@@ -1,0 +1,11 @@
+{
+  "id": "quote.crypto",
+  "label": "Crypto price",
+  "auth": "none",
+  "inputs": [{ "name": "symbol", "type": "string", "required": true }],
+  "output": "string",
+  "scopes": [],
+  "discloses": "the ticker you ask about (sent to CoinGecko)",
+  "rateLimit": { "perMin": 10 },
+  "timeoutMs": 5000
+}

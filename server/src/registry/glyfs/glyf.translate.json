@@ -1,0 +1,20 @@
+{
+  "id": "glyf.translate",
+  "version": 1,
+  "name": "Translate",
+  "icon": "translate",
+  "input": "field",
+  "requires": { "fullAccess": true, "connectors": [], "wallet": false },
+  "discloses": ["the text in your current field"],
+  "vars": { "target": "English" },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[translate:{{target}}]]\nTranslate the message below into {{target}}. Keep the tone and register. Reply with ONLY the translation.\n\nMessage:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": { "mode": "preview", "from": "final" }
+}

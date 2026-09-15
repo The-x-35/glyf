@@ -1,0 +1,19 @@
+{
+  "id": "web.search",
+  "label": "Web search",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "query",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "instant answer + result links as JSON rows",
+  "scopes": [],
+  "discloses": "your search (sent to DuckDuckGo)",
+  "rateLimit": {
+    "perMin": 30
+  },
+  "timeoutMs": 6000
+}

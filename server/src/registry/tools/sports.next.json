@@ -1,0 +1,19 @@
+{
+  "id": "sports.next",
+  "label": "Next fixture",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "team",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "a team's next match",
+  "scopes": [],
+  "discloses": "the team you name (sent to TheSportsDB)",
+  "rateLimit": {
+    "perMin": 10
+  },
+  "timeoutMs": 7000
+}

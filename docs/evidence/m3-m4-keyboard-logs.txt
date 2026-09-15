@@ -1,0 +1,40 @@
+getpwuid_r did not find a match for uid 501
+Filtering the log data using "subsystem == "so.glyf.keyboard""
+Timestamp                       Thread     Type        Activity             PID    TTL  
+2026-09-12 11:11:08.439141+0530 0x37a188   Default     0xe45026             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 11:11:08.477786+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=25.2
+2026-09-12 11:11:08.484401+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_DICT check pending=none
+2026-09-12 11:11:43.416851+0530 0x37a188   Default     0xe47055             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 11:11:43.434648+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=2 footprint_mb=46.0
+2026-09-12 11:11:43.435859+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_DICT check pending=none
+2026-09-12 11:11:51.433433+0530 0x37a188   Default     0xe478a1             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=shell:root footprint_mb=45.7
+2026-09-12 11:11:52.827767+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=shell:settings footprint_mb=46.6
+2026-09-12 11:11:54.294022+0530 0x37a188   Default     0xe478a9             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=shell:root footprint_mb=47.8
+2026-09-12 11:12:08.459989+0530 0x37a188   Default     0xe48835             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 11:12:08.488774+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=3 footprint_mb=48.1
+2026-09-12 11:12:08.489737+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_DICT check pending=none
+2026-09-12 11:12:17.952417+0530 0x37a188   Default     0xe48ec5             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=emoji footprint_mb=47.5
+2026-09-12 11:12:26.191758+0530 0x37a188   Default     0xe4a394             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 11:12:26.216429+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=4 footprint_mb=59.4
+2026-09-12 11:12:26.219314+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_DICT check pending=none
+2026-09-12 11:12:47.815719+0530 0x37a188   Default     0xe4bda2             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:backend] GLYF_RUN start glyf=rewrite.polite
+2026-09-12 11:12:54.413469+0530 0x37a188   Default     0xe4c5c4             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 11:12:54.427286+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=5 footprint_mb=59.1
+2026-09-12 11:12:54.428532+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_DICT check pending=none
+2026-09-12 11:13:14.959230+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:backend] GLYF_RUN start glyf=glyf.translate
+2026-09-12 11:13:40.289081+0530 0x37a188   Default     0xe4e996             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 11:13:40.305668+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=6 footprint_mb=60.5
+2026-09-12 11:13:40.306698+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_DICT check pending=none
+2026-09-12 11:13:49.748335+0530 0x37ae72   Info        0xe4eacb             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A extensionContext.open success=false
+2026-09-12 11:13:49.748879+0530 0x37a188   Info        0xe4eacb             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A responderApplication legacy openURL: unavailable
+2026-09-12 11:13:49.751449+0530 0x37a188   Info        0xe4eacb             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A responderApplicationModern invoked
+2026-09-12 11:14:06.791825+0530 0x37a188   Default     0xe50249             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 11:14:06.812588+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=7 footprint_mb=59.9
+2026-09-12 11:14:06.814042+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_DICT check pending=6a05d825-1cc2-48b2-a7cc-88ed0fe85932
+2026-09-12 11:14:06.815648+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_DICT inserted chars=97
+2026-09-12 11:14:19.485132+0530 0x37a188   Default     0xe50eb7             43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 11:14:19.512247+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=8 footprint_mb=61.1
+2026-09-12 11:14:19.513682+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_DICT check pending=none
+2026-09-12 11:14:35.456592+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=shell:root footprint_mb=60.8
+2026-09-12 11:14:35.472654+0530 0x37a188   Default     0x0                  43663  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=shell:vault footprint_mb=61.0
+Child process terminated with signal 15: Terminated

@@ -1,0 +1,19 @@
+{
+  "id": "books.search",
+  "label": "Book search",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "query",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "top matching books",
+  "scopes": [],
+  "discloses": "your book search (sent to Open Library)",
+  "rateLimit": {
+    "perMin": 15
+  },
+  "timeoutMs": 7000
+}

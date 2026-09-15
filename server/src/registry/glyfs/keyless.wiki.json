@@ -1,0 +1,31 @@
+{
+  "id": "keyless.wiki",
+  "version": 1,
+  "name": "Wiki lookup",
+  "icon": "books.vertical",
+  "input": "field",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the topic in your field (sent to Wikipedia)"
+  ],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "tool",
+      "tool": "wiki.summary",
+      "args": {
+        "topic": "{{input}}"
+      },
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

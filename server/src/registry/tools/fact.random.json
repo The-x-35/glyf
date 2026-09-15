@@ -1,0 +1,13 @@
+{
+  "id": "fact.random",
+  "label": "Random fact",
+  "auth": "none",
+  "inputs": [],
+  "output": "one surprising fact",
+  "scopes": [],
+  "discloses": "nothing personal (fetches Useless Facts)",
+  "rateLimit": {
+    "perMin": 15
+  },
+  "timeoutMs": 5000
+}

@@ -1,0 +1,11 @@
+{
+  "id": "calendar.today",
+  "label": "Today's calendar",
+  "auth": "oauth:google",
+  "inputs": [{ "name": "query", "type": "string", "required": false }],
+  "output": "list<{title,start,end,link}>",
+  "scopes": ["calendar.readonly"],
+  "discloses": "your Google Calendar events",
+  "rateLimit": { "perMin": 20 },
+  "timeoutMs": 4000
+}

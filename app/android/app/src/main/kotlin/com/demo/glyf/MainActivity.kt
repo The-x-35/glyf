@@ -1,0 +1,55 @@
+package com.demo.glyf
+
+import android.content.Intent
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity : FlutterActivity() {
+
+    private var bridge: GlyfBridge? = null
+    private var pendingPermission: ((Boolean) -> Unit)? = null
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        val b = GlyfBridge(applicationContext)
+        val channel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, "so.glyf/bridge")
+        channel.setMethodCallHandler(b)
+        b.channel = channel
+        b.requestContactsPermission = { done ->
+            pendingPermission = done
+            requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), 71)
+        }
+        b.requestLocationPermission = { done ->
+            pendingPermission = done
+            requestPermissions(
+                arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION), 72)
+        }
+        bridge = b
+        intent?.dataString?.let { link ->
+            if (link.startsWith("glyf://")) b.lastDeepLink = link
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 71 || requestCode == 72) {
+            val ok = grantResults.firstOrNull() ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            pendingPermission?.invoke(ok)
+            pendingPermission = null
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val link = intent.dataString ?: return
+        if (link.startsWith("glyf://")) {
+            bridge?.lastDeepLink = link
+            bridge?.channel?.invokeMethod("onDeepLink", link)
+        }
+    }
+}

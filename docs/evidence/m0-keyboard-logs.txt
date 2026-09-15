@@ -1,0 +1,59 @@
+getpwuid_r did not find a match for uid 501
+Filtering the log data using "subsystem == "so.glyf.keyboard" OR composedMessage CONTAINS "GLYF_""
+Timestamp                       Thread     Type        Activity             PID    TTL  
+2026-09-11 19:27:49.018170+0530 0x29c75b   Default     0x0                  96694  0    GlyfM0UITests-Runner: (Foundation) GLYF_UITEST keyboard not reachable via globe — enabling in Settings
+2026-09-11 19:27:53.463372+0530 0x29c75b   Default     0x0                  96694  0    GlyfM0UITests-Runner: (Foundation) GLYF_UITEST enable: at Settings root
+2026-09-11 19:27:57.680913+0530 0x29c75b   Default     0x0                  96694  0    GlyfM0UITests-Runner: (Foundation) GLYF_UITEST enable: at Keyboard screen
+2026-09-11 19:28:02.671947+0530 0x29c75b   Default     0x0                  96694  0    GlyfM0UITests-Runner: (Foundation) GLYF_UITEST enable: at Add New Keyboard sheet
+2026-09-11 19:28:12.362963+0530 0x29c75b   Default     0x0                  96694  0    GlyfM0UITests-Runner: (Foundation) GLYF_UITEST enable: full access granted
+2026-09-11 19:28:21.372613+0530 0x29d105   Info        0xa36aef             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:28:21.423805+0530 0x29d105   Info        0x0                  96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=21.5
+2026-09-11 19:28:30.295602+0530 0x29d105   Info        0xa37b96             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:28:30.321756+0530 0x29d105   Info        0x0                  96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=39.9
+2026-09-11 19:28:39.204296+0530 0x29d105   Info        0xa38873             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:28:39.236054+0530 0x29d105   Info        0x0                  96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=40.5
+2026-09-11 19:28:41.610529+0530 0x29d12a   Info        0xa3893b             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A extensionContext.open success=false
+2026-09-11 19:28:41.610959+0530 0x29d105   Info        0xa3893b             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A responderApplication delivered=false
+2026-09-11 19:28:41.610968+0530 0x29d105   Info        0xa3893b             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A exhausted — no strategy delivered
+2026-09-11 19:28:47.817640+0530 0x29c75b   Default     0x0                  96694  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT foregrounded=false
+2026-09-11 19:28:47.817998+0530 0x29c75b   Default     0x0                  96694  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT no strategy foregrounded the app — fallback card UX required
+2026-09-11 19:30:45.500448+0530 0x29d105   Info        0xa3b5e5             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:30:45.531432+0530 0x29d105   Info        0x0                  96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=44.9
+2026-09-11 19:30:53.943927+0530 0x29fd7d   Info        0xa3b8e0             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A extensionContext.open success=false
+2026-09-11 19:30:53.944196+0530 0x29d105   Info        0xa3b8e0             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A responderApplication delivered=false
+2026-09-11 19:30:53.944201+0530 0x29d105   Info        0xa3b8e0             96803  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A exhausted — no strategy delivered
+2026-09-11 19:31:00.147336+0530 0x29fce1   Default     0x0                  97113  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT foregrounded=false
+2026-09-11 19:31:00.147538+0530 0x29fce1   Default     0x0                  97113  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT no strategy foregrounded the app — fallback card UX required
+2026-09-11 19:31:50.126236+0530 0x2a20c1   Info        0xa3d073             97344  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:31:50.165755+0530 0x2a20c1   Info        0x0                  97344  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=21.5
+2026-09-11 19:31:58.263034+0530 0x2a20e6   Info        0xa3d493             97344  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A extensionContext.open success=false
+2026-09-11 19:31:58.263640+0530 0x2a20c1   Info        0xa3d493             97344  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A responderApplication delivered=false
+2026-09-11 19:31:58.263646+0530 0x2a20c1   Info        0xa3d493             97344  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A exhausted — no strategy delivered
+2026-09-11 19:32:04.468307+0530 0x2a1f9c   Default     0x0                  97336  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT foregrounded=false
+2026-09-11 19:32:04.468582+0530 0x2a1f9c   Default     0x0                  97336  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT no strategy foregrounded the app — fallback card UX required
+2026-09-11 19:33:12.390054+0530 0x2a447c   Info        0xa3f234             97568  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:33:12.434239+0530 0x2a447c   Info        0x0                  97568  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=21.6
+2026-09-11 19:33:20.511173+0530 0x2a44a5   Info        0xa3f553             97568  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A extensionContext.open success=false
+2026-09-11 19:33:20.511803+0530 0x2a447c   Info        0xa3f553             97568  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A responderApplication legacy openURL: unavailable
+2026-09-11 19:33:20.513406+0530 0x2a447c   Info        0xa3f553             97568  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A responderApplicationModern invoked
+2026-09-11 19:33:20.698930+0530 0x2a432f   Default     0x0                  97561  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT foregrounded=true
+2026-09-11 19:33:22.723727+0530 0x2a432f   Default     0x0                  97561  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT deepLinkShown=true
+2026-09-11 19:34:45.056445+0530 0x2a52ed   Info        0xa41fe7             97799  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:34:45.090811+0530 0x2a52ed   Info        0x0                  97799  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=21.6
+2026-09-11 19:34:51.184291+0530 0x2a4ed0   Default     0x0                  97780  0    GlyfM0UITests-Runner: (Foundation) GLYF_FA_PROBE pingUpdatedWithFullAccessOff=true
+2026-09-11 19:35:05.631913+0530 0x2a4ed0   Default     0x0                  97780  0    GlyfM0UITests-Runner: (Foundation) GLYF_FA_PROBE toggled full access to true
+2026-09-11 19:35:38.501725+0530 0x2a5c73   Info        0xa441f4             97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:35:38.538180+0530 0x2a5c73   Info        0x0                  97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=21.8
+2026-09-11 19:35:49.493242+0530 0x2a5c73   Info        0xa45374             97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:35:49.519800+0530 0x2a5c73   Info        0x0                  97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=2 footprint_mb=40.0
+2026-09-11 19:35:58.288922+0530 0x2a5c73   Info        0xa45e03             97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:35:58.324722+0530 0x2a5c73   Info        0x0                  97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=3 footprint_mb=40.7
+2026-09-11 19:36:00.694419+0530 0x2a5d71   Info        0xa45edb             97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A extensionContext.open success=false
+2026-09-11 19:36:00.694776+0530 0x2a5c73   Info        0xa45edb             97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A responderApplication legacy openURL: unavailable
+2026-09-11 19:36:00.696506+0530 0x2a5c73   Info        0xa45edb             97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:spikeA] GLYF_SPIKE_A responderApplicationModern invoked
+2026-09-11 19:36:00.774327+0530 0x2a5c73   Info        0xa46080             97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-11 19:36:00.797149+0530 0x2a5c73   Info        0x0                  97958  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=4 footprint_mb=42.3
+2026-09-11 19:36:00.900137+0530 0x2a5b00   Default     0x0                  97950  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT foregrounded=true
+2026-09-11 19:36:01.967079+0530 0x2a5b00   Default     0x0                  97950  0    GlyfM0UITests-Runner: (Foundation) GLYF_SPIKE_A_RESULT deepLinkShown=true
+Child process terminated with signal 15: Terminated
+"GLYF_MEM"' 

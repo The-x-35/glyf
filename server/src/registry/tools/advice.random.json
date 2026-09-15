@@ -1,0 +1,13 @@
+{
+  "id": "advice.random",
+  "label": "Advice",
+  "auth": "none",
+  "inputs": [],
+  "output": "one line of advice",
+  "scopes": [],
+  "discloses": "nothing personal (fetches Advice Slip)",
+  "rateLimit": {
+    "perMin": 15
+  },
+  "timeoutMs": 5000
+}

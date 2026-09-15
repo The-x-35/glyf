@@ -1,0 +1,11 @@
+{
+  "id": "url.unfurl",
+  "label": "Link preview",
+  "auth": "none",
+  "inputs": [{ "name": "url", "type": "string", "required": true }],
+  "output": "{title,description,url}",
+  "scopes": [],
+  "discloses": "the URL you paste (fetched directly)",
+  "rateLimit": { "perMin": 15 },
+  "timeoutMs": 6000
+}

@@ -1,0 +1,31 @@
+{
+  "id": "rewrite.expand",
+  "version": 1,
+  "name": "Expand",
+  "icon": "sparkles",
+  "input": "field",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the text in your current field"
+  ],
+  "vars": {
+    "toneHint": ""
+  },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[expand]]\nExpand the brief note below into a fuller, well-written message. Keep the language and intent.{{toneHint}} Reply with ONLY the expanded text.\n\nNote:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

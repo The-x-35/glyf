@@ -1,0 +1,19 @@
+{
+  "id": "holidays.next",
+  "label": "Next holidays",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "country",
+      "type": "string",
+      "required": false
+    }
+  ],
+  "output": "next three public holidays",
+  "scopes": [],
+  "discloses": "the country code you pick (sent to Nager.Date)",
+  "rateLimit": {
+    "perMin": 10
+  },
+  "timeoutMs": 6000
+}

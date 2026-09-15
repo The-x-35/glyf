@@ -1,0 +1,31 @@
+{
+  "id": "social.xreply",
+  "version": 1,
+  "name": "Super X reply",
+  "icon": "sparkles",
+  "input": "clipboard",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the text on your clipboard"
+  ],
+  "vars": {
+    "tone": "witty"
+  },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[xreply]]\nThe text below is a social post. Draft a sharp reply in a {{tone}} tone \u2014 under 200 characters, no hashtags. Reply with ONLY the reply text.\n\nPost:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": "rewrite.tone",
+  "version": 1,
+  "name": "Tone shift",
+  "icon": "sparkles",
+  "input": "field",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the text in your current field"
+  ],
+  "vars": {
+    "tone": "casual",
+    "toneHint": ""
+  },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[tone:{{tone}}]]\nRewrite the message below in a {{tone}} tone. Keep the meaning and language.{{toneHint}} Reply with ONLY the rewritten text.\n\nMessage:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

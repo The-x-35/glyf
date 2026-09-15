@@ -1,0 +1,13 @@
+{
+  "id": "news.tech",
+  "label": "Tech headlines",
+  "auth": "none",
+  "inputs": [],
+  "output": "today's top tech headlines",
+  "scopes": [],
+  "discloses": "nothing personal (fetches Hacker News front page)",
+  "rateLimit": {
+    "perMin": 10
+  },
+  "timeoutMs": 6000
+}

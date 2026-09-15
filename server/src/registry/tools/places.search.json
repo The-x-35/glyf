@@ -1,0 +1,19 @@
+{
+  "id": "places.search",
+  "label": "Place search",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "query",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "top matching places with map links",
+  "scopes": [],
+  "discloses": "your place search (sent to OpenStreetMap)",
+  "rateLimit": {
+    "perMin": 15
+  },
+  "timeoutMs": 7000
+}

@@ -1,0 +1,19 @@
+{
+  "id": "country.info",
+  "label": "Country facts",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "country",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "capital, population, currency",
+  "scopes": [],
+  "discloses": "the country you name (sent to REST Countries)",
+  "rateLimit": {
+    "perMin": 15
+  },
+  "timeoutMs": 6000
+}

@@ -1,0 +1,29 @@
+{
+  "id": "social.hook",
+  "version": 1,
+  "name": "Hook rewrite",
+  "icon": "sparkles",
+  "input": "field",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the text in your current field"
+  ],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[hook]]\nRewrite the post below with a scroll-stopping first line. Keep the substance and language. Reply with ONLY the rewritten post.\n\nPost:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

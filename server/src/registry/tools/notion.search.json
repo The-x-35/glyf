@@ -1,0 +1,11 @@
+{
+  "id": "notion.search",
+  "label": "Search Notion",
+  "auth": "oauth:notion",
+  "inputs": [{ "name": "query", "type": "string", "required": true }],
+  "output": "list<{title,url,lastEdited}>",
+  "scopes": ["read_content"],
+  "discloses": "your Notion workspace content",
+  "rateLimit": { "perMin": 20 },
+  "timeoutMs": 4000
+}

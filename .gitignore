@@ -1,0 +1,22 @@
+.DS_Store
+node_modules/
+server/dist/
+spikes/**/build/
+*.log
+
+# secrets — server-side only, never in any client bundle (SPEC §1.6)
+.env
+.env.*
+!.env.example
+
+# build output
+app/ios/build/
+site/.next/
+site/.vercel/
+*.tsbuildinfo
+
+# gate recordings are too big for GitHub (some >100 MB); they stay local
+docs/evidence/*.mp4
+
+# stray Xcode template project with its own git repo (the real iOS app is app/ios)
+/glyf/

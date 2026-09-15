@@ -1,0 +1,29 @@
+{
+  "id": "glyf.summarize",
+  "version": 1,
+  "name": "Summarize",
+  "icon": "sparkles",
+  "input": "clipboard",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the text on your clipboard"
+  ],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[summarize]]\nSummarize the text below in 2-3 crisp sentences. Same language. Reply with ONLY the summary.\n\nText:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

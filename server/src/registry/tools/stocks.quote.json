@@ -1,0 +1,19 @@
+{
+  "id": "stocks.quote",
+  "label": "Stock quote",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "symbol",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "latest close and day change",
+  "scopes": [],
+  "discloses": "the ticker you name (sent to Stooq)",
+  "rateLimit": {
+    "perMin": 20
+  },
+  "timeoutMs": 6000
+}

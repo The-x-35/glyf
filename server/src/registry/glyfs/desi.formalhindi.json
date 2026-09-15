@@ -1,0 +1,29 @@
+{
+  "id": "desi.formalhindi",
+  "version": 1,
+  "name": "Formal Hindi",
+  "icon": "sparkles",
+  "input": "field",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the text in your current field"
+  ],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[formalhindi]]\nRewrite the message below in polite, formal Hindi (Devanagari). Reply with ONLY the rewritten text.\n\nMessage:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

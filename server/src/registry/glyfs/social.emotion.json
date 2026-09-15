@@ -1,0 +1,29 @@
+{
+  "id": "social.emotion",
+  "version": 1,
+  "name": "Emotion read",
+  "icon": "sparkles",
+  "input": "clipboard",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the text on your clipboard"
+  ],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[emotion]]\nRead the message below. In 2 short lines: (1) the mood behind it, (2) the smartest reply strategy. Reply with ONLY those two lines.\n\nMessage:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

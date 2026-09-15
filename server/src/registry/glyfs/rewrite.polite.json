@@ -1,0 +1,20 @@
+{
+  "id": "rewrite.polite",
+  "version": 1,
+  "name": "Make it polite",
+  "icon": "hand.wave",
+  "input": "field",
+  "requires": { "fullAccess": true, "connectors": [], "wallet": false },
+  "discloses": ["the text in your current field"],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[polite]]\nRewrite the message below to be warm, courteous, and natural, keeping its meaning, language, and length. Reply with ONLY the rewritten text — no preamble, no quotes.\n\nMessage:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": { "mode": "preview", "from": "final" }
+}

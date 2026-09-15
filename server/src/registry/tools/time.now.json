@@ -1,0 +1,11 @@
+{
+  "id": "time.now",
+  "label": "Date & time",
+  "auth": "none",
+  "inputs": [{ "name": "timezone", "type": "string", "required": false }],
+  "output": "string",
+  "scopes": [],
+  "discloses": "nothing — computed locally",
+  "rateLimit": { "perMin": 60 },
+  "timeoutMs": 1000
+}

@@ -1,0 +1,19 @@
+{
+  "id": "word.synonyms",
+  "label": "Synonyms",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "word",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "comma list of synonyms",
+  "scopes": [],
+  "discloses": "the word you name (sent to Datamuse)",
+  "rateLimit": {
+    "perMin": 30
+  },
+  "timeoutMs": 5000
+}

@@ -1,0 +1,19 @@
+{
+  "id": "air.quality",
+  "label": "Air quality",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "place",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "US AQI and PM2.5",
+  "scopes": [],
+  "discloses": "the place name you type (sent to Open-Meteo)",
+  "rateLimit": {
+    "perMin": 20
+  },
+  "timeoutMs": 6000
+}

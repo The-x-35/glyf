@@ -1,0 +1,20 @@
+{
+  "id": "glyf.proofread",
+  "version": 1,
+  "name": "Proofread",
+  "icon": "checkmark.seal",
+  "input": "field",
+  "requires": { "fullAccess": true, "connectors": [], "wallet": false },
+  "discloses": ["the text in your current field"],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[proofread]]\nFix grammar, spelling, and punctuation in the message below. Change NOTHING else — keep the tone, wording, and language. Reply with ONLY the corrected text.\n\nMessage:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": { "mode": "preview", "from": "final" }
+}

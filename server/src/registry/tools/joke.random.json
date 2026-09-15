@@ -1,0 +1,13 @@
+{
+  "id": "joke.random",
+  "label": "Dad joke",
+  "auth": "none",
+  "inputs": [],
+  "output": "one short joke",
+  "scopes": [],
+  "discloses": "nothing personal (fetches icanhazdadjoke)",
+  "rateLimit": {
+    "perMin": 15
+  },
+  "timeoutMs": 5000
+}

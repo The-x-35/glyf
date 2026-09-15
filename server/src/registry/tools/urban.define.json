@@ -1,0 +1,19 @@
+{
+  "id": "urban.define",
+  "label": "Slang lookup",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "term",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "top slang definition",
+  "scopes": [],
+  "discloses": "the term you name (sent to Urban Dictionary)",
+  "rateLimit": {
+    "perMin": 15
+  },
+  "timeoutMs": 6000
+}

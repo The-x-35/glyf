@@ -1,0 +1,20 @@
+{
+  "id": "dictation.formal",
+  "version": 1,
+  "name": "Formal dictation",
+  "icon": "text.badge.checkmark",
+  "input": "none",
+  "requires": { "fullAccess": false, "connectors": [], "wallet": false },
+  "discloses": ["your dictated transcript"],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[formal]]\nThis is a raw speech-to-text transcript. Rewrite it as polished, formal written text: remove fillers, fix grammar and punctuation, elevate the register while preserving the meaning and language. Reply with ONLY the rewritten text.\n\nTranscript:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": { "mode": "preview", "from": "final" }
+}

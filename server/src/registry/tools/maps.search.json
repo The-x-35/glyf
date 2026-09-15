@@ -1,0 +1,19 @@
+{
+  "id": "maps.search",
+  "label": "Maps search",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "query",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "matching places with Google Maps links as JSON rows",
+  "scopes": [],
+  "discloses": "your place search (sent to OpenStreetMap)",
+  "rateLimit": {
+    "perMin": 30
+  },
+  "timeoutMs": 7000
+}

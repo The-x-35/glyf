@@ -1,0 +1,13 @@
+{
+  "id": "quote.inspire",
+  "label": "Inspiring quote",
+  "auth": "none",
+  "inputs": [],
+  "output": "a quote with attribution",
+  "scopes": [],
+  "discloses": "nothing personal (fetches ZenQuotes)",
+  "rateLimit": {
+    "perMin": 15
+  },
+  "timeoutMs": 5000
+}

@@ -1,0 +1,24 @@
+{
+  "id": "route.eta",
+  "label": "Route ETA",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "from",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "to",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "driving distance and time",
+  "scopes": [],
+  "discloses": "the two places you name (sent to OSRM/Open-Meteo)",
+  "rateLimit": {
+    "perMin": 10
+  },
+  "timeoutMs": 8000
+}

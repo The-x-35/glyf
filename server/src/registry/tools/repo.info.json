@@ -1,0 +1,19 @@
+{
+  "id": "repo.info",
+  "label": "GitHub repo",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "repo",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "stars, language, description",
+  "scopes": [],
+  "discloses": "the repo path you name (sent to GitHub's public API)",
+  "rateLimit": {
+    "perMin": 10
+  },
+  "timeoutMs": 6000
+}

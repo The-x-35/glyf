@@ -1,0 +1,924 @@
+{
+ "dictionary": "app/dict/en.glyd",
+ "packs": "app/assets/vocab/packs.json",
+ "rowPitch": 1.44,
+ "note": "The shipped dictionary, not the golden one. Runs in both suites when app/dict/en.glyd exists.",
+ "cases": [
+  {
+   "name": "fixes teh",
+   "typed": "teh",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "the"
+   }
+  },
+  {
+   "name": "fixes hte",
+   "typed": "hte",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "the"
+   }
+  },
+  {
+   "name": "fixes recieve",
+   "typed": "recieve",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "receive"
+   }
+  },
+  {
+   "name": "fixes definately",
+   "typed": "definately",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "definitely"
+   }
+  },
+  {
+   "name": "fixes tomorow",
+   "typed": "tomorow",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "tomorrow"
+   }
+  },
+  {
+   "name": "fixes thnaks",
+   "typed": "thnaks",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "thanks"
+   }
+  },
+  {
+   "name": "fixes becuase",
+   "typed": "becuase",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "because"
+   }
+  },
+  {
+   "name": "fixes wierd",
+   "typed": "wierd",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "weird"
+   }
+  },
+  {
+   "name": "fixes alot",
+   "typed": "alot",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "a lot"
+   }
+  },
+  {
+   "name": "fixes dont",
+   "typed": "dont",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "don't"
+   }
+  },
+  {
+   "name": "fixes im",
+   "typed": "im",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "I'm"
+   }
+  },
+  {
+   "name": "fixes cant",
+   "typed": "cant",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "can't"
+   }
+  },
+  {
+   "name": "fixes wont",
+   "typed": "wont",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "won't"
+   }
+  },
+  {
+   "name": "fixes didnt",
+   "typed": "didnt",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "didn't"
+   }
+  },
+  {
+   "name": "fixes youre",
+   "typed": "youre",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "you're"
+   }
+  },
+  {
+   "name": "fixes thats",
+   "typed": "thats",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "that's"
+   }
+  },
+  {
+   "name": "fixes adress",
+   "typed": "adress",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "address"
+   }
+  },
+  {
+   "name": "fixes untill",
+   "typed": "untill",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "until"
+   }
+  },
+  {
+   "name": "fixes occured",
+   "typed": "occured",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "occurred"
+   }
+  },
+  {
+   "name": "fixes seperate",
+   "typed": "seperate",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "separate"
+   }
+  },
+  {
+   "name": "fixes goign",
+   "typed": "goign",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "going"
+   }
+  },
+  {
+   "name": "fixes waht",
+   "typed": "waht",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "what"
+   }
+  },
+  {
+   "name": "fixes jsut",
+   "typed": "jsut",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "just"
+   }
+  },
+  {
+   "name": "fixes knwo",
+   "typed": "knwo",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "know"
+   }
+  },
+  {
+   "name": "fixes abotu",
+   "typed": "abotu",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "about"
+   }
+  },
+  {
+   "name": "fixes freind",
+   "typed": "freind",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "friend"
+   }
+  },
+  {
+   "name": "fixes beleive",
+   "typed": "beleive",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "believe"
+   }
+  },
+  {
+   "name": "fixes wiht",
+   "typed": "wiht",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "with"
+   }
+  },
+  {
+   "name": "fixes taht",
+   "typed": "taht",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "that"
+   }
+  },
+  {
+   "name": "fixes realy",
+   "typed": "realy",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "really"
+   }
+  },
+  {
+   "name": "fixes whcih",
+   "typed": "whcih",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "which"
+   }
+  },
+  {
+   "name": "fixes shoudl",
+   "typed": "shoudl",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "should"
+   }
+  },
+  {
+   "name": "fixes coudl",
+   "typed": "coudl",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "could"
+   }
+  },
+  {
+   "name": "fixes hsa",
+   "typed": "hsa",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "has"
+   }
+  },
+  {
+   "name": "fixes delhi",
+   "typed": "delhi",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "Delhi"
+   }
+  },
+  {
+   "name": "fixes zomato",
+   "typed": "zomato",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "Zomato"
+   }
+  },
+  {
+   "name": "fixes swiggy",
+   "typed": "swiggy",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "Swiggy"
+   }
+  },
+  {
+   "name": "keeps arpit",
+   "typed": "arpit",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps glyf",
+   "typed": "glyf",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps lol",
+   "typed": "lol",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps omg",
+   "typed": "omg",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps idk",
+   "typed": "idk",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps u",
+   "typed": "u",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps ur",
+   "typed": "ur",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps k",
+   "typed": "k",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps ok",
+   "typed": "ok",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps bro",
+   "typed": "bro",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps bruh",
+   "typed": "bruh",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps hum",
+   "typed": "hum",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps bot",
+   "typed": "bot",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps id",
+   "typed": "id",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps os",
+   "typed": "os",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps form",
+   "typed": "form",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps from",
+   "typed": "from",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps acha",
+   "typed": "acha",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps accha",
+   "typed": "accha",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps yaar",
+   "typed": "yaar",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps kal",
+   "typed": "kal",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps bhai",
+   "typed": "bhai",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps hai",
+   "typed": "hai",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps kya",
+   "typed": "kya",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps nahi",
+   "typed": "nahi",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps haan",
+   "typed": "haan",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps theek",
+   "typed": "theek",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps matlab",
+   "typed": "matlab",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps mera",
+   "typed": "mera",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps tera",
+   "typed": "tera",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps hua",
+   "typed": "hua",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps kar",
+   "typed": "kar",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps raha",
+   "typed": "raha",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps tha",
+   "typed": "tha",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps anvika",
+   "typed": "anvika",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps rohan",
+   "typed": "rohan",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps priya",
+   "typed": "priya",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps figma",
+   "typed": "figma",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps bgmi",
+   "typed": "bgmi",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps insta",
+   "typed": "insta",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps gonna",
+   "typed": "gonna",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps wanna",
+   "typed": "wanna",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps gotta",
+   "typed": "gotta",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps tbh",
+   "typed": "tbh",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps ngl",
+   "typed": "ngl",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps fr",
+   "typed": "fr",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps its",
+   "typed": "its",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps well",
+   "typed": "well",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps were",
+   "typed": "were",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps your",
+   "typed": "your",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps there",
+   "typed": "there",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps their",
+   "typed": "their",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "fixes ill (I'll is far more common)",
+   "typed": "ill",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "I'll"
+   }
+  },
+  {
+   "name": "keeps lets",
+   "typed": "lets",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps a name at sentence start",
+   "typed": "Arpit",
+   "sentenceStart": true,
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "with Hinglish, keeps yar",
+   "typed": "yar",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "with Hinglish, keeps chalo",
+   "typed": "chalo",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "with Hinglish, keeps arre",
+   "typed": "arre",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "with Hinglish, keeps bas",
+   "typed": "bas",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "with Hinglish, keeps nhi",
+   "typed": "nhi",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "with Hinglish, keeps kyu",
+   "typed": "kyu",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "with Hinglish, keeps bht",
+   "typed": "bht",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "with Hinglish, keeps kr",
+   "typed": "kr",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "with Hinglish, keeps rha",
+   "typed": "rha",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "with Hinglish, keeps gya",
+   "typed": "gya",
+   "previous": "bhai",
+   "state": {
+    "packs": [
+     "local.hinglish"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "predicts you after thank",
+   "typed": "",
+   "previous": "thank",
+   "expect": {
+    "predictionsInclude": [
+     "you"
+    ]
+   }
+  },
+  {
+   "name": "predicts morning after good",
+   "typed": "",
+   "previous": "good",
+   "expect": {
+    "predictionsInclude": [
+     "morning"
+    ]
+   }
+  },
+  {
+   "name": "predicts birthday after happy",
+   "typed": "",
+   "previous": "happy",
+   "expect": {
+    "predictionsInclude": [
+     "birthday"
+    ]
+   }
+  },
+  {
+   "name": "predicts are after how",
+   "typed": "",
+   "previous": "how",
+   "expect": {
+    "predictionsInclude": [
+     "are"
+    ]
+   }
+  }
+ ]
+}

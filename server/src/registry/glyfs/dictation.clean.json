@@ -1,0 +1,20 @@
+{
+  "id": "dictation.clean",
+  "version": 1,
+  "name": "Clean dictation",
+  "icon": "waveform",
+  "input": "none",
+  "requires": { "fullAccess": false, "connectors": [], "wallet": false },
+  "discloses": ["your dictated transcript"],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[clean]]\nThis is a raw speech-to-text transcript. Clean it up: remove filler words (um, uh, like, you know, I mean), fix punctuation, casing, and obvious mis-transcriptions. Keep the speaker's language, meaning, tone, and wording otherwise. Reply with ONLY the cleaned text.\n\nTranscript:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": { "mode": "preview", "from": "final" }
+}

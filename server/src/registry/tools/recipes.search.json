@@ -1,0 +1,19 @@
+{
+  "id": "recipes.search",
+  "label": "Recipe",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "dish",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "a recipe summary",
+  "scopes": [],
+  "discloses": "the dish you name (sent to TheMealDB)",
+  "rateLimit": {
+    "perMin": 10
+  },
+  "timeoutMs": 7000
+}

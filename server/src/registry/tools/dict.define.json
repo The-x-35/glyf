@@ -1,0 +1,19 @@
+{
+  "id": "dict.define",
+  "label": "Dictionary",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "word",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "definition with part of speech",
+  "scopes": [],
+  "discloses": "the word you name (sent to dictionaryapi.dev)",
+  "rateLimit": {
+    "perMin": 30
+  },
+  "timeoutMs": 5000
+}

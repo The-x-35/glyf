@@ -1,0 +1,29 @@
+{
+  "id": "desi.hinglish",
+  "version": 1,
+  "name": "Hinglish flip",
+  "icon": "sparkles",
+  "input": "field",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the text in your current field"
+  ],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[hinglish]]\nIf the message below is in Hinglish or Hindi, rewrite it in natural English. If it is in English, rewrite it in natural, friendly Hinglish (Roman script). Reply with ONLY the rewritten text.\n\nMessage:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

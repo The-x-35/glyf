@@ -1,0 +1,19 @@
+{
+  "id": "yt.search",
+  "label": "YouTube search",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "query",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "video results as JSON rows (title, channel, link)",
+  "scopes": [],
+  "discloses": "your search (sent to YouTube)",
+  "rateLimit": {
+    "perMin": 30
+  },
+  "timeoutMs": 6000
+}

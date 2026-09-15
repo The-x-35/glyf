@@ -1,0 +1,19 @@
+{
+  "id": "wiki.summary",
+  "label": "Wikipedia summary",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "topic",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "one-paragraph encyclopedia summary",
+  "scopes": [],
+  "discloses": "the topic you name (sent to Wikipedia)",
+  "rateLimit": {
+    "perMin": 20
+  },
+  "timeoutMs": 6000
+}

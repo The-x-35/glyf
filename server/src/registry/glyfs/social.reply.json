@@ -1,0 +1,31 @@
+{
+  "id": "social.reply",
+  "version": 1,
+  "name": "Reply draft",
+  "icon": "sparkles",
+  "input": "clipboard",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the text on your clipboard"
+  ],
+  "vars": {
+    "toneHint": ""
+  },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[reply]]\nDraft a reply to the message below. Natural, warm, concise.{{toneHint}} Reply with ONLY the draft.\n\nTheir message:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

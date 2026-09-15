@@ -1,0 +1,54 @@
+{
+  "id": "keyless.stock",
+  "version": 1,
+  "name": "Stock check",
+  "icon": "chart.bar",
+  "input": "field",
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the ticker in your field (sent to Stooq)"
+  ],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "if",
+      "cond": "{{input}} != ''",
+      "then": [
+        "s2"
+      ],
+      "else": [
+        "s3"
+      ]
+    },
+    {
+      "id": "s2",
+      "type": "format",
+      "template": "{{input}}",
+      "out": "arg"
+    },
+    {
+      "id": "s3",
+      "type": "format",
+      "template": "AAPL",
+      "out": "arg"
+    },
+    {
+      "id": "s4",
+      "type": "tool",
+      "tool": "stocks.quote",
+      "args": {
+        "symbol": "{{arg}}"
+      },
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
+}

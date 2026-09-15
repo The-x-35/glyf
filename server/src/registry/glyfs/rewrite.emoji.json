@@ -1,0 +1,20 @@
+{
+  "id": "rewrite.emoji",
+  "version": 1,
+  "name": "Emoji-fy",
+  "icon": "face.smiling",
+  "input": "field",
+  "requires": { "fullAccess": true, "connectors": [], "wallet": false },
+  "discloses": ["the text in your current field"],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[emoji]]\nExpress the idea in the message below using ONLY emoji — no words at all. Reply with just the emoji sequence.\n\nMessage:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": { "mode": "preview", "from": "final" }
+}

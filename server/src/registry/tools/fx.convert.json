@@ -1,0 +1,15 @@
+{
+  "id": "fx.convert",
+  "label": "Currency conversion",
+  "auth": "none",
+  "inputs": [
+    { "name": "amount", "type": "number", "required": true },
+    { "name": "from", "type": "string", "required": true },
+    { "name": "to", "type": "string", "required": true }
+  ],
+  "output": "string",
+  "scopes": [],
+  "discloses": "the amounts and currencies you convert (sent to Frankfurter)",
+  "rateLimit": { "perMin": 20 },
+  "timeoutMs": 5000
+}

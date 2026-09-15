@@ -1,0 +1,19 @@
+{
+  "id": "food.info",
+  "label": "Food facts",
+  "auth": "none",
+  "inputs": [
+    {
+      "name": "food",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "output": "calories and Nutri-Score",
+  "scopes": [],
+  "discloses": "the food you name (sent to Open Food Facts)",
+  "rateLimit": {
+    "perMin": 10
+  },
+  "timeoutMs": 8000
+}

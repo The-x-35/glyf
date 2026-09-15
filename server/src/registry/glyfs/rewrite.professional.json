@@ -1,0 +1,20 @@
+{
+  "id": "rewrite.professional",
+  "version": 1,
+  "name": "Professional",
+  "icon": "briefcase",
+  "input": "field",
+  "requires": { "fullAccess": true, "connectors": [], "wallet": false },
+  "discloses": ["the text in your current field"],
+  "vars": {},
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[professional]]\nRewrite the message below for a professional work audience: clear, respectful, concise. Same language. Reply with ONLY the rewritten text.\n\nMessage:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": { "mode": "preview", "from": "final" }
+}

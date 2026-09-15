@@ -1,0 +1,20 @@
+getpwuid_r did not find a match for uid 501
+Filtering the log data using "subsystem == "so.glyf.keyboard""
+Timestamp                       Thread     Type        Activity             PID    TTL  
+2026-09-12 00:29:42.922240+0530 0x302af4   Default     0xca8244             17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 00:29:43.001856+0530 0x302af4   Default     0x0                  17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=1 footprint_mb=26.1
+2026-09-12 00:30:17.878413+0530 0x302af4   Default     0xcaa1b3             17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 00:30:17.899161+0530 0x302af4   Default     0x0                  17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=2 footprint_mb=46.8
+2026-09-12 00:30:25.907067+0530 0x302af4   Default     0xca9aed             17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=shell:root footprint_mb=45.5
+2026-09-12 00:30:27.303622+0530 0x302af4   Default     0x0                  17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=shell:settings footprint_mb=46.3
+2026-09-12 00:30:28.769631+0530 0x302af4   Default     0xcaa875             17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=shell:root footprint_mb=47.4
+2026-09-12 00:30:44.002134+0530 0x302af4   Default     0xcab7e4             17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 00:30:44.027460+0530 0x302af4   Default     0x0                  17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=3 footprint_mb=48.6
+2026-09-12 00:30:53.532901+0530 0x302af4   Default     0xcab83f             17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM surface=emoji footprint_mb=53.1
+2026-09-12 00:31:02.828563+0530 0x302af4   Default     0xcac8d3             17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 00:31:02.848167+0530 0x302af4   Default     0x0                  17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=4 footprint_mb=59.4
+2026-09-12 00:31:24.555648+0530 0x302af4   Default     0xcad7fa             17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:backend] GLYF_RUN start glyf=rewrite.polite
+2026-09-12 00:31:31.228175+0530 0x302af4   Default     0xcae283             17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:lifecycle] GLYF_KB viewDidLoad
+2026-09-12 00:31:31.248222+0530 0x302af4   Default     0x0                  17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:memory] GLYF_MEM appearance=5 footprint_mb=59.9
+2026-09-12 00:31:51.912825+0530 0x302af4   Default     0x0                  17290  0    GlyfKeyboard: (GlyfKeyboard.debug.dylib) [so.glyf.keyboard:backend] GLYF_RUN start glyf=glyf.translate
+Child process terminated with signal 15: Terminated

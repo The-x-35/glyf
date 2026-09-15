@@ -1,0 +1,20 @@
+{
+  "id": "custom.prompt",
+  "version": 1,
+  "name": "Custom prompt",
+  "icon": "sparkles",
+  "input": "field",
+  "requires": { "fullAccess": true, "connectors": [], "wallet": false },
+  "discloses": ["the text in your current field", "your typed instruction"],
+  "vars": { "prompt": "" },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "[[custom]]\nYou are Glyf, an AI writing tool inside a keyboard. Apply the user's instruction to their draft. Reply with ONLY the resulting text — no preamble, no explanations, no quotes.\n\nInstruction: {{prompt}}\n\nDraft:\n{{input}}",
+      "out": "final"
+    }
+  ],
+  "output": { "mode": "preview", "from": "final" }
+}
