@@ -3,8 +3,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useId, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import {
-  CLIPS, EMOJI, HOLD_MS, LANGS, POS, ROWS_123, ROWS_ABC, SEARCH_SUGGEST, SKILLS, SPACE_HOLD_MS, SHORTHAND, TONES, VAULT, WEATHER,
-  autocorrect, calc, classify, contextual, proofread, rewrite, rowOf, searchCards, short, shortAddr, solAddress, suggest, translate,
+  CLIP_AGE, CLIPS, EMOJI, HOLD_MS, LANGS, POS, ROWS_123, ROWS_ABC, SEARCH_SUGGEST, SKILLS, SPACE_HOLD_MS, SHORTHAND, TONES, VAULT, WEATHER,
+  autocorrect, calc, classify, contextual, isLink, proofread, rewrite, rowOf, searchCards, short, shortAddr, solAddress, suggest, translate,
   SWAP_RATE, type ActResult, type Card, type Lang, type Panel, type PayHint, type SearchTab,
 } from "./data";
 import { hub } from "./hub";
@@ -425,8 +425,11 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
         const v = VAULT.find((item) => item.id === arg);
         return v ? drop(v.value) : undefined;
       }
-      case "clip":
-        return drop(CLIPS[Number(arg)]);
+      case "clip": {
+        const c = CLIPS[Number(arg)];
+        if (isLink(c)) return void window.open(c, "_blank", "noopener,noreferrer");
+        return drop(c);
+      }
       case "emoji":
         return set({ text: x.text + EMOJI[Number(arg)] });
       case "skill":
@@ -1163,7 +1166,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
           <div className="kb-rows">
             {CLIPS.map((c, i) => (
               <button key={c} type="button" className="kb-row" onClick={() => perform(`clip:${i}`)}>
-                <span className="kb-row-k">{i === 0 ? "Just now" : i === 1 ? "2 min" : "1 hr"}</span>
+                <span className="kb-row-k">{CLIP_AGE[i]}</span>
                 <span className="kb-row-v">{c}</span>
               </button>
             ))}

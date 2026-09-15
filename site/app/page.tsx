@@ -1,7 +1,6 @@
 import Experience from "@/components/chat/Experience";
 import Cursor from "@/components/Cursor";
 import BackdropKeys from "@/components/BackdropKeys";
-import SpaceEgg from "@/components/SpaceEgg";
 import ThemeToggle from "@/components/ThemeToggle";
 import Waitlist from "@/components/Waitlist";
 
@@ -79,7 +78,6 @@ export default function Page() {
         <section className="finale" id="join">
           <div className="wrap">
             <h2 className="display">Made for your thumbs.</h2>
-            <SpaceEgg />
             <div className="finale-form">
               <Waitlist source="footer" />
             </div>

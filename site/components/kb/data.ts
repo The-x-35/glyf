@@ -250,7 +250,10 @@ export function calc(text: string): Calc | null {
 
 export const WEATHER = "It's 24° and cloudy in Bengaluru — rain after 6 PM ☔";
 
-export const CLIPS = ["meet.google.com/xk2-pqr-7ty", "Flight PNR · QR7GH2", "the figma link from standup"];
+/** Clipboard history. Links open in a new tab instead of pasting. */
+export const CLIPS = ["https://youtu.be/dQw4w9WgXcQ?si=ms6HzsvNvsPeLhH_", "meet.google.com/xk2-pqr-7ty", "Flight PNR · QR7GH2", "the figma link from standup"];
+export const CLIP_AGE = ["Just now", "2 min", "1 hr", "Yesterday"];
+export const isLink = (text: string) => /^https?:\/\//.test(text);
 
 export const EMOJI = ["😂", "❤️", "🔥", "🙏", "🎉", "😭", "💀", "✨", "🥹", "👀", "💯", "🤝", "😎", "🫶", "🙌", "☕", "🍕", "🏃", "😴", "🤔", "👍", "🥳", "😅", "🌧️"];
 

@@ -394,19 +394,43 @@ a {
   }
 }
 
+/* phones: a bigger keyboard that reaches higher up the screen */
 @media (max-width: 700px) {
-  .backdrop-keys-board {
-    width: 200vw;
-    margin-left: -100vw;
-    bottom: -4svh;
+  .backdrop-keys {
+    -webkit-mask-image: radial-gradient(ellipse 95% 60% at 50% 84%, #000 30%, transparent 78%);
+    mask-image: radial-gradient(ellipse 95% 60% at 50% 84%, #000 30%, transparent 78%);
   }
 
-  /* phones: the form rests just above the keyboard (its top edge sits ~166px
-     above the screen bottom), instead of floating mid-screen */
+  .backdrop-keys-board {
+    width: 230vw;
+    margin-left: -115vw;
+    bottom: -18px;
+    grid-auto-rows: clamp(52px, 8.6svh, 76px);
+    gap: 12px 8px;
+    padding: 16px;
+    border-radius: 30px;
+  }
+
+  .hk {
+    font-size: 26px;
+    border-radius: 11px;
+  }
+
+  .hk.fn,
+  .hk.space {
+    font-size: 17px;
+  }
+
+  .hk-dot {
+    width: 7px;
+    height: 7px;
+  }
+
+  /* the tilted keyboard shows ~32svh + 7px of screen; the form sits ~32px above it */
   .hero {
     min-height: 100svh;
     justify-content: flex-end;
-    padding: 96px 0 200px;
+    padding: 88px 0 calc(32.1svh + 25px);
   }
 }
 
