@@ -51,7 +51,7 @@ Plus:
 | iOS app + keyboard | Built and tested on the simulator through M7 cores plus a large feature set beyond the spec. Arpit runs it on his iPhone. TestFlight build 2 uploaded; build 3 prepared (compliance key set) |
 | Android app + keyboard | Built and verified on the emulator with feature parity and iOS styling. Not published |
 | Backend (`server/`) | Built and tested (about 90 tests). Runs locally only. Not deployed; `api.tryglyf.com` does not exist yet, so release app builds have no working AI |
-| Website (`site/`) | v8 built and verified on desktop and phone. Waitlist writes to Neon. **Not deployed yet** (Vercel) |
+| Website (`site/`) | v8, **live on https://www.tryglyf.com** (Vercel, deployed 16 Sep). Waitlist writes to Neon |
 | Crypto wallet (M8) | Not started, on purpose. The site demos a private Solana payment UI only |
 | Repo | Private GitHub `The-x-35/glyf`, history cleaned of AI attribution |
 | Docs | This folder |
@@ -125,7 +125,8 @@ The `so.glyf.*` names are older than the domain. They stay because changing the 
 
 | URL | Purpose | State |
 |---|---|---|
-| `https://tryglyf.com` | Website | Domain owned; waiting on the Vercel deploy and DNS |
+| `https://www.tryglyf.com` | Website | Live on Vercel (primary domain) |
+| `https://tryglyf.com` | Redirects to www (308) | Live |
 | `https://api.tryglyf.com` | Backend for release app builds and OAuth callbacks | Not deployed |
 | `https://github.com/The-x-35/glyf` | Code (private) | Live |
 
@@ -136,7 +137,7 @@ The `so.glyf.*` names are older than the domain. They stay because changing the 
 | Service | Used for | State / what's needed |
 |---|---|---|
 | GitHub | Code | Private repo live; push works from the dev Mac over HTTPS with keychain credentials |
-| Vercel | Website hosting | Arpit to import the repo (Root Directory `site`) and add `DATABASE_URL` |
+| Vercel | Website hosting | Live on www.tryglyf.com since 16 Sep (Root Directory `site`). Confirm `DATABASE_URL` with one real signup |
 | Neon Postgres | Waitlist, later app users | Table created. **Rotate the password** (the connection string was pasted in chat twice) |
 | Apple Developer / App Store Connect | Signing, TestFlight, later in-app purchases | Build 2 on TestFlight. Plus/Max products and receipt validation not created |
 | Google Play Console | Android release | Not set up |

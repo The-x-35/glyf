@@ -146,3 +146,31 @@ i think u shud use the hero section as the og image also , set it properly and d
 
 also make navbar a little bigger in site and logo in navbar to be bigger too 
 and glyf more text in hero gly should be our workmark logo in there
+
+### 02:55 · Assistant
+
+Most of the docs are written, and the link-preview image and navbar changes are in. Two helper agents are still writing `docs/APPS.md` and `docs/BACKEND.md`. Once they finish I'll check them for secrets and em dashes, then commit and push everything.
+
+**Done so far:**
+- **Git history:** no [the assistant] in any commit on GitHub. I rewrote the history and force-pushed.
+- **Link preview:** a 1200×630 image drawn from the hero (headline, subline, greyed store badges, waitlist form, the faint keyboard behind). The build shows the preview tags pointing at tryglyf.com.
+- **Navbar:** taller (64px, from 56px) with a bigger wordmark (28px, from 22px).
+- **Headline:** "glyf" in "Type less. glyf more." is now the wordmark with the raised purple dot. It stays one line on desktop and two on phones, with nothing overflowing. I checked this by measuring, since the browser preview is hidden on my side, so give it a look.
+- **Docs written:**
+  - `docs/README.md`: the index.
+  - `PROJECT.md`: overview, status, identifiers, accounts and keys.
+  - `DECISIONS.md`: all 91 decisions with your words.
+  - `TIMELINE.md`: what happened each day.
+  - `WEBSITE.md`: everything about the site, including all 8 chat scripts word for word.
+  - `WORKING-AGREEMENTS.md`: your rules.
+  - `OPEN-ITEMS.md`: what's pending and who does it.
+  - `docs/history/`: all 117 of your messages, the full conversation for each day, and 7 long progress summaries from the chat.
+- **Secrets:** API keys, passwords and the database address are blanked out in the history files. [the assistant]'s name is replaced with "[the assistant]" everywhere, including in your own messages.
+- **README:** the root `README.md` now points to the docs, and I updated its outdated design and Android notes.
+
+---
+
+### 03:12 · Arpit
+
+i deployed website on [www.tryglyf.com](https://www.tryglyf.com) 
+can see og image

@@ -866,3 +866,8 @@ Times are India Standard Time (IST). Pasted API keys, passwords and connection s
 
 > also make navbar a little bigger in site and logo in navbar to be bigger too 
 > and glyf more text in hero gly should be our workmark logo in there
+
+## 118. Wed 16 Sep 2026, 03:12
+
+> i deployed website on [www.tryglyf.com](https://www.tryglyf.com) 
+> can see og image

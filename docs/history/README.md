@@ -6,7 +6,7 @@ Glyf was built in chat sessions between Arpit and an AI coding assistant. This f
 
 | File | Contents |
 |---|---|
-| `messages-from-arpit.md` | Every message Arpit sent (117 as of 16 Sep 2026, 02:40), numbered, word for word, with date and time. Messages he sent while the assistant was still working on something are marked "(sent mid-task)". Screenshots and videos he attached are noted as "[screenshot attached]" or by file path |
+| `messages-from-arpit.md` | Every message Arpit sent (118 as of 16 Sep 2026, 03:12), numbered, word for word, with date and time. Messages he sent while the assistant was still working on something are marked "(sent mid-task)". Screenshots and videos he attached are noted as "[screenshot attached]" or by file path |
 | `transcript-YYYY-MM-DD.md` | One file per day: Arpit's messages and the assistant's written replies, in order. Tool calls, command output and file contents are left out; what they produced is in the code and the other docs |
 | `context-snapshots.md` | Seven long summaries the assistant wrote when the conversation got too long to hold at once (12 Sep 13:16, 13 Sep 02:48, 14 Sep 13:55, 14 Sep 20:17, 15 Sep 00:28, 15 Sep 15:25, 15 Sep 23:55). Each lists the requests so far, the technical state, files changed, errors and fixes, and what was next. This is the most detailed technical record of how the project got where it is |
 

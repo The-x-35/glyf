@@ -11,14 +11,14 @@ Last updated: Wed 16 Sep 2026 (IST).
 | | |
 |---|---|
 | Purpose | Show what the Glyf keyboard does and collect waitlist signups before launch |
-| Domain | `tryglyf.com` (bought by Arpit on 14 Sep 2026) |
+| Domain | **https://www.tryglyf.com** is the live, primary domain; `tryglyf.com` redirects to it (308). Domain bought by Arpit on 14 Sep 2026 |
 | Code | `site/` in the monorepo (private GitHub repo `The-x-35/glyf`) |
 | Stack | Next.js 15 (app router), React 19, TypeScript, framer-motion 11, plain CSS in `app/globals.css`, Inter variable font (local file) |
 | Data | Neon Postgres, table `waitlist`, reached directly from a Next.js API route through `@neondatabase/serverless` |
 | Hosting | Vercel (Arpit deploys it; no Vercel login exists on the dev Mac) |
-| Env vars | `DATABASE_URL` (required), `SITE_URL` (optional, defaults to `https://tryglyf.com`) |
+| Env vars | `DATABASE_URL` (required), `SITE_URL` (optional, defaults to `https://www.tryglyf.com`; if set, it must be the domain that serves the page, not one that redirects) |
 | Backend server | Not used. The site does not call `server/` at all |
-| Status | Built and verified locally on desktop and phone sizes. Not deployed yet |
+| Status | **Live on Vercel since Wed 16 Sep 2026, about 03:10 IST**, deployed by Arpit from the repo. Share image confirmed live |
 
 Run locally:
 
@@ -353,8 +353,10 @@ Not checked on phone: dark mode on the phone layout, the Messages list screen af
 1. Rotate the Neon password first (the connection string was pasted in chat twice). Update `site/.env.local` locally too.
 2. Vercel → Add New → Project → import `The-x-35/glyf` (give Vercel's GitHub app access to the private repo if it isn't listed).
 3. **Root Directory: `site`.** Framework preset Next.js, default build settings.
-4. Environment variables: `DATABASE_URL` = the Neon pooled connection string (Production and Preview). Optional `SITE_URL` = `https://tryglyf.com`.
+4. Environment variables: `DATABASE_URL` = the Neon pooled connection string (Production and Preview). `SITE_URL` is optional; leave it unset or set it to `https://www.tryglyf.com`.
 5. Deploy, then Settings → Domains: add `tryglyf.com` and `www.tryglyf.com`, and set the DNS records Vercel shows at the registrar.
+
+Done by Arpit on 16 Sep 2026: the site is live on `www.tryglyf.com`, with the apex redirecting to it. Checked right after: the page and both share images answered 200. The first deploy's canonical link and share tags pointed at the apex, which redirects, so the default `SITE` in `app/layout.tsx` was changed to `https://www.tryglyf.com`. The live page picks this up on the next deploy. If `SITE_URL` was added in Vercel with the apex value, change it to the www address or remove it.
 
 `.vercelignore` excludes `.archive` and `.env.local`.
 
@@ -392,7 +394,8 @@ Not checked on phone: dark mode on the phone layout, the Messages list screen af
 
 ## 14. Known issues and open items
 
-- Not deployed; see section 12. Rotate the Neon password before launch.
+- Live on www.tryglyf.com. Rotate the Neon password if that hasn't been done (it was pasted in chat twice), then update it in Vercel.
+- The share tags point at the www domain only after the next deploy (see section 12).
 - Brand marks (MagicBlock, Solana, USDC/Circle, Apple, Google Play) appear on a public page; check each brand's guidelines.
 - Placeholders still in the vault: UPI `arpit@okbank`, phone `+91 98765 43210`.
 - The waitlist throttle is per server instance (a rough limit, not a guarantee on serverless).

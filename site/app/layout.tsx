@@ -8,8 +8,9 @@ const inter = localFont({
   variable: "--font-inter",
 });
 
-/** Canonical home. Override with SITE_URL on preview deploys. */
-const SITE = process.env.SITE_URL ?? "https://tryglyf.com";
+/** Canonical home: www is the primary domain on Vercel (tryglyf.com redirects to it),
+ *  so share previews and the canonical link point straight at it. */
+const SITE = process.env.SITE_URL ?? "https://www.tryglyf.com";
 
 const TITLE = "Glyf · Type less. Glyf more.";
 const DESCRIPTION =

@@ -331,6 +331,8 @@ Details live in the area docs: [WEBSITE.md](WEBSITE.md), [APPS.md](APPS.md), [BA
 
 **D91. A bigger navbar, and the wordmark inside the headline.** "make navbar a little bigger in site and logo in navbar to be bigger too and glyf more text in hero gly should be our workmark logo in there". The nav is 64px with a 28px wordmark, and "glyf" in "Type less. glyf more." is the wordmark with its raised dot.
 
+**D92. www.tryglyf.com is the primary domain.** Arpit deployed the site on Vercel at www.tryglyf.com ("i deployed website on www.tryglyf.com"), with `tryglyf.com` redirecting to it. The site's canonical link, `og:url` and share-image URLs now default to the www address, so link previews don't have to follow a redirect.
+
 ---
 
 ## Standing rules (apply to all future work)

@@ -236,7 +236,7 @@ None of this works across multiple server instances. A deployment must run one i
 ### Logging and privacy in logs
 
 - Fastify logger at `info`, with `disableRequestLogging: true`, so URLs and query strings (which can carry coordinates) are not logged per request.
-- Routes log events and timings only (SPEC §12): glyf id, device id, plan, input length, duration, intent, provider, card count. Never the typed text, the query, the vocabulary description or the model output.
+- Routes log events and timings only (SPEC §12): glyf id, device id, plan, input length, duration, intent, provider, card count. Never the typed text, the query, the vocabulary description or the model output. One exception: failure logs include raw error messages, and a few tool errors embed user input ([known issue 28](#16-known-issues)).
 - Bad-request logs record which zod field failed (`issues`), never the body.
 - SPEC §8.4 asked for per-call latency and token counts in dev logs. Token counts are not logged.
 
@@ -324,7 +324,7 @@ No route has real authentication, CORS configuration or a global rate limiter. F
   - `event: token` with `{ t: string }`, zero or more times.
   - `event: done` with `{ text, remaining, ms }` (plus `model: "cache"` on a cache hit).
   - `event: error` with `{ message }`.
-- Errors always arrive as an `error` frame on an HTTP 200 stream: bad request, unknown glyf, cap reached ("Daily free runs used up" on free; on paid plans a "Daily runs used up" message), tool or `ask` errors (passed through verbatim), and transport failures ("Couldn't reach Glyf. Tap to retry.").
+- Errors always arrive as an `error` frame on an HTTP 200 stream: bad request, unknown glyf, and cap reached ("Daily free runs used up" on free; on paid plans a "Daily runs used up" message). For failures during the run, a message that starts with `needs input` (an `ask` step) or contains the word `tool` (unknown tool, tool rate limit) is passed through verbatim. Every other failure, including model exhaustion, upstream API errors and the "Connect <Provider> in the Glyf app first" message, becomes "Couldn't reach Glyf. Tap to retry." ([known issue 27](#16-known-issues)).
 - Resolution order: shipped registry, then the device's own glyfs, then glyfs the device installed from the hub. A user glyf cannot shadow a shipped id.
 - The meter is consumed before the cache check, so cache hits still count.
 - If the client disconnects mid-stream, the upstream model request is aborted. The abort listens on `reply.raw` "close" while the response is unfinished. Listening on the request's "close" (the first implementation) fired as soon as the body was read and killed every run (fixed 2026-09-12).
@@ -670,7 +670,7 @@ Notes:
 - `discloses` must be non-empty.
 - At most 12 steps.
 - At most 6000 characters of `llm` prompt text in total.
-- OAuth-backed tools are allowed (since 2026-09-12 evening). At run time the executor asks the user to connect the provider if no token exists.
+- OAuth-backed tools are allowed (since 2026-09-12 evening). At run time the tool throws a "Connect <Provider> in the Glyf app first" error if no token exists (shown verbatim by `/builder/test`, masked by `/glyf/run`, see [known issue 27](#16-known-issues)).
 
 SPEC §6.9 describes a server-side moderation queue that auto-rejects glyfs reading vault or wallet data and sending it to non-registry destinations. What exists is this synchronous rule check; there is no queue or human review.
 
@@ -1068,7 +1068,7 @@ The URI must match what is registered with the provider exactly. That is why the
 | Notion | `notion.search` tool inside glyf runs | Never run against a real account |
 | Slack, GitHub, Linear, Todoist, Calendly, Zoom, Spotify | None yet | Connect and disconnect only |
 
-- Tokens are resolved per request (`connectionsFor()` in `routes/glyf.ts`, `googleToken()` in `routes/search.ts`); expired tokens are skipped, and the tool then asks the user to reconnect.
+- Tokens are resolved per request (`connectionsFor()` in `routes/glyf.ts`, `googleToken()` in `routes/search.ts`); expired tokens are skipped. The tool then throws "Connect <Provider> in the Glyf app first", but `/glyf/run` currently shows the generic retry line instead ([known issue 27](#16-known-issues)). `/builder/test` returns the message verbatim.
 - **No refresh flow exists.** Refresh tokens are stored but never used. Google access tokens last about an hour, so a real Google connection would need reconnecting after that ([known issue 11](#16-known-issues)).
 - `/connectors/disconnect` deletes the row but does not revoke the token at the provider.
 - The in-keyboard ConnectorSurface (hold C, with a Month view Arpit asked for on 2026-09-12) runs on the demo calendar routes (`/connector/mockcal/*`). It is not wired to the real `calendar.today` data.
@@ -1099,7 +1099,7 @@ As of the last notes (2026-09-16) no OAuth credentials of any kind had been prov
 ### 8.7 Gaps against SPEC §6.11 and §6.12
 
 - SPEC says devices hold an opaque `connectionId`. In practice connections are keyed by device id plus provider name, and the device id is sent instead.
-- SPEC says "refresh handling server-side; on revocation, glyfs fail with a clean Reconnect state". Refresh is missing; expiry produces the "Connect X in the Glyf app first" error.
+- SPEC says "refresh handling server-side; on revocation, glyfs fail with a clean Reconnect state". Refresh is missing, and an expired or missing token surfaces through `/glyf/run` as the generic "Couldn't reach Glyf. Tap to retry." rather than a reconnect prompt.
 - SPEC wants scope minimisation with escalation through a fresh consent screen. Scopes are chosen once at connect time; there is no escalation flow.
 - SPEC's revocation UI shows a last-used timestamp per connector. The server does not record when a connection was last used.
 - The M6 gate items (Gmail unread list, Notion recents, Drive recents, contacts, Meet link key, verifying via proxy that no token reaches the device) are not done because they need real credentials.
@@ -1152,7 +1152,7 @@ What Arpit still needs to provide for M8: Privy dashboard configuration (Solana 
 | Every glyf and tool declares what it can see | SPEC §6.8, §11.6 | Schema requires `discloses`; tests enforce it |
 | User glyfs cannot touch the wallet | SPEC §6.9 | `validateUserDef` |
 | Telemetry is events only, never content | SPEC §11.10, §12 | String fields over 80 chars dropped; only counts stored |
-| No content in logs | SPEC §12 | Request logging disabled; routes log ids, lengths and timings |
+| No content in logs | SPEC §12 | Request logging disabled; routes log ids, lengths and timings (exception: [known issue 28](#16-known-issues)) |
 | Location is not stored | Decision 2026-09-14 | Used per request only |
 | No code execution from user input | SPEC §11.12 spirit | Math uses a parser, conditions use a parser, no `eval` anywhere |
 | Rendered pages cannot run injected script | Act pages | HTML escaping, `http(s)`-only links, tested |
@@ -1255,4 +1255,286 @@ Names only. Values live in `server/.env` (never committed). "Example" says wheth
 | `DATABASE_URL` | `server/.env` per the 2026-09-15 snapshot (not re-checked) | Never read. Intended for future app sign-ups in Neon |
 | `GLYF_API` | Formerly the website's variable pointing at this server | Removed from the site on 2026-09-15 |
 
-<!-- CONTINUE -->
+---
+
+## 12. Tests
+
+### 12.1 Running
+
+```bash
+cd server
+npm test            # vitest run, all files
+npx vitest run test/search.test.ts   # one file
+npm run typecheck   # tsc --noEmit
+```
+
+- Tests need no network and no keys. Files that touch models, search or tools force mock mode (`env.mockAI = true` and `process.env.MOCK_AI = "true"`). Route tests build the app with `buildApp()` and use Fastify's `inject()`, so no port is opened.
+- Storage is `MemoryKV` because vitest runs with `NODE_ENV=test`.
+- The tests were not run while writing this doc. The last reported result was 90 passing on 2026-09-15, which matches the static count of 90 `it()` blocks.
+
+### 12.2 What each file covers
+
+| File | Cases | Covers |
+|---|---|---|
+| `test/engine.test.ts` | 9 | Every shipped glyf loads and declares `discloses` (at least 20); a definition without `discloses` is rejected; chain and conditional steps parse; interpolation; `llm` plus `format` chain streams only the output step; caller vars override definition vars; `ask` without an answer fails closed; TTLCache stores, expires and keys deterministically; meter counts down, refuses at zero, resets the next day |
+| `test/routes.test.ts` | 10 | `/health` reports mock mode without secrets; `/glyf/catalog` lists disclosures; `/glyf/run` streams token and done frames with `remaining`; unknown glyf gives an error frame; cap reached gives an error frame and `/meter` shows 0; translate honours the `target` var; `/tools/run` runs `web.search`, `yt.search`, `maps.search`; refuses OAuth tools (403) and unknown ids (404); waitlist accepts, dedupes, counts and validates |
+| `test/m5.test.ts` | 21 | `evalCond` comparisons, `contains`, truthiness; dotted interpolation into JSON; `if` runs only the chosen branch; `map` collects results; `ask` from vars or failing with the question; `tool` steps run registry tools and reject unknown ones; every tool declares `discloses` and limits; `ensureInputWired` adds or leaves input; user glyf save, list, resolve, publish, install, resolve for the installer; moderation refuses wallet and unknown tools; cannot overwrite someone else's glyf; Google start returns 503 naming the variable without credentials; consent URL has exactly the chosen scopes plus identity and S256; connector status per device; Builder mock generate, test, save, publish, install and run by another device; `pro` flag gets past the free cap; `keyless.weather` runs through `/glyf/run`; mock calendar filter; telemetry ingest and funnel |
+| `test/openrouter.test.ts` | 13 | Classifier verdict detection and non-detection of real answers about safety; VerdictGate swallows short and long verdicts, streams real answers in full and in order, releases short answers at the end; `endpointFor` routes `groq:`, `gemini:`, `mistral:`, `inception:`, `cerebras:` and OpenRouter ids (including `:free`) and skips providers without keys; `requestOptions` for gpt-oss, Qwen on Groq, Gemini 2.5 Flash, Flash-Lite, Mistral and OpenRouter; cooldown skips and restores models, defaults to 60 s, caps at 600 s, never empties the chain |
+| `test/act.test.ts` | 14 | `planByRules` routing and leaving ambiguous text to the model; `parsePlan` reads JSON inside prose and rejects unknown intents; `listInsert` format; `POST /act` places (with a dev page link and insert), page served with every place and 404 for unknown ids, video paste format, computed answer, rewrite for an ordinary message, metering returns 429; static map only with a key and valid coordinates; empty text rejected; `renderPage` escapes HTML and never emits a `javascript:` link |
+| `test/search.test.ts` | 14 | `composeInsert` paste formats (title and link, link only, address line, no emoji for web, no title); `evaluateMath` precedence, right-associative power, commas, rejection of non-math, division by zero and identifiers; `sunTimes` plausible Bengaluru sunset, ordering of sunrise, golden hour and sunset, midnight sun and polar night, seasons; duration and distance formatters |
+| `test/skills.test.ts` | 6 | Category derivation for shipped and community glyfs; skills list mixes official and community rows with real per-device install counts and hides `custom.prompt` and dictation; creators appear only after publishing and never include device ids; `/skills` filters by category and search, `/skills/get` for official and missing ids, `/skills/creators`; `/hub/list` does not leak the publisher's device id |
+| `test/vocab.test.ts` | 3 | `cleanWord` keeps Hinglish, Devanagari, apostrophes and hyphens and drops digits, emails, URLs and long strings; `parsePack` dedupes and drops junk; `POST /vocab/generate` returns a pack and validates input |
+
+### 12.3 History of the server test count
+
+15 at the M2 gate (2026-09-12), 31 at M5, 33 after `ensureInputWired`, 36 after the Google broker, about 39 to 40 on 2026-09-13 and 2026-09-14 morning, 54 after the search suite (2026-09-14), 75 after act (2026-09-15 00:28), 81 to 84 after skills and vocab, 90 after the model router work (2026-09-15).
+
+### 12.4 Not covered
+
+- No test calls a real provider. OAuth callbacks, token exchange, Brave, Serper, Places, Geoapify, YouTube and every live tool executor are untested.
+- `/search`, `/search/suggest`, `/search/photo`, `/gif/search`, `/connectors/disconnect`, the generic `/oauth/:provider/*` routes and `/account/*` have no route tests.
+- Model streaming (`drainSSE`, the fallback loop against real HTTP) is only tested through its helpers.
+- The CI secrets guard is not tested ([known issue 1](#16-known-issues)).
+
+---
+
+## 13. Deployment
+
+### 13.1 Status
+
+- **Not deployed.** During the 2026-09-14 debugging the assistant noted that `https://api.tryglyf.com` "doesn't exist yet", the iOS settings code describes it as a domain that does not resolve before launch, and nothing later in the history mentions a deploy. This was not re-checked while writing.
+- Release builds of the iOS app, the iOS keyboard, the Flutter app and the Android app already point at `https://api.tryglyf.com`, so every TestFlight user currently gets no AI, search or connectors.
+- The domain: tryglyf.com was bought on 2026-09-14 ("bought tryglyf.com now, wire it up in app and everywhere"). `glyf.so` was found unregistered on 2026-09-13 but hard to buy; it was not pursued in the notes. Reverse-DNS identifiers (`group.so.glyf.shared`, `so.glyf.vault`, `so.glyf/bridge`) were deliberately left unchanged, because renaming the App Group would point installs at an empty container and wipe user data.
+- Hosting: not chosen. On 2026-09-13 the assistant offered to deploy to Fly.io or Railway ("both take this Fastify app as-is") given an account or token. No token was provided. Vercel hosts only the website.
+
+### 13.2 Deployment checklist
+
+1. **Host** with a persistent disk (FileKV writes JSON files) or implement the Postgres KV driver first. Run a single instance (the meter, OAuth states and caches are in memory).
+2. **Run with `npm start`** (tsx), or add a step that copies `src/registry/` into `dist/` before using `npm run build` ([known issue 9](#16-known-issues)).
+3. **DNS:** point `api.tryglyf.com` at the host with HTTPS.
+4. **Environment:**
+   - `NODE_ENV=production` (turns off Nominatim).
+   - `MOCK_AI` unset or `false`.
+   - At least one model key; ideally `GEMINI_API_KEY` and `GROQ_API_KEY` with the chains from `.env.example`.
+   - `PUBLIC_BASE_URL=https://api.tryglyf.com` (or wherever `/p/:id` is served) so list results get live pages.
+   - `OAUTH_REDIRECT_BASE=https://api.tryglyf.com` and provider credential pairs, with the production callback URI registered at each provider.
+   - Search keys: `YOUTUBE_API_KEY`, `GEOAPIFY_KEY` or `GOOGLE_PLACES_KEY`, optionally `BRAVE_SEARCH_KEY`.
+   - `PORT` if the host requires one.
+5. **Keys:** regenerate the YouTube key and restrict it by IP to the server's egress address. Rotate every secret pasted in chat.
+6. **Hardening before public traffic:** fix the `url.unfurl` server-side request forgery risk, make `/telemetry/funnel` private, meter or limit the Builder routes, add per-IP rate limiting, and decide on per-device caps for paid search providers ([section 16](#16-known-issues)).
+7. **Verify:** `GET /health`, `GET /search/status`, a live `/glyf/run`, and one OAuth sign-in with a test user.
+8. **Attribution and policy:** Geoapify and Brave attribution in the apps, YouTube quota extension, Google OAuth verification for sensitive scopes.
+
+---
+
+## 14. Extending the backend
+
+| Task | Steps |
+|---|---|
+| Add a keyless tool | Add `src/registry/tools/<id>.json` with `discloses`, `rateLimit` and `timeoutMs`; add a `case` in `runTool()` and a canned output in `mockTool()` (`lib/tools.ts`); add it to the Builder system prompt in `routes/builder.ts` if the Builder should use it. The registry test fails without `discloses` |
+| Add a shipped glyf | Add `src/registry/glyfs/<id>.json`. Start prompts with a `[[tag]]` so mock output is recognisable. The server refuses to start on an invalid definition or duplicate id. Clients bind it by id |
+| Add an OAuth provider | Add an entry to `PROVIDERS` in `routes/connector.ts` (URLs, scope, scope parameter name, Basic or body auth, extras); set `<PREFIX>_CLIENT_ID` and `<PREFIX>_CLIENT_SECRET`; register the callback URI; add tools with `"auth": "oauth:<provider>"` |
+| Add a model provider | Add the endpoint to `PROVIDERS` in `providers/openrouter.ts`, the key to `env.ts` and to the `assertServerSecrets()` list, then use `<prefix>:<model>` in the chains |
+| Add a route | Create a module in `src/routes/`, register it in `buildApp()` in `src/index.ts`, restart the server |
+| Change a search card field | Change `lib/searchcards.ts`, the Swift `SearchCard.swift` and the Kotlin `BackendClient.SearchCard`, and keep the `composeInsert` tests identical on all three |
+| Change the handoff contracts | Edit `shared/contracts/*.schema.json`, then run `node tools/gen_contracts.mjs` (writes Swift, Dart and `src/schemas/contracts.generated.ts`). The generator must check `oneOf` before nested objects (a 2026-09-12 bug emitted an empty error struct) |
+
+---
+
+## 15. Decision log
+
+Status values: **Active** (in force), **Superseded** (replaced by a later row), **Pending** (decided but not done), **Deferred**, **Final** (researched and closed).
+
+### 2026-09-11 to 2026-09-13
+
+| Date | Decision | Reason or quote | Status |
+|---|---|---|---|
+| 2026-09-11 | No backend in M0; scaffold and spikes only | SPEC §14 | Done |
+| 2026-09-11 | Recommend $10 on OpenRouter before M2 | Unfunded free tier allows 50 requests/day, which blocks development (SPEC §8.2) | Pending (not funded per notes) |
+| 2026-09-11 | OpenRouter key and Privy app id and secret stored only in `server/.env`, never in clients; rotate later | Arpit: "for privy , keep them safe in env"; SPEC §1.6 | Active (rotation pending) |
+| 2026-09-11 | M8 swaps: app signs with `signTransaction`, backend broadcasts via `/execute` | Spike B: `privy_flutter` signs Solana; iOS bridge drops `rpcUrl` | Pending (M8) |
+| 2026-09-12 | Backend stack: Fastify, TypeScript, zod, tsx, vitest | SPEC §2 | Active |
+| 2026-09-12 | Storage behind a KV interface; JSON files for dev; Postgres later | Zero setup now; SPEC §2 pins Postgres in production | Active (Postgres pending) |
+| 2026-09-12 | `/glyf/run` streams over SSE; the device sends only a glyf id and input | SPEC §6.4 fast path, §1.6 | Active |
+| 2026-09-12 | Model fallback chain, 24 h run cache, `MOCK_AI` mode | SPEC §8.3, §8.4 | Active |
+| 2026-09-12 | Shipped glyfs are Builder-format JSON on the server, each with `discloses` | SPEC §6.13, §13: if a default cannot be expressed in the format, the format is wrong | Active |
+| 2026-09-12 | 40 free runs per device per day, enforced server-side | SPEC §6.16 | Active |
+| 2026-09-12 | Abort model calls on response close, not request close | Request close fired as soon as the body was read and killed every run | Active |
+| 2026-09-12 | Full step engine: `if`, `map`, `tool`, `ask`; no `eval`; registry-only tools | SPEC §6.8, §11.5; chaining with conditionals is the stated edge over Acti | Active |
+| 2026-09-12 | Builder uses strict JSON on the smart tier, retry once, 422 fail closed | SPEC §8.3 | Active |
+| 2026-09-12 | User glyf moderation at save and again at publish; `user.<8 hex>` ids; version bump on update | SPEC §6.9 | Active |
+| 2026-09-12 | Unconfigured OAuth providers answer 503 naming the missing variables | Never fake a connector ("documented, not faked") | Active |
+| 2026-09-12 | Telemetry sink stores event counts only; strings over 80 chars dropped | SPEC §12 | Active |
+| 2026-09-12 | Pro unlock is local; the `pro` flag skips the free cap until StoreKit receipts exist | M7 buildable core; receipt validation at ship | Superseded by the plan enum (same evening) |
+| 2026-09-12 | Test the supplied keys live: OpenRouter runs and Builder from the real keyboard; Privy secret authenticated, then parked | Arpit: "i sent u openrouter api key why arent u testing that too" | Done |
+| 2026-09-12 | `ensureInputWired`: add `{{input}}` when a live Builder definition forgets it | Found in live testing | Active |
+| 2026-09-12 | Google sign-in at the end of onboarding with user-chosen scopes, PKCE, tokens server-side, identity always included; doubles as the account | Arpit: "at the end of onboarding flow based on the answered questions we will aks perms in google login" | Active (no credentials) |
+| 2026-09-12 | Generic broker for Notion, Slack, GitHub, Linear, Todoist, Calendly, Zoom, Spotify; each activates from its env pair | Arpit: "did u add notion, slack , and other thigs, research on what all we can have and add it" | Active (no credentials) |
+| 2026-09-12 | OAuth-backed tools execute inside glyf runs with per-device tokens; moderation stops refusing them | Integrations "to work end to end" | Active |
+| 2026-09-12 | Plans: Free 40/day, Plus $4.99 (10 times), Max $19.99 (unlimited); plan enum in requests, legacy `pro` maps to Plus; client-asserted until receipts | Arpit: "one 5 $ plan and one 20$"; research against Wispr Flow and Grammarly | Active (receipts pending) |
+| 2026-09-12 | Expand the registry with free, no-key APIs; leave out categories that need paid keys (flights, movies and TV, news wires) | Arpit: "integrate as much free tools as possible" | Active |
+| 2026-09-12 | Strip leaked `[[directive]]` tags from model output | A live model returned "[[tighten]]" on empty input | Active |
+| 2026-09-12 | GIF search goes through a server GIPHY proxy; the keyboard would copy to the pasteboard | Keyboards cannot type images; key stays server-side | Pending (needs `GIPHY_API_KEY` and a client tab) |
+| 2026-09-12 | Mock calendar routes (events, then a month grid) power the in-keyboard calendar until OAuth exists | Keep the ConnectorSurface testable; Arpit asked for "a button to view months calendar along with my todays tasks" | Active |
+| 2026-09-13 | Deploy the server to Fly.io or Railway so TestFlight testers get AI | Builds pointed at `127.0.0.1` | Pending (no account or token provided) |
+| 2026-09-13 | Server-side data stays attached across app updates because it hangs off the persisted device id; lock the bundle id before real users | Update persistence verified experimentally | Active |
+| 2026-09-13 | Search suite v1 through `/tools/run`: DuckDuckGo instant answers, Nominatim places, YouTube link fallback | Arpit: "need maps and youtube etc from google like gboard" | Superseded 2026-09-14 |
+| 2026-09-13 | Website waitlist v1 posts through the site's API to the server's `/waitlist` | First website | Superseded 2026-09-15 |
+
+### 2026-09-14 to 2026-09-16
+
+| Date | Decision | Reason or quote | Status |
+|---|---|---|---|
+| 2026-09-14 | Public origin `https://api.tryglyf.com`; `OAUTH_REDIRECT_BASE` added; release apps use it, debug apps use the local server; every invented `glyf.so` reference replaced; `so.glyf.*` reverse-DNS ids kept | Arpit: "bought tryglyf.com now, wire it up in app and everywhere" | Active (not deployed) |
+| 2026-09-14 | Typed `POST /search` separate from `/tools/run` | Glyf chains need strings; the keyboard cards need thumbnails, ratings, durations | Active |
+| 2026-09-14 | Paste format mirrors Gboard, with a link-only setting; default title and link | Arpit's request; verified against Gboard shares | Active |
+| 2026-09-14 | Compute answers locally (math parser, NOAA sunrise and sunset) instead of calling APIs | Instant, free, licence-free; Open-Meteo's free tier is non-commercial | Active (some tools still use Open-Meteo) |
+| 2026-09-14 | Wikipedia summaries instead of dictionaryapi.dev in answers | dictionaryapi.dev returning 522 | Active (the `dict.define` tool still uses it) |
+| 2026-09-14 | Brave responses are never cached; other search results cached 10 min | Brave terms allow only transient storage | Active |
+| 2026-09-14 | Public Overpass opt-in only | 13 s timeouts | Active |
+| 2026-09-14 | Nominatim serialized and development-only in `/search` | OSM policy: 1 request/second for the whole server, no autocomplete | Active (tools not gated) |
+| 2026-09-14 | Debug builds never inherit a production backend URL; fix Swift `DEBUG` flags | Keyboard hit `https://api.tryglyf.com` with TLS errors | Active |
+| 2026-09-14 | Landing state: Google Trends, YouTube chart or liked videos, nearby places; recents stay on the device | Arpit: show recent or top searches and nearby things instead of an empty search bar | Active |
+| 2026-09-14 | Mock results never shown to users; mock server only for test suites | Arpit: "you have hard coded results in ios" | Active |
+| 2026-09-14 | DuckDuckGo removed from the web tab; with no key the tab is answers-only plus a Google handoff | Measured empty on five ordinary queries; commercial use needs approval | Active |
+| 2026-09-14 | Brave is the primary web provider; Serper is an opt-in fallback only | Brave has an independent licensed index; Serper resells scraped Google results while Google litigates the category | Active (code order differs, known issue 2) |
+| 2026-09-14 | No Google product can supply structured google.com results (Custom Search closed, Grounding terms, Bing retired) | Research | Final ("do not revisit") |
+| 2026-09-14 | Embedded browser plus the user's Google login rejected | Webview OAuth blocked since 2021-09-30; Juno removal under 5.2.2; Power Ventures; Meta v. Bright Data; SearchGuard; Apple 4.4.1; keyboard memory | Final |
+| 2026-09-14 | Piped YouTube proxy removed | Same terms exposure; instances collapsed | Final |
+| 2026-09-14 | Google login adds only `youtube.readonly` (liked videos) to search; there is no scope for search or watch history | Arpit asked whether user data was needed for recent views | Active (no credentials; verification needed) |
+| 2026-09-14 | YouTube key created as a "Public data" API key; OAuth client later and separately | Arpit: "shud we just do public for now ?" | Active |
+| 2026-09-14 | YouTube key restrictions: API restricted to YouTube Data API v3; application restriction None during development, IP address after deploy; regenerate after deploy; never reuse it for billed Places | Arpit: "this is key for yt, also help me add restrictions to it"; the key was pasted in chat | Active (IP restriction and regeneration pending) |
+| 2026-09-14 | File the YouTube quota extension early | Default about 100 searches/day; approval takes weeks to months | Pending |
+| 2026-09-14 | Maps without a credit card: Geoapify; HERE not built | Arpit: "find free alternative for maps key, i dont wanna add my card here rn"; Geoapify confirmed no card, 3,000/day, commercial use; HERE's card requirement unverified; OSM India coverage 4 of 5 in a test | Active (key pending) |
+| 2026-09-14 | Coarse location (about 1 km) from the app, forwarded per request, never stored | Arpit: "u can req location access for this if needed in on boarding flow" | Active |
+| 2026-09-14 | Hold-space act: rules first, then one fast JSON routing call; only real provider data; Google handoff when nothing answers; metered like a run | Arpit wants every feature from Acti's launch video, without invented facts | Active |
+| 2026-09-15 | Live mini-app pages at `/p/:id` with unguessable ids and escaped HTML; `PUBLIC_BASE_URL` in production | Acti's "drop a live mini-app" | Active |
+| 2026-09-15 | Static map proxy for the Android act place card (Geoapify, numbers only) | iOS uses MapKit; the key stays server-side | Active (key pending) |
+| 2026-09-14/15 (night) | Classifier verdict gate; pin specific OpenRouter free models | `openrouter/free` returned "User Safety: safe" as a proofread | Gate active; pins superseded on 2026-09-15 |
+| 2026-09-15 | Skills hub: shipped plus community skills, derived categories, real per-device install counts, creators only after publishing | Acti parity with Glyf's honesty rules; nothing seeded | Active |
+| 2026-09-15 | Stop `/hub/list` leaking publisher device ids | A device id works as a login | Active |
+| 2026-09-15 | AI vocabulary packs endpoint, metered, description never logged | Arpit's categorized vocabulary library request | Active |
+| 2026-09-15 | AI privacy (provider training on inputs, opt-out flags) deferred | Arpit: "we will not work on ai privacy rn as we will have privacy policy" | Deferred |
+| 2026-09-15 | Model chain: Gemini 2.5 Flash-Lite, then Groq Qwen 3.8 and gpt-oss-20b for fast; Groq gpt-oss-120b for smart; OpenRouter free as the tail; provider prefixes, per-model reasoning settings, 429 cooldown | Arpit: "find me good and v cheap ai model to use here, i heard groq is good but ig they stopped sharing dev apis"; research found Groq free keys still exist | Active (keys pending) |
+| 2026-09-15 | Website waitlist moves to Neon Postgres through the site's own API route; the server is not involved | Launch the site that night; the server is not deployed | Active |
+| 2026-09-15 | The same Neon database will store app sign-ups; sign-up first, onboarding next, Google permissions only when a feature needs them | Arpit: "use this db in app also for storing users who sign up" | Pending (nothing built in the server) |
+| 2026-09-16 | Monorepo pushed to the private GitHub repo; real `.env` files and dev data excluded | Arpit's request | Done |
+| 2026-09-16 | Document everything in `docs/` | Arpit: "note down everything in docs, like everything, every decisions we made" | This document |
+
+---
+
+## 16. Known issues
+
+Found by reading the code while writing this doc (2026-09-16). None were fixed, because this task was documentation only. Severity is a judgement for a public launch.
+
+| # | Severity | Issue | Where | Suggested fix |
+|---|---|---|---|---|
+| 1 | High | The CI secrets guard scans zero files: the quoted brace glob in `--include` is not expanded, so it always passes (tested with `/usr/bin/grep` on this Mac) | `ci/check_no_secrets.sh` | Use one `--include` per extension; add `app/android` and `site` to the targets |
+| 2 | Medium | Web search tries Serper before Brave, the reverse of the 2026-09-14 decision. With both keys set, Serper answers while `/search/status` reports `brave`. No effect today because neither key is set | `searchWeb()` in `lib/search.ts` | Call Brave first, Serper only when Brave returns nothing |
+| 3 | High | The `/glyf/run` cache key has no device id, and tool-backed outputs are cached too. A community glyf using `calendar.today` or `notion.search` could serve one device's calendar or Notion results to another device running the same glyf, version, input and vars within 24 h. Tool outputs such as weather can also be up to 24 h stale | `routes/glyf.ts` | Skip the cache for any definition with `tool` steps, or at least with OAuth tools, and add the device id to the key |
+| 4 | Medium | `/builder/generate` (up to two smart-tier calls) and `/builder/test` are not metered | `routes/builder.ts` | Consume the meter, or give the Builder its own cap |
+| 5 | Medium | The plan is whatever the client sends. `plan: "max"` removes the cap | `routes/glyf.ts`, `routes/act.ts`, `routes/vocab.ts` | StoreKit and Play receipt validation (the planned M7-ship work) |
+| 6 | Medium | Per-tool rate limits are global across all devices, so one busy user can block a tool for everyone, and many users will hit limits sized for one | `rateLimited()` in `lib/tools.ts` | Key the window by device and tool, and add a global ceiling separately |
+| 7 | High (once deployed) | `url.unfurl` fetches any `http(s)` URL the caller gives, following redirects, including private addresses and cloud metadata endpoints. Reachable without auth through `/tools/run` | `lib/tools.ts` | Resolve the host and block private, loopback and link-local ranges; cap redirects; or drop the tool from `/tools/run` |
+| 8 | Medium | Tools still use sources that were rejected for the search suite or never vetted: `web.search` uses DuckDuckGo (commercial use needs approval); `maps.search` and `places.search` call public Nominatim with no 1 request/second gate and no production gate; `weather.now`, `air.quality` and `route.eta` use Open-Meteo (non-commercial free tier); `dict.define` uses dictionaryapi.dev (failing on 2026-09-14, also used by the `keyless.define` glyf); `sports.next` and `recipes.search` use public test keys; `stocks.quote` reads a Stooq CSV quote endpoint whose terms were not reviewed | `lib/tools.ts` | Re-point these tools at the search suite's providers or licensed APIs, or gate them to development |
+| 9 | Medium | `npm run build` compiles to `dist/` but does not copy `src/registry/*.json`, which is read from disk relative to the compiled file. `node dist/index.js` would fail at startup (inferred from how `tsc` works; not run) | `package.json`, `lib/glyfengine.ts`, `lib/tools.ts` | Deploy with `npm start`, or add a copy step |
+| 10 | Medium | All limits, caches, cooldowns and OAuth pending states are in memory, and FileKV rewrites whole JSON files synchronously on each write. Restarts reset free runs; more than one instance breaks metering and OAuth | `lib/meter.ts`, `lib/store.ts`, `routes/connector.ts` | Postgres KV (the planned Neon database) and a shared store for the meter and pending states |
+| 11 | Medium | OAuth: refresh tokens are stored but never used, so Google connections die after about an hour; `/connectors/status` reports `connected: true` for expired tokens; disconnect does not revoke at the provider; the Google `id_token` email is decoded without verification (display only) | `routes/connector.ts`, `routes/glyf.ts`, `routes/search.ts` | Refresh on expiry, check `expires_at` in status, call provider revocation endpoints |
+| 12 | High (once deployed) | No authentication. The device id is a bearer credential for listing, deleting and publishing glyfs, renaming accounts and disconnecting connectors | all routes | Accounts (the planned sign-up), then authenticated sessions |
+| 13 | Low | `/telemetry/funnel` is public, and `/telemetry` accepts any event name, so the telemetry collection can be grown without limit | `routes/telemetry.ts` | Protect the funnel; allow-list event names |
+| 14 | Low | `.env.example` sets `OAUTH_REDIRECT_BASE` to the production URL while its own comment says to leave it unset for local development. Copying the file sends local OAuth callbacks to production | `server/.env.example` | Comment the line out |
+| 15 | Low | Dead configuration: `PRIVY_APP_SECRET` and `GLYF_FEE_BPS` are never read, `env.privyAppId` is unused, and `schemas/contracts.generated.ts` is never imported | `env.ts`, `schemas/` | Keep until M8, but know they do nothing |
+| 16 | Medium | Hub installs record a version but runs resolve the latest published definition. When a publisher republishes with a changed `discloses`, installers run the new definition without re-consent unless the client checks | `resolve()` in `lib/userglyfs.ts` | Store and run the pinned definition; require re-consent server-side when `discloses` changes |
+| 17 | Low | Mini-app pages never expire and cannot be deleted | `lib/pages.ts` | Add an expiry |
+| 18 | Low | The meter day is UTC (resets at 05:30 IST), and `GET /meter/:deviceId` always computes against the free cap, even for Plus and Max devices | `lib/meter.ts`, `routes/meter.ts` | Accept the plan, or store it per device |
+| 19 | Low | `/glyf/run` returns HTTP 200 for every failure, including bad requests and cap reached; clients must read the `error` frame | `routes/glyf.ts` | Acceptable for SSE; document for new clients |
+| 20 | Low | `/health` reports only whether an OpenRouter key exists, not Gemini or Groq | `routes/health.ts` | Report presence per provider |
+| 21 | Low | Unused routes remain: `/waitlist`, `/waitlist/count`, `/hub/list`, `/hub/install`, and the client methods for `/tools/run`; `/gif/search` has no client | several | Remove or wire them up |
+| 22 | Low | The maps provider label defaults to `openstreetmap` even when nothing answered, including in production where Nominatim is disabled | `searchMaps()` in `lib/search.ts` | Default to `none` |
+| 23 | Medium | Paid search providers (Brave, Places, Weather) have no per-device limit; only the shared 10-minute cache protects the keys | `routes/search.ts` | Per-device daily search caps once paid keys are added |
+| 24 | Low | Plan promises are not implemented: Plus "priority" and Max "smartest models" use the same chains as Free | `lib/meter.ts`, `providers/openrouter.ts` | Choose chains by plan |
+| 25 | Low | `calendar.today` metadata says `calendar.readonly` while the broker requests `calendar.events` | `registry/tools/calendar.today.json` | Align the metadata |
+| 26 | Low | Mock mode is read two ways (`env.mockAI` at startup, `process.env.MOCK_AI` per call). Consistent in a running server, confusing in tests | several | Read one source |
+| 27 | Medium | `/glyf/run` passes through only errors containing "tool" or starting with "needs input". The "Connect <Provider> in the Glyf app first" message and messages like "couldn't find '<place>'" become "Couldn't reach Glyf. Tap to retry.", so users are told to retry instead of to connect an account or fix their input | catch block in `routes/glyf.ts` | Use typed errors (user-facing versus transport) instead of substring checks |
+| 28 | Low | The `glyf_failed` warning logs the raw error message, and some tool errors embed user input (for example the place name in "couldn't find '<place>'"), which bends the "never content in logs" rule | `routes/glyf.ts`, `lib/tools.ts` | Log an error code instead of the message |
+
+---
+
+## 17. Pending work and what Arpit needs to provide
+
+### 17.1 Needs Arpit (accounts, keys, decisions)
+
+Status is as of the last notes (2026-09-16) and was not re-checked in `server/.env`.
+
+| # | Item | Unlocks | Notes |
+|---|---|---|---|
+| 1 | **Hosting account or token** (Fly.io, Railway or similar) and DNS for `api.tryglyf.com` | Every AI, search and connector feature for TestFlight and real users | The biggest real-user blocker since 2026-09-13 |
+| 2 | **`GEMINI_API_KEY` and `GROQ_API_KEY`** (both free, no card), or **$10 on OpenRouter** | Fast, working AI; today's free OpenRouter quota runs out and runs take 12 to 60 s | Keys from aistudio.google.com/apikey and console.groq.com/keys. Decide whether Gemini's free-tier terms are acceptable (training on inputs, no personal information, no apps likely used by under-18s) |
+| 3 | **`GEOAPIFY_KEY`** (free, no card) | Maps and nearby results in production; static maps on Android | Sign up at myprojects.geoapify.com; add "Powered by Geoapify" in the apps |
+| 4 | `BRAVE_SEARCH_KEY` (optional) | Real web links and live answers ("World Cup today") | $5 per 1,000 after the $5 monthly credit; needs a card and a "Powered by Brave" line |
+| 5 | `GOOGLE_PLACES_KEY` and `GOOGLE_WEATHER_KEY` (optional) | Ratings, open-now, photos, weather card | Needs a Google billing account; Arpit declined a card on 2026-09-14. Use a separate key from the YouTube one |
+| 6 | **YouTube quota extension form** | More than about 100 searches/day | Needs a public URL, privacy policy and demo account; slow approval |
+| 7 | **Regenerate and IP-restrict the YouTube key** after deploy | Security | It was pasted in chat |
+| 8 | **Google OAuth client** (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) with both redirect URIs, consent screen, test users | Google sign-in, calendar tool, liked videos | Start Google's verification for sensitive scopes early |
+| 9 | Notion and Slack OAuth apps, plus any of GitHub, Linear, Todoist, Calendly, Zoom, Spotify | Those connectors | Each needs only its two variables and a registered redirect URI |
+| 10 | `GIPHY_API_KEY` | GIF search | A client GIF tab also has to be built |
+| 11 | App Store Connect subscription products for Plus and Max, and the shared secret for receipt validation; Play Billing later | Real plans instead of client-asserted ones | |
+| 12 | **Rotate secrets pasted in chat**: OpenRouter key, Privy app secret, YouTube key, Neon password | Security | Update `server/.env`, `site/.env.local` and Vercel afterwards |
+| 13 | Privy dashboard configuration (Solana enabled) and a Jupiter API key | M8 crypto | Not before the separate crypto release |
+| 14 | AI privacy decision (opt-out flags, provider training) | Privacy policy accuracy | Deferred by Arpit on 2026-09-15 |
+
+### 17.2 Engineering work
+
+**Before a public launch**
+- Deploy (section 13) with production environment variables.
+- Fix the high-severity issues: CI guard (1), device-scoped run cache (3), `url.unfurl` request forgery (7), authentication (12).
+- Accounts and sign-up in Neon Postgres, replacing device ids as identity; implement the Postgres KV driver and move the meter and OAuth states out of memory.
+- Receipt validation for plans; meter the Builder; per-device limits on paid search providers.
+- OAuth refresh-token handling, expiry-aware status, revocation on disconnect, and typed run errors so users see "connect your account" instead of "tap to retry" (27).
+- Put Brave ahead of Serper in code; move or gate tools that use rejected sources.
+- Copy the registry for compiled builds, or standardize on `npm start`.
+
+**Feature work still open**
+- Real connector surfaces: Gmail unread and draft reply, Notion recents, Drive, Slack, contacts through the server, Meet link, LinkedIn summon (needs a web search key).
+- Wire the in-keyboard calendar surface to the real `calendar.today` data instead of the demo calendar.
+- A GIF tab in the keyboards.
+- Server-side version pinning and re-consent for hub installs.
+- Interactive `ask` steps and the visual chain editor (M9).
+- M8: `swap`, `risk`, `jupiter`, `solana` and `storekit` providers, `POST /execute`, fee display with `GLYF_FEE_BPS`.
+- Plan differences (priority and smarter models for paid plans).
+- Run about 50 real Hinglish messages through the chosen models once keys exist.
+- Clean up legacy routes (`/waitlist`, `/hub/list`, `/hub/install`).
+
+---
+
+## 18. Relationship to the website
+
+- `site/` is a Next.js app hosted on Vercel (root directory `site`, variable `DATABASE_URL`, optional `SITE_URL`). It does not call this server.
+- Its waitlist (`site/app/api/waitlist/route.ts`, table defined in `site/db/waitlist.sql`) inserts directly into Neon Postgres with email checks, a honeypot and a rough per-IP throttle.
+- Before 2026-09-15 the site's waitlist proxied to this server's `/waitlist` through a `GLYF_API` variable. That path is gone from the site; the server routes remain as legacy.
+- The site's search, act, wallet, MagicBlock and Jupiter demos are front-end simulations with canned data.
+- Planned link between them: the same Neon database will later hold app sign-ups.
+
+---
+
+## 19. Sources
+
+Code and config (read in full while writing):
+- `server/package.json`, `server/tsconfig.json`, `server/.env.example`, `server/.gitignore`
+- Every file in `server/src/` and `server/test/`, including all 53 registry JSON files
+- `shared/contracts/README.md`, `intent.schema.json`, `result.schema.json`; `tools/gen_contracts.mjs`
+- `ci/check_no_secrets.sh`; the root `.gitignore`
+- Client call sites for backend URLs and endpoints in `app/lib`, `app/ios/GlyfKeyboard`, `app/ios/Runner`, `app/android/app/src/main` (searched, not read in full)
+
+Product and gate docs:
+- `SPEC.md` (sections 0 to 4 and 6.4 to 14), `README.md`
+- `docs/M0-GATE.md`, `docs/M1-M2-GATE.md`, `docs/M3-M4-GATE.md`, `docs/M5-GATE.md`, `docs/SPIKES.md`
+
+History:
+- `docs/history/messages-from-arpit.md` (all 115 messages)
+- `docs/history/context-snapshots.md` (snapshots 1 to 7)
+- `docs/history/transcript-2026-09-11.md` to `transcript-2026-09-16.md` (read in full for 2026-09-12, 2026-09-14 and 2026-09-16; partly read and searched for backend topics on the other days)
+- The assistant's working notes on AI models, the search suite, milestone status, Acti parity, the typing engine and launch decisions
+
+Not opened on purpose: `server/.env`, `site/.env.local`, and the contents of `server/data/*.json` (entry counts only).
+

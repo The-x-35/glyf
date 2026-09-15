@@ -10,11 +10,11 @@ Last updated: Wed 16 Sep 2026 (IST).
 
 | # | Item | Owner |
 |---|---|---|
-| W1 | Rotate the Neon database password (it was pasted in chat twice). Update `site/.env.local` locally | Arpit |
-| W2 | Vercel: import `The-x-35/glyf`, set Root Directory to `site`, add `DATABASE_URL` (Production and Preview), optional `SITE_URL=https://tryglyf.com`, deploy | Arpit |
-| W3 | Vercel → Domains: add `tryglyf.com` and `www.tryglyf.com`; set the DNS records Vercel shows at the registrar | Arpit |
-| W4 | After deploy: sign up once on the live site and check the row lands in Neon | Arpit or Build |
-| W5 | Check the link preview (Open Graph image) on a real share once live | Arpit or Build |
+| W1 | Rotate the Neon database password (it was pasted in chat twice). Update it in Vercel and `site/.env.local` | Arpit |
+| W2 | ~~Deploy on Vercel with domains~~ **Done 16 Sep:** live on www.tryglyf.com, apex redirects to www | Arpit |
+| W3 | Redeploy once so the canonical link and share-image URLs use `https://www.tryglyf.com` (code default changed after the first deploy). A push to `main` redeploys automatically if the Vercel project is connected to the GitHub repo. If `SITE_URL` was set in Vercel to the apex, change it to the www address or remove it | Arpit |
+| W4 | Sign up once on the live site and check the row lands in Neon. The live API answers (email checks verified), but the database connection wasn't tested, to avoid putting a test row into the real list | Arpit |
+| W5 | Share the link somewhere (iMessage, WhatsApp, X, LinkedIn) to see the preview card. Tags and images are live and correct | Arpit |
 | W6 | Brand use: MagicBlock, Solana, USDC (Circle), App Store and Google Play marks appear on the page. Check their guidelines or ask MagicBlock | Arpit |
 | W7 | Replace the vault placeholders if wanted: UPI `arpit@okbank`, phone `+91 98765 43210` | Arpit |
 | W8 | Decide whether Semi's 🙏 reaction on the payment card stays (only the emoji after "thank you" was removed) | Arpit |
