@@ -21,7 +21,8 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   alternates: { canonical: "/" },
   openGraph: { title: TITLE, description: DESCRIPTION, type: "website", url: SITE, siteName: "Glyf" },
-  twitter: { card: "summary", title: TITLE, description: "The AI keyboard that does the rest." },
+  // The share image is the hero itself: app/opengraph-image.png + twitter-image.png (tools/make_og_image.py).
+  twitter: { card: "summary_large_image", title: TITLE, description: "The AI keyboard that does the rest." },
 };
 
 export const viewport: Viewport = {

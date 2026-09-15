@@ -61,7 +61,13 @@ export default function Page() {
         <section className="hero" id="top">
           <div className="wrap hero-copy">
             <h1 className="hero-title">
-              <span>Type less.</span> <span>Glyf more.</span>
+              <span>Type less.</span>{" "}
+              <span>
+                <span className="hero-mark">
+                  glyf<span className="dot" />
+                </span>{" "}
+                more.
+              </span>
             </h1>
             <p className="hero-sub">The AI keyboard that does the rest.</p>
             <StoreBadges />

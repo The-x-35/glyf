@@ -133,7 +133,7 @@ html {
 }
 
 #join {
-  scroll-margin-top: 56px;
+  scroll-margin-top: 64px;
 }
 
 /* The page colour lives on <html> only: a body background would paint over
@@ -199,7 +199,8 @@ a {
   color: var(--ink);
 }
 
-.wordmark .dot {
+.wordmark .dot,
+.hero-title .hero-mark .dot {
   display: inline-block;
   width: 0.18em;
   height: 0.18em;
@@ -222,9 +223,13 @@ a {
 }
 
 .nav-inner {
-  height: 56px;
+  height: 64px;
   display: flex;
   align-items: center;
+}
+
+.nav .wordmark {
+  font-size: 28px;
 }
 
 .nav-end {
@@ -237,21 +242,21 @@ a {
 .nav-cta {
   background: var(--pill);
   color: var(--pill-ink);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   text-decoration: none;
   border-radius: 980px;
-  padding: 7px 15px;
+  padding: 9px 18px;
   white-space: nowrap;
 }
 
 .theme-toggle {
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 18px;
+  font-size: 20px;
   color: var(--ink-2);
   transition: color 0.15s, background 0.15s;
 }
@@ -442,6 +447,14 @@ a {
   display: inline-block;
 }
 
+/* "glyf" in the headline is the wordmark itself: bold, tight, raised dot */
+.hero-title .hero-mark {
+  display: inline-flex;
+  align-items: baseline;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+}
+
 .hero-sub {
   margin-top: clamp(14px, 1.8vw, 22px);
   font-size: clamp(21px, 2.4vw, 30px);
@@ -545,7 +558,7 @@ a {
 @media (max-width: 700px) {
   .hero {
     min-height: 100svh;
-    padding: 64px 0 calc(32.1svh + 25px);
+    padding: 72px 0 calc(32.1svh + 25px);
   }
 
   .hero-copy {
@@ -745,7 +758,7 @@ a {
   position: sticky;
   top: 0;
   height: 100svh;
-  padding: 76px 0 20px;
+  padding: 84px 0 20px;
   display: flex;
 }
 
@@ -3385,7 +3398,7 @@ html.has-cursor * {
   }
 
   .xp-pin {
-    padding: 56px 0 0;
+    padding: 64px 0 0;
   }
 
   .xp-grid {

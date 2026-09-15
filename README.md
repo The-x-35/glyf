@@ -1,17 +1,19 @@
 # Glyf
 
-Agentic AI keyboard for iOS. *Every key is a glyf.*
+AI keyboard for iPhone and Android. *Type less. glyf more.*
 
-**Design (locked 2026-09-12): WHITE ONLY.** Near-white ground, white cards,
-ink text, black pill CTAs, Apple-standard keyboard metrics (260pt: 44 toolbar
-+ 216 keys). The accent `#7C5CFF` appears ONLY as the bound-key dot /
-selection highlights — exactly like the logo (keycap-`g`, concept 01 in
-`glyf-symbol-concepts.svg`, also the app icon). App shell: Acti-style bottom
-bar — Home (Glyf Keys + status) · Build (catalog + bind-to-key) · Profile
-(vault, prefs) · ＋.
+**Everything about the project (decisions, timeline, every part, open items, full chat history) is in [docs/README.md](docs/README.md).**
+
+**Design:** Apple-like and simple, no explainer lines. Apple-standard keyboard
+metrics (260pt: 44 toolbar + 216 keys), liquid-glass keys by default, and the
+keyboard follows the host's light or dark mode. The website has light and dark;
+the apps get it later (this replaced the 12 Sep white-only lock). The accent
+`#7C5CFF` appears only as the bound-key dot and small highlights, like the logo
+(keycap `g`, concept 01 in `glyf-symbol-concepts.svg`, also the app icon).
+Black pill CTAs. App shell: three tabs, Home · Build · Profile.
 
 Full specification: [SPEC.md](SPEC.md). Work happens milestone by milestone
-(M0–M9, SPEC §9); each milestone has a hard acceptance gate.
+(M0 to M9, SPEC §9); each milestone has a hard acceptance gate.
 
 ## Status
 
@@ -26,7 +28,8 @@ Full specification: [SPEC.md](SPEC.md). Work happens milestone by milestone
 | **M6** — connectors | ✅ buildable core (keyless tools · ConnectorSurface on demo calendar · OAuth broker skeleton) — real providers blocked on OAuth client credentials, see same doc |
 | **M7** — polish/perf/monetization | ✅ buildable core (paywall + pro flag · tone learning · telemetry sink · funnels) — StoreKit product + receipt validation at ship, see same doc |
 | M8 — crypto (SEPARATE release; Privy stays server-side, unlinked until here) | not started, by design (§9) |
-| M9 — Android | forbidden before iOS ships (§1) |
+| M9 — Android | built early by Arpit's call (13 Sep): Flutter app + Kotlin keyboard at feature parity, verified on the emulator, not published. Chaining UI and more languages still pending |
+| Website | `site/`, the tryglyf.com waitlist site, built and verified locally, not deployed yet. See [docs/WEBSITE.md](docs/WEBSITE.md) |
 
 Run the backend before using AI features:
 
@@ -45,8 +48,8 @@ site/                 tryglyf.com website — Next.js; Vercel root directory, ne
 shared/contracts/     JSON Schemas, single source of truth for cross-process payloads
 shared/typing/        typing-engine dictionary format + golden test cases
 ci/                   guard scripts (Flutter-free keyboard §1.1, no client secrets §1.6)
-tools/                repo automation (Xcode target wiring)
-docs/                 spike findings + milestone gate evidence
+tools/                repo automation (Xcode target wiring, dictionary builder, contracts codegen, share image)
+docs/                 project docs (start at docs/README.md), spike findings, milestone gate evidence
 ```
 
 ## Build & run (simulator — iPhone 17 Pro, SPEC §10)
@@ -56,7 +59,7 @@ cd app
 flutter build ios --simulator --debug
 xcrun simctl boot "iPhone 17 Pro"
 xcrun simctl install booted build/ios/iphonesimulator/Runner.app
-xcrun simctl launch booted so.glyf.app
+xcrun simctl launch booted com.demo.glyf
 ```
 
 Enable the keyboard once per simulator reset:
