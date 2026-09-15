@@ -58,6 +58,7 @@ How Arpit wants Glyf built. These rules come from his direct instructions and fr
 - **Production wiring:** release builds point at `https://api.tryglyf.com`, and debug builds at local servers.
 - **Website builds:** run `next build` in a copy of `site/`, not in place, or the dev server loses its CSS.
 - **Git hygiene:** no `.env` files, no build output, no files over 100 MB, no assistant config folders.
+- **A push to `main` is a production deploy.** Vercel is connected to the GitHub repo and redeploys www.tryglyf.com on every push. Verify builds before pushing site changes.
 
 ## 5. Tools and permissions
 

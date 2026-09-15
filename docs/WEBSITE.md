@@ -356,7 +356,9 @@ Not checked on phone: dark mode on the phone layout, the Messages list screen af
 4. Environment variables: `DATABASE_URL` = the Neon pooled connection string (Production and Preview). `SITE_URL` is optional; leave it unset or set it to `https://www.tryglyf.com`.
 5. Deploy, then Settings → Domains: add `tryglyf.com` and `www.tryglyf.com`, and set the DNS records Vercel shows at the registrar.
 
-Done by Arpit on 16 Sep 2026: the site is live on `www.tryglyf.com`, with the apex redirecting to it. Checked right after: the page and both share images answered 200. The first deploy's canonical link and share tags pointed at the apex, which redirects, so the default `SITE` in `app/layout.tsx` was changed to `https://www.tryglyf.com`. The live page picks this up on the next deploy. If `SITE_URL` was added in Vercel with the apex value, change it to the www address or remove it.
+Done by Arpit on 16 Sep 2026: the site is live on `www.tryglyf.com`, with the apex redirecting to it. Checked right after: the page and both share images answered 200. The first deploy's canonical link and share tags pointed at the apex, which redirects, so the default `SITE` in `app/layout.tsx` was changed to `https://www.tryglyf.com`. It was pushed at 03:17 and live at 03:18, with canonical, `og:url`, `og:image` and `twitter:image` all on www and the image answering 200.
+
+**Deploys are automatic:** the Vercel project is connected to the GitHub repo, so every push to `main` redeploys the site within about a minute. Commit and push only what should go live.
 
 `.vercelignore` excludes `.archive` and `.env.local`.
 
@@ -395,7 +397,7 @@ Done by Arpit on 16 Sep 2026: the site is live on `www.tryglyf.com`, with the ap
 ## 14. Known issues and open items
 
 - Live on www.tryglyf.com. Rotate the Neon password if that hasn't been done (it was pasted in chat twice), then update it in Vercel.
-- The share tags point at the www domain only after the next deploy (see section 12).
+- A push to `main` deploys to production immediately (section 12).
 - Brand marks (MagicBlock, Solana, USDC/Circle, Apple, Google Play) appear on a public page; check each brand's guidelines.
 - Placeholders still in the vault: UPI `arpit@okbank`, phone `+91 98765 43210`.
 - The waitlist throttle is per server instance (a rough limit, not a guarantee on serverless).

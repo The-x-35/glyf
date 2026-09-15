@@ -12,7 +12,7 @@ Last updated: Wed 16 Sep 2026 (IST).
 |---|---|---|
 | W1 | Rotate the Neon database password (it was pasted in chat twice). Update it in Vercel and `site/.env.local` | Arpit |
 | W2 | ~~Deploy on Vercel with domains~~ **Done 16 Sep:** live on www.tryglyf.com, apex redirects to www | Arpit |
-| W3 | Redeploy once so the canonical link and share-image URLs use `https://www.tryglyf.com` (code default changed after the first deploy). A push to `main` redeploys automatically if the Vercel project is connected to the GitHub repo. If `SITE_URL` was set in Vercel to the apex, change it to the www address or remove it | Arpit |
+| W3 | ~~Point canonical and share URLs at www~~ **Done 16 Sep 03:18:** pushed to `main`, Vercel redeployed automatically (the project is connected to the GitHub repo), and the live page now uses `https://www.tryglyf.com` everywhere | Build |
 | W4 | Sign up once on the live site and check the row lands in Neon. The live API answers (email checks verified), but the database connection wasn't tested, to avoid putting a test row into the real list | Arpit |
 | W5 | Share the link somewhere (iMessage, WhatsApp, X, LinkedIn) to see the preview card. Tags and images are live and correct | Arpit |
 | W6 | Brand use: MagicBlock, Solana, USDC (Circle), App Store and Google Play marks appear on the page. Check their guidelines or ask MagicBlock | Arpit |
@@ -55,7 +55,25 @@ Last updated: Wed 16 Sep 2026 (IST).
 | A11 | Paper design port: the keyboard page and website page were unfinished when the Paper free plan's weekly MCP limit hit. Resume after the reset or on Paper Pro | Arpit (plan) + Build |
 | A12 | Mobbin connector: authorize it if design references from Mobbin are wanted | Arpit |
 
-## 4. Repo and housekeeping
+## 4. Code problems found while writing the docs (not fixed yet)
+
+Found by reading the code on 16 Sep. Nothing was changed, because that task was documentation only. Full lists: [BACKEND.md](BACKEND.md) section 16 (28 items) and [APPS.md](APPS.md) section 11 (21 items). The most important:
+
+| # | Problem | Where | Owner |
+|---|---|---|---|
+| C1 | The CI secrets check scans zero files (a quoted file-type pattern matches nothing), so it always passes | `ci/check_no_secrets.sh` | Build |
+| C2 | The AI run cache isn't per user and includes tool results, so a shared skill could show one person's calendar or Notion results to another within 24h | `server/src/routes/glyf.ts` | Build |
+| C3 | `url.unfurl` fetches any address, including internal ones, once the server is public | `server/src/lib/tools.ts` | Build |
+| C4 | No real accounts: the device ID works as a login for editing skills and connectors | server routes | Build (with the planned sign-up) |
+| C5 | The paywall grants Plus or Max without payment, and the server trusts whatever plan the phone sends | app paywall + server meter | Build (with A2) |
+| C6 | Test launch arguments, including one that writes the decrypted vault to disk, are not removed from release builds | iOS app | Build |
+| C7 | Onboarding calls the Google permissions "Read-only", but the Calendar and Gmail scopes can write | Flutter onboarding | Build |
+| C8 | The Android vault refuses 6 field types the app offers (name, GST, wallet, social, bio, reply) | Android vault store | Build |
+| C9 | Android keyboard gaps versus iOS: no delete repeat, multi-touch, accents or caps lock; holding Translate, Vault or Calendar keys only opens the app | Android IME | Build |
+| C10 | Web search tries Serper before Brave (the opposite of the 14 Sep decision), and "Connect your account first" errors reach users as "Tap to retry" | server search and run routes | Build |
+| C11 | TestFlight builds 2 and 3 were likely built before the release server address existed, and the server isn't deployed, so testers probably have no AI | apps + B1 | Build + Arpit |
+
+## 5. Repo and housekeeping
 
 | # | Item | Owner |
 |---|---|---|

@@ -49,7 +49,7 @@ Plus:
 | Area | State |
 |---|---|
 | iOS app + keyboard | Built and tested on the simulator through M7 cores plus a large feature set beyond the spec. Arpit runs it on his iPhone. TestFlight build 2 uploaded; build 3 prepared (compliance key set) |
-| Android app + keyboard | Built and verified on the emulator with feature parity and iOS styling. Not published |
+| Android app + keyboard | Built and verified on the emulator with iOS styling and the main features. The keyboard still trails iOS: no delete key repeat, multi-touch, accents or caps lock; holding the Translate, Vault or Calendar keys opens the app; the vault refuses 6 field types (see [APPS.md](APPS.md) section 6). Not published |
 | Backend (`server/`) | Built and tested (about 90 tests). Runs locally only. Not deployed; `api.tryglyf.com` does not exist yet, so release app builds have no working AI |
 | Website (`site/`) | v8, **live on https://www.tryglyf.com** (Vercel, deployed 16 Sep). Waitlist writes to Neon |
 | Crypto wallet (M8) | Not started, on purpose. The site demos a private Solana payment UI only |
