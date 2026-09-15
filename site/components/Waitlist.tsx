@@ -50,7 +50,7 @@ export default function Waitlist({ source }: { source: string }) {
         body: JSON.stringify({ email: normalizeEmail(email), source, company: honey.current?.value ?? "" }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body.error ?? "Couldn't join right now — try again in a bit.");
+      if (!res.ok || !body.ok) throw new Error(body.error ?? "Couldn't join right now. Try again in a bit.");
       try {
         localStorage.setItem(KEY, "1");
       } catch {}
@@ -59,7 +59,7 @@ export default function Waitlist({ source }: { source: string }) {
       window.dispatchEvent(new Event("glyf:joined"));
     } catch (err) {
       setState("error");
-      setMsg(err instanceof Error ? err.message : "Couldn't join right now — try again in a bit.");
+      setMsg(err instanceof Error ? err.message : "Couldn't join right now. Try again in a bit.");
     }
   }
 
@@ -67,7 +67,7 @@ export default function Waitlist({ source }: { source: string }) {
     return (
       <p className="wl-done" role="status">
         <span className="wl-check"><CheckIcon /></span>
-        {already ? "You're already on the list." : "You're on the list — we'll email when Glyf ships."}
+        {already ? "You're already on the list." : "You're on the list. We'll email you when Glyf ships."}
         <button
           type="button"
           className="wl-again"

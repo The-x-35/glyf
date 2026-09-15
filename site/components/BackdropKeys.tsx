@@ -4,7 +4,7 @@ import { motion, useScroll, useTransform } from "framer-motion";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { POS } from "./kb/data";
 
-/** The Glyf keyboard behind the hero — faint, lying back in perspective,
+/** The Glyf keyboard behind the hero: faint, lying back in perspective,
  *  quietly typing the tagline, firing a glyf now and then, and pressing
  *  whatever you press on your real keyboard. Fades out past the hero.
  *  Decorative only: no input, hidden from assistive tech. */

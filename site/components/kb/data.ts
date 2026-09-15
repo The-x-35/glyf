@@ -1,4 +1,4 @@
-/** What the demo keyboard knows. Sample content only — the apps pull live
+/** What the demo keyboard knows. Sample content only; the apps pull live
  *  results; this page shows how the keys behave. Everything here is pure. */
 
 export type Spotlight = "all" | "you" | "ai" | "search" | "calc" | "typing";
@@ -94,7 +94,7 @@ export function rowOf(k: string): number {
   return i < 0 ? 0 : i;
 }
 
-/** Letters with a skill bound — hold them. */
+/** Letters with a skill bound: hold them. */
 export const SKILLS: Record<string, { name: string; hint: string }> = {
   p: { name: "Proofread", hint: "Fixes grammar, keeps your voice" },
   t: { name: "Translate", hint: "Live, as you type" },
@@ -113,8 +113,8 @@ const CANNED_SRC: [string, Record<string, string>][] = [
   [
     "hey im 5 mins late dont order without me",
     {
-      polite: "Hey! Running about five minutes late — please go ahead and order for me.",
-      shorter: "5 min late — order for me.",
+      polite: "Hey! Running about five minutes late, please go ahead and order for me.",
+      shorter: "5 min late, order for me.",
       work: "Apologies, I'm running five minutes late. Please go ahead and order without me.",
       hinglish: "Yaar 5 min late hoon, mere liye order kar dena.",
       emoji: "Running 5 late 🏃💨 order for me 🙏",
@@ -123,9 +123,9 @@ const CANNED_SRC: [string, Record<string, string>][] = [
   [
     "ya ill send it by 6 dont worry",
     {
-      polite: "Sure thing! I'll send it over by 6 — thanks for the reminder.",
+      polite: "Sure thing! I'll send it over by 6. Thanks for the reminder.",
       shorter: "Will send by 6.",
-      work: "Absolutely — I'll share the Q3 deck with the client by 6 PM today.",
+      work: "Absolutely, I'll share the Q3 deck with the client by 6 PM today.",
       hinglish: "Haan, 6 baje tak bhej dunga, tension mat lo.",
       emoji: "On it! Sending by 6 📊✅",
     },
@@ -248,7 +248,7 @@ export function calc(text: string): Calc | null {
   return { value, start: m.index + (m[0].length - m[0].trimStart().length), eq };
 }
 
-export const WEATHER = "It's 24° and cloudy in Bengaluru — rain after 6 PM ☔";
+export const WEATHER = "It's 24° and cloudy in Bengaluru, rain after 6 PM ☔";
 
 /** Clipboard history. Links open in a new tab instead of pasting. */
 export const CLIPS = ["https://youtu.be/dQw4w9WgXcQ?si=ms6HzsvNvsPeLhH_", "meet.google.com/xk2-pqr-7ty", "Flight PNR · QR7GH2", "the figma link from standup"];
@@ -264,7 +264,7 @@ const FIXES: Record<string, string> = {
   cant: "can't", wont: "won't", didnt: "didn't", doesnt: "doesn't", isnt: "isn't", ive: "I've",
   thnaks: "thanks", becuase: "because", definately: "definitely", waht: "what", taht: "that",
   tommorow: "tomorrow", tomorow: "tomorrow", seperate: "separate", untill: "until", wierd: "weird",
-  // Hinglish typos — the pack knows the words, so it fixes them and leaves yaar alone.
+  // Hinglish typos: the pack knows the words, so it fixes them and leaves yaar alone.
   pakak: "pakka", yaaar: "yaar", thik: "theek", kese: "kaise", bhot: "bahut", hna: "haan",
 };
 
@@ -345,7 +345,7 @@ export function rewrite(text: string, tone: string): string {
   const lower = bare[0].toLowerCase() + bare.slice(1);
   switch (tone) {
     case "polite":
-      return IMPERATIVE.test(bare) ? `Hey! Could you ${lower}, please? Thank you!` : `Hey! ${bare} — hope that's okay!`;
+      return IMPERATIVE.test(bare) ? `Hey! Could you ${lower}, please? Thank you!` : `Hey! ${bare}. Hope that's okay!`;
     case "shorter": {
       const shorter = bare
         .replace(/\b(just|really|very|actually|basically|literally|totally|honestly|kind of|sort of|i think|please)\b\s*/gi, "")
@@ -425,12 +425,12 @@ function videosFor(q: string): Card[] {
   const t = q.toLowerCase();
   if (/road trip|drive|songs/.test(t))
     return [
-      { kind: "video", title: "Road trip hits — non-stop highway mix", meta: "Open Roads · 4.2M views", insert: "▶ Road trip hits — non-stop highway mix", hue: 16, badge: "1:02:10" },
+      { kind: "video", title: "Road trip hits: non-stop highway mix", meta: "Open Roads · 4.2M views", insert: "▶ Road trip hits: non-stop highway mix", hue: 16, badge: "1:02:10" },
       { kind: "video", title: "Indie drive playlist 2026", meta: "Night Shift · 910K views", insert: "▶ Indie drive playlist 2026", hue: 200, badge: "48:22" },
     ];
   if (/lofi|study|focus/.test(t))
     return [
-      { kind: "video", title: "Lofi beats to study to — 3 hour mix", meta: "Quiet Hours · 2.1M views", insert: "▶ Lofi beats to study to — 3 hour mix", hue: 265, badge: "3:02:14" },
+      { kind: "video", title: "Lofi beats to study to, 3 hour mix", meta: "Quiet Hours · 2.1M views", insert: "▶ Lofi beats to study to, 3 hour mix", hue: 265, badge: "3:02:14" },
       { kind: "video", title: "Rainy café jazz for deep focus", meta: "Slow Mornings · 880K views", insert: "▶ Rainy café jazz for deep focus", hue: 28, badge: "1:12:40" },
     ];
   const topic = cap(q.replace(/\b(video|videos|watch|on youtube|youtube)\b/gi, "").trim() || q);

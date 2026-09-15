@@ -11,9 +11,9 @@ const inter = localFont({
 /** Canonical home. Override with SITE_URL on preview deploys. */
 const SITE = process.env.SITE_URL ?? "https://tryglyf.com";
 
-const TITLE = "Glyf — Type less. Glyf more.";
+const TITLE = "Glyf · Type less. Glyf more.";
 const DESCRIPTION =
-  "The AI keyboard for iPhone and Android. Hold a key to search, rewrite, translate and fill in your details — right where you type. Join the waitlist.";
+  "The AI keyboard for iPhone and Android. Hold a key to search, rewrite, translate and fill in your details, right where you type. Join the waitlist.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),

@@ -3,7 +3,7 @@ import type { Coach, KbSnapshot } from "../kb/Keyboard";
 
 /** Each chat is a small level: a friend asks for something, the visitor
  *  gets it done on the keyboard, and the coach points at the one key that
- *  does it. Anything that needs typing, the keyboard types itself — the
+ *  does it. Anything that needs typing, the keyboard types itself; the
  *  visitor only holds and taps. Coaches read live keyboard state, so any
  *  path works. */
 

@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   if (throttled(ip)) {
-    return NextResponse.json({ ok: false, error: "Too many tries — give it a minute." }, { status: 429 });
+    return NextResponse.json({ ok: false, error: "Too many tries. Give it a minute." }, { status: 429 });
   }
 
   const raw = String(body.email ?? "").slice(0, 320);
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
 
   const url = process.env.DATABASE_URL;
   if (!url) {
-    return NextResponse.json({ ok: false, error: "The list isn't open yet — try again soon." }, { status: 503 });
+    return NextResponse.json({ ok: false, error: "The list isn't open yet. Try again soon." }, { status: 503 });
   }
 
   const sql = neon(url);
@@ -80,6 +80,6 @@ export async function POST(req: Request) {
     if ((err as { code?: string }).code === "23514") {
       return NextResponse.json({ ok: false, error: "That email doesn't look right." }, { status: 400 });
     }
-    return NextResponse.json({ ok: false, error: "Couldn't join right now — try again in a bit." }, { status: 502 });
+    return NextResponse.json({ ok: false, error: "Couldn't join right now. Try again in a bit." }, { status: 502 });
   }
 }

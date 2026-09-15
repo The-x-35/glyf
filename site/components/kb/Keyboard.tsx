@@ -1186,7 +1186,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
             {TONES.map((t) => (
               <button key={t.id} type="button" className={cx("kb-row", co(`tone:${t.id}`))} onClick={() => perform(`tone:${t.id}`)} disabled={!s.text.trim()}>
                 <span className="kb-row-k">{t.label}</span>
-                <span className="kb-row-v">{s.text.trim() ? rewrite(s.text, t.id) : "—"}</span>
+                <span className="kb-row-v">{s.text.trim() ? rewrite(s.text, t.id) : "…"}</span>
                 {tip(`tone:${t.id}`)}
               </button>
             ))}
@@ -1302,7 +1302,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
             {renderKey("backspace", 2, { span: 3, fn: true, label: <I.BackspaceIcon />, aria: "Delete" })}
             {renderKey("mode", 3, { span: 3, fn: true, label: s.mode === "abc" ? "123" : "ABC", aria: "Switch keys" })}
             {renderKey("emoji", 3, { span: 2, fn: true, label: <I.EmojiIcon />, aria: "Emoji" })}
-            {renderKey("space", 3, { span: 10, label: <span className="kb-space-mark">glyf</span>, aria: "Space — hold for Glyf", cls: "space" })}
+            {renderKey("space", 3, { span: 10, label: <span className="kb-space-mark">glyf</span>, aria: "Space, hold for Glyf", cls: "space" })}
             {renderKey(".", 3, { span: 2, fn: true, aria: "Full stop" })}
             {renderKey("return", 3, { span: 3, fn: true, label: <I.ReturnIcon />, aria: "Return" })}
           </div>

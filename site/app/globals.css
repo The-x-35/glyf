@@ -1,4 +1,4 @@
-/* Glyf — tryglyf.com, v8.
+/* Glyf: tryglyf.com, v8.
    · The page is a set of chats. A friend asks for something; you do it on
      the Glyf keyboard; a coach points at the one key that does it.
    · Light and dark: every colour is a token. Dark comes from the system or
@@ -294,7 +294,7 @@ a {
   text-align: center;
 }
 
-/* the keyboard behind everything — faint, lying back, alive */
+/* the keyboard behind everything: faint, lying back, alive */
 .backdrop-keys {
   position: fixed;
   z-index: -1;
@@ -405,7 +405,7 @@ a {
     width: 230vw;
     margin-left: -115vw;
     bottom: -18px;
-    grid-auto-rows: clamp(52px, 8.6svh, 76px);
+    grid-auto-rows: clamp(40px, 8.6svh, 76px);
     gap: 12px 8px;
     padding: 16px;
     border-radius: 30px;
@@ -424,13 +424,6 @@ a {
   .hk-dot {
     width: 7px;
     height: 7px;
-  }
-
-  /* the tilted keyboard shows ~32svh + 7px of screen; the form sits ~32px above it */
-  .hero {
-    min-height: 100svh;
-    justify-content: flex-end;
-    padding: 88px 0 calc(32.1svh + 25px);
   }
 }
 
@@ -544,6 +537,87 @@ a {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Phones: a big headline up top, the badges + waitlist resting ~33px above
+   the keyboard, which fills the bottom third (it shows ~32svh + 7px). */
+@media (max-width: 700px) {
+  .hero {
+    min-height: 100svh;
+    padding: 64px 0 calc(32.1svh + 25px);
+  }
+
+  .hero-copy {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .hero-title {
+    margin-top: auto;
+    font-size: clamp(54px, min(19vw, 10.5svh), 84px);
+  }
+
+  .hero-sub {
+    margin-bottom: 20px;
+    font-size: clamp(17px, 5.6vw, 21px);
+  }
+
+  .stores {
+    margin-top: auto;
+  }
+
+  .hero-form {
+    width: 100%;
+  }
+}
+
+/* short phones (SE, or Safari with both bars showing) */
+@media (max-width: 700px) and (max-height: 700px) {
+  .hero-title {
+    font-size: clamp(46px, min(17vw, 9.4svh), 84px);
+  }
+
+  .hero-sub {
+    margin-bottom: 12px;
+  }
+}
+
+/* very short (SE in Safari): tuck the keyboard lower to give the headline air */
+@media (max-width: 700px) and (max-height: 600px) {
+  .backdrop-keys-board {
+    bottom: -44px;
+  }
+
+  .hero {
+    padding-bottom: calc(32.1svh + 2px);
+  }
+
+  .hero-title {
+    font-size: min(15vw, 8.8svh);
+  }
+}
+
+/* narrow phones: keep both store badges on one row */
+@media (max-width: 340px) {
+  .store {
+    height: 44px;
+    gap: 6px;
+    padding: 0 10px 0 8px;
+  }
+
+  .store svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .store-lines small {
+    font-size: 9px;
+  }
+
+  .store-lines b {
+    font-size: 14px;
   }
 }
 
@@ -847,7 +921,7 @@ a {
   background: var(--im-bg);
 }
 
-/* header: iOS 26 — glass controls floating over the thread */
+/* header: iOS 26 glass controls floating over the thread */
 .chat-head {
   position: absolute;
   z-index: 6;
@@ -1850,7 +1924,7 @@ a {
   color: color-mix(in srgb, var(--kb-ink) 40%, transparent);
 }
 
-/* press: instant fill, like Apple (no scale — it reads as lag) */
+/* press: instant fill, like Apple (no scale, it reads as lag) */
 .kb-key.is-down {
   background: var(--kb-fn);
 }
@@ -3295,7 +3369,7 @@ html.has-cursor * {
   background: rgba(255, 255, 255, 0.14);
 }
 
-/* ── Phones: iMessage — a conversation, with Messages one tap back ── */
+/* ── Phones: iMessage, a conversation with Messages one tap back ── */
 
 @media (max-width: 900px) {
   .only-mob {
