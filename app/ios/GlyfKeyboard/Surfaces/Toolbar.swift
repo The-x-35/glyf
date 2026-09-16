@@ -317,10 +317,17 @@ final class GlyfToolbar: UIView {
             smartCard.layer.shadowColor = Glass.keyShadowColor.cgColor
             smartCard.accessibilityLabel = "\(chip.key) \(chip.value)"
         }
-        let hide = !smartCard.isHidden
-        scroll.isHidden = hide || panelTitle != nil
-        candidatesStack.isHidden = hide || panelTitle != nil || !showingCandidates
-        divider.isHidden = hide || Glass.siteLook
+        if smartCard.isHidden {
+            // No chip: back to whichever of tools / suggestions the strip was
+            // showing. Never both — they share the same space and used to
+            // draw over each other when a chip went away.
+            applyCandidatesVisibility(toolsVisible: !showingCandidates || userPinnedTools)
+        } else {
+            scroll.isHidden = true
+            candidatesStack.isHidden = true
+            divider.isHidden = true
+            runsChip.isHidden = true
+        }
         setNeedsLayout()
     }
 
