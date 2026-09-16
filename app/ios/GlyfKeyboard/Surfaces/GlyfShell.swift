@@ -6,6 +6,9 @@ protocol GlyfShellDelegate: AnyObject {
     func shellOpenApp(path: String)
     func shellStateChanged()
     func shellOpenSearch()
+    /// A tile that opens one of the keyboard's own surfaces (the website's
+    /// g menu): "search" | "emoji" | "translate" | "tones" | "ask".
+    func shellOpenSurface(_ id: String)
     /// Opens the note editor strip (nil id = new note).
     func shellEditNote(id: String?, text: String)
 }
@@ -49,6 +52,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     // MARK: State
 
     private var stack: [String] = ["root"]
+    /// True when a deeper screen is open: the strip shows the way back.
+    var canGoBack: Bool { stack.count > 1 }
     private var screen: Screen!
     private let header = UIView()
     private let backButton = UIButton(type: .system)
@@ -60,18 +65,21 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// Root renders as a launcher grid (Gboard/Launchpad pattern) — every
     /// deeper screen stays the reusable table.
     private let grid = UIView()
+    /// The vault draws as the website's 3-column card grid, not a list.
+    private let vaultGrid = UIScrollView()
+    private var vaultCards: [(label: String, value: String, insert: String)] = []
     private struct Tile { var icon: String; var title: String; var target: String }
+    /// The website's g menu: 4 x 2, in its order. "More" stands where the
+    /// site puts Wallet and holds everything the keyboard has beyond it.
     private static let rootTiles: [Tile] = [
         Tile(icon: "magnifyingglass", title: "Search", target: "!search"),
-        Tile(icon: "square.grid.2x2", title: "Glyfs", target: "glyfs"),
-        Tile(icon: "keyboard", title: "Glyf Keys", target: "keys"),
-        Tile(icon: "link", title: "Connectors", target: "connectors"),
-        // Vault carries notes now; Shorthand stands on its own (§6.7).
+        Tile(icon: "wand.and.stars", title: "Rewrite", target: "!tones"),
+        Tile(icon: "character.bubble", title: "Translate", target: "!translate"),
         Tile(icon: "person.text.rectangle", title: "Vault", target: "vault"),
-        Tile(icon: "bolt", title: "Shorthand", target: "shorthand"),
         Tile(icon: "doc.on.clipboard", title: "Clipboard", target: "clipboard"),
-        Tile(icon: "rectangle.stack", title: "Packs", target: "packs"),
-        Tile(icon: "gearshape", title: "Settings", target: "settings"),
+        Tile(icon: "face.smiling", title: "Emoji", target: "!emoji"),
+        Tile(icon: "sparkles", title: "Ask Glyf", target: "!ask"),
+        Tile(icon: "ellipsis.circle", title: "More", target: "more"),
     ]
 
     private static let stateFile = "shell-state.json"
@@ -106,6 +114,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
         buildGrid()
         addSubview(grid)
+        vaultGrid.alwaysBounceVertical = true
+        vaultGrid.showsVerticalScrollIndicator = false
+        addSubview(vaultGrid)
 
         footerButton.setTitle("Open in Glyf app ↗", for: .normal)
         footerButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
@@ -125,25 +136,32 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         let isRoot = screen.id == "root"
-        // The strip above carries the panel name and the close button on the
-        // website look, so the panel itself only needs a back arrow.
-        let headerH: CGFloat = Glass.siteLook ? (isRoot ? 0 : 30) : 36
-        titleLabel.isHidden = Glass.siteLook
-        closeButton.isHidden = Glass.siteLook
+        // In the website look the strip carries the title, the close button
+        // AND the way back, so the panel spends none of its 206pt on chrome.
+        let headerH: CGFloat = Glass.solidLook ? 0 : 36
+        titleLabel.isHidden = Glass.solidLook
+        closeButton.isHidden = Glass.solidLook
+        backButton.isHidden = Glass.solidLook || screen.id == "root"
         header.frame = CGRect(x: 0, y: 0, width: bounds.width, height: headerH)
         backButton.frame = CGRect(x: 4, y: 0, width: 44, height: headerH)
         closeButton.frame = CGRect(x: bounds.width - 48, y: 0, width: 44, height: headerH)
         titleLabel.frame = CGRect(x: 52, y: 0, width: bounds.width - 104, height: headerH)
-        let footerH: CGFloat = screen.showOpenInApp ? 30 : 0
-        table.isHidden = isRoot
+        let isVault = screen.id == "vault" && Glass.solidLook
+        // Grids fill the panel the way the website does; only list screens
+        // keep the "open in the app" line.
+        let footerH: CGFloat = screen.showOpenInApp && !isRoot && !isVault ? 30 : 0
+        table.isHidden = isRoot || isVault
         grid.isHidden = !isRoot
+        vaultGrid.isHidden = !isVault
         table.frame = CGRect(x: 0, y: headerH, width: bounds.width,
                              height: bounds.height - headerH - footerH)
         grid.frame = table.frame
+        vaultGrid.frame = table.frame
         if isRoot { layoutGrid() }
+        if isVault { layoutVaultGrid() }
         footerButton.frame = CGRect(x: 0, y: bounds.height - footerH,
                                     width: bounds.width, height: footerH)
-        footerButton.isHidden = !screen.showOpenInApp
+        footerButton.isHidden = footerH == 0
     }
 
     // MARK: Root launcher grid
@@ -155,36 +173,43 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             cell.accessibilityLabel = tile.title
             cell.accessibilityIdentifier = "shell:tile:\(tile.target)"
 
-            let chip = UIView()
-            chip.tag = 1
-            chip.backgroundColor = Glass.surfaceCard
-            chip.layer.cornerRadius = 16
-            chip.layer.cornerCurve = .continuous
-            chip.layer.borderWidth = 1
-            chip.layer.borderColor = Glass.strokeHairline.cgColor
-            chip.isUserInteractionEnabled = false
-            cell.addSubview(chip)
+            let card = UIView()
+            card.tag = 1
+            card.backgroundColor = Glass.surfaceCard
+            card.layer.cornerRadius = 14
+            card.layer.cornerCurve = .continuous
+            if Glass.solidLook {
+                card.layer.shadowColor = Glass.keyShadowColor.cgColor
+                card.layer.shadowOpacity = Glass.keyShadowOpacity
+                card.layer.shadowOffset = Glass.keyShadowOffset
+                card.layer.shadowRadius = 0
+            } else {
+                card.layer.borderWidth = 1
+                card.layer.borderColor = Glass.strokeHairline.cgColor
+            }
+            card.isUserInteractionEnabled = false
+            cell.addSubview(card)
 
             let icon = UIImageView(image: UIImage(systemName: tile.icon))
             icon.tag = 2
             icon.tintColor = Glass.textPrimary
             icon.contentMode = .center
-            icon.preferredSymbolConfiguration = .init(pointSize: 21, weight: .regular)
+            icon.preferredSymbolConfiguration = .init(pointSize: 22, weight: .regular)
             icon.isUserInteractionEnabled = false
             cell.addSubview(icon)
 
             let label = UILabel()
             label.tag = 3
             label.text = tile.title
-            label.font = .systemFont(ofSize: 11, weight: .medium)
-            label.textColor = Glass.textSecondary
+            label.font = .systemFont(ofSize: 12, weight: .medium)
+            label.textColor = Glass.textPrimary
             label.textAlignment = .center
             label.isUserInteractionEnabled = false
             cell.addSubview(label)
 
             cell.addAction(UIAction { [weak self] _ in
-                if tile.target == "!search" {
-                    self?.delegate?.shellOpenSearch()
+                if tile.target.hasPrefix("!") {
+                    self?.delegate?.shellOpenSurface(String(tile.target.dropFirst()))
                 } else {
                     self?.push(tile.target)
                 }
@@ -193,26 +218,104 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         }
     }
 
+    /// The website's grid: 4 x 2 with an 8pt gap, tiles filling the panel.
     private func layoutGrid() {
-        let cols = 4
-        let cellW = grid.bounds.width / CGFloat(cols)
+        let cols = 4, gap: CGFloat = 8, side: CGFloat = 6
         let rows = Int(ceil(Double(Self.rootTiles.count) / Double(cols)))
-        let cellH = min(92, max(78, grid.bounds.height / CGFloat(rows)))
-        let topPad = max(0, (grid.bounds.height - CGFloat(rows) * cellH) / 2 - 4)
+        let cellW = (grid.bounds.width - side * 2 - gap * CGFloat(cols - 1)) / CGFloat(cols)
+        let cellH = (grid.bounds.height - gap * CGFloat(rows - 1)) / CGFloat(rows)
         for case let cell as UIControl in grid.subviews {
             let i = cell.tag - 1000
             guard i >= 0, i < Self.rootTiles.count else { continue }
             let r = i / cols, c = i % cols
-            cell.frame = CGRect(x: CGFloat(c) * cellW, y: topPad + CGFloat(r) * cellH,
+            cell.frame = CGRect(x: side + CGFloat(c) * (cellW + gap),
+                                y: CGFloat(r) * (cellH + gap),
                                 width: cellW, height: cellH)
-            let chipSize: CGFloat = 52
-            let chip = cell.viewWithTag(1)
-            chip?.frame = CGRect(x: (cellW - chipSize) / 2, y: 6,
-                                 width: chipSize, height: chipSize)
-            cell.viewWithTag(2)?.frame = chip?.frame ?? .zero
-            cell.viewWithTag(3)?.frame = CGRect(x: 2, y: 6 + chipSize + 4,
-                                                width: cellW - 4, height: 14)
+            cell.viewWithTag(1)?.frame = cell.bounds
+            // Icon over caption, centred as a column with an 8pt gap.
+            let iconH: CGFloat = 26, capH: CGFloat = 15
+            let top = (cellH - iconH - 8 - capH) / 2
+            cell.viewWithTag(2)?.frame = CGRect(x: 0, y: top, width: cellW, height: iconH)
+            cell.viewWithTag(3)?.frame = CGRect(x: 2, y: top + iconH + 8,
+                                                width: cellW - 4, height: capH)
         }
+    }
+
+    // MARK: Vault grid (website 6.3)
+
+    /// Nine cards, three to a row: label above value, tap inserts.
+    private func buildVaultGrid() {
+        vaultGrid.subviews.forEach { $0.removeFromSuperview() }
+        let vault = VaultStore.shared.load()
+        vaultCards = vault.fields.map {
+            (label: $0.label.uppercased(), value: $0.value, insert: $0.value)
+        }
+        for note in NotesStore.shared.load() {
+            vaultCards.append((label: "NOTE", value: note.text, insert: note.text))
+        }
+        for (i, item) in vaultCards.enumerated() {
+            let cell = UIControl()
+            cell.tag = 2000 + i
+            cell.accessibilityLabel = item.label
+            cell.accessibilityIdentifier = "vault:card:\(i)"
+
+            let card = UIView()
+            card.tag = 1
+            card.backgroundColor = Glass.surfaceCard
+            card.layer.cornerRadius = 12
+            card.layer.cornerCurve = .continuous
+            card.layer.shadowColor = Glass.keyShadowColor.cgColor
+            card.layer.shadowOpacity = Glass.keyShadowOpacity
+            card.layer.shadowOffset = Glass.keyShadowOffset
+            card.layer.shadowRadius = 0
+            card.isUserInteractionEnabled = false
+            cell.addSubview(card)
+
+            let label = UILabel()
+            label.tag = 2
+            label.attributedText = NSAttributedString(
+                string: item.label,
+                attributes: [.kern: 0.44,
+                             .font: UIFont.systemFont(ofSize: 11, weight: .semibold),
+                             .foregroundColor: Glass.textSecondary])
+            label.isUserInteractionEnabled = false
+            cell.addSubview(label)
+
+            let value = UILabel()
+            value.tag = 3
+            value.text = item.value
+            value.font = .systemFont(ofSize: 13, weight: .medium)
+            value.textColor = Glass.textPrimary
+            value.lineBreakMode = .byTruncatingTail
+            value.isUserInteractionEnabled = false
+            cell.addSubview(value)
+
+            cell.addAction(UIAction { [weak self] _ in
+                self?.delegate?.shellInsertText(item.insert)
+            }, for: .touchUpInside)
+            vaultGrid.addSubview(cell)
+        }
+    }
+
+    private func layoutVaultGrid() {
+        let cols = 3, gap: CGFloat = 6, side: CGFloat = 6
+        let w = (vaultGrid.bounds.width - side * 2 - gap * CGFloat(cols - 1)) / CGFloat(cols)
+        let rows = max(1, Int(ceil(Double(vaultCards.count) / Double(cols))))
+        // Three rows fill the panel exactly; more than nine cards scroll.
+        let h = (vaultGrid.bounds.height - gap * 2) / 3
+        for case let cell as UIControl in vaultGrid.subviews {
+            let i = cell.tag - 2000
+            guard i >= 0, i < vaultCards.count else { continue }
+            let r = i / cols, c = i % cols
+            cell.frame = CGRect(x: side + CGFloat(c) * (w + gap),
+                                y: CGFloat(r) * (h + gap), width: w, height: h)
+            cell.viewWithTag(1)?.frame = cell.bounds
+            let top = (h - 15 - 2 - 17) / 2
+            cell.viewWithTag(2)?.frame = CGRect(x: 8, y: top, width: w - 16, height: 15)
+            cell.viewWithTag(3)?.frame = CGRect(x: 8, y: top + 17, width: w - 16, height: 17)
+        }
+        vaultGrid.contentSize = CGSize(width: vaultGrid.bounds.width,
+                                       height: CGFloat(rows) * (h + gap) - gap)
     }
 
     // MARK: Navigation
@@ -222,7 +325,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         render()
     }
 
-    private func back() {
+    func back() {
         if stack.count > 1 {
             stack.removeLast()
             render()
@@ -243,6 +346,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         screen = Self.build(id: stack.last ?? "root")
         titleLabel.text = screen.title
         backButton.isHidden = screen.id == "root"
+        if screen.id == "vault", Glass.solidLook { buildVaultGrid() }
         table.reloadData()
         saveState()
         setNeedsLayout()
@@ -289,6 +393,18 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                 .nav(icon: "gearshape", title: "Settings", detail: nil, target: "settings"),
                 .nav(icon: "person.crop.circle", title: "Account", detail: nil, target: "account"),
             ], showOpenInApp: true)
+
+        case "more":
+            return Screen(id: id, title: "More", rows: [
+                .nav(icon: "square.grid.2x2", title: "Glyfs", detail: nil, target: "glyfs"),
+                .nav(icon: "keyboard", title: "Glyf Keys", detail: nil, target: "keys"),
+                .nav(icon: "bolt", title: "Shorthand", detail: nil, target: "shorthand"),
+                .nav(icon: "note.text", title: "Notes", detail: nil, target: "notes"),
+                .nav(icon: "link", title: "Connectors", detail: nil, target: "connectors"),
+                .nav(icon: "rectangle.stack", title: "Packs", detail: nil, target: "packs"),
+                .nav(icon: "gearshape", title: "Settings", detail: nil, target: "settings"),
+                .nav(icon: "person.crop.circle", title: "Account", detail: nil, target: "account"),
+            ], showOpenInApp: false)
 
         case "settings":
             return Screen(id: id, title: "Settings", rows: [

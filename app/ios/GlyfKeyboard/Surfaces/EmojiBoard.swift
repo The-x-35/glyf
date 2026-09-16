@@ -71,10 +71,12 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
                             for: .touchUpInside)
         addSubview(abcButton)
 
+        // Website metrics: cells at least 42 wide auto-fill the panel, 2pt
+        // gaps, 42 tall, glyph 25pt (sized per width in layoutSubviews).
         let layout = UICollectionViewFlowLayout()
-        layout.itemSize = CGSize(width: 38, height: 38)
+        layout.itemSize = CGSize(width: 42, height: 42)
         layout.minimumInteritemSpacing = 2
-        layout.minimumLineSpacing = 4
+        layout.minimumLineSpacing = 2
         collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collection.backgroundColor = .clear
         collection.dataSource = self
@@ -270,6 +272,14 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
             collection.frame = CGRect(x: 8, y: 44, width: bounds.width - 16,
                                       height: bounds.height - 44 - 40)
         }
+        // Auto-fill: as many 42pt columns as fit, sharing the slack evenly.
+        if let flow = collection.collectionViewLayout as? UICollectionViewFlowLayout {
+            let gap: CGFloat = 2
+            let cols = max(1, floor((collection.bounds.width + gap) / (42 + gap)))
+            let w = (collection.bounds.width - gap * (cols - 1)) / cols
+            let size = CGSize(width: floor(w), height: 42)
+            if flow.itemSize != size { flow.itemSize = size; flow.invalidateLayout() }
+        }
     }
 }
 
@@ -277,7 +287,7 @@ private final class EmojiCell: UICollectionViewCell {
     let label = UILabel()
     override init(frame: CGRect) {
         super.init(frame: frame)
-        label.font = .systemFont(ofSize: 28)
+        label.font = .systemFont(ofSize: 25)
         label.textAlignment = .center
         contentView.addSubview(label)
     }

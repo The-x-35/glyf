@@ -7,6 +7,8 @@ protocol ToolbarDelegate: AnyObject {
     func toolbarSuggestionTapped(_ suggestion: GlyfToolbar.Suggestion)
     /// The strip's close button while a panel is open (website behaviour).
     func toolbarCloseTapped()
+    /// The chevron beside a panel title: go back a screen inside the panel.
+    func toolbarBackTapped()
     /// The smart chip (a sum just typed, or a saved detail the sentence asks
     /// for) was tapped.
     func toolbarSmartTapped(_ chip: Smart.Chip)
@@ -30,6 +32,9 @@ final class GlyfToolbar: UIView {
     /// turns into a close button and the rest becomes "icon + panel name".
     private let panelLabel = UILabel()
     private let panelIcon = UIImageView()
+    /// Deeper panel screens keep their way back in the strip, so the panel
+    /// itself never spends a row on a chevron.
+    private let panelBack = UIButton(type: .system)
     private(set) var panelTitle: String?
     /// Smart chip: one card across the strip, accent key then value.
     private let smartCard = UIControl()
@@ -116,6 +121,16 @@ final class GlyfToolbar: UIView {
         panelLabel.textColor = Glass.textPrimary
         panelLabel.isHidden = true
         addSubview(panelLabel)
+        panelBack.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+        panelBack.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold), forImageIn: .normal)
+        panelBack.tintColor = Glass.textPrimary
+        panelBack.isHidden = true
+        panelBack.accessibilityIdentifier = "toolbar:back"
+        panelBack.accessibilityLabel = "Back"
+        panelBack.addAction(UIAction { [weak self] _ in self?.delegate?.toolbarBackTapped() },
+                            for: .touchUpInside)
+        addSubview(panelBack)
 
         smartCard.backgroundColor = Glass.fillKey
         smartCard.layer.cornerRadius = 12
@@ -193,8 +208,9 @@ final class GlyfToolbar: UIView {
 
     /// Panel open: title + icon in the strip, brand pill becomes a close
     /// button. `nil` restores the tools.
-    func showPanelHeader(icon: String?, title: String?) {
+    func showPanelHeader(icon: String?, title: String?, canGoBack: Bool = false) {
         panelTitle = title
+        panelBack.isHidden = !(title != nil && canGoBack)
         let open = title != nil
         panelLabel.text = title
         panelLabel.isHidden = !open
@@ -369,8 +385,13 @@ final class GlyfToolbar: UIView {
                                       height: cardH)
         }
         if panelTitle != nil {
-            panelIcon.frame = CGRect(x: left, y: (h - 24) / 2, width: 24, height: 24)
-            let textX = panelIcon.isHidden ? left : left + 30
+            var x = left
+            if !panelBack.isHidden {
+                panelBack.frame = CGRect(x: x - 4, y: 0, width: 30, height: h)
+                x += 28
+            }
+            panelIcon.frame = CGRect(x: x, y: (h - 24) / 2, width: 24, height: 24)
+            let textX = panelIcon.isHidden ? x : x + 30
             panelLabel.frame = CGRect(x: textX, y: 0, width: bounds.width - textX - 10, height: h)
         }
         scroll.frame = CGRect(x: left, y: 0, width: width, height: h)

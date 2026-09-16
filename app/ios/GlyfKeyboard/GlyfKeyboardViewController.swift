@@ -360,7 +360,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let header = panelHeader()
         if lastPanelTitle != .some(header.1) {
             lastPanelTitle = .some(header.1)
-            toolbar.showPanelHeader(icon: header.0, title: header.1)
+            toolbar.showPanelHeader(icon: header.0, title: header.1,
+                                    canGoBack: shell?.canGoBack == true)
         }
         let showHUD = surface == .none && hudActive
         hud?.isHidden = !showHUD
@@ -1330,6 +1331,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     /// The strip's close button: whatever panel is open goes away.
+    func toolbarBackTapped() {
+        shell?.back()
+    }
+
     func toolbarCloseTapped() {
         setSurface(.none)
     }
@@ -1453,11 +1458,23 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         // The strip shows which panel screen is open.
         let header = panelHeader()
         lastPanelTitle = .some(header.1)
-        toolbar.showPanelHeader(icon: header.0, title: header.1)
+        toolbar.showPanelHeader(icon: header.0, title: header.1,
+                                canGoBack: shell?.canGoBack == true)
     }
 
     func shellOpenSearch() {
         setSurface(.search)
+    }
+
+    func shellOpenSurface(_ id: String) {
+        switch id {
+        case "search": setSurface(.search)
+        case "emoji": setSurface(.emoji)
+        case "tones": setSurface(.none); showTonesPopup()
+        case "translate": setSurface(.none); openBar(autoRun: "glyf.translate")
+        case "ask": setSurface(.none); openBar(autoRun: nil)
+        default: break
+        }
     }
 
     func shellEditNote(id: String?, text: String) {
