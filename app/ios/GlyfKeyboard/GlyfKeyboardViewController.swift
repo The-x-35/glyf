@@ -110,7 +110,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
         switch surface {
         case .none:
             return base + (hudActive ? Glass.toolbarHeight : 0)
-                + (clipStrip != nil ? Glass.toolbarHeight : 0)
         case .emoji:
             // Searching collapses the board to a strip ABOVE the letter
             // keys, so the surface needs room for both.
@@ -378,17 +377,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         let showHUD = surface == .none && hudActive
         hud?.isHidden = !showHUD
-        clipStrip?.isHidden = surface != .none
         switch surface {
         case .none:
             var y: CGFloat = 0
             if showHUD {
                 ensureHUD().frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
                 y = Glass.toolbarHeight
-            }
-            if let clipStrip {
-                clipStrip.frame = CGRect(x: 0, y: y, width: w, height: Glass.toolbarHeight)
-                y += Glass.toolbarHeight
             }
             toolbar.isHidden = false
             toolbar.frame = CGRect(x: 0, y: y, width: w, height: Glass.toolbarHeight)
@@ -718,11 +712,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         let before = textDocumentProxy.documentContextBeforeInput ?? ""
         let tail = String(before.suffix(120))
-        // Something just copied is offered while the field is still empty —
-        // but only what history already holds, so the chip never has to read
-        // the pasteboard (that is the Paste button's job, alert-free).
+        // Something just copied rides in the strip as one chip, never as a
+        // second row: history's copy when we already have it, otherwise the
+        // offer itself (tapping reads, which is the moment iOS asks).
         let paste: String? = (hasFullAccess && tail.isEmpty && ClipContext.isFresh())
-            ? ClipboardStore.load().first?.text : nil
+            ? (ClipboardStore.load().first?.text ?? "Tap to paste what you copied")
+            : nil
         let chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields, paste: paste)
         toolbar.showSmart(chip)
         return chip != nil
@@ -1047,20 +1042,10 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
 
     /// Offers a recent copy above the toolbar — without reading it: only the
     /// user's tap reads the pasteboard (§ paste-prompt rule).
+    /// Kept as the one place that reacts to a fresh copy: the offer now
+    /// lives in the strip as a chip, so there is never a second row.
     private func refreshClipStrip(animated: Bool) {
-        let wanted = hasFullAccess && !isSecureField && surface == .none && ClipContext.isFresh()
-        if wanted, clipStrip == nil {
-            let strip = ClipContextStrip()
-            strip.delegate = self
-            content.addSubview(strip)
-            clipStrip = strip
-        } else if !wanted, let strip = clipStrip {
-            strip.removeFromSuperview()
-            clipStrip = nil
-        } else {
-            return
-        }
-        applySurfaceLayout(animated: animated)
+        updateCandidates()
     }
 
     private func removeClipStrip() {
@@ -1446,10 +1431,19 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
 
     func toolbarSmartTapped(_ chip: Smart.Chip) {
         if case .paste(let text) = chip {
-            // The chip only ever carries text history already has, so the tap
-            // types it straight out with no pasteboard read.
+            // History's copy types straight out; the placeholder means we do
+            // not have the text yet, so the tap is the intent that reads it.
             ClipContext.markDone()
-            textDocumentProxy.insertText(text)
+            if text == "Tap to paste what you copied" {
+                guard let read = UIPasteboard.general.string, !read.isEmpty else {
+                    toolbar.showSmart(nil)
+                    return
+                }
+                remember(copied: read)
+                textDocumentProxy.insertText(read)
+            } else {
+                textDocumentProxy.insertText(text)
+            }
         } else {
             textDocumentProxy.insertText(chip.insert)
         }
