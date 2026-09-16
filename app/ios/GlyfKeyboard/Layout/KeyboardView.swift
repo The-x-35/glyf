@@ -130,14 +130,13 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         super.layoutSubviews()
         guard !rows.isEmpty, bounds.width > 100 else { return }
         let s = SettingsStore.current
-        // Measured off the system keyboard on a 402pt phone (iOS 26): the
-        // keys sit on a 10-column grid, 6.5pt side margins, 39.5pt column
-        // pitch, 6pt gaps → 33.5pt letters, 54pt rows, 42pt tall. Matching
-        // this to the point is what keeps muscle memory intact.
-        let hGap: CGFloat = 6
-        let vGap: CGFloat = 12
-        var left: CGFloat = 6.5
-        var right: CGFloat = 6.5
+        // Every number here is measured off the system keyboard (KeyMetrics):
+        // a 10-column grid with constant margins and gaps, so the keys land
+        // where iOS puts them on whatever phone this is.
+        let hGap = KeyMetrics.hGap
+        let vGap = KeyMetrics.vGap
+        var left = KeyMetrics.sideMargin
+        var right = KeyMetrics.sideMargin
         if s.oneHanded == "left" { right += 56 }
         if s.oneHanded == "right" { left += 56 }
         let availW = bounds.width - left - right
@@ -160,9 +159,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             let y = CGFloat(r) * rowH + vGap / 2
             for spec in row {
                 let units = spec.units < 0 ? flexUnits : spec.units
-                let air = spec.gapUnits * keyPitch
-                let w = units * keyPitch - hGap - air
-                keys[idx].frame = CGRect(x: spec.gapLeading ? x + air : x, y: y,
+                let block = units * keyPitch - hGap
+                // shift / delete / mode sit at 1.35 letters, which leaves the
+                // wider gap iOS draws beside them.
+                let w = spec.sideKey ? KeyMetrics.sideKeyWidth(keyWidth: unitWidth) : block
+                keys[idx].frame = CGRect(x: spec.gapLeading ? x + block - w : x, y: y,
                                          width: w, height: keyH)
                 x += units * keyPitch
                 idx += 1

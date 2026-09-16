@@ -6,6 +6,43 @@ import UIKit
 /// surface is rebuilt on change, so tokens are plain computed values.
 /// The APP stays white-only; the one accent (#7C5CFF) survives solely as the
 /// bound-key dot / focus color, exactly like the logo.
+/// The system keyboard's own geometry, measured off iOS 26 on four widths
+/// (390, 402, 420 and 440pt) rather than guessed: the margins and gaps are
+/// the same on every phone, the key width falls out of the screen width, and
+/// the row height steps up once on Plus/Max-class phones. Matching this is
+/// what makes Glyf feel like the keyboard people already know.
+///
+///     width  margin  gap  key     pitch   row     key height
+///     390    6.67    6    32.33   38.33   53.8    42
+///     402    6.67    6    33.47   39.47   53.8    42
+///     420    6.67    6    35.27   41.27   55.9    44
+///     440    6.67    6    37.27   43.27   55.9    44
+enum KeyMetrics {
+    /// Left and right edge inset. Constant across every phone width.
+    static let sideMargin: CGFloat = 6.67
+    /// Gap between keys in a row. Constant.
+    static let hGap: CGFloat = 6
+    /// Row pitch minus key height. Constant.
+    static let vGap: CGFloat = 12
+    /// Plus/Max-class phones (414pt and wider) get the taller key rows.
+    static let wideClassWidth: CGFloat = 414
+
+    static func keyWidth(width: CGFloat) -> CGFloat {
+        (width - sideMargin * 2 - hGap * 9) / 10
+    }
+    /// Column pitch: one letter plus one gap.
+    static func pitch(width: CGFloat) -> CGFloat { keyWidth(width: width) + hGap }
+    static func rowPitch(width: CGFloat) -> CGFloat {
+        width >= wideClassWidth ? 56 : 54
+    }
+    /// The key region: four rows, 216pt on standard phones and 224 on the
+    /// wide class — the same numbers the system keyboard uses.
+    static func keysHeight(width: CGFloat) -> CGFloat { rowPitch(width: width) * 4 }
+    /// shift, delete and the third-row mode key: a shade over 1.35 letters
+    /// (measured 43.66 / 45.3 / 47.66 / 50.0 against 1.35x).
+    static func sideKeyWidth(keyWidth: CGFloat) -> CGFloat { keyWidth * 1.35 }
+}
+
 enum Glass {
 
     /// Resolved by the keyboard VC from settings + host appearance.
@@ -290,12 +327,14 @@ enum Glass {
         static let reducedMotionFlash: TimeInterval = 0.12
     }
 
-    // MARK: Heights — APPLE STANDARD. Total 260pt portrait: 44 toolbar
-    // (like QuickType) + 216 keys, exactly the system keyboard's key region.
+    // MARK: Heights — APPLE STANDARD. 44pt strip (like QuickType) over the
+    // system keyboard's own key region, whose size comes from KeyMetrics.
 
     static let toolbarHeight: CGFloat = 44
-    static let keysHeight: CGFloat = 216
-    static let keyboardBaseHeight: CGFloat = 260
+    static func keysHeight(width: CGFloat) -> CGFloat { KeyMetrics.keysHeight(width: width) }
+    static func keyboardBaseHeight(width: CGFloat) -> CGFloat {
+        toolbarHeight + keysHeight(width: width)
+    }
     static let numberRowExtra: CGFloat = 42
     static let barExtra: CGFloat = 96      // §5.2
     static let shellExtra: CGFloat = 140   // §6.3

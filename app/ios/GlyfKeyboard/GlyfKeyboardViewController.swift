@@ -91,8 +91,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
     // MARK: Heights
 
     private var keysHeight: CGFloat {
-        SettingsStore.current.numberRow
-            ? Glass.keysHeight + Glass.numberRowExtra : Glass.keysHeight
+        // The key region is the system keyboard's own, which is taller on
+        // Plus/Max-class phones — never a number baked in for one device.
+        let w = view.bounds.width > 0 ? view.bounds.width
+                                      : UIScreen.main.bounds.width
+        let base = Glass.keysHeight(width: w)
+        return SettingsStore.current.numberRow ? base + Glass.numberRowExtra : base
     }
 
     /// §6.13 T: the Translation HUD adds a 44pt strip while enabled — never
@@ -220,6 +224,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         SettingsStore.invalidate()
+        // The translate strip belongs to the session it was opened in. Left
+        // persisted it greets the next app as an unexplained empty band.
+        if SettingsStore.current.translationHUD == true {
+            SettingsStore.update { $0.translationHUD = false }
+            hud?.removeFromSuperview()
+            hud = nil
+        }
         VaultStore.shared.invalidate() // the app may have edited the vault
         resolveAppearance() // BEFORE building — tokens feed every surface
         if !didBuild {
@@ -349,6 +360,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
         default: return (nil, nil)
         }
     }
+
+    /// The tool being dragged onto or around the strip, and its ghost.
+    private var draggingToolId: String?
+    private var dragGhost: UIImageView?
 
     private var lastPanelTitle: String??
 
@@ -1325,8 +1340,99 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarItemLongPressed(_ id: String) {
+        // Superseded by the drag gesture; kept so a plain hold with no drag
+        // still opens the place where the strip is edited by hand.
         setSurface(.shell)
         shell?.push(id == "settings" ? "settings" : "toolbar")
+    }
+
+    // MARK: Strip customising (hold a tool, drag it)
+
+    func toolbarItemDragBegan(_ id: String, at windowPoint: CGPoint) {
+        beginToolDrag(id: id, icon: GlyfToolbar.icons[id] ?? "square", at: windowPoint)
+    }
+
+    func toolbarItemDragMoved(to windowPoint: CGPoint) { moveToolDrag(to: windowPoint) }
+
+    func toolbarItemDragEnded(_ id: String, at windowPoint: CGPoint) {
+        let inStrip = toolbarContains(windowPoint)
+        endToolDrag()
+        SettingsStore.update { s in
+            s.toolbarOrder.removeAll { $0 == id }
+            if inStrip {
+                let idx = min(max(0, toolbar.dropIndex(for: toolbar.convert(windowPoint, from: nil))),
+                              s.toolbarOrder.count)
+                s.toolbarOrder.insert(id, at: idx)
+                s.toolbarHidden.removeAll { $0 == id }
+            } else {
+                // Dragged off the strip: put it away, findable in the g menu.
+                if !s.toolbarHidden.contains(id) { s.toolbarHidden.append(id) }
+                s.toolbarOrder.append(id)
+            }
+        }
+        toolbar.reloadItems()
+        if !inStrip { KeyboardToast.show(in: content, text: "Removed from the strip") }
+    }
+
+    func shellTileDragBegan(_ id: String, icon: String, at windowPoint: CGPoint) {
+        beginToolDrag(id: id, icon: GlyfToolbar.icons[id] ?? icon, at: windowPoint)
+    }
+
+    func shellTileDragMoved(to windowPoint: CGPoint) { moveToolDrag(to: windowPoint) }
+
+    func shellTileDragEnded(at windowPoint: CGPoint) {
+        guard let id = draggingToolId else { return }
+        let inStrip = toolbarContains(windowPoint)
+        endToolDrag()
+        guard inStrip else { return }
+        SettingsStore.update { s in
+            s.toolbarHidden.removeAll { $0 == id }
+            s.toolbarOrder.removeAll { $0 == id }
+            let idx = min(max(0, toolbar.dropIndex(for: toolbar.convert(windowPoint, from: nil))),
+                          s.toolbarOrder.count)
+            s.toolbarOrder.insert(id, at: idx)
+        }
+        toolbar.reloadItems()
+        setSurface(.none)
+        KeyboardToast.show(in: content, text: "Added to the strip")
+    }
+
+    private func beginToolDrag(id: String, icon: String, at windowPoint: CGPoint) {
+        draggingToolId = id
+        let ghost = UIImageView(image: UIImage(systemName: icon))
+        ghost.preferredSymbolConfiguration = .init(pointSize: 22, weight: .regular)
+        ghost.tintColor = Glass.textPrimary
+        ghost.contentMode = .center
+        ghost.backgroundColor = Glass.surfaceCard
+        ghost.layer.cornerRadius = 12
+        ghost.layer.cornerCurve = .continuous
+        ghost.layer.shadowColor = UIColor.black.cgColor
+        ghost.layer.shadowOpacity = 0.18
+        ghost.layer.shadowRadius = 8
+        ghost.layer.shadowOffset = CGSize(width: 0, height: 3)
+        ghost.bounds = CGRect(x: 0, y: 0, width: 44, height: 44)
+        ghost.center = content.convert(windowPoint, from: nil)
+        content.addSubview(ghost)
+        dragGhost = ghost
+        moveToolDrag(to: windowPoint)
+    }
+
+    private func moveToolDrag(to windowPoint: CGPoint) {
+        dragGhost?.center = content.convert(windowPoint, from: nil)
+        toolbar.showDropMarker(at: toolbarContains(windowPoint)
+                               ? toolbar.convert(windowPoint, from: nil) : nil)
+    }
+
+    private func endToolDrag() {
+        dragGhost?.removeFromSuperview()
+        dragGhost = nil
+        draggingToolId = nil
+        toolbar.showDropMarker(at: nil)
+    }
+
+    private func toolbarContains(_ windowPoint: CGPoint) -> Bool {
+        let p = toolbar.convert(windowPoint, from: nil)
+        return toolbar.bounds.insetBy(dx: -8, dy: -10).contains(p)
     }
 
     /// The strip's close button: whatever panel is open goes away.
@@ -1604,6 +1710,16 @@ extension GlyfKeyboardViewController: EmojiBoardDelegate {
 
     func emojiPicked(_ emoji: String) {
         textDocumentProxy.insertText(emoji)
+    }
+
+    func emojiBackToLetters() {
+        setSurface(.none)
+    }
+
+    func emojiDeleteBackward() {
+        textDocumentProxy.deleteBackward()
+        syncAutoShift()
+        updateCandidates()
     }
 
     func emojiBoardClosed() {

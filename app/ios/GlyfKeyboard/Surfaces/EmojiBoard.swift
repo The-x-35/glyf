@@ -3,6 +3,10 @@ import UIKit
 protocol EmojiBoardDelegate: AnyObject {
     func emojiPicked(_ emoji: String)
     func emojiBoardClosed()
+    /// The ABC key: back to the letters, exactly like the system keyboard.
+    func emojiBackToLetters()
+    /// The backspace at the far end of the category row, also Apple's.
+    func emojiDeleteBackward()
     func emojiSearchActivated(_ editor: InlineEditor)
     /// Search opened/closed — the board collapses to a strip so the LETTER
     /// KEYS can show underneath (Apple/Gboard behavior).
@@ -19,6 +23,11 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
     private let searchEditor = InlineEditor(placeholder: "Search emoji")
     private let closeButton = UIButton(type: .system)
     private let abcButton = UIButton(type: .system)
+    /// Apple's emoji keyboard keeps ABC bottom-left and ⌫ bottom-right, on
+    /// either side of the category row. People reach for both without
+    /// looking, so they are here too.
+    private let lettersButton = UIButton(type: .system)
+    private let deleteButton = UIButton(type: .system)
     /// While true the board is a strip (field + one result row) and the
     /// keyboard's letter keys are visible below it.
     private(set) var searchActive = false
@@ -86,6 +95,23 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         long.minimumPressDuration = 0.35
         collection.addGestureRecognizer(long)
         addSubview(collection)
+
+        lettersButton.setTitle("ABC", for: .normal)
+        lettersButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .regular)
+        lettersButton.setTitleColor(Glass.textPrimary, for: .normal)
+        lettersButton.accessibilityIdentifier = "emoji:letters"
+        lettersButton.addAction(UIAction { [weak self] _ in
+            self?.delegate?.emojiBackToLetters()
+        }, for: .touchUpInside)
+        addSubview(lettersButton)
+
+        deleteButton.setImage(UIImage(systemName: "delete.left"), for: .normal)
+        deleteButton.tintColor = Glass.textPrimary
+        deleteButton.accessibilityIdentifier = "emoji:delete"
+        deleteButton.addAction(UIAction { [weak self] _ in
+            self?.delegate?.emojiDeleteBackward()
+        }, for: .touchUpInside)
+        addSubview(deleteButton)
 
         tabs.axis = .horizontal
         tabs.distribution = .fillEqually
@@ -265,10 +291,17 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
             searchEditor.frame = CGRect(x: 54, y: 6, width: bounds.width - 96, height: 32)
             closeButton.frame = CGRect(x: bounds.width - 40, y: 6, width: 32, height: 32)
             collection.frame = CGRect(x: 8, y: 46, width: bounds.width - 16, height: 44)
+            lettersButton.isHidden = true
+            deleteButton.isHidden = true
         } else {
             searchEditor.frame = CGRect(x: 8, y: 6, width: bounds.width - 52, height: 32)
             closeButton.frame = CGRect(x: bounds.width - 40, y: 6, width: 32, height: 32)
-            tabs.frame = CGRect(x: 4, y: bounds.height - 38, width: bounds.width - 8, height: 34)
+            let barY = bounds.height - 38
+            lettersButton.isHidden = false
+            deleteButton.isHidden = false
+            lettersButton.frame = CGRect(x: 4, y: barY, width: 46, height: 34)
+            deleteButton.frame = CGRect(x: bounds.width - 48, y: barY, width: 44, height: 34)
+            tabs.frame = CGRect(x: 54, y: barY, width: bounds.width - 108, height: 34)
             collection.frame = CGRect(x: 8, y: 44, width: bounds.width - 16,
                                       height: bounds.height - 44 - 40)
         }

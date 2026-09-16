@@ -19,11 +19,11 @@ struct KeySpec: Equatable {
     /// on: one letter is 1, and every row adds up to 10. -1 = fill remaining
     /// (space bar). Measured against iOS: see KeyboardView.layoutSubviews.
     var units: CGFloat = 1
-    /// Air the system leaves beside shift/delete/#+= : the key keeps its
-    /// column but gives this fraction of a pitch back on one side, which is
-    /// what makes the gap next to those keys wider than 6pt.
-    var gapUnits: CGFloat = 0
-    /// Which side the air is on (delete/return keep their right edge).
+    /// shift, delete and the third row's mode key: they keep their column
+    /// but are drawn at KeyMetrics.sideKeyWidth, which is what leaves the
+    /// wider gap iOS draws between them and the letters.
+    var sideKey: Bool = false
+    /// Which side the air is on (delete keeps its right edge).
     var gapLeading: Bool = false
     var accents: [String] = []
 
@@ -134,10 +134,10 @@ enum KeyboardLayout {
     }
 
     /// shift, delete and the mode key on the third row: one and a half
-    /// columns each, with 0.2 of a column given back as air toward the
-    /// letters (iOS draws them 45.3pt wide at a 39.5pt pitch).
+    /// columns each, drawn at 1.35 letters so the air beside them matches
+    /// the system keyboard on every phone width.
     private static func side(_ kind: KeySpec.Kind, leading: Bool = false) -> KeySpec {
-        KeySpec(kind: kind, units: 1.5, gapUnits: 0.2, gapLeading: leading)
+        KeySpec(kind: kind, units: 1.5, sideKey: true, gapLeading: leading)
     }
 
     private static func wide(_ spec: KeySpec) -> KeySpec {

@@ -31,6 +31,7 @@
 		49740A143ABEAF1269AAC45E /* Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */; };
 		4ADAFEE41C95B9EC1027E1D1 /* TranslationHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EBDAF6797DA60917F2CADBD /* TranslationHUD.swift */; };
 		4B759E29785C7F2263CF60D4 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D580A139E7DF9CB049153E03 /* KeyboardLayout.swift */; };
+		50553C7711A43B097A732A2B /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7508C7D7086528DBA50605BC /* GlassTokens.swift */; };
 		5B4D75708ECDD5C6F417F4D2 /* Smart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 397338FD53A5248DAFEBD08F /* Smart.swift */; };
 		5C544F3EFFA3927D874C208B /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		5E0A6309E93806626CBD55BA /* TypingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF986CE579005D015F108B53 /* TypingStore.swift */; };
@@ -46,6 +47,7 @@
 		766B89438D8A7F5C1E326099 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60BFE26B50FE956967CF026 /* SettingsStore.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		7B15D2A5E11C0989CAE367E6 /* IntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B2E745F387CCCC496C13F0 /* IntentStore.swift */; };
+		7F06F8B50C201C5ADE91869E /* KeyMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */; };
 		86507FC08D2603FB1EEAF708 /* SearchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E6DFEACD2A44AAB2AA5FA2 /* SearchCard.swift */; };
 		8B014813759E3E3B13C1E7A5 /* SearchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E6DFEACD2A44AAB2AA5FA2 /* SearchCard.swift */; };
 		8CDFDA410E29956D1735FA6D /* Autocorrect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06CC38085C3400E0BFBEF26D /* Autocorrect.swift */; };
@@ -180,6 +182,7 @@
 		4DDCD668B425F7D836701C6A /* IntentStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IntentStoreTests.swift; sourceTree = "<group>"; };
 		4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Decoder.swift; sourceTree = "<group>"; };
 		4E97DFE2A588F7A69880F23A /* InlineEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InlineEditor.swift; sourceTree = "<group>"; };
+		50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyMetricsTests.swift; sourceTree = "<group>"; };
 		58E1EBDDAEBB9FDE7F264EF4 /* GlyfM0UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GlyfM0UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5950219DD87CBFD3056204A6 /* PersonalLexicon.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PersonalLexicon.swift; sourceTree = "<group>"; };
 		5D8C4C96456B2A323C0EE8F0 /* GlyfCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfCatalog.swift; sourceTree = "<group>"; };
@@ -268,6 +271,7 @@
 				4DDCD668B425F7D836701C6A /* IntentStoreTests.swift */,
 				79A18448EF0F4C763B35281E /* VaultTests.swift */,
 				BAEEBB996F46607AAF62836B /* TypingEngineTests.swift */,
+				50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -763,6 +767,8 @@
 				9593A6FEA7701CB8761D55D2 /* TypingText.swift in Sources */,
 				C58CCEE4FC6D7CCD5835BF2F /* TypingEngineTests.swift in Sources */,
 				5B4D75708ECDD5C6F417F4D2 /* Smart.swift in Sources */,
+				50553C7711A43B097A732A2B /* GlassTokens.swift in Sources */,
+				7F06F8B50C201C5ADE91869E /* KeyMetricsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -9,6 +9,10 @@ protocol GlyfShellDelegate: AnyObject {
     /// A tile that opens one of the keyboard's own surfaces (the website's
     /// g menu): "search" | "emoji" | "translate" | "tones" | "ask".
     func shellOpenSurface(_ id: String)
+    /// A tile held and dragged: it can be dropped on the strip to live there.
+    func shellTileDragBegan(_ id: String, icon: String, at windowPoint: CGPoint)
+    func shellTileDragMoved(to windowPoint: CGPoint)
+    func shellTileDragEnded(at windowPoint: CGPoint)
     /// Opens the note editor strip (nil id = new note).
     func shellEditNote(id: String?, text: String)
 }
@@ -214,7 +218,49 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                     self?.push(tile.target)
                 }
             }, for: .touchUpInside)
+            // Hold a tile and drag it onto the strip to keep it there — the
+            // way you rearrange a launcher.
+            let drag = UILongPressGestureRecognizer(target: self, action: #selector(tileDrag(_:)))
+            drag.minimumPressDuration = 0.3
+            drag.allowableMovement = .greatestFiniteMagnitude
+            cell.addGestureRecognizer(drag)
             grid.addSubview(cell)
+        }
+    }
+
+    /// The strip id a tile stands for, or nil when it cannot live there.
+    private static func stripId(for target: String) -> String? {
+        switch target {
+        case "!search": return "search"
+        case "!emoji": return "emoji"
+        case "!translate": return "translate"
+        case "!tones": return "rewrite"
+        case "!ask": return "ask"
+        case "vault": return "vault"
+        case "clipboard": return "clipboard"
+        case "settings": return "settings"
+        default: return nil
+        }
+    }
+
+    @objc private func tileDrag(_ g: UILongPressGestureRecognizer) {
+        guard let cell = g.view as? UIControl else { return }
+        let i = cell.tag - 1000
+        guard i >= 0, i < Self.rootTiles.count else { return }
+        let tile = Self.rootTiles[i]
+        let point = cell.convert(g.location(in: cell), to: window)
+        switch g.state {
+        case .began:
+            guard let id = Self.stripId(for: tile.target) else { return }
+            cell.alpha = 0.3
+            delegate?.shellTileDragBegan(id, icon: tile.icon, at: point)
+        case .changed:
+            delegate?.shellTileDragMoved(to: point)
+        case .ended, .cancelled, .failed:
+            cell.alpha = 1
+            delegate?.shellTileDragEnded(at: point)
+        default:
+            break
         }
     }
 

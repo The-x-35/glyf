@@ -5,7 +5,7 @@ import Foundation
 struct GlyfSettings: Codable, Equatable {
     /// Bumped when defaults change; load() migrates older files additively.
     /// Optional so files written before the field existed still decode.
-    var schemaVersion: Int? = 4
+    var schemaVersion: Int? = 5
     var haptics: Bool = true
     var keyClicks: Bool = true
     var numberRow: Bool = false
@@ -109,9 +109,13 @@ struct GlyfSettings: Codable, Equatable {
     }
 
     enum Toolbar {
-        /// The website's strip: six tools beside the g pill. Settings lives in
-        /// the g menu, so the gear is not on the strip any more.
-        static let defaultOrder = ["search", "clipboard", "vault", "dictation", "emoji", "translate"]
+        /// The strip: the tools the keys themselves cannot reach. Emoji is
+        /// not among them — the keyboard has an emoji key in its bottom row,
+        /// where iOS puts it. Users can add anything back (Toolbar screen).
+        static let defaultOrder = ["search", "clipboard", "vault", "dictation", "translate"]
+        /// Everything that can live on the strip, for the customise screen.
+        static let allItems = ["search", "clipboard", "vault", "dictation",
+                               "translate", "emoji", "settings", "skills"]
     }
 }
 
@@ -172,6 +176,13 @@ enum SettingsStore {
             // The gear moved into the g menu, matching the website strip.
             s.toolbarOrder.removeAll { $0 == "settings" }
             s.schemaVersion = 4
+        }
+        // v4 → v5: emoji leaves the strip; the bottom row already has it.
+        if (s.schemaVersion ?? 1) < 5 {
+            if !(s.toolbarHidden.contains("emoji")) {
+                s.toolbarOrder.removeAll { $0 == "emoji" }
+            }
+            s.schemaVersion = 5
         }
         if s.customTitles == nil { s.customTitles = [:] }
         // Legacy proUnlocked → the plus plan.

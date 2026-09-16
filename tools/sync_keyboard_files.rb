@@ -16,6 +16,7 @@ TEST_SHARED = %w[
   Engine/ToneProfile.swift
   Engine/NotesStore.swift
   Layout/KeyboardLayout.swift
+  Design/GlassTokens.swift
   Engine/SpaceGesture.swift
   Engine/Smart.swift
   Engine/Typing/TypingText.swift

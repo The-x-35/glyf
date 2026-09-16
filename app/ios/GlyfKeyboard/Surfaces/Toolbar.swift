@@ -4,6 +4,10 @@ protocol ToolbarDelegate: AnyObject {
     func toolbarGlyfTapped()
     func toolbarItemTapped(_ id: String)
     func toolbarItemLongPressed(_ id: String)
+    /// A held strip icon being dragged: reorder, or off the strip to remove.
+    func toolbarItemDragBegan(_ id: String, at windowPoint: CGPoint)
+    func toolbarItemDragMoved(to windowPoint: CGPoint)
+    func toolbarItemDragEnded(_ id: String, at windowPoint: CGPoint)
     func toolbarSuggestionTapped(_ suggestion: GlyfToolbar.Suggestion)
     /// The strip's close button while a panel is open (website behaviour).
     func toolbarCloseTapped()
@@ -41,6 +45,10 @@ final class GlyfToolbar: UIView {
     private let smartKey = UILabel()
     private let smartValue = UILabel()
     private(set) var smartChip: Smart.Chip?
+    /// The strip item currently lifted by a hold, if any.
+    private var draggingId: String?
+    /// Where a dropped tool would land, drawn as a thin accent bar.
+    private let dropMarker = UIView()
 
     /// item id → SF Symbol
     static let icons: [String: String] = [
@@ -51,6 +59,9 @@ final class GlyfToolbar: UIView {
         "emoji": "face.smiling",
         "translate": "translate",
         "settings": "gearshape",
+        "skills": "bolt",
+        "rewrite": "wand.and.stars",
+        "ask": "sparkles",
     ]
 
     private(set) var showingCandidates = false
@@ -97,6 +108,11 @@ final class GlyfToolbar: UIView {
         // The website spreads the six tools evenly across the strip.
         itemsStack.distribution = .fillEqually
         scroll.addSubview(itemsStack)
+
+        dropMarker.backgroundColor = Glass.accentPrimary
+        dropMarker.layer.cornerRadius = 1.5
+        dropMarker.isHidden = true
+        addSubview(dropMarker)
 
         candidatesStack.axis = .horizontal
         candidatesStack.spacing = 4
@@ -174,6 +190,35 @@ final class GlyfToolbar: UIView {
         reloadItems()
     }
 
+    /// Index a tool would take if dropped at this point (strip coordinates),
+    /// and the marker that shows it. Nil hides the marker.
+    func showDropMarker(at point: CGPoint?) {
+        guard let point, !itemsStack.arrangedSubviews.isEmpty else {
+            dropMarker.isHidden = true
+            return
+        }
+        let idx = dropIndex(for: point)
+        let views = itemsStack.arrangedSubviews
+        let x: CGFloat
+        if idx >= views.count {
+            x = itemsStack.convert(views[views.count - 1].frame, to: self).maxX + 2
+        } else {
+            x = itemsStack.convert(views[idx].frame, to: self).minX - 4
+        }
+        dropMarker.frame = CGRect(x: x, y: 8, width: 3, height: bounds.height - 16)
+        dropMarker.isHidden = false
+        bringSubviewToFront(dropMarker)
+    }
+
+    func dropIndex(for point: CGPoint) -> Int {
+        let views = itemsStack.arrangedSubviews
+        for (i, v) in views.enumerated() {
+            let f = itemsStack.convert(v.frame, to: self)
+            if point.x < f.midX { return i }
+        }
+        return views.count
+    }
+
     func reloadItems() {
         itemsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let s = SettingsStore.current
@@ -192,18 +237,36 @@ final class GlyfToolbar: UIView {
                 self?.delegate?.toolbarItemTapped(id)
             }, for: .touchUpInside)
             let long = UILongPressGestureRecognizer(target: self, action: #selector(itemLong(_:)))
-            long.minimumPressDuration = 0.4
+            long.minimumPressDuration = 0.32
+            long.allowableMovement = .greatestFiniteMagnitude
             b.addGestureRecognizer(long)
             itemsStack.addArrangedSubview(b)
         }
         setNeedsLayout()
     }
 
+    /// Hold an icon and it lifts: slide sideways to reorder, or drag it off
+    /// the strip to put it away. (Gboard's gesture, on Glyf's strip.)
     @objc private func itemLong(_ g: UILongPressGestureRecognizer) {
-        guard g.state == .began, let b = g.view as? UIButton,
-              let id = b.accessibilityIdentifier?.split(separator: ":").last
+        guard let b = g.view as? UIButton,
+              let raw = b.accessibilityIdentifier?.split(separator: ":").last
         else { return }
-        delegate?.toolbarItemLongPressed(String(id))
+        let id = String(raw)
+        let point = g.location(in: self)
+        switch g.state {
+        case .began:
+            draggingId = id
+            b.alpha = 0.25
+            delegate?.toolbarItemDragBegan(id, at: convert(point, to: window))
+        case .changed:
+            delegate?.toolbarItemDragMoved(to: convert(point, to: window))
+        case .ended, .cancelled, .failed:
+            b.alpha = 1
+            draggingId = nil
+            delegate?.toolbarItemDragEnded(id, at: convert(point, to: window))
+        default:
+            break
+        }
     }
 
     /// Panel open: title + icon in the strip, brand pill becomes a close
