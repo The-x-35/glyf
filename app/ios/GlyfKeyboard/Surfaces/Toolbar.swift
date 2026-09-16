@@ -5,6 +5,11 @@ protocol ToolbarDelegate: AnyObject {
     func toolbarItemTapped(_ id: String)
     func toolbarItemLongPressed(_ id: String)
     func toolbarSuggestionTapped(_ suggestion: GlyfToolbar.Suggestion)
+    /// The strip's close button while a panel is open (website behaviour).
+    func toolbarCloseTapped()
+    /// The smart chip (a sum just typed, or a saved detail the sentence asks
+    /// for) was tapped.
+    func toolbarSmartTapped(_ chip: Smart.Chip)
 }
 
 /// §6.2 — the 44pt strip above the keys. When autocorrect candidates show,
@@ -20,6 +25,17 @@ final class GlyfToolbar: UIView {
     private let itemsStack = UIStackView()
     private let candidatesStack = UIStackView()
     private let runsChip = UIButton(type: .system)
+    private let brandDot = CALayer()
+    /// Panel mode (website parity): the strip keeps its place, the brand pill
+    /// turns into a close button and the rest becomes "icon + panel name".
+    private let panelLabel = UILabel()
+    private let panelIcon = UIImageView()
+    private(set) var panelTitle: String?
+    /// Smart chip: one card across the strip, accent key then value.
+    private let smartCard = UIControl()
+    private let smartKey = UILabel()
+    private let smartValue = UILabel()
+    private(set) var smartChip: Smart.Chip?
 
     /// item id → SF Symbol
     static let icons: [String: String] = [
@@ -53,15 +69,14 @@ final class GlyfToolbar: UIView {
         glyfButton.layer.shadowOffset = CGSize(width: 0, height: 2)
         glyfButton.layer.shadowRadius = 3
         glyfButton.layer.shadowColor = UIColor.black.cgColor
-        let dot = CALayer()
-        dot.backgroundColor = Glass.accentPrimary.cgColor
-        dot.frame = CGRect(x: 31, y: 6, width: 6, height: 6)
-        dot.cornerRadius = 3
-        dot.shadowColor = Glass.accentPrimary.cgColor
-        dot.shadowOpacity = 0.9
-        dot.shadowRadius = 3
-        dot.shadowOffset = .zero
-        glyfButton.layer.addSublayer(dot)
+        brandDot.backgroundColor = Glass.accentPrimary.cgColor
+        brandDot.frame = CGRect(x: 31, y: 6, width: 6, height: 6)
+        brandDot.cornerRadius = 3
+        brandDot.shadowColor = Glass.accentPrimary.cgColor
+        brandDot.shadowOpacity = 0.9
+        brandDot.shadowRadius = 3
+        brandDot.shadowOffset = .zero
+        glyfButton.layer.addSublayer(brandDot)
         glyfButton.accessibilityIdentifier = "toolbar:glyf"
         glyfButton.accessibilityLabel = "Glyf"
         glyfButton.addTarget(self, action: #selector(glyfTapped), for: .touchUpInside)
@@ -74,6 +89,8 @@ final class GlyfToolbar: UIView {
         addSubview(scroll)
         itemsStack.axis = .horizontal
         itemsStack.spacing = 6
+        // The website spreads the six tools evenly across the strip.
+        itemsStack.distribution = .fillEqually
         scroll.addSubview(itemsStack)
 
         candidatesStack.axis = .horizontal
@@ -91,6 +108,37 @@ final class GlyfToolbar: UIView {
         runsChip.isUserInteractionEnabled = false
         addSubview(runsChip)
 
+        panelIcon.contentMode = .center
+        panelIcon.tintColor = Glass.textPrimary
+        panelIcon.isHidden = true
+        addSubview(panelIcon)
+        panelLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        panelLabel.textColor = Glass.textPrimary
+        panelLabel.isHidden = true
+        addSubview(panelLabel)
+
+        smartCard.backgroundColor = Glass.fillKey
+        smartCard.layer.cornerRadius = 12
+        smartCard.layer.cornerCurve = .continuous
+        smartCard.layer.shadowColor = Glass.keyShadowColor.cgColor
+        smartCard.layer.shadowOpacity = 1
+        smartCard.layer.shadowRadius = 0
+        smartCard.layer.shadowOffset = CGSize(width: 0, height: 1)
+        smartCard.isHidden = true
+        smartCard.accessibilityIdentifier = "strip:smart"
+        smartCard.addAction(UIAction { [weak self] _ in
+            guard let self, let chip = self.smartChip else { return }
+            self.delegate?.toolbarSmartTapped(chip)
+        }, for: .touchUpInside)
+        smartKey.font = .systemFont(ofSize: 13, weight: .semibold)
+        smartKey.textColor = Glass.accentPrimary
+        smartCard.addSubview(smartKey)
+        smartValue.font = .systemFont(ofSize: 15)
+        smartValue.textColor = Glass.textPrimary
+        smartValue.lineBreakMode = .byTruncatingTail
+        smartCard.addSubview(smartValue)
+        addSubview(smartCard)
+
         reloadItems()
     }
 
@@ -101,9 +149,13 @@ final class GlyfToolbar: UIView {
     func applyPalette() {
         divider.backgroundColor = Glass.strokeHairline
         // On dark chrome the ink pill needs a faint ring to stay separate
-        // from the backdrop (black-on-black otherwise).
-        glyfButton.layer.borderWidth = Glass.chromeDark ? 1 : 0
-        glyfButton.layer.borderColor = UIColor.white.withAlphaComponent(0.35).cgColor
+        // from the backdrop (black-on-black otherwise). The website uses a
+        // half-point ring at 18% and no drop shadow.
+        glyfButton.layer.borderWidth = Glass.chromeDark ? (Glass.siteLook ? 0.5 : 1) : 0
+        glyfButton.layer.borderColor = UIColor.white
+            .withAlphaComponent(Glass.siteLook ? 0.18 : 0.35).cgColor
+        glyfButton.layer.shadowOpacity = Glass.siteLook ? 0 : 0.28
+        glyfButton.backgroundColor = Glass.siteLook && Glass.isDark ? .black : Glass.brandInk
         reloadItems()
     }
 
@@ -114,12 +166,13 @@ final class GlyfToolbar: UIView {
             guard let symbol = Self.icons[id] else { continue }
             let b = UIButton(type: .system)
             b.setImage(UIImage(systemName: symbol), for: .normal)
-            b.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 20),
+            b.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 21, weight: .regular),
                                               forImageIn: .normal)
-            b.tintColor = Glass.textSecondary
+            b.tintColor = Glass.textPrimary.withAlphaComponent(0.78)
+            b.layer.cornerRadius = 10
+            b.layer.cornerCurve = .continuous
             b.accessibilityIdentifier = "toolbar:\(id)"
             b.accessibilityLabel = id
-            b.widthAnchor.constraint(equalToConstant: 42).isActive = true
             b.addAction(UIAction { [weak self] _ in
                 self?.delegate?.toolbarItemTapped(id)
             }, for: .touchUpInside)
@@ -138,7 +191,65 @@ final class GlyfToolbar: UIView {
         delegate?.toolbarItemLongPressed(String(id))
     }
 
+    /// Panel open: title + icon in the strip, brand pill becomes a close
+    /// button. `nil` restores the tools.
+    func showPanelHeader(icon: String?, title: String?) {
+        panelTitle = title
+        let open = title != nil
+        panelLabel.text = title
+        panelLabel.isHidden = !open
+        panelIcon.preferredSymbolConfiguration =
+            UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)
+        panelIcon.image = icon.flatMap { UIImage(systemName: $0) }
+        panelIcon.isHidden = !open || panelIcon.image == nil
+        scroll.isHidden = open
+        candidatesStack.isHidden = open || !showingCandidates
+        runsChip.isHidden = open || runsRemaining == nil
+        divider.isHidden = open || Glass.siteLook
+        if open {
+            glyfButton.setTitle(nil, for: .normal)
+            glyfButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+            glyfButton.setPreferredSymbolConfiguration(
+                UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold), forImageIn: .normal)
+            glyfButton.tintColor = Glass.textPrimary
+            glyfButton.backgroundColor = Glass.fillSoft
+            glyfButton.accessibilityIdentifier = "toolbar:close"
+            glyfButton.accessibilityLabel = "Close"
+            brandDot.isHidden = true
+        } else {
+            glyfButton.setImage(nil, for: .normal)
+            glyfButton.setTitle("g", for: .normal)
+            glyfButton.backgroundColor = Glass.siteLook && Glass.isDark ? .black : Glass.brandInk
+            glyfButton.accessibilityIdentifier = "toolbar:glyf"
+            glyfButton.accessibilityLabel = "Glyf"
+            brandDot.isHidden = false
+        }
+        setNeedsLayout()
+    }
+
+    /// One chip across the strip, or nil to go back to tools and suggestions.
+    func showSmart(_ chip: Smart.Chip?) {
+        smartChip = chip
+        smartCard.isHidden = chip == nil || panelTitle != nil
+        if let chip {
+            smartKey.text = chip.key
+            smartValue.text = chip.value
+            smartCard.backgroundColor = Glass.fillKey
+            smartCard.layer.shadowColor = Glass.keyShadowColor.cgColor
+            smartCard.accessibilityLabel = "\(chip.key) \(chip.value)"
+        }
+        let hide = !smartCard.isHidden
+        scroll.isHidden = hide || panelTitle != nil
+        candidatesStack.isHidden = hide || panelTitle != nil || !showingCandidates
+        divider.isHidden = hide || Glass.siteLook
+        setNeedsLayout()
+    }
+
     @objc private func glyfTapped() {
+        if panelTitle != nil {
+            delegate?.toolbarCloseTapped()
+            return
+        }
         if showingCandidates && !candidatesStack.isHidden {
             // Restore tools without opening the shell (§6.2).
             userPinnedTools = true
@@ -185,6 +296,7 @@ final class GlyfToolbar: UIView {
     }
 
     private func applyCandidatesVisibility(toolsVisible: Bool) {
+        guard panelTitle == nil else { return }   // a panel owns the strip
         scroll.isHidden = !toolsVisible
         divider.isHidden = !toolsVisible
         candidatesStack.isHidden = toolsVisible || !showingCandidates
@@ -203,7 +315,8 @@ final class GlyfToolbar: UIView {
         let emphasized = item.kind == .correction
         b.titleLabel?.font = .systemFont(ofSize: 16, weight: emphasized ? .semibold : .regular)
         b.setTitleColor(item.kind == .literal ? Glass.textSecondary : Glass.textPrimary, for: .normal)
-        b.backgroundColor = emphasized ? Glass.fillBar : .clear
+        // The website marks the best candidate by weight alone, no pill.
+        b.backgroundColor = (emphasized && !Glass.siteLook) ? Glass.fillBar : .clear
         b.layer.cornerRadius = 8
         b.layer.cornerCurve = .continuous
         b.titleLabel?.lineBreakMode = .byTruncatingTail
@@ -228,21 +341,42 @@ final class GlyfToolbar: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        glyfButton.frame = CGRect(x: 6, y: 6, width: 44, height: bounds.height - 12)
-        divider.frame = CGRect(x: 58, y: 10, width: Glass.hairlineWidth * 2,
-                               height: bounds.height - 20)
+        // Website strip: a g pill 1.18x the strip height wide and 0.78x tall,
+        // then the tools spread across the rest. No divider.
+        let h = bounds.height
+        let pillW = (h * 1.18).rounded()
+        let pillH = (h * 0.78).rounded()
+        glyfButton.frame = CGRect(x: 5, y: (h - pillH) / 2, width: pillW, height: pillH)
+        brandDot.frame = CGRect(x: pillW - pillW * 0.20 - 6, y: pillH * 0.18, width: 6, height: 6)
+        divider.isHidden = Glass.siteLook
+        divider.frame = CGRect(x: pillW + 11, y: 10, width: Glass.hairlineWidth * 2,
+                               height: h - 20)
         let chipW: CGFloat = runsChip.isHidden ? 0 : 64
         if !runsChip.isHidden {
             runsChip.frame = CGRect(x: bounds.width - chipW - 6, y: 11,
-                                    width: chipW, height: bounds.height - 22)
+                                    width: chipW, height: h - 22)
         }
-        let left: CGFloat = 64
-        let width = bounds.width - left - chipW - 10
-        scroll.frame = CGRect(x: left, y: 0, width: width, height: bounds.height)
-        let stackW = max(width, CGFloat(itemsStack.arrangedSubviews.count) * 48)
-        itemsStack.frame = CGRect(x: 0, y: 4, width: stackW, height: bounds.height - 8)
-        scroll.contentSize = CGSize(width: stackW, height: bounds.height)
+        let left = pillW + (Glass.siteLook ? 11 : 17)
+        let width = bounds.width - left - chipW - 6
+        if !smartCard.isHidden {
+            let cardH = (h * 0.78).rounded()
+            smartCard.frame = CGRect(x: left, y: (h - cardH) / 2,
+                                     width: max(0, bounds.width - left - 6), height: cardH)
+            let keyW = min(smartKey.intrinsicContentSize.width, 120)
+            smartKey.frame = CGRect(x: 14, y: 0, width: keyW, height: cardH)
+            smartValue.frame = CGRect(x: 14 + keyW + 10, y: 0,
+                                      width: max(0, smartCard.bounds.width - keyW - 38),
+                                      height: cardH)
+        }
+        if panelTitle != nil {
+            panelIcon.frame = CGRect(x: left, y: (h - 24) / 2, width: 24, height: 24)
+            let textX = panelIcon.isHidden ? left : left + 30
+            panelLabel.frame = CGRect(x: textX, y: 0, width: bounds.width - textX - 10, height: h)
+        }
+        scroll.frame = CGRect(x: left, y: 0, width: width, height: h)
+        itemsStack.frame = CGRect(x: 0, y: (h - 34) / 2, width: width, height: 34)
+        scroll.contentSize = CGSize(width: width, height: h)
         candidatesStack.frame = CGRect(x: left, y: 6, width: bounds.width - left - 8,
-                                       height: bounds.height - 12)
+                                       height: h - 12)
     }
 }

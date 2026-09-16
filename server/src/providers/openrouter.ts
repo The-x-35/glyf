@@ -53,7 +53,9 @@ export function requestOptions(ep: Endpoint, tier: "fast" | "smart"): Record<str
   } else if (ep.url.includes("groq.com") && id.includes("qwen")) {
     // Groq returns Qwen's thinking as raw <think> text otherwise.
     opts.reasoning_effort = "none";
-  } else if (ep.url.includes("googleapis.com") && /gemini-2\.5-flash(?!-lite)/.test(id)) {
+  } else if (ep.url.includes("googleapis.com") && /gemini-[\d.]+-(flash|pro)(?!-lite)/.test(id)) {
+    // Gemini's full flash/pro models think first; the lite ones don't take the
+    // option at all (400 Invalid argument), so never send it to them.
     opts.reasoning_effort = tier === "fast" ? "none" : "low";
   }
   return opts;

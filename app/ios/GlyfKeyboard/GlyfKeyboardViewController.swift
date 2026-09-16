@@ -111,13 +111,17 @@ final class GlyfKeyboardViewController: UIInputViewController {
             // Searching collapses the board to a strip ABOVE the letter
             // keys, so the surface needs room for both.
             return base + (emoji?.searchActive == true ? EmojiBoard.searchStripHeight : 0)
-        case .bar: return base + Glass.barExtra
-        // Suggestions add rows ABOVE the keys rather than replacing them.
-        case .search: return base + Glass.barExtra + (search?.landingExtra ?? 0)
+        // Panels take the key area instead of growing the keyboard, exactly
+        // like the website: the keys never move, so muscle memory holds.
+        case .bar:
+            return bar?.expandedForResult == true ? base : base + Glass.barExtra
+        // While typing a query the keys stay live under a strip; results
+        // become a panel over the keys.
+        case .search:
+            return search?.expandedForResults == true
+                ? base : base + Glass.barExtra + (search?.landingExtra ?? 0)
         case .noteEdit: return base + NoteEditSurface.stripHeight
-        case .shell, .connector: return base + Glass.shellExtra
-        // Results need room for a map and a card or two under it.
-        case .act: return base + Glass.shellExtra
+        case .shell, .connector, .act: return base
         }
     }
 
@@ -163,7 +167,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private func refreshPalette() {
         guard didBuild else { return }
         if let blur = backdrop as? UIVisualEffectView {
-            blur.effect = Glass.base
+            // Switching to the site look mid-session: drop the material and
+            // paint the board colour on the same view.
+            blur.effect = Glass.siteLook ? nil : Glass.base
+            blur.backgroundColor = Glass.siteLook ? Glass.solidBackdrop : .clear
         } else {
             backdrop?.backgroundColor = Glass.solidBackdrop
         }
@@ -296,7 +303,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
             content.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        if Glass.reduceTransparency {
+        // The site look paints a solid board (as on tryglyf.com); the other
+        // themes keep Apple's blur. Reduce Transparency forces solid too.
+        if Glass.reduceTransparency || Glass.siteLook {
             backdrop = UIView()
             backdrop.backgroundColor = Glass.solidBackdrop
         } else {
@@ -316,9 +325,39 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     // MARK: Surface layout
 
+    /// Panels sit in the key area: the strip stays put and the keys are
+    /// covered, so the keyboard never changes height (website behaviour).
+    private func panelRect(_ w: CGFloat, _ h: CGFloat) -> CGRect {
+        CGRect(x: 0, y: Glass.toolbarHeight, width: w,
+               height: max(0, h - Glass.toolbarHeight))
+    }
+
+    /// Strip contents while a panel is open: icon + name, close on the left.
+    private func panelHeader() -> (String?, String?) {
+        switch surface {
+        case .shell:
+            let title = shell?.headerTitle ?? "Glyf"
+            return (title == "Glyf" ? "square.grid.2x2" : nil, title)
+        case .search where search?.expandedForResults == true:
+            return ("magnifyingglass", "Search")
+        case .emoji where emoji?.searchActive != true: return ("face.smiling", "Emoji")
+        case .act: return ("sparkles", "Glyf")
+        case .bar where bar?.expandedForResult == true: return ("sparkles", "Glyf")
+        case .connector where connector?.searchActive != true: return ("calendar", "Calendar")
+        default: return (nil, nil)
+        }
+    }
+
+    private var lastPanelTitle: String??
+
     private func layoutSurfaces() {
         let w = content.bounds.width
         let h = content.bounds.height
+        let header = panelHeader()
+        if lastPanelTitle != .some(header.1) {
+            lastPanelTitle = .some(header.1)
+            toolbar.showPanelHeader(icon: header.0, title: header.1)
+        }
         let showHUD = surface == .none && hudActive
         hud?.isHidden = !showHUD
         clipStrip?.isHidden = surface != .none
@@ -357,11 +396,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
                                       height: max(0, h - Glass.toolbarHeight))
             }
         case .shell:
-            toolbar.isHidden = true
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = true
-            shell?.frame = content.bounds
+            shell?.frame = panelRect(w, h)
         case .connector:
-            toolbar.isHidden = true
+            toolbar.isHidden = connector?.searchActive == true
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             if connector?.searchActive == true {
                 keyboardView.isHidden = false
                 connector?.frame = CGRect(x: 0, y: 0, width: w,
@@ -371,7 +412,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
                     height: max(0, h - ConnectorSurface.searchStripHeight))
             } else {
                 keyboardView.isHidden = true
-                connector?.frame = content.bounds
+                connector?.frame = panelRect(w, h)
             }
         case .noteEdit:
             toolbar.isHidden = true
@@ -382,11 +423,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
                                         width: w,
                                         height: max(0, h - NoteEditSurface.stripHeight))
         case .search:
-            toolbar.isHidden = true
+            toolbar.isHidden = !(search?.expandedForResults ?? false)
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             if let sv = search {
                 if sv.expandedForResults {
                     keyboardView.isHidden = true
-                    sv.frame = content.bounds
+                    sv.frame = panelRect(w, h)
                 } else {
                     // Collapsed and landing differ only in how much room the
                     // strip takes; the keys stay visible in both, so you can
@@ -399,15 +441,17 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 }
             }
         case .act:
-            toolbar.isHidden = true
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = true
-            act?.frame = content.bounds
+            act?.frame = panelRect(w, h)
         case .bar:
-            toolbar.isHidden = true
+            toolbar.isHidden = !(bar?.expandedForResult ?? false)
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             if let bar {
                 if bar.expandedForResult {
                     keyboardView.isHidden = true
-                    bar.frame = content.bounds
+                    bar.frame = panelRect(w, h)
                 } else {
                     keyboardView.isHidden = false
                     let barH = Glass.toolbarHeight + Glass.barExtra
@@ -646,7 +690,22 @@ final class GlyfKeyboardViewController: UIInputViewController {
         return policy
     }
 
+    /// The website's smart strip: a sum you just typed, or the saved detail
+    /// the sentence is asking for, offered as one chip above the keys.
+    private func updateSmartChip() -> Bool {
+        guard surface == .none, !isSecureField else {
+            toolbar.showSmart(nil)
+            return false
+        }
+        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        let tail = String(before.suffix(120))
+        let chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields)
+        toolbar.showSmart(chip)
+        return chip != nil
+    }
+
     private func updateCandidates() {
+        if updateSmartChip() { return }   // one chip owns the strip
         let policy = typingPolicy
         guard SettingsStore.current.candidates, policy.contains(.suggestions), surface == .none else {
             toolbar.showSuggestions([])
@@ -1239,6 +1298,18 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         shell?.push(id == "settings" ? "settings" : "toolbar")
     }
 
+    /// The strip's close button: whatever panel is open goes away.
+    func toolbarCloseTapped() {
+        setSurface(.none)
+    }
+
+    func toolbarSmartTapped(_ chip: Smart.Chip) {
+        textDocumentProxy.insertText(chip.insert)
+        toolbar.showSmart(nil)
+        updateCandidates()
+        if case .vault = chip { MemoryLogger.logSurface("smart:vault") }
+    }
+
     func toolbarSuggestionTapped(_ suggestion: GlyfToolbar.Suggestion) {
         let before = textDocumentProxy.documentContextBeforeInput
         let word = WordTracker.currentWord(beforeContext: before)
@@ -1342,6 +1413,10 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
     func shellStateChanged() {
         // Settings toggles may change layout-affecting state.
         keyboardView.refreshBindings()
+        // The strip shows which panel screen is open.
+        let header = panelHeader()
+        lastPanelTitle = .some(header.1)
+        toolbar.showPanelHeader(icon: header.0, title: header.1)
     }
 
     func shellOpenSearch() {

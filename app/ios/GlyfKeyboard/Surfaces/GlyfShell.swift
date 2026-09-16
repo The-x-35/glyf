@@ -98,7 +98,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
         table.backgroundColor = .clear
         table.separatorStyle = .none
-        table.rowHeight = 52
+        table.rowHeight = Glass.siteLook ? 48 : 52   // website: key height x 1.1
         table.dataSource = self
         table.delegate = self
         table.register(ShellCell.self, forCellReuseIdentifier: "c")
@@ -124,16 +124,21 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        header.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 36)
-        backButton.frame = CGRect(x: 4, y: 0, width: 44, height: 36)
-        closeButton.frame = CGRect(x: bounds.width - 48, y: 0, width: 44, height: 36)
-        titleLabel.frame = CGRect(x: 52, y: 0, width: bounds.width - 104, height: 36)
-        let footerH: CGFloat = screen.showOpenInApp ? 30 : 0
         let isRoot = screen.id == "root"
+        // The strip above carries the panel name and the close button on the
+        // website look, so the panel itself only needs a back arrow.
+        let headerH: CGFloat = Glass.siteLook ? (isRoot ? 0 : 30) : 36
+        titleLabel.isHidden = Glass.siteLook
+        closeButton.isHidden = Glass.siteLook
+        header.frame = CGRect(x: 0, y: 0, width: bounds.width, height: headerH)
+        backButton.frame = CGRect(x: 4, y: 0, width: 44, height: headerH)
+        closeButton.frame = CGRect(x: bounds.width - 48, y: 0, width: 44, height: headerH)
+        titleLabel.frame = CGRect(x: 52, y: 0, width: bounds.width - 104, height: headerH)
+        let footerH: CGFloat = screen.showOpenInApp ? 30 : 0
         table.isHidden = isRoot
         grid.isHidden = !isRoot
-        table.frame = CGRect(x: 0, y: 36, width: bounds.width,
-                             height: bounds.height - 36 - footerH)
+        table.frame = CGRect(x: 0, y: headerH, width: bounds.width,
+                             height: bounds.height - headerH - footerH)
         grid.frame = table.frame
         if isRoot { layoutGrid() }
         footerButton.frame = CGRect(x: 0, y: bounds.height - footerH,
@@ -231,10 +236,13 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         delegate?.shellClosed()
     }
 
+    /// What the strip above should call this panel (website parity).
+    var headerTitle: String { screen.id == "root" ? "Glyf" : screen.title }
+
     func render() {
         screen = Self.build(id: stack.last ?? "root")
         titleLabel.text = screen.title
-        backButton.isHidden = false
+        backButton.isHidden = screen.id == "root"
         table.reloadData()
         saveState()
         setNeedsLayout()
@@ -517,9 +525,16 @@ private final class ShellCell: UITableViewCell {
         backgroundColor = .clear
         selectionStyle = .none
 
-        card.layer.cornerRadius = 13
+        // Website row: radius 12 card with a hard bottom edge, no outline.
+        card.layer.cornerRadius = Glass.siteLook ? 12 : 13
         card.layer.cornerCurve = .continuous
-        card.layer.borderWidth = Glass.hairlineWidth
+        card.layer.borderWidth = Glass.siteLook ? 0 : Glass.hairlineWidth
+        if Glass.siteLook {
+            card.layer.shadowColor = Glass.keyShadowColor.cgColor
+            card.layer.shadowOpacity = 1
+            card.layer.shadowRadius = 0
+            card.layer.shadowOffset = CGSize(width: 0, height: 1)
+        }
         contentView.addSubview(card)
 
         chip.layer.cornerRadius = 8
@@ -534,9 +549,9 @@ private final class ShellCell: UITableViewCell {
         chipDot.layer.cornerRadius = 2
         chip.addSubview(chipDot)
 
-        title.font = .systemFont(ofSize: 14.5, weight: .semibold)
+        title.font = .systemFont(ofSize: Glass.siteLook ? 14 : 14.5, weight: .semibold)
         card.addSubview(title)
-        value.font = .systemFont(ofSize: 12.5)
+        value.font = .systemFont(ofSize: Glass.siteLook ? 14 : 12.5)
         card.addSubview(value)
     }
 
@@ -555,6 +570,12 @@ private final class ShellCell: UITableViewCell {
         let w = card.bounds.width - x - trailW
         if value.isHidden {
             title.frame = CGRect(x: x, y: 0, width: w, height: card.bounds.height)
+        } else if Glass.siteLook {
+            // One line: a fixed key column, then the value (website rows).
+            let keyW: CGFloat = min(92, w * 0.42)
+            title.frame = CGRect(x: x, y: 0, width: keyW, height: card.bounds.height)
+            value.frame = CGRect(x: x + keyW + 10, y: 0,
+                                 width: max(0, w - keyW - 10), height: card.bounds.height)
         } else {
             title.frame = CGRect(x: x, y: 7, width: w, height: 18)
             value.frame = CGRect(x: x, y: 25, width: w, height: 15)

@@ -31,6 +31,7 @@
 		49740A143ABEAF1269AAC45E /* Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */; };
 		4ADAFEE41C95B9EC1027E1D1 /* TranslationHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EBDAF6797DA60917F2CADBD /* TranslationHUD.swift */; };
 		4B759E29785C7F2263CF60D4 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D580A139E7DF9CB049153E03 /* KeyboardLayout.swift */; };
+		5B4D75708ECDD5C6F417F4D2 /* Smart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 397338FD53A5248DAFEBD08F /* Smart.swift */; };
 		5C544F3EFFA3927D874C208B /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		5E0A6309E93806626CBD55BA /* TypingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF986CE579005D015F108B53 /* TypingStore.swift */; };
 		60C4A7BDE1ACB619E5799149 /* SecretScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26C1C3564E6011D2D3389969 /* SecretScanner.swift */; };
@@ -90,6 +91,7 @@
 		DD044109F80BDDCF6A31AD4D /* IntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B2E745F387CCCC496C13F0 /* IntentStore.swift */; };
 		DDBF15D8AF62B38811FE1788 /* LocationOnce.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADB9E43E6C30DA5026053D1C /* LocationOnce.swift */; };
 		E571CBEB353F3B3F075EBB0A /* KeyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64E80BA037A9998D346C4C78 /* KeyView.swift */; };
+		E7BD0E1FCC0F7FE19D446927 /* Smart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 397338FD53A5248DAFEBD08F /* Smart.swift */; };
 		E97ABD1B60BD8D93EB00E35D /* GlyfBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAB6C89A5A109AF1D863E30 /* GlyfBridge.swift */; };
 		EA2A2E2DE0D4A0F759975502 /* NotesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9781AA84DE222D4BBC690481 /* NotesStore.swift */; };
 		ED2E6632145F625290245147 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F0849F07512C2072EB2EB9C /* KeyboardView.swift */; };
@@ -167,6 +169,7 @@
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppGroupStore.swift; sourceTree = "<group>"; };
+		397338FD53A5248DAFEBD08F /* Smart.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Smart.swift; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActSurface.swift; sourceTree = "<group>"; };
 		3CECC849C144A1C00C88586B /* Toolbar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Toolbar.swift; sourceTree = "<group>"; };
@@ -331,6 +334,7 @@
 				776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */,
 				07E305711B11F34700D4CCDE /* SpaceGesture.swift */,
 				92B55B7082912818253E0D3E /* Typing */,
+				397338FD53A5248DAFEBD08F /* Smart.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -726,6 +730,7 @@
 				338DFF9C537EFE2A4F8227D8 /* TypingEngine.swift in Sources */,
 				0B545E6619BFA8152F0DD00A /* TypingText.swift in Sources */,
 				5E0A6309E93806626CBD55BA /* TypingStore.swift in Sources */,
+				E7BD0E1FCC0F7FE19D446927 /* Smart.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -757,6 +762,7 @@
 				044742F7AFBAAE8CB2D505AF /* TypingEngine.swift in Sources */,
 				9593A6FEA7701CB8761D55D2 /* TypingText.swift in Sources */,
 				C58CCEE4FC6D7CCD5835BF2F /* TypingEngineTests.swift in Sources */,
+				5B4D75708ECDD5C6F417F4D2 /* Smart.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

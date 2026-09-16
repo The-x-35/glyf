@@ -5,7 +5,7 @@ import Foundation
 struct GlyfSettings: Codable, Equatable {
     /// Bumped when defaults change; load() migrates older files additively.
     /// Optional so files written before the field existed still decode.
-    var schemaVersion: Int? = 3
+    var schemaVersion: Int? = 4
     var haptics: Bool = true
     var keyClicks: Bool = true
     var numberRow: Bool = false
@@ -40,8 +40,9 @@ struct GlyfSettings: Codable, Equatable {
     /// Keyboard appearance: "auto" follows the host app (Apple behavior);
     /// "light"/"dark" force it.
     var appearance: String? = "auto"
-    /// Key style: "glass" (liquid-glass, default) | "classic" | "glow".
-    var keyTheme: String? = "glass"
+    /// Key style: "site" (the tryglyf.com look, default) | "glass"
+    /// (liquid-glass) | "classic" | "glow".
+    var keyTheme: String? = "site"
     /// "" | "color:#RRGGBB" | "grad:<id>" — Gboard-style painted backdrop.
     var themeBg: String? = ""
     /// Gboard "borders around keys".
@@ -105,7 +106,9 @@ struct GlyfSettings: Codable, Equatable {
     }
 
     enum Toolbar {
-        static let defaultOrder = ["search", "clipboard", "vault", "dictation", "emoji", "translate", "settings"]
+        /// The website's strip: six tools beside the g pill. Settings lives in
+        /// the g menu, so the gear is not on the strip any more.
+        static let defaultOrder = ["search", "clipboard", "vault", "dictation", "emoji", "translate"]
     }
 }
 
@@ -158,6 +161,14 @@ enum SettingsStore {
                 s.bindings[key] = glyfId
             }
             s.schemaVersion = 3
+        }
+        // v3 → v4: the keyboard wears the website look. Anyone still on the
+        // old default moves over; a deliberate pick (classic, glow) stays.
+        if (s.schemaVersion ?? 1) < 4 {
+            if (s.keyTheme ?? "glass") == "glass" { s.keyTheme = "site" }
+            // The gear moved into the g menu, matching the website strip.
+            s.toolbarOrder.removeAll { $0 == "settings" }
+            s.schemaVersion = 4
         }
         if s.customTitles == nil { s.customTitles = [:] }
         // Legacy proUnlocked → the plus plan.

@@ -17,6 +17,7 @@ TEST_SHARED = %w[
   Engine/NotesStore.swift
   Layout/KeyboardLayout.swift
   Engine/SpaceGesture.swift
+  Engine/Smart.swift
   Engine/Typing/TypingText.swift
   Engine/Typing/GlydTrie.swift
   Engine/Typing/Decoder.swift

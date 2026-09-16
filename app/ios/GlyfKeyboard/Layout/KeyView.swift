@@ -79,6 +79,15 @@ final class KeyView: UIControl {
         }
     }
 
+    /// Grey keys on the web: shift, delete, 123, emoji, globe, return.
+    /// The space bar keeps the letter colour and wears the "glyf" watermark.
+    private var isFunctionKey: Bool {
+        switch spec.kind {
+        case .char, .space: return false
+        default: return true
+        }
+    }
+
     private func updateFace() {
         var text: String?
         var image: UIImage?
@@ -156,17 +165,23 @@ final class KeyView: UIControl {
             layer.shadowOffset = CGSize(width: 0, height: 2.5)
             return
         }
-        // Glass (default) + classic: uniform keys, the DOT alone marks
+        // Site (default), glass and classic: uniform keys, the DOT alone marks
         // bindings — simple like Apple, just with purple dots. The Gboard
-        // "borders" toggle firms the outline; NEVER an accent border.
-        layer.borderWidth = Glass.keyBorders ? 1 : Glass.hairlineWidth
+        // "borders" toggle firms the outline; NEVER an accent border. The site
+        // look draws no outline at all, only the hard bottom edge.
+        let borderless = Glass.siteLook && !Glass.keyBorders
+        layer.borderWidth = Glass.keyBorders ? 1 : (borderless ? 0 : Glass.hairlineWidth)
         layer.borderColor = (Glass.keyBorders ? Glass.strokeKeyBorder
                                               : Glass.strokeHairline).cgColor
-        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowColor = Glass.keyShadowColor.cgColor
         layer.shadowOpacity = Glass.keyShadowOpacity
         layer.shadowRadius = Glass.keyShadowRadius
         layer.shadowOffset = Glass.keyShadowOffset
-        backgroundColor = pressed ? Glass.fillKeyPressed : Glass.fillKey
+        if isFunctionKey {
+            backgroundColor = pressed ? Glass.fillKeyFnPressed : Glass.fillKeyFn
+        } else {
+            backgroundColor = pressed ? Glass.fillKeyPressed : Glass.fillKey
+        }
     }
 
     func setPressed(_ pressed: Bool) {
