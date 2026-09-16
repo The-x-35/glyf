@@ -123,7 +123,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
         }
         keyboard.isDark = dark
-        keyboard.keyTheme = settings.optString("keyTheme", "glass")
+        keyboard.keyTheme = settings.optString("keyTheme", "site")
         keyboard.themeBg = settings.optString("themeBg", "")
         keyboard.keyBorders = settings.optBoolean("keyBorders", false)
         keyboard.themeDim = settings.optDouble("themeBrightness", 0.0).toFloat()
@@ -139,6 +139,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (themed != null) root.background = themed
         else root.setBackgroundColor(keyboard.backdrop())
         buildToolbar(dark || keyboard.themeBg.isNotEmpty())
+        // Android hands a keyboard the clipboard without asking, so history
+        // fills itself: whatever was copied since last time is kept here.
+        if (!isSecureField()) com.demo.glyf.store.ClipboardStore.captureNow(this)
         actGeneration++ // a late act result must not land in a new field
         dismissOverlay()
         if (searchActive) exitSearch()
@@ -216,7 +219,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             toolIcons.addView(v, LinearLayout.LayoutParams(0, dp(34), 1f))
         }
         icon("search") { enterSearch() }
-        icon("clipboard") { pasteClipboard() }
+        icon("clipboard") { showClipboardPanel() }
         icon("vault") { showVaultPanel() }
         icon("mic") {
             android.widget.Toast.makeText(this,
@@ -225,7 +228,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         icon("emoji") { showEmojiPanel() }
         icon("translate") { runTranslateOnField() }
-        icon("gear") { openApp() }
+        // The website's strip is six tools beside the g pill; settings live
+        // in the g menu, so the gear is not on the strip.
     }
 
     /** Monochrome toolbar glyphs, canvas-drawn so they tint with the theme
@@ -353,8 +357,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     // MARK: search suite (Gboard-style: chips + query the keys type into)
 
     private val chromeDark get() = keyboard.isDark || keyboard.themeBg.isNotEmpty()
-    private fun ink() = if (chromeDark) Color.WHITE else Color.rgb(18, 18, 20)
-    private fun card() = if (chromeDark) Color.rgb(44, 44, 46) else Color.WHITE
+    private fun ink() = keyboard.palette().ink
+    private fun card() = keyboard.palette().card
 
     private fun enterSearch() {
         if (searchActive) return
@@ -2018,12 +2022,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** The g menu — same launcher-grid idea as the iOS shell root. */
     private fun showMenuGrid() {
         val (_, body) = panelShell("Glyf")
+        // The website's g menu, in its order (4 x 2).
         val items = listOf(
             Triple("search", "Search") { dismissFeaturePanel(); enterSearch() },
+            Triple("bolt", "Rewrite") { dismissFeaturePanel(); showGlyfBar() },
+            Triple("translate", "Translate") { dismissFeaturePanel(); runTranslateOnField() },
             Triple("vault", "Vault") { showVaultPanel() },
-            Triple("bolt", "Shorthand") { showShorthandPanel() },
-            Triple("clipboard", "Clipboard") { dismissFeaturePanel(); pasteClipboard() },
+            Triple("clipboard", "Clipboard") { showClipboardPanel() },
             Triple("emoji", "Emoji") { showEmojiPanel() },
+            Triple("notes", "Shorthand") { showShorthandPanel() },
             Triple("gear", "Settings") { dismissFeaturePanel(); openApp() },
         )
         var i = 0
@@ -2091,6 +2098,32 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
         }
         cardRow(body, "＋ New note", "") { enterNoteEdit(null, "") }
+    }
+
+    /** The website's clipboard: age on the left, the copy on the right. */
+    private fun showClipboardPanel() {
+        com.demo.glyf.store.ClipboardStore.captureNow(this)
+        val (_, body) = panelShell("Clipboard")
+        val items = com.demo.glyf.store.ClipboardStore.load(this)
+        if (items.isEmpty()) {
+            cardRow(body, "Nothing copied yet", "") { dismissFeaturePanel() }
+            return
+        }
+        for (item in items) {
+            val flat = item.text.replace("\n", " ")
+            cardRow(body, com.demo.glyf.store.ClipboardStore.age(item.ts), flat) {
+                currentInputConnection?.commitText(item.text, 1)
+                dismissFeaturePanel()
+            }
+            (body.getChildAt(body.childCount - 1)).setOnLongClickListener {
+                com.demo.glyf.store.ClipboardStore.togglePin(this, item.text)
+                showClipboardPanel(); true
+            }
+        }
+        cardRow(body, "Clear unpinned", "") {
+            com.demo.glyf.store.ClipboardStore.clearUnpinned(this)
+            showClipboardPanel()
+        }
     }
 
     private fun showShorthandPanel() {

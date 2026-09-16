@@ -54,19 +54,98 @@ class GlyfKeyboardView(
     var shifted = false
     var numberRow = false
     var isDark = false
-    var keyTheme = "glass"
+    var keyTheme = "site"
     var themeBg = ""          // "" | color:#RRGGBB | grad:<id>
     var keyBorders = false
     var themeDim = 0f
     var bindings: Map<String, String> = emptyMap()
 
-    /// Colored/gradient backdrop = dark chrome (white ink), like iOS.
-    private val chromeDark get() = isDark || themeBg.isNotEmpty()
+    /** Solid keys with a hard bottom edge: the website look and every colour
+     *  theme, which are the same keyboard in another colour (mirrors
+     *  Glass.solidLook on iOS). */
+    private val solidLook get() = keyTheme == "site" || themeBg.isNotEmpty()
+
+    /** Chrome darkness follows the ink the palette chose. */
+    private val chromeDark get() = if (solidLook) palette().darkChrome else isDark
+
+    /**
+     * One board colour builds the whole keyboard, the way Gboard derives a
+     * theme from its seed — the Kotlin twin of Glass.KeyPalette (iOS) and
+     * KeyPalette (Dart). Feeding it the website's board reproduces the
+     * website's palette, so themes and the default look share one path.
+     */
+    class KeyPalette(val board: Int) {
+        private val light = luminance(board) > 0.34f
+        val darkChrome = !light
+        val key = if (light) Color.WHITE else blend(board, Color.WHITE, 0.185f)
+        val keyPressed =
+            if (light) blend(key, board, 0.55f) else blend(key, Color.WHITE, 0.11f)
+        val fn = if (light) blend(board, Color.BLACK, 0.14f)
+                 else blend(board, Color.WHITE, 0.07f)
+        val fnPressed = if (light) blend(fn, Color.WHITE, 0.18f)
+                        else blend(fn, Color.WHITE, 0.06f)
+        val ink = if (light) tinted(board, 0.10f, 0.12f) else tinted(board, 0.04f, 0.965f)
+        val inkSoft = blend(ink, board, if (light) 0.42f else 0.40f)
+        val edge = Color.argb(if (light) 61 else 179, 0, 0, 0)
+        val card = if (light) Color.WHITE else blend(board, Color.WHITE, 0.065f)
+
+        companion object {
+            fun luminance(c: Int) = (0.2126f * Color.red(c) + 0.7152f * Color.green(c) +
+                0.0722f * Color.blue(c)) / 255f
+
+            fun blend(a: Int, b: Int, t: Float): Int {
+                val k = t.coerceIn(0f, 1f)
+                return Color.rgb(
+                    (Color.red(a) + (Color.red(b) - Color.red(a)) * k).toInt(),
+                    (Color.green(a) + (Color.green(b) - Color.green(a)) * k).toInt(),
+                    (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * k).toInt())
+            }
+
+            /** Near-black / near-white carrying a trace of the board's hue. */
+            private fun tinted(board: Int, maxSat: Float, value: Float): Int {
+                val hsv = FloatArray(3)
+                Color.colorToHSV(board, hsv)
+                hsv[1] = minOf(hsv[1], maxSat)
+                hsv[2] = value
+                return Color.HSVToColor(hsv)
+            }
+        }
+    }
+
+    private var paletteCache: Pair<String, KeyPalette>? = null
+
+    fun palette(): KeyPalette {
+        val cacheKey = "$themeBg|$isDark|$keyTheme|$themeDim"
+        paletteCache?.let { if (it.first == cacheKey) return it.second }
+        val made = KeyPalette(paletteSeed())
+        paletteCache = cacheKey to made
+        return made
+    }
+
+    /** The colour a theme is built from: the pick, a gradient's middle, or
+     *  the website's own board. */
+    private fun paletteSeed(): Int {
+        if (themeBg.startsWith("color:#")) {
+            try {
+                return dimmed(Color.parseColor(themeBg.removePrefix("color:")), themeDim)
+            } catch (_: Exception) {}
+        }
+        if (themeBg.startsWith("grad:")) {
+            GRADIENTS[themeBg.removePrefix("grad:")]?.let {
+                return KeyPalette.blend(dimmed(it[0], themeDim), dimmed(it[1], themeDim), 0.5f)
+            }
+        }
+        return if (isDark) SITE_BOARD_DARK else SITE_BOARD_LIGHT
+    }
 
     companion object {
         /** §6.5: a bound LETTER fires at 320ms; the space bar waits longer so
          *  a glide can still start (SpaceGesture.HOLD_MS). */
         const val BOUND_HOLD_MS = 320L
+
+        /** The website's two board colours (--kb). */
+        val SITE_BOARD_LIGHT = Color.rgb(0xD5, 0xD8, 0xDE)
+        val SITE_BOARD_DARK = Color.rgb(0x1F, 0x1F, 0x22)
 
         /// Gradient ids — same pairs as the Flutter previews and iOS.
         val GRADIENTS: Map<String, IntArray> = mapOf(
@@ -159,10 +238,13 @@ class GlyfKeyboardView(
 
     private val accent = Color.parseColor("#7C5CFF")
 
-    private fun keyFill(isPressed: Boolean): Int = when {
-        (keyTheme == "glass" || themeBg.isNotEmpty()) && chromeDark ->
-            if (isPressed) Color.argb(102, 255, 255, 255)
-            else Color.argb(if (themeBg.isNotEmpty()) 61 else 36, 255, 255, 255)
+    private fun keyFill(isPressed: Boolean, isFn: Boolean = false): Int = when {
+        solidLook -> palette().let {
+            if (isFn) (if (isPressed) it.fnPressed else it.fn)
+            else (if (isPressed) it.keyPressed else it.key)
+        }
+        keyTheme == "glass" && chromeDark ->
+            if (isPressed) Color.argb(102, 255, 255, 255) else Color.argb(36, 255, 255, 255)
         keyTheme == "glass" ->
             if (isPressed) Color.argb(235, 255, 255, 255) else Color.argb(148, 255, 255, 255)
         chromeDark ->
@@ -171,7 +253,8 @@ class GlyfKeyboardView(
             if (isPressed) Color.rgb(237, 237, 240) else Color.WHITE
     }
 
-    private fun ink(): Int = if (chromeDark) Color.WHITE else Color.rgb(18, 18, 20)
+    private fun ink(): Int =
+        if (solidLook) palette().ink else if (chromeDark) Color.WHITE else Color.rgb(18, 18, 20)
     private fun hairline(): Int = when {
         keyBorders && chromeDark -> Color.argb(120, 255, 255, 255)
         keyBorders -> Color.argb(78, 0, 0, 0)
@@ -180,7 +263,8 @@ class GlyfKeyboardView(
     }
 
     fun backdrop(): Int =
-        if (isDark) Color.rgb(28, 28, 30) else Color.rgb(209, 212, 217)
+        if (solidLook) palette().board
+        else if (isDark) Color.rgb(28, 28, 30) else Color.rgb(209, 212, 217)
 
     // MARK: measurement + drawing
 
@@ -239,16 +323,24 @@ class GlyfKeyboardView(
                     keyPaint.color = if (isDark) Color.rgb(92, 87, 122)
                                      else Color.rgb(246, 244, 255)
                 } else {
-                    shadowPaint.color = Color.argb(if (keyTheme == "glass") 26 else 56, 0, 0, 0)
-                    val drop = RectF(rect.left, rect.top + dp(1f),
-                        rect.right, rect.bottom + dp(1f))
+                    // The website draws a hard 2dp edge under each key, not a
+                    // blur: an offset round-rect in the palette's edge colour.
+                    val fn = solidLook && key.char == null && key.id != "space"
+                    val lift = if (solidLook) dp(2f) else dp(1f)
+                    shadowPaint.color =
+                        if (solidLook) palette().edge
+                        else Color.argb(if (keyTheme == "glass") 26 else 56, 0, 0, 0)
+                    val drop = RectF(rect.left, rect.top + lift,
+                        rect.right, rect.bottom + lift)
                     canvas.drawRoundRect(drop, radius, radius, shadowPaint)
-                    keyPaint.color = keyFill(isPressed)
+                    keyPaint.color = keyFill(isPressed, fn)
                 }
                 canvas.drawRoundRect(rect, radius, radius, keyPaint)
-                strokePaint.color = hairline()
-                strokePaint.strokeWidth = if (keyBorders) dp(1.1f) else 1f
-                canvas.drawRoundRect(rect, radius, radius, strokePaint)
+                if (keyBorders || !solidLook) {
+                    strokePaint.color = hairline()
+                    strokePaint.strokeWidth = if (keyBorders) dp(1.1f) else 1f
+                    canvas.drawRoundRect(rect, radius, radius, strokePaint)
+                }
 
                 if (!trackpadLook) {
                     drawFace(canvas, key, rect)
@@ -291,7 +383,8 @@ class GlyfKeyboardView(
             shadowPaint.color = Color.argb(46, 0, 0, 0)
             canvas.drawRoundRect(RectF(bx, by + dp(2f), bx + bw, by + bh + dp(3f)),
                 dp(12f), dp(12f), shadowPaint)
-            keyPaint.color = if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
+            keyPaint.color = if (solidLook) palette().key
+                             else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
             canvas.drawRoundRect(balloon, dp(12f), dp(12f), keyPaint)
             textPaint.color = ink()
             textPaint.textSize = dp(30f)

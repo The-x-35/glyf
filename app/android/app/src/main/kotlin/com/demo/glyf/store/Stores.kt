@@ -53,7 +53,7 @@ object SettingsStore {
     }
 
     fun defaults(): JSONObject = JSONObject().apply {
-        put("schemaVersion", 3)
+        put("schemaVersion", 4)
         put("haptics", true)
         put("keyClicks", true)
         put("numberRow", false)
@@ -63,7 +63,7 @@ object SettingsStore {
         put("candidates", true)
         put("oneHanded", "off")
         put("toolbarOrder", JSONArray(listOf(
-            "clipboard", "vault", "dictation", "emoji", "translate", "settings")))
+            "search", "clipboard", "vault", "dictation", "emoji", "translate")))
         put("toolbarHidden", JSONArray())
         put("bindings", JSONObject(mapOf(
             "t" to "surface:translate-hud",
@@ -74,7 +74,7 @@ object SettingsStore {
         put("proUnlocked", false)
         put("plan", "free")
         put("appearance", "auto")
-        put("keyTheme", "glass")
+        put("keyTheme", "site")
         put("themeBg", "")          // "" | color:#RRGGBB | grad:<id>
         put("keyBorders", false)
         put("themeBrightness", 0.0)
@@ -100,6 +100,24 @@ object SettingsStore {
                 current.put(key, base.get(key))
                 changed = true
             }
+        }
+        // v3 -> v4: the keyboard wears the website look. Anyone still on the
+        // old default moves over; a deliberate pick (classic, glow) stays.
+        if (current.optInt("schemaVersion", 1) < 4) {
+            if (current.optString("keyTheme", "glass") == "glass") {
+                current.put("keyTheme", "site")
+            }
+            val order = current.optJSONArray("toolbarOrder")
+            if (order != null) {
+                val kept = JSONArray()
+                for (i in 0 until order.length()) {
+                    val id = order.optString(i)
+                    if (id != "settings") kept.put(id)
+                }
+                current.put("toolbarOrder", kept)
+            }
+            current.put("schemaVersion", 4)
+            changed = true
         }
         val fixed = productionized(current.optString("backendURL"))
         if (fixed != current.optString("backendURL")) {
