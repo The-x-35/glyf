@@ -20,26 +20,88 @@ enum Glass {
     /// board instead of a blur so the palette matches tryglyf.com exactly.
     static var siteLook: Bool { keyTheme == "site" && !themedBgActive }
 
+    /// Solid keys with a hard bottom edge: the website look, and every
+    /// colour theme the user picks (those are the same keyboard in another
+    /// colour, not a different material).
+    static var solidLook: Bool { keyTheme == "site" || themedBgActive }
+
+    // MARK: Derived palette
+
+    /// Every colour in a solid keyboard comes from ONE board colour, the way
+    /// Gboard builds a theme from its seed: keys are lifted off the board,
+    /// function keys go the other way, and the ink is whichever of
+    /// near-black / near-white the keys can actually carry. Feeding it the
+    /// website's board reproduces the website's palette exactly, so themes
+    /// and the default look are the same keyboard.
+    struct KeyPalette {
+        let board, key, keyPressed, fn, fnPressed: UIColor
+        let ink, inkSoft, edge, card, soft: UIColor
+        /// The ink is light: chrome (hairlines, icons) should behave as dark.
+        let darkChrome: Bool
+
+        init(board: UIColor) {
+            var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+            board.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+            self.board = board
+            let lightBoard = board.glyfLuminance > 0.34
+            if lightBoard {
+                // White keys on a tinted board: Gboard's light themes and the
+                // website both land here.
+                key = .white
+                keyPressed = key.blend(board, 0.55)
+                fn = board.blend(.black, 0.14)
+                fnPressed = fn.blend(.white, 0.18)
+                ink = UIColor(hue: h, saturation: min(s, 0.10), brightness: 0.12, alpha: 1)
+                edge = UIColor.black.withAlphaComponent(0.24)
+                card = .white
+                soft = UIColor.white.withAlphaComponent(0.60)
+                darkChrome = false
+            } else {
+                key = board.blend(.white, 0.185)
+                keyPressed = key.blend(.white, 0.11)
+                fn = board.blend(.white, 0.07)
+                fnPressed = fn.blend(.white, 0.06)
+                ink = UIColor(hue: h, saturation: min(s, 0.04), brightness: 0.965, alpha: 1)
+                edge = UIColor.black.withAlphaComponent(0.70)
+                card = board.blend(.white, 0.065)
+                soft = UIColor.white.withAlphaComponent(0.07)
+                darkChrome = true
+            }
+            inkSoft = ink.blend(board, lightBoard ? 0.42 : 0.40)
+        }
+    }
+
+    private static var paletteCache: (key: String, palette: KeyPalette)?
+
+    static var palette: KeyPalette {
+        let seed = paletteSeed
+        let cacheKey = "\(themeBg)|\(isDark)|\(keyTheme)"
+        if let cached = paletteCache, cached.key == cacheKey { return cached.palette }
+        let made = KeyPalette(board: seed)
+        paletteCache = (cacheKey, made)
+        return made
+    }
+
+    /// The board colour a theme is built from: the picked colour, the middle
+    /// of a picked gradient, or the website's own board.
+    private static var paletteSeed: UIColor {
+        let painted = themeBgColors().map { UIColor(cgColor: $0) }
+        if painted.count == 1 { return painted[0] }
+        if let first = painted.first, let last = painted.last, painted.count > 1 {
+            return first.blend(last, 0.5)
+        }
+        return isDark ? Site.boardDark : Site.boardLight
+    }
+
     // MARK: Website palette (site/app/globals.css --kb* tokens)
 
+    /// The two board colours the website is built on (--kb). Everything else
+    /// on the site — key #ffffff/#48484c, function #b5bac3/#2e2e32, ink
+    /// #1d1d1f/#f5f5f7, edge, card, soft — falls out of KeyPalette to within
+    /// a shade, which is why themes and the default look identical in build.
     private enum Site {
         static let boardLight = UIColor(red: 0xD5 / 255, green: 0xD8 / 255, blue: 0xDE / 255, alpha: 1)
         static let boardDark = UIColor(red: 0x1F / 255, green: 0x1F / 255, blue: 0x22 / 255, alpha: 1)
-        static let keyLight = UIColor.white
-        static let keyDark = UIColor(red: 0x48 / 255, green: 0x48 / 255, blue: 0x4C / 255, alpha: 1)
-        static let fnLight = UIColor(red: 0xB5 / 255, green: 0xBA / 255, blue: 0xC3 / 255, alpha: 1)
-        static let fnDark = UIColor(red: 0x2E / 255, green: 0x2E / 255, blue: 0x32 / 255, alpha: 1)
-        static let inkLight = UIColor(red: 0x1D / 255, green: 0x1D / 255, blue: 0x1F / 255, alpha: 1)
-        static let inkDark = UIColor(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255, alpha: 1)
-        static let cardLight = UIColor.white
-        static let cardDark = UIColor(red: 0x2C / 255, green: 0x2C / 255, blue: 0x30 / 255, alpha: 1)
-        static let edgeLight = UIColor.black.withAlphaComponent(0.24)
-        static let edgeDark = UIColor.black.withAlphaComponent(0.70)
-        static let softLight = UIColor.white.withAlphaComponent(0.60)
-        static let softDark = UIColor.white.withAlphaComponent(0.07)
-        /// Pressed key: the board colour showing through, as on the web.
-        static let keyPressedLight = UIColor(red: 0xE4 / 255, green: 0xE6 / 255, blue: 0xEB / 255, alpha: 1)
-        static let keyPressedDark = UIColor(red: 0x5C / 255, green: 0x5C / 255, blue: 0x61 / 255, alpha: 1)
     }
 
     /// Painted background behind the blur: "" (stock), "color:#RRGGBB",
@@ -74,8 +136,9 @@ enum Glass {
 
     /// A colored backdrop reads as "dark chrome" — ink flips white there.
     static var themedBgActive: Bool { !themeBgColors().isEmpty }
-    /// Key chrome darkness: host dark mode OR any painted color/gradient.
-    static var chromeDark: Bool { isDark || themedBgActive }
+    /// Key chrome darkness: what the ink is doing, so hairlines and icons
+    /// stay legible on a pale theme as well as a deep one.
+    static var chromeDark: Bool { solidLook ? palette.darkChrome : isDark }
 
     // MARK: Blur (ONE layer per surface, never per key — §5.2)
 
@@ -94,16 +157,16 @@ enum Glass {
     /// Every key is the same surface (Apple's current uniform look).
     /// Glass theme: translucent over the shared blur = liquid glass.
     static var fillKey: UIColor {
-        if siteLook { return isDark ? Site.keyDark : Site.keyLight }
-        if keyTheme == "glass" || themedBgActive {
-            return chromeDark ? UIColor.white.withAlphaComponent(themedBgActive ? 0.24 : 0.14)
+        if solidLook { return palette.key }
+        if keyTheme == "glass" {
+            return chromeDark ? UIColor.white.withAlphaComponent(0.14)
                               : UIColor.white.withAlphaComponent(0.58)
         }
         return chromeDark ? UIColor(red: 0.42, green: 0.42, blue: 0.44, alpha: 1) : .white
     }
     static var fillKeyPressed: UIColor {
-        if siteLook { return isDark ? Site.keyPressedDark : Site.keyPressedLight }
-        if keyTheme == "glass" || themedBgActive {
+        if solidLook { return palette.keyPressed }
+        if keyTheme == "glass" {
             return chromeDark ? UIColor.white.withAlphaComponent(0.40)
                               : UIColor.white.withAlphaComponent(0.92)
         }
@@ -112,18 +175,16 @@ enum Glass {
     }
     /// Solid version regardless of theme (press balloons, cards).
     static var fillKeySolid: UIColor {
-        if siteLook { return isDark ? Site.keyDark : Site.keyLight }
+        if solidLook { return palette.key }
         return isDark ? UIColor(red: 0.42, green: 0.42, blue: 0.44, alpha: 1) : .white
     }
-    /// Function keys (shift, delete, 123, emoji, return): grey on the web,
-    /// like Apple's. Other themes keep the uniform key colour.
+    /// Function keys (shift, delete, 123, emoji, return): a shade off the
+    /// board, like Apple's and the website's.
     static var fillKeyFn: UIColor {
-        siteLook ? (isDark ? Site.fnDark : Site.fnLight) : fillKey
+        solidLook ? palette.fn : fillKey
     }
     static var fillKeyFnPressed: UIColor {
-        guard siteLook else { return fillKeyPressed }
-        return isDark ? UIColor(red: 0x3C / 255, green: 0x3C / 255, blue: 0x41 / 255, alpha: 1)
-                      : UIColor(red: 0xC7 / 255, green: 0xCB / 255, blue: 0xD3 / 255, alpha: 1)
+        solidLook ? palette.fnPressed : fillKeyPressed
     }
     static var fillKeySpecial: UIColor { fillKeyFn }
     static var fillKeyGlyf: UIColor { fillKey }
@@ -142,12 +203,12 @@ enum Glass {
     }
     /// Cards and sheets INSIDE keyboard surfaces (result views, popups…).
     static var surfaceCard: UIColor {
-        if siteLook { return isDark ? Site.cardDark : Site.cardLight }
+        if solidLook { return palette.card }
         return isDark ? UIColor(red: 0.17, green: 0.17, blue: 0.18, alpha: 1) : .white
     }
     /// Soft chip/field fill over the board (the web's --kb-soft).
     static var fillSoft: UIColor {
-        if siteLook { return isDark ? Site.softDark : Site.softLight }
+        if solidLook { return palette.soft }
         return isDark ? UIColor.white.withAlphaComponent(0.08) : UIColor.white.withAlphaComponent(0.6)
     }
 
@@ -173,14 +234,11 @@ enum Glass {
     static let accentDanger = UIColor(red: 0xF0 / 255, green: 0x44 / 255, blue: 0x38 / 255, alpha: 1)
 
     static var textPrimary: UIColor {
-        if siteLook { return isDark ? Site.inkDark : Site.inkLight }
+        if solidLook { return palette.ink }
         return chromeDark ? .white : UIColor(white: 0.07, alpha: 1)
     }
     static var textSecondary: UIColor {
-        if siteLook {
-            return isDark ? UIColor(red: 0xA1 / 255, green: 0xA1 / 255, blue: 0xA6 / 255, alpha: 1)
-                          : UIColor(red: 0x6E / 255, green: 0x6E / 255, blue: 0x73 / 255, alpha: 1)
-        }
+        if solidLook { return palette.inkSoft }
         return chromeDark ? UIColor(white: 0.85, alpha: 1) : UIColor(white: 0.42, alpha: 1)
     }
     /// The one thing that stays constant either way: the brand keycap.
@@ -189,7 +247,7 @@ enum Glass {
     /// Space-bar "glyf" watermark — tuned to read on EVERY theme (the old
     /// textSecondary×0.45 vanished on light glass).
     static var watermark: UIColor {
-        if siteLook { return (isDark ? Site.inkDark : Site.inkLight).withAlphaComponent(0.40) }
+        if solidLook { return palette.ink.withAlphaComponent(0.40) }
         return chromeDark ? UIColor.white.withAlphaComponent(0.55)
                           : UIColor(red: 0.16, green: 0.16, blue: 0.18, alpha: 0.40)
     }
@@ -204,16 +262,16 @@ enum Glass {
     // MARK: Shadows (Apple keys: crisp 1pt drop, no blur fuzz)
 
     static var keyShadowOpacity: Float {
-        if siteLook { return 1 }            // the colour carries the alpha
+        if solidLook { return 1 }           // the colour carries the alpha
         if keyTheme == "glass" { return isDark ? 0.22 : 0.08 }
         return isDark ? 0.40 : 0.20
     }
     /// The web draws `box-shadow: 0 2px 0 var(--kb-edge)`: a hard edge under
     /// each key, not a blur.
     static var keyShadowColor: UIColor {
-        siteLook ? (isDark ? Site.edgeDark : Site.edgeLight) : .black
+        solidLook ? palette.edge : .black
     }
-    static var keyShadowOffset: CGSize { CGSize(width: 0, height: siteLook ? 2 : 1) }
+    static var keyShadowOffset: CGSize { CGSize(width: 0, height: solidLook ? 2 : 1) }
     static let keyShadowRadius: CGFloat = 0
 
     // MARK: Motion (§5.2/§5.3 — nothing bounces)
@@ -247,7 +305,7 @@ enum Glass {
 
     /// Solid stand-ins when Reduce Transparency is on.
     static var solidBackdrop: UIColor {
-        if siteLook { return isDark ? Site.boardDark : Site.boardLight }
+        if solidLook { return palette.board }
         return isDark ? UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
                       : UIColor(red: 0.82, green: 0.84, blue: 0.87, alpha: 1)
     }
@@ -255,6 +313,24 @@ enum Glass {
 }
 
 extension UIColor {
+    /// Perceived brightness, 0…1 (sRGB luma — good enough to pick ink).
+    var glyfLuminance: CGFloat {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        guard getRed(&r, green: &g, blue: &b, alpha: &a) else { return 0.5 }
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    /// Mix toward another colour: 0 keeps self, 1 becomes `other`.
+    func blend(_ other: UIColor, _ t: CGFloat) -> UIColor {
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 1
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 1
+        guard getRed(&r1, green: &g1, blue: &b1, alpha: &a1),
+              other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2) else { return self }
+        let k = max(0, min(1, t))
+        return UIColor(red: r1 + (r2 - r1) * k, green: g1 + (g2 - g1) * k,
+                       blue: b1 + (b2 - b1) * k, alpha: a1 + (a2 - a1) * k)
+    }
+
     /// "RRGGBB" → color; nil on malformed input.
     convenience init?(hex: String) {
         let s = hex.trimmingCharacters(in: .whitespaces)

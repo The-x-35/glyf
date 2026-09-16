@@ -227,3 +227,45 @@ class KeycapGMark extends StatelessWidget {
     );
   }
 }
+
+/// The keyboard's palette, derived from one board colour — the Dart twin of
+/// Glass.KeyPalette in GlassTokens.swift / KeyPalette.kt. Theme previews are
+/// built with it so a tile shows exactly what the keyboard will wear.
+class KeyPalette {
+  KeyPalette(this.board)
+      : _light = _luminance(board) > 0.34;
+
+  final Color board;
+  final bool _light;
+
+  bool get lightBoard => _light;
+  Color get key => _light ? Colors.white : _blend(board, Colors.white, 0.185);
+  Color get keyPressed =>
+      _light ? _blend(key, board, 0.55) : _blend(key, Colors.white, 0.11);
+  Color get fn => _light
+      ? _blend(board, Colors.black, 0.14)
+      : _blend(board, Colors.white, 0.07);
+  Color get ink => _light
+      ? HSVColor.fromColor(board).withSaturation(
+              HSVColor.fromColor(board).saturation.clamp(0.0, 0.10))
+          .withValue(0.12)
+          .toColor()
+      : HSVColor.fromColor(board).withSaturation(
+              HSVColor.fromColor(board).saturation.clamp(0.0, 0.04))
+          .withValue(0.965)
+          .toColor();
+  Color get edge => Colors.black.withValues(alpha: _light ? 0.24 : 0.70);
+
+  /// Public mix so previews can build a gradient's middle colour.
+  static Color mix(Color a, Color b, double t) => _blend(a, b, t);
+
+  static double _luminance(Color c) =>
+      (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b);
+
+  static Color _blend(Color a, Color b, double t) => Color.from(
+        alpha: 1,
+        red: a.r + (b.r - a.r) * t,
+        green: a.g + (b.g - a.g) * t,
+        blue: a.b + (b.b - a.b) * t,
+      );
+}
