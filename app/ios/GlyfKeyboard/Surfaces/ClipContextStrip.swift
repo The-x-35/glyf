@@ -3,6 +3,8 @@ import UIKit
 protocol ClipContextStripDelegate: AnyObject {
     /// The strip was tapped while it only knew *that* something was copied.
     func clipStripRead()
+    /// Paste was tapped: put the copy in the field (and in history).
+    func clipStripPaste()
     /// The quoted text was tapped: act on it.
     func clipStripAct(_ text: String)
     func clipStripDismissed()
@@ -13,8 +15,12 @@ protocol ClipContextStripDelegate: AnyObject {
 ///
 /// Reading the pasteboard can raise Apple's paste prompt, so the strip starts
 /// out knowing only that a copy happened (changeCount + hasStrings, both
-/// prompt-free). The user's tap is the intent that reads it; from then on the
-/// text is quoted, and tapping it acts on it.
+/// prompt-free). Paste is the moment the person asks for the text, so that is
+/// where the read happens — iOS shows its one alert per copy, and from then
+/// on the text lives in Glyf's own history and never needs asking again.
+///
+/// (UIPasteControl would skip that alert, but inside a keyboard extension it
+/// renders inert: it asks canPaste and then never delivers a tap.)
 final class ClipContextStrip: UIView {
 
     weak var delegate: ClipContextStripDelegate?
@@ -22,11 +28,25 @@ final class ClipContextStrip: UIView {
     private let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard"))
     private let label = UILabel()
     private let closeButton = UIButton(type: .system)
+    private var pasteButton: UIButton?
     private(set) var text: String?
 
     init() {
         super.init(frame: .zero)
         backgroundColor = .clear
+
+        let paste = UIButton(type: .system)
+        paste.setTitle("Paste", for: .normal)
+        paste.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        paste.setTitleColor(.white, for: .normal)
+        paste.backgroundColor = Glass.accentPrimary
+        paste.layer.cornerRadius = 10
+        paste.layer.cornerCurve = .continuous
+        paste.accessibilityIdentifier = "clip:paste"
+        paste.addAction(UIAction { [weak self] _ in self?.delegate?.clipStripPaste() },
+                        for: .touchUpInside)
+        addSubview(paste)
+        pasteButton = paste
 
         icon.tintColor = Glass.textSecondary
         icon.contentMode = .scaleAspectFit
@@ -48,7 +68,9 @@ final class ClipContextStrip: UIView {
         isAccessibilityElement = false
         label.isAccessibilityElement = true
         label.accessibilityIdentifier = "clip:card"
-        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+        tap.delegate = self
+        addGestureRecognizer(tap)
         showAvailable()
     }
 
@@ -58,6 +80,7 @@ final class ClipContextStrip: UIView {
         text = nil
         label.text = "Copied text"
         label.textColor = Glass.textSecondary
+        pasteButton?.isHidden = false
     }
 
     func show(text: String) {
@@ -66,6 +89,9 @@ final class ClipContextStrip: UIView {
         self.text = text
         label.text = "“\(flat)”"
         label.textColor = Glass.textPrimary
+        // The text is in hand: the strip is now a thing to act on, not paste.
+        pasteButton?.isHidden = true
+        setNeedsLayout()
     }
 
     @objc private func tapped() {
@@ -77,7 +103,24 @@ final class ClipContextStrip: UIView {
         let h = bounds.height
         icon.frame = CGRect(x: 14, y: (h - 18) / 2, width: 18, height: 18)
         closeButton.frame = CGRect(x: bounds.width - 42, y: 0, width: 38, height: h)
-        label.frame = CGRect(x: 42, y: 0, width: bounds.width - 42 - 46, height: h)
+        var labelRight = bounds.width - 46
+        if let pasteButton, !pasteButton.isHidden {
+            let w: CGFloat = 72, ph = min(h - 12, 32)
+            pasteButton.frame = CGRect(x: labelRight - w - 6, y: (h - ph) / 2,
+                                       width: w, height: ph)
+            labelRight -= w + 14
+        }
+        label.frame = CGRect(x: 42, y: 0, width: max(40, labelRight - 42), height: h)
+    }
+}
+
+extension ClipContextStrip: UIGestureRecognizerDelegate {
+    /// The Paste button owns its own taps: without this the strip's gesture
+    /// swallows them and Paste would do the same thing as the strip.
+    func gestureRecognizer(_ g: UIGestureRecognizer,
+                           shouldReceive touch: UITouch) -> Bool {
+        guard let pasteButton, !pasteButton.isHidden else { return true }
+        return !pasteButton.frame.contains(touch.location(in: self))
     }
 }
 

@@ -370,7 +370,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             ClipboardStore.captureNow() // opening the screen is user intent
             var rows: [Row] = ClipboardStore.load().map { .clip($0) }
             if rows.isEmpty {
-                rows.append(.info(title: "Nothing copied yet", detail: nil))
+                rows.append(.info(title: ClipboardStore.fullAccessHint
+                                  ? "Nothing copied yet"
+                                  : "Turn on Full Access to keep what you copy", detail: nil))
             } else {
                 rows.append(.action(title: "Clear unpinned", style: .danger, handler: {
                     ClipboardStore.clearUnpinned()
@@ -513,6 +515,18 @@ private final class ShellCell: UITableViewCell {
         guard t == glyfId else { return t }
         let last = glyfId.split(separator: ".").last.map(String.init) ?? glyfId
         return last.prefix(1).uppercased() + last.dropFirst()
+    }
+
+    /// "Just now", "2 min", "1 hr", "Yesterday" — the website's clipboard ages.
+    static func age(_ date: Date, now: Date = Date()) -> String {
+        let seconds = max(0, now.timeIntervalSince(date))
+        switch seconds {
+        case ..<60: return "Just now"
+        case ..<3600: return "\(Int(seconds / 60)) min"
+        case ..<86_400: return "\(Int(seconds / 3600)) hr"
+        case ..<172_800: return "Yesterday"
+        default: return "\(Int(seconds / 86_400)) days"
+        }
     }
 
     private func preview(_ v: String) -> String {
@@ -696,8 +710,15 @@ private final class ShellCell: UITableViewCell {
             card.backgroundColor = .clear
             card.layer.borderColor = UIColor.clear.cgColor
         case .clip(let item):
-            setIcon("doc.on.clipboard")
-            title.text = preview(item.text)
+            // Website row: how long ago on the left, the text beside it.
+            if Glass.siteLook {
+                title.text = Self.age(item.ts)
+                value.text = preview(item.text)
+                value.isHidden = false
+            } else {
+                setIcon("doc.on.clipboard")
+                title.text = preview(item.text)
+            }
             setTrailing(iconButton(item.pinned ? "pin.fill" : "pin",
                                    tint: item.pinned ? Glass.accentPrimary
                                                      : Glass.textSecondary) { [weak self] in

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { GlyfDef, GlyfDefSchema, GlyfStep } from "../schemas/glyfdef.js";
+import { registryDir } from "./paths.js";
 import { runTool, toolExists } from "./tools.js";
 
 /** Loads and executes Builder-format glyf definitions (§6.8).
@@ -9,9 +9,7 @@ import { runTool, toolExists } from "./tools.js";
  *  caller-provided vars (a one-shot HTTP run can't pause mid-chain; the
  *  interactive ask UI ships with the chain editor, M9). */
 
-const REGISTRY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "registry", "glyfs");
-
-export function loadRegistry(dir = REGISTRY_DIR): Map<string, GlyfDef> {
+export function loadRegistry(dir = registryDir("glyfs")): Map<string, GlyfDef> {
   const defs = new Map<string, GlyfDef>();
   for (const file of readdirSync(dir).filter(f => f.endsWith(".json")).sort()) {
     const raw = JSON.parse(readFileSync(join(dir, file), "utf8"));

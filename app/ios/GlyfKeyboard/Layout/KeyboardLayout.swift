@@ -15,8 +15,16 @@ struct KeySpec: Equatable {
     }
 
     var kind: Kind
-    /// Width in letter-key units. -1 = fill remaining (space bar).
+    /// Width in key columns (pitches), the unit the system keyboard is drawn
+    /// on: one letter is 1, and every row adds up to 10. -1 = fill remaining
+    /// (space bar). Measured against iOS: see KeyboardView.layoutSubviews.
     var units: CGFloat = 1
+    /// Air the system leaves beside shift/delete/#+= : the key keeps its
+    /// column but gives this fraction of a pitch back on one side, which is
+    /// what makes the gap next to those keys wider than 6pt.
+    var gapUnits: CGFloat = 0
+    /// Which side the air is on (delete/return keep their right edge).
+    var gapLeading: Bool = false
     var accents: [String] = []
 
     var isChar: Bool { if case .char = kind { return true }; return false }
@@ -98,24 +106,24 @@ enum KeyboardLayout {
             }
             result.append("qwertyuiop".map { key(String($0)) })
             result.append("asdfghjkl".map { key(String($0)) })
-            result.append([KeySpec(kind: .shift, units: 1.4)]
+            result.append([side(.shift)]
                 + "zxcvbnm".map { key(String($0)) }
-                + [KeySpec(kind: .delete, units: 1.4)])
+                + [side(.delete, leading: true)])
             result.append(bottomRow(modeLabel: "123", globe: globe, context: context))
         case .symbols1:
             result.append("1234567890".map { key(String($0)) })
             result.append(["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""].map { key($0) })
             // Apple metrics: the five keys STRETCH between mode and delete.
-            result.append([KeySpec(kind: .mode("#+="), units: 1.4)]
+            result.append([side(.mode("#+="))]
                 + [".", ",", "?", "!", "'"].map { wide(key($0)) }
-                + [KeySpec(kind: .delete, units: 1.4)])
+                + [side(.delete, leading: true)])
             result.append(bottomRow(modeLabel: "ABC", globe: globe, context: context))
         case .symbols2:
             result.append(["[", "]", "{", "}", "#", "%", "^", "*", "+", "="].map { key($0) })
             result.append(["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"].map { key($0) })
-            result.append([KeySpec(kind: .mode("123"), units: 1.4)]
+            result.append([side(.mode("123"))]
                 + [".", ",", "?", "!", "'"].map { wide(key($0)) }
-                + [KeySpec(kind: .delete, units: 1.4)])
+                + [side(.delete, leading: true)])
             result.append(bottomRow(modeLabel: "ABC", globe: globe, context: context))
         }
         return result
@@ -125,32 +133,41 @@ enum KeyboardLayout {
         KeySpec(kind: .char(c), accents: accents[c] ?? [])
     }
 
+    /// shift, delete and the mode key on the third row: one and a half
+    /// columns each, with 0.2 of a column given back as air toward the
+    /// letters (iOS draws them 45.3pt wide at a 39.5pt pitch).
+    private static func side(_ kind: KeySpec.Kind, leading: Bool = false) -> KeySpec {
+        KeySpec(kind: kind, units: 1.5, gapUnits: 0.2, gapLeading: leading)
+    }
+
     private static func wide(_ spec: KeySpec) -> KeySpec {
         var s = spec
-        s.units = 1.44 // (10 − two 1.4 specials) ÷ 5, Apple-style stretch
+        s.units = 1.4 // (10 − two 1.5 specials) ÷ 5, Apple-style stretch
         return s
     }
 
+    /// 10 columns again: 1.25 + 1.25 + space + 2.5 on iOS, and the globe
+    /// takes a column of its own where the system still asks us to draw it.
     private static func bottomRow(modeLabel: String, globe: Bool,
                                   context: KeyboardContext = .text) -> [KeySpec] {
-        var row: [KeySpec] = [KeySpec(kind: .mode(modeLabel), units: globe ? 1.15 : 1.3)]
-        if globe { row.append(KeySpec(kind: .globe, units: 1.0)) }
+        var row: [KeySpec] = [KeySpec(kind: .mode(modeLabel), units: 1.25)]
+        if globe { row.append(KeySpec(kind: .globe, units: 1.25)) }
         // Email/URL fields: the keys those fields actually need, where the
         // system keyboard puts them (§6.1).
         switch context {
         case .email:
-            row.append(key("@"))
+            row.append(KeySpec(kind: .char("@"), units: 1.25))
             row.append(KeySpec(kind: .space, units: -1))
-            row.append(key("."))
+            row.append(KeySpec(kind: .char("."), units: 1.25, accents: accents["."] ?? []))
         case .url:
-            row.append(key("."))
+            row.append(KeySpec(kind: .char("."), units: 1.25, accents: accents["."] ?? []))
             row.append(KeySpec(kind: .space, units: -1))
-            row.append(key("/"))
+            row.append(KeySpec(kind: .char("/"), units: 1.25, accents: accents["/"] ?? []))
         default:
-            row.append(KeySpec(kind: .emoji, units: globe ? 1.0 : 1.1))
+            row.append(KeySpec(kind: .emoji, units: 1.25))
             row.append(KeySpec(kind: .space, units: -1))
         }
-        row.append(KeySpec(kind: .ret, units: 2.2))
+        row.append(KeySpec(kind: .ret, units: 2.5))
         return row
     }
 

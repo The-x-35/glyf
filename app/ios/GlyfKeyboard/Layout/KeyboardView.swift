@@ -130,37 +130,41 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         super.layoutSubviews()
         guard !rows.isEmpty, bounds.width > 100 else { return }
         let s = SettingsStore.current
-        // Apple-standard feel (measured against the system keyboard):
-        // 6pt key gaps, 10pt row gaps → 44pt keys at 216.
+        // Measured off the system keyboard on a 402pt phone (iOS 26): the
+        // keys sit on a 10-column grid, 6.5pt side margins, 39.5pt column
+        // pitch, 6pt gaps → 33.5pt letters, 54pt rows, 42pt tall. Matching
+        // this to the point is what keeps muscle memory intact.
         let hGap: CGFloat = 6
-        let vGap: CGFloat = 10
-        var left: CGFloat = 3
-        var right: CGFloat = 3
+        let vGap: CGFloat = 12
+        var left: CGFloat = 6.5
+        var right: CGFloat = 6.5
         if s.oneHanded == "left" { right += 56 }
         if s.oneHanded == "right" { left += 56 }
         let availW = bounds.width - left - right
-        // Digit pads have 3 wide columns; QWERTY sizes off 10 units.
-        unitWidth = context.isPad ? (availW - 2 * hGap - 80) / 3
-                                  : (availW - 9 * hGap) / 10
+        // Digit pads have 3 wide columns; QWERTY sizes off 10 columns.
+        let columns: CGFloat = context.isPad ? 3 : 10
+        let padInset: CGFloat = context.isPad ? 80 : 0
+        keyPitch = (availW - padInset + hGap) / columns
+        unitWidth = keyPitch - hGap
         let rowH = bounds.height / CGFloat(rows.count)
         let keyH = min(rowH - vGap, context.isPad ? 50 : .greatestFiniteMagnitude)
-        keyPitch = unitWidth + hGap
         rowHeight = rowH
 
         var idx = 0
         for (r, row) in rows.enumerated() {
             let fixedUnits = row.map { $0.units }.filter { $0 > 0 }.reduce(0, +)
-            let gaps = CGFloat(row.count - 1) * hGap
-            let hasFlex = row.contains { $0.units < 0 }
-            let fixedWidth = fixedUnits * unitWidth + gaps
-            let flexWidth = max(unitWidth, availW - fixedWidth)
-            let rowWidth = hasFlex ? availW : fixedWidth
+            let flexUnits = max(1, columns - fixedUnits)
+            let rowUnits = row.contains { $0.units < 0 } ? columns : fixedUnits
+            let rowWidth = rowUnits * keyPitch - hGap
             var x = left + (availW - rowWidth) / 2
             let y = CGFloat(r) * rowH + vGap / 2
             for spec in row {
-                let w = spec.units < 0 ? flexWidth : spec.units * unitWidth
-                keys[idx].frame = CGRect(x: x, y: y, width: w, height: keyH)
-                x += w + hGap
+                let units = spec.units < 0 ? flexUnits : spec.units
+                let air = spec.gapUnits * keyPitch
+                let w = units * keyPitch - hGap - air
+                keys[idx].frame = CGRect(x: spec.gapLeading ? x + air : x, y: y,
+                                         width: w, height: keyH)
+                x += units * keyPitch
                 idx += 1
             }
         }

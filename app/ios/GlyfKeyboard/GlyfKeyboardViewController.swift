@@ -274,8 +274,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
             appearance: Self.appearances, footprintMB: mb, hasFullAccess: hasFullAccess)
         ClipboardStore.fullAccessHint = hasFullAccess && !isSecureField
         if hasFullAccess, !isSecureField {
-            // NO pasteboard read here — that fires Apple's paste prompt over
-            // the keyboard. Reads happen at user-intent moments only.
+            // Nothing reads the pasteboard here on purpose: a read the person
+            // did not ask for raises Apple's "Allow Paste" alert every single
+            // time. The copied-text strip offers a Paste button instead (a
+            // system UIPasteControl, no alert), and that is what fills
+            // history. The Clipboard screen reads too, since opening it is
+            // the ask.
             BackendClient.shared.fetchRemaining { [weak self] n in
                 self?.toolbar.setRunsRemaining(n)
             }
@@ -699,7 +703,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         let before = textDocumentProxy.documentContextBeforeInput ?? ""
         let tail = String(before.suffix(120))
-        let chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields)
+        // Something just copied is offered while the field is still empty —
+        // but only what history already holds, so the chip never has to read
+        // the pasteboard (that is the Paste button's job, alert-free).
+        let paste: String? = (hasFullAccess && tail.isEmpty && ClipContext.isFresh())
+            ? ClipboardStore.load().first?.text : nil
+        let chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields, paste: paste)
         toolbar.showSmart(chip)
         return chip != nil
     }
@@ -1239,15 +1248,37 @@ extension GlyfKeyboardViewController: ClipContextStripDelegate {
 
     func clipStripRead() {
         // The user's tap is the intent that may surface Apple's paste prompt.
+        // (The Paste button beside this label goes through UIPasteControl and
+        // never prompts; this path is the fallback for the rest of the strip.)
         guard let text = UIPasteboard.general.string,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             ClipContext.markDone()
             removeClipStrip()
             return
         }
+        remember(copied: text)
+        clipStrip?.show(text: text)
+    }
+
+    /// Everything that arrives from the pasteboard lands in history first, so
+    /// "what I copied earlier" is there even after the copy itself is gone.
+    private func remember(copied text: String) {
         _ = ClipboardStore.inserting(text, into: ClipboardStore.load(), now: Date())
             .map(ClipboardStore.save)
-        clipStrip?.show(text: text)
+    }
+
+    func clipStripPaste() {
+        guard let text = UIPasteboard.general.string,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            ClipContext.markDone()
+            removeClipStrip()
+            return
+        }
+        remember(copied: text)
+        ClipContext.markDone()
+        removeClipStrip()
+        textDocumentProxy.insertText(text)
+        updateCandidates()
     }
 
     func clipStripAct(_ text: String) {
@@ -1304,10 +1335,16 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarSmartTapped(_ chip: Smart.Chip) {
-        textDocumentProxy.insertText(chip.insert)
+        if case .paste(let text) = chip {
+            // The chip only ever carries text history already has, so the tap
+            // types it straight out with no pasteboard read.
+            ClipContext.markDone()
+            textDocumentProxy.insertText(text)
+        } else {
+            textDocumentProxy.insertText(chip.insert)
+        }
         toolbar.showSmart(nil)
         updateCandidates()
-        if case .vault = chip { MemoryLogger.logSurface("smart:vault") }
     }
 
     func toolbarSuggestionTapped(_ suggestion: GlyfToolbar.Suggestion) {

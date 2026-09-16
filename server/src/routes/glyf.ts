@@ -42,11 +42,18 @@ export function glyfRoutes(
   app.post("/glyf/run", async (req, reply) => {
     const parsed = RunRequestSchema.safeParse(req.body);
 
+    // `no-transform` and `X-Accel-Buffering: no` are what tell a CDN or proxy
+    // in front of this server (Vercel's included) to pass bytes through
+    // instead of collecting the whole body first, which would turn the stream
+    // into one late blob. flushHeaders() opens the stream immediately so the
+    // client sees a live connection before the first token.
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     });
+    reply.raw.flushHeaders?.();
     const send = (event: string, data: unknown) => {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };

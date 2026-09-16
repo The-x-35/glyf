@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { env, assertServerSecrets } from "./env.js";
 import { MemoryMeter } from "./lib/meter.js";
-import { defaultKV } from "./lib/store.js";
+import { defaultKV, type KV } from "./lib/store.js";
 import { GlyfLibrary } from "./lib/userglyfs.js";
 import { glyfRoutes } from "./routes/glyf.js";
 import { meterRoutes } from "./routes/meter.js";
@@ -17,16 +17,48 @@ import { waitlistRoutes } from "./routes/waitlist.js";
 import { actRoutes } from "./routes/act.js";
 import { vocabRoutes } from "./routes/vocab.js";
 
-export function buildApp() {
+declare module "fastify" {
+  interface FastifyInstance {
+    /** The store this instance was built with, so a serverless entry point can
+     *  flush queued writes once the response is done. */
+    glyfKV: KV;
+  }
+}
+
+/** `kv` is a parameter only so tests can watch the serverless lifecycle hooks;
+ *  every caller leaves it alone and gets the store `defaultKV()` picks. */
+export function buildApp(kv: KV = defaultKV()) {
   const app = Fastify({
     logger: { level: "info" },
     disableRequestLogging: true,
   });
-  const kv = defaultKV();
   const meter = new MemoryMeter(env.freeRunsPerDay);
   const library = new GlyfLibrary(kv);
+  app.decorate("glyfKV", kv);
 
-  healthRoutes(app);
+  // A store that lives somewhere else (Postgres on serverless) keeps the
+  // synchronous KV calls honest with two hooks: read in what other instances
+  // wrote before a handler looks, and get this handler's writes durable before
+  // the client can act on the response (a /p/<id> link, an OAuth redirect).
+  // FileKV and MemoryKV define neither, so local runs add nothing.
+  if (kv.refresh) {
+    app.addHook("onRequest", async () => {
+      try {
+        await kv.refresh!();
+      } catch (err) {
+        // Serve what the mirror already holds rather than failing the request.
+        app.log.error({ err: err instanceof Error ? err.message : String(err) }, "kv_refresh_failed");
+      }
+    });
+  }
+  if (kv.flush) {
+    app.addHook("onSend", async (_req, _reply, payload) => {
+      await kv.flush!();
+      return payload;
+    });
+  }
+
+  healthRoutes(app, kv);
   glyfRoutes(app, meter, library, kv);
   meterRoutes(app, meter);
   builderRoutes(app, library);

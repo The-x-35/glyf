@@ -118,19 +118,36 @@ export const PROVIDERS: Record<string, ProviderCfg> = {
   },
 };
 
-const pending = new Map<string, PendingAuth>();
-
-function prunePending(): void {
-  for (const [k, v] of pending) {
-    if (Date.now() - v.createdAt > 600_000) pending.delete(k);
-  }
-}
+/** An authorization in flight, held for ten minutes.
+ *
+ *  This lives in the KV rather than in a module Map because `start` and
+ *  `callback` are two separate requests: on a serverless host they can land on
+ *  two different instances, and a Map would lose the state between them, so
+ *  every sign-in would come back as ok=false. The KV is shared, so it works on
+ *  one process and on twenty. */
+const PENDING = "oauth_pending";
+const PENDING_TTL_MS = 600_000;
 
 export function connKey(deviceId: string, provider: string): string {
   return `${deviceId}:${provider}`;
 }
 
 export function connectorRoutes(app: FastifyInstance, kv: KV): void {
+
+  const pending = {
+    set(state: string, auth: PendingAuth) {
+      for (const { id, value } of kv.list<PendingAuth>(PENDING)) {
+        if (Date.now() - value.createdAt > PENDING_TTL_MS) kv.del(PENDING, id);
+      }
+      kv.put(PENDING, state, auth);
+    },
+    get(state: string): PendingAuth | undefined {
+      const auth = kv.get<PendingAuth>(PENDING, state);
+      // Expiry is enforced on read too: pruning is best effort.
+      return auth && Date.now() - auth.createdAt <= PENDING_TTL_MS ? auth : undefined;
+    },
+    delete(state: string) { kv.del(PENDING, state); },
+  };
 
   const clientId = (p: ProviderCfg) => process.env[`${p.envPrefix}_CLIENT_ID`];
   const clientSecret = (p: ProviderCfg) => process.env[`${p.envPrefix}_CLIENT_SECRET`];
@@ -183,7 +200,6 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
       const state = randomUUID();
       const verifier = randomUUID() + randomUUID();
       const challenge = createHash("sha256").update(verifier).digest("base64url");
-      prunePending();
       pending.set(state, {
         deviceId, provider: "google", scopes: chosen, verifier, createdAt: Date.now(),
       });
@@ -267,7 +283,6 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
       if (deviceId.length < 8) return reply.code(400).send({ error: "deviceId required" });
 
       const state = randomUUID();
-      prunePending();
       pending.set(state, {
         deviceId, provider: name, scopes: p.scope ? p.scope.split(/[ ,]+/) : [],
         verifier: "", createdAt: Date.now(),

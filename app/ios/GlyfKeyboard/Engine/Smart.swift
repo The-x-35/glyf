@@ -12,17 +12,21 @@ enum Smart {
         case calc(value: String, hasEquals: Bool)
         /// "my upi id is " -> the saved UPI.
         case vault(field: VaultField)
+        /// Something was just copied: one tap pastes it.
+        case paste(text: String)
 
         var key: String {
             switch self {
             case .calc: return "="
             case .vault(let f): return f.label
+            case .paste: return "Paste"
             }
         }
         var value: String {
             switch self {
             case .calc(let v, _): return v
             case .vault(let f): return f.value
+            case .paste(let t): return t.replacingOccurrences(of: "\n", with: " ")
             }
         }
         /// What tapping the chip puts in the field.
@@ -30,14 +34,17 @@ enum Smart {
             switch self {
             case .calc(let v, let hasEquals): return hasEquals ? " \(v)" : " = \(v)"
             case .vault(let f): return f.value
+            case .paste(let t): return t
             }
         }
     }
 
-    /// One chip at most, calculator first (it is the more specific signal).
-    static func chip(for text: String, fields: [VaultField]) -> Chip? {
+    /// One chip at most, in the website's order: a sum you just typed, then a
+    /// saved detail the sentence asks for, then something freshly copied.
+    static func chip(for text: String, fields: [VaultField], paste: String? = nil) -> Chip? {
         if let c = calc(text) { return .calc(value: c.value, hasEquals: c.hasEquals) }
         if let f = vaultMatch(text, fields: fields) { return .vault(field: f) }
+        if let paste, !paste.isEmpty, text.isEmpty { return .paste(text: paste) }
         return nil
     }
 

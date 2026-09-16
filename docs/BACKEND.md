@@ -1538,3 +1538,187 @@ History:
 
 Not opened on purpose: `server/.env`, `site/.env.local`, and the contents of `server/data/*.json` (entry counts only).
 
+
+---
+
+## 20. Deploying on Vercel
+
+Added 2026-09-16. This section replaces the generic checklist in [13.2](#132-deployment-checklist) for the Vercel route. It is written from the code in `server/` after the changes listed below; the dashboard steps and the DNS record were not executed, so treat them as the instructions to follow, not as a report of something already done.
+
+### 20.1 What was added to the repo
+
+| File | What it does |
+|---|---|
+| `server/api/index.ts` | The function Vercel runs. Builds the Fastify app once per cold start with the same `buildApp()` the CLI uses, then hands each raw `req`/`res` to Fastify's own server. No route logic is duplicated |
+| `server/vercel.json` | Rewrites every path to that function, ships `src/registry/**` with it, and raises the function timeout to 60 seconds |
+| `server/src/lib/store.ts` | New `PostgresKV` alongside `FileKV` and `MemoryKV`, plus the driver choice in `defaultKV()` |
+| `server/src/lib/paths.ts` | Finds the shipped glyf and tool JSON whether the code was moved, bundled or left in place |
+| `server/test/store.test.ts`, `server/test/vercel.test.ts` | 36 new tests: the KV contract across all three drivers, the Postgres driver against a fake database, the request hooks, and the function entry end to end |
+
+`npm run dev` and `npm start` are untouched: they still run `src/index.ts`, still listen on `PORT`, and still use `server/data/*.json` unless a database is configured (see 20.4).
+
+### 20.2 Streaming
+
+`POST /glyf/run` is the only Server Sent Events route. `POST /act` returns one JSON body and needs nothing special.
+
+Handing the raw `req`/`res` pair to `fastify.server.emit("request", ...)` keeps the response a real Node stream, so frames leave as they are written instead of being collected into one body. Three things were changed or added to keep it that way end to end:
+
+1. `routes/glyf.ts` now sends `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`, and calls `flushHeaders()` right after `writeHead`. Those are the headers that stop a CDN or proxy in front of the function from buffering the body, and the flush opens the stream before the first token exists.
+2. The function waits for the response to finish (`close` or `finish`) before it resolves. Without that wait the invocation can be frozen part way through a stream.
+3. `test/vercel.test.ts` locks the behaviour: the response must have `transfer-encoding: chunked`, no `content-length`, the two anti-buffering headers, and both a `token` and a `done` frame.
+
+The maximum run length is the function timeout, not a stream setting. `vercel.json` sets `maxDuration: 60`, because the platform default is 10 to 15 seconds depending on plan and a smart-tier chain with a fallback can exceed that. 60 is the ceiling on Hobby; on Pro it can go higher. If a deploy is rejected for the value, lower it and the only effect is a shorter cap on `/glyf/run`, `/act` and `/vocab/generate`.
+
+### 20.3 Storage
+
+A Vercel function has a per-instance, read-only file system, so `FileKV` would lose every write between invocations. `PostgresKV` implements the same `KV` interface against Neon over HTTP (`@neondatabase/serverless`, a new dependency), in one table it creates if missing:
+
+```sql
+create table if not exists glyf_kv (
+  collection text not null,
+  key text not null,
+  value jsonb,
+  deleted boolean not null default false,
+  updated_at timestamptz not null default now(),
+  primary key (collection, key)
+);
+create index if not exists glyf_kv_updated_at_idx on glyf_kv (updated_at);
+```
+
+Both statements are `if not exists` and a duplicate error from two instances starting at once is swallowed, so a cold stampede is safe. The table is separate from the website's waitlist table in the same database; nothing existing is touched.
+
+Every caller (meter, connections, glyf library, hub, pages, telemetry, waitlist, search recents) keeps calling the KV synchronously, unchanged. That works because the driver keeps a mirror of the table in memory and `buildApp()` adds two hooks when, and only when, the store needs them:
+
+- `onRequest` calls `refresh()`, one query for the rows whose `updated_at` moved since the last call. The first call on a cold instance loads the table; later calls normally return nothing. So a handler reads what every other instance had written when the request arrived, not a stale snapshot. If the query fails the request is still served from the mirror and `kv_refresh_failed` is logged.
+- `onSend` calls `flush()`, which waits for this request's writes to land before the body goes out. That is what makes a `/p/<id>` link work the moment the user taps it and an OAuth token durable before the app is redirected back. `flush()` never rejects; a failed write is logged and dropped after one retry. The function entry flushes again after the response for the streaming route, which ends its own response and so never reaches `onSend`.
+
+Deletes are tombstones (`deleted = true`) rather than row deletions, so a disconnect made on one instance reaches the others through the same "what changed" query.
+
+One related fix went with it: the OAuth broker used to hold in-flight authorizations in a module-level `Map`. Start and callback are two separate requests, so on a serverless host they can be two instances and every sign-in would have come back `ok=false`. Those now live in the KV (collection `oauth_pending`, same ten minute expiry, enforced on read as well as by pruning).
+
+### 20.4 Local behaviour, one change to know about
+
+`defaultKV()` picks, in order: `NODE_ENV=test` gives memory, `GLYF_STORE` forces a driver, `DATABASE_URL` gives Postgres, a serverless host without a database gives memory with a warning, and anything else gives `server/data/*.json`.
+
+`server/.env` already contains `DATABASE_URL` (confirmed through `GET /health`, the file was not opened). That means a plain `npm start` on the laptop now reads and writes that database instead of the local JSON files. The server prints a warning line saying so. To keep the old local behaviour, run with `GLYF_STORE=file`, which is documented in `.env.example`.
+
+### 20.5 Steps in the Vercel dashboard
+
+1. **Add New, Project**, and import the same GitHub repository, `The-x-35/glyf`. It is the repo the website project already uses; a second project on the same repo is normal.
+2. **Root Directory:** click Edit and choose `server`. Leave "Include files outside the root directory" off.
+3. **Framework Preset:** `Other`.
+4. **Build and Output Settings:** leave all three overrides off. Install Command stays the default (`npm install`), Build Command stays empty, Output Directory stays empty. There is nothing to build: `api/index.ts` is compiled by the Node runtime and TypeScript runs through `tsx` only in local development.
+5. **Node.js Version:** leave the default (22.x). `package.json` asks for `>=20`.
+6. **Environment Variables:** add the names in 20.6 before the first deploy, for Production at minimum. A variable added later needs a redeploy to take effect.
+7. **Deploy**, then open the deployment's Functions tab and confirm there is exactly one function, `api/index`.
+8. **Region:** Project Settings, Functions, set the region to the one closest to the Neon database (every request makes at least one query to it). Mumbai `bom1` or Singapore `sin1` fit a Neon instance in the same area. Hobby projects get one region.
+9. **Deployment Protection:** Project Settings, Deployment Protection. Vercel Authentication is on by default for new projects and would make the API return a login page to the apps. Turn it off for Production, or the keyboards cannot reach it.
+
+### 20.6 Environment variables to set in the project
+
+Names only, no values here. Same names the local `server/.env` uses, so they can be copied across.
+
+**Required**
+
+| Name | Why |
+|---|---|
+| `DATABASE_URL` | Neon connection string. Without it the deploy runs on memory and loses connections, published glyfs, pages, telemetry and waitlist entries on every cold start |
+| `NODE_ENV` | Set to `production`. Disables the OpenStreetMap development fallback, which is capped at one request per second for the whole server |
+| One of `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `INCEPTION_API_KEY`, `CEREBRAS_API_KEY` | At least one, or every AI route fails. `GET /health` lists which ones are present |
+| `OAUTH_REDIRECT_BASE` | `https://api.tryglyf.com`. Callback URLs are built from it and must match what is registered at each provider, exactly |
+| `PUBLIC_BASE_URL` | `https://api.tryglyf.com`. Without it `/act` stops offering shared page links in production |
+
+**Recommended**
+
+| Name | Why |
+|---|---|
+| `FAST_MODELS`, `SMART_MODELS` | The fallback chains. Defaults are `openrouter/free` alone, which is not what the app should ship on |
+| `FREE_RUNS_PER_DAY` | Daily free cap, default 40. Plus is ten times it |
+| `CACHE_TTL_MS` | Run cache lifetime, default 24 hours |
+| `YOUTUBE_API_KEY`, `GEOAPIFY_KEY` or `GOOGLE_PLACES_KEY`, `GOOGLE_WEATHER_KEY`, `BRAVE_SEARCH_KEY`, `SERPER_API_KEY` | The search suite. Each vertical degrades without its key rather than failing; `GET /search/status` reports which are live |
+| `GIPHY_API_KEY` | GIF search |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and scopes. Register `https://api.tryglyf.com/oauth/google/callback` in the Google console first |
+| `NOTION_`, `SLACK_`, `GITHUB_`, `LINEAR_`, `TODOIST_`, `CALENDLY_`, `ZOOM_`, `SPOTIFY_` plus `_CLIENT_ID` and `_CLIENT_SECRET` | One pair per connector wanted. Each provider is dormant until its pair exists |
+
+**Optional**
+
+| Name | Why |
+|---|---|
+| `<PROVIDER>_REDIRECT_URI` | Only when one provider needs a callback host different from `OAUTH_REDIRECT_BASE` |
+| `MOCK_AI` | Leave unset. `true` makes every model, search and tool answer canned data |
+| `OVERPASS_API_BASE` | Self-hosted Overpass for keyless nearby search |
+| `GLYF_STORE` | Forces a storage driver. Not needed in production, where `DATABASE_URL` already selects Postgres |
+| `GLYF_REGISTRY_DIR` | Absolute path to a directory holding `glyfs/` and `tools/`. Only needed if a future build moves the registry JSON somewhere the function cannot find it (the symptom is a 500 on boot or an empty `/glyf/catalog`) |
+| `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `GLYF_FEE_BPS` | Parked for M8, not read by any route yet |
+
+`PORT` is not used on Vercel: the function never listens on a socket.
+
+### 20.7 Attaching api.tryglyf.com
+
+1. In the new project: **Settings, Domains, Add**, type `api.tryglyf.com`, Add.
+2. If `tryglyf.com` is already on Vercel nameservers (the website project uses the domain), Vercel creates the record itself and the domain turns Valid within a minute. Nothing else to do.
+3. If DNS lives at the registrar instead, add one record there:
+
+   | Type | Name | Value | TTL |
+   |---|---|---|---|
+   | CNAME | `api` | `cname.vercel-dns.com` | Auto, or 60 |
+
+   Do not add an A record for this subdomain, and do not proxy it through another CDN: a proxy in front of the function is the usual cause of buffered Server Sent Events.
+4. Wait for the certificate to be issued (Vercel does this automatically once the record resolves), then check that `https://api.tryglyf.com/health` answers before pointing anything at it.
+5. The apps need no change: release builds already target `https://api.tryglyf.com`.
+
+### 20.8 Verifying it is live
+
+```bash
+# 1. Configuration. Presence booleans only, never key values.
+curl -s https://api.tryglyf.com/health | python3 -m json.tool
+# Expect: ok true, live true, mockAI false,
+#         storage {"driver":"postgres","ready":true,...},
+#         env.oauthRedirectBase "https://api.tryglyf.com".
+
+# 2. Which search providers are wired up.
+curl -s https://api.tryglyf.com/search/status | python3 -m json.tool
+
+# 3. The catalog, which proves the shipped registry JSON shipped with the function.
+curl -s https://api.tryglyf.com/glyf/catalog | python3 -m json.tool | head -20
+
+# 4. Streaming. Each line is stamped with the seconds since the request began,
+#    so tokens arriving over time is visible rather than assumed.
+curl -N -s -X POST https://api.tryglyf.com/glyf/run \
+  -H 'content-type: application/json' \
+  -d '{"glyfId":"rewrite.polite","input":"send me the file now","vars":{},"deviceId":"deploy-check-0001"}' \
+  | perl -ne 'printf("%6.2fs  %s", time()-$^T, $_)'
+# Expect: several "event: token" lines at increasing timestamps, then
+# "event: done". All lines sharing one timestamp means something buffered,
+# unless MOCK_AI is on, in which case the canned answer really is instant.
+
+# 5. The same request, headers only. A streamed response is chunked and
+#    carries no content-length.
+curl -s -o /dev/null -D - -X POST https://api.tryglyf.com/glyf/run \
+  -H 'content-type: application/json' \
+  -d '{"glyfId":"rewrite.polite","input":"hello","vars":{},"deviceId":"deploy-check-0001"}'
+
+# 6. Storage actually persisting. Run twice, a minute apart, and the count
+#    must not go back to zero (it would on a memory store after a cold start).
+curl -s https://api.tryglyf.com/waitlist/count
+
+# 7. One OAuth sign-in with a test account, end to end, if connector
+#    credentials were set. It is the only way to confirm the callback URL
+#    registered at the provider matches OAUTH_REDIRECT_BASE.
+```
+
+### 20.9 Cost and cold start
+
+- Nothing heavy runs at import. The app is built on the first request of a cold instance: 53 small JSON files are read from disk and validated, no network calls, no database connection. Warm instances reuse it.
+- Each request adds one Neon HTTP query for `refresh()`, plus one per write. Neon over HTTP has no connection pool to exhaust, which is why it suits functions.
+- `refresh()` loads the whole table on a cold start. That is fine at launch scale (thousands of rows) and is the thing to revisit first if the table grows large: the migration path is an async `KV` interface with per-collection loading.
+- `maxDuration: 60` is a ceiling, not a reservation. Vercel bills active CPU and wall time actually used, and an idle stream waiting on a model is cheap.
+- `/telemetry/funnel`, `/waitlist/count` and `/glyf/catalog` are public and uncached. They were public before this deploy too, but they become cheap to hammer once there is a public URL. Known issue: rate limiting is still not in place.
+
+### 20.10 Known gaps on serverless
+
+1. **The meter is per-instance.** `MemoryMeter` counts runs in the memory of one function instance, so the daily free cap leaks across concurrent instances and resets on cold starts. Nothing breaks, but free users can exceed 40 runs a day and the model bill follows. The fix is a `MeterStore` backed by the KV, one row per `<deviceId>:<day>`; the interface seam for it already exists in `lib/meter.ts`.
+2. **The run cache and the per-tool rate limiter are per-instance too** (`lib/cache.ts`, `lib/tools.ts`), so both are weaker than they look. Same fix, same table.
+3. **Last write wins on counters.** Telemetry counts and hub install counts read, add one and write back. Two instances doing that at the same moment lose one increment. It was already true across processes with `FileKV`.
+4. **A failed write is logged and dropped** after one retry rather than failing the request. `flush()` cannot throw after the work itself succeeded, so the log is the only signal. Watch for `kv write failed` and `kv_refresh_failed` in the function logs.
+5. **Not verified against a live database or a live Vercel project.** The Postgres driver is covered by tests against a fake that speaks the same statements, and the function entry is covered end to end over a real HTTP socket, but neither a Neon connection nor a deployment was exercised while writing this.

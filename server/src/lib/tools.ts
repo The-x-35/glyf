@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { z } from "zod";
+import { registryDir } from "./paths.js";
 
 /** §6.11 — the tool registry. Keyless tools ship now (no user auth, no API
  *  keys); OAuth tools activate in M6 when provider credentials exist. Every
@@ -25,11 +25,9 @@ export const ToolMetaSchema = z.object({
 });
 export type ToolMeta = z.infer<typeof ToolMetaSchema>;
 
-const TOOLS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "registry", "tools");
-
 let cache: Map<string, ToolMeta> | null = null;
 
-export function loadTools(dir = TOOLS_DIR): Map<string, ToolMeta> {
+export function loadTools(dir = registryDir("tools")): Map<string, ToolMeta> {
   if (cache) return cache;
   const tools = new Map<string, ToolMeta>();
   for (const file of readdirSync(dir).filter(f => f.endsWith(".json")).sort()) {

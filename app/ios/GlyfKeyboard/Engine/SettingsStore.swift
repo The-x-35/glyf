@@ -43,6 +43,9 @@ struct GlyfSettings: Codable, Equatable {
     /// Key style: "site" (the tryglyf.com look, default) | "glass"
     /// (liquid-glass) | "classic" | "glow".
     var keyTheme: String? = "site"
+    /// Keep what you copy in the keyboard's clipboard history. iOS may ask to
+    /// allow the paste the first time after a copy from another app.
+    var clipboardHistory: Bool? = true
     /// "" | "color:#RRGGBB" | "grad:<id>" — Gboard-style painted backdrop.
     var themeBg: String? = ""
     /// Gboard "borders around keys".

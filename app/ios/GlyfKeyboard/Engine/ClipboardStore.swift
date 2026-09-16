@@ -73,9 +73,11 @@ enum ClipboardStore {
     static func captureNow() -> Bool {
         guard fullAccessHint else { return false }
         guard pasteboardHasNewContent() else { return false }
-        markPasteboardSeen()
+        // Only a read that actually returned something counts as "seen": if
+        // iOS refused (or the person said no), the copy stays on offer.
         guard UIPasteboard.general.hasStrings,
               let text = UIPasteboard.general.string else { return false }
+        markPasteboardSeen()
         let items = load()
         guard let next = inserting(text, into: items, now: Date()) else { return false }
         save(next)
