@@ -10,6 +10,7 @@ import '../core/glyf_api.dart';
 import '../core/recommend.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
+import 'demo_chat.dart';
 import 'orb.dart';
 
 /// §6.18 — onboarding, rebuilt around questions instead of tours:
@@ -124,6 +125,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
     Telemetry.log('onboarding_complete',
         {'persona': _persona ?? 'none', 'keys': _chosenKeys.length});
+    if (!mounted) {
+      widget.onDone();
+      return;
+    }
+    // Settings are done; now the part that actually teaches Glyf — the
+    // website's guided chat, played on the keyboard they just enabled.
+    // Skippable from its own header.
+    await Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (ctx) => DemoChat(onDone: () => Navigator.of(ctx).pop()),
+    ));
     widget.onDone();
   }
 

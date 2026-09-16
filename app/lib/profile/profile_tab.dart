@@ -8,6 +8,7 @@ import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
+import '../onboarding/demo_chat.dart';
 import '../notes/notes_screen.dart';
 import '../vault/vault_screen.dart';
 import '../vocab/vocabulary_screen.dart';
@@ -352,6 +353,14 @@ class _ProfileTabState extends State<ProfileTab> {
             trailingText:
                 (_tone['hint'] as String?)?.isNotEmpty == true ? 'Active' : '',
             onTap: _showTone,
+          ),
+          _navCard(
+            icon: Icons.chat_bubble_outline,
+            title: 'Take the tour',
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              fullscreenDialog: true,
+              builder: (ctx) => DemoChat(onDone: () => Navigator.of(ctx).pop()),
+            )),
           ),
           _navCard(
             icon: Icons.replay_outlined,

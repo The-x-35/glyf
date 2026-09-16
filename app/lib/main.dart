@@ -5,6 +5,7 @@ import 'core/catalog.dart';
 import 'core/telemetry.dart';
 import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
+import 'onboarding/demo_chat.dart';
 import 'onboarding/onboarding_flow.dart';
 import 'shell/app_shell.dart';
 
@@ -63,6 +64,10 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       final id = uri.queryParameters['id'];
       if (id != null) _openDictation(id);
     }
+    if (uri.host == 'demo') {
+      _openDemo();
+      return;
+    }
     if (uri.host == 'connected') {
       // OAuth consent round-trip landed (§6.11).
       final ok = uri.queryParameters['ok'] == 'true';
@@ -78,6 +83,16 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
               ? 'Google connected'
               : 'Google connection didn’t finish')));
     }
+  }
+
+  /// glyf://demo — replay the guided tour any time, from Settings or a link.
+  void _openDemo() {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return;
+    Navigator.of(ctx).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (c) => DemoChat(onDone: () => Navigator.of(c).pop()),
+    ));
   }
 
   Future<void> _checkPendingDictation() async {
