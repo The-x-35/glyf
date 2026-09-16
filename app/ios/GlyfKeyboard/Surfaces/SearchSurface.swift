@@ -67,6 +67,10 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
     private let closeButton = UIButton(type: .system)
     private let chipsRow = UIScrollView()
+    /// The website's tab track: a soft pill holding icon-only tabs with a
+    /// key-coloured thumb that slides to the active one.
+    private let tabTrack = UIView()
+    private let tabThumb = UIView()
     private var chipButtons: [UIButton] = []
     let queryEditor = InlineEditor(placeholder: "Search…")
     private let goButton = UIButton(type: .system)
@@ -93,21 +97,30 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
         chipsRow.showsHorizontalScrollIndicator = false
         addSubview(chipsRow)
+        tabTrack.backgroundColor = Glass.fillSoft
+        tabTrack.layer.cornerCurve = .continuous
+        chipsRow.addSubview(tabTrack)
+        tabThumb.backgroundColor = Glass.fillKey
+        tabThumb.layer.cornerCurve = .continuous
+        tabThumb.layer.shadowColor = Glass.keyShadowColor.cgColor
+        tabThumb.layer.shadowOpacity = Glass.keyShadowOpacity
+        tabThumb.layer.shadowOffset = Glass.keyShadowOffset
+        tabThumb.layer.shadowRadius = 0
+        tabTrack.addSubview(tabThumb)
         for t in Tab.allCases {
             let b = UIButton(type: .system)
             var cfg = UIButton.Configuration.plain()
-            cfg.image = brandIcon(for: t)
-            cfg.title = t.rawValue
-            cfg.imagePadding = 6
-            cfg.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12,
-                                                        bottom: 6, trailing: 13)
+            // Neutral stroke marks, like the website: the vendors' own marks
+            // belong on the result cards, not the tabs.
+            cfg.image = UIImage(systemName: t.icon)?
+                .applyingSymbolConfiguration(.init(pointSize: 15, weight: .medium))
+            cfg.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10,
+                                                        bottom: 6, trailing: 10)
             b.configuration = cfg
-            b.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
-            b.layer.cornerRadius = 15
-            b.layer.cornerCurve = .continuous
+            b.accessibilityLabel = t.rawValue
             b.accessibilityIdentifier = "search:tab:\(t.rawValue.lowercased())"
             b.addAction(UIAction { [weak self] _ in self?.select(t) }, for: .touchUpInside)
-            chipsRow.addSubview(b)
+            tabTrack.addSubview(b)
             chipButtons.append(b)
         }
 
@@ -172,46 +185,74 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
     // MARK: layout
 
-    /// Strip height while the keyboard is still visible underneath.
-    static let collapsedHeight: CGFloat = 96
+    /// Strip height while the keyboard is still visible underneath: the
+    /// website's one row of tabs plus query, and a line for status.
+    static let collapsedHeight: CGFloat = 62
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        closeButton.frame = CGRect(x: 2, y: 6, width: 34, height: 30)
-        chipsRow.frame = CGRect(x: 36, y: 5, width: bounds.width - 36, height: 32)
-        var x: CGFloat = 8
-        for b in chipButtons {
-            let w = b.intrinsicContentSize.width
-            b.frame = CGRect(x: x, y: 1, width: w, height: 30)
-            x += w + 8
+        let rowH: CGFloat = 44
+        closeButton.frame = CGRect(x: 2, y: (rowH - 30) / 2, width: 32, height: 30)
+        // Tab track: 3pt padding, 2pt gaps, 35pt icon-only tabs.
+        let pillW: CGFloat = 35, pad: CGFloat = 3, gap: CGFloat = 2, pillH: CGFloat = 30
+        let n = CGFloat(chipButtons.count)
+        let trackW = pillW * n + gap * (n - 1) + pad * 2
+        let trackH = pillH + pad * 2
+        chipsRow.frame = CGRect(x: 34, y: (rowH - trackH) / 2, width: trackW, height: trackH)
+        chipsRow.contentSize = CGSize(width: trackW, height: trackH)
+        tabTrack.frame = CGRect(x: 0, y: 0, width: trackW, height: trackH)
+        tabTrack.layer.cornerRadius = trackH / 2
+        for (i, b) in chipButtons.enumerated() {
+            b.frame = CGRect(x: pad + CGFloat(i) * (pillW + gap), y: pad,
+                             width: pillW, height: pillH)
         }
-        chipsRow.contentSize = CGSize(width: x + 2, height: 32)
+        moveThumb(animated: false)
 
         let hasABC = expandedForResults
-        let abcW: CGFloat = hasABC ? 52 : 0
+        let abcW: CGFloat = hasABC ? 46 : 0
         abcButton.isHidden = !hasABC
-        abcButton.frame = CGRect(x: 6, y: 42, width: abcW, height: 36)
-        queryEditor.frame = CGRect(x: 10 + abcW, y: 42,
-                                   width: bounds.width - abcW - 58, height: 36)
-        goButton.frame = CGRect(x: bounds.width - 44, y: 42, width: 36, height: 36)
-        statusLabel.frame = CGRect(x: 14, y: 82, width: bounds.width - 28, height: 16)
+        let queryX = chipsRow.frame.maxX + 6 + abcW
+        abcButton.frame = CGRect(x: chipsRow.frame.maxX + 6, y: (rowH - 34) / 2,
+                                 width: abcW, height: 34)
+        goButton.frame = CGRect(x: bounds.width - 40, y: (rowH - 34) / 2,
+                                width: 34, height: 34)
+        queryEditor.frame = CGRect(x: queryX, y: (rowH - 34) / 2,
+                                   width: max(60, goButton.frame.minX - queryX - 6), height: 34)
+        statusLabel.frame = CGRect(x: 14, y: rowH + 2, width: bounds.width - 28, height: 15)
         statusLabel.isHidden = status.isEmpty
         table.isHidden = !(expandedForResults || landingActive)
-        table.frame = CGRect(x: 0, y: 100, width: bounds.width,
-                             height: max(0, bounds.height - 104))
+        let tableY = rowH + (status.isEmpty ? 4 : 18)
+        table.frame = CGRect(x: 0, y: tableY, width: bounds.width,
+                             height: max(0, bounds.height - tableY - 4))
+    }
+
+    /// The active tab's pill: the thumb slides, the way the website does it.
+    private func moveThumb(animated: Bool) {
+        guard let i = Tab.allCases.firstIndex(of: tab), chipButtons.indices.contains(i)
+        else { return }
+        let frame = chipButtons[i].frame
+        let apply = { [weak self] in
+            self?.tabThumb.frame = frame
+            self?.tabThumb.layer.cornerRadius = frame.height / 2
+        }
+        if animated {
+            UIView.animate(withDuration: 0.22, delay: 0,
+                           usingSpringWithDamping: 0.86, initialSpringVelocity: 0.4,
+                           options: [.allowUserInteraction], animations: apply)
+        } else {
+            apply()
+        }
     }
 
     private func styleChips() {
         for (i, t) in Tab.allCases.enumerated() {
             let b = chipButtons[i]
             let active = t == tab
-            b.backgroundColor = active ? Glass.brandInk : Glass.surfaceCard
-            // Brand marks keep their own colour; only the label follows state.
-            b.configuration?.baseForegroundColor = active ? Glass.surfaceCard : Glass.textPrimary
-            b.tintColor = active ? Glass.surfaceCard : Glass.textPrimary
-            b.layer.borderWidth = active ? 0 : 1
-            b.layer.borderColor = Glass.strokeHairline.cgColor
+            b.configuration?.baseForegroundColor =
+                active ? Glass.textPrimary : Glass.textSecondary
+            b.tintColor = active ? Glass.textPrimary : Glass.textSecondary
         }
+        moveThumb(animated: true)
     }
 
     // MARK: behavior
@@ -232,12 +273,14 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     func showLanding() {
         task?.cancel()
         let vertical = tab.vertical
-        let recents = SearchRecents.list(vertical ?? "web").map { q -> Card in
+        // Three rows, like the website's landing: any more would slide under
+        // the keys, which stay live here.
+        let recents = SearchRecents.list(vertical ?? "web").prefix(3).map { q -> Card in
             var c = Card(kind: "query", id: "recent-\(q)", title: q, url: "")
             c.source = "recent"
             return c
         }
-        cards = recents
+        cards = Array(recents)
         status = ""
         landingActive = true
         if tab == .contacts {

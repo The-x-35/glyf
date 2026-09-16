@@ -342,8 +342,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .shell:
             let title = shell?.headerTitle ?? "Glyf"
             return (title == "Glyf" ? "square.grid.2x2" : nil, title)
-        case .search where search?.expandedForResults == true:
-            return ("magnifyingglass", "Search")
         case .emoji where emoji?.searchActive != true: return ("face.smiling", "Emoji")
         case .act: return ("sparkles", "Glyf")
         case .bar where bar?.expandedForResult == true: return ("sparkles", "Glyf")
@@ -428,12 +426,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
                                         width: w,
                                         height: max(0, h - NoteEditSurface.stripHeight))
         case .search:
-            toolbar.isHidden = !(search?.expandedForResults ?? false)
-            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            // Search is the one surface that takes over the strip as well:
+            // its own tabs and query field ARE the strip (website 6.1).
+            toolbar.isHidden = true
             if let sv = search {
                 if sv.expandedForResults {
                     keyboardView.isHidden = true
-                    sv.frame = panelRect(w, h)
+                    sv.frame = CGRect(x: 0, y: 0, width: w, height: h)
                 } else {
                     // Collapsed and landing differ only in how much room the
                     // strip takes; the keys stay visible in both, so you can
