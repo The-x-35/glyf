@@ -311,8 +311,8 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         mapView.isHidden = !result || mapPlace == nil
         if !result { snapshotter?.cancel() }
         textView.isHidden = !result || (textView.text ?? "").isEmpty
-        titleLabel.isHidden = !result
-        closeButton.isHidden = working
+        titleLabel.isHidden = !result || Glass.solidLook
+        closeButton.isHidden = working || Glass.solidLook
         statusLabel.isHidden = p != .failed
         if working { startRings() } else { stopRings() }
         setNeedsLayout()
@@ -387,9 +387,11 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             shape.path = UIBezierPath(ovalIn: shape.bounds).cgPath
         }
 
-        // Result: header · text · cards · actions.
-        closeButton.frame = CGRect(x: 6, y: 4, width: 38, height: 36)
-        titleLabel.frame = CGRect(x: 46, y: 4, width: w - 58, height: 36)
+        // Result: header · text · cards · actions. In the website look the
+        // strip already names the panel and closes it, so this row collapses.
+        let headerH: CGFloat = Glass.solidLook ? 0 : 40
+        closeButton.frame = CGRect(x: 6, y: 4, width: 38, height: headerH - 4)
+        titleLabel.frame = CGRect(x: 46, y: 4, width: w - 58, height: headerH - 4)
         let actionsY = h - 52
         retryButton.frame = CGRect(x: 10, y: actionsY, width: 44, height: 38)
         let pillsX: CGFloat = 62
@@ -397,7 +399,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         copyButton.frame = CGRect(x: pillsX, y: actionsY, width: pillsW * 0.38, height: 38)
         insertButton.frame = CGRect(x: pillsX + pillsW * 0.38 + 8, y: actionsY,
                                     width: pillsW * 0.62 - 8, height: 38)
-        var y: CGFloat = 44
+        var y: CGFloat = headerH + 4
         if !mapView.isHidden {
             mapView.frame = CGRect(x: 10, y: y + 2, width: w - 20, height: Self.mapHeight)
             y += Self.mapHeight + 6
@@ -409,7 +411,8 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             y += textH + 6
         }
         table.frame = CGRect(x: 0, y: y, width: w, height: max(0, actionsY - y - 6))
-        statusLabel.frame = CGRect(x: 24, y: 44, width: w - 48, height: max(40, h - 110))
+        statusLabel.frame = CGRect(x: 24, y: headerH + 4, width: w - 48,
+                                   height: max(40, h - headerH - 70))
     }
 
     // MARK: Cards (the search suite's own cells)

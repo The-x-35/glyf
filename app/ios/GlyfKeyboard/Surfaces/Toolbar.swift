@@ -220,7 +220,7 @@ final class GlyfToolbar: UIView {
         panelIcon.isHidden = !open || panelIcon.image == nil
         scroll.isHidden = open
         candidatesStack.isHidden = open || !showingCandidates
-        runsChip.isHidden = open || runsRemaining == nil
+        runsChip.isHidden = open || runsRemaining == nil || Glass.solidLook
         divider.isHidden = open || Glass.siteLook
         if open {
             glyfButton.setTitle(nil, for: .normal)
@@ -316,7 +316,9 @@ final class GlyfToolbar: UIView {
         scroll.isHidden = !toolsVisible
         divider.isHidden = !toolsVisible
         candidatesStack.isHidden = toolsVisible || !showingCandidates
-        runsChip.isHidden = runsRemaining == nil || !toolsVisible
+        // The website's strip is six tools and the g pill, nothing else; the
+        // run counter lives in the g menu's Account screen.
+        runsChip.isHidden = runsRemaining == nil || !toolsVisible || Glass.solidLook
     }
 
     private func suggestionButton(_ item: Suggestion) -> UIButton {

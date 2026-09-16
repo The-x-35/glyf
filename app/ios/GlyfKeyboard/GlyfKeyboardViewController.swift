@@ -1317,7 +1317,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         case "emoji":
             setSurface(.emoji)
         case "translate":
-            openBar(autoRun: "glyf.translate")
+            toggleTranslateHUD()
         case "dictation":
             startDictationHandoff()
         default:
@@ -1466,12 +1466,23 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         setSurface(.search)
     }
 
+    /// The website's translate: a strip over live keys, not a panel.
+    func toggleTranslateHUD() {
+        let on = !(SettingsStore.current.translationHUD ?? false)
+        SettingsStore.update { $0.translationHUD = on }
+        applySurfaceLayout(animated: true)
+        if on {
+            hud?.refreshTarget()
+            notifyHUD()
+        }
+    }
+
     func shellOpenSurface(_ id: String) {
         switch id {
         case "search": setSurface(.search)
         case "emoji": setSurface(.emoji)
         case "tones": setSurface(.none); showTonesPopup()
-        case "translate": setSurface(.none); openBar(autoRun: "glyf.translate")
+        case "translate": setSurface(.none); toggleTranslateHUD()
         case "ask": setSurface(.none); openBar(autoRun: nil)
         default: break
         }
