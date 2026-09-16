@@ -226,7 +226,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 "Dictation lands in the Android update",
                 android.widget.Toast.LENGTH_SHORT).show()
         }
-        icon("emoji") { showEmojiPanel() }
+        // Emoji is a KEY on the bottom row, where both platforms put it, so
+        // the strip keeps the tools the keys cannot reach.
         icon("translate") { runTranslateOnField() }
         // The website's strip is six tools beside the g pill; settings live
         // in the g menu, so the gear is not on the strip.
@@ -1962,7 +1963,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     /** Container that replaces the keys; header row = back + title. */
-    private fun panelShell(title: String): Pair<LinearLayout, LinearLayout> {
+    /** @param bottomBar adds the ABC / backspace row the system emoji
+     *  keyboard has at its foot — muscle memory, on both platforms. */
+    private fun panelShell(title: String, bottomBar: Boolean = false):
+            Pair<LinearLayout, LinearLayout> {
         dismissFeaturePanel()
         keyboard.visibility = View.GONE
         val panel = LinearLayout(this).apply {
@@ -1987,8 +1991,28 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             LinearLayout.LayoutParams.MATCH_PARENT, dp(34)))
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply { addView(body) }
+        val barH = if (bottomBar) dp(40) else 0
         panel.addView(scroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, keyboard.height - dp(36)))
+            LinearLayout.LayoutParams.MATCH_PARENT, keyboard.height - dp(36) - barH))
+        if (bottomBar) {
+            val bar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            bar.addView(TextView(this).apply {
+                text = "ABC"; textSize = 15f; setTextColor(ink())
+                setPadding(dp(6), dp(6), dp(14), dp(6))
+                setOnClickListener { dismissFeaturePanel() }
+            })
+            bar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+            bar.addView(TextView(this).apply {
+                text = "⌫"; textSize = 18f; setTextColor(ink())
+                setPadding(dp(14), dp(4), dp(8), dp(4))
+                setOnClickListener { onKey("delete", null) }
+            })
+            panel.addView(bar, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, barH))
+        }
         root.addView(panel)
         featurePanel = panel
         return panel to body
@@ -2223,7 +2247,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     )
 
     private fun showEmojiPanel() {
-        val (_, body) = panelShell("Emoji")
+        val (_, body) = panelShell("Emoji", bottomBar = true)
         for ((_, list) in emojiCats) {
             val emojis = list.split(" ").filter { it.isNotBlank() && !it.contains("against") }
             var i = 0

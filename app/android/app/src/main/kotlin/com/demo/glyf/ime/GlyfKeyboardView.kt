@@ -412,21 +412,23 @@ class GlyfKeyboardView(
         }
         val label: String = when {
             key.char != null -> {
-                textPaint.textSize = dp(21f)
+                // Same optical size as the iOS build (a letter fills about
+                // half the key's height), so the two keyboards are twins.
+                textPaint.textSize = dp(23f)
                 display(key)
             }
             key.id == "space" -> {
                 // The brand watermark must read on EVERY theme (§5) — keyed
                 // to chrome darkness, not just system dark mode.
-                textPaint.textSize = dp(12f)
+                textPaint.textSize = dp(13.5f)
                 textPaint.color = if (chromeDark) Color.argb(150, 255, 255, 255)
                                   else Color.argb(105, 40, 40, 46)
                 "glyf"
             }
-            key.id == "delete" -> { textPaint.textSize = dp(16f); "⌫" }
+            key.id == "delete" -> { textPaint.textSize = dp(18f); "⌫" }
             key.id == "emojikey" -> { drawSmiley(canvas, rect); return }
             key.id.startsWith("mode:") -> {
-                textPaint.textSize = dp(13f)
+                textPaint.textSize = dp(15f)
                 key.id.removePrefix("mode:")
             }
             else -> ""
