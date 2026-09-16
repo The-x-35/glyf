@@ -33,7 +33,9 @@ final class KeyView: UIControl {
         label.minimumScaleFactor = 0.6
         addSubview(label)
         icon.contentMode = .center
-        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+        // Measured against iOS: shift and delete draw ~19.7 x 17pt, which is
+        // this symbol size. Ours used to come out a tenth small.
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 19.5, weight: .light)
         icon.tintColor = Glass.textPrimary
         addSubview(icon)
 
@@ -94,11 +96,13 @@ final class KeyView: UIControl {
         switch spec.kind {
         case .char(let c):
             text = shifted ? c.uppercased() : c
-            label.font = .systemFont(ofSize: 23, weight: .regular)
+            // 25pt: the system keyboard draws a lowercase q 10.7 x 17pt on
+            // every iPhone width, and this is the size that matches it.
+            label.font = .systemFont(ofSize: 25, weight: .regular)
         case .space:
             // Watermark, not a label (Acti-style restraint).
             text = "glyf"
-            label.font = .systemFont(ofSize: 13, weight: .medium)
+            label.font = .systemFont(ofSize: 15, weight: .regular)
         case .ret:
             image = UIImage(systemName: "return")
         case .delete:
@@ -109,7 +113,7 @@ final class KeyView: UIControl {
             image = UIImage(systemName: "globe")
         case .mode(let m):
             text = m
-            label.font = .systemFont(ofSize: 15, weight: .medium)
+            label.font = .systemFont(ofSize: 17.5, weight: .regular)
         case .emoji:
             image = UIImage(systemName: "face.smiling")
         }
