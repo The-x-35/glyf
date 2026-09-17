@@ -3,12 +3,10 @@ import UIKit
 protocol ClipboardPanelDelegate: AnyObject {
     func clipboardPanelClosed()
     func clipboardPanelPaste(_ text: String)
-    /// History on/off changed (the toggle in the header).
-    func clipboardPanelChanged()
 }
 
 /// The clipboard, laid out the way Gboard lays it out — which is the standard
-/// people already know: a header with back, an on/off toggle and edit, then
+/// people already know: a header with back and edit, then
 /// PINNED and RECENT as two columns of cards. Tap a card to paste it. Hold one
 /// and the rest dim while a menu offers Paste, Pin and Delete.
 ///
@@ -21,7 +19,6 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     private let header = UIView()
     private let backButton = UIButton(type: .system)
     private let titleLabel = UILabel()
-    private let toggleButton = UIButton(type: .system)
     private let editButton = UIButton(type: .system)
     private let scroll = ControlScrollView()
     private let scrim = UIControl()
@@ -65,13 +62,6 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         titleLabel.textColor = Glass.textPrimary
         header.addSubview(titleLabel)
 
-        toggleButton.tintColor = Glass.textPrimary
-        toggleButton.backgroundColor = Glass.surfaceCard
-        toggleButton.accessibilityIdentifier = "clip:toggle"
-        toggleButton.addAction(UIAction { [weak self] _ in self?.toggleHistory() },
-                               for: .touchUpInside)
-        header.addSubview(toggleButton)
-
         editButton.setImage(UIImage(systemName: "pencil"), for: .normal)
         editButton.setPreferredSymbolConfiguration(
             .init(pointSize: 17, weight: .medium), forImageIn: .normal)
@@ -101,28 +91,11 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
 
     func reload() {
         items = ClipboardStore.load()
-        refreshToggle()
         rebuildCards()
     }
 
+    /// On unless turned off in the app (Keyboard → Keep what you copy).
     private var historyOn: Bool { SettingsStore.current.clipboardHistory != false }
-
-    private func refreshToggle() {
-        let symbol = historyOn ? "switch.2" : "switch.2"
-        toggleButton.setImage(UIImage(systemName: symbol), for: .normal)
-        toggleButton.setPreferredSymbolConfiguration(
-            .init(pointSize: 17, weight: .medium), forImageIn: .normal)
-        toggleButton.alpha = historyOn ? 1 : 0.45
-        toggleButton.accessibilityLabel = historyOn ? "Clipboard on" : "Clipboard off"
-    }
-
-    private func toggleHistory() {
-        let on = !historyOn
-        SettingsStore.update { $0.clipboardHistory = on }
-        refreshToggle()
-        rebuildCards()
-        delegate?.clipboardPanelChanged()
-    }
 
     private func toggleEditing() {
         editing.toggle()
@@ -147,11 +120,9 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         backButton.layer.cornerRadius = b / 2
         editButton.frame = CGRect(x: w - M.side - b, y: (M.headerH - b) / 2, width: b, height: b)
         editButton.layer.cornerRadius = b / 2
-        toggleButton.frame = CGRect(x: editButton.frame.minX - 8 - b,
-                                    y: (M.headerH - b) / 2, width: b, height: b)
-        toggleButton.layer.cornerRadius = b / 2
+        editButton.isHidden = !historyOn
         titleLabel.frame = CGRect(x: backButton.frame.maxX + 14, y: 0,
-                                  width: toggleButton.frame.minX - backButton.frame.maxX - 20,
+                                  width: editButton.frame.minX - backButton.frame.maxX - 20,
                                   height: M.headerH)
         scroll.frame = CGRect(x: 0, y: M.headerH, width: w, height: bounds.height - M.headerH)
         scrim.frame = bounds
@@ -174,8 +145,8 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
 
         if !historyOn {
             y = addTip(at: y, width: w - M.side * 2,
-                       icon: "switch.2",
-                       text: "Clipboard is off. Turn it on to keep what you copy.")
+                       icon: "doc.on.clipboard",
+                       text: "Clipboard history is off in the Glyf app.")
             scroll.contentSize = CGSize(width: w, height: y + 12)
             return
         }

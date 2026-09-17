@@ -49,6 +49,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   String? _detailsError;
   bool _keySounds = true;
   bool _haptics = true;
+  /// On by default, like Gboard: what you copy is there to paste later.
+  bool _clipboard = true;
+  /// Android only, off until asked for: it needs photo access.
+  bool _screenshots = false;
   bool _keyboardEnabled = false;
   bool _fullAccess = false;
   bool _keyboardSelected = false;
@@ -155,6 +159,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     await GlyfBridge.updateSharedSettings((s) {
       s['keyClicks'] = _keySounds;
       s['haptics'] = _haptics;
+      s['clipboardHistory'] = _clipboard;
+      if (Platform.isAndroid) s['clipboardScreenshots'] = _screenshots;
       final b = Map<String, dynamic>.from(
           (s['bindings'] as Map<String, dynamic>?) ?? {});
       b.addAll(_chosenKeys);
@@ -354,13 +360,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       case 'feel':
         return _frame(children: [
           const SizedBox(height: 30),
-          _headline('Make it yours', 'Both change anytime in Profile.'),
+          _headline('Make it yours', 'Change these anytime in Profile.'),
           const SizedBox(height: 20),
           _toggleCard('🔊', 'Key sounds', _keySounds,
               (v) => setState(() => _keySounds = v)),
           const SizedBox(height: 10),
           _toggleCard('📳', 'Haptics', _haptics,
               (v) => setState(() => _haptics = v)),
+          const SizedBox(height: 10),
+          _toggleCard('📋', 'Keep what you copy', _clipboard,
+              (v) => setState(() => _clipboard = v)),
+          if (Platform.isAndroid) ...[
+            const SizedBox(height: 10),
+            _toggleCard('🖼️', 'Save recent screenshots', _screenshots, (v) async {
+              // Needs photo access; the switch only turns on once it is given.
+              if (v && !await GlyfBridge.screenshotAccess()) return;
+              setState(() => _screenshots = v);
+            }),
+          ],
           const Spacer(),
           _pill('Continue', onTap: _advance),
           const SizedBox(height: 20),

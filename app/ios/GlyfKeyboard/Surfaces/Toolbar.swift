@@ -328,8 +328,29 @@ final class GlyfToolbar: UIView {
         smartChip = chip
         smartCard.isHidden = chip == nil || panelTitle != nil
         if let chip {
-            smartKey.text = chip.key
-            smartValue.text = chip.value
+            // Content on the left, the action on the right edge.
+            if let verb = chip.verb {
+                smartKey.attributedText = nil
+                smartKey.text = verb
+            } else {
+                let spark = NSTextAttachment(image: UIImage(systemName: "sparkles",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))?
+                    .withTintColor(Glass.accentPrimary, renderingMode: .alwaysOriginal) ?? UIImage())
+                smartKey.attributedText = NSAttributedString(attachment: spark)
+            }
+            if case .vault(let field) = chip {
+                let line = NSMutableAttributedString(string: field.label + "  ", attributes: [
+                    .foregroundColor: Glass.textSecondary,
+                    .font: UIFont.systemFont(ofSize: 13, weight: .medium)])
+                line.append(NSAttributedString(string: chip.value, attributes: [
+                    .foregroundColor: Glass.textPrimary, .font: UIFont.systemFont(ofSize: 15)]))
+                smartValue.attributedText = line
+            } else {
+                smartValue.attributedText = nil
+                smartValue.font = .systemFont(ofSize: 15)
+                smartValue.textColor = Glass.textPrimary
+                smartValue.text = chip.value
+            }
             smartCard.backgroundColor = Glass.surfaceCard
             smartCard.accessibilityLabel = "\(chip.key) \(chip.value)"
         }
@@ -468,8 +489,9 @@ final class GlyfToolbar: UIView {
             smartCard.frame = CGRect(x: left, y: mid - cardH / 2,
                                      width: max(0, bounds.width - left - 6), height: cardH)
             let keyW = min(smartKey.intrinsicContentSize.width, 120)
-            smartKey.frame = CGRect(x: 14, y: 0, width: keyW, height: cardH)
-            smartValue.frame = CGRect(x: 14 + keyW + 10, y: 0,
+            smartKey.frame = CGRect(x: smartCard.bounds.width - 14 - keyW, y: 0,
+                                    width: keyW, height: cardH)
+            smartValue.frame = CGRect(x: 14, y: 0,
                                       width: max(0, smartCard.bounds.width - keyW - 38),
                                       height: cardH)
         }

@@ -265,6 +265,10 @@ abstract final class GlyfBridge {
 
   static Future<void> contactsDisable() => _call<bool>('contactsDisable');
 
+  /// Android: photo access for screenshots in the clipboard. True once granted.
+  static Future<bool> screenshotAccess() async =>
+      (await _call<bool>('screenshotAccess')) ?? false;
+
   // "Near me" searches. The app owns the permission and caches a coarse fix
   // in shared settings; the keyboard only reads it.
   static Future<Map<String, dynamic>> locationStatus() async {

@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
@@ -124,6 +126,11 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           _label('Clipboard & AI'),
           _card([
             _switch('Keep what you copy', 'clipboardHistory', fallback: true),
+            // Gboard's "Save recent screenshots in clipboard". iOS keyboards
+            // can only type text, so this is Android's alone.
+            if (Platform.isAndroid)
+              _switch('Save recent screenshots', 'clipboardScreenshots',
+                  onBeforeOn: GlyfBridge.screenshotAccess),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),
           ]),
         ],
@@ -155,7 +162,8 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
         ]),
       );
 
-  Widget _switch(String title, String key, {bool fallback = false}) {
+  Widget _switch(String title, String key,
+      {bool fallback = false, Future<bool> Function()? onBeforeOn}) {
     final on = (_settings[key] as bool?) ?? fallback;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
@@ -164,7 +172,11 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
         CupertinoSwitch(
           value: on,
           activeTrackColor: Glass.ink,
-          onChanged: (v) => _set(key, v),
+          onChanged: (v) async {
+            // Turning on something that needs a permission waits for it.
+            if (v && onBeforeOn != null && !await onBeforeOn()) return;
+            _set(key, v);
+          },
         ),
       ]),
     );

@@ -53,7 +53,7 @@ object SettingsStore {
     }
 
     fun defaults(): JSONObject = JSONObject().apply {
-        put("schemaVersion", 6)
+        put("schemaVersion", 7)
         put("haptics", true)
         put("keyClicks", true)
         put("numberRow", false)
@@ -63,7 +63,7 @@ object SettingsStore {
         put("candidates", true)
         put("oneHanded", "off")
         put("toolbarOrder", JSONArray(listOf(
-            "search", "clipboard", "vault", "dictation", "emoji", "translate")))
+            "search", "clipboard", "vault", "dictation", "translate")))
         put("toolbarHidden", JSONArray())
         // Two holds only: S shares your details, T translates. The canned
         // glyfs (proofread, emoji-fy…) were what hold-space AI already does.
@@ -120,13 +120,15 @@ object SettingsStore {
             current.put("schemaVersion", 4)
             changed = true
         }
-        // v5/v6: drop the canned glyf bindings; keep only S and T.
+        // v5/v6: drop the canned glyf bindings; keep S, T and built glyfs.
         if (current.optInt("schemaVersion", 1) < 6) {
             val kept = JSONObject()
             val b = current.optJSONObject("bindings") ?: JSONObject()
+            val built = current.optJSONObject("customTitles") ?: JSONObject()
             for (k in b.keys()) {
                 val target = b.optString(k)
-                if (target == "surface:vault" || target == "surface:translate-hud") {
+                if (target == "surface:vault" || target == "surface:translate-hud" ||
+                    built.has(target)) {
                     kept.put(k, target)
                 }
             }
@@ -135,6 +137,37 @@ object SettingsStore {
             current.put("bindings", kept)
             current.put("schemaVersion", 6)
             changed = true
+        }
+        // v7: the strip matches iOS. Emoji left it (the bottom row has an emoji
+        // key), unless someone hid it on purpose.
+        if (current.optInt("schemaVersion", 1) < 7) {
+            val hidden = current.optJSONArray("toolbarHidden")
+            val emojiHidden = (0 until (hidden?.length() ?: 0)).any { hidden!!.optString(it) == "emoji" }
+            if (!emojiHidden) {
+                val order = current.optJSONArray("toolbarOrder") ?: JSONArray()
+                val kept = JSONArray()
+                for (i in 0 until order.length()) {
+                    if (order.optString(i) != "emoji") kept.put(order.optString(i))
+                }
+                current.put("toolbarOrder", kept)
+            }
+            current.put("schemaVersion", 7)
+            changed = true
+        }
+        // Every load, as on iOS: Search leads the strip and the default tools
+        // are all present (anyone can hide one; losing one is a bug).
+        run {
+            val order = current.optJSONArray("toolbarOrder") ?: JSONArray()
+            val ids = (0 until order.length()).map { order.optString(it) }.toMutableList()
+            val before = ids.toList()
+            if ("search" !in ids) ids.add(0, "search")
+            for (id in listOf("search", "clipboard", "vault", "dictation", "translate")) {
+                if (id !in ids) ids.add(id)
+            }
+            if (ids != before) {
+                current.put("toolbarOrder", JSONArray(ids))
+                changed = true
+            }
         }
         val fixed = productionized(current.optString("backendURL"))
         if (fixed != current.optString("backendURL")) {

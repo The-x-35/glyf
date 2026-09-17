@@ -26,6 +26,10 @@ class MainActivity : FlutterActivity() {
             requestPermissions(
                 arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION), 72)
         }
+        b.requestImagesPermission = { done ->
+            pendingPermission = done
+            requestPermissions(arrayOf(ScreenshotAccess.permission), 73)
+        }
         bridge = b
         intent?.dataString?.let { link ->
             if (link.startsWith("glyf://")) b.lastDeepLink = link
@@ -36,7 +40,7 @@ class MainActivity : FlutterActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 71 || requestCode == 72) {
+        if (requestCode == 71 || requestCode == 72 || requestCode == 73) {
             val ok = grantResults.firstOrNull() ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
             pendingPermission?.invoke(ok)

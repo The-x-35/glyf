@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <!-- Coarse only: "near me" search needs a neighbourhood, never a pinpoint. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Requested only when the user turns on screenshots in the clipboard. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
     <application
         android:label="Glyf"
         android:name="${applicationName}"

@@ -27,6 +27,7 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
     /** Set by MainActivity — asks for READ_CONTACTS, calls back with grant. */
     var requestContactsPermission: (((Boolean) -> Unit) -> Unit)? = null
     var requestLocationPermission: (((Boolean) -> Unit) -> Unit)? = null
+    var requestImagesPermission: (((Boolean) -> Unit) -> Unit)? = null
 
     /** One coarse fix, cached into shared settings for the keyboard.
      *
@@ -303,6 +304,16 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
                             ).toString())
                         }
                     }
+                }
+            }
+            // Screenshots in the clipboard (Gboard's setting): the app asks for
+            // photo access; the keyboard only lists recent screenshots.
+            "screenshotAccess" -> {
+                if (ScreenshotAccess.granted(ctx)) {
+                    result.success(true)
+                } else {
+                    val ask = requestImagesPermission
+                    if (ask == null) result.success(false) else ask { ok -> result.success(ok) }
                 }
             }
             "contactsDisable" -> {

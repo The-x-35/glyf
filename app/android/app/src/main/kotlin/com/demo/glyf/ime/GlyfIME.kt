@@ -79,11 +79,40 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         KeyboardTyping.prepare(this) { }
         (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
             .addPrimaryClipChangedListener(clipListener)
+        if (com.demo.glyf.BuildConfig.DEBUG) {
+            // Injected taps never reach an IME window on the emulator, so debug
+            // builds open panels by broadcast to check them:
+            //   adb shell am broadcast -a com.demo.glyf.DEBUG_TOOL --es id menu
+            val filter = android.content.IntentFilter("com.demo.glyf.DEBUG_TOOL")
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(debugTool, filter, RECEIVER_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(debugTool, filter)
+            }
+        }
+    }
+
+    private val debugTool = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: android.content.Context, intent: Intent) {
+            if (!::keyboard.isInitialized) return
+            when (val id = intent.getStringExtra("id") ?: return) {
+                "menu" -> showMenuGrid()
+                "copy" -> {
+                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("",
+                        intent.getStringExtra("text") ?: ""))
+                }
+                "close" -> dismissFeaturePanel()
+                else -> openTool(id)
+            }
+        }
     }
 
     override fun onDestroy() {
         (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
             .removePrimaryClipChangedListener(clipListener)
+        if (com.demo.glyf.BuildConfig.DEBUG) runCatching { unregisterReceiver(debugTool) }
         super.onDestroy()
     }
 
@@ -191,7 +220,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             setOnClickListener {
                 // While suggestions fill the strip, g brings the tools back (iOS §6.2).
-                if (suggestionRow.visibility == View.VISIBLE) {
+                if (featurePanel is ToolMenuView) {
+                    dismissFeaturePanel()
+                } else if (suggestionRow.visibility == View.VISIBLE) {
                     toolsPinned = true
                     applySuggestionVisibility()
                 } else showMenuGrid() // iOS shell parity
@@ -212,126 +243,71 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         toolbar.addView(suggestionRow, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
         suggestionsShown = emptyList()
 
-        // Ink-tinted drawn icons — SAME item set and order as iOS.
-        fun icon(kind: String, onTap: () -> Unit) {
-            val v = ToolIcon(this, kind, ink)
-            v.setOnClickListener { onTap() }
+        // The strip is the person's own: the same ids, order and hidden set
+        // the iOS strip reads, so a tool pinned on one phone reads the same.
+        for (id in stripTools()) {
+            val v = ToolIcon(this, id, ink)
+            v.contentDescription = id
+            v.setOnClickListener { openTool(id) }
             toolIcons.addView(v, LinearLayout.LayoutParams(0, dp(34), 1f))
         }
-        icon("search") { enterSearch() }
-        icon("clipboard") { showClipboardPanel() }
-        icon("vault") { showVaultPanel() }
-        icon("mic") {
-            android.widget.Toast.makeText(this,
-                "Dictation lands in the Android update",
-                android.widget.Toast.LENGTH_SHORT).show()
-        }
-        // Emoji is a KEY on the bottom row, where both platforms put it, so
-        // the strip keeps the tools the keys cannot reach.
-        icon("translate") { runTranslateOnField() }
-        // The website's strip is six tools beside the g pill; settings live
-        // in the g menu, so the gear is not on the strip.
+        gPill = g
     }
 
-    /** Monochrome toolbar glyphs, canvas-drawn so they tint with the theme
-     *  (the SF-symbol equivalent — emoji can't be tinted). */
-    private class ToolIcon(
-        ctx: android.content.Context,
-        private val kind: String,
-        tint: Int,
-    ) : View(ctx) {
-        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            style = android.graphics.Paint.Style.STROKE
-            strokeCap = android.graphics.Paint.Cap.ROUND
-            strokeJoin = android.graphics.Paint.Join.ROUND
-            color = tint
-            alpha = 205
-        }
-        private fun dp(v: Float) = v * resources.displayMetrics.density
+    private var gPill: TextView? = null
 
-        override fun onDraw(c: android.graphics.Canvas) {
-            p.strokeWidth = dp(1.6f)
-            val cx = width / 2f
-            val cy = height / 2f
-            when (kind) {
-                "search" -> {
-                    c.drawCircle(cx - dp(1.5f), cy - dp(1.5f), dp(5.2f), p)
-                    c.drawLine(cx + dp(2.4f), cy + dp(2.4f), cx + dp(6.4f), cy + dp(6.4f), p)
-                }
-                "clipboard" -> {
-                    c.drawRoundRect(cx - dp(6f), cy - dp(6.4f), cx + dp(6f), cy + dp(7.6f),
-                        dp(2.4f), dp(2.4f), p)
-                    c.drawRoundRect(cx - dp(3f), cy - dp(8.6f), cx + dp(3f), cy - dp(4.8f),
-                        dp(1.6f), dp(1.6f), p)
-                }
-                "vault" -> {
-                    c.drawRoundRect(cx - dp(7.6f), cy - dp(5.6f), cx + dp(7.6f), cy + dp(5.6f),
-                        dp(2.4f), dp(2.4f), p)
-                    c.drawCircle(cx - dp(3.6f), cy - dp(0.6f), dp(1.8f), p)
-                    c.drawLine(cx + dp(1f), cy - dp(2f), cx + dp(5f), cy - dp(2f), p)
-                    c.drawLine(cx + dp(1f), cy + dp(1.6f), cx + dp(5f), cy + dp(1.6f), p)
-                }
-                "gear" -> {
-                    p.strokeWidth = dp(2.2f)
-                    c.drawCircle(cx, cy, dp(3.1f), p)
-                    for (i in 0 until 6) {
-                        val a = Math.toRadians(i * 60.0)
-                        val r1 = dp(5.4f)
-                        val r2 = dp(7.4f)
-                        c.drawLine(
-                            cx + (r1 * Math.cos(a)).toFloat(), cy + (r1 * Math.sin(a)).toFloat(),
-                            cx + (r2 * Math.cos(a)).toFloat(), cy + (r2 * Math.sin(a)).toFloat(), p)
-                    }
-                }
-                "mic" -> {
-                    c.drawRoundRect(cx - dp(2.6f), cy - dp(8f), cx + dp(2.6f), cy + dp(1f),
-                        dp(2.6f), dp(2.6f), p)
-                    val arc = android.graphics.RectF(cx - dp(5.6f), cy - dp(4f),
-                        cx + dp(5.6f), cy + dp(4.4f))
-                    c.drawArc(arc, 15f, 150f, false, p)
-                    c.drawLine(cx, cy + dp(4.4f), cx, cy + dp(7.6f), p)
-                }
-                "emoji" -> {
-                    c.drawCircle(cx, cy, dp(7f), p)
-                    val dots = android.graphics.Paint(p).apply {
-                        style = android.graphics.Paint.Style.FILL
-                    }
-                    c.drawCircle(cx - dp(2.6f), cy - dp(2f), dp(1f), dots)
-                    c.drawCircle(cx + dp(2.6f), cy - dp(2f), dp(1f), dots)
-                    c.drawArc(cx - dp(3.6f), cy - dp(1.4f), cx + dp(3.6f), cy + dp(4.4f),
-                        25f, 130f, false, p)
-                }
-                "translate" -> {
-                    val t = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                        color = p.color; alpha = p.alpha
-                        textAlign = android.graphics.Paint.Align.CENTER
-                        typeface = android.graphics.Typeface.DEFAULT_BOLD
-                    }
-                    t.textSize = dp(11f)
-                    c.drawText("A", cx - dp(3.4f), cy + dp(0.6f), t)
-                    t.textSize = dp(9.5f)
-                    c.drawText("文", cx + dp(3.8f), cy + dp(6.4f), t)
-                }
-                "notes" -> {
-                    c.drawRoundRect(cx - dp(6.4f), cy - dp(7f), cx + dp(6.4f), cy + dp(7f),
-                        dp(2.4f), dp(2.4f), p)
-                    c.drawLine(cx - dp(3.4f), cy - dp(2.6f), cx + dp(3.4f), cy - dp(2.6f), p)
-                    c.drawLine(cx - dp(3.4f), cy + dp(0.8f), cx + dp(3.4f), cy + dp(0.8f), p)
-                }
-                "bolt" -> {
-                    val path = android.graphics.Path().apply {
-                        moveTo(cx + dp(2.2f), cy - dp(8f))
-                        lineTo(cx - dp(3.6f), cy + dp(1.2f))
-                        lineTo(cx - dp(0.4f), cy + dp(1.2f))
-                        lineTo(cx - dp(2.2f), cy + dp(8f))
-                        lineTo(cx + dp(3.6f), cy - dp(1.2f))
-                        lineTo(cx + dp(0.4f), cy - dp(1.2f))
-                        close()
-                    }
-                    c.drawPath(path, p)
+    private fun stripTools(): List<String> {
+        val known = ToolIcon.TOOLS.map { it.first }.toSet()
+        val order = settings.optJSONArray("toolbarOrder")
+        val hidden = settings.optJSONArray("toolbarHidden")
+        val hiddenSet = (0 until (hidden?.length() ?: 0)).map { hidden!!.optString(it) }.toSet()
+        val ids = (0 until (order?.length() ?: 0)).map { order!!.optString(it) }
+            .ifEmpty { listOf("search", "clipboard", "vault", "dictation", "translate") }
+        return ids.filter { it in known && it !in hiddenSet }.distinct()
+    }
+
+    /** Every tool opens the same way from the strip and from the g menu. */
+    private fun openTool(id: String) {
+        when (id) {
+            "search" -> { dismissFeaturePanel(); enterSearch() }
+            "clipboard" -> showClipboardPanel()
+            "emoji" -> showEmojiPanel()
+            "rewrite" -> { dismissFeaturePanel(); showGlyfBar() }
+            "translate" -> { dismissFeaturePanel(); runTranslateOnField() }
+            "ask" -> { dismissFeaturePanel(); onSpaceHoldOpenBar() }
+            "dictation" -> { dismissFeaturePanel(); startVoiceTyping() }
+            "vault" -> showVaultPanel()
+            "glyfs" -> showMyGlyfsPanel()
+            "shorthand" -> showShorthandPanel()
+            "keys" -> showKeysPanel()
+            // Paying is signed in the app's wallet, never in the keyboard.
+            "pay" -> { dismissFeaturePanel(); openAppPath("wallet") }
+            "settings" -> { dismissFeaturePanel(); openApp() }
+        }
+    }
+
+    /** Voice typing is the system's: hand over to the voice keyboard the
+     *  person already has (Google voice typing, usually), the way Gboard's
+     *  mic does, and come back to Glyf when they switch again. */
+    private fun startVoiceTyping() {
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+        for (info in imm.enabledInputMethodList) {
+            for (sub in imm.getEnabledInputMethodSubtypeList(info, true)) {
+                if (sub.mode == "voice") {
+                    switchInputMethod(info.id, sub)
+                    return
                 }
             }
         }
+        android.widget.Toast.makeText(this, "No voice typing on this phone",
+            android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun openAppPath(path: String) {
+        startActivity(Intent(Intent.ACTION_VIEW,
+            android.net.Uri.parse("glyf://open?path=$path"))
+            .setPackage(packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun openApp() {
@@ -1061,7 +1037,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     // MARK: Copied-text card (Acti's copied context, Glyf's way)
 
-    private var clipCard: LinearLayout? = null
     private val clipListener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
         main.post { refreshClipCard() }
     }
@@ -1070,64 +1045,87 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** A copy from the last 10 minutes waits above the toolbar, quoted —
      *  tap to act on it, ✕ to dismiss it for good. The default IME may read
      *  the clipboard, so Android can show the text straight away. */
+    /** Something was copied a moment ago and nothing is typed yet: it rides
+     *  in the strip as one chip, text on the left and Paste on the right, the
+     *  way Gboard offers a fresh copy and the way iOS does it. Never a second
+     *  row above the keyboard. */
     private fun refreshClipCard() {
-        if (!::root.isInitialized) return
+        if (!::root.isInitialized || !::toolIcons.isInitialized) return
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        val stamp = if (android.os.Build.VERSION.SDK_INT >= 26)
-            cm.primaryClipDescription?.timestamp ?: 0L else 0L
+        val stamp = cm.primaryClipDescription?.timestamp ?: 0L
         val text = cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.trim().orEmpty()
         val busy = searchActive || barActive || noteEditActive || overlay != null ||
             featurePanel != null || isSecureField()
         val fresh = stamp > 0 && System.currentTimeMillis() - stamp < 10 * 60 * 1000 &&
             stamp != imePrefs.getLong("clipDone", -1)
-        if (busy || !fresh || text.isEmpty()) {
-            removeClipCard()
+        val typed = currentInputConnection?.getTextBeforeCursor(1, 0)?.isNotEmpty() == true
+        if (busy || !fresh || text.isEmpty() || typed ||
+            com.demo.glyf.store.SecretScanner.scan(text) != null) {
+            if (stripChipKind == "paste") hideStripChip()
             return
         }
-        removeClipCard()
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), 0, dp(4), 0)
-            contentDescription = "clip:card"
-            setOnClickListener {
-                imePrefs.edit().putLong("clipDone", stamp).apply()
-                removeClipCard()
-                actSkill = null
-                actBefore = ""
-                actAfter = ""
-                actRunInput = text // acted on, never deleted from the field
-                runAct()
-            }
+        showStripChip("paste", null, text.replace('\n', ' '), "Paste") {
+            imePrefs.edit().putLong("clipDone", stamp).apply()
+            currentInputConnection?.commitText(text, 1)
+            hideStripChip()
         }
-        card.addView(ToolIcon(this, "clipboard", Color.argb(170, 128, 128, 136)),
-            LinearLayout.LayoutParams(dp(26), dp(26)))
-        card.addView(TextView(this).apply {
-            this.text = "“${text.replace('\n', ' ')}”"
-            textSize = 14.5f
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(ink())
-            setPadding(dp(8), 0, dp(8), 0)
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        card.addView(TextView(this).apply {
-            this.text = "✕"; textSize = 14f
-            setTextColor(Color.argb(170, 128, 128, 136))
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            contentDescription = "clip:close"
-            setOnClickListener {
-                imePrefs.edit().putLong("clipDone", stamp).apply()
-                removeClipCard()
-            }
-        })
-        root.addView(card, 0, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)))
-        clipCard = card
     }
 
     private fun removeClipCard() {
-        clipCard?.let { root.removeView(it) }
-        clipCard = null
+        if (stripChipKind == "paste") hideStripChip()
+    }
+
+    private var stripChip: View? = null
+    private var stripChipKind: String? = null
+
+    /** One chip across the strip: content on the left, the action on the right. */
+    private fun showStripChip(kind: String, label: String?, value: String, verb: String,
+                              onTap: () -> Unit) {
+        hideStripChip()
+        val chip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), 0, dp(14), 0)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(card())
+            }
+            contentDescription = "strip:smart"
+            setOnClickListener { onTap() }
+        }
+        if (label != null) chip.addView(TextView(this).apply {
+            text = label
+            textSize = 13f
+            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+            setPadding(0, 0, dp(8), 0)
+        })
+        chip.addView(TextView(this).apply {
+            text = value
+            textSize = 15f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(ink())
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        chip.addView(TextView(this).apply {
+            text = verb
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(0x7C, 0x5C, 0xFF))
+            setPadding(dp(10), 0, 0, 0)
+        })
+        toolbar.addView(chip, 1, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+            leftMargin = dp(8)
+        })
+        stripChip = chip
+        stripChipKind = kind
+        applySuggestionVisibility()
+    }
+
+    private fun hideStripChip() {
+        stripChip?.let { toolbar.removeView(it) }
+        stripChip = null
+        stripChipKind = null
+        if (::toolIcons.isInitialized) applySuggestionVisibility()
     }
 
     // MARK: Act — hold space on what you typed (POST /act)
@@ -1676,10 +1674,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (before.isEmpty() && !isSecureField()) {
             val fill = Autofill.match(currentInputEditorInfo, VaultStore.load(this))
             if (fill != null) {
-                showSuggestions(listOf(Suggestion(fill, Suggestion.Kind.FILL)))
+                // Same chip as iOS: the saved detail, Insert on the right.
+                showStripChip("fill", null, fill, "Insert") {
+                    currentInputConnection?.commitText(fill, 1)
+                    hideStripChip()
+                }
                 return
             }
         }
+        if (stripChipKind == "fill") hideStripChip()
+        refreshClipCard()
         if (word.isEmpty()) {
             val corr = lastCorrection
             val previous = WordContext.previousWord(before)
@@ -1738,6 +1742,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private fun applySuggestionVisibility() {
+        if (stripChip != null) {
+            // A chip owns the strip while it is up.
+            suggestionRow.visibility = View.GONE
+            toolIcons.visibility = View.GONE
+            return
+        }
         val showing = suggestionsShown.isNotEmpty() && !toolsPinned
         suggestionRow.visibility = if (showing) View.VISIBLE else View.GONE
         toolIcons.visibility = if (showing) View.GONE else View.VISIBLE
@@ -1974,7 +1984,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun dismissFeaturePanel() {
         featurePanel?.let { root.removeView(it) }
         featurePanel = null
+        gPill?.text = "g"
+        dropMarker?.let { if (::toolIcons.isInitialized) toolIcons.removeView(it) }
+        dropMarker = null
         keyboard.visibility = View.VISIBLE
+        // The clipboard panel takes the toolbar's space too; always give it back.
+        if (::toolbar.isInitialized) toolbar.visibility = View.VISIBLE
     }
 
     /** Container that replaces the keys; header row = back + title. */
@@ -2058,54 +2073,107 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         body.addView(cardV, lp)
     }
 
-    /** The g menu — same launcher-grid idea as the iOS shell root. */
+    /** The g menu: every tool in one scrolling grid (ToolMenuView), the twin
+     *  of the iOS shell. The strip stays up so a tile can be dropped on it,
+     *  and the g pill turns into the way out. */
     private fun showMenuGrid() {
-        val (_, body) = panelShell("Glyf")
-        // The website's g menu, in its order (4 x 2).
-        val items = listOf(
-            Triple("search", "Search") { dismissFeaturePanel(); enterSearch() },
-            Triple("bolt", "Rewrite") { dismissFeaturePanel(); showGlyfBar() },
-            Triple("translate", "Translate") { dismissFeaturePanel(); runTranslateOnField() },
-            Triple("vault", "Vault") { showVaultPanel() },
-            Triple("clipboard", "Clipboard") { showClipboardPanel() },
-            Triple("emoji", "Emoji") { showEmojiPanel() },
-            Triple("notes", "Shorthand") { showShorthandPanel() },
-            Triple("gear", "Settings") { dismissFeaturePanel(); openApp() },
+        dismissFeaturePanel()
+        if (toolbar.height == 0) return
+        val panelH = keyboard.height
+        keyboard.visibility = View.GONE
+        toolsPinned = true
+        applySuggestionVisibility()
+        val menu = ToolMenuView(this, keyboard.palette(),
+            onOpen = { id -> openTool(id) },
+            onDragOverStrip = { rawX -> showStripDropMarker(rawX) },
+            onPinToStrip = { id, rawX -> pinToStrip(id, rawX) },
         )
-        var i = 0
-        while (i < items.size) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
+        root.addView(menu, root.indexOfChild(keyboard) + 1,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, panelH))
+        featurePanel = menu
+        gPill?.text = "✕"
+    }
+
+    private var dropMarker: View? = null
+
+    private fun stripIndexAt(rawX: Float): Int {
+        val loc = IntArray(2)
+        for (i in 0 until toolIcons.childCount) {
+            val child = toolIcons.getChildAt(i)
+            if (child === dropMarker) continue
+            child.getLocationOnScreen(loc)
+            if (rawX < loc[0] + child.width / 2f) return i
+        }
+        return toolIcons.childCount
+    }
+
+    private fun showStripDropMarker(rawX: Float?) {
+        dropMarker?.let { toolIcons.removeView(it) }
+        dropMarker = null
+        if (rawX == null) return
+        val marker = View(this).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = dp(2).toFloat()
+                setColor(Color.rgb(0x7C, 0x5C, 0xFF))
             }
-            for (j in i until minOf(i + 3, items.size)) {
-                val (kind, label, action) = items[j]
-                val tile = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER
-                    setPadding(0, dp(8), 0, dp(8))
-                    setOnClickListener { action() }
-                }
-                val chip = ToolIcon(this, kind, ink())
-                val chipWrap = android.widget.FrameLayout(this).apply {
-                    background = GradientDrawable().apply {
-                        cornerRadius = dp(16).toFloat(); setColor(card())
-                    }
-                    addView(chip, android.widget.FrameLayout.LayoutParams(
-                        dp(52), dp(52)))
-                }
-                tile.addView(chipWrap, LinearLayout.LayoutParams(dp(52), dp(52)))
-                tile.addView(TextView(this).apply {
-                    text = label; textSize = 11f
-                    setTextColor(Color.argb(200,
-                        Color.red(ink()), Color.green(ink()), Color.blue(ink())))
-                    gravity = Gravity.CENTER
-                    setPadding(0, dp(5), 0, 0)
-                })
-                row.addView(tile, LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        val index = stripIndexAt(rawX).coerceAtMost(toolIcons.childCount)
+        toolIcons.addView(marker, index, LinearLayout.LayoutParams(dp(3), dp(24)))
+        dropMarker = marker
+    }
+
+    private fun pinToStrip(id: String, rawX: Float) {
+        showStripDropMarker(null)
+        val current = stripTools().toMutableList()
+        val index = stripIndexAt(rawX).coerceIn(0, current.size)
+        val existing = current.indexOf(id)
+        if (existing >= 0) current.removeAt(existing)
+        current.add(if (existing in 0 until index) index - 1 else index, id)
+        val hidden = settings.optJSONArray("toolbarHidden")
+        val keepHidden = org.json.JSONArray()
+        for (i in 0 until (hidden?.length() ?: 0)) {
+            if (hidden!!.optString(i) != id) keepHidden.put(hidden.optString(i))
+        }
+        settings.put("toolbarOrder", org.json.JSONArray(current))
+        settings.put("toolbarHidden", keepHidden)
+        SettingsStore.save(this, settings.toString())
+        dismissFeaturePanel()
+        buildToolbar(keyboard.isDark || keyboard.themeBg.isNotEmpty())
+        android.widget.Toast.makeText(this, "Added to the strip",
+            android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    /** The glyfs this person built in the app; tap one to run it on what is
+     *  typed, the same as holding its key. */
+    private fun showMyGlyfsPanel() {
+        val (_, body) = panelShell("My glyfs")
+        val titles = settings.optJSONObject("customTitles")
+        val bindings = settings.optJSONObject("bindings")
+        val ids = titles?.keys()?.asSequence()?.toList()?.sortedBy { titles.optString(it).lowercase() }
+            ?: emptyList()
+        for (id in ids) {
+            val key = bindings?.keys()?.asSequence()?.firstOrNull { bindings.optString(it) == id }
+            cardRow(body, titles!!.optString(id), key?.let { "Hold ${it.uppercase()}" } ?: "") {
+                dismissFeaturePanel()
+                startSkill(key ?: "", id)
             }
-            body.addView(row)
-            i += 3
+        }
+        cardRow(body, "＋ Build your own", "") { dismissFeaturePanel(); openAppPath("build") }
+    }
+
+    /** What each key holds. */
+    private fun showKeysPanel() {
+        val (_, body) = panelShell("Keys")
+        val bindings = settings.optJSONObject("bindings") ?: return
+        for (letter in "qwertyuiopasdfghjklzxcvbnm".map { it.toString() }) {
+            val target = bindings.optString(letter).takeIf { it.isNotBlank() } ?: continue
+            val title = when (target) {
+                "surface:vault" -> "Vault"
+                "surface:translate-hud" -> "Translate"
+                "surface:tones" -> "Rewrite"
+                else -> skillTitle(target)
+            }
+            cardRow(body, "Hold ${letter.uppercase()}", title) {}
         }
     }
 
@@ -2139,30 +2207,55 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         cardRow(body, "＋ New note", "") { enterNoteEdit(null, "") }
     }
 
-    /** The website's clipboard: age on the left, the copy on the right. */
+    /** Gboard's clipboard, identical to the iOS panel: it takes the whole
+     *  keyboard, toolbar included, the way Gboard's does. */
     private fun showClipboardPanel() {
         com.demo.glyf.store.ClipboardStore.captureNow(this)
-        val (_, body) = panelShell("Clipboard")
-        val items = com.demo.glyf.store.ClipboardStore.load(this)
-        if (items.isEmpty()) {
-            cardRow(body, "Nothing copied yet", "") { dismissFeaturePanel() }
-            return
-        }
-        for (item in items) {
-            val flat = item.text.replace("\n", " ")
-            cardRow(body, com.demo.glyf.store.ClipboardStore.age(item.ts), flat) {
-                currentInputConnection?.commitText(item.text, 1)
+        dismissFeaturePanel()
+        keyboard.visibility = View.GONE
+        toolbar.visibility = View.GONE
+        val panel = ClipboardPanelView(
+            this, keyboard.palette(),
+            onClose = {
                 dismissFeaturePanel()
-            }
-            (body.getChildAt(body.childCount - 1)).setOnLongClickListener {
-                com.demo.glyf.store.ClipboardStore.togglePin(this, item.text)
-                showClipboardPanel(); true
-            }
+                toolbar.visibility = View.VISIBLE
+            },
+            onPaste = { text ->
+                currentInputConnection?.commitText(text, 1)
+                dismissFeaturePanel()
+                toolbar.visibility = View.VISIBLE
+            },
+            onImage = { uri ->
+                dismissFeaturePanel()
+                toolbar.visibility = View.VISIBLE
+                insertImage(uri)
+            },
+        )
+        root.addView(panel, android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+            keyboard.height + toolbar.height))
+        featurePanel = panel
+    }
+
+    /** A screenshot goes in as an image where the field takes images (chat
+     *  apps do), the way Gboard sends one; anywhere else it is copied so it
+     *  can be pasted by hand. */
+    private fun insertImage(uri: android.net.Uri) {
+        val mimes = currentInputEditorInfo?.contentMimeTypes ?: emptyArray()
+        val type = contentResolver.getType(uri) ?: "image/png"
+        val accepts = mimes.any { android.content.ClipDescription.compareMimeTypes(type, it) }
+        if (accepts) {
+            val info = android.view.inputmethod.InputContentInfo(uri,
+                android.content.ClipDescription("Screenshot", arrayOf(type)))
+            val sent = currentInputConnection?.commitContent(info,
+                android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
+                null) == true
+            if (sent) return
         }
-        cardRow(body, "Clear unpinned", "") {
-            com.demo.glyf.store.ClipboardStore.clearUnpinned(this)
-            showClipboardPanel()
-        }
+        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newUri(contentResolver, "Screenshot", uri))
+        android.widget.Toast.makeText(this, "Screenshot copied",
+            android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private fun showShorthandPanel() {

@@ -1333,7 +1333,6 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
         updateCandidates()
     }
 
-    func clipboardPanelChanged() {}
 }
 
 // MARK: - ClipContextStripDelegate

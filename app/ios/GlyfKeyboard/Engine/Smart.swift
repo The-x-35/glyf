@@ -31,6 +31,16 @@ enum Smart {
             case .action: return "Glyf"
             }
         }
+        /// The verb on the chip's right edge: what a tap does. Nil for the
+        /// model's suggestions, whose text is already the action.
+        var verb: String? {
+            switch self {
+            case .calc, .vault: return "Insert"
+            case .paste: return "Paste"
+            case .pay: return "Pay"
+            case .action: return nil
+            }
+        }
         var value: String {
             switch self {
             case .calc(let v, _): return v
