@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
@@ -41,10 +40,11 @@ class _AiKeyboardState extends State<AiKeyboard> with SingleTickerProviderStateM
   }
 }
 
-/// The exact Settings rows a setup step needs, with the one to flip turning
-/// on under a tap. Held on once the phone reports the step done.
-class SetupSwitches extends StatefulWidget {
-  const SetupSwitches({super.key, required this.step, required this.done, required this.android});
+/// What a setup step still needs, as a list that ticks itself off. The
+/// switches live in Settings; drawing fakes of them here only asked to be
+/// flipped, so each row just shows where it stands.
+class SetupChecklist extends StatelessWidget {
+  const SetupChecklist({super.key, required this.step, required this.done, required this.android});
 
   /// 'enable' (add the keyboard) or 'access' (Full Access / switch to it).
   final String step;
@@ -52,38 +52,9 @@ class SetupSwitches extends StatefulWidget {
   final bool android;
 
   @override
-  State<SetupSwitches> createState() => _SetupSwitchesState();
-}
-
-class _SetupSwitchesState extends State<SetupSwitches> with SingleTickerProviderStateMixin {
-  late final AnimationController _loop =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 3200))..repeat();
-
-  @override
-  void dispose() {
-    _loop.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    if (still) return _content(0.6);
-    return AnimatedBuilder(animation: _loop, builder: (context, _) => _content(_loop.value));
-  }
-
-  /// How far the "tap it" demo is: 0 off, 1 on. Held on once done.
-  double _toggle(double t) {
-    if (widget.done) return 1;
-    if (t < 0.35) return 0;
-    if (t < 0.5) return Curves.easeOut.transform((t - 0.35) / 0.15);
-    if (t < 0.9) return 1;
-    return 1 - (t - 0.9) / 0.1;
-  }
-
-  Widget _content(double t) {
-    final enable = widget.step == 'enable';
-    final header = !widget.android ? 'Keyboards' : (enable ? 'On-screen keyboard' : 'Choose input method');
+    final enable = step == 'enable';
+    final header = !android ? 'In Settings' : (enable ? 'On-screen keyboard' : 'Choose input method');
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -99,54 +70,32 @@ class _SetupSwitchesState extends State<SetupSwitches> with SingleTickerProvider
             borderRadius: BorderRadius.circular(18),
             boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 18, offset: Offset(0, 6))],
           ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: _rows(enable, t)),
+          child: Column(mainAxisSize: MainAxisSize.min, children: _rows(enable)),
         ),
       ],
     );
   }
 
-  List<Widget> _rows(bool enable, double t) {
-    final on = _toggle(t);
-    final tap = widget.done ? null : t;
-    if (!widget.android) {
+  List<Widget> _rows(bool enable) {
+    if (!android) {
+      // Full Access comes after the keyboard itself, so on the first step
+      // the keyboard is the only thing that can be ticked.
       return [
-        _row(
-          icon: _GlyfAppIcon(),
-          title: 'Glyf',
-          control: _Switch(on: enable ? on : 1, focus: enable && !widget.done, tapAt: enable ? tap : null),
-        ),
+        _row(icon: _GlyfAppIcon(), title: 'Glyf keyboard', done: enable ? done : true),
         _divider(),
         _row(
           icon: const _SettingsIcon(Icons.lock_open_rounded, Color(0xFF34C759)),
           title: 'Allow Full Access',
-          control: _Switch(on: enable ? 0 : on, focus: !enable && !widget.done, tapAt: enable ? null : tap),
+          done: !enable && done,
         ),
       ];
     }
-    if (enable) {
-      return [
-        _row(
-          icon: const _SettingsIcon(Icons.keyboard_rounded, Color(0xFF4285F4)),
-          title: 'Gboard',
-          control: const _MaterialSwitch(on: 1),
-        ),
-        _divider(),
-        _row(
-          icon: _GlyfAppIcon(),
-          title: 'Glyf',
-          control: _MaterialSwitch(on: on, focus: !widget.done, tapAt: tap),
-        ),
-      ];
-    }
-    // The system's keyboard picker, with Glyf being chosen.
     return [
       _row(
-        icon: const _SettingsIcon(Icons.keyboard_rounded, Color(0xFF4285F4)),
-        title: 'Gboard',
-        control: _Radio(on: 1 - on),
+        icon: _GlyfAppIcon(),
+        title: enable ? 'Glyf keyboard' : 'Glyf in use',
+        done: done,
       ),
-      _divider(),
-      _row(icon: _GlyfAppIcon(), title: 'Glyf', control: _Radio(on: on, tapAt: tap)),
     ];
   }
 
@@ -155,7 +104,7 @@ class _SetupSwitchesState extends State<SetupSwitches> with SingleTickerProvider
         child: Divider(height: 0.5, thickness: 0.5, color: Color(0x1F000000)),
       );
 
-  Widget _row({required Widget icon, required String title, required Widget control}) {
+  Widget _row({required Widget icon, required String title, required bool done}) {
     return SizedBox(
       height: 54,
       child: Padding(
@@ -164,146 +113,48 @@ class _SetupSwitchesState extends State<SetupSwitches> with SingleTickerProvider
           SizedBox(width: 30, height: 30, child: icon),
           const SizedBox(width: 14),
           Expanded(child: Text(title, style: const TextStyle(fontSize: 16, color: Glass.ink))),
-          control,
+          _Mark(done: done),
         ]),
       ),
     );
   }
 }
 
-/// An iOS-style switch at any point between off (0) and on (1).
-class _Switch extends StatelessWidget {
-  const _Switch({required this.on, this.focus = false, this.tapAt});
-  final double on;
-  final bool focus;
-  final double? tapAt;
+/// Where one thing stands: an empty ring until the phone reports it on, then
+/// a tick that lands as soon as it is.
+class _Mark extends StatelessWidget {
+  const _Mark({required this.done});
+  final bool done;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
-      if (tapAt != null) Positioned(right: -4, child: _TapRing(t: tapAt!, size: 40)),
-      Container(
-        width: 51,
-        height: 31,
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: Color.lerp(const Color(0xFFE9E9EA), const Color(0xFF34C759), on),
-          boxShadow: focus ? [BoxShadow(color: Glass.accent.withValues(alpha: 0.35), spreadRadius: 3)] : null,
-        ),
-        child: Align(
-          alignment: Alignment(-1 + 2 * on, 0),
-          child: Container(
-            width: 27,
-            height: 27,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-              boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 2))],
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: done ? 1 : 0),
+      duration: const Duration(milliseconds: 340),
+      curve: Curves.easeOutBack,
+      builder: (context, t, _) => SizedBox(
+        width: 26,
+        height: 26,
+        child: Stack(alignment: Alignment.center, children: [
+          Opacity(
+            opacity: (1 - t).clamp(0.0, 1.0),
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFD6D9E0), width: 1.6),
+              ),
             ),
           ),
-        ),
+          if (t > 0.01)
+            Transform.scale(
+              scale: t.clamp(0.0, 1.2),
+              child: Container(
+                decoration: const BoxDecoration(shape: BoxShape.circle, color: Glass.success),
+                child: const Icon(Icons.check_rounded, size: 17, color: Colors.white),
+              ),
+            ),
+        ]),
       ),
-    ]);
-  }
-}
-
-/// A finger's tap: a ring that lands just before the switch flips.
-class _TapRing extends StatelessWidget {
-  const _TapRing({required this.t, required this.size});
-  final double t;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    if (t < 0.25 || t > 0.55) return SizedBox(width: size, height: size);
-    final p = (t - 0.25) / 0.3;
-    return Opacity(
-      opacity: (1 - p).clamp(0.0, 1.0),
-      child: Container(
-        width: size * (0.6 + 0.6 * p),
-        height: size * (0.6 + 0.6 * p),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Glass.accent.withValues(alpha: 0.22),
-          border: Border.all(color: Glass.accent.withValues(alpha: 0.6), width: 2),
-        ),
-      ),
-    );
-  }
-}
-
-/// A Material 3 switch, the way Android's Settings draws it, at any point
-/// between off (0) and on (1).
-class _MaterialSwitch extends StatelessWidget {
-  const _MaterialSwitch({required this.on, this.focus = false, this.tapAt});
-  final double on;
-  final bool focus;
-  final double? tapAt;
-
-  static const primary = Color(0xFF415F91);
-  static const outline = Color(0xFF74777F);
-
-  @override
-  Widget build(BuildContext context) {
-    final thumb = lerpDouble(16, 24, on)!;
-    return Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
-      if (tapAt != null) Positioned(right: -4, child: _TapRing(t: tapAt!, size: 40)),
-      Container(
-        width: 52,
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: Color.lerp(const Color(0xFFE0E2EC), primary, on),
-          border: Border.all(color: Color.lerp(outline, primary, on)!, width: 2),
-          boxShadow: focus ? [BoxShadow(color: Glass.accent.withValues(alpha: 0.35), spreadRadius: 3)] : null,
-        ),
-        child: Align(
-          alignment: Alignment(-1 + 2 * on, 0),
-          child: Container(
-            width: thumb,
-            height: thumb,
-            margin: EdgeInsets.symmetric(horizontal: lerpDouble(4, 0, on)!),
-            decoration: BoxDecoration(shape: BoxShape.circle, color: Color.lerp(outline, Colors.white, on)),
-            child: on > 0.6
-                ? Icon(Icons.check_rounded, size: 16, color: primary.withValues(alpha: (on - 0.6) / 0.4))
-                : null,
-          ),
-        ),
-      ),
-    ]);
-  }
-}
-
-/// The keyboard picker's radio button, between unchosen (0) and chosen (1).
-class _Radio extends StatelessWidget {
-  const _Radio({required this.on, this.tapAt});
-  final double on;
-  final double? tapAt;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 40,
-      height: 40,
-      child: Stack(alignment: Alignment.center, children: [
-        if (tapAt != null) _TapRing(t: tapAt!, size: 40),
-        Container(
-          width: 22,
-          height: 22,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Color.lerp(_MaterialSwitch.outline, _MaterialSwitch.primary, on)!, width: 2),
-          ),
-          child: Container(
-            width: 11 * on,
-            height: 11 * on,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: _MaterialSwitch.primary),
-          ),
-        ),
-      ]),
     );
   }
 }

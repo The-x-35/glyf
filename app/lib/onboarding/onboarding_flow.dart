@@ -622,7 +622,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           GlyfText(title,
               style: const TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
           const SizedBox(height: 24),
-          SetupSwitches(step: _steps[_step], done: done, android: Platform.isAndroid),
+          SetupChecklist(step: _steps[_step], done: done, android: Platform.isAndroid),
           const Spacer(flex: 3),
           if (done)
             _pill('Continue', onTap: _advance)
@@ -641,16 +641,19 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         return _frame(children: [
           const SizedBox(height: 30),
           _headline('Search what\u2019s near you'),
-          const SizedBox(height: 26),
-          Center(
-            child: AnimatedScale(
-              scale: _locationOn ? 1 : 0.92,
-              duration: const Duration(milliseconds: 300),
-              child: Icon(Icons.near_me_rounded,
-                  size: 74,
-                  color: _locationOn ? Glass.success : const Color(0xFFDDE0E6)),
+          const SizedBox(height: 22),
+          // What it does, before it asks for anything.
+          const NearbyDemo(),
+          if (_locationOn)
+            const Padding(
+              padding: EdgeInsets.only(top: 14),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.check_circle_rounded, size: 17, color: Glass.success),
+                SizedBox(width: 7),
+                Text('Nearby search is on',
+                    style: TextStyle(color: Glass.ink, fontSize: 13.5, fontWeight: FontWeight.w600)),
+              ]),
             ),
-          ),
 
           if (_locationNote != null)
             Padding(

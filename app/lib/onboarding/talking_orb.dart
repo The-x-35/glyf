@@ -389,13 +389,206 @@ class _RememberDemoState extends State<RememberDemo> with SingleTickerProviderSt
     );
   }
 
-  Widget _bubble(String text, {required bool mine}) => Container(
-        constraints: const BoxConstraints(maxWidth: 230),
-        padding: const EdgeInsets.fromLTRB(12, 7, 12, 8),
+  Widget _bubble(String text, {required bool mine}) => _chatBubble(text, mine: mine);
+}
+
+Widget _chatBubble(String text, {required bool mine}) => Container(
+      constraints: const BoxConstraints(maxWidth: 230),
+      padding: const EdgeInsets.fromLTRB(12, 7, 12, 8),
+      decoration: BoxDecoration(
+        color: mine ? const Color(0xFF0A84FF) : const Color(0xFFE9E9EB),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Text(text, style: TextStyle(fontSize: 14.5, color: mine ? Colors.white : Colors.black)),
+    );
+
+/// The same few seconds for nearby search: a friend asks where to meet, the
+/// keyboard finds a place around you, one tap sends it with its map.
+class NearbyDemo extends StatefulWidget {
+  const NearbyDemo({super.key, this.place = 'Blue Tokai Coffee', this.detail = '300 m · Indiranagar'});
+
+  final String place;
+  final String detail;
+
+  @override
+  State<NearbyDemo> createState() => _NearbyDemoState();
+}
+
+class _NearbyDemoState extends State<NearbyDemo> with SingleTickerProviderStateMixin {
+  late final AnimationController _t =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 6200))..repeat();
+
+  @override
+  void dispose() {
+    _t.dispose();
+    super.dispose();
+  }
+
+  double _between(double v, double a, double b) => ((v - a) / (b - a)).clamp(0.0, 1.0);
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _t,
+      builder: (context, _) {
+        final v = _t.value;
+        final ask = Curves.easeOutBack.transform(_between(v, 0.02, 0.12));
+        final strip = Curves.easeOutCubic.transform(_between(v, 0.22, 0.32));
+        final press = _between(v, 0.42, 0.50);
+        final sent = Curves.easeOutBack.transform(_between(v, 0.52, 0.62));
+        final out = 1 - _between(v, 0.90, 0.98);
+        final pressed = press > 0 && sent == 0;
+        return Opacity(
+          opacity: out,
+          child: Container(
+            height: 214,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Glass.hairline),
+              boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 24, offset: Offset(0, 10))],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(children: [
+              Positioned(
+                left: 14,
+                top: 14,
+                child: Transform.scale(
+                  alignment: Alignment.bottomLeft,
+                  scale: ask,
+                  child: _chatBubble('where should we meet? ☕', mine: false),
+                ),
+              ),
+              // The place, sent: its map and its name, the way it lands in a chat.
+              Positioned(
+                right: 14,
+                top: 56,
+                child: Transform.scale(
+                  alignment: Alignment.bottomRight,
+                  scale: sent,
+                  child: _placeCard(),
+                ),
+              ),
+              // The keyboard's strip, rising with the place it found nearby.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: -64 + 64 * strip * (1 - _between(v, 0.62, 0.70)),
+                child: Container(
+                  height: 64,
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                  color: const Color(0xFFE9EAEE),
+                  child: AnimatedScale(
+                    scale: pressed ? 0.96 : 1,
+                    duration: const Duration(milliseconds: 120),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: Glass.accent.withValues(alpha: press > 0 ? 0.9 : 0), width: 2),
+                      ),
+                      child: Row(children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(7),
+                          child: const SizedBox(width: 30, height: 30, child: _MapArt()),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(widget.place,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 13.5, color: Glass.ink, fontWeight: FontWeight.w600)),
+                              Text(widget.detail,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11.5, color: Glass.inkSoft)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('Insert',
+                            style: TextStyle(
+                                fontSize: 12.5, color: Glass.accent, fontWeight: FontWeight.w700)),
+                      ]),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _placeCard() => Container(
+        width: 206,
         decoration: BoxDecoration(
-          color: mine ? const Color(0xFF0A84FF) : const Color(0xFFE9E9EB),
-          borderRadius: BorderRadius.circular(18),
+          color: const Color(0xFFF2F2F4),
+          borderRadius: BorderRadius.circular(16),
         ),
-        child: Text(text, style: TextStyle(fontSize: 14.5, color: mine ? Colors.white : Colors.black)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 56, width: 206, child: _MapArt()),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(11, 7, 11, 9),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(widget.place,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13.5, color: Glass.ink, fontWeight: FontWeight.w700)),
+              Text(widget.detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5, color: Glass.inkSoft)),
+            ]),
+          ),
+        ]),
       );
+}
+
+/// A map, small: two streets, a park, and a pin on the place.
+class _MapArt extends StatelessWidget {
+  const _MapArt();
+
+  @override
+  Widget build(BuildContext context) => const CustomPaint(painter: _MapPainter(), size: Size.infinite);
+}
+
+class _MapPainter extends CustomPainter {
+  const _MapPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFFEFEAE0));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.56, h * 0.08, w * 0.42, h * 0.5),
+        Radius.circular(w * 0.04),
+      ),
+      Paint()..color = const Color(0xFFCDE8C3),
+    );
+    final road = Paint()
+      ..color = Colors.white
+      ..strokeWidth = h * 0.13
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(-2, h * 0.36), Offset(w + 2, h * 0.28), road);
+    canvas.drawLine(Offset(-2, h * 0.82), Offset(w + 2, h * 0.88), road);
+    canvas.drawLine(Offset(w * 0.3, -2), Offset(w * 0.24, h + 2), road);
+    canvas.drawLine(Offset(w * 0.78, -2), Offset(w * 0.84, h + 2), road);
+    final pin = Offset(w * 0.44, h * 0.56);
+    canvas.drawCircle(pin, h * 0.13, Paint()..color = const Color(0xFFFF3B30));
+    canvas.drawCircle(pin, h * 0.055, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(_MapPainter old) => false;
 }
