@@ -264,6 +264,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
     if (error == null && Auth.signedIn) {
       Telemetry.log('onboarding_signed_in', {});
+      // Signed out and back in on a phone that's already set up: home.
+      final state = await GlyfBridge.onboardingState();
+      if (!mounted) return;
+      if (state['done'] == true) {
+        widget.onDone();
+        return;
+      }
       _advance();
     }
   }

@@ -20,16 +20,29 @@ abstract final class Auth {
   static _Account? _account;
   static bool _testSignedIn = false;
 
+  /// The account a UI test says it is signed in with, for Profile to show.
+  static ({String provider, String email})? _testAccount;
+
   static bool get signedIn => _account != null || _testSignedIn;
 
   /// Whether someone is signed in on this phone. Works offline: the session
   /// is on the phone and carries its own expiry.
   static Future<bool> restore() async {
-    // UI tests reach the screens behind sign-in without a real account.
+    // UI tests reach the screens behind sign-in without a real account
+    // (`--glyf-test-account=google:someone@example.com` names one).
     // Never in a release build.
-    if (!kReleaseMode && (await GlyfBridge.launchArgs()).contains('--glyf-test-signed-in')) {
-      _testSignedIn = true;
-      return true;
+    if (!kReleaseMode) {
+      final args = await GlyfBridge.launchArgs();
+      if (args.contains('--glyf-test-signed-in')) {
+        _testSignedIn = true;
+        const flag = '--glyf-test-account=';
+        final named = args.where((a) => a.startsWith(flag)).map((a) => a.substring(flag.length)).firstOrNull;
+        final split = named?.indexOf(':') ?? -1;
+        if (named != null && split > 0) {
+          _testAccount = (provider: named.substring(0, split), email: named.substring(split + 1));
+        }
+        return true;
+      }
     }
     final raw = await GlyfBridge.sessionLoad();
     final account = raw == null ? null : _Account.fromJson(raw);
@@ -118,14 +131,20 @@ abstract final class Auth {
     return 'Sign-in did not finish. Try again.';
   }
 
-  /// The email and name the account came with, for filling in the vault.
-  static ({String? email, String? name}) identity() => (email: _account?.email, name: _account?.name);
+  /// The email and name the account came with (for the vault and Profile),
+  /// and whether it is a Google or an Apple account.
+  static ({String? email, String? name, String? provider}) identity() => (
+        email: _account?.email ?? _testAccount?.email,
+        name: _account?.name,
+        provider: _account?.provider ?? _testAccount?.provider,
+      );
 
   static Future<void> signOut() async {
     await GlyfBridge.sessionClear();
     await GlyfBridge.signOutProviders();
     _account = null;
     _testSignedIn = false;
+    _testAccount = null;
   }
 
   // ── what the server learns ──────────────────────────────────────────────

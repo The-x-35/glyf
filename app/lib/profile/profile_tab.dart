@@ -14,6 +14,7 @@ import '../onboarding/demo_chat.dart';
 import '../wallet/wallet_screen.dart';
 import '../vault/vault_screen.dart';
 import '../vocab/vocabulary_screen.dart';
+import 'brand_marks.dart' show GoogleG;
 import 'keyboard_screen.dart';
 import 'paywall_sheet.dart';
 
@@ -71,7 +72,9 @@ class _ProfileTabState extends State<ProfileTab> {
       _contactsOn = contacts['enabled'] == true;
       _connectedTools = 1 + (_contactsOn ? 1 : 0) + (calendar['enabled'] == true ? 1 : 0);
       _nearbyOn = nearby['enabled'] == true;
-      _displayName = (onboarding['displayName'] as String?) ?? 'You';
+      _displayName = (onboarding['displayName'] as String?) ??
+          Auth.identity().name ??
+          'You';
     });
   }
 
@@ -161,11 +164,53 @@ class _ProfileTabState extends State<ProfileTab> {
 
   String get _plan => (_settings['plan'] as String?) ??
       (_settings['proUnlocked'] == true ? 'plus' : 'free');
-  String get _uid =>
-      ((_settings['deviceId'] as String?) ?? '').replaceAll('-', '')
-          .padRight(8, '0')
-          .substring(0, 8)
-          .toUpperCase();
+
+  /// Who is signed in: the account's email with its Google or Apple mark.
+  Widget _account() {
+    final id = Auth.identity();
+    final email = id.email;
+    if (email == null || email.isEmpty) return const SizedBox.shrink();
+    return Semantics(
+      identifier: 'profile:email',
+      child: Row(children: [
+        if (id.provider == 'google')
+          const GoogleG(size: 14)
+        else if (id.provider == 'apple')
+          const Icon(Icons.apple, size: 16, color: Glass.ink),
+        if (id.provider == 'google' || id.provider == 'apple') const SizedBox(width: 6),
+        Flexible(
+          child: Text(email,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
+        ),
+      ]),
+    );
+  }
+
+  Future<void> _signOut() async {
+    final email = Auth.identity().email;
+    final go = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Sign out of Glyf?'),
+        content: email == null || email.isEmpty ? null : Text('\n$email'),
+        actions: [
+          CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Sign out')),
+        ],
+      ),
+    );
+    if (go != true) return;
+    await Auth.signOut();
+    Telemetry.log('signed_out', {});
+    widget.onRerunOnboarding();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -181,23 +226,14 @@ class _ProfileTabState extends State<ProfileTab> {
               child:
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(_displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         color: Glass.ink,
                         fontSize: 23,
                         fontWeight: FontWeight.w800)),
-                const SizedBox(height: 4),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Glass.hairline),
-                  ),
-                  child: Text('UID $_uid',
-                      style: const TextStyle(
-                          color: Glass.inkSoft, fontSize: 11.5)),
-                ),
+                const SizedBox(height: 3),
+                _account(),
               ]),
             ),
             GestureDetector(
@@ -357,17 +393,26 @@ class _ProfileTabState extends State<ProfileTab> {
             title: 'Replay onboarding',
             onTap: widget.onRerunOnboarding,
           ),
-          _navCard(
-            icon: Icons.logout_rounded,
-            title: 'Sign out',
-            trailingText: Auth.identity().email ?? '',
-            onTap: () async {
-              await Auth.signOut();
-              Telemetry.log('signed_out', {});
-              widget.onRerunOnboarding();
-            },
+          const SizedBox(height: 18),
+          _groupLabel('Account'),
+          Semantics(
+            identifier: 'profile:sign-out',
+            button: true,
+            child: GlassCard(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+              onTap: _signOut,
+              child: const Row(children: [
+                Icon(Icons.logout_rounded, color: Glass.danger, size: 21),
+                SizedBox(width: 13),
+                Text('Sign out',
+                    style: TextStyle(
+                        color: Glass.danger,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700)),
+              ]),
+            ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 24),
 
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             Container(
