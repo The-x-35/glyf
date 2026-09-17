@@ -139,10 +139,31 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
   }
 
   Widget _line(String text, {required bool title, int? upTo}) {
-    final style = title
+    return Padding(
+      padding: EdgeInsets.only(bottom: title ? 10 : 4),
+      child: GlyfText(text, style: _style(title), upTo: upTo),
+    );
+  }
+
+  TextStyle _style(bool title) => title
         ? TextStyle(fontSize: widget.titleSize, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -widget.titleSize * 0.03)
         : TextStyle(fontSize: widget.titleSize * 0.56, height: 1.35, fontWeight: FontWeight.w400, color: Glass.inkSoft);
-    final pieces = _pieces(text);
+}
+
+/// Text where `{glyf}` is the Glyf wordmark, e.g. "Hi, I'm {glyf}".
+/// [upTo] shows only the first pieces (characters, the wordmark counting as
+/// one) for typing it out.
+class GlyfText extends StatelessWidget {
+  const GlyfText(this.text, {super.key, required this.style, this.upTo, this.align = TextAlign.center});
+  final String text;
+  final TextStyle style;
+  final int? upTo;
+  final TextAlign align;
+
+  @override
+  Widget build(BuildContext context) {
+    const mark = _TalkingOrbState._mark;
+    final pieces = _TalkingOrbState._pieces(text);
     final shown = pieces.take(upTo ?? pieces.length).toList();
     final spans = <InlineSpan>[];
     final run = StringBuffer();
@@ -152,7 +173,7 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
       run.clear();
     }
     for (final p in shown) {
-      if (p == _mark) {
+      if (p == mark) {
         flush();
         final size = style.fontSize! * 1.04;
         spans.add(WidgetSpan(
@@ -169,13 +190,10 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
       }
     }
     flush();
-    return Padding(
-      padding: EdgeInsets.only(bottom: title ? 10 : 4),
-      child: Semantics(
-        label: text.replaceAll(_mark, 'Glyf'),
-        child: ExcludeSemantics(
-          child: Text.rich(TextSpan(children: spans), textAlign: TextAlign.center, style: style),
-        ),
+    return Semantics(
+      label: text.replaceAll(mark, 'Glyf'),
+      child: ExcludeSemantics(
+        child: Text.rich(TextSpan(children: spans), textAlign: align, style: style),
       ),
     );
   }

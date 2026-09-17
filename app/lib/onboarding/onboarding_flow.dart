@@ -11,6 +11,7 @@ import '../core/telemetry.dart';
 import '../core/theme.dart';
 import 'demo_chat.dart';
 import '../profile/brand_marks.dart';
+import 'setup_hero.dart';
 import 'talking_orb.dart';
 
 /// Onboarding: sign in, meet the orb, tell it what to remember, make the
@@ -537,60 +538,27 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ]);
 
       case 'enable':
-        return _frame(children: [
-          const SizedBox(height: 30),
-          _headline(
-              'Turn Glyf on',
-              Platform.isAndroid
-                  ? 'Settings → On-screen keyboard → Glyf'
-                  : 'Settings → General → Keyboard → Keyboards'),
-          const SizedBox(height: 26),
-          Center(
-            child: AnimatedScale(
-              scale: _keyboardEnabled ? 1 : 0.92,
-              duration: const Duration(milliseconds: 300),
-              child: Icon(Icons.check_circle,
-                  size: 74,
-                  color: _keyboardEnabled
-                      ? Glass.success
-                      : const Color(0xFFDDE0E6)),
-            ),
-          ),
-          const Spacer(),
-          if (!_keyboardEnabled)
-            _pill('Open Settings', onTap: () => GlyfBridge.openSettings()),
-          if (_keyboardEnabled) _pill('Continue', onTap: _advance),
-          if (!_keyboardEnabled) _skip(),
-          if (_keyboardEnabled) const SizedBox(height: 20),
-        ]);
-
       case 'access':
-        final step2Done = Platform.isAndroid ? _keyboardSelected : _fullAccess;
+        final enable = _steps[_step] == 'enable';
+        final done = enable ? _keyboardEnabled : (Platform.isAndroid ? _keyboardSelected : _fullAccess);
+        final title = enable
+            ? 'Turn on {glyf}'
+            : (Platform.isAndroid ? 'Switch to {glyf}' : 'Allow Full Access');
         return _frame(children: [
-          const SizedBox(height: 30),
-          Platform.isAndroid
-              ? _headline('Switch to Glyf',
-                  'Pick Glyf from the keyboard list.')
-              : _headline('Allow Full Access'),
-          const SizedBox(height: 26),
-          Center(
-            child: AnimatedScale(
-              scale: step2Done ? 1 : 0.92,
-              duration: const Duration(milliseconds: 300),
-              child: Icon(Icons.check_circle,
-                  size: 74,
-                  color: step2Done ? Glass.success : const Color(0xFFDDE0E6)),
-            ),
-          ),
-          const Spacer(),
-          if (!step2Done)
-            _pill(Platform.isAndroid ? 'Choose keyboard' : 'Open Settings',
-                onTap: () => Platform.isAndroid
+          const Spacer(flex: 2),
+          Center(child: SetupHero(step: _steps[_step], done: done, android: Platform.isAndroid)),
+          const SizedBox(height: 34),
+          GlyfText(title,
+              style: const TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
+          const Spacer(flex: 3),
+          if (done)
+            _pill('Continue', onTap: _advance)
+          else
+            _pill(!enable && Platform.isAndroid ? 'Choose keyboard' : 'Open Settings',
+                onTap: () => !enable && Platform.isAndroid
                     ? GlyfBridge.showImePicker()
                     : GlyfBridge.openSettings()),
-          if (step2Done) _pill('Continue', onTap: _advance),
-          if (!step2Done) _skip(),
-          if (step2Done) const SizedBox(height: 20),
+          if (!done) _skip() else const SizedBox(height: 20),
         ]);
 
       // "Coffee near me" is only a real answer if the keyboard knows roughly
