@@ -429,8 +429,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             }
             insertFromKey(shiftActive ? c.uppercased() : c)
             lastTapOffset = nil
+            // Apple's: an apostrophe from the symbols goes straight back to letters.
+            if mode != .letters, c == "'" { setMode(.letters) }
         case .space:
             delegate?.kbSpaceTapped()
+            // "at 5 pm": a space after numbers or symbols brings the letters back.
+            if mode != .letters { setMode(.letters) }
         case .ret:
             delegate?.kbReturnTapped()
         case .shift:

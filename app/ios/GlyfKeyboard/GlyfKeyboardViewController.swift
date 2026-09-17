@@ -783,7 +783,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // Nothing local to say? Let the model look at the sentence and name
         // the thing Glyf could do with it (the website's coach).
         if chip == nil {
-            if let cached = suggestedChip, suggestedFor == tail {
+            // The answer is stored for the trimmed sentence: people end with a space.
+            if let cached = suggestedChip,
+               suggestedFor == tail.trimmingCharacters(in: .whitespacesAndNewlines) {
                 chip = cached
             } else {
                 askForSuggestion(tail)
@@ -1281,7 +1283,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                     self.hud?.refreshTarget()
                     self.notifyHUD()
                 } else {
-                    KeyboardToast.show(in: self.content, text: "Translation HUD off")
+                    KeyboardToast.show(in: self.content, text: "Translate off")
                 }
             case "surface:tones":
                 self.showTonesPopup()
@@ -1389,6 +1391,16 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
 
     func clipboardPanelPaste(_ text: String) {
         setSurface(.none)
+        textDocumentProxy.insertText(text)
+        updateCandidates()
+    }
+
+    func clipboardPanelPasteFresh() {
+        setSurface(.none)
+        guard let text = UIPasteboard.general.string,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        ClipContext.markDone()
+        remember(copied: text)
         textDocumentProxy.insertText(text)
         updateCandidates()
     }

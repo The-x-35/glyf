@@ -159,6 +159,8 @@ final class GlyfToolbar: UIView {
         smartCard.layer.shadowOpacity = 0
         smartCard.isHidden = true
         smartCard.accessibilityIdentifier = "strip:smart"
+        smartCard.isAccessibilityElement = true
+        smartCard.accessibilityTraits = .button
         smartCard.addAction(UIAction { [weak self] _ in
             guard let self, let chip = self.smartChip else { return }
             self.delegate?.toolbarSmartTapped(chip)

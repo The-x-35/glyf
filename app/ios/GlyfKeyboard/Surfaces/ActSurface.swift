@@ -252,6 +252,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         mapPlace = nil
         table.reloadData()
         show(.result)
+        setNeedsLayout()
         table.setContentOffset(.zero, animated: false)
     }
 
@@ -412,9 +413,14 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         // strip already names the panel and closes it, so this row collapses.
         let headerH: CGFloat = Glass.solidLook ? 0 : 40
         closeButton.frame = CGRect(x: 6, y: 4, width: 38, height: headerH - 4)
-        titleLabel.frame = CGRect(x: 46, y: 4, width: w - 58, height: headerH - 4)
-        let actionsY = h - 52
-        retryButton.frame = CGRect(x: 10, y: actionsY, width: 44, height: 38)
+        titleLabel.frame = CGRect(x: 46, y: 4, width: w - 104, height: headerH - 4)
+        // Versions to pick from have no Copy/Insert row (a tap inserts, a hold
+        // copies), so the list runs to the bottom and ↻ sits in the header.
+        let listOnly = !options.isEmpty && headerH > 0
+        let actionsY = listOnly ? h : h - 52
+        retryButton.frame = listOnly
+            ? CGRect(x: w - 50, y: 4, width: 44, height: headerH - 4)
+            : CGRect(x: 10, y: actionsY, width: 44, height: 38)
         let pillsX: CGFloat = 62
         let pillsW = w - pillsX - 10
         copyButton.frame = CGRect(x: pillsX, y: actionsY, width: pillsW * 0.38, height: 38)
@@ -431,7 +437,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             textView.frame = CGRect(x: 10, y: y, width: w - 20, height: textH)
             y += textH + 6
         }
-        table.frame = CGRect(x: 0, y: y, width: w, height: max(0, actionsY - y - 6))
+        table.frame = CGRect(x: 0, y: y, width: w, height: max(0, actionsY - y - (listOnly ? 0 : 6)))
         statusLabel.frame = CGRect(x: 24, y: headerH + 4, width: w - 48,
                                    height: max(40, h - headerH - 70))
     }
@@ -539,6 +545,8 @@ final class OptionCell: UITableViewCell {
         body.text = option.text
         accessibilityLabel = "\(option.label): \(option.text)"
         accessibilityIdentifier = "act:option:\(option.id)"
+        isAccessibilityElement = true
+        accessibilityTraits = .button
         setNeedsLayout()
     }
 

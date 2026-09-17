@@ -44,6 +44,12 @@ import UIKit
       try? edits.data(using: .utf8)?.write(
         to: dir.appendingPathComponent("typing-edits.json"), options: .atomic)
     }
+    if args.contains("--glyf-screenshots-on") {
+      SettingsStore.update { s in s.clipboardScreenshots = true }
+    }
+    if args.contains("--glyf-clear-tour") {
+      SettingsStore.update { s in s.tourHint = nil }
+    }
     if args.contains("--glyf-seed-bindings") {
       // Gate tests exercise the full §6.13 key map; shipping presets are
       // deliberately smaller, so tests seed the rest explicitly.

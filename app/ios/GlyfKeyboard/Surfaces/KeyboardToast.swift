@@ -18,11 +18,18 @@ enum KeyboardToast {
                              width: width, height: 28)
         label.alpha = 0
         container.addSubview(label)
+        // The fade-out starts only once the fade-in is done: queued together,
+        // the label's alpha is already 0 to VoiceOver while it is on screen.
         UIView.animate(withDuration: 0.15) { label.alpha = 1 }
-        UIView.animate(withDuration: 0.3, delay: 1.6, options: []) {
-            label.alpha = 0
-        } completion: { _ in
-            label.removeFromSuperview()
+        // Held by a timer, not an animation delay, so it is really on screen
+        // (to VoiceOver too) the whole time it shows.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) {
+            UIView.animate(withDuration: 0.3) {
+                label.alpha = 0
+            } completion: { _ in
+                label.removeFromSuperview()
+            }
         }
+        UIAccessibility.post(notification: .announcement, argument: text)
     }
 }

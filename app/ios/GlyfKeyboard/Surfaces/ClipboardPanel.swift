@@ -4,6 +4,8 @@ import UIKit
 protocol ClipboardPanelDelegate: AnyObject {
     func clipboardPanelClosed()
     func clipboardPanelPaste(_ text: String)
+    /// The copy iOS has not handed over yet: tapping is the moment it asks.
+    func clipboardPanelPasteFresh()
     /// A screenshot was copied: iOS keyboards can only type text, so the
     /// image goes on the pasteboard for the person to paste.
     func clipboardPanelCopiedImage()
@@ -162,6 +164,12 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             return
         }
 
+        // Something copied that iOS only hands over after "Allow Paste":
+        // offer it first, the way Gboard shows the latest copy on top.
+        if ClipContext.isFresh() {
+            y = addFreshCard(at: y, width: w - M.side * 2)
+        }
+
         let pinned = items.filter(\.pinned)
         let recent = items.filter { !$0.pinned }
         if !pinned.isEmpty {
@@ -173,10 +181,9 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             if !shots.isEmpty { y = addShots(at: y, colW: colW) }
             if !recent.isEmpty { y = addGrid(recent, at: y, colW: colW) }
         }
-        if items.isEmpty && shots.isEmpty {
-            y = addSection("TIPS", at: y)
+        if items.isEmpty && shots.isEmpty && !ClipContext.isFresh() {
             y = addTip(at: y, width: w - M.side * 2, icon: "doc.on.clipboard",
-                       text: "Anything you copy shows up here. Tap a clip to paste it, hold it to pin.")
+                       text: "Nothing copied yet")
         }
         scroll.contentSize = CGSize(width: w, height: y + 12)
     }
@@ -217,6 +224,8 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             card.layer.cornerCurve = .continuous
             card.accessibilityLabel = flat
             card.accessibilityIdentifier = "clip:card"
+            card.isAccessibilityElement = true
+            card.accessibilityTraits = .button
 
             let label = UILabel(frame: CGRect(x: M.cardPad, y: M.cardPad, width: textW, height: textH))
             label.text = flat
@@ -311,6 +320,8 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             card.clipsToBounds = true
             card.accessibilityLabel = "Screenshot"
             card.accessibilityIdentifier = "clip:shot"
+            card.isAccessibilityElement = true
+            card.accessibilityTraits = [.button, .image]
             let image = UIImageView(frame: card.bounds)
             image.contentMode = .scaleAspectFill
             image.isUserInteractionEnabled = false
@@ -368,6 +379,35 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
                 self?.reload()
             }),
         ], card: card)
+    }
+
+    private func addFreshCard(at y: CGFloat, width: CGFloat) -> CGFloat {
+        let card = UIControl(frame: CGRect(x: M.side, y: y, width: width, height: 48))
+        card.backgroundColor = Glass.surfaceCard
+        card.layer.cornerRadius = M.radius
+        card.layer.cornerCurve = .continuous
+        card.accessibilityLabel = "Paste what you copied"
+        card.accessibilityIdentifier = "clip:fresh"
+        card.isAccessibilityElement = true
+        card.accessibilityTraits = .button
+        let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)))
+        icon.tintColor = Glass.accentPrimary
+        icon.contentMode = .center
+        icon.frame = CGRect(x: M.cardPad - 2, y: 0, width: 24, height: 48)
+        card.addSubview(icon)
+        let label = UILabel(frame: CGRect(x: M.cardPad + 30, y: 0, width: width - M.cardPad * 2 - 30, height: 48))
+        label.text = "Paste what you copied"
+        label.font = .systemFont(ofSize: M.textSize, weight: .semibold)
+        label.textColor = Glass.accentPrimary
+        card.addSubview(label)
+        card.addAction(UIAction { [weak self] _ in
+            guard let self, !self.editing else { return }
+            self.delegate?.clipboardPanelPasteFresh()
+        }, for: .touchUpInside)
+        card.tag = Self.contentTag
+        scroll.addSubview(card)
+        return card.frame.maxY + M.gap
     }
 
     private func addTip(at y: CGFloat, width: CGFloat, icon: String, text: String) -> CGFloat {

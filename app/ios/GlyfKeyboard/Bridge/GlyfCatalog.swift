@@ -48,9 +48,9 @@ enum GlyfCatalog {
 
     static func title(for id: String) -> String {
         switch id {
-        case "surface:vault": return "Vault picker"
-        case "surface:translate-hud": return "Translation HUD"
-        case "surface:tones": return "Humanize"
+        case "surface:vault": return "Vault"
+        case "surface:translate-hud": return "Translate"
+        case "surface:tones": return "Rewrite"
         case "connector:mockcal": return "Calendar picker"
         default: break
         }

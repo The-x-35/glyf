@@ -187,6 +187,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             let cell = UIControl()
             cell.accessibilityLabel = title
             cell.accessibilityIdentifier = "shell:tile:\(id)"
+            cell.isAccessibilityElement = true
+            cell.accessibilityTraits = .button
 
             let card = UIView()
             card.tag = 1
@@ -327,8 +329,10 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         for (i, item) in vaultCards.enumerated() {
             let cell = UIControl()
             cell.tag = 2000 + i
-            cell.accessibilityLabel = item.label
+            cell.accessibilityLabel = "\(item.label), \(item.value)"
             cell.accessibilityIdentifier = "vault:card:\(i)"
+            cell.isAccessibilityElement = true
+            cell.accessibilityTraits = .button
 
             let card = UIView()
             card.tag = 1
