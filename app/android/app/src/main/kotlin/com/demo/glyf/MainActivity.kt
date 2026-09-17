@@ -50,6 +50,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         val link = intent.dataString ?: return
         if (link.startsWith("glyf://")) {
             bridge?.lastDeepLink = link

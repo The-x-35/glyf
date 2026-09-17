@@ -165,8 +165,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val after = ic?.getTextAfterCursor(4000, 0)?.toString() ?: ""
         out.put("text", before + after)
         out.put("cursor", before.length)
+        val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClipDescription
+        out.put("clipMime", clip?.takeIf { it.mimeTypeCount > 0 }?.getMimeType(0) ?: "")
+        out.put("clipLabel", clip?.label?.toString() ?: "")
         val dir = java.io.File(filesDir, "qa").apply { mkdirs() }
-        java.io.File(dir, "state.json").writeText(out.toString())
+        // Written whole, then swapped in: a reader never sees half a file.
+        val tmp = java.io.File(dir, "state.json.tmp")
+        tmp.writeText(out.toString())
+        tmp.renameTo(java.io.File(dir, "state.json"))
     }
 
     override fun onDestroy() {
@@ -246,6 +252,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (searchActive) exitSearch()
         if (barActive) exitBar()
         if (translateStrip != null) exitTranslate()
+        // A new field starts on the letters, like Gboard: an emoji page or a
+        // menu left open in the last one would otherwise sit under the keys.
+        if (featurePanel != null) dismissFeaturePanel()
         keyboard.rebuild()
         syncAutoShift()
         refreshClipCard()
@@ -900,7 +909,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** The tour's ring: a key, the strip chip, or the g pill. */
     private fun applyTourHint() {
-        val hint = settings.optString("tourHint").takeIf { it.isNotBlank() }
+        // A tour closed by force leaves its hint behind: only a fresh one counts.
+        val fresh = settings.optDouble("tourHintAt", 0.0) > System.currentTimeMillis() - 15 * 60 * 1000
+        val hint = settings.optString("tourHint").takeIf { it.isNotBlank() && fresh }
         keyboard.tourKey = hint?.takeIf { it != "chip" && it != "g" }
         val ringColor = Color.rgb(0x7C, 0x5C, 0xFF)
         (stripChip?.background as? GradientDrawable)?.setStroke(

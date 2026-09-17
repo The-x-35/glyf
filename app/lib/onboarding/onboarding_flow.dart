@@ -24,7 +24,8 @@ class OnboardingFlow extends StatefulWidget {
 }
 
 class _OnboardingFlowState extends State<OnboardingFlow> {
-  static const _steps = [
+  /// 'connect' only when this server can actually sign in with Google.
+  List<String> _steps = const [
     'hello', 'details', 'feel', 'enable', 'access', 'nearby', 'connect'
   ];
   int _step = 0;
@@ -34,7 +35,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// email gets the email, "my address is" gets the address. They are saved
   /// in the on-device vault, never uploaded.
   static const _detailFields = <(String, String, String)>[
-    ('name', 'Name', 'Arpit Singh'),
+    ('name', 'Name', 'Your name'),
     ('email', 'Email', 'you@example.com'),
     ('phone', 'Phone', '+91 98765 43210'),
     ('address', 'Home', 'Flat, street, city, pin'),
@@ -65,6 +66,22 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     super.initState();
     Telemetry.log('onboarding_step_view', {'step': _steps[_step]});
     _poll = Timer.periodic(const Duration(seconds: 1), (_) => _checkStatus());
+    _dropConnectIfUnavailable();
+  }
+
+  /// A Google step that can only fail is worse than none: ask the server
+  /// whether sign-in is set up, and leave the step out when it is not.
+  Future<void> _dropConnectIfUnavailable() async {
+    bool configured = false;
+    try {
+      final status = await GlyfApi.connectorsStatus();
+      final providers = (status['providers'] as List?) ?? const [];
+      configured = providers.any((p) => p is Map && p['id'] == 'google' && p['configured'] == true);
+    } catch (_) {
+      configured = false;
+    }
+    if (!mounted || configured) return;
+    setState(() => _steps = _steps.where((s) => s != 'connect').toList());
   }
 
   @override
@@ -252,8 +269,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       case 'details':
         return _frame(children: [
           const SizedBox(height: 24),
-          _headline('What should Glyf know?',
-              'Saved on this phone. Fill a form with one tap.'),
+          _headline('What should Glyf know?', 'Saved on this phone.'),
           const SizedBox(height: 14),
           for (final (kind, label, hint) in _detailFields)
             Padding(
@@ -307,7 +323,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       case 'feel':
         return _frame(children: [
           const SizedBox(height: 30),
-          _headline('Make it yours', 'Change these anytime in Profile.'),
+          _headline('Make it yours'),
           const SizedBox(height: 20),
           _toggleCard('🔊', 'Key sounds', _keySounds,
               (v) => setState(() => _keySounds = v)),
@@ -394,8 +410,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       case 'nearby':
         return _frame(children: [
           const SizedBox(height: 30),
-          _headline('Search what\u2019s near you',
-              'So “coffee near me” finds coffee near you.'),
+          _headline('Search what\u2019s near you'),
           const SizedBox(height: 26),
           Center(
             child: AnimatedScale(
@@ -410,8 +425,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
             child: Text(
-              'Approximate only, kept on your device, and never stored on our '
-              'servers. You can turn it off any time in Settings.',
+              'Approximate, and never stored on our servers.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Glass.inkSoft, fontSize: 12.5, height: 1.4),
             ),
@@ -530,13 +544,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             children: children),
       );
 
-  Widget _headline(String title, String sub) =>
+  Widget _headline(String title, [String? sub]) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(title,
             style: const TextStyle(
                 color: Glass.ink, fontSize: 26, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
-        Text(sub, style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
+        if (sub != null) ...[
+          const SizedBox(height: 6),
+          Text(sub, style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
+        ],
       ]);
 
   Widget _pill(String label, {VoidCallback? onTap}) => Semantics(

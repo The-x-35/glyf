@@ -272,9 +272,9 @@ class _HomeTabState extends State<HomeTab> {
     final current = _bindings[letter];
     final mine = (_settings['customTitles'] as Map<String, dynamic>?) ?? const {};
     const holds = [
-      ('surface:vault', '🗂️', 'Vault', 'Your details, ready to send'),
-      ('surface:translate-hud', '🌐', 'Translate', 'Translate as you type'),
-      ('surface:tones', '🎚️', 'Rewrite', 'Pick a tone for your draft'),
+      ('surface:vault', '🗂️', 'Vault', null),
+      ('surface:translate-hud', '🌐', 'Translate', null),
+      ('surface:tones', '🎚️', 'Rewrite', null),
     ];
     showModalBottomSheet<void>(
       context: context,

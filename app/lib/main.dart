@@ -48,6 +48,12 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     Catalog.rememberCustomTitles(
         settings['customTitles'] as Map<String, dynamic>?);
     Telemetry.log('app_open');
+    // A tour that ended with the app killed never cleared its hint.
+    GlyfBridge.updateSharedSettings((s) {
+      s.remove('tourHint');
+      s.remove('tourHintAt');
+      return s;
+    });
     // The keyboard may have parked an intent before we ever launched
     // (Spike A fallback path) — pick it up.
     _checkPendingDictation();

@@ -30,6 +30,12 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- glyf:// links are handled by the app (MainActivity.onNewIntent).
+                 Flutter's own deep linking would also push "/" on top of it,
+                 burying the screen the link opened under a second Home. -->
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
@@ -107,7 +106,7 @@ final _levels = <_Level>[
     them: ['hey, the deck for tomorrow', 'can you get it to me before 6?'],
     prefill: _roughReply,
     hint: 'space',
-    coach: 'Hold the space bar, then Insert',
+    coach: 'Hold the space bar, then pick one',
     goal: (text, _) =>
         text.trim().toLowerCase() != _roughReply && text.trim().length > 18,
     reply: ['amazing, thank you!', 'see you at the review 🙌'],
@@ -148,6 +147,12 @@ class _DemoChatState extends State<DemoChat> with SingleTickerProviderStateMixin
     ..repeat(reverse: true);
   bool _busy = false;
   bool _coachUp = false;
+  /// The keyboard has been down for a while during a level. Android can
+  /// refuse (or later drop) a keyboard nobody tapped for; then the coach asks
+  /// for the tap instead of pointing at keys nobody can see.
+  bool _askedForKeyboard = false;
+  Timer? _keyboardWatch;
+  int _downTicks = 0;
   bool _ready = false;
   _VaultPeek _vault = const _VaultPeek([]);
 
@@ -163,6 +168,7 @@ class _DemoChatState extends State<DemoChat> with SingleTickerProviderStateMixin
   @override
   void dispose() {
     _setHint(null);
+    _keyboardWatch?.cancel();
     _controller.removeListener(_textChanged);
     _controller.dispose();
     _focus.dispose();
@@ -193,8 +199,10 @@ class _DemoChatState extends State<DemoChat> with SingleTickerProviderStateMixin
   Future<void> _setHint(String? hint) => GlyfBridge.updateSharedSettings((s) {
         if (hint == null) {
           s.remove('tourHint');
+          s.remove('tourHintAt');
         } else {
           s['tourHint'] = hint;
+          s['tourHintAt'] = DateTime.now().millisecondsSinceEpoch;
         }
         return s;
       });
@@ -206,6 +214,12 @@ class _DemoChatState extends State<DemoChat> with SingleTickerProviderStateMixin
       _ready = false;
       _busy = true;
     });
+    // The keyboard goes down while the next person's messages come in, and
+    // comes back up with the reply already in the box. Pointing a keyboard
+    // that is still up at a changed field races on Android and can leave it
+    // attached to nothing.
+    await _lowerKeyboard();
+    if (!mounted) return;
     _controller.clear();
     for (final line in _current.them) {
       await Future.delayed(const Duration(milliseconds: 620));
@@ -222,13 +236,56 @@ class _DemoChatState extends State<DemoChat> with SingleTickerProviderStateMixin
       _busy = false;
       _coachUp = true;
     });
+    await _prefill();
+  }
+
+  /// Puts the level's message in the box with the keyboard up and reading it.
+  Future<void> _prefill() async {
     _controller.value = TextEditingValue(
       text: _current.prefill,
       selection: TextSelection.collapsed(offset: _current.prefill.length),
     );
-    _focus.requestFocus();
-    // Focus alone can leave the keyboard down after the last send.
-    SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+    if (!_focus.hasFocus) _focus.requestFocus();
+    await _raiseKeyboard();
+  }
+
+  Future<void> _lowerKeyboard() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    for (var i = 0; i < 25; i++) {
+      await Future.delayed(const Duration(milliseconds: 60));
+      if (!mounted || MediaQuery.viewInsetsOf(context).bottom == 0) return;
+    }
+  }
+
+  /// The box brings the keyboard up itself when it takes focus. Only when
+  /// nothing has come up after a generous wait (a slow phone animates the
+  /// keyboard in for a couple of seconds), take focus again once.
+  /// (Raw show and hide calls on top of that raced on Android: the keyboard
+  /// attached, then dropped the box a moment later.)
+  Future<void> _raiseKeyboard() async {
+    _watchKeyboard();
+    if (!_focus.hasFocus) _focus.requestFocus();
+    for (var i = 0; i < 30; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!mounted || MediaQuery.viewInsetsOf(context).bottom > 0) return;
+    }
+    _focus.unfocus();
+    await Future.delayed(const Duration(milliseconds: 150));
+    if (mounted) _focus.requestFocus();
+  }
+
+  /// Down for 4 seconds in a row while a level waits for a tap: ask for it.
+  void _watchKeyboard() {
+    _keyboardWatch?.cancel();
+    _downTicks = 0;
+    _askedForKeyboard = false;
+    _keyboardWatch = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted) return;
+      final down = MediaQuery.viewInsetsOf(context).bottom == 0;
+      _downTicks = down && _coachUp && !_busy ? _downTicks + 1 : 0;
+      final ask = _downTicks >= 8;
+      if (ask != _askedForKeyboard) setState(() => _askedForKeyboard = ask);
+    });
   }
 
   void _textChanged() {
@@ -270,10 +327,7 @@ class _DemoChatState extends State<DemoChat> with SingleTickerProviderStateMixin
         _coachUp = true;
       });
       _toBottom();
-      _controller.value = TextEditingValue(
-        text: _current.prefill,
-        selection: TextSelection.collapsed(offset: _current.prefill.length),
-      );
+      await _prefill();
       return;
     }
     setState(() => _msgs.last.tapback = _current.tapback);
@@ -469,7 +523,12 @@ class _DemoChatState extends State<DemoChat> with SingleTickerProviderStateMixin
             size: 18, color: Glass.accent),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(_ready ? 'Now send it' : level.coach,
+          child: Text(
+              _ready
+                  ? 'Now send it'
+                  : _askedForKeyboard
+                      ? 'Tap the message box'
+                      : level.coach,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
         ),
       ]),
@@ -499,6 +558,9 @@ class _DemoChatState extends State<DemoChat> with SingleTickerProviderStateMixin
                 child: TextField(
                   controller: _controller,
                   focusNode: _focus,
+                  // The keyboard is what this screen teaches: tapping Send or
+                  // the chat keeps it up and attached.
+                  onTapOutside: (_) {},
                   maxLines: 4,
                   minLines: 1,
                   textInputAction: TextInputAction.newline,

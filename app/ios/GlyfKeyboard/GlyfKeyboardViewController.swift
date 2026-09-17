@@ -230,6 +230,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
             viewHeightConstraint = v
         }
         keyboardView.needsGlobe = needsInputModeSwitchKey
+        // A keyboard coming back for a field starts on the letters: a menu,
+        // clipboard or answer panel left open last time would greet the next
+        // field with something it never asked for.
+        if didBuild, surface != .none { setSurface(.none, animated: false) }
         keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
         log.log("GLYF_KB ctx autocap=\(self.textDocumentProxy.autocapitalizationType?.rawValue ?? -1) kbType=\(self.textDocumentProxy.keyboardType?.rawValue ?? -1)")
         keyboardView.rebuild()
@@ -677,7 +681,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     private func applyTourHint() {
         SettingsStore.reloadIfChanged()
-        let hint = SettingsStore.current.tourHint
+        let s = SettingsStore.current
+        let fresh = (s.tourHintAt ?? 0) > (Date().timeIntervalSince1970 - 15 * 60) * 1000
+        let hint = fresh ? s.tourHint : nil
         var rect: CGRect?
         switch hint {
         case "chip":

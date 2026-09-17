@@ -94,6 +94,9 @@ struct GlyfSettings: Codable, Equatable {
     /// Set by the app's guided tour while it waits for one tap: "chip",
     /// "space", "emojikey", "g" or a letter. The keyboard rings that control.
     var tourHint: String? = nil
+    /// When the tour set the hint (ms since 1970). A tour that was closed by
+    /// force leaves its hint behind; an old one is ignored.
+    var tourHintAt: Double? = nil
     /// The language besides the phone's own that this person types in, as
     /// translate last detected it. Where English drafts get translated to.
     var translateOther: String? = nil
