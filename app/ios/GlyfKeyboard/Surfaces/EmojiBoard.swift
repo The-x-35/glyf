@@ -14,13 +14,15 @@ protocol EmojiBoardDelegate: AnyObject {
     func emojiSearchDismissed()
 }
 
-/// §6.1 emoji keyboard: recents, search, categories, long-press skin tones.
+/// §6.1 emoji keyboard, laid out like Apple's: Search Emoji on top, then one
+/// grid five rows tall that pages left and right through every section, the
+/// section's name above it, and ABC · categories · delete along the bottom.
 /// One UICollectionView with cell reuse; text-only cells (no images — memory).
 final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDelegate {
 
     weak var delegate: EmojiBoardDelegate?
 
-    private let searchEditor = InlineEditor(placeholder: "Search emoji")
+    private let searchEditor = InlineEditor(placeholder: "Search Emoji", searchStyle: true)
     private let closeButton = UIButton(type: .system)
     private let abcButton = UIButton(type: .system)
     /// Apple's emoji keyboard keeps ABC bottom-left and ⌫ bottom-right, on
@@ -33,9 +35,14 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
     private(set) var searchActive = false
     /// Strip height in search mode (field row + results row).
     static let searchStripHeight: CGFloat = 96
+    /// How much taller than the letters the grid stands (Apple's does too).
+    static let extraHeight: CGFloat = 44
     private var collection: UICollectionView!
     private let tabs = UIStackView()
-    private var currentEmoji: [String] = []
+    private let tabThumb = UIView()
+    private let sectionLabel = UILabel()
+    /// Frequently used, then every category, as one horizontal run.
+    private var sections: [(title: String, emoji: [String])] = []
     private var currentCategory = 0
     private var searchResults: [String]?
     private var tonePopup: UIView?
@@ -80,17 +87,25 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
                             for: .touchUpInside)
         addSubview(abcButton)
 
-        // Website metrics: cells at least 42 wide auto-fill the panel, 2pt
-        // gaps, 42 tall, glyph 25pt (sized per width in layoutSubviews).
+        // Apple's grid, measured on iOS 26: columns about 47pt apart, rows
+        // 39pt, five rows, filled top to bottom and paging sideways.
         let layout = UICollectionViewFlowLayout()
-        layout.itemSize = CGSize(width: 42, height: 42)
-        layout.minimumInteritemSpacing = 2
-        layout.minimumLineSpacing = 2
+        layout.scrollDirection = .horizontal
+        layout.itemSize = CGSize(width: 47, height: 39)
+        layout.minimumInteritemSpacing = 0
+        layout.minimumLineSpacing = 0
+        layout.sectionInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 14)
         collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collection.backgroundColor = .clear
         collection.dataSource = self
         collection.delegate = self
         collection.register(EmojiCell.self, forCellWithReuseIdentifier: "e")
+        collection.showsHorizontalScrollIndicator = false
+        collection.alwaysBounceHorizontal = true
+
+        sectionLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        sectionLabel.textColor = Glass.textSecondary
+        addSubview(sectionLabel)
         let long = UILongPressGestureRecognizer(target: self, action: #selector(cellLong(_:)))
         long.minimumPressDuration = 0.35
         collection.addGestureRecognizer(long)
@@ -113,47 +128,70 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         }, for: .touchUpInside)
         addSubview(deleteButton)
 
+        tabThumb.backgroundColor = Glass.textPrimary.withAlphaComponent(Glass.isDark ? 0.18 : 0.10)
+        addSubview(tabThumb)
         tabs.axis = .horizontal
         tabs.distribution = .fillEqually
         addSubview(tabs)
         buildTabs()
-        selectCategory(0)
+        reload()
+        highlightTab(0)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    private static let sectionTitles = [
+        "smileys": "SMILEYS & PEOPLE", "people": "PEOPLE", "animals": "ANIMALS & NATURE",
+        "food": "FOOD & DRINK", "activity": "ACTIVITY", "travel": "TRAVEL & PLACES",
+        "objects": "OBJECTS", "symbols": "SYMBOLS", "flags": "FLAGS",
+    ]
+
     private func buildTabs() {
-        let recents = UIButton(type: .system)
-        recents.setImage(UIImage(systemName: "clock"), for: .normal)
-        recents.tintColor = Glass.textSecondary
-        recents.addAction(UIAction { [weak self] _ in self?.selectCategory(-1) }, for: .touchUpInside)
-        tabs.addArrangedSubview(recents)
-        for (i, cat) in EmojiData.categories.enumerated() {
+        let symbols = ["clock"] + EmojiData.categories.map(\.symbol)
+        for (i, symbol) in symbols.enumerated() {
             let b = UIButton(type: .system)
-            b.setImage(UIImage(systemName: cat.symbol), for: .normal)
+            b.setImage(UIImage(systemName: symbol), for: .normal)
+            b.setPreferredSymbolConfiguration(.init(pointSize: 15, weight: .regular), forImageIn: .normal)
             b.tintColor = Glass.textSecondary
-            b.addAction(UIAction { [weak self] _ in self?.selectCategory(i) }, for: .touchUpInside)
+            b.addAction(UIAction { [weak self] _ in self?.jump(to: i) }, for: .touchUpInside)
             tabs.addArrangedSubview(b)
         }
     }
 
-    private func selectCategory(_ idx: Int) {
-        currentCategory = idx
-        searchResults = nil
-        searchEditor.clear()
-        for (i, v) in tabs.arrangedSubviews.enumerated() {
-            (v as? UIButton)?.tintColor = (i == idx + 1) ? Glass.accentPrimary : Glass.textSecondary
+    /// A category button: straight to the start of its section.
+    private func jump(to section: Int) {
+        guard section < sections.count, collection.numberOfItems(inSection: section) > 0 else { return }
+        collection.scrollToItem(at: IndexPath(item: 0, section: section), at: .left, animated: false)
+        highlightTab(section)
+    }
+
+    /// Apple rings the category you are in with a soft circle.
+    private func highlightTab(_ section: Int) {
+        currentCategory = section
+        let views = tabs.arrangedSubviews
+        guard views.indices.contains(section) else { return }
+        for (i, v) in views.enumerated() {
+            (v as? UIButton)?.tintColor = i == section ? Glass.textPrimary : Glass.textSecondary
         }
-        reload()
+        let frame = tabs.convert(views[section].frame, to: self)
+        let d = min(frame.height, 30)
+        tabThumb.frame = CGRect(x: frame.midX - d / 2, y: frame.midY - d / 2, width: d, height: d)
+        tabThumb.layer.cornerRadius = d / 2
+        sectionLabel.text = sections.indices.contains(section) ? sections[section].title : nil
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard !searchActive, scrollView === collection else { return }
+        // The section under the left edge names the grid, as Apple's does.
+        let probe = CGPoint(x: scrollView.contentOffset.x + 24, y: 20)
+        if let ip = collection.indexPathForItem(at: probe), ip.section != currentCategory {
+            highlightTab(ip.section)
+        }
     }
 
     private func reload() {
-        if let results = searchResults {
-            currentEmoji = results
-        } else if currentCategory == -1 {
-            currentEmoji = Self.loadRecents()
-        } else {
-            currentEmoji = EmojiData.categories[currentCategory].emoji
+        sections = [("FREQUENTLY USED", Self.loadRecents())] + EmojiData.categories.map {
+            (Self.sectionTitles[$0.id] ?? $0.id.uppercased(), $0.emoji)
         }
         collection.reloadData()
         collection.setContentOffset(.zero, animated: false)
@@ -165,8 +203,6 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
             searchActive = true
             // Empty query shows recents in the strip right away.
             if searchResults == nil { searchResults = Self.loadRecents() }
-            (collection.collectionViewLayout as? UICollectionViewFlowLayout)?
-                .scrollDirection = .horizontal
             abcButton.isHidden = false
             tabs.isHidden = true
             reload()
@@ -183,8 +219,6 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         searchEditor.isActive = false
         searchEditor.clear()
         searchResults = nil
-        (collection.collectionViewLayout as? UICollectionViewFlowLayout)?
-            .scrollDirection = .vertical
         abcButton.isHidden = true
         tabs.isHidden = false
         reload()
@@ -215,19 +249,29 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     // MARK: Collection
 
+    func numberOfSections(in cv: UICollectionView) -> Int {
+        searchResults != nil ? 1 : sections.count
+    }
+
     func collectionView(_ cv: UICollectionView, numberOfItemsInSection s: Int) -> Int {
-        currentEmoji.count
+        if let results = searchResults { return results.count }
+        return sections.indices.contains(s) ? sections[s].emoji.count : 0
+    }
+
+    private func emoji(at ip: IndexPath) -> String {
+        if let results = searchResults { return results[ip.item] }
+        return sections[ip.section].emoji[ip.item]
     }
 
     func collectionView(_ cv: UICollectionView,
                         cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = cv.dequeueReusableCell(withReuseIdentifier: "e", for: indexPath) as! EmojiCell
-        cell.label.text = currentEmoji[indexPath.item]
+        cell.label.text = emoji(at: indexPath)
         return cell
     }
 
     func collectionView(_ cv: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        pick(currentEmoji[indexPath.item])
+        pick(emoji(at: indexPath))
     }
 
     private func pick(_ e: String) {
@@ -242,7 +286,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         case .began:
             let p = g.location(in: collection)
             guard let ip = collection.indexPathForItem(at: p) else { return }
-            let base = currentEmoji[ip.item]
+            let base = emoji(at: ip)
             let variants = EmojiData.variants(of: base)
             guard variants.count > 1, let cell = collection.cellForItem(at: ip) else { return }
             showTonePopup(variants, over: collection.convert(cell.frame, to: self))
@@ -284,34 +328,43 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        let flow = collection.collectionViewLayout as? UICollectionViewFlowLayout
         if searchActive {
             // Strip mode: [ABC][field][x] + one horizontal result row; the
             // letter keys live below this view.
             abcButton.frame = CGRect(x: 6, y: 6, width: 44, height: 32)
             searchEditor.frame = CGRect(x: 54, y: 6, width: bounds.width - 96, height: 32)
+            closeButton.isHidden = false
             closeButton.frame = CGRect(x: bounds.width - 40, y: 6, width: 32, height: 32)
             collection.frame = CGRect(x: 8, y: 46, width: bounds.width - 16, height: 44)
+            sectionLabel.isHidden = true
             lettersButton.isHidden = true
             deleteButton.isHidden = true
+            tabThumb.isHidden = true
+            if flow?.itemSize != CGSize(width: 44, height: 44) {
+                flow?.itemSize = CGSize(width: 44, height: 44); flow?.invalidateLayout()
+            }
         } else {
-            searchEditor.frame = CGRect(x: 8, y: 6, width: bounds.width - 52, height: 32)
-            closeButton.frame = CGRect(x: bounds.width - 40, y: 6, width: 32, height: 32)
-            let barY = bounds.height - 38
+            // Apple's: the search field across the top, no close button (ABC
+            // is the way back), the section name, five rows, the bottom bar.
+            closeButton.isHidden = true
+            searchEditor.frame = CGRect(x: 8, y: 6, width: bounds.width - 16, height: 34)
+            sectionLabel.isHidden = false
+            sectionLabel.frame = CGRect(x: 14, y: 44, width: bounds.width - 28, height: 16)
+            let barY = bounds.height - 36
             lettersButton.isHidden = false
             deleteButton.isHidden = false
+            tabThumb.isHidden = false
             lettersButton.frame = CGRect(x: 4, y: barY, width: 46, height: 34)
             deleteButton.frame = CGRect(x: bounds.width - 48, y: barY, width: 44, height: 34)
             tabs.frame = CGRect(x: 54, y: barY, width: bounds.width - 108, height: 34)
-            collection.frame = CGRect(x: 8, y: 44, width: bounds.width - 16,
-                                      height: bounds.height - 44 - 40)
-        }
-        // Auto-fill: as many 42pt columns as fit, sharing the slack evenly.
-        if let flow = collection.collectionViewLayout as? UICollectionViewFlowLayout {
-            let gap: CGFloat = 2
-            let cols = max(1, floor((collection.bounds.width + gap) / (42 + gap)))
-            let w = (collection.bounds.width - gap * (cols - 1)) / cols
-            let size = CGSize(width: floor(w), height: 42)
-            if flow.itemSize != size { flow.itemSize = size; flow.invalidateLayout() }
+            let gridTop: CGFloat = 64
+            collection.frame = CGRect(x: 4, y: gridTop, width: bounds.width - 8,
+                                      height: max(0, barY - gridTop - 2))
+            let rowH = floor(collection.bounds.height / 5)
+            let size = CGSize(width: 47, height: rowH)
+            if flow?.itemSize != size { flow?.itemSize = size; flow?.invalidateLayout() }
+            highlightTab(currentCategory)
         }
     }
 }
@@ -320,7 +373,7 @@ private final class EmojiCell: UICollectionViewCell {
     let label = UILabel()
     override init(frame: CGRect) {
         super.init(frame: frame)
-        label.font = .systemFont(ofSize: 25)
+        label.font = .systemFont(ofSize: 32)
         label.textAlignment = .center
         contentView.addSubview(label)
     }

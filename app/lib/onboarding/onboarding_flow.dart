@@ -48,7 +48,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool _haptics = true;
   /// On by default, like Gboard: what you copy is there to paste later.
   bool _clipboard = true;
-  /// Android only, off until asked for: it needs photo access.
+  /// Off until asked for: it needs photo access.
   bool _screenshots = false;
   bool _keyboardEnabled = false;
   bool _fullAccess = false;
@@ -153,7 +153,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       s['keyClicks'] = _keySounds;
       s['haptics'] = _haptics;
       s['clipboardHistory'] = _clipboard;
-      if (Platform.isAndroid) s['clipboardScreenshots'] = _screenshots;
+      s['clipboardScreenshots'] = _screenshots;
       return s;
     });
     await GlyfBridge.saveOnboardingState({
@@ -317,7 +317,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const SizedBox(height: 10),
           _toggleCard('📋', 'Keep what you copy', _clipboard,
               (v) => setState(() => _clipboard = v)),
-          if (Platform.isAndroid) ...[
+          ...[
             const SizedBox(height: 10),
             _toggleCard('🖼️', 'Save recent screenshots', _screenshots, (v) async {
               // Needs photo access; the switch only turns on once it is given.

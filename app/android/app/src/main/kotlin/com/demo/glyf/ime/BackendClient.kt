@@ -225,6 +225,8 @@ object BackendClient {
     }
 
     /** POST /act result — mirrors the Swift `BackendClient.ActResult`. */
+    data class RewriteOption(val id: String, val label: String, val text: String)
+
     data class ActResult(
         val intent: String,
         val title: String,
@@ -232,6 +234,8 @@ object BackendClient {
         val text: String?,
         val insert: String,
         val remaining: Int?,
+        /** A rewrite's versions (Basic, Professional, Polite…), when offered. */
+        val options: List<RewriteOption> = emptyList(),
     )
 
     /** POST /act — hold space on typed text: the server routes the intent
@@ -246,6 +250,7 @@ object BackendClient {
         lon: Double? = null,
         country: String? = null,
         tz: String? = null,
+        intent: String? = null,
         onResult: (ActResult) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -267,6 +272,7 @@ object BackendClient {
                     if (lat != null && lon != null) { put("lat", lat); put("lon", lon) }
                     if (country != null && country.length == 2) put("country", country)
                     if (tz != null) put("tz", tz)
+                    if (intent != null) put("intent", intent)
                 }
                 c.outputStream.use { it.write(body.toString().toByteArray()) }
                 val ok = c.responseCode in 200..299
@@ -284,6 +290,14 @@ object BackendClient {
                     text = textOut,
                     insert = json.optStringOrNull("insert") ?: textOut ?: "",
                     remaining = if (json.has("remaining")) json.optInt("remaining") else null,
+                    options = json.optJSONArray("options")?.let { arr ->
+                        (0 until arr.length()).mapNotNull { i ->
+                            arr.optJSONObject(i)?.let { o ->
+                                RewriteOption(o.optString("id"), o.optString("label"), o.optString("text"))
+                                    .takeIf { it.text.isNotBlank() }
+                            }
+                        }
+                    } ?: emptyList(),
                 ))
             } catch (e: Exception) {
                 android.util.Log.e("GlyfKB", "act failed: $e")

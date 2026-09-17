@@ -188,6 +188,12 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
 
     // MARK: Act (POST /act — hold space on what you typed)
 
+    struct RewriteOption: Decodable, Equatable {
+        var id: String
+        var label: String
+        var text: String
+    }
+
     struct ActResult: Decodable {
         var ok: Bool
         var intent: String?
@@ -195,6 +201,8 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         var cards: [SearchCard]?
         var text: String?
         var insert: String?
+        /// A rewrite's versions (Basic, Professional, Polite…), when offered.
+        var options: [RewriteOption]?
         var remaining: Int?
         var error: String?
     }

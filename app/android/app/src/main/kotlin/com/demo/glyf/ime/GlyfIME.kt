@@ -288,7 +288,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "search" -> { dismissFeaturePanel(); enterSearch() }
             "clipboard" -> showClipboardPanel()
             "emoji" -> showEmojiPanel()
-            "rewrite" -> { dismissFeaturePanel(); showGlyfBar() }
+            "rewrite" -> {
+                // The website's list of versions for what is typed; with
+                // nothing typed, the bar asks what to write instead.
+                dismissFeaturePanel()
+                val ic = currentInputConnection
+                val before = ic?.getTextBeforeCursor(2000, 0)?.toString() ?: ""
+                val after = ic?.getTextAfterCursor(2000, 0)?.toString() ?: ""
+                if ((before + after).isBlank()) showGlyfBar() else startAct(before, after, "rewrite")
+            }
             "translate" -> { dismissFeaturePanel(); runTranslateOnField() }
             "ask" -> { dismissFeaturePanel(); onSpaceHoldOpenBar() }
             "dictation" -> { dismissFeaturePanel(); startVoiceTyping() }
@@ -1237,8 +1245,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var actRunInput = ""
     private var actStreamView: TextView? = null
 
-    private fun startAct(before: String, after: String) {
+    /** What a tapped tool asked for (Rewrite); null lets the server decide. */
+    private var actIntent: String? = null
+
+    private fun startAct(before: String, after: String, intent: String? = null) {
         actSkill = null
+        actIntent = intent
         actBefore = before
         actAfter = after
         actRunInput = (before + after).trim()
@@ -1325,6 +1337,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             lon = lon?.takeIf { !it.isNaN() },
             country = settings.optString("region").takeIf { it.length == 2 },
             tz = java.util.TimeZone.getDefault().id,
+            intent = actIntent,
             onResult = { r -> main.post {
                 if (generation == actGeneration && overlay === panel) showActResult(panel, r)
             } },
@@ -1432,7 +1445,36 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         fun gap() = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             .apply { setMargins(0, 0, 0, dp(8)) }
-        if (!r.text.isNullOrBlank()) {
+        if (r.options.isNotEmpty()) {
+            // The website's rows: the style, then the message. Tap to put it
+            // in; hold to copy it.
+            for (o in r.options) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    contentDescription = "act:option:${o.id}"
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(14).toFloat(); setColor(card())
+                    }
+                    setOnClickListener { actInsert(o.text) }
+                    setOnLongClickListener { actCopy(o.text); true }
+                }
+                row.addView(TextView(this).apply {
+                    text = o.label
+                    textSize = 13f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+                }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
+                row.addView(TextView(this).apply {
+                    text = o.text
+                    textSize = 15f
+                    maxLines = 3
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(ink())
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                list.addView(row, gap())
+            }
+        } else if (!r.text.isNullOrBlank()) {
             list.addView(TextView(this).apply {
                 text = r.text
                 textSize = 15.5f
@@ -1491,10 +1533,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         actions.addView(pill("↻", primary = false, id = "act:retry") { runAct() },
             LinearLayout.LayoutParams(dp(44), dp(38)))
-        actions.addView(pill("Copy", primary = false, id = "act:copy") { actCopy(r.insert) },
-            LinearLayout.LayoutParams(0, dp(38), 0.38f).apply { leftMargin = dp(8) })
-        actions.addView(pill("Insert ↑", primary = true, id = "act:insert") { actInsert(r.insert) },
-            LinearLayout.LayoutParams(0, dp(38), 0.62f).apply { leftMargin = dp(8) })
+        // Rows are their own buttons; Copy and Insert only when there is one answer.
+        if (r.options.isEmpty() && r.insert.isNotBlank()) {
+            actions.addView(pill("Copy", primary = false, id = "act:copy") { actCopy(r.insert) },
+                LinearLayout.LayoutParams(0, dp(38), 0.38f).apply { leftMargin = dp(8) })
+            actions.addView(pill("Insert ↑", primary = true, id = "act:insert") { actInsert(r.insert) },
+                LinearLayout.LayoutParams(0, dp(38), 0.62f).apply { leftMargin = dp(8) })
+        }
         column.addView(actions)
         panel.addView(column, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))

@@ -1,8 +1,12 @@
+import Photos
 import UIKit
 
 protocol ClipboardPanelDelegate: AnyObject {
     func clipboardPanelClosed()
     func clipboardPanelPaste(_ text: String)
+    /// A screenshot was copied: iOS keyboards can only type text, so the
+    /// image goes on the pasteboard for the person to paste.
+    func clipboardPanelCopiedImage()
 }
 
 /// The clipboard, laid out the way Gboard lays it out — which is the standard
@@ -25,6 +29,9 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     private var menu: UIView?
 
     private var items: [ClipItem] = []
+    /// Screenshots from the last hour, when turned on and Photos allows it.
+    private var shots: [PHAsset] = []
+    private var shotViews: [(card: UIControl, asset: PHAsset)] = []
     private var editing = false
     /// Width the cards were last laid out for; any change lays them out again.
     /// (UIScrollView keeps private indicator subviews, so "no subviews" can
@@ -91,7 +98,9 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
 
     func reload() {
         items = ClipboardStore.load()
+        shots = Self.recentScreenshots()
         rebuildCards()
+        askForPhotosIfNeeded()
     }
 
     /// On unless turned off in the app (Keyboard → Keep what you copy).
@@ -130,6 +139,8 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             laidOutWidth = scroll.bounds.width
             for v in cardViews.map(\.card) { v.removeFromSuperview() }
             cardViews.removeAll()
+            for v in shotViews.map(\.card) { v.removeFromSuperview() }
+            shotViews.removeAll()
             scroll.subviews.filter { $0.tag == Self.contentTag }.forEach { $0.removeFromSuperview() }
             layoutCards()
         }
@@ -157,11 +168,12 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             y = addSection("PINNED", at: y)
             y = addGrid(pinned, at: y, colW: colW)
         }
-        if !recent.isEmpty {
+        if !recent.isEmpty || !shots.isEmpty {
             y = addSection("RECENT", at: y)
-            y = addGrid(recent, at: y, colW: colW)
+            if !shots.isEmpty { y = addShots(at: y, colW: colW) }
+            if !recent.isEmpty { y = addGrid(recent, at: y, colW: colW) }
         }
-        if items.isEmpty {
+        if items.isEmpty && shots.isEmpty {
             y = addSection("TIPS", at: y)
             y = addTip(at: y, width: w - M.side * 2, icon: "doc.on.clipboard",
                        text: "Anything you copy shows up here. Tap a clip to paste it, hold it to pin.")
@@ -244,6 +256,120 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         return max(colY[0], colY[1])
     }
 
+    // MARK: Screenshots
+
+    /// iOS keeps the keyboard's Photos permission apart from the app's, and
+    /// a keyboard asks on first use. Opening the clipboard with screenshots
+    /// turned on is that first use.
+    private func askForPhotosIfNeeded() {
+        guard SettingsStore.current.clipboardScreenshots == true,
+              PHPhotoLibrary.authorizationStatus(for: .readWrite) == .notDetermined else { return }
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
+            guard status == .authorized || status == .limited else { return }
+            DispatchQueue.main.async { self?.reload() }
+        }
+    }
+
+    private static let removedKey = "clip-removed-shots"
+
+    /// Screenshots from the last hour, newest first, as Gboard keeps them.
+    static func recentScreenshots() -> [PHAsset] {
+        guard SettingsStore.current.clipboardScreenshots == true else { return [] }
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited else { return [] }
+        let options = PHFetchOptions()
+        let since = Date().addingTimeInterval(-3600) as NSDate
+        #if targetEnvironment(simulator)
+        // The simulator cannot take a real screenshot into Photos.
+        options.predicate = NSPredicate(format: "creationDate > %@", since)
+        #else
+        options.predicate = NSPredicate(format: "creationDate > %@ AND (mediaSubtypes & %d) != 0",
+                                        since, PHAssetMediaSubtype.photoScreenshot.rawValue)
+        #endif
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        options.fetchLimit = 6
+        let removed = Set(UserDefaults.standard.stringArray(forKey: removedKey) ?? [])
+        var out: [PHAsset] = []
+        PHAsset.fetchAssets(with: .image, options: options).enumerateObjects { asset, _, _ in
+            if !removed.contains(asset.localIdentifier) { out.append(asset) }
+        }
+        return out
+    }
+
+    /// Two columns of screenshot cards, each showing the top of the shot.
+    private func addShots(at top: CGFloat, colW: CGFloat) -> CGFloat {
+        var colY: [CGFloat] = [top, top]
+        let h = (colW * 1.25).rounded()
+        let scale = UIScreen.main.scale
+        for asset in shots {
+            let col = colY[0] <= colY[1] ? 0 : 1
+            let card = UIControl(frame: CGRect(x: M.side + CGFloat(col) * (colW + M.gap),
+                                               y: colY[col], width: colW, height: h))
+            card.backgroundColor = Glass.surfaceCard
+            card.layer.cornerRadius = M.radius
+            card.layer.cornerCurve = .continuous
+            card.clipsToBounds = true
+            card.accessibilityLabel = "Screenshot"
+            card.accessibilityIdentifier = "clip:shot"
+            let image = UIImageView(frame: card.bounds)
+            image.contentMode = .scaleAspectFill
+            image.isUserInteractionEnabled = false
+            card.addSubview(image)
+            let opts = PHImageRequestOptions()
+            opts.deliveryMode = .opportunistic
+            opts.isNetworkAccessAllowed = false
+            PHImageManager.default().requestImage(
+                for: asset, targetSize: CGSize(width: colW * scale, height: h * scale),
+                contentMode: .aspectFill, options: opts) { result, _ in
+                    if let result { image.image = result }
+                }
+            card.addAction(UIAction { [weak self] _ in
+                guard let self, !self.editing else { return }
+                self.copyShot(asset)
+            }, for: .touchUpInside)
+            let hold = UILongPressGestureRecognizer(target: self, action: #selector(shotHeld(_:)))
+            hold.minimumPressDuration = 0.35
+            card.addGestureRecognizer(hold)
+            card.tag = Self.contentTag
+            scroll.addSubview(card)
+            shotViews.append((card, asset))
+            colY[col] += h + M.gap
+        }
+        return max(colY[0], colY[1])
+    }
+
+    private func copyShot(_ asset: PHAsset) {
+        let opts = PHImageRequestOptions()
+        opts.isNetworkAccessAllowed = false
+        opts.deliveryMode = .highQualityFormat
+        PHImageManager.default().requestImageDataAndOrientation(for: asset, options: opts) {
+            [weak self] data, _, _, _ in
+            guard let data, let image = UIImage(data: data) else { return }
+            UIPasteboard.general.image = image
+            DispatchQueue.main.async { self?.delegate?.clipboardPanelCopiedImage() }
+        }
+    }
+
+    @objc private func shotHeld(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began, !editing, let card = g.view as? UIControl,
+              let entry = shotViews.first(where: { $0.card === card }) else { return }
+        let asset = entry.asset
+        showMenu(rows: [
+            ("doc.on.doc", "Copy", { [weak self] in
+                self?.dismissMenu()
+                self?.copyShot(asset)
+            }),
+            ("trash", "Delete", { [weak self] in
+                // Off the clipboard only; the screenshot stays in Photos.
+                var removed = UserDefaults.standard.stringArray(forKey: Self.removedKey) ?? []
+                removed.append(asset.localIdentifier)
+                UserDefaults.standard.set(Array(removed.suffix(50)), forKey: Self.removedKey)
+                self?.dismissMenu()
+                self?.reload()
+            }),
+        ], card: card)
+    }
+
     private func addTip(at y: CGFloat, width: CGFloat, icon: String, text: String) -> CGFloat {
         let card = UIView()
         card.backgroundColor = Glass.surfaceCard
@@ -280,18 +406,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     }
 
     private func showMenu(for item: ClipItem, card: UIControl) {
-        dismissMenu()
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        scrim.isHidden = false
-        bringSubviewToFront(scrim)
-
-        // The held card stays bright above the scrim, where it was.
-        let lifted = card.snapshotView(afterScreenUpdates: false) ?? UIView()
-        lifted.frame = card.convert(card.bounds, to: self)
-        lifted.isUserInteractionEnabled = false
-        addSubview(lifted)
-
-        let rows: [(String, String, () -> Void)] = [
+        showMenu(rows: [
             ("doc.on.clipboard", "Paste", { [weak self] in
                 self?.dismissMenu()
                 self?.delegate?.clipboardPanelPaste(item.text)
@@ -306,7 +421,21 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
                 self?.dismissMenu()
                 self?.reload()
             }),
-        ]
+        ], card: card)
+    }
+
+    private func showMenu(rows: [(String, String, () -> Void)], card: UIControl) {
+        dismissMenu()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        scrim.isHidden = false
+        bringSubviewToFront(scrim)
+
+        // The held card stays bright above the scrim, where it was.
+        let lifted = card.snapshotView(afterScreenUpdates: false) ?? UIView()
+        lifted.frame = card.convert(card.bounds, to: self)
+        lifted.isUserInteractionEnabled = false
+        addSubview(lifted)
+
         let menuW: CGFloat = 176, rowH: CGFloat = 50
         let box = UIView()
         box.backgroundColor = Glass.surfaceCard

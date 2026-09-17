@@ -52,6 +52,8 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     private let statusLabel = UILabel()
 
     private var cards: [BackendClient.SearchCard] = []
+    /// A rewrite's versions, one row each, the way the website lists them.
+    private var options: [BackendClient.RewriteOption] = []
     private var insertText = ""
     /// One place → a real map above its card (Apple Maps, no key needed).
     private let mapView = UIImageView()
@@ -155,6 +157,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         table.register(LinkCell.self, forCellReuseIdentifier: "link")
         table.register(VideoCell.self, forCellReuseIdentifier: "video")
         table.register(PlaceCell.self, forCellReuseIdentifier: "place")
+        table.register(OptionCell.self, forCellReuseIdentifier: "option")
         addSubview(table)
 
         statusLabel.font = .systemFont(ofSize: 14)
@@ -239,8 +242,22 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         for b in [retryButton, copyButton, insertButton] { b.isHidden = true }
     }
 
+    /// A rewrite's versions as rows: the style on the left, the message on
+    /// the right. Tap one to put it in; hold one to copy it.
+    func showOptions(_ options: [BackendClient.RewriteOption]) {
+        self.options = options
+        cards = []
+        insertText = ""
+        textView.text = ""
+        mapPlace = nil
+        table.reloadData()
+        show(.result)
+        table.setContentOffset(.zero, animated: false)
+    }
+
     func showResult(title: String, cards: [BackendClient.SearchCard], text: String?, insert: String) {
         titleLabel.text = title
+        options = []
         self.cards = cards
         insertText = insert
         textView.text = text ?? ""
@@ -421,9 +438,14 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
     // MARK: Cards (the search suite's own cells)
 
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { cards.count }
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        options.isEmpty ? cards.count : options.count
+    }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        if !options.isEmpty {
+            return OptionCell.height(for: options[indexPath.row].text, width: tableView.bounds.width)
+        }
         switch cards[indexPath.row].kind {
         case "answer": return 104
         case "video": return 82
@@ -433,6 +455,13 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        if !options.isEmpty {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "option", for: indexPath) as! OptionCell
+            let option = options[indexPath.row]
+            cell.fill(option)
+            cell.onHold = { [weak self] in self?.delegate?.actCopy(option.text) }
+            return cell
+        }
         let card = cards[indexPath.row]
         switch card.kind {
         case "answer":
@@ -452,11 +481,77 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
     /// Tapping one card drops just that one — a single place out of a list.
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        if !options.isEmpty {
+            delegate?.actInsert(options[indexPath.row].text)
+            return
+        }
         let card = cards[indexPath.row]
         if card.kind == "query" {
             if let url = URL(string: card.url) { delegate?.actOpen(url) }
             return
         }
         delegate?.actInsert(card.insertText(style: SettingsStore.current.pasteStyle ?? "titleAndLink"))
+    }
+}
+
+/// One version of a rewrite: its style, then the message. The website's row.
+final class OptionCell: UITableViewCell {
+    private let card = UIView()
+    private let label = UILabel()
+    private let body = UILabel()
+    var onHold: (() -> Void)?
+
+    private static let labelW: CGFloat = 92
+    private static let bodyFont = UIFont.systemFont(ofSize: 15)
+
+    static func height(for text: String, width: CGFloat) -> CGFloat {
+        let textW = width - 20 - 14 - labelW - 12 - 14
+        let rect = (text as NSString).boundingRect(
+            with: CGSize(width: max(40, textW), height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin], attributes: [.font: bodyFont], context: nil)
+        return min(ceil(rect.height), bodyFont.lineHeight * 3) + 24 + 8
+    }
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        backgroundColor = .clear
+        selectionStyle = .none
+        card.backgroundColor = Glass.surfaceCard
+        card.layer.cornerRadius = 14
+        card.layer.cornerCurve = .continuous
+        contentView.addSubview(card)
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = Glass.textSecondary
+        card.addSubview(label)
+        body.font = Self.bodyFont
+        body.textColor = Glass.textPrimary
+        body.numberOfLines = 3
+        card.addSubview(body)
+        let hold = UILongPressGestureRecognizer(target: self, action: #selector(held(_:)))
+        hold.minimumPressDuration = 0.4
+        contentView.addGestureRecognizer(hold)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func fill(_ option: BackendClient.RewriteOption) {
+        label.text = option.label
+        body.text = option.text
+        accessibilityLabel = "\(option.label): \(option.text)"
+        accessibilityIdentifier = "act:option:\(option.id)"
+        setNeedsLayout()
+    }
+
+    @objc private func held(_ g: UILongPressGestureRecognizer) {
+        if g.state == .began { onHold?() }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        card.frame = contentView.bounds.inset(by: UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10))
+        label.frame = CGRect(x: 14, y: 12, width: Self.labelW, height: 18)
+        body.frame = CGRect(x: 14 + Self.labelW + 12, y: 12,
+                            width: card.bounds.width - Self.labelW - 40,
+                            height: card.bounds.height - 24)
     }
 }

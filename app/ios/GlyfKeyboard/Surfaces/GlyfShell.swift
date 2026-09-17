@@ -21,7 +21,6 @@ protocol GlyfShellDelegate: AnyObject {
 /// §6.3 — the in-keyboard navigation shell. HARD memory rules:
 /// screens are DATA (`ShellScreen` structs) rendered by ONE reusable
 /// UITableView; pop = discard data, never a VC tree; icons ≤20pt SF Symbols.
-/// Nav state survives keyboard dismissal for 60s via the App Group.
 final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     weak var delegate: GlyfShellDelegate?
@@ -437,15 +436,10 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         AppGroupStore.writeJSON(["stack": ["root"], "ts": 0], name: stateFile)
     }
 
+    /// Always the menu. The shell used to reopen whatever screen was up in
+    /// the last minute, so g could land on Vault instead of the grid.
     private func restoreOrRoot() {
-        if let saved = AppGroupStore.readJSON(name: Self.stateFile),
-           let ts = saved["ts"] as? TimeInterval,
-           let savedStack = saved["stack"] as? [String],
-           Date().timeIntervalSince1970 - ts < 60, !savedStack.isEmpty {
-            stack = savedStack
-        } else {
-            stack = ["root"]
-        }
+        stack = ["root"]
         render()
     }
 

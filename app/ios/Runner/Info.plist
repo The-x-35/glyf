@@ -43,6 +43,8 @@
 	<string>Glyf syncs names, numbers and emails so the keyboard can insert them when you search — nothing leaves your device.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Glyf uses your approximate location only to answer “near me” searches and local weather from the keyboard. It is kept on your device and never stored on our servers.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Glyf shows your screenshots from the last hour in the keyboard's clipboard so you can paste them. They stay on your phone.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Glyf records only when you start dictation. Audio is transcribed on-device and never uploaded.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

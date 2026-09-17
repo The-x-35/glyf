@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
 import { buildApp } from "../src/index.js";
-import { listInsert, parsePlan, planByRules } from "../src/lib/act.js";
+import { listInsert, parsePlan, parseRewriteOptions, planByRules, rewriteStyles } from "../src/lib/act.js";
 import type { PlaceCard } from "../src/lib/searchcards.js";
 import { renderPage } from "../src/lib/pages.js";
 
@@ -154,5 +154,20 @@ describe("renderPage", () => {
     expect(html).toContain("&lt;script&gt;");
     expect(html).toContain("A&amp;B &lt;b&gt;");
     expect(html).not.toContain("javascript:");
+  });
+});
+
+
+describe("rewrite options", () => {
+  it("offers Hinglish only where people write it", () => {
+    expect(rewriteStyles({ country: "IN" }).map(s => s.id)).toContain("hinglish");
+    expect(rewriteStyles({ country: "US" }).map(s => s.id)).not.toContain("hinglish");
+  });
+  it("reads the versions in row order and drops empty ones", () => {
+    const styles = rewriteStyles({ country: "US" });
+    const out = parseRewriteOptions(
+      'here: {"work":"I will send it by 6 PM.","basic":"ya ok, will send it by 6","polite":"","shorter":"By 6."}',
+      styles);
+    expect(out.map(o => o.label)).toEqual(["Basic", "Professional", "Shorter"]);
   });
 });

@@ -1,5 +1,6 @@
 import Contacts
 import Flutter
+import Photos
 import UIKit
 
 /// Native side of the `so.glyf/bridge` MethodChannel.
@@ -248,6 +249,12 @@ final class GlyfBridge {
                     }
                     result(self.jsonString(self.syncContacts(store: store)))
                 }
+            }
+        // Screenshots in the keyboard's clipboard: the app asks for Photos;
+        // the keyboard then lists the last hour's screenshots.
+        case "screenshotAccess":
+            PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+                DispatchQueue.main.async { result(status == .authorized || status == .limited) }
             }
         case "contactsDisable":
             if let url = AppGroupStore.bridgeDir?.appendingPathComponent("contacts.json") {

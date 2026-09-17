@@ -37,7 +37,44 @@ export interface ActResult {
   insert: string;
   /** Live mini-app page for a list result, when one was published. */
   page?: string;
+  /** A rewrite comes back as several versions, the website's rows. */
+  options?: RewriteOption[];
   provider: string;
+}
+
+export interface RewriteOption {
+  id: string;
+  label: string;
+  text: string;
+}
+
+/** The versions a rewrite offers, in the order the rows show them. Hinglish
+ *  only where people write it. */
+export function rewriteStyles(ctx: SearchContext): { id: string; label: string; how: string }[] {
+  const styles = [
+    { id: "basic", label: "Basic", how: "fix spelling, grammar and punctuation only; keep their words and tone" },
+    { id: "work", label: "Professional", how: "professional and clear, for work" },
+    { id: "polite", label: "Polite", how: "warm and courteous" },
+    { id: "shorter", label: "Shorter", how: "as short as it can be while saying the same thing" },
+    { id: "emoji", label: "Emoji", how: "friendly, with a few emoji that fit" },
+  ];
+  const indian = ctx.country === "IN" || ctx.tz === "Asia/Kolkata" || ctx.tz === "Asia/Calcutta";
+  if (indian) styles.splice(4, 0, { id: "hinglish", label: "Hinglish", how: "casual Hinglish in Roman script" });
+  return styles;
+}
+
+/** Reads the model's JSON of versions; missing or empty ones are dropped. */
+export function parseRewriteOptions(reply: string, styles: { id: string; label: string }[]): RewriteOption[] {
+  const match = reply.match(/\{[\s\S]*\}/);
+  if (!match) return [];
+  try {
+    const obj = JSON.parse(match[0]) as Record<string, unknown>;
+    return styles
+      .map(st => ({ id: st.id, label: st.label, text: typeof obj[st.id] === "string" ? (obj[st.id] as string).trim() : "" }))
+      .filter(o => o.text.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 export interface ActOptions {
@@ -244,13 +281,23 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
     }
 
     case "rewrite": {
-      const rewritten = await modelText(
-        "[[act.rewrite]]\nRewrite this message so it reads clearly and naturally, keeping the " +
-        "writer's meaning, language and tone. If the message asks for a detail about the " +
-        "writer that is listed below, fill it in. Reply with the message only." +
-        profileBlock(opts.profile) + "\n" + typed);
-      return { intent: "rewrite", title: "Rewrite", cards: [], text: rewritten,
-        insert: rewritten, provider: "model" };
+      const styles = rewriteStyles(ctx);
+      const reply = await modelText(
+        "[[act.rewrite.options]]\nRewrite the message below in each of these styles, keeping the " +
+        "writer's meaning. If the message asks for a detail about the writer that is listed " +
+        "below, fill it in.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
+        "\nReply with JSON only, one key per style: {" +
+        styles.map(st => `"${st.id}":"..."`).join(",") + "}" +
+        profileBlock(opts.profile) + "\n\nMessage:\n" + typed);
+      let options = parseRewriteOptions(reply, styles);
+      if (options.length === 0) {
+        // A reply that is not the JSON is still a rewrite: offer it as Basic.
+        const plain = reply.replace(/^```\w*|```$/g, "").trim();
+        options = plain ? [{ id: "basic", label: "Basic", text: plain }] : [];
+      }
+      const first = options[0]?.text ?? typed;
+      return { intent: "rewrite", title: "Rewrite", cards: [], text: first,
+        insert: first, options, provider: "model" };
     }
   }
 }

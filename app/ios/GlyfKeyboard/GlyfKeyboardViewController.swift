@@ -118,7 +118,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .emoji:
             // Searching collapses the board to a strip ABOVE the letter
             // keys, so the surface needs room for both.
-            return base + (emoji?.searchActive == true ? EmojiBoard.searchStripHeight : 0)
+            // Apple's emoji keyboard stands a little taller than its letters,
+            // so its five rows get the same 39pt they have there.
+            return base + (emoji?.searchActive == true ? EmojiBoard.searchStripHeight : EmojiBoard.extraHeight)
         // Panels take the key area instead of growing the keyboard, exactly
         // like the website: the keys never move, so muscle memory holds.
         case .bar:
@@ -392,9 +394,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 keyboardView.frame = CGRect(x: 0, y: keysY, width: w,
                                             height: max(0, h - keysY))
             } else {
+                // The board is the whole keyboard, search field where the
+                // strip was, the way Apple's emoji keyboard is.
+                toolbar.isHidden = true
                 keyboardView.isHidden = true
-                emoji?.frame = CGRect(x: 0, y: Glass.toolbarHeight, width: w,
-                                      height: max(0, h - Glass.toolbarHeight))
+                emoji?.frame = CGRect(x: 0, y: 0, width: w, height: h)
             }
         case .shell:
             toolbar.isHidden = false
@@ -1250,6 +1254,10 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                                               onResult: { [weak self] result in
             guard let self, self.surface == .act else { return }
             self.actHasResult = true
+            if let options = result.options, !options.isEmpty {
+                self.act?.showOptions(options)
+                return
+            }
             self.act?.showResult(title: result.title ?? "", cards: result.cards ?? [],
                                  text: result.text, insert: result.insert ?? result.text ?? "")
         }, onError: { [weak self] message in
@@ -1385,6 +1393,11 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
         updateCandidates()
     }
 
+    func clipboardPanelCopiedImage() {
+        setSurface(.none)
+        KeyboardToast.show(in: content, text: "Screenshot copied")
+    }
+
 }
 
 // MARK: - ClipContextStripDelegate
@@ -1457,7 +1470,16 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         case "search": setSurface(.search)
         case "clipboard": setSurface(.clipboard)
         case "emoji": setSurface(.emoji)
-        case "rewrite": setSurface(.none); showTonesPopup()
+        // Rewrite is the website's list of versions for what is typed; with
+        // nothing typed there is nothing to rewrite, so it asks instead.
+        case "rewrite":
+            let before = textDocumentProxy.documentContextBeforeInput ?? ""
+            let after = textDocumentProxy.documentContextAfterInput ?? ""
+            if (before + after).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                setSurface(.none); openBar(autoRun: nil)
+            } else {
+                startAct(before: before, after: after, intent: "rewrite")
+            }
         case "translate": setSurface(.none); toggleTranslateHUD()
         case "ask": setSurface(.none); openBar(autoRun: nil)
         case "dictation": setSurface(.none); startDictationHandoff()

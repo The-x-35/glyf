@@ -52,6 +52,9 @@ struct GlyfSettings: Codable, Equatable {
     /// Keep what you copy in the keyboard's clipboard history. iOS may ask to
     /// allow the paste the first time after a copy from another app.
     var clipboardHistory: Bool? = true
+    /// Screenshots from the last hour in the clipboard (Gboard's setting).
+    /// The app asks for Photos access when it is turned on.
+    var clipboardScreenshots: Bool? = false
     /// "" | "color:#RRGGBB" | "grad:<id>" — Gboard-style painted backdrop.
     var themeBg: String? = ""
     /// Gboard "borders around keys".

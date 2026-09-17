@@ -8,7 +8,9 @@ final class InlineEditor: UIView {
 
     private let label = UILabel()
     private let caret = UIView()
+    private let icon = UIImageView()
     private let placeholderText: String
+    private let searchStyle: Bool
     var onChange: ((String) -> Void)?
 
     private(set) var text: String = "" {
@@ -19,8 +21,10 @@ final class InlineEditor: UIView {
         didSet { updateActive() }
     }
 
-    init(placeholder: String) {
+    /// `searchStyle` draws Apple's search pill: a magnifier, no outline.
+    init(placeholder: String, searchStyle: Bool = false) {
         placeholderText = placeholder
+        self.searchStyle = searchStyle
         super.init(frame: .zero)
         backgroundColor = Glass.surfaceCard
         layer.cornerRadius = 12
@@ -30,6 +34,18 @@ final class InlineEditor: UIView {
 
         label.font = .systemFont(ofSize: 15)
         addSubview(label)
+        if searchStyle {
+            backgroundColor = Glass.isDark ? UIColor.white.withAlphaComponent(0.10)
+                                           : UIColor.white.withAlphaComponent(0.65)
+            layer.borderWidth = 0
+            layer.cornerRadius = 17
+            label.font = .systemFont(ofSize: 17)
+            icon.image = UIImage(systemName: "magnifyingglass")
+            icon.preferredSymbolConfiguration = .init(pointSize: 15, weight: .medium)
+            icon.tintColor = Glass.textSecondary
+            icon.contentMode = .center
+            addSubview(icon)
+        }
         caret.backgroundColor = Glass.accentPrimary
         caret.layer.cornerRadius = 1
         caret.isHidden = true
@@ -61,8 +77,10 @@ final class InlineEditor: UIView {
     }
 
     private func updateActive() {
-        layer.borderColor = isActive
-            ? Glass.strokeFocus.cgColor : Glass.strokeHairline.cgColor
+        if !searchStyle {
+            layer.borderColor = isActive
+                ? Glass.strokeFocus.cgColor : Glass.strokeHairline.cgColor
+        }
         caret.isHidden = !isActive
         if isActive {
             caret.alpha = 1
@@ -77,9 +95,11 @@ final class InlineEditor: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        label.frame = bounds.insetBy(dx: 12, dy: 4)
-        let w = min(label.intrinsicContentSize.width, bounds.width - 26)
-        let x = text.isEmpty ? 12 : 12 + w + 2
+        let lead: CGFloat = searchStyle ? 36 : 12
+        icon.frame = CGRect(x: 10, y: 0, width: 22, height: bounds.height)
+        label.frame = CGRect(x: lead, y: 4, width: bounds.width - lead - 12, height: bounds.height - 8)
+        let w = min(label.intrinsicContentSize.width, bounds.width - lead - 14)
+        let x = text.isEmpty ? lead : lead + w + 2
         caret.frame = CGRect(x: x, y: 7, width: 2, height: bounds.height - 14)
     }
 }
