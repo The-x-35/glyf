@@ -39,8 +39,13 @@ enum class KContext { TEXT, EMAIL, URL, NUMBER_PAD, DECIMAL_PAD, PHONE_PAD;
 
 object KeyboardLayout {
 
+    /** Measured off Gboard (427dp emulator): every row is ten columns, and
+     *  shift, delete, the mode key and enter take one and a half of them. */
+    const val SIDE_UNITS = 1.5f
+
     private fun ch(c: String) = Key(id = c, char = c)
-    private fun wide(c: String) = Key(id = c, char = c, units = 1.44f)
+    /** (10 - two 1.5 side keys) / 5 punctuation keys. */
+    private fun wide(c: String) = Key(id = c, char = c, units = 1.4f)
 
     fun rows(mode: Mode, numberRow: Boolean, context: KContext): List<List<Key>> {
         if (context.isPad) return padRows(context)
@@ -50,46 +55,53 @@ object KeyboardLayout {
                 if (numberRow) out.add("1234567890".map { ch(it.toString()) })
                 out.add("qwertyuiop".map { ch(it.toString()) })
                 out.add("asdfghjkl".map { ch(it.toString()) })
-                out.add(listOf(Key("shift", units = 1.4f)) +
+                out.add(listOf(Key("shift", units = SIDE_UNITS)) +
                         "zxcvbnm".map { ch(it.toString()) } +
-                        listOf(Key("delete", units = 1.4f)))
+                        listOf(Key("delete", units = SIDE_UNITS)))
                 out.add(bottomRow("123", context))
             }
             Mode.SYMBOLS1 -> {
                 out.add("1234567890".map { ch(it.toString()) })
                 out.add(listOf("-", "/", ":", ";", "(", ")", "$", "&", "@", "\"").map { ch(it) })
-                out.add(listOf(Key("mode:#+=", units = 1.4f)) +
+                out.add(listOf(Key("mode:#+=", units = SIDE_UNITS)) +
                         listOf(".", ",", "?", "!", "'").map { wide(it) } +
-                        listOf(Key("delete", units = 1.4f)))
+                        listOf(Key("delete", units = SIDE_UNITS)))
                 out.add(bottomRow("ABC", context))
             }
             Mode.SYMBOLS2 -> {
                 out.add(listOf("[", "]", "{", "}", "#", "%", "^", "*", "+", "=").map { ch(it) })
                 out.add(listOf("_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•").map { ch(it) })
-                out.add(listOf(Key("mode:123", units = 1.4f)) +
+                out.add(listOf(Key("mode:123", units = SIDE_UNITS)) +
                         listOf(".", ",", "?", "!", "'").map { wide(it) } +
-                        listOf(Key("delete", units = 1.4f)))
+                        listOf(Key("delete", units = SIDE_UNITS)))
                 out.add(bottomRow("ABC", context))
             }
         }
         return out
     }
 
+    /** Gboard's bottom row, ten columns again: 1.5 + 1 + space + 1 + 1.5,
+     *  with the field's own keys either side of the space bar. */
     private fun bottomRow(modeLabel: String, context: KContext): List<Key> {
-        val row = mutableListOf(Key("mode:$modeLabel", units = 1.3f))
+        val row = mutableListOf(Key("mode:$modeLabel", units = SIDE_UNITS))
         when (context) {
+            // Gboard keeps the emoji key in every context, with the field's
+            // own key on the far side of the space bar.
             KContext.EMAIL -> {
-                row.add(ch("@")); row.add(Key("space", units = -1f)); row.add(ch("."))
+                row.add(ch("@")); row.add(Key("emojikey"))
+                row.add(Key("space", units = -1f)); row.add(ch("."))
             }
             KContext.URL -> {
-                row.add(ch(".")); row.add(Key("space", units = -1f)); row.add(ch("/"))
+                row.add(ch("/")); row.add(Key("emojikey"))
+                row.add(Key("space", units = -1f)); row.add(ch("."))
             }
             else -> {
-                row.add(Key("emojikey", units = 1.1f))
+                row.add(Key("emojikey"))
                 row.add(Key("space", units = -1f))
+                row.add(ch(","))
             }
         }
-        row.add(Key("return", units = 2.2f))
+        row.add(Key("return", units = SIDE_UNITS))
         return row
     }
 

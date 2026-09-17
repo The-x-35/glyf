@@ -143,6 +143,9 @@ class GlyfKeyboardView(
          *  a glide can still start (SpaceGesture.HOLD_MS). */
         const val BOUND_HOLD_MS = 320L
 
+        /** Row height in dp, measured off Gboard. */
+        const val ROW_PITCH = 59f
+
         /** The website's two board colours (--kb). */
         val SITE_BOARD_LIGHT = Color.rgb(0xD5, 0xD8, 0xDE)
         val SITE_BOARD_DARK = Color.rgb(0x1F, 0x1F, 0x22)
@@ -270,7 +273,9 @@ class GlyfKeyboardView(
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         val w = MeasureSpec.getSize(widthSpec)
-        val rowsH = dp(if (numberRow && mode == Mode.LETTERS) 216f + 42f else 216f)
+        // Gboard's rows are 59dp, not the iPhone's 54 — measured on a 427dp
+        // emulator: four rows of keys are 236dp there.
+        val rowsH = dp(if (numberRow && mode == Mode.LETTERS) ROW_PITCH * 5 else ROW_PITCH * 4)
         setMeasuredDimension(w, rowsH.toInt())
     }
 
@@ -278,30 +283,35 @@ class GlyfKeyboardView(
         keyRects.clear()
         if (rows.isEmpty()) rebuild()
         val hGap = dp(6f)
-        val vGap = dp(10f)
-        val side = dp(3f)
+        val vGap = dp(12f)
+        val side = dp(5f)   // Gboard's margin
         val availW = width - side * 2
         val isPad = kContext.isPad
-        val unitW = if (isPad) (availW - 2 * hGap - dp(80f)) / 3f
-                    else (availW - 9 * hGap) / 10f
+        // Ten columns across the row, exactly as Gboard lays them out: a key
+        // is its share of the pitch minus one gap, so 1.5-column keys come
+        // out 57dp wide instead of 54.
+        val columns = if (isPad) 3f else 10f
+        val padInset = if (isPad) dp(80f) else 0f
+        val pitch = (availW - padInset + hGap) / columns
+        val unitW = pitch - hGap
         val rowH = height / rows.size.toFloat()
         val keyH = min(rowH - vGap, if (isPad) dp(52f) else Float.MAX_VALUE)
         val radius = dp(9.5f)
-        keyPitchPx = unitW + hGap
+        keyPitchPx = pitch
         rowPitchPx = rowH
 
         rows.forEachIndexed { r, row ->
             val fixedUnits = row.filter { it.units > 0 }.sumOf { it.units.toDouble() }.toFloat()
-            val gaps = (row.size - 1) * hGap
             val hasFlex = row.any { it.units < 0 }
-            val fixedWidth = fixedUnits * unitW + gaps
-            val flexW = maxOf(unitW, availW - fixedWidth)
-            val rowW = if (hasFlex) availW else fixedWidth
+            val flexUnits = maxOf(1f, columns - fixedUnits)
+            val rowUnits = if (hasFlex) columns else fixedUnits
+            val rowW = rowUnits * pitch - hGap
             var x = side + (availW - rowW) / 2f
             val y = r * rowH + vGap / 2f
 
             for (key in row) {
-                val w = if (key.units < 0) flexW else key.units * unitW
+                val units = if (key.units < 0) flexUnits else key.units
+                val w = units * pitch - hGap
                 val rect = RectF(x, y, x + w, y + keyH)
                 keyRects.add(key to rect)
 
@@ -350,7 +360,7 @@ class GlyfKeyboardView(
                         }
                     }
                 }
-                x += w + hGap
+                x += units * pitch
             }
         }
 
