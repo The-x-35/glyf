@@ -68,6 +68,7 @@ final class GlyfToolbar: UIView {
         "shorthand": "text.badge.plus",
         "keys": "keyboard",
         "pay": "creditcard",
+        "calendar": "calendar",
         "settings": "gearshape",
     ]
 

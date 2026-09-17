@@ -26,6 +26,10 @@ class MainActivity : FlutterActivity() {
             requestPermissions(
                 arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION), 72)
         }
+        b.requestCalendarPermission = { done ->
+            pendingPermission = done
+            requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 74)
+        }
         b.requestImagesPermission = { done ->
             pendingPermission = done
             requestPermissions(arrayOf(ScreenshotAccess.permission), 73)
@@ -40,7 +44,7 @@ class MainActivity : FlutterActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 71 || requestCode == 72 || requestCode == 73) {
+        if (requestCode in 71..74) {
             val ok = grantResults.firstOrNull() ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
             pendingPermission?.invoke(ok)

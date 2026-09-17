@@ -265,6 +265,21 @@ abstract final class GlyfBridge {
 
   static Future<void> contactsDisable() => _call<bool>('contactsDisable');
 
+  // The phone's calendar for the keyboard's Calendar panel.
+  static Future<Map<String, dynamic>> calendarStatus() async {
+    final raw = await _call<String>('calendarStatus');
+    if (raw == null) return const {'enabled': false, 'permission': 'denied'};
+    return jsonDecode(raw) as Map<String, dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> calendarEnable() async {
+    final raw = await _call<String>('calendarEnable');
+    if (raw == null) return const {'ok': false, 'error': 'unavailable'};
+    return jsonDecode(raw) as Map<String, dynamic>;
+  }
+
+  static Future<void> calendarDisable() => _call<bool>('calendarDisable');
+
   /// Android: photo access for screenshots in the clipboard. True once granted.
   static Future<bool> screenshotAccess() async =>
       (await _call<bool>('screenshotAccess')) ?? false;

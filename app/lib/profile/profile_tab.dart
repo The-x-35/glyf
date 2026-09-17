@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart'
 import 'package:flutter/material.dart';
 
 import '../core/auth.dart';
+import 'connected_tools_screen.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
@@ -32,7 +33,8 @@ class _ProfileTabState extends State<ProfileTab> {
   String _displayName = 'You';
   bool _serverUp = false;
   int? _remaining;
-  int _connectedTools = 1; // the demo calendar
+  /// Private payments are always on; calendar and contacts when connected.
+  int _connectedTools = 1;
   bool _contactsOn = false;
   bool _nearbyOn = false;
   Timer? _poll;
@@ -54,6 +56,7 @@ class _ProfileTabState extends State<ProfileTab> {
     final settings = await GlyfBridge.sharedSettings();
     final tone = await GlyfBridge.toneProfile();
     final contacts = await GlyfBridge.contactsStatus();
+    final calendar = await GlyfBridge.calendarStatus();
     final nearby = await GlyfBridge.locationStatus();
     final up = await GlyfApi.healthy();
     final remaining =
@@ -66,6 +69,7 @@ class _ProfileTabState extends State<ProfileTab> {
       _serverUp = up;
       _remaining = remaining;
       _contactsOn = contacts['enabled'] == true;
+      _connectedTools = 1 + (_contactsOn ? 1 : 0) + (calendar['enabled'] == true ? 1 : 0);
       _nearbyOn = nearby['enabled'] == true;
       _displayName = (onboarding['displayName'] as String?) ?? 'You';
     });
@@ -317,7 +321,11 @@ class _ProfileTabState extends State<ProfileTab> {
             icon: Icons.cable_outlined,
             title: 'Connected tools',
             trailingText: '$_connectedTools active',
-            onTap: _showConnectors,
+            onTap: () async {
+              await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ConnectedToolsScreen()));
+              _refresh();
+            },
           ),
           _navCard(
             icon: Icons.auto_fix_high_outlined,
@@ -515,112 +523,4 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Future<void> _showConnectors() async {
-    Map<String, dynamic>? status;
-    try {
-      status = await GlyfApi.connectorsStatus();
-    } catch (_) {}
-    if (!mounted) return;
-    final providers =
-        (status?['providers'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-    final mock = status?['mock'] as Map<String, dynamic>?;
-    _connectedTools = (mock != null ? 1 : 0) +
-        providers.where((p) => p['connected'] == true).length;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('Connected tools',
-                style: TextStyle(
-                    color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 12),
-            if (status == null)
-              const Text('Engine offline',
-                  style: TextStyle(color: Glass.inkSoft, fontSize: 13)),
-            if (mock != null)
-              _connectorRow(
-                  label: mock['label'] as String? ?? 'Demo Calendar',
-                  detail: 'Connected',
-                  ok: true),
-            for (final p in providers)
-              _connectorRow(
-                label: p['label'] as String? ?? (p['id'] as String),
-                detail: p['connected'] == true
-                    ? (p['email'] as String? ?? 'Connected')
-                    : p['configured'] == true
-                        ? 'Ready to connect'
-                        : 'Coming soon',
-                ok: p['connected'] == true,
-                action: p['id'] != 'google'
-                    ? null
-                    : p['connected'] == true
-                        ? ('Disconnect', () async {
-                            await GlyfApi.disconnect('google');
-                            if (ctx.mounted) Navigator.of(ctx).pop();
-                            _refresh();
-                          })
-                        : p['configured'] == true
-                            ? ('Connect', () async {
-                                try {
-                                  final url = await GlyfApi.googleStartUrl(
-                                      ['calendar', 'gmail', 'meet']);
-                                  await GlyfBridge.openURL(url);
-                                } catch (_) {}
-                                if (ctx.mounted) Navigator.of(ctx).pop();
-                              })
-                            : null,
-              ),
-            const SizedBox(height: 6),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _connectorRow({
-    required String label,
-    required String detail,
-    required bool ok,
-    (String, VoidCallback)? action,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(
-              color: ok ? Glass.success : const Color(0xFFD9DCE2),
-              shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label,
-                style: const TextStyle(
-                    color: Glass.ink,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600)),
-            Text(detail,
-                style: const TextStyle(color: Glass.inkSoft, fontSize: 11.5)),
-          ]),
-        ),
-        if (action != null)
-          TextButton(
-            onPressed: action.$2,
-            child: Text(action.$1,
-                style: const TextStyle(
-                    color: Glass.ink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700)),
-          ),
-      ]),
-    );
-  }
 }

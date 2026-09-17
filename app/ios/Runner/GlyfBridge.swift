@@ -258,6 +258,20 @@ final class GlyfBridge {
             PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
                 DispatchQueue.main.async { result(status == .authorized || status == .limited) }
             }
+        // The phone's calendar for the keyboard's Calendar panel: the app asks,
+        // keeps the coming weeks in the App Group, the keyboard reads them.
+        case "calendarStatus":
+            result(jsonString([
+                "enabled": CalendarSync.shared.enabled,
+                "permission": CalendarSync.shared.permission,
+            ]))
+        case "calendarEnable":
+            CalendarSync.shared.enable { [weak self] outcome in
+                result(self?.jsonString(outcome))
+            }
+        case "calendarDisable":
+            CalendarSync.shared.disable()
+            result(true)
         case "contactsDisable":
             if let url = AppGroupStore.bridgeDir?.appendingPathComponent("contacts.json") {
                 try? FileManager.default.removeItem(at: url)

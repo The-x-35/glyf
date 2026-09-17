@@ -53,6 +53,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// Gboard's clipboard: its own header, pinned and recent as card columns.
     private var clipboardPanel: ClipboardPanel?
     private var connector: ConnectorSurface?
+    /// The Calendar tool: a month and the chosen day's events.
+    private var calendarView: CalendarSurface?
     private var search: SearchSurface?
     private var noteEdit: NoteEditSurface?
     private var pendingNote: (id: String?, text: String)?
@@ -424,6 +426,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             } else {
                 keyboardView.isHidden = true
                 connector?.frame = panelRect(w, h)
+                calendarView?.frame = panelRect(w, h)
             }
         case .noteEdit:
             toolbar.isHidden = true
@@ -489,7 +492,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             // Entrances fade in inside the same spring; the growing height
             // provides the rise itself.
             for overlay in [self.shell, self.bar, self.emoji, self.connector,
-                            self.search, self.noteEdit, self.hud,
+                            self.search, self.noteEdit, self.hud, self.calendarView,
                             self.tonesPopup, self.act, self.clipStrip,
                             self.clipboardPanel] as [UIView?] {
                 overlay?.alpha = 1
@@ -528,7 +531,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
             }
             bar?.cancelRun(); bar?.removeFromSuperview(); bar = nil
         case .emoji: emoji?.removeFromSuperview(); emoji = nil
-        case .connector: connector?.removeFromSuperview(); connector = nil
+        case .connector:
+            connector?.removeFromSuperview(); connector = nil
+            calendarView?.removeFromSuperview(); calendarView = nil
         case .search: search?.cancelWork(); search?.removeFromSuperview(); search = nil
         case .noteEdit: noteEdit?.removeFromSuperview(); noteEdit = nil
         case .act:
@@ -571,6 +576,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
             prepareEntrance(c, animated: animated)
             clipboardPanel = c
             MemoryLogger.logSurface("clipboard")
+        case .connector(let id) where id == "calendar" || id == "mockcal":
+            let c = CalendarSurface()
+            c.delegate = self
+            content.addSubview(c)
+            prepareEntrance(c, animated: animated)
+            calendarView = c
         case .connector(let id):
             let c = ConnectorSurface(connectorId: id)
             c.delegate = self
@@ -1752,6 +1763,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         case "dictation": setSurface(.none); startDictationHandoff()
         // Paying is signed in the app's wallet, never in the keyboard.
         case "pay": setSurface(.none); openApp(path: "wallet")
+        case "calendar": setSurface(.connector("calendar"))
         case "vault", "glyfs", "shorthand", "keys", "settings":
             if surface != .shell { setSurface(.shell) }
             shell?.push(id)

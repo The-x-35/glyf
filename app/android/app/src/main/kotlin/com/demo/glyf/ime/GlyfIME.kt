@@ -375,6 +375,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "ask" -> { dismissFeaturePanel(); onSpaceHoldOpenBar() }
             "dictation" -> { dismissFeaturePanel(); startVoiceTyping() }
             "vault" -> showVaultPanel()
+            "calendar" -> showCalendarPanel()
             "glyfs" -> showMyGlyfsPanel()
             "shorthand" -> showShorthandPanel()
             "keys" -> showKeysPanel()
@@ -2832,6 +2833,26 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         root.addView(panel, android.widget.LinearLayout.LayoutParams(
             android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
             keyboard.height + toolbar.height))
+        featurePanel = panel
+    }
+
+    /** The Calendar tool: a month and the chosen day's events, in place of
+     *  the keys (iOS CalendarSurface). */
+    private fun showCalendarPanel() {
+        dismissFeaturePanel()
+        keyboard.visibility = View.GONE
+        val panel = CalendarPanelView(
+            this, keyboard.palette(),
+            onInsert = { text ->
+                currentInputConnection?.commitText(text, 1)
+                dismissFeaturePanel()
+            },
+            onClose = { dismissFeaturePanel() },
+            onConnect = { dismissFeaturePanel(); openAppPath("connected") },
+        )
+        root.addView(panel, root.indexOfChild(keyboard) + 1,
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, keyboard.height))
         featurePanel = panel
     }
 

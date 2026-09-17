@@ -480,4 +480,47 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(json["haptics"] as? Bool, false, "the keyboard's own change lands")
         XCTAssertNil(json["tourStep"], "a field the keyboard cleared is removed")
     }
+
+    // MARK: Calendar words
+
+    private func calendarAt(_ tz: String = "Asia/Kolkata") -> Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: tz)!
+        return c
+    }
+
+    func testCalendarSharesAnEventAndFreeTime() throws {
+        let cal = calendarAt()
+        let en = Locale(identifier: "en_US")
+        let day = cal.date(from: DateComponents(year: 2026, month: 9, day: 18))!
+        func at(_ h: Int, _ m: Int = 0) -> Date { cal.date(bySettingHour: h, minute: m, second: 0, of: day)! }
+        let events = [
+            CalendarText.Event(title: "Standup", start: at(10), end: at(10, 30), allDay: false),
+            CalendarText.Event(title: "Design review", start: at(15), end: at(16), allDay: false, location: "Studio"),
+        ]
+        // Time formats use a narrow no-break space before AM/PM.
+        func plain(_ t: String) -> String { t.replacingOccurrences(of: "\u{202F}", with: " ") }
+        XCTAssertEqual(plain(CalendarText.insert(events[1], calendar: cal, locale: en)),
+                       "📅 Design review · Fri, Sep 18, 3:00–4:00 PM · Studio")
+        XCTAssertEqual(plain(CalendarText.freeTime(on: day, in: events, calendar: cal, locale: en, now: day)),
+                       "I'm free Fri, Sep 18, 9:00–10:00 AM, 10:30 AM–3:00 PM and 4:00–9:00 PM")
+        XCTAssertEqual(CalendarText.freeTime(on: day, in: [], calendar: cal, locale: en, now: day), "I'm free all day Fri, Sep 18")
+        XCTAssertEqual(plain(CalendarText.freeTime(on: day, in: events, calendar: cal, locale: en, now: at(15, 10))),
+                       "I'm free Fri, Sep 18, 4:00–9:00 PM", "today starts from now")
+        let allDay = [CalendarText.Event(title: "Offsite", start: cal.startOfDay(for: day),
+                                         end: cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: day))!, allDay: true)]
+        XCTAssertEqual(CalendarText.freeTime(on: day, in: allDay, calendar: cal, locale: en, now: day), "I'm busy all day Fri, Sep 18")
+    }
+
+    func testCalendarReadsTheAppsFile() {
+        let json: [String: Any] = ["events": [
+            ["title": "Lunch", "start": "2026-09-18T07:30:00Z", "end": "2026-09-18T08:30:00Z", "allDay": false, "color": "#FF9500"],
+            ["title": "", "start": "bad", "end": "2026-09-18T08:30:00Z"],
+        ]]
+        let events = CalendarText.events(fromJSON: json)
+        XCTAssertEqual(events.count, 1, "a row it cannot read is skipped")
+        XCTAssertEqual(events[0].title, "Lunch")
+        XCTAssertEqual(events[0].color, "#FF9500")
+        XCTAssertTrue(CalendarText.events(fromJSON: nil).isEmpty)
+    }
 }

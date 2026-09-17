@@ -78,7 +78,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// holding one and moving it (saved as `menuOrder`).
     static let tools: [(id: String, title: String)] = [
         ("search", "Search"), ("rewrite", "Rewrite"), ("translate", "Translate"),
-        ("vault", "Vault"), ("clipboard", "Clipboard"), ("emoji", "Emoji"),
+        ("vault", "Vault"), ("calendar", "Calendar"), ("clipboard", "Clipboard"), ("emoji", "Emoji"),
         ("ask", "Ask Glyf"), ("dictation", "Voice"), ("glyfs", "My glyfs"),
         ("shorthand", "Shorthand"), ("keys", "Keys"), ("pay", "Pay"),
         ("settings", "Settings"),
@@ -575,8 +575,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
         case "connectors":
             return Screen(id: id, title: "Connectors", rows: [
-                .nav(icon: "calendar", title: "Calendar", detail: nil, target: "!connector:mockcal"),
-                .info(title: "Google · Notion · Slack soon", detail: nil),
+                .nav(icon: "calendar", title: "Calendar", detail: nil, target: "!connector:calendar"),
             ], appPath: "connectors")
 
         case "vault":
@@ -618,6 +617,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                 delegate?.shellRunGlyf(String(target.dropFirst("!run:".count)))
             } else if target.hasPrefix("!app:") {
                 delegate?.shellOpenApp(path: String(target.dropFirst("!app:".count)))
+            } else if target.hasPrefix("!connector:") {
+                delegate?.shellOpenTool(String(target.dropFirst("!connector:".count)))
             } else {
                 push(target)
             }

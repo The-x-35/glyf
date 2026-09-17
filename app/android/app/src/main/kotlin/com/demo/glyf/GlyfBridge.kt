@@ -27,6 +27,7 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
     /** Set by MainActivity — asks for READ_CONTACTS, calls back with grant. */
     var requestContactsPermission: (((Boolean) -> Unit) -> Unit)? = null
     var requestLocationPermission: (((Boolean) -> Unit) -> Unit)? = null
+    var requestCalendarPermission: (((Boolean) -> Unit) -> Unit)? = null
     var requestImagesPermission: (((Boolean) -> Unit) -> Unit)? = null
 
     /** One coarse fix, cached into shared settings for the keyboard.
@@ -160,7 +161,12 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
                 } else result.success(false)
             }
             "documentsPath" -> result.success(ctx.filesDir.absolutePath)
-            "launchArgs" -> result.success(emptyList<String>())
+            // Debug builds: test flags the scenario runner leaves in files/qa/args.txt
+            // (Android has no launch arguments for an app started by tap).
+            "launchArgs" -> result.success(
+                if (!BuildConfig.DEBUG) emptyList<String>()
+                else java.io.File(ctx.filesDir, "qa/args.txt").takeIf { it.exists() }
+                    ?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList<String>())
 
             "readSharedSettings" -> result.success(SettingsStore.load(ctx).toString())
             "writeSharedSettings" -> {
@@ -288,6 +294,40 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
                     "enabled" to enabled,
                     "permission" to if (granted) "granted" else "notDetermined",
                 )).toString())
+            }
+            // The phone's calendar for the keyboard's Calendar panel. The
+            // keyboard shares this app's permission, so nothing is copied.
+            "calendarStatus" -> {
+                val granted = ctx.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                val on = ctx.getSharedPreferences("glyf", Context.MODE_PRIVATE).getBoolean("calendarOn", false)
+                result.success(JSONObject(mapOf(
+                    "enabled" to (granted && on),
+                    "permission" to if (granted) "granted" else "denied",
+                )).toString())
+            }
+            "calendarEnable" -> {
+                val prefs = ctx.getSharedPreferences("glyf", Context.MODE_PRIVATE)
+                val granted = ctx.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                    prefs.edit().putBoolean("calendarOn", true).apply()
+                    result.success(JSONObject(mapOf("ok" to true)).toString())
+                } else {
+                    val ask = requestCalendarPermission
+                    if (ask == null) {
+                        result.success(JSONObject(mapOf("ok" to false, "error" to "denied")).toString())
+                    } else ask { ok ->
+                        if (ok) prefs.edit().putBoolean("calendarOn", true).apply()
+                        result.success(JSONObject(
+                            if (ok) mapOf("ok" to true) else mapOf("ok" to false, "error" to "denied")
+                        ).toString())
+                    }
+                }
+            }
+            "calendarDisable" -> {
+                ctx.getSharedPreferences("glyf", Context.MODE_PRIVATE).edit().putBoolean("calendarOn", false).apply()
+                result.success(true)
             }
             "contactsEnable" -> {
                 val granted = ctx.checkSelfPermission(

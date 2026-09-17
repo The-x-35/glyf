@@ -44,6 +44,23 @@ import UIKit
       try? edits.data(using: .utf8)?.write(
         to: dir.appendingPathComponent("typing-edits.json"), options: .atomic)
     }
+    if args.contains("--glyf-seed-calendar"), let dir = AppGroupStore.bridgeDir {
+      // UI tests: a known day in the keyboard's calendar.
+      let cal = Calendar.current
+      let iso = ISO8601DateFormatter()
+      let today = cal.startOfDay(for: Date())
+      func at(_ day: Int, _ h: Int, _ m: Int = 0) -> String {
+        iso.string(from: cal.date(byAdding: .minute, value: day * 1440 + h * 60 + m, to: today)!)
+      }
+      let events: [[String: Any]] = [
+        ["title": "Standup", "start": at(0, 10), "end": at(0, 10, 30), "allDay": false, "color": "#34C759"],
+        ["title": "Design review", "start": at(0, 15), "end": at(0, 16), "allDay": false, "location": "Studio", "color": "#7C5CFF"],
+        ["title": "Dinner with Zoya", "start": at(1, 20), "end": at(1, 22), "allDay": false, "color": "#FF9500"],
+      ]
+      if let data = try? JSONSerialization.data(withJSONObject: ["events": events]) {
+        try? data.write(to: dir.appendingPathComponent("calendar.json"), options: .atomic)
+      }
+    }
     if args.contains("--glyf-screenshots-on") {
       SettingsStore.update { s in s.clipboardScreenshots = true }
     }
@@ -72,6 +89,11 @@ import UIKit
         }
       }
     }
+    // The keyboard's calendar is only as fresh as the last time the app ran.
+    CalendarSync.shared.refreshIfEnabled()
+    NotificationCenter.default.addObserver(
+      forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+    ) { _ in CalendarSync.shared.refreshIfEnabled() }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

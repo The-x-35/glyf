@@ -146,6 +146,16 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 }
                 c.drawPath(path, p)
             }
+            "calendar" -> {
+                c.drawRoundRect(cx - dp(7.4f), cy - dp(6.2f), cx + dp(7.4f), cy + dp(7.4f),
+                    dp(2.4f), dp(2.4f), p)
+                c.drawLine(cx - dp(7.4f), cy - dp(2.2f), cx + dp(7.4f), cy - dp(2.2f), p)
+                c.drawLine(cx - dp(3.6f), cy - dp(8.4f), cx - dp(3.6f), cy - dp(4.6f), p)
+                c.drawLine(cx + dp(3.6f), cy - dp(8.4f), cx + dp(3.6f), cy - dp(4.6f), p)
+                for (row in 0..1) for (col in -1..1) {
+                    c.drawCircle(cx + col * dp(3.8f), cy + dp(1.4f) + row * dp(3.2f), dp(0.9f), fill)
+                }
+            }
             "pay" -> {
                 c.drawRoundRect(cx - dp(8.4f), cy - dp(5.8f), cx + dp(8.4f), cy + dp(5.8f),
                     dp(2f), dp(2f), p)
@@ -173,7 +183,7 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
         /** Every tool, in the website's order first; titles as the grid shows them. */
         val TOOLS = listOf(
             "search" to "Search", "rewrite" to "Rewrite", "translate" to "Translate",
-            "vault" to "Vault", "clipboard" to "Clipboard", "emoji" to "Emoji",
+            "vault" to "Vault", "calendar" to "Calendar", "clipboard" to "Clipboard", "emoji" to "Emoji",
             "ask" to "Ask Glyf", "dictation" to "Voice", "glyfs" to "My glyfs",
             "shorthand" to "Shorthand", "keys" to "Keys", "pay" to "Pay",
             "settings" to "Settings",
