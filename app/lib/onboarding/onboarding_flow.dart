@@ -71,8 +71,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool _haptics = true;
   /// On by default, like Gboard: what you copy is there to paste later.
   bool _clipboard = true;
-  /// On by default, like Gboard; photo access is asked for on Continue.
-  bool _screenshots = true;
+  /// Off until asked for: turning it on is what asks for the photo library.
+  bool _screenshots = false;
   bool _keyboardEnabled = false;
   bool _fullAccess = false;
   bool _keyboardSelected = false;
@@ -295,12 +295,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _signedIn(await Auth.signInWithApple());
   }
 
-  /// Photo access for recent screenshots, asked when it is on and they move on.
-  Future<void> _feelContinue() async {
-    if (_screenshots && !await GlyfBridge.screenshotAccess()) {
-      if (mounted) setState(() => _screenshots = false);
+  /// Recent screenshots need the photo library, and only the app can ask for
+  /// it, so the ask belongs to this switch — never to moving on.
+  Future<void> _wantScreenshots(bool on) async {
+    if (!on) {
+      setState(() => _screenshots = false);
+      return;
     }
-    _advance();
+    final granted = await GlyfBridge.screenshotAccess();
+    if (mounted) setState(() => _screenshots = granted);
   }
 
   /// Onboarding is done once the tour is offered: settings saved, state
@@ -611,10 +614,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           _toggleCard('📋', 'Keep what you copy', _clipboard,
               (v) => setState(() => _clipboard = v)),
           const SizedBox(height: 10),
-          _toggleCard('🖼️', 'Recent screenshots', _screenshots,
-              (v) => setState(() => _screenshots = v)),
+          _toggleCard('🖼️', 'Recent screenshots', _screenshots, _wantScreenshots),
           const Spacer(),
-          _pill('Continue', onTap: _feelContinue),
+          _pill('Continue', onTap: _advance),
           const SizedBox(height: 20),
         ]);
 

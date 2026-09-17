@@ -87,6 +87,9 @@ class SetupChecklist extends StatelessWidget {
               id: 'onb:setup:keyboard',
               icon: _GlyfAppIcon(),
               title: 'Glyf keyboard',
+              // iOS drops you at the front of Settings and gives apps no way
+              // in, so the row says where to walk.
+              hint: android ? null : 'General › Keyboard › Keyboards',
               done: keyboardOn,
               action: 'Open',
               onTap: onKeyboard,
@@ -98,6 +101,7 @@ class SetupChecklist extends StatelessWidget {
                   ? const _SettingsIcon(Icons.keyboard_rounded, Glass.accent)
                   : const _SettingsIcon(Icons.lock_open_rounded, Color(0xFF34C759)),
               title: android ? 'Glyf in use' : 'Allow Full Access',
+              hint: android ? null : '…then Glyf › Allow Full Access',
               done: inUseOn,
               action: android ? 'Choose' : 'Open',
               onTap: onInUse,
@@ -120,15 +124,31 @@ class SetupChecklist extends StatelessWidget {
     required bool done,
     required String action,
     required VoidCallback onTap,
+    String? hint,
   }) {
+    final showHint = hint != null && !done;
     final row = SizedBox(
-      height: 56,
+      height: showHint ? 64 : 56,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(children: [
           SizedBox(width: 30, height: 30, child: icon),
           const SizedBox(width: 14),
-          Expanded(child: Text(title, style: const TextStyle(fontSize: 16, color: Glass.ink))),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 16, color: Glass.ink)),
+                if (showHint)
+                  Text(hint,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12.5, color: Glass.inkSoft)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
           _Mark(done: done, action: action),
         ]),
       ),

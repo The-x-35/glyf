@@ -125,7 +125,7 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           _card([
             _switch('Keep what you copy', 'clipboardHistory', fallback: true),
             _switch('Recent screenshots', 'clipboardScreenshots',
-                fallback: true, onBeforeOn: GlyfBridge.screenshotAccess),
+                fallback: false, onBeforeOn: GlyfBridge.screenshotAccess),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),
           ]),
         ],
