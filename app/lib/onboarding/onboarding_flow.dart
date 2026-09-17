@@ -337,7 +337,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               child: TalkingOrb(
                 size: 170,
                 titleSize: 34,
-                lines: ['Hi, I’m Glyf.', 'Sign in to set up your keyboard.'],
+                lines: ['Hi, I’m {glyf}', 'Sign in to set up your keyboard.'],
               ),
             )
           else

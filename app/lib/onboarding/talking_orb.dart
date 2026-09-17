@@ -18,6 +18,7 @@ class TalkingOrb extends StatefulWidget {
   });
 
   /// Said one after another, each typed out. The first is the title.
+  /// `{glyf}` in a line is the Glyf wordmark, appearing as one piece.
   final List<String> lines;
   final double size;
   final double titleSize;
@@ -31,9 +32,24 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
   late final AnimationController _voice =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
   final List<String> _shown = [];
-  String _typing = '';
+  /// The line being typed and how many pieces of it are out so far.
+  String? _typingLine;
+  int _typed = 0;
   bool _speaking = false;
   Timer? _timer;
+
+  static const _mark = '{glyf}';
+
+  /// A line as pieces: each character, and the wordmark as a single piece.
+  static List<String> _pieces(String line) {
+    final out = <String>[];
+    final parts = line.split(_mark);
+    for (var i = 0; i < parts.length; i++) {
+      out.addAll(parts[i].characters);
+      if (i < parts.length - 1) out.add(_mark);
+    }
+    return out;
+  }
 
   @override
   void initState() {
@@ -47,7 +63,7 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
     if (old.lines.join('\n') != widget.lines.join('\n')) {
       _timer?.cancel();
       _shown.clear();
-      _typing = '';
+      _typingLine = null;
       _speak();
     }
   }
@@ -69,16 +85,18 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
         continue;
       }
       final done = Completer<void>();
+      final count = _pieces(line).length;
       var i = 0;
+      _typingLine = line;
       _timer = Timer.periodic(const Duration(milliseconds: 26), (t) {
         if (!mounted) {
           t.cancel();
           if (!done.isCompleted) done.complete();
           return;
         }
-        i = math.min(line.length, i + 1);
-        setState(() => _typing = line.substring(0, i));
-        if (i >= line.length) {
+        i = math.min(count, i + 1);
+        setState(() => _typed = i);
+        if (i >= count) {
           t.cancel();
           done.complete();
         }
@@ -89,7 +107,8 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
       if (!mounted) return;
       setState(() {
         _shown.add(line);
-        _typing = '';
+        _typingLine = null;
+        _typed = 0;
       });
     }
     if (!mounted) return;
@@ -114,20 +133,52 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
       ),
       SizedBox(height: widget.size * 0.06),
       for (var i = 0; i < _shown.length; i++) _line(_shown[i], title: i == 0),
-      if (_typing.isNotEmpty) _line(_typing, title: _shown.isEmpty),
+      if (_typingLine != null && _typed > 0)
+        _line(_typingLine!, title: _shown.isEmpty, upTo: _typed),
     ]);
   }
 
-  Widget _line(String text, {required bool title}) => Padding(
-        padding: EdgeInsets.only(bottom: title ? 10 : 4),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: title
-              ? TextStyle(fontSize: widget.titleSize, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -widget.titleSize * 0.03)
-              : TextStyle(fontSize: widget.titleSize * 0.56, height: 1.35, fontWeight: FontWeight.w400, color: Glass.inkSoft),
+  Widget _line(String text, {required bool title, int? upTo}) {
+    final style = title
+        ? TextStyle(fontSize: widget.titleSize, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -widget.titleSize * 0.03)
+        : TextStyle(fontSize: widget.titleSize * 0.56, height: 1.35, fontWeight: FontWeight.w400, color: Glass.inkSoft);
+    final pieces = _pieces(text);
+    final shown = pieces.take(upTo ?? pieces.length).toList();
+    final spans = <InlineSpan>[];
+    final run = StringBuffer();
+    void flush() {
+      if (run.isEmpty) return;
+      spans.add(TextSpan(text: run.toString()));
+      run.clear();
+    }
+    for (final p in shown) {
+      if (p == _mark) {
+        flush();
+        final size = style.fontSize! * 1.04;
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          // Room on the right for the wordmark's dot, which rides past the f.
+          child: Padding(
+            padding: EdgeInsets.only(left: size * 0.06, right: size * (GlyfWordmark.gapRatio + GlyfWordmark.dotRatio)),
+            child: GlyfWordmark(size: size),
+          ),
+        ));
+      } else {
+        run.write(p);
+      }
+    }
+    flush();
+    return Padding(
+      padding: EdgeInsets.only(bottom: title ? 10 : 4),
+      child: Semantics(
+        label: text.replaceAll(_mark, 'Glyf'),
+        child: ExcludeSemantics(
+          child: Text.rich(TextSpan(children: spans), textAlign: TextAlign.center, style: style),
         ),
-      );
+      ),
+    );
+  }
 }
 
 /// A few seconds of the thing the orb is talking about: a friend asks for an
