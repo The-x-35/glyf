@@ -1084,17 +1084,26 @@ final class GlyfKeyboardViewController: UIInputViewController {
               trimmed != suggestedFor
         else { return }
         cancelSuggestion()
+        let fields = VaultStore.shared.load().fields
+        let kinds = SettingsStore.current.aiUsesVault == false ? [] : Array(Set(fields.map(\.kind))).sorted()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.suggestTask = BackendClient.shared.suggestAction(text: trimmed) {
+            self.suggestTask = BackendClient.shared.suggestAction(text: trimmed, kinds: kinds) {
                 [weak self] intent, label, query in
                 guard let self, self.surface == .none else { return }
                 let before = self.textDocumentProxy.documentContextBeforeInput ?? ""
                 // The sentence moved on while we were asking: drop it.
                 guard String(before.suffix(120))
                     .trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
-                self.suggestedFor = trimmed
-                self.suggestedChip = .action(label: label, query: query, intent: intent)
+                if intent == "detail" {
+                    // The model named the kind; the value is this phone's own.
+                    guard let field = fields.first(where: { $0.kind == label }) else { return }
+                    self.suggestedFor = trimmed
+                    self.suggestedChip = .vault(field: field)
+                } else {
+                    self.suggestedFor = trimmed
+                    self.suggestedChip = .action(label: label, query: query, intent: intent)
+                }
                 self.updateCandidates()
             }
         }

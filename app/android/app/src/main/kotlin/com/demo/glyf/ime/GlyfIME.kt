@@ -1470,6 +1470,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private var suggestedChip: Smart.Chip.Action? = null
+    /** A saved detail the model says the sentence is leading into. */
+    private var suggestedDetail: Smart.Field? = null
     private var suggestedFor = ""
     private var suggestCancel: (() -> Unit)? = null
     private val suggestWork = Runnable { askForSuggestion() }
@@ -1487,6 +1489,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val tail = before.takeLast(120)
         val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
         var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN")
+        // Nothing in the words, but the model heard the sentence asking for a detail.
+        val detail = suggestedDetail
+        if (chip == null && detail != null && suggestedFor == tail.trim()) chip = Smart.Chip.Vault(detail)
         // The tour keeps the strip for the step it is coaching.
         val step = tourStep()
         if (step != null) {
@@ -1555,16 +1560,25 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val text = (ic.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
         if (text.length < 12) return
         suggestCancel?.invoke()
+        val fields = vaultFields()
         suggestCancel = BackendClient.suggestAction(
             backendURL = settings.optString("backendURL"),
             text = text,
             deviceId = settings.optString("deviceId"),
+            kinds = if (settings.optBoolean("aiUsesVault", true)) fields.map { it.kind }.distinct() else emptyList(),
         ) { intent, label, query -> main.post {
             val now = (currentInputConnection?.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
             // The sentence moved on while we were asking: drop it.
             if (now != text) return@post
             suggestedFor = text
-            suggestedChip = Smart.Chip.Action(label, query, intent)
+            if (intent == "detail") {
+                // The model named the kind; the value is this phone's own.
+                suggestedDetail = fields.firstOrNull { it.kind == label } ?: return@post
+                suggestedChip = null
+            } else {
+                suggestedDetail = null
+                suggestedChip = Smart.Chip.Action(label, query, intent)
+            }
             updateSuggestions()
         } }
     }

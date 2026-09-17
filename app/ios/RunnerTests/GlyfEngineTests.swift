@@ -523,4 +523,27 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(events[0].color, "#FF9500")
         XCTAssertTrue(CalendarText.events(fromJSON: nil).isEmpty)
     }
+
+    // MARK: Saved details in everyday words
+
+    func testVaultChipHearsEverydayWordsButNotQuestions() {
+        let fields = [
+            VaultField(id: "1", kind: "address", label: "Home", value: "42 Glass Lane"),
+            VaultField(id: "2", kind: "upi", label: "UPI", value: "arpit@okbank"),
+            VaultField(id: "3", kind: "phone", label: "Mobile", value: "+91 98765 43210"),
+            VaultField(id: "4", kind: "email", label: "Email", value: "a@b.co"),
+        ]
+        func kind(_ t: String) -> String? {
+            if case .vault(let f)? = Smart.chip(for: t, fields: fields) { return f.kind }
+            return nil
+        }
+        XCTAssertEqual(kind("just gpay me on"), "upi")
+        XCTAssertEqual(kind("haan ship it to"), "address")
+        XCTAssertEqual(kind("ok here's my number:"), "phone")
+        XCTAssertEqual(kind("you can email me at"), "email")
+        XCTAssertNil(kind("what's your address?"), "a question for someone else")
+        XCTAssertNil(kind("send me ur upi"))
+        XCTAssertNil(kind("my number is 98765"), "already typed")
+        XCTAssertNil(kind("my wallet address"), "the wallet was asked for, and none is saved")
+    }
 }

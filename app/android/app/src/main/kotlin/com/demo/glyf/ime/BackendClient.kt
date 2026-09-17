@@ -154,6 +154,7 @@ object BackendClient {
         backendURL: String,
         text: String,
         deviceId: String,
+        kinds: List<String> = emptyList(),
         onResult: (intent: String, label: String, query: String) -> Unit,
     ): () -> Unit {
         val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -167,6 +168,8 @@ object BackendClient {
                     setRequestProperty("Content-Type", "application/json")
                 }
                 val body = JSONObject().put("text", text).put("deviceId", deviceId)
+                // The kinds of detail saved, never the details.
+                if (kinds.isNotEmpty()) body.put("kinds", org.json.JSONArray(kinds))
                 c.outputStream.use { it.write(body.toString().toByteArray()) }
                 if (c.responseCode !in 200..299 || cancelled.get()) return@execute
                 val json = JSONObject(c.inputStream.bufferedReader().readText())

@@ -276,7 +276,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
     @discardableResult
     /// POST /suggest — what Glyf could do about what is being typed. Cheap
     /// and cancellable: the strip asks after a pause, never on every key.
-    func suggestAction(text: String,
+    func suggestAction(text: String, kinds: [String] = [],
                        onResult: @escaping (String, String, String) -> Void)
     -> URLSessionDataTask? {
         let s = SettingsStore.current
@@ -285,9 +285,10 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         req.httpMethod = "POST"
         req.timeoutInterval = 8
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "text": text, "deviceId": s.deviceId,
-        ])
+        var body: [String: Any] = ["text": text, "deviceId": s.deviceId]
+        // The kinds of detail saved, never the details.
+        if !kinds.isEmpty { body["kinds"] = kinds }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         let task = session.dataTask(with: req) { data, _, _ in
             guard let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

@@ -224,10 +224,11 @@ object Smart {
     /** Sentence endings that mean "the next thing I type is X". */
     private val triggers: List<Triple<Regex, List<String>, String?>> = listOf(
         Triple("""\b(my name is|name:|this is)\s*$""", listOf("name"), null),
+        // Before address: "my wallet address" asks for the wallet.
+        Triple("""\b(wallet|sol|solana|phantom|usdc|crypto)(?:\s*(?:address|addy|wallet))?\s*(?:is\s*)?:?\s*$""", listOf("wallet"), null),
         Triple("""\b(address|deliver(?: it)? to|send (?:it |the \w+ )?to|ship (?:it )?to|come to|pick me up (?:from|at))\s*(?:is\s*)?:?\s*$""", listOf("address"), null),
         Triple("""\b(upi|gpay|google pay|phonepe|paytm)(?:\s*id)?\s*(?:is\s*)?:?\s*$""", listOf("upi"), null),
         Triple("""\bpay me (?:at|on)\s*$""", listOf("upi"), null),
-        Triple("""\b(wallet|sol|solana|phantom|usdc|crypto)(?:\s*(?:address|addy|wallet))?\s*(?:is\s*)?:?\s*$""", listOf("wallet"), null),
         Triple("""\b(insta|instagram|ig)(?:\s*(?:handle|id))?\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "insta"),
         Triple("""\b(twitter|on x|x handle)\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "x"),
         Triple("""\blinkedin\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "linkedin"),
@@ -235,8 +236,28 @@ object Smart {
         Triple("""\b(number|phone|mobile|whatsapp|call me (?:at|on))\s*(?:is\s*)?:?\s*$""", listOf("phone"), null),
     ).map { (p, kinds, label) -> Triple(Regex(p, RegexOption.IGNORE_CASE), kinds, label) }
 
+    /** Words that lead into one of your own details near the end of the
+     *  sentence ("here's my number", "gpay me on"): the same list the server's
+     *  suggestions use (server/src/lib/details.ts). */
+    private val firstPerson: List<Pair<Regex, String>> = listOf(
+        """\b(my|our)\s+(home\s+|delivery\s+|shipping\s+|office\s+|current\s+)?(address|addy|location)\b""" to "address",
+        """\b(ship|deliver|send|courier|post)\s+(it|them|the\s+\w+|this)?\s*(to|at)\s*:?\s*$""" to "address",
+        """\b(i\s+(live|stay)\s+(at|in)|come\s+(over\s+)?to|pick\s+me\s+up\s+(from|at))\s*:?\s*$""" to "address",
+        """\b(my|our)\s+(phone|mobile|cell|contact|whatsapp)?\s*(number|no\.?|num)\b""" to "phone",
+        """\b(call|text|whatsapp|ping|reach)\s+me\s+(on|at)\s*:?\s*$""" to "phone",
+        """\b(my|our)\s+(e-?mail|mail\s*id|gmail)\b""" to "email",
+        """\b(e-?mail|mail)\s+me\s+(on|at)\s*:?\s*$""" to "email",
+        """\b(my|our)\s+(upi|vpa|gpay|google\s+pay|phonepe|paytm)(\s+(id|number|handle))?\b""" to "upi",
+        """\b(gpay|google\s+pay|phonepe|paytm|upi|pay|transfer|send\s+(the\s+)?(money|amount|it))\s+(me\s+)?(on|at|to)\s*:?\s*$""" to "upi",
+        """\b(my|our)\s+(sol(ana)?|crypto|usdc|phantom)?\s*wallet(\s+address)?\b""" to "wallet",
+        """\b(my|our)\s+(website|portfolio|site|link|calendly)\b""" to "link",
+        """\b(my|our)\s+(insta(gram)?|ig|twitter|x\s+handle|linkedin|handle)\b""" to "social",
+        """\b(my|our)\s+gst(in)?(\s+(number|no\.?))?\b""" to "gst",
+    ).map { (p, kind) -> Regex(p, RegexOption.IGNORE_CASE) to kind }
+
     fun vaultMatch(text: String, fields: List<Field>): Field? {
         if (text.isEmpty()) return null
+        if (asksSomeoneElse(text)) return null
         for ((re, kinds, label) in triggers) {
             if (!re.containsMatchIn(text)) continue
             val candidates = fields.filter { it.kind in kinds }
@@ -244,7 +265,29 @@ object Smart {
                 candidates.firstOrNull { it.label.lowercase().contains(label) }?.let { return it }
                 continue
             }
-            candidates.firstOrNull()?.let { return it }
+            // The sentence named the kind; with none saved there is nothing to offer.
+            return candidates.firstOrNull()
+        }
+        return firstPersonMatch(text, fields)
+    }
+
+    /** "send me ur upi", "what's your address": a question for someone else. */
+    private fun asksSomeoneElse(text: String): Boolean {
+        val clause = text.lowercase().split(Regex("[.!?\n]")).lastOrNull()?.trim().orEmpty()
+        val tail = clause.split(Regex("""\s+""")).takeLast(6).joinToString(" ")
+        return Regex("""\b(your|ur|yours|his|her|their)\b""").containsMatchIn(tail)
+    }
+
+    /** First-person asks only. */
+    fun firstPersonMatch(text: String, fields: List<Field>): Field? {
+        val clause = text.lowercase().split(Regex("[.!?\n]")).lastOrNull()?.trim().orEmpty()
+        if (clause.isEmpty() || asksSomeoneElse(text)) return null
+        for ((re, kind) in firstPerson) {
+            val m = re.find(clause) ?: continue
+            val field = fields.firstOrNull { it.kind == kind || (kind == "social" && it.kind == "handle") } ?: continue
+            // The detail itself has not been typed yet.
+            val after = clause.substring(m.range.last + 1).replace(Regex("""^[\s:,-]*(is|are|=)?[\s:,-]*"""), "")
+            if (after.length <= 3) return field
         }
         return null
     }

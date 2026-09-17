@@ -271,10 +271,11 @@ enum Smart {
     /// Each pattern maps to a vault field kind, and for socials to a label.
     private static let triggers: [(pattern: String, kind: String, label: String?)] = [
         (#"\b(my name is|name:|this is)\s*$"#, "name", nil),
+        // Before address: "my wallet address" asks for the wallet.
+        (#"\b(wallet|sol|solana|phantom|usdc|crypto)(?:\s*(?:address|addy|wallet))?\s*(?:is\s*)?:?\s*$"#, "wallet", nil),
         (#"\b(address|deliver(?: it)? to|send (?:it |the \w+ )?to|ship (?:it )?to|come to|pick me up (?:from|at))\s*(?:is\s*)?:?\s*$"#, "address", nil),
         (#"\b(upi|gpay|google pay|phonepe|paytm)(?:\s*id)?\s*(?:is\s*)?:?\s*$"#, "upi", nil),
         (#"\bpay me (?:at|on)\s*$"#, "upi", nil),
-        (#"\b(wallet|sol|solana|phantom|usdc|crypto)(?:\s*(?:address|addy|wallet))?\s*(?:is\s*)?:?\s*$"#, "wallet", nil),
         (#"\b(insta|instagram|ig)(?:\s*(?:handle|id))?\s*(?:is\s*)?:?\s*$"#, "social", "insta"),
         (#"\b(twitter|on x|x handle)\s*(?:is\s*)?:?\s*$"#, "social", "x"),
         (#"\blinkedin\s*(?:is\s*)?:?\s*$"#, "social", "linkedin"),
@@ -287,7 +288,7 @@ enum Smart {
         // soon as the sentence asks for the detail. (The field's reported
         // context can lag a keystroke, so requiring a trailing space here
         // would make the chip miss the moment it is needed.)
-        guard !text.isEmpty else { return nil }
+        guard !text.isEmpty, !asksSomeoneElse(text) else { return nil }
         for (pattern, kind, label) in triggers {
             guard text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
             else { continue }
@@ -298,7 +299,53 @@ enum Smart {
                 }
                 continue
             }
-            if let hit = candidates.first { return hit }
+            // The sentence named the kind; with none saved there is nothing to offer.
+            return candidates.first
+        }
+        return firstPersonMatch(text, fields: fields)
+    }
+
+    /// Words that lead into one of your own details near the end of the
+    /// sentence ("here's my number", "gpay me on"): the same list the server's
+    /// suggestions use (server/src/lib/details.ts).
+    private static let firstPerson: [(pattern: String, kind: String)] = [
+        (#"\b(my|our)\s+(home\s+|delivery\s+|shipping\s+|office\s+|current\s+)?(address|addy|location)\b"#, "address"),
+        (#"\b(ship|deliver|send|courier|post)\s+(it|them|the\s+\w+|this)?\s*(to|at)\s*:?\s*$"#, "address"),
+        (#"\b(i\s+(live|stay)\s+(at|in)|come\s+(over\s+)?to|pick\s+me\s+up\s+(from|at))\s*:?\s*$"#, "address"),
+        (#"\b(my|our)\s+(phone|mobile|cell|contact|whatsapp)?\s*(number|no\.?|num)\b"#, "phone"),
+        (#"\b(call|text|whatsapp|ping|reach)\s+me\s+(on|at)\s*:?\s*$"#, "phone"),
+        (#"\b(my|our)\s+(e-?mail|mail\s*id|gmail)\b"#, "email"),
+        (#"\b(e-?mail|mail)\s+me\s+(on|at)\s*:?\s*$"#, "email"),
+        (#"\b(my|our)\s+(upi|vpa|gpay|google\s+pay|phonepe|paytm)(\s+(id|number|handle))?\b"#, "upi"),
+        (#"\b(gpay|google\s+pay|phonepe|paytm|upi|pay|transfer|send\s+(the\s+)?(money|amount|it))\s+(me\s+)?(on|at|to)\s*:?\s*$"#, "upi"),
+        (#"\b(my|our)\s+(sol(ana)?|crypto|usdc|phantom)?\s*wallet(\s+address)?\b"#, "wallet"),
+        (#"\b(my|our)\s+(website|portfolio|site|link|calendly)\b"#, "link"),
+        (#"\b(my|our)\s+(insta(gram)?|ig|twitter|x\s+handle|linkedin|handle)\b"#, "social"),
+        (#"\b(my|our)\s+gst(in)?(\s+(number|no\.?))?\b"#, "gst"),
+    ]
+
+    private static func lastClause(_ text: String) -> String {
+        let parts = text.lowercased().components(separatedBy: CharacterSet(charactersIn: ".!?\n"))
+        return (parts.last ?? "").trimmingCharacters(in: .whitespaces)
+    }
+
+    /// "send me ur upi", "what's your address": a question for someone else.
+    private static func asksSomeoneElse(_ text: String) -> Bool {
+        let tail = lastClause(text).split(separator: " ").suffix(6).joined(separator: " ")
+        return tail.range(of: #"\b(your|ur|yours|his|her|their)\b"#, options: .regularExpression) != nil
+    }
+
+    /// First-person asks only, and only before the detail has been typed.
+    static func firstPersonMatch(_ text: String, fields: [VaultField]) -> VaultField? {
+        let clause = lastClause(text)
+        guard !clause.isEmpty, !asksSomeoneElse(text) else { return nil }
+        for (pattern, kind) in firstPerson {
+            guard let r = clause.range(of: pattern, options: [.regularExpression, .caseInsensitive]),
+                  let field = fields.first(where: { $0.kind == kind || (kind == "social" && $0.kind == "handle") })
+            else { continue }
+            let after = String(clause[r.upperBound...])
+                .replacingOccurrences(of: #"^[\s:,-]*(is|are|=)?[\s:,-]*"#, with: "", options: .regularExpression)
+            if after.count <= 3 { return field }
         }
         return nil
     }

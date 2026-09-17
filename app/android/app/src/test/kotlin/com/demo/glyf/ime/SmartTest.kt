@@ -29,6 +29,19 @@ class SmartTest {
         assertNull(Smart.evaluate("2+abc"))
     }
 
+    @Test fun detailsInEverydayWords() {
+        val more = vault + listOf(Smart.Field("phone", "Mobile", "+91 98765 43210"), Smart.Field("email", "Email", "a@b.co"))
+        assertEquals("upi", Smart.chip("just gpay me on", more).let { (it as Smart.Chip.Vault).field.kind })
+        assertEquals("address", (Smart.chip("haan ship it to", more) as Smart.Chip.Vault).field.kind)
+        assertEquals("phone", (Smart.chip("ok here's my number:", more) as Smart.Chip.Vault).field.kind)
+        assertEquals("email", (Smart.chip("you can email me at", more) as Smart.Chip.Vault).field.kind)
+        // Asking someone else, or already typed, or nothing saved of that kind.
+        assertNull(Smart.chip("what's your address?", more))
+        assertNull(Smart.chip("send me ur upi", more))
+        assertNull(Smart.chip("my number is 98765", more))
+        assertNull(Smart.chip("my wallet address", more))
+    }
+
     @Test fun detailsTheSentenceAsksFor() {
         assertEquals("42 Glass Lane, Indiranagar, Bengaluru 560038",
             (Smart.chip("sure my address is ", vault) as Smart.Chip.Vault).field.value)

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { plan, type ActIntent } from "../lib/act.js";
 import { TTLCache } from "../lib/cache.js";
+import { DETAIL_KINDS, detailByModel, detailByRules, type DetailKind } from "../lib/details.js";
 
 /**
  * POST /suggest — read what someone is typing and say what Glyf could DO
@@ -19,6 +20,8 @@ import { TTLCache } from "../lib/cache.js";
 const SuggestSchema = z.object({
   text: z.string().min(4).max(600),
   deviceId: z.string().min(1).max(80),
+  /** Kinds of detail saved in the keyboard's vault. Never the values. */
+  kinds: z.array(z.string().max(16)).max(20).optional(),
 });
 
 /** What the chip says, and what the keyboard runs when it is tapped. */
@@ -48,6 +51,22 @@ export function suggestRoutes(app: FastifyInstance): void {
     const parsed = SuggestSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ ok: false, error: "Bad request" });
     const text = parsed.data.text.trim();
+    const kinds = (parsed.data.kinds ?? []).filter((k): k is DetailKind =>
+      (DETAIL_KINDS as readonly string[]).includes(k));
+
+    // About to share one of their own details? The keyboard fills it in.
+    if (kinds.length > 0) {
+      const dkey = TTLCache.key(["detail", text.toLowerCase(), kinds.slice().sort().join(",")]);
+      const hit = cache.get(dkey);
+      const field = hit !== undefined && hit !== null
+        ? (hit === "none" ? null : hit as DetailKind)
+        : detailByRules(text, kinds) ?? (text.split(/\s+/).length >= 3 ? await detailByModel(text, kinds) : null);
+      if (hit === undefined || hit === null) cache.set(dkey, field ?? "none");
+      if (field) {
+        req.log.info({ intent: "detail", field }, "suggest");
+        return { ok: true, suggestion: { intent: "detail", field, label: field, action: "vault", query: "" } };
+      }
+    }
 
     const key = TTLCache.key(["suggest", text.toLowerCase()]);
     const cached = cache.get(key);
