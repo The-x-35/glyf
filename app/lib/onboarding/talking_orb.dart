@@ -310,11 +310,11 @@ class _RememberDemoState extends State<RememberDemo> with SingleTickerProviderSt
       animation: _t,
       builder: (context, _) {
         final v = _t.value;
-        final ask = Curves.easeOutBack.transform(_between(v, 0.02, 0.12));
+        final ask = Curves.easeOutBack.transform(_between(v, 0.01, 0.10));
         final strip = Curves.easeOutCubic.transform(_between(v, 0.22, 0.32));
         final press = _between(v, 0.42, 0.50);
         final sent = Curves.easeOutBack.transform(_between(v, 0.52, 0.62));
-        final out = 1 - _between(v, 0.90, 0.98);
+        final out = 1 - _between(v, 0.93, 0.99);
         final pressed = press > 0 && sent == 0;
         // The card itself never fades — only what is playing inside it.
         return _demoCard(
@@ -427,10 +427,6 @@ class NearbyDemo extends StatefulWidget {
 }
 
 class _NearbyDemoState extends State<NearbyDemo> with SingleTickerProviderStateMixin {
-  static const _height = 330.0;
-  static const _stripH = 52.0;
-  static const _keysH = 104.0;
-
   late final AnimationController _t =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 6200));
 
@@ -461,46 +457,36 @@ class _NearbyDemoState extends State<NearbyDemo> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final still = widget.settled || (MediaQuery.maybeDisableAnimationsOf(context) ?? false);
-    if (still) return _card(ask: 1, chip: 0, press: 0, sent: 1, out: 1);
+    if (still) return _card(ask: 1, strip: 0, back: 0, press: 0, sent: 1, out: 1);
     return AnimatedBuilder(
       animation: _t,
       builder: (context, _) {
         final v = _t.value;
         return _card(
-          ask: Curves.easeOutBack.transform(_between(v, 0.02, 0.12)),
-          // Found, then gone from the strip once it is in the chat.
-          chip: Curves.easeOutCubic.transform(_between(v, 0.18, 0.30)) *
-              (1 - _between(v, 0.62, 0.72)),
+          ask: Curves.easeOutBack.transform(_between(v, 0.01, 0.10)),
+          strip: Curves.easeOutCubic.transform(_between(v, 0.22, 0.32)),
+          back: _between(v, 0.62, 0.70),
           press: _between(v, 0.42, 0.50),
           sent: Curves.easeOutBack.transform(_between(v, 0.52, 0.62)),
-          out: 1 - _between(v, 0.88, 0.97),
+          out: 1 - _between(v, 0.93, 0.99),
         );
       },
     );
   }
 
-  /// The chat above, the keyboard below: the place it found sits in the strip
-  /// until it is tapped, and then it is in the chat with its map.
   Widget _card({
     required double ask,
-    required double chip,
+    required double strip,
+    required double back,
     required double press,
     required double sent,
     required double out,
   }) {
     final pressed = press > 0 && sent == 0;
     return _demoCard(
-      height: _height,
-      opacity: 1,
+      height: 276,
+      opacity: out,
       children: [
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          bottom: _stripH + _keysH,
-          child: Opacity(
-            opacity: out.clamp(0.0, 1.0),
-            child: Stack(children: [
               Positioned(
                 left: 14,
                 top: 16,
@@ -510,196 +496,97 @@ class _NearbyDemoState extends State<NearbyDemo> with SingleTickerProviderStateM
                   child: _chatBubble('where should we meet? ☕', mine: false),
                 ),
               ),
-              // The place, sent: its map and its name, as it lands in a chat.
+              // The place, sent: its map and its name, the way it lands in a chat.
               Positioned(
                 right: 14,
-                top: 58,
+                top: 56,
                 child: Transform.scale(
                   alignment: Alignment.bottomRight,
                   scale: sent,
                   child: _placeCard(),
                 ),
               ),
-            ]),
-          ),
-        ),
-        // The keyboard, there the whole time, the way it is while you chat.
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: ColoredBox(
-            color: const Color(0xFFE9EAEE),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              SizedBox(height: _stripH, child: _strip(chip: chip, press: press, pressed: pressed)),
-              const SizedBox(
-                height: _keysH,
-                child: CustomPaint(painter: _KeysPainter(), size: Size.infinite),
+              // The keyboard's strip, rising with the place it found nearby.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: -64 + 64 * strip * (1 - back),
+                child: Container(
+                  height: 64,
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                  color: const Color(0xFFE9EAEE),
+                  child: AnimatedScale(
+                    scale: pressed ? 0.96 : 1,
+                    duration: const Duration(milliseconds: 120),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: Glass.accent.withValues(alpha: press > 0 ? 0.9 : 0), width: 2),
+                      ),
+                      child: Row(children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(7),
+                          child: const SizedBox(width: 30, height: 30, child: _MapArt()),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(widget.place,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 13.5, color: Glass.ink, fontWeight: FontWeight.w600)),
+                              Text(widget.detail,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11.5, color: Glass.inkSoft)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('Insert',
+                            style: TextStyle(
+                                fontSize: 12.5, color: Glass.accent, fontWeight: FontWeight.w700)),
+                      ]),
+                    ),
+                  ),
+                ),
               ),
-            ]),
-          ),
-        ),
       ],
     );
   }
 
-  /// The keyboard's strip: the g key, and what it found beside it.
-  Widget _strip({required double chip, required double press, required bool pressed}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(9, 8, 9, 5),
-      child: Row(children: [
-        Container(
-          width: 36,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: const Color(0xFF141418),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Stack(clipBehavior: Clip.none, children: [
-            const Text('g',
-                style: TextStyle(
-                    color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700, height: 1.15)),
-            Positioned(
-              right: -5,
-              top: 1,
-              child: Container(
-                width: 4,
-                height: 4,
-                decoration: const BoxDecoration(color: Glass.accent, shape: BoxShape.circle),
-              ),
+  /// The place as the website and the tour send it: the map, the name, and
+  /// how far it is.
+  Widget _placeCard() => ClipRRect(
+        borderRadius: BorderRadius.circular(19),
+        child: Container(
+          width: 214,
+          color: const Color(0xFFE9E9EB),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const SizedBox(height: 84, width: 214, child: _MapArt()),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(widget.place,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w700)),
+                Text('${widget.detail.split(' · ').first} · Maps',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5, color: Color(0xFF8E8E93))),
+              ]),
             ),
           ]),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Opacity(
-            opacity: chip.clamp(0.0, 1.0),
-            child: Transform.translate(
-              offset: Offset(0, 7 * (1 - chip)),
-              child: AnimatedScale(
-                scale: pressed ? 0.97 : 1,
-                duration: const Duration(milliseconds: 120),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(
-                        color: Glass.accent.withValues(alpha: press > 0 ? 0.9 : 0), width: 2),
-                  ),
-                  child: Row(children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: const SizedBox(width: 26, height: 26, child: _MapArt()),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(widget.place,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12.5,
-                                  height: 1.2,
-                                  color: Glass.ink,
-                                  fontWeight: FontWeight.w600)),
-                          Text(widget.detail,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 10.5, height: 1.2, color: Glass.inkSoft)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('Insert',
-                        style: TextStyle(
-                            fontSize: 12, color: Glass.accent, fontWeight: FontWeight.w700)),
-                  ]),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ]),
-    );
-  }
-
-  Widget _placeCard() => Container(
-        width: 206,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF2F2F4),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(height: 56, width: 206, child: _MapArt()),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(11, 7, 11, 9),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(widget.place,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13.5, color: Glass.ink, fontWeight: FontWeight.w700)),
-              Text(widget.detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11.5, color: Glass.inkSoft)),
-            ]),
-          ),
-        ]),
       );
-}
-
-/// The keys under the strip: a keyboard, drawn small and quiet.
-class _KeysPainter extends CustomPainter {
-  const _KeysPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width, h = size.height;
-    const padX = 7.0;
-    final gap = w * 0.011;
-    final unit = (w - padX * 2 - gap * 9) / 10;
-    final rowGap = h * 0.055;
-    final keyH = (h - rowGap * 3 - 12) / 4;
-    final key = Paint()..color = Colors.white;
-    final fn = Paint()..color = const Color(0xFFC9CAD4);
-    final shadow = Paint()..color = const Color(0x14000000);
-    void draw(double x, double y, double kw, Paint paint) {
-      final r = RRect.fromRectAndRadius(Rect.fromLTWH(x, y, kw, keyH), Radius.circular(unit * 0.2));
-      canvas.drawRRect(r.shift(const Offset(0, 1)), shadow);
-      canvas.drawRRect(r, paint);
-    }
-
-    var y = 6.0;
-    for (var i = 0; i < 10; i++) {
-      draw(padX + i * (unit + gap), y, unit, key);
-    }
-    y += keyH + rowGap;
-    for (var i = 0; i < 9; i++) {
-      draw(padX + (unit + gap) / 2 + i * (unit + gap), y, unit, key);
-    }
-    y += keyH + rowGap;
-    final side = unit * 1.35;
-    draw(padX, y, side, fn);
-    final lettersX = (w - (unit * 7 + gap * 6)) / 2;
-    for (var i = 0; i < 7; i++) {
-      draw(lettersX + i * (unit + gap), y, unit, key);
-    }
-    draw(w - padX - side, y, side, fn);
-    y += keyH + rowGap;
-    final mode = unit * 2.3;
-    draw(padX, y, mode, fn);
-    draw(w - padX - mode, y, mode, fn);
-    draw(padX + mode + gap, y, w - padX * 2 - mode * 2 - gap * 2, key);
-  }
-
-  @override
-  bool shouldRepaint(_KeysPainter old) => false;
 }
 
 /// A map, small: two streets, a park, and a pin on the place.
@@ -726,7 +613,7 @@ class _MapPainter extends CustomPainter {
     );
     final road = Paint()
       ..color = Colors.white
-      ..strokeWidth = h * 0.13
+      ..strokeWidth = h * 0.09
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(Offset(-2, h * 0.36), Offset(w + 2, h * 0.28), road);
     canvas.drawLine(Offset(-2, h * 0.82), Offset(w + 2, h * 0.88), road);

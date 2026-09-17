@@ -648,7 +648,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       // a coarse fix for the search suite to send.
       case 'nearby':
         return _frame(children: [
-          const Spacer(flex: 3),
+          const Spacer(flex: 2),
           const Text('Search what\u2019s near you',
               textAlign: TextAlign.center,
               style: TextStyle(
