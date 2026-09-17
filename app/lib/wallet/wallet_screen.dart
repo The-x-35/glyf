@@ -260,9 +260,6 @@ class _WalletScreenState extends State<WalletScreen> {
   Widget _login() => _card(children: [
         const Text('Sign in to your wallet',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        const Text('Privy holds the keys for you. Glyf never sees them.',
-            style: TextStyle(fontSize: 13, color: Glass.inkSoft)),
         const SizedBox(height: 12),
         _field(_email, 'you@example.com', type: TextInputType.emailAddress),
         if (_codeSent) ...[
@@ -285,10 +282,6 @@ class _WalletScreenState extends State<WalletScreen> {
         _card(children: [
           const Text('Send USDC privately',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          const Text('Routed through MagicBlock, so the amount and who it went '
-              'to are not left on chain.',
-              style: TextStyle(fontSize: 13, color: Glass.inkSoft)),
           const SizedBox(height: 12),
           _field(_to, 'Recipient address'),
           const Divider(height: 22),

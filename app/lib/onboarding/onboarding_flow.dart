@@ -563,8 +563,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           Platform.isAndroid
               ? _headline('Switch to Glyf',
                   'Pick Glyf from the keyboard list.')
-              : _headline('Allow Full Access',
-                  'AI runs need it. Typing works without it.'),
+              : _headline('Allow Full Access'),
           const SizedBox(height: 26),
           Center(
             child: AnimatedScale(
@@ -603,15 +602,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                   color: _locationOn ? Glass.success : const Color(0xFFDDE0E6)),
             ),
           ),
-          const SizedBox(height: 22),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              'Approximate, and never stored on our servers.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Glass.inkSoft, fontSize: 12.5, height: 1.4),
-            ),
-          ),
+
           if (_locationNote != null)
             Padding(
               padding: const EdgeInsets.only(top: 10),
@@ -631,8 +622,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       case 'connect':
         return _frame(children: [
           const SizedBox(height: 30),
-          _headline('Connect your Google',
-              'You choose exactly what Glyf can reach.'),
+          _headline('Connect your Google'),
           const SizedBox(height: 20),
           for (final (id, emoji, label, detail) in const [
             ('youtube', '▶️', 'YouTube', 'Your liked videos in the search tab'),
@@ -674,15 +664,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 ]),
               ),
             ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
-            child: Text(
-              'Read-only, and only what you tick. Glyf never sees your Google '
-              'password, and signing in does not give it your search history.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Glass.inkSoft, fontSize: 12, height: 1.4),
-            ),
-          ),
+
           if (_connectNote != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
