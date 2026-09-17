@@ -10,6 +10,7 @@ import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 import 'demo_chat.dart';
+import '../profile/brand_marks.dart';
 import 'talking_orb.dart';
 
 /// Onboarding: sign in, meet the orb, tell it what to remember, make the
@@ -277,7 +278,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       body: GlyfBackground(
         child: SafeArea(
           child: Column(children: [
-            _progress(),
+            if (_steps[_step] != 'signin') _progress(),
             Expanded(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 340),
@@ -330,36 +331,42 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     switch (_steps[_step]) {
       case 'signin':
         return _frame(children: [
-          const Spacer(),
-          const Center(
-            child: TalkingOrb(
-              size: 128,
-              lines: ['Hi, I’m Glyf.', 'Sign in and I’ll set up your keyboard.'],
+          const Spacer(flex: 4),
+          if (!_emailOpen)
+            const Center(
+              child: TalkingOrb(
+                size: 170,
+                titleSize: 34,
+                lines: ['Hi, I’m Glyf.', 'Sign in to set up your keyboard.'],
+              ),
+            )
+          else
+            const Center(
+              child: TalkingOrb(size: 96, titleSize: 26, lines: ['Your email']),
             ),
-          ),
-          const Spacer(),
+          const Spacer(flex: 3),
           if (!_emailOpen) ...[
-            _authButton(
-              id: 'onb:google',
-              label: 'Continue with Google',
-              icon: const _GoogleMark(),
-              onTap: _busy ? null : _google,
-            ),
             if (Platform.isIOS) ...[
-              const SizedBox(height: 10),
               _authButton(
                 id: 'onb:apple',
                 label: 'Continue with Apple',
-                icon: const Icon(Icons.apple, color: Colors.white, size: 22),
+                icon: const Icon(Icons.apple, color: Colors.white, size: 24),
                 dark: true,
                 onTap: _busy ? null : _apple,
               ),
+              const SizedBox(height: 12),
             ],
-            const SizedBox(height: 10),
+            _authButton(
+              id: 'onb:google',
+              label: 'Continue with Google',
+              icon: const GoogleG(size: 20),
+              onTap: _busy ? null : _google,
+            ),
+            const SizedBox(height: 12),
             _authButton(
               id: 'onb:email',
               label: 'Continue with email',
-              icon: const Icon(Icons.mail_outline_rounded, color: Glass.ink, size: 21),
+              icon: const Icon(Icons.mail_outline_rounded, color: Glass.ink, size: 22),
               onTap: _busy ? null : () => setState(() { _emailOpen = true; _signInError = null; }),
             ),
           ] else ...[
@@ -427,10 +434,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const SizedBox(height: 18),
           Center(
             child: TalkingOrb(
-              size: 96,
+              size: 116,
+              titleSize: 28,
               lines: const [
-                'Your keyboard should remember a few things about you,',
-                'so when someone asks, it’s one tap.',
+                'Let me remember you.',
+                'When someone asks for your address or UPI, it’s one tap.',
               ],
               onDone: () { if (mounted) setState(() => _meetDone = true); },
             ),
@@ -449,7 +457,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       case 'details':
         return _frame(children: [
           const SizedBox(height: 10),
-          const Center(child: TalkingOrb(size: 64, lines: ['What should I remember?'])),
+          const Center(child: TalkingOrb(size: 76, titleSize: 26, lines: ['What should I remember?'])),
           const SizedBox(height: 16),
           Expanded(
             child: ListView(padding: EdgeInsets.zero, children: [
@@ -735,20 +743,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       Semantics(
         identifier: id,
         button: true,
+        // Equal weight for every way in (Google's and Apple's guidelines):
+        // same height, same shape, the logo in a fixed slot on the left and
+        // the words centred.
         child: SizedBox(
-          height: 54,
+          height: 56,
           child: OutlinedButton(
             onPressed: onTap,
             style: OutlinedButton.styleFrom(
               backgroundColor: dark ? Colors.black : Colors.white,
-              foregroundColor: dark ? Colors.white : Glass.ink,
-              side: BorderSide(color: dark ? Colors.black : const Color(0x1F000000)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(27)),
-              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              foregroundColor: dark ? Colors.white : const Color(0xFF1F1F1F),
+              disabledBackgroundColor: dark ? Colors.black : Colors.white,
+              side: BorderSide(color: dark ? Colors.black : const Color(0xFF747775), width: dark ? 0 : 1),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, letterSpacing: -0.2),
             ),
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              SizedBox(width: 24, height: 24, child: Center(child: icon)),
-              const SizedBox(width: 10),
+            child: Stack(alignment: Alignment.center, children: [
+              Align(alignment: Alignment.centerLeft, child: SizedBox(width: 26, height: 26, child: Center(child: icon))),
               Text(label),
             ]),
           ),
@@ -784,35 +796,4 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       ]),
     );
   }
-}
-
-/// Google's G, drawn: four arcs in its four colours.
-class _GoogleMark extends StatelessWidget {
-  const _GoogleMark();
-
-  @override
-  Widget build(BuildContext context) =>
-      CustomPaint(size: const Size(20, 20), painter: _GooglePainter());
-}
-
-class _GooglePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = size.width * 0.2;
-    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke, size.height - stroke);
-    Paint p(Color c) => Paint()
-      ..color = c
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke;
-    const deg = 3.14159265 / 180;
-    canvas.drawArc(rect, -40 * deg, -100 * deg, false, p(const Color(0xFFEA4335)));
-    canvas.drawArc(rect, -140 * deg, -80 * deg, false, p(const Color(0xFFFBBC05)));
-    canvas.drawArc(rect, 140 * deg, -95 * deg, false, p(const Color(0xFF34A853)));
-    canvas.drawArc(rect, 45 * deg, -85 * deg, false, p(const Color(0xFF4285F4)));
-    canvas.drawLine(Offset(size.width / 2, size.height / 2), Offset(size.width - stroke / 2, size.height / 2),
-        p(const Color(0xFF4285F4)));
-  }
-
-  @override
-  bool shouldRepaint(_GooglePainter oldDelegate) => false;
 }

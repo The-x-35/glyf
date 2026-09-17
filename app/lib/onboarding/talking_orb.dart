@@ -9,11 +9,18 @@ import 'orb.dart';
 /// The glass orb, talking: it glows and breathes while its words appear, the
 /// way a voice assistant shows it is speaking, and settles when it is done.
 class TalkingOrb extends StatefulWidget {
-  const TalkingOrb({super.key, required this.lines, this.size = 132, this.onDone});
+  const TalkingOrb({
+    super.key,
+    required this.lines,
+    this.size = 132,
+    this.titleSize = 30,
+    this.onDone,
+  });
 
-  /// Said one after another, each typed out.
+  /// Said one after another, each typed out. The first is the title.
   final List<String> lines;
   final double size;
+  final double titleSize;
   final VoidCallback? onDone;
 
   @override
@@ -96,38 +103,29 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       AnimatedBuilder(
         animation: _voice,
-        builder: (context, child) {
-          final v = Curves.easeInOut.transform(_voice.value);
-          return Stack(alignment: Alignment.center, children: [
-            // The voice: a soft ring that swells as it talks.
-            Container(
-              width: widget.size * (1.08 + 0.16 * v),
-              height: widget.size * (1.08 + 0.16 * v),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(colors: [
-                  Glass.accent.withValues(alpha: _speaking ? 0.20 * (0.5 + v) : 0.06),
-                  Glass.accent.withValues(alpha: 0),
-                ]),
-              ),
-            ),
-            Transform.scale(scale: 1 + 0.035 * v, child: child),
-          ]);
+        builder: (context, _) {
+          // The voice: the glow swells and the sphere breathes while it talks.
+          final v = _speaking ? Curves.easeInOut.transform(_voice.value) : 0.0;
+          return Transform.scale(
+            scale: 1 + 0.03 * v,
+            child: GlassOrb(size: widget.size, energy: v),
+          );
         },
-        child: GlassOrb(size: widget.size, label: 'g'),
       ),
-      const SizedBox(height: 18),
-      for (final line in _shown) _line(line),
-      if (_typing.isNotEmpty) _line(_typing),
+      SizedBox(height: widget.size * 0.06),
+      for (var i = 0; i < _shown.length; i++) _line(_shown[i], title: i == 0),
+      if (_typing.isNotEmpty) _line(_typing, title: _shown.isEmpty),
     ]);
   }
 
-  Widget _line(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
+  Widget _line(String text, {required bool title}) => Padding(
+        padding: EdgeInsets.only(bottom: title ? 10 : 4),
         child: Text(
           text,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 21, height: 1.3, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.3),
+          style: title
+              ? TextStyle(fontSize: widget.titleSize, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -widget.titleSize * 0.03)
+              : TextStyle(fontSize: widget.titleSize * 0.56, height: 1.35, fontWeight: FontWeight.w400, color: Glass.inkSoft),
         ),
       );
 }

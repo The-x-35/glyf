@@ -61,6 +61,7 @@ flutter:
   # Vocabulary packs: shown in the app, loaded by both keyboards.
   assets:
     - assets/vocab/packs.json
+    - assets/brand/glyf-symbol.png
 
   # One typeface on BOTH platforms (SF-metric Inter) — the app must look
   # identical on iOS and Android.

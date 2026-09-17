@@ -152,55 +152,115 @@ const _magicBlock = [
   'M31.4071 11.2009C31.0758 9.98395 29.2073 9.1682 26.2806 8.96024C24.9876 8.869 23.5511 8.89986 22.026 9.04342C19.8598 9.2487 17.5152 9.68207 15.1331 10.3315C13.718 10.7179 12.3539 11.1633 11.0649 11.6544C10.8745 11.7268 10.6867 11.7993 10.5003 11.8744C10.1944 11.9952 9.93154 12.2098 9.76388 12.4916C9.45404 13.0149 9.3521 13.6441 9.54391 14.2895C9.44331 14.0064 9.30516 13.7783 9.1375 13.5998C8.67475 13.1061 7.92362 13.0108 7.32406 13.3248C6.416 13.7998 5.57903 14.2962 4.83461 14.8101C3.70658 15.5869 2.50746 16.5234 1.84217 17.7524C1.63025 18.1455 1.47198 18.591 1.50417 19.0431C1.54843 19.6616 1.9468 20.087 2.43235 20.4318C2.69256 20.6169 2.97423 20.7726 3.26932 20.8947C4.20018 21.2811 5.26114 21.4582 6.26712 21.5508V18.9666C6.26712 18.7144 6.45624 18.489 6.70706 18.4769C6.97532 18.4635 7.19664 18.6755 7.19664 18.9412C7.19664 18.9412 7.19664 21.9747 7.19664 21.9734V25.3115C7.19664 25.8885 7.50648 26.4278 8.00544 26.7177L14.2183 30.3309C14.4678 30.4758 14.7522 30.5509 15.0379 30.5509C15.2471 30.5509 15.4564 30.5106 15.6535 30.4301L24.7556 26.6989C25.3685 26.448 25.7656 25.8563 25.7656 25.1935V17.1486L25.8675 17.1003C29.7197 15.0435 31.8416 12.7881 31.4084 11.2009H31.4071ZM19.263 20.4573C19.263 21.4059 18.9612 21.9573 18.426 21.9573C17.8908 21.9573 17.5367 21.4474 17.5367 20.2855V18.438C17.5367 17.4894 17.8385 16.938 18.3737 16.938C18.9089 16.938 19.263 17.4478 19.263 18.6098V20.4573ZM22.9918 19.5288C22.9918 20.4774 22.69 21.0288 22.1548 21.0288C21.6196 21.0288 21.2655 20.519 21.2655 19.3571V17.5096C21.2655 16.561 21.5673 16.0095 22.1025 16.0095C22.6377 16.0095 22.9918 16.5194 22.9918 17.6813V19.5288Z',
 ];
 
-/// SVG path data (M L H V C Z, absolute or relative) to a Flutter Path.
-Path svgPath(String d) {
-  final path = Path()..fillType = PathFillType.evenOdd;
-  final tokens = RegExp(r'[MmLlHhVvCcZz]|-?\d*\.?\d+(?:e-?\d+)?').allMatches(d).map((m) => m.group(0)!).toList();
+/// SVG path data (M L H V C S Q Z, absolute or relative) to a Flutter Path.
+Path svgPath(String d, {PathFillType fill = PathFillType.evenOdd}) {
+  final path = Path()..fillType = fill;
+  final tokens = RegExp(r'[MmLlHhVvCcSsQqZz]|-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?')
+      .allMatches(d)
+      .map((m) => m.group(0)!)
+      .toList();
+  bool isCmd(String t) => RegExp(r'^[A-Za-z]$').hasMatch(t);
   var i = 0;
   var cmd = 'M';
   var x = 0.0, y = 0.0, sx = 0.0, sy = 0.0;
+  // The last cubic control point, for S (smooth) curves.
+  double? cx2, cy2;
   double next() => double.parse(tokens[i++]);
   while (i < tokens.length) {
-    if (RegExp(r'^[A-Za-z]$').hasMatch(tokens[i])) cmd = tokens[i++];
+    if (isCmd(tokens[i])) cmd = tokens[i++];
     final rel = cmd == cmd.toLowerCase();
+    final ox = rel ? x : 0.0, oy = rel ? y : 0.0;
     switch (cmd.toUpperCase()) {
       case 'M':
-        final nx = next(), ny = next();
-        x = rel ? x + nx : nx;
-        y = rel ? y + ny : ny;
+        x = ox + next();
+        y = oy + next();
         sx = x;
         sy = y;
         path.moveTo(x, y);
         cmd = rel ? 'l' : 'L';
+        cx2 = null;
       case 'L':
-        final nx = next(), ny = next();
-        x = rel ? x + nx : nx;
-        y = rel ? y + ny : ny;
+        x = ox + next();
+        y = oy + next();
         path.lineTo(x, y);
+        cx2 = null;
       case 'H':
-        final nx = next();
-        x = rel ? x + nx : nx;
+        x = ox + next();
         path.lineTo(x, y);
+        cx2 = null;
       case 'V':
-        final ny = next();
-        y = rel ? y + ny : ny;
+        y = (rel ? y : 0.0) + next();
         path.lineTo(x, y);
+        cx2 = null;
       case 'C':
-        var x1 = next(), y1 = next(), x2 = next(), y2 = next(), nx = next(), ny = next();
-        if (rel) {
-          x1 += x; y1 += y; x2 += x; y2 += y; nx += x; ny += y;
-        }
+        final x1 = ox + next(), y1 = oy + next();
+        final x2 = ox + next(), y2 = oy + next();
+        final nx = ox + next(), ny = oy + next();
         path.cubicTo(x1, y1, x2, y2, nx, ny);
+        cx2 = x2;
+        cy2 = y2;
         x = nx;
         y = ny;
+      case 'S':
+        // First control point mirrors the previous curve's second one.
+        final x1 = cx2 == null ? x : 2 * x - cx2;
+        final y1 = cy2 == null ? y : 2 * y - cy2;
+        final x2 = ox + next(), y2 = oy + next();
+        final nx = ox + next(), ny = oy + next();
+        path.cubicTo(x1, y1, x2, y2, nx, ny);
+        cx2 = x2;
+        cy2 = y2;
+        x = nx;
+        y = ny;
+      case 'Q':
+        final x1 = ox + next(), y1 = oy + next();
+        final nx = ox + next(), ny = oy + next();
+        path.quadraticBezierTo(x1, y1, nx, ny);
+        x = nx;
+        y = ny;
+        cx2 = null;
       case 'Z':
         path.close();
         x = sx;
         y = sy;
-        if (i < tokens.length && !RegExp(r'^[A-Za-z]$').hasMatch(tokens[i])) cmd = 'L';
+        cx2 = null;
+        if (i < tokens.length && !isCmd(tokens[i])) cmd = 'L';
       default:
         i++;
     }
   }
   return path;
+}
+
+/// Google's "G", in its standard colours: the pre-approved logo geometry
+/// from Google's Sign in with Google assets (48x48), never redrawn.
+class GoogleG extends StatelessWidget {
+  const GoogleG({super.key, this.size = 20});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size.square(size), painter: _GoogleGPainter());
+}
+
+class _GoogleGPainter extends CustomPainter {
+  static const _parts = <(int, String)>[
+    (0xFFEA4335, 'M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z'),
+    (0xFF4285F4, 'M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z'),
+    (0xFFFBBC05, 'M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z'),
+    (0xFF34A853, 'M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z'),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 48, size.height / 48);
+    for (final (color, d) in _parts) {
+      canvas.drawPath(svgPath(d, fill: PathFillType.nonZero), Paint()..color = Color(color)..isAntiAlias = true);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_GoogleGPainter oldDelegate) => false;
 }

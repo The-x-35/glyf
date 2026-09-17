@@ -369,7 +369,7 @@ class _PulsingMicState extends State<_PulsingMic>
               color: Glass.accent.withValues(alpha: 0.10 + 0.06 * (1 - t)),
             ),
           ),
-          const GlassOrb(size: 132, floating: false),
+          const GlassOrb(size: 132, floating: false, showSymbol: false),
           const Icon(Icons.mic, color: Glass.ink, size: 44),
         ]);
       },
