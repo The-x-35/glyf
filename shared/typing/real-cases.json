@@ -919,6 +919,70 @@
      "are"
     ]
    }
+  },
+  {
+   "name": "keeps sry",
+   "typed": "sry",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps tmrw",
+   "typed": "tmrw",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps rn",
+   "typed": "rn",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps ppl",
+   "typed": "ppl",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps lmk",
+   "typed": "lmk",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps omw",
+   "typed": "omw",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps cuz",
+   "typed": "cuz",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps pics",
+   "typed": "pics",
+   "previous": "the",
+   "expect": {
+    "autocorrect": null
+   }
   }
  ]
 }
