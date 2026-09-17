@@ -127,7 +127,7 @@ Run on 17 September 2026: the real keyboards (iPhone 17 Pro simulator, Android A
 - Both: VoiceOver couldn’t reach menu tiles, clipboard cards, versions or the strip chip; toasts were silent; TalkBack read out internal ids. Every control has a spoken name; toasts are announced.
 - App: Screens said “Translation HUD”, “Vault picker”, “Humanize”, with explainer lines under options. Vault, Translate, Rewrite. No explainers.
 - App: Onboarding’s Google step showed a server setup error naming environment variables. The step only appears when Google sign-in works; errors never name server settings.
-- Both: glyf:// links (the tour, Build your own, Pay) opened a second Home on top of the right screen. Flutter’s own link routing is off; the app handles its links.
+- Both: glyf:// links (the tour, Build your own, Pay) opened a second Home on top of the right screen, and a link that started the app was dropped. The app handles its own links, including the one that launched it.
 - App: On Android the tour started with the keyboard down, or up but not reading the message. Each level brings the keyboard up attached to the message box.
 - Both: A tour closed by force left its rings on the keyboard. Hints expire and are cleared when the app starts.
 
