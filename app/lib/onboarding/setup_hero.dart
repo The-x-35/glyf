@@ -72,7 +72,10 @@ class SetupChecklist extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 16, bottom: 8),
-          child: Text(android ? 'On this phone' : 'In Settings',
+          // iOS gives apps no way into a Settings page any more, so the
+          // shortest way there is written down: both switches live together
+          // under the app, not under General.
+          child: Text(android ? 'On this phone' : 'Settings › Apps › Glyf › Keyboards',
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Glass.inkSoft)),
         ),
         Container(
@@ -87,9 +90,6 @@ class SetupChecklist extends StatelessWidget {
               id: 'onb:setup:keyboard',
               icon: _GlyfAppIcon(),
               title: 'Glyf keyboard',
-              // iOS drops you at the front of Settings and gives apps no way
-              // in, so the row says where to walk.
-              hint: android ? null : 'General › Keyboard › Keyboards',
               done: keyboardOn,
               action: 'Open',
               onTap: onKeyboard,
@@ -101,7 +101,6 @@ class SetupChecklist extends StatelessWidget {
                   ? const _SettingsIcon(Icons.keyboard_rounded, Glass.accent)
                   : const _SettingsIcon(Icons.lock_open_rounded, Color(0xFF34C759)),
               title: android ? 'Glyf in use' : 'Allow Full Access',
-              hint: android ? null : '…then Glyf › Allow Full Access',
               done: inUseOn,
               action: android ? 'Choose' : 'Open',
               onTap: onInUse,
