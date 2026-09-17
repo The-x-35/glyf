@@ -36,6 +36,8 @@ function worthSuggesting(text: string, intent: ActIntent): boolean {
   if (t.length < 8) return false;
   // A half-typed word is not an intent yet.
   if (intent === "rewrite" && t.split(/\s+/).length < 4) return false;
+  // "Look it up" only repeated what holding space already does.
+  if (intent === "answer") return false;
   return true;
 }
 

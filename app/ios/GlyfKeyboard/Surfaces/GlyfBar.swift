@@ -39,7 +39,7 @@ final class GlyfBar: UIView {
     private let promptEditor = InlineEditor(placeholder: "Tell Glyf what to do…")
     private let runButton = UIButton(type: .system)
     private let closeButton = UIButton(type: .system)
-    private let chipsScroll = UIScrollView()
+    private let chipsScroll = ControlScrollView()
     private let chipsStack = UIStackView()
     private let resultView = UITextView()
     private let statusLabel = UILabel()

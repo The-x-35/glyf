@@ -43,7 +43,7 @@ final class TranslationHUD: UIView {
         track.layer.cornerCurve = .continuous
         addSubview(track)
 
-        thumb.backgroundColor = Glass.fillKey
+        thumb.backgroundColor = Glass.surfaceCard
         thumb.layer.cornerCurve = .continuous
         thumb.layer.shadowColor = Glass.keyShadowColor.cgColor
         thumb.layer.shadowOpacity = Glass.keyShadowOpacity
@@ -167,11 +167,13 @@ final class TranslationHUD: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let h = bounds.height
-        // Track: 3pt padding, 2pt gaps, 30pt pills — the search tab track.
-        let pillW: CGFloat = 35, pad: CGFloat = 3, gap: CGFloat = 2, pillH: CGFloat = 30
+        let mid = h / 2 - Glass.stripLift
+        // Track: 3pt padding, 2pt gaps, pills as tall as the strip allows.
+        let pillW: CGFloat = 35, pad: CGFloat = 3, gap: CGFloat = 2
+        let pillH: CGFloat = min(30, h - 10)
         let trackW = pillW * CGFloat(pills.count) + gap * CGFloat(pills.count - 1) + pad * 2
         let trackH = pillH + pad * 2
-        track.frame = CGRect(x: 8, y: (h - trackH) / 2, width: trackW, height: trackH)
+        track.frame = CGRect(x: 8, y: mid - trackH / 2, width: trackW, height: trackH)
         track.layer.cornerRadius = trackH / 2
         for (i, pill) in pills.enumerated() {
             pill.frame = CGRect(x: pad + CGFloat(i) * (pillW + gap), y: pad,
@@ -182,9 +184,9 @@ final class TranslationHUD: UIView {
         track.sendSubviewToBack(thumb)
 
         closeButton.frame = CGRect(x: bounds.width - 32, y: 0, width: 28, height: h)
-        let replaceW: CGFloat = 84, replaceH: CGFloat = 30
+        let replaceW: CGFloat = 84, replaceH: CGFloat = min(30, h - 10)
         replaceButton.frame = CGRect(x: bounds.width - 32 - replaceW - 6,
-                                     y: (h - replaceH) / 2,
+                                     y: mid - replaceH / 2,
                                      width: replaceW, height: replaceH)
         replaceButton.layer.cornerRadius = replaceH / 2
         let textX = track.frame.maxX + 8

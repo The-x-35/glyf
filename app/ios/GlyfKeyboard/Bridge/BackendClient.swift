@@ -231,6 +231,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
     }
 
     func runAct(text: String,
+                intent: String? = nil,
                 onResult: @escaping (ActResult) -> Void,
                 onError: @escaping (String) -> Void) -> URLSessionDataTask? {
         let s = SettingsStore.current
@@ -244,6 +245,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         if let lat = s.lastLat, let lon = s.lastLon { body["lat"] = lat; body["lon"] = lon }
         if let region = s.region, region.count == 2 { body["country"] = region }
         if let profile = Self.shareableProfile() { body["profile"] = profile }
+        if let intent { body["intent"] = intent }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"

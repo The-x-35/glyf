@@ -18,11 +18,8 @@ final class AccentPopup: UIView {
         let baseShown = shifted ? base.uppercased() : base
         options = [baseShown] + accents.map { shifted ? $0.uppercased() : $0 }
 
-        if Glass.reduceTransparency {
-            backgroundColor = Glass.solidKey
-        } else {
-            backgroundColor = Glass.fillKeyPressed
-        }
+        // Apple's accent bubble: a card on the sheet, whatever the keys wear.
+        backgroundColor = Glass.surfaceCard
         layer.cornerRadius = Glass.radiusKey + 2
         layer.cornerCurve = .continuous
         layer.borderWidth = Glass.hairlineWidth

@@ -36,7 +36,7 @@ final class KeyView: UIControl {
         // Measured against iOS: shift and delete draw ~19.7 x 17pt, which is
         // this symbol size. Ours used to come out a tenth small.
         icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 19.5, weight: .light)
-        icon.tintColor = Glass.textPrimary
+        icon.tintColor = Glass.keyInk
         addSubview(icon)
 
         tintLayer.backgroundColor = Glass.accentPrimary.cgColor
@@ -121,7 +121,8 @@ final class KeyView: UIControl {
         label.isHidden = text == nil
         icon.image = image
         icon.isHidden = image == nil
-        label.textColor = Glass.textPrimary
+        label.textColor = Glass.keyInk
+        icon.tintColor = Glass.keyInk
         if case .space = spec.kind {
             label.textColor = Glass.watermark
         }
@@ -153,6 +154,7 @@ final class KeyView: UIControl {
 
     private func updateBinding() {
         accentDot.isHidden = !isBound
+        accentDot.backgroundColor = Glass.boundDot.cgColor
         updateFill(pressed: false)
     }
 
@@ -173,7 +175,7 @@ final class KeyView: UIControl {
         // bindings — simple like Apple, just with purple dots. The Gboard
         // "borders" toggle firms the outline; NEVER an accent border. The site
         // look draws no outline at all, only the hard bottom edge.
-        let borderless = Glass.siteLook && !Glass.keyBorders
+        let borderless = Glass.solidLook && !Glass.keyBorders
         layer.borderWidth = Glass.keyBorders ? 1 : (borderless ? 0 : Glass.hairlineWidth)
         layer.borderColor = (Glass.keyBorders ? Glass.strokeKeyBorder
                                               : Glass.strokeHairline).cgColor
@@ -223,7 +225,7 @@ final class KeyView: UIControl {
         let big = UILabel(frame: balloon.bounds)
         big.textAlignment = .center
         big.font = .systemFont(ofSize: 34, weight: .regular)
-        big.textColor = Glass.textPrimary
+        big.textColor = Glass.keyInk
         big.text = label.text
         balloon.addSubview(big)
         // Keep the balloon on-screen at the edges.
@@ -300,8 +302,8 @@ final class KeyView: UIControl {
         fade.duration = Glass.Ripple.perKeyTint
         tintLayer.add(fade, forKey: "settle")
         tintLayer.opacity = 0
-        label.textColor = Glass.textPrimary
-        icon.tintColor = Glass.textPrimary
+        label.textColor = Glass.keyInk
+        icon.tintColor = Glass.keyInk
         if case .space = spec.kind {
             label.textColor = Glass.watermark
         }

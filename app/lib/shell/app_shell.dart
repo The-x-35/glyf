@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../build/build_tab.dart';
 import '../core/theme.dart';
 import '../home/home_tab.dart';
 import '../profile/profile_tab.dart';
 
-/// Two tabs — Home (the brand keycap) and Settings. There is no builder and
-/// no creator shelf: the keyboard is the product, and everything you can
-/// change about it lives on one scrollable screen.
+/// Three tabs — Home (the brand keycap), Build, Profile. The Builder lives
+/// inside Build, so there's no separate ＋. Tabs crossfade and keep state.
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.onRerunOnboarding});
   final VoidCallback onRerunOnboarding;
+
+  /// A deep link asking for a tab (glyf://open?path=build).
+  static final requestedTab = ValueNotifier<int?>(null);
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -20,7 +23,23 @@ class _AppShellState extends State<AppShell> {
   final _activeTab = ValueNotifier<int>(0);
 
   @override
+  void initState() {
+    super.initState();
+    AppShell.requestedTab.addListener(_onRequestedTab);
+    _onRequestedTab();
+  }
+
+  void _onRequestedTab() {
+    final i = AppShell.requestedTab.value;
+    if (i == null) return;
+    AppShell.requestedTab.value = null;
+    setState(() => _index = i);
+    _activeTab.value = i;
+  }
+
+  @override
   void dispose() {
+    AppShell.requestedTab.removeListener(_onRequestedTab);
     _activeTab.dispose();
     super.dispose();
   }
@@ -29,6 +48,7 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     final tabs = [
       const HomeTab(),
+      BuildTab(activeTab: _activeTab),
       ProfileTab(onRerunOnboarding: widget.onRerunOnboarding),
     ];
     return Scaffold(
@@ -63,13 +83,24 @@ class _AppShellState extends State<AppShell> {
                 _tab(0, 'home', _GTabIcon(selected: _index == 0)),
                 _tab(
                     1,
-                    'settings',
+                    'build',
                     Icon(
                         _index == 1
-                            ? Icons.tune_rounded
-                            : Icons.tune_outlined,
+                            ? Icons.grid_view_rounded
+                            : Icons.grid_view_outlined,
                         size: 24,
                         color: _index == 1
+                            ? Glass.ink
+                            : const Color(0xFFA6ABB4))),
+                _tab(
+                    2,
+                    'profile',
+                    Icon(
+                        _index == 2
+                            ? Icons.person_rounded
+                            : Icons.person_outline_rounded,
+                        size: 25,
+                        color: _index == 2
                             ? Glass.ink
                             : const Color(0xFFA6ABB4))),
               ],

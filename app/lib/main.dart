@@ -72,6 +72,11 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       _openWallet(path.queryParameters['to'], path.queryParameters['amount']);
       return;
     }
+    if (uri.host == 'open' && uri.queryParameters['path'] == 'build') {
+      // "Build your own" from the keyboard's My glyfs list.
+      AppShell.requestedTab.value = 1;
+      return;
+    }
     if (uri.host == 'demo') {
       _openDemo();
       return;

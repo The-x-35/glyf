@@ -170,33 +170,71 @@ class _HomeTabState extends State<HomeTab> {
           ),
           const SizedBox(height: 20),
 
-          // The two holds worth learning; everything else is hold-space AI.
-          GlassCard(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Column(children: [
-              _hint('Hold space', 'Glyf rewrites, answers or finds it'),
-              const Divider(height: 18, color: Glass.hairline),
-              _hint('Hold S', 'Your details, ready to send'),
-              const Divider(height: 18, color: Glass.hairline),
-              _hint('Hold T', 'Translate as you type'),
-            ]),
-          ),
+          // Bound keys as full cards — tap to change.
+          for (final e in bound)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: GlassCard(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                onTap: () => _keyTapped(e.key),
+                child: Row(children: [
+                  _keycap(e.key),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(Catalog.byId(e.value).title,
+                        style: const TextStyle(
+                            color: Glass.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                  Text(Catalog.byId(e.value).emoji,
+                      style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.chevron_right,
+                      color: Color(0xFFB9BEC7), size: 20),
+                ]),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _hint(String gesture, String what) => Row(children: [
-        SizedBox(
-          width: 96,
-          child: Text(gesture,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+  Widget _keycap(String letter) {
+    // No `alignment` on the Container: it must hand the Stack tight 40×40
+    // constraints so the dot pins to the keycap corner, not the letter.
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: Glass.hairline),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Stack(children: [
+        Center(
+          child: Text(letter.toUpperCase(),
+              style: const TextStyle(
+                  color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w700)),
         ),
-        Expanded(
-          child: Text(what,
-              style: const TextStyle(fontSize: 14, color: Glass.inkSoft)),
+        Positioned(
+          right: 6,
+          top: 6,
+          child: Container(
+            width: 5,
+            height: 5,
+            decoration: const BoxDecoration(
+                color: Glass.accent, shape: BoxShape.circle),
+          ),
         ),
-      ]);
+      ]),
+    );
+  }
 
   Widget _statusRow(String label, bool ok, {required Future<void> Function() fix}) {
     return Padding(

@@ -23,7 +23,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     private let titleLabel = UILabel()
     private let toggleButton = UIButton(type: .system)
     private let editButton = UIButton(type: .system)
-    private let scroll = UIScrollView()
+    private let scroll = ControlScrollView()
     private let scrim = UIControl()
     private var menu: UIView?
 
@@ -48,7 +48,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
 
     init() {
         super.init(frame: .zero)
-        backgroundColor = Glass.solidBackdrop
+        backgroundColor = .clear   // the system sheet is the board
 
         backButton.setImage(UIImage(systemName: "arrow.left"), for: .normal)
         backButton.setPreferredSymbolConfiguration(
@@ -87,7 +87,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         scroll.alwaysBounceVertical = true
         addSubview(scroll)
 
-        scrim.backgroundColor = Glass.solidBackdrop.withAlphaComponent(0.72)
+        scrim.backgroundColor = Glass.scrim
         scrim.isHidden = true
         scrim.addAction(UIAction { [weak self] _ in self?.dismissMenu() }, for: .touchUpInside)
         addSubview(scrim)

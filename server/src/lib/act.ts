@@ -51,6 +51,8 @@ export interface ActOptions {
    * here: the vault refuses to store cards, IDs, OTPs and keys.
    */
   profile?: Record<string, string>;
+  /** What a tapped suggestion chip promised; skips routing when set. */
+  intent?: ActIntent;
 }
 
 /** The profile as prompt lines, or "" when there is nothing to say. */
@@ -140,6 +142,13 @@ export function plan(text: string): Promise<ActPlan> {
   return byRules ? Promise.resolve(byRules) : planWithModel(text);
 }
 
+/** Nothing live came back. Say so, keep the Google card to open, and put
+ *  nothing in the message: a search link pasted into a chat helps no one. */
+function nothingFound(intent: ActIntent, typed: string, query: string, provider: string): ActResult {
+  return { intent, title: typed, cards: [googleCard(query)], text: "Nothing found for that.",
+    insert: "", provider };
+}
+
 function googleCard(query: string): SearchCard {
   return {
     kind: "query", id: `google:${query}`, title: `See “${query}” on Google`,
@@ -167,7 +176,10 @@ async function modelText(prompt: string): Promise<string> {
 export async function act(text: string, ctx: SearchContext = {}, opts: ActOptions = {}): Promise<ActResult> {
   const typed = text.trim();
   if (!typed) throw new Error("nothing to act on");
-  const p = await plan(typed);
+  // A chip already named the action: do exactly that with what was typed.
+  const p = opts.intent
+    ? { intent: opts.intent, query: planByRules(typed)?.query ?? typed }
+    : await plan(typed);
 
   switch (p.intent) {
     case "place":
@@ -175,8 +187,7 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
       const res = await search("maps", p.query, ctx);
       const places = res.cards.filter((c): c is PlaceCard => c.kind === "place");
       if (places.length === 0) {
-        return { intent: p.intent, title: typed, cards: [googleCard(p.query)],
-          insert: googleCard(p.query).url, provider: res.provider };
+        return nothingFound(p.intent, typed, p.query, res.provider);
       }
       if (p.intent === "place") {
         const top = places[0];
@@ -196,8 +207,7 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
       const res = await search("yt", p.query, ctx);
       const video = res.cards.find(c => c.kind === "video");
       if (!video) {
-        return { intent: "video", title: typed, cards: [googleCard(p.query)],
-          insert: googleCard(p.query).url, provider: res.provider };
+        return nothingFound("video", typed, p.query, res.provider);
       }
       return { intent: "video", title: video.title, cards: [video],
         insert: composeInsert(video, "titleAndLink"), provider: res.provider };
@@ -215,8 +225,7 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
       if (links.length === 0) {
         // No live source configured or nothing found: hand off honestly
         // rather than let a model guess at scores and schedules.
-        return { intent: "answer", title: typed, cards: [googleCard(p.query)],
-          insert: googleCard(p.query).url, provider: res.provider };
+        return nothingFound("answer", typed, p.query, res.provider);
       }
       const sources = links.map((l, i) =>
         `[${i + 1}] ${l.title}\n${l.kind === "link" && l.snippet ? l.snippet : ""}\n${l.url}`).join("\n\n");

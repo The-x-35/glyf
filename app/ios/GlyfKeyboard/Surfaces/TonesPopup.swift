@@ -46,7 +46,7 @@ final class TonesPopup: UIView {
             b.setTitle(label, for: .normal)
             b.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
             b.setTitleColor(Glass.textPrimary, for: .normal)
-            b.backgroundColor = Glass.fillKey
+            b.backgroundColor = Glass.surfaceCard
             b.layer.cornerRadius = 12
             b.layer.cornerCurve = .continuous
             b.layer.borderWidth = Glass.hairlineWidth

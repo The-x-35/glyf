@@ -47,102 +47,92 @@ enum Glass {
 
     /// Resolved by the keyboard VC from settings + host appearance.
     static var isDark = false
-    /// Key style, user-picked in the app (Gboard-style):
-    /// "site" (default, the tryglyf.com look: solid board, white keys, grey
-    /// function keys, a 2pt bottom edge), "glass" (translucent liquid glass),
-    /// "classic" (solid Apple-white), "glow" (wash + accent under-glow).
+    /// Key style, user-picked in the app: "site" (default, Apple's iOS 26
+    /// keys on the system sheet) or "glass" (translucent keys). Older
+    /// installs may still carry "classic" or "glow".
     static var keyTheme = "site"
 
-    /// True while the keyboard wears the website look, which paints a solid
-    /// board instead of a blur so the palette matches tryglyf.com exactly.
+    /// True while the keyboard wears the default look (no theme picked).
     static var siteLook: Bool { keyTheme == "site" && !themedBgActive }
 
-    /// Solid keys with a hard bottom edge: the website look, and every
-    /// colour theme the user picks (those are the same keyboard in another
-    /// colour, not a different material).
+    /// The website's structure (flat cards, no surface headers): the default
+    /// look and every colour theme.
     static var solidLook: Bool { keyTheme == "site" || themedBgActive }
 
-    // MARK: Derived palette
+    // MARK: Keys on the system sheet
 
-    /// Every colour in a solid keyboard comes from ONE board colour, the way
-    /// Gboard builds a theme from its seed: keys are lifted off the board,
-    /// function keys go the other way, and the ink is whichever of
-    /// near-black / near-white the keys can actually carry. Feeding it the
-    /// website's board reproduces the website's palette exactly, so themes
-    /// and the default look are the same keyboard.
-    struct KeyPalette {
-        let board, key, keyPressed, fn, fnPressed: UIColor
-        let ink, inkSoft, edge, card, soft: UIColor
-        /// The ink is light: chrome (hairlines, icons) should behave as dark.
-        let darkChrome: Bool
+    /// iOS draws its own keyboard sheet behind every third-party keyboard:
+    /// the rounded Liquid Glass tray in apps built for iOS 26, the classic
+    /// backdrop before that. It cannot be turned off and its margins cannot
+    /// be painted over, so Glyf paints no board at all. Keys sit straight on
+    /// the system's sheet the way Apple's do, and the sheet is whatever iOS
+    /// makes it (light, dark, tinted, Reduce Transparency). A theme colours
+    /// the keys, never a slab inside the tray, which is what used to show as
+    /// a lighter band above the strip.
+    ///
+    /// Apple's keys, measured off the iOS 26 simulator: #FFFFFF on the light
+    /// sheet, #404041 on the dark one, every key the same colour, no edge.
+    private static let appleKeyLight = UIColor.white
+    private static let appleKeyDark = UIColor(red: 0x40 / 255, green: 0x40 / 255,
+                                              blue: 0x41 / 255, alpha: 1)
 
-        init(board: UIColor) {
-            var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
-            board.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-            self.board = board
-            let lightBoard = board.glyfLuminance > 0.34
-            if lightBoard {
-                // White keys on a tinted board: Gboard's light themes and the
-                // website both land here.
-                key = .white
-                keyPressed = key.blend(board, 0.55)
-                fn = board.blend(.black, 0.14)
-                fnPressed = fn.blend(.white, 0.18)
-                ink = UIColor(hue: h, saturation: min(s, 0.10), brightness: 0.12, alpha: 1)
-                edge = UIColor.black.withAlphaComponent(0.24)
-                card = .white
-                soft = UIColor.white.withAlphaComponent(0.60)
-                darkChrome = false
-            } else {
-                key = board.blend(.white, 0.185)
-                keyPressed = key.blend(.white, 0.11)
-                fn = board.blend(.white, 0.07)
-                fnPressed = fn.blend(.white, 0.06)
-                ink = UIColor(hue: h, saturation: min(s, 0.04), brightness: 0.965, alpha: 1)
-                edge = UIColor.black.withAlphaComponent(0.70)
-                card = board.blend(.white, 0.065)
-                soft = UIColor.white.withAlphaComponent(0.07)
-                darkChrome = true
-            }
-            inkSoft = ink.blend(board, lightBoard ? 0.42 : 0.40)
+    /// The theme's colours with the user's dim applied; empty with no theme.
+    private static var themeColors: [UIColor] {
+        let k = CGFloat(1 - themeDim)
+        return themeBgColors().map { cg in
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            UIColor(cgColor: cg).getRed(&r, green: &g, blue: &b, alpha: &a)
+            return UIColor(red: r * k, green: g * k, blue: b * k, alpha: 1)
         }
     }
 
-    private static var paletteCache: (key: String, palette: KeyPalette)?
-
-    static var palette: KeyPalette {
-        let seed = paletteSeed
-        let cacheKey = "\(themeBg)|\(isDark)|\(keyTheme)"
-        if let cached = paletteCache, cached.key == cacheKey { return cached.palette }
-        let made = KeyPalette(board: seed)
-        paletteCache = (cacheKey, made)
-        return made
+    /// A gradient theme runs across the whole key grid; KeyboardView masks
+    /// it to the key shapes, so every key carries its own slice.
+    static var keyGradient: [UIColor]? {
+        let colors = themeColors
+        return colors.count > 1 ? colors.map(liftedOffSheet) : nil
     }
 
-    /// The board colour a theme is built from: the picked colour, the middle
-    /// of a picked gradient, or the website's own board.
-    private static var paletteSeed: UIColor {
-        let painted = themeBgColors().map { UIColor(cgColor: $0) }
-        if painted.count == 1 { return painted[0] }
-        if let first = painted.first, let last = painted.last, painted.count > 1 {
-            return first.blend(last, 0.5)
+    /// One key's colour: Apple's, the theme's, or the middle of a gradient
+    /// theme (for balloons, where a slice would look torn).
+    static var keyColor: UIColor {
+        let colors = themeColors
+        guard let first = colors.first, let last = colors.last else {
+            return isDark ? appleKeyDark : appleKeyLight
         }
-        return isDark ? Site.boardDark : Site.boardLight
+        return liftedOffSheet(colors.count > 1 ? first.blend(last, 0.5) : first)
     }
 
-    // MARK: Website palette (site/app/globals.css --kb* tokens)
-
-    /// The two board colours the website is built on (--kb). Everything else
-    /// on the site — key #ffffff/#48484c, function #b5bac3/#2e2e32, ink
-    /// #1d1d1f/#f5f5f7, edge, card, soft — falls out of KeyPalette to within
-    /// a shade, which is why themes and the default look identical in build.
-    private enum Site {
-        static let boardLight = UIColor(red: 0xD5 / 255, green: 0xD8 / 255, blue: 0xDE / 255, alpha: 1)
-        static let boardDark = UIColor(red: 0x1F / 255, green: 0x1F / 255, blue: 0x22 / 255, alpha: 1)
+    /// Keys need to stand off the sheet the way Apple's do: a near-black
+    /// theme would sink into the dark sheet and a near-white one would wash
+    /// into the light sheet, so each moves just far enough to read as a key.
+    /// Only the direction of the sheet is used, never its colour.
+    private static func liftedOffSheet(_ c: UIColor) -> UIColor {
+        let l = c.glyfLuminance
+        if isDark && l < 0.25 { return c.blend(.white, (0.25 - l) / (1 - l)) }
+        if !isDark && l > 0.80 { return c.blend(.white, 0.6) }
+        return c
     }
 
-    /// Painted background behind the blur: "" (stock), "color:#RRGGBB",
-    /// or "grad:<id>" — picked in the app's Gboard-style theme screen.
+    /// The glass look keeps its translucent keys over the sheet.
+    private static var glassKeys: Bool { keyTheme == "glass" && !themedBgActive }
+
+    /// Glyphs on keys: whichever of black and white the key can carry.
+    static var keyInk: UIColor {
+        if glassKeys { return textPrimary }
+        return keyColor.glyfLuminance > 0.5 ? .black : .white
+    }
+
+    /// The dot on a bound key is the brand purple, unless the key is a
+    /// colour purple disappears into; then it takes the glyph ink.
+    static var boundDot: UIColor {
+        guard themedBgActive else { return accentPrimary }
+        let apart = abs(keyColor.glyfLuminance - accentPrimary.glyfLuminance)
+        return apart < 0.25 ? keyInk : accentPrimary
+    }
+
+    /// The theme the keys wear: "" (none), "color:#RRGGBB" or "grad:<id>",
+    /// picked on the app's Keyboard screen.
     static var themeBg = ""
     /// Gboard "borders around keys" toggle.
     static var keyBorders = false
@@ -171,11 +161,10 @@ enum Glass {
         return []
     }
 
-    /// A colored backdrop reads as "dark chrome" — ink flips white there.
     static var themedBgActive: Bool { !themeBgColors().isEmpty }
-    /// Key chrome darkness: what the ink is doing, so hairlines and icons
-    /// stay legible on a pale theme as well as a deep one.
-    static var chromeDark: Bool { solidLook ? palette.darkChrome : isDark }
+    /// Chrome (the strip, panels, hairlines) sits on the system sheet, so it
+    /// follows the sheet's appearance whatever colour the keys are.
+    static var chromeDark: Bool { isDark }
 
     // MARK: Blur (ONE layer per surface, never per key — §5.2)
 
@@ -191,38 +180,30 @@ enum Glass {
 
     // MARK: Fills — Apple-keyboard palette, both appearances
 
-    /// Every key is the same surface (Apple's current uniform look).
-    /// Glass theme: translucent over the shared blur = liquid glass.
+    /// Every key is the same surface (Apple's iOS 26 uniform look).
+    /// Glass theme: translucent over the system sheet.
     static var fillKey: UIColor {
-        if solidLook { return palette.key }
-        if keyTheme == "glass" {
-            return chromeDark ? UIColor.white.withAlphaComponent(0.14)
-                              : UIColor.white.withAlphaComponent(0.58)
+        if keyGradient != nil { return .clear }   // KeyboardView paints the slice
+        if glassKeys {
+            return isDark ? UIColor.white.withAlphaComponent(0.14)
+                          : UIColor.white.withAlphaComponent(0.58)
         }
-        return chromeDark ? UIColor(red: 0.42, green: 0.42, blue: 0.44, alpha: 1) : .white
+        return keyColor
     }
     static var fillKeyPressed: UIColor {
-        if solidLook { return palette.keyPressed }
-        if keyTheme == "glass" {
-            return chromeDark ? UIColor.white.withAlphaComponent(0.40)
-                              : UIColor.white.withAlphaComponent(0.92)
+        if keyGradient != nil { return UIColor.white.withAlphaComponent(0.28) }
+        if glassKeys {
+            return isDark ? UIColor.white.withAlphaComponent(0.40)
+                          : UIColor.white.withAlphaComponent(0.92)
         }
-        return chromeDark ? UIColor(red: 0.55, green: 0.55, blue: 0.58, alpha: 1)
-                          : UIColor(white: 0.93, alpha: 1)
+        return keyColor.blend(keyInk, 0.14)
     }
-    /// Solid version regardless of theme (press balloons, cards).
-    static var fillKeySolid: UIColor {
-        if solidLook { return palette.key }
-        return isDark ? UIColor(red: 0.42, green: 0.42, blue: 0.44, alpha: 1) : .white
-    }
-    /// Function keys (shift, delete, 123, emoji, return): a shade off the
-    /// board, like Apple's and the website's.
-    static var fillKeyFn: UIColor {
-        solidLook ? palette.fn : fillKey
-    }
-    static var fillKeyFnPressed: UIColor {
-        solidLook ? palette.fnPressed : fillKeyPressed
-    }
+    /// Solid version regardless of theme (press balloons).
+    static var fillKeySolid: UIColor { keyColor }
+    /// Function keys (shift, delete, 123, emoji, return) wear the letter
+    /// colour, as they do on iOS 26.
+    static var fillKeyFn: UIColor { fillKey }
+    static var fillKeyFnPressed: UIColor { fillKeyPressed }
     static var fillKeySpecial: UIColor { fillKeyFn }
     static var fillKeyGlyf: UIColor { fillKey }
     /// Bound key wash — barely-there accent over the key surface.
@@ -238,15 +219,16 @@ enum Glass {
         isDark ? UIColor(red: 0.17, green: 0.17, blue: 0.18, alpha: 1)
                : UIColor(red: 0.93, green: 0.94, blue: 0.96, alpha: 1)
     }
-    /// Cards and sheets INSIDE keyboard surfaces (result views, popups…).
-    static var surfaceCard: UIColor {
-        if solidLook { return palette.card }
-        return isDark ? UIColor(red: 0.17, green: 0.17, blue: 0.18, alpha: 1) : .white
-    }
-    /// Soft chip/field fill over the board (the web's --kb-soft).
+    /// Cards INSIDE keyboard surfaces (clips, tiles, results): Apple's key
+    /// colour, so they read as part of the same keyboard on either sheet.
+    static var surfaceCard: UIColor { isDark ? appleKeyDark : appleKeyLight }
+    /// Soft chip/field fill over the sheet (the web's --kb-soft).
     static var fillSoft: UIColor {
-        if solidLook { return palette.soft }
-        return isDark ? UIColor.white.withAlphaComponent(0.08) : UIColor.white.withAlphaComponent(0.6)
+        isDark ? UIColor.white.withAlphaComponent(0.08) : UIColor.white.withAlphaComponent(0.6)
+    }
+    /// Dims a panel behind a menu, over whatever the sheet is.
+    static var scrim: UIColor {
+        isDark ? UIColor.black.withAlphaComponent(0.55) : UIColor.white.withAlphaComponent(0.62)
     }
 
     // MARK: Strokes
@@ -272,24 +254,20 @@ enum Glass {
     static let accentWarning = UIColor(red: 0xB7 / 255, green: 0x79 / 255, blue: 0x09 / 255, alpha: 1)
     static let accentDanger = UIColor(red: 0xF0 / 255, green: 0x44 / 255, blue: 0x38 / 255, alpha: 1)
 
+    /// Text on the sheet and on cards. Glyphs on keys use `keyInk`, which
+    /// follows the key colour instead.
     static var textPrimary: UIColor {
-        if solidLook { return palette.ink }
-        return chromeDark ? .white : UIColor(white: 0.07, alpha: 1)
+        isDark ? .white : UIColor(white: 0.07, alpha: 1)
     }
     static var textSecondary: UIColor {
-        if solidLook { return palette.inkSoft }
-        return chromeDark ? UIColor(white: 0.85, alpha: 1) : UIColor(white: 0.42, alpha: 1)
+        isDark ? UIColor(white: 0.63, alpha: 1) : UIColor(white: 0.42, alpha: 1)
     }
     /// The one thing that stays constant either way: the brand keycap.
     static let brandInk = UIColor(white: 0.07, alpha: 1)
 
     /// Space-bar "glyf" watermark — tuned to read on EVERY theme (the old
     /// textSecondary×0.45 vanished on light glass).
-    static var watermark: UIColor {
-        if solidLook { return palette.ink.withAlphaComponent(0.40) }
-        return chromeDark ? UIColor.white.withAlphaComponent(0.55)
-                          : UIColor(red: 0.16, green: 0.16, blue: 0.18, alpha: 0.40)
-    }
+    static var watermark: UIColor { keyInk.withAlphaComponent(0.40) }
 
     // MARK: Radii + spacing — measured against the system keyboard
 
@@ -300,17 +278,13 @@ enum Glass {
 
     // MARK: Shadows (Apple keys: crisp 1pt drop, no blur fuzz)
 
+    /// iOS 26 keys are flat: no edge under them on either sheet. Only the
+    /// translucent glass keys keep a faint drop to separate from the glass.
     static var keyShadowOpacity: Float {
-        if solidLook { return 1 }           // the colour carries the alpha
-        if keyTheme == "glass" { return isDark ? 0.22 : 0.08 }
-        return isDark ? 0.40 : 0.20
+        glassKeys ? (isDark ? 0.22 : 0.08) : 0
     }
-    /// The web draws `box-shadow: 0 2px 0 var(--kb-edge)`: a hard edge under
-    /// each key, not a blur.
-    static var keyShadowColor: UIColor {
-        solidLook ? palette.edge : .black
-    }
-    static var keyShadowOffset: CGSize { CGSize(width: 0, height: solidLook ? 2 : 1) }
+    static var keyShadowColor: UIColor { .black }
+    static var keyShadowOffset: CGSize { CGSize(width: 0, height: 1) }
     static let keyShadowRadius: CGFloat = 0
 
     // MARK: Motion (§5.2/§5.3 — nothing bounces)
@@ -327,10 +301,19 @@ enum Glass {
         static let reducedMotionFlash: TimeInterval = 0.12
     }
 
-    // MARK: Heights — APPLE STANDARD. 44pt strip (like QuickType) over the
-    // system keyboard's own key region, whose size comes from KeyMetrics.
+    // MARK: Heights — the strip over the system keyboard's own key region,
+    // whose size comes from KeyMetrics.
 
-    static let toolbarHeight: CGFloat = 44
+    /// iOS 26 puts a 16pt band of its own sheet above every third-party
+    /// keyboard and clips anything drawn into it (tested: a view placed
+    /// above our top edge is cut off at the edge). So the strip is short and
+    /// that band is its top padding: 16 + 36 + the keys' 6pt top gap lands
+    /// the first row 58pt under the sheet's edge, against Apple's 51 and our
+    /// old 66. The keys are bottom-anchored, so none of them move.
+    static let toolbarHeight: CGFloat = 36
+    /// The band already pads the strip from above, so its contents sit this
+    /// far above centre to look centred between the sheet edge and the keys.
+    static let stripLift: CGFloat = 3
     static func keysHeight(width: CGFloat) -> CGFloat { KeyMetrics.keysHeight(width: width) }
     static func keyboardBaseHeight(width: CGFloat) -> CGFloat {
         toolbarHeight + keysHeight(width: width)
@@ -344,13 +327,8 @@ enum Glass {
     static var reduceTransparency: Bool { UIAccessibility.isReduceTransparencyEnabled }
     static var reduceMotion: Bool { UIAccessibility.isReduceMotionEnabled }
 
-    /// Solid stand-ins when Reduce Transparency is on.
-    static var solidBackdrop: UIColor {
-        if solidLook { return palette.board }
-        return isDark ? UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
-                      : UIColor(red: 0.82, green: 0.84, blue: 0.87, alpha: 1)
-    }
-    static var solidKey: UIColor { fillKey }
+    /// Solid stand-in for translucent popups when Reduce Transparency is on.
+    static var solidKey: UIColor { fillKeySolid }
 }
 
 extension UIColor {

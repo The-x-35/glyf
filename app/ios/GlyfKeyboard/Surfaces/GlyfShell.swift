@@ -6,9 +6,10 @@ protocol GlyfShellDelegate: AnyObject {
     func shellOpenApp(path: String)
     func shellStateChanged()
     func shellOpenSearch()
-    /// A tile that opens one of the keyboard's own surfaces (the website's
-    /// g menu): "search" | "emoji" | "translate" | "tones" | "ask".
-    func shellOpenSurface(_ id: String)
+    /// A g menu tile was tapped: the same tool ids the strip uses.
+    func shellOpenTool(_ id: String)
+    /// Run one of the person's own glyfs on what they are typing.
+    func shellRunGlyf(_ id: String)
     /// A tile held and dragged: it can be dropped on the strip to live there.
     func shellTileDragBegan(_ id: String, icon: String, at windowPoint: CGPoint)
     func shellTileDragMoved(to windowPoint: CGPoint)
@@ -67,24 +68,33 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     private let footerButton = UIButton(type: .system)
 
     /// Root renders as a launcher grid (Gboard/Launchpad pattern) — every
-    /// deeper screen stays the reusable table.
-    private let grid = UIView()
+    /// deeper screen stays the reusable table. It scrolls: every tool the
+    /// keyboard has is here, nothing hides behind a More.
+    private let grid = ControlScrollView()
     /// The vault draws as the website's 3-column card grid, not a list.
-    private let vaultGrid = UIScrollView()
+    private let vaultGrid = ControlScrollView()
     private var vaultCards: [(label: String, value: String, insert: String)] = []
-    private struct Tile { var icon: String; var title: String; var target: String }
-    /// The website's g menu: 4 x 2, in its order. "More" stands where the
-    /// site puts Wallet and holds everything the keyboard has beyond it.
-    private static let rootTiles: [Tile] = [
-        Tile(icon: "magnifyingglass", title: "Search", target: "!search"),
-        Tile(icon: "wand.and.stars", title: "Rewrite", target: "!tones"),
-        Tile(icon: "character.bubble", title: "Translate", target: "!translate"),
-        Tile(icon: "person.text.rectangle", title: "Vault", target: "vault"),
-        Tile(icon: "doc.on.clipboard", title: "Clipboard", target: "!clipboard"),
-        Tile(icon: "face.smiling", title: "Emoji", target: "!emoji"),
-        Tile(icon: "sparkles", title: "Ask Glyf", target: "!ask"),
-        Tile(icon: "ellipsis.circle", title: "More", target: "more"),
+    /// Every tool, in the website's order first. The ids are the strip's, so
+    /// any tile can be dragged up to live there. People reorder them by
+    /// holding one and moving it (saved as `menuOrder`).
+    static let tools: [(id: String, title: String)] = [
+        ("search", "Search"), ("rewrite", "Rewrite"), ("translate", "Translate"),
+        ("vault", "Vault"), ("clipboard", "Clipboard"), ("emoji", "Emoji"),
+        ("ask", "Ask Glyf"), ("dictation", "Voice"), ("glyfs", "My glyfs"),
+        ("shorthand", "Shorthand"), ("keys", "Keys"), ("pay", "Pay"),
+        ("settings", "Settings"),
     ]
+
+    /// The saved order, with tools added since it was saved at the end.
+    static var menuOrder: [String] {
+        let known = tools.map(\.id)
+        let saved = (SettingsStore.current.menuOrder ?? []).filter(known.contains)
+        return saved + known.filter { !saved.contains($0) }
+    }
+
+    private var order: [String] = []
+    private var tileViews: [String: UIControl] = [:]
+    private var draggingTile: String?
 
     private static let stateFile = "shell-state.json"
 
@@ -161,7 +171,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                              height: bounds.height - headerH - footerH)
         grid.frame = table.frame
         vaultGrid.frame = table.frame
-        if isRoot { layoutGrid() }
+        if isRoot, draggingTile == nil { layoutGrid() }
         if isVault { layoutVaultGrid() }
         footerButton.frame = CGRect(x: 0, y: bounds.height - footerH,
                                     width: bounds.width, height: footerH)
@@ -171,30 +181,27 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     // MARK: Root launcher grid
 
     private func buildGrid() {
-        for (i, tile) in Self.rootTiles.enumerated() {
+        grid.alwaysBounceVertical = true
+        grid.showsVerticalScrollIndicator = false
+        order = Self.menuOrder
+        for (id, title) in Self.tools {
             let cell = UIControl()
-            cell.tag = 1000 + i
-            cell.accessibilityLabel = tile.title
-            cell.accessibilityIdentifier = "shell:tile:\(tile.target)"
+            cell.accessibilityLabel = title
+            cell.accessibilityIdentifier = "shell:tile:\(id)"
 
             let card = UIView()
             card.tag = 1
             card.backgroundColor = Glass.surfaceCard
             card.layer.cornerRadius = 14
             card.layer.cornerCurve = .continuous
-            if Glass.solidLook {
-                card.layer.shadowColor = Glass.keyShadowColor.cgColor
-                card.layer.shadowOpacity = Glass.keyShadowOpacity
-                card.layer.shadowOffset = Glass.keyShadowOffset
-                card.layer.shadowRadius = 0
-            } else {
+            if !Glass.solidLook {
                 card.layer.borderWidth = 1
                 card.layer.borderColor = Glass.strokeHairline.cgColor
             }
             card.isUserInteractionEnabled = false
             cell.addSubview(card)
 
-            let icon = UIImageView(image: UIImage(systemName: tile.icon))
+            let icon = UIImageView(image: UIImage(systemName: GlyfToolbar.icons[id] ?? "square"))
             icon.tag = 2
             icon.tintColor = Glass.textPrimary
             icon.contentMode = .center
@@ -204,7 +211,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
             let label = UILabel()
             label.tag = 3
-            label.text = tile.title
+            label.text = title
             label.font = .systemFont(ofSize: 12, weight: .medium)
             label.textColor = Glass.textPrimary
             label.textAlignment = .center
@@ -212,72 +219,88 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             cell.addSubview(label)
 
             cell.addAction(UIAction { [weak self] _ in
-                if tile.target.hasPrefix("!") {
-                    self?.delegate?.shellOpenSurface(String(tile.target.dropFirst()))
-                } else {
-                    self?.push(tile.target)
-                }
+                self?.delegate?.shellOpenTool(id)
             }, for: .touchUpInside)
-            // Hold a tile and drag it onto the strip to keep it there — the
-            // way you rearrange a launcher.
+            // Hold a tile to pick it up: move it around the grid to reorder,
+            // or up onto the strip to keep it there.
             let drag = UILongPressGestureRecognizer(target: self, action: #selector(tileDrag(_:)))
             drag.minimumPressDuration = 0.3
-            drag.allowableMovement = .greatestFiniteMagnitude
+            drag.allowableMovement = 10   // moving first is a scroll, not a pick-up
             cell.addGestureRecognizer(drag)
             grid.addSubview(cell)
-        }
-    }
-
-    /// The strip id a tile stands for, or nil when it cannot live there.
-    private static func stripId(for target: String) -> String? {
-        switch target {
-        case "!search": return "search"
-        case "!emoji": return "emoji"
-        case "!translate": return "translate"
-        case "!tones": return "rewrite"
-        case "!ask": return "ask"
-        case "vault": return "vault"
-        case "clipboard": return "clipboard"
-        case "settings": return "settings"
-        default: return nil
+            tileViews[id] = cell
         }
     }
 
     @objc private func tileDrag(_ g: UILongPressGestureRecognizer) {
-        guard let cell = g.view as? UIControl else { return }
-        let i = cell.tag - 1000
-        guard i >= 0, i < Self.rootTiles.count else { return }
-        let tile = Self.rootTiles[i]
+        guard let cell = g.view as? UIControl,
+              let id = tileViews.first(where: { $0.value === cell })?.key else { return }
         let point = cell.convert(g.location(in: cell), to: window)
         switch g.state {
         case .began:
-            guard let id = Self.stripId(for: tile.target) else { return }
-            cell.alpha = 0.3
-            delegate?.shellTileDragBegan(id, icon: tile.icon, at: point)
+            draggingTile = id
+            grid.isScrollEnabled = false
+            UIView.animate(withDuration: 0.15) { cell.alpha = 0.3 }
+            delegate?.shellTileDragBegan(id, icon: GlyfToolbar.icons[id] ?? "square", at: point)
         case .changed:
             delegate?.shellTileDragMoved(to: point)
+            let inGrid = g.location(in: grid)
+            guard grid.bounds.contains(inGrid), let to = tileIndex(at: inGrid),
+                  let from = order.firstIndex(of: id), to != from else { break }
+            order.remove(at: from)
+            order.insert(id, at: to)
+            // The picked-up tile slides into its new slot as a faint
+            // placeholder; the ghost under the finger shows what is moving.
+            UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut]) {
+                self.layoutGrid()
+            }
         case .ended, .cancelled, .failed:
-            cell.alpha = 1
+            draggingTile = nil
+            grid.isScrollEnabled = true
+            UIView.animate(withDuration: 0.15) {
+                cell.alpha = 1
+                self.layoutGrid()
+            }
+            if order != Self.menuOrder {
+                let saved = order
+                SettingsStore.update { $0.menuOrder = saved }
+            }
             delegate?.shellTileDragEnded(at: point)
         default:
             break
         }
     }
 
-    /// The website's grid: 4 x 2 with an 8pt gap, tiles filling the panel.
+    private static let gridCols = 4
+    private static let gridGap: CGFloat = 8
+    private static let gridSide: CGFloat = 6
+    /// Two rows fill the panel with the third peeking in, so the grid shows
+    /// at a glance that it scrolls.
+    private var tileHeight: CGFloat { max(64, (grid.bounds.height - 40 - Self.gridGap) / 2) }
+
+    private func tileIndex(at p: CGPoint) -> Int? {
+        let cols = Self.gridCols
+        let cellW = (grid.bounds.width - Self.gridSide * 2 - Self.gridGap * CGFloat(cols - 1))
+            / CGFloat(cols)
+        let c = Int((p.x - Self.gridSide) / (cellW + Self.gridGap))
+        let r = Int(p.y / (tileHeight + Self.gridGap))
+        guard c >= 0, c < cols, r >= 0 else { return nil }
+        return min(order.count - 1, r * cols + c)
+    }
+
+    /// Tiles in `order`, four to a row.
     private func layoutGrid() {
-        let cols = 4, gap: CGFloat = 8, side: CGFloat = 6
-        let rows = Int(ceil(Double(Self.rootTiles.count) / Double(cols)))
+        let cols = Self.gridCols, gap = Self.gridGap, side = Self.gridSide
         let cellW = (grid.bounds.width - side * 2 - gap * CGFloat(cols - 1)) / CGFloat(cols)
-        let cellH = (grid.bounds.height - gap * CGFloat(rows - 1)) / CGFloat(rows)
-        for case let cell as UIControl in grid.subviews {
-            let i = cell.tag - 1000
-            guard i >= 0, i < Self.rootTiles.count else { continue }
+        let cellH = tileHeight
+        for (i, id) in order.enumerated() {
+            guard let cell = tileViews[id] else { continue }
             let r = i / cols, c = i % cols
-            cell.frame = CGRect(x: side + CGFloat(c) * (cellW + gap),
-                                y: CGFloat(r) * (cellH + gap),
-                                width: cellW, height: cellH)
-            cell.viewWithTag(1)?.frame = cell.bounds
+            let frame = CGRect(x: side + CGFloat(c) * (cellW + gap),
+                               y: CGFloat(r) * (cellH + gap),
+                               width: cellW, height: cellH)
+            cell.frame = frame
+            cell.viewWithTag(1)?.frame = CGRect(origin: .zero, size: frame.size)
             // Icon over caption, centred as a column with an 8pt gap.
             let iconH: CGFloat = 26, capH: CGFloat = 15
             let top = (cellH - iconH - 8 - capH) / 2
@@ -285,6 +308,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             cell.viewWithTag(3)?.frame = CGRect(x: 2, y: top + iconH + 8,
                                                 width: cellW - 4, height: capH)
         }
+        let rows = Int(ceil(Double(order.count) / Double(cols)))
+        grid.contentSize = CGSize(width: grid.bounds.width,
+                                  height: CGFloat(rows) * (cellH + gap) - gap + side)
     }
 
     // MARK: Vault grid (website 6.3)
@@ -428,29 +454,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     static func build(id: String) -> Screen {
         switch id {
         case "root":
-            return Screen(id: id, title: "Glyf", rows: [
-                .nav(icon: "square.grid.2x2", title: "Glyfs", detail: nil, target: "glyfs"),
-                .nav(icon: "keyboard", title: "Glyf Keys", detail: nil, target: "keys"),
-                .nav(icon: "link", title: "Connectors", detail: nil, target: "connectors"),
-                .nav(icon: "person.text.rectangle", title: "Vault", detail: nil, target: "vault"),
-                .nav(icon: "note.text", title: "Notes", detail: nil, target: "notes"),
-                .nav(icon: "doc.on.clipboard", title: "Clipboard", detail: nil, target: "clipboard"),
-                .nav(icon: "rectangle.stack", title: "Packs", detail: nil, target: "packs"),
-                .nav(icon: "gearshape", title: "Settings", detail: nil, target: "settings"),
-                .nav(icon: "person.crop.circle", title: "Account", detail: nil, target: "account"),
-            ], showOpenInApp: true)
-
-        case "more":
-            return Screen(id: id, title: "More", rows: [
-                .nav(icon: "square.grid.2x2", title: "Glyfs", detail: nil, target: "glyfs"),
-                .nav(icon: "keyboard", title: "Glyf Keys", detail: nil, target: "keys"),
-                .nav(icon: "bolt", title: "Shorthand", detail: nil, target: "shorthand"),
-                .nav(icon: "note.text", title: "Notes", detail: nil, target: "notes"),
-                .nav(icon: "link", title: "Connectors", detail: nil, target: "connectors"),
-                .nav(icon: "rectangle.stack", title: "Packs", detail: nil, target: "packs"),
-                .nav(icon: "gearshape", title: "Settings", detail: nil, target: "settings"),
-                .nav(icon: "person.crop.circle", title: "Account", detail: nil, target: "account"),
-            ], showOpenInApp: false)
+            // Drawn as the tool grid, not as rows.
+            return Screen(id: id, title: "Glyf", rows: [], showOpenInApp: false)
 
         case "settings":
             return Screen(id: id, title: "Settings", rows: [
@@ -458,10 +463,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                            options: ["auto", "light", "dark"],
                            value: { SettingsStore.current.appearance ?? "auto" },
                            set: { v in SettingsStore.update { $0.appearance = v } }),
-                .segmented(title: "Key style",
-                           options: ["glass", "classic", "glow"],
-                           value: { SettingsStore.current.keyTheme ?? "glass" },
-                           set: { v in SettingsStore.update { $0.keyTheme = v } }),
                 .toggle(title: "Haptics",
                         value: { SettingsStore.current.haptics },
                         set: { v in SettingsStore.update { $0.haptics = v } }),
@@ -553,13 +554,23 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             if rows.isEmpty {
                 rows.append(.info(title: "No keys bound", detail: nil))
             }
-            return Screen(id: id, title: "Glyf Keys", rows: rows, appPath: "keys")
+            return Screen(id: id, title: "Keys", rows: rows, appPath: "keys")
 
         case "glyfs":
-            let rows: [Row] = GlyfCatalog.all.map {
-                .nav(icon: $0.icon, title: $0.title, detail: nil, target: "!none")
-            }
-            return Screen(id: id, title: "Glyfs", rows: rows, appPath: "glyfs")
+            // The glyfs this person built in the app. Tap one to run it on
+            // what is being typed; the key it sits on shows alongside.
+            let s = SettingsStore.current
+            var rows: [Row] = (s.customTitles ?? [:])
+                .sorted { $0.value.localizedCaseInsensitiveCompare($1.value) == .orderedAscending }
+                .map { glyfId, title in
+                    let key = s.bindings.first { $0.value == glyfId }?.key
+                    return .nav(icon: "sparkles", title: title,
+                                detail: key.map { "Hold \($0.uppercased())" },
+                                target: "!run:\(glyfId)")
+                }
+            rows.append(.nav(icon: "plus", title: "Build your own", detail: nil,
+                             target: "!app:build"))
+            return Screen(id: id, title: "My glyfs", rows: rows, showOpenInApp: false)
 
         case "connectors":
             return Screen(id: id, title: "Connectors", rows: [
@@ -583,18 +594,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             rows.append(.action(title: "＋ New note", style: .accent, handler: {}))
             return Screen(id: id, title: "Vault", rows: rows, appPath: "vault")
 
-        case "packs":
-            return Screen(id: id, title: "Packs", rows: [
-                .nav(icon: "pencil.and.outline", title: "Writer", detail: nil, target: "!none"),
-                .nav(icon: "bolt.fill", title: "Operator", detail: nil, target: "!none"),
-                .nav(icon: "bubble.left.and.bubble.right", title: "Social", detail: nil, target: "!none"),
-            ], appPath: "packs")
-
-        case "account":
-            return Screen(id: id, title: "Account", rows: [
-                .info(title: "Free · \(GlyfCatalog.runsRemainingText())", detail: nil),
-            ], appPath: "account")
-
         default:
             return Screen(id: id, title: id, rows: [.info(title: "…", detail: nil)])
         }
@@ -617,7 +616,13 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         switch screen.rows[ip.row] {
         case .nav(_, _, _, let target):
             if target == "!none" { break }
-            push(target)
+            if target.hasPrefix("!run:") {
+                delegate?.shellRunGlyf(String(target.dropFirst("!run:".count)))
+            } else if target.hasPrefix("!app:") {
+                delegate?.shellOpenApp(path: String(target.dropFirst("!app:".count)))
+            } else {
+                push(target)
+            }
         case .action(let title, _, let handler):
             if title.contains("New note") {
                 delegate?.shellEditNote(id: nil, text: "")
@@ -701,16 +706,10 @@ private final class ShellCell: UITableViewCell {
         backgroundColor = .clear
         selectionStyle = .none
 
-        // Website row: radius 12 card with a hard bottom edge, no outline.
+        // Radius 12 card, flat on the sheet, no outline.
         card.layer.cornerRadius = Glass.siteLook ? 12 : 13
         card.layer.cornerCurve = .continuous
         card.layer.borderWidth = Glass.siteLook ? 0 : Glass.hairlineWidth
-        if Glass.siteLook {
-            card.layer.shadowColor = Glass.keyShadowColor.cgColor
-            card.layer.shadowOpacity = 1
-            card.layer.shadowRadius = 0
-            card.layer.shadowOffset = CGSize(width: 0, height: 1)
-        }
         contentView.addSubview(card)
 
         chip.layer.cornerRadius = 8
@@ -889,7 +888,7 @@ private final class ShellCell: UITableViewCell {
             })
         case .binding(let key, let glyfId):
             chip.isHidden = false
-            chip.backgroundColor = Glass.fillKeySolid
+            chip.backgroundColor = Glass.surfaceCard
             chipLetter.text = key.uppercased()
             chipDot.isHidden = false
             title.text = Self.displayTitle(glyfId ?? "")
@@ -921,7 +920,7 @@ private final class ShellCell: UITableViewCell {
             })
         case .snippet(let trigger, let text):
             chip.isHidden = false
-            chip.backgroundColor = Glass.fillKeySolid
+            chip.backgroundColor = Glass.surfaceCard
             chipLetter.text = ";"
             chipLetter.textColor = Glass.accentPrimary
             title.text = trigger

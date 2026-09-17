@@ -43,6 +43,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var actInput: (before: String, after: String)?
     /// Set when a bound letter's skill is running in the act surface.
     private var actSkill: (glyfId: String, letter: String)?
+    /// What a suggestion chip promised to do; nil lets the server decide.
+    private var actIntent: String?
     /// The text the run reads (field text, or the clipboard for a skill).
     private var actRunInput = ""
     private var actHasResult = false
@@ -146,8 +148,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// system style), unless the user forces light or dark in settings.
     private func resolveAppearance() {
         let pref = SettingsStore.current.appearance ?? "auto"
-        let hostDark = textDocumentProxy.keyboardAppearance == .dark
-            || traitCollection.userInterfaceStyle == .dark
+        // The host's keyboardAppearance is resolved once, when the field
+        // takes focus: Messages opened in dark mode keeps reporting .dark
+        // after the phone switches to light. The trait (which the system
+        // sheet follows) does change, so after a live flip it wins.
+        let traitDark = traitCollection.userInterfaceStyle == .dark
+        let hostDark = appearanceFlipped
+            ? traitDark
+            : textDocumentProxy.keyboardAppearance == .dark || traitDark
         let dark = pref == "dark" || (pref == "auto" && hostDark)
         let theme = SettingsStore.current.keyTheme ?? "glass"
         let bg = SettingsStore.current.themeBg ?? ""
@@ -171,55 +179,20 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// surfaces pick the palette up on their next open.
     private func refreshPalette() {
         guard didBuild else { return }
-        if let blur = backdrop as? UIVisualEffectView {
-            // Switching to the site look mid-session: drop the material and
-            // paint the board colour on the same view.
-            blur.effect = Glass.siteLook ? nil : Glass.base
-            blur.backgroundColor = Glass.siteLook ? Glass.solidBackdrop : .clear
-        } else {
-            backdrop?.backgroundColor = Glass.solidBackdrop
-        }
-        applyThemeBackdrop()
         toolbar.applyPalette()
         keyboardView.rebuild()
     }
 
-    /// Color/gradient themes (Gboard-style picker in the app): a painted
-    /// layer over the blur, dimmed by the user's slider. "" = stock glass.
-    private var themeLayer: CAGradientLayer?
-    private func applyThemeBackdrop() {
-        themeLayer?.removeFromSuperlayer()
-        themeLayer = nil
-        let colors = Glass.themeBgColors()
-        // Painted themes replace the blur outright (Gboard renders color as
-        // the base); stock glass keeps the material.
-        backdrop.isHidden = !colors.isEmpty
-        guard !colors.isEmpty else { return }
-        let layer = CAGradientLayer()
-        let dimmed = colors.map { c -> CGColor in
-            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            UIColor(cgColor: c).getRed(&r, green: &g, blue: &b, alpha: &a)
-            let k = 1 - Glass.themeDim
-            return UIColor(red: r * k, green: g * k, blue: b * k, alpha: 1).cgColor
-        }
-        layer.colors = dimmed.count == 1 ? [dimmed[0], dimmed[0]] : dimmed
-        layer.startPoint = CGPoint(x: 0, y: 0)
-        layer.endPoint = CGPoint(x: 1, y: 1)
-        layer.frame = view.bounds
-        view.layer.insertSublayer(layer, at: 0)
-        themeLayer = layer
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        themeLayer?.frame = view.bounds
-    }
+    /// Set once light/dark changes while the keyboard is up; cleared when it
+    /// goes away, so the next field's own appearance is read fresh.
+    private var appearanceFlipped = false
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
         super.traitCollectionDidChange(previous)
-        if previous?.userInterfaceStyle != traitCollection.userInterfaceStyle {
-            resolveAppearance()
-        }
+        guard let before = previous?.userInterfaceStyle,
+              before != traitCollection.userInterfaceStyle else { return }
+        if before != .unspecified { appearanceFlipped = true }
+        resolveAppearance()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -237,7 +210,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
         if !didBuild {
             didBuild = true
             build()
-            applyThemeBackdrop() // painted themes exist from the FIRST frame
             toolbar.applyPalette()
         }
         if heightConstraint == nil {
@@ -274,6 +246,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        appearanceFlipped = false
         TypingStore.shared.saveNow()
     }
 
@@ -319,14 +292,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
             content.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        // The site look paints a solid board (as on tryglyf.com); the other
-        // themes keep Apple's blur. Reduce Transparency forces solid too.
-        if Glass.reduceTransparency || Glass.siteLook {
-            backdrop = UIView()
-            backdrop.backgroundColor = Glass.solidBackdrop
-        } else {
-            backdrop = UIVisualEffectView(effect: Glass.base)
-        }
+        // No board of our own: iOS draws the keyboard sheet behind every
+        // third-party keyboard and its margins cannot be painted, so a board
+        // inside it only shows up as a second, mismatched band. The keys sit
+        // on the system's sheet, in every theme (see Glass: keys on the sheet).
+        backdrop = UIView()
+        backdrop.backgroundColor = .clear
+        backdrop.isUserInteractionEnabled = false
         backdrop.frame = content.bounds
         backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         content.addSubview(backdrop)
@@ -556,6 +528,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         inlineTarget = nil
         surface = new
+        // A suggestion is about the sentence in the field; once a panel is
+        // open it is about something else, so it leaves the strip.
+        if new != .none { toolbar.showSmart(nil) }
         switch new {
         case .shell:
             let s = GlyfShell()
@@ -1154,6 +1129,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
 
     private func startAct(clipboard text: String) {
         actSkill = nil
+        actIntent = nil
         actInput = ("", "") // a copied text is acted on, never deleted from the field
         actRunInput = text.trimmingCharacters(in: .whitespacesAndNewlines)
         actAccepted = false
@@ -1161,8 +1137,9 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         runAct()
     }
 
-    private func startAct(before: String, after: String) {
+    private func startAct(before: String, after: String, intent: String? = nil) {
         actSkill = nil
+        actIntent = intent
         actInput = (before, after)
         actRunInput = (before + after).trimmingCharacters(in: .whitespacesAndNewlines)
         actAccepted = false
@@ -1217,7 +1194,8 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             return
         }
         act.showWorking(intent: actRunInput)
-        actTask = BackendClient.shared.runAct(text: actRunInput, onResult: { [weak self] result in
+        actTask = BackendClient.shared.runAct(text: actRunInput, intent: actIntent,
+                                              onResult: { [weak self] result in
             guard let self, self.surface == .act else { return }
             self.actHasResult = true
             self.act?.showResult(title: result.title ?? "", cards: result.cards ?? [],
@@ -1325,6 +1303,10 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
 
     func actRetry() { runAct() }
 
+    func actOpen(_ url: URL) {
+        HostAppOpener.open(url, from: self) { _ in }
+    }
+
     func actClosed() {
         // §6.15: a skill result the user walked away from is a "discard".
         if actHasResult, !actAccepted { recordSkillOutcome(accepted: false) }
@@ -1415,23 +1397,25 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarItemTapped(_ id: String) {
+        openTool(id)
+    }
+
+    /// Every tool opens the same way from the strip and from the g menu.
+    private func openTool(_ id: String) {
         switch id {
-        case "search":
-            setSurface(.search)
-        case "clipboard":
-            setSurface(.clipboard)
-        case "vault":
-            setSurface(.shell); shell?.push("vault")
-        case "settings":
-            setSurface(.shell); shell?.push("settings")
-        case "emoji":
-            setSurface(.emoji)
-        case "translate":
-            toggleTranslateHUD()
-        case "dictation":
-            startDictationHandoff()
-        default:
-            break
+        case "search": setSurface(.search)
+        case "clipboard": setSurface(.clipboard)
+        case "emoji": setSurface(.emoji)
+        case "rewrite": setSurface(.none); showTonesPopup()
+        case "translate": setSurface(.none); toggleTranslateHUD()
+        case "ask": setSurface(.none); openBar(autoRun: nil)
+        case "dictation": setSurface(.none); startDictationHandoff()
+        // Paying is signed in the app's wallet, never in the keyboard.
+        case "pay": setSurface(.none); openApp(path: "wallet")
+        case "vault", "glyfs", "shorthand", "keys", "settings":
+            if surface != .shell { setSurface(.shell) }
+            shell?.push(id)
+        default: break
         }
     }
 
@@ -1541,11 +1525,17 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarSmartTapped(_ chip: Smart.Chip) {
-        if case .action(_, let query, _) = chip {
+        if case .action(_, _, let intent) = chip {
             suggestedChip = nil
             suggestedFor = ""
             toolbar.showSmart(nil)
-            startAct(clipboard: query)
+            // The chip is about what was typed: act on that sentence, the way
+            // holding space does, and do what the chip said. Re-reading a
+            // rewritten query could land somewhere else (a Google link for
+            // "Tidy this up").
+            startAct(before: textDocumentProxy.documentContextBeforeInput ?? "",
+                     after: textDocumentProxy.documentContextAfterInput ?? "",
+                     intent: intent)
             return
         }
         if case .pay(let address, let amount) = chip {
@@ -1703,16 +1693,13 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         }
     }
 
-    func shellOpenSurface(_ id: String) {
-        switch id {
-        case "clipboard": setSurface(.clipboard)
-        case "search": setSurface(.search)
-        case "emoji": setSurface(.emoji)
-        case "tones": setSurface(.none); showTonesPopup()
-        case "translate": setSurface(.none); toggleTranslateHUD()
-        case "ask": setSurface(.none); openBar(autoRun: nil)
-        default: break
-        }
+    func shellOpenTool(_ id: String) {
+        openTool(id)
+    }
+
+    func shellRunGlyf(_ id: String) {
+        setSurface(.none)
+        startSkill(glyfId: id, letter: "")
     }
 
     func shellEditNote(id: String?, text: String) {

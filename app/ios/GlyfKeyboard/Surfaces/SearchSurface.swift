@@ -66,7 +66,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     private var status = ""
 
     private let closeButton = UIButton(type: .system)
-    private let chipsRow = UIScrollView()
+    private let chipsRow = ControlScrollView()
     /// The website's tab track: a soft pill holding icon-only tabs with a
     /// key-coloured thumb that slides to the active one.
     private let tabTrack = UIView()
@@ -100,7 +100,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         tabTrack.backgroundColor = Glass.fillSoft
         tabTrack.layer.cornerCurve = .continuous
         chipsRow.addSubview(tabTrack)
-        tabThumb.backgroundColor = Glass.fillKey
+        tabThumb.backgroundColor = Glass.surfaceCard
         tabThumb.layer.cornerCurve = .continuous
         tabThumb.layer.shadowColor = Glass.keyShadowColor.cgColor
         tabThumb.layer.shadowOpacity = Glass.keyShadowOpacity

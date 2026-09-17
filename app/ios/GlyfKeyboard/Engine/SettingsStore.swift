@@ -23,6 +23,8 @@ struct GlyfSettings: Codable, Equatable {
     var oneHanded: String = "off"
     /// Toolbar item ids in display order; missing ids are appended on load.
     var toolbarOrder: [String] = Toolbar.defaultOrder
+    /// The g menu's tile order, as the person arranged it (nil = default).
+    var menuOrder: [String]? = nil
     var toolbarHidden: [String] = []
     /// Key letter (lowercase) → glyf id, "surface:<name>" for in-keyboard
     /// surfaces, or "connector:<id>" for ConnectorSurface pickers (§6.12).
@@ -119,9 +121,6 @@ struct GlyfSettings: Codable, Equatable {
         /// not among them — the keyboard has an emoji key in its bottom row,
         /// where iOS puts it. Users can add anything back (Toolbar screen).
         static let defaultOrder = ["search", "clipboard", "vault", "dictation", "translate"]
-        /// Everything that can live on the strip, for the customise screen.
-        static let allItems = ["search", "clipboard", "vault", "dictation",
-                               "translate", "emoji", "settings", "skills"]
     }
 }
 
@@ -191,10 +190,12 @@ enum SettingsStore {
             s.schemaVersion = 5
         }
         // v5 → v6: the canned glyfs go. Hold space does all of it better,
-        // so only the two holds that are not AI remain.
+        // so only S, T and the glyfs people built themselves stay on keys.
         if (s.schemaVersion ?? 1) < 6 {
+            let built = s.customTitles ?? [:]
             s.bindings = s.bindings.filter { _, target in
                 target == "surface:vault" || target == "surface:translate-hud"
+                    || built[target] != nil
             }
             for (key, target) in GlyfSettings.defaultBindings where s.bindings[key] == nil {
                 s.bindings[key] = target

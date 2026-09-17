@@ -27,7 +27,7 @@ final class GlyfToolbar: UIView {
 
     private let glyfButton = UIButton(type: .system)
     private let divider = UIView()
-    private let scroll = UIScrollView()
+    private let scroll = ControlScrollView()
     private let itemsStack = UIStackView()
     private let candidatesStack = UIStackView()
     private let runsChip = UIButton(type: .system)
@@ -51,17 +51,21 @@ final class GlyfToolbar: UIView {
     private let dropMarker = UIView()
 
     /// item id → SF Symbol
+    /// One icon per tool, shared by the strip and the g menu grid.
     static let icons: [String: String] = [
         "search": "magnifyingglass",
-        "clipboard": "doc.on.clipboard",
-        "vault": "person.text.rectangle",
-        "dictation": "mic",
-        "emoji": "face.smiling",
-        "translate": "translate",
-        "settings": "gearshape",
-        "skills": "bolt",
         "rewrite": "wand.and.stars",
+        "translate": "translate",
+        "vault": "person.text.rectangle",
+        "clipboard": "doc.on.clipboard",
+        "emoji": "face.smiling",
         "ask": "sparkles",
+        "dictation": "mic",
+        "glyfs": "square.grid.2x2",
+        "shorthand": "text.badge.plus",
+        "keys": "keyboard",
+        "pay": "creditcard",
+        "settings": "gearshape",
     ]
 
     private(set) var showingCandidates = false
@@ -148,13 +152,11 @@ final class GlyfToolbar: UIView {
                             for: .touchUpInside)
         addSubview(panelBack)
 
-        smartCard.backgroundColor = Glass.fillKey
+        smartCard.backgroundColor = Glass.surfaceCard
         smartCard.layer.cornerRadius = 12
         smartCard.layer.cornerCurve = .continuous
-        smartCard.layer.shadowColor = Glass.keyShadowColor.cgColor
-        smartCard.layer.shadowOpacity = 1
-        smartCard.layer.shadowRadius = 0
-        smartCard.layer.shadowOffset = CGSize(width: 0, height: 1)
+        // Flat, like every card on the iOS 26 sheet.
+        smartCard.layer.shadowOpacity = 0
         smartCard.isHidden = true
         smartCard.accessibilityIdentifier = "strip:smart"
         smartCard.addAction(UIAction { [weak self] _ in
@@ -179,14 +181,24 @@ final class GlyfToolbar: UIView {
     /// the brand keycap stays constant by design).
     func applyPalette() {
         divider.backgroundColor = Glass.strokeHairline
+        panelIcon.tintColor = Glass.textPrimary
+        panelLabel.textColor = Glass.textPrimary
+        panelBack.tintColor = Glass.textPrimary
+        smartCard.backgroundColor = Glass.surfaceCard
+        smartValue.textColor = Glass.textPrimary
+        // Suggestion words are drawn with the ink of the moment they were
+        // made; redraw them or they stay dark on a sheet that just went dark.
+        let words = suggestions
+        suggestions = []
+        if !words.isEmpty { showSuggestions(words) }
         // On dark chrome the ink pill needs a faint ring to stay separate
         // from the backdrop (black-on-black otherwise). The website uses a
         // half-point ring at 18% and no drop shadow.
-        glyfButton.layer.borderWidth = Glass.chromeDark ? (Glass.siteLook ? 0.5 : 1) : 0
+        glyfButton.layer.borderWidth = Glass.chromeDark ? (Glass.solidLook ? 0.5 : 1) : 0
         glyfButton.layer.borderColor = UIColor.white
-            .withAlphaComponent(Glass.siteLook ? 0.18 : 0.35).cgColor
-        glyfButton.layer.shadowOpacity = Glass.siteLook ? 0 : 0.28
-        glyfButton.backgroundColor = Glass.siteLook && Glass.isDark ? .black : Glass.brandInk
+            .withAlphaComponent(Glass.solidLook ? 0.18 : 0.35).cgColor
+        glyfButton.layer.shadowOpacity = Glass.solidLook ? 0 : 0.28
+        glyfButton.backgroundColor = Glass.solidLook && Glass.isDark ? .black : Glass.brandInk
         reloadItems()
     }
 
@@ -238,7 +250,7 @@ final class GlyfToolbar: UIView {
             }, for: .touchUpInside)
             let long = UILongPressGestureRecognizer(target: self, action: #selector(itemLong(_:)))
             long.minimumPressDuration = 0.32
-            long.allowableMovement = .greatestFiniteMagnitude
+            long.allowableMovement = 10   // moving first is a scroll, not a pick-up
             b.addGestureRecognizer(long)
             itemsStack.addArrangedSubview(b)
         }
@@ -289,7 +301,7 @@ final class GlyfToolbar: UIView {
         scroll.isHidden = hideTools
         candidatesStack.isHidden = open || !showingCandidates
         runsChip.isHidden = open || runsRemaining == nil || Glass.solidLook
-        divider.isHidden = hideTools || Glass.siteLook
+        divider.isHidden = hideTools || Glass.solidLook
         if open {
             glyfButton.setTitle(nil, for: .normal)
             glyfButton.setImage(UIImage(systemName: "xmark"), for: .normal)
@@ -303,7 +315,7 @@ final class GlyfToolbar: UIView {
         } else {
             glyfButton.setImage(nil, for: .normal)
             glyfButton.setTitle("g", for: .normal)
-            glyfButton.backgroundColor = Glass.siteLook && Glass.isDark ? .black : Glass.brandInk
+            glyfButton.backgroundColor = Glass.solidLook && Glass.isDark ? .black : Glass.brandInk
             glyfButton.accessibilityIdentifier = "toolbar:glyf"
             glyfButton.accessibilityLabel = "Glyf"
             brandDot.isHidden = false
@@ -318,8 +330,7 @@ final class GlyfToolbar: UIView {
         if let chip {
             smartKey.text = chip.key
             smartValue.text = chip.value
-            smartCard.backgroundColor = Glass.fillKey
-            smartCard.layer.shadowColor = Glass.keyShadowColor.cgColor
+            smartCard.backgroundColor = Glass.surfaceCard
             smartCard.accessibilityLabel = "\(chip.key) \(chip.value)"
         }
         if smartCard.isHidden {
@@ -389,7 +400,7 @@ final class GlyfToolbar: UIView {
     private func applyCandidatesVisibility(toolsVisible: Bool) {
         guard panelTitle == nil else { return }   // a panel owns the strip
         scroll.isHidden = !toolsVisible
-        divider.isHidden = !toolsVisible
+        divider.isHidden = !toolsVisible || Glass.solidLook
         candidatesStack.isHidden = toolsVisible || !showingCandidates
         // The website's strip is six tools and the g pill, nothing else; the
         // run counter lives in the g menu's Account screen.
@@ -409,7 +420,7 @@ final class GlyfToolbar: UIView {
         b.titleLabel?.font = .systemFont(ofSize: 16, weight: emphasized ? .semibold : .regular)
         b.setTitleColor(item.kind == .literal ? Glass.textSecondary : Glass.textPrimary, for: .normal)
         // The website marks the best candidate by weight alone, no pill.
-        b.backgroundColor = (emphasized && !Glass.siteLook) ? Glass.fillBar : .clear
+        b.backgroundColor = (emphasized && !Glass.solidLook) ? Glass.fillBar : .clear
         b.layer.cornerRadius = 8
         b.layer.cornerCurve = .continuous
         b.titleLabel?.lineBreakMode = .byTruncatingTail
@@ -437,11 +448,12 @@ final class GlyfToolbar: UIView {
         // Website strip: a g pill 1.18x the strip height wide and 0.78x tall,
         // then the tools spread across the rest. No divider.
         let h = bounds.height
+        let mid = h / 2 - Glass.stripLift
         let pillW = (h * 1.18).rounded()
         let pillH = (h * 0.78).rounded()
-        glyfButton.frame = CGRect(x: 5, y: (h - pillH) / 2, width: pillW, height: pillH)
+        glyfButton.frame = CGRect(x: 5, y: mid - pillH / 2, width: pillW, height: pillH)
         brandDot.frame = CGRect(x: pillW - pillW * 0.20 - 6, y: pillH * 0.18, width: 6, height: 6)
-        divider.isHidden = Glass.siteLook
+        divider.isHidden = Glass.solidLook
         divider.frame = CGRect(x: pillW + 11, y: 10, width: Glass.hairlineWidth * 2,
                                height: h - 20)
         let chipW: CGFloat = runsChip.isHidden ? 0 : 64
@@ -449,11 +461,11 @@ final class GlyfToolbar: UIView {
             runsChip.frame = CGRect(x: bounds.width - chipW - 6, y: 11,
                                     width: chipW, height: h - 22)
         }
-        let left = pillW + (Glass.siteLook ? 11 : 17)
+        let left = pillW + (Glass.solidLook ? 11 : 17)
         let width = bounds.width - left - chipW - 6
         if !smartCard.isHidden {
             let cardH = (h * 0.78).rounded()
-            smartCard.frame = CGRect(x: left, y: (h - cardH) / 2,
+            smartCard.frame = CGRect(x: left, y: mid - cardH / 2,
                                      width: max(0, bounds.width - left - 6), height: cardH)
             let keyW = min(smartKey.intrinsicContentSize.width, 120)
             smartKey.frame = CGRect(x: 14, y: 0, width: keyW, height: cardH)
@@ -464,17 +476,19 @@ final class GlyfToolbar: UIView {
         if panelTitle != nil {
             var x = left
             if !panelBack.isHidden {
-                panelBack.frame = CGRect(x: x - 4, y: 0, width: 30, height: h)
+                panelBack.frame = CGRect(x: x - 4, y: -Glass.stripLift, width: 30, height: h)
                 x += 28
             }
-            panelIcon.frame = CGRect(x: x, y: (h - 24) / 2, width: 24, height: 24)
+            panelIcon.frame = CGRect(x: x, y: mid - 12, width: 24, height: 24)
             let textX = panelIcon.isHidden ? x : x + 30
-            panelLabel.frame = CGRect(x: textX, y: 0, width: bounds.width - textX - 10, height: h)
+            panelLabel.frame = CGRect(x: textX, y: -Glass.stripLift,
+                                      width: bounds.width - textX - 10, height: h)
         }
         scroll.frame = CGRect(x: left, y: 0, width: width, height: h)
-        itemsStack.frame = CGRect(x: 0, y: (h - 34) / 2, width: width, height: 34)
+        let itemH = min(34, h - 4)
+        itemsStack.frame = CGRect(x: 0, y: mid - itemH / 2, width: width, height: itemH)
         scroll.contentSize = CGSize(width: width, height: h)
-        candidatesStack.frame = CGRect(x: left, y: 6, width: bounds.width - left - 8,
-                                       height: h - 12)
+        candidatesStack.frame = CGRect(x: left, y: mid - (h - 12) / 2,
+                                       width: bounds.width - left - 8, height: h - 12)
     }
 }

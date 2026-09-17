@@ -256,7 +256,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
     private func showTonePopup(_ variants: [String], over rect: CGRect) {
         tonePopup?.removeFromSuperview()
         let pop = UIView()
-        pop.backgroundColor = Glass.reduceTransparency ? Glass.solidKey : Glass.fillKeyPressed
+        pop.backgroundColor = Glass.surfaceCard
         pop.layer.cornerRadius = 12
         pop.layer.cornerCurve = .continuous
         pop.layer.shadowOpacity = 0.25

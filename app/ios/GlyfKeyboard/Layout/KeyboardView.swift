@@ -169,6 +169,40 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 idx += 1
             }
         }
+        layoutKeyGradient()
+    }
+
+    /// A gradient theme is one gradient across the whole grid, shown only
+    /// through the key shapes: every key carries its slice and the system
+    /// sheet stays visible between them.
+    private var keyGradientLayer: CAGradientLayer?
+
+    private func layoutKeyGradient() {
+        guard let colors = Glass.keyGradient else {
+            keyGradientLayer?.removeFromSuperlayer()
+            keyGradientLayer = nil
+            return
+        }
+        let gradient = keyGradientLayer ?? CAGradientLayer()
+        if keyGradientLayer == nil {
+            layer.insertSublayer(gradient, at: 0)
+            keyGradientLayer = gradient
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradient.frame = bounds
+        gradient.colors = colors.map(\.cgColor)
+        gradient.startPoint = CGPoint(x: 0, y: 0)
+        gradient.endPoint = CGPoint(x: 1, y: 1)
+        let shapes = UIBezierPath()
+        for kv in keys {
+            shapes.append(UIBezierPath(roundedRect: kv.frame, cornerRadius: Glass.radiusKey))
+        }
+        let mask = (gradient.mask as? CAShapeLayer) ?? CAShapeLayer()
+        mask.frame = bounds
+        mask.path = shapes.cgPath
+        gradient.mask = mask
+        CATransaction.commit()
     }
 
     // MARK: Shift

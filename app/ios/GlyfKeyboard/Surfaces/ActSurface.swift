@@ -8,6 +8,8 @@ protocol ActSurfaceDelegate: AnyObject {
     func actCopy(_ text: String)
     func actRetry()
     func actClosed()
+    /// A hand-off card (a search to finish elsewhere) opens instead of pasting.
+    func actOpen(_ url: URL)
 }
 
 /// Hold space on what you typed → Glyf acts on it (the Acti Bar move, in
@@ -307,7 +309,9 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         for v in [mark, intentLabel, cancelButton] as [UIView] { v.isHidden = !working }
         workingTitle.isHidden = !working || (workingTitle.text ?? "").isEmpty
         ringsLayer.isHidden = !working
-        for v in [table, retryButton, copyButton, insertButton] as [UIView] { v.isHidden = !result }
+        for v in [table, retryButton] as [UIView] { v.isHidden = !result }
+        // Nothing worth putting in the message: no Copy, no Insert.
+        for v in [copyButton, insertButton] as [UIView] { v.isHidden = !result || insertText.isEmpty }
         mapView.isHidden = !result || mapPlace == nil
         if !result { snapshotter?.cancel() }
         textView.isHidden = !result || (textView.text ?? "").isEmpty
@@ -449,9 +453,10 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     /// Tapping one card drops just that one — a single place out of a list.
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         let card = cards[indexPath.row]
-        let text = card.kind == "query"
-            ? card.url
-            : card.insertText(style: SettingsStore.current.pasteStyle ?? "titleAndLink")
-        delegate?.actInsert(text)
+        if card.kind == "query" {
+            if let url = URL(string: card.url) { delegate?.actOpen(url) }
+            return
+        }
+        delegate?.actInsert(card.insertText(style: SettingsStore.current.pasteStyle ?? "titleAndLink"))
     }
 }
