@@ -271,20 +271,25 @@ final class GlyfToolbar: UIView {
 
     /// Panel open: title + icon in the strip, brand pill becomes a close
     /// button. `nil` restores the tools.
-    func showPanelHeader(icon: String?, title: String?, canGoBack: Bool = false) {
+    /// - Parameter keepTools: the g menu's own screen leaves the tools on the
+    ///   strip, because that is what you drag a tile onto. Deeper panels take
+    ///   the strip for their name.
+    func showPanelHeader(icon: String?, title: String?, canGoBack: Bool = false,
+                         keepTools: Bool = false) {
         panelTitle = title
         panelBack.isHidden = !(title != nil && canGoBack)
         let open = title != nil
+        let hideTools = open && !keepTools
         panelLabel.text = title
-        panelLabel.isHidden = !open
+        panelLabel.isHidden = !open || keepTools
         panelIcon.preferredSymbolConfiguration =
             UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)
         panelIcon.image = icon.flatMap { UIImage(systemName: $0) }
-        panelIcon.isHidden = !open || panelIcon.image == nil
-        scroll.isHidden = open
+        panelIcon.isHidden = !open || keepTools || panelIcon.image == nil
+        scroll.isHidden = hideTools
         candidatesStack.isHidden = open || !showingCandidates
         runsChip.isHidden = open || runsRemaining == nil || Glass.solidLook
-        divider.isHidden = open || Glass.siteLook
+        divider.isHidden = hideTools || Glass.siteLook
         if open {
             glyfButton.setTitle(nil, for: .normal)
             glyfButton.setImage(UIImage(systemName: "xmark"), for: .normal)

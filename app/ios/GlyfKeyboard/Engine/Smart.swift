@@ -39,11 +39,50 @@ enum Smart {
         }
     }
 
+    /// What the field itself says it wants, as far as a keyboard can tell.
+    /// iOS gives a keyboard extension no label, so this is assembled from the
+    /// keyboard type and the field's capitalisation/return key; Android adds
+    /// the real hint and autofill hints, which are stronger.
+    struct FieldHint: Equatable {
+        /// A vault kind ("email", "phone", "address", "name", "upi", "link"),
+        /// or nil when the field gives nothing away.
+        var kind: String?
+        /// The field is empty, so filling it is the only thing to do here.
+        var empty: Bool = true
+
+        static let none = FieldHint(kind: nil)
+
+        /// Android hints and iOS placeholders, matched by wording. Kept here
+        /// so both platforms agree on what a field is asking for.
+        static func kind(fromHint hint: String) -> String? {
+            let h = hint.lowercased()
+            func has(_ words: [String]) -> Bool { words.contains { h.contains($0) } }
+            if has(["e-mail", "email", "mail id"]) { return "email" }
+            if has(["phone", "mobile", "contact number", "whatsapp"]) { return "phone" }
+            if has(["address", "street", "flat", "house", "city", "pincode",
+                    "postal", "zip", "delivery"]) { return "address" }
+            if has(["full name", "your name", "first name", "last name",
+                    "name"]) { return "name" }
+            if has(["upi", "vpa", "gpay", "phonepe", "paytm"]) { return "upi" }
+            if has(["website", "url", "link", "portfolio"]) { return "link" }
+            if has(["company", "organisation", "organization", "employer"]) { return "company" }
+            if has(["instagram", "twitter", "linkedin", "handle", "social"]) { return "social" }
+            return nil
+        }
+    }
+
     /// One chip at most, in the website's order: a sum you just typed, then a
-    /// saved detail the sentence asks for, then something freshly copied.
-    static func chip(for text: String, fields: [VaultField], paste: String? = nil) -> Chip? {
+    /// saved detail the sentence (or the field itself) asks for, then
+    /// something freshly copied.
+    static func chip(for text: String, fields: [VaultField], paste: String? = nil,
+                     field: FieldHint = .none) -> Chip? {
         if let c = calc(text) { return .calc(value: c.value, hasEquals: c.hasEquals) }
         if let f = vaultMatch(text, fields: fields) { return .vault(field: f) }
+        // A form asking for something we already know: one tap fills it.
+        if text.isEmpty, field.empty, let kind = field.kind,
+           let f = fields.first(where: { $0.kind == kind }) {
+            return .vault(field: f)
+        }
         if let paste, !paste.isEmpty, text.isEmpty { return .paste(text: paste) }
         return nil
     }

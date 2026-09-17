@@ -43,6 +43,10 @@ struct GlyfSettings: Codable, Equatable {
     /// Key style: "site" (the tryglyf.com look, default) | "glass"
     /// (liquid-glass) | "classic" | "glow".
     var keyTheme: String? = "site"
+    /// Let a Glyf run see the shareable half of your vault (name, email,
+    /// phone, address, UPI, links), so "write my address" and form filling
+    /// work. Off means runs never carry your details.
+    var aiUsesVault: Bool? = true
     /// Keep what you copy in the keyboard's clipboard history. iOS may ask to
     /// allow the paste the first time after a copy from another app.
     var clipboardHistory: Bool? = true

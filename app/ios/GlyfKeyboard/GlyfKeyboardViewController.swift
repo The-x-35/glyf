@@ -352,6 +352,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .shell:
             let title = shell?.headerTitle ?? "Glyf"
             return (title == "Glyf" ? "square.grid.2x2" : nil, title)
+        // (The g menu keeps the tools on the strip: see keepTools below.)
         case .emoji where emoji?.searchActive != true: return ("face.smiling", "Emoji")
         case .act: return ("sparkles", "Glyf")
         case .bar where bar?.expandedForResult == true: return ("sparkles", "Glyf")
@@ -364,6 +365,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var draggingToolId: String?
     private var dragGhost: UIImageView?
 
+    /// The g menu itself is open (its root grid), so the strip keeps showing
+    /// the tools — that is the thing a tile gets dragged onto.
+    private var shellAtMenu: Bool {
+        surface == .shell && shell?.canGoBack == false
+    }
+
     private var lastPanelTitle: String??
 
     private func layoutSurfaces() {
@@ -373,7 +380,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         if lastPanelTitle != .some(header.1) {
             lastPanelTitle = .some(header.1)
             toolbar.showPanelHeader(icon: header.0, title: header.1,
-                                    canGoBack: shell?.canGoBack == true)
+                                    canGoBack: shell?.canGoBack == true,
+                                    keepTools: shellAtMenu)
         }
         let showHUD = surface == .none && hudActive
         hud?.isHidden = !showHUD
@@ -718,9 +726,31 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let paste: String? = (hasFullAccess && tail.isEmpty && ClipContext.isFresh())
             ? (ClipboardStore.load().first?.text ?? "Tap to paste what you copied")
             : nil
-        let chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields, paste: paste)
+        let chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
+                              paste: paste, field: fieldHint(emptyField: before.isEmpty))
         toolbar.showSmart(chip)
         return chip != nil
+    }
+
+    /// What the focused field is asking for. iOS tells a keyboard extension
+    /// nothing about labels, so this reads the signals it does give: the
+    /// keyboard type, and for names the pairing of word-capitalisation with a
+    /// Next key. (Android reads the real hint — see Autofill.kt.)
+    private func fieldHint(emptyField: Bool) -> Smart.FieldHint {
+        guard !isSecureField else { return .none }
+        let proxy = textDocumentProxy
+        var kind: String?
+        switch proxy.keyboardType {
+        case .emailAddress: kind = "email"
+        case .phonePad, .namePhonePad: kind = "phone"
+        case .URL, .webSearch: kind = "link"
+        default: break
+        }
+        if kind == nil, proxy.autocapitalizationType == .words,
+           proxy.returnKeyType == .next {
+            kind = "name"
+        }
+        return Smart.FieldHint(kind: kind, empty: emptyField)
     }
 
     private func updateCandidates() {
@@ -1558,7 +1588,8 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         let header = panelHeader()
         lastPanelTitle = .some(header.1)
         toolbar.showPanelHeader(icon: header.0, title: header.1,
-                                canGoBack: shell?.canGoBack == true)
+                                canGoBack: shell?.canGoBack == true,
+                                keepTools: shellAtMenu)
     }
 
     func shellOpenSearch() {

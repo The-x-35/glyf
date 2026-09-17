@@ -27,11 +27,26 @@ class OnboardingFlow extends StatefulWidget {
 
 class _OnboardingFlowState extends State<OnboardingFlow> {
   static const _steps = [
-    'hello', 'persona', 'feel', 'enable', 'access', 'nearby', 'keys', 'connect'
+    'hello', 'persona', 'details', 'feel', 'enable', 'access', 'nearby',
+    'keys', 'connect'
   ];
   int _step = 0;
 
   String? _persona;
+  /// The details that make everything else one tap: a form asking for an
+  /// email gets the email, "my address is" gets the address. They are saved
+  /// in the on-device vault, never uploaded.
+  static const _detailFields = <(String, String, String)>[
+    ('name', 'Name', 'Arpit Singh'),
+    ('email', 'Email', 'you@example.com'),
+    ('phone', 'Phone', '+91 98765 43210'),
+    ('address', 'Home', 'Flat, street, city, pin'),
+    ('upi', 'UPI', 'you@okbank'),
+  ];
+  final Map<String, TextEditingController> _details = {
+    for (final f in _detailFields) f.$1: TextEditingController(),
+  };
+  String? _detailsError;
   bool _keySounds = true;
   bool _haptics = true;
   bool _keyboardEnabled = false;
@@ -55,7 +70,35 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   @override
   void dispose() {
     _poll?.cancel();
+    for (final c in _details.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  /// Saves whatever was filled in; empty boxes are simply skipped.
+  Future<void> _saveDetails() async {
+    String? firstError;
+    var saved = 0;
+    for (final (kind, label, _) in _detailFields) {
+      final value = _details[kind]!.text.trim();
+      if (value.isEmpty) continue;
+      final res = await GlyfBridge.vaultUpsertField(
+          kind: kind, label: label, value: value);
+      if (res.ok) {
+        saved++;
+      } else {
+        firstError ??= res.error;
+      }
+    }
+    Telemetry.log('onboarding_details', {'saved': saved});
+    if (!mounted) return;
+    if (firstError != null) {
+      setState(() => _detailsError = firstError);
+      return;
+    }
+    setState(() => _detailsError = null);
+    _advance();
   }
 
   Future<void> _enableLocation() async {
@@ -250,6 +293,61 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             ),
           const Spacer(),
           _pill('Continue', onTap: _persona == null ? null : _advance),
+          _skip(),
+        ]);
+
+      case 'details':
+        return _frame(children: [
+          const SizedBox(height: 24),
+          _headline('What should Glyf know?',
+              'Saved on this phone. Fill a form with one tap.'),
+          const SizedBox(height: 14),
+          for (final (kind, label, hint) in _detailFields)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: GlassCard(
+                child: Row(children: [
+                  SizedBox(
+                    width: 74,
+                    child: Text(label,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700)),
+                  ),
+                  Expanded(
+                    child: Semantics(
+                      identifier: 'onb:detail:$kind',
+                      child: TextField(
+                        controller: _details[kind],
+                        keyboardType: switch (kind) {
+                          'email' => TextInputType.emailAddress,
+                          'phone' => TextInputType.phone,
+                          'address' => TextInputType.streetAddress,
+                          _ => TextInputType.text,
+                        },
+                        textCapitalization: kind == 'name'
+                            ? TextCapitalization.words
+                            : TextCapitalization.none,
+                        style: const TextStyle(fontSize: 15),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          hintText: hint,
+                          hintStyle: const TextStyle(color: Glass.inkSoft),
+                        ),
+                      ),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          if (_detailsError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, bottom: 6),
+              child: Text(_detailsError!,
+                  style: const TextStyle(fontSize: 13, color: Glass.danger)),
+            ),
+          const Spacer(),
+          _pill('Save', onTap: _saveDetails),
           _skip(),
         ]);
 

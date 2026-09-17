@@ -80,5 +80,7 @@ export const RunRequestSchema = z.object({
   /** §6.16 — client-asserted until receipt validation (M7-ship TODO). */
   pro: z.boolean().default(false), // legacy client flag ⇒ treated as "plus"
   plan: z.enum(["free", "plus", "max"]).default("free"),
+  /** Shareable vault details; a prompt opts in with {{profile}}. */
+  profile: z.record(z.string().max(40), z.string().max(400)).optional(),
 });
 export type RunRequest = z.infer<typeof RunRequestSchema>;

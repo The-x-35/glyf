@@ -6,6 +6,29 @@ import os.log
 /// NEVER holds provider keys; the backend owns OpenRouter (§1.6).
 final class BackendClient: NSObject, URLSessionDataDelegate {
 
+    /// Vault kinds the model may see when the person asks it to write or fill
+    /// something: the details they hand out every day anyway. Anything
+    /// secret-shaped never reaches the vault in the first place (VaultRules),
+    /// and nothing here goes out unless "Let AI use your details" is on.
+    static let shareableKinds: Set<String> = [
+        "name", "email", "phone", "address", "upi", "link", "social",
+        "company", "bio",
+    ]
+
+    /// nil when the setting is off or there is nothing worth sending.
+    static func shareableProfile() -> [String: String]? {
+        guard SettingsStore.current.aiUsesVault != false else { return nil }
+        var out: [String: String] = [:]
+        for field in VaultStore.shared.load().fields
+        where shareableKinds.contains(field.kind) {
+            // One per kind, labelled so socials stay distinguishable.
+            let key = field.kind == "social" ? "social:\(field.label.lowercased())" : field.kind
+            if out[key] == nil { out[key] = field.value }
+        }
+        return out.isEmpty ? nil : out
+    }
+
+
     static let shared = BackendClient()
     private let log = Logger(subsystem: "so.glyf.keyboard", category: "backend")
 
@@ -49,7 +72,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         if mergedVars["toneHint"] == nil {
             mergedVars["toneHint"] = ToneProfile.currentHint()
         }
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "glyfId": glyfId,
             "input": input,
             "vars": mergedVars,
@@ -57,6 +80,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
             "pro": s.proUnlocked ?? false, // legacy flag, still honored
             "plan": s.plan ?? "free",      // §6.16 (receipt validation: M7-ship)
         ]
+        if let profile = Self.shareableProfile() { body["profile"] = profile }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         let task = session.dataTask(with: req)
@@ -191,6 +215,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         ]
         if let lat = s.lastLat, let lon = s.lastLon { body["lat"] = lat; body["lon"] = lon }
         if let region = s.region, region.count == 2 { body["country"] = region }
+        if let profile = Self.shareableProfile() { body["profile"] = profile }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"

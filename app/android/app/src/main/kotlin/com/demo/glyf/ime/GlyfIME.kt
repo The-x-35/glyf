@@ -51,7 +51,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var suggestionsShown = emptyList<Suggestion>()
     private var toolsPinned = false
     private data class Suggestion(val text: String, val kind: Kind) {
-        enum class Kind { LITERAL, CORRECTION, WORD, UNDO }
+        enum class Kind { LITERAL, CORRECTION, WORD, UNDO, FILL }
     }
     private data class Correction(val original: String, val replacement: String, val fromEngine: Boolean)
     private var lastCorrection: Correction? = null
@@ -1670,6 +1670,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val before = ic.getTextBeforeCursor(96, 0)?.toString() ?: ""
         val word = WordContext.currentWord(before)
         val engine = KeyboardTyping.engine
+        // A form asking for something already in the vault: offer it, one tap
+        // fills it. Android tells a keyboard what the field wants (hint,
+        // autofill hints, input type), so this is exact here.
+        if (before.isEmpty() && !isSecureField()) {
+            val fill = Autofill.match(currentInputEditorInfo, VaultStore.load(this))
+            if (fill != null) {
+                showSuggestions(listOf(Suggestion(fill, Suggestion.Kind.FILL)))
+                return
+            }
+        }
         if (word.isEmpty()) {
             val corr = lastCorrection
             val previous = WordContext.previousWord(before)
@@ -1741,6 +1751,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val engine = KeyboardTyping.engine
         val policy = typingPolicy()
         when (item.kind) {
+            Suggestion.Kind.FILL -> {
+                ic.commitText(item.text, 1)
+                showSuggestions(emptyList())
+                return
+            }
             Suggestion.Kind.UNDO -> {
                 val corr = lastCorrection ?: return
                 if (before.endsWith(corr.replacement + " ")) {

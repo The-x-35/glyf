@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { env } from "../env.js";
+import { profileBlock } from "../lib/act.js";
 import { RunRequestSchema } from "../schemas/glyfdef.js";
 import { loadRegistry, runGlyf } from "../lib/glyfengine.js";
 import { completeStreaming } from "../providers/openrouter.js";
@@ -12,6 +13,17 @@ import { connKey, PROVIDERS } from "./connector.js";
 /** POST /glyf/run — SSE stream: token* → done | error (§6.4 fast path).
  *  Resolution order: shipped registry → the device's own glyfs → hub installs.
  *  The device sends a glyf id + input; prompts and provider keys live here. */
+/** Makes the writer's details available to any prompt that asks for them:
+ *  {{profile}} for the whole block, {{profile.email}} for one line. */
+function withProfile(vars: Record<string, string>,
+                     profile?: Record<string, string>): Record<string, string> {
+  if (!profile || Object.keys(profile).length === 0) return { ...vars, profile: "" };
+  const out: Record<string, string> = { ...vars };
+  for (const [k, v] of Object.entries(profile)) out[`profile.${k}`] = v;
+  out.profile = profileBlock(profile).trim();
+  return out;
+}
+
 export function glyfRoutes(
   app: FastifyInstance, meter: MeterStore, library: GlyfLibrary, kv: KV,
 ): void {
@@ -63,7 +75,7 @@ export function glyfRoutes(
     };
 
     if (!parsed.success) return fail("Bad request");
-    const { glyfId, input, vars, deviceId, pro, plan } = parsed.data;
+    const { glyfId, input, vars, deviceId, pro, plan, profile } = parsed.data;
     const def = registry.get(glyfId) ?? library.resolve(deviceId, glyfId);
     if (!def) return fail(`Unknown glyf '${glyfId}'`);
 
@@ -102,7 +114,7 @@ export function glyfRoutes(
 
     try {
       const text = await runGlyf({
-        def, input, vars,
+        def, input, vars: withProfile(vars, profile),
         connections: connectionsFor(deviceId),
         complete: async (tier, prompt, onToken) => {
           const res = await completeStreaming(

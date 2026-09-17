@@ -18,6 +18,8 @@ const ActSchema = z.object({
   lon: z.number().min(-180).max(180).optional(),
   country: z.string().length(2).optional(),
   tz: z.string().max(64).optional(),
+  /** Shareable vault details, when the writer allows it (see ActOptions). */
+  profile: z.record(z.string().max(40), z.string().max(400)).optional(),
 });
 
 /** Where shared pages live. Unset in dev → this server, which is enough to
@@ -43,7 +45,7 @@ export function actRoutes(app: FastifyInstance, meter: MeterStore, kv: KV): void
       req.log.warn({ issues: parsed.error.issues }, "act bad request");
       return reply.code(400).send({ ok: false, error: "Bad request" });
     }
-    const { text, deviceId, plan, lat, lon, country, tz } = parsed.data;
+    const { text, deviceId, plan, lat, lon, country, tz, profile } = parsed.data;
 
     const remaining = meter.consume(deviceId, new Date(), planCap(plan, env.freeRunsPerDay));
     if (remaining < 0) {
@@ -57,6 +59,7 @@ export function actRoutes(app: FastifyInstance, meter: MeterStore, kv: KV): void
     try {
       const base = pageBase();
       const result = await act(text, { lat, lon, country: country?.toUpperCase(), tz }, {
+        profile,
         publish: base ? (title, places) => `${base}/p/${createPage(kv, title, places)}` : undefined,
       });
       // §12: events and timings only — never the typed text.

@@ -43,6 +43,23 @@ export interface ActResult {
 export interface ActOptions {
   /** Publishes a list as a live mini-app page and returns its public URL. */
   publish?: (title: string, places: PlaceCard[]) => string | undefined;
+  /**
+   * The shareable half of the writer's vault — name, email, phone, address,
+   * UPI, links — sent only when they have left "Let AI use your details" on.
+   * It exists so "send them my address" or a form that wants an email can be
+   * answered without them typing it again. Nothing secret-shaped can be in
+   * here: the vault refuses to store cards, IDs, OTPs and keys.
+   */
+  profile?: Record<string, string>;
+}
+
+/** The profile as prompt lines, or "" when there is nothing to say. */
+export function profileBlock(profile?: Record<string, string>): string {
+  const entries = Object.entries(profile ?? {}).filter(([, v]) => v?.trim());
+  if (entries.length === 0) return "";
+  const lines = entries.map(([k, v]) => `${k}: ${v}`).join("\n");
+  return `\n\nDetails about the writer, to use ONLY where the message asks ` +
+    `for them (never volunteer them):\n${lines}`;
 }
 
 const PLACE_WORDS =
@@ -220,7 +237,9 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
     case "rewrite": {
       const rewritten = await modelText(
         "[[act.rewrite]]\nRewrite this message so it reads clearly and naturally, keeping the " +
-        "writer's meaning, language and tone. Reply with the message only.\n" + typed);
+        "writer's meaning, language and tone. If the message asks for a detail about the " +
+        "writer that is listed below, fill it in. Reply with the message only." +
+        profileBlock(opts.profile) + "\n" + typed);
       return { intent: "rewrite", title: "Rewrite", cards: [], text: rewritten,
         insert: rewritten, provider: "model" };
     }
