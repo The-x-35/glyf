@@ -23,6 +23,8 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
 
     var channel: MethodChannel? = null
     var lastDeepLink: String? = null
+    /** Debug-only test flags from the intent that started this launch. */
+    var launchArgs: List<String> = emptyList()
 
     /** Set by MainActivity — asks for READ_CONTACTS, calls back with grant. */
     var requestContactsPermission: (((Boolean) -> Unit) -> Unit)? = null
@@ -161,12 +163,10 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
                 } else result.success(false)
             }
             "documentsPath" -> result.success(ctx.filesDir.absolutePath)
-            // Debug builds: test flags the scenario runner leaves in files/qa/args.txt
-            // (Android has no launch arguments for an app started by tap).
-            "launchArgs" -> result.success(
-                if (!BuildConfig.DEBUG) emptyList<String>()
-                else java.io.File(ctx.filesDir, "qa/args.txt").takeIf { it.exists() }
-                    ?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList<String>())
+            // Debug builds: test flags for this launch only, passed the way the
+            // scenario runner starts the app (am start --esa glyfArgs ...), so a
+            // flag can never outlive the run that set it.
+            "launchArgs" -> result.success(if (BuildConfig.DEBUG) launchArgs else emptyList<String>())
 
             "readSharedSettings" -> result.success(SettingsStore.load(ctx).toString())
             "writeSharedSettings" -> {

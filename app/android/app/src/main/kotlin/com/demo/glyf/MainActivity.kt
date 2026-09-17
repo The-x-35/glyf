@@ -35,6 +35,9 @@ class MainActivity : FlutterActivity() {
             requestPermissions(arrayOf(ScreenshotAccess.permission), 73)
         }
         bridge = b
+        if (BuildConfig.DEBUG) {
+            b.launchArgs = intent?.getStringArrayExtra("glyfArgs")?.toList() ?: emptyList()
+        }
         intent?.dataString?.let { link ->
             if (link.startsWith("glyf://")) b.lastDeepLink = link
         }
