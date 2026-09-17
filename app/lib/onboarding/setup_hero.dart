@@ -40,28 +40,39 @@ class _AiKeyboardState extends State<AiKeyboard> with SingleTickerProviderStateM
   }
 }
 
-/// What a setup step still needs, as a list that ticks itself off. The
-/// switches live in Settings; drawing fakes of them here only asked to be
-/// flipped, so each row just shows where it stands.
+/// The two things Glyf needs from the phone, as a list that ticks itself
+/// off. Each row that isn't done yet is the button for it — tapping it opens
+/// the place that turns it on — and a tick lands the moment the phone says so.
 class SetupChecklist extends StatelessWidget {
-  const SetupChecklist({super.key, required this.step, required this.done, required this.android});
+  const SetupChecklist({
+    super.key,
+    required this.android,
+    required this.keyboardOn,
+    required this.inUseOn,
+    required this.onKeyboard,
+    required this.onInUse,
+  });
 
-  /// 'enable' (add the keyboard) or 'access' (Full Access / switch to it).
-  final String step;
-  final bool done;
   final bool android;
+
+  /// Glyf is one of the phone's keyboards.
+  final bool keyboardOn;
+
+  /// iPhone: Full Access is on. Android: Glyf is the keyboard in use.
+  final bool inUseOn;
+
+  final VoidCallback onKeyboard;
+  final VoidCallback onInUse;
 
   @override
   Widget build(BuildContext context) {
-    final enable = step == 'enable';
-    final header = !android ? 'In Settings' : (enable ? 'On-screen keyboard' : 'Choose input method');
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 16, bottom: 8),
-          child: Text(header,
+          child: Text(android ? 'On this phone' : 'In Settings',
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Glass.inkSoft)),
         ),
         Container(
@@ -70,33 +81,31 @@ class SetupChecklist extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 18, offset: Offset(0, 6))],
           ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: _rows(enable)),
+          clipBehavior: Clip.antiAlias,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _row(
+              id: 'onb:setup:keyboard',
+              icon: _GlyfAppIcon(),
+              title: 'Glyf keyboard',
+              done: keyboardOn,
+              action: 'Open',
+              onTap: onKeyboard,
+            ),
+            _divider(),
+            _row(
+              id: 'onb:setup:in-use',
+              icon: android
+                  ? const _SettingsIcon(Icons.keyboard_rounded, Glass.accent)
+                  : const _SettingsIcon(Icons.lock_open_rounded, Color(0xFF34C759)),
+              title: android ? 'Glyf in use' : 'Allow Full Access',
+              done: inUseOn,
+              action: android ? 'Choose' : 'Open',
+              onTap: onInUse,
+            ),
+          ]),
         ),
       ],
     );
-  }
-
-  List<Widget> _rows(bool enable) {
-    if (!android) {
-      // Full Access comes after the keyboard itself, so on the first step
-      // the keyboard is the only thing that can be ticked.
-      return [
-        _row(icon: _GlyfAppIcon(), title: 'Glyf keyboard', done: enable ? done : true),
-        _divider(),
-        _row(
-          icon: const _SettingsIcon(Icons.lock_open_rounded, Color(0xFF34C759)),
-          title: 'Allow Full Access',
-          done: !enable && done,
-        ),
-      ];
-    }
-    return [
-      _row(
-        icon: _GlyfAppIcon(),
-        title: enable ? 'Glyf keyboard' : 'Glyf in use',
-        done: done,
-      ),
-    ];
   }
 
   Widget _divider() => const Padding(
@@ -104,57 +113,66 @@ class SetupChecklist extends StatelessWidget {
         child: Divider(height: 0.5, thickness: 0.5, color: Color(0x1F000000)),
       );
 
-  Widget _row({required Widget icon, required String title, required bool done}) {
-    return SizedBox(
-      height: 54,
+  Widget _row({
+    required String id,
+    required Widget icon,
+    required String title,
+    required bool done,
+    required String action,
+    required VoidCallback onTap,
+  }) {
+    final row = SizedBox(
+      height: 56,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(children: [
           SizedBox(width: 30, height: 30, child: icon),
           const SizedBox(width: 14),
           Expanded(child: Text(title, style: const TextStyle(fontSize: 16, color: Glass.ink))),
-          _Mark(done: done),
+          _Mark(done: done, action: action),
         ]),
+      ),
+    );
+    if (done) return row;
+    return Semantics(
+      identifier: id,
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(onTap: onTap, child: row),
       ),
     );
   }
 }
 
-/// Where one thing stands: an empty ring until the phone reports it on, then
-/// a tick that lands as soon as it is.
+/// Where one thing stands: what to tap until the phone reports it on, then a
+/// tick that lands the moment it is.
 class _Mark extends StatelessWidget {
-  const _Mark({required this.done});
+  const _Mark({required this.done, required this.action});
   final bool done;
+  final String action;
 
   @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: done ? 1 : 0),
-      duration: const Duration(milliseconds: 340),
-      curve: Curves.easeOutBack,
-      builder: (context, t, _) => SizedBox(
-        width: 26,
-        height: 26,
-        child: Stack(alignment: Alignment.center, children: [
-          Opacity(
-            opacity: (1 - t).clamp(0.0, 1.0),
-            child: Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFFD6D9E0), width: 1.6),
-              ),
-            ),
-          ),
-          if (t > 0.01)
-            Transform.scale(
-              scale: t.clamp(0.0, 1.2),
-              child: Container(
-                decoration: const BoxDecoration(shape: BoxShape.circle, color: Glass.success),
-                child: const Icon(Icons.check_rounded, size: 17, color: Colors.white),
-              ),
-            ),
-        ]),
-      ),
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 280),
+      switchInCurve: Curves.easeOutBack,
+      transitionBuilder: (child, anim) =>
+          ScaleTransition(scale: anim, child: FadeTransition(opacity: anim, child: child)),
+      child: done
+          ? Container(
+              key: const ValueKey('on'),
+              width: 26,
+              height: 26,
+              decoration: const BoxDecoration(shape: BoxShape.circle, color: Glass.success),
+              child: const Icon(Icons.check_rounded, size: 17, color: Colors.white),
+            )
+          : Row(key: const ValueKey('off'), mainAxisSize: MainAxisSize.min, children: [
+              Text(action,
+                  style: const TextStyle(
+                      fontSize: 14.5, color: Glass.accent, fontWeight: FontWeight.w700)),
+              const Icon(Icons.chevron_right_rounded, size: 20, color: Glass.accent),
+            ]),
     );
   }
 }

@@ -33,7 +33,7 @@ class OnboardingFlow extends StatefulWidget {
 class _OnboardingFlowState extends State<OnboardingFlow> {
   /// 'connect' only when this server can actually sign in with Google.
   List<String> _steps = const [
-    'signin', 'meet', 'details', 'feel', 'enable', 'access', 'nearby', 'connect', 'tour'
+    'signin', 'meet', 'details', 'feel', 'setup', 'nearby', 'connect', 'tour'
   ];
   int _step = 0;
 
@@ -192,6 +192,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       };
     });
     Telemetry.log('onboarding_location', {'granted': _locationOn});
+  }
+
+  /// Takes them where the thing they tapped is turned on.
+  void _openSetup(String what) {
+    Telemetry.log('onboarding_setup_open', {'what': what});
+    if (what == 'picker') {
+      GlyfBridge.showImePicker();
+    } else {
+      GlyfBridge.openSettings();
+    }
   }
 
   Future<void> _checkStatus() async {
@@ -608,29 +618,28 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const SizedBox(height: 20),
         ]);
 
-      case 'enable':
-      case 'access':
-        final enable = _steps[_step] == 'enable';
-        final done = enable ? _keyboardEnabled : (Platform.isAndroid ? _keyboardSelected : _fullAccess);
-        final title = enable
-            ? 'Turn on {glyf}'
-            : (Platform.isAndroid ? 'Switch to {glyf}' : 'Allow Full Access');
+      // Both things Glyf needs from the phone on one screen: each row opens
+      // the place that turns it on, and Continue waits until both are on.
+      case 'setup':
+        final android = Platform.isAndroid;
+        final inUse = android ? _keyboardSelected : _fullAccess;
+        final done = _keyboardEnabled && inUse;
         return _frame(children: [
           const Spacer(flex: 2),
           const AiKeyboard(),
           const SizedBox(height: 32),
-          GlyfText(title,
-              style: const TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
+          const GlyfText('Turn on {glyf}',
+              style: TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
           const SizedBox(height: 24),
-          SetupChecklist(step: _steps[_step], done: done, android: Platform.isAndroid),
+          SetupChecklist(
+            android: android,
+            keyboardOn: _keyboardEnabled,
+            inUseOn: inUse,
+            onKeyboard: () => _openSetup('keyboard'),
+            onInUse: () => _openSetup(android ? 'picker' : 'access'),
+          ),
           const Spacer(flex: 3),
-          if (done)
-            _pill('Continue', onTap: _advance)
-          else
-            _pill(!enable && Platform.isAndroid ? 'Choose keyboard' : 'Open Settings',
-                onTap: () => !enable && Platform.isAndroid
-                    ? GlyfBridge.showImePicker()
-                    : GlyfBridge.openSettings()),
+          _pill('Continue', onTap: done ? _advance : null),
           if (!done) _skip() else const SizedBox(height: 20),
         ]);
 
