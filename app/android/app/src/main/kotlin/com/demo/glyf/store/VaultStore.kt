@@ -60,8 +60,11 @@ object VaultStore {
         true
     } catch (_: Exception) { false }
 
+    /** The kinds iOS's VaultRules allows (plus "handle", which older builds
+     *  saved), so a detail saved on one phone is savable on the other. */
     private val allowedKinds = setOf(
-        "address", "upi", "email", "phone", "handle", "link", "custom")
+        "name", "email", "phone", "address", "upi", "gst", "wallet",
+        "link", "social", "bio", "reply", "custom", "handle")
 
     fun upsertField(ctx: Context, id: String?, kind: String,
                     label: String, value: String): String? {

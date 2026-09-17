@@ -17,10 +17,11 @@ class TalkingOrb extends StatefulWidget {
     this.titleSize = 30,
     this.onDone,
     this.launchTarget = false,
+    this.instant = false,
   });
 
-  /// Said one after another, each typed out. The first is the title.
-  /// `{glyf}` in a line is the Glyf wordmark, appearing as one piece.
+  /// The first is the title, typed out; the lines after it pop in whole once
+  /// it is said. `{glyf}` in a line is the Glyf wordmark, as one piece.
   final List<String> lines;
   final double size;
   final double titleSize;
@@ -29,6 +30,9 @@ class TalkingOrb extends StatefulWidget {
   /// The first screen after launch: the launch bubble lands on this orb, so
   /// it stays hidden, and says nothing, until it has.
   final bool launchTarget;
+
+  /// Already heard (a step come back to): everything shows at once.
+  final bool instant;
 
   @override
   State<TalkingOrb> createState() => _TalkingOrbState();
@@ -96,13 +100,26 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  bool get _still =>
+      widget.instant || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+
   Future<void> _speak() async {
-    final reduce = WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+    if (_still) {
+      setState(() => _shown.addAll(widget.lines));
+      widget.onDone?.call();
+      return;
+    }
     setState(() => _speaking = true);
-    if (!reduce) _voice.repeat(reverse: true);
-    for (final line in widget.lines) {
-      if (reduce) {
-        _shown.add(line);
+    _voice.repeat(reverse: true);
+    for (var index = 0; index < widget.lines.length; index++) {
+      final line = widget.lines[index];
+      if (index > 0) {
+        // After the title, the rest arrives whole, with a small pop.
+        await Future.delayed(Duration(milliseconds: index == 1 ? 180 : 120));
+        if (!mounted) return;
+        setState(() => _shown.add(line));
+        await Future.delayed(const Duration(milliseconds: 380));
+        if (!mounted) return;
         continue;
       }
       final done = Completer<void>();
@@ -123,8 +140,6 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
         }
       });
       await done.future;
-      if (!mounted) return;
-      await Future.delayed(const Duration(milliseconds: 380));
       if (!mounted) return;
       setState(() {
         _shown.add(line);
@@ -163,12 +178,33 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
       ),
       SizedBox(height: widget.size * 0.06),
       // Every line is laid out from the start, the unsaid part invisible, so
-      // typing never grows the column and the orb above never moves.
-      for (var i = 0; i < widget.lines.length; i++)
-        _line(widget.lines[i],
-            title: i == 0,
-            upTo: i < _shown.length ? null : (i == _shown.length && _typingLine != null ? _typed : 0)),
+      // nothing grows the column and the orb above never moves.
+      _line(widget.lines.first,
+          title: true,
+          upTo: _shown.isNotEmpty ? null : (_typingLine != null ? _typed : 0)),
+      for (var i = 1; i < widget.lines.length; i++)
+        _popIn(_line(widget.lines[i], title: false), shown: i < _shown.length),
     ]);
+  }
+
+  /// A line that pops in once it is said: fades up and grows the last few
+  /// percent with a touch of overshoot. Before that it only holds its place.
+  Widget _popIn(Widget line, {required bool shown}) {
+    if (!shown) return Opacity(opacity: 0, child: line);
+    if (_still) return line;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutBack,
+      child: line,
+      builder: (context, t, child) => Opacity(
+        opacity: t.clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset(0, 6 * (1 - t)),
+          child: Transform.scale(scale: 0.94 + 0.06 * t, child: child),
+        ),
+      ),
+    );
   }
 
   Widget _line(String text, {required bool title, int? upTo}) {

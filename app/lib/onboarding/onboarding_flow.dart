@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
@@ -13,10 +14,12 @@ import 'demo_chat.dart';
 import '../profile/brand_marks.dart';
 import 'setup_hero.dart';
 import 'talking_orb.dart';
+import 'tour_preview.dart';
+import 'tour_scenarios.dart';
 
 /// Onboarding: sign in with Apple or Google, meet the orb, tell it what to
-/// remember, make the keyboard yours, turn it on, then the website's chats on
-/// the real keyboard.
+/// remember, make the keyboard yours, turn it on, then an offer to see the
+/// website's chats played on the real keyboard (or skip straight to home).
 /// One screen, steps slide through an AnimatedSwitcher (no PageView, so
 /// both humans and UI tests can address everything directly).
 class OnboardingFlow extends StatefulWidget {
@@ -30,9 +33,21 @@ class OnboardingFlow extends StatefulWidget {
 class _OnboardingFlowState extends State<OnboardingFlow> {
   /// 'connect' only when this server can actually sign in with Google.
   List<String> _steps = const [
-    'signin', 'meet', 'details', 'feel', 'enable', 'access', 'nearby', 'connect'
+    'signin', 'meet', 'details', 'feel', 'enable', 'access', 'nearby', 'connect', 'tour'
   ];
   int _step = 0;
+
+  /// Which way the last step change went, for the slide.
+  bool _forward = true;
+
+  /// Steps already seen: coming back to one, its orb doesn't talk again.
+  final Set<String> _heard = {};
+
+  /// Saving settings and "onboarding done" as the tour offer opens.
+  Future<void>? _completing;
+
+  /// The tour was opened or skipped: a second tap does nothing.
+  bool _leaving = false;
 
   String? _persona;
   /// The details that make everything else one tap: a form asking for an
@@ -47,6 +62,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   ];
   final Map<String, TextEditingController> _details = {
     for (final f in _detailFields) f.$1: TextEditingController(),
+  };
+  final Map<String, FocusNode> _detailFocus = {
+    for (final f in _detailFields) f.$1: FocusNode(),
   };
   String? _detailsError;
   bool _keySounds = true;
@@ -79,6 +97,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // Already signed in (onboarding was left half way): start after sign-in.
     if (Auth.signedIn) _step = 1;
     _launchStep = _step;
+    for (final c in _details.values) {
+      c.addListener(_detailsChanged);
+    }
     Telemetry.log('onboarding_step_view', {'step': _steps[_step]});
     _poll = Timer.periodic(const Duration(seconds: 1), (_) => _checkStatus());
     _dropConnectIfUnavailable();
@@ -105,18 +126,43 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     for (final c in _details.values) {
       c.dispose();
     }
+    for (final f in _detailFocus.values) {
+      f.dispose();
+    }
     super.dispose();
   }
 
-  /// Saves whatever was filled in; empty boxes are simply skipped.
+  void _detailsChanged() {
+    if (mounted && _steps[_step] == 'details') setState(() {});
+  }
+
+  int get _filledDetails =>
+      _detailFields.where((f) => _details[f.$1]!.text.trim().isNotEmpty).length;
+
+  /// Saves whatever was filled in; empty boxes are simply skipped. Coming
+  /// back and saving again updates what was saved, never adds a twin.
   Future<void> _saveDetails() async {
+    FocusScope.of(context).unfocus();
+    final saved0 = <String, Map>{};
+    try {
+      final raw = await GlyfBridge.vaultList();
+      final fields = raw == null ? const [] : ((jsonDecode(raw) as Map)['fields'] as List? ?? const []);
+      for (final f in fields.whereType<Map>()) {
+        saved0.putIfAbsent('${f['kind']}|${f['label']}', () => f);
+      }
+    } catch (_) {}
     String? firstError;
     var saved = 0;
     for (final (kind, label, _) in _detailFields) {
       final value = _details[kind]!.text.trim();
       if (value.isEmpty) continue;
+      final prior = saved0['$kind|$label'];
+      if (prior != null && prior['value'] == value) {
+        saved++;
+        continue;
+      }
       final res = await GlyfBridge.vaultUpsertField(
-          kind: kind, label: label, value: value);
+          id: prior?['id'] as String?, kind: kind, label: label, value: value);
       if (res.ok) {
         saved++;
       } else {
@@ -163,12 +209,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   void _advance() {
     Telemetry.log('onboarding_step_complete', {'step': _steps[_step]});
-    if (_step >= _steps.length - 1) {
-      _finish();
-      return;
-    }
-    setState(() => _step++);
+    // The tour offer is the end: its own buttons leave onboarding.
+    if (_step >= _steps.length - 1) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    _heard.add(_steps[_step]);
+    setState(() {
+      _forward = true;
+      _step++;
+    });
     if (_steps[_step] == 'details') _prefillFromAccount();
+    if (_steps[_step] == 'tour') _completing ??= _complete();
     if (_steps[_step] == 'connect' && _googleScopes.isEmpty) {
       // Persona decides the SUGGESTION; the checklist is the user's call.
       _googleScopes.addAll(switch (_persona) {
@@ -179,6 +229,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       });
     }
     Telemetry.log('onboarding_step_view', {'step': _steps[_step]});
+  }
+
+  /// Back is there once signed in and past the orb's hello, up to the tour
+  /// offer (by then onboarding is saved as done).
+  bool get _canGoBack {
+    final name = _steps[_step];
+    return _step > _steps.indexOf('meet') && name != 'tour' && !_busy;
+  }
+
+  void _back() {
+    if (!_canGoBack) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    _heard.add(_steps[_step]);
+    setState(() {
+      _forward = false;
+      _step--;
+    });
+    Telemetry.log('onboarding_step_back', {'step': _steps[_step]});
   }
 
   /// The name and email the account came with, so nobody types them twice.
@@ -218,7 +286,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _advance();
   }
 
-  Future<void> _finish() async {
+  /// Onboarding is done once the tour is offered: settings saved, state
+  /// written, so a phone closed on the offer opens to home next time.
+  Future<void> _complete() async {
     await GlyfBridge.updateSharedSettings((s) {
       s['keyClicks'] = _keySounds;
       s['haptics'] = _haptics;
@@ -233,57 +303,105 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
     Telemetry.log('onboarding_complete', {'persona': _persona ?? 'none'});
     unawaited(Auth.syncPrefs());
-    if (!mounted) {
-      widget.onDone();
-      return;
-    }
-    // Settings are done; now the part that actually teaches Glyf — the
-    // website's guided chat, played on the keyboard they just enabled.
-    // Skippable from its own header.
+  }
+
+  /// The website's chats on the real keyboard, from the one picked (or the
+  /// first); home when it closes.
+  Future<void> _startTour(int index) async {
+    if (_leaving) return;
+    _leaving = true;
+    await _completing;
+    if (!mounted) return;
+    Telemetry.log('tour_start', {'from': tourScenarios[index].id});
     await Navigator.of(context).push(MaterialPageRoute(
       fullscreenDialog: true,
-      builder: (ctx) => DemoChat(onDone: () => Navigator.of(ctx).pop()),
+      builder: (ctx) => DemoChat(startAt: index, onDone: () => Navigator.of(ctx).pop()),
     ));
+    widget.onDone();
+  }
+
+  Future<void> _skipTour() async {
+    if (_leaving) return;
+    _leaving = true;
+    await _completing;
+    Telemetry.log('tour_skipped', {});
     widget.onDone();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: GlyfBackground(
-        child: SafeArea(
-          child: Column(children: [
-            if (_steps[_step] != 'signin') _progress(),
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 340),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeIn,
-                transitionBuilder: (child, anim) => FadeTransition(
-                  opacity: anim,
-                  child: SlideTransition(
-                    position: Tween(
-                            begin: const Offset(0.06, 0),
-                            end: Offset.zero)
-                        .animate(anim),
-                    child: child,
+    // Android's back gesture walks the steps too.
+    return PopScope(
+      canPop: !_canGoBack,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: Scaffold(
+        body: GlyfBackground(
+          child: SafeArea(
+            child: Column(children: [
+              if (_steps[_step] != 'signin') _topBar(),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 340),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SlideTransition(
+                      position: Tween(
+                              begin: Offset(_forward ? 0.06 : -0.06, 0),
+                              end: Offset.zero)
+                          .animate(anim),
+                      child: child,
+                    ),
+                  ),
+                  child: KeyedSubtree(
+                    key: ValueKey(_step),
+                    child: _buildStep(),
                   ),
                 ),
-                child: KeyedSubtree(
-                  key: ValueKey(_step),
-                  child: _buildStep(),
-                ),
               ),
-            ),
-          ]),
+            ]),
+          ),
         ),
       ),
     );
   }
 
+  /// Back on the left, the progress bar centred between two equal slots.
+  Widget _topBar() {
+    return SizedBox(
+      height: 44,
+      child: Row(children: [
+        SizedBox(
+          width: 52,
+          child: AnimatedOpacity(
+            opacity: _canGoBack ? 1 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: IgnorePointer(
+              ignoring: !_canGoBack,
+              child: Semantics(
+                identifier: 'onb:back',
+                button: true,
+                label: 'Back',
+                child: IconButton(
+                  onPressed: _back,
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 19, color: Glass.ink),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Expanded(child: _progress()),
+        const SizedBox(width: 52),
+      ]),
+    );
+  }
+
   Widget _progress() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+      padding: EdgeInsets.zero,
       child: Row(
         children: List.generate(_steps.length, (i) {
           return Expanded(
@@ -352,6 +470,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               size: 116,
               titleSize: 28,
               launchTarget: _launchStep == _step,
+              instant: _heard.contains('meet'),
               lines: const [
                 'Let me remember you.',
                 'When someone asks for your address or UPI, it’s one tap.',
@@ -371,60 +490,90 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ]);
 
       case 'details':
-        return _frame(children: [
-          const SizedBox(height: 10),
-          const Center(child: TalkingOrb(size: 76, titleSize: 26, lines: ['What should I remember?'])),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView(padding: EdgeInsets.zero, children: [
-              for (final (kind, label, hint) in _detailFields)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: GlassCard(
-                    child: Row(children: [
-                      SizedBox(
-                        width: 74,
-                        child: Text(label,
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                      ),
-                      Expanded(
-                        child: Semantics(
-                          identifier: 'onb:detail:$kind',
-                          child: TextField(
-                            controller: _details[kind],
-                            keyboardType: switch (kind) {
-                              'email' => TextInputType.emailAddress,
-                              'phone' => TextInputType.phone,
-                              'address' => TextInputType.streetAddress,
-                              _ => TextInputType.text,
-                            },
-                            textCapitalization: kind == 'name'
-                                ? TextCapitalization.words
-                                : TextCapitalization.none,
-                            style: const TextStyle(fontSize: 15),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              hintText: hint,
-                              hintStyle: const TextStyle(color: Glass.inkSoft),
+        // While typing, nothing to tap by mistake sits over the keyboard: the
+        // keyboard's Next walks the boxes, and the buttons come back after.
+        final typing = MediaQuery.viewInsetsOf(context).bottom > 0;
+        final filled = _filledDetails;
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          child: _frame(children: [
+            const SizedBox(height: 10),
+            Center(
+              child: TalkingOrb(
+                size: 76,
+                titleSize: 26,
+                lines: const ['What should I remember?'],
+                instant: _heard.contains('details'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView(padding: EdgeInsets.zero, children: [
+                for (final (i, (kind, label, hint)) in _detailFields.indexed)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: GlassCard(
+                      onTap: () => _detailFocus[kind]!.requestFocus(),
+                      child: Row(children: [
+                        SizedBox(
+                          width: 74,
+                          child: Text(label,
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                        ),
+                        Expanded(
+                          child: Semantics(
+                            identifier: 'onb:detail:$kind',
+                            child: TextField(
+                              controller: _details[kind],
+                              focusNode: _detailFocus[kind],
+                              keyboardType: switch (kind) {
+                                'email' => TextInputType.emailAddress,
+                                'phone' => TextInputType.phone,
+                                'address' => TextInputType.streetAddress,
+                                _ => TextInputType.text,
+                              },
+                              textInputAction: i < _detailFields.length - 1
+                                  ? TextInputAction.next
+                                  : TextInputAction.done,
+                              onSubmitted: (_) => i < _detailFields.length - 1
+                                  ? _detailFocus[_detailFields[i + 1].$1]!.requestFocus()
+                                  : FocusManager.instance.primaryFocus?.unfocus(),
+                              textCapitalization: kind == 'name'
+                                  ? TextCapitalization.words
+                                  : TextCapitalization.none,
+                              style: const TextStyle(fontSize: 15),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                border: InputBorder.none,
+                                hintText: hint,
+                                hintStyle: const TextStyle(color: Glass.inkSoft),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ]),
+                      ]),
+                    ),
                   ),
-                ),
-              if (_detailsError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2, bottom: 6),
-                  child: Text(_detailsError!,
-                      style: const TextStyle(fontSize: 13, color: Glass.danger)),
-                ),
-            ]),
-          ),
-          _pill('Save', onTap: _saveDetails),
-          _skip(),
-        ]);
+                if (_detailsError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2, bottom: 6),
+                    child: Text(_detailsError!,
+                        style: const TextStyle(fontSize: 13, color: Glass.danger)),
+                  ),
+              ]),
+            ),
+            if (typing)
+              const SizedBox(height: 8)
+            else if (filled == 0) ...[
+              _pill('Skip for now', onTap: _advance),
+              const SizedBox(height: 20),
+            ] else ...[
+              _pill(filled == 1 ? 'Save 1 detail' : 'Save $filled details', onTap: _saveDetails),
+              _skip(),
+            ],
+          ]),
+        );
 
       case 'feel':
         return _frame(children: [
@@ -571,6 +720,30 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           _skip(label: 'Not now'),
         ]);
 
+      case 'tour':
+        // The cards run edge to edge so the next one peeks in; the rest
+        // keeps the usual margins.
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const SizedBox(height: 6),
+          const Center(
+            child: TalkingOrb(
+              size: 84,
+              titleSize: 30,
+              lines: ['You’re all set', 'Try Glyf in a few real chats.'],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(child: TourPreview(onOpen: _startTour)),
+          const SizedBox(height: 18),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _pill('See the tour', onTap: () => _startTour(0)),
+              _skip(label: 'Skip tour', onTap: _skipTour, id: 'onb:skip-tour'),
+            ]),
+          ),
+        ]);
+
       default:
         return const SizedBox.shrink();
     }
@@ -652,11 +825,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ),
       );
 
-  Widget _skip({String label = 'Skip'}) => Semantics(
-        identifier: 'onb:skip',
+  Widget _skip({String label = 'Skip', VoidCallback? onTap, String id = 'onb:skip'}) => Semantics(
+        identifier: id,
         button: true,
         child: TextButton(
-          onPressed: _advance,
+          onPressed: onTap ?? _advance,
           child: Text(label,
               style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
         ),

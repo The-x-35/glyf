@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
+import 'chat_parts.dart';
 import 'tour_scenarios.dart';
 
 /// The website's chats (tryglyf.com), as a phone app, on the real keyboard.
@@ -19,8 +20,11 @@ import 'tour_scenarios.dart';
 /// and payment cards, a banner when the next friend writes, and the
 /// Messages list one tap back.
 class DemoChat extends StatefulWidget {
-  const DemoChat({super.key, required this.onDone});
+  const DemoChat({super.key, required this.onDone, this.startAt = 0});
   final VoidCallback onDone;
+
+  /// The chat to open first (the one picked on the tour offer).
+  final int startAt;
 
   /// Set while the tour is open: the keyboard's Pay chip lands here, in a
   /// practice wallet, instead of the real one.
@@ -107,7 +111,8 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
     GlyfBridge.locationStatus().then((s) {
       if (mounted) setState(() => _nearbyOn = s['enabled'] == true);
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _open(0));
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _open(widget.startAt.clamp(0, tourScenarios.length - 1)));
   }
 
   @override
@@ -600,24 +605,7 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
     );
   }
 
-  Widget _avatar(TourScenario sc, double size) => Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color.lerp(Colors.white, sc.tint, 0.16)!,
-              Color.lerp(Colors.white, sc.tint, 0.36)!,
-            ],
-          ),
-          border: Border.all(color: sc.tint.withValues(alpha: 0.3), width: 0.5),
-        ),
-        child: Text(sc.avatar, style: TextStyle(fontSize: size * 0.5)),
-      );
+  Widget _avatar(TourScenario sc, double size) => TourAvatar(sc, size: size);
 
   Widget _glass({required Widget child, EdgeInsets? padding, double radius = 22}) => Container(
         padding: padding,
@@ -782,7 +770,7 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
     if (last && rich == null) {
       body = CustomPaint(
         foregroundPainter: null,
-        painter: _Tail(color: m.mine ? _imBlue : _imGrey, mine: m.mine),
+        painter: BubbleTail(color: m.mine ? _imBlue : _imGrey, mine: m.mine),
         child: body,
       );
     }
@@ -1186,38 +1174,6 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
       ),
     );
   }
-}
-
-/// The iMessage tail on the last bubble of a run.
-class _Tail extends CustomPainter {
-  _Tail({required this.color, required this.mine});
-  final Color color;
-  final bool mine;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = color;
-    final h = size.height;
-    final w = size.width;
-    final path = Path();
-    if (mine) {
-      path
-        ..moveTo(w - 14, h - 14)
-        ..quadraticBezierTo(w - 4, h - 2, w + 6, h)
-        ..quadraticBezierTo(w - 6, h + 1, w - 18, h - 4)
-        ..close();
-    } else {
-      path
-        ..moveTo(14, h - 14)
-        ..quadraticBezierTo(4, h - 2, -6, h)
-        ..quadraticBezierTo(6, h + 1, 18, h - 4)
-        ..close();
-    }
-    canvas.drawPath(path, p);
-  }
-
-  @override
-  bool shouldRepaint(_Tail old) => old.color != color || old.mine != mine;
 }
 
 class _Point extends CustomPainter {
