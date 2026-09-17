@@ -20,3 +20,6 @@ docs/evidence/*.mp4
 
 # stray Xcode template project with its own git repo (the real iOS app is app/ios)
 /glyf/
+
+# Scenario screenshots are evidence for a run, not source.
+qa/results/*.png

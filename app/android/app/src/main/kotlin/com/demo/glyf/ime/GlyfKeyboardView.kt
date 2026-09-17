@@ -264,6 +264,14 @@ class GlyfKeyboardView(
 
     private var rows: List<List<Key>> = emptyList()
     private val keyRects = mutableListOf<Pair<Key, RectF>>()
+
+    /** Each key's id and its centre on screen, for the debug state dump. */
+    fun keyCenters(): List<Pair<String, IntArray>> {
+        val loc = IntArray(2).also { getLocationOnScreen(it) }
+        return keyRects.map { (k, r) ->
+            k.id to intArrayOf(loc[0] + r.centerX().toInt(), loc[1] + r.centerY().toInt())
+        }
+    }
     /** Key-center spacing across a row and between rows, in px — the typing
      *  engine's grid (shared/typing/FORMAT.md "Scoring"). */
     private var keyPitchPx = 1f

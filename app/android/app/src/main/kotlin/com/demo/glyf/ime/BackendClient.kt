@@ -145,6 +145,37 @@ object BackendClient {
         }
     }
 
+    /** POST /suggest — the model names what Glyf could do with the sentence
+     *  ("Tidy this up", "Show me places"), or nothing. Silent on failure. */
+    fun suggestAction(
+        backendURL: String,
+        text: String,
+        deviceId: String,
+        onResult: (intent: String, label: String, query: String) -> Unit,
+    ): () -> Unit {
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        pool.execute {
+            try {
+                val c = (URL("$backendURL/suggest").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 4000
+                    readTimeout = 8000
+                    setRequestProperty("Content-Type", "application/json")
+                }
+                val body = JSONObject().put("text", text).put("deviceId", deviceId)
+                c.outputStream.use { it.write(body.toString().toByteArray()) }
+                if (c.responseCode !in 200..299 || cancelled.get()) return@execute
+                val json = JSONObject(c.inputStream.bufferedReader().readText())
+                val s = json.optJSONObject("suggestion") ?: return@execute
+                val intent = s.optStringOrNull("intent") ?: return@execute
+                val label = s.optStringOrNull("label") ?: return@execute
+                if (!cancelled.get()) onResult(intent, label, s.optStringOrNull("query") ?: text)
+            } catch (_: Exception) { /* no chip */ }
+        }
+        return { cancelled.set(true) }
+    }
+
     /** GET /search/suggest — the landing state for a tab (trending searches,
      *  popular videos, nearby places). The user's own recents stay on the
      *  device and are merged in by the caller. */
@@ -251,6 +282,7 @@ object BackendClient {
         country: String? = null,
         tz: String? = null,
         intent: String? = null,
+        profile: Map<String, String>? = null,
         onResult: (ActResult) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -273,6 +305,7 @@ object BackendClient {
                     if (country != null && country.length == 2) put("country", country)
                     if (tz != null) put("tz", tz)
                     if (intent != null) put("intent", intent)
+                    if (!profile.isNullOrEmpty()) put("profile", JSONObject(profile))
                 }
                 c.outputStream.use { it.write(body.toString().toByteArray()) }
                 val ok = c.responseCode in 200..299

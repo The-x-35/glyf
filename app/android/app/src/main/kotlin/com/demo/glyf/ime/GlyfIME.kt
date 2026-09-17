@@ -80,9 +80,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
             .addPrimaryClipChangedListener(clipListener)
         if (com.demo.glyf.BuildConfig.DEBUG) {
-            // Injected taps never reach an IME window on the emulator, so debug
-            // builds open panels by broadcast to check them:
+            // Debug builds take commands by broadcast, for the scenario runner:
             //   adb shell am broadcast -a com.demo.glyf.DEBUG_TOOL --es id menu
+            //   adb shell am broadcast -a com.demo.glyf.DEBUG_TOOL --es id dump
             val filter = android.content.IntentFilter("com.demo.glyf.DEBUG_TOOL")
             if (android.os.Build.VERSION.SDK_INT >= 33) {
                 registerReceiver(debugTool, filter, RECEIVER_EXPORTED)
@@ -104,6 +104,22 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         intent.getStringExtra("text") ?: ""))
                 }
                 "close" -> dismissFeaturePanel()
+                "dump" -> writeQaState()
+                "seedvault" -> {
+                    val fields = VaultStore.load(this@GlyfIME).optJSONArray("fields")
+                    if (fields == null || fields.length() == 0) {
+                        VaultStore.upsertField(this@GlyfIME, null, "address", "Home",
+                            "42 Glass Lane, Indiranagar, Bengaluru 560038")
+                        VaultStore.upsertField(this@GlyfIME, null, "upi", "UPI", "arpit@okbank")
+                    }
+                }
+                "clear" -> currentInputConnection?.let { ic ->
+                    ic.finishComposingText()
+                    val before = ic.getTextBeforeCursor(10000, 0)?.length ?: 0
+                    val after = ic.getTextAfterCursor(10000, 0)?.length ?: 0
+                    ic.deleteSurroundingText(before, after)
+                    updateSuggestions()
+                }
                 "delwords" -> {
                     val n = intent.getIntExtra("count", 1)
                     onDeleteWordsPreview(n)
@@ -112,6 +128,45 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 else -> openTool(id)
             }
         }
+    }
+
+    /** Debug builds: what is on the keyboard right now, for the scenario
+     *  runner (qa/android-scenarios.mjs) to find things to tap and check what
+     *  happened. Keys come from the canvas; everything else from the views. */
+    private fun writeQaState() {
+        val out = org.json.JSONObject()
+        val keys = org.json.JSONObject()
+        if (keyboard.isShown) {
+            for ((id, xy) in keyboard.keyCenters()) keys.put(id, org.json.JSONArray(listOf(xy[0], xy[1])))
+        }
+        out.put("keys", keys)
+        out.put("shifted", keyboard.shifted)
+        out.put("mode", keyboard.mode.name)
+        val views = org.json.JSONArray()
+        fun walk(v: View) {
+            if (!v.isShown) return
+            val qaId = v.getTag(com.demo.glyf.R.id.qa_id) as? String
+            val label = qaId ?: v.contentDescription?.toString()
+                ?: (v as? TextView)?.text?.toString()?.takeIf { it.isNotBlank() }
+            if (label != null && v !== keyboard) {
+                val loc = IntArray(2).also { v.getLocationOnScreen(it) }
+                views.put(org.json.JSONObject()
+                    .put("id", qaId ?: v.contentDescription?.toString() ?: "")
+                    .put("text", (v as? TextView)?.text?.toString() ?: "")
+                    .put("x", loc[0] + v.width / 2).put("y", loc[1] + v.height / 2)
+                    .put("w", v.width).put("h", v.height))
+            }
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        if (::root.isInitialized) walk(root)
+        out.put("views", views)
+        val ic = currentInputConnection
+        val before = ic?.getTextBeforeCursor(4000, 0)?.toString() ?: ""
+        val after = ic?.getTextAfterCursor(4000, 0)?.toString() ?: ""
+        out.put("text", before + after)
+        out.put("cursor", before.length)
+        val dir = java.io.File(filesDir, "qa").apply { mkdirs() }
+        java.io.File(dir, "state.json").writeText(out.toString())
     }
 
     override fun onDestroy() {
@@ -223,6 +278,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
         val g = TextView(this).apply {
             text = "g"
+            setTag(com.demo.glyf.R.id.qa_id, "toolbar:glyf")
+            contentDescription = "Glyf menu"
             setTextColor(Color.WHITE)
             textSize = 19f
             typeface = Typeface.DEFAULT_BOLD
@@ -263,7 +320,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // the iOS strip reads, so a tool pinned on one phone reads the same.
         for (id in stripTools()) {
             val v = ToolIcon(this, id, ink)
-            v.contentDescription = id
+            v.setTag(com.demo.glyf.R.id.qa_id, id)
+            v.contentDescription = ToolIcon.TOOLS.firstOrNull { it.first == id }?.second ?: id
             v.setOnClickListener { openTool(id) }
             toolIcons.addView(v, LinearLayout.LayoutParams(0, dp(34), 1f))
         }
@@ -759,7 +817,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 syncAutoShift()
                 updateSuggestions()
             }
-            id == "space" -> { handleSpace(ic); translateDraftChanged() }
+            id == "space" -> {
+                handleSpace(ic)
+                translateDraftChanged()
+                // Gboard's: "at 5 pm", a space after numbers brings the letters back.
+                if (keyboard.mode != Mode.LETTERS) {
+                    keyboard.mode = Mode.LETTERS
+                    keyboard.rebuild()
+                    syncAutoShift()
+                }
+            }
             id == "return" -> {
                 commitCurrentWord(ic)
                 ic.commitText("\n", 1)
@@ -1047,7 +1114,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         head.addView(TextView(this).apply {
             text = "✕"; textSize = 16f; setTextColor(ink())
             setPadding(dp(12), 0, dp(6), 0)
-            contentDescription = "bar:close"
+            setTag(com.demo.glyf.R.id.qa_id, "bar:close"); contentDescription = "Close"
             setOnClickListener { exitBar() }
         })
 
@@ -1064,7 +1131,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTextColor(ink())
             setHintTextColor(Color.argb(120, 128, 128, 136))
             setPadding(dp(12), dp(7), dp(12), dp(7))
-            contentDescription = "bar:prompt"
+            setTag(com.demo.glyf.R.id.qa_id, "bar:prompt"); contentDescription = "Ask Glyf"
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat(); setColor(card())
             }
@@ -1074,7 +1141,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(card())
-            contentDescription = "bar:run"
+            setTag(com.demo.glyf.R.id.qa_id, "bar:run"); contentDescription = "Run"
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL; setColor(ink())
             }
@@ -1091,7 +1158,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(ink())
                 setPadding(dp(13), dp(6), dp(13), dp(6))
-                contentDescription = "chip:$glyfId"
+                setTag(com.demo.glyf.R.id.qa_id, "chip:$glyfId")
                 background = GradientDrawable().apply {
                     cornerRadius = dp(15).toFloat(); setColor(card())
                     setStroke(1, Color.argb(if (chromeDark) 40 else 26, 128, 128, 136))
@@ -1151,6 +1218,125 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  in the strip as one chip, text on the left and Paste on the right, the
      *  way Gboard offers a fresh copy and the way iOS does it. Never a second
      *  row above the keyboard. */
+    /** Vault kinds the model may see when asked to write or fill something
+     *  (iOS BackendClient.shareableKinds), only while "Let AI use your saved
+     *  details" is on. Anything secret-shaped never reaches the vault. */
+    private fun shareableProfile(): Map<String, String>? {
+        if (!settings.optBoolean("aiUsesVault", true)) return null
+        val kinds = setOf("name", "email", "phone", "address", "upi", "link", "social",
+            "handle", "company", "bio")
+        val out = LinkedHashMap<String, String>()
+        for (f in vaultFields()) {
+            if (f.kind !in kinds) continue
+            val key = if (f.kind == "social" || f.kind == "handle") "social:${f.label.lowercase()}" else f.kind
+            out.putIfAbsent(key, f.value)
+        }
+        return out.ifEmpty { null }
+    }
+
+    private var vaultFieldsStamp = -1L
+    private var vaultFieldsCache: List<Smart.Field> = emptyList()
+
+    /** Decrypting the vault on every keystroke is wasted work: reread it only
+     *  when the file changed. */
+    private fun vaultFields(): List<Smart.Field> {
+        val stamp = com.demo.glyf.store.Bridge.file(this, "vault.enc").lastModified()
+        if (stamp != vaultFieldsStamp) {
+            vaultFieldsCache = Smart.fields(VaultStore.load(this))
+            vaultFieldsStamp = stamp
+        }
+        return vaultFieldsCache
+    }
+
+    private var suggestedChip: Smart.Chip.Action? = null
+    private var suggestedFor = ""
+    private var suggestCancel: (() -> Unit)? = null
+    private val suggestWork = Runnable { askForSuggestion() }
+
+    /** The website's smart strip: a sum just typed, the saved detail the
+     *  sentence asks for, a payment address, or what the model says Glyf could
+     *  do with the sentence. One chip, which owns the strip. True when shown. */
+    private fun updateSmartChip(before: String): Boolean {
+        val smartKinds = setOf("smart", "pay", "action")
+        if (searchActive || barActive || noteEditActive || overlay != null || featurePanel != null ||
+            isSecureField() || translateStrip != null) {
+            if (stripChipKind in smartKinds) hideStripChip()
+            return false
+        }
+        val tail = before.takeLast(120)
+        val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
+        val chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN")
+        if (chip != null) cancelSuggestion()
+        when (chip) {
+            is Smart.Chip.Calc, is Smart.Chip.Vault -> {
+                showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "") {
+                    currentInputConnection?.commitText(Smart.insert(chip), 1)
+                    hideStripChip()
+                    updateSuggestions()
+                }
+                return true
+            }
+            is Smart.Chip.Pay -> {
+                showStripChip("pay", null, Smart.display(chip), "Pay") {
+                    hideStripChip()
+                    openAppPath("wallet?to=${chip.address}" + (chip.amount?.let { "&amount=$it" } ?: ""))
+                }
+                return true
+            }
+            else -> {}
+        }
+        val trimmed = tail.trim()
+        val cached = suggestedChip
+        if (cached != null && suggestedFor == trimmed) {
+            showStripChip("action", null, cached.label, "") {
+                suggestedChip = null
+                suggestedFor = ""
+                hideStripChip()
+                val ic = currentInputConnection
+                startAct(ic?.getTextBeforeCursor(4000, 0)?.toString() ?: "",
+                    ic?.getTextAfterCursor(4000, 0)?.toString() ?: "", cached.intent)
+            }
+            return true
+        }
+        if (stripChipKind in smartKinds) hideStripChip()
+        scheduleSuggestion(trimmed)
+        return false
+    }
+
+    /** Debounced and never for a half-typed thought: a 700ms pause on a real
+     *  sentence is the only thing that spends a request. */
+    private fun scheduleSuggestion(text: String) {
+        main.removeCallbacks(suggestWork)
+        if (text.length < 12 || text.split(" ").size < 3 || text == suggestedFor ||
+            !settings.optBoolean("candidates", true)) return
+        main.postDelayed(suggestWork, 700)
+    }
+
+    private fun askForSuggestion() {
+        val ic = currentInputConnection ?: return
+        val text = (ic.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
+        if (text.length < 12) return
+        suggestCancel?.invoke()
+        suggestCancel = BackendClient.suggestAction(
+            backendURL = settings.optString("backendURL"),
+            text = text,
+            deviceId = settings.optString("deviceId"),
+        ) { intent, label, query -> main.post {
+            val now = (currentInputConnection?.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
+            // The sentence moved on while we were asking: drop it.
+            if (now != text) return@post
+            suggestedFor = text
+            suggestedChip = Smart.Chip.Action(label, query, intent)
+            updateSuggestions()
+        } }
+    }
+
+    private fun cancelSuggestion() {
+        main.removeCallbacks(suggestWork)
+        suggestCancel?.invoke()
+        suggestCancel = null
+    }
+
     private fun refreshClipCard() {
         if (!::root.isInitialized || !::toolIcons.isInitialized) return
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -1192,7 +1378,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 cornerRadius = dp(12).toFloat()
                 setColor(card())
             }
-            contentDescription = "strip:smart"
+            setTag(com.demo.glyf.R.id.qa_id, "strip:smart")
             setOnClickListener { onTap() }
         }
         if (label != null) chip.addView(TextView(this).apply {
@@ -1208,7 +1394,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(ink())
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        chip.addView(TextView(this).apply {
+        if (verb.isEmpty()) {
+            // The model's suggestion: its words are the action, a sparkle marks it.
+            chip.addView(ToolIcon(this, "ask", Color.rgb(0x7C, 0x5C, 0xFF)),
+                LinearLayout.LayoutParams(dp(22), dp(22)).apply { leftMargin = dp(8) })
+        } else chip.addView(TextView(this).apply {
             text = verb
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
@@ -1338,6 +1528,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             country = settings.optString("region").takeIf { it.length == 2 },
             tz = java.util.TimeZone.getDefault().id,
             intent = actIntent,
+            profile = shareableProfile(),
             onResult = { r -> main.post {
                 if (generation == actGeneration && overlay === panel) showActResult(panel, r)
             } },
@@ -1377,7 +1568,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setTextColor(ink())
-                contentDescription = "act:skill"
+                setTag(com.demo.glyf.R.id.qa_id, "act:skill"); contentDescription = "Working"
             }, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP).apply { topMargin = dp(14) })
@@ -1428,7 +1619,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         header.addView(TextView(this).apply {
             text = "✕"; textSize = 16f; setTextColor(ink())
             setPadding(dp(6), 0, dp(12), 0)
-            contentDescription = "act:close"
+            setTag(com.demo.glyf.R.id.qa_id, "act:close"); contentDescription = "Close"
             setOnClickListener { actClose() }
         })
         header.addView(TextView(this).apply {
@@ -1438,6 +1629,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        // Versions have no Copy/Insert row (tap inserts, hold copies), so ↻
+        // sits up here and the list gets the whole panel.
+        if (r.options.isNotEmpty()) {
+            header.addView(pill("↻", primary = false, id = "act:retry") { runAct() },
+                LinearLayout.LayoutParams(dp(44), dp(34)))
+        }
         column.addView(header, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(40)))
 
@@ -1452,7 +1649,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     setPadding(dp(14), dp(12), dp(14), dp(12))
-                    contentDescription = "act:option:${o.id}"
+                    setTag(com.demo.glyf.R.id.qa_id, "act:option:${o.id}")
+                    contentDescription = "${o.label}: ${o.text}"
                     background = GradientDrawable().apply {
                         cornerRadius = dp(14).toFloat(); setColor(card())
                     }
@@ -1480,7 +1678,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 textSize = 15.5f
                 setTextColor(ink())
                 setPadding(dp(12), dp(10), dp(12), dp(10))
-                contentDescription = "act:text"
+                setTag(com.demo.glyf.R.id.qa_id, "act:text"); contentDescription = "Answer"
                 background = GradientDrawable().apply {
                     cornerRadius = dp(15).toFloat(); setColor(card())
                 }
@@ -1505,7 +1703,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 background = GradientDrawable().apply {
                     cornerRadius = dp(15).toFloat(); setColor(card())
                 }
-                contentDescription = "act:map"
+                setTag(com.demo.glyf.R.id.qa_id, "act:map"); contentDescription = "Map"
                 setOnClickListener { actInsert(place.insertText(style)) }
             }
             list.addView(map, LinearLayout.LayoutParams(
@@ -1527,20 +1725,22 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             addView(list)
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, 0)
+        if (r.options.isEmpty()) {
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(8), 0, 0)
+            }
+            actions.addView(pill("↻", primary = false, id = "act:retry") { runAct() },
+                LinearLayout.LayoutParams(dp(44), dp(38)))
+            // Copy and Insert only when there is one answer to take.
+            if (r.insert.isNotBlank()) {
+                actions.addView(pill("Copy", primary = false, id = "act:copy") { actCopy(r.insert) },
+                    LinearLayout.LayoutParams(0, dp(38), 0.38f).apply { leftMargin = dp(8) })
+                actions.addView(pill("Insert ↑", primary = true, id = "act:insert") { actInsert(r.insert) },
+                    LinearLayout.LayoutParams(0, dp(38), 0.62f).apply { leftMargin = dp(8) })
+            }
+            column.addView(actions)
         }
-        actions.addView(pill("↻", primary = false, id = "act:retry") { runAct() },
-            LinearLayout.LayoutParams(dp(44), dp(38)))
-        // Rows are their own buttons; Copy and Insert only when there is one answer.
-        if (r.options.isEmpty() && r.insert.isNotBlank()) {
-            actions.addView(pill("Copy", primary = false, id = "act:copy") { actCopy(r.insert) },
-                LinearLayout.LayoutParams(0, dp(38), 0.38f).apply { leftMargin = dp(8) })
-            actions.addView(pill("Insert ↑", primary = true, id = "act:insert") { actInsert(r.insert) },
-                LinearLayout.LayoutParams(0, dp(38), 0.62f).apply { leftMargin = dp(8) })
-        }
-        column.addView(actions)
         panel.addView(column, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
     }
@@ -1560,7 +1760,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         header.addView(TextView(this).apply {
             this.text = "✕"; textSize = 16f; setTextColor(ink())
             setPadding(dp(6), 0, dp(12), 0)
-            contentDescription = "act:close"
+            setTag(com.demo.glyf.R.id.qa_id, "act:close"); contentDescription = "Close"
             setOnClickListener { actClose() }
         })
         header.addView(TextView(this).apply {
@@ -1575,7 +1775,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             textSize = 15.5f
             setTextColor(ink())
             setPadding(dp(12), dp(10), dp(12), dp(10))
-            contentDescription = "act:text"
+            setTag(com.demo.glyf.R.id.qa_id, "act:text"); contentDescription = "Answer"
             background = GradientDrawable().apply {
                 cornerRadius = dp(15).toFloat(); setColor(card())
             }
@@ -1597,14 +1797,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             gravity = Gravity.CENTER
             setTextColor(Color.argb(170, 128, 128, 136))
             setPadding(dp(24), 0, dp(24), 0)
-            contentDescription = "act:status"
+            setTag(com.demo.glyf.R.id.qa_id, "act:status"); contentDescription = "Status"
             setOnClickListener { runAct() }
         }, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         panel.addView(TextView(this).apply {
             text = "✕"; textSize = 16f; setTextColor(ink())
             setPadding(dp(14), dp(10), dp(14), dp(10))
-            contentDescription = "act:close"
+            setTag(com.demo.glyf.R.id.qa_id, "act:close"); contentDescription = "Close"
             setOnClickListener { actClose() }
         }, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -1661,11 +1861,23 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         })
     }
 
+    /** What TalkBack says for a symbol-only control. */
+    private fun spokenFor(id: String, label: String): String = when {
+        id.endsWith("close") -> "Close"
+        id.endsWith("retry") -> "Try again"
+        id.endsWith("copy") -> "Copy"
+        id.endsWith("insert") -> "Insert"
+        id.endsWith("back") -> "Back"
+        id.endsWith("edit") -> "Edit"
+        else -> label
+    }
+
     private fun circleButton(label: String, id: String, onTap: () -> Unit) = TextView(this).apply {
         text = label; textSize = 15f
         gravity = Gravity.CENTER
         setTextColor(ink())
-        contentDescription = id
+        setTag(com.demo.glyf.R.id.qa_id, id)
+        contentDescription = spokenFor(id, label)
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL; setColor(card())
             setStroke(1, Color.argb(if (chromeDark) 40 else 26, 128, 128, 136))
@@ -1679,7 +1891,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         typeface = Typeface.DEFAULT_BOLD
         gravity = Gravity.CENTER
         setTextColor(if (primary) card() else ink())
-        contentDescription = id
+        setTag(com.demo.glyf.R.id.qa_id, id)
+        contentDescription = spokenFor(id, label)
         background = GradientDrawable().apply {
             cornerRadius = dp(19).toFloat()
             setColor(if (primary) ink() else card())
@@ -1823,6 +2036,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
         }
         if (stripChipKind == "fill") hideStripChip()
+        if (updateSmartChip(before)) return
         refreshClipCard()
         if (word.isEmpty()) {
             val corr = lastCorrection
@@ -1872,7 +2086,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         setColor(Color.argb(if (chromeDark) 40 else 22, Color.red(ink), Color.green(ink), Color.blue(ink)))
                     }
                 }
-                contentDescription = "suggest:$i"
+                setTag(com.demo.glyf.R.id.qa_id, "suggest:$i")
                 setOnClickListener { suggestionTapped(item) }
             }
             suggestionRow.addView(tv, LinearLayout.LayoutParams(0, dp(32), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
