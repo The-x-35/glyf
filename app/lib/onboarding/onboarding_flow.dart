@@ -4,15 +4,16 @@ import 'dart:io' show Platform;
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
+import '../core/auth.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 import 'demo_chat.dart';
-import 'orb.dart';
+import 'talking_orb.dart';
 
-/// §6.18 — onboarding, rebuilt around questions instead of tours:
-/// hello → who are you → make it yours → enable → full access → your keys.
+/// Onboarding: sign in, meet the orb, tell it what to remember, make the
+/// keyboard yours, turn it on, then the website's chats on the real keyboard.
 /// One screen, steps slide through an AnimatedSwitcher (no PageView, so
 /// both humans and UI tests can address everything directly).
 class OnboardingFlow extends StatefulWidget {
@@ -26,7 +27,7 @@ class OnboardingFlow extends StatefulWidget {
 class _OnboardingFlowState extends State<OnboardingFlow> {
   /// 'connect' only when this server can actually sign in with Google.
   List<String> _steps = const [
-    'hello', 'details', 'feel', 'enable', 'access', 'nearby', 'connect'
+    'signin', 'meet', 'details', 'feel', 'enable', 'access', 'nearby', 'connect'
   ];
   int _step = 0;
 
@@ -49,8 +50,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool _haptics = true;
   /// On by default, like Gboard: what you copy is there to paste later.
   bool _clipboard = true;
-  /// Off until asked for: it needs photo access.
-  bool _screenshots = false;
+  /// On by default, like Gboard; photo access is asked for on Continue.
+  bool _screenshots = true;
   bool _keyboardEnabled = false;
   bool _fullAccess = false;
   bool _keyboardSelected = false;
@@ -61,9 +62,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   String? _locationNote;
   Timer? _poll;
 
+  // Sign-in
+  final _email = TextEditingController();
+  final _code = TextEditingController();
+  bool _emailOpen = false;
+  bool _codeSent = false;
+  bool _busy = false;
+  String? _signInError;
+  bool _meetDone = false;
+
   @override
   void initState() {
     super.initState();
+    // Already signed in (onboarding was left half way): start after sign-in.
+    if (Auth.signedIn) _step = 1;
     Telemetry.log('onboarding_step_view', {'step': _steps[_step]});
     _poll = Timer.periodic(const Duration(seconds: 1), (_) => _checkStatus());
     _dropConnectIfUnavailable();
@@ -87,6 +99,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   @override
   void dispose() {
     _poll?.cancel();
+    _email.dispose();
+    _code.dispose();
     for (final c in _details.values) {
       c.dispose();
     }
@@ -153,6 +167,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       return;
     }
     setState(() => _step++);
+    if (_steps[_step] == 'details') _prefillFromAccount();
     if (_steps[_step] == 'connect' && _googleScopes.isEmpty) {
       // Persona decides the SUGGESTION; the checklist is the user's call.
       _googleScopes.addAll(switch (_persona) {
@@ -163,6 +178,68 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       });
     }
     Telemetry.log('onboarding_step_view', {'step': _steps[_step]});
+  }
+
+  /// The name and email the account came with, so nobody types them twice.
+  void _prefillFromAccount() {
+    final id = Auth.identity();
+    if (_details['name']!.text.isEmpty && (id.name ?? '').isNotEmpty) _details['name']!.text = id.name!;
+    if (_details['email']!.text.isEmpty && (id.email ?? '').isNotEmpty) _details['email']!.text = id.email!;
+  }
+
+  Future<void> _signedIn(String? error) async {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _signInError = error;
+    });
+    if (error == null && Auth.signedIn) {
+      Telemetry.log('onboarding_signed_in', {});
+      _advance();
+    }
+  }
+
+  Future<void> _google() async {
+    setState(() { _busy = true; _signInError = null; });
+    _signedIn(await Auth.signInWithGoogle());
+  }
+
+  Future<void> _apple() async {
+    setState(() { _busy = true; _signInError = null; });
+    _signedIn(await Auth.signInWithApple());
+  }
+
+  Future<void> _emailContinue() async {
+    final email = _email.text.trim();
+    if (!_codeSent) {
+      if (!email.contains('@') || !email.contains('.')) {
+        setState(() => _signInError = 'Enter your email address.');
+        return;
+      }
+      setState(() { _busy = true; _signInError = null; });
+      final error = await Auth.sendEmailCode(email);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _signInError = error;
+        _codeSent = error == null;
+      });
+      return;
+    }
+    if (_code.text.trim().length < 6) {
+      setState(() => _signInError = 'Enter the 6-digit code from your email.');
+      return;
+    }
+    setState(() { _busy = true; _signInError = null; });
+    _signedIn(await Auth.verifyEmailCode(email, _code.text));
+  }
+
+  /// Photo access for recent screenshots, asked when it is on and they move on.
+  Future<void> _feelContinue() async {
+    if (_screenshots && !await GlyfBridge.screenshotAccess()) {
+      if (mounted) setState(() => _screenshots = false);
+    }
+    _advance();
   }
 
   Future<void> _finish() async {
@@ -179,6 +256,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'completedAt': DateTime.now().toUtc().toIso8601String(),
     });
     Telemetry.log('onboarding_complete', {'persona': _persona ?? 'none'});
+    unawaited(Auth.syncPrefs());
     if (!mounted) {
       widget.onDone();
       return;
@@ -250,72 +328,176 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   Widget _buildStep() {
     switch (_steps[_step]) {
-      case 'hello':
+      case 'signin':
         return _frame(children: [
           const Spacer(),
-          const Center(child: GlassOrb(size: 150, label: 'g')),
-          const SizedBox(height: 30),
-          const Center(child: GlyfWordmark(size: 44)),
-          const SizedBox(height: 10),
           const Center(
-            child: Text('Every key is a Glyf.',
-                style: TextStyle(color: Glass.inkSoft, fontSize: 15)),
+            child: TalkingOrb(
+              size: 128,
+              lines: ['Hi, I’m Glyf.', 'Sign in and I’ll set up your keyboard.'],
+            ),
           ),
           const Spacer(),
-          _pill('Set up Glyf', onTap: _advance),
+          if (!_emailOpen) ...[
+            _authButton(
+              id: 'onb:google',
+              label: 'Continue with Google',
+              icon: const _GoogleMark(),
+              onTap: _busy ? null : _google,
+            ),
+            if (Platform.isIOS) ...[
+              const SizedBox(height: 10),
+              _authButton(
+                id: 'onb:apple',
+                label: 'Continue with Apple',
+                icon: const Icon(Icons.apple, color: Colors.white, size: 22),
+                dark: true,
+                onTap: _busy ? null : _apple,
+              ),
+            ],
+            const SizedBox(height: 10),
+            _authButton(
+              id: 'onb:email',
+              label: 'Continue with email',
+              icon: const Icon(Icons.mail_outline_rounded, color: Glass.ink, size: 21),
+              onTap: _busy ? null : () => setState(() { _emailOpen = true; _signInError = null; }),
+            ),
+          ] else ...[
+            GlassCard(
+              child: Semantics(
+                identifier: 'onb:email-field',
+                child: TextField(
+                  controller: _email,
+                  enabled: !_codeSent,
+                  autofocus: true,
+                  keyboardType: TextInputType.emailAddress,
+                  autocorrect: false,
+                  style: const TextStyle(fontSize: 16),
+                  decoration: const InputDecoration(
+                    isDense: true, border: InputBorder.none, hintText: 'you@email.com',
+                    hintStyle: TextStyle(color: Glass.inkSoft)),
+                  onSubmitted: (_) => _emailContinue(),
+                ),
+              ),
+            ),
+            if (_codeSent) ...[
+              const SizedBox(height: 10),
+              GlassCard(
+                child: Semantics(
+                  identifier: 'onb:code-field',
+                  child: TextField(
+                    controller: _code,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    style: const TextStyle(fontSize: 20, letterSpacing: 6, fontWeight: FontWeight.w600),
+                    decoration: const InputDecoration(
+                      isDense: true, border: InputBorder.none, counterText: '', hintText: '6-digit code',
+                      hintStyle: TextStyle(color: Glass.inkSoft, fontSize: 16, letterSpacing: 0, fontWeight: FontWeight.w400)),
+                    onSubmitted: (_) => _emailContinue(),
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            _pill(_busy ? 'One moment…' : (_codeSent ? 'Sign in' : 'Send code'),
+                onTap: _busy ? null : _emailContinue),
+            TextButton(
+              onPressed: _busy ? null : () => setState(() {
+                _emailOpen = false;
+                _codeSent = false;
+                _code.clear();
+                _signInError = null;
+              }),
+              child: const Text('Other ways to sign in', style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
+            ),
+          ],
+          if (_signInError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(_signInError!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 13.5, color: Glass.danger)),
+            ),
+          const SizedBox(height: 18),
+        ]);
+
+      case 'meet':
+        return _frame(children: [
+          const SizedBox(height: 18),
+          Center(
+            child: TalkingOrb(
+              size: 96,
+              lines: const [
+                'Your keyboard should remember a few things about you,',
+                'so when someone asks, it’s one tap.',
+              ],
+              onDone: () { if (mounted) setState(() => _meetDone = true); },
+            ),
+          ),
+          const SizedBox(height: 22),
+          const RememberDemo(),
+          const Spacer(),
+          AnimatedOpacity(
+            opacity: _meetDone ? 1 : 0.35,
+            duration: const Duration(milliseconds: 300),
+            child: _pill('Tell Glyf about me', onTap: _advance),
+          ),
           const SizedBox(height: 20),
         ]);
 
       case 'details':
         return _frame(children: [
-          const SizedBox(height: 24),
-          _headline('What should Glyf know?', 'Saved on this phone.'),
-          const SizedBox(height: 14),
-          for (final (kind, label, hint) in _detailFields)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: GlassCard(
-                child: Row(children: [
-                  SizedBox(
-                    width: 74,
-                    child: Text(label,
-                        style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w700)),
-                  ),
-                  Expanded(
-                    child: Semantics(
-                      identifier: 'onb:detail:$kind',
-                      child: TextField(
-                        controller: _details[kind],
-                        keyboardType: switch (kind) {
-                          'email' => TextInputType.emailAddress,
-                          'phone' => TextInputType.phone,
-                          'address' => TextInputType.streetAddress,
-                          _ => TextInputType.text,
-                        },
-                        textCapitalization: kind == 'name'
-                            ? TextCapitalization.words
-                            : TextCapitalization.none,
-                        style: const TextStyle(fontSize: 15),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          hintText: hint,
-                          hintStyle: const TextStyle(color: Glass.inkSoft),
+          const SizedBox(height: 10),
+          const Center(child: TalkingOrb(size: 64, lines: ['What should I remember?'])),
+          const SizedBox(height: 16),
+          Expanded(
+            child: ListView(padding: EdgeInsets.zero, children: [
+              for (final (kind, label, hint) in _detailFields)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: GlassCard(
+                    child: Row(children: [
+                      SizedBox(
+                        width: 74,
+                        child: Text(label,
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                      ),
+                      Expanded(
+                        child: Semantics(
+                          identifier: 'onb:detail:$kind',
+                          child: TextField(
+                            controller: _details[kind],
+                            keyboardType: switch (kind) {
+                              'email' => TextInputType.emailAddress,
+                              'phone' => TextInputType.phone,
+                              'address' => TextInputType.streetAddress,
+                              _ => TextInputType.text,
+                            },
+                            textCapitalization: kind == 'name'
+                                ? TextCapitalization.words
+                                : TextCapitalization.none,
+                            style: const TextStyle(fontSize: 15),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              border: InputBorder.none,
+                              hintText: hint,
+                              hintStyle: const TextStyle(color: Glass.inkSoft),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                    ]),
                   ),
-                ]),
-              ),
-            ),
-          if (_detailsError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 2, bottom: 6),
-              child: Text(_detailsError!,
-                  style: const TextStyle(fontSize: 13, color: Glass.danger)),
-            ),
-          const Spacer(),
+                ),
+              if (_detailsError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, bottom: 6),
+                  child: Text(_detailsError!,
+                      style: const TextStyle(fontSize: 13, color: Glass.danger)),
+                ),
+            ]),
+          ),
           _pill('Save', onTap: _saveDetails),
           _skip(),
         ]);
@@ -330,19 +512,19 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const SizedBox(height: 10),
           _toggleCard('📳', 'Haptics', _haptics,
               (v) => setState(() => _haptics = v)),
-          const SizedBox(height: 10),
+          const SizedBox(height: 24),
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
+            child: Text('Clipboard',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Glass.inkSoft)),
+          ),
           _toggleCard('📋', 'Keep what you copy', _clipboard,
               (v) => setState(() => _clipboard = v)),
-          ...[
-            const SizedBox(height: 10),
-            _toggleCard('🖼️', 'Save recent screenshots', _screenshots, (v) async {
-              // Needs photo access; the switch only turns on once it is given.
-              if (v && !await GlyfBridge.screenshotAccess()) return;
-              setState(() => _screenshots = v);
-            }),
-          ],
+          const SizedBox(height: 10),
+          _toggleCard('🖼️', 'Recent screenshots', _screenshots,
+              (v) => setState(() => _screenshots = v)),
           const Spacer(),
-          _pill('Continue', onTap: _advance),
+          _pill('Continue', onTap: _feelContinue),
           const SizedBox(height: 20),
         ]);
 
@@ -561,6 +743,36 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         child: PillButton(label: label, onPressed: onTap),
       );
 
+  Widget _authButton({
+    required String id,
+    required String label,
+    required Widget icon,
+    required VoidCallback? onTap,
+    bool dark = false,
+  }) =>
+      Semantics(
+        identifier: id,
+        button: true,
+        child: SizedBox(
+          height: 54,
+          child: OutlinedButton(
+            onPressed: onTap,
+            style: OutlinedButton.styleFrom(
+              backgroundColor: dark ? Colors.black : Colors.white,
+              foregroundColor: dark ? Colors.white : Glass.ink,
+              side: BorderSide(color: dark ? Colors.black : const Color(0x1F000000)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(27)),
+              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              SizedBox(width: 24, height: 24, child: Center(child: icon)),
+              const SizedBox(width: 10),
+              Text(label),
+            ]),
+          ),
+        ),
+      );
+
   Widget _skip({String label = 'Skip'}) => Semantics(
         identifier: 'onb:skip',
         button: true,
@@ -590,4 +802,35 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       ]),
     );
   }
+}
+
+/// Google's G, drawn: four arcs in its four colours.
+class _GoogleMark extends StatelessWidget {
+  const _GoogleMark();
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: const Size(20, 20), painter: _GooglePainter());
+}
+
+class _GooglePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.2;
+    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke, size.height - stroke);
+    Paint p(Color c) => Paint()
+      ..color = c
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    const deg = 3.14159265 / 180;
+    canvas.drawArc(rect, -40 * deg, -100 * deg, false, p(const Color(0xFFEA4335)));
+    canvas.drawArc(rect, -140 * deg, -80 * deg, false, p(const Color(0xFFFBBC05)));
+    canvas.drawArc(rect, 140 * deg, -95 * deg, false, p(const Color(0xFF34A853)));
+    canvas.drawArc(rect, 45 * deg, -85 * deg, false, p(const Color(0xFF4285F4)));
+    canvas.drawLine(Offset(size.width / 2, size.height / 2), Offset(size.width - stroke / 2, size.height / 2),
+        p(const Color(0xFF4285F4)));
+  }
+
+  @override
+  bool shouldRepaint(_GooglePainter oldDelegate) => false;
 }

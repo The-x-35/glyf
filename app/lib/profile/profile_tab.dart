@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart'
     show CupertinoAlertDialog, CupertinoDialogAction, showCupertinoDialog;
 import 'package:flutter/material.dart';
 
+import '../core/auth.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
@@ -347,6 +348,16 @@ class _ProfileTabState extends State<ProfileTab> {
             icon: Icons.replay_outlined,
             title: 'Replay onboarding',
             onTap: widget.onRerunOnboarding,
+          ),
+          _navCard(
+            icon: Icons.logout_rounded,
+            title: 'Sign out',
+            trailingText: Auth.identity().email ?? '',
+            onTap: () async {
+              await Auth.signOut();
+              Telemetry.log('signed_out', {});
+              widget.onRerunOnboarding();
+            },
           ),
           const SizedBox(height: 14),
 

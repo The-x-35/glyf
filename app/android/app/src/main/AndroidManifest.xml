@@ -64,6 +64,20 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Google sign-in returns here (Privy). Its own scheme, so it never
+             competes with the app's glyf:// links. -->
+        <activity
+            android:name="io.privy.sdk.oAuth.PrivyRedirectActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="glyfauth" />
+            </intent-filter>
+        </activity>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

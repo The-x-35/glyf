@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'core/auth.dart';
 import 'core/bridge.dart';
 import 'core/catalog.dart';
 import 'core/telemetry.dart';
@@ -24,6 +25,8 @@ class GlyfApp extends StatefulWidget {
 class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
   // Default to the funnel; flip to home once saved state proves completion.
   bool _onboarded = false;
+  /// Until the saved session has been read, nothing is shown.
+  bool _ready = false;
 
   @override
   void initState() {
@@ -41,8 +44,17 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
 
   Future<void> _load() async {
     final state = await GlyfBridge.onboardingState();
+    // Nobody uses Glyf signed out: without a session, onboarding runs again.
+    final signedIn = await Auth.restore();
     if (!mounted) return;
-    if (state['done'] == true) setState(() => _onboarded = true);
+    setState(() {
+      _onboarded = state['done'] == true && signedIn;
+      _ready = true;
+    });
+    if (signedIn) {
+      Auth.syncProfile();
+      Auth.syncPrefs();
+    }
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(
@@ -160,9 +172,11 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
       theme: Glass.theme(),
-      home: _onboarded
-          ? AppShell(onRerunOnboarding: () => setState(() => _onboarded = false))
-          : OnboardingFlow(onDone: () => setState(() => _onboarded = true)),
+      home: !_ready
+          ? const Scaffold(backgroundColor: Glass.bg)
+          : _onboarded
+              ? AppShell(onRerunOnboarding: () => setState(() => _onboarded = false))
+              : OnboardingFlow(onDone: () => setState(() => _onboarded = true)),
     );
   }
 }

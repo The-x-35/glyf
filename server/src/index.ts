@@ -19,6 +19,7 @@ import { walletRoutes } from "./routes/wallet.js";
 import { suggestRoutes } from "./routes/suggest.js";
 import { translateRoutes } from "./routes/translate.js";
 import { vocabRoutes } from "./routes/vocab.js";
+import { meRoutes } from "./routes/me.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -77,6 +78,7 @@ export function buildApp(kv: KV = defaultKV()) {
   suggestRoutes(app);
   translateRoutes(app);
   vocabRoutes(app, meter);
+  meRoutes(app);
   return app;
 }
 

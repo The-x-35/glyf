@@ -463,4 +463,21 @@ final class GlyfEngineTests: XCTestCase {
         sofia.panel = .translate(ready: true, target: "Spanish")
         XCTAssertEqual(TourCoach.coach(sofia), .init(target: "hud:replace", label: "Replace"))
     }
+
+    // MARK: Settings file shared with the app
+
+    func testKeyboardWritesKeepTheAppsOwnKeys() throws {
+        let existing = try JSONSerialization.data(withJSONObject: [
+            "signedInWith": "google", "privyAppId": "public-id", "tourStep": "semi:0", "haptics": true,
+        ])
+        var s = GlyfSettings()
+        s.haptics = false
+        s.tourStep = nil
+        let out = SettingsStore.merged(try JSONEncoder().encode(s), over: existing)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: out) as? [String: Any])
+        XCTAssertEqual(json["signedInWith"] as? String, "google", "the app's sign-in survives")
+        XCTAssertEqual(json["privyAppId"] as? String, "public-id")
+        XCTAssertEqual(json["haptics"] as? Bool, false, "the keyboard's own change lands")
+        XCTAssertNil(json["tourStep"], "a field the keyboard cleared is removed")
+    }
 }

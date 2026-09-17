@@ -243,8 +243,23 @@ enum SettingsStore {
         cached = s
         guard let dir = AppGroupStore.bridgeDir,
               let data = try? JSONEncoder().encode(s) else { return }
-        try? data.write(to: dir.appendingPathComponent(fileName), options: .atomic)
+        let url = dir.appendingPathComponent(fileName)
+        try? merged(data, over: try? Data(contentsOf: url)).write(to: url, options: .atomic)
         NotificationCenter.default.post(name: changedNote, object: nil)
+    }
+
+    /// The file also holds what only the app keeps there (the signed-in
+    /// account, its sign-in ids): a keyboard write replaces its own fields and
+    /// leaves those alone. A field of ours that is now nil is removed.
+    static func merged(_ ours: Data, over existing: Data?) -> Data {
+        guard let existing,
+              var file = (try? JSONSerialization.jsonObject(with: existing)) as? [String: Any],
+              let mine = (try? JSONSerialization.jsonObject(with: ours)) as? [String: Any]
+        else { return ours }
+        let known = Set(Mirror(reflecting: GlyfSettings()).children.compactMap(\.label))
+        for key in known where mine[key] == nil { file.removeValue(forKey: key) }
+        for (key, value) in mine { file[key] = value }
+        return (try? JSONSerialization.data(withJSONObject: file)) ?? ours
     }
 
     static func update(_ mutate: (inout GlyfSettings) -> Void) {

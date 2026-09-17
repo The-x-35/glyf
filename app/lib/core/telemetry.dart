@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'auth.dart';
 import 'bridge.dart';
 import 'glyf_api.dart';
 
@@ -49,6 +50,9 @@ abstract final class Telemetry {
     }
     _lastFlush = DateTime.now();
     final batch = List<Map<String, dynamic>>.from(_unflushed.take(500));
+    // Signed in, the same events are kept with the account (names and
+    // counts only, like everything here).
+    if (Auth.signedIn) await Auth.sendEvents(batch.take(100).toList());
     if (await GlyfApi.telemetryPost(batch)) {
       _unflushed.removeRange(0, batch.length);
     }
