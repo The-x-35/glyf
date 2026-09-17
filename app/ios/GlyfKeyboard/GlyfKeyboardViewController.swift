@@ -361,6 +361,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
     }
 
+    /// The model's read on what is being typed, and the work in flight.
+    private var suggestTask: URLSessionDataTask?
+    private var suggestWork: DispatchWorkItem?
+    private var suggestedFor = ""
+    private var suggestedChip: Smart.Chip?
+
     /// The tool being dragged onto or around the strip, and its ghost.
     private var draggingToolId: String?
     private var dragGhost: UIImageView?
@@ -726,8 +732,19 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let paste: String? = (hasFullAccess && tail.isEmpty && ClipContext.isFresh())
             ? (ClipboardStore.load().first?.text ?? "Tap to paste what you copied")
             : nil
-        let chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
+        var chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
                               paste: paste, field: fieldHint(emptyField: before.isEmpty))
+        // Nothing local to say? Let the model look at the sentence and name
+        // the thing Glyf could do with it (the website's coach).
+        if chip == nil {
+            if let cached = suggestedChip, suggestedFor == tail {
+                chip = cached
+            } else {
+                askForSuggestion(tail)
+            }
+        } else {
+            cancelSuggestion()
+        }
         toolbar.showSmart(chip)
         return chip != nil
     }
@@ -751,6 +768,41 @@ final class GlyfKeyboardViewController: UIInputViewController {
             kind = "name"
         }
         return Smart.FieldHint(kind: kind, empty: emptyField)
+    }
+
+    /// Debounced, cancellable, and never for a half-typed word: a pause of
+    /// 700ms on a real sentence is the only thing that spends a request.
+    private func askForSuggestion(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard hasFullAccess, !isSecureField, surface == .none,
+              SettingsStore.current.candidates,
+              trimmed.count >= 12, trimmed.split(separator: " ").count >= 3,
+              trimmed != suggestedFor
+        else { return }
+        cancelSuggestion()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.suggestTask = BackendClient.shared.suggestAction(text: trimmed) {
+                [weak self] intent, label, query in
+                guard let self, self.surface == .none else { return }
+                let before = self.textDocumentProxy.documentContextBeforeInput ?? ""
+                // The sentence moved on while we were asking: drop it.
+                guard String(before.suffix(120))
+                    .trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
+                self.suggestedFor = trimmed
+                self.suggestedChip = .action(label: label, query: query, intent: intent)
+                self.updateCandidates()
+            }
+        }
+        suggestWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
+    }
+
+    private func cancelSuggestion() {
+        suggestWork?.cancel()
+        suggestWork = nil
+        suggestTask?.cancel()
+        suggestTask = nil
     }
 
     private func updateCandidates() {
@@ -1460,6 +1512,13 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarSmartTapped(_ chip: Smart.Chip) {
+        if case .action(_, let query, _) = chip {
+            suggestedChip = nil
+            suggestedFor = ""
+            toolbar.showSmart(nil)
+            startAct(clipboard: query)
+            return
+        }
         if case .pay(let address, let amount) = chip {
             // The keyboard never signs: the app's Privy wallet does.
             var path = "wallet?to=\(address)"

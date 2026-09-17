@@ -14,6 +14,9 @@ enum Smart {
         case vault(field: VaultField)
         /// Something was just copied: one tap pastes it.
         case paste(text: String)
+        /// The model read what is being typed and named what Glyf could do
+        /// about it — the website's coach, in the strip.
+        case action(label: String, query: String, intent: String)
         /// A Solana address is on screen or freshly copied: one tap opens the
         /// wallet with it filled in. The keyboard never holds a key — the app
         /// signs (website 6.10, "Private sends by MagicBlock").
@@ -25,6 +28,7 @@ enum Smart {
             case .vault(let f): return f.label
             case .paste: return "Paste"
             case .pay: return "Pay"
+            case .action: return "Glyf"
             }
         }
         var value: String {
@@ -32,6 +36,7 @@ enum Smart {
             case .calc(let v, _): return v
             case .vault(let f): return f.value
             case .paste(let t): return t.replacingOccurrences(of: "\n", with: " ")
+            case .action(let label, _, _): return label
             case .pay(let address, let amount):
                 let short = address.count > 12
                     ? "\(address.prefix(4))…\(address.suffix(4))" : address
@@ -44,7 +49,8 @@ enum Smart {
             case .calc(let v, let hasEquals): return hasEquals ? " \(v)" : " = \(v)"
             case .vault(let f): return f.value
             case .paste(let t): return t
-            case .pay: return ""   // handled by the app, never typed
+            case .pay: return ""       // handled by the app, never typed
+            case .action: return ""    // runs a glyf instead of typing
             }
         }
     }

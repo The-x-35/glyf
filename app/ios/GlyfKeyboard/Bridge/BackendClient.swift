@@ -202,6 +202,34 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
     /// Hands the typed intent to the server, which routes it (place, list,
     /// answer, video, rewrite) and returns cards plus the text Insert drops.
     @discardableResult
+    /// POST /suggest — what Glyf could do about what is being typed. Cheap
+    /// and cancellable: the strip asks after a pause, never on every key.
+    func suggestAction(text: String,
+                       onResult: @escaping (String, String, String) -> Void)
+    -> URLSessionDataTask? {
+        let s = SettingsStore.current
+        guard let url = URL(string: "\(s.backendURL)/suggest") else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 8
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "text": text, "deviceId": s.deviceId,
+        ])
+        let task = session.dataTask(with: req) { data, _, _ in
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let suggestion = json["suggestion"] as? [String: Any],
+                  let intent = suggestion["intent"] as? String,
+                  let label = suggestion["label"] as? String
+            else { return }
+            let query = suggestion["query"] as? String ?? text
+            DispatchQueue.main.async { onResult(intent, label, query) }
+        }
+        task.resume()
+        return task
+    }
+
     func runAct(text: String,
                 onResult: @escaping (ActResult) -> Void,
                 onError: @escaping (String) -> Void) -> URLSessionDataTask? {
