@@ -1,0 +1,327 @@
+[
+ {
+  "id": "S51",
+  "surface": "iPhone",
+  "area": "Typing",
+  "title": "A typo in a sentence is fixed on space",
+  "input": "i think teh plan works",
+  "outcome": "I think the plan works",
+  "verdict": "pass"
+ },
+ {
+  "id": "S52",
+  "surface": "iPhone",
+  "area": "Typing",
+  "title": "Two spaces end the sentence",
+  "input": "ok␣␣see",
+  "outcome": "Ok. See",
+  "verdict": "pass"
+ },
+ {
+  "id": "S53",
+  "surface": "iPhone",
+  "area": "Typing",
+  "title": "The next word is predicted",
+  "input": "thank ␣",
+  "outcome": "strip offers “you”; tap gives “thank you”",
+  "verdict": "pass"
+ },
+ {
+  "id": "S54",
+  "surface": "iPhone",
+  "area": "Typing",
+  "title": "Backspace right after a fix puts the word back",
+  "input": "teh ␣ ⌫",
+  "outcome": "teh",
+  "verdict": "pass"
+ },
+ {
+  "id": "S55",
+  "surface": "iPhone",
+  "area": "Typing",
+  "title": "A space after a number brings the letters back",
+  "input": "call at 5 ␣",
+  "outcome": "letters come back, like Apple’s",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S56",
+  "surface": "iPhone",
+  "area": "Typing",
+  "title": "Holding delete clears words",
+  "input": "one two three four five six (hold ⌫ 2.5s)",
+  "outcome": "27 characters down to 1",
+  "verdict": "pass"
+ },
+ {
+  "id": "S57",
+  "surface": "iPhone",
+  "area": "Typing",
+  "title": "Sliding on the space bar moves the cursor",
+  "input": "hello world, glide left, type x",
+  "outcome": "XHello world",
+  "verdict": "pass"
+ },
+ {
+  "id": "S58",
+  "surface": "iPhone",
+  "area": "Typing",
+  "title": "Return starts a new line",
+  "input": "hi ⏎ there",
+  "outcome": "two lines",
+  "verdict": "pass"
+ },
+ {
+  "id": "S59",
+  "surface": "iPhone",
+  "area": "Shorthand",
+  "title": "Shorthand expands",
+  "input": ";sig ␣",
+  "outcome": "— Arpit · tryglyf.com",
+  "verdict": "pass"
+ },
+ {
+  "id": "S60",
+  "surface": "iPhone",
+  "area": "Strip",
+  "title": "A sum in a message offers the answer",
+  "input": "split is 3480/4",
+  "outcome": "chip “870 Insert” → Split is 3480/4 = 870",
+  "verdict": "pass"
+ },
+ {
+  "id": "S61",
+  "surface": "iPhone",
+  "area": "Strip",
+  "title": "Asked for your address, it is one tap away",
+  "input": "sure my address is ␣",
+  "outcome": "chip “Home 42 Glass Lane…” → inserted",
+  "verdict": "pass"
+ },
+ {
+  "id": "S62",
+  "surface": "iPhone",
+  "area": "Strip",
+  "title": "Asked for your UPI, it is one tap away",
+  "input": "my upi is ␣",
+  "outcome": "chip → arpit@okbank",
+  "verdict": "pass"
+ },
+ {
+  "id": "S63",
+  "surface": "iPhone",
+  "area": "Strip",
+  "title": "A rough message offers Tidy this up",
+  "input": "ya ok will send the deck before six tmrw ␣",
+  "outcome": "chip “Tidy this up” → versions",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S64",
+  "surface": "iPhone",
+  "area": "Hold space",
+  "title": "Hold space: pick the Professional version",
+  "input": "ya ok will send deck b4 6",
+  "outcome": "Basic · Professional · Polite · Shorter · Hinglish · Emoji → “I will send the deck before 6:00 PM.”",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S65",
+  "surface": "iPhone",
+  "area": "Hold space",
+  "title": "Holding a version copies it instead",
+  "input": "sry running late traffic is crazy (hold Basic)",
+  "outcome": "message untouched; strip offers “Paste Sorry, I am running late…”",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S66",
+  "surface": "iPhone",
+  "area": "Hold space",
+  "title": "Hold space on a place search sends places",
+  "input": "best biryani near indiranagar",
+  "outcome": "Insert → the places, with a link",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S67",
+  "surface": "iPhone",
+  "area": "Hold space",
+  "title": "Hold space on a trailer sends the video",
+  "input": "dune part two trailer",
+  "outcome": "https://youtu.be/Way9Dexny3w",
+  "verdict": "pass"
+ },
+ {
+  "id": "S68",
+  "surface": "iPhone",
+  "area": "Hold space",
+  "title": "Hold space on a currency sum answers it",
+  "input": "100 usd to inr",
+  "outcome": "9,596 INR — 100 USD · today’s rate",
+  "verdict": "pass"
+ },
+ {
+  "id": "S69",
+  "surface": "iPhone",
+  "area": "Hold space",
+  "title": "Hold space with nothing typed opens Ask",
+  "input": "(empty) hold ␣",
+  "outcome": "Ask bar opens",
+  "verdict": "pass"
+ },
+ {
+  "id": "S70",
+  "surface": "iPhone",
+  "area": "g menu",
+  "title": "g opens the tool menu, not Vault",
+  "input": "tap g",
+  "outcome": "13 tools: Search, Rewrite, Translate, Vault, Clipboard, Emoji, Ask, Voice, My glyfs, Shorthand, Keys, Pay, Settings",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S71",
+  "surface": "iPhone",
+  "area": "g menu",
+  "title": "Menu → Vault card types the detail",
+  "input": "g → Vault → Home",
+  "outcome": "42 Glass Lane, Indiranagar, Bengaluru 560038",
+  "verdict": "pass"
+ },
+ {
+  "id": "S72",
+  "surface": "iPhone",
+  "area": "Clipboard",
+  "title": "Something just copied pastes from the clipboard",
+  "input": "copy “Flight AI 2021 lands at 6:40, gate 12” → g → Clipboard",
+  "outcome": "“Paste what you copied” on top → pasted, then kept in history",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S73",
+  "surface": "iPhone",
+  "area": "Clipboard",
+  "title": "Recent screenshots show in the clipboard",
+  "input": "g → Clipboard → tap the screenshot",
+  "outcome": "“Screenshot copied”",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S74",
+  "surface": "iPhone",
+  "area": "Emoji",
+  "title": "The emoji key inserts an emoji",
+  "input": "what a finish ␣ → 😊 key → 😂",
+  "outcome": "what a finish 😂",
+  "verdict": "pass"
+ },
+ {
+  "id": "S75",
+  "surface": "iPhone",
+  "area": "Emoji",
+  "title": "Emoji pages swipe sideways, like Apple’s",
+  "input": "swipe left ×3",
+  "outcome": "FREQUENTLY USED → PEOPLE",
+  "verdict": "pass"
+ },
+ {
+  "id": "S76",
+  "surface": "iPhone",
+  "area": "Emoji",
+  "title": "Emoji search finds pizza",
+  "input": "search “pizza”",
+  "outcome": "🍕 inserted",
+  "verdict": "pass"
+ },
+ {
+  "id": "S77",
+  "surface": "iPhone",
+  "area": "Translate",
+  "title": "Translate as you type, then Replace",
+  "input": "kal milte hain office ke baad ␣",
+  "outcome": "Hindi → English: Let’s meet tomorrow after office.",
+  "verdict": "pass"
+ },
+ {
+  "id": "S78",
+  "surface": "iPhone",
+  "area": "Translate",
+  "title": "The direction can be changed",
+  "input": "see you tomorrow ␣ → tap direction",
+  "outcome": "English → Hindi: कल मिलते हैं",
+  "verdict": "pass"
+ },
+ {
+  "id": "S79",
+  "surface": "iPhone",
+  "area": "Search",
+  "title": "Search YouTube and send the video",
+  "input": "g → Search → YouTube → “arijit singh live”",
+  "outcome": "video card → link in the message",
+  "verdict": "pass"
+ },
+ {
+  "id": "S80",
+  "surface": "iPhone",
+  "area": "Held keys",
+  "title": "Hold T to translate",
+  "input": "hold T",
+  "outcome": "translate strip opens",
+  "verdict": "pass"
+ },
+ {
+  "id": "S81",
+  "surface": "iPhone",
+  "area": "Held keys",
+  "title": "Hold S for Vault",
+  "input": "hold S",
+  "outcome": "vault cards open",
+  "verdict": "pass"
+ },
+ {
+  "id": "S82",
+  "surface": "iPhone",
+  "area": "Look",
+  "title": "Dark mode keys are dark, light mode keys white",
+  "input": "Messages, system dark then light",
+  "outcome": "key face 0.25 dark, 1.00 light",
+  "verdict": "pass"
+ },
+ {
+  "id": "S83",
+  "surface": "iPhone",
+  "area": "Strip",
+  "title": "Strip tools open in one tap",
+  "input": "tap the clipboard icon",
+  "outcome": "clipboard opens",
+  "verdict": "pass"
+ },
+ {
+  "id": "S99",
+  "surface": "App",
+  "area": "Build your own",
+  "title": "Make a glyf from an idea and hold its key",
+  "input": "Build → “Say no, politely” → key N → Save; then “hey can u send the report tmrw morning thx”, hold N",
+  "outcome": "“Sorry, I won’t be able to send it tomorrow morning. Thanks for understanding!” replaces the message",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S100",
+  "surface": "App",
+  "area": "Onboarding",
+  "title": "Onboarding, then the guided tour",
+  "input": "Set up → details → sounds, clipboard, screenshots (photo permission) → turn on → switch to Glyf → nearby → the tour: tap the 870 chip, the address chip, hold space and pick a version, pick an emoji",
+  "outcome": "All four tour levels done on real keys, 80 to 94 seconds a run; passed 8 of the last 8 runs. The Google step is left out while Google sign-in isn’t set up.",
+  "verdict": "pass",
+  "fixed": true
+ }
+]

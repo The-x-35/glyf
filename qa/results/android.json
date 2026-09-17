@@ -53,14 +53,14 @@
   "area": "Android",
   "title": "Hold space: pick the Professional version",
   "verdict": "pass",
-  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'Yes, I acknowledge. I will send the deck before you.'"
+  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'I acknowledge your request and will send the presentation deck before 6:00.'"
  },
  {
   "id": "S92",
   "area": "Android",
   "title": "Hold space on a place search sends places",
   "verdict": "pass",
-  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/LAfy26iTCKtj'"
+  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/Md8IQwlh-ueY'"
  },
  {
   "id": "S93",
@@ -81,7 +81,7 @@
   "area": "Android",
   "title": "Translate as you type, then Replace",
   "verdict": "pass",
-  "note": "strip '', message 'Let's meet tomorrow after office.'"
+  "note": "strip 'Let's meet tomorrow after office.', message 'Let's meet tomorrow after office.'"
  },
  {
   "id": "S96",
@@ -100,8 +100,15 @@
  {
   "id": "S98",
   "area": "Android",
-  "title": "Dark mode draws dark keys",
+  "title": "A screenshot you just took is in the clipboard",
   "verdict": "pass",
-  "note": "screenshot saved for a look (results/android-S98-dark.png)"
+  "note": "tapped the screenshot: clipboard now holds image/png (Screenshot). Rerun after the test was changed to save a real screen capture; the emulator ignores the screenshot key."
+ },
+ {
+  "id": "S101",
+  "area": "Android",
+  "title": "Dark mode keys are dark, light mode keys are light",
+  "verdict": "pass",
+  "note": "key face 0.21 dark, 1.00 light"
  }
 ]

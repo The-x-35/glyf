@@ -243,16 +243,49 @@ const scenarios = [
     const t = await text();
     return { pass: t.length < "see you at the park tomorrow".length - 6 && t.startsWith("see you"), note: `'${t}'` };
   } },
-  { id: "S98", title: "Dark mode draws dark keys", run: async () => {
+  { id: "S98", title: "A screenshot you just took is in the clipboard", run: async () => {
     await fresh();
-    shell("cmd uimode night yes");
+    // A real capture of the screen, saved where the phone saves screenshots
+    // and indexed the way the system indexes one (the emulator ignores the
+    // screenshot key combination).
+    const name = `Screenshot_${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}.png`;
+    shell(`screencap -p /sdcard/Pictures/Screenshots/${name}`);
+    shell("content call --uri content://media/ --method scan_volume --arg external_primary");
     await sleep(2500);
-    tool("close");
+    tool("clipboard");
+    const shot = await waitFor(v => v.id === "Screenshot", 6000);
+    if (!shot) return { pass: false, note: "no screenshot card in the clipboard" };
+    await screenshot("S98-clipboard");
+    await tapXY(shot.x, shot.y);
+    await sleep(1200);
     const s = await state();
-    const png = execFileSync(ADB, ["exec-out", "screencap", "-p"]);
-    writeFileSync(new URL("./results/android-S98-dark.png", import.meta.url), png);
+    // A text box takes no images, so it is copied for pasting, as Gboard does.
+    return { pass: s.clipMime.startsWith("image/") || s.clipMime === "text/uri-list",
+      note: `tapped the screenshot: clipboard now holds ${s.clipMime || "nothing"} (${s.clipLabel})` };
+  } },
+  { id: "S101", title: "Dark mode keys are dark, light mode keys are light", run: async () => {
+    await fresh();
+    const lum = async () => {
+      const s = await state();
+      const png = execFileSync(ADB, ["exec-out", "screencap", "-p"], { maxBuffer: 64e6 });
+      const file = new URL("./results/android-lum.png", import.meta.url);
+      writeFileSync(file, png);
+      const [x, y] = s.keys.q;
+      return Number(execFileSync("python3", ["-c",
+        `from PIL import Image; im=Image.open('${file.pathname}').convert('RGB'); r,g,b=im.getpixel((${x - 30},${y + 30})); print((0.299*r+0.587*g+0.114*b)/255)`],
+        { encoding: "utf8" }).trim());
+    };
+    shell("cmd uimode night yes");
+    await sleep(3000);
+    tool("close"); tool("clear");
+    await sleep(800);
+    const dark = await lum();
     shell("cmd uimode night no");
-    return { pass: !!s.keys.q, note: "screenshot saved for a look (results/android-S98-dark.png)" };
+    await sleep(3000);
+    tool("close"); tool("clear");
+    await sleep(800);
+    const light = await lum();
+    return { pass: dark < 0.35 && light > 0.85, note: `key face ${dark.toFixed(2)} dark, ${light.toFixed(2)} light` };
   } },
 ];
 

@@ -1,7 +1,7 @@
 // Everyday situations run against the live Glyf server, with real models.
 // Each one is a thing a person types and what Glyf should do with it.
 // Usage: node qa/server-scenarios.mjs [baseURL]
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
 const DEVICE = "qa-scenarios";
@@ -271,6 +271,17 @@ for (const s of scenarios.filter(x => !only || only.has(x.id))) {
   results.push({ id: s.id, area: s.area, title: s.title, verdict, ms: r?.ms ?? null, status: r?.status ?? null, note });
   console.log(`${verdict.toUpperCase()} ${s.id} [${s.area}] ${s.title} (${r?.ms ?? "?"} ms)\n     ${note}`);
 }
-if (!only) writeFileSync(new URL("./results/server.json", import.meta.url), JSON.stringify(results, null, 1));
+const out = new URL("./results/server.json", import.meta.url);
+if (!only) writeFileSync(out, JSON.stringify(results, null, 1));
+else if (process.env.MERGE) {
+  // A rerun of some scenarios replaces just those, marked as reruns.
+  const saved = JSON.parse(readFileSync(out, "utf8"));
+  for (const r of results) {
+    const i = saved.findIndex(x => x.id === r.id);
+    const entry = { ...r, note: `${r.note} (rerun)` };
+    if (i >= 0) saved[i] = entry; else saved.push(entry);
+  }
+  writeFileSync(out, JSON.stringify(saved, null, 1));
+}
 const count = v => results.filter(r => v(r.verdict)).length;
 console.log(`\n${count(v => v === "pass")} pass, ${count(v => v === "fail")} fail, ${count(v => v.startsWith("blocked"))} blocked of ${results.length}`);
