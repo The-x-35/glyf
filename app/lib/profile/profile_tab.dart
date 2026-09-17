@@ -10,7 +10,6 @@ import '../core/telemetry.dart';
 import '../core/theme.dart';
 import '../onboarding/demo_chat.dart';
 import '../wallet/wallet_screen.dart';
-import '../notes/notes_screen.dart';
 import '../vault/vault_screen.dart';
 import '../vocab/vocabulary_screen.dart';
 import 'keyboard_screen.dart';
@@ -305,19 +304,13 @@ class _ProfileTabState extends State<ProfileTab> {
             onTap: _toggleNearby,
           ),
           _navCard(
-            icon: Icons.badge_outlined,
-            title: 'Your info & shorthand',
+            icon: Icons.lock_outline,
+            title: 'Vault',
             onTap: () async {
               await Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const VaultScreen()));
               _refresh();
             },
-          ),
-          _navCard(
-            icon: Icons.sticky_note_2_outlined,
-            title: 'Notes',
-            onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const NotesScreen())),
           ),
           _navCard(
             icon: Icons.cable_outlined,

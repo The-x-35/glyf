@@ -635,6 +635,12 @@ async function nominatimPlaces(q: string, ctx: SearchContext): Promise<PlaceCard
     const near = await overpassNearby(term, ctx.lat!, ctx.lon!).catch(() => []);
     if (near.length) return near;
   }
+  // Nominatim matches names, but it also knows OSM's categories by their
+  // own words: "coffee" finds nothing near Bandra, "cafe" finds its cafes.
+  if (pq.nearby || pq.where) {
+    const tag = OSM_TAGS.find(([re]) => re.test(term))?.[1];
+    if (tag) term = tag.split("=")[1].replace(/_/g, " ");
+  }
 
   // The point to search around, and how tightly (degrees).
   let center = here ? { lat: ctx.lat!, lon: ctx.lon! } : undefined;

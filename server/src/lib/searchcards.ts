@@ -27,6 +27,9 @@ export interface CardBase {
   emoji?: string;
   /** Optional third paste line — the street address on a place card. */
   extra?: string;
+  /** An answer is sent as the answer ("Sunset's at 6:24 PM 🌇"), not as a
+   *  search link. When set, a tap puts exactly this in the field. */
+  say?: string;
 }
 
 /** The big answer at the top of the web tab: sunset time, temperature, a
@@ -104,9 +107,10 @@ export interface SearchResponse {
  *  Lives on the server so the two keyboards and the site can never drift —
  *  each client ports this one function and its tests. */
 export function composeInsert(
-  card: Pick<CardBase, "title" | "url" | "emoji" | "extra">,
+  card: Pick<CardBase, "title" | "url" | "emoji" | "extra" | "say">,
   mode: "titleAndLink" | "linkOnly",
 ): string {
+  if (card.say?.trim()) return card.say.trim();
   if (mode === "linkOnly" || !card.title.trim()) return card.url;
   const lines = [card.url, `${card.emoji ? `${card.emoji} ` : ""}${card.title}`];
   if (card.extra?.trim()) lines.push(card.extra.trim());

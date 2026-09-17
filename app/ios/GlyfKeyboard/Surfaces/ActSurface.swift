@@ -7,6 +7,8 @@ protocol ActSurfaceDelegate: AnyObject {
     func actInsert(_ text: String)
     func actCopy(_ text: String)
     func actRetry()
+    /// Whether ↻ makes sense now (an answer or an error is showing).
+    func actRetryAvailable(_ available: Bool)
     func actClosed()
     /// A hand-off card (a search to finish elsewhere) opens instead of pasting.
     func actOpen(_ url: URL)
@@ -30,6 +32,8 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
     private enum Phase { case working, result, failed }
     private var phase: Phase = .working
+    var isWorking: Bool { phase == .working }
+    var hasOptions: Bool { phase == .result && !options.isEmpty }
 
     // Working
     private let ringsLayer = CALayer()
@@ -240,6 +244,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             setNeedsLayout()
         }
         for b in [retryButton, copyButton, insertButton] { b.isHidden = true }
+        delegate?.actRetryAvailable(false)
     }
 
     /// A rewrite's versions as rows: the style on the left, the message on
@@ -327,7 +332,10 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         for v in [mark, intentLabel, cancelButton] as [UIView] { v.isHidden = !working }
         workingTitle.isHidden = !working || (workingTitle.text ?? "").isEmpty
         ringsLayer.isHidden = !working
-        for v in [table, retryButton] as [UIView] { v.isHidden = !result }
+        table.isHidden = !result
+        // The strip carries ↻ in the website look; glass looks keep their row.
+        retryButton.isHidden = !result || Glass.solidLook
+        delegate?.actRetryAvailable(!working)
         // Nothing worth putting in the message: no Copy, no Insert.
         for v in [copyButton, insertButton] as [UIView] { v.isHidden = !result || insertText.isEmpty }
         mapView.isHidden = !result || mapPlace == nil
@@ -416,12 +424,12 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         titleLabel.frame = CGRect(x: 46, y: 4, width: w - 104, height: headerH - 4)
         // Versions to pick from have no Copy/Insert row (a tap inserts, a hold
         // copies), so the list runs to the bottom and ↻ sits in the header.
-        let listOnly = !options.isEmpty && headerH > 0
+        let listOnly = !options.isEmpty
         let actionsY = listOnly ? h : h - 52
-        retryButton.frame = listOnly
+        retryButton.frame = headerH > 0 && listOnly
             ? CGRect(x: w - 50, y: 4, width: 44, height: headerH - 4)
             : CGRect(x: 10, y: actionsY, width: 44, height: 38)
-        let pillsX: CGFloat = 62
+        let pillsX: CGFloat = Glass.solidLook ? 10 : 62
         let pillsW = w - pillsX - 10
         copyButton.frame = CGRect(x: pillsX, y: actionsY, width: pillsW * 0.38, height: 38)
         insertButton.frame = CGRect(x: pillsX + pillsW * 0.38 + 8, y: actionsY,

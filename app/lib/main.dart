@@ -52,6 +52,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     GlyfBridge.updateSharedSettings((s) {
       s.remove('tourHint');
       s.remove('tourHintAt');
+      s.remove('tourStep');
       return s;
     });
     // The keyboard may have parked an intent before we ever launched
@@ -81,6 +82,12 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       // The keyboard saw an address and an amount; the wallet takes it from
       // here, because signing belongs in the app.
       final path = Uri.parse(uri.queryParameters['path']!);
+      // Inside the tour, Semi's payment is practised, never sent.
+      final practice = DemoChat.onPracticePay;
+      if (practice != null) {
+        practice(path.queryParameters['to'], path.queryParameters['amount']);
+        return;
+      }
       _openWallet(path.queryParameters['to'], path.queryParameters['amount']);
       return;
     }

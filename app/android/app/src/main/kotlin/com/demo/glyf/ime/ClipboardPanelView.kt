@@ -77,7 +77,9 @@ class ClipboardPanelView(
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12f), 0, dp(12f), 0)
         }
-        row.addView(circle("back") { onClose() }, LinearLayout.LayoutParams(dp(38f), dp(38f)))
+        row.addView(circle("back") { onClose() }.apply {
+            setTag(com.demo.glyf.R.id.qa_id, "clip:back"); contentDescription = "Close"
+        }, LinearLayout.LayoutParams(dp(38f), dp(38f)))
         row.addView(TextView(context).apply {
             text = "Clipboard"
             textSize = 22f
@@ -127,7 +129,7 @@ class ClipboardPanelView(
      *  ones removed from the clipboard here. */
     private fun shots(): List<Entry> {
         val s = com.demo.glyf.store.SettingsStore.load(context)
-        if (!s.optBoolean("clipboardScreenshots", false)) return emptyList()
+        if (!s.optBoolean("clipboardScreenshots", true)) return emptyList()
         val removed = prefs.getStringSet("removedShots", emptySet()) ?: emptySet()
         return com.demo.glyf.ScreenshotAccess.recent(context)
             .filter { it.uri.toString() !in removed }
@@ -282,6 +284,12 @@ class ClipboardPanelView(
     private fun showMenu(item: ClipboardStore.Item, anchor: View) {
         popMenu(anchor, listOf(
             Triple("⎘", "Paste") { dismissMenu(); onPaste(item.text) },
+            Triple("🔒", "Save to vault") {
+                val refusal = com.demo.glyf.store.NotesStore.upsert(context, null, item.text)
+                dismissMenu()
+                android.widget.Toast.makeText(context, refusal ?: "Saved to vault",
+                    android.widget.Toast.LENGTH_SHORT).show()
+            },
             Triple("📌", if (item.pinned) "Unpin" else "Pin") {
                 ClipboardStore.togglePin(context, item.text); dismissMenu(); reload()
             },

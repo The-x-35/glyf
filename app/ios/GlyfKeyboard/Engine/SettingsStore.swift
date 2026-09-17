@@ -5,7 +5,7 @@ import Foundation
 struct GlyfSettings: Codable, Equatable {
     /// Bumped when defaults change; load() migrates older files additively.
     /// Optional so files written before the field existed still decode.
-    var schemaVersion: Int? = 6
+    var schemaVersion: Int? = 7
     var haptics: Bool = true
     var keyClicks: Bool = true
     var numberRow: Bool = false
@@ -54,7 +54,7 @@ struct GlyfSettings: Codable, Equatable {
     var clipboardHistory: Bool? = true
     /// Screenshots from the last hour in the clipboard (Gboard's setting).
     /// The app asks for Photos access when it is turned on.
-    var clipboardScreenshots: Bool? = false
+    var clipboardScreenshots: Bool? = true
     /// "" | "color:#RRGGBB" | "grad:<id>" — Gboard-style painted backdrop.
     var themeBg: String? = ""
     /// Gboard "borders around keys".
@@ -77,12 +77,12 @@ struct GlyfSettings: Codable, Equatable {
     /// Deliberately SMALL (design decision 2026-09-12: "don't preset a lot").
     /// Three anchors ship bound; onboarding personas and per-key
     /// recommendations fill the rest by choice, never by default.
-    /// Two holds, and that is all: S shares your details, T translates as
+    /// Two holds, and that is all: V shares your details, T translates as
     /// you type. Proofread, emoji-fy and the rest were canned versions of
     /// what holding space already does with the model, so they are gone.
     static let defaultBindings: [String: String] = [
         "t": "surface:translate-hud",
-        "s": "surface:vault",
+        "v": "surface:vault",
     ]
     /// Backend base URL (dev). Set from the app's debug screen.
     /// Dev builds talk to the Mac; shipped builds talk to tryglyf.com.
@@ -97,6 +97,11 @@ struct GlyfSettings: Codable, Equatable {
     /// When the tour set the hint (ms since 1970). A tour that was closed by
     /// force leaves its hint behind; an old one is ignored.
     var tourHintAt: Double? = nil
+    /// The tour's chat and step ("mumma:0"); the keyboard's coach reads what
+    /// is open and points at the next thing to tap (TourCoach).
+    var tourStep: String? = nil
+    /// When the tour copied something from the chat (ms since 1970).
+    var tourCopiedAt: Double? = nil
     /// The language besides the phone's own that this person types in, as
     /// translate last detected it. Where English drafts get translated to.
     var translateOther: String? = nil
@@ -213,6 +218,18 @@ enum SettingsStore {
                 s.bindings[key] = target
             }
             s.schemaVersion = 6
+        }
+        // v6 → v7: the vault moves to V, the letter it is named for.
+        if (s.schemaVersion ?? 1) < 7 {
+            if s.bindings["s"] == "surface:vault",
+               s.bindings["v"] == nil || s.bindings["v"] == "surface:vault" {
+                s.bindings["s"] = nil
+                s.bindings["v"] = "surface:vault"
+            }
+            if !s.bindings.values.contains("surface:vault"), s.bindings["v"] == nil {
+                s.bindings["v"] = "surface:vault"
+            }
+            s.schemaVersion = 7
         }
         if s.customTitles == nil { s.customTitles = [:] }
         // Legacy proUnlocked → the plus plan.

@@ -3,6 +3,7 @@ package com.demo.glyf.ime
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
@@ -65,6 +66,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var searchQuery = ""
     private var searchStrip: LinearLayout? = null
     private var searchResults: LinearLayout? = null
+    private var searchResultCount = 0
     private var searchQueryView: TextView? = null
     private var searchStatusView: TextView? = null
     /// Suggestions shown while the KEYS STAY VISIBLE — you must be able to
@@ -243,7 +245,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (themed != null) root.background = themed
         else root.setBackgroundColor(keyboard.backdrop())
         buildToolbar(dark || keyboard.themeBg.isNotEmpty())
-        applyTourHint()
+        clearCoach()
+        tourTyped = null
+        main.removeCallbacks(tourTick)
+        main.postDelayed(tourTick, 400)
         // Android hands a keyboard the clipboard without asking, so history
         // fills itself: whatever was copied since last time is kept here.
         if (!isSecureField()) com.demo.glyf.store.ClipboardStore.captureNow(this)
@@ -276,6 +281,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        main.removeCallbacks(tourTick)
+        clearCoach()
         KeyboardTyping.saveNow(this)
     }
 
@@ -457,6 +464,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     if (searchQuery.isBlank()) showLanding() else submitSearch()
                 }
                 tag = tabId
+                setTag(com.demo.glyf.R.id.qa_id, "search:tab:$tabId")
             }
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(30))
@@ -481,9 +489,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val back = TextView(this).apply {
             text = "✕"; textSize = 16f; setTextColor(ink())
             setPadding(dp(6), 0, dp(10), 0)
+            setTag(com.demo.glyf.R.id.qa_id, "search:close"); contentDescription = "Close"
             setOnClickListener { exitSearch() }
         }
         val query = TextView(this).apply {
+            setTag(com.demo.glyf.R.id.qa_id, "search:query")
             hint = "Type, then ⏎"
             textSize = 15f
             setTextColor(ink())
@@ -496,6 +506,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val go = TextView(this).apply {
             text = "→"; textSize = 18f; setTextColor(ink())
             setPadding(dp(12), 0, dp(6), 0)
+            setTag(com.demo.glyf.R.id.qa_id, "search:go"); contentDescription = "Search"
             setOnClickListener { submitSearch() }
         }
         row.addView(back)
@@ -647,8 +658,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             ink = ink(), card = card(),
             soft = Color.argb(170, 128, 128, 136), dp = ::dp)
         val backendURL = settings.optString("backendURL")
-        for (c in cards.take(3)) {
+        for ((i, c) in cards.take(3).withIndex()) {
             val v = SearchCards.view(this, c, theme, backendURL) { tapped -> insertResult(tapped) }
+            v.setTag(com.demo.glyf.R.id.qa_id, "search:row:$i")
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -688,8 +700,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             ink = ink(), card = card(),
             soft = Color.argb(170, 128, 128, 136), dp = ::dp)
         val backendURL = settings.optString("backendURL")
-        for (c in cards) {
+        searchResultCount = cards.size
+        for ((i, c) in cards.withIndex()) {
             val v = SearchCards.view(this, c, theme, backendURL) { tapped -> insertResult(tapped) }
+            v.setTag(com.demo.glyf.R.id.qa_id, "search:card:$i")
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -907,17 +921,212 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         applyTourHint()
     }
 
-    /** The tour's ring: a key, the strip chip, or the g pill. */
-    private fun applyTourHint() {
-        // A tour closed by force leaves its hint behind: only a fresh one counts.
+    // MARK: tour coach (the website's, see TourCoach)
+
+    private var coachOverlay: TourCoachOverlay? = null
+    private var tourTyping = false
+    /** What the keyboard already typed for the tour, so it types it once. */
+    private var tourTyped: String? = null
+
+    /** The app moves the tour along without touching the text, so the
+     *  keyboard looks again a few times a second while it is up. */
+    private val tourTick = object : Runnable {
+        override fun run() {
+            if (!::root.isInitialized) return
+            reloadSettingsIfChanged()
+            applyTourHint()
+            main.postDelayed(this, 400)
+        }
+    }
+
+    private fun tourCopied() =
+        settings.optDouble("tourCopiedAt", 0.0) > System.currentTimeMillis() - 10 * 60 * 1000
+
+    private fun tourStep(): String? {
+        // A tour closed by force leaves its step behind: only a fresh one counts.
         val fresh = settings.optDouble("tourHintAt", 0.0) > System.currentTimeMillis() - 15 * 60 * 1000
-        val hint = settings.optString("tourHint").takeIf { it.isNotBlank() && fresh }
-        keyboard.tourKey = hint?.takeIf { it != "chip" && it != "g" }
-        val ringColor = Color.rgb(0x7C, 0x5C, 0xFF)
-        (stripChip?.background as? GradientDrawable)?.setStroke(
-            if (hint == "chip") dp(2) else 0, ringColor)
-        (gPill?.background as? GradientDrawable)?.setStroke(
-            if (hint == "g") dp(2) else 0, ringColor)
+        return settings.optString("tourStep").takeIf { it.isNotBlank() && fresh }
+    }
+
+    /** The step the strip was last arranged for. */
+    private var coachedStep: String? = null
+
+    private fun applyTourHint() {
+        if (!::root.isInitialized || !::keyboard.isInitialized || !::toolIcons.isInitialized) return
+        keyboard.tourKey = null
+        val arranged = tourStep()?.let { "$it|${tourCopied()}" }
+        if (arranged != coachedStep) {
+            // A new step, or the address just copied, changes which chips
+            // the strip may show.
+            coachedStep = arranged
+            refreshClipCard()
+            updateSuggestions()
+        }
+        val step = tourStep() ?: return clearCoach()
+        val state = tourState(step)
+        tourAutotype(state)
+        val coach = TourCoach.coach(state) ?: return clearCoach()
+        val rect = coachRect(coach.target) ?: return clearCoach()
+        val overlay = coachOverlay ?: TourCoachOverlay(resources.displayMetrics.density).also {
+            coachOverlay = it
+            root.overlay.add(it)
+        }
+        overlay.setBounds(0, 0, root.width, root.height)
+        overlay.target = rect
+        overlay.label = coach.label
+    }
+
+    private fun clearCoach() {
+        coachOverlay?.let {
+            it.stop()
+            root.overlay.remove(it)
+        }
+        coachOverlay = null
+    }
+
+    private fun tourState(step: String): TourCoach.State {
+        val ic = currentInputConnection
+        val text = (ic?.getTextBeforeCursor(2000, 0)?.toString() ?: "") +
+            (ic?.getTextAfterCursor(2000, 0)?.toString() ?: "")
+        val bindings = settings.optJSONObject("bindings")
+        fun keyFor(target: String) =
+            bindings?.keys()?.asSequence()?.sorted()?.firstOrNull { bindings.optString(it) == target }
+        return TourCoach.State(
+            step = step,
+            text = text,
+            panel = coachPanel(),
+            chip = if (stripChipKind == "smart") stripSmartDetail else stripChipKind,
+            suggestions = if (suggestionRow.visibility == View.VISIBLE) suggestionsShown.map { it.text } else emptyList(),
+            fields = vaultFields(),
+            vaultKey = keyFor("surface:vault"),
+            translateKey = keyFor("surface:translate-hud"),
+            stripTools = setOf("search", "vault", "translate").filter { findQaView(it) != null }.toSet(),
+            copied = tourCopied(),
+        )
+    }
+
+    private fun coachPanel(): TourCoach.Panel {
+        if (searchActive) {
+            val view = when {
+                searchResults != null -> TourCoach.SearchView.Results(searchResultCount)
+                searchStatusView?.text?.toString() == "Searching…" -> TourCoach.SearchView.Loading
+                searchLanding != null -> TourCoach.SearchView.Landing(searchLanding?.childCount ?: 0)
+                else -> TourCoach.SearchView.Typing
+            }
+            return TourCoach.Panel.Search(searchTab, view, searchQuery)
+        }
+        overlay?.let { panel ->
+            if (panel.tag != "act") return TourCoach.Panel.Other("act:close")
+            return TourCoach.Panel.Act(
+                working = findQaView("act:cancel", panel) != null,
+                options = findQaView("act:option:*", panel) != null)
+        }
+        translateStrip?.let { return TourCoach.Panel.Translate(translateResult.isNotEmpty(), translateTarget) }
+        if (barActive) return TourCoach.Panel.Other("bar:close")
+        if (noteEditActive) return TourCoach.Panel.Other("noteedit:close")
+        val panel = featurePanel ?: return TourCoach.Panel.None
+        return when {
+            panel.tag == "vault" -> TourCoach.Panel.Vault
+            panel is ToolMenuView -> TourCoach.Panel.Menu
+            panel is ClipboardPanelView -> TourCoach.Panel.Other("clip:back")
+            else -> TourCoach.Panel.Other("panel:back|panel:abc")
+        }
+    }
+
+    /** Types what the tour needs typed, a letter at a time, the way the
+     *  website's keyboard does: the search query, or Sofía's reply. */
+    private fun tourAutotype(state: TourCoach.State) {
+        if (tourTyping) return
+        val panel = state.panel
+        if (panel is TourCoach.Panel.Search) {
+            val q = TourCoach.searchQuery(state.step) ?: return
+            if (panel.tab != TourCoach.searchTab(state.step)) return
+            if (panel.view is TourCoach.SearchView.Loading) return
+            // Once per step on this tab: the step's own query, replacing
+            // whatever an earlier chat left in the box.
+            val key = "${state.step}:search:${System.identityHashCode(searchStrip)}:${panel.tab}"
+            if (tourTyped == key) return
+            tourTyped = key
+            if (panel.query == q) return
+            if (panel.query.isNotEmpty()) {
+                searchQuery = ""
+                renderQuery()
+                dismissSearchResults()
+                showLanding()
+            }
+            typeForTour(q, { letter ->
+                if (searchActive) { searchQuery += letter; renderQuery() }
+            })
+            return
+        }
+        val text = TourCoach.autotype(state) ?: return
+        val key = "${state.step}:field:${System.identityHashCode(translateStrip)}"
+        if (tourTyped == key) return
+        tourTyped = key
+        typeForTour(text, { letter -> currentInputConnection?.commitText(letter, 1) }) {
+            updateSuggestions()
+            translateDraftChanged()
+        }
+    }
+
+    private fun typeForTour(text: String, append: (String) -> Unit, done: (() -> Unit)? = null) {
+        tourTyping = true
+        val letters = text.map { it.toString() }
+        for ((i, letter) in letters.withIndex()) {
+            main.postDelayed({
+                append(letter)
+                if (i == letters.size - 1) {
+                    tourTyping = false
+                    done?.invoke()
+                    applyTourHint()
+                }
+            }, 350L + i * 45L)
+        }
+    }
+
+    /** The topmost visible view with this qa id; "prefix*" takes the highest match. */
+    private fun findQaView(id: String, from: View = root): View? {
+        val prefix = if (id.endsWith("*")) id.dropLast(1) else null
+        var best: View? = null
+        var bestTop = Int.MAX_VALUE
+        val r = android.graphics.Rect()
+        fun walk(v: View): Boolean {
+            if (v.visibility != View.VISIBLE) return false
+            val qa = v.getTag(com.demo.glyf.R.id.qa_id) as? String
+            if (qa != null) {
+                if (prefix != null) {
+                    if (qa.startsWith(prefix) && v.getGlobalVisibleRect(r) && r.height() > dp(8) && r.top < bestTop) {
+                        best = v
+                        bestTop = r.top
+                    }
+                } else if (qa == id && v.getGlobalVisibleRect(r)) {
+                    best = v
+                    return true
+                }
+            }
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) if (walk(v.getChildAt(i))) return true
+            return false
+        }
+        walk(from)
+        return best
+    }
+
+    /** Where a coach target is, in the keyboard root's coordinates. */
+    private fun coachRect(target: String): RectF? {
+        val origin = IntArray(2).also { root.getLocationInWindow(it) }
+        for (id in target.split("|")) {
+            if (id.startsWith("key:")) {
+                if (!keyboard.isShown) continue
+                val k = keyboard.keyRect(id.removePrefix("key:")) ?: continue
+                val loc = IntArray(2).also { keyboard.getLocationInWindow(it) }
+                return RectF(k).apply { offset((loc[0] - origin[0]).toFloat(), (loc[1] - origin[1]).toFloat()) }
+            }
+            val v = findQaView(id) ?: continue
+            val r = android.graphics.Rect()
+            if (!v.getGlobalVisibleRect(r)) continue
+            return RectF(r).apply { offset(-origin[0].toFloat(), -origin[1].toFloat()) }
+        }
+        return null
     }
 
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int,
@@ -1276,10 +1485,27 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         val tail = before.takeLast(120)
         val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
-        val chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN")
+        var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN")
+        // The tour keeps the strip for the step it is coaching.
+        val step = tourStep()
+        if (step != null) {
+            val kind = when (chip) {
+                is Smart.Chip.Calc -> "calc"
+                is Smart.Chip.Vault -> "vault:${chip.field.kind}"
+                is Smart.Chip.Pay -> "pay"
+                is Smart.Chip.Action -> "action"
+                null -> null
+            }
+            if (kind != null && !TourCoach.allowsChip(kind, step, tourCopied())) chip = null
+            if (chip == null) {
+                if (stripChipKind in smartKinds) hideStripChip()
+                return false
+            }
+        }
         if (chip != null) cancelSuggestion()
         when (chip) {
             is Smart.Chip.Calc, is Smart.Chip.Vault -> {
+                stripSmartDetail = if (chip is Smart.Chip.Vault) "vault:${chip.field.kind}" else "calc"
                 showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "") {
                     currentInputConnection?.commitText(Smart.insert(chip), 1)
                     hideStripChip()
@@ -1358,7 +1584,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val fresh = stamp > 0 && System.currentTimeMillis() - stamp < 10 * 60 * 1000 &&
             stamp != imePrefs.getLong("clipDone", -1)
         val typed = currentInputConnection?.getTextBeforeCursor(1, 0)?.isNotEmpty() == true
-        if (busy || !fresh || text.isEmpty() || typed ||
+        val tourBlocks = tourStep()?.let { !TourCoach.allowsChip("paste", it, tourCopied()) } == true
+        if (busy || !fresh || text.isEmpty() || typed || tourBlocks ||
             com.demo.glyf.store.SecretScanner.scan(text) != null) {
             if (stripChipKind == "paste") hideStripChip()
             return
@@ -1376,6 +1603,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     private var stripChip: View? = null
     private var stripChipKind: String? = null
+    /** What a "smart" chip holds, for the tour's coach: "calc" or "vault:<kind>". */
+    private var stripSmartDetail: String? = null
 
     /** One chip across the strip: content on the left, the action on the right. */
     private fun showStripChip(kind: String, label: String?, value: String, verb: String,
@@ -2378,6 +2607,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         header.addView(TextView(this).apply {
             text = "‹"; textSize = 22f; setTextColor(ink())
             setPadding(dp(8), 0, dp(14), dp(2))
+            setTag(com.demo.glyf.R.id.qa_id, "panel:back"); contentDescription = "Close"
             setOnClickListener { dismissFeaturePanel() }
         })
         header.addView(TextView(this).apply {
@@ -2400,6 +2630,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             bar.addView(TextView(this).apply {
                 text = "ABC"; textSize = 15f; setTextColor(ink())
                 setPadding(dp(6), dp(6), dp(14), dp(6))
+                setTag(com.demo.glyf.R.id.qa_id, "panel:abc")
                 setOnClickListener { dismissFeaturePanel() }
             })
             bar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
@@ -2545,30 +2776,29 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** Vault = your info + your notes (notes editable right here). */
+    /** Vault = your details and your notes. Tap one to put it in; hold a
+     *  note to edit it. */
     private fun showVaultPanel() {
-        val (_, body) = panelShell("Vault")
-        val vault = VaultStore.load(this)
-        val fields = vault.optJSONArray("fields")
-        for (i in 0 until (fields?.length() ?: 0)) {
-            val f = fields!!.getJSONObject(i)
-            cardRow(body, f.optString("label"), f.optString("value")) {
-                currentInputConnection?.commitText(f.optString("value"), 1)
+        val (panel, body) = panelShell("Vault")
+        panel.tag = "vault"
+        for ((i, f) in vaultFields().withIndex()) {
+            cardRow(body, f.label, f.value) {
+                currentInputConnection?.commitText(f.value, 1)
                 dismissFeaturePanel()
             }
+            body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "vault:card:$i")
         }
         val notes = com.demo.glyf.store.NotesStore.list(this)
         for (i in 0 until notes.length()) {
             val n = notes.getJSONObject(i)
             val text = n.optString("text")
             val id = n.optString("id")
-            cardRow(body, text.lineSequence().first().take(44), "✎ tap title · edit") {
+            val lines = text.lines().filter { it.isNotBlank() }
+            cardRow(body, lines.firstOrNull()?.take(44) ?: "", lines.drop(1).joinToString(" ")) {
                 currentInputConnection?.commitText(text, 1)
                 dismissFeaturePanel()
             }
-            // Replace the helper subline with a real edit affordance: long
-            // press the card edits instead of inserting.
-            (body.getChildAt(body.childCount - 1)).setOnLongClickListener {
+            body.getChildAt(body.childCount - 1).setOnLongClickListener {
                 enterNoteEdit(id, text); true
             }
         }
@@ -2792,6 +3022,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             gravity = Gravity.CENTER
             setPadding(dp(12), 0, dp(12), 0)
             background = GradientDrawable().apply { cornerRadius = dp(15).toFloat(); setColor(card()) }
+            setTag(com.demo.glyf.R.id.qa_id, "hud:direction")
             setOnClickListener { cycleTranslateTarget() }
         }
         val text = TextView(this).apply {
@@ -2814,6 +3045,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 cornerRadius = dp(15).toFloat(); setColor(Color.rgb(0x0A, 0x84, 0xFF))
             }
             alpha = 0.3f
+            setTag(com.demo.glyf.R.id.qa_id, "hud:replace")
             setOnClickListener { applyTranslation() }
         }
         val close = TextView(this).apply {
@@ -2821,6 +3053,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             textSize = 14f
             setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
             setPadding(dp(10), dp(8), dp(8), dp(8))
+            setTag(com.demo.glyf.R.id.qa_id, "hud:close"); contentDescription = "Close"
             setOnClickListener { exitTranslate() }
         }
         strip.addView(dir, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)))

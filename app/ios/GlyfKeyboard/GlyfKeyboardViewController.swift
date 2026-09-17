@@ -254,6 +254,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         appearanceFlipped = false
+        stopTourWatch()
         TypingStore.shared.saveNow()
     }
 
@@ -277,6 +278,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             }
         }
         toolbar.setRunsRemaining(GlyfCatalog.cachedRunsRemaining())
+        startTourWatch()
         // Host input sessions (Flutter especially) finish attaching a beat
         // AFTER viewDidAppear — inserting immediately loses the text.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -674,53 +676,270 @@ final class GlyfKeyboardViewController: UIInputViewController {
         applyTourHint()
     }
 
-    // MARK: Tour ring
+    // MARK: Tour coach
 
-    /// A pulsing ring around the one thing the app's tour is waiting for.
+    /// The website's coach, on the real keyboard: while the app's tour waits
+    /// on a step, a pulsing ring around the one thing to tap and a label
+    /// saying what to do with it (TourCoach decides both).
     private var tourRing: CAShapeLayer?
+    private var tourLabel: TourLabelView?
+    private var tourTimer: Timer?
+    private var tourTyping = false
+    /// What the keyboard already typed for the tour, so it types it once.
+    private var tourTyped: String?
+
+    private var tourCopied: Bool {
+        (SettingsStore.current.tourCopiedAt ?? 0) > (Date().timeIntervalSince1970 - 10 * 60) * 1000
+    }
+
+    private var tourStep: String? {
+        let s = SettingsStore.current
+        let fresh = (s.tourHintAt ?? 0) > (Date().timeIntervalSince1970 - 15 * 60) * 1000
+        return fresh ? s.tourStep : nil
+    }
+
+    /// The app moves the tour along without touching the text, so the
+    /// keyboard looks again a few times a second while it is up.
+    private func startTourWatch() {
+        tourTimer?.invalidate()
+        tourTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+            self?.applyTourHint()
+        }
+    }
+
+    private func stopTourWatch() {
+        tourTimer?.invalidate()
+        tourTimer = nil
+        clearTourCoach()
+    }
+
+    /// The step (and copy) the strip was last arranged for.
+    private var coachedStep: String?
 
     private func applyTourHint() {
         SettingsStore.reloadIfChanged()
-        let s = SettingsStore.current
-        let fresh = (s.tourHintAt ?? 0) > (Date().timeIntervalSince1970 - 15 * 60) * 1000
-        let hint = fresh ? s.tourHint : nil
-        var rect: CGRect?
-        switch hint {
-        case "chip":
-            rect = toolbar.smartFrame.map { toolbar.convert($0, to: content) }
-        case "g":
-            rect = toolbar.convert(toolbar.glyfFrame, to: content)
-        case .some(let id):
-            if surface == .none, !keyboardView.isHidden {
-                rect = keyboardView.frame(ofKey: id).map { keyboardView.convert($0, to: content) }
-            }
-        case .none:
-            rect = nil
-        }
-        guard let rect, !toolbar.isHidden || hint != "chip" else {
-            tourRing?.removeFromSuperlayer()
-            tourRing = nil
+        let arranged = tourStep.map { "\($0)|\(tourCopied)" }
+        if didBuild, arranged != coachedStep {
+            // A new step, or the address just copied, changes which chips
+            // the strip may show.
+            coachedStep = arranged
+            updateCandidates()
             return
         }
-        let ring = tourRing ?? CAShapeLayer()
-        if tourRing == nil {
-            ring.fillColor = nil
-            ring.strokeColor = Glass.accentPrimary.cgColor
-            ring.lineWidth = 2.5
-            let pulse = CABasicAnimation(keyPath: "opacity")
-            pulse.fromValue = 1
-            pulse.toValue = 0.25
-            pulse.duration = 0.7
-            pulse.autoreverses = true
-            pulse.repeatCount = .infinity
-            ring.add(pulse, forKey: "pulse")
-            content.layer.addSublayer(ring)
-            tourRing = ring
+        guard didBuild, let step = tourStep else {
+            clearTourCoach()
+            return
         }
+        let state = tourState(step: step)
+        tourAutotype(state)
+        guard let coach = TourCoach.coach(state), let rect = coachRect(coach.target) else {
+            clearTourCoach()
+            return
+        }
+        showTourCoach(rect: rect, label: coach.label)
+    }
+
+    private func tourState(step: String) -> TourCoach.State {
+        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        let after = textDocumentProxy.documentContextAfterInput ?? ""
+        var state = TourCoach.State(step: step, text: before + after)
+        state.panel = coachPanel()
+        state.chip = toolbar.smartFrame == nil ? nil : toolbar.smartChip
+        state.suggestions = toolbar.showingCandidates ? toolbar.suggestions.map(\.text) : []
+        state.fields = VaultStore.shared.load().fields
+        let bindings = SettingsStore.current.bindings.sorted { $0.key < $1.key }
+        state.vaultKey = bindings.first { $0.value == "surface:vault" }?.key
+        state.translateKey = bindings.first { $0.value == "surface:translate-hud" }?.key
+        state.stripTools = Set(["search", "vault", "translate"].filter { findCoachView("toolbar:\($0)") != nil })
+        state.copied = tourCopied
+        return state
+    }
+
+    private func coachPanel() -> TourCoach.Panel {
+        switch surface {
+        case .none:
+            if tonesPopup != nil { return .tones }
+            if hudActive, let hud, !hud.isHidden {
+                return .translate(ready: hud.ready, target: hud.targetLanguage)
+            }
+            return .none
+        case .search:
+            guard let sv = search else { return .other(close: "search:close") }
+            return .search(tab: sv.tab.rawValue.lowercased(), view: sv.coachView,
+                           query: sv.queryEditor.text)
+        case .shell:
+            switch shell?.screenId {
+            case "vault": return .vault
+            case "root": return .menu
+            default: return .other(close: "toolbar:close|shell:close")
+            }
+        case .act:
+            return .act(working: act?.isWorking ?? true, options: act?.hasOptions ?? false)
+        case .clipboard:
+            return .other(close: "clip:back")
+        case .emoji:
+            return .other(close: emoji?.searchActive == true ? "emoji:close" : "emoji:abc|emoji:letters")
+        case .connector:
+            return .other(close: "toolbar:close|connector:close")
+        case .noteEdit:
+            return .other(close: "noteedit:close")
+        case .bar:
+            return .other(close: "bar:close|toolbar:close")
+        }
+    }
+
+    /// Types what the tour needs typed, a letter at a time, the way the
+    /// website's keyboard does: the search query, or Sofía's reply.
+    private func tourAutotype(_ state: TourCoach.State) {
+        guard !tourTyping else { return }
+        if case .search(let tab, let view, let query) = state.panel, let sv = search,
+           tab == TourCoach.searchTab(step: state.step),
+           let q = TourCoach.searchQuery(step: state.step) {
+            if case .loading = view { return }
+            // Once per step on this tab: the step's own query, replacing
+            // whatever an earlier chat left in the box.
+            let key = "\(state.step):search:\(ObjectIdentifier(sv).hashValue):\(tab)"
+            guard tourTyped != key else { return }
+            tourTyped = key
+            guard query != q else { return }
+            if !query.isEmpty { sv.startOver() }
+            typeForTour(q, append: { [weak sv] in sv?.queryEditor.append($0) })
+            return
+        }
+        if let text = TourCoach.autotype(state) {
+            let key = "\(state.step):field:\(ObjectIdentifier(hud ?? content).hashValue)"
+            guard tourTyped != key else { return }
+            tourTyped = key
+            typeForTour(text, append: { [weak self] in self?.textDocumentProxy.insertText($0) }) { [weak self] in
+                self?.updateCandidates()
+                self?.notifyHUD()
+            }
+        }
+    }
+
+    private func typeForTour(_ text: String, append: @escaping (String) -> Void,
+                             done: (() -> Void)? = nil) {
+        tourTyping = true
+        let letters = text.map(String.init)
+        for (i, letter) in letters.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35 + Double(i) * 0.045) { [weak self] in
+                guard let self else { return }
+                append(letter)
+                if i == letters.count - 1 {
+                    self.tourTyping = false
+                    done?()
+                    self.applyTourHint()
+                }
+            }
+        }
+    }
+
+    /// Where a coach target is, in `content`'s coordinates. "a|b" tries each;
+    /// a trailing "*" takes the topmost visible match.
+    private func coachRect(_ target: String) -> CGRect? {
+        for id in target.split(separator: "|").map(String.init) {
+            if let v = findCoachView(id), let r = visibleRect(of: v) { return r }
+        }
+        return nil
+    }
+
+    private func findCoachView(_ id: String) -> UIView? {
+        let prefix: String? = id.hasSuffix("*") ? String(id.dropLast()) : nil
+        var best: (view: UIView, y: CGFloat)?
+        func visit(_ v: UIView) -> Bool {
+            if v.isHidden || v.alpha < 0.02 { return false }
+            if let ident = v.accessibilityIdentifier {
+                if let prefix {
+                    if ident.hasPrefix(prefix), let r = visibleRect(of: v), r.height > 8,
+                       best == nil || r.minY < best!.y {
+                        best = (v, r.minY)
+                    }
+                } else if ident == id, visibleRect(of: v) != nil {
+                    best = (v, 0)
+                    return true
+                }
+            }
+            for sub in v.subviews where visit(sub) { return true }
+            return false
+        }
+        _ = visit(content)
+        return best?.view
+    }
+
+    /// The part of a view that can actually be seen: clipped by every
+    /// scrolling or clipping ancestor, nil when nothing is left.
+    private func visibleRect(of v: UIView) -> CGRect? {
+        var rect = v.convert(v.bounds, to: content)
+        var node = v.superview
+        while let n = node, n !== content {
+            if n.isHidden || n.alpha < 0.02 { return nil }
+            if n.clipsToBounds || n is UIScrollView {
+                rect = rect.intersection(n.convert(n.bounds, to: content))
+            }
+            node = n.superview
+        }
+        guard node === content else { return nil }
+        rect = rect.intersection(content.bounds)
+        return rect.isNull || rect.width < 4 || rect.height < 4 ? nil : rect
+    }
+
+    private func showTourCoach(rect: CGRect, label: String) {
+        let ring = tourRing ?? {
+            let r = CAShapeLayer()
+            r.fillColor = nil
+            r.strokeColor = Glass.accentPrimary.cgColor
+            r.lineWidth = 2.5
+            if !Glass.reduceMotion {
+                let pulse = CABasicAnimation(keyPath: "opacity")
+                pulse.fromValue = 1
+                pulse.toValue = 0.3
+                pulse.duration = 0.75
+                pulse.autoreverses = true
+                pulse.repeatCount = .infinity
+                r.add(pulse, forKey: "pulse")
+            }
+            r.zPosition = 50
+            content.layer.addSublayer(r)
+            tourRing = r
+            return r
+        }()
         ring.frame = content.bounds
-        ring.path = UIBezierPath(roundedRect: rect.insetBy(dx: -3, dy: -3),
-                                 cornerRadius: Glass.radiusKey + 3).cgPath
-        ring.zPosition = 50
+        // Along the top strip a ring outside the target is cut off by the
+        // sheet's edge, so it hugs the target's own outline there.
+        let onStrip = rect.minY < 6
+        let inset: CGFloat = onStrip ? 1.25 : -3
+        let radius: CGFloat = onStrip ? min(rect.height / 2, 12) - 1.25
+                                      : min(Glass.radiusKey + 3, rect.height / 2 + 3)
+        ring.path = UIBezierPath(roundedRect: rect.insetBy(dx: inset, dy: inset),
+                                 cornerRadius: radius).cgPath
+
+        let tag = tourLabel ?? {
+            let l = TourLabelView()
+            l.layer.zPosition = 51
+            content.addSubview(l)
+            tourLabel = l
+            return l
+        }()
+        if tag.superview !== content { content.addSubview(tag) }
+        content.bringSubviewToFront(tag)
+        tag.text = label
+        let size = tag.sizeThatFits(.zero)
+        let gap: CGFloat = 5
+        // Above the target when there is room (keys, cards), below it along
+        // the strip, like the website's pill.
+        let above = rect.minY - size.height - gap >= 0 && rect.minY > Glass.toolbarHeight - 4
+        let x = min(max(6, rect.midX - size.width / 2), content.bounds.width - size.width - 6)
+        let y = above ? rect.minY - size.height - gap : rect.maxY + gap
+        tag.pointsUp = !above
+        tag.arrowX = rect.midX - x
+        tag.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    private func clearTourCoach() {
+        tourRing?.removeFromSuperlayer()
+        tourRing = nil
+        tourLabel?.removeFromSuperview()
+        tourLabel = nil
     }
 
     private func syncAutoShift() {
@@ -781,11 +1000,21 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // Something just copied rides in the strip as one chip, never as a
         // second row: history's copy when we already have it, otherwise the
         // offer itself (tapping reads, which is the moment iOS asks).
+        // History only knows a copy once it has been read; a newer one shows
+        // as an offer instead of the older text.
         let paste: String? = (hasFullAccess && tail.isEmpty && ClipContext.isFresh())
-            ? (ClipboardStore.load().first?.text ?? "Tap to paste what you copied")
+            ? (ClipboardStore.pasteboardHasNewContent()
+                ? "Tap to paste what you copied"
+                : (ClipboardStore.load().first?.text ?? "Tap to paste what you copied"))
             : nil
         var chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
                               paste: paste, field: fieldHint(emptyField: before.isEmpty))
+        // The tour keeps the strip for the step it is coaching.
+        if let step = tourStep {
+            if let c = chip, !TourCoach.allowsChip(Self.chipKind(c), step: step, copied: tourCopied) { chip = nil }
+            toolbar.showSmart(chip)
+            return chip != nil
+        }
         // Nothing local to say? Let the model look at the sentence and name
         // the thing Glyf could do with it (the website's coach).
         if chip == nil {
@@ -801,6 +1030,16 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         toolbar.showSmart(chip)
         return chip != nil
+    }
+
+    private static func chipKind(_ chip: Smart.Chip) -> String {
+        switch chip {
+        case .calc: return "calc"
+        case .vault(let f): return "vault:\(f.kind)"
+        case .paste: return "paste"
+        case .pay: return "pay"
+        case .action: return "action"
+        }
     }
 
     /// What the focused field is asking for. iOS tells a keyboard extension
@@ -1371,6 +1610,12 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
 
     func actRetry() { runAct() }
 
+    func actRetryAvailable(_ available: Bool) {
+        guard surface == .act, Glass.solidLook else { return }
+        toolbar.setPanelAction(symbol: "arrow.clockwise", label: "Try again",
+                               handler: available ? { [weak self] in self?.actRetry() } : nil)
+    }
+
     func actOpen(_ url: URL) {
         HostAppOpener.open(url, from: self) { _ in }
     }
@@ -1409,6 +1654,10 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
         remember(copied: text)
         textDocumentProxy.insertText(text)
         updateCandidates()
+    }
+
+    func clipboardPanelSavedToVault(refusal: String?) {
+        KeyboardToast.show(in: content, text: refusal ?? "Saved to vault")
     }
 
     func clipboardPanelCopiedImage() {

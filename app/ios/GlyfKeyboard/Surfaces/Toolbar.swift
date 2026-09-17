@@ -39,6 +39,9 @@ final class GlyfToolbar: UIView {
     /// Deeper panel screens keep their way back in the strip, so the panel
     /// itself never spends a row on a chevron.
     private let panelBack = UIButton(type: .system)
+    /// A panel's own action at the strip's right edge (↻ on an answer).
+    private let panelAction = UIButton(type: .system)
+    private var panelActionHandler: (() -> Void)?
     private(set) var panelTitle: String?
     /// Smart chip: one card across the strip, accent key then value.
     private let smartCard = UIControl()
@@ -148,6 +151,10 @@ final class GlyfToolbar: UIView {
         panelBack.isHidden = true
         panelBack.accessibilityIdentifier = "toolbar:back"
         panelBack.accessibilityLabel = "Back"
+        panelAction.tintColor = Glass.textPrimary
+        panelAction.isHidden = true
+        panelAction.addAction(UIAction { [weak self] _ in self?.panelActionHandler?() }, for: .touchUpInside)
+        addSubview(panelAction)
         panelBack.addAction(UIAction { [weak self] _ in self?.delegate?.toolbarBackTapped() },
                             for: .touchUpInside)
         addSubview(panelBack)
@@ -304,10 +311,18 @@ final class GlyfToolbar: UIView {
             UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)
         panelIcon.image = icon.flatMap { UIImage(systemName: $0) }
         panelIcon.isHidden = !open || keepTools || panelIcon.image == nil
-        scroll.isHidden = hideTools
-        candidatesStack.isHidden = open || !showingCandidates
-        runsChip.isHidden = open || runsRemaining == nil || Glass.solidLook
-        divider.isHidden = hideTools || Glass.solidLook
+        if open {
+            scroll.isHidden = hideTools
+            candidatesStack.isHidden = true
+            runsChip.isHidden = true
+            divider.isHidden = hideTools || Glass.solidLook
+        } else {
+            // Back to exactly one of tools or suggestions. Setting both here
+            // (tools on, suggestions on) drew words over the icons after
+            // the emoji page closed.
+            setPanelAction(symbol: nil, label: nil, handler: nil)
+            applyCandidatesVisibility(toolsVisible: !showingCandidates || userPinnedTools)
+        }
         if open {
             glyfButton.setTitle(nil, for: .normal)
             glyfButton.setImage(UIImage(systemName: "xmark"), for: .normal)
@@ -326,6 +341,20 @@ final class GlyfToolbar: UIView {
             glyfButton.accessibilityLabel = "Glyf"
             brandDot.isHidden = false
         }
+        setNeedsLayout()
+    }
+
+    /// The open panel's action at the strip's right edge, or nil for none.
+    func setPanelAction(symbol: String?, label: String?, handler: (() -> Void)?) {
+        panelActionHandler = handler
+        if let symbol {
+            panelAction.setImage(UIImage(systemName: symbol), for: .normal)
+            panelAction.setPreferredSymbolConfiguration(
+                UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold), forImageIn: .normal)
+        }
+        panelAction.accessibilityLabel = label
+        panelAction.accessibilityIdentifier = "toolbar:panelAction"
+        panelAction.isHidden = handler == nil || panelTitle == nil
         setNeedsLayout()
     }
 
@@ -409,7 +438,11 @@ final class GlyfToolbar: UIView {
 
     func showSuggestions(_ items: [Suggestion]) {
         let items = Array(items.prefix(3))
-        if items == suggestions, showingCandidates == !items.isEmpty { return }
+        if items == suggestions, showingCandidates == !items.isEmpty {
+            // Same words, but something else may have moved the strip since.
+            applyCandidatesVisibility(toolsVisible: items.isEmpty || userPinnedTools)
+            return
+        }
         suggestions = items
         candidatesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for (i, item) in items.enumerated() {
@@ -509,8 +542,11 @@ final class GlyfToolbar: UIView {
             }
             panelIcon.frame = CGRect(x: x, y: mid - 12, width: 24, height: 24)
             let textX = panelIcon.isHidden ? x : x + 30
+            let actionW: CGFloat = panelAction.isHidden ? 0 : 44
+            panelAction.frame = CGRect(x: bounds.width - actionW - 4, y: mid - 17,
+                                       width: actionW, height: 34)
             panelLabel.frame = CGRect(x: textX, y: -Glass.stripLift,
-                                      width: bounds.width - textX - 10, height: h)
+                                      width: bounds.width - textX - 10 - actionW, height: h)
         }
         scroll.frame = CGRect(x: left, y: 0, width: width, height: h)
         let itemH = min(34, h - 4)

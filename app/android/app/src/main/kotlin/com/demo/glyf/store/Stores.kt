@@ -53,7 +53,7 @@ object SettingsStore {
     }
 
     fun defaults(): JSONObject = JSONObject().apply {
-        put("schemaVersion", 7)
+        put("schemaVersion", 8)
         put("haptics", true)
         put("keyClicks", true)
         put("numberRow", false)
@@ -65,11 +65,11 @@ object SettingsStore {
         put("toolbarOrder", JSONArray(listOf(
             "search", "clipboard", "vault", "dictation", "translate")))
         put("toolbarHidden", JSONArray())
-        // Two holds only: S shares your details, T translates. The canned
+        // Two holds only: V shares your details, T translates. The canned
         // glyfs (proofread, emoji-fy…) were what hold-space AI already does.
         put("bindings", JSONObject(mapOf(
             "t" to "surface:translate-hud",
-            "s" to "surface:vault")))
+            "v" to "surface:vault")))
         put("customTitles", JSONObject())
         put("translationHUD", false)
         put("proUnlocked", false)
@@ -132,7 +132,7 @@ object SettingsStore {
                     kept.put(k, target)
                 }
             }
-            if (!kept.has("s")) kept.put("s", "surface:vault")
+            if (!kept.has("v") && !kept.has("s")) kept.put("v", "surface:vault")
             if (!kept.has("t")) kept.put("t", "surface:translate-hud")
             current.put("bindings", kept)
             current.put("schemaVersion", 6)
@@ -152,6 +152,20 @@ object SettingsStore {
                 current.put("toolbarOrder", kept)
             }
             current.put("schemaVersion", 7)
+            changed = true
+        }
+        // v8: the vault moves to V, the letter it is named for (as on iOS).
+        if (current.optInt("schemaVersion", 1) < 8) {
+            val b = current.optJSONObject("bindings") ?: JSONObject()
+            if (b.optString("s") == "surface:vault" &&
+                (!b.has("v") || b.optString("v") == "surface:vault")) {
+                b.remove("s")
+                b.put("v", "surface:vault")
+            }
+            val hasVault = b.keys().asSequence().any { b.optString(it) == "surface:vault" }
+            if (!hasVault && !b.has("v")) b.put("v", "surface:vault")
+            current.put("bindings", b)
+            current.put("schemaVersion", 8)
             changed = true
         }
         // Every load, as on iOS: Search leads the strip and the default tools

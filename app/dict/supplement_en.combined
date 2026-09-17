@@ -102,6 +102,7 @@ dictionary=supplement:en,locale=en,description=Glyf supplement to the AOSP Engli
  word=EMI,f=100
  word=GST,f=100
  word=Aadhaar,f=110
+ word=pakka,f=110
  word=crore,f=120
  word=crores,f=110
  word=lakh,f=120

@@ -65,6 +65,13 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     private var cards: [Card] = []
     private var status = ""
 
+    /// What the tour's coach needs to know about this surface.
+    var coachView: TourCoach.SearchView {
+        if expandedForResults { return .results(cards.count) }
+        if status == "Searching…" { return .loading }
+        return landingActive ? .landing(rows: cards.count) : .typing
+    }
+
     private let closeButton = UIButton(type: .system)
     private let chipsRow = ControlScrollView()
     /// The website's tab track: a soft pill holding icon-only tabs with a
@@ -401,6 +408,22 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         delegate?.searchLayoutChanged()
         activateQuery()
         // ABC returns you to suggestions, never to an empty panel.
+        showLanding()
+    }
+
+    /// An empty query and the suggestions again, results or not.
+    func startOver() {
+        task?.cancel()
+        queryEditor.setText("")
+        if expandedForResults {
+            expandedForResults = false
+            cards = []
+            status = ""
+            table.reloadData()
+            setNeedsLayout()
+            delegate?.searchLayoutChanged()
+        }
+        activateQuery()
         showLanding()
     }
 

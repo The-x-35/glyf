@@ -6,9 +6,9 @@ import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 
-/// §6.7 vault editor — add/edit lives in the APP only; the keyboard just
-/// picks and types. Validation (blocked types) runs native-side; refusals
-/// surface verbatim here.
+/// The vault: the details, notes and shorthand the keyboard types for you.
+/// Add and edit live in the app only; the keyboard just picks and types.
+/// Validation (secrets are refused) runs native-side and surfaces here.
 class VaultScreen extends StatefulWidget {
   const VaultScreen({super.key});
 
@@ -17,12 +17,26 @@ class VaultScreen extends StatefulWidget {
 }
 
 class _VaultScreenState extends State<VaultScreen> {
-  Map<String, dynamic> _vault = {'fields': [], 'combos': [], 'snippets': []};
+  Map<String, dynamic> _vault = {'fields': [], 'snippets': []};
+  List<Map<String, dynamic>> _notes = [];
 
-  static const kinds = [
-    'name', 'email', 'phone', 'address', 'upi', 'gst', 'wallet',
-    'link', 'social', 'bio', 'reply', 'custom',
+  /// Kinds the keyboard knows how to offer, by the name a person uses.
+  static const kinds = <(String, String, IconData)>[
+    ('name', 'Name', Icons.person_outline),
+    ('email', 'Email', Icons.alternate_email),
+    ('phone', 'Phone', Icons.phone_outlined),
+    ('address', 'Address', Icons.home_outlined),
+    ('upi', 'UPI', Icons.currency_rupee),
+    ('wallet', 'Solana wallet', Icons.account_balance_wallet_outlined),
+    ('link', 'Link', Icons.link),
+    ('social', 'Social', Icons.alternate_email),
+    ('gst', 'GST number', Icons.receipt_long_outlined),
+    ('bio', 'Bio', Icons.short_text),
+    ('custom', 'Other', Icons.label_outline),
   ];
+
+  static IconData _iconFor(String? kind) =>
+      kinds.firstWhere((k) => k.$1 == kind, orElse: () => kinds.last).$3;
 
   @override
   void initState() {
@@ -40,12 +54,15 @@ class _VaultScreenState extends State<VaultScreen> {
 
   Future<void> _refresh() async {
     final raw = await GlyfBridge.vaultList();
-    if (!mounted || raw == null) return;
-    setState(() => _vault = jsonDecode(raw) as Map<String, dynamic>);
+    final notes = await GlyfBridge.notesList();
+    if (!mounted) return;
+    setState(() {
+      if (raw != null) _vault = jsonDecode(raw) as Map<String, dynamic>;
+      _notes = notes;
+    });
   }
 
   List<dynamic> get _fields => (_vault['fields'] as List?) ?? [];
-  List<dynamic> get _combos => (_vault['combos'] as List?) ?? [];
   List<dynamic> get _snippets => (_vault['snippets'] as List?) ?? [];
 
   @override
@@ -66,46 +83,39 @@ class _VaultScreenState extends State<VaultScreen> {
                         color: Glass.ink,
                         fontSize: 24,
                         fontWeight: FontWeight.w800)),
-                const Spacer(),
               ]),
-              const SizedBox(height: 4),
-              Text(
-                'Long-press S on the keyboard to type any of this. '
-                'Passwords, cards, IDs, and seeds are refused by design.',
-                style: TextStyle(
-                    color: Glass.inkSoft, fontSize: 12.5),
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
 
-              _sectionHeader('Fields', onAdd: () => _editField(null)),
+              _sectionHeader('Details', onAdd: () => _editField(null)),
               for (final f in _fields)
                 _row(
                   title: f['label'] as String? ?? '',
                   subtitle: f['value'] as String? ?? '',
-                  icon: Icons.badge_outlined,
+                  icon: _iconFor(f['kind'] as String?),
                   onTap: () => _editField(f as Map<String, dynamic>),
                   onDelete: () async {
                     await GlyfBridge.vaultDeleteField(f['id'] as String);
                     _refresh();
                   },
                 ),
-              if (_fields.isEmpty) _empty('No fields yet — add your address, UPI, links…'),
+              if (_fields.isEmpty) _addRow('Add your address', () => _editField(null)),
 
               const SizedBox(height: 18),
-              _sectionHeader('Combos', onAdd: _fields.isEmpty ? null : _editCombo),
-              for (final c in _combos)
+              _sectionHeader('Notes', onAdd: () => _editNote(null)),
+              for (final n in _notes)
                 _row(
-                  title: c['label'] as String? ?? '',
-                  subtitle: '${(c['fieldIds'] as List?)?.length ?? 0} fields · one tap',
-                  icon: Icons.layers_outlined,
-                  onTap: null,
+                  title: (n['text'] as String? ?? '').split('\n').first,
+                  subtitle: (n['text'] as String? ?? '').contains('\n')
+                      ? (n['text'] as String).split('\n').skip(1).join(' ')
+                      : '',
+                  icon: Icons.sticky_note_2_outlined,
+                  onTap: () => _editNote(n),
                   onDelete: () async {
-                    await GlyfBridge.vaultDeleteCombo(c['id'] as String);
+                    await GlyfBridge.notesDelete(n['id'] as String? ?? '');
                     _refresh();
                   },
                 ),
-              if (_combos.isEmpty)
-                _empty('Combos type several fields at once — “Shipping block”'),
+              if (_notes.isEmpty) _addRow('Add a note', () => _editNote(null)),
 
               const SizedBox(height: 18),
               _sectionHeader('Shorthand', onAdd: () => _editSnippet(null)),
@@ -120,8 +130,7 @@ class _VaultScreenState extends State<VaultScreen> {
                     _refresh();
                   },
                 ),
-              if (_snippets.isEmpty)
-                _empty('Type ;sig anywhere and it expands inline'),
+              if (_snippets.isEmpty) _addRow('Add shorthand', () => _editSnippet(null)),
             ],
           ),
         ),
@@ -132,7 +141,7 @@ class _VaultScreenState extends State<VaultScreen> {
   Widget _sectionHeader(String title, {VoidCallback? onAdd}) {
     return Row(children: [
       Text(title,
-          style: TextStyle(
+          style: const TextStyle(
               color: Glass.inkSoft,
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -148,12 +157,19 @@ class _VaultScreenState extends State<VaultScreen> {
     ]);
   }
 
-  Widget _empty(String text) {
+  /// An empty section is one quiet tap target, not a paragraph.
+  Widget _addRow(String label, VoidCallback onTap) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Text(text,
-          style: TextStyle(
-              color: const Color(0xFFB6BAC3), fontSize: 12.5)),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        onTap: onTap,
+        child: Row(children: [
+          const Icon(Icons.add_circle_outline, color: Glass.inkSoft, size: 18),
+          const SizedBox(width: 12),
+          Text(label, style: const TextStyle(color: Glass.inkSoft, fontSize: 14.5)),
+        ]),
+      ),
     );
   }
 
@@ -175,19 +191,20 @@ class _VaultScreenState extends State<VaultScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(title,
-                  style: TextStyle(
-                      color: Glass.ink, fontSize: 14.5, fontWeight: FontWeight.w600)),
-              Text(subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      color: Glass.inkSoft, fontSize: 12)),
+                  style: const TextStyle(
+                      color: Glass.ink, fontSize: 14.5, fontWeight: FontWeight.w600)),
+              if (subtitle.isNotEmpty)
+                Text(subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Glass.inkSoft, fontSize: 12)),
             ]),
           ),
           IconButton(
             onPressed: onDelete,
-            icon: Icon(Icons.delete_outline,
-                color: const Color(0xFFA6ABB4), size: 18),
+            icon: const Icon(Icons.delete_outline, color: Color(0xFFA6ABB4), size: 18),
           ),
         ]),
       ),
@@ -200,17 +217,17 @@ class _VaultScreenState extends State<VaultScreen> {
     final labelCtl = TextEditingController(text: existing?['label'] as String? ?? '');
     final valueCtl = TextEditingController(text: existing?['value'] as String? ?? '');
     var kind = existing?['kind'] as String? ?? 'address';
+    if (!kinds.any((k) => k.$1 == kind)) kind = 'custom';
     await _sheet(
-      title: existing == null ? 'Add field' : 'Edit field',
+      title: existing == null ? 'Add detail' : 'Edit detail',
       builder: (setSheetState, showError) => [
         DropdownButtonFormField<String>(
           initialValue: kind,
           dropdownColor: Colors.white,
           decoration: _dec('Type'),
-          style: TextStyle(color: Glass.ink),
+          style: const TextStyle(color: Glass.ink),
           items: [
-            for (final k in kinds)
-              DropdownMenuItem(value: k, child: Text(k)),
+            for (final k in kinds) DropdownMenuItem(value: k.$1, child: Text(k.$2)),
           ],
           onChanged: (v) => kind = v ?? 'custom',
         ),
@@ -219,8 +236,8 @@ class _VaultScreenState extends State<VaultScreen> {
           identifier: 'vault-label-field',
           child: TextField(
               controller: labelCtl,
-              style: TextStyle(color: Glass.ink),
-              decoration: _dec('Label — e.g. Home address')),
+              style: const TextStyle(color: Glass.ink),
+              decoration: _dec('Label, like Home')),
         ),
         const SizedBox(height: 10),
         Semantics(
@@ -229,7 +246,7 @@ class _VaultScreenState extends State<VaultScreen> {
               controller: valueCtl,
               maxLines: 3,
               minLines: 1,
-              style: TextStyle(color: Glass.ink),
+              style: const TextStyle(color: Glass.ink),
               decoration: _dec('Value')),
         ),
       ],
@@ -246,32 +263,26 @@ class _VaultScreenState extends State<VaultScreen> {
     );
   }
 
-  Future<void> _editCombo() async {
-    final labelCtl = TextEditingController();
-    final selected = <String>{};
+  Future<void> _editNote(Map<String, dynamic>? note) async {
+    final textCtl = TextEditingController(text: note?['text'] as String? ?? '');
     await _sheet(
-      title: 'New combo',
+      title: note == null ? 'New note' : 'Edit note',
       builder: (setSheetState, showError) => [
         TextField(
-            controller: labelCtl,
-            style: TextStyle(color: Glass.ink),
-            decoration: _dec('Label — e.g. Shipping block')),
-        const SizedBox(height: 10),
-        for (final f in _fields)
-          CheckboxListTile(
-            dense: true,
-            activeColor: Glass.accent,
-            checkColor: Colors.white,
-            title: Text(f['label'] as String? ?? '',
-                style: TextStyle(color: Glass.ink, fontSize: 14)),
-            value: selected.contains(f['id']),
-            onChanged: (v) => setSheetState(() {
-              v == true ? selected.add(f['id'] as String) : selected.remove(f['id']);
-            }),
-          ),
+          controller: textCtl,
+          maxLines: 6,
+          minLines: 3,
+          autofocus: note == null,
+          style: const TextStyle(color: Glass.ink, fontSize: 15),
+          decoration: _dec('Note'),
+        ),
       ],
-      onSave: () => GlyfBridge.vaultUpsertCombo(
-          label: labelCtl.text.trim(), fieldIds: selected.toList()),
+      onSave: () async {
+        final res = await GlyfBridge.notesUpsert(
+            id: note?['id'] as String?, text: textCtl.text);
+        if (res.ok) Telemetry.log(note == null ? 'note_created' : 'note_edited');
+        return res;
+      },
     );
   }
 
@@ -283,15 +294,15 @@ class _VaultScreenState extends State<VaultScreen> {
       builder: (setSheetState, showError) => [
         TextField(
             controller: trigCtl,
-            style: TextStyle(color: Glass.ink),
-            decoration: _dec('Trigger — like ;sig')),
+            style: const TextStyle(color: Glass.ink),
+            decoration: _dec('Shortcut, like ;sig')),
         const SizedBox(height: 10),
         TextField(
             controller: textCtl,
             maxLines: 3,
             minLines: 1,
-            style: TextStyle(color: Glass.ink),
-            decoration: _dec('Expands to…')),
+            style: const TextStyle(color: Glass.ink),
+            decoration: _dec('Types out')),
       ],
       onSave: () => GlyfBridge.vaultUpsertSnippet(
           trigger: trigCtl.text.trim(), text: textCtl.text.trim()),
@@ -301,7 +312,7 @@ class _VaultScreenState extends State<VaultScreen> {
   InputDecoration _dec(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: TextStyle(color: const Color(0xFFB6BAC3), fontSize: 13.5),
+      hintStyle: const TextStyle(color: Color(0xFFB6BAC3), fontSize: 13.5),
       filled: true,
       fillColor: const Color(0xFFF2F3F7),
       border: OutlineInputBorder(
@@ -341,12 +352,11 @@ class _VaultScreenState extends State<VaultScreen> {
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   onPressed: () => Navigator.of(sheetCtx).pop(),
-                  icon: Icon(Icons.close,
-                      color: Glass.inkSoft, size: 20),
+                  icon: const Icon(Icons.close, color: Glass.inkSoft, size: 20),
                 ),
                 const SizedBox(width: 8),
                 Text(title,
-                    style: TextStyle(
+                    style: const TextStyle(
                         color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w700)),
                 const Spacer(),
                 Semantics(

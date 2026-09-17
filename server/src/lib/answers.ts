@@ -114,6 +114,7 @@ function mathAnswer(q: string): AnswerCard | null {
       return {
         kind: "answer", id: "calc", art: "calc",
         title: q, value: tidyNumber(value), sub: `${pct[1]}% of ${pct[2]}`,
+        say: `${pct[1]}% of ${pct[2]} is ${tidyNumber(value)}`,
         url: `https://www.google.com/search?q=${encodeURIComponent(q)}`,
       };
     }
@@ -123,6 +124,7 @@ function mathAnswer(q: string): AnswerCard | null {
   return {
     kind: "answer", id: "calc", art: "calc",
     title: q, value: tidyNumber(value), sub: q.replace(/\s+/g, " ").trim(),
+    say: `${q.replace(/\s+/g, " ").trim()} = ${tidyNumber(value)}`,
     url: `https://www.google.com/search?q=${encodeURIComponent(q)}`,
   };
 }
@@ -133,13 +135,67 @@ function mathAnswer(q: string): AnswerCard | null {
  *  licence, no latency. A named place ("sunset in Paris") needs a geocoder we
  *  deliberately do not have, so it falls through to the web provider's own
  *  answer box instead. */
+/** Where a time zone's clocks are set from, for a caller who has not shared
+ *  a location: the zone's own city (or its capital, where one zone covers a
+ *  whole country). The card names the city, so nobody mistakes it for theirs. */
+const ZONE_CITIES: Record<string, [number, number, string]> = {
+  "Asia/Kolkata": [28.6139, 77.209, "New Delhi"],
+  "Asia/Calcutta": [28.6139, 77.209, "New Delhi"],
+  "Asia/Dubai": [25.2048, 55.2708, "Dubai"],
+  "Asia/Singapore": [1.3521, 103.8198, "Singapore"],
+  "Asia/Tokyo": [35.6762, 139.6503, "Tokyo"],
+  "Asia/Shanghai": [31.2304, 121.4737, "Shanghai"],
+  "Asia/Hong_Kong": [22.3193, 114.1694, "Hong Kong"],
+  "Asia/Seoul": [37.5665, 126.978, "Seoul"],
+  "Asia/Jakarta": [-6.2088, 106.8456, "Jakarta"],
+  "Asia/Bangkok": [13.7563, 100.5018, "Bangkok"],
+  "Asia/Karachi": [24.8607, 67.0011, "Karachi"],
+  "Asia/Dhaka": [23.8103, 90.4125, "Dhaka"],
+  "Asia/Kathmandu": [27.7172, 85.324, "Kathmandu"],
+  "Asia/Colombo": [6.9271, 79.8612, "Colombo"],
+  "Asia/Manila": [14.5995, 120.9842, "Manila"],
+  "Asia/Riyadh": [24.7136, 46.6753, "Riyadh"],
+  "Europe/London": [51.5072, -0.1276, "London"],
+  "Europe/Paris": [48.8566, 2.3522, "Paris"],
+  "Europe/Berlin": [52.52, 13.405, "Berlin"],
+  "Europe/Madrid": [40.4168, -3.7038, "Madrid"],
+  "Europe/Rome": [41.9028, 12.4964, "Rome"],
+  "Europe/Amsterdam": [52.3676, 4.9041, "Amsterdam"],
+  "Europe/Dublin": [53.3498, -6.2603, "Dublin"],
+  "Europe/Lisbon": [38.7223, -9.1393, "Lisbon"],
+  "Europe/Moscow": [55.7558, 37.6173, "Moscow"],
+  "Europe/Istanbul": [41.0082, 28.9784, "Istanbul"],
+  "Africa/Lagos": [6.5244, 3.3792, "Lagos"],
+  "Africa/Nairobi": [-1.2921, 36.8219, "Nairobi"],
+  "Africa/Cairo": [30.0444, 31.2357, "Cairo"],
+  "Africa/Johannesburg": [-26.2041, 28.0473, "Johannesburg"],
+  "America/New_York": [40.7128, -74.006, "New York"],
+  "America/Chicago": [41.8781, -87.6298, "Chicago"],
+  "America/Denver": [39.7392, -104.9903, "Denver"],
+  "America/Los_Angeles": [34.0522, -118.2437, "Los Angeles"],
+  "America/Toronto": [43.6532, -79.3832, "Toronto"],
+  "America/Vancouver": [49.2827, -123.1207, "Vancouver"],
+  "America/Mexico_City": [19.4326, -99.1332, "Mexico City"],
+  "America/Sao_Paulo": [-23.5505, -46.6333, "São Paulo"],
+  "America/Bogota": [4.711, -74.0721, "Bogotá"],
+  "America/Argentina/Buenos_Aires": [-34.6037, -58.3816, "Buenos Aires"],
+  "Australia/Sydney": [-33.8688, 151.2093, "Sydney"],
+  "Australia/Melbourne": [-37.8136, 144.9631, "Melbourne"],
+  "Pacific/Auckland": [-36.8485, 174.7633, "Auckland"],
+};
+
 function sunAnswer(q: string, ctx: AnswerContext): AnswerCard | null {
   if (!/\bsun\s?(set|rise)\b|\bgolden hour\b/i.test(q)) return null;
-  if (ctx.lat === undefined || ctx.lon === undefined) return null;
   // A place named in the query is not necessarily where the caller is.
   if (/\b(?:in|at)\s+[a-zÀ-ɏ]/i.test(q)) return null;
+  let lat = ctx.lat, lon = ctx.lon, city: string | null = null;
+  if (lat === undefined || lon === undefined) {
+    const zone = ctx.tz ? ZONE_CITIES[ctx.tz] : undefined;
+    if (!zone) return null;
+    [lat, lon, city] = zone;
+  }
 
-  const times = sunTimes(ctx.lat, ctx.lon);
+  const times = sunTimes(lat, lon);
   const golden = /golden hour/i.test(q);
   const rise = /sun\s?rise/i.test(q);
 
@@ -156,11 +212,15 @@ function sunAnswer(q: string, ctx: AnswerContext): AnswerCard | null {
   const when = golden ? times.goldenHour : rise ? times.sunrise : times.sunset;
   if (!when) return null;
   const label = golden ? "Golden hour" : rise ? "Sunrise" : "Sunset";
+  const clock = clockIn(when, ctx.tz);
+  const place = city ? ` in ${city}` : "";
   return {
     kind: "answer", id: rise ? "sunrise" : "sunset", art: "sun",
     title: label,
-    value: clockIn(when, ctx.tz),
-    sub: `${label} · today`,
+    say: golden ? `Golden hour${place} starts at ${clock} ✨`
+      : rise ? `Sunrise${place} is at ${clock} 🌅` : `Sunset${place} is at ${clock} 🌇`,
+    value: clock,
+    sub: city ? `${label} in ${city} · today` : `${label} · today`,
     url: googleQ(q),
   };
 }
@@ -206,6 +266,7 @@ async function weatherAnswer(q: string, ctx: AnswerContext): Promise<AnswerCard 
   return {
     kind: "answer", id: "weather", art: "weather",
     title: "Weather",
+    say: `It's ${Math.round(t)}°${word === "Now" ? "" : ` and ${word.toLowerCase()}`} right now`,
     value: `${Math.round(t)}°`,
     sub: `${word}${feels !== undefined ? ` · feels ${Math.round(feels)}°` : ""}`,
     url: googleQ(q),
@@ -226,7 +287,7 @@ function timeAnswer(q: string, ctx: AnswerContext): AnswerCard | null {
   } catch { return null; }
   return {
     kind: "answer", id: "time", art: "none",
-    title: "Time", value, sub: day, url: googleQ(q),
+    title: "Time", value, sub: day, url: googleQ(q), say: `It's ${value}`,
   };
 }
 
@@ -243,6 +304,7 @@ async function currencyAnswer(q: string): Promise<AnswerCard | null> {
   return {
     kind: "answer", id: "fx", art: "calc",
     title: `${amount} ${from} to ${to}`,
+    say: `${tidyNumber(amount)} ${from} is ${tidyNumber(value)} ${to}`,
     value: `${tidyNumber(value)} ${to}`,
     sub: `${tidyNumber(amount)} ${from} · today's rate`,
     source: "frankfurter.app",

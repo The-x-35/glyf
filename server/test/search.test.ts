@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { composeInsert } from "../src/lib/searchcards.js";
-import { evaluateMath } from "../src/lib/answers.js";
+import { evaluateMath, instantAnswer } from "../src/lib/answers.js";
 import { formatDistance, formatDuration, nameMatch, placeQuery } from "../src/lib/search.js";
 import { clockIn, sunTimes } from "../src/lib/sun.js";
 
@@ -102,6 +102,21 @@ describe("sunTimes", () => {
     // …and polar night in midwinter.
     expect(sunTimes(78.22, 15.65, new Date("2026-12-21T12:00:00Z")).polar)
       .toBe("night");
+  });
+
+  it("answers sunset from the time zone's city when no location is shared", async () => {
+    const card = await instantAnswer("sunset time today", { tz: "Asia/Kolkata" });
+    expect(card?.id).toBe("sunset");
+    expect(card?.value).toMatch(/\d{1,2}:\d{2}/);
+    expect(card?.sub).toContain("New Delhi");
+    // Sent as the answer itself, never as a search link.
+    expect(card?.say).toMatch(/^Sunset in New Delhi is at \d{1,2}:\d{2} [AP]M 🌇$/);
+    expect(composeInsert(card!, "titleAndLink")).toBe(card!.say);
+    // An unknown zone and no location: no guess at all.
+    expect(await instantAnswer("sunset time today", { tz: "Antarctica/Troll" })).toBeNull();
+    // A shared location wins and names no city.
+    const here = await instantAnswer("what time is sunset", { lat: 19.07, lon: 72.87, tz: "Asia/Kolkata" });
+    expect(here?.sub).toBe("Sunset · today");
   });
 
   it("tracks the seasons — a London summer day is longer than a winter one", () => {

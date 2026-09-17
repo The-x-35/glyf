@@ -78,6 +78,11 @@ final class TranslationHUD: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// A translation is showing and Replace would put it in.
+    var ready: Bool { !lastTranslation.isEmpty }
+    /// Where translations go, once the server has said.
+    var targetLanguage: String? { target }
+
     /// A fresh strip decides the direction itself again.
     func refreshTarget() {
         forcedTarget = nil

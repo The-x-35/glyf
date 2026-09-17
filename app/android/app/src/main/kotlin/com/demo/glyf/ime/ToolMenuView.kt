@@ -76,6 +76,7 @@ class ToolMenuView(
                 setColor(palette.card)
             }
             contentDescription = title
+            setTag(com.demo.glyf.R.id.qa_id, "shell:tile:$id")
         }
         cell.addView(ToolIcon(context, id, palette.ink).apply { scale = 1.15f },
             LayoutParams(LayoutParams.MATCH_PARENT, dp(28f).toInt(), Gravity.TOP))

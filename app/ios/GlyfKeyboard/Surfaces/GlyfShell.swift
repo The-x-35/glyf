@@ -414,6 +414,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         delegate?.shellClosed()
     }
 
+    /// The screen on top: "root", "vault", …
+    var screenId: String { screen?.id ?? "root" }
+
     /// What the strip above should call this panel (website parity).
     var headerTitle: String { screen.id == "root" ? "Glyf" : screen.title }
 
@@ -580,9 +583,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             let vault = VaultStore.shared.load()
             NotesStore.shared.invalidate() // the app may have edited them
             var rows: [Row] = []
-            for combo in vault.combos {
-                rows.append(.vaultCombo(combo))
-            }
             for field in vault.fields {
                 rows.append(.vaultField(field))
             }

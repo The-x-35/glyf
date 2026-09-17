@@ -265,6 +265,9 @@ class GlyfKeyboardView(
     private var rows: List<List<Key>> = emptyList()
     private val keyRects = mutableListOf<Pair<Key, RectF>>()
 
+    /** A key's rectangle in this view, for the tour's coach. */
+    fun keyRect(id: String): RectF? = keyRects.firstOrNull { it.first.id == id }?.second?.let { RectF(it) }
+
     /** Each key's id and its centre on screen, for the debug state dump. */
     fun keyCenters(): List<Pair<String, IntArray>> {
         val loc = IntArray(2).also { getLocationOnScreen(it) }

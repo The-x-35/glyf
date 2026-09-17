@@ -19,6 +19,9 @@ struct GlyfKeyboardSearchCard: Decodable {
     var emoji: String?
     /// Optional third paste line — the street address on a place card.
     var extra: String?
+    /// An answer is sent as the answer ("Sunset's at 6:24 PM 🌇"); when set,
+    /// a tap inserts exactly this.
+    var say: String?
 
     // answer
     var value: String?
@@ -58,6 +61,9 @@ struct GlyfKeyboardSearchCard: Decodable {
     ///     <emoji> <title>
     ///     <extra>
     func insertText(style: String) -> String {
+        if let say = say?.trimmingCharacters(in: .whitespacesAndNewlines), !say.isEmpty {
+            return say
+        }
         if style == "linkOnly" || title.trimmingCharacters(in: .whitespaces).isEmpty {
             return url
         }

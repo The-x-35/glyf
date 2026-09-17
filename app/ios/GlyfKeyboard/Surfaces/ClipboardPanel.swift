@@ -9,6 +9,8 @@ protocol ClipboardPanelDelegate: AnyObject {
     /// A screenshot was copied: iOS keyboards can only type text, so the
     /// image goes on the pasteboard for the person to paste.
     func clipboardPanelCopiedImage()
+    /// A clip went into the vault as a note, or `refusal` says why not.
+    func clipboardPanelSavedToVault(refusal: String?)
 }
 
 /// The clipboard, laid out the way Gboard lays it out — which is the standard
@@ -271,7 +273,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     /// a keyboard asks on first use. Opening the clipboard with screenshots
     /// turned on is that first use.
     private func askForPhotosIfNeeded() {
-        guard SettingsStore.current.clipboardScreenshots == true,
+        guard SettingsStore.current.clipboardScreenshots != false,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .notDetermined else { return }
         PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
             guard status == .authorized || status == .limited else { return }
@@ -283,7 +285,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
 
     /// Screenshots from the last hour, newest first, as Gboard keeps them.
     static func recentScreenshots() -> [PHAsset] {
-        guard SettingsStore.current.clipboardScreenshots == true else { return [] }
+        guard SettingsStore.current.clipboardScreenshots != false else { return [] }
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || status == .limited else { return [] }
         let options = PHFetchOptions()
@@ -450,6 +452,11 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             ("doc.on.clipboard", "Paste", { [weak self] in
                 self?.dismissMenu()
                 self?.delegate?.clipboardPanelPaste(item.text)
+            }),
+            ("person.text.rectangle", "Save to vault", { [weak self] in
+                let refusal = NotesStore.shared.upsert(id: nil, text: item.text)
+                self?.dismissMenu()
+                self?.delegate?.clipboardPanelSavedToVault(refusal: refusal)
             }),
             (item.pinned ? "pin.slash" : "pin", item.pinned ? "Unpin" : "Pin", { [weak self] in
                 ClipboardStore.togglePin(item.text)

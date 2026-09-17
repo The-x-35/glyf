@@ -68,6 +68,8 @@ object BackendClient {
         val url: String,
         val emoji: String? = null,
         val extra: String? = null,
+        /** An answer is sent as the answer; when set, a tap inserts exactly this. */
+        val say: String? = null,
         // answer
         val value: String? = null,
         val sub: String? = null,
@@ -94,6 +96,7 @@ object BackendClient {
         /** What a tap puts in the host field. Kept identical to the Swift
          *  version and the server's composeInsert. */
         fun insertText(style: String): String {
+            say?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
             if (style == "linkOnly" || title.isBlank()) return url
             val lines = mutableListOf(url, "${if (emoji != null) "$emoji " else ""}$title")
             extra?.trim()?.takeIf { it.isNotEmpty() }?.let { lines.add(it) }
@@ -353,6 +356,7 @@ object BackendClient {
                 url = o.optString("url"),
                 emoji = o.optStringOrNull("emoji"),
                 extra = o.optStringOrNull("extra"),
+                say = o.optStringOrNull("say"),
                 value = o.optStringOrNull("value"),
                 sub = o.optStringOrNull("sub"),
                 art = o.optStringOrNull("art"),

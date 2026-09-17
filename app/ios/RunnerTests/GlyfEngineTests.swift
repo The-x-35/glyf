@@ -130,42 +130,56 @@ final class GlyfEngineTests: XCTestCase {
     /// is preserved — except Search, which leads (Gboard parity).
     func testToolbarOrderMigrationAddsNewItemsAndLeadsWithSearch() {
         var s = GlyfSettings()
-        s.toolbarOrder = ["settings"] // simulate an old file
+        s.toolbarOrder = ["dictation", "settings"] // an old file, in the user's order
+        s.schemaVersion = 1
         s = SettingsStore.migrated(s)
-        XCTAssertEqual(Set(s.toolbarOrder), Set(GlyfSettings.Toolbar.defaultOrder))
+        XCTAssertEqual(Set(s.toolbarOrder), Set(GlyfSettings.Toolbar.defaultOrder),
+                       "the gear left the strip for the g menu")
         XCTAssertEqual(s.toolbarOrder.first, "search")
-        XCTAssertEqual(s.toolbarOrder.dropFirst().first, "settings",
+        XCTAssertEqual(s.toolbarOrder.dropFirst().first, "dictation",
                        "the user's own order must survive under Search")
     }
 
-    /// v2 → v3 (§6.13): default map fills UNCLAIMED keys only; the old
-    /// one-shot T translate upgrades to the HUD; user rebinds survive.
-    func testV3MigrationRespectsUserBindings() {
+    /// An old file ends up current: T's one-shot translate upgrades to the
+    /// strip, a glyf the person built keeps its key, canned glyfs are gone,
+    /// and the vault moves from S to V.
+    func testMigrationToCurrentBindings() {
         var old = GlyfSettings()
         old.schemaVersion = 2
+        old.customTitles = ["user.abc": "Say No Politely"]
         old.bindings = [
             "t": "glyf.translate",       // stock M2 default → upgrades
-            "j": "glyf.proofread",       // user's own choice → SURVIVES
-            "s": "surface:vault",
+            "n": "user.abc",             // built by the person → SURVIVES
+            "p": "glyf.proofread",       // canned → removed
+            "s": "surface:vault",        // old vault key → moves to V
         ]
         let s = SettingsStore.migrated(old)
-        XCTAssertEqual(s.schemaVersion, 3)
+        XCTAssertEqual(s.schemaVersion, 7)
         XCTAssertEqual(s.bindings["t"], "surface:translate-hud")
-        XCTAssertEqual(s.bindings["j"], "glyf.proofread")
-        XCTAssertEqual(s.bindings["p"], "glyf.proofread")
-        // Presets stay deliberately small — unclaimed letters stay FREE.
-        XCTAssertNil(s.bindings["w"])
-        XCTAssertNil(s.bindings["c"])
-        XCTAssertNotNil(s.customTitles)
+        XCTAssertEqual(s.bindings["n"], "user.abc")
+        XCTAssertNil(s.bindings["p"])
+        XCTAssertNil(s.bindings["s"])
+        XCTAssertEqual(s.bindings["v"], "surface:vault")
     }
 
-    /// A user who REBOUND t before v3 keeps their binding — no HUD hijack.
-    func testV3MigrationKeepsRetargetedT() {
+    /// Someone who put something else on V keeps it; the vault stays on S.
+    func testVaultStaysOnSWhenVIsTaken() {
+        var old = GlyfSettings()
+        old.schemaVersion = 6
+        old.customTitles = ["user.v": "Voice note"]
+        old.bindings = ["s": "surface:vault", "v": "user.v", "t": "surface:translate-hud"]
+        let s = SettingsStore.migrated(old)
+        XCTAssertEqual(s.bindings["s"], "surface:vault")
+        XCTAssertEqual(s.bindings["v"], "user.v")
+    }
+
+    /// A canned glyf someone had on T is gone with the rest; T translates.
+    func testCannedGlyfOnTGivesWayToTranslate() {
         var old = GlyfSettings()
         old.schemaVersion = 2
         old.bindings = ["t": "rewrite.polite"]
         let s = SettingsStore.migrated(old)
-        XCTAssertEqual(s.bindings["t"], "rewrite.polite")
+        XCTAssertEqual(s.bindings["t"], "surface:translate-hud")
     }
 
     /// Running migration on a current file changes nothing (idempotent).
@@ -370,5 +384,83 @@ final class GlyfEngineTests: XCTestCase {
         var m = CursorMirror(before: "a", after: "")
         XCTAssertEqual(m.offset(forGraphemes: -3), -3)
         XCTAssertTrue(m.isStale, "the host may hold more text than the proxy showed")
+    }
+
+    // MARK: Tour coach — the website's steps on the real keyboard
+
+    private func field(_ kind: String, _ label: String, _ value: String) -> VaultField {
+        VaultField(id: kind, kind: kind, label: label, value: value)
+    }
+
+    func testCoachWalksMapsSearchLikeTheWebsite() {
+        var s = TourCoach.State(step: "sakshi:0", text: "")
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "toolbar:search", label: "Search"))
+        s.panel = .search(tab: "search", view: .landing(rows: 0), query: "")
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "search:tab:maps", label: "Maps"))
+        s.panel = .search(tab: "maps", view: .landing(rows: 0), query: "coffee near me")
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "search:go", label: "Search"))
+        s.panel = .search(tab: "maps", view: .results(3), query: "coffee near me")
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "search:card:*", label: "Tap to share"))
+        s.panel = .none
+        s.text = "📍 Blue Tokai · Bandra"
+        XCTAssertNil(TourCoach.coach(s), "the chat points at Send")
+    }
+
+    func testCoachGoesThroughTheMenuWhenTheToolIsOffTheStrip() {
+        var s = TourCoach.State(step: "kabir:0", text: "")
+        s.stripTools = []
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "toolbar:glyf", label: "Tap g"))
+        s.panel = .menu
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "shell:tile:search", label: "Search"))
+        XCTAssertFalse(TourCoach.allowsChip("paste", step: "sakshi:0"), "a chip would cover the tools")
+        XCTAssertTrue(TourCoach.allowsChip("vault:upi", step: "zoya:1"))
+        XCTAssertFalse(TourCoach.allowsChip("paste", step: "semi:0"), "an old copy is not the address")
+        XCTAssertTrue(TourCoach.allowsChip("paste", step: "semi:0", copied: true))
+    }
+
+    func testCoachOpensTheVaultOnWhicheverKeyHoldsIt() {
+        let home = field("address", "Home", "12 Hill Road, Bandra")
+        var s = TourCoach.State(step: "mumma:0", text: "")
+        s.fields = [field("name", "Name", "Arpit"), home]
+        s.vaultKey = "v"
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "key:v", label: "Hold V"))
+        s.vaultKey = "q"
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "key:q", label: "Hold Q"))
+        s.panel = .vault
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "vault:card:1", label: "Tap Home"))
+        s.panel = .none
+        s.text = "12 Hill Road, Bandra"
+        XCTAssertNil(TourCoach.coach(s))
+    }
+
+    func testCoachPointsAtTheRightSuggestionForHinglish() {
+        var s = TourCoach.State(step: "rohan:0", text: "haan yaar pakak")
+        s.suggestions = ["pakak", "pakka", "pakad"]
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "suggest:1", label: "Tap pakka"))
+        s.text = "haan yaar pakka definately"
+        s.suggestions = ["definately", "definitely"]
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "suggest:1", label: "Tap definitely"))
+    }
+
+    func testCoachRewriteMathAndTranslate() {
+        var neha = TourCoach.State(step: "neha:0", text: "ya ill send it by 6 dont worry")
+        XCTAssertEqual(TourCoach.coach(neha), .init(target: "key:space", label: "Hold glyf"))
+        neha.panel = .act(working: true, options: false)
+        XCTAssertNil(TourCoach.coach(neha))
+        neha.panel = .act(working: false, options: true)
+        XCTAssertEqual(TourCoach.coach(neha), .init(target: "act:option:work", label: "Professional"))
+
+        var zoya = TourCoach.State(step: "zoya:0", text: "3480/4")
+        zoya.chip = .calc(value: "870", hasEquals: false)
+        XCTAssertEqual(TourCoach.coach(zoya), .init(target: "strip:smart", label: "Tap"))
+
+        var sofia = TourCoach.State(step: "sofia:0", text: "")
+        sofia.translateKey = "t"
+        XCTAssertEqual(TourCoach.coach(sofia), .init(target: "key:t", label: "Hold T"))
+        sofia.panel = .translate(ready: false, target: nil)
+        XCTAssertEqual(TourCoach.autotype(sofia), "see you tomorrow")
+        sofia.text = "see you tomorrow"
+        sofia.panel = .translate(ready: true, target: "Spanish")
+        XCTAssertEqual(TourCoach.coach(sofia), .init(target: "hud:replace", label: "Replace"))
     }
 }

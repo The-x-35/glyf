@@ -124,9 +124,8 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           _label('Clipboard & AI'),
           _card([
             _switch('Keep what you copy', 'clipboardHistory', fallback: true),
-            // Gboard's "Save recent screenshots in clipboard".
-            _switch('Save recent screenshots', 'clipboardScreenshots',
-                onBeforeOn: GlyfBridge.screenshotAccess),
+            _switch('Recent screenshots', 'clipboardScreenshots',
+                fallback: true, onBeforeOn: GlyfBridge.screenshotAccess),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),
           ]),
         ],
@@ -211,7 +210,7 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
         crossAxisCount: 3,
         mainAxisSpacing: 12,
         crossAxisSpacing: 12,
-        childAspectRatio: 0.82,
+        childAspectRatio: 1.02,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         children: tiles,
@@ -255,35 +254,11 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
                           end: Alignment.bottomRight,
                           colors: gradient),
                 ),
-                padding: const EdgeInsets.all(8),
-                // LayoutBuilder sizes the keys to the space there is, so the
-                // preview can never overflow its tile.
-                child: LayoutBuilder(builder: (context, box) {
-                  const rows = 3, gap = 3.0;
-                  final keyH = (box.maxHeight - gap * (rows - 1)) / rows;
-                  return Column(children: [
-                    for (var r = 0; r < rows; r++) ...[
-                      if (r > 0) const SizedBox(height: gap),
-                      SizedBox(
-                        height: keyH,
-                        child: Row(children: [
-                          for (var i = 0; i < 5; i++)
-                            Expanded(
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                                decoration: BoxDecoration(
-                                  color: r == 2 && (i == 0 || i == 4)
-                                      ? palette.fn
-                                      : keyColor,
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                              ),
-                            ),
-                        ]),
-                      ),
-                    ],
-                  ]);
-                }),
+                padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
+                child: CustomPaint(
+                  painter: _MiniKeyboard(key: keyColor, fn: palette.fn),
+                  child: const SizedBox.expand(),
+                ),
               ),
             ),
           ),
@@ -302,4 +277,57 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
       ),
     );
   }
+}
+
+/// A keyboard in miniature, drawn to a real keyboard's proportions: ten keys
+/// across, a key a little taller than it is wide, the second row inset, shift
+/// and delete wide, a long space bar.
+class _MiniKeyboard extends CustomPainter {
+  _MiniKeyboard({required this.key, required this.fn});
+
+  final Color key;
+  final Color fn;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const gap = 2.2;
+    final unit = (size.width - gap * 9) / 10;
+    var keyH = unit * 1.32;
+    final rowsH = keyH * 4 + gap * 3 * 1.6;
+    if (rowsH > size.height) keyH *= size.height / rowsH;
+    final rowGap = gap * 1.6;
+    final top = (size.height - (keyH * 4 + rowGap * 3)) / 2;
+    final keyPaint = Paint()..color = key;
+    final fnPaint = Paint()..color = fn;
+    final r = Radius.circular(unit * 0.22);
+
+    void keyAt(double x, double y, double w, Paint p) =>
+        canvas.drawRRect(RRect.fromLTRBR(x, y, x + w, y + keyH, r), p);
+
+    var y = top;
+    for (var i = 0; i < 10; i++) {
+      keyAt(i * (unit + gap), y, unit, keyPaint);
+    }
+    y += keyH + rowGap;
+    final inset = (unit + gap) / 2;
+    for (var i = 0; i < 9; i++) {
+      keyAt(inset + i * (unit + gap), y, unit, keyPaint);
+    }
+    y += keyH + rowGap;
+    final side = unit * 1.4;
+    keyAt(0, y, side, fnPaint);
+    final lettersX = (size.width - (unit * 7 + gap * 6)) / 2;
+    for (var i = 0; i < 7; i++) {
+      keyAt(lettersX + i * (unit + gap), y, unit, keyPaint);
+    }
+    keyAt(size.width - side, y, side, fnPaint);
+    y += keyH + rowGap;
+    final mode = unit * 2.2;
+    keyAt(0, y, mode, fnPaint);
+    keyAt(size.width - mode, y, mode, fnPaint);
+    keyAt(mode + gap, y, size.width - mode * 2 - gap * 2, keyPaint);
+  }
+
+  @override
+  bool shouldRepaint(_MiniKeyboard old) => old.key != key || old.fn != fn;
 }
