@@ -6,6 +6,7 @@ import 'core/telemetry.dart';
 import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
 import 'onboarding/demo_chat.dart';
+import 'wallet/wallet_screen.dart';
 import 'onboarding/onboarding_flow.dart';
 import 'shell/app_shell.dart';
 
@@ -64,6 +65,13 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       final id = uri.queryParameters['id'];
       if (id != null) _openDictation(id);
     }
+    if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('wallet') == true) {
+      // The keyboard saw an address and an amount; the wallet takes it from
+      // here, because signing belongs in the app.
+      final path = Uri.parse(uri.queryParameters['path']!);
+      _openWallet(path.queryParameters['to'], path.queryParameters['amount']);
+      return;
+    }
     if (uri.host == 'demo') {
       _openDemo();
       return;
@@ -83,6 +91,14 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
               ? 'Google connected'
               : 'Google connection didn’t finish')));
     }
+  }
+
+  void _openWallet(String? to, String? amount) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return;
+    Navigator.of(ctx).push(MaterialPageRoute(
+      builder: (c) => WalletScreen(prefillTo: to, prefillAmount: amount),
+    ));
   }
 
   /// glyf://demo — replay the guided tour any time, from Settings or a link.

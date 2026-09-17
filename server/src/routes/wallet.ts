@@ -39,6 +39,16 @@ export function walletRoutes(app: FastifyInstance): void {
 
   app.get("/wallet/mints", async () => ({ ok: true, mints: MINTS }));
 
+  /** What the app needs to start Privy. Both ids are public by design — the
+   *  app secret stays here and is never sent anywhere. */
+  app.get("/wallet/config", async () => ({
+    ok: true,
+    privyAppId: process.env.PRIVY_APP_ID ?? "",
+    privyAppClientId: process.env.PRIVY_APP_CLIENT_ID ?? "",
+    ready: Boolean(process.env.PRIVY_APP_ID && process.env.PRIVY_APP_CLIENT_ID),
+    cluster: process.env.SOLANA_CLUSTER ?? "mainnet",
+  }));
+
   app.post("/wallet/transfer", async (req, reply) => {
     const parsed = TransferSchema.safeParse(req.body);
     if (!parsed.success) {

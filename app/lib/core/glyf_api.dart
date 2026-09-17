@@ -278,6 +278,45 @@ abstract final class GlyfApi {
     }
   }
 
+  /// GET /wallet/config — the public Privy ids, so no id ships in the app.
+  static Future<Map<String, dynamic>?> walletConfig() async {
+    try {
+      final base = await _baseUrl();
+      final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+      final req = await client.getUrl(Uri.parse('$base/wallet/config'));
+      final res = await req.close().timeout(const Duration(seconds: 6));
+      final body = await res.transform(utf8.decoder).join();
+      client.close();
+      return jsonDecode(body) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// POST /wallet/transfer — an unsigned private payment for Privy to sign.
+  static Future<Map<String, dynamic>?> buildTransfer({
+    required String from,
+    required String to,
+    required String amount,
+    String mint = 'USDC',
+  }) async {
+    try {
+      final base = await _baseUrl();
+      final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+      final req = await client.postUrl(Uri.parse('$base/wallet/transfer'));
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode({
+        'from': from, 'to': to, 'amount': amount, 'mint': mint, 'private': true,
+      }));
+      final res = await req.close().timeout(const Duration(seconds: 20));
+      final body = await res.transform(utf8.decoder).join();
+      client.close();
+      return jsonDecode(body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'ok': false, 'error': 'Could not reach the Glyf server.'};
+    }
+  }
+
   /// GET /health — powers the backend status dot.
   static Future<bool> healthy() async {
     try {

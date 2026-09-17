@@ -9,6 +9,7 @@ import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 import '../onboarding/demo_chat.dart';
+import '../wallet/wallet_screen.dart';
 import '../notes/notes_screen.dart';
 import '../vault/vault_screen.dart';
 import '../vocab/vocabulary_screen.dart';
@@ -353,6 +354,14 @@ class _ProfileTabState extends State<ProfileTab> {
             trailingText:
                 (_tone['hint'] as String?)?.isNotEmpty == true ? 'Active' : '',
             onTap: _showTone,
+          ),
+          _navCard(
+            icon: Icons.account_balance_wallet_outlined,
+            title: 'Wallet',
+            trailingText: 'Private sends',
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (ctx) => const WalletScreen(),
+            )),
           ),
           _navCard(
             icon: Icons.chat_bubble_outline,

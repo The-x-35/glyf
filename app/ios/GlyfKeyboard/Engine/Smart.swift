@@ -14,12 +14,17 @@ enum Smart {
         case vault(field: VaultField)
         /// Something was just copied: one tap pastes it.
         case paste(text: String)
+        /// A Solana address is on screen or freshly copied: one tap opens the
+        /// wallet with it filled in. The keyboard never holds a key — the app
+        /// signs (website 6.10, "Private sends by MagicBlock").
+        case pay(address: String, amount: String?)
 
         var key: String {
             switch self {
             case .calc: return "="
             case .vault(let f): return f.label
             case .paste: return "Paste"
+            case .pay: return "Pay"
             }
         }
         var value: String {
@@ -27,6 +32,10 @@ enum Smart {
             case .calc(let v, _): return v
             case .vault(let f): return f.value
             case .paste(let t): return t.replacingOccurrences(of: "\n", with: " ")
+            case .pay(let address, let amount):
+                let short = address.count > 12
+                    ? "\(address.prefix(4))…\(address.suffix(4))" : address
+                return amount.map { "\($0) USDC to \(short)" } ?? "privately to \(short)"
             }
         }
         /// What tapping the chip puts in the field.
@@ -35,6 +44,7 @@ enum Smart {
             case .calc(let v, let hasEquals): return hasEquals ? " \(v)" : " = \(v)"
             case .vault(let f): return f.value
             case .paste(let t): return t
+            case .pay: return ""   // handled by the app, never typed
             }
         }
     }
@@ -71,11 +81,14 @@ enum Smart {
         }
     }
 
-    /// One chip at most, in the website's order: a sum you just typed, then a
-    /// saved detail the sentence (or the field itself) asks for, then
-    /// something freshly copied.
+    /// One chip at most, in the website's order: a payment someone just asked
+    /// for, a sum you typed, a saved detail the sentence (or the field) asks
+    /// for, then something freshly copied.
     static func chip(for text: String, fields: [VaultField], paste: String? = nil,
                      field: FieldHint = .none) -> Chip? {
+        if let p = payment(in: text) ?? paste.flatMap({ payment(in: $0) }) {
+            return .pay(address: p.address, amount: p.amount ?? amountAsked(in: text))
+        }
         if let c = calc(text) { return .calc(value: c.value, hasEquals: c.hasEquals) }
         if let f = vaultMatch(text, fields: fields) { return .vault(field: f) }
         // A form asking for something we already know: one tap fills it.
@@ -199,6 +212,41 @@ enum Smart {
         }
         guard let v = sum(), i == tokens.count, v.isFinite else { return nil }
         return v
+    }
+
+    // MARK: Payments
+
+    /// A Solana address sitting in the text (or on the clipboard), which in a
+    /// chat means someone is asking to be paid.
+    private static let addressPattern = try? NSRegularExpression(
+        pattern: #"(?<![A-HJ-NP-Za-km-z1-9])([1-9A-HJ-NP-Za-km-z]{32,44})(?![A-HJ-NP-Za-km-z1-9])"#)
+
+    static func payment(in text: String) -> (address: String, amount: String?)? {
+        guard let re = addressPattern, !text.isEmpty else { return nil }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
+        else { return nil }
+        let address = ns.substring(with: m.range(at: 1))
+        // Base58 has no 0, O, I or l; a run of hex or a sentence is not an
+        // address. Require the mix of cases a real key has.
+        let hasUpper = address.contains { $0.isUppercase }
+        let hasLower = address.contains { $0.isLowercase }
+        let hasDigit = address.contains { $0.isNumber }
+        guard hasUpper, hasLower, hasDigit else { return nil }
+        return (address, amountAsked(in: text))
+    }
+
+    /// "send $200" / "200 usdc" → "200".
+    static func amountAsked(in text: String) -> String? {
+        let patterns = [#"[$₹]\s*([\d,]+(?:\.\d{1,6})?)"#,
+                        #"([\d,]+(?:\.\d{1,6})?)\s*(?:usdc|usdt|dollars?)"#]
+        for p in patterns {
+            if let r = text.range(of: p, options: [.regularExpression, .caseInsensitive]) {
+                let digits = text[r].filter { $0.isNumber || $0 == "." }
+                if !digits.isEmpty { return String(digits) }
+            }
+        }
+        return nil
     }
 
     // MARK: Contextual vault

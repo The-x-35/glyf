@@ -1460,6 +1460,14 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarSmartTapped(_ chip: Smart.Chip) {
+        if case .pay(let address, let amount) = chip {
+            // The keyboard never signs: the app's Privy wallet does.
+            var path = "wallet?to=\(address)"
+            if let amount { path += "&amount=\(amount)" }
+            openApp(path: path)
+            toolbar.showSmart(nil)
+            return
+        }
         if case .paste(let text) = chip {
             // History's copy types straight out; the placeholder means we do
             // not have the text yet, so the tap is the intent that reads it.
