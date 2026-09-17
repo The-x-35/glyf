@@ -546,10 +546,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             : (Platform.isAndroid ? 'Switch to {glyf}' : 'Allow Full Access');
         return _frame(children: [
           const Spacer(flex: 2),
-          Center(child: SetupHero(step: _steps[_step], done: done, android: Platform.isAndroid)),
-          const SizedBox(height: 34),
+          const AiKeyboard(),
+          const SizedBox(height: 32),
           GlyfText(title,
               style: const TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
+          const SizedBox(height: 24),
+          SetupSwitches(step: _steps[_step], done: done, android: Platform.isAndroid),
           const Spacer(flex: 3),
           if (done)
             _pill('Continue', onTap: _advance)

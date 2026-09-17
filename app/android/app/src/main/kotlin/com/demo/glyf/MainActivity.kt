@@ -37,6 +37,10 @@ class MainActivity : FlutterActivity() {
         bridge = b
         if (BuildConfig.DEBUG) {
             b.launchArgs = intent?.getStringArrayExtra("glyfArgs")?.toList() ?: emptyList()
+            // UI-test hook, as on iOS: onboarding starts over.
+            if ("--glyf-reset-onboarding" in b.launchArgs) {
+                com.demo.glyf.store.Bridge.file(this, "onboarding.json").delete()
+            }
         }
         intent?.dataString?.let { link ->
             if (link.startsWith("glyf://")) b.lastDeepLink = link
