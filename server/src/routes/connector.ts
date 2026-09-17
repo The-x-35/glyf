@@ -159,13 +159,14 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
   app.get<{ Querystring: { deviceId?: string } }>(
     "/connectors/status", async req => {
       const deviceId = req.query.deviceId ?? "";
-      const row = (id: string, label: string, envId: string) => {
+      const row = (id: string, label: string, envId: string, envSecret?: string) => {
         const conn = deviceId
           ? kv.get<Connection>("connections", connKey(deviceId, id))
           : undefined;
         return {
           id, label,
-          configured: Boolean(process.env[envId]),
+          // Sign-in shares GOOGLE_CLIENT_ID, so an id alone is not a connector.
+          configured: Boolean(process.env[envId]) && (!envSecret || Boolean(process.env[envSecret])),
           connected: Boolean(conn),
           scopes: conn?.scopes ?? [],
           email: conn?.email,
@@ -173,7 +174,7 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
       };
       return {
         providers: [
-          row("google", "Google", "GOOGLE_CLIENT_ID"),
+          row("google", "Google", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
           ...Object.entries(PROVIDERS).map(([id, p]) =>
             row(id, p.label, `${p.envPrefix}_CLIENT_ID`)),
         ],
