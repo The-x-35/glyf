@@ -49,6 +49,10 @@ flutter {
 }
 
 dependencies {
+    // Sign in with Google (Credential Manager), for the ID token the server checks.
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     // JVM unit tests for the IME's pure logic (gestures, typing engine) —
     // the same cases RunnerTests covers on iOS.
     testImplementation("junit:junit:4.13.2")

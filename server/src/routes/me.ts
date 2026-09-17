@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { privyProfile, Users, verifyPrivyToken, type PrivyProfile } from "../lib/users.js";
+import { verifySession } from "../lib/identity.js";
+import { Users } from "../lib/users.js";
 
 /**
  * The signed-in person.
@@ -10,8 +11,9 @@ import { privyProfile, Users, verifyPrivyToken, type PrivyProfile } from "../lib
  * POST   /me/events  what I did in the app (names and counts, never text)
  * DELETE /me         forget me
  *
- * Every call carries the Privy access token; the server checks its signature
- * and reads email and name from Privy itself.
+ * Every call carries the Glyf session from POST /auth/session (after Sign in
+ * with Apple or Google); email and name were taken from the provider's
+ * verified token then.
  */
 
 const DeviceSchema = z.object({
@@ -35,13 +37,11 @@ const EventsSchema = z.object({
 export interface MeDeps {
   users?: Users;
   verify?: (token: string) => Promise<string | null>;
-  profile?: (userId: string) => Promise<PrivyProfile>;
 }
 
 export function meRoutes(app: FastifyInstance, deps: MeDeps = {}): void {
   const users = deps.users ?? new Users();
-  const check = deps.verify ?? ((t: string) => verifyPrivyToken(t));
-  const profileOf = deps.profile ?? ((id: string) => privyProfile(id).catch((): PrivyProfile => ({})));
+  const check = deps.verify ?? (async (t: string) => verifySession(t));
 
   async function who(req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
     const header = req.headers.authorization ?? "";
@@ -59,16 +59,16 @@ export function meRoutes(app: FastifyInstance, deps: MeDeps = {}): void {
     if (!id) return reply;
     const parsed = DeviceSchema.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ ok: false, error: "Bad request" });
-    const profile = await profileOf(id);
     if (users.enabled) {
       try {
-        await users.upsert(id, profile, parsed.data);
+        // The phone it is on now; who they are was saved at sign-in.
+        await users.upsert(id, {}, parsed.data);
       } catch (err) {
         req.log.error({ err: err instanceof Error ? err.message : String(err) }, "me_upsert_failed");
         return reply.code(503).send({ ok: false, error: "Could not save your account right now" });
       }
     }
-    return { ok: true, stored: users.enabled, user: { id, email: profile.email ?? null, name: profile.name ?? null } };
+    return { ok: true, stored: users.enabled, user: { id } };
   });
 
   app.post("/me/prefs", async (req, reply) => {

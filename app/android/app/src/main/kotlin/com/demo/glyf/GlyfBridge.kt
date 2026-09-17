@@ -25,6 +25,8 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
     var lastDeepLink: String? = null
     /** Debug-only test flags from the intent that started this launch. */
     var launchArgs: List<String> = emptyList()
+    /** The activity Google's sign-in sheet shows over; set by MainActivity. */
+    var activity: android.app.Activity? = null
 
     /** Set by MainActivity — asks for READ_CONTACTS, calls back with grant. */
     var requestContactsPermission: (((Boolean) -> Unit) -> Unit)? = null
@@ -167,6 +169,30 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
             // scenario runner starts the app (am start --esa glyfArgs ...), so a
             // flag can never outlive the run that set it.
             "launchArgs" -> result.success(if (BuildConfig.DEBUG) launchArgs else emptyList<String>())
+
+            // Signing in (SignIn.kt): the provider's ID token comes back for the
+            // server to check; the Glyf session it returns is kept encrypted.
+            "signInGoogle" -> {
+                val a = activity
+                if (a == null) {
+                    result.success(mapOf("error" to "failed"))
+                } else {
+                    SignIn.google(a, call.argument<String>("clientId") ?: "",
+                        call.argument<String>("nonce") ?: "") { result.success(it) }
+                }
+            }
+            // Sign in with Apple is an iPhone button; Android offers Google.
+            "signInApple" -> result.success(mapOf("error" to "apple_unavailable"))
+            "signOutProviders" -> {
+                SignIn.signOut(ctx)
+                result.success(true)
+            }
+            "sessionLoad" -> result.success(SessionStore.load(ctx))
+            "sessionSave" -> result.success(SessionStore.save(ctx, call.argument<String>("json") ?: ""))
+            "sessionClear" -> {
+                SessionStore.clear(ctx)
+                result.success(true)
+            }
 
             "readSharedSettings" -> result.success(SettingsStore.load(ctx).toString())
             "writeSharedSettings" -> {

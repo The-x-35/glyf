@@ -34,6 +34,7 @@ class MainActivity : FlutterActivity() {
             pendingPermission = done
             requestPermissions(arrayOf(ScreenshotAccess.permission), 73)
         }
+        b.activity = this
         bridge = b
         if (BuildConfig.DEBUG) {
             b.launchArgs = intent?.getStringArrayExtra("glyfArgs")?.toList() ?: emptyList()
@@ -45,6 +46,11 @@ class MainActivity : FlutterActivity() {
         intent?.dataString?.let { link ->
             if (link.startsWith("glyf://")) b.lastDeepLink = link
         }
+    }
+
+    override fun onDestroy() {
+        bridge?.activity = null
+        super.onDestroy()
     }
 
     override fun onRequestPermissionsResult(

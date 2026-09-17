@@ -68,6 +68,23 @@ final class GlyfBridge {
                                             in: .userDomainMask).first?.path)
         case "launchArgs":
             result(ProcessInfo.processInfo.arguments)
+        // Signing in (SignIn.swift): the provider's ID token comes back for the
+        // server to check; the Glyf session it returns lives in the Keychain.
+        case "signInApple":
+            let nonce = (call.arguments as? [String: Any])?["nonce"] as? String ?? ""
+            SignIn.shared.apple(nonce: nonce) { result($0) }
+        case "signInGoogle":
+            let args = call.arguments as? [String: Any]
+            SignIn.shared.google(clientId: args?["clientId"] as? String ?? "",
+                                 nonce: args?["nonce"] as? String ?? "") { result($0) }
+        case "sessionLoad":
+            result(SessionKeychain.load())
+        case "sessionSave":
+            let json = (call.arguments as? [String: Any])?["json"] as? String ?? ""
+            result(!json.isEmpty && SessionKeychain.save(json))
+        case "sessionClear":
+            SessionKeychain.clear()
+            result(true)
         // Shared keyboard settings (App Group settings.json).
         // Served through SettingsStore.load() so the app always sees the
         // MIGRATED view — §6.13 defaults appear even before the keyboard's

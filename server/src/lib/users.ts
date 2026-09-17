@@ -1,10 +1,8 @@
-import { createPublicKey, verify, type JsonWebKey } from "node:crypto";
-
 /**
  * People who signed in to the app, in Postgres (Neon).
  *
  * Only what a person would expect an app to know about its users is kept:
- * who they are (Privy id, email, name, how they signed in), the phone they
+ * who they are (their Apple or Google id, email, name), the phone they
  * use it on, their keyboard settings, and what they do in the app. Nothing
  * from the vault ever arrives here, not even encrypted: the app sends the
  * KINDS of detail someone saved ("address", "upi"), never the details.
@@ -13,8 +11,24 @@ import { createPublicKey, verify, type JsonWebKey } from "node:crypto";
 export type SqlQuery = (text: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
 
 const DDL = [
+  // Accounts were keyed by Privy id before sign-in moved to Apple and Google
+  // directly; the column is now the user id ("google:<sub>", "apple:<sub>").
+  `do $$ begin
+     if exists (select 1 from information_schema.columns
+                where table_name = 'glyf_users' and column_name = 'privy_id') then
+       alter table glyf_users rename column privy_id to user_id;
+     end if;
+     if exists (select 1 from information_schema.columns
+                where table_name = 'glyf_user_prefs' and column_name = 'privy_id') then
+       alter table glyf_user_prefs rename column privy_id to user_id;
+     end if;
+     if exists (select 1 from information_schema.columns
+                where table_name = 'glyf_events' and column_name = 'privy_id') then
+       alter table glyf_events rename column privy_id to user_id;
+     end if;
+   end $$`,
   `create table if not exists glyf_users (
-     privy_id text primary key,
+     user_id text primary key,
      email text,
      name text,
      login_method text,
@@ -27,127 +41,25 @@ const DDL = [
      last_seen_at timestamptz not null default now()
    )`,
   `create table if not exists glyf_user_prefs (
-     privy_id text primary key references glyf_users(privy_id) on delete cascade,
+     user_id text primary key references glyf_users(user_id) on delete cascade,
      prefs jsonb not null default '{}'::jsonb,
      updated_at timestamptz not null default now()
    )`,
   `create table if not exists glyf_events (
      id bigserial primary key,
-     privy_id text not null references glyf_users(privy_id) on delete cascade,
+     user_id text not null references glyf_users(user_id) on delete cascade,
      name text not null,
      props jsonb not null default '{}'::jsonb,
      at timestamptz not null default now()
    )`,
-  `create index if not exists glyf_events_user_at on glyf_events (privy_id, at desc)`,
+  `create index if not exists glyf_events_user_at on glyf_events (user_id, at desc)`,
 ];
 
-// ── Privy sessions ──────────────────────────────────────────────────────────
-
-type Jwks = { keys: (JsonWebKey & { kid?: string })[] };
-
-let jwksCache: { appId: string; keys: Jwks["keys"]; at: number } | null = null;
-
-async function privyKeys(appId: string, fetchImpl: typeof fetch): Promise<Jwks["keys"]> {
-  if (jwksCache && jwksCache.appId === appId && Date.now() - jwksCache.at < 3600_000) {
-    return jwksCache.keys;
-  }
-  const res = await fetchImpl(`https://auth.privy.io/api/v1/apps/${encodeURIComponent(appId)}/jwks.json`, {
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!res.ok) throw new Error(`jwks ${res.status}`);
-  const body = await res.json() as Jwks;
-  jwksCache = { appId, keys: body.keys ?? [], at: Date.now() };
-  return jwksCache.keys;
-}
-
-export function resetKeyCacheForTests(): void {
-  jwksCache = null;
-}
-
-function json64(part: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(Buffer.from(part, "base64url").toString("utf8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-/** Checks a Privy access token (ES256, signed for this app, not expired) and
- *  returns the Privy user id, or null for anything that does not hold up. */
-export async function verifyPrivyToken(
-  token: string,
-  opts: { appId?: string; fetchImpl?: typeof fetch; now?: number } = {},
-): Promise<string | null> {
-  const appId = opts.appId ?? process.env.PRIVY_APP_ID ?? "";
-  if (!appId || !token) return null;
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const [h, p, s] = parts;
-  const header = json64(h);
-  const claims = json64(p);
-  if (!header || !claims || header.alg !== "ES256") return null;
-  const now = (opts.now ?? Date.now()) / 1000;
-  const aud = claims.aud;
-  const audOk = aud === appId || (Array.isArray(aud) && aud.includes(appId));
-  if (claims.iss !== "privy.io" || !audOk) return null;
-  if (typeof claims.exp !== "number" || claims.exp < now - 30) return null;
-  if (typeof claims.sub !== "string" || !claims.sub) return null;
-  let keys: Jwks["keys"];
-  try {
-    keys = await privyKeys(appId, opts.fetchImpl ?? fetch);
-  } catch {
-    return null;
-  }
-  const candidates = header.kid ? keys.filter(k => k.kid === header.kid) : keys;
-  for (const jwk of candidates) {
-    try {
-      const key = createPublicKey({ key: jwk, format: "jwk" });
-      const ok = verify("sha256", Buffer.from(`${h}.${p}`), { key, dsaEncoding: "ieee-p1363" },
-        Buffer.from(s, "base64url"));
-      if (ok) return claims.sub;
-    } catch {
-      // try the next key
-    }
-  }
-  return null;
-}
-
-export interface PrivyProfile {
+export interface Profile {
   email?: string;
   name?: string;
+  /** How they signed in: "google" or "apple". */
   method?: string;
-}
-
-/** Email, name and sign-in method from Privy itself, so the app cannot claim
- *  an address it does not own. Needs the app secret, which never leaves here. */
-export async function privyProfile(userId: string, fetchImpl: typeof fetch = fetch): Promise<PrivyProfile> {
-  const appId = process.env.PRIVY_APP_ID;
-  const secret = process.env.PRIVY_APP_SECRET;
-  if (!appId || !secret) return {};
-  const res = await fetchImpl(`https://auth.privy.io/api/v1/users/${encodeURIComponent(userId)}`, {
-    signal: AbortSignal.timeout(6000),
-    headers: {
-      authorization: `Basic ${Buffer.from(`${appId}:${secret}`).toString("base64")}`,
-      "privy-app-id": appId,
-    },
-  });
-  if (!res.ok) return {};
-  const user = await res.json() as { linked_accounts?: Record<string, unknown>[] };
-  const accounts = user.linked_accounts ?? [];
-  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
-  const google = accounts.find(a => a.type === "google_oauth");
-  const apple = accounts.find(a => a.type === "apple_oauth");
-  const email = accounts.find(a => a.type === "email");
-  const first = [...accounts].sort((a, b) =>
-    Number(a.first_verified_at ?? a.verified_at ?? 0) - Number(b.first_verified_at ?? b.verified_at ?? 0))[0];
-  const method = first?.type === "google_oauth" ? "google"
-    : first?.type === "apple_oauth" ? "apple"
-    : first?.type === "email" ? "email" : undefined;
-  return {
-    email: str(email?.address) ?? str(google?.email) ?? str(apple?.email),
-    name: str(google?.name),
-    method,
-  };
 }
 
 // ── What is kept ────────────────────────────────────────────────────────────
@@ -235,13 +147,13 @@ export class Users {
     return this.schema;
   }
 
-  async upsert(id: string, profile: PrivyProfile, device: Device): Promise<void> {
+  async upsert(id: string, profile: Profile, device: Device): Promise<void> {
     await this.ensureSchema();
     const sql = await this.sql();
     await sql(
-      `insert into glyf_users (privy_id, email, name, login_method, platform, app_version, locale, region, timezone)
+      `insert into glyf_users (user_id, email, name, login_method, platform, app_version, locale, region, timezone)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       on conflict (privy_id) do update set
+       on conflict (user_id) do update set
          email = coalesce(excluded.email, glyf_users.email),
          name = coalesce(excluded.name, glyf_users.name),
          login_method = coalesce(glyf_users.login_method, excluded.login_method),
@@ -260,8 +172,8 @@ export class Users {
     await this.ensureSchema();
     const sql = await this.sql();
     await sql(
-      `insert into glyf_user_prefs (privy_id, prefs) values ($1, $2::jsonb)
-       on conflict (privy_id) do update set prefs = excluded.prefs, updated_at = now()`,
+      `insert into glyf_user_prefs (user_id, prefs) values ($1, $2::jsonb)
+       on conflict (user_id) do update set prefs = excluded.prefs, updated_at = now()`,
       [id, JSON.stringify(cleanPrefs(prefs))],
     );
   }
@@ -280,7 +192,7 @@ export class Users {
         props[k] = v;
       }
       const at = e.at && !Number.isNaN(Date.parse(e.at)) ? e.at : new Date().toISOString();
-      await sql(`insert into glyf_events (privy_id, name, props, at) values ($1, $2, $3::jsonb, $4)`,
+      await sql(`insert into glyf_events (user_id, name, props, at) values ($1, $2, $3::jsonb, $4)`,
         [id, e.name.slice(0, 64), JSON.stringify(props), at]);
       stored++;
     }
@@ -290,6 +202,6 @@ export class Users {
   async remove(id: string): Promise<void> {
     await this.ensureSchema();
     const sql = await this.sql();
-    await sql(`delete from glyf_users where privy_id = $1`, [id]);
+    await sql(`delete from glyf_users where user_id = $1`, [id]);
   }
 }

@@ -76,6 +76,28 @@ abstract final class GlyfBridge {
 
   static Future<String?> lastDeepLink() => _call<String>('lastDeepLink');
 
+  // Signing in (SignIn.swift / SignIn.kt): `idToken` on success (with `name`
+  // and `email` when the provider shares them), `error` otherwise.
+
+  static Future<Map<String, dynamic>> signInApple(String nonce) async =>
+      Map<String, dynamic>.from(
+          await _call<Map>('signInApple', {'nonce': nonce}) ?? const {'error': 'failed'});
+
+  static Future<Map<String, dynamic>> signInGoogle({required String clientId, required String nonce}) async =>
+      Map<String, dynamic>.from(await _call<Map>('signInGoogle', {'clientId': clientId, 'nonce': nonce}) ??
+          const {'error': 'failed'});
+
+  static Future<void> signOutProviders() => _call<bool>('signOutProviders');
+
+  /// The Glyf session, kept in the Keychain (iOS) or encrypted with a
+  /// Keystore key (Android).
+  static Future<String?> sessionLoad() => _call<String>('sessionLoad');
+
+  static Future<bool> sessionSave(String json) async =>
+      await _call<bool>('sessionSave', {'json': json}) ?? false;
+
+  static Future<void> sessionClear() => _call<bool>('sessionClear');
+
   static Future<void> writeAppPong(String message) =>
       _call<void>('writeAppPong', {'message': message});
 

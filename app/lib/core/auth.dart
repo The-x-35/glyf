@@ -1,71 +1,29 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart' show debugPrint, kReleaseMode;
-import 'package:flutter/services.dart' show PlatformException;
-import 'package:privy_flutter/privy_flutter.dart';
 
 import 'bridge.dart';
-import 'glyf_api.dart';
 
-/// Signing in, once, for the whole app: Apple or Google, through Privy (the
-/// same account the wallet uses).
+/// Signing in, once, for the whole app: Sign in with Apple on the iPhone,
+/// Google on both phones.
 ///
-/// After a sign-in the server is told who this is and which phone they are on
-/// (POST /me); keyboard settings and app events follow. The vault never
-/// leaves the phone: only which KINDS of detail were saved are sent.
+/// The phone signs in natively and gets an ID token from Apple or Google. The
+/// Glyf server checks it against the provider's keys (POST /auth/session) and
+/// hands back its own session, kept in the Keychain or behind a Keystore key.
+/// After that the server hears which phone this is (POST /me), the keyboard
+/// settings and app events. The vault never leaves the phone: only which
+/// KINDS of detail were saved are sent.
 abstract final class Auth {
-  /// The scheme Privy returns to after Google or Apple. Kept apart from the
-  /// app's own glyf:// links so the two never compete for a URL.
-  static const oauthScheme = 'glyfauth';
-
-  static Privy? _privy;
-  static Future<Privy?>? _starting;
-  static PrivyUser? _user;
-
-  static PrivyUser? get user => _user;
+  static _Account? _account;
   static bool _testSignedIn = false;
-  static bool get signedIn => _user != null || _testSignedIn;
 
-  /// Privy, started with the public ids the server hands out. Null when the
-  /// server cannot be reached or sign-in is not set up there.
-  static Future<Privy?> privy() {
-    if (_privy != null) return Future.value(_privy);
-    return _starting ??= () async {
-      // The ids are public; kept on the phone so a saved session opens
-      // offline too.
-      final s = await GlyfBridge.sharedSettings();
-      var appId = s['privyAppId'] as String?;
-      var clientId = s['privyAppClientId'] as String?;
-      final cfg = await GlyfApi.walletConfig();
-      if (cfg != null && cfg['ready'] == true) {
-        appId = cfg['privyAppId'] as String;
-        clientId = cfg['privyAppClientId'] as String;
-        if (s['privyAppId'] != appId || s['privyAppClientId'] != clientId) {
-          await GlyfBridge.updateSharedSettings((m) => m
-            ..['privyAppId'] = appId
-            ..['privyAppClientId'] = clientId);
-        }
-      }
-      if (appId == null || appId.isEmpty || clientId == null || clientId.isEmpty) {
-        _starting = null;
-        return null;
-      }
-      final p = Privy.init(
-        config: PrivyConfig(
-          appId: appId,
-          appClientId: clientId,
-          logLevel: PrivyLogLevel.error,
-        ),
-      );
-      _privy = p;
-      return p;
-    }();
-  }
+  static bool get signedIn => _account != null || _testSignedIn;
 
-  /// Whether someone is signed in on this phone. Works offline from Privy's
-  /// stored session.
+  /// Whether someone is signed in on this phone. Works offline: the session
+  /// is on the phone and carries its own expiry.
   static Future<bool> restore() async {
     // UI tests reach the screens behind sign-in without a real account.
     // Never in a release build.
@@ -73,129 +31,130 @@ abstract final class Auth {
       _testSignedIn = true;
       return true;
     }
-    final p = await privy();
-    if (p == null) return false;
-    try {
-      final state = await p.getAuthState();
-      if (state is Authenticated) {
-        _user = state.user;
-        return true;
-      }
-    } catch (_) {}
-    _user = null;
-    return false;
+    final raw = await GlyfBridge.sessionLoad();
+    final account = raw == null ? null : _Account.fromJson(raw);
+    if (account == null || account.expired) {
+      if (raw != null) await GlyfBridge.sessionClear();
+      _account = null;
+      return false;
+    }
+    _account = account;
+    return true;
   }
 
-  static Future<String?> signInWithGoogle() => _oauth(OAuthProvider.google);
-  static Future<String?> signInWithApple() => _oauth(OAuthProvider.apple);
-
-  /// Null on success, otherwise what to tell the person.
-  static Future<String?> _oauth(OAuthProvider provider) async {
-    final p = await privy();
-    if (p == null) return 'Sign-in is unavailable right now. Try again in a moment.';
-    try {
-      final res = await p.oAuth.login(provider: provider, appUrlScheme: oauthScheme);
-      String? error;
-      res.fold(
-        onSuccess: (u) => _user = u,
-        onFailure: (e) => error = _friendly(e.message),
-      );
-      if (error == null) await _afterSignIn(provider.name);
-      return error;
-    } on PlatformException catch (e) {
-      return _friendly(e.message ?? '');
-    } catch (e) {
-      return _friendly('$e');
-    }
+  /// Null once signed in, or when the person closed the sheet; otherwise
+  /// what to tell them.
+  static Future<String?> signInWithGoogle() async {
+    final config = await _config();
+    if (config == null) return _offline;
+    final google = config['google'];
+    final clientId = google is Map ? (Platform.isIOS ? google['iosClientId'] : google['webClientId']) : null;
+    if (clientId is! String || clientId.isEmpty) return 'Google sign-in is not set up yet.';
+    final nonce = _nonce();
+    return _finish('google', await GlyfBridge.signInGoogle(clientId: clientId, nonce: nonce), nonce);
   }
 
-  static String _friendly(String raw) {
-    if (!kReleaseMode) debugPrint('glyf sign-in: $raw');
-    final m = raw.toLowerCase();
-    if (m.contains('native_app_id') || m.contains('allowed app identifier')) {
-      return 'Sign-in is not set up for this app yet.';
+  static Future<String?> signInWithApple() async {
+    final config = await _config();
+    if (config == null) return _offline;
+    if (config['apple'] != true) return 'Sign in with Apple is not set up yet.';
+    final nonce = _nonce();
+    return _finish('apple', await GlyfBridge.signInApple(nonce), nonce);
+  }
+
+  static const _offline = 'No connection. Try again when you are online.';
+
+  /// The provider's token in, a Glyf session out.
+  static Future<String?> _finish(String provider, Map<String, dynamic> res, String nonce) async {
+    final idToken = res['idToken'];
+    if (idToken is! String) return _friendly('${res['error'] ?? 'failed'}');
+    final name = res['name'] is String ? res['name'] as String : null;
+    final reply = await _send('POST', '/auth/session', body: {
+      'provider': provider,
+      'idToken': idToken,
+      'nonce': nonce,
+      'name': ?name,
+      'device': _device(),
+    });
+    if (reply == null) return _offline;
+    final body = reply.body;
+    if (reply.status >= 400 || body?['ok'] != true || body?['token'] is! String) {
+      return body?['error'] as String? ?? 'Sign-in could not be verified. Try again.';
     }
-    if (m.contains('cancel')) return 'Sign-in was cancelled.';
-    if (m.contains('network') || m.contains('internet')) return 'No connection. Try again when you are online.';
-    if (m.contains('not allowed') || m.contains('not enabled') || m.contains('scheme')) {
-      return 'That sign-in option is not available yet.';
+    final user = body!['user'] is Map ? body['user'] as Map : const {};
+    final account = _Account(
+      token: body['token'] as String,
+      id: '${user['id'] ?? ''}',
+      provider: provider,
+      email: user['email'] as String? ?? res['email'] as String?,
+      name: user['name'] as String? ?? name,
+    );
+    await GlyfBridge.sessionSave(account.toJson());
+    _account = account;
+    await GlyfBridge.updateSharedSettings((s) => s..['signedInWith'] = provider);
+    unawaited(syncPrefs());
+    return null;
+  }
+
+  static String? _friendly(String error) {
+    if (!kReleaseMode) debugPrint('glyf sign-in: $error');
+    switch (error) {
+      case 'cancelled':
+        return null;
+      case 'not_configured':
+        return 'Google sign-in is not set up yet.';
+      case 'apple_unavailable':
+        return 'Sign in with Apple is not available on this phone.';
+      case 'no_account':
+        return 'Add a Google account to this phone, then try again.';
+      case 'network':
+        return _offline;
+    }
+    final m = error.toLowerCase();
+    if (m.contains('network') || m.contains('internet') || m.contains('offline')) return _offline;
+    if (m.contains('invalid_client') || m.contains('unregistered') || m.contains('developer console')) {
+      return 'Google sign-in is not set up yet.';
     }
     return 'Sign-in did not finish. Try again.';
   }
 
   /// The email and name the account came with, for filling in the vault.
-  static ({String? email, String? name}) identity() {
-    final u = _user;
-    if (u == null) return (email: null, name: null);
-    String? email;
-    String? name;
-    for (final a in u.linkedAccounts) {
-      switch (a) {
-        case EmailAccount(:final emailAddress):
-          email ??= emailAddress;
-        case GoogleOAuthAccount(email: final e, name: final n):
-          email ??= e;
-          name ??= n;
-        case AppleOAuthAccount(email: final e):
-          email ??= e;
-        default:
-          break;
-      }
-    }
-    return (email: email, name: name);
-  }
+  static ({String? email, String? name}) identity() => (email: _account?.email, name: _account?.name);
 
   static Future<void> signOut() async {
-    final p = await privy();
-    try {
-      await p?.logout();
-    } catch (_) {}
-    _user = null;
+    await GlyfBridge.sessionClear();
+    await GlyfBridge.signOutProviders();
+    _account = null;
+    _testSignedIn = false;
   }
 
   // ── what the server learns ──────────────────────────────────────────────
 
-  static Future<String?> _token() async {
-    final u = _user;
-    if (u == null) return null;
-    try {
-      final res = await u.getAccessToken();
-      String? token;
-      res.fold(onSuccess: (t) => token = t, onFailure: (_) {});
-      return token;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static Future<void> _afterSignIn(String method) async {
-    await GlyfBridge.updateSharedSettings((s) => s..['signedInWith'] = method);
-    unawaited(syncProfile());
-  }
-
-  /// Who is signed in, on which phone. Called after sign-in and at launch.
-  static Future<void> syncProfile() async {
-    final token = await _token();
-    if (token == null) return;
+  static Map<String, Object?> _device() {
     final locale = Platform.localeName.replaceAll('_', '-');
-    await _post('/me', token, {
+    return {
       'platform': Platform.isIOS ? 'ios' : 'android',
       'appVersion': '1.0.0',
       'locale': locale,
       'region': locale.contains('-') ? locale.split('-').last : null,
       'timezone': DateTime.now().timeZoneName,
-    });
+    };
+  }
+
+  /// Who is signed in, on which phone. Called at launch.
+  static Future<void> syncProfile() async {
+    final token = _account?.token;
+    if (token == null) return;
+    await _authed('/me', token, _device());
   }
 
   /// Keyboard settings, and which kinds of detail the vault holds (never the
   /// details themselves). The server keeps only settings it lists.
   static Future<void> syncPrefs() async {
-    final token = await _token();
+    final token = _account?.token;
     if (token == null) return;
     final s = await GlyfBridge.sharedSettings();
     final prefs = Map<String, dynamic>.from(s)
-      ..remove('privyAppId')
-      ..remove('privyAppClientId')
       ..remove('backendURL')
       ..remove('deviceId')
       ..remove('lastLat')
@@ -213,14 +172,14 @@ abstract final class Auth {
       final notes = await GlyfBridge.notesList();
       prefs['noteCount'] = notes.length;
     } catch (_) {}
-    await _post('/me/prefs', token, {'prefs': prefs});
+    await _authed('/me/prefs', token, {'prefs': prefs});
   }
 
   /// App events (names, counts, ids; never text), when someone is signed in.
   static Future<bool> sendEvents(List<Map<String, dynamic>> events) async {
-    final token = await _token();
+    final token = _account?.token;
     if (token == null) return false;
-    return _post('/me/events', token, {
+    return _authed('/me/events', token, {
       'events': [
         for (final e in events)
           {
@@ -235,24 +194,95 @@ abstract final class Auth {
     });
   }
 
-  static Future<bool> _post(String path, String token, Map<String, Object?> body) async {
+  /// A call as the signed-in person. A session the server no longer accepts
+  /// is dropped, so the next launch asks to sign in again.
+  static Future<bool> _authed(String path, String token, Map<String, Object?> body) async {
+    final reply = await _send('POST', path, body: body, token: token);
+    if (reply == null) return false;
+    if (reply.status == 401) {
+      await GlyfBridge.sessionClear();
+      _account = null;
+    }
+    return reply.status < 400;
+  }
+
+  static Future<Map<String, dynamic>?> _config() async {
+    final reply = await _send('GET', '/auth/config');
+    return reply != null && reply.status < 400 ? reply.body : null;
+  }
+
+  static Future<({int status, Map<String, dynamic>? body})?> _send(String method, String path,
+      {Map<String, Object?>? body, String? token}) async {
     try {
       final s = await GlyfBridge.sharedSettings();
       final base = (s['backendURL'] as String?) ?? 'http://127.0.0.1:8787';
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+      final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
       try {
-        final req = await client.postUrl(Uri.parse('$base$path'));
-        req.headers.contentType = ContentType.json;
-        req.headers.set('Authorization', 'Bearer $token');
-        req.write(jsonEncode(body));
-        final res = await req.close().timeout(const Duration(seconds: 10));
-        await res.drain<void>();
-        return res.statusCode < 400;
+        final req = await client.openUrl(method, Uri.parse('$base$path'));
+        if (token != null) req.headers.set('Authorization', 'Bearer $token');
+        if (body != null) {
+          req.headers.contentType = ContentType.json;
+          req.write(jsonEncode(body));
+        }
+        final res = await req.close().timeout(const Duration(seconds: 15));
+        final text = await res.transform(utf8.decoder).join();
+        Map<String, dynamic>? json;
+        try {
+          final decoded = jsonDecode(text);
+          if (decoded is Map<String, dynamic>) json = decoded;
+        } catch (_) {}
+        return (status: res.statusCode, body: json);
       } finally {
         client.close();
       }
     } catch (_) {
-      return false;
+      return null;
+    }
+  }
+
+  static String _nonce() {
+    final random = Random.secure();
+    return base64UrlEncode(List<int>.generate(32, (_) => random.nextInt(256))).replaceAll('=', '');
+  }
+}
+
+/// A Glyf session and who it belongs to, as kept on the phone.
+class _Account {
+  const _Account({required this.token, required this.id, required this.provider, this.email, this.name});
+
+  final String token;
+  final String id;
+  final String provider;
+  final String? email;
+  final String? name;
+
+  /// Read from the session's own claims; the server checks the signature.
+  bool get expired {
+    try {
+      final claims = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))));
+      final exp = claims is Map ? claims['exp'] : null;
+      return exp is! num || DateTime.now().millisecondsSinceEpoch / 1000 > exp;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  String toJson() => jsonEncode({'token': token, 'id': id, 'provider': provider, 'email': email, 'name': name});
+
+  static _Account? fromJson(String raw) {
+    try {
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      final token = m['token'];
+      if (token is! String || token.isEmpty) return null;
+      return _Account(
+        token: token,
+        id: '${m['id'] ?? ''}',
+        provider: '${m['provider'] ?? ''}',
+        email: m['email'] as String?,
+        name: m['name'] as String?,
+      );
+    } catch (_) {
+      return null;
     }
   }
 }

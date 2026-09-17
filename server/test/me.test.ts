@@ -1,41 +1,7 @@
-import { generateKeyPairSync, sign } from "node:crypto";
 import Fastify from "fastify";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { meRoutes } from "../src/routes/me.js";
-import { cleanPrefs, resetKeyCacheForTests, Users, verifyPrivyToken, type SqlQuery } from "../src/lib/users.js";
-
-const APP = "app-under-test";
-
-function keys() {
-  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
-  const jwk = { ...publicKey.export({ format: "jwk" }), kid: "k1", alg: "ES256", use: "sig" };
-  return { privateKey, jwk };
-}
-
-function token(privateKey: ReturnType<typeof keys>["privateKey"], claims: Record<string, unknown>, kid = "k1") {
-  const h = Buffer.from(JSON.stringify({ alg: "ES256", typ: "JWT", kid })).toString("base64url");
-  const p = Buffer.from(JSON.stringify(claims)).toString("base64url");
-  const s = sign("sha256", Buffer.from(`${h}.${p}`), { key: privateKey, dsaEncoding: "ieee-p1363" });
-  return `${h}.${p}.${s.toString("base64url")}`;
-}
-
-describe("Privy session check", () => {
-  beforeEach(() => resetKeyCacheForTests());
-
-  it("accepts a token Privy signed for this app and nothing else", async () => {
-    const { privateKey, jwk } = keys();
-    const fetchImpl = (async () => new Response(JSON.stringify({ keys: [jwk] }))) as typeof fetch;
-    const now = Date.now();
-    const good = { iss: "privy.io", aud: APP, sub: "did:privy:abc", exp: now / 1000 + 600 };
-    expect(await verifyPrivyToken(token(privateKey, good), { appId: APP, fetchImpl, now })).toBe("did:privy:abc");
-    // Another app's token, an expired one, a forged one.
-    expect(await verifyPrivyToken(token(privateKey, { ...good, aud: "other" }), { appId: APP, fetchImpl, now })).toBeNull();
-    expect(await verifyPrivyToken(token(privateKey, { ...good, exp: now / 1000 - 120 }), { appId: APP, fetchImpl, now })).toBeNull();
-    const forged = keys();
-    expect(await verifyPrivyToken(token(forged.privateKey, good), { appId: APP, fetchImpl, now })).toBeNull();
-    expect(await verifyPrivyToken("not.a.token", { appId: APP, fetchImpl, now })).toBeNull();
-  });
-});
+import { cleanPrefs, Users, type SqlQuery } from "../src/lib/users.js";
 
 describe("what is kept about a person", () => {
   it("keeps settings, never vault values or anything unlisted", () => {
@@ -61,8 +27,7 @@ describe("/me routes", () => {
     const f = Fastify();
     meRoutes(f, {
       users: new Users(sql),
-      verify: async (t) => (t === "good" ? "did:privy:abc" : null),
-      profile: async () => ({ email: "a@b.co", name: "Asha", method: "google" }),
+      verify: async (t) => (t === "good" ? "google:1234" : null),
     });
     return f;
   }
@@ -74,15 +39,16 @@ describe("/me routes", () => {
     expect(bad.statusCode).toBe(401);
   });
 
-  it("stores who signed in with the email Privy vouches for", async () => {
+  it("records the phone a signed-in person is on", async () => {
     const queries: { text: string; params?: unknown[] }[] = [];
     const res = await app(queries).inject({
       method: "POST", url: "/me", headers: { authorization: "Bearer good" },
       payload: { platform: "ios", appVersion: "1.0.0", locale: "en-IN", region: "IN", timezone: "Asia/Kolkata" },
     });
-    expect(res.json()).toMatchObject({ ok: true, stored: true, user: { id: "did:privy:abc", email: "a@b.co" } });
+    expect(res.json()).toMatchObject({ ok: true, stored: true, user: { id: "google:1234" } });
+    // Email and name came from the provider at sign-in; this never overwrites them.
     const upsert = queries.find(q => q.text.includes("insert into glyf_users"));
-    expect(upsert?.params?.slice(0, 5)).toEqual(["did:privy:abc", "a@b.co", "Asha", "google", "ios"]);
+    expect(upsert?.params?.slice(0, 5)).toEqual(["google:1234", null, null, null, "ios"]);
   });
 
   it("drops private settings and typed text on the way in", async () => {
