@@ -9,6 +9,7 @@ import 'connected_tools_screen.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
+import '../core/text_sheet.dart';
 import '../core/theme.dart';
 import '../onboarding/demo_chat.dart';
 import '../wallet/wallet_screen.dart';
@@ -165,24 +166,66 @@ class _ProfileTabState extends State<ProfileTab> {
   String get _plan => (_settings['plan'] as String?) ??
       (_settings['proUnlocked'] == true ? 'plus' : 'free');
 
-  /// Who is signed in: the account's email with its Google or Apple mark.
+  /// Who is signed in, and Sign out beside it: under the name, where it is
+  /// seen without scrolling.
   Widget _account() {
     final id = Auth.identity();
-    final email = id.email;
-    if (email == null || email.isEmpty) return const SizedBox.shrink();
-    return Semantics(
-      identifier: 'profile:email',
+    final email = id.email ?? '';
+    final provider = switch (id.provider) {
+      'google' => 'Google',
+      'apple' => 'Apple',
+      _ => null,
+    };
+    return GlassCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
       child: Row(children: [
-        if (id.provider == 'google')
-          const GoogleG(size: 14)
-        else if (id.provider == 'apple')
-          const Icon(Icons.apple, size: 16, color: Glass.ink),
-        if (id.provider == 'google' || id.provider == 'apple') const SizedBox(width: 6),
-        Flexible(
-          child: Text(email,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
+        Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(color: Glass.bg, shape: BoxShape.circle),
+          child: switch (id.provider) {
+            'google' => const GoogleG(size: 18),
+            'apple' => const Icon(Icons.apple, size: 21, color: Glass.ink),
+            _ => const Icon(Icons.person_outline_rounded, size: 20, color: Glass.ink),
+          },
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(provider == null ? 'Signed in' : 'Signed in with $provider',
+                style: const TextStyle(
+                    color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
+            if (email.isNotEmpty)
+              Semantics(
+                identifier: 'profile:email',
+                child: Text(email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
+              ),
+          ]),
+        ),
+        const SizedBox(width: 10),
+        Semantics(
+          identifier: 'profile:sign-out',
+          button: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _signOut,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Glass.danger.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Text('Sign out',
+                  style: TextStyle(
+                      color: Glass.danger,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700)),
+            ),
+          ),
         ),
       ]),
     );
@@ -223,18 +266,13 @@ class _ProfileTabState extends State<ProfileTab> {
             const KeycapGMark(size: 62),
             const SizedBox(width: 16),
             Expanded(
-              child:
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(_displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Glass.ink,
-                        fontSize: 23,
-                        fontWeight: FontWeight.w800)),
-                const SizedBox(height: 3),
-                _account(),
-              ]),
+              child: Text(_displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Glass.ink,
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800)),
             ),
             GestureDetector(
               onTap: _editName,
@@ -253,7 +291,11 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
           ]),
-          const SizedBox(height: 22),
+          const SizedBox(height: 20),
+
+          // Account
+          _account(),
+          const SizedBox(height: 12),
 
           // Plan
           Semantics(
@@ -393,26 +435,7 @@ class _ProfileTabState extends State<ProfileTab> {
             title: 'Replay onboarding',
             onTap: widget.onRerunOnboarding,
           ),
-          const SizedBox(height: 18),
-          _groupLabel('Account'),
-          Semantics(
-            identifier: 'profile:sign-out',
-            button: true,
-            child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-              onTap: _signOut,
-              child: const Row(children: [
-                Icon(Icons.logout_rounded, color: Glass.danger, size: 21),
-                SizedBox(width: 13),
-                Text('Sign out',
-                    style: TextStyle(
-                        color: Glass.danger,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700)),
-              ]),
-            ),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 14),
 
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             Container(
@@ -475,49 +498,14 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   Future<void> _editName() async {
-    final ctrl = TextEditingController(
-        text: _displayName == 'You' ? '' : _displayName);
-    final name = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-            left: 22,
-            right: 22,
-            top: 18,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Your name',
-              style: TextStyle(
-                  color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 12),
-          TextField(
-            controller: ctrl,
-            autofocus: true,
-            maxLength: 24,
-            style: const TextStyle(color: Glass.ink, fontSize: 16),
-            decoration: InputDecoration(
-              counterText: '',
-              filled: true,
-              fillColor: const Color(0xFFF7F8FA),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none),
-            ),
-          ),
-          const SizedBox(height: 12),
-          PillButton(
-              label: 'Save',
-              onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim())),
-          const SizedBox(height: 4),
-        ]),
-      ),
-    );
-    ctrl.dispose();
+    final name = (await showTextSheet(
+      context,
+      title: 'Your name',
+      action: 'Save',
+      initial: _displayName == 'You' ? '' : _displayName,
+      maxLength: 24,
+    ))
+        ?.trim();
     if (name == null || name.isEmpty) return;
     final state = await GlyfBridge.onboardingState();
     state['displayName'] = name;

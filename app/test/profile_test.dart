@@ -56,4 +56,32 @@ void main() {
     // Dispose the page so its refresh timer doesn't outlive the test.
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('closing the name sheet leaves the page working', (tester) async {
+    addTearDown(tester.view.reset);
+    await tester.runAsync(Auth.restore);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ProfileTab(onRerunOnboarding: () {})),
+    ));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump();
+
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Your name'), findsOneWidget);
+    // The keyboard is up while the name is edited...
+    tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+    await tester.pumpAndSettle();
+
+    // ...and goes down while the sheet slides away.
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pump();
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your name'), findsNothing);
+    expect(find.text('Edit'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

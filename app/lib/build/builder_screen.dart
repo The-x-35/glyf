@@ -4,6 +4,7 @@ import '../core/bridge.dart';
 import '../core/catalog.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
+import '../core/text_sheet.dart';
 import '../core/theme.dart';
 import '../home/keyboard_visual.dart';
 import '../profile/paywall_sheet.dart';
@@ -166,47 +167,19 @@ class _BuilderScreenState extends State<BuilderScreen> {
     final step = steps[index];
     final field = step['type'] == 'format' ? 'template' : 'prompt';
     if (step[field] == null) return;
-    final ctrl = TextEditingController(text: step[field] as String);
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 18,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Edit step',
-              style: TextStyle(
-                  color: Glass.ink, fontSize: 16, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 10),
-          TextField(
-            controller: ctrl,
-            maxLines: 8,
-            style: const TextStyle(fontSize: 14, color: Glass.ink, height: 1.35),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: const Color(0xFFF4F5F8),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none),
-            ),
-          ),
-          const SizedBox(height: 12),
-          PillButton(label: 'Done', onPressed: () => Navigator.pop(ctx, true)),
-        ]),
-      ),
+    final text = await showTextSheet(
+      context,
+      title: 'Edit step',
+      action: 'Done',
+      initial: step[field] as String,
+      maxLines: 8,
+      autofocus: false,
+      style: const TextStyle(fontSize: 14, color: Glass.ink, height: 1.35),
     );
-    if (saved == true) {
-      setState(() => step[field] = ctrl.text);
+    if (text != null && mounted) {
+      setState(() => step[field] = text);
       _test();
     }
-    ctrl.dispose();
   }
 
   @override
