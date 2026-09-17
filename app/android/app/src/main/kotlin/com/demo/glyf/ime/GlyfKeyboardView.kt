@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
@@ -74,22 +75,82 @@ class GlyfKeyboardView(
      * KeyPalette (Dart). Feeding it the website's board reproduces the
      * website's palette, so themes and the default look share one path.
      */
-    class KeyPalette(val board: Int) {
-        private val light = luminance(board) > 0.34f
-        val darkChrome = !light
-        val key = if (light) Color.WHITE else blend(board, Color.WHITE, 0.185f)
-        val keyPressed =
-            if (light) blend(key, board, 0.55f) else blend(key, Color.WHITE, 0.11f)
-        val fn = if (light) blend(board, Color.BLACK, 0.14f)
-                 else blend(board, Color.WHITE, 0.07f)
-        val fnPressed = if (light) blend(fn, Color.WHITE, 0.18f)
-                        else blend(fn, Color.WHITE, 0.06f)
-        val ink = if (light) tinted(board, 0.10f, 0.12f) else tinted(board, 0.04f, 0.965f)
-        val inkSoft = blend(ink, board, if (light) 0.42f else 0.40f)
-        val edge = Color.argb(if (light) 61 else 179, 0, 0, 0)
-        val card = if (light) Color.WHITE else blend(board, Color.WHITE, 0.065f)
-
+    class KeyPalette(
+        val board: Int,
+        val key: Int,
+        val keyPressed: Int,
+        val fn: Int,
+        val fnPressed: Int,
+        val ink: Int,
+        val inkSoft: Int,
+        val edge: Int,
+        val card: Int,
+        val darkChrome: Boolean,
+    ) {
         companion object {
+            /** Every colour from one board colour: colour themes. */
+            fun fromBoard(board: Int): KeyPalette {
+                val light = luminance(board) > 0.34f
+                val key = if (light) Color.WHITE else blend(board, Color.WHITE, 0.185f)
+                val fn = if (light) blend(board, Color.BLACK, 0.14f)
+                         else blend(board, Color.WHITE, 0.07f)
+                val ink = if (light) tinted(board, 0.10f, 0.12f) else tinted(board, 0.04f, 0.965f)
+                return KeyPalette(
+                    board = board,
+                    key = key,
+                    keyPressed = if (light) blend(key, board, 0.55f) else blend(key, Color.WHITE, 0.11f),
+                    fn = fn,
+                    fnPressed = if (light) blend(fn, Color.WHITE, 0.18f) else blend(fn, Color.WHITE, 0.06f),
+                    ink = ink,
+                    inkSoft = blend(ink, board, if (light) 0.42f else 0.40f),
+                    edge = Color.argb(if (light) 61 else 179, 0, 0, 0),
+                    card = if (light) Color.WHITE else blend(board, Color.WHITE, 0.065f),
+                    darkChrome = !light,
+                )
+            }
+
+            /**
+             * Gboard's default look, which follows the phone's own colours
+             * (Material You). Measured against Gboard on the emulator: the
+             * function keys are exactly system_accent2_100 (light) and
+             * system_accent2_700 (dark); letters are white on a board a fifth
+             * of the way from neutral1_50 to neutral1_100 in light, and in
+             * dark the board and keys sit just above neutral1_900.
+             */
+            fun gboardDefault(ctx: Context, dark: Boolean): KeyPalette {
+                fun sys(name: String): Int {
+                    val id = ctx.resources.getIdentifier(name, "color", "android")
+                    return ctx.resources.getColor(id, null)
+                }
+                return if (!dark) {
+                    val board = blend(sys("system_neutral1_50"), sys("system_neutral1_100"), 0.2f)
+                    val fn = sys("system_accent2_100")
+                    val ink = sys("system_neutral1_900")
+                    KeyPalette(board = board, key = Color.WHITE,
+                        keyPressed = blend(Color.WHITE, fn, 0.6f), fn = fn,
+                        fnPressed = blend(fn, ink, 0.12f), ink = ink,
+                        inkSoft = blend(ink, board, 0.42f),
+                        edge = Color.TRANSPARENT, card = Color.WHITE, darkChrome = false)
+                } else {
+                    val n900 = sys("system_neutral1_900")
+                    val n800 = sys("system_neutral1_800")
+                    val board = blend(n900, n800, 0.2f)
+                    val key = extrapolate(n900, n800, 1.2f)
+                    val fn = sys("system_accent2_700")
+                    val ink = sys("system_neutral1_100")
+                    KeyPalette(board = board, key = key,
+                        keyPressed = blend(key, Color.WHITE, 0.12f), fn = fn,
+                        fnPressed = blend(fn, Color.WHITE, 0.12f), ink = ink,
+                        inkSoft = blend(ink, board, 0.40f),
+                        edge = Color.TRANSPARENT, card = key, darkChrome = true)
+                }
+            }
+
+            private fun extrapolate(a: Int, b: Int, t: Float) = Color.rgb(
+                (Color.red(a) + (Color.red(b) - Color.red(a)) * t).toInt().coerceIn(0, 255),
+                (Color.green(a) + (Color.green(b) - Color.green(a)) * t).toInt().coerceIn(0, 255),
+                (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * t).toInt().coerceIn(0, 255))
+
             fun luminance(c: Int) = (0.2126f * Color.red(c) + 0.7152f * Color.green(c) +
                 0.0722f * Color.blue(c)) / 255f
 
@@ -117,7 +178,11 @@ class GlyfKeyboardView(
     fun palette(): KeyPalette {
         val cacheKey = "$themeBg|$isDark|$keyTheme|$themeDim"
         paletteCache?.let { if (it.first == cacheKey) return it.second }
-        val made = KeyPalette(paletteSeed())
+        // The default look on Android 12+ is Gboard's: the phone's own colours.
+        // Picked colour themes are still built from their seed.
+        val made = if (keyTheme == "site" && themeBg.isEmpty() && Build.VERSION.SDK_INT >= 31)
+            KeyPalette.gboardDefault(context, isDark)
+        else KeyPalette.fromBoard(paletteSeed())
         paletteCache = cacheKey to made
         return made
     }
@@ -142,6 +207,8 @@ class GlyfKeyboardView(
         /** §6.5: a bound LETTER fires at 320ms; the space bar waits longer so
          *  a glide can still start (SpaceGesture.HOLD_MS). */
         const val BOUND_HOLD_MS = 320L
+        /** Gboard's default key long-press delay. */
+        const val DIGIT_HOLD_MS = 300L
 
         /** Row height in dp, measured off Gboard. */
         const val ROW_PITCH = 59f
@@ -296,7 +363,8 @@ class GlyfKeyboardView(
         val unitW = pitch - hGap
         val rowH = height / rows.size.toFloat()
         val keyH = min(rowH - vGap, if (isPad) dp(52f) else Float.MAX_VALUE)
-        val radius = dp(9.5f)
+        // Gboard's keys: 6dp corners, and ?123 and enter as pills.
+        val radius = dp(6f)
         keyPitchPx = pitch
         rowPitchPx = rowH
 
@@ -314,6 +382,9 @@ class GlyfKeyboardView(
                 val w = units * pitch - hGap
                 val rect = RectF(x, y, x + w, y + keyH)
                 keyRects.add(key to rect)
+                val lastRow = r == rows.lastIndex && !isPad
+                val pill = lastRow && (key.id == "return" || key.id.startsWith("mode:"))
+                val radius = if (pill) keyH / 2f else radius
 
                 val isPressed = pressed?.id == key.id && pressedRect == rect
                 val bound = key.char != null && bindings.containsKey(key.char)
@@ -335,7 +406,13 @@ class GlyfKeyboardView(
                 } else {
                     // The website draws a hard 2dp edge under each key, not a
                     // blur: an offset round-rect in the palette's edge colour.
-                    val fn = solidLook && key.char == null && key.id != "space"
+                    // Gboard's roles: the emoji key wears the letter colour,
+                    // the bottom row's punctuation wears the function colour.
+                    val fn = solidLook && when {
+                        key.id == "emojikey" || key.id == "space" -> false
+                        key.char != null -> lastRow
+                        else -> true
+                    }
                     val lift = if (solidLook) dp(2f) else dp(1f)
                     shadowPaint.color =
                         if (solidLook) palette().edge
@@ -445,6 +522,25 @@ class GlyfKeyboardView(
         }
         canvas.drawText(label, rect.centerX(),
             rect.centerY() + textPaint.textSize * 0.36f, textPaint)
+        // Gboard's number hints on the top row: the digit a hold types. Keys
+        // that hold a glyf show their dot instead, and keep their hold.
+        val digit = holdDigit(key)
+        if (digit != null) {
+            val size = textPaint.textSize
+            textPaint.textSize = dp(10.5f)
+            textPaint.color = Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink()))
+            canvas.drawText(digit, rect.right - dp(7f), rect.top + dp(13f), textPaint)
+            textPaint.textSize = size
+        }
+    }
+
+    /** The digit a held top-row letter types, or null. */
+    private fun holdDigit(key: Key): String? {
+        if (mode != Mode.LETTERS || numberRow) return null
+        val c = key.char ?: return null
+        if (bindings.containsKey(c)) return null
+        val i = "qwertyuiop".indexOf(c)
+        return if (i < 0) null else ((i + 1) % 10).toString()
     }
 
     /** Outline smiley — the emoji glyph can't tint with themes. */
@@ -527,6 +623,15 @@ class GlyfKeyboardView(
                 }
                 val char = hit.first.char
                 val glyfId = char?.let { bindings[it] }
+                val digit = holdDigit(hit.first)
+                if (digit != null) {
+                    handler2.postDelayed({
+                        longPressFired = true
+                        pressFeedback()
+                        listener.onKey(digit, digit)
+                        invalidate()
+                    }, DIGIT_HOLD_MS)
+                }
                 if (glyfId != null) {
                     startCharge(hit.second, BOUND_HOLD_MS)
                     handler2.postDelayed({

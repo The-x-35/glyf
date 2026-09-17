@@ -58,7 +58,7 @@ object KeyboardLayout {
                 out.add(listOf(Key("shift", units = SIDE_UNITS)) +
                         "zxcvbnm".map { ch(it.toString()) } +
                         listOf(Key("delete", units = SIDE_UNITS)))
-                out.add(bottomRow("123", context))
+                out.add(bottomRow("?123", context))
             }
             Mode.SYMBOLS1 -> {
                 out.add("1234567890".map { ch(it.toString()) })
@@ -80,8 +80,8 @@ object KeyboardLayout {
         return out
     }
 
-    /** Gboard's bottom row, ten columns again: 1.5 + 1 + space + 1 + 1.5,
-     *  with the field's own keys either side of the space bar. */
+    /** Gboard's bottom row, measured on the 427dp emulator: ?123 1.5, the
+     *  field's own key 1, emoji 1, space 4, period 1, enter 1.5. */
     private fun bottomRow(modeLabel: String, context: KContext): List<Key> {
         val row = mutableListOf(Key("mode:$modeLabel", units = SIDE_UNITS))
         when (context) {
@@ -96,9 +96,10 @@ object KeyboardLayout {
                 row.add(Key("space", units = -1f)); row.add(ch("."))
             }
             else -> {
+                row.add(ch(","))
                 row.add(Key("emojikey"))
                 row.add(Key("space", units = -1f))
-                row.add(ch(","))
+                row.add(ch("."))
             }
         }
         row.add(Key("return", units = SIDE_UNITS))

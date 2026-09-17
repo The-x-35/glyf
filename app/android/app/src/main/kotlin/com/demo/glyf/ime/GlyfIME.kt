@@ -125,16 +125,24 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setPadding(dp(10), dp(6), dp(10), dp(6))
         }
         keyboard = GlyfKeyboardView(this, this)
+        // Gboard's toolbar: 47dp from the board's top edge to the key area.
         root.addView(toolbar, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(44)))
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
         root.addView(keyboard)
-        // Keep the key rows clear of the gesture-nav zone — taps that land
-        // in it become nav gestures and collapse the keyboard.
+        // Keep the key rows clear of the keyboard's navigation strip. With
+        // gesture navigation Android draws a 48dp strip under an IME (hide
+        // and switch-keyboard buttons) but reports only the 24dp gesture bar
+        // as navigationBars; the strip is the tappable inset. Gboard clears it
+        // and leaves 6dp more, measured on the emulator.
+        // Start at the usual answer (a 48dp strip) so the first show is laid
+        // out right; the insets below correct it where a phone differs.
+        root.setPadding(0, 0, 0, dp(48) + dp(6))
         root.setOnApplyWindowInsetsListener { v, insets ->
-            val nav = if (android.os.Build.VERSION.SDK_INT >= 30)
-                insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom
-            else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
-            v.setPadding(0, 0, 0, nav)
+            val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                maxOf(insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom,
+                      insets.getInsets(android.view.WindowInsets.Type.tappableElement()).bottom)
+            } else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
+            if (v.paddingBottom != bottom + dp(6)) v.setPadding(0, 0, 0, bottom + dp(6))
             insets
         }
         return root
@@ -738,10 +746,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 autoShifted = false
                 keyboard.invalidate()
             }
-            id == "emojikey" -> { /* emoji panel: Android M2 */ }
+            id == "emojikey" -> showEmojiPanel()
             id.startsWith("mode:") -> {
                 keyboard.mode = when (id.removePrefix("mode:")) {
-                    "123" -> Mode.SYMBOLS1
+                    "123", "?123" -> Mode.SYMBOLS1
                     "#+=" -> Mode.SYMBOLS2
                     else -> Mode.LETTERS
                 }
@@ -765,7 +773,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             id.startsWith("mode:") -> {
                 keyboard.mode = when (id.removePrefix("mode:")) {
-                    "123" -> Mode.SYMBOLS1
+                    "123", "?123" -> Mode.SYMBOLS1
                     "#+=" -> Mode.SYMBOLS2
                     else -> Mode.LETTERS
                 }
