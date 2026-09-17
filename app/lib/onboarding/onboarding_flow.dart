@@ -70,11 +70,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   String? _signInError;
   bool _meetDone = false;
 
+  /// The step on screen when the app opened: the launch bubble lands on its orb.
+  late final int _launchStep;
+
   @override
   void initState() {
     super.initState();
     // Already signed in (onboarding was left half way): start after sign-in.
     if (Auth.signedIn) _step = 1;
+    _launchStep = _step;
     Telemetry.log('onboarding_step_view', {'step': _steps[_step]});
     _poll = Timer.periodic(const Duration(seconds: 1), (_) => _checkStatus());
     _dropConnectIfUnavailable();
@@ -303,11 +307,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       case 'signin':
         return _frame(children: [
           const Spacer(flex: 4),
-          const Center(
+          Center(
             child: TalkingOrb(
               size: 170,
               titleSize: 34,
-              lines: ['Hi, I’m {glyf}', 'Sign in to set up your AI keyboard.'],
+              lines: const ['Hi, I’m {glyf}', 'Sign in to set up your AI keyboard.'],
+              launchTarget: _launchStep == _step,
             ),
           ),
           const Spacer(flex: 3),
@@ -346,6 +351,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             child: TalkingOrb(
               size: 116,
               titleSize: 28,
+              launchTarget: _launchStep == _step,
               lines: const [
                 'Let me remember you.',
                 'When someone asks for your address or UPI, it’s one tap.',

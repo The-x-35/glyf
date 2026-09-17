@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Glass.bg: the launch animation starts on exactly this colour. -->
+    <color name="launch_bg">#F4F5F8</color>
+</resources>

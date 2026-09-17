@@ -6,6 +6,7 @@ import 'core/catalog.dart';
 import 'core/telemetry.dart';
 import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
+import 'launch/launch_overlay.dart';
 import 'onboarding/demo_chat.dart';
 import 'wallet/wallet_screen.dart';
 import 'onboarding/onboarding_flow.dart';
@@ -27,6 +28,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
   bool _onboarded = false;
   /// Until the saved session has been read, nothing is shown.
   bool _ready = false;
+
+  /// The launch animation plays over the app until it has handed off.
+  bool _launching = true;
 
   @override
   void initState() {
@@ -172,6 +176,17 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
       theme: Glass.theme(),
+      builder: (context, child) => Stack(children: [
+        if (child != null) Positioned.fill(child: child),
+        if (_launching)
+          Positioned.fill(
+            child: LaunchOverlay(
+              ready: _ready,
+              handToOrb: !_onboarded,
+              onDone: () => setState(() => _launching = false),
+            ),
+          ),
+      ]),
       home: !_ready
           ? const Scaffold(backgroundColor: Glass.bg)
           : _onboarded

@@ -5,6 +5,12 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 
+/// One clock for every bubble on screen: a bubble handed from the launch
+/// animation to the next screen keeps the same sheen angle, so nothing jumps.
+final Stopwatch _orbClock = Stopwatch()..start();
+
+double orbSheenAngle() => (_orbClock.elapsedMilliseconds % 16000) / 16000 * 2 * math.pi;
+
 /// The glass orb: Glyf's onboarding signature. A glossy sphere holding the
 /// Glyf symbol (the app icon's g and violet dot), floating on a soft glow,
 /// its sheen slowly turning so it reads as glass, not a flat circle.
@@ -15,6 +21,7 @@ class GlassOrb extends StatefulWidget {
     this.floating = true,
     this.energy = 0,
     this.showSymbol = true,
+    this.sphereKey,
   });
 
   final double size;
@@ -24,20 +31,29 @@ class GlassOrb extends StatefulWidget {
   final double energy;
   final bool showSymbol;
 
+  /// On the sphere itself, inside the float: where the launch bubble lands.
+  final Key? sphereKey;
+
   @override
   State<GlassOrb> createState() => _GlassOrbState();
 }
 
-class _GlassOrbState extends State<GlassOrb> with TickerProviderStateMixin {
-  late final AnimationController _bob =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 4200))..repeat(reverse: true);
-  late final AnimationController _spin =
-      AnimationController(vsync: this, duration: const Duration(seconds: 16))..repeat();
+class _GlassOrbState extends State<GlassOrb> with SingleTickerProviderStateMixin {
+  late final AnimationController _frames =
+      AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat();
+  int _born = _orbClock.elapsedMilliseconds;
+
+  @override
+  void didUpdateWidget(GlassOrb old) {
+    super.didUpdateWidget(old);
+    // A bubble that starts floating (the launch just landed on it) starts
+    // from rest, not from wherever the clock would put it.
+    if (widget.floating && !old.floating) _born = _orbClock.elapsedMilliseconds;
+  }
 
   @override
   void dispose() {
-    _bob.dispose();
-    _spin.dispose();
+    _frames.dispose();
     super.dispose();
   }
 
@@ -45,75 +61,155 @@ class _GlassOrbState extends State<GlassOrb> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     return AnimatedBuilder(
-      animation: Listenable.merge([_bob, _spin]),
+      animation: _frames,
       builder: (context, _) {
-        final t = reduce ? 0.5 : Curves.easeInOut.transform(_bob.value);
-        final lift = widget.floating ? lerpDouble(-6, 6, t)! : 0.0;
+        // The float starts from rest (a sine from 0), so a bubble that has
+        // just landed here does not jump to the top of its bob.
+        final phase = reduce ? 0.0 : ((_orbClock.elapsedMilliseconds - _born) % 8400) / 8400;
+        final wave = math.sin(phase * 2 * math.pi);
         return Transform.translate(
-          offset: Offset(0, lift),
-          child: _orb(reduce ? 0 : _spin.value * 2 * math.pi, t),
+          offset: Offset(0, widget.floating ? 6 * wave : 0),
+          child: OrbVisual(
+            key: widget.sphereKey,
+            size: widget.size,
+            angle: reduce ? 0 : orbSheenAngle(),
+            energy: widget.energy,
+            breathe: (wave + 1) / 2,
+            showSymbol: widget.showSymbol,
+          ),
         );
       },
     );
   }
+}
 
-  Widget _orb(double angle, double t) {
-    final s = widget.size;
-    final e = widget.energy.clamp(0.0, 1.0);
+/// The bubble at one moment. Everything the launch animation moves is a
+/// parameter; at the defaults this is exactly the resting GlassOrb. Its box
+/// is 1.5× the sphere so the glow has room.
+class OrbVisual extends StatelessWidget {
+  const OrbVisual({
+    super.key,
+    required this.size,
+    this.angle = 0,
+    this.energy = 0,
+    this.breathe = 0.5,
+    this.showSymbol = true,
+    this.lensBlur = 16,
+    this.lensTint = 0,
+    this.fill = 0,
+    this.frontOpacity = 1,
+    this.bodyOpacity = 1,
+    this.glowOpacity = 1,
+    this.symbolOpacity = 1,
+    this.symbolBlur = 0,
+    this.symbolScale = 1,
+  });
+
+  final double size;
+  final double angle;
+  final double energy;
+
+  /// 0 at the top of the float, 1 at the bottom: the shadow breathes with it.
+  final double breathe;
+  final bool showSymbol;
+
+  /// How much the glass blurs what is behind it (a lens as it grows).
+  final double lensBlur;
+
+  /// A pale wash over the lens before the glass body fills in, 0 to 1.
+  final double lensTint;
+
+  /// Solid violet over the glass, 0 to 1: the dot the lens swells out of.
+  final double fill;
+
+  /// The highlight, glint and rim light, which arrive as the violet clears.
+  final double frontOpacity;
+  final double bodyOpacity;
+  final double glowOpacity;
+  final double symbolOpacity;
+  final double symbolBlur;
+  final double symbolScale;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = size;
+    final e = energy.clamp(0.0, 1.0);
+    final t = breathe;
+    final glow = glowOpacity.clamp(0.0, 1.0);
+    Widget symbol = Image.asset(
+      'assets/brand/glyf-symbol.png',
+      height: s * 0.5,
+      filterQuality: FilterQuality.high,
+    );
+    if (symbolBlur > 0.05) {
+      symbol = ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: symbolBlur, sigmaY: symbolBlur, tileMode: TileMode.decal),
+        child: symbol,
+      );
+    }
     return SizedBox(
       width: s * 1.5,
       height: s * 1.5,
       child: Stack(alignment: Alignment.center, children: [
-        // The glow the sphere sits in: violet with a cool blue edge.
-        Container(
-          width: s * (1.4 + 0.12 * e),
-          height: s * (1.4 + 0.12 * e),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(colors: [
-              Glass.accent.withValues(alpha: 0.26 + 0.16 * e),
-              const Color(0xFF8FB8FF).withValues(alpha: 0.12 + 0.06 * e),
-              Glass.accent.withValues(alpha: 0),
-            ], stops: const [0.3, 0.6, 1]),
-          ),
-        ),
-        // Soft shadow the sphere casts below itself, breathing with the float.
-        Positioned(
-          bottom: s * 0.14 - 4 * t,
-          child: Container(
-            width: s * (0.56 - 0.05 * t),
-            height: s * 0.08,
+        if (glow > 0) ...[
+          // The glow the sphere sits in: violet with a cool blue edge.
+          Container(
+            width: s * (1.4 + 0.12 * e),
+            height: s * (1.4 + 0.12 * e),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(s),
-              boxShadow: [
-                BoxShadow(color: const Color(0xFF4B2FD6).withValues(alpha: 0.14), blurRadius: s * 0.16),
-              ],
+              shape: BoxShape.circle,
+              gradient: RadialGradient(colors: [
+                Glass.accent.withValues(alpha: (0.26 + 0.16 * e) * glow),
+                const Color(0xFF8FB8FF).withValues(alpha: (0.12 + 0.06 * e) * glow),
+                Glass.accent.withValues(alpha: 0),
+              ], stops: const [0.3, 0.6, 1]),
             ),
           ),
-        ),
+          // Soft shadow the sphere casts below itself, breathing with the float.
+          Positioned(
+            bottom: s * 0.14 - 4 * t,
+            child: Container(
+              width: s * (0.56 - 0.05 * t),
+              height: s * 0.08,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(s),
+                boxShadow: [
+                  BoxShadow(color: const Color(0xFF4B2FD6).withValues(alpha: 0.14 * glow), blurRadius: s * 0.16),
+                ],
+              ),
+            ),
+          ),
+        ],
         SizedBox(
           width: s,
           height: s,
           child: ClipOval(
             child: Stack(fit: StackFit.expand, children: [
-              BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: CustomPaint(painter: _SphereBody(angle)),
-              ),
-              if (widget.showSymbol)
+              if (lensBlur > 0.05)
+                BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: lensBlur, sigmaY: lensBlur),
+                  child: const SizedBox.expand(),
+                ),
+              if (lensTint > 0) ColoredBox(color: const Color(0xFFF4F1FF).withValues(alpha: 0.32 * lensTint)),
+              if (bodyOpacity > 0)
+                Opacity(opacity: bodyOpacity.clamp(0.0, 1.0), child: CustomPaint(painter: _SphereBody(angle))),
+              if (fill > 0) ColoredBox(color: Glass.accent.withValues(alpha: fill.clamp(0.0, 1.0))),
+              if (showSymbol && symbolOpacity > 0)
                 Center(
                   // Nudged so the g, not the g-and-dot, sits in the middle.
                   child: Transform.translate(
                     offset: Offset(s * 0.04, s * 0.015),
-                    child: Image.asset(
-                      'assets/brand/glyf-symbol.png',
-                      height: s * 0.5,
-                      filterQuality: FilterQuality.high,
+                    child: Transform.scale(
+                      scale: symbolScale,
+                      child: Opacity(opacity: symbolOpacity.clamp(0.0, 1.0), child: symbol),
                     ),
                   ),
                 ),
               // Glass over the symbol: highlights and the rim.
-              CustomPaint(painter: _SphereFront()),
+              if (frontOpacity >= 0.999)
+                CustomPaint(painter: _SphereFront())
+              else if (frontOpacity > 0)
+                Opacity(opacity: frontOpacity, child: CustomPaint(painter: _SphereFront())),
             ]),
           ),
         ),

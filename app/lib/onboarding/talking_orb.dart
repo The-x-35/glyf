@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
+import '../launch/launch_overlay.dart';
 import 'orb.dart';
 
 /// The glass orb, talking: it glows and breathes while its words appear, the
@@ -15,6 +16,7 @@ class TalkingOrb extends StatefulWidget {
     this.size = 132,
     this.titleSize = 30,
     this.onDone,
+    this.launchTarget = false,
   });
 
   /// Said one after another, each typed out. The first is the title.
@@ -23,6 +25,10 @@ class TalkingOrb extends StatefulWidget {
   final double size;
   final double titleSize;
   final VoidCallback? onDone;
+
+  /// The first screen after launch: the launch bubble lands on this orb, so
+  /// it stays hidden, and says nothing, until it has.
+  final bool launchTarget;
 
   @override
   State<TalkingOrb> createState() => _TalkingOrbState();
@@ -51,9 +57,23 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
     return out;
   }
 
+  bool get _awaitingLaunch => widget.launchTarget && !LaunchHandoff.done.value;
+
   @override
   void initState() {
     super.initState();
+    if (_awaitingLaunch) {
+      LaunchHandoff.done.addListener(_landed);
+    } else {
+      _speak();
+    }
+  }
+
+  void _landed() {
+    if (!LaunchHandoff.done.value) return;
+    LaunchHandoff.done.removeListener(_landed);
+    if (!mounted) return;
+    setState(() {});
     _speak();
   }
 
@@ -70,6 +90,7 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    LaunchHandoff.done.removeListener(_landed);
     _timer?.cancel();
     _voice.dispose();
     super.dispose();
@@ -125,16 +146,28 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
         builder: (context, _) {
           // The voice: the glow swells and the sphere breathes while it talks.
           final v = _speaking ? Curves.easeInOut.transform(_voice.value) : 0.0;
-          return Transform.scale(
-            scale: 1 + 0.03 * v,
-            child: GlassOrb(size: widget.size, energy: v),
+          return Opacity(
+            opacity: _awaitingLaunch ? 0 : 1,
+            child: Transform.scale(
+              scale: 1 + 0.03 * v,
+              child: GlassOrb(
+                size: widget.size,
+                energy: v,
+                // Held still for the launch bubble to land on exactly.
+                floating: !_awaitingLaunch,
+                sphereKey: widget.launchTarget ? LaunchHandoff.orbKey : null,
+              ),
+            ),
           );
         },
       ),
       SizedBox(height: widget.size * 0.06),
-      for (var i = 0; i < _shown.length; i++) _line(_shown[i], title: i == 0),
-      if (_typingLine != null && _typed > 0)
-        _line(_typingLine!, title: _shown.isEmpty, upTo: _typed),
+      // Every line is laid out from the start, the unsaid part invisible, so
+      // typing never grows the column and the orb above never moves.
+      for (var i = 0; i < widget.lines.length; i++)
+        _line(widget.lines[i],
+            title: i == 0,
+            upTo: i < _shown.length ? null : (i == _shown.length && _typingLine != null ? _typed : 0)),
     ]);
   }
 
@@ -152,7 +185,8 @@ class _TalkingOrbState extends State<TalkingOrb> with TickerProviderStateMixin {
 
 /// Text where `{glyf}` is the Glyf wordmark, e.g. "Hi, I'm {glyf}".
 /// [upTo] shows only the first pieces (characters, the wordmark counting as
-/// one) for typing it out.
+/// one) for typing it out; the rest keeps its place, invisible, so the text
+/// never reflows as it types.
 class GlyfText extends StatelessWidget {
   const GlyfText(this.text, {super.key, required this.style, this.upTo, this.align = TextAlign.center});
   final String text;
@@ -164,15 +198,25 @@ class GlyfText extends StatelessWidget {
   Widget build(BuildContext context) {
     const mark = _TalkingOrbState._mark;
     final pieces = _TalkingOrbState._pieces(text);
-    final shown = pieces.take(upTo ?? pieces.length).toList();
+    final visible = upTo ?? pieces.length;
     final spans = <InlineSpan>[];
     final run = StringBuffer();
+    var runHidden = false;
     void flush() {
       if (run.isEmpty) return;
-      spans.add(TextSpan(text: run.toString()));
+      spans.add(TextSpan(
+        text: run.toString(),
+        style: runHidden ? const TextStyle(color: Color(0x00000000)) : null,
+      ));
       run.clear();
     }
-    for (final p in shown) {
+    for (var i = 0; i < pieces.length; i++) {
+      final p = pieces[i];
+      final hidden = i >= visible;
+      if (hidden != runHidden) {
+        flush();
+        runHidden = hidden;
+      }
       if (p == mark) {
         flush();
         final size = style.fontSize! * 1.04;
@@ -180,9 +224,12 @@ class GlyfText extends StatelessWidget {
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
           // Room on the right for the wordmark's dot, which rides past the f.
-          child: Padding(
-            padding: EdgeInsets.only(left: size * 0.06, right: size * (GlyfWordmark.gapRatio + GlyfWordmark.dotRatio)),
-            child: GlyfWordmark(size: size),
+          child: Opacity(
+            opacity: hidden ? 0 : 1,
+            child: Padding(
+              padding: EdgeInsets.only(left: size * 0.06, right: size * (GlyfWordmark.gapRatio + GlyfWordmark.dotRatio)),
+              child: GlyfWordmark(size: size),
+            ),
           ),
         ));
       } else {
