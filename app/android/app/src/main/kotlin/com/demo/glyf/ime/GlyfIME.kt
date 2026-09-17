@@ -188,6 +188,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         dismissOverlay()
         if (searchActive) exitSearch()
         if (barActive) exitBar()
+        if (translateStrip != null) exitTranslate()
         keyboard.rebuild()
         syncAutoShift()
         refreshClipCard()
@@ -748,12 +749,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 syncAutoShift()
                 updateSuggestions()
             }
-            id == "space" -> handleSpace(ic)
+            id == "space" -> { handleSpace(ic); translateDraftChanged() }
             id == "return" -> {
                 commitCurrentWord(ic)
                 ic.commitText("\n", 1)
                 syncAutoShift()
                 updateSuggestions()
+                translateDraftChanged()
             }
             id == "shift" -> {
                 keyboard.shifted = !keyboard.shifted
@@ -1917,9 +1919,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     // MARK: bound keys → run → preview (the §6.4 loop, Android slice)
 
     override fun onBoundKeyHeld(char: String, glyfId: String) {
+        when (glyfId) {
+            "surface:vault" -> { showVaultPanel(); return }
+            "surface:translate-hud" -> { runTranslateOnField(); return }
+            "surface:tones" -> { dismissFeaturePanel(); showGlyfBar(); return }
+        }
         if (glyfId.startsWith("surface:") || glyfId.startsWith("connector:")) {
-            // In-keyboard surfaces arrive with the Android M2 pass —
-            // for now the app is one tap away.
             openApp()
             return
         }
@@ -2444,17 +2449,159 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     /** Toolbar translate — same as iOS: runs glyf.translate on the field. */
+    // MARK: Translate strip (iOS TranslationHUD twin)
+
+    private var translateStrip: LinearLayout? = null
+    private var translateDir: TextView? = null
+    private var translateText: TextView? = null
+    private var translateReplace: TextView? = null
+    private var translateSource = ""
+    private var translateResult = ""
+    private var translateDetected: String? = null
+    private var translateTarget: String? = null
+    private var translateForced: String? = null
+    private var translateConsumed = 0
+
+    /** The person's two languages: the phone's first, and the other one they
+     *  type in (last detected), else the phone's next, else the region's. */
+    private fun translatePair(): Pair<String, String> {
+        val locales = resources.configuration.locales
+        val names = (0 until locales.size()).map { locales[it].getDisplayLanguage(java.util.Locale.ENGLISH) }
+        val primary = names.firstOrNull() ?: "English"
+        val region = locales[0].country
+        val fallback = if (region == "IN") (if (primary == "Hindi") "English" else "Hindi")
+                       else (if (primary == "English") "Spanish" else "English")
+        val typed = settings.optString("translateOther").takeIf { it.isNotBlank() && it != primary }
+        return primary to (typed ?: names.drop(1).firstOrNull { it != primary } ?: fallback)
+    }
+
+    /** Translate takes the strip's place, the way it does on iOS. */
     private fun runTranslateOnField() {
+        if (translateStrip != null) { exitTranslate(); return }
+        dismissFeaturePanel()
+        val strip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(4), 0)
+        }
+        val dir = TextView(this).apply {
+            text = "Translate"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(ink())
+            gravity = Gravity.CENTER
+            setPadding(dp(12), 0, dp(12), 0)
+            background = GradientDrawable().apply { cornerRadius = dp(15).toFloat(); setColor(card()) }
+            setOnClickListener { cycleTranslateTarget() }
+        }
+        val text = TextView(this).apply {
+            text = "…"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.START
+            setTextColor(ink())
+            setPadding(dp(10), 0, dp(8), 0)
+        }
+        val replace = TextView(this).apply {
+            this.text = "Replace"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(dp(14), 0, dp(14), 0)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(15).toFloat(); setColor(Color.rgb(0x0A, 0x84, 0xFF))
+            }
+            alpha = 0.3f
+            setOnClickListener { applyTranslation() }
+        }
+        val close = TextView(this).apply {
+            this.text = "✕"
+            textSize = 14f
+            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+            setPadding(dp(10), dp(8), dp(8), dp(8))
+            setOnClickListener { exitTranslate() }
+        }
+        strip.addView(dir, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)))
+        strip.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        strip.addView(replace, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)))
+        strip.addView(close)
+        toolbar.visibility = View.GONE
+        root.addView(strip, root.indexOfChild(toolbar),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
+        translateStrip = strip
+        translateDir = dir
+        translateText = text
+        translateReplace = replace
+        translateForced = null
+        translateSource = ""
+        translateDraftChanged()
+    }
+
+    private fun exitTranslate() {
+        translateStrip?.let { root.removeView(it) }
+        translateStrip = null
+        translateSource = ""
+        translateResult = ""
+        toolbar.visibility = View.VISIBLE
+    }
+
+    /** Called on word commits: translate what is typed so far. */
+    private fun translateDraftChanged() {
+        if (translateStrip == null) return
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
-        val after = ic.getTextAfterCursor(2000, 0)?.toString() ?: ""
-        val input = (before + after).trim()
-        if (input.isEmpty()) {
-            android.widget.Toast.makeText(this, "Type something to translate",
-                android.widget.Toast.LENGTH_SHORT).show()
-            return
+        val text = before.takeLast(280).trim()
+        translateConsumed = before.length
+        if (text.isEmpty() || text == translateSource) return
+        translateSource = text
+        translateResult = ""
+        translateText?.text = "…"
+        translateReplace?.alpha = 0.3f
+        val (primary, secondary) = translatePair()
+        BackendClient.translate(settings.optString("backendURL"), settings.optString("deviceId"),
+            text, primary, secondary, translateForced) { result ->
+            main.post {
+                if (result == null || translateSource != text || translateStrip == null) return@post
+                translateDetected = result.detected
+                translateTarget = result.target
+                translateDir?.text = "${result.detected} → ${result.target}"
+                translateText?.text = result.text
+                translateResult = result.text
+                translateReplace?.alpha = 1f
+                if (result.detected != primary && result.detected != "Unknown" &&
+                    settings.optString("translateOther") != result.detected) {
+                    settings.put("translateOther", result.detected)
+                    SettingsStore.save(this, settings.toString())
+                }
+            }
         }
-        showRunOverlay("glyf.translate", input, before.length, after.length)
+    }
+
+    private fun cycleTranslateTarget() {
+        val (primary, secondary) = translatePair()
+        val options = listOf(primary, secondary, "English", "Hindi", "Spanish", "French")
+            .distinct().filter { it != translateDetected }
+        if (options.isEmpty()) return
+        val current = translateTarget ?: options[0]
+        val next = options[(options.indexOf(current) + 1).mod(options.size)]
+        translateForced = next
+        translateTarget = next
+        translateDir?.text = "${translateDetected ?: "Translate"} → $next"
+        translateSource = ""
+        translateDraftChanged()
+    }
+
+    private fun applyTranslation() {
+        if (translateResult.isEmpty()) return
+        val ic = currentInputConnection ?: return
+        ic.deleteSurroundingText(translateConsumed, 0)
+        ic.commitText(translateResult, 1)
+        translateSource = ""
+        translateResult = ""
+        translateText?.text = "…"
+        translateReplace?.alpha = 0.3f
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

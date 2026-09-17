@@ -88,6 +88,9 @@ struct GlyfSettings: Codable, Equatable {
     var deviceId: String = UUID().uuidString.lowercased()
     /// Params passed to glyf runs (M2: translate target).
     var translateTarget: String = "English"
+    /// The language besides the phone's own that this person types in, as
+    /// translate last detected it. Where English drafts get translated to.
+    var translateOther: String? = nil
 
     /// The deployed API. Changing the domain? This is the only place.
     static let productionBackend = "https://api.tryglyf.com"

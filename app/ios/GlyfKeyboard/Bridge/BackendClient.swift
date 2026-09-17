@@ -201,6 +201,70 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
 
     /// Hands the typed intent to the server, which routes it (place, list,
     /// answer, video, rewrite) and returns cards plus the text Insert drops.
+    struct Translation {
+        let detected: String
+        let target: String
+        let text: String
+    }
+
+    /// The person's two languages, as Google Translate would guess them: the
+    /// phone's first language, and the other language they actually type in
+    /// (the last one detected), else the next on the phone's list, else the
+    /// common second language where they live.
+    static var translatePair: (primary: String, secondary: String) {
+        let names = Locale.preferredLanguages.compactMap { tag -> String? in
+            let code = Locale(identifier: tag).language.languageCode?.identifier ?? tag
+            return Locale(identifier: "en").localizedString(forLanguageCode: code)
+        }
+        let primary = names.first ?? "English"
+        let fallback = Locale.current.region?.identifier == "IN"
+            ? (primary == "Hindi" ? "English" : "Hindi")
+            : (primary == "English" ? "Spanish" : "English")
+        let typed = SettingsStore.current.translateOther.flatMap { $0 == primary ? nil : $0 }
+        let secondary = typed ?? names.dropFirst().first { $0 != primary } ?? fallback
+        return (primary, secondary)
+    }
+
+    /// POST /translate — detects the language and picks the direction; an
+    /// explicit target overrides the direction.
+    @discardableResult
+    func translate(text: String, target: String?,
+                   completion: @escaping (Translation?) -> Void) -> URLSessionDataTask? {
+        let s = SettingsStore.current
+        guard let url = URL(string: "\(s.backendURL)/translate") else { completion(nil); return nil }
+        let pair = Self.translatePair
+        var body: [String: Any] = [
+            "text": text, "deviceId": s.deviceId,
+            "primary": pair.primary, "secondary": pair.secondary,
+        ]
+        if let target { body["target"] = target }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 15
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let task = session.dataTask(with: req) { data, _, _ in
+            var out: Translation?
+            if let data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let text = json["translation"] as? String,
+               let detected = json["detected"] as? String,
+               let target = json["target"] as? String {
+                out = Translation(detected: detected, target: target, text: text)
+            }
+            DispatchQueue.main.async {
+                // Remember the other language this person types in.
+                if let out, out.detected != pair.primary, out.detected != "Unknown",
+                   SettingsStore.current.translateOther != out.detected {
+                    SettingsStore.update { $0.translateOther = out.detected }
+                }
+                completion(out)
+            }
+        }
+        task.resume()
+        return task
+    }
+
     @discardableResult
     /// POST /suggest — what Glyf could do about what is being typed. Cheap
     /// and cancellable: the strip asks after a pause, never on every key.

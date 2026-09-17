@@ -181,6 +181,49 @@ object BackendClient {
         }
     }
 
+    data class Translation(val detected: String, val target: String, val text: String)
+
+    /** POST /translate — detects the language and picks the direction from
+     *  the person's two languages (iOS twin). Callback on the pool thread. */
+    fun translate(
+        backendURL: String,
+        deviceId: String,
+        text: String,
+        primary: String,
+        secondary: String,
+        target: String?,
+        done: (Translation?) -> Unit,
+    ) {
+        pool.execute {
+            var conn: HttpURLConnection? = null
+            try {
+                conn = (URL("$backendURL/translate").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 5000
+                    readTimeout = 15000
+                    setRequestProperty("Content-Type", "application/json")
+                }
+                val body = JSONObject().apply {
+                    put("text", text); put("deviceId", deviceId)
+                    put("primary", primary); put("secondary", secondary)
+                    if (target != null) put("target", target)
+                }
+                conn.outputStream.use { it.write(body.toString().toByteArray()) }
+                val json = JSONObject(conn.inputStream.bufferedReader().readText())
+                val out = json.optString("translation").takeIf { it.isNotBlank() }?.let {
+                    Translation(json.optString("detected"), json.optString("target"), it)
+                }
+                done(out)
+            } catch (e: Exception) {
+                android.util.Log.e("GlyfKB", "translate failed: $e")
+                done(null)
+            } finally {
+                conn?.disconnect()
+            }
+        }
+    }
+
     /** POST /act result — mirrors the Swift `BackendClient.ActResult`. */
     data class ActResult(
         val intent: String,

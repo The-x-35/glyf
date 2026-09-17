@@ -2,25 +2,23 @@ import UIKit
 
 protocol TranslationHUDDelegate: AnyObject {
     func hudClosed()
-    func hudRequestTranslation(of text: String, completion: @escaping (String?) -> Void)
+    func hudRequestTranslation(of text: String, target: String?,
+                               completion: @escaping (BackendClient.Translation?) -> Void)
     func hudReplaceDraft(with text: String, consumedBefore: Int)
 }
 
 /// §6.13 T / website 6.6 — translate never covers the keys. It takes the
-/// strip: a language track on the left, the live translation in the middle,
-/// and Replace on the right. Typing keeps working underneath the whole time.
+/// strip: the direction on the left, the live translation in the middle,
+/// Replace on the right. Typing keeps working underneath the whole time.
+///
+/// Like Google Translate, nothing asks which language this is: the server
+/// detects it and picks the direction from the person's two languages.
+/// Tapping the direction points the translation somewhere else instead.
 final class TranslationHUD: UIView {
 
     weak var delegate: TranslationHUDDelegate?
 
-    /// The website's three, with the short codes it shows at phone widths.
-    private static let languages: [(code: String, name: String)] = [
-        ("HI", "Hindi"), ("ES", "Spanish"), ("FR", "French"),
-    ]
-
-    private let track = UIView()
-    private let thumb = UIView()
-    private var pills: [UIButton] = []
+    private let directionButton = UIButton(type: .system)
     private let textLabel = UILabel()
     private let replaceButton = UIButton(type: .system)
     private let closeButton = UIButton(type: .system)
@@ -28,38 +26,25 @@ final class TranslationHUD: UIView {
     private var lastSource = ""
     private var lastTranslation = ""
     private var lastConsumed = 0
-    private var selected = 0
+    private var detected: String?
+    private var target: String?
+    /// Set when the person tapped the direction; nil lets detection decide.
+    private var forcedTarget: String?
 
     init() {
         super.init(frame: .zero)
         backgroundColor = Glass.solidLook ? .clear : Glass.fillBar
-        if !Glass.solidLook {
-            layer.borderWidth = Glass.hairlineWidth
-            layer.borderColor = Glass.strokeHairline.cgColor
-        }
         accessibilityIdentifier = "hud:translate"
 
-        track.backgroundColor = Glass.fillSoft
-        track.layer.cornerCurve = .continuous
-        addSubview(track)
-
-        thumb.backgroundColor = Glass.surfaceCard
-        thumb.layer.cornerCurve = .continuous
-        thumb.layer.shadowColor = Glass.keyShadowColor.cgColor
-        thumb.layer.shadowOpacity = Glass.keyShadowOpacity
-        thumb.layer.shadowOffset = Glass.keyShadowOffset
-        thumb.layer.shadowRadius = 0
-        track.addSubview(thumb)
-
-        for (i, lang) in Self.languages.enumerated() {
-            let pill = UIButton(type: .system)
-            pill.setTitle(lang.code, for: .normal)
-            pill.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
-            pill.accessibilityIdentifier = "hud:lang:\(lang.code)"
-            pill.addAction(UIAction { [weak self] _ in self?.select(i) }, for: .touchUpInside)
-            track.addSubview(pill)
-            pills.append(pill)
-        }
+        directionButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        directionButton.setTitleColor(Glass.textPrimary, for: .normal)
+        directionButton.backgroundColor = Glass.surfaceCard
+        directionButton.layer.cornerCurve = .continuous
+        directionButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        directionButton.accessibilityIdentifier = "hud:direction"
+        directionButton.addAction(UIAction { [weak self] _ in self?.cycleTarget() },
+                                  for: .touchUpInside)
+        addSubview(directionButton)
 
         textLabel.font = .systemFont(ofSize: 17, weight: .semibold)
         textLabel.textColor = Glass.textPrimary
@@ -93,35 +78,39 @@ final class TranslationHUD: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// Follows whatever the app (or a T hold) set as the target language.
+    /// A fresh strip decides the direction itself again.
     func refreshTarget() {
-        let target = SettingsStore.current.translateTarget
-        selected = Self.languages.firstIndex { $0.name == target } ?? 0
-        applySelection(animated: false)
+        forcedTarget = nil
+        updateDirection()
     }
 
-    private func select(_ i: Int) {
-        guard i != selected else { return }
-        selected = i
-        SettingsStore.update { $0.translateTarget = Self.languages[i].name }
-        applySelection(animated: true)
-        // The language changed: translate the same draft again.
+    private func updateDirection() {
+        let title: String
+        if let detected, let target {
+            title = "\(detected) → \(target)"
+        } else {
+            title = "Translate"
+        }
+        directionButton.setTitle(title, for: .normal)
+        setNeedsLayout()
+    }
+
+    /// Where a tap on the direction sends the translation next: the person's
+    /// two languages, then the common ones, never the language being typed.
+    private func cycleTarget() {
+        let pair = BackendClient.translatePair
+        var options = [pair.primary, pair.secondary, "English", "Hindi", "Spanish", "French"]
+        var seen = Set<String>()
+        options = options.filter { seen.insert($0).inserted && $0 != detected }
+        guard !options.isEmpty else { return }
+        let current = target ?? options[0]
+        let next = options[((options.firstIndex(of: current) ?? -1) + 1) % options.count]
+        forcedTarget = next
+        target = next
+        updateDirection()
         let source = lastSource
         lastSource = ""
-        lastTranslation = ""
-        textLabel.text = "…"
-        updateReplaceEnabled()
         if !source.isEmpty { draftChanged(source, consumedBefore: lastConsumed) }
-    }
-
-    private func applySelection(animated: Bool) {
-        for (i, pill) in pills.enumerated() {
-            pill.setTitleColor(i == selected ? Glass.textPrimary : Glass.textSecondary,
-                               for: .normal)
-        }
-        setNeedsLayout()
-        guard animated else { return }
-        layoutIfNeeded()
     }
 
     /// Called by the VC on word commits (space/return) with the draft.
@@ -135,12 +124,16 @@ final class TranslationHUD: UIView {
         textLabel.text = "…"
         updateReplaceEnabled()
         pendingWork?.cancel()
+        let forced = forcedTarget
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.delegate?.hudRequestTranslation(of: text) { [weak self] translated in
-                guard let self, let translated, self.lastSource == text else { return }
-                self.lastTranslation = translated
-                self.textLabel.text = translated
+            self.delegate?.hudRequestTranslation(of: text, target: forced) { [weak self] result in
+                guard let self, let result, self.lastSource == text else { return }
+                self.detected = result.detected
+                self.target = result.target
+                self.updateDirection()
+                self.lastTranslation = result.text
+                self.textLabel.text = result.text
                 self.textLabel.textColor = Glass.textPrimary
                 self.updateReplaceEnabled()
             }
@@ -168,29 +161,19 @@ final class TranslationHUD: UIView {
         super.layoutSubviews()
         let h = bounds.height
         let mid = h / 2 - Glass.stripLift
-        // Track: 3pt padding, 2pt gaps, pills as tall as the strip allows.
-        let pillW: CGFloat = 35, pad: CGFloat = 3, gap: CGFloat = 2
         let pillH: CGFloat = min(30, h - 10)
-        let trackW = pillW * CGFloat(pills.count) + gap * CGFloat(pills.count - 1) + pad * 2
-        let trackH = pillH + pad * 2
-        track.frame = CGRect(x: 8, y: mid - trackH / 2, width: trackW, height: trackH)
-        track.layer.cornerRadius = trackH / 2
-        for (i, pill) in pills.enumerated() {
-            pill.frame = CGRect(x: pad + CGFloat(i) * (pillW + gap), y: pad,
-                                width: pillW, height: pillH)
-        }
-        thumb.frame = pills.indices.contains(selected) ? pills[selected].frame : .zero
-        thumb.layer.cornerRadius = pillH / 2
-        track.sendSubviewToBack(thumb)
+        let dirW = min(directionButton.intrinsicContentSize.width, bounds.width * 0.42)
+        directionButton.frame = CGRect(x: 8, y: mid - pillH / 2, width: dirW, height: pillH)
+        directionButton.layer.cornerRadius = pillH / 2
 
-        closeButton.frame = CGRect(x: bounds.width - 32, y: 0, width: 28, height: h)
+        closeButton.frame = CGRect(x: bounds.width - 32, y: -Glass.stripLift, width: 28, height: h)
         let replaceW: CGFloat = 84, replaceH: CGFloat = min(30, h - 10)
         replaceButton.frame = CGRect(x: bounds.width - 32 - replaceW - 6,
                                      y: mid - replaceH / 2,
                                      width: replaceW, height: replaceH)
         replaceButton.layer.cornerRadius = replaceH / 2
-        let textX = track.frame.maxX + 8
-        textLabel.frame = CGRect(x: textX, y: 0,
+        let textX = directionButton.frame.maxX + 10
+        textLabel.frame = CGRect(x: textX, y: -Glass.stripLift,
                                  width: max(20, replaceButton.frame.minX - textX - 8), height: h)
     }
 }

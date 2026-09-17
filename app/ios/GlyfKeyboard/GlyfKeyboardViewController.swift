@@ -112,8 +112,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var totalHeight: CGFloat {
         let base = Glass.toolbarHeight + keysHeight
         switch surface {
+        // Translate takes the strip's place rather than adding a row over it.
         case .none:
-            return base + (hudActive ? Glass.toolbarHeight : 0)
+            return base
         case .emoji:
             // Searching collapses the board to a strip ABOVE the letter
             // keys, so the surface needs room for both.
@@ -367,12 +368,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         hud?.isHidden = !showHUD
         switch surface {
         case .none:
-            var y: CGFloat = 0
+            let y: CGFloat = 0
             if showHUD {
                 ensureHUD().frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
-                y = Glass.toolbarHeight
             }
-            toolbar.isHidden = false
+            toolbar.isHidden = showHUD
             toolbar.frame = CGRect(x: 0, y: y, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = false
             keyboardView.alpha = 1
@@ -1852,15 +1852,10 @@ extension GlyfKeyboardViewController: EmojiBoardDelegate {
 
 extension GlyfKeyboardViewController: TranslationHUDDelegate {
 
-    func hudRequestTranslation(of text: String, completion: @escaping (String?) -> Void) {
+    func hudRequestTranslation(of text: String, target: String?,
+                               completion: @escaping (BackendClient.Translation?) -> Void) {
         guard hasFullAccess, !isSecureField else { completion(nil); return }
-        var final = ""
-        BackendClient.shared.run(
-            glyfId: "glyf.translate", input: text,
-            vars: ["target": SettingsStore.current.translateTarget],
-            onToken: { final += $0 },
-            onDone: { text, _ in completion(text.isEmpty ? final : text) },
-            onError: { _ in completion(nil) })
+        BackendClient.shared.translate(text: text, target: target, completion: completion)
     }
 
     func hudReplaceDraft(with text: String, consumedBefore: Int) {
