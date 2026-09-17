@@ -202,6 +202,10 @@ final class GlyfToolbar: UIView {
         reloadItems()
     }
 
+    /// The chip's frame while it is showing, for the tour's ring.
+    var smartFrame: CGRect? { smartCard.isHidden ? nil : smartCard.frame }
+    var glyfFrame: CGRect { glyfButton.frame }
+
     /// Index a tool would take if dropped at this point (strip coordinates),
     /// and the marker that shows it. Nil hides the marker.
     func showDropMarker(at point: CGPoint?) {

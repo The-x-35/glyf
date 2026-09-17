@@ -157,6 +157,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         super.onStartInputView(info, restarting)
         android.util.Log.d("GlyfKB", "onStartInputView restarting=$restarting overlay=${overlay != null}")
         settings = SettingsStore.load(this)
+        settingsStamp = com.demo.glyf.store.Bridge.file(this, SettingsStore.FILE).lastModified()
         val dark = when (settings.optString("appearance", "auto")) {
             "dark" -> true
             "light" -> false
@@ -181,6 +182,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (themed != null) root.background = themed
         else root.setBackgroundColor(keyboard.backdrop())
         buildToolbar(dark || keyboard.themeBg.isNotEmpty())
+        applyTourHint()
         // Android hands a keyboard the clipboard without asking, so history
         // fills itself: whatever was copied since last time is kept here.
         if (!isSecureField()) com.demo.glyf.store.ClipboardStore.captureNow(this)
@@ -806,10 +808,37 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var selStart = -1
     private var selEnd = -1
 
+    private var settingsStamp = 0L
+
+    /** The app may change settings while the keyboard is up (its tour does):
+     *  a file stamp check, cheap enough for every selection change. */
+    private fun reloadSettingsIfChanged() {
+        val stamp = com.demo.glyf.store.Bridge.file(this, SettingsStore.FILE).lastModified()
+        if (stamp == settingsStamp) return
+        settingsStamp = stamp
+        settings = SettingsStore.load(this)
+        keyboard.bindings = settings.optJSONObject("bindings")?.let { b ->
+            b.keys().asSequence().associateWith { b.optString(it) }
+        } ?: emptyMap()
+        applyTourHint()
+    }
+
+    /** The tour's ring: a key, the strip chip, or the g pill. */
+    private fun applyTourHint() {
+        val hint = settings.optString("tourHint").takeIf { it.isNotBlank() }
+        keyboard.tourKey = hint?.takeIf { it != "chip" && it != "g" }
+        val ringColor = Color.rgb(0x7C, 0x5C, 0xFF)
+        (stripChip?.background as? GradientDrawable)?.setStroke(
+            if (hint == "chip") dp(2) else 0, ringColor)
+        (gPill?.background as? GradientDrawable)?.setStroke(
+            if (hint == "g") dp(2) else 0, ringColor)
+    }
+
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int,
                                    newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
             candidatesStart, candidatesEnd)
+        reloadSettingsIfChanged()
         selStart = newSelStart
         selEnd = newSelEnd
         // The cursor moved without a key (a tap in the field): suggest for
@@ -1184,6 +1213,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         stripChip = chip
         stripChipKind = kind
         applySuggestionVisibility()
+        applyTourHint()
     }
 
     private fun hideStripChip() {

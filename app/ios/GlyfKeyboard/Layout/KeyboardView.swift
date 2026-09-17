@@ -205,6 +205,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         CATransaction.commit()
     }
 
+    /// Where a key is, in this view, for the tour's ring.
+    func frame(ofKey id: String) -> CGRect? {
+        keys.first { $0.spec.id == id }?.frame
+    }
+
     // MARK: Shift
 
     private var lastShiftTap: Date = .distantPast

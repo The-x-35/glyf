@@ -55,6 +55,10 @@ class GlyfKeyboardView(
         fun onDeleteWordsCommit(count: Int)
     }
 
+    /** The key the app's tour is waiting for; drawn with a pulsing ring. */
+    var tourKey: String? = null
+        set(value) { field = value; invalidate() }
+
     var mode = Mode.LETTERS
     var kContext = KContext.TEXT
     var shifted = false
@@ -433,6 +437,17 @@ class GlyfKeyboardView(
                     keyPaint.color = keyFill(isPressed, fn)
                 }
                 canvas.drawRoundRect(rect, radius, radius, keyPaint)
+                if (tourKey != null && key.id == tourKey) {
+                    // One second per pulse, redrawn a frame at a time while
+                    // the tour waits on this key.
+                    val phase = (android.os.SystemClock.uptimeMillis() % 1400) / 700f
+                    val a = if (phase < 1f) 1f - phase * 0.75f else 0.25f + (phase - 1f) * 0.75f
+                    strokePaint.color = Color.argb((255 * a).toInt(), 0x7C, 0x5C, 0xFF)
+                    strokePaint.strokeWidth = dp(2.5f)
+                    val ring = RectF(rect).apply { inset(-dp(3f), -dp(3f)) }
+                    canvas.drawRoundRect(ring, radius + dp(3f), radius + dp(3f), strokePaint)
+                    postInvalidateDelayed(32)
+                }
                 if (keyBorders || !solidLook) {
                     strokePaint.color = hairline()
                     strokePaint.strokeWidth = if (keyBorders) dp(1.1f) else 1f

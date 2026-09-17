@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
@@ -10,9 +11,9 @@ import '../core/theme.dart';
 /// The website's guided chat, played on the real keyboard.
 ///
 /// tryglyf.com walks a visitor through Glyf by handing them a thread and a
-/// job: someone asks for your address, someone asks you to split a bill.
-/// This is that, except the keyboard under it is the one they just enabled,
-/// so the muscle memory they build here is the muscle memory they keep.
+/// job. Here the message is already typed for them and the keyboard itself
+/// rings the one thing to tap (the answer in the strip, the space bar, the
+/// emoji key), so every level is a tap or a hold, never typing. Then send.
 class DemoChat extends StatefulWidget {
   const DemoChat({super.key, required this.onDone});
   final VoidCallback onDone;
@@ -21,7 +22,7 @@ class DemoChat extends StatefulWidget {
   State<DemoChat> createState() => _DemoChatState();
 }
 
-/// One person, one thing they want, one way Glyf gets it done.
+/// One person, one thing they want, one tap that gets it done.
 class _Level {
   const _Level({
     required this.id,
@@ -30,12 +31,12 @@ class _Level {
     required this.tint,
     required this.tag,
     required this.them,
+    required this.prefill,
+    required this.hint,
     required this.coach,
-    required this.how,
     required this.goal,
     required this.reply,
     required this.tapback,
-    this.demoText,
   });
 
   final String id;
@@ -44,30 +45,27 @@ class _Level {
   final Color tint;
   final String tag;
   final List<String> them;
-  /// What to do, in the fewest words that still say it.
+  /// Typed into the message for them, so the level is a tap, not typing.
+  final String prefill;
+  /// What the keyboard rings: "chip", "space", "emojikey", or a letter.
+  final String hint;
   final String coach;
-  final String how;
-  final bool Function(String sent, _VaultPeek vault) goal;
+  final bool Function(String text, _VaultPeek vault) goal;
   final List<String> reply;
   final String tapback;
-  /// What "Show me" types, when someone would rather watch than try.
-  final String? demoText;
 }
 
-/// What the vault holds, so a level can check the real answer went out.
+/// What the vault holds, so a level can check the real answer went in.
 class _VaultPeek {
   const _VaultPeek(this.values);
   final List<String> values;
-  bool matched(String sent) {
-    final t = sent.toLowerCase();
+  bool matched(String text) {
+    final t = text.toLowerCase();
     return values.any((v) => v.length > 3 && t.contains(v.toLowerCase()));
   }
 }
 
-const _polite = [
-  'absolutely', 'sure thing', 'of course', 'happy to', 'on it',
-  'certainly', 'will do', 'sorry', 'please', 'thanks',
-];
+const _roughReply = 'ya ok will send deck b4 6';
 
 final _levels = <_Level>[
   _Level(
@@ -77,13 +75,12 @@ final _levels = <_Level>[
     tint: const Color(0xFFFF9F0A),
     tag: 'Maths, mid-sentence',
     them: ['dinner was 3480 for the four of us 😭', 'how much do i owe you?'],
-    coach: 'Type 3480/4 and tap the answer',
-    how: 'Glyf does the sum in the strip. Tap it and the answer lands in '
-        'the message.',
-    goal: (sent, _) => sent.contains('870'),
+    prefill: '3480/4',
+    hint: 'chip',
+    coach: 'Tap the answer in the strip',
+    goal: (text, _) => text.contains('870'),
     reply: ['perfect, sending now 🙏', 'you\'re the best'],
     tapback: '🙏',
-    demoText: '3480/4 = 870',
   ),
   _Level(
     id: 'vault',
@@ -92,10 +89,12 @@ final _levels = <_Level>[
     tint: const Color(0xFFFF6FAE),
     tag: 'Never type it again',
     them: ['hi beta 🎉', 'sending you something', 'what\'s your address?'],
-    coach: 'Hold S, or tap the card icon',
-    how: 'Everything you saved lives on the keyboard. Nothing leaves your '
-        'phone until you tap it.',
-    goal: (sent, vault) => vault.matched(sent) || sent.trim().length > 12,
+    prefill: 'my address is ',
+    hint: 'chip',
+    coach: 'Tap your address in the strip',
+    goal: (text, vault) => vault.values.isEmpty
+        ? text.trim().length > 'my address is '.length + 4
+        : vault.matched(text),
     reply: ['got it beta ❤️', 'it\'ll be there by friday'],
     tapback: '❤️',
   ),
@@ -106,15 +105,13 @@ final _levels = <_Level>[
     tint: const Color(0xFF5E5CE6),
     tag: 'AI, without leaving',
     them: ['hey, the deck for tomorrow', 'can you get it to me before 6?'],
-    coach: 'Type roughly, then hold the space bar',
-    how: 'Hold space and Glyf rewrites what you typed. Keep it or don\'t.',
-    goal: (sent, _) {
-      final t = sent.toLowerCase();
-      return _polite.any(t.contains) && sent.trim().length > 18;
-    },
+    prefill: _roughReply,
+    hint: 'space',
+    coach: 'Hold the space bar, then Insert',
+    goal: (text, _) =>
+        text.trim().toLowerCase() != _roughReply && text.trim().length > 18,
     reply: ['amazing, thank you!', 'see you at the review 🙌'],
     tapback: '👍',
-    demoText: 'Absolutely, I\'ll send the deck across before 6.',
   ),
   _Level(
     id: 'emoji',
@@ -123,13 +120,12 @@ final _levels = <_Level>[
     tint: const Color(0xFF32D583),
     tag: 'The rest of it',
     them: ['we won 🏆', 'still can\'t believe that last over'],
-    coach: 'Send something with an emoji',
-    how: 'Emoji is the key beside 123, where iOS keeps it. The strip holds '
-        'search, clipboard, vault and translate.',
-    goal: (sent, _) => sent.runes.any((r) => r > 0x203F),
+    prefill: 'what a finish ',
+    hint: 'emojikey',
+    coach: 'Tap the emoji key and pick one',
+    goal: (text, _) => text.runes.any((r) => r > 0x203F),
     reply: ['hahaha same 😭', 'next match you\'re coming'],
     tapback: '😂',
-    demoText: 'what a finish 🔥',
   ),
 ];
 
@@ -141,31 +137,37 @@ class _Msg {
   String? tapback;
 }
 
-class _DemoChatState extends State<DemoChat> {
+class _DemoChatState extends State<DemoChat> with SingleTickerProviderStateMixin {
   int _level = 0;
   final _msgs = <_Msg>[];
   final _controller = TextEditingController();
   final _focus = FocusNode();
   final _scroll = ScrollController();
+  late final AnimationController _pulse = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 700))
+    ..repeat(reverse: true);
   bool _busy = false;
   bool _coachUp = false;
+  bool _ready = false;
   _VaultPeek _vault = const _VaultPeek([]);
-  Timer? _typing;
 
   @override
   void initState() {
     super.initState();
     Telemetry.log('demo_start', {});
+    _controller.addListener(_textChanged);
     _loadVault();
     WidgetsBinding.instance.addPostFrameCallback((_) => _runLevel());
   }
 
   @override
   void dispose() {
-    _typing?.cancel();
+    _setHint(null);
+    _controller.removeListener(_textChanged);
     _controller.dispose();
     _focus.dispose();
     _scroll.dispose();
+    _pulse.dispose();
     super.dispose();
   }
 
@@ -180,18 +182,31 @@ class _DemoChatState extends State<DemoChat> {
               if (f is Map && f['value'] is String) f['value'] as String,
           ]));
     } catch (_) {
-      // A vault we cannot read just means this level accepts any answer.
+      // A vault we cannot read just means that level accepts any answer.
     }
   }
 
   _Level get _current => _levels[_level];
 
+  /// Tells the keyboard what to ring. Written to shared settings, which the
+  /// keyboard re-reads when the text changes.
+  Future<void> _setHint(String? hint) => GlyfBridge.updateSharedSettings((s) {
+        if (hint == null) {
+          s.remove('tourHint');
+        } else {
+          s['tourHint'] = hint;
+        }
+        return s;
+      });
+
   Future<void> _runLevel() async {
     setState(() {
       _msgs.clear();
       _coachUp = false;
+      _ready = false;
       _busy = true;
     });
+    _controller.clear();
     for (final line in _current.them) {
       await Future.delayed(const Duration(milliseconds: 620));
       if (!mounted) return;
@@ -200,11 +215,29 @@ class _DemoChatState extends State<DemoChat> {
     }
     await Future.delayed(const Duration(milliseconds: 260));
     if (!mounted) return;
+    // The hint goes first: typing the message is what makes the keyboard
+    // look again, and it should find the hint already there.
+    await _setHint(_current.hint);
     setState(() {
       _busy = false;
       _coachUp = true;
     });
+    _controller.value = TextEditingValue(
+      text: _current.prefill,
+      selection: TextSelection.collapsed(offset: _current.prefill.length),
+    );
     _focus.requestFocus();
+    // Focus alone can leave the keyboard down after the last send.
+    SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+  }
+
+  void _textChanged() {
+    if (_busy || !_coachUp) return;
+    final ready = _current.goal(_controller.text, _vault);
+    if (ready == _ready) return;
+    setState(() => _ready = ready);
+    // Done on the keyboard: the ring moves to the send button.
+    _setHint(ready ? null : _current.hint);
   }
 
   void _toBottom() {
@@ -218,25 +251,29 @@ class _DemoChatState extends State<DemoChat> {
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _busy) return;
+    final done = _current.goal(text, _vault);
     _controller.clear();
     setState(() {
       _msgs.add(_Msg(text, mine: true));
       _coachUp = false;
+      _ready = false;
       _busy = true;
     });
     _toBottom();
-
-    final done = _current.goal(text, _vault);
     Telemetry.log('demo_send', {'level': _current.id, 'done': done});
     await Future.delayed(const Duration(milliseconds: 520));
     if (!mounted) return;
     if (!done) {
       setState(() {
         _msgs.add(_Msg('hmm, try again? 🙈', mine: false));
-        _coachUp = true;
         _busy = false;
+        _coachUp = true;
       });
       _toBottom();
+      _controller.value = TextEditingValue(
+        text: _current.prefill,
+        selection: TextSelection.collapsed(offset: _current.prefill.length),
+      );
       return;
     }
     setState(() => _msgs.last.tapback = _current.tapback);
@@ -248,8 +285,14 @@ class _DemoChatState extends State<DemoChat> {
     }
     await Future.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
+    _next();
+  }
+
+  /// On to the next person, or out when this was the last.
+  Future<void> _next() async {
     if (_level >= _levels.length - 1) {
       Telemetry.log('demo_complete', {});
+      await _setHint(null);
       widget.onDone();
       return;
     }
@@ -260,26 +303,16 @@ class _DemoChatState extends State<DemoChat> {
     _runLevel();
   }
 
-  void _showMe() {
-    final text = _current.demoText;
-    if (text == null) return;
-    Telemetry.log('demo_show_me', {'level': _current.id});
-    _typing?.cancel();
-    _controller.clear();
-    var i = 0;
-    _typing = Timer.periodic(const Duration(milliseconds: 26), (t) {
-      if (!mounted || i >= text.length) {
-        t.cancel();
-        return;
-      }
-      i++;
-      _controller.text = text.substring(0, i);
-      _controller.selection = TextSelection.collapsed(offset: i);
-    });
+  /// Skips this one demo, not the tour.
+  void _skip() {
+    if (_busy) return;
+    Telemetry.log('demo_skip', {'level': _current.id});
+    _next();
   }
 
-  void _skip() {
-    Telemetry.log('demo_skip', {'level': _current.id});
+  Future<void> _close() async {
+    Telemetry.log('demo_close', {'level': _current.id});
+    await _setHint(null);
     widget.onDone();
   }
 
@@ -298,11 +331,11 @@ class _DemoChatState extends State<DemoChat> {
                 controller: _scroll,
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
                 itemCount: _msgs.length,
-                itemBuilder: (_, i) => _bubble(_msgs[i], level.tint),
+                itemBuilder: (_, i) => _bubble(_msgs[i]),
               ),
             ),
             if (_coachUp) _coachCard(level),
-            _composer(level),
+            _composer(),
           ],
         ),
       ),
@@ -311,12 +344,16 @@ class _DemoChatState extends State<DemoChat> {
 
   Widget _header(_Level level) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 8, 10, 10),
+      padding: const EdgeInsets.fromLTRB(4, 8, 10, 10),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Glass.hairline)),
       ),
       child: Row(
         children: [
+          IconButton(
+            onPressed: _close,
+            icon: const Icon(Icons.close_rounded, color: Glass.inkSoft),
+          ),
           Container(
             width: 38,
             height: 38,
@@ -340,31 +377,27 @@ class _DemoChatState extends State<DemoChat> {
               ],
             ),
           ),
-          Row(
-            children: [
-              for (var i = 0; i < _levels.length; i++)
-                Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: i <= _level ? Glass.ink : Glass.hairline,
-                  ),
-                ),
-            ],
-          ),
+          for (var i = 0; i < _levels.length; i++)
+            Container(
+              width: 6,
+              height: 6,
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: i <= _level ? Glass.ink : Glass.hairline,
+              ),
+            ),
           TextButton(
             onPressed: _skip,
-            child: const Text('Skip',
-                style: TextStyle(fontSize: 15, color: Glass.inkSoft)),
+            child: Text(_level >= _levels.length - 1 ? 'Done' : 'Skip',
+                style: const TextStyle(fontSize: 15, color: Glass.inkSoft)),
           ),
         ],
       ),
     );
   }
 
-  Widget _bubble(_Msg m, Color tint) {
+  Widget _bubble(_Msg m) {
     final radius = BorderRadius.circular(20);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -421,47 +454,29 @@ class _DemoChatState extends State<DemoChat> {
     );
   }
 
+  /// One line: what to tap now. It changes to "Send it" once that is done.
   Widget _coachCard(_Level level) {
     return Container(
       margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
       decoration: BoxDecoration(
-        color: Glass.bg,
+        color: Glass.accent.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Glass.hairline),
+        border: Border.all(color: Glass.accent.withValues(alpha: 0.25)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(level.coach,
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 3),
-                Text(level.how,
-                    style: const TextStyle(
-                        fontSize: 13, height: 1.35, color: Glass.inkSoft)),
-              ],
-            ),
-          ),
-          if (level.demoText != null)
-            TextButton(
-              onPressed: _showMe,
-              child: const Text('Show me',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Glass.accent)),
-            ),
-        ],
-      ),
+      child: Row(children: [
+        Icon(_ready ? Icons.arrow_upward_rounded : Icons.touch_app_rounded,
+            size: 18, color: Glass.accent),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(_ready ? 'Now send it' : level.coach,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        ),
+      ]),
     );
   }
 
-  Widget _composer(_Level level) {
+  Widget _composer() {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
       decoration: const BoxDecoration(
@@ -500,15 +515,30 @@ class _DemoChatState extends State<DemoChat> {
             const SizedBox(width: 8),
             GestureDetector(
               onTap: _send,
-              child: Container(
-                width: 34,
-                height: 34,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF0A84FF),
-                  shape: BoxShape.circle,
+              child: AnimatedBuilder(
+                animation: _pulse,
+                builder: (_, child) => Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        width: 2.5,
+                        color: _ready
+                            ? Glass.accent.withValues(alpha: 0.25 + 0.75 * (1 - _pulse.value))
+                            : Colors.transparent),
+                  ),
+                  child: child,
                 ),
-                child: const Icon(Icons.arrow_upward,
-                    color: Colors.white, size: 19),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF0A84FF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.arrow_upward,
+                      color: Colors.white, size: 19),
+                ),
               ),
             ),
           ],

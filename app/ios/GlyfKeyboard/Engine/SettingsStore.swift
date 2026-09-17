@@ -88,6 +88,9 @@ struct GlyfSettings: Codable, Equatable {
     var deviceId: String = UUID().uuidString.lowercased()
     /// Params passed to glyf runs (M2: translate target).
     var translateTarget: String = "English"
+    /// Set by the app's guided tour while it waits for one tap: "chip",
+    /// "space", "emojikey", "g" or a letter. The keyboard rings that control.
+    var tourHint: String? = nil
     /// The language besides the phone's own that this person types in, as
     /// translate last detected it. Where English drafts get translated to.
     var translateOther: String? = nil
@@ -229,4 +232,19 @@ enum SettingsStore {
 
     /// Re-read from disk (the app may have written while we were dismissed).
     static func invalidate() { cached = nil }
+
+    private static var loadedStamp: Date?
+
+    /// Re-reads the file when the app changed it since the last read: a stat,
+    /// not a decode, so it is cheap enough to ask on every text change.
+    @discardableResult
+    static func reloadIfChanged() -> Bool {
+        guard let dir = AppGroupStore.bridgeDir else { return false }
+        let path = dir.appendingPathComponent(fileName).path
+        let stamp = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+        guard stamp != loadedStamp else { return false }
+        loadedStamp = stamp
+        cached = nil
+        return true
+    }
 }

@@ -355,6 +355,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var lastPanelTitle: String??
 
     private func layoutSurfaces() {
+        defer { applyTourHint() }
         let w = content.bounds.width
         let h = content.bounds.height
         let header = panelHeader()
@@ -649,6 +650,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        // The app may have changed settings while we are up (its tour does).
+        if SettingsStore.reloadIfChanged() { keyboardView.refreshBindings() }
         // Field flavor can change per focus (email → number pad → text).
         keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
         syncAutoShift()
@@ -660,6 +663,54 @@ final class GlyfKeyboardViewController: UIInputViewController {
         notifyHUD()
         // Fires when the REAL input session (re)attaches — retry delivery.
         deliverPendingResult()
+        applyTourHint()
+    }
+
+    // MARK: Tour ring
+
+    /// A pulsing ring around the one thing the app's tour is waiting for.
+    private var tourRing: CAShapeLayer?
+
+    private func applyTourHint() {
+        SettingsStore.reloadIfChanged()
+        let hint = SettingsStore.current.tourHint
+        var rect: CGRect?
+        switch hint {
+        case "chip":
+            rect = toolbar.smartFrame.map { toolbar.convert($0, to: content) }
+        case "g":
+            rect = toolbar.convert(toolbar.glyfFrame, to: content)
+        case .some(let id):
+            if surface == .none, !keyboardView.isHidden {
+                rect = keyboardView.frame(ofKey: id).map { keyboardView.convert($0, to: content) }
+            }
+        case .none:
+            rect = nil
+        }
+        guard let rect, !toolbar.isHidden || hint != "chip" else {
+            tourRing?.removeFromSuperlayer()
+            tourRing = nil
+            return
+        }
+        let ring = tourRing ?? CAShapeLayer()
+        if tourRing == nil {
+            ring.fillColor = nil
+            ring.strokeColor = Glass.accentPrimary.cgColor
+            ring.lineWidth = 2.5
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 1
+            pulse.toValue = 0.25
+            pulse.duration = 0.7
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            ring.add(pulse, forKey: "pulse")
+            content.layer.addSublayer(ring)
+            tourRing = ring
+        }
+        ring.frame = content.bounds
+        ring.path = UIBezierPath(roundedRect: rect.insetBy(dx: -3, dy: -3),
+                                 cornerRadius: Glass.radiusKey + 3).cgPath
+        ring.zPosition = 50
     }
 
     private func syncAutoShift() {
@@ -797,6 +848,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     }
 
     private func updateCandidates() {
+        defer { applyTourHint() }         // the strip changed under the ring
         if updateSmartChip() { return }   // one chip owns the strip
         let policy = typingPolicy
         guard SettingsStore.current.candidates, policy.contains(.suggestions), surface == .none else {
