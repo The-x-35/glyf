@@ -647,15 +647,18 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       // where you are. The APP asks — a keyboard extension cannot — and caches
       // a coarse fix for the search suite to send.
       case 'nearby':
+        // Shaped like the setup step: what it does, then what it is called.
         return _frame(children: [
+          const Spacer(flex: 3),
+          NearbyDemo(settled: _locationOn),
           const SizedBox(height: 30),
-          _headline('Search what\u2019s near you'),
-          const SizedBox(height: 22),
-          // What it does, before it asks for anything.
-          const NearbyDemo(),
+          const Text('Search what\u2019s near you',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
           if (_locationOn)
             const Padding(
-              padding: EdgeInsets.only(top: 14),
+              padding: EdgeInsets.only(top: 16),
               child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(Icons.check_circle_rounded, size: 17, color: Glass.success),
                 SizedBox(width: 7),
@@ -671,7 +674,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
             ),
-          const Spacer(),
+          const Spacer(flex: 3),
           if (_locationOn)
             _pill('Continue', onTap: _advance)
           else

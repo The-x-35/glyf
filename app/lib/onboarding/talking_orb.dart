@@ -316,18 +316,10 @@ class _RememberDemoState extends State<RememberDemo> with SingleTickerProviderSt
         final sent = Curves.easeOutBack.transform(_between(v, 0.52, 0.62));
         final out = 1 - _between(v, 0.90, 0.98);
         final pressed = press > 0 && sent == 0;
-        return Opacity(
+        // The card itself never fades — only what is playing inside it.
+        return _demoCard(
           opacity: out,
-          child: Container(
-            height: 214,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Glass.hairline),
-              boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 24, offset: Offset(0, 10))],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(children: [
+          children: [
               Positioned(
                 left: 14,
                 top: 16,
@@ -382,8 +374,7 @@ class _RememberDemoState extends State<RememberDemo> with SingleTickerProviderSt
                   ),
                 ),
               ),
-            ]),
-          ),
+          ],
         );
       },
     );
@@ -391,6 +382,20 @@ class _RememberDemoState extends State<RememberDemo> with SingleTickerProviderSt
 
   Widget _bubble(String text, {required bool mine}) => _chatBubble(text, mine: mine);
 }
+
+/// The card every onboarding demo plays inside: white, still, whatever is
+/// happening in it.
+Widget _demoCard({required double opacity, required List<Widget> children, double height = 214}) => Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Glass.hairline),
+        boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 24, offset: Offset(0, 10))],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Opacity(opacity: opacity.clamp(0.0, 1.0), child: Stack(children: children)),
+    );
 
 Widget _chatBubble(String text, {required bool mine}) => Container(
       constraints: const BoxConstraints(maxWidth: 230),
@@ -405,8 +410,15 @@ Widget _chatBubble(String text, {required bool mine}) => Container(
 /// The same few seconds for nearby search: a friend asks where to meet, the
 /// keyboard finds a place around you, one tap sends it with its map.
 class NearbyDemo extends StatefulWidget {
-  const NearbyDemo({super.key, this.place = 'Blue Tokai Coffee', this.detail = '300 m · Indiranagar'});
+  const NearbyDemo({
+    super.key,
+    this.settled = false,
+    this.place = 'Blue Tokai Coffee',
+    this.detail = '300 m · Indiranagar',
+  });
 
+  /// Nearby search is already on: hold the finished chat, don't replay it.
+  final bool settled;
   final String place;
   final String detail;
 
@@ -416,7 +428,23 @@ class NearbyDemo extends StatefulWidget {
 
 class _NearbyDemoState extends State<NearbyDemo> with SingleTickerProviderStateMixin {
   late final AnimationController _t =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 6200))..repeat();
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 6200));
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.settled) _t.repeat();
+  }
+
+  @override
+  void didUpdateWidget(NearbyDemo old) {
+    super.didUpdateWidget(old);
+    if (widget.settled) {
+      _t.stop();
+    } else if (!_t.isAnimating) {
+      _t.repeat();
+    }
+  }
 
   @override
   void dispose() {
@@ -428,31 +456,40 @@ class _NearbyDemoState extends State<NearbyDemo> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final still = widget.settled || (MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+    if (still) return _card(ask: 1, strip: 0, back: 0, press: 0, sent: 1, out: 1);
     return AnimatedBuilder(
       animation: _t,
       builder: (context, _) {
         final v = _t.value;
-        final ask = Curves.easeOutBack.transform(_between(v, 0.02, 0.12));
-        final strip = Curves.easeOutCubic.transform(_between(v, 0.22, 0.32));
-        final press = _between(v, 0.42, 0.50);
-        final sent = Curves.easeOutBack.transform(_between(v, 0.52, 0.62));
-        final out = 1 - _between(v, 0.90, 0.98);
-        final pressed = press > 0 && sent == 0;
-        return Opacity(
-          opacity: out,
-          child: Container(
-            height: 214,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Glass.hairline),
-              boxShadow: const [BoxShadow(color: Color(0x12000000), blurRadius: 24, offset: Offset(0, 10))],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(children: [
+        return _card(
+          ask: Curves.easeOutBack.transform(_between(v, 0.02, 0.12)),
+          strip: Curves.easeOutCubic.transform(_between(v, 0.22, 0.32)),
+          back: _between(v, 0.62, 0.70),
+          press: _between(v, 0.42, 0.50),
+          sent: Curves.easeOutBack.transform(_between(v, 0.52, 0.62)),
+          out: 1 - _between(v, 0.90, 0.98),
+        );
+      },
+    );
+  }
+
+  Widget _card({
+    required double ask,
+    required double strip,
+    required double back,
+    required double press,
+    required double sent,
+    required double out,
+  }) {
+    final pressed = press > 0 && sent == 0;
+    return _demoCard(
+      height: 252,
+      opacity: out,
+      children: [
               Positioned(
                 left: 14,
-                top: 14,
+                top: 16,
                 child: Transform.scale(
                   alignment: Alignment.bottomLeft,
                   scale: ask,
@@ -462,7 +499,7 @@ class _NearbyDemoState extends State<NearbyDemo> with SingleTickerProviderStateM
               // The place, sent: its map and its name, the way it lands in a chat.
               Positioned(
                 right: 14,
-                top: 56,
+                top: 62,
                 child: Transform.scale(
                   alignment: Alignment.bottomRight,
                   scale: sent,
@@ -473,7 +510,7 @@ class _NearbyDemoState extends State<NearbyDemo> with SingleTickerProviderStateM
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: -64 + 64 * strip * (1 - _between(v, 0.62, 0.70)),
+                bottom: -64 + 64 * strip * (1 - back),
                 child: Container(
                   height: 64,
                   padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
@@ -521,10 +558,7 @@ class _NearbyDemoState extends State<NearbyDemo> with SingleTickerProviderStateM
                   ),
                 ),
               ),
-            ]),
-          ),
-        );
-      },
+      ],
     );
   }
 
