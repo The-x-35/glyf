@@ -57,6 +57,12 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     // The keyboard may have parked an intent before we ever launched
     // (Spike A fallback path) — pick it up.
     _checkPendingDictation();
+    // A glyf:// link that started the app arrived before anything here was
+    // listening; the platform kept it for us.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final link = await GlyfBridge.lastDeepLink();
+      if (link != null && mounted) _handleLink(link);
+    });
   }
 
   @override

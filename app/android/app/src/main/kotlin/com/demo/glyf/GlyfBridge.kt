@@ -112,7 +112,11 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
             "readKeyboardPing" ->
                 result.success(Bridge.readJson(ctx, "keyboard-ping.json")?.toString())
             "writeAppPong" -> result.success(true)
-            "lastDeepLink" -> result.success(lastDeepLink)
+            "lastDeepLink" -> {
+                // Taken once: the app reads it at start for the link that launched it.
+                result.success(lastDeepLink)
+                lastDeepLink = null
+            }
 
             "keyboardEnabled" -> {
                 // Settings.Secure ENABLED_INPUT_METHODS is sealed off from

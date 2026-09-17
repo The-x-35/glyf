@@ -37,7 +37,9 @@ final class GlyfBridge {
             let args = call.arguments as? [String: Any]
             result(AppGroupStore.writeAppPong(message: args?["message"] as? String ?? "pong"))
         case "lastDeepLink":
+            // Taken once: the app reads it at start for the link that launched it.
             result(lastDeepLink)
+            lastDeepLink = nil
         // §6.18 funnel signals
         case "keyboardEnabled":
             // Derived, not hardcoded — survives bundle-id changes (device

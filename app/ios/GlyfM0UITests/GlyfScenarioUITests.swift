@@ -576,14 +576,14 @@ final class GlyfScenarioUITests: XCTestCase {
     // MARK: - Held keys
 
     func testS80_HoldTTranslates() throws {
-        open(["--glyf-seed-bindings"])
+        open(["--glyf-seed-holds"])
         clear()
         el("key:t").press(forDuration: 0.9)
         XCTAssertNotNil(wait("hud:translate", 4), "holding T should open translate")
     }
 
     func testS81_HoldSOpensVault() throws {
-        open(["--glyf-seed-bindings"])
+        open(["--glyf-seed-holds"])
         clear()
         el("key:s").press(forDuration: 0.9)
         XCTAssertNotNil(wait("vault:card:0", 4), "holding S should open the vault")

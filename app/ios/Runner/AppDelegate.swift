@@ -50,6 +50,14 @@ import UIKit
     if args.contains("--glyf-clear-tour") {
       SettingsStore.update { s in s.tourHint = nil }
     }
+    if args.contains("--glyf-seed-holds") {
+      // Scenario tests: just the holds the keyboard ships with.
+      SettingsStore.update { s in
+        for (k, v) in ["t": "surface:translate-hud", "s": "surface:vault"] where s.bindings[k] == nil {
+          s.bindings[k] = v
+        }
+      }
+    }
     if args.contains("--glyf-seed-bindings") {
       // Gate tests exercise the full §6.13 key map; shipping presets are
       // deliberately smaller, so tests seed the rest explicitly.
