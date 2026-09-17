@@ -5,9 +5,7 @@ import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
 import '../core/bridge.dart';
-import '../core/catalog.dart';
 import '../core/glyf_api.dart';
-import '../core/recommend.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 import 'demo_chat.dart';
@@ -27,8 +25,7 @@ class OnboardingFlow extends StatefulWidget {
 
 class _OnboardingFlowState extends State<OnboardingFlow> {
   static const _steps = [
-    'hello', 'persona', 'details', 'feel', 'enable', 'access', 'nearby',
-    'keys', 'connect'
+    'hello', 'details', 'feel', 'enable', 'access', 'nearby', 'connect'
   ];
   int _step = 0;
 
@@ -56,7 +53,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool _keyboardEnabled = false;
   bool _fullAccess = false;
   bool _keyboardSelected = false;
-  late Map<String, String> _chosenKeys = {};
   // Google consent choices — preset from the persona, the USER decides.
   late final Set<String> _googleScopes = {};
   String? _connectNote;
@@ -140,9 +136,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       return;
     }
     setState(() => _step++);
-    if (_steps[_step] == 'keys' && _chosenKeys.isEmpty && _persona != null) {
-      _chosenKeys = Map.of(Recommend.personas[_persona] ?? {});
-    }
     if (_steps[_step] == 'connect' && _googleScopes.isEmpty) {
       // Persona decides the SUGGESTION; the checklist is the user's call.
       _googleScopes.addAll(switch (_persona) {
@@ -161,10 +154,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       s['haptics'] = _haptics;
       s['clipboardHistory'] = _clipboard;
       if (Platform.isAndroid) s['clipboardScreenshots'] = _screenshots;
-      final b = Map<String, dynamic>.from(
-          (s['bindings'] as Map<String, dynamic>?) ?? {});
-      b.addAll(_chosenKeys);
-      s['bindings'] = b;
       return s;
     });
     await GlyfBridge.saveOnboardingState({
@@ -172,8 +161,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'persona': _persona,
       'completedAt': DateTime.now().toUtc().toIso8601String(),
     });
-    Telemetry.log('onboarding_complete',
-        {'persona': _persona ?? 'none', 'keys': _chosenKeys.length});
+    Telemetry.log('onboarding_complete', {'persona': _persona ?? 'none'});
     if (!mounted) {
       widget.onDone();
       return;
@@ -259,47 +247,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const Spacer(),
           _pill('Set up Glyf', onTap: _advance),
           const SizedBox(height: 20),
-        ]);
-
-      case 'persona':
-        return _frame(children: [
-          const SizedBox(height: 30),
-          _headline('What fills your day?', 'Your keys get picked around it.'),
-          const SizedBox(height: 20),
-          for (final (id, emoji, label) in const [
-            ('student', '🎓', 'Studying'),
-            ('working', '💼', 'Working'),
-            ('creator', '📣', 'Creating content'),
-            ('texting', '💬', 'Mostly texting'),
-          ])
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Semantics(
-                identifier: 'onb:persona:$id',
-                button: true,
-                child: GlassCard(
-                  borderColor: _persona == id ? Glass.accent : null,
-                  onTap: () => setState(() => _persona = id),
-                  child: Row(children: [
-                    Text(emoji, style: const TextStyle(fontSize: 22)),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Text(label,
-                          style: const TextStyle(
-                              color: Glass.ink,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                    if (_persona == id)
-                      const Icon(Icons.check_circle,
-                          color: Glass.accent, size: 20),
-                  ]),
-                ),
-              ),
-            ),
-          const Spacer(),
-          _pill('Continue', onTap: _persona == null ? null : _advance),
-          _skip(),
         ]);
 
       case 'details':
@@ -551,64 +498,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const Spacer(),
           _pill('Sign in with Google', onTap: _connectGoogle),
           _skip(label: 'Not now'),
-        ]);
-
-      case 'keys':
-        final recs = _persona == null
-            ? Recommend.personas['texting']!
-            : (Recommend.personas[_persona] ?? {});
-        return _frame(children: [
-          const SizedBox(height: 30),
-          _headline('Your starting keys',
-              'Hold a key to fire it. Change any of this later.'),
-          const SizedBox(height: 20),
-          for (final e in recs.entries)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: GlassCard(
-                onTap: () => setState(() {
-                  if (_chosenKeys.containsKey(e.key)) {
-                    _chosenKeys.remove(e.key);
-                  } else {
-                    _chosenKeys[e.key] = e.value;
-                  }
-                }),
-                child: Row(children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Glass.accent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(e.key.toUpperCase(),
-                        style: const TextStyle(
-                            color: Glass.ink,
-                            fontWeight: FontWeight.w800)),
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Text(Catalog.byId(e.value).title,
-                        style: const TextStyle(
-                            color: Glass.ink,
-                            fontSize: 15.5,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                  Icon(
-                      _chosenKeys.containsKey(e.key)
-                          ? Icons.check_circle
-                          : Icons.circle_outlined,
-                      size: 22,
-                      color: _chosenKeys.containsKey(e.key)
-                          ? Glass.accent
-                          : const Color(0xFFD3D6DD)),
-                ]),
-              ),
-            ),
-          const Spacer(),
-          _pill('Continue', onTap: _advance),
-          const SizedBox(height: 20),
         ]);
 
       default:

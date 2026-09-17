@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../core/bridge.dart';
 import '../core/catalog.dart';
-import '../core/recommend.dart';
+import '../build/builder_screen.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 import 'keyboard_visual.dart';
@@ -262,80 +262,100 @@ class _HomeTabState extends State<HomeTab> {
     if (current != null) {
       _showBoundSheet(letter, current);
     } else {
-      _showRecommendSheet(letter);
+      _showKeySheet(letter);
     }
   }
 
-  /// Acti-style "Recommended for 'X'" — three picks for a free key.
-  void _showRecommendSheet(String letter) {
-    final recs = Recommend.forLetter(letter, _bindings);
+  /// What a key can hold: the three holds built into the keyboard, the glyfs
+  /// this person built, or a new one made for this key.
+  void _showKeySheet(String letter) {
+    final current = _bindings[letter];
+    final mine = (_settings['customTitles'] as Map<String, dynamic>?) ?? const {};
+    const holds = [
+      ('surface:vault', '🗂️', 'Vault', 'Your details, ready to send'),
+      ('surface:translate-hud', '🌐', 'Translate', 'Translate as you type'),
+      ('surface:tones', '🎚️', 'Rewrite', 'Pick a tone for your draft'),
+    ];
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius:
               BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text.rich(TextSpan(children: [
-              const TextSpan(text: 'Recommended for '),
-              TextSpan(
-                  text: '‘${letter.toUpperCase()}’',
-                  style: const TextStyle(color: Glass.accent)),
-            ]),
-                style: const TextStyle(
-                    color: Glass.ink,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800)),
-            const SizedBox(height: 14),
-            for (final g in recs)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: GlassCard(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _setBinding(letter, g.id);
-                    Telemetry.log('rec_bound', {'key': letter, 'glyfId': g.id});
-                  },
-                  child: Row(children: [
-                    Text(g.emoji, style: const TextStyle(fontSize: 22)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(g.title,
-                                style: const TextStyle(
-                                    color: Glass.ink,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700)),
-                            Text(g.subtitle,
+      builder: (ctx) {
+        Widget option(String id, String emoji, String title, String? subtitle) =>
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: GlassCard(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                borderColor: current == id ? Glass.accent : null,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _setBinding(letter, id);
+                },
+                child: Row(children: [
+                  Text(emoji, style: const TextStyle(fontSize: 22)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title,
+                              style: const TextStyle(
+                                  color: Glass.ink,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700)),
+                          if (subtitle != null)
+                            Text(subtitle,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                     color: Glass.inkSoft, fontSize: 12)),
-                          ]),
-                    ),
-                    const Icon(Icons.add_circle_outline,
-                        size: 20, color: Glass.ink),
-                  ]),
-                ),
+                        ]),
+                  ),
+                  Icon(current == id ? Icons.check_circle : Icons.add_circle_outline,
+                      size: 20, color: current == id ? Glass.accent : Glass.ink),
+                ]),
               ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _showAllGlyfsSheet(letter);
-              },
-              child: const Text('Browse all',
-                  style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
-            ),
-          ]),
-        ),
-      ),
+            );
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text.rich(TextSpan(children: [
+                const TextSpan(text: 'Hold '),
+                TextSpan(
+                    text: '‘${letter.toUpperCase()}’',
+                    style: const TextStyle(color: Glass.accent)),
+                const TextSpan(text: ' to…'),
+              ]),
+                  style: const TextStyle(
+                      color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 14),
+              Flexible(
+                child: ListView(shrinkWrap: true, children: [
+                  for (final (id, emoji, title, subtitle) in holds)
+                    option(id, emoji, title, subtitle),
+                  for (final e in mine.entries)
+                    option(e.key, '✨', e.value.toString(), null),
+                ]),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(ctx).pop();
+                  await Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => BuilderScreen(initialKey: letter)));
+                  _refresh();
+                },
+                child: const Text('Build your own',
+                    style: TextStyle(
+                        color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w600)),
+              ),
+            ]),
+          ),
+        );
+      },
     );
   }
 
@@ -366,7 +386,7 @@ class _HomeTabState extends State<HomeTab> {
                 label: 'Change',
                 onPressed: () {
                   Navigator.of(ctx).pop();
-                  _showAllGlyfsSheet(letter);
+                  _showKeySheet(letter);
                 }),
             TextButton(
               onPressed: () {
@@ -382,46 +402,4 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  void _showAllGlyfsSheet(String letter) {
-    final current = _bindings[letter];
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('Hold ${letter.toUpperCase()} fires…',
-                style: const TextStyle(
-                    color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 10),
-            Flexible(
-              child: ListView(shrinkWrap: true, children: [
-                for (final g in Catalog.bindable)
-                  ListTile(
-                    dense: true,
-                    leading:
-                        Text(g.emoji, style: const TextStyle(fontSize: 20)),
-                    title: Text(g.title,
-                        style: const TextStyle(
-                            color: Glass.ink, fontWeight: FontWeight.w600)),
-                    trailing: current == g.id
-                        ? const Icon(Icons.check, color: Glass.accent)
-                        : null,
-                    onTap: () {
-                      Navigator.of(ctx).pop();
-                      _setBinding(letter, g.id);
-                    },
-                  ),
-              ]),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
 }

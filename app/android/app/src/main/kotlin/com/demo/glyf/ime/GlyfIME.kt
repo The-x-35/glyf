@@ -922,13 +922,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var barInput: BarInput? = null
 
     /** Same quick glyfs, same order, same titles as iOS GlyfCatalog. */
-    private val quickGlyfs = listOf(
-        "rewrite.polite" to "Make it polite",
-        "rewrite.tighten" to "Tighten",
-        "glyf.translate" to "Translate",
-        "rewrite.emoji" to "Emoji-fy",
-        "glyf.proofread" to "Proofread",
-    )
+    /** The person's own glyfs, one tap each in the bar (as on iOS). */
+    private fun myGlyfs(): List<Pair<String, String>> {
+        val titles = settings.optJSONObject("customTitles") ?: return emptyList()
+        return titles.keys().asSequence().map { it to titles.optString(it) }
+            .sortedBy { it.second.lowercase() }.toList()
+    }
 
     override fun onSpaceHoldOpenBar() {
         // A hold inside a strip, or in a password field, is just a space.
@@ -1047,7 +1046,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
         // Quick glyfs.
         val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        for ((glyfId, title) in quickGlyfs) {
+        for ((glyfId, title) in myGlyfs()) {
             chips.addView(TextView(this).apply {
                 text = title; textSize = 13f
                 typeface = Typeface.DEFAULT_BOLD

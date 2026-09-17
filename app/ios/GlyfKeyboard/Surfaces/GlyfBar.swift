@@ -143,9 +143,14 @@ final class GlyfBar: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The person's own glyfs, one tap each. The canned ones (polite,
+    /// tighten, emoji-fy, proofread) are what holding space already does.
     private func buildChips() {
-        for id in GlyfCatalog.quickGlyfIds {
-            guard let info = GlyfCatalog.all.first(where: { $0.id == id }) else { continue }
+        let mine = (SettingsStore.current.customTitles ?? [:])
+            .sorted { $0.value.localizedCaseInsensitiveCompare($1.value) == .orderedAscending }
+        for (glyfId, title) in mine {
+            let info = (id: glyfId, title: title)
+            let id = glyfId
             let b = UIButton(type: .system)
             b.setTitle(info.title, for: .normal)
             b.titleLabel?.font = .systemFont(ofSize: 13.5, weight: .semibold)
@@ -182,7 +187,7 @@ final class GlyfBar: UIView {
         switch input.source {
         case "field": sourceChip.text = "  FIELD TEXT  "
         case "clipboard": sourceChip.text = "  CLIPBOARD  "
-        default: sourceChip.text = "  NO INPUT — prompt runs alone  "
+        default: sourceChip.text = "  NO INPUT  "
         }
         setNeedsLayout() // chip sizes from its text
 
@@ -190,7 +195,7 @@ final class GlyfBar: UIView {
             statusLabel.text = "AI needs Full Access — enable it in Settings → Glyf"
             statusLabel.textColor = Glass.accentWarning
         } else {
-            statusLabel.text = "Pick a quick Glyf or describe what you want"
+            statusLabel.text = nil
             statusLabel.textColor = Glass.textSecondary
         }
         delegate?.barNeedsRunsRefresh()

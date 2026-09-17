@@ -13,7 +13,10 @@ import 'key_picker.dart';
 /// on a sample message, pick the key it lives on, save. The generated steps
 /// stay one tap away under "How it works"; nothing runs client-side.
 class BuilderScreen extends StatefulWidget {
-  const BuilderScreen({super.key});
+  const BuilderScreen({super.key, this.initialKey});
+
+  /// The key it was started from (Home's key sheet), picked in advance.
+  final String? initialKey;
 
   @override
   State<BuilderScreen> createState() => _BuilderScreenState();
@@ -49,6 +52,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
   @override
   void initState() {
     super.initState();
+    _key = widget.initialKey;
     _describe.addListener(() => setState(() {}));
     GlyfBridge.sharedSettings().then((s) {
       final b = (s['bindings'] as Map<String, dynamic>?) ?? {};

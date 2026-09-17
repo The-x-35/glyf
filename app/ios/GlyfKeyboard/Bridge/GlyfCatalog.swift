@@ -45,8 +45,6 @@ enum GlyfCatalog {
     ]
 
     /// Shown as chips in the Glyf Bar, in this order.
-    static let quickGlyfIds = ["rewrite.polite", "rewrite.tighten", "glyf.translate",
-                               "rewrite.emoji", "glyf.proofread"]
 
     static func title(for id: String) -> String {
         switch id {
