@@ -15,6 +15,7 @@ import { toolsRoutes } from "./routes/tools.js";
 import { searchRoutes } from "./routes/search.js";
 import { waitlistRoutes } from "./routes/waitlist.js";
 import { actRoutes } from "./routes/act.js";
+import { walletRoutes } from "./routes/wallet.js";
 import { vocabRoutes } from "./routes/vocab.js";
 
 declare module "fastify" {
@@ -70,6 +71,7 @@ export function buildApp(kv: KV = defaultKV()) {
   searchRoutes(app, kv);
   waitlistRoutes(app, kv);
   actRoutes(app, meter, kv);
+  walletRoutes(app);
   vocabRoutes(app, meter);
   return app;
 }
