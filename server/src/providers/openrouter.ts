@@ -83,7 +83,7 @@ export function resetCooldowns(): void {
 }
 
 /** How long a model gets to start answering before the next one is tried. */
-export const FIRST_BYTE_MS = { fast: 4000, smart: 9000 };
+export const FIRST_BYTE_MS = { fast: 4000, smart: 20000 };
 
 export interface StreamHandlers {
   onToken: (t: string) => void;

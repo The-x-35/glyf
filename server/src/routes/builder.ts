@@ -81,10 +81,16 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary): void 
 
     // STRICT tier (§8.3): validate, retry once, fail closed.
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await completeStreaming("smart", [
-        { role: "system", content: SYSTEM },
-        { role: "user", content: `Design a glyf: ${description}` },
-      ], { onToken: () => {} });
+      let res: { text: string };
+      try {
+        res = await completeStreaming("smart", [
+          { role: "system", content: SYSTEM },
+          { role: "user", content: `Design a glyf: ${description}` },
+        ], { onToken: () => {} });
+      } catch (err) {
+        req.log.warn({ attempt, err: String(err) }, "builder_models_unavailable");
+        return reply.code(503).send({ error: "Couldn't make that glyf right now. Try again in a moment." });
+      }
       const cleaned = res.text.trim()
         .replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
       try {
