@@ -14,8 +14,9 @@ import '../profile/brand_marks.dart';
 import 'setup_hero.dart';
 import 'talking_orb.dart';
 
-/// Onboarding: sign in, meet the orb, tell it what to remember, make the
-/// keyboard yours, turn it on, then the website's chats on the real keyboard.
+/// Onboarding: sign in with Apple or Google, meet the orb, tell it what to
+/// remember, make the keyboard yours, turn it on, then the website's chats on
+/// the real keyboard.
 /// One screen, steps slide through an AnimatedSwitcher (no PageView, so
 /// both humans and UI tests can address everything directly).
 class OnboardingFlow extends StatefulWidget {
@@ -65,10 +66,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   Timer? _poll;
 
   // Sign-in
-  final _email = TextEditingController();
-  final _code = TextEditingController();
-  bool _emailOpen = false;
-  bool _codeSent = false;
   bool _busy = false;
   String? _signInError;
   bool _meetDone = false;
@@ -101,8 +98,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   @override
   void dispose() {
     _poll?.cancel();
-    _email.dispose();
-    _code.dispose();
     for (final c in _details.values) {
       c.dispose();
     }
@@ -211,31 +206,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _signedIn(await Auth.signInWithApple());
   }
 
-  Future<void> _emailContinue() async {
-    final email = _email.text.trim();
-    if (!_codeSent) {
-      if (!email.contains('@') || !email.contains('.')) {
-        setState(() => _signInError = 'Enter your email address.');
-        return;
-      }
-      setState(() { _busy = true; _signInError = null; });
-      final error = await Auth.sendEmailCode(email);
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _signInError = error;
-        _codeSent = error == null;
-      });
-      return;
-    }
-    if (_code.text.trim().length < 6) {
-      setState(() => _signInError = 'Enter the 6-digit code from your email.');
-      return;
-    }
-    setState(() { _busy = true; _signInError = null; });
-    _signedIn(await Auth.verifyEmailCode(email, _code.text));
-  }
-
   /// Photo access for recent screenshots, asked when it is on and they move on.
   Future<void> _feelContinue() async {
     if (_screenshots && !await GlyfBridge.screenshotAccess()) {
@@ -333,93 +303,32 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       case 'signin':
         return _frame(children: [
           const Spacer(flex: 4),
-          if (!_emailOpen)
-            const Center(
-              child: TalkingOrb(
-                size: 170,
-                titleSize: 34,
-                lines: ['Hi, I’m {glyf}', 'Sign in to set up your keyboard.'],
-              ),
-            )
-          else
-            const Center(
-              child: TalkingOrb(size: 96, titleSize: 26, lines: ['Your email']),
+          const Center(
+            child: TalkingOrb(
+              size: 170,
+              titleSize: 34,
+              lines: ['Hi, I’m {glyf}', 'Sign in to set up your keyboard.'],
             ),
+          ),
           const Spacer(flex: 3),
-          if (!_emailOpen) ...[
-            if (Platform.isIOS) ...[
-              _authButton(
-                id: 'onb:apple',
-                label: 'Continue with Apple',
-                icon: const Icon(Icons.apple, color: Colors.white, size: 24),
-                dark: true,
-                onTap: _busy ? null : _apple,
-              ),
-              const SizedBox(height: 12),
-            ],
+          // Apple and Google are the whole list: every Android phone has a
+          // Google account, and an iPhone offering Google offers Apple too.
+          if (Platform.isIOS) ...[
             _authButton(
-              id: 'onb:google',
-              label: 'Continue with Google',
-              icon: const GoogleG(size: 20),
-              onTap: _busy ? null : _google,
+              id: 'onb:apple',
+              label: 'Continue with Apple',
+              icon: const Icon(Icons.apple, color: Colors.white, size: 24),
+              dark: true,
+              onTap: _busy ? null : _apple,
             ),
             const SizedBox(height: 12),
-            _authButton(
-              id: 'onb:email',
-              label: 'Continue with email',
-              icon: const Icon(Icons.mail_outline_rounded, color: Glass.ink, size: 22),
-              onTap: _busy ? null : () => setState(() { _emailOpen = true; _signInError = null; }),
-            ),
-          ] else ...[
-            GlassCard(
-              child: Semantics(
-                identifier: 'onb:email-field',
-                child: TextField(
-                  controller: _email,
-                  enabled: !_codeSent,
-                  autofocus: true,
-                  keyboardType: TextInputType.emailAddress,
-                  autocorrect: false,
-                  style: const TextStyle(fontSize: 16),
-                  decoration: const InputDecoration(
-                    isDense: true, border: InputBorder.none, hintText: 'you@email.com',
-                    hintStyle: TextStyle(color: Glass.inkSoft)),
-                  onSubmitted: (_) => _emailContinue(),
-                ),
-              ),
-            ),
-            if (_codeSent) ...[
-              const SizedBox(height: 10),
-              GlassCard(
-                child: Semantics(
-                  identifier: 'onb:code-field',
-                  child: TextField(
-                    controller: _code,
-                    autofocus: true,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    style: const TextStyle(fontSize: 20, letterSpacing: 6, fontWeight: FontWeight.w600),
-                    decoration: const InputDecoration(
-                      isDense: true, border: InputBorder.none, counterText: '', hintText: '6-digit code',
-                      hintStyle: TextStyle(color: Glass.inkSoft, fontSize: 16, letterSpacing: 0, fontWeight: FontWeight.w400)),
-                    onSubmitted: (_) => _emailContinue(),
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 14),
-            _pill(_busy ? 'One moment…' : (_codeSent ? 'Sign in' : 'Send code'),
-                onTap: _busy ? null : _emailContinue),
-            TextButton(
-              onPressed: _busy ? null : () => setState(() {
-                _emailOpen = false;
-                _codeSent = false;
-                _code.clear();
-                _signInError = null;
-              }),
-              child: const Text('Other ways to sign in', style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
-            ),
           ],
+          _authButton(
+            id: 'onb:google',
+            label: 'Continue with Google',
+            icon: const GoogleG(size: 20),
+            onTap: _busy ? null : _google,
+          ),
           if (_signInError != null)
             Padding(
               padding: const EdgeInsets.only(top: 10),

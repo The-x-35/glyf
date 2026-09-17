@@ -9,8 +9,8 @@ import 'package:privy_flutter/privy_flutter.dart';
 import 'bridge.dart';
 import 'glyf_api.dart';
 
-/// Signing in, once, for the whole app: Google, Apple or an emailed code,
-/// through Privy (the same account the wallet uses).
+/// Signing in, once, for the whole app: Apple or Google, through Privy (the
+/// same account the wallet uses).
 ///
 /// After a sign-in the server is told who this is and which phone they are on
 /// (POST /me); keyboard settings and app events follow. The vault never
@@ -109,25 +109,6 @@ abstract final class Auth {
     }
   }
 
-  static Future<String?> sendEmailCode(String email) async {
-    final p = await privy();
-    if (p == null) return 'Sign-in is unavailable right now. Try again in a moment.';
-    final res = await p.email.sendCode(email.trim());
-    String? error;
-    res.fold(onSuccess: (_) {}, onFailure: (e) => error = _friendly(e.message));
-    return error;
-  }
-
-  static Future<String?> verifyEmailCode(String email, String code) async {
-    final p = await privy();
-    if (p == null) return 'Sign-in is unavailable right now. Try again in a moment.';
-    final res = await p.email.loginWithCode(code: code.trim(), email: email.trim());
-    String? error;
-    res.fold(onSuccess: (u) => _user = u, onFailure: (e) => error = _friendly(e.message));
-    if (error == null) await _afterSignIn('email');
-    return error;
-  }
-
   static String _friendly(String raw) {
     if (!kReleaseMode) debugPrint('glyf sign-in: $raw');
     final m = raw.toLowerCase();
@@ -135,10 +116,9 @@ abstract final class Auth {
       return 'Sign-in is not set up for this app yet.';
     }
     if (m.contains('cancel')) return 'Sign-in was cancelled.';
-    if (m.contains('code')) return 'That code did not work. Check it and try again.';
     if (m.contains('network') || m.contains('internet')) return 'No connection. Try again when you are online.';
     if (m.contains('not allowed') || m.contains('not enabled') || m.contains('scheme')) {
-      return 'That sign-in option is not available yet. Use email for now.';
+      return 'That sign-in option is not available yet.';
     }
     return 'Sign-in did not finish. Try again.';
   }
