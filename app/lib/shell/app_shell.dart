@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../build/build_tab.dart';
 import '../core/theme.dart';
 import '../home/home_tab.dart';
 import '../profile/profile_tab.dart';
 
-/// Three tabs — Home (the brand keycap), Build, Profile. The Builder lives
-/// inside Build, so there's no separate ＋. Tabs crossfade and keep state.
+/// Two tabs — Home (the brand keycap) and Settings. There is no builder and
+/// no creator shelf: the keyboard is the product, and everything you can
+/// change about it lives on one scrollable screen.
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.onRerunOnboarding});
   final VoidCallback onRerunOnboarding;
@@ -29,7 +29,6 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     final tabs = [
       const HomeTab(),
-      BuildTab(activeTab: _activeTab),
       ProfileTab(onRerunOnboarding: widget.onRerunOnboarding),
     ];
     return Scaffold(
@@ -64,24 +63,13 @@ class _AppShellState extends State<AppShell> {
                 _tab(0, 'home', _GTabIcon(selected: _index == 0)),
                 _tab(
                     1,
-                    'build',
+                    'settings',
                     Icon(
                         _index == 1
-                            ? Icons.grid_view_rounded
-                            : Icons.grid_view_outlined,
+                            ? Icons.tune_rounded
+                            : Icons.tune_outlined,
                         size: 24,
                         color: _index == 1
-                            ? Glass.ink
-                            : const Color(0xFFA6ABB4))),
-                _tab(
-                    2,
-                    'profile',
-                    Icon(
-                        _index == 2
-                            ? Icons.person_rounded
-                            : Icons.person_outline_rounded,
-                        size: 25,
-                        color: _index == 2
                             ? Glass.ink
                             : const Color(0xFFA6ABB4))),
               ],

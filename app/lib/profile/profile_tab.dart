@@ -13,11 +13,11 @@ import '../wallet/wallet_screen.dart';
 import '../notes/notes_screen.dart';
 import '../vault/vault_screen.dart';
 import '../vocab/vocabulary_screen.dart';
-import 'keyboard_settings_sheet.dart';
+import 'keyboard_screen.dart';
 import 'paywall_sheet.dart';
-import 'themes_screen.dart';
 
-/// Profile — identity up top, then Creator and Settings groups.
+/// Settings — one scrollable screen. Everything you can change about the
+/// keyboard is here; there is no creator shelf and nothing to publish.
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key, required this.onRerunOnboarding});
   final VoidCallback onRerunOnboarding;
@@ -29,7 +29,6 @@ class ProfileTab extends StatefulWidget {
 class _ProfileTabState extends State<ProfileTab> {
   Map<String, dynamic> _settings = {};
   Map<String, dynamic> _tone = {};
-  Map<String, dynamic> _creator = {};
   String _displayName = 'You';
   bool _serverUp = false;
   int? _remaining;
@@ -59,10 +58,6 @@ class _ProfileTabState extends State<ProfileTab> {
     final up = await GlyfApi.healthy();
     final remaining =
         settings['proUnlocked'] == true ? null : await GlyfApi.meterRemaining();
-    Map<String, dynamic> creator = _creator;
-    try {
-      creator = await GlyfApi.creatorStats();
-    } catch (_) {}
     final onboarding = await GlyfBridge.onboardingState();
     if (!mounted) return;
     setState(() {
@@ -70,7 +65,6 @@ class _ProfileTabState extends State<ProfileTab> {
       _tone = tone;
       _serverUp = up;
       _remaining = remaining;
-      _creator = creator;
       _contactsOn = contacts['enabled'] == true;
       _nearbyOn = nearby['enabled'] == true;
       _displayName = (onboarding['displayName'] as String?) ?? 'You';
@@ -279,26 +273,16 @@ class _ProfileTabState extends State<ProfileTab> {
           ),
           const SizedBox(height: 22),
 
-          _groupLabel('Creator'),
-          _navCard(
-            icon: Icons.auto_awesome_outlined,
-            title: 'My Glyfs',
-            trailingText: '${_creator['glyfs'] ?? 0} created',
-            onTap: () => Telemetry.log('profile_myglyfs'),
-          ),
-          _navCard(
-            icon: Icons.workspace_premium_outlined,
-            title: 'Creator stats',
-            trailingText: '${_creator['installs'] ?? 0} installs',
-            onTap: () {},
-          ),
-          const SizedBox(height: 18),
-
-          _groupLabel('Settings'),
+          _groupLabel('Keyboard'),
           _navCard(
             icon: Icons.keyboard_alt_outlined,
             title: 'Keyboard',
-            onTap: () => showKeyboardSettings(context),
+            trailingText: 'Look, typing, feel',
+            onTap: () async {
+              await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const KeyboardScreen()));
+              _refresh();
+            },
           ),
           _navCard(
             icon: Icons.menu_book_outlined,
@@ -306,15 +290,8 @@ class _ProfileTabState extends State<ProfileTab> {
             onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const VocabularyScreen())),
           ),
-          _navCard(
-            icon: Icons.palette_outlined,
-            title: 'Themes',
-            onTap: () async {
-              await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ThemesScreen()));
-              _refresh();
-            },
-          ),
+          const SizedBox(height: 18),
+          _groupLabel('You'),
           _navCard(
             icon: Icons.person_search_outlined,
             title: 'Contacts search',
@@ -355,6 +332,8 @@ class _ProfileTabState extends State<ProfileTab> {
                 (_tone['hint'] as String?)?.isNotEmpty == true ? 'Active' : '',
             onTap: _showTone,
           ),
+          const SizedBox(height: 18),
+          _groupLabel('More'),
           _navCard(
             icon: Icons.account_balance_wallet_outlined,
             title: 'Wallet',

@@ -53,7 +53,7 @@ object SettingsStore {
     }
 
     fun defaults(): JSONObject = JSONObject().apply {
-        put("schemaVersion", 4)
+        put("schemaVersion", 6)
         put("haptics", true)
         put("keyClicks", true)
         put("numberRow", false)
@@ -65,10 +65,11 @@ object SettingsStore {
         put("toolbarOrder", JSONArray(listOf(
             "search", "clipboard", "vault", "dictation", "emoji", "translate")))
         put("toolbarHidden", JSONArray())
+        // Two holds only: S shares your details, T translates. The canned
+        // glyfs (proofread, emoji-fy…) were what hold-space AI already does.
         put("bindings", JSONObject(mapOf(
             "t" to "surface:translate-hud",
-            "s" to "surface:vault",
-            "p" to "glyf.proofread")))
+            "s" to "surface:vault")))
         put("customTitles", JSONObject())
         put("translationHUD", false)
         put("proUnlocked", false)
@@ -117,6 +118,22 @@ object SettingsStore {
                 current.put("toolbarOrder", kept)
             }
             current.put("schemaVersion", 4)
+            changed = true
+        }
+        // v5/v6: drop the canned glyf bindings; keep only S and T.
+        if (current.optInt("schemaVersion", 1) < 6) {
+            val kept = JSONObject()
+            val b = current.optJSONObject("bindings") ?: JSONObject()
+            for (k in b.keys()) {
+                val target = b.optString(k)
+                if (target == "surface:vault" || target == "surface:translate-hud") {
+                    kept.put(k, target)
+                }
+            }
+            if (!kept.has("s")) kept.put("s", "surface:vault")
+            if (!kept.has("t")) kept.put("t", "surface:translate-hud")
+            current.put("bindings", kept)
+            current.put("schemaVersion", 6)
             changed = true
         }
         val fixed = productionized(current.optString("backendURL"))

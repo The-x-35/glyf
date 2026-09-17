@@ -11,7 +11,7 @@ import { SCENARIOS, type Scenario } from "./scenarios";
 /** The chats, as iMessage: on a laptop the chat list sits beside the window;
  *  on a phone it's the conversation, with Messages one tap back. */
 
-type Msg = { id: string; from: "me" | "them"; text: string; at: string; layoutId?: string; tapback?: string; copyable?: boolean };
+export type Msg = { id: string; from: "me" | "them"; text: string; at: string; layoutId?: string; tapback?: string; copyable?: boolean };
 
 type Thread = {
   msgs: Msg[];
@@ -38,7 +38,7 @@ const teaser = (sc: Scenario) => {
   return [...lines].reverse().find((l) => !solAddress(l)) ?? lines[lines.length - 1];
 };
 
-const Done = () => (
+export const Done = () => (
   <svg viewBox="0 0 20 20" width="18" height="18" aria-label="Done">
     <circle cx="10" cy="10" r="9" fill="#34c759" />
     <path d="m6 10.2 2.6 2.6L14 7.4" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -59,7 +59,7 @@ const Video = () => (
 );
 
 /** The autopilot's pointer: a Mac arrow on desktop, a fingertip on touch. */
-const Arrow = () => (
+export const Arrow = () => (
   <svg viewBox="0 0 24 28" width="24" height="28" aria-hidden>
     <path d="M3 2v19.5l5-4.6 3.3 7.1 3.1-1.4-3.2-6.9 6.8-.4z" fill="#fff" stroke="#111" strokeWidth="1.4" strokeLinejoin="round" />
   </svg>
@@ -71,7 +71,7 @@ const Chevron = () => (
   </svg>
 );
 
-function Avatar({ sc, size = "md" }: { sc: Scenario; size?: "sm" | "md" | "lg" }) {
+export function Avatar({ sc, size = "md" }: { sc: Scenario; size?: "sm" | "md" | "lg" }) {
   return (
     <span className={cx("av", `av--${size}`)} style={{ "--tint": sc.tint } as CSSProperties} aria-hidden>
       {sc.avatar}
@@ -138,7 +138,7 @@ function Rich({ text }: { text: string }) {
   return null;
 }
 
-function Bubble({
+export function Bubble({
   m, first, last, coach, menuOpen, onTap, onCopy,
 }: {
   m: Msg;

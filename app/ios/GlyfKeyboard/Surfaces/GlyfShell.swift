@@ -80,7 +80,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         Tile(icon: "wand.and.stars", title: "Rewrite", target: "!tones"),
         Tile(icon: "character.bubble", title: "Translate", target: "!translate"),
         Tile(icon: "person.text.rectangle", title: "Vault", target: "vault"),
-        Tile(icon: "doc.on.clipboard", title: "Clipboard", target: "clipboard"),
+        Tile(icon: "doc.on.clipboard", title: "Clipboard", target: "!clipboard"),
         Tile(icon: "face.smiling", title: "Emoji", target: "!emoji"),
         Tile(icon: "sparkles", title: "Ask Glyf", target: "!ask"),
         Tile(icon: "ellipsis.circle", title: "More", target: "more"),

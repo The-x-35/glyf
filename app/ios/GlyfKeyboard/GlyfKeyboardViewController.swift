@@ -48,6 +48,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var actHasResult = false
     private var actAccepted = false
     private var emoji: EmojiBoard?
+    /// Gboard's clipboard: its own header, pinned and recent as card columns.
+    private var clipboardPanel: ClipboardPanel?
     private var connector: ConnectorSurface?
     private var search: SearchSurface?
     private var noteEdit: NoteEditSurface?
@@ -62,7 +64,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var cursorMirror: CursorMirror?
     private var lastCursorAdjust: CFTimeInterval = 0
 
-    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act }
+    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard }
     private var surface: Surface = .none
 
     /// When set, key input routes into an inline editor (bar prompt / emoji search).
@@ -124,7 +126,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return search?.expandedForResults == true
                 ? base : base + Glass.barExtra + (search?.landingExtra ?? 0)
         case .noteEdit: return base + NoteEditSurface.stripHeight
-        case .shell, .connector, .act: return base
+        case .shell, .connector, .act, .clipboard: return base
         }
     }
 
@@ -472,6 +474,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = true
             act?.frame = panelRect(w, h)
+        case .clipboard:
+            // Gboard's clipboard owns the whole keyboard, strip included.
+            toolbar.isHidden = true
+            keyboardView.isHidden = true
+            clipboardPanel?.frame = CGRect(x: 0, y: 0, width: w, height: h)
         case .bar:
             toolbar.isHidden = !(bar?.expandedForResult ?? false)
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
@@ -500,7 +507,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             // provides the rise itself.
             for overlay in [self.shell, self.bar, self.emoji, self.connector,
                             self.search, self.noteEdit, self.hud,
-                            self.tonesPopup, self.act, self.clipStrip] as [UIView?] {
+                            self.tonesPopup, self.act, self.clipStrip,
+                            self.clipboardPanel] as [UIView?] {
                 overlay?.alpha = 1
             }
             self.view.layoutIfNeeded()
@@ -543,6 +551,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .act:
             actTask?.cancel(); actTask = nil
             act?.removeFromSuperview(); act = nil
+        case .clipboard: clipboardPanel?.removeFromSuperview(); clipboardPanel = nil
         case .none: break
         }
         inlineTarget = nil
@@ -569,6 +578,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
             prepareEntrance(e, animated: animated)
             emoji = e
             MemoryLogger.logSurface("emoji")
+        case .clipboard:
+            let c = ClipboardPanel()
+            c.delegate = self
+            content.addSubview(c)
+            prepareEntrance(c, animated: animated)
+            clipboardPanel = c
+            MemoryLogger.logSurface("clipboard")
         case .connector(let id):
             let c = ConnectorSurface(connectorId: id)
             c.delegate = self
@@ -1324,6 +1340,20 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
     }
 }
 
+// MARK: - ClipboardPanelDelegate
+
+extension GlyfKeyboardViewController: ClipboardPanelDelegate {
+    func clipboardPanelClosed() { setSurface(.none) }
+
+    func clipboardPanelPaste(_ text: String) {
+        setSurface(.none)
+        textDocumentProxy.insertText(text)
+        updateCandidates()
+    }
+
+    func clipboardPanelChanged() {}
+}
+
 // MARK: - ClipContextStripDelegate
 
 extension GlyfKeyboardViewController: ClipContextStripDelegate {
@@ -1389,8 +1419,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         case "search":
             setSurface(.search)
         case "clipboard":
-            ClipboardStore.captureNow() // user asked for the clipboard
-            setSurface(.shell); shell?.push("clipboard")
+            setSurface(.clipboard)
         case "vault":
             setSurface(.shell); shell?.push("vault")
         case "settings":
@@ -1676,6 +1705,7 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
 
     func shellOpenSurface(_ id: String) {
         switch id {
+        case "clipboard": setSurface(.clipboard)
         case "search": setSurface(.search)
         case "emoji": setSurface(.emoji)
         case "tones": setSurface(.none); showTonesPopup()

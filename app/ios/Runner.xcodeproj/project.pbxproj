@@ -17,6 +17,7 @@
 		0B545E6619BFA8152F0DD00A /* TypingText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2800A99C3DD59CFC155C03C /* TypingText.swift */; };
 		0E08430B71036E4ED4D917CB /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ED172FBD98BD64B321D6F03F /* Foundation.framework */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
+		1CAC13D36C427C7132889EF1 /* ClipboardPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACF0028C0693E817D1AC231 /* ClipboardPanel.swift */; };
 		20A21D92D3A57F8A1719908F /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
 		21C14BE98D0CD059C5EC3C2E /* SpaceGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07E305711B11F34700D4CCDE /* SpaceGesture.swift */; };
 		264770223DD8226DB4B988F0 /* ActSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */; };
@@ -233,6 +234,7 @@
 		D6E6DFEACD2A44AAB2AA5FA2 /* SearchCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchCard.swift; sourceTree = "<group>"; };
 		D7BD628E919BD87B27B98432 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		D82BB17847C2DCF9BBACCBD1 /* Runner.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
+		DACF0028C0693E817D1AC231 /* ClipboardPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardPanel.swift; sourceTree = "<group>"; };
 		DF986CE579005D015F108B53 /* TypingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingStore.swift; sourceTree = "<group>"; };
 		E2800A99C3DD59CFC155C03C /* TypingText.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingText.swift; sourceTree = "<group>"; };
 		E46B9884C62D41962509FCA0 /* KeyboardToast.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardToast.swift; sourceTree = "<group>"; };
@@ -352,6 +354,7 @@
 				F2E78F3328F27A5F72F19B32 /* ThumbLoader.swift */,
 				3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */,
 				1BBED0EAF8F6D2E1EC7A8B1C /* ClipContextStrip.swift */,
+				DACF0028C0693E817D1AC231 /* ClipboardPanel.swift */,
 			);
 			name = Surfaces;
 			path = Surfaces;
@@ -836,6 +839,7 @@
 				0B545E6619BFA8152F0DD00A /* TypingText.swift in Sources */,
 				5E0A6309E93806626CBD55BA /* TypingStore.swift in Sources */,
 				E7BD0E1FCC0F7FE19D446927 /* Smart.swift in Sources */,
+				1CAC13D36C427C7132889EF1 /* ClipboardPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

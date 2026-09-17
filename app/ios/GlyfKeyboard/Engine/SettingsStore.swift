@@ -5,7 +5,7 @@ import Foundation
 struct GlyfSettings: Codable, Equatable {
     /// Bumped when defaults change; load() migrates older files additively.
     /// Optional so files written before the field existed still decode.
-    var schemaVersion: Int? = 5
+    var schemaVersion: Int? = 6
     var haptics: Bool = true
     var keyClicks: Bool = true
     var numberRow: Bool = false
@@ -72,10 +72,12 @@ struct GlyfSettings: Codable, Equatable {
     /// Deliberately SMALL (design decision 2026-09-12: "don't preset a lot").
     /// Three anchors ship bound; onboarding personas and per-key
     /// recommendations fill the rest by choice, never by default.
+    /// Two holds, and that is all: S shares your details, T translates as
+    /// you type. Proofread, emoji-fy and the rest were canned versions of
+    /// what holding space already does with the model, so they are gone.
     static let defaultBindings: [String: String] = [
-        "t": "surface:translate-hud",   // §6.13 T — Translation HUD ★
-        "s": "surface:vault",           // §6.13 S — Share My Info
-        "p": "glyf.proofread",          // §6.13 P — Proofread
+        "t": "surface:translate-hud",
+        "s": "surface:vault",
     ]
     /// Backend base URL (dev). Set from the app's debug screen.
     /// Dev builds talk to the Mac; shipped builds talk to tryglyf.com.
@@ -187,6 +189,17 @@ enum SettingsStore {
                 s.toolbarOrder.removeAll { $0 == "emoji" }
             }
             s.schemaVersion = 5
+        }
+        // v5 → v6: the canned glyfs go. Hold space does all of it better,
+        // so only the two holds that are not AI remain.
+        if (s.schemaVersion ?? 1) < 6 {
+            s.bindings = s.bindings.filter { _, target in
+                target == "surface:vault" || target == "surface:translate-hud"
+            }
+            for (key, target) in GlyfSettings.defaultBindings where s.bindings[key] == nil {
+                s.bindings[key] = target
+            }
+            s.schemaVersion = 6
         }
         if s.customTitles == nil { s.customTitles = [:] }
         // Legacy proUnlocked → the plus plan.
