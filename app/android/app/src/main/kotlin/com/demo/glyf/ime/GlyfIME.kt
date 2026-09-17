@@ -772,7 +772,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             return
         }
         if (barActive) {
-            typeIntoStrip(id, char, barPrompt, { barPrompt = it; barPromptView?.text = it }) {
+            typeIntoStrip(id, char, barPrompt, { barPrompt = it; barPromptView?.text = it; styleBarRun() }) {
                 runBarPrompt()
             }
             return
@@ -1239,13 +1239,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     // MARK: Glyf Bar (§6.4) — hold space, let go
 
-    private data class BarInput(val text: String, val source: String,
-                                val consumedBefore: Int, val consumedAfter: Int = 0)
+    /** What Ask Glyf works on: "field", "clipboard" or "empty". */
+    private data class BarInput(val text: String, val source: String)
 
     private var barActive = false
     private var barPrompt = ""
     private var barStrip: LinearLayout? = null
     private var barPromptView: TextView? = null
+    private var barRunView: TextView? = null
     private var barInput: BarInput? = null
 
     /** Same quick glyfs, same order, same titles as iOS GlyfCatalog. */
@@ -1288,131 +1289,194 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val before = ic?.getTextBeforeCursor(2000, 0)?.toString() ?: ""
         val after = ic?.getTextAfterCursor(2000, 0)?.toString() ?: ""
         if ((before + after).isNotBlank()) {
-            return BarInput(before + after, "field", before.length, after.length)
+            return BarInput(before + after, "field")
         }
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         val clip = cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
-        if (!clip.isNullOrBlank()) return BarInput(clip, "clipboard", 0)
-        return BarInput("", "empty", 0)
+        if (!clip.isNullOrBlank()) return BarInput(clip, "clipboard")
+        return BarInput("", "empty")
     }
 
     private fun showGlyfBar() {
         removeClipCard()
         dismissOverlay()
-        val input = collectBarInput()
-        barInput = input
+        barInput = collectBarInput()
         barActive = true
         barPrompt = ""
         toolbar.visibility = View.GONE
-        val secondary = Color.argb(170, 128, 128, 136)
+        val strip = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(strip, 0)
+        barStrip = strip
+        renderBar()
+    }
 
-        val strip = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(4), dp(8), dp(6))
-        }
+    /** Ask Glyf, the same bar as iOS. The strip row: close where the g was,
+     *  the prompt with its send arrow where the tools were, the keys typing
+     *  into it. Under it, only when there is something for it: the copied
+     *  text the prompt will work on (tap to leave it out) and the person's
+     *  own glyfs. Answers open in the act panel. */
+    private fun renderBar() {
+        val strip = barStrip ?: return
+        strip.removeAllViews()
+        val accent = Color.rgb(0x7C, 0x5C, 0xFF)
+        val quiet = Color.argb(170, 128, 128, 136)
 
-        // What the bar will read, and close.
-        val head = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        head.addView(TextView(this).apply {
-            text = when (input.source) {
-                "field" -> "FIELD TEXT"
-                "clipboard" -> "CLIPBOARD"
-                else -> "NO INPUT — prompt runs alone"
-            }
-            textSize = 10.5f
-            typeface = Typeface.DEFAULT_BOLD
-            letterSpacing = 0.04f
-            setTextColor(secondary)
-            setPadding(dp(9), dp(2), dp(9), dp(2))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(9).toFloat(); setColor(card())
-            }
-        })
-        head.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        head.addView(TextView(this).apply {
-            text = "✕"; textSize = 16f; setTextColor(ink())
-            setPadding(dp(12), 0, dp(6), 0)
-            setTag(com.demo.glyf.R.id.qa_id, "bar:close"); contentDescription = "Close"
-            setOnClickListener { exitBar() }
-        })
-
-        // The instruction the keys type into, and run.
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(5), 0, 0)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
         }
-        val prompt = TextView(this).apply {
-            hint = "Tell Glyf what to do…"
-            textSize = 15f
-            maxLines = 2
+        row.addView(TextView(this).apply {
+            text = "✕"; textSize = 16f
+            gravity = Gravity.CENTER
             setTextColor(ink())
-            setHintTextColor(Color.argb(120, 128, 128, 136))
-            setPadding(dp(12), dp(7), dp(12), dp(7))
-            setTag(com.demo.glyf.R.id.qa_id, "bar:prompt"); contentDescription = "Ask Glyf"
+            setTag(com.demo.glyf.R.id.qa_id, "bar:close"); contentDescription = "Close"
             background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat(); setColor(card())
+                cornerRadius = dp(10).toFloat()
+                setColor(if (chromeDark) Color.argb(20, 255, 255, 255) else Color.argb(153, 255, 255, 255))
+            }
+            setOnClickListener { exitBar() }
+        }, LinearLayout.LayoutParams(dp(38), dp(30)))
+
+        val field = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(9), 0, dp(4), 0)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(17).toFloat(); setColor(card())
+                setStroke(dp(1), Color.argb(153, 0x7C, 0x5C, 0xFF))
             }
         }
+        field.addView(ToolIcon(this, "ask", accent).apply { scale = 0.85f },
+            LinearLayout.LayoutParams(dp(20), dp(20)))
+        val prompt = TextView(this).apply {
+            text = barPrompt
+            hint = "Ask Glyf"
+            textSize = 15f
+            maxLines = 1
+            // The end stays in view: that is where the typing is.
+            ellipsize = android.text.TextUtils.TruncateAt.START
+            setTextColor(ink())
+            setHintTextColor(quiet)
+            setPadding(dp(8), 0, dp(6), 0)
+            setTag(com.demo.glyf.R.id.qa_id, "bar:prompt"); contentDescription = "Ask Glyf"
+        }
+        field.addView(prompt, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         val run = TextView(this).apply {
-            text = "↑"; textSize = 17f
+            text = "↑"; textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setTextColor(card())
-            setTag(com.demo.glyf.R.id.qa_id, "bar:run"); contentDescription = "Run"
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL; setColor(ink())
-            }
+            setTag(com.demo.glyf.R.id.qa_id, "bar:run"); contentDescription = "Ask"
             setOnClickListener { runBarPrompt() }
         }
-        row.addView(prompt, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(run, LinearLayout.LayoutParams(dp(34), dp(34)).apply { leftMargin = dp(8) })
+        field.addView(run, LinearLayout.LayoutParams(dp(26), dp(26)))
+        row.addView(field, LinearLayout.LayoutParams(0, dp(34), 1f).apply { leftMargin = dp(8) })
+        strip.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
+        barPromptView = prompt
+        barRunView = run
+        styleBarRun()
 
-        // Quick glyfs.
-        val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val chips = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val input = barInput
+        val context = input?.text?.trim().orEmpty()
+        if (input != null && input.source != "empty" && context.isNotEmpty()) {
+            val copied = input.source == "clipboard"
+            chips.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(9), 0, dp(11), 0)
+                setTag(com.demo.glyf.R.id.qa_id, "bar:context")
+                contentDescription = if (copied) "Copied text, tap to leave it out"
+                    else "Your text, tap to leave it out"
+                background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(card()) }
+                addView(ToolIcon(this@GlyfIME, if (copied) "clipboard" else "edit", accent).apply { scale = 0.75f },
+                    LinearLayout.LayoutParams(dp(18), dp(18)))
+                addView(TextView(this@GlyfIME).apply {
+                    text = "“${barPreview(context)}”"
+                    textSize = 13f
+                    maxLines = 1
+                    setTextColor(ink())
+                    setPadding(dp(6), 0, dp(9), 0)
+                })
+                addView(TextView(this@GlyfIME).apply {
+                    text = "✕"; textSize = 11f
+                    setTextColor(quiet)
+                })
+                setOnClickListener {
+                    // Leave the copied text out: the prompt runs on its own.
+                    barInput = BarInput("", "empty")
+                    renderBar()
+                }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply { rightMargin = dp(6) })
+        }
         for ((glyfId, title) in myGlyfs()) {
             chips.addView(TextView(this).apply {
-                text = title; textSize = 13f
+                text = title; textSize = 13.5f
                 typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
                 setTextColor(ink())
-                setPadding(dp(13), dp(6), dp(13), dp(6))
+                setPadding(dp(13), 0, dp(13), 0)
                 setTag(com.demo.glyf.R.id.qa_id, "chip:$glyfId")
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(15).toFloat(); setColor(card())
-                    setStroke(1, Color.argb(if (chromeDark) 40 else 26, 128, 128, 136))
-                }
-                setOnClickListener { runFromBar(glyfId, emptyMap()) }
-            }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(6) })
+                background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(card()) }
+                setOnClickListener { runFromBar(glyfId, emptyMap(), title) }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply { rightMargin = dp(6) })
         }
-        val chipScroll = android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            setPadding(0, dp(7), 0, 0)
-            addView(chips)
+        if (chips.childCount > 0) {
+            strip.addView(android.widget.HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                clipToPadding = false
+                setPadding(dp(8), 0, dp(8), dp(6))
+                addView(chips)
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)))
         }
+    }
 
-        strip.addView(head)
-        strip.addView(row)
-        strip.addView(chipScroll)
-        root.addView(strip, 0)
-        barStrip = strip
-        barPromptView = prompt
+    /** The send arrow: ink once there is something to ask. */
+    private fun styleBarRun() {
+        val run = barRunView ?: return
+        val ready = barPrompt.isNotBlank()
+        run.setTextColor(if (ready) card() else Color.argb(170, 128, 128, 136))
+        run.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(if (ready) ink() else Color.argb(if (chromeDark) 40 else 30, 128, 128, 136))
+        }
+    }
+
+    /** One line of the context, short enough for its chip. */
+    private fun barPreview(text: String): String {
+        val flat = text.split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
+        return if (flat.length > 30) flat.take(30) + "…" else flat
     }
 
     private fun runBarPrompt() {
         val p = barPrompt.trim()
         if (p.isEmpty()) return
-        runFromBar("custom.prompt", mapOf("prompt" to p))
+        runFromBar("custom.prompt", mapOf("prompt" to p), p)
     }
 
-    private fun runFromBar(glyfId: String, vars: Map<String, String>) {
+    /** A bar run plays out like a held key's skill in the act panel: working,
+     *  the answer, Insert (swapping the field text it read; copied text only
+     *  adds). */
+    private fun runFromBar(glyfId: String, vars: Map<String, String>, title: String) {
         val input = barInput ?: return
         exitBar()
-        showRunOverlay(glyfId, input.text, input.consumedBefore, input.consumedAfter, vars)
+        actSkill = glyfId to ""
+        actSkillTitle = title
+        actVars = vars
+        actIntent = null
+        if (input.source == "field") {
+            val ic = currentInputConnection
+            actBefore = ic?.getTextBeforeCursor(2000, 0)?.toString() ?: ""
+            actAfter = ic?.getTextAfterCursor(2000, 0)?.toString() ?: ""
+        } else {
+            actBefore = ""
+            actAfter = ""
+        }
+        actRunInput = input.text
+        runAct()
     }
 
     private fun exitBar() {
@@ -1421,6 +1485,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         barStrip?.let { root.removeView(it) }
         barStrip = null
         barPromptView = null
+        barRunView = null
         toolbar.visibility = View.VISIBLE
         syncAutoShift()
     }
@@ -1686,6 +1751,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var actPanelHeight = 0
     /** Set while a bound letter's skill runs in the act panel: glyf id → letter. */
     private var actSkill: Pair<String, String>? = null
+    /** A bar run's own name (the prompt itself) and its vars. */
+    private var actSkillTitle: String? = null
+    private var actVars: Map<String, String> = emptyMap()
     /** What the run reads: the field text, or the clipboard for a skill. */
     private var actRunInput = ""
     private var actStreamView: TextView? = null
@@ -1695,6 +1763,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     private fun startAct(before: String, after: String, intent: String? = null) {
         actSkill = null
+        actSkillTitle = null
+        actVars = emptyMap()
         actIntent = intent
         actBefore = before
         actAfter = after
@@ -1709,6 +1779,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val before = ic?.getTextBeforeCursor(2000, 0)?.toString() ?: ""
         val after = ic?.getTextAfterCursor(2000, 0)?.toString() ?: ""
         actSkill = glyfId to letter
+        actSkillTitle = null
+        actVars = emptyMap()
         if ((before + after).isNotBlank()) {
             actBefore = before
             actAfter = after
@@ -1744,10 +1816,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val panel = actPanel()
         actStreamView = null
         actSkill?.let { (glyfId, letter) ->
-            val title = skillTitle(glyfId)
-            buildActWorking(panel, actRunInput, title, letter)
-            val vars = if (glyfId == "glyf.translate")
-                mapOf("target" to settings.optString("translateTarget", "English")) else emptyMap()
+            val title = actSkillTitle ?: skillTitle(glyfId)
+            buildActWorking(panel, actRunInput, title, letter.ifEmpty { null })
+            val vars = actVars + (if (glyfId == "glyf.translate")
+                mapOf("target" to settings.optString("translateTarget", "English")) else emptyMap())
             val streamed = StringBuilder()
             BackendClient.run(
                 settings.optString("backendURL"), glyfId, actRunInput, vars,
@@ -1817,6 +1889,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         panel.removeAllViews()
         panel.addView(ActRingsView(this, ink()), FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        panel.addView(actHeader(retry = false), FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, dp(47), Gravity.TOP))
         if (title != null) {
             panel.addView(TextView(this).apply {
                 text = title; textSize = 15f
@@ -1826,7 +1900,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 setTag(com.demo.glyf.R.id.qa_id, "act:skill"); contentDescription = "Working"
             }, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP).apply { topMargin = dp(14) })
+                Gravity.TOP).apply { topMargin = dp(53) })
         }
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1860,38 +1934,52 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
+    /** The strip while the act panel is open, the same as iOS and the
+     *  website: close where the g was, ✦ Glyf, and ↻ at the right once there
+     *  is an answer to try again. */
+    private fun actHeader(retry: Boolean): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(10), dp(6), dp(10), dp(6))
+        addView(TextView(this@GlyfIME).apply {
+            text = "✕"; textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(ink())
+            setTag(com.demo.glyf.R.id.qa_id, "act:close"); contentDescription = "Close"
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(if (chromeDark) Color.argb(20, 255, 255, 255) else Color.argb(153, 255, 255, 255))
+            }
+            setOnClickListener { actClose() }
+        }, LinearLayout.LayoutParams(dp(38), dp(30)))
+        addView(ToolIcon(this@GlyfIME, "ask", ink()),
+            LinearLayout.LayoutParams(dp(22), dp(22)).apply { leftMargin = dp(14) })
+        addView(TextView(this@GlyfIME).apply {
+            text = "Glyf"; textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(ink())
+            setPadding(dp(8), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (retry) addView(TextView(this@GlyfIME).apply {
+            text = "↻"; textSize = 19f
+            gravity = Gravity.CENTER
+            setTextColor(ink())
+            setTag(com.demo.glyf.R.id.qa_id, "act:retry"); contentDescription = "Try again"
+            setOnClickListener { runAct() }
+        }, LinearLayout.LayoutParams(dp(40), dp(34)))
+    }
+
     private fun showActResult(panel: FrameLayout, r: BackendClient.ActResult) {
         actStreamView = null
         panel.removeAllViews()
+        val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        outer.addView(actHeader(retry = true), LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(2), dp(10), dp(10))
+            setPadding(dp(10), 0, dp(10), dp(10))
         }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        header.addView(TextView(this).apply {
-            text = "✕"; textSize = 16f; setTextColor(ink())
-            setPadding(dp(6), 0, dp(12), 0)
-            setTag(com.demo.glyf.R.id.qa_id, "act:close"); contentDescription = "Close"
-            setOnClickListener { actClose() }
-        })
-        header.addView(TextView(this).apply {
-            text = r.title; textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(ink())
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        // Versions have no Copy/Insert row (tap inserts, hold copies), so ↻
-        // sits up here and the list gets the whole panel.
-        if (r.options.isNotEmpty()) {
-            header.addView(pill("↻", primary = false, id = "act:retry") { runAct() },
-                LinearLayout.LayoutParams(dp(44), dp(34)))
-        }
-        column.addView(header, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)))
+        outer.addView(column, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         fun gap() = LinearLayout.LayoutParams(
@@ -1985,46 +2073,33 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, dp(8), 0, 0)
             }
-            actions.addView(pill("↻", primary = false, id = "act:retry") { runAct() },
-                LinearLayout.LayoutParams(dp(44), dp(38)))
-            // Copy and Insert only when there is one answer to take.
+            // Copy and Insert only when there is one answer to take (↻ is up
+            // in the strip, as on iOS).
             if (r.insert.isNotBlank()) {
                 actions.addView(pill("Copy", primary = false, id = "act:copy") { actCopy(r.insert) },
-                    LinearLayout.LayoutParams(0, dp(38), 0.38f).apply { leftMargin = dp(8) })
+                    LinearLayout.LayoutParams(0, dp(38), 0.38f))
                 actions.addView(pill("Insert ↑", primary = true, id = "act:insert") { actInsert(r.insert) },
                     LinearLayout.LayoutParams(0, dp(38), 0.62f).apply { leftMargin = dp(8) })
             }
             column.addView(actions)
         }
-        panel.addView(column, FrameLayout.LayoutParams(
+        panel.addView(outer, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
     }
 
     /** The skill's answer arriving token by token; actions come with the end. */
+    @Suppress("UNUSED_PARAMETER")
     private fun showActStreaming(panel: FrameLayout, title: String, text: String) {
         actStreamView?.let { it.text = text; return }
         panel.removeAllViews()
+        val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        outer.addView(actHeader(retry = false), LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(2), dp(10), dp(10))
+            setPadding(dp(10), 0, dp(10), dp(10))
         }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        header.addView(TextView(this).apply {
-            this.text = "✕"; textSize = 16f; setTextColor(ink())
-            setPadding(dp(6), 0, dp(12), 0)
-            setTag(com.demo.glyf.R.id.qa_id, "act:close"); contentDescription = "Close"
-            setOnClickListener { actClose() }
-        })
-        header.addView(TextView(this).apply {
-            this.text = title; textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(ink())
-        })
-        column.addView(header, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)))
+        outer.addView(column, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         val body = TextView(this).apply {
             this.text = text
             textSize = 15.5f
@@ -2039,7 +2114,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             isVerticalScrollBarEnabled = false
             addView(body)
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-        panel.addView(column, FrameLayout.LayoutParams(
+        panel.addView(outer, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         actStreamView = body
     }
@@ -2474,110 +2549,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         if (isSecureField()) return // no AI in password fields
         startSkill(char, glyfId)
-    }
-
-    private fun showRunOverlay(glyfId: String, input: String, consumedBefore: Int,
-                               consumedAfter: Int = 0,
-                               extraVars: Map<String, String> = emptyMap()) {
-        dismissOverlay()
-        val dark = keyboard.isDark
-        val card = if (dark) Color.rgb(44, 44, 46) else Color.WHITE
-        val ink = if (dark) Color.WHITE else Color.rgb(18, 18, 20)
-
-        val panel = FrameLayout(this).apply {
-            setBackgroundColor(keyboard.backdrop())
-        }
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(16))
-        }
-        val status = TextView(this).apply {
-            text = "Running…"
-            setTextColor(if (dark) Color.LTGRAY else Color.DKGRAY)
-            textSize = 12.5f
-        }
-        val result = TextView(this).apply {
-            setTextColor(ink)
-            textSize = 15f
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(card)
-            }
-        }
-        val scroll = ScrollView(this).apply { addView(result) }
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            visibility = View.GONE
-        }
-
-        fun action(label: String, primary: Boolean, onTap: () -> Unit) {
-            val b = Button(this).apply {
-                text = label
-                isAllCaps = false
-                textSize = 14f
-                setTextColor(if (primary) card else ink)
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(17).toFloat()
-                    setColor(if (primary) ink else card)
-                }
-                setOnClickListener { onTap() }
-            }
-            val lp = LinearLayout.LayoutParams(0, dp(38), 1f)
-            lp.setMargins(dp(4), dp(8), dp(4), 0)
-            actions.addView(b, lp)
-        }
-
-        var finalText = ""
-        action("Replace", true) {
-            val ic = currentInputConnection ?: return@action
-            // Swap exactly the text the run read — both sides of the cursor.
-            // With the cursor glided mid-sentence, deleting only the before-
-            // part left the old tail after the rewrite.
-            ic.beginBatchEdit()
-            ic.deleteSurroundingText(consumedBefore, consumedAfter)
-            ic.commitText(finalText, 1)
-            ic.endBatchEdit()
-            dismissOverlay()
-        }
-        action("Insert", false) {
-            currentInputConnection?.commitText(finalText, 1)
-            dismissOverlay()
-        }
-        action("✕", false) { dismissOverlay() }
-
-        column.addView(status)
-        column.addView(scroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-        column.addView(actions)
-        panel.addView(column)
-        root.addView(panel, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, keyboard.height + dp(44)))
-        keyboard.visibility = View.GONE
-        toolbar.visibility = View.GONE
-        overlay = panel
-
-        val vars = (if (glyfId == "glyf.translate")
-            mapOf("target" to settings.optString("translateTarget", "English"))
-        else emptyMap()) + extraVars
-
-        BackendClient.run(
-            settings.optString("backendURL"),
-            glyfId, input, vars,
-            settings.optString("deviceId"),
-            settings.optString("plan", "free"),
-            onToken = { t -> main.post { result.text = "${result.text}$t" } },
-            onDone = { text, remaining ->
-                main.post {
-                    android.util.Log.d("GlyfKB", "ui done attached=${result.isAttachedToWindow}")
-                    finalText = text
-                    result.text = text
-                    status.text = remaining?.let { "$it runs left today" } ?: " "
-                    actions.visibility = View.VISIBLE
-                }
-            },
-            onError = { message -> main.post { status.text = message } },
-        )
     }
 
     private fun dismissOverlay() {

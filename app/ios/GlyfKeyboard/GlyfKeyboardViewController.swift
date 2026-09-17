@@ -42,7 +42,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var actTask: URLSessionDataTask?
     private var actInput: (before: String, after: String)?
     /// Set when a bound letter's skill is running in the act surface.
-    private var actSkill: (glyfId: String, letter: String)?
+    private var actSkill: (glyfId: String, letter: String?)?
+    /// A bar run's own name (the prompt itself) and its vars.
+    private var actSkillTitle: String?
+    private var actVars: [String: String] = [:]
     /// What a suggestion chip promised to do; nil lets the server decide.
     private var actIntent: String?
     /// The text the run reads (field text, or the clipboard for a skill).
@@ -63,7 +66,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// §6.13 R — transient overlay over the keys, not a Surface.
     private var tonesPopup: TonesPopup?
     /// §6.15: did the user act on the bar's result (Replace/Insert/Copy)?
-    private var barAccepted = false
     /// Text around the cursor, mirrored for the length of a space-bar glide.
     private var cursorMirror: CursorMirror?
     private var lastCursorAdjust: CFTimeInterval = 0
@@ -125,8 +127,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return base + (emoji?.searchActive == true ? EmojiBoard.searchStripHeight : EmojiBoard.extraHeight)
         // Panels take the key area instead of growing the keyboard, exactly
         // like the website: the keys never move, so muscle memory holds.
+        // Ask Glyf keeps the keys live under it; its chips row adds height.
         case .bar:
-            return bar?.expandedForResult == true ? base : base + Glass.barExtra
+            return base + (bar?.extraHeight ?? 0)
         // While typing a query the keys stay live under a strip; results
         // become a panel over the keys.
         case .search:
@@ -340,7 +343,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // (The g menu keeps the tools on the strip: see keepTools below.)
         case .emoji where emoji?.searchActive != true: return ("face.smiling", "Emoji")
         case .act: return ("sparkles", "Glyf")
-        case .bar where bar?.expandedForResult == true: return ("sparkles", "Glyf")
         case .connector where connector?.searchActive != true: return ("calendar", "Calendar")
         default: return (nil, nil)
         }
@@ -466,19 +468,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
             keyboardView.isHidden = true
             clipboardPanel?.frame = CGRect(x: 0, y: 0, width: w, height: h)
         case .bar:
-            toolbar.isHidden = !(bar?.expandedForResult ?? false)
-            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            // The bar is the strip (and its chips row); the keys type into it.
+            toolbar.isHidden = true
+            keyboardView.isHidden = false
             if let bar {
-                if bar.expandedForResult {
-                    keyboardView.isHidden = true
-                    bar.frame = panelRect(w, h)
-                } else {
-                    keyboardView.isHidden = false
-                    let barH = Glass.toolbarHeight + Glass.barExtra
-                    bar.frame = CGRect(x: 0, y: 0, width: w, height: barH)
-                    keyboardView.frame = CGRect(x: 0, y: barH, width: w,
-                                                height: max(0, h - barH))
-                }
+                let barH = Glass.toolbarHeight + bar.extraHeight
+                bar.frame = CGRect(x: 0, y: 0, width: w, height: barH)
+                keyboardView.frame = CGRect(x: 0, y: barH, width: w,
+                                            height: max(0, h - barH))
             }
         }
     }
@@ -524,12 +521,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // Tear down the old overlay — pop = discard data (§6.3).
         switch surface {
         case .shell: shell?.removeFromSuperview(); shell = nil
-        case .bar:
-            // §6.15: a result the user walked away from is a "discard" signal.
-            if !barAccepted, let b = bar, b.hasResult, let id = b.lastRunGlyfId {
-                ToneProfile.record(glyfId: id, accepted: false)
-            }
-            bar?.cancelRun(); bar?.removeFromSuperview(); bar = nil
+        case .bar: bar?.removeFromSuperview(); bar = nil
         case .emoji: emoji?.removeFromSuperview(); emoji = nil
         case .connector:
             connector?.removeFromSuperview(); connector = nil
@@ -555,10 +547,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             prepareEntrance(s, animated: animated)
             shell = s
         case .bar:
-            barAccepted = false
             let b = GlyfBar()
             b.delegate = self
-            b.onExpandChange = { [weak self] in self?.applySurfaceLayout(animated: true) }
             content.addSubview(b)
             prepareEntrance(b, animated: animated)
             bar = b
@@ -1350,6 +1340,11 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             editor.append("\n")
             return
         }
+        if inlineTarget != nil, surface == .bar {
+            // Return asks, like the send arrow.
+            bar?.submit()
+            return
+        }
         if let editor = inlineTarget {
             editor.isActive = false
             inlineTarget = nil
@@ -1452,6 +1447,8 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
 
     private func startAct(clipboard text: String) {
         actSkill = nil
+        actSkillTitle = nil
+        actVars = [:]
         actIntent = nil
         actInput = ("", "") // a copied text is acted on, never deleted from the field
         actRunInput = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1462,6 +1459,8 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
 
     private func startAct(before: String, after: String, intent: String? = nil) {
         actSkill = nil
+        actSkillTitle = nil
+        actVars = [:]
         actIntent = intent
         actInput = (before, after)
         actRunInput = (before + after).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1477,6 +1476,8 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         guard hasFullAccess else { openBar(autoRun: glyfId); return } // the bar explains Full Access
         let input = collectBarInput()
         actSkill = (glyfId, letter)
+        actSkillTitle = nil
+        actVars = [:]
         actRunInput = input.text
         // Field text is swapped on Insert; clipboard or empty input only inserts.
         actInput = input.source == "field"
@@ -1491,9 +1492,9 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         actTask?.cancel()
         actHasResult = false
         if let skill = actSkill {
-            let title = GlyfCatalog.title(for: skill.glyfId)
+            let title = actSkillTitle ?? GlyfCatalog.title(for: skill.glyfId)
             act.showWorking(intent: actRunInput, title: title, keyLetter: skill.letter)
-            var vars: [String: String] = [:]
+            var vars = actVars
             if skill.glyfId == "glyf.translate" {
                 vars["target"] = SettingsStore.current.translateTarget
             }
@@ -1569,14 +1570,35 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
 
     // MARK: Bar
 
+    /// Ask Glyf. A tool that already knows what to run (translate, a tone)
+    /// goes straight to the act panel; without Full Access the bar says how
+    /// to get it.
     private func openBar(autoRun: String?, vars: [String: String] = [:]) {
         guard !isSecureField else { return } // §11.9: no AI in secure fields
-        setSurface(.bar)
         let input = collectBarInput()
-        bar?.present(input: input, hasFullAccess: hasFullAccess)
-        if let glyfId = autoRun {
-            bar?.autoRun(glyfId: glyfId, vars: vars)
+        if let glyfId = autoRun, hasFullAccess {
+            runFromBar(glyfId: glyfId, vars: vars, title: GlyfCatalog.title(for: glyfId), input: input)
+            return
         }
+        setSurface(.bar)
+        bar?.present(input: input, hasFullAccess: hasFullAccess)
+        applySurfaceLayout(animated: true)
+    }
+
+    /// A bar run plays out like a held key's skill: working, the answer, and
+    /// Insert (which swaps the field text it read; copied text only adds).
+    private func runFromBar(glyfId: String, vars: [String: String], title: String,
+                            input: GlyfBar.Input) {
+        actSkill = (glyfId, nil)
+        actSkillTitle = title
+        actVars = vars
+        actIntent = nil
+        actRunInput = input.text
+        actInput = input.source == "field"
+            ? (textDocumentProxy.documentContextBeforeInput ?? "", input.after) : ("", "")
+        actAccepted = false
+        setSurface(.act)
+        runAct()
     }
 
     private func collectBarInput() -> GlyfBar.Input {
@@ -2079,41 +2101,18 @@ extension GlyfKeyboardViewController: GlyfBarDelegate {
         setSurface(.none)
     }
 
-    func barReplace(text: String, input: GlyfBar.Input) {
-        recordBarAccepted()
-        // §6.4 Replace swaps exactly the text the run read — both sides of
-        // the cursor. With the cursor glided mid-sentence, deleting only the
-        // before-part left the old tail after the rewrite.
-        if !input.after.isEmpty {
-            textDocumentProxy.adjustTextPosition(byCharacterOffset: input.after.utf16.count)
-        }
-        for _ in 0..<(input.consumedBefore + input.after.count) {
-            textDocumentProxy.deleteBackward()
-        }
-        textDocumentProxy.insertText(text)
+    func barRun(glyfId: String, vars: [String: String], title: String, input: GlyfBar.Input) {
+        inlineTarget = nil
+        runFromBar(glyfId: glyfId, vars: vars, title: title, input: input)
+    }
+
+    func barOpenApp() {
         setSurface(.none)
+        openApp(path: "home")
     }
 
-    func barInsert(text: String) {
-        recordBarAccepted()
-        textDocumentProxy.insertText(text)
-        setSurface(.none)
-    }
-
-    func barCopy(text: String) {
-        guard hasFullAccess else { return }
-        recordBarAccepted()
-        UIPasteboard.general.string = text
-        _ = ClipboardStore.inserting(text, into: ClipboardStore.load(), now: Date())
-            .map(ClipboardStore.save)
-    }
-
-    /// §6.15: keeping a result teaches the tone profile.
-    private func recordBarAccepted() {
-        if !barAccepted, let id = bar?.lastRunGlyfId {
-            ToneProfile.record(glyfId: id, accepted: true)
-        }
-        barAccepted = true
+    func barHeightChanged() {
+        applySurfaceLayout(animated: true)
     }
 
     func barPromptActivated(_ editor: InlineEditor) {

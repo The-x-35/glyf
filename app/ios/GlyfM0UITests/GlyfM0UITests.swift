@@ -413,39 +413,33 @@ final class GlyfGateUITests: XCTestCase {
 
     // MARK: - M2 (backend in MOCK_AI mode on 127.0.0.1:8787)
 
-    func test04_GlyfBar_SpaceHold_MockRun_Replace() throws {
+    func test04_AskGlyf_SpaceHoldOnEmpty_MockRun_Insert() throws {
         let field = launchToTypingField()
         clearField(field)
-        typeOnGlyf("send file now")
 
-        // §5.3/§6.4: hold space ≥320ms → ripple → bar rises.
+        // §6.4: hold space with nothing typed → Ask Glyf takes the strip and
+        // the keys type into its prompt.
         kb("space")?.press(forDuration: 0.6)
-        XCTAssertNotNil(kbWait("chip:rewrite.polite", timeout: 5), "Glyf Bar did not open")
+        XCTAssertNotNil(kbWait("bar:prompt", timeout: 5), "Ask Glyf did not open")
+        typeOnGlyf("say hi")
+        kb("bar:run")?.tap()
 
-        kb("chip:rewrite.polite")?.tap()
-
-        // Mock backend answers deterministically: "MOCK polite: <input>".
-        let result = firstExisting(hosts.map { $0.textViews["bar:result"].firstMatch })
-        XCTAssertNotNil(result, "result view missing")
+        // The answer opens in the act panel; the mock backend is deterministic.
+        let answerView = firstExisting(hosts.map { $0.textViews["act:text"].firstMatch })
+        XCTAssertNotNil(answerView, "act answer missing")
         let deadline = Date().addingTimeInterval(10)
-        var resultText = ""
+        var answer = ""
         while Date() < deadline {
-            resultText = (result?.value as? String) ?? ""
-            if resultText.contains("MOCK polite") { break }
+            answer = (answerView?.value as? String) ?? ""
+            if answer.contains("MOCK") { break }
             usleep(400_000)
         }
-        XCTAssertTrue(resultText.contains("MOCK polite"), "no mock result, got '\(resultText)'")
+        XCTAssertTrue(answer.contains("MOCK"), "no mock answer, got '\(answer)'")
 
-        kb("bar:replace")?.tap()
+        kb("act:insert")?.tap()
         sleep(1)
-        // Replace consumes the whole draft and leaves EXACTLY the result
-        // (the mock echoes the input, so substring checks can't prove
-        // consumption — equality does).
-        let value = fieldValue(field)
-        XCTAssertTrue(value.hasPrefix("MOCK polite"),
-                      "Replace should swap the draft, got '\(value)'")
-        XCTAssertFalse(value.lowercased().hasPrefix("send file now"),
-                       "original draft should be consumed by Replace")
+        XCTAssertTrue(fieldValue(field).contains("MOCK"),
+                      "Insert should add the answer, got '\(fieldValue(field))'")
     }
 
     /// The space bar carries three gestures: a glide at any point while
@@ -599,8 +593,8 @@ final class GlyfGateUITests: XCTestCase {
         XCTAssertNotNil(kbWait("tones:casual", timeout: 5), "tones popup did not open")
         kb("tones:casual")?.tap()
 
-        // Picks feed rewrite.tone with the tone var → normal bar preview.
-        let result = firstExisting(hosts.map { $0.textViews["bar:result"].firstMatch })
+        // Picks feed rewrite.tone with the tone var → the act panel's answer.
+        let result = firstExisting(hosts.map { $0.textViews["act:text"].firstMatch })
         var text = ""
         let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
@@ -610,7 +604,7 @@ final class GlyfGateUITests: XCTestCase {
         }
         XCTAssertTrue(text.contains("MOCK tone"),
                       "tone rewrite did not run, got '\(text)'")
-        kb("bar:close")?.tap()
+        kb("act:close")?.tap()
     }
 
     func test11_KeylessWeather_W() throws {

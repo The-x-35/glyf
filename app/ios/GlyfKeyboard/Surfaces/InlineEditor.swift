@@ -21,8 +21,19 @@ final class InlineEditor: UIView {
         didSet { updateActive() }
     }
 
+    /// Room kept clear on the right, for a button laid over the pill's end.
+    var trailingInset: CGFloat = 12 {
+        didSet { setNeedsLayout() }
+    }
+
+    /// Long text keeps its end in view (where the typing is) instead of its start.
+    var showsEnd = false {
+        didSet { label.lineBreakMode = showsEnd ? .byTruncatingHead : .byTruncatingTail }
+    }
+
     /// `searchStyle` draws Apple's search pill: a magnifier, no outline.
-    init(placeholder: String, searchStyle: Bool = false) {
+    /// `symbol` leads an outlined pill with an accent icon (Ask Glyf's sparkle).
+    init(placeholder: String, searchStyle: Bool = false, symbol: String? = nil) {
         placeholderText = placeholder
         self.searchStyle = searchStyle
         super.init(frame: .zero)
@@ -43,6 +54,12 @@ final class InlineEditor: UIView {
             icon.image = UIImage(systemName: "magnifyingglass")
             icon.preferredSymbolConfiguration = .init(pointSize: 15, weight: .medium)
             icon.tintColor = Glass.textSecondary
+            icon.contentMode = .center
+            addSubview(icon)
+        } else if let symbol {
+            icon.image = UIImage(systemName: symbol)
+            icon.preferredSymbolConfiguration = .init(pointSize: 14, weight: .semibold)
+            icon.tintColor = Glass.accentPrimary
             icon.contentMode = .center
             addSubview(icon)
         }
@@ -95,10 +112,11 @@ final class InlineEditor: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let lead: CGFloat = searchStyle ? 36 : 12
+        let lead: CGFloat = searchStyle || icon.image != nil ? 36 : 12
         icon.frame = CGRect(x: 10, y: 0, width: 22, height: bounds.height)
-        label.frame = CGRect(x: lead, y: 4, width: bounds.width - lead - 12, height: bounds.height - 8)
-        let w = min(label.intrinsicContentSize.width, bounds.width - lead - 14)
+        label.frame = CGRect(x: lead, y: 4, width: max(0, bounds.width - lead - trailingInset),
+                             height: bounds.height - 8)
+        let w = min(label.intrinsicContentSize.width, bounds.width - lead - trailingInset - 2)
         let x = text.isEmpty ? lead : lead + w + 2
         caret.frame = CGRect(x: x, y: 7, width: 2, height: bounds.height - 14)
     }
