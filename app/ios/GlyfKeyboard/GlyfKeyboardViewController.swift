@@ -1682,7 +1682,9 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
 
     func clipboardPanelCopiedImage() {
         setSurface(.none)
-        KeyboardToast.show(in: content, text: "Screenshot copied")
+        // iOS lets no keyboard put an image in a text box: it is on the
+        // clipboard, one hold of the box away.
+        KeyboardToast.show(in: content, text: "Copied. Hold the text box to paste")
     }
 
 }
