@@ -212,7 +212,7 @@ describe("user glyfs + hub (§6.8/§6.9)", () => {
 });
 
 describe("oauth broker (§6.11)", () => {
-  it("google start fails closed without credentials, naming the env var", async () => {
+  it("google start fails closed without credentials, without naming server settings", async () => {
     delete process.env.GOOGLE_CLIENT_ID;
     const app = buildApp();
     const res = await app.inject({
@@ -220,7 +220,8 @@ describe("oauth broker (§6.11)", () => {
       url: "/oauth/google/start?deviceId=test-dev-00000001&scopes=calendar,gmail",
     });
     expect(res.statusCode).toBe(503);
-    expect(res.json().error).toContain("GOOGLE_CLIENT_ID");
+    expect(res.json().error).toBe("Google sign-in isn't available yet");
+    expect(res.json().error).not.toContain("GOOGLE_CLIENT_ID");
   });
 
   it("start builds a consent URL with exactly the chosen scopes when configured", async () => {
@@ -354,6 +355,6 @@ describe("routes: builder + hub + connector + telemetry", () => {
     const app = buildApp();
     const res = await app.inject({ method: "GET", url: "/oauth/google/start" });
     expect(res.statusCode).toBe(503);
-    expect(res.json().error).toContain("GOOGLE_CLIENT_ID");
+    expect(res.json().error).not.toContain("server/.env");
   });
 });

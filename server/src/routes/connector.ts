@@ -187,9 +187,9 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
     "/oauth/google/start", async (req, reply) => {
       const id = process.env.GOOGLE_CLIENT_ID;
       if (!id || !process.env.GOOGLE_CLIENT_SECRET) {
-        return reply.code(503).send({
-          error: "Google sign-in isn't configured yet — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in server/.env",
-        });
+        // Which settings are missing is for the server log, not for the app.
+        req.log.warn("google oauth start: GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set");
+        return reply.code(503).send({ error: "Google sign-in isn't available yet" });
       }
       const deviceId = req.query.deviceId ?? "";
       if (deviceId.length < 8) return reply.code(400).send({ error: "deviceId required" });
@@ -275,9 +275,8 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
       if (!p) return reply.code(404).send({ error: "unknown provider" });
       const id = clientId(p);
       if (!id || !clientSecret(p)) {
-        return reply.code(503).send({
-          error: `${p.label} isn't configured yet — set ${p.envPrefix}_CLIENT_ID and ${p.envPrefix}_CLIENT_SECRET in server/.env`,
-        });
+        req.log.warn(`${name} oauth start: ${p.envPrefix}_CLIENT_ID/${p.envPrefix}_CLIENT_SECRET not set`);
+        return reply.code(503).send({ error: `${p.label} sign-in isn't available yet` });
       }
       const deviceId = req.query.deviceId ?? "";
       if (deviceId.length < 8) return reply.code(400).send({ error: "deviceId required" });

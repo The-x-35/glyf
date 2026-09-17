@@ -48,6 +48,7 @@ Step types you may use:
   urban.define(term), country.info(country), repo.info(repo), food.info(food),
   calendar.today() [needs Google connected], notion.search(query) [needs Notion connected].
   Never invent tools.
+The glyf runs inside a phone keyboard: what it writes goes straight into a chat message the person is typing. So every llm prompt must ask for text that is ready to send as it is: in the writer's own voice, about as long as their message (a short chat stays a short chat), never a formal email unless the glyf is about email, no subject line, no sign-off, and never placeholders like [Name] or [Date].
 The LAST produced out must be named "final" (or output.from must point at it).
 "input" should be "field" when the action transforms what the user typed, "clipboard" when it reacts to copied content, "none" when it needs no text.
 Keep it minimal: most glyfs are ONE llm step.`;

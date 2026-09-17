@@ -55,7 +55,7 @@ export function rewriteStyles(ctx: SearchContext): { id: string; label: string; 
     { id: "basic", label: "Basic", how: "the same message written properly: capital letters, punctuation, spelling and grammar fixed, and texting shorthand spelled out (u → you, pls → please, cant → can't, sooo → so); keep their words, tone and any emoji" },
     { id: "work", label: "Professional", how: "professional and clear, for work" },
     { id: "polite", label: "Polite", how: "warm and courteous" },
-    { id: "shorter", label: "Shorter", how: "as short as it can be while saying the same thing" },
+    { id: "shorter", label: "Shorter", how: "at most half as long, one or two short sentences, keeping every fact" },
     { id: "emoji", label: "Emoji", how: "friendly, with a few emoji that fit" },
   ];
   const indian = ctx.country === "IN" || ctx.tz === "Asia/Kolkata" || ctx.tz === "Asia/Calcutta";
@@ -167,7 +167,7 @@ async function planWithModel(text: string): Promise<ActPlan> {
   }
   try {
     const res = await completeStreaming("fast",
-      [{ role: "user", content: ROUTER_PROMPT(text) }], { onToken: () => {} });
+      [{ role: "user", content: ROUTER_PROMPT(text) }], { onToken: () => {}, stallMs: 4000 });
     return parsePlan(res.text, text.trim()) ?? { intent: "rewrite", query: text.trim() };
   } catch {
     return { intent: "rewrite", query: text.trim() };
@@ -206,7 +206,8 @@ export function listInsert(title: string, places: PlaceCard[]): string {
 }
 
 async function modelText(prompt: string): Promise<string> {
-  const res = await completeStreaming("fast", [{ role: "user", content: prompt }], { onToken: () => {} });
+  const res = await completeStreaming("fast", [{ role: "user", content: prompt }],
+    { onToken: () => {}, stallMs: 5000 });
   return res.text.trim();
 }
 
@@ -286,8 +287,10 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
       const styles = rewriteStyles(ctx);
       const reply = await modelText(
         "[[act.rewrite.options]]\nRewrite the message below in each of these styles, keeping the " +
-        "writer's meaning. If the message asks for a detail about the writer that is listed " +
-        "below, fill it in.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
+        "writer's meaning. Keep every fact exactly: times, dates, numbers, amounts, names and places " +
+        "(\"b4 6\" is \"before 6\", a time; \"u\" is \"you\"; \"tmrw\" is \"tomorrow\"). " +
+        "Never add facts that are not in the message. If the message asks for a detail about the " +
+        "writer that is listed below, fill it in.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
         "\nReply with JSON only, one key per style: {" +
         styles.map(st => `"${st.id}":"..."`).join(",") + "}" +
         profileBlock(opts.profile) + "\n\nMessage:\n" + typed);

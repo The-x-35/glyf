@@ -113,10 +113,16 @@ export async function runGlyf(opts: RunOptions): Promise<string> {
     if (s.type === "map") s.steps.forEach(id => referenced.add(id));
   }
 
+  /** The step whose words the person gets: the one the output reads from. */
+  const streamingFinal = (out: string) => out === def.output.from;
+
   async function runStep(step: GlyfStep): Promise<void> {
     switch (step.type) {
       case "llm": {
-        const prompt = interpolate(step.prompt, ctx);
+        // Whatever a glyf asks, its words land in a message about to be sent.
+        const prompt = interpolate(step.prompt, ctx) + (streamingFinal(step.out)
+          ? "\n\nWrite it ready to send as it is: no placeholders like [Name], no subject line, no notes."
+          : "");
         const streaming = step.out === def.output.from;
         const tier = step.model === "smart" || step.model === "strict" ? "smart" : "fast";
         const text = await complete(tier, prompt, streaming ? onToken : () => {});

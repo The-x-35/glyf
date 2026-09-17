@@ -107,7 +107,7 @@ export async function translate(req: TranslateRequest): Promise<TranslateResult>
     return { detected, target, translation: `[${target}] ${text}` };
   }
   const res = await completeStreaming("fast", [{ role: "user", content: PROMPT({ ...req, text }) }],
-    { onToken: () => {} });
+    { onToken: () => {}, stallMs: 4000 });
   const parsed = parseTranslation(res.text, req);
   if (!parsed) throw new Error("translation unreadable");
   // A script that names its language beats the model's guess.

@@ -12,7 +12,7 @@ export function gifRoutes(app: FastifyInstance): void {
       const key = process.env.GIPHY_API_KEY;
       if (!key) {
         return reply.code(503).send({
-          error: "GIF search isn't configured yet — set GIPHY_API_KEY in server/.env",
+          error: "GIF search isn't available yet",
         });
       }
       const q = (req.query.q ?? "").slice(0, 80);

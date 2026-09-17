@@ -88,6 +88,10 @@ export const FIRST_BYTE_MS = { fast: 4000, smart: 9000 };
 export interface StreamHandlers {
   onToken: (t: string) => void;
   signal?: AbortSignal;
+  /** For callers that wait for the whole reply (nothing is streamed to a
+   *  person): a model that goes quiet this long mid-answer is dropped for
+   *  the next one instead of holding the reply hostage. */
+  stallMs?: number;
 }
 
 export class ModelExhaustedError extends Error {
@@ -146,6 +150,7 @@ async function completeMasked(
     // queue, a silent rate limit): someone is holding the space bar, so move
     // on to the next one rather than wait it out.
     const attempt = new AbortController();
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
     const stuck = setTimeout(() => attempt.abort(), tier === "fast" ? FIRST_BYTE_MS.fast : FIRST_BYTE_MS.smart);
     const onAbort = () => attempt.abort();
     handlers.signal?.addEventListener("abort", onAbort);
@@ -161,13 +166,21 @@ async function completeMasked(
         signal: attempt.signal,
       });
       clearTimeout(stuck);
+      if (handlers.stallMs) {
+        // Re-armed on every chunk below; fires only if the stream goes quiet.
+        stallTimer = setTimeout(() => attempt.abort(), handlers.stallMs);
+      }
       if (!res.ok || !res.body) {
         if (res.status === 429) noteRateLimited(model, res.headers.get("retry-after"));
         attempts.push({ model, status: res.status });
         continue;
       }
       const gate = new VerdictGate(handlers.onToken);
-      const text = await drainSSE(res.body, { ...handlers, onToken: t => gate.push(t) });
+      const text = await drainSSE(res.body, { ...handlers, onToken: t => gate.push(t) }, () => {
+        if (!handlers.stallMs) return;
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => attempt.abort(), handlers.stallMs);
+      });
       if (text.trim().length === 0) {
         attempts.push({ model, status: "empty" });
         continue;
@@ -184,6 +197,7 @@ async function completeMasked(
       attempts.push({ model, status: attempt.signal.aborted ? "slow" : (err as Error).name || "error" });
     } finally {
       clearTimeout(stuck);
+      clearTimeout(stallTimer);
       handlers.signal?.removeEventListener("abort", onAbort);
     }
   }
@@ -233,6 +247,7 @@ export class VerdictGate {
 async function drainSSE(
   body: ReadableStream<Uint8Array>,
   handlers: StreamHandlers,
+  onChunk: () => void = () => {},
 ): Promise<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -241,6 +256,7 @@ async function drainSSE(
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    onChunk();
     buffer += decoder.decode(value, { stream: true });
     let idx: number;
     while ((idx = buffer.indexOf("\n")) >= 0) {
