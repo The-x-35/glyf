@@ -103,6 +103,7 @@
 		ED2E6632145F625290245147 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F0849F07512C2072EB2EB9C /* KeyboardView.swift */; };
 		F05081D9183D7B365F98DF91 /* GlyfEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74BB8405F8AB9A49632A3940 /* GlyfEngineTests.swift */; };
 		F1D3EBC57AB8F7FF8D71C1D9 /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
+		F3F70A9CD2E23F0F6A54E6AE /* GlyfScenarioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5EDE3074B7BAC0173FA466A /* GlyfScenarioUITests.swift */; };
 		F4B50347186E7B2550BBB6B0 /* ToneProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F870C03E48C1149F7284D509 /* ToneProfile.swift */; };
 		F570CD64F4CF68669044375C /* IntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B2E745F387CCCC496C13F0 /* IntentStore.swift */; };
 		F697C4D3635DA73ACB9B61D7 /* SecretScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26C1C3564E6011D2D3389969 /* SecretScanner.swift */; };
@@ -228,6 +229,7 @@
 		BB08610153E93D016950991C /* ControlScrollView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ControlScrollView.swift; sourceTree = "<group>"; };
 		BCD273F58EDF622C4D76884F /* GlyfKeyboard.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = GlyfKeyboard.entitlements; sourceTree = "<group>"; };
 		BF6DB2DF0F83FB95AAE78ADA /* GlyfShell.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfShell.swift; sourceTree = "<group>"; };
+		C5EDE3074B7BAC0173FA466A /* GlyfScenarioUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfScenarioUITests.swift; sourceTree = "<group>"; };
 		C60BFE26B50FE956967CF026 /* SettingsStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		C613956FFF2C3CEE732AF10E /* ConnectorSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConnectorSurface.swift; sourceTree = "<group>"; };
 		C778BE7B854B6E1973814E1F /* MemoryLogger.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MemoryLogger.swift; sourceTree = "<group>"; };
@@ -326,6 +328,7 @@
 			isa = PBXGroup;
 			children = (
 				9FDE3921B98C38CD61A63DE1 /* GlyfM0UITests.swift */,
+				C5EDE3074B7BAC0173FA466A /* GlyfScenarioUITests.swift */,
 			);
 			name = GlyfM0UITests;
 			path = GlyfM0UITests;
@@ -886,6 +889,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9A138A47EC4BCBD1AB3E1E6B /* GlyfM0UITests.swift in Sources */,
+				F3F70A9CD2E23F0F6A54E6AE /* GlyfScenarioUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

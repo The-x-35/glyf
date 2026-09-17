@@ -1,0 +1,107 @@
+[
+ {
+  "id": "S84",
+  "area": "Android",
+  "title": "A typo in a sentence is fixed on space",
+  "verdict": "pass",
+  "note": "'I think the plan works '"
+ },
+ {
+  "id": "S85",
+  "area": "Android",
+  "title": "Texting shorthand stays as typed",
+  "verdict": "pass",
+  "note": "'sry running late omw '"
+ },
+ {
+  "id": "S86",
+  "area": "Android",
+  "title": "A space after a number brings the letters back",
+  "verdict": "pass",
+  "note": "mode LETTERS, 'call at 5 '"
+ },
+ {
+  "id": "S87",
+  "area": "Android",
+  "title": "A sum in a message offers the answer",
+  "verdict": "pass",
+  "note": "'split is 3480/4 = 870'"
+ },
+ {
+  "id": "S88",
+  "area": "Android",
+  "title": "Asked for your address, it is one tap away",
+  "verdict": "pass",
+  "note": "'sure my address is 42 Glass Lane, Indiranagar, Bengaluru 560038'"
+ },
+ {
+  "id": "S89",
+  "area": "Android",
+  "title": "Asked for your UPI, it is one tap away",
+  "verdict": "pass",
+  "note": "'my upi is arpit@okbank'"
+ },
+ {
+  "id": "S90",
+  "area": "Android",
+  "title": "A rough message offers Tidy this up",
+  "verdict": "pass",
+  "note": "chip 'Tidy this up', versions shown"
+ },
+ {
+  "id": "S91",
+  "area": "Android",
+  "title": "Hold space: pick the Professional version",
+  "verdict": "pass",
+  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'Yes, I acknowledge. I will send the deck before you.'"
+ },
+ {
+  "id": "S92",
+  "area": "Android",
+  "title": "Hold space on a place search sends places",
+  "verdict": "pass",
+  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/LAfy26iTCKtj'"
+ },
+ {
+  "id": "S93",
+  "area": "Android",
+  "title": "The g button opens the tool menu",
+  "verdict": "pass",
+  "note": "tiles: Search, Rewrite, Translate, Vault, Clipboard, Emoji"
+ },
+ {
+  "id": "S94",
+  "area": "Android",
+  "title": "Copied text pastes from the strip",
+  "verdict": "pass",
+  "note": "'Flight AI 2021 lands at 6:40'"
+ },
+ {
+  "id": "S95",
+  "area": "Android",
+  "title": "Translate as you type, then Replace",
+  "verdict": "pass",
+  "note": "strip '', message 'Let's meet tomorrow after office.'"
+ },
+ {
+  "id": "S96",
+  "area": "Android",
+  "title": "Emoji key inserts an emoji",
+  "verdict": "pass",
+  "note": "'what a finish 😂'"
+ },
+ {
+  "id": "S97",
+  "area": "Android",
+  "title": "Slide left from delete removes whole words",
+  "verdict": "pass",
+  "note": "'see you at '"
+ },
+ {
+  "id": "S98",
+  "area": "Android",
+  "title": "Dark mode draws dark keys",
+  "verdict": "pass",
+  "note": "screenshot saved for a look (results/android-S98-dark.png)"
+ }
+]

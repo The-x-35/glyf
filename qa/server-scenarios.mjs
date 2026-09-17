@@ -26,7 +26,9 @@ const scenarios = [
   { id: "S01", area: "Rewrite", title: "Rough reply to a manager: 'ya ok will send deck b4 6'",
     run: () => act("ya ok will send deck b4 6"),
     check: r => r.json.intent === "rewrite" && (r.json.options ?? []).length >= 4
-      && r.json.options.some(o => o.label === "Professional"),
+      && r.json.options.some(o => o.label === "Professional")
+      // "b4 6" is a time: every version keeps it.
+      && r.json.options.every(o => /\b6\b/.test(o.text)),
     show: r => (r.json.options ?? []).map(o => `${o.label}: ${o.text}`).join(" | ") },
   { id: "S02", area: "Rewrite", title: "Apology for being late: 'sry running late traffic is crazy'",
     run: () => act("sry running late traffic is crazy"),
