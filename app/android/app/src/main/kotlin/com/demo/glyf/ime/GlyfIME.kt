@@ -104,6 +104,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         intent.getStringExtra("text") ?: ""))
                 }
                 "close" -> dismissFeaturePanel()
+                "delwords" -> {
+                    val n = intent.getIntExtra("count", 1)
+                    onDeleteWordsPreview(n)
+                    main.postDelayed({ onDeleteWordsCommit(n) }, 600)
+                }
                 else -> openTool(id)
             }
         }
@@ -724,8 +729,17 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         KeyboardTyping.engine?.revert(corr.original, corr.replacement)
                         KeyboardTyping.scheduleSave(this)
                     }
+                } else if (selEnd > selStart && selStart >= 0) {
+                    ic.commitText("", 1)   // a selection goes as one piece
                 } else {
-                    ic.deleteSurroundingText(1, 0)
+                    // One whole character: an emoji or a flag is several UTF-16
+                    // units, and deleting one unit leaves a broken glyph.
+                    val tail = ic.getTextBeforeCursor(16, 0)?.toString() ?: ""
+                    val it = java.text.BreakIterator.getCharacterInstance()
+                    it.setText(tail)
+                    val last = it.last()
+                    val prev = it.previous()
+                    ic.deleteSurroundingText(if (prev == java.text.BreakIterator.DONE) 1 else last - prev, 0)
                 }
                 val current = WordContext.currentWord(ic.getTextBeforeCursor(64, 0)?.toString())
                 val n = current.codePointCount(0, current.length)
@@ -799,6 +813,48 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // The cursor moved without a key (a tap in the field): suggest for
         // wherever it landed.
         if (glideCursor < 0 && !searchActive && !barActive && !noteEditActive) main.post { updateSuggestions() }
+    }
+
+    /** How many UTF-16 units the last [count] words before the cursor take,
+     *  with the spaces after them. */
+    private fun wordsSpan(before: String, count: Int): Int {
+        var end = before.length
+        repeat(count) {
+            var i = end
+            while (i > 0 && before[i - 1].isWhitespace()) i--
+            while (i > 0 && !before[i - 1].isWhitespace()) i--
+            end = i
+        }
+        return before.length - end
+    }
+
+    /** Where a gesture delete started: the cursor, and the text before it. */
+    private var deleteAnchor = -1
+    private var deleteBefore = ""
+
+    override fun onDeleteWordsPreview(count: Int) {
+        val ic = currentInputConnection ?: return
+        if (deleteAnchor < 0) {
+            if (selEnd < 0) return
+            deleteAnchor = selEnd
+            deleteBefore = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
+        }
+        val span = wordsSpan(deleteBefore, count)
+        ic.setSelection(deleteAnchor - span, deleteAnchor)
+        keyboard.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+    }
+
+    override fun onDeleteWordsCommit(count: Int) {
+        val ic = currentInputConnection ?: return
+        if (deleteAnchor >= 0) {
+            val span = wordsSpan(deleteBefore, count)
+            ic.setSelection(deleteAnchor, deleteAnchor)
+            ic.deleteSurroundingText(span, 0)
+        }
+        deleteAnchor = -1
+        deleteBefore = ""
+        syncAutoShift()
+        updateSuggestions()
     }
 
     override fun onCursorGlideBegan() {

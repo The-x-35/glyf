@@ -48,6 +48,11 @@ class GlyfKeyboardView(
         fun onCursorGlideBegan()
         fun onCursorMove(graphemes: Int)
         fun onCursorGlideEnded()
+        /** Gboard's gesture delete: sliding left from delete selects this many
+         *  whole words before the cursor (0 clears the selection). */
+        fun onDeleteWordsPreview(count: Int)
+        /** The finger lifted after a gesture delete: remove what is selected. */
+        fun onDeleteWordsCommit(count: Int)
     }
 
     var mode = Mode.LETTERS
@@ -207,6 +212,8 @@ class GlyfKeyboardView(
         /** §6.5: a bound LETTER fires at 320ms; the space bar waits longer so
          *  a glide can still start (SpaceGesture.HOLD_MS). */
         const val BOUND_HOLD_MS = 320L
+        /** How long delete is held before it starts repeating. */
+        const val DELETE_REPEAT_DELAY_MS = 400L
         /** Gboard's default key long-press delay. */
         const val DIGIT_HOLD_MS = 300L
 
@@ -282,6 +289,9 @@ class GlyfKeyboardView(
     private var pressedRect: RectF? = null
     private val handler2 = Handler(Looper.getMainLooper())
     private var longPressFired = false
+    private var deleteRepeats = 0
+    /** Words selected by sliding left from delete; 0 when not sliding. */
+    private var deleteWords = 0
     /** Non-null while a finger is on the space bar. */
     private var spaceGesture: SpaceGesture? = null
     private var spaceSlidAway = false
@@ -621,6 +631,23 @@ class GlyfKeyboardView(
                     invalidate()
                     return true
                 }
+                if (hit.first.id == "delete") {
+                    // Gboard's delete: one character on the tap, then held it
+                    // repeats and speeds up; slid left it selects whole words.
+                    deleteRepeats = 0
+                    deleteWords = 0
+                    handler2.postDelayed(object : Runnable {
+                        override fun run() {
+                            if (deleteWords > 0) return
+                            longPressFired = true
+                            deleteRepeats++
+                            listener.onKey("delete", null)
+                            handler2.postDelayed(this, if (deleteRepeats > 12) 40L else 80L)
+                        }
+                    }, DELETE_REPEAT_DELAY_MS)
+                    invalidate()
+                    return true
+                }
                 val char = hit.first.char
                 val glyfId = char?.let { bindings[it] }
                 val digit = holdDigit(hit.first)
@@ -644,6 +671,20 @@ class GlyfKeyboardView(
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
+                if (pressed?.id == "delete") {
+                    val step = keyPitchPx * 0.8f
+                    val words = if (keyPitchPx > 1f) ((downX - event.x - step * 0.5f) / step)
+                        .toInt().coerceAtLeast(0) else 0
+                    if (words > 0 || deleteWords > 0) {
+                        if (words != deleteWords) {
+                            if (deleteWords == 0) handler2.removeCallbacksAndMessages(null)
+                            deleteWords = words
+                            longPressFired = true
+                            listener.onDeleteWordsPreview(words)
+                        }
+                    }
+                    return true
+                }
                 val gesture = spaceGesture ?: return true
                 val rect = pressedRect
                 val xDp = event.x / density
@@ -673,6 +714,13 @@ class GlyfKeyboardView(
                 pressedRect = null
                 spaceGesture = null
                 invalidate()
+                if (key?.id == "delete" && (deleteWords > 0 || longPressFired)) {
+                    // A slide that came back to nothing deletes nothing.
+                    if (deleteWords > 0 || deleteRepeats == 0) listener.onDeleteWordsCommit(deleteWords)
+                    deleteWords = 0
+                    longPressFired = false
+                    return true
+                }
                 when {
                     gesture != null -> {
                         // The lift carries travel no MOVE reported (fast
