@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseTarget, parseTranslation, scriptLanguage } from "../src/lib/translate.js";
+import { chooseTarget, languageName, parseTranslation, scriptLanguage } from "../src/lib/translate.js";
 
 const req = { text: "", primary: "English", secondary: "Hindi" };
 
@@ -35,5 +35,14 @@ describe("parsing", () => {
   });
   it("refuses an empty translation", () => {
     expect(parseTranslation('{"detected":"English","translation":""}', req)).toBeNull();
+  });
+});
+
+describe("languageName", () => {
+  it("names a language the way the strip shows it", () => {
+    expect(languageName("Hindi (Hinglish)")).toBe("Hindi");
+    expect(languageName("Romanized Hindi")).toBe("Hindi");
+    expect(languageName("Chinese (Simplified)")).toBe("Chinese");
+    expect(languageName("spanish")).toBe("Spanish");
   });
 });

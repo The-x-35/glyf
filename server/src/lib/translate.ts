@@ -58,13 +58,26 @@ export function chooseTarget(detected: string, req: TranslateRequest): string {
   return detected.toLowerCase() === req.primary.toLowerCase() ? req.secondary : req.primary;
 }
 
-const PROMPT = (req: TranslateRequest) => `[[translate:auto]]
-Detect the language of the message. If it is ${req.primary}, translate it into ${req.secondary}. Otherwise translate it into ${req.primary}.${req.target ? ` The person asked for ${req.target}: translate into ${req.target} whatever the message is in.` : ""}
+const PROMPT = (req: TranslateRequest) => req.target ? `[[translate:to]]
+Translate the message into ${req.target}, whatever language it is in. Romanised Hindi or Hinglish counts as Hindi. Keep the tone and register.
+Reply with JSON only: {"detected":"<language of the message, in English>","target":"${req.target}","translation":"<the ${req.target} translation>"}
+
+Message:
+${req.text}` : `[[translate:auto]]
+Detect the language of the message. If it is ${req.primary}, translate it into ${req.secondary}. Otherwise translate it into ${req.primary}.
 Romanised Hindi or Hinglish counts as Hindi. Keep the tone and register.
 Reply with JSON only: {"detected":"<language name in English>","target":"<language name in English>","translation":"<the translation>"}
 
 Message:
 ${req.text}`;
+
+/** "Hindi (Hinglish)", "Romanized Hindi", "hinglish" are all Hindi on the
+ *  strip; "Chinese (Simplified)" is Chinese. */
+export function languageName(raw: string): string {
+  const name = raw.replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
+  if (/hinglish|roman(i[sz]ed)? hindi/i.test(raw)) return "Hindi";
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 export function parseTranslation(reply: string, req: TranslateRequest): TranslateResult | null {
   const match = reply.match(/\{[\s\S]*\}/);
@@ -73,11 +86,12 @@ export function parseTranslation(reply: string, req: TranslateRequest): Translat
     const obj = JSON.parse(match[0]) as Partial<TranslateResult>;
     if (typeof obj.translation !== "string" || !obj.translation.trim()) return null;
     const detected = typeof obj.detected === "string" && obj.detected.trim()
-      ? obj.detected.trim() : "Unknown";
+      ? languageName(obj.detected) : "Unknown";
     return {
       detected,
-      target: typeof obj.target === "string" && obj.target.trim()
-        ? obj.target.trim() : chooseTarget(detected, req),
+      // A direction picked by hand is the direction, whatever the model says.
+      target: req.target ?? (typeof obj.target === "string" && obj.target.trim()
+        ? languageName(obj.target) : chooseTarget(detected, req)),
       translation: obj.translation.trim(),
     };
   } catch {

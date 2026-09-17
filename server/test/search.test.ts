@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { composeInsert } from "../src/lib/searchcards.js";
 import { evaluateMath } from "../src/lib/answers.js";
-import { formatDistance, formatDuration } from "../src/lib/search.js";
+import { formatDistance, formatDuration, nameMatch, placeQuery } from "../src/lib/search.js";
 import { clockIn, sunTimes } from "../src/lib/sun.js";
 
 /** §6.12 search suite — the pure logic behind the Search / YouTube / Maps
@@ -125,5 +125,35 @@ describe("formatters", () => {
     expect(formatDistance(350)).toBe("350 m");
     expect(formatDistance(1200)).toBe("1.2 km");
     expect(formatDistance(23000)).toBe("23 km");
+  });
+});
+
+describe("placeQuery", () => {
+  it("takes an area out of a place search", () => {
+    expect(placeQuery("best biryani near indiranagar")).toEqual(
+      { what: "biryani", where: "indiranagar", nearby: false });
+    expect(placeQuery("hotels in goa")).toEqual({ what: "hotels", where: "goa", nearby: false });
+    expect(placeQuery("good cafes around Koramangala?")).toEqual(
+      { what: "cafes", where: "Koramangala", nearby: false });
+  });
+
+  it("knows 'nearest' and 'near me' mean around the caller", () => {
+    expect(placeQuery("nearest atm")).toEqual({ what: "atm", nearby: true });
+    expect(placeQuery("cafes near me")).toEqual({ what: "cafes", nearby: true });
+    expect(placeQuery("closest pharmacy open now")).toMatchObject({ nearby: true });
+  });
+
+  it("leaves a place's own name alone", () => {
+    expect(placeQuery("Times Square Starbucks")).toEqual({ what: "Times Square Starbucks", nearby: false });
+    expect(placeQuery("Phoenix Marketcity")).toEqual({ what: "Phoenix Marketcity", nearby: false });
+  });
+});
+
+describe("nameMatch", () => {
+  it("ranks the place named in the query above shops inside it", () => {
+    expect(nameMatch("Phoenix Marketcity", "Phoenix Marketcity Bangalore"))
+      .toBeGreaterThan(nameMatch("Starbucks", "Phoenix Marketcity Bangalore"));
+    expect(nameMatch("Aramane Donne Biryani", "biryani")).toBe(1);
+    expect(nameMatch("Taj Hotel", "hotels")).toBe(1);
   });
 });

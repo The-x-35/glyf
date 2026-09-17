@@ -52,7 +52,7 @@ export interface RewriteOption {
  *  only where people write it. */
 export function rewriteStyles(ctx: SearchContext): { id: string; label: string; how: string }[] {
   const styles = [
-    { id: "basic", label: "Basic", how: "fix spelling, grammar and punctuation only; keep their words and tone" },
+    { id: "basic", label: "Basic", how: "the same message written properly: capital letters, punctuation, spelling and grammar fixed, and texting shorthand spelled out (u → you, pls → please, cant → can't, sooo → so); keep their words, tone and any emoji" },
     { id: "work", label: "Professional", how: "professional and clear, for work" },
     { id: "polite", label: "Polite", how: "warm and courteous" },
     { id: "shorter", label: "Shorter", how: "as short as it can be while saying the same thing" },
@@ -258,7 +258,9 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
         return { intent: "answer", title: answer.title, cards: [answer],
           insert: line, provider: res.provider };
       }
-      const links = res.cards.filter(c => c.kind === "link").slice(0, 5);
+      // The tail row is a hand-off to Google, not a source to answer from.
+      const links = res.cards.filter(c => c.kind === "link" && c.id !== "tail"
+        && !/google\.[a-z.]+\/search/.test(c.url)).slice(0, 5);
       if (links.length === 0) {
         // No live source configured or nothing found: hand off honestly
         // rather than let a model guess at scores and schedules.

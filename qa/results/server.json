@@ -1,0 +1,452 @@
+[
+ {
+  "id": "S01",
+  "area": "Rewrite",
+  "title": "Rough reply to a manager: 'ya ok will send deck b4 6'",
+  "verdict": "pass",
+  "ms": 4860,
+  "status": 200,
+  "note": "Basic: Ya, okay, I will send the deck before 6. 😊 | Professional: I will send the presentation deck to you before 6:00 PM. | Polite: Sure thing! I will be sure to send the deck over to you before 6:00. | Shorter: Will send deck by 6. | Hinglish: Haan okay, deck 6 baje se pehle bhej dunga. | Emoji: Ya, ok! Sending the deck before 6 📁✨"
+ },
+ {
+  "id": "S02",
+  "area": "Rewrite",
+  "title": "Apology for being late: 'sry running late traffic is crazy'",
+  "verdict": "pass",
+  "ms": 2622,
+  "status": 200,
+  "note": "Basic: Sorry, I am running late; traffic is crazy. | Professional: Please accept my apologies, but I am running late due to heavy traffic. | Polite: I am so sorry, but I am running late due to heavy traffic. I apologize for the inconvenience."
+ },
+ {
+  "id": "S03",
+  "area": "Rewrite",
+  "title": "Hinglish offered in India: 'kal meeting shift kar do please'",
+  "verdict": "pass",
+  "ms": 2716,
+  "status": 200,
+  "note": "Basic, Professional, Polite, Shorter, Hinglish, Emoji"
+ },
+ {
+  "id": "S04",
+  "area": "Rewrite",
+  "title": "No Hinglish row for someone in the US",
+  "verdict": "pass",
+  "ms": 2348,
+  "status": 200,
+  "note": "Basic, Professional, Polite, Shorter, Emoji"
+ },
+ {
+  "id": "S05",
+  "area": "Rewrite",
+  "title": "Shorter version is actually shorter",
+  "verdict": "pass",
+  "ms": 2951,
+  "status": 200,
+  "note": "Basic(129): Hey, just wanted to check if you had a chance to look at the proposal I sent over last week, because we need to decide by Friday. | Shorter(92): Have you had a chance to review the proposal I sent last week? We need a decision by Friday."
+ },
+ {
+  "id": "S06",
+  "area": "Rewrite",
+  "title": "A rewrite never pastes a Google link",
+  "verdict": "pass",
+  "ms": 2793,
+  "status": 200,
+  "note": "rewrite: Tidy this up, please; it's for the client."
+ },
+ {
+  "id": "S07",
+  "area": "Rewrite",
+  "title": "Chip intent forced to rewrite keeps the whole sentence",
+  "verdict": "pass",
+  "ms": 2332,
+  "status": 200,
+  "note": "Basic: Who is coming tonight? Let me know. | Professional: Could you please let me know who is planning to attend tonight?"
+ },
+ {
+  "id": "S08",
+  "area": "Vault in AI",
+  "title": "Friend asks for your address; your saved address fills in",
+  "verdict": "pass",
+  "ms": 2439,
+  "status": 200,
+  "note": "Sure, my address is 42 Glass Lane, Indiranagar, Bengaluru 560038."
+ },
+ {
+  "id": "S09",
+  "area": "Vault in AI",
+  "title": "Details are never volunteered where nobody asked",
+  "verdict": "pass",
+  "ms": 1244,
+  "status": 200,
+  "note": "See you at the game tonight!"
+ },
+ {
+  "id": "S10",
+  "area": "Places",
+  "title": "'best biryani near indiranagar' gives a list of places",
+  "verdict": "pass",
+  "ms": 1160,
+  "status": 200,
+  "note": "Aramane Donne Biryani (830 m) · Biryani biryani (1.2 km) · Karnataka Special Biryani (1.2 km)"
+ },
+ {
+  "id": "S11",
+  "area": "Places",
+  "title": "'nearest atm' gives the one place",
+  "verdict": "pass",
+  "ms": 1098,
+  "status": 200,
+  "note": "place: SBI ATM 1.7 km"
+ },
+ {
+  "id": "S12",
+  "area": "Places",
+  "title": "'cafes near me' uses the phone's rough location",
+  "verdict": "pass",
+  "ms": 1121,
+  "status": 200,
+  "note": "BUNGEO · Bäcker & Charlie · Third Wave Coffee Roasters"
+ },
+ {
+  "id": "S13",
+  "area": "Video",
+  "title": "'send me the dune part 2 trailer' finds the video",
+  "verdict": "pass",
+  "ms": 696,
+  "status": 200,
+  "note": "Dune: Part Two | Official Trailer"
+ },
+ {
+  "id": "S14",
+  "area": "Answers",
+  "title": "'weather in bangalore tomorrow' is a live answer, not a guess",
+  "verdict": "blocked: live weather needs a web search or weather key",
+  "ms": 3,
+  "status": 200,
+  "note": "answer: Nothing found for that. | insert=\"\""
+ },
+ {
+  "id": "S15",
+  "area": "Answers",
+  "title": "Nothing found inserts nothing (no link pasted)",
+  "verdict": "pass",
+  "ms": 4848,
+  "status": 200,
+  "note": "answer: insert=\"\" text=Nothing found for that."
+ },
+ {
+  "id": "S16",
+  "area": "Answers",
+  "title": "Maths in a question: '18% of 2450' answers 441",
+  "verdict": "pass",
+  "ms": 1103,
+  "status": 200,
+  "note": "441"
+ },
+ {
+  "id": "S17",
+  "area": "Suggestions",
+  "title": "A rough message gets 'Tidy this up'",
+  "verdict": "pass",
+  "ms": 932,
+  "status": 200,
+  "note": "{\"intent\":\"rewrite\",\"label\":\"Tidy this up\",\"action\":\"act\",\"query\":\"ya ok will send the deck before 6 tmrw\"}"
+ },
+ {
+  "id": "S18",
+  "area": "Suggestions",
+  "title": "A place list gets 'Show me places'",
+  "verdict": "pass",
+  "ms": 1,
+  "status": 200,
+  "note": "{\"intent\":\"places\",\"label\":\"Show me places\",\"action\":\"act\",\"query\":\"any good italian places in koramangala\"}"
+ },
+ {
+  "id": "S19",
+  "area": "Suggestions",
+  "title": "A plain question gets no 'Look it up' chip",
+  "verdict": "pass",
+  "ms": 773,
+  "status": 200,
+  "note": "null"
+ },
+ {
+  "id": "S20",
+  "area": "Suggestions",
+  "title": "Three words in, no chip yet",
+  "verdict": "pass",
+  "ms": 799,
+  "status": 200,
+  "note": "null"
+ },
+ {
+  "id": "S21",
+  "area": "Translate",
+  "title": "Hinglish 'kal milte hain office ke baad' comes out in English",
+  "verdict": "pass",
+  "ms": 1068,
+  "status": 200,
+  "note": "Hindi → English: Let's meet tomorrow after office."
+ },
+ {
+  "id": "S22",
+  "area": "Translate",
+  "title": "English goes to your other language (Hindi)",
+  "verdict": "pass",
+  "ms": 1203,
+  "status": 200,
+  "note": "English → Hindi: कल ऑफिस के बाद मिलते हैं"
+ },
+ {
+  "id": "S23",
+  "area": "Translate",
+  "title": "Devanagari detected without asking the model",
+  "verdict": "pass",
+  "ms": 1410,
+  "status": 200,
+  "note": "Hindi → English: I need a day off tomorrow."
+ },
+ {
+  "id": "S24",
+  "area": "Translate",
+  "title": "Tamil message comes back in English",
+  "verdict": "pass",
+  "ms": 1089,
+  "status": 200,
+  "note": "Tamil → English: Let's meet tomorrow"
+ },
+ {
+  "id": "S25",
+  "area": "Translate",
+  "title": "Tapping the direction to Spanish sends it to Spanish",
+  "verdict": "pass",
+  "ms": 2716,
+  "status": 200,
+  "note": "English → Spanish: Feliz cumpleaños, que tengas un gran año"
+ },
+ {
+  "id": "S26",
+  "area": "Translate",
+  "title": "A Spanish-speaking phone: Spanish text goes to English second language",
+  "verdict": "pass",
+  "ms": 1433,
+  "status": 200,
+  "note": "Spanish → English: see you tomorrow at the office"
+ },
+ {
+  "id": "S27",
+  "area": "Search",
+  "title": "Web search for 'ipl points table'",
+  "verdict": "blocked: web results need BRAVE_SEARCH_KEY",
+  "ms": 1,
+  "status": 200,
+  "note": "See all results for “ipl points table”"
+ },
+ {
+  "id": "S28",
+  "area": "Search",
+  "title": "YouTube search for 'arijit singh live'",
+  "verdict": "pass",
+  "ms": 1288,
+  "status": 200,
+  "note": "Arijit Singh with his soulful performance | 6th Royal Stag Mirchi Music Awards | Radio Mirchi · Arijit Singh Full Mirchi Music Awards Stage Performance |"
+ },
+ {
+  "id": "S29",
+  "area": "Search",
+  "title": "Maps search for 'third wave coffee'",
+  "verdict": "pass",
+  "ms": 353,
+  "status": 200,
+  "note": "Third Wave Coffee (Lavelle Road, D'Souza Layout, Bengaluru 560001) · Third Wave Coffee (CMR Road, Kalyan Nagar, Bengaluru 560043)"
+ },
+ {
+  "id": "S30",
+  "area": "Builder",
+  "title": "Tap 'Say no, politely' and a glyf is made",
+  "verdict": "pass",
+  "ms": 8376,
+  "status": 200,
+  "note": "Polite Refusal: 1 step(s)"
+ },
+ {
+  "id": "S31",
+  "area": "Builder",
+  "title": "Tap 'Turn it into a LinkedIn post' and it is made",
+  "verdict": "pass",
+  "ms": 8271,
+  "status": 200,
+  "note": "LinkedIn Post Draft"
+ },
+ {
+  "id": "S32",
+  "area": "Builder",
+  "title": "The preview runs the new glyf on a sample message",
+  "verdict": "pass",
+  "ms": 2011,
+  "status": 200,
+  "note": "Hey, kal morning tak report bhej sakte ho kya? Thanks!"
+ },
+ {
+  "id": "S33",
+  "area": "Builder",
+  "title": "A description too short to build is refused cleanly",
+  "verdict": "pass",
+  "ms": 2,
+  "status": 400,
+  "note": "400 {\"error\":\"Bad request\"}"
+ },
+ {
+  "id": "S34",
+  "area": "Pay",
+  "title": "Wallet config is there for the app's Privy login",
+  "verdict": "pass",
+  "ms": null,
+  "status": 200,
+  "note": "ready: true, cluster: mainnet"
+ },
+ {
+  "id": "S35",
+  "area": "Safety",
+  "title": "A card number is hidden from the model and comes back exactly in every version",
+  "verdict": "pass",
+  "ms": 2706,
+  "status": 200,
+  "note": "Basic: My card is 4111 1111 1111 1111, exp 12/29, cvv 123. Please pay the bill. | Professional: Please find the payment details for the bill: Card number 4111 1111 1111 1111, expiration date 12/29, and CVV 123. Thank you."
+ },
+ {
+  "id": "S36",
+  "area": "Safety",
+  "title": "Bad requests get a 400, not a crash",
+  "verdict": "pass",
+  "ms": 2,
+  "status": 400,
+  "note": "400"
+ },
+ {
+  "id": "S37",
+  "area": "Safety",
+  "title": "An OTP in a message survives every rewrite untouched",
+  "verdict": "pass",
+  "ms": 1616,
+  "status": 200,
+  "note": "Basic: OTP is 482913. Don't share it with anyone, okay? | Professional: Please keep your OTP 482913 confidential and do not share it with anyone."
+ },
+ {
+  "id": "S38",
+  "area": "Safety",
+  "title": "Translating a message keeps the account number exactly",
+  "verdict": "pass",
+  "ms": 1907,
+  "status": 200,
+  "note": "Hindi → English: My account number is 4111111111111111, please send the money"
+ },
+ {
+  "id": "S39",
+  "area": "Answers",
+  "title": "'100 usd to inr' converts at today's rate",
+  "verdict": "pass",
+  "ms": 559,
+  "status": 200,
+  "note": "9,596 INR — 100 USD · today's rate"
+ },
+ {
+  "id": "S40",
+  "area": "Answers",
+  "title": "'what is a black hole' answers from Wikipedia",
+  "verdict": "pass",
+  "ms": 1628,
+  "status": 200,
+  "note": "Black hole — A black hole is an astronomical body so compact that its gravity prevents anything, including light, from e"
+ },
+ {
+  "id": "S41",
+  "area": "Answers",
+  "title": "'sunset' gives today's sunset where you are",
+  "verdict": "pass",
+  "ms": 6,
+  "status": 200,
+  "note": "6:21 PM — Sunset · today"
+ },
+ {
+  "id": "S42",
+  "area": "Video",
+  "title": "'lofi beats playlist' finds a video to send",
+  "verdict": "pass",
+  "ms": 705,
+  "status": 200,
+  "note": "https://youtu.be/lTRiuFIWV54 / 🎥 1 A.M Study Session 📚 [lofi hip hop]"
+ },
+ {
+  "id": "S43",
+  "area": "Places",
+  "title": "'hotels in goa' lists hotels in Goa",
+  "verdict": "pass",
+  "ms": 1157,
+  "status": 200,
+  "note": "Manish hotel (Avenida Dom João de Castro, Patto Colony, Panaji 403100) · Pascoal Farm Spice Village (Belgaum - Panaji Highway, Saptmale 403406) · Backpackers Inn (Kingfisher Circle, Patto Colony, Panaji 403100)"
+ },
+ {
+  "id": "S44",
+  "area": "Rewrite",
+  "title": "Emoji-heavy banter keeps its meaning",
+  "verdict": "pass",
+  "ms": 1159,
+  "status": 200,
+  "note": "Basic: Omg 😂😂 that was so funny, I can't breathe. | Professional: That was genuinely humorous. | Polite: That gave me a good laugh!"
+ },
+ {
+  "id": "S45",
+  "area": "Speed",
+  "title": "A normal rewrite comes back in under 6 seconds",
+  "verdict": "pass",
+  "ms": 1128,
+  "status": 200,
+  "note": "1128 ms"
+ },
+ {
+  "id": "S46",
+  "area": "Rewrite",
+  "title": "A long rambling message still gets every version",
+  "verdict": "pass",
+  "ms": 3484,
+  "status": 200,
+  "note": "Shorter: We arrived at 7, but the event was moved without notice to another hall, and we missed the first session. Since we paid for the full day, please send us the recording or slides."
+ },
+ {
+  "id": "S47",
+  "area": "Suggestions",
+  "title": "A message in Hinglish still gets 'Tidy this up'",
+  "verdict": "pass",
+  "ms": 771,
+  "status": 200,
+  "note": "{\"intent\":\"rewrite\",\"label\":\"Tidy this up\",\"action\":\"act\",\"query\":\"bhai kal ka plan cancel kar de yaar mood nahi hai\"}"
+ },
+ {
+  "id": "S48",
+  "area": "Builder",
+  "title": "'Fix my grammar' becomes a glyf that works on a sample",
+  "verdict": "pass",
+  "ms": 731,
+  "status": 200,
+  "note": "I went to the store yesterday and bought milk."
+ },
+ {
+  "id": "S49",
+  "area": "Translate",
+  "title": "Mixed Hinglish with English words detected as Hindi",
+  "verdict": "pass",
+  "ms": 1131,
+  "status": 200,
+  "note": "Hindi → English: The meeting has been postponed, let's keep it for tomorrow at 4 o'clock. (rerun after the language-name fix)"
+ },
+ {
+  "id": "S50",
+  "area": "Places",
+  "title": "A place's own name finds that place",
+  "verdict": "pass",
+  "ms": 2,
+  "status": 200,
+  "note": "Phoenix Marketcity Bangalore (Whitefield Main Road, West End Road, ITI Industrial Estate)"
+ }
+]

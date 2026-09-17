@@ -1,4 +1,5 @@
 import { env } from "../env.js";
+import { KEEP_PLACEHOLDERS, SecretVault } from "../lib/secrets.js";
 
 /** §8: OpenRouter, backend only, OpenAI-compatible, streamed — plus any
  *  OpenAI-compatible provider named by a prefix in the model chain. */
@@ -81,6 +82,9 @@ export function resetCooldowns(): void {
   coolingUntil.clear();
 }
 
+/** How long a model gets to start answering before the next one is tried. */
+export const FIRST_BYTE_MS = { fast: 4000, smart: 9000 };
+
 export interface StreamHandlers {
   onToken: (t: string) => void;
   signal?: AbortSignal;
@@ -95,12 +99,37 @@ export class ModelExhaustedError extends Error {
 /**
  * §8.3 ModelRouter: walk the fallback chain; a model that answers wins.
  * Returns the full text; tokens stream through `onToken` as they arrive.
+ *
+ * Every model call goes through here, so this is where card numbers, codes,
+ * passwords and keys are swapped for placeholders (lib/secrets.ts) and put
+ * back into the reply: no model ever reads one.
  */
 export async function completeStreaming(
   tier: "fast" | "smart",
   messages: { role: string; content: string }[],
   handlers: StreamHandlers,
 ): Promise<{ text: string; model: string }> {
+  const vault = new SecretVault();
+  const safe = messages.map(m => ({ role: m.role, content: vault.mask(m.content) }));
+  if (vault.count > 0) {
+    const last = safe.length - 1;
+    safe[last] = { ...safe[last], content: safe[last].content + KEEP_PLACEHOLDERS };
+  }
+  const stream = vault.restoringStream(handlers.onToken);
+  const res = await completeMasked(tier, safe, { ...handlers, onToken: stream.push });
+  stream.flush();
+  return { text: vault.restore(res.text), model: res.model };
+}
+
+/** What a model is actually sent: messages with nothing private left in them. */
+export let lastOutboundForTests: { role: string; content: string }[] = [];
+
+async function completeMasked(
+  tier: "fast" | "smart",
+  messages: { role: string; content: string }[],
+  handlers: StreamHandlers,
+): Promise<{ text: string; model: string }> {
+  if (process.env.VITEST) lastOutboundForTests = messages;
   if (env.mockAI) {
     return mockStream(messages, handlers);
   }
@@ -113,6 +142,13 @@ export async function completeStreaming(
       attempts.push({ model, status: "no-key" });
       continue;
     }
+    // A model that has not started answering in a few seconds is stuck (a
+    // queue, a silent rate limit): someone is holding the space bar, so move
+    // on to the next one rather than wait it out.
+    const attempt = new AbortController();
+    const stuck = setTimeout(() => attempt.abort(), tier === "fast" ? FIRST_BYTE_MS.fast : FIRST_BYTE_MS.smart);
+    const onAbort = () => attempt.abort();
+    handlers.signal?.addEventListener("abort", onAbort);
     try {
       const res = await fetch(ep.url, {
         method: "POST",
@@ -122,8 +158,9 @@ export async function completeStreaming(
           ...(ep.openrouter ? { "HTTP-Referer": "https://tryglyf.com", "X-Title": "Glyf" } : {}),
         },
         body: JSON.stringify({ model: ep.model, messages, stream: true, ...requestOptions(ep, tier) }),
-        signal: handlers.signal,
+        signal: attempt.signal,
       });
+      clearTimeout(stuck);
       if (!res.ok || !res.body) {
         if (res.status === 429) noteRateLimited(model, res.headers.get("retry-after"));
         attempts.push({ model, status: res.status });
@@ -144,7 +181,10 @@ export async function completeStreaming(
       return { text, model };
     } catch (err) {
       if (handlers.signal?.aborted) throw err;
-      attempts.push({ model, status: (err as Error).name || "error" });
+      attempts.push({ model, status: attempt.signal.aborted ? "slow" : (err as Error).name || "error" });
+    } finally {
+      clearTimeout(stuck);
+      handlers.signal?.removeEventListener("abort", onAbort);
     }
   }
   throw new ModelExhaustedError(attempts);

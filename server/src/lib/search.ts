@@ -425,28 +425,45 @@ async function geoapifyPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[
   const key = process.env.GEOAPIFY_KEY;
   if (!key) return [];
   const here = ctx.lat !== undefined && ctx.lon !== undefined;
-  const term = q.replace(NEARBY, " ").replace(/\s+/g, " ").trim() || q;
-  const category = GEOAPIFY_CATEGORIES.find(([re]) => re.test(term))?.[1];
+  const pq = placeQuery(q);
+  const term = pq.where || pq.nearby ? pq.what : q;
+
+  // "biryani near indiranagar": find the area first, then search around it.
+  let around = here && pq.nearby ? { lat: ctx.lat!, lon: ctx.lon! } : undefined;
+  if (pq.where) {
+    const area = new URLSearchParams({ text: pq.where, limit: "1", apiKey: key });
+    if (here) area.set("bias", `proximity:${ctx.lon},${ctx.lat}`);
+    const found = await json<{ features?: GeoapifyFeature[] }>(
+      `https://api.geoapify.com/v1/geocode/search?${area}`, 7000).catch(() => null);
+    const p = found?.features?.[0]?.properties;
+    if (p?.lat !== undefined && p?.lon !== undefined) around = { lat: p.lat, lon: p.lon };
+  }
+  // Distances are always from the caller, not from the area searched.
+  const cards = (features: GeoapifyFeature[]) => features.flatMap(f => geoapifyCard(
+    pq.where && f.properties ? { properties: { ...f.properties, distance: undefined } } : f, ctx));
 
   // "coffee near me" is a CATEGORY query — Places answers it properly and
   // returns the distance for us. A named place goes to geocoding instead.
-  if (here && category && NEARBY.test(q)) {
+  const category = GEOAPIFY_CATEGORIES.find(([re]) => re.test(term))?.[1];
+  if (around && category) {
     const data = await json<{ features?: GeoapifyFeature[] }>(
       "https://api.geoapify.com/v2/places?" + new URLSearchParams({
         categories: category,
-        filter: `circle:${ctx.lon},${ctx.lat},3000`,
-        bias: `proximity:${ctx.lon},${ctx.lat}`,
+        filter: `circle:${around.lon},${around.lat},3000`,
+        bias: `proximity:${around.lon},${around.lat}`,
         limit: "8", apiKey: key,
       }), 7000);
-    const rows = (data.features ?? []).flatMap(f => geoapifyCard(f, ctx));
+    const rows = cards(data.features ?? []);
     if (rows.length) return rows;
   }
 
   const params = new URLSearchParams({ text: term, limit: "8", apiKey: key });
-  if (here) params.set("bias", `proximity:${ctx.lon},${ctx.lat}`);
+  const bias = around ?? (here ? { lat: ctx.lat!, lon: ctx.lon! } : undefined);
+  if (bias) params.set("bias", `proximity:${bias.lon},${bias.lat}`);
+  if (around) params.set("filter", `circle:${around.lon},${around.lat},5000`);
   const data = await json<{ features?: GeoapifyFeature[] }>(
     `https://api.geoapify.com/v1/geocode/search?${params}`, 7000);
-  return (data.features ?? []).flatMap(f => geoapifyCard(f, ctx)).slice(0, 6);
+  return cards(data.features ?? []).slice(0, 6);
 }
 
 /** "coffee near me" is a category query, not a name query. OSM has no such
@@ -473,6 +490,37 @@ const OSM_TAGS: [RegExp, string][] = [
 ];
 
 const NEARBY = /\b(near|around|close to)\s+(me|here|by)\b|\bnearby\b|\bnear me\b/i;
+
+export interface PlaceQuery {
+  /** What to look for: "biryani", "atm", or the whole name for a named place. */
+  what: string;
+  /** An area named in the query: "indiranagar" in "biryani near indiranagar". */
+  where?: string;
+  /** Asked for what is around the caller: "near me", "nearest". */
+  nearby: boolean;
+}
+
+/** OSM searches match names, so "best biryani near indiranagar" has to be
+ *  taken apart first: find Indiranagar, then look for biryani around it.
+ *  A plain name ("Times Square Starbucks") comes back as it was. */
+export function placeQuery(q: string): PlaceQuery {
+  const raw = q.trim().replace(/\s+/g, " ");
+  const nearby = NEARBY.test(raw) || /\b(nearest|closest)\b/i.test(raw);
+  let t = raw.replace(NEARBY, " ").replace(/\b(nearest|closest)\b/gi, " ").replace(/\s+/g, " ").trim();
+  let where: string | undefined;
+  const m = t.match(/^(.+?)\s+(?:near|in|around|close to)\s+(.+)$/i);
+  if (m && !/^(me|here|by)$/i.test(m[2].trim())) {
+    t = m[1];
+    where = m[2].replace(/[?.!]+$/, "").trim();
+  }
+  if (!where && !nearby) return { what: raw, nearby: false };
+  const what = t
+    .replace(/\b(best|top|good|great|nice|cheap|cheapest|popular|famous|recommended|must[- ]try|some|any|decent|the|a|an)\b/gi, " ")
+    .replace(/\b(places?|spots?|options?|joints?)\b(?=.)/gi, " ")
+    .replace(/[?.!]+$/, "")
+    .replace(/\s+/g, " ").trim();
+  return { what: what || t.trim() || raw, where, nearby };
+}
 
 /** Opt-in: the public Overpass instance regularly takes 13s and then returns
  *  a timeout remark, which is worse than no result inside a keyboard. Set
@@ -542,43 +590,106 @@ function nominatimSlot(): Promise<void> {
   return wait;
 }
 
+interface NominatimPlace {
+  display_name: string; name?: string; lat: string; lon: string;
+  address?: Record<string, string>;
+  /** [south, north, west, east] */
+  boundingbox?: string[];
+}
+
+/** How much of what was asked for is in a place's own name. A shop inside
+ *  "Phoenix Marketcity" has the mall in its address, not in its name. */
+export function nameMatch(name: string, what: string): number {
+  const words = what.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 1);
+  if (words.length === 0) return 0;
+  const n = name.toLowerCase();
+  return words.filter(w => n.includes(w.replace(/s$/, ""))).length / words.length;
+}
+
+/** "SBI ATM, HAL Old Airport Road, NR Colony, …, Karnataka, 560075, India" is
+ *  what OSM calls an address. A person would write "HAL Old Airport Road,
+ *  Kodihalli, Bengaluru 560075". */
+export function shortAddress(p: NominatimPlace): string {
+  const a = p.address;
+  if (!a) return p.display_name.split(",").slice(1, 4).join(",").trim();
+  const street = [a.house_number, a.road].filter(Boolean).join(" ");
+  const area = a.neighbourhood ?? a.suburb ?? a.quarter ?? a.city_district;
+  const city = a.city ?? a.town ?? a.village ?? a.county;
+  const parts = [street, area, [city, a.postcode].filter(Boolean).join(" ")]
+    .map(x => x?.trim()).filter((x): x is string => !!x);
+  return [...new Set(parts)].join(", ");
+}
+
+async function nominatimSearch(params: URLSearchParams): Promise<NominatimPlace[]> {
+  await nominatimSlot();
+  return json(`https://nominatim.openstreetmap.org/search?${params}`, 8000);
+}
+
 async function nominatimPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[]> {
   const here = ctx.lat !== undefined && ctx.lon !== undefined;
+  const pq = placeQuery(q);
   // "near me" is an instruction to us, not part of the name to match.
-  const term = q.replace(NEARBY, " ").replace(/\s+/g, " ").trim() || q;
+  let term = pq.where || pq.nearby ? pq.what : q.replace(NEARBY, " ").replace(/\s+/g, " ").trim() || q;
 
-  if (here && NEARBY.test(q)) {
+  if (here && pq.nearby && !pq.where) {
     const near = await overpassNearby(term, ctx.lat!, ctx.lon!).catch(() => []);
     if (near.length) return near;
+  }
+
+  // The point to search around, and how tightly (degrees).
+  let center = here ? { lat: ctx.lat!, lon: ctx.lon! } : undefined;
+  let d = pq.nearby ? 0.05 : 0.6;
+  let bounded = pq.nearby;
+  if (pq.where) {
+    const area = new URLSearchParams({ format: "jsonv2", limit: "1", q: pq.where });
+    if (here) {
+      area.set("viewbox", `${ctx.lon! - 1},${ctx.lat! + 1},${ctx.lon! + 1},${ctx.lat! - 1}`);
+    }
+    const spot = (await nominatimSearch(area).catch(() => []))[0];
+    if (spot) {
+      center = { lat: Number(spot.lat), lon: Number(spot.lon) };
+      // A neighbourhood is searched tightly, a city or a state across itself.
+      const [south, north, west, east] = (spot.boundingbox ?? []).map(Number);
+      const span = Number.isFinite(south + north + west + east)
+        ? Math.max(north - south, east - west) / 2 : 0;
+      d = Math.min(0.6, Math.max(0.03, span));
+      bounded = true;
+    } else {
+      term = q;
+    }
   }
 
   const params = new URLSearchParams({
     format: "jsonv2", limit: "8", q: term, addressdetails: "1",
   });
-  if (here) {
-    // Bounded when the caller asked for nearby, a soft nudge otherwise.
-    const d = NEARBY.test(q) ? 0.12 : 0.6;
-    params.set("viewbox",
-      `${ctx.lon! - d},${ctx.lat! + d},${ctx.lon! + d},${ctx.lat! - d}`);
-    if (NEARBY.test(q)) params.set("bounded", "1");
+  if (center) {
+    // Bounded when the caller asked for somewhere, a soft nudge otherwise.
+    params.set("viewbox", `${center.lon - d},${center.lat + d},${center.lon + d},${center.lat - d}`);
+    if (bounded) params.set("bounded", "1");
   }
-  await nominatimSlot();
-  const data = await json<{
-    display_name: string; name?: string; lat: string; lon: string;
-  }[]>(`https://nominatim.openstreetmap.org/search?${params}`, 8000);
+  let data = await nominatimSearch(params);
+  // "Phoenix Marketcity Bangalore": OSM spells the city Bengaluru, so only a
+  // shop with the mall in its address matched. Try again without the city.
+  const words = term.split(" ");
+  if (!pq.where && !pq.nearby && words.length >= 3 && !data.some(p => nameMatch(p.name ?? "", term) >= 0.5)) {
+    params.set("q", words.slice(0, -1).join(" "));
+    const retry = await nominatimSearch(params).catch(() => []);
+    if (retry.some(p => nameMatch(p.name ?? "", term) >= 0.5)) data = [...retry, ...data];
+  }
 
   const rows = data.map(p => {
     const lat = Number(p.lat), lon = Number(p.lon);
     const name = p.name?.trim() || p.display_name.split(",")[0].trim();
-    const address = p.display_name.split(",").slice(1).join(",").trim();
+    const address = shortAddress(p);
     return {
-      metres: here ? haversine(ctx.lat!, ctx.lon!, lat, lon) : 0,
+      metres: center ? haversine(center.lat, center.lon, lat, lon) : 0,
       card: {
         kind: "place" as const,
         id: `osm-${lat},${lon}`,
         title: name,
         address,
         lat, lon,
+        // Distance is from the caller, even when the search was around an area.
         distance: here ? formatDistance(haversine(ctx.lat!, ctx.lon!, lat, lon)) : undefined,
         url: mapsURL(`${name} ${address}`.trim()),
         emoji: "📍",
@@ -586,7 +697,33 @@ async function nominatimPlaces(q: string, ctx: SearchContext): Promise<PlaceCard
       },
     };
   });
-  if (here) rows.sort((a, b) => a.metres - b.metres);
+  // A mall or landmark OSM only knows as part of its shops' addresses
+  // ("Starbucks, Phoenix Marketcity Bangalore, Whitefield Main Road"): the
+  // place asked for is that address, so offer it by its own name.
+  if (!pq.where && !pq.nearby && rows.length && !rows.some(r => nameMatch(r.card.title, term) >= 0.5)) {
+    const phrase = term.toLowerCase();
+    const host = data.find(p => p.display_name.toLowerCase().includes(phrase));
+    if (host) {
+      const at = host.display_name.toLowerCase().indexOf(phrase);
+      const title = host.display_name.slice(at, at + term.length);
+      const address = host.display_name.slice(at + term.length).split(",")
+        .map(x => x.trim()).filter(Boolean).slice(0, 3).join(", ");
+      const lat = Number(host.lat), lon = Number(host.lon);
+      rows.unshift({
+        metres: center ? haversine(center.lat, center.lon, lat, lon) : 0,
+        card: {
+          kind: "place" as const, id: `osm-host-${lat},${lon}`, title, address, lat, lon,
+          distance: here ? formatDistance(haversine(ctx.lat!, ctx.lon!, lat, lon)) : undefined,
+          url: mapsURL(`${title} ${address}`.trim()), emoji: "📍", extra: address,
+        },
+      });
+    }
+  }
+
+  // The place that is called what was asked for first, then the closest.
+  const what = pq.where || pq.nearby ? pq.what : term;
+  rows.sort((a, b) => nameMatch(b.card.title, what) - nameMatch(a.card.title, what)
+    || (center ? a.metres - b.metres : 0));
   return rows.slice(0, 6).map(r => r.card);
 }
 
