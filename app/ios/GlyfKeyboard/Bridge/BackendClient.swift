@@ -63,6 +63,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
             return nil
         }
         var req = URLRequest(url: url)
+        req.glyfSession()
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -109,6 +110,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
             onError("Bad backend URL"); return nil
         }
         var req = URLRequest(url: url)
+        req.glyfSession()
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: [
@@ -157,6 +159,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         body["tz"] = TimeZone.current.identifier
 
         var req = URLRequest(url: url)
+        req.glyfSession()
         req.httpMethod = "POST"
         req.timeoutInterval = 15
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -247,6 +250,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         ]
         if let target { body["target"] = target }
         var req = URLRequest(url: url)
+        req.glyfSession()
         req.httpMethod = "POST"
         req.timeoutInterval = 15
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -282,6 +286,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         let s = SettingsStore.current
         guard let url = URL(string: "\(s.backendURL)/suggest") else { return nil }
         var req = URLRequest(url: url)
+        req.glyfSession()
         req.httpMethod = "POST"
         req.timeoutInterval = 8
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -321,6 +326,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         if let intent { body["intent"] = intent }
 
         var req = URLRequest(url: url)
+        req.glyfSession()
         req.httpMethod = "POST"
         req.timeoutInterval = 40
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -370,6 +376,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         guard let url = comps.url else { onError("Bad backend URL"); return nil }
 
         var req = URLRequest(url: url)
+        req.glyfSession()
         req.timeoutInterval = 12
         let task = URLSession.shared.dataTask(with: req) { data, _, err in
             DispatchQueue.main.async {
@@ -465,5 +472,16 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
                 completion(n)
             }
         }.resume()
+    }
+}
+
+
+extension URLRequest {
+    /// The server turns away anyone without a session, so every call from the
+    /// keyboard carries the one the app signed in with.
+    mutating func glyfSession() {
+        if let token = GlyfSession.token() {
+            setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
     }
 }

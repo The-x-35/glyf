@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildApp } from "../src/index.js";
+import { signedInApp } from "./helpers.js";
 import { env } from "../src/env.js";
 import {
   MemoryLimiter, PostgresLimiter, allow, capsFor, windowStart, type SqlLike,
@@ -88,7 +88,7 @@ describe("hard limits", () => {
   it("stops the run stream at the cap, whatever the request claims", async () => {
     const before = env.freeRunsPerDay;
     env.freeRunsPerDay = 1;
-    const app = buildApp();
+    const app = signedInApp();
     const run = (extra: Record<string, unknown>) => app.inject({
       method: "POST", url: "/glyf/run",
       payload: { glyfId: "rewrite.tighten", input: "x", vars: {}, deviceId: "cap-dev-00000001", ...extra },
@@ -102,7 +102,7 @@ describe("hard limits", () => {
   it("stops /act at the cap too, and says when to come back", async () => {
     const before = env.freeRunsPerDay;
     env.freeRunsPerDay = 1;
-    const app = buildApp();
+    const app = signedInApp();
     const send = () => app.inject({
       method: "POST", url: "/act",
       payload: { text: "sunset", deviceId: "cap-dev-00000002", plan: "max" },
@@ -117,7 +117,7 @@ describe("hard limits", () => {
   it("holds the same line on translate and vocab", async () => {
     const before = env.freeRunsPerDay;
     env.freeRunsPerDay = 1;
-    const app = buildApp();
+    const app = signedInApp();
     const device = "cap-dev-00000003";
     await app.inject({
       method: "POST", url: "/translate",
@@ -134,7 +134,7 @@ describe("hard limits", () => {
   it("the meter chip reports what is left", async () => {
     const before = env.freeRunsPerDay;
     env.freeRunsPerDay = 3;
-    const app = buildApp();
+    const app = signedInApp();
     const device = "cap-dev-00000004";
     await app.inject({
       method: "POST", url: "/act", payload: { text: "sunset", deviceId: device },
@@ -145,7 +145,7 @@ describe("hard limits", () => {
   });
 
   it("refuses a body far larger than anything anyone types", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "POST", url: "/act",
       payload: { text: "x".repeat(600 * 1024), deviceId: "cap-dev-00000005" },
@@ -172,7 +172,7 @@ describe("asking for something to be written", () => {
   });
 
   it("writes the thing and offers it to the message", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "POST", url: "/act",
       payload: { text: "Write an essay on dogs", deviceId: "write-dev-00000001" },

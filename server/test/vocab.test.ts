@@ -1,6 +1,6 @@
+import { signedInApp } from "./helpers.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { buildApp } from "../src/index.js";
 import { cleanWord, parsePack } from "../src/lib/vocab.js";
 
 describe("vocab packs", () => {
@@ -33,7 +33,7 @@ describe("vocab packs", () => {
   });
 
   it("POST /vocab/generate returns a reviewed-shape pack and validates input", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const ok = await app.inject({
       method: "POST", url: "/vocab/generate",
       payload: { description: "Cardiologist in Pune who texts Hinglish", deviceId: "vocab-dev-0001" },

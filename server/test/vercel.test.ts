@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import handler from "../api/index.js";
 import { env } from "../src/env.js";
+import { testToken } from "./helpers.js";
 
 /** The Vercel entry point is a plain Node request handler, so it can be
  *  checked the way Vercel will run it: hand it a real req/res pair and see
@@ -11,12 +12,15 @@ import { env } from "../src/env.js";
 
 let server: Server;
 let base = "";
+/** Every path but the open few needs a session, exactly as in production. */
+let auth: Record<string, string>;
 
 beforeAll(async () => {
   env.mockAI = true; // no model quota burned, same as the other route tests
   server = createServer((req, res) => { void handler(req, res); });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  auth = { authorization: `Bearer ${testToken()}` };
 });
 
 afterAll(async () => {
@@ -30,7 +34,7 @@ describe("vercel function entry", () => {
     const body = await res.json() as Record<string, unknown>;
     expect(body.ok).toBe(true);
     expect(body.storage).toMatchObject({ driver: "memory" });
-    const catalog = await (await fetch(`${base}/glyf/catalog`)).json() as { glyfs: unknown[] };
+    const catalog = await (await fetch(`${base}/glyf/catalog`, { headers: auth })).json() as { glyfs: unknown[] };
     expect(catalog.glyfs.length).toBeGreaterThanOrEqual(9);
   });
 
@@ -44,7 +48,7 @@ describe("vercel function entry", () => {
   it("passes SSE through unbuffered on POST /glyf/run", async () => {
     const res = await fetch(`${base}/glyf/run`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...auth },
       body: JSON.stringify({
         glyfId: "rewrite.polite",
         input: "send me the file now",
@@ -80,7 +84,7 @@ describe("vercel function entry", () => {
   it("answers a POST route with a normal JSON body", async () => {
     const res = await fetch(`${base}/act`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...auth },
       body: JSON.stringify({ text: "2+2", deviceId: "vercel-device-0001" }),
     });
     expect(res.status).toBe(200);
@@ -89,8 +93,18 @@ describe("vercel function entry", () => {
     expect(Array.isArray(body.cards)).toBe(true);
   });
 
+  it("turns away a caller with no session", async () => {
+    const res = await fetch(`${base}/act`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "2+2", deviceId: "vercel-device-0002" }),
+    });
+    expect(res.status).toBe(401);
+    expect((await res.json() as { error: string }).error).toContain("Sign in");
+  });
+
   it("404s an unknown path instead of crashing the function", async () => {
-    const res = await fetch(`${base}/not-a-route`);
+    const res = await fetch(`${base}/not-a-route`, { headers: auth });
     expect(res.status).toBe(404);
   });
 });

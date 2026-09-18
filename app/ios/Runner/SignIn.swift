@@ -200,39 +200,15 @@ extension SignIn: ASAuthorizationControllerPresentationContextProviding,
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor { window }
 }
 
-/// The Glyf session, in this app's Keychain (never the shared group: the
-/// keyboard has no use for it).
+/// The Glyf session. It lives in the shared keychain group (GlyfSession) so
+/// the keyboard can send it too — the server wants it on every call.
 enum SessionKeychain {
-    private static let service = "so.glyf.session"
-    private static let account = "session-v1"
-
-    private static var base: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: service,
-         kSecAttrAccount as String: account]
-    }
-
-    static func load() -> String? {
-        var query = base
-        query[kSecReturnData as String] = true
-        var out: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
+    static func load() -> String? { GlyfSession.loadJSON() }
 
     @discardableResult
-    static func save(_ json: String) -> Bool {
-        clear()
-        var query = base
-        query[kSecValueData as String] = Data(json.utf8)
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
-    }
+    static func save(_ json: String) -> Bool { GlyfSession.save(json) }
 
-    static func clear() {
-        SecItemDelete(base as CFDictionary)
-    }
+    static func clear() { GlyfSession.clear() }
 }
 
 private extension Data {

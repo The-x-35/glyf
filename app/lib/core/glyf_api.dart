@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kReleaseMode;
 
+import 'auth.dart';
 import 'bridge.dart';
 
 /// The app's own client for POST /glyf/run (SSE). The APP may talk to the
@@ -40,6 +41,7 @@ abstract final class GlyfApi {
     try {
       final req = await client.postUrl(Uri.parse('$base/glyf/run'));
       req.headers.contentType = ContentType.json;
+      _signIn(req);
       req.headers.set('Accept', 'text/event-stream');
       req.write(jsonEncode({
         'glyfId': glyfId,
@@ -97,6 +99,13 @@ abstract final class GlyfApi {
     }
   }
 
+  /// The server turns away anyone without a session, so every call carries
+  /// the one from signing in.
+  static void _signIn(HttpClientRequest req) {
+    final token = Auth.bearer;
+    if (token != null) req.headers.set('Authorization', 'Bearer $token');
+  }
+
   // ---- JSON helpers ------------------------------------------------------
 
   static Future<Map<String, dynamic>> _postJson(
@@ -107,6 +116,7 @@ abstract final class GlyfApi {
     try {
       final req = await client.postUrl(Uri.parse('$base$path'));
       req.headers.contentType = ContentType.json;
+      _signIn(req);
       req.write(jsonEncode(body));
       final res = await req.close().timeout(timeout);
       final text = await res.transform(utf8.decoder).join();
@@ -127,6 +137,7 @@ abstract final class GlyfApi {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
     try {
       final req = await client.getUrl(Uri.parse('$base$path'));
+      _signIn(req);
       final res = await req.close().timeout(timeout);
       final text = await res.transform(utf8.decoder).join();
       final obj = jsonDecode(text) as Map<String, dynamic>;
@@ -145,6 +156,7 @@ abstract final class GlyfApi {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
     try {
       final req = await client.deleteUrl(Uri.parse('$base$path'));
+      _signIn(req);
       final res = await req.close().timeout(const Duration(seconds: 8));
       return await res.transform(utf8.decoder).join();
     } finally {

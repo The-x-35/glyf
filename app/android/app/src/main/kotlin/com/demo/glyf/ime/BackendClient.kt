@@ -12,6 +12,16 @@ object BackendClient {
 
     private val pool = Executors.newCachedThreadPool()
 
+    /** The signed-in session, kept fresh by the IME: the server turns away
+     *  anyone without one. */
+    @Volatile
+    @JvmStatic
+    var bearer: String? = null
+
+    private fun HttpURLConnection.signIn() {
+        bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+    }
+
     data class ToolRow(val title: String, val snippet: String, val url: String)
 
     /** POST /tools/run — keyless search-suite tools; rows for the panel. */
@@ -32,6 +42,7 @@ object BackendClient {
                     connectTimeout = 5000
                     readTimeout = 12000
                     setRequestProperty("Content-Type", "application/json")
+                    signIn()
                 }
                 val body = JSONObject(mapOf(
                     "id" to id, "args" to JSONObject(args as Map<*, *>),
@@ -127,6 +138,7 @@ object BackendClient {
                     connectTimeout = 5000
                     readTimeout = 15000
                     setRequestProperty("Content-Type", "application/json")
+                    signIn()
                 }
                 val body = JSONObject().apply {
                     put("vertical", vertical)
@@ -166,6 +178,7 @@ object BackendClient {
                     connectTimeout = 4000
                     readTimeout = 8000
                     setRequestProperty("Content-Type", "application/json")
+                    signIn()
                 }
                 val body = JSONObject().put("text", text).put("deviceId", deviceId)
                 // The kinds of detail saved, never the details.
@@ -240,6 +253,7 @@ object BackendClient {
                     connectTimeout = 5000
                     readTimeout = 15000
                     setRequestProperty("Content-Type", "application/json")
+                    signIn()
                 }
                 val body = JSONObject().apply {
                     put("text", text); put("deviceId", deviceId)
@@ -301,6 +315,7 @@ object BackendClient {
                     connectTimeout = 5000
                     readTimeout = 40000
                     setRequestProperty("Content-Type", "application/json")
+                    signIn()
                 }
                 conn = c
                 val body = JSONObject().apply {
@@ -408,6 +423,7 @@ object BackendClient {
                     connectTimeout = 5000
                     readTimeout = 30000
                     setRequestProperty("Content-Type", "application/json")
+                    signIn()
                     setRequestProperty("Accept", "text/event-stream")
                 }
                 val body = JSONObject(mapOf(

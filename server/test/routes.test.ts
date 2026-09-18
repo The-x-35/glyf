@@ -1,6 +1,6 @@
+import { signedInApp } from "./helpers.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { buildApp } from "../src/index.js";
 
 beforeAll(() => {
   env.mockAI = true; // §8.4 — route tests burn zero quota
@@ -8,7 +8,7 @@ beforeAll(() => {
 
 describe("routes", () => {
   it("GET /health reports mock mode without echoing secrets", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({ method: "GET", url: "/health" });
     const body = res.json();
     expect(body.ok).toBe(true);
@@ -17,7 +17,7 @@ describe("routes", () => {
   });
 
   it("GET /glyf/catalog lists defs with disclosures", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({ method: "GET", url: "/glyf/catalog" });
     const body = res.json();
     expect(body.glyfs.length).toBeGreaterThanOrEqual(9);
@@ -25,7 +25,7 @@ describe("routes", () => {
   });
 
   it("POST /glyf/run streams token + done frames in mock mode", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "POST",
       url: "/glyf/run",
@@ -45,7 +45,7 @@ describe("routes", () => {
   });
 
   it("unknown glyf id → SSE error frame", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "POST",
       url: "/glyf/run",
@@ -56,7 +56,7 @@ describe("routes", () => {
 
   it("meter runs out → error frame + /meter reflects it", async () => {
     env.freeRunsPerDay = 2;
-    const app = buildApp();
+    const app = signedInApp();
     const run = () => app.inject({
       method: "POST",
       url: "/glyf/run",
@@ -72,7 +72,7 @@ describe("routes", () => {
   });
 
   it("translate def honors the target var (mock echoes the tag)", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "POST",
       url: "/glyf/run",
@@ -93,7 +93,7 @@ describe("keyboard search suite (/tools/run)", () => {
   });
 
   it("runs web.search and returns JSON rows", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "POST",
       url: "/tools/run",
@@ -107,7 +107,7 @@ describe("keyboard search suite (/tools/run)", () => {
   });
 
   it("runs yt.search and maps.search rows", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     for (const id of ["yt.search", "maps.search"]) {
       const res = await app.inject({
         method: "POST",
@@ -121,7 +121,7 @@ describe("keyboard search suite (/tools/run)", () => {
   });
 
   it("refuses oauth tools and unknown ids", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const oauth = await app.inject({
       method: "POST",
       url: "/tools/run",
@@ -139,7 +139,7 @@ describe("keyboard search suite (/tools/run)", () => {
 
 describe("waitlist", () => {
   it("accepts, dedupes, counts, and validates emails", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const ok = await app.inject({
       method: "POST", url: "/waitlist",
       payload: { email: "Hi@Example.com" },

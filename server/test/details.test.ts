@@ -1,6 +1,6 @@
+import { signedInApp } from "./helpers.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { buildApp } from "../src/index.js";
 import { detailByRules } from "../src/lib/details.js";
 
 beforeAll(() => {
@@ -30,7 +30,7 @@ describe("saved details the sentence leads into", () => {
   });
 
   it("answers /suggest with the kind, never a value", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "POST", url: "/suggest",
       payload: { text: "yes please ship it to", deviceId: "details-test", kinds: ["address", "upi"] },

@@ -1,8 +1,8 @@
+import { signedInApp } from "./helpers.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { buildApp } from "../src/index.js";
 import {
   FileKV, MemoryKV, PostgresKV, type KV, type SqlQuery,
 } from "../src/lib/store.js";
@@ -223,7 +223,7 @@ describe("PostgresKV", () => {
   });
 });
 
-/** The hooks buildApp() adds for a store that lives somewhere else. They are
+/** The hooks signedInApp() adds for a store that lives somewhere else. They are
  *  what lets every existing caller keep calling the KV synchronously. */
 describe("KV lifecycle hooks", () => {
   class HookKV extends MemoryKV {
@@ -235,7 +235,7 @@ describe("KV lifecycle hooks", () => {
 
   it("refreshes once per request and flushes before the response goes out", async () => {
     const kv = new HookKV();
-    const app = buildApp(kv);
+    const app = signedInApp(kv);
     await app.inject({ method: "GET", url: "/health" });
     expect(kv.refreshes).toBe(1);
     expect(kv.flushes).toBe(1);
@@ -255,7 +255,7 @@ describe("KV lifecycle hooks", () => {
         this.put("waitlist", "from-another-instance", { email: "a@example.com" });
       }
     }
-    const app = buildApp(new LateKV());
+    const app = signedInApp(new LateKV());
     const res = await app.inject({ method: "GET", url: "/waitlist/count" });
     expect(res.json().count).toBe(1);
   });
@@ -265,7 +265,7 @@ describe("KV lifecycle hooks", () => {
       async refresh(): Promise<void> { throw new Error("db unreachable"); }
       async flush(): Promise<void> { /* never rejects, by contract */ }
     }
-    const app = buildApp(new BrokenKV());
+    const app = signedInApp(new BrokenKV());
     const res = await app.inject({ method: "GET", url: "/health" });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
@@ -273,7 +273,7 @@ describe("KV lifecycle hooks", () => {
 
   it("exposes the store to the serverless entry point", () => {
     const kv = new HookKV();
-    expect(buildApp(kv).glyfKV).toBe(kv);
+    expect(signedInApp(kv).glyfKV).toBe(kv);
   });
 
   /** OAuth start and callback are two requests, so on a serverless host they
@@ -283,8 +283,8 @@ describe("KV lifecycle hooks", () => {
     process.env.GOOGLE_CLIENT_SECRET = "test-secret";
     try {
       const shared = new MemoryKV();          // one database
-      const one = buildApp(shared);           // two instances of the server
-      const two = buildApp(shared);
+      const one = signedInApp(shared);           // two instances of the server
+      const two = signedInApp(shared);
 
       const start = await one.inject({
         method: "GET",

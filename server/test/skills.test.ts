@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildApp } from "../src/index.js";
+import { signedInApp } from "./helpers.js";
 import { loadRegistry } from "../src/lib/glyfengine.js";
 import { categoryOf, creators, recordOfficialInstall, skillsList } from "../src/lib/skills.js";
 import { MemoryKV } from "../src/lib/store.js";
@@ -87,7 +87,7 @@ describe("skills list", () => {
 
 describe("skills routes", () => {
   it("filters by category and search, gets shipped and community skills", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const all = await app.inject({ method: "GET", url: "/skills" });
     expect(all.statusCode).toBe(200);
     const body = all.json();
@@ -120,7 +120,7 @@ describe("skills routes", () => {
   });
 
   it("keeps publisher device ids out of the public hub list", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const def = userDef("Shout");
     const save = await app.inject({ method: "POST", url: "/glyfs", payload: { deviceId: "owner-dev-0000001", def } });
     const id = save.json().id;

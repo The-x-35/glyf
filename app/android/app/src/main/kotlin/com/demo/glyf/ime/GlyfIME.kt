@@ -78,6 +78,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     override fun onCreate() {
         super.onCreate()
+        // The server turns away anyone without a session; the keyboard reads
+        // the app's and sends it with every call.
+        com.demo.glyf.ime.BackendClient.bearer = com.demo.glyf.SessionStore.token(this)
         KeyboardTyping.prepare(this) { }
         (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
             .addPrimaryClipChangedListener(clipListener)
@@ -218,6 +221,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // Signed out and back in since the keyboard last ran? Take the new one.
+        com.demo.glyf.ime.BackendClient.bearer = com.demo.glyf.SessionStore.token(this)
         android.util.Log.d("GlyfKB", "onStartInputView restarting=$restarting overlay=${overlay != null}")
         settings = SettingsStore.load(this)
         settingsStamp = com.demo.glyf.store.Bridge.file(this, SettingsStore.FILE).lastModified()

@@ -1,2 +1,4 @@
 data/
 .vercel/
+.vercel
+.env*

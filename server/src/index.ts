@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { env, assertServerSecrets } from "./env.js";
 import { Guard } from "./lib/guard.js";
+import { protectRoutes } from "./lib/protect.js";
 import { buildLimiter } from "./lib/limiter-factory.js";
 import { defaultKV, type KV } from "./lib/store.js";
 import { GlyfLibrary } from "./lib/userglyfs.js";
@@ -41,7 +42,11 @@ export function buildApp(kv: KV = defaultKV()) {
     // before a handler ever sees them.
     bodyLimit: 512 * 1024,
   });
-  const guard = new Guard({ limits: buildLimiter(), freePerDay: env.freeRunsPerDay });
+  const limits = buildLimiter();
+  const guard = new Guard({ limits, freePerDay: env.freeRunsPerDay });
+  // The lock goes on before any route is registered, so nothing added later
+  // is open by accident.
+  protectRoutes(app, { limits });
   const library = new GlyfLibrary(kv);
   app.decorate("glyfKV", kv);
 

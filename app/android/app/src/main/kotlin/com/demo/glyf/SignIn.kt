@@ -17,6 +17,7 @@ import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import org.json.JSONObject
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -85,7 +86,8 @@ object SignIn {
 
 /**
  * The Glyf session: AES-GCM on disk (no backups), key in the Android
- * Keystore. The keyboard never reads it.
+ * Keystore. The keyboard reads it too — the server wants a session on every
+ * call — but only ever to read.
  */
 object SessionStore {
     private const val KEY_ALIAS = "so.glyf.session"
@@ -115,6 +117,34 @@ object SessionStore {
         }
     } catch (_: Exception) {
         null
+    }
+
+    /** Just the bearer token, and only while it is still good. */
+    fun token(ctx: Context): String? = try {
+        val json = load(ctx)
+        val obj = json?.let { JSONObject(it) }
+        val token = obj?.optString("token").orEmpty()
+        when {
+            token.isEmpty() -> null
+            expired(token) -> null
+            else -> token
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** The `exp` in the session's own claims; unreadable ones are left to the
+     *  server to judge. */
+    private fun expired(token: String): Boolean = try {
+        val parts = token.split(".")
+        if (parts.size != 3) false else {
+            val payload = android.util.Base64.decode(
+                parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+            val exp = JSONObject(String(payload)).optLong("exp", 0L)
+            exp > 0L && exp * 1000L <= System.currentTimeMillis()
+        }
+    } catch (_: Exception) {
+        false
     }
 
     fun save(ctx: Context, json: String): Boolean = try {

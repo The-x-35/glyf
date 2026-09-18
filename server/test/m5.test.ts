@@ -1,6 +1,6 @@
+import { signedInApp } from "./helpers.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { buildApp } from "../src/index.js";
 import { evalCond, interpolate, runGlyf } from "../src/lib/glyfengine.js";
 import { GlyfDefSchema } from "../src/schemas/glyfdef.js";
 import { loadTools } from "../src/lib/tools.js";
@@ -214,7 +214,7 @@ describe("user glyfs + hub (§6.8/§6.9)", () => {
 describe("oauth broker (§6.11)", () => {
   it("google start fails closed without credentials, without naming server settings", async () => {
     delete process.env.GOOGLE_CLIENT_ID;
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "GET",
       url: "/oauth/google/start?deviceId=test-dev-00000001&scopes=calendar,gmail",
@@ -227,7 +227,7 @@ describe("oauth broker (§6.11)", () => {
   it("start builds a consent URL with exactly the chosen scopes when configured", async () => {
     process.env.GOOGLE_CLIENT_ID = "test-client";
     process.env.GOOGLE_CLIENT_SECRET = "test-secret";
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "GET",
       url: "/oauth/google/start?deviceId=test-dev-00000001&scopes=calendar",
@@ -245,7 +245,7 @@ describe("oauth broker (§6.11)", () => {
   });
 
   it("status reports per-device connection state", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "GET", url: "/connectors/status?deviceId=test-dev-00000001",
     });
@@ -258,7 +258,7 @@ describe("oauth broker (§6.11)", () => {
 
 describe("routes: builder + hub + connector + telemetry", () => {
   it("builder/generate (mock) returns a valid def; test runs it; save+publish+install round-trips", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const gen = await app.inject({
       method: "POST", url: "/builder/generate",
       payload: { description: "make text sound like a pirate", deviceId: "test-dev-00000001" },
@@ -306,7 +306,7 @@ describe("routes: builder + hub + connector + telemetry", () => {
 
   it("a phone claiming pro gets no more runs than its plan allows (§6.16)", async () => {
     env.freeRunsPerDay = 1;
-    const app = buildApp();
+    const app = signedInApp();
     const run = (pro: boolean) => app.inject({
       method: "POST", url: "/glyf/run",
       payload: { glyfId: "rewrite.tighten", input: "x", vars: {}, deviceId: "pro-dev-00000001", pro },
@@ -321,7 +321,7 @@ describe("routes: builder + hub + connector + telemetry", () => {
   });
 
   it("keyless.weather glyf runs the tool through /glyf/run (W key path)", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "POST", url: "/glyf/run",
       payload: { glyfId: "keyless.weather", input: "Pune", vars: {}, deviceId: "test-dev-00000003" },
@@ -331,7 +331,7 @@ describe("routes: builder + hub + connector + telemetry", () => {
   });
 
   it("mockcal serves the ConnectorSurface (§6.12)", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({ method: "GET", url: "/connector/mockcal/events?q=design" });
     const body = res.json();
     expect(body.events).toHaveLength(1);
@@ -339,7 +339,7 @@ describe("routes: builder + hub + connector + telemetry", () => {
   });
 
   it("telemetry ingests events and reports the funnel", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const post = await app.inject({
       method: "POST", url: "/telemetry",
       payload: {
@@ -353,7 +353,7 @@ describe("routes: builder + hub + connector + telemetry", () => {
   });
 
   it("oauth start without credentials fails cleanly (§6.11 skeleton)", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({ method: "GET", url: "/oauth/google/start" });
     expect(res.statusCode).toBe(503);
     expect(res.json().error).not.toContain("server/.env");

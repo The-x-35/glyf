@@ -131,6 +131,10 @@ abstract final class Auth {
     return 'Sign-in did not finish. Try again.';
   }
 
+  /// The session to send with every call to the server. Null when nobody is
+  /// signed in, which is also when the server will refuse.
+  static String? get bearer => _account?.expired == false ? _account?.token : null;
+
   /// The email and name the account came with (for the vault and Profile),
   /// and whether it is a Google or an Apple account.
   static ({String? email, String? name, String? provider}) identity() => (

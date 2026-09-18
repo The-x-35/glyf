@@ -24,10 +24,12 @@ export interface Caps {
 }
 
 export function capsFor(plan: Plan, freePerDay: number): Caps {
+  // A person types; they don't fire. Even the top plan gets a minute's worth
+  // that a human could plausibly use, so a stolen session can't drain a day.
   switch (plan) {
-    case "max": return { runsPerDay: freePerDay * 25, burstPerMinute: 30 };
-    case "plus": return { runsPerDay: freePerDay * 10, burstPerMinute: 20 };
-    default: return { runsPerDay: freePerDay, burstPerMinute: 12 };
+    case "max": return { runsPerDay: freePerDay * 25, burstPerMinute: 15 };
+    case "plus": return { runsPerDay: freePerDay * 10, burstPerMinute: 12 };
+    default: return { runsPerDay: freePerDay, burstPerMinute: 8 };
   }
 }
 

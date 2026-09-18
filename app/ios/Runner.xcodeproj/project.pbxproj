@@ -20,6 +20,7 @@
 		1CAC13D36C427C7132889EF1 /* ClipboardPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACF0028C0693E817D1AC231 /* ClipboardPanel.swift */; };
 		20A21D92D3A57F8A1719908F /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
 		21C14BE98D0CD059C5EC3C2E /* SpaceGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07E305711B11F34700D4CCDE /* SpaceGesture.swift */; };
+		22D65AB7F68DF03931D9BEA4 /* GlyfSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */; };
 		264770223DD8226DB4B988F0 /* ActSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */; };
 		301F473B5F209817B6C95E96 /* AccentPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603D199225C0A5A5986ECBD5 /* AccentPopup.swift */; };
 		31A5DBAC5940AE8D66750E8C /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
@@ -44,6 +45,7 @@
 		6B502FA1491B78CA9CCF7F63 /* InlineEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E97DFE2A588F7A69880F23A /* InlineEditor.swift */; };
 		6D705D6C53780C162B803930 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F69B8F550E5B5270B4D18FCA /* Pods_Runner.framework */; };
 		735137DEAC3D31AC61DBBBFB /* CalendarText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7C9B275603B0968648339E /* CalendarText.swift */; };
+		737B2D28D4945E95B7BCC5E5 /* GlyfSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */; };
 		741A70377640E915138D3838 /* SearchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E6DFEACD2A44AAB2AA5FA2 /* SearchCard.swift */; };
 		742ECE3EBB12DC390813885E /* EmojiBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B45C4A1A9F02EC32C4EC037 /* EmojiBoard.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
@@ -223,6 +225,7 @@
 		8234BE4687484A021A8CC2FA /* en.glyd */ = {isa = PBXFileReference; includeInIndex = 1; name = en.glyd; path = ../dict/en.glyd; sourceTree = SOURCE_ROOT; };
 		8780A09C43898372745A2010 /* TypingEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingEngine.swift; sourceTree = "<group>"; };
 		8EBDAF6797DA60917F2CADBD /* TranslationHUD.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TranslationHUD.swift; sourceTree = "<group>"; };
+		90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfSession.swift; sourceTree = "<group>"; };
 		9185252D8BB3209B13267E60 /* GlyfKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GlyfKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		969AE566AACBB47939055C04 /* TonesPopup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TonesPopup.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
@@ -498,6 +501,7 @@
 				5D8C4C96456B2A323C0EE8F0 /* GlyfCatalog.swift */,
 				08B2E745F387CCCC496C13F0 /* IntentStore.swift */,
 				4223D5E2A46414C673A83747 /* Contracts.generated.swift */,
+				90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */,
 			);
 			name = Bridge;
 			path = Bridge;
@@ -875,6 +879,7 @@
 				C935003FB1F140378070B3BB /* TourLabelView.swift in Sources */,
 				81364F0B50AAA933D02723D5 /* CalendarText.swift in Sources */,
 				4981B7628978DB909E4C478F /* CalendarSurface.swift in Sources */,
+				737B2D28D4945E95B7BCC5E5 /* GlyfSession.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -945,6 +950,7 @@
 				A7E9D6421F758C2BC141CA25 /* SearchRecents.swift in Sources */,
 				57353ACE229EF65D43370F78 /* CalendarSync.swift in Sources */,
 				96246651528C4638ED7A2433 /* SignIn.swift in Sources */,
+				22D65AB7F68DF03931D9BEA4 /* GlyfSession.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

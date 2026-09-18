@@ -1,6 +1,6 @@
+import { signedInApp } from "./helpers.js";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { buildApp } from "../src/index.js";
 import { listInsert, parsePlan, parseRewriteOptions, planByRules, rewriteStyles } from "../src/lib/act.js";
 import type { PlaceCard } from "../src/lib/searchcards.js";
 import { renderPage } from "../src/lib/pages.js";
@@ -61,7 +61,7 @@ describe("listInsert", () => {
 
 describe("POST /act", () => {
   const post = async (text: string, extra: Record<string, unknown> = {}) => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({
       method: "POST", url: "/act",
       payload: { text, deviceId: "test-device-act", ...extra },
@@ -83,7 +83,7 @@ describe("POST /act", () => {
   });
 
   it("serves the live page with every place, escaped, and 404s unknown ids", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const res = await app.inject({ method: "POST", url: "/act",
       payload: { text: "coffee near me", deviceId: "test-device-page" } });
     const id = String(res.json().page).split("/p/")[1];
@@ -118,7 +118,7 @@ describe("POST /act", () => {
 
   it("is metered like any other AI run", async () => {
     env.freeRunsPerDay = 1;
-    const app = buildApp();
+    const app = signedInApp();
     const send = () => app.inject({ method: "POST", url: "/act",
       payload: { text: "sunset", deviceId: "metered-device-act" } });
     expect((await send()).statusCode).toBe(200);
@@ -128,7 +128,7 @@ describe("POST /act", () => {
   });
 
   it("serves static maps only for real coordinates, and only with a key", async () => {
-    const app = buildApp();
+    const app = signedInApp();
     const saved = process.env.GEOAPIFY_KEY;
     delete process.env.GEOAPIFY_KEY;
     const noKey = await app.inject({ method: "GET", url: "/search/staticmap?lat=40.75&lon=-73.98" });
