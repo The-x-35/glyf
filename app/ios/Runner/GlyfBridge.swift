@@ -50,6 +50,8 @@ final class GlyfBridge {
             }
             result(enabled)
         case "openSettings":
+            // The only supported way in. iOS shows the app's own page when the
+            // app has one — which is why this app ships a Settings bundle.
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
