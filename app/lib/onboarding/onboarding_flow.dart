@@ -67,6 +67,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     for (final f in _detailFields) f.$1: FocusNode(),
   };
   String? _detailsError;
+  /// Why the screenshots switch wouldn't stay on, when it wouldn't.
+  String? _photosNote;
   bool _keySounds = true;
   bool _haptics = true;
   /// On by default, like Gboard: what you copy is there to paste later.
@@ -299,11 +301,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// it, so the ask belongs to this switch — never to moving on.
   Future<void> _wantScreenshots(bool on) async {
     if (!on) {
-      setState(() => _screenshots = false);
+      setState(() {
+        _screenshots = false;
+        _photosNote = null;
+      });
       return;
     }
     final granted = await GlyfBridge.screenshotAccess();
-    if (mounted) setState(() => _screenshots = granted);
+    if (!mounted) return;
+    setState(() {
+      _screenshots = granted;
+      // Asked before and said no: iOS won't ask again, so say where it is
+      // rather than let the switch flick back for no reason.
+      _photosNote = granted ? null : 'Photos are off for Glyf. Allow them in Settings.';
+    });
   }
 
   /// Onboarding is done once the tour is offered: settings saved, state
@@ -615,17 +626,40 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               (v) => setState(() => _clipboard = v)),
           const SizedBox(height: 10),
           _toggleCard('🖼️', 'Recent screenshots', _screenshots, _wantScreenshots),
+          if (_photosNote != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 4),
+              child: Row(children: [
+                Expanded(
+                  child: Text(_photosNote!,
+                      style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
+                ),
+                GestureDetector(
+                  onTap: () => GlyfBridge.openSettings(),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Text('Open',
+                        style: TextStyle(
+                            color: Glass.accent, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ]),
+            ),
           const Spacer(),
           _pill('Continue', onTap: _advance),
           const SizedBox(height: 20),
         ]);
 
       // Both things Glyf needs from the phone on one screen: each row opens
-      // the place that turns it on, and Continue waits until both are on.
+      // the place that turns it on.
       case 'setup':
         final android = Platform.isAndroid;
         final inUse = android ? _keyboardSelected : _fullAccess;
-        final done = _keyboardEnabled && inUse;
+        // Android can see both from here. Full Access is a fact only the
+        // keyboard itself can report — it lands the moment the keyboard next
+        // runs — so on iPhone it is never what stands in the way; the
+        // keyboard says so itself where it matters (the bar, search, paste).
+        final done = android ? (_keyboardEnabled && inUse) : _keyboardEnabled;
         return _frame(children: [
           const Spacer(flex: 2),
           const AiKeyboard(),
