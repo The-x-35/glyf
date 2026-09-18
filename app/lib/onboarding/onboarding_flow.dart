@@ -69,6 +69,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   String? _detailsError;
   /// Why the screenshots switch wouldn't stay on, when it wouldn't.
   String? _photosNote;
+  /// When this run of the setup step began: only what the keyboard says
+  /// after this counts as proof of Full Access.
+  DateTime? _setupSince;
+  /// The box the keyboard is asked to turn up in.
+  final _try = TextEditingController();
   bool _keySounds = true;
   bool _haptics = true;
   /// On by default, like Gboard: what you copy is there to paste later.
@@ -131,6 +136,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     for (final f in _detailFocus.values) {
       f.dispose();
     }
+    _try.dispose();
     super.dispose();
   }
 
@@ -196,6 +202,34 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     Telemetry.log('onboarding_location', {'granted': _locationOn});
   }
 
+  /// Where the keyboard gets to speak for itself: type one letter with Glyf
+  /// and it reports Full Access, which nothing else on the phone can tell us.
+  Widget _tryHere() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Semantics(
+          identifier: 'onb:setup:try',
+          child: TextField(
+            controller: _try,
+            autocorrect: false,
+            style: const TextStyle(color: Glass.ink, fontSize: 16),
+            decoration: InputDecoration(
+              hintText: 'Type a letter here',
+              hintStyle: const TextStyle(color: Glass.inkSoft, fontSize: 15),
+              prefixIcon: const Icon(Icons.keyboard_alt_outlined, size: 20, color: Glass.inkSoft),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(vertical: 14),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+            ),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 8, left: 4),
+          child: Text('Tap 🌐 on the keyboard and pick Glyf',
+              style: TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
+        ),
+      ]);
+
   /// Takes them where the thing they tapped is turned on.
   void _openSetup(String what) {
     Telemetry.log('onboarding_setup_open', {'what': what});
@@ -212,10 +246,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         Platform.isAndroid ? await GlyfBridge.keyboardSelected() : false;
     final ping = await GlyfBridge.keyboardPing();
     if (!mounted) return;
+    // The keyboard reports Full Access by running, and what it said last
+    // week means nothing now — a keyboard that has been turned off can't
+    // even correct it. So only a report from this visit counts, and only
+    // while the keyboard is on.
+    final said = DateTime.tryParse('${ping?['ts'] ?? ''}');
+    final fresh = said != null && _setupSince != null && said.isAfter(_setupSince!);
     setState(() {
       _keyboardEnabled = enabled;
       _keyboardSelected = selected;
-      _fullAccess = ping?['hasFullAccess'] == true;
+      _fullAccess = enabled && fresh && ping?['hasFullAccess'] == true;
     });
   }
 
@@ -230,6 +270,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _step++;
     });
     if (_steps[_step] == 'details') _prefillFromAccount();
+    if (_steps[_step] == 'setup') _setupSince = DateTime.now().toUtc();
     if (_steps[_step] == 'tour') _completing ??= _complete();
     if (_steps[_step] == 'connect' && _googleScopes.isEmpty) {
       // Persona decides the SUGGESTION; the checklist is the user's call.
@@ -258,6 +299,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _forward = false;
       _step--;
     });
+    if (_steps[_step] == 'setup') _setupSince = DateTime.now().toUtc();
     Telemetry.log('onboarding_step_back', {'step': _steps[_step]});
   }
 
@@ -660,10 +702,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         // runs — so on iPhone it is never what stands in the way; the
         // keyboard says so itself where it matters (the bar, search, paste).
         final done = android ? (_keyboardEnabled && inUse) : _keyboardEnabled;
+        // While the keyboard is up the picture of a keyboard is the first
+        // thing that can go.
+        final typing = MediaQuery.viewInsetsOf(context).bottom > 0;
         return _frame(children: [
           const Spacer(flex: 2),
-          const AiKeyboard(),
-          const SizedBox(height: 32),
+          // Hidden, not removed: taking it out of the list would shuffle the
+          // box below it and cost it the keyboard it just called up.
+          Offstage(
+            offstage: typing,
+            child: const Column(children: [AiKeyboard(), SizedBox(height: 32)]),
+          ),
           const GlyfText('Turn on {glyf}',
               style: TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
           const SizedBox(height: 24),
@@ -674,9 +723,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             onKeyboard: () => _openSetup('keyboard'),
             onInUse: () => _openSetup(android ? 'picker' : 'access'),
           ),
+          // Full Access is real only when the keyboard itself says so, and it
+          // says so by turning up: so once the keyboard is added, this is
+          // where it gets its first word in.
+          if (!android && _keyboardEnabled && !_fullAccess) ...[
+            const SizedBox(height: 16),
+            _tryHere(),
+          ],
           const Spacer(flex: 3),
-          _pill('Continue', onTap: done ? _advance : null),
-          if (!done) _skip() else const SizedBox(height: 20),
+          Offstage(
+            offstage: typing,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _pill('Continue', onTap: done ? _advance : null),
+              if (!done) _skip() else const SizedBox(height: 20),
+            ]),
+          ),
         ]);
 
       // "Coffee near me" is only a real answer if the keyboard knows roughly

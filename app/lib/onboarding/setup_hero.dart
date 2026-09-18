@@ -104,6 +104,9 @@ class SetupChecklist extends StatelessWidget {
               done: inUseOn,
               action: android ? 'Choose' : 'Open',
               onTap: onInUse,
+              // The switch only exists once the keyboard is added, so the row
+              // waits its turn rather than sending anyone to look for it.
+              waiting: !keyboardOn,
             ),
           ]),
         ),
@@ -124,35 +127,42 @@ class SetupChecklist extends StatelessWidget {
     required String action,
     required VoidCallback onTap,
     String? hint,
+    bool waiting = false,
   }) {
     final showHint = hint != null && !done;
     final row = SizedBox(
       height: showHint ? 64 : 56,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Row(children: [
-          SizedBox(width: 30, height: 30, child: icon),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontSize: 16, color: Glass.ink)),
-                if (showHint)
-                  Text(hint,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12.5, color: Glass.inkSoft)),
-              ],
+        child: Opacity(
+          opacity: waiting ? 0.45 : 1,
+          child: Row(children: [
+            SizedBox(width: 30, height: 30, child: icon),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 16, color: Glass.ink)),
+                  if (showHint)
+                    Text(hint,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5, color: Glass.inkSoft)),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          _Mark(done: done, action: action),
-        ]),
+            const SizedBox(width: 8),
+            if (waiting)
+              const _Ring()
+            else
+              _Mark(done: done, action: action),
+          ]),
+        ),
       ),
     );
-    if (done) return row;
+    if (done || waiting) return row;
     return Semantics(
       identifier: id,
       button: true,
@@ -162,6 +172,21 @@ class SetupChecklist extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A row whose turn hasn't come: nothing to do here yet.
+class _Ring extends StatelessWidget {
+  const _Ring();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFFD6D9E0), width: 1.6),
+        ),
+      );
 }
 
 /// Where one thing stands: what to tap until the phone reports it on, then a
