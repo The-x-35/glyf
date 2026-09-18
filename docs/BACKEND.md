@@ -44,11 +44,11 @@ Glyf is an AI keyboard for iPhone and Android. The keyboards (native Swift on iO
 | Tests | vitest 2, 8 files, 90 test cases (static count) |
 | Entry point | `server/src/index.ts` (`buildApp()` registers all routes) |
 | Port | `8787` by default (`PORT`), listens on `0.0.0.0` |
-| Storage | JSON files in `server/data/` behind a `KV` interface. Postgres was planned but is not built |
+| Storage | A `KV` interface: JSON files in `server/data/` on a laptop, Postgres (`PostgresKV`, Neon over HTTP) wherever `DATABASE_URL` is set — which is what production runs (`GLYF_STORE=postgres` makes a missing URL fail at boot instead of falling back to files) |
 | AI | Any OpenAI-compatible chat API: OpenRouter, Gemini, Groq, Mistral, Inception, Cerebras, chosen by an ordered fallback chain |
 | Mock mode | `MOCK_AI=true` makes every model, search and tool call deterministic and offline |
-| Public origin (planned) | `https://api.tryglyf.com` |
-| Deployed? | **No.** As of the last notes (2026-09-16) the server only runs on Arpit's Mac. Release builds of the apps already point at `https://api.tryglyf.com`, so TestFlight users get no AI until it is deployed |
+| Public origin | `https://api.tryglyf.com` |
+| Deployed? | **Yes, since 2026-09-18** — Railway, Singapore region (`x-railway-edge: sin1`), next to the Neon database. Every push to `main` redeploys, so a push is a deploy. See [section 13](#13-deployment) |
 | Repo | Private monorepo `https://github.com/The-x-35/glyf` (first push 2026-09-16). `server/.env` and `server/data/` are not committed |
 | Package version | `glyf-server` 0.2.0 (`server/package.json`) |
 
@@ -93,7 +93,7 @@ Health check: `curl http://127.0.0.1:8787/health` returns `{ ok, mockAI, fastMod
 The backend URL is persisted in shared settings (`backendURL`). Both native stores "productionize" it on load:
 
 - A release build rewrites any stored dev URL (`127.0.0.1`, `localhost`, `10.0.2.2`, `0.0.0.0`) to production, so a shipped build can never point at a laptop.
-- An iOS debug build rewrites a stored production URL back to the dev URL. This was added on 2026-09-14 after the simulator kept a persisted production URL and every search failed with a TLS error, because `api.tryglyf.com` does not exist yet. The same investigation found that Swift `#if DEBUG` was dead in the keyboard target (it needs `SWIFT_ACTIVE_COMPILATION_CONDITIONS`), so debug keyboards had been silently calling production.
+- An iOS debug build rewrites a stored production URL back to the dev URL. This was added on 2026-09-14 after the simulator kept a persisted production URL and every search failed with a TLS error, because `api.tryglyf.com` did not exist yet (it went live 2026-09-18). The same investigation found that Swift `#if DEBUG` was dead in the keyboard target (it needs `SWIFT_ACTIVE_COMPILATION_CONDITIONS`), so debug keyboards had been silently calling production.
 
 A physical phone cannot reach `127.0.0.1` on the Mac. Until the server is deployed, device testing of AI features needs the stored `backendURL` changed to the Mac's LAN address or a tunnel. This was never set up in the notes.
 
@@ -1302,15 +1302,16 @@ npm run typecheck   # tsc --noEmit
 
 ### 13.1 Status
 
-- **Not deployed.** During the 2026-09-14 debugging the assistant noted that `https://api.tryglyf.com` "doesn't exist yet", the iOS settings code describes it as a domain that does not resolve before launch, and nothing later in the history mentions a deploy. This was not re-checked while writing.
-- Release builds of the iOS app, the iOS keyboard, the Flutter app and the Android app already point at `https://api.tryglyf.com`, so every TestFlight user currently gets no AI, search or connectors.
+- **Live since 2026-09-18 at `https://api.tryglyf.com`**, on Railway: root directory `server`, build `npm run build`, start `node dist/src/index.js`, healthcheck `/health`, region Singapore (the Neon database is in `ap-southeast-1`, and the limiter makes three or four round trips per request, so distance would show). DNS is a Porkbun CNAME `api` → `6v7dc7zj.up.railway.app`; Railway issues the certificate. Every push to `main` redeploys, so a push **is** a deploy; Arpit does it.
+- Verified the same day: `/health` reports `storage.driver: "postgres"`; an unauthenticated `POST /act` gets 401 "Sign in to use Glyf"; a signed one answers in about 4 s and the meter counts down; `/search` for "coffee near me" from Bengaluru returns Geoapify places; the open-path per-IP limit answers the 13th request in a minute with 429.
+- Vercel was rejected for the API on 2026-09-18 (it keeps the website): its Hobby plan is non-commercial, a function cold-starts on a keyboard tap and is frozen between requests (provider cooldowns and tool limits live in the process), and its default region is US East. The Vercel adapter (`api/index.ts`, `vercel.json`) stays in the repo and is harmless. Cheaper hosts looked at the same day, for the record: Koyeb Eco from $1.61/month, Fly.io about $2, Northflank's free sandbox (always on, but "not for production"); Render's free tier sleeps after 15 minutes and is unusable behind a keyboard.
+- Environment on the host: the `server/.env` names minus `PORT` and the empty `GROQ_API_KEY`, plus `NODE_ENV=production`, `GLYF_STORE=postgres`, `OAUTH_REDIRECT_BASE` and `PUBLIC_BASE_URL` (both `https://api.tryglyf.com`) and `GEOAPIFY_KEY`. Never `VITEST` (any value switches the hard limits to per-process memory), and never a generated value in `GOOGLE_CLIENT_SECRET` or `OVERPASS_API_BASE` — Railway's editor offers `${{ secret() }}` for both.
 - The domain: tryglyf.com was bought on 2026-09-14 ("bought tryglyf.com now, wire it up in app and everywhere"). `glyf.so` was found unregistered on 2026-09-13 but hard to buy; it was not pursued in the notes. Reverse-DNS identifiers (`group.so.glyf.shared`, `so.glyf.vault`, `so.glyf/bridge`) were deliberately left unchanged, because renaming the App Group would point installs at an empty container and wipe user data.
-- Hosting: not chosen. On 2026-09-13 the assistant offered to deploy to Fly.io or Railway ("both take this Fastify app as-is") given an account or token. No token was provided. Vercel hosts only the website.
 
-### 13.2 Deployment checklist
+### 13.2 Deployment checklist (for a second host)
 
-1. **Host** with a persistent disk (FileKV writes JSON files) or implement the Postgres KV driver first. Run a single instance (the meter, OAuth states and caches are in memory).
-2. **Run with `npm start`** (tsx), or add a step that copies `src/registry/` into `dist/` before using `npm run build` ([known issue 9](#16-known-issues)).
+1. **Host** as one long-lived Node process with `DATABASE_URL` set: the meter and the hard limits are in Postgres, but provider cooldowns and tool limits are per process, so run a single instance.
+2. **Build with `npm run build` and start `node dist/src/index.js`** from the `server` directory. The registry is found from the working directory, so nothing has to be copied into `dist/`.
 3. **DNS:** point `api.tryglyf.com` at the host with HTTPS.
 4. **Environment:**
    - `NODE_ENV=production` (turns off Nominatim).
