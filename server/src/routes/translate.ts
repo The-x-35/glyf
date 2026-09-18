@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { TTLCache } from "../lib/cache.js";
+import type { Guard } from "../lib/guard.js";
 import { translate } from "../lib/translate.js";
 
 /** POST /translate — the translate strip: detects the language, picks the
@@ -15,16 +16,19 @@ const TranslateSchema = z.object({
   target: z.string().min(2).max(40).optional(),
 });
 
-export function translateRoutes(app: FastifyInstance): void {
+export function translateRoutes(app: FastifyInstance, guard: Guard): void {
   const cache = new TTLCache(10 * 60_000, 500);
 
   app.post("/translate", async (req, reply) => {
     const parsed = TranslateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ ok: false, error: "Bad request" });
-    const { text, primary, secondary, target } = parsed.data;
+    const { text, primary, secondary, target, deviceId } = parsed.data;
     const key = TTLCache.key(["translate", text.trim(), primary, secondary, target ?? ""]);
     const cached = cache.get(key);
+    // A cached phrase costs nothing upstream, so it costs nothing here.
     if (cached) return { ok: true, ...JSON.parse(cached) };
+    const gate = await guard.spend(req, deviceId);
+    if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
     try {
       const result = await translate({ text, primary, secondary, target });
       cache.set(key, JSON.stringify(result));

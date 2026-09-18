@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../env.js";
 import { GlyfDefSchema } from "../schemas/glyfdef.js";
+import type { Guard } from "../lib/guard.js";
 import { runGlyf } from "../lib/glyfengine.js";
 import { completeStreaming } from "../providers/openrouter.js";
 import { GlyfLibrary, SaveGlyfSchema, validateUserDef, ensureInputWired } from "../lib/userglyfs.js";
@@ -53,12 +54,14 @@ The LAST produced out must be named "final" (or output.from must point at it).
 "input" should be "field" when the action transforms what the user typed, "clipboard" when it reacts to copied content, "none" when it needs no text.
 Keep it minimal: most glyfs are ONE llm step.`;
 
-export function builderRoutes(app: FastifyInstance, library: GlyfLibrary): void {
+export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard: Guard): void {
 
   app.post("/builder/generate", async (req, reply) => {
     const parsed = GenerateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "Bad request" });
-    const { description } = parsed.data;
+    const { description, deviceId } = parsed.data;
+    const gate = await guard.spend(req, deviceId);
+    if (!gate.ok) return reply.code(429).send({ error: gate.message });
 
     if (env.mockAI) {
       // Deterministic builder for tests/offline (§8.4).
@@ -120,6 +123,8 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary): void 
     }
     const refusal = validateUserDef(defParsed.data);
     if (refusal) return reply.code(422).send({ error: refusal });
+    const gate = await guard.spend(req, parsed.data.deviceId);
+    if (!gate.ok) return reply.code(429).send({ error: gate.message });
 
     const started = Date.now();
     try {

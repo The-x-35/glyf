@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { plan, type ActIntent } from "../lib/act.js";
+import type { Guard } from "../lib/guard.js";
 import { TTLCache } from "../lib/cache.js";
 import { DETAIL_KINDS, detailByModel, detailByRules, type DetailKind } from "../lib/details.js";
 
@@ -31,6 +32,7 @@ const LABELS: Record<ActIntent, { label: string; action: string }> = {
   answer: { label: "Look it up", action: "act" },
   video: { label: "Find the video", action: "act" },
   rewrite: { label: "Tidy this up", action: "act" },
+  write: { label: "Write it for me", action: "act" },
 };
 
 /** Suggestions are a nicety, never a nag: below this, say nothing. */
@@ -44,12 +46,14 @@ function worthSuggesting(text: string, intent: ActIntent): boolean {
   return true;
 }
 
-export function suggestRoutes(app: FastifyInstance): void {
+export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
   const cache = new TTLCache(60_000, 200);   // stores JSON, like the run cache
 
   app.post("/suggest", async (req, reply) => {
     const parsed = SuggestSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ ok: false, error: "Bad request" });
+    const gate = await guard.spend(req, parsed.data.deviceId);
+    if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
     const text = parsed.data.text.trim();
     const kinds = (parsed.data.kinds ?? []).filter((k): k is DetailKind =>
       (DETAIL_KINDS as readonly string[]).includes(k));

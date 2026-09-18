@@ -304,7 +304,7 @@ describe("routes: builder + hub + connector + telemetry", () => {
     expect(run.payload).toContain("event: done");
   });
 
-  it("pro flag skips the meter (§6.16)", async () => {
+  it("a phone claiming pro gets no more runs than its plan allows (§6.16)", async () => {
     env.freeRunsPerDay = 1;
     const app = buildApp();
     const run = (pro: boolean) => app.inject({
@@ -314,8 +314,9 @@ describe("routes: builder + hub + connector + telemetry", () => {
     await run(false);
     const blocked = await run(false);
     expect(blocked.payload).toContain("used up");
-    const pro = await run(true);
-    expect(pro.payload).toContain("event: done");
+    // The cap belongs to the account, not to a flag in the request body.
+    const claiming = await run(true);
+    expect(claiming.payload).toContain("used up");
     env.freeRunsPerDay = 40;
   });
 

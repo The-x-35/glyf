@@ -53,6 +53,9 @@ const DDL = [
      at timestamptz not null default now()
    )`,
   `create index if not exists glyf_events_user_at on glyf_events (user_id, at desc)`,
+  // The plan is the server's word: a phone can claim what it likes, the cap
+  // it gets is the one on this row. Nothing but a verified purchase moves it.
+  `alter table glyf_users add column if not exists plan text not null default 'free'`,
 ];
 
 export interface Profile {
@@ -197,6 +200,15 @@ export class Users {
       stored++;
     }
     return stored;
+  }
+
+  /** The plan on their row; free for anyone not on one. */
+  async plan(id: string): Promise<"free" | "plus" | "max"> {
+    await this.ensureSchema();
+    const sql = await this.sql();
+    const rows = await sql(`select plan from glyf_users where user_id = $1`, [id]);
+    const plan = rows[0]?.plan;
+    return plan === "plus" || plan === "max" ? plan : "free";
   }
 
   async remove(id: string): Promise<void> {

@@ -124,7 +124,7 @@ describe("POST /act", () => {
     expect((await send()).statusCode).toBe(200);
     const blocked = await send();
     expect(blocked.statusCode).toBe(429);
-    expect(blocked.json().error).toBe("Daily free runs used up");
+    expect(blocked.json().error).toContain("used up");
   });
 
   it("serves static maps only for real coordinates, and only with a key", async () => {

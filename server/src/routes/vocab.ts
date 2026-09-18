@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../env.js";
-import { planCap, type MeterStore } from "../lib/meter.js";
+import type { Guard } from "../lib/guard.js";
 import { generatePack } from "../lib/vocab.js";
 
 /** POST /vocab/generate — words for the keyboard from a description of how
@@ -12,15 +12,14 @@ const Body = z.object({
   plan: z.enum(["free", "plus", "max"]).default("free"),
 });
 
-export function vocabRoutes(app: FastifyInstance, meter: MeterStore): void {
+export function vocabRoutes(app: FastifyInstance, guard: Guard): void {
   app.post("/vocab/generate", async (req, reply) => {
     const parsed = Body.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ ok: false, error: "Bad request" });
-    const { description, deviceId, plan } = parsed.data;
-    const remaining = meter.consume(deviceId, new Date(), planCap(plan, env.freeRunsPerDay));
-    if (remaining < 0) {
-      return reply.code(429).send({ ok: false, error: plan === "free" ? "Daily free runs used up" : "Daily runs used up" });
-    }
+    const { description, deviceId } = parsed.data;
+    const gate = await guard.spend(req, deviceId);
+    if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
+    const remaining = gate.remaining;
     const started = Date.now();
     try {
       const pack = await generatePack(description);

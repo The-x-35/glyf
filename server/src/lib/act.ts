@@ -17,7 +17,7 @@ import { composeInsert, type PlaceCard, type SearchCard } from "./searchcards.js
  * provider can answer, the result is an honest "see it on Google" card.
  */
 
-export type ActIntent = "place" | "places" | "answer" | "video" | "rewrite";
+export type ActIntent = "place" | "places" | "answer" | "video" | "rewrite" | "write";
 
 export interface ActPlan {
   intent: ActIntent;
@@ -132,6 +132,16 @@ export function planByRules(text: string): ActPlan | null {
   if (/\b(video|trailer|music video|song|lyrics|playlist|tutorial|livestream|live stream|full match|highlights)\b/.test(lower)) {
     return { intent: "video", query: t };
   }
+
+  // "write an essay on dogs", "draft a leave email", "give me 5 captions":
+  // asking for something to be written is not a question to look up.
+  if (/^(write|draft|compose|make|create|generate|give me|suggest|brainstorm|come up with|think of|list)\b/.test(lower)
+      && !placey) {
+    return { intent: "write", query: t };
+  }
+  if (/^(explain|summari[sz]e|translate|rephrase|expand|shorten|outline|plan)\b/.test(lower)) {
+    return { intent: "write", query: t };
+  }
   return null;
 }
 
@@ -151,11 +161,12 @@ export function parsePlan(reply: string, fallbackQuery: string): ActPlan | null 
 }
 
 const ROUTER_PROMPT = (text: string) => `You route what someone typed on their phone keyboard to ONE action.
-Reply with JSON only, no prose: {"intent":"place|places|answer|video|rewrite","query":"search query"}
+Reply with JSON only, no prose: {"intent":"place|places|answer|video|rewrite|write","query":"search query"}
 place   — one specific place to share, e.g. "Times Square Starbucks", "Phoenix Marketcity".
 places  — recommendations, several places, e.g. "SF best italian restaurant".
 answer  — needs a live fact: scores, fixtures, schedules, prices, news, definitions, "who is".
 video   — they want a video or a song.
+write   — they are asking for something to BE written or worked out: "write an essay on dogs", "draft a leave email", "5 captions for this photo", "explain quantum computing".
 rewrite — a message they are writing to someone; nothing to look up.
 Typed: """${text.replace(/"""/g, "'")}"""`;
 
@@ -163,7 +174,9 @@ async function planWithModel(text: string): Promise<ActPlan> {
   if (env.mockAI) {
     // Deterministic offline routing for tests: questions look things up,
     // everything else is a message to tidy.
-    return { intent: text.trim().endsWith("?") ? "answer" : "rewrite", query: text.trim() };
+    const t = text.trim();
+    if (/^(write|draft|compose|explain)\b/i.test(t)) return { intent: "write", query: t };
+    return { intent: t.endsWith("?") ? "answer" : "rewrite", query: t };
   }
   try {
     const res = await completeStreaming("fast",
@@ -203,6 +216,26 @@ export function listInsert(title: string, places: PlaceCard[]): string {
     return `${i + 1}. ${bits.join(" · ")}\n${p.url}`;
   });
   return [title, ...lines].join("\n");
+}
+
+/** Live facts a model must not invent: they change faster than it knows. */
+export function isLive(text: string): boolean {
+  return /\b(score|scores|fixture|fixtures|schedule|price|prices|stock|weather|forecast|news|today|tonight|tomorrow|yesterday|now|current|latest|live)\b/i
+    .test(text);
+}
+
+/** The model writes the thing and it goes straight in the message. */
+async function written(
+  typed: string, prompt: string, ctx: SearchContext, opts: ActOptions, provider: string,
+): Promise<ActResult> {
+  let text = "";
+  try {
+    text = await modelText(prompt + profileBlock(opts.profile));
+  } catch {
+    text = "";
+  }
+  if (!text) return nothingFound("write", typed, typed, provider);
+  return { intent: "write", title: typed, cards: [], text, insert: text, provider };
 }
 
 async function modelText(prompt: string): Promise<string> {
@@ -263,9 +296,12 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
       const links = res.cards.filter(c => c.kind === "link" && c.id !== "tail"
         && !/google\.[a-z.]+\/search/.test(c.url)).slice(0, 5);
       if (links.length === 0) {
-        // No live source configured or nothing found: hand off honestly
-        // rather than let a model guess at scores and schedules.
-        return nothingFound("answer", typed, p.query, res.provider);
+        // Scores, prices, fixtures and the weather change by the hour: with
+        // no live source to read, say so rather than let a model guess. For
+        // anything else, the model knows it as well as a search page would.
+        if (isLive(typed)) return nothingFound("answer", typed, p.query, res.provider);
+        return await written(typed, `Answer this in at most four short lines, plainly and without preamble: ${typed}`,
+          ctx, opts, res.provider);
       }
       const sources = links.map((l, i) =>
         `[${i + 1}] ${l.title}\n${l.kind === "link" && l.snippet ? l.snippet : ""}\n${l.url}`).join("\n\n");
@@ -282,6 +318,15 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
       return { intent: "answer", title: typed, cards: [links[0]], text: summary,
         insert: `${summary}\n${links[0].url}`, provider: res.provider };
     }
+
+    // They asked for something to be written or worked out, so write it.
+    case "write":
+      return await written(
+        typed,
+        `Write exactly what is asked for, ready to use as it is — no preamble, no "here is", ` +
+        `no placeholders like [Name], no markdown headings. Keep it to what was asked; ` +
+        `if no length is given, a few short paragraphs at most.\n\nAsked for: ${typed}`,
+        ctx, opts, "model");
 
     case "rewrite": {
       const styles = rewriteStyles(ctx);

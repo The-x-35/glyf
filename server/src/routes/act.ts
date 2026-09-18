@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../env.js";
 import { act } from "../lib/act.js";
-import { planCap, type MeterStore } from "../lib/meter.js";
+import type { Guard } from "../lib/guard.js";
 import { createPage, getPage, renderPage } from "../lib/pages.js";
 import type { KV } from "../lib/store.js";
 
@@ -32,7 +32,7 @@ function pageBase(): string | undefined {
   return process.env.NODE_ENV === "production" ? undefined : `http://127.0.0.1:${env.port}`;
 }
 
-export function actRoutes(app: FastifyInstance, meter: MeterStore, kv: KV): void {
+export function actRoutes(app: FastifyInstance, guard: Guard, kv: KV): void {
   app.get("/p/:id", async (req, reply) => {
     const page = getPage(kv, (req.params as { id: string }).id);
     if (!page) return reply.code(404).type("text/html").send("<h1>Not found</h1>");
@@ -49,13 +49,9 @@ export function actRoutes(app: FastifyInstance, meter: MeterStore, kv: KV): void
     }
     const { text, deviceId, plan, lat, lon, country, tz, profile, intent } = parsed.data;
 
-    const remaining = meter.consume(deviceId, new Date(), planCap(plan, env.freeRunsPerDay));
-    if (remaining < 0) {
-      return reply.code(429).send({
-        ok: false,
-        error: plan === "free" ? "Daily free runs used up" : "Daily runs used up — Max has no cap",
-      });
-    }
+    const gate = await guard.spend(req, deviceId);
+    if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
+    const remaining = gate.remaining;
 
     const started = Date.now();
     try {

@@ -5,7 +5,7 @@ import { RunRequestSchema } from "../schemas/glyfdef.js";
 import { loadRegistry, runGlyf } from "../lib/glyfengine.js";
 import { completeStreaming } from "../providers/openrouter.js";
 import { TTLCache } from "../lib/cache.js";
-import { planCap, type MeterStore } from "../lib/meter.js";
+import type { Guard } from "../lib/guard.js";
 import type { GlyfLibrary } from "../lib/userglyfs.js";
 import type { KV } from "../lib/store.js";
 import { connKey, PROVIDERS } from "./connector.js";
@@ -25,7 +25,7 @@ function withProfile(vars: Record<string, string>,
 }
 
 export function glyfRoutes(
-  app: FastifyInstance, meter: MeterStore, library: GlyfLibrary, kv: KV,
+  app: FastifyInstance, guard: Guard, library: GlyfLibrary, kv: KV,
 ): void {
   const registry = loadRegistry();
   const cache = new TTLCache(env.cacheTtlMs);
@@ -83,17 +83,12 @@ export function glyfRoutes(
     const started = Date.now();
     req.log.info({ glyfId, deviceId, plan, inputChars: input.length }, "glyf_fired");
 
-    // §6.16 plans: free = daily cap, plus = 10×, max = unlimited. The plan
-    // is client-asserted until StoreKit receipts land (M7-ship TODO — the
-    // enforcement seam is already here).
-    const effectivePlan = plan !== "free" ? plan : (pro ? "plus" : "free");
-    const remaining = meter.consume(
-      deviceId, new Date(), planCap(effectivePlan, env.freeRunsPerDay));
-    if (remaining < 0) {
-      return fail(effectivePlan === "free"
-        ? "Daily free runs used up"
-        : "Daily runs used up — Max has no cap");
-    }
+    // §6.16 plans: the cap belongs to the account (or the phone, signed
+    // out) and comes from the database — what the client says about its plan
+    // is not evidence.
+    const gate = await guard.spend(req, deviceId);
+    if (!gate.ok) return fail(gate.message);
+    const remaining = gate.remaining;
 
     const abort = new AbortController();
     // Response close = client went away mid-stream. (req.raw "close" fires as

@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { env, assertServerSecrets } from "./env.js";
-import { MemoryMeter } from "./lib/meter.js";
+import { Guard } from "./lib/guard.js";
+import { buildLimiter } from "./lib/limiter-factory.js";
 import { defaultKV, type KV } from "./lib/store.js";
 import { GlyfLibrary } from "./lib/userglyfs.js";
 import { glyfRoutes } from "./routes/glyf.js";
@@ -36,8 +37,11 @@ export function buildApp(kv: KV = defaultKV()) {
   const app = Fastify({
     logger: { level: "info" },
     disableRequestLogging: true,
+    // Nothing anyone types needs a megabyte; oversized bodies are refused
+    // before a handler ever sees them.
+    bodyLimit: 512 * 1024,
   });
-  const meter = new MemoryMeter(env.freeRunsPerDay);
+  const guard = new Guard({ limits: buildLimiter(), freePerDay: env.freeRunsPerDay });
   const library = new GlyfLibrary(kv);
   app.decorate("glyfKV", kv);
 
@@ -64,9 +68,9 @@ export function buildApp(kv: KV = defaultKV()) {
   }
 
   healthRoutes(app, kv);
-  glyfRoutes(app, meter, library, kv);
-  meterRoutes(app, meter);
-  builderRoutes(app, library);
+  glyfRoutes(app, guard, library, kv);
+  meterRoutes(app, guard);
+  builderRoutes(app, library, guard);
   hubRoutes(app, library, kv);
   connectorRoutes(app, kv);
   telemetryRoutes(app, kv);
@@ -74,11 +78,11 @@ export function buildApp(kv: KV = defaultKV()) {
   toolsRoutes(app);
   searchRoutes(app, kv);
   waitlistRoutes(app, kv);
-  actRoutes(app, meter, kv);
+  actRoutes(app, guard, kv);
   walletRoutes(app);
-  suggestRoutes(app);
-  translateRoutes(app);
-  vocabRoutes(app, meter);
+  suggestRoutes(app, guard);
+  translateRoutes(app, guard);
+  vocabRoutes(app, guard);
   authRoutes(app);
   meRoutes(app);
   return app;
