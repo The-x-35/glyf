@@ -29,6 +29,13 @@ export interface AnswerContext {
   tz?: string;
 }
 
+/** Live facts a model must not invent: they change faster than it knows.
+ *  Both the web tab and /act hold this line, so it lives with the answers. */
+export function isLive(text: string): boolean {
+  return /\b(score|scores|fixture|fixtures|schedule|price|prices|stock|weather|forecast|news|today|tonight|tomorrow|yesterday|now|current|latest|live)\b/i
+    .test(text);
+}
+
 // ── arithmetic ────────────────────────────────────────────────────────────
 // A real parser, not eval(): the query string reaches this code straight
 // from a keyboard, so it must never be executed.

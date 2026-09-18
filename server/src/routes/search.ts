@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { connKey } from "./connector.js";
+import type { Guard } from "../lib/guard.js";
 import type { KV } from "../lib/store.js";
 import { z } from "zod";
 import { search, searchProviders } from "../lib/search.js";
@@ -9,7 +10,8 @@ import { suggest } from "../lib/suggest.js";
  *  consume flat strings — while the keyboard's Search / YouTube / Maps tabs
  *  need typed cards with thumbnails, ratings and durations.
  *
- *  No LLM cost, so runs never touch the plan meter. */
+ *  Lookups cost nothing and never touch the plan meter; the web tab's model
+ *  answer, when nothing else answered, counts as a run like any other. */
 
 const BodySchema = z.object({
   vertical: z.enum(["web", "yt", "maps"]),
@@ -24,7 +26,7 @@ const BodySchema = z.object({
   tz: z.string().max(64).optional(),
 });
 
-export function searchRoutes(app: FastifyInstance, kv: KV): void {
+export function searchRoutes(app: FastifyInstance, kv: KV, guard: Guard): void {
   /** The device's live Google token, or undefined. Never leaves the server. */
   const googleToken = (deviceId?: string): string | undefined => {
     if (!deviceId) return undefined;
@@ -41,10 +43,14 @@ export function searchRoutes(app: FastifyInstance, kv: KV): void {
       req.log.warn({ issues: parsed.error.issues }, "search bad request");
       return reply.code(400).send({ error: "bad request" });
     }
-    const { vertical, query, lat, lon, country, tz } = parsed.data;
+    const { vertical, query, deviceId, lat, lon, country, tz } = parsed.data;
     try {
       const result = await search(vertical, query, {
         lat, lon, country: country?.toUpperCase(), tz,
+      }, {
+        // Asked only once nothing else has answered; a plan with no run
+        // left gets the Google row instead of a guess.
+        model: async () => (await guard.spend(req, deviceId)).ok,
       });
       return { ok: true, ...result };
     } catch (err) {

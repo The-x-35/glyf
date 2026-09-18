@@ -1,5 +1,6 @@
 import { completeStreaming } from "../providers/openrouter.js";
 import { env } from "../env.js";
+import { isLive } from "./answers.js";
 import { search, type SearchContext } from "./search.js";
 import { composeInsert, type PlaceCard, type SearchCard } from "./searchcards.js";
 
@@ -218,11 +219,8 @@ export function listInsert(title: string, places: PlaceCard[]): string {
   return [title, ...lines].join("\n");
 }
 
-/** Live facts a model must not invent: they change faster than it knows. */
-export function isLive(text: string): boolean {
-  return /\b(score|scores|fixture|fixtures|schedule|price|prices|stock|weather|forecast|news|today|tonight|tomorrow|yesterday|now|current|latest|live)\b/i
-    .test(text);
-}
+/** Live facts a model must not invent — the same line the web tab holds. */
+export { isLive };
 
 /** The model writes the thing and it goes straight in the message. */
 async function written(
@@ -285,7 +283,9 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
     }
 
     case "answer": {
-      const res = await search("web", p.query, ctx);
+      // Lookups only: this branch writes its own answer below, so the web
+      // tab's model rung would only double the call.
+      const res = await search("web", p.query, ctx, { model: false });
       const answer = res.cards.find(c => c.kind === "answer");
       if (answer && answer.kind === "answer") {
         const line = answer.sub ? `${answer.value} — ${answer.sub}` : answer.value;

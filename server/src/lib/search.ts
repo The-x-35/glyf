@@ -1,5 +1,6 @@
-import { instantAnswer, type AnswerContext } from "./answers.js";
+import { instantAnswer, isLive, type AnswerContext } from "./answers.js";
 import { TTLCache } from "./cache.js";
+import { completeStreaming } from "../providers/openrouter.js";
 import type {
   AnswerCard, LinkCard, PlaceCard, SearchCard, SearchResponse, VideoCard,
   Vertical,
@@ -8,10 +9,11 @@ import type {
 /** The search suite's engine: one function per vertical, each a chain of
  *  providers that degrades instead of failing.
  *
- *  Keys are OPTIONAL everywhere. With none set the suite still returns real
- *  results (DuckDuckGo instant answers, OpenStreetMap places, keyless answer
- *  cards); adding a key upgrades that vertical in place with no client
- *  change. `provider` in the response says which rung actually answered.
+ *  Keys are OPTIONAL everywhere. With none set the web tab still answers:
+ *  computed cards first (a sum, today's sunset), then the model for what it
+ *  can know — never for a score or a price. Adding a key upgrades a vertical
+ *  in place with no client change. `provider` in the response says which
+ *  rung actually answered.
  */
 
 const UA = "glyf/0.6 (+https://tryglyf.com)";
@@ -158,15 +160,64 @@ function stripTags(s: string): string {
   return s.replace(/<[^>]*>/g, "").trim();
 }
 
-async function searchWeb(q: string, ctx: SearchContext): Promise<SearchResponse> {
+// ── the model, when nothing else can answer ───────────────────────────────
+
+export type Ask = (prompt: string) => Promise<string>;
+
+const askModel: Ask = async prompt => {
+  const res = await completeStreaming("fast", [{ role: "user", content: prompt }],
+    { onToken: () => {}, stallMs: 5000 });
+  return res.text;
+};
+
+/** The web tab's answer when no search key is set: the model, as a headline
+ *  and one sentence — the shape the answer card draws. It is told to decline
+ *  what it cannot know, and a live search (a score, a price) never asks at
+ *  all: a guess would be worse than the Google row. */
+export async function aiAnswer(q: string, ask: Ask = askModel): Promise<AnswerCard | null> {
+  if (isLive(q)) return null;
+  const prompt = "Answer this search. Reply with exactly two lines of plain text, no markdown:\n"
+    + "line 1: the answer itself, at most six words\n"
+    + "line 2: one sentence of context, at most 25 words\n"
+    + "If answering needs current information (news, prices, scores, weather, "
+    + "schedules), or you are not sure, reply with the single word NO.\n"
+    + `Search: ${q}`;
+  let reply: string;
+  try { reply = await ask(prompt); } catch { return null; }
+  const lines = reply.split("\n")
+    .map(l => l.replace(/^(?:[-*•]|line \d:)\s*/i, "").trim())
+    .filter(Boolean);
+  const [head, ...rest] = lines;
+  if (!head || /^no[.!]?$/i.test(head)) return null;
+  const value = head.replace(/[.!]$/, "").slice(0, 48);
+  const sub = rest.join(" ").slice(0, 220) || undefined;
+  return {
+    kind: "answer", id: `ai:${q.toLowerCase()}`, art: "define",
+    title: q, value, sub, source: "Glyf AI", url: googleSearchURL(q),
+    // A tap sends the sentence; the headline alone can read as a fragment.
+    say: sub ?? value,
+  };
+}
+
+export interface SearchOptions {
+  /** Whether the web tab may ask the model once nothing else has answered.
+   *  A function is called only at that moment, so the route can charge a
+   *  run for it; `false` keeps the tab to real lookups, which is what /act
+   *  wants since it writes its own answer. Default: allowed. */
+  model?: boolean | (() => Promise<boolean>);
+}
+
+async function mayAsk(model: SearchOptions["model"]): Promise<boolean> {
+  return typeof model === "function" ? model() : model !== false;
+}
+
+async function searchWeb(q: string, ctx: SearchContext, opts: SearchOptions): Promise<SearchResponse> {
   const cards: SearchCard[] = [];
 
   // Locally-computable answers (a calculation, today's sunset) beat anything
   // upstream: instant, free, and always available.
   let answer = await instantAnswer(q, ctx).catch(() => null);
 
-  // No key configured = an answers-only tab: the computed cards still work
-  // and the tail row hands off to Google. Never a fabricated result list.
   let provider = "none";
   let links: LinkCard[] = [];
   try {
@@ -183,14 +234,23 @@ async function searchWeb(q: string, ctx: SearchContext): Promise<SearchResponse>
       if (links.length) provider = "brave";
     } catch { /* fall through */ }
   }
+  // No key and nothing computed: the model answers. Never a fabricated
+  // result list — one honest card, or the Google row for what it can't know.
+  if (!answer && !links.length && !isLive(q) && await mayAsk(opts.model)) {
+    answer = await aiAnswer(q);
+    if (answer) provider = "ai";
+  }
   if (answer) cards.push(answer);
   cards.push(...links);
-  // A tail row is always present, so the suite is never a dead end.
-  cards.push({
-    kind: "link", id: "tail",
-    title: `See all results for “${q}”`,
-    url: googleSearchURL(q), domain: "google.com",
-  });
+  // The Google row: "see more" under a result list, and the only way on when
+  // nothing answered. An answer standing alone does not need it.
+  if (links.length || !answer) {
+    cards.push({
+      kind: "link", id: "tail",
+      title: `See all results for “${q}”`,
+      url: googleSearchURL(q), domain: "google.com",
+    });
+  }
   return { vertical: "web", query: q, cards, provider };
 }
 
@@ -805,7 +865,7 @@ function mockSearch(vertical: Vertical, q: string): SearchResponse {
 }
 
 export async function search(
-  vertical: Vertical, query: string, ctx: SearchContext = {},
+  vertical: Vertical, query: string, ctx: SearchContext = {}, opts: SearchOptions = {},
 ): Promise<SearchResponse> {
   const q = query.trim();
   if (!q) throw new Error("needs a search");
@@ -815,16 +875,21 @@ export async function search(
     ctx.lat !== undefined ? ctx.lat.toFixed(2) : "", // ~1km buckets
     ctx.lon !== undefined ? ctx.lon.toFixed(2) : "",
     ctx.country ?? "",
+    // A lookups-only answer must not be handed to a caller who may ask the model.
+    opts.model === false ? "lookups" : "",
   ]);
   const hit = cache.get(key);
   if (hit) return JSON.parse(hit) as SearchResponse;
 
   const out = vertical === "yt" ? await searchYouTube(q, ctx)
     : vertical === "maps" ? await searchMaps(q, ctx)
-    : await searchWeb(q, ctx);
+    : await searchWeb(q, ctx, opts);
   // Brave's terms allow only "transient storage required for operation" —
-  // no result cache. Every other provider we use permits a short one.
-  if (out.provider !== "brave") cache.set(key, JSON.stringify(out));
+  // no result cache. Every other provider we use permits a short one. A web
+  // search nobody answered cost nothing and may have been a refused run, so
+  // it is not kept either: the next try should get to ask again.
+  const empty = vertical === "web" && out.provider === "none";
+  if (out.provider !== "brave" && !empty) cache.set(key, JSON.stringify(out));
   return out;
 }
 
@@ -917,7 +982,7 @@ export function searchProviders(): Record<Vertical, string> {
   return {
     web: process.env.BRAVE_SEARCH_KEY ? "brave"
       : process.env.SERPER_API_KEY ? "google"
-      : "answers-only",
+      : "ai",
     yt: process.env.YOUTUBE_API_KEY ? "youtube-data-api" : "none",
     maps: process.env.GOOGLE_PLACES_KEY ? "google-places"
       : process.env.GEOAPIFY_KEY ? "geoapify"

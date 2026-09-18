@@ -81,7 +81,7 @@ export function buildApp(kv: KV = defaultKV()) {
   telemetryRoutes(app, kv);
   gifRoutes(app);
   toolsRoutes(app);
-  searchRoutes(app, kv);
+  searchRoutes(app, kv, guard);
   waitlistRoutes(app, kv);
   actRoutes(app, guard, kv);
   walletRoutes(app);

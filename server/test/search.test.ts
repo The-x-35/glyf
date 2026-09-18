@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { composeInsert } from "../src/lib/searchcards.js";
-import { evaluateMath, instantAnswer } from "../src/lib/answers.js";
-import { formatDistance, formatDuration, nameMatch, placeQuery } from "../src/lib/search.js";
+import { evaluateMath, instantAnswer, isLive } from "../src/lib/answers.js";
+import { env } from "../src/env.js";
+import { aiAnswer, formatDistance, formatDuration, nameMatch, placeQuery, search } from "../src/lib/search.js";
 import { clockIn, sunTimes } from "../src/lib/sun.js";
 
 /** §6.12 search suite — the pure logic behind the Search / YouTube / Maps
@@ -170,5 +171,57 @@ describe("nameMatch", () => {
       .toBeGreaterThan(nameMatch("Starbucks", "Phoenix Marketcity Bangalore"));
     expect(nameMatch("Aramane Donne Biryani", "biryani")).toBe(1);
     expect(nameMatch("Taj Hotel", "hotels")).toBe(1);
+  });
+});
+
+describe("the web tab without a search key", () => {
+  it("knows which searches a model must not answer from memory", () => {
+    expect(isLive("ipl score today")).toBe(true);
+    expect(isLive("bitcoin price")).toBe(true);
+    expect(isLive("capital of peru")).toBe(false);
+  });
+
+  it("turns the model's two lines into a headline and a sentence", async () => {
+    const card = await aiAnswer("capital of peru",
+      async () => "Lima\nLima is the capital and largest city of Peru.");
+    expect(card).toMatchObject({ kind: "answer", art: "define", value: "Lima" });
+    expect(card?.sub).toBe("Lima is the capital and largest city of Peru.");
+    // A tap sends the sentence, not a search link.
+    expect(composeInsert(card!, "titleAndLink")).toBe("Lima is the capital and largest city of Peru.");
+  });
+
+  it("shows nothing rather than a guess", async () => {
+    expect(await aiAnswer("weather in pune", async () => "Sunny")).toBeNull();
+    expect(await aiAnswer("capital of peru", async () => "NO")).toBeNull();
+    expect(await aiAnswer("capital of peru", async () => { throw new Error("down"); })).toBeNull();
+  });
+
+  it("answers with the model and drops the Google row; a live search keeps it", async () => {
+    const before = {
+      mock: env.mockAI, flag: process.env.MOCK_AI,
+      brave: process.env.BRAVE_SEARCH_KEY, serper: process.env.SERPER_API_KEY,
+    };
+    env.mockAI = true;              // the model answers "MOCK …" and burns nothing
+    process.env.MOCK_AI = "false";  // …while the search rungs run for real
+    delete process.env.BRAVE_SEARCH_KEY;
+    delete process.env.SERPER_API_KEY;
+    try {
+      const answered = await search("web", "who painted the mona lisa");
+      expect(answered.provider).toBe("ai");
+      expect(answered.cards.map(c => c.kind)).toEqual(["answer"]);
+
+      const live = await search("web", "ipl score today");
+      expect(live.provider).toBe("none");
+      expect(live.cards.map(c => c.id)).toEqual(["tail"]);
+
+      // /act writes its own answer, so it asks for lookups only.
+      const lookups = await search("web", "who painted the mona lisa", {}, { model: false });
+      expect(lookups.provider).toBe("none");
+    } finally {
+      env.mockAI = before.mock;
+      if (before.flag === undefined) delete process.env.MOCK_AI; else process.env.MOCK_AI = before.flag;
+      if (before.brave !== undefined) process.env.BRAVE_SEARCH_KEY = before.brave;
+      if (before.serper !== undefined) process.env.SERPER_API_KEY = before.serper;
+    }
   });
 });
