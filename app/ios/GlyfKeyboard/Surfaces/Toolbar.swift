@@ -27,6 +27,8 @@ final class GlyfToolbar: UIView {
 
     private let glyfButton = UIButton(type: .system)
     private let divider = UIView()
+    /// Between the three suggestion slots, like the system bar's.
+    private let slotLines = [UIView(), UIView()]
     private let scroll = ControlScrollView()
     private let itemsStack = UIStackView()
     private let candidatesStack = UIStackView()
@@ -127,6 +129,13 @@ final class GlyfToolbar: UIView {
         candidatesStack.distribution = .fillEqually
         candidatesStack.isHidden = true
         addSubview(candidatesStack)
+        // The system bar rules its three slots off with two hairlines, whether
+        // or not a slot has a word in it.
+        for line in slotLines {
+            line.backgroundColor = Glass.strokeHairline
+            line.isHidden = true
+            addSubview(line)
+        }
 
         runsChip.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
         runsChip.setTitleColor(Glass.accentWarning, for: .normal)
@@ -453,6 +462,11 @@ final class GlyfToolbar: UIView {
                         for: .touchUpInside)
             candidatesStack.addArrangedSubview(b)
         }
+        // Always three slots, so one word sits in its slot and the lines
+        // between slots stay where they are (the system bar's way).
+        while !items.isEmpty, candidatesStack.arrangedSubviews.count < 3 {
+            candidatesStack.addArrangedSubview(UIView())
+        }
         showingCandidates = !items.isEmpty
         if items.isEmpty { userPinnedTools = false }
         applyCandidatesVisibility(toolsVisible: items.isEmpty || userPinnedTools)
@@ -463,6 +477,7 @@ final class GlyfToolbar: UIView {
         scroll.isHidden = !toolsVisible
         divider.isHidden = !toolsVisible || Glass.solidLook
         candidatesStack.isHidden = toolsVisible || !showingCandidates
+        for line in slotLines { line.isHidden = candidatesStack.isHidden }
         // The website's strip is six tools and the g pill, nothing else; the
         // run counter lives in the g menu's Account screen.
         runsChip.isHidden = runsRemaining == nil || !toolsVisible || Glass.solidLook
@@ -478,7 +493,8 @@ final class GlyfToolbar: UIView {
         }
         b.setTitle(title, for: .normal)
         let emphasized = item.kind == .correction
-        b.titleLabel?.font = .systemFont(ofSize: 16, weight: emphasized ? .semibold : .regular)
+        // 17pt: the system bar's "The" stands 12pt tall, which is this size.
+        b.titleLabel?.font = .systemFont(ofSize: 17, weight: emphasized ? .semibold : .regular)
         b.setTitleColor(item.kind == .literal ? Glass.textSecondary : Glass.textPrimary, for: .normal)
         // The website marks the best candidate by weight alone, no pill.
         b.backgroundColor = (emphasized && !Glass.solidLook) ? Glass.fillBar : .clear
@@ -555,5 +571,14 @@ final class GlyfToolbar: UIView {
         scroll.contentSize = CGSize(width: width, height: h)
         candidatesStack.frame = CGRect(x: left, y: mid - (h - 12) / 2,
                                        width: bounds.width - left - 8, height: h - 12)
+        // A hairline on each boundary between the three equal slots, drawn
+        // at the system bar's height: a little over half the strip.
+        let slotW = (candidatesStack.bounds.width - 2 * candidatesStack.spacing) / 3
+        let lineH = (h * 0.56).rounded()
+        for (i, line) in slotLines.enumerated() {
+            let x = candidatesStack.frame.minX + slotW * CGFloat(i + 1)
+                + candidatesStack.spacing * CGFloat(i) + candidatesStack.spacing / 2
+            line.frame = CGRect(x: x.rounded() - 0.5, y: mid - lineH / 2, width: 1, height: lineH)
+        }
     }
 }

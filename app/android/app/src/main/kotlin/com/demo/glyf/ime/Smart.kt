@@ -22,14 +22,27 @@ object Smart {
         data class Action(val label: String, val query: String, val intent: String) : Chip()
         /** A Solana address on screen: one tap opens the wallet with it. */
         data class Pay(val address: String, val amount: String?) : Chip()
+        /** "$13" → "$13 = ₹1,246" where the phone is; "$sol" → "1 SOL = $112".
+         *  `shown` is the whole line, `insert` what a tap adds after the
+         *  amount. Never offered without a live rate. */
+        data class Money(val shown: String, val insert: String) : Chip()
     }
+
+    /** The rates the keyboard has at hand (from the server, via RatesStore):
+     *  `fiat` per dollar (INR: 95.88), `crypto` dollars per token (SOL: 111.77),
+     *  `local` the currency where the phone is ("INR"). */
+    data class RatesSnapshot(
+        val fiat: Map<String, Double> = emptyMap(),
+        val crypto: Map<String, Double> = emptyMap(),
+        val local: String = "USD",
+    ) { companion object { val EMPTY = RatesSnapshot() } }
 
     /** The small label on the chip's left, when there is one. */
     fun key(chip: Chip): String? = (chip as? Chip.Vault)?.field?.label
 
     /** What a tap does, on the chip's right edge; null for the model's own words. */
     fun verb(chip: Chip): String? = when (chip) {
-        is Chip.Calc, is Chip.Vault -> "Insert"
+        is Chip.Calc, is Chip.Vault, is Chip.Money -> "Insert"
         is Chip.Pay -> "Pay"
         is Chip.Action -> null
     }
@@ -39,6 +52,7 @@ object Smart {
         is Chip.Calc -> chip.result
         is Chip.Vault -> chip.field.value
         is Chip.Action -> chip.label
+        is Chip.Money -> chip.shown
         is Chip.Pay -> {
             val a = chip.address
             val short = if (a.length > 12) "${a.take(4)}…${a.takeLast(4)}" else a
@@ -50,6 +64,7 @@ object Smart {
     fun insert(chip: Chip): String = when (chip) {
         is Chip.Calc -> if (chip.hasEquals) " ${chip.result}" else " = ${chip.result}"
         is Chip.Vault -> chip.field.value
+        is Chip.Money -> chip.insert
         is Chip.Action, is Chip.Pay -> ""
     }
 
@@ -63,12 +78,80 @@ object Smart {
         }
     }
 
-    /** One chip at most, in the website's order: a payment, a sum, a detail. */
-    fun chip(text: String, fields: List<Field>, indianGrouping: Boolean = true): Chip? {
+    /** One chip at most, in the website's order: a payment, a sum, an amount
+     *  in another currency, a detail. */
+    fun chip(text: String, fields: List<Field>, indianGrouping: Boolean = true,
+             rates: RatesSnapshot = RatesSnapshot.EMPTY): Chip? {
         payment(text)?.let { return Chip.Pay(it.first, it.second ?: amountAsked(text)) }
         calc(text, indianGrouping)?.let { return Chip.Calc(it.first, it.second) }
+        money(text, rates)?.let { return it }
         vaultMatch(text, fields)?.let { return Chip.Vault(it) }
         return null
+    }
+
+    // MARK: Money (Smart.swift twin)
+
+    private val symbolCurrency = mapOf('$' to "USD", '€' to "EUR", '£' to "GBP", '₹' to "INR", '¥' to "JPY")
+    private val wordCurrency = mapOf(
+        "usd" to "USD", "dollar" to "USD", "dollars" to "USD", "bucks" to "USD",
+        "eur" to "EUR", "euro" to "EUR", "euros" to "EUR",
+        "gbp" to "GBP", "pound" to "GBP", "pounds" to "GBP", "quid" to "GBP",
+        "inr" to "INR", "rupee" to "INR", "rupees" to "INR", "rs" to "INR",
+        "jpy" to "JPY", "yen" to "JPY", "aud" to "AUD", "cad" to "CAD", "sgd" to "SGD",
+        "chf" to "CHF", "cny" to "CNY", "rmb" to "CNY", "yuan" to "CNY", "hkd" to "HKD",
+        "aed" to "AED", "dirham" to "AED", "dirhams" to "AED", "krw" to "KRW", "won" to "KRW",
+    )
+    private val currencySymbol = mapOf(
+        "USD" to "$", "EUR" to "€", "GBP" to "£", "INR" to "₹", "JPY" to "¥", "CNY" to "¥", "KRW" to "₩",
+    )
+    /** An amount at the end of the text: "$13", "13 usd", "₹500", "20 euros". */
+    private val amountPattern = Regex(
+        """(?:([$€£₹¥])\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?([$€£₹¥]|[A-Za-z]{2,7}))\s*$""",
+        RegexOption.IGNORE_CASE)
+    /** "$sol", "$usdc": a ticker, never a number. */
+    private val cashtagPattern = Regex("""(?:^|\s)\$([A-Za-z]{2,6})\s*$""")
+
+    /** The ticker at the end of the text, for whoever fetches prices. */
+    fun cashtag(text: String): String? = cashtagPattern.find(text)?.groupValues?.get(1)?.uppercase()
+
+    private fun unitOf(m: MatchResult): String = m.groups[1]?.value ?: m.groups[4]?.value ?: ""
+    private fun currencyOf(unit: String): String? =
+        if (unit.length == 1) symbolCurrency[unit[0]] else wordCurrency[unit.lowercase()]
+
+    /** Whether the text ends in an amount the chip could convert, rate or no
+     *  rate — so the keyboard knows to go and fetch one. */
+    fun looksLikeMoney(text: String): Boolean {
+        val m = amountPattern.find(text) ?: return false
+        return currencyOf(unitOf(m)) != null
+    }
+
+    /** "$13" here in India → "$13 = ₹1,246"; "₹500" → "₹500 = $5.21";
+     *  "$sol" → "1 SOL = $111.77 · ₹10,718". Nothing without a rate. */
+    fun money(text: String, rates: RatesSnapshot): Chip.Money? {
+        cashtag(text)?.let { ticker ->
+            val usd = rates.crypto[ticker] ?: return null
+            var shown = "1 $ticker = ${format(usd, "USD")}"
+            if (rates.local != "USD") rates.fiat[rates.local]?.let { shown += " · ${format(usd * it, rates.local)}" }
+            return Chip.Money(shown, " = ${format(usd, "USD")}")
+        }
+        val m = amountPattern.find(text) ?: return null
+        val amount = (m.groups[2]?.value ?: m.groups[3]?.value ?: "")
+            .replace(",", "").toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val from = currencyOf(unitOf(m)) ?: return null
+        // Where the phone is, or dollars when the amount already is local.
+        val to = if (from == rates.local) "USD" else rates.local
+        if (to == from) return null
+        val fromRate = rates.fiat[from]?.takeIf { it > 0 } ?: return null
+        val toRate = rates.fiat[to] ?: return null
+        val result = format(amount / fromRate * toRate, to)
+        return Chip.Money("${format(amount, from)} = $result", " = $result")
+    }
+
+    /** "₹1,246", "$5.21", "AED 47.7": the symbol where one is common, the
+     *  code elsewhere; Indian grouping for rupees, whole yen and won. */
+    fun format(value: Double, code: String): String {
+        val v = if (code == "JPY" || code == "KRW") Math.round(value).toDouble() else value
+        return (currencySymbol[code] ?: "$code ") + format(v, code == "INR")
     }
 
     // MARK: Calculator

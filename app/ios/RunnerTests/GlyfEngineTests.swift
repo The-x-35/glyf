@@ -546,4 +546,29 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(kind("my number is 98765"), "already typed")
         XCTAssertNil(kind("my wallet address"), "the wallet was asked for, and none is saved")
     }
+
+    // MARK: Money where you are
+
+    func testMoneyChipConvertsWhereYouAreAndNeverGuesses() {
+        let rates = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88, "EUR": 0.8726],
+                                        crypto: ["SOL": 111.77], local: "INR")
+        XCTAssertEqual(Smart.chip(for: "it costs $13", fields: [], rates: rates),
+                       .money(shown: "$13 = ₹1,246.44", insert: " = ₹1,246.44"))
+        XCTAssertEqual(Smart.chip(for: "₹500", fields: [], rates: rates),
+                       .money(shown: "₹500 = $5.21", insert: " = $5.21"), "local money reads in dollars")
+        XCTAssertEqual(Smart.chip(for: "about 20 euros", fields: [], rates: rates)?.value, "€20 = ₹2,197.57")
+        XCTAssertEqual(Smart.chip(for: "buying $sol", fields: [], rates: rates),
+                       .money(shown: "1 SOL = $111.77 · ₹10,716.51", insert: " = $111.77"))
+        // No rate, no chip — and the keyboard is told what to fetch.
+        XCTAssertNil(Smart.chip(for: "$13", fields: []))
+        XCTAssertTrue(Smart.looksLikeMoney("$13"))
+        XCTAssertFalse(Smart.looksLikeMoney("flight AI 2021"))
+        XCTAssertEqual(Smart.cashtag("send $sol"), "SOL")
+        XCTAssertNil(Smart.cashtag("$13"))
+        XCTAssertNil(Smart.chip(for: "$usdc", fields: [], rates: rates), "a ticker with no price yet")
+        // A sum still wins over a conversion; a dollar amount at home stays quiet.
+        XCTAssertEqual(Smart.chip(for: "$10*3", fields: [], rates: rates), .calc(value: "$30", hasEquals: false))
+        let home = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88], crypto: [:], local: "USD")
+        XCTAssertNil(Smart.chip(for: "$13", fields: [], rates: home))
+    }
 }

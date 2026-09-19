@@ -22,6 +22,25 @@ class SmartTest {
         assertEquals(Smart.Chip.Calc("7", false), Smart.chip("(2+5)", vault))
     }
 
+    @Test fun moneyWhereYouAreAndNeverAGuess() {
+        val rates = Smart.RatesSnapshot(
+            fiat = mapOf("USD" to 1.0, "INR" to 95.88, "EUR" to 0.8726),
+            crypto = mapOf("SOL" to 111.77), local = "INR")
+        assertEquals(Smart.Chip.Money("$13 = ₹1,246.44", " = ₹1,246.44"), Smart.chip("it costs $13", vault, rates = rates))
+        assertEquals(Smart.Chip.Money("₹500 = $5.21", " = $5.21"), Smart.chip("₹500", vault, rates = rates))
+        assertEquals("€20 = ₹2,197.57", Smart.display(Smart.chip("about 20 euros", vault, rates = rates)!!))
+        assertEquals(Smart.Chip.Money("1 SOL = $111.77 · ₹10,716.51", " = $111.77"), Smart.chip("buying \$sol", vault, rates = rates))
+        assertNull(Smart.chip("\$13", vault))
+        assertEquals(true, Smart.looksLikeMoney("\$13"))
+        assertEquals(false, Smart.looksLikeMoney("flight AI 2021"))
+        assertEquals("SOL", Smart.cashtag("send \$sol"))
+        assertNull(Smart.cashtag("\$13"))
+        assertNull(Smart.chip("\$usdc", vault, rates = rates))
+        assertEquals(Smart.Chip.Calc("$30", false), Smart.chip("\$10*3", vault, rates = rates))
+        val home = Smart.RatesSnapshot(fiat = mapOf("USD" to 1.0, "INR" to 95.88), local = "USD")
+        assertNull(Smart.chip("\$13", vault, rates = home))
+    }
+
     @Test fun notSums() {
         assertNull(Smart.chip("call me at 5", vault))
         assertNull(Smart.chip("flight AI 2021", vault))

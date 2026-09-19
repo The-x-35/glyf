@@ -61,6 +61,7 @@
 		8CDFDA410E29956D1735FA6D /* Autocorrect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06CC38085C3400E0BFBEF26D /* Autocorrect.swift */; };
 		8EE319B1516CC2D1684B7013 /* EmojiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAFFC06C09A0F4C0BC665EE /* EmojiData.swift */; };
 		8FDA6AA2F6697F472DBE6E53 /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7508C7D7086528DBA50605BC /* GlassTokens.swift */; };
+		91E3A56EB8244E365BC6E1F6 /* RatesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235F44B4001D69C6942D575B /* RatesStore.swift */; };
 		922265267F1A3B7BEDDF5E3C /* MemoryLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C778BE7B854B6E1973814E1F /* MemoryLogger.swift */; };
 		94D6346E4E0082C52FA6C582 /* NotesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9781AA84DE222D4BBC690481 /* NotesStore.swift */; };
 		9593A6FEA7701CB8761D55D2 /* TypingText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2800A99C3DD59CFC155C03C /* TypingText.swift */; };
@@ -189,6 +190,7 @@
 		1C660509749B9F4AFCF76EE7 /* CalendarSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CalendarSurface.swift; sourceTree = "<group>"; };
 		1F0849F07512C2072EB2EB9C /* KeyboardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardView.swift; sourceTree = "<group>"; };
 		216941F772F52490F9094510 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
+		235F44B4001D69C6942D575B /* RatesStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RatesStore.swift; sourceTree = "<group>"; };
 		26C1C3564E6011D2D3389969 /* SecretScanner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SecretScanner.swift; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -404,6 +406,7 @@
 				397338FD53A5248DAFEBD08F /* Smart.swift */,
 				9F09C0ACA1F1B45C6AC46AA4 /* TourCoach.swift */,
 				0F7C9B275603B0968648339E /* CalendarText.swift */,
+				235F44B4001D69C6942D575B /* RatesStore.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -880,6 +883,7 @@
 				81364F0B50AAA933D02723D5 /* CalendarText.swift in Sources */,
 				4981B7628978DB909E4C478F /* CalendarSurface.swift in Sources */,
 				737B2D28D4945E95B7BCC5E5 /* GlyfSession.swift in Sources */,
+				91E3A56EB8244E365BC6E1F6 /* RatesStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

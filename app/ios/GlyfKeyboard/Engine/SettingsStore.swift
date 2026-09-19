@@ -77,12 +77,12 @@ struct GlyfSettings: Codable, Equatable {
     /// Deliberately SMALL (design decision 2026-09-12: "don't preset a lot").
     /// Three anchors ship bound; onboarding personas and per-key
     /// recommendations fill the rest by choice, never by default.
-    /// Two holds, and that is all: V shares your details, T translates as
-    /// you type. Proofread, emoji-fy and the rest were canned versions of
-    /// what holding space already does with the model, so they are gone.
+    /// Two holds, and that is all: V shares your details, C opens the
+    /// calendar. Every other letter is the person's to bind; holding space
+    /// already does with the model what the canned glyfs used to.
     static let defaultBindings: [String: String] = [
-        "t": "surface:translate-hud",
         "v": "surface:vault",
+        "c": "connector:calendar",
     ]
     /// Backend base URL (dev). Set from the app's debug screen.
     /// Dev builds talk to the Mac; shipped builds talk to tryglyf.com.

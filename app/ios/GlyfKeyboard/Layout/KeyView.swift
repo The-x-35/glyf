@@ -63,7 +63,9 @@ final class KeyView: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        label.frame = bounds
+        // The system keyboard sits its letters a touch below centre (a
+        // capital's top lands 1pt lower than a centred label puts it).
+        label.frame = spec.isChar ? bounds.offsetBy(dx: 0, dy: shifted ? 1 : 0.5) : bounds
         icon.frame = bounds
         tintLayer.frame = bounds
         accentDot.frame = CGRect(x: bounds.width - 10.5, y: 5.5, width: 5, height: 5)
@@ -96,9 +98,12 @@ final class KeyView: UIControl {
         switch spec.kind {
         case .char(let c):
             text = shifted ? c.uppercased() : c
-            // 25pt: the system keyboard draws a lowercase q 10.7 x 17pt on
-            // every iPhone width, and this is the size that matches it.
-            label.font = .systemFont(ofSize: 25, weight: .regular)
+            // Measured against the system keyboard on the same simulator, by
+            // ink rather than bounding box (boxes hide a point of size): a
+            // lowercase a carries the ink of 24pt, a capital A that of 22pt,
+            // with a 46 px cap height. Apple draws capitals smaller so both
+            // cases read as one size; one 25pt face made ours shout.
+            label.font = .systemFont(ofSize: shifted ? 22 : 24, weight: .regular)
         case .space:
             // Watermark, not a label (Acti-style restraint).
             text = "glyf"

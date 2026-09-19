@@ -909,7 +909,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                       const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
             ),
           const Spacer(),
-          _pill('Sign in with Google', onTap: _connectGoogle),
+          _pill('Connect Google', onTap: _connectGoogle),
           _skip(label: 'Not now'),
         ]);
 

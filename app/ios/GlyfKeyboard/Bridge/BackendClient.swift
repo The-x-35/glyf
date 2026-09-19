@@ -461,7 +461,9 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         guard let url = URL(string: "\(s.backendURL)/meter/\(s.deviceId)") else {
             completion(nil); return
         }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        var req = URLRequest(url: url)
+        req.glyfSession()   // the meter is per account now, and the gate wants it
+        URLSession.shared.dataTask(with: req) { data, _, _ in
             var n: Int?
             if let data,
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {

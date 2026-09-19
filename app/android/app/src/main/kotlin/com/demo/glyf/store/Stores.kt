@@ -65,11 +65,11 @@ object SettingsStore {
         put("toolbarOrder", JSONArray(listOf(
             "search", "clipboard", "vault", "dictation", "translate")))
         put("toolbarHidden", JSONArray())
-        // Two holds only: V shares your details, T translates. The canned
-        // glyfs (proofread, emoji-fy…) were what hold-space AI already does.
+        // Two holds only: V shares your details, C opens the calendar. Every
+        // other letter is the person's to bind; hold-space AI covers the rest.
         put("bindings", JSONObject(mapOf(
-            "t" to "surface:translate-hud",
-            "v" to "surface:vault")))
+            "v" to "surface:vault",
+            "c" to "connector:calendar")))
         put("customTitles", JSONObject())
         put("translationHUD", false)
         put("proUnlocked", false)

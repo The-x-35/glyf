@@ -721,6 +721,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
         SettingsStore.reloadIfChanged()
         let arranged = tourStep.map { "\($0)|\(tourCopied)" }
         if didBuild, arranged != coachedStep {
+            // A new chat in the tour starts clean: a panel the previous one
+            // left open (its search results, say) would sit over the keys.
+            let chat = tourStep?.split(separator: ":").first.map(String.init)
+            let previous = coachedStep?.split(separator: ":").first.map(String.init)
+            if let chat, let previous, chat != previous, surface != .none {
+                setSurface(.none)
+                applySurfaceLayout(animated: true)
+            }
             // A new step, or the address just copied, changes which chips
             // the strip may show.
             coachedStep = arranged
@@ -1009,7 +1017,18 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 : (ClipboardStore.load().first?.text ?? "Tap to paste what you copied"))
             : nil
         var chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
-                              paste: paste, field: fieldHint(emptyField: before.isEmpty))
+                              paste: paste, field: fieldHint(emptyField: before.isEmpty),
+                              rates: RatesStore.shared.snapshot())
+        // An amount or a ticker with no rate yet: ask for one; the strip is
+        // arranged again when it lands.
+        if chip == nil, hasFullAccess {
+            if let ticker = Smart.cashtag(in: tail) {
+                RatesStore.shared.ensureToken(ticker) { [weak self] in self?.updateCandidates() }
+                RatesStore.shared.ensureFiat { [weak self] in self?.updateCandidates() }
+            } else if Smart.looksLikeMoney(tail) {
+                RatesStore.shared.ensureFiat { [weak self] in self?.updateCandidates() }
+            }
+        }
         // The tour keeps the strip for the step it is coaching.
         if let step = tourStep {
             if let c = chip, !TourCoach.allowsChip(Self.chipKind(c), step: step, copied: tourCopied) { chip = nil }
@@ -1036,6 +1055,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private static func chipKind(_ chip: Smart.Chip) -> String {
         switch chip {
         case .calc: return "calc"
+        case .money: return "money"
         case .vault(let f): return "vault:\(f.kind)"
         case .paste: return "paste"
         case .pay: return "pay"

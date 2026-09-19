@@ -21,10 +21,14 @@ enum Smart {
         /// wallet with it filled in. The keyboard never holds a key — the app
         /// signs (website 6.10, "Private sends by MagicBlock").
         case pay(address: String, amount: String?)
+        /// "$13" → "$13 = ₹1,246" where the phone is; "$sol" → "1 SOL = $112".
+        /// `shown` is the whole line, `insert` what a tap adds after the
+        /// amount. Never shown without a live rate.
+        case money(shown: String, insert: String)
 
         var key: String {
             switch self {
-            case .calc: return "="
+            case .calc, .money: return "="
             case .vault(let f): return f.label
             case .paste: return "Paste"
             case .pay: return "Pay"
@@ -35,7 +39,7 @@ enum Smart {
         /// model's suggestions, whose text is already the action.
         var verb: String? {
             switch self {
-            case .calc, .vault: return "Insert"
+            case .calc, .vault, .money: return "Insert"
             case .paste: return "Paste"
             case .pay: return "Pay"
             case .action: return nil
@@ -47,6 +51,7 @@ enum Smart {
             case .vault(let f): return f.value
             case .paste(let t): return t.replacingOccurrences(of: "\n", with: " ")
             case .action(let label, _, _): return label
+            case .money(let shown, _): return shown
             case .pay(let address, let amount):
                 let short = address.count > 12
                     ? "\(address.prefix(4))…\(address.suffix(4))" : address
@@ -59,10 +64,22 @@ enum Smart {
             case .calc(let v, let hasEquals): return hasEquals ? " \(v)" : " = \(v)"
             case .vault(let f): return f.value
             case .paste(let t): return t
+            case .money(_, let insert): return insert
             case .pay: return ""       // handled by the app, never typed
             case .action: return ""    // runs a glyf instead of typing
             }
         }
+    }
+
+    /// The rates the keyboard has at hand (from the server, via RatesStore).
+    /// `fiat` is per dollar (INR: 95.88), `crypto` is dollars per token
+    /// (SOL: 111.77), `local` the currency where the phone is ("INR").
+    struct RatesSnapshot: Equatable {
+        var fiat: [String: Double] = [:]
+        var crypto: [String: Double] = [:]
+        var local: String = "USD"
+
+        static let empty = RatesSnapshot()
     }
 
     /// What the field itself says it wants, as far as a keyboard can tell.
@@ -101,11 +118,12 @@ enum Smart {
     /// for, a sum you typed, a saved detail the sentence (or the field) asks
     /// for, then something freshly copied.
     static func chip(for text: String, fields: [VaultField], paste: String? = nil,
-                     field: FieldHint = .none) -> Chip? {
+                     field: FieldHint = .none, rates: RatesSnapshot = .empty) -> Chip? {
         if let p = payment(in: text) ?? paste.flatMap({ payment(in: $0) }) {
             return .pay(address: p.address, amount: p.amount ?? amountAsked(in: text))
         }
         if let c = calc(text) { return .calc(value: c.value, hasEquals: c.hasEquals) }
+        if let m = money(in: text, rates: rates) { return m }
         if let f = vaultMatch(text, fields: fields) { return .vault(field: f) }
         // A form asking for something we already know: one tap fills it.
         if text.isEmpty, field.empty, let kind = field.kind,
@@ -228,6 +246,111 @@ enum Smart {
         }
         guard let v = sum(), i == tokens.count, v.isFinite else { return nil }
         return v
+    }
+
+    // MARK: Money
+
+    private static let symbolCurrency: [Character: String] = [
+        "$": "USD", "€": "EUR", "£": "GBP", "₹": "INR", "¥": "JPY",
+    ]
+    private static let wordCurrency: [String: String] = [
+        "usd": "USD", "dollar": "USD", "dollars": "USD", "bucks": "USD",
+        "eur": "EUR", "euro": "EUR", "euros": "EUR",
+        "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "quid": "GBP",
+        "inr": "INR", "rupee": "INR", "rupees": "INR", "rs": "INR",
+        "jpy": "JPY", "yen": "JPY", "aud": "AUD", "cad": "CAD", "sgd": "SGD",
+        "chf": "CHF", "cny": "CNY", "rmb": "CNY", "yuan": "CNY", "hkd": "HKD",
+        "aed": "AED", "dirham": "AED", "dirhams": "AED", "krw": "KRW", "won": "KRW",
+    ]
+    private static let currencySymbol: [String: String] = [
+        "USD": "$", "EUR": "€", "GBP": "£", "INR": "₹", "JPY": "¥", "CNY": "¥", "KRW": "₩",
+    ]
+
+    /// An amount at the end of what is being typed: "$13", "13 usd", "₹500",
+    /// "20 euros". Symbol or word, either side of the number.
+    private static let amountPattern = try? NSRegularExpression(
+        pattern: #"(?:([$€£₹¥])\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?([$€£₹¥]|[A-Za-z]{2,7}))\s*$"#,
+        options: [.caseInsensitive])
+    /// "$sol", "$usdc": a ticker, never a number.
+    private static let cashtagPattern = try? NSRegularExpression(
+        pattern: #"(?:^|\s)\$([A-Za-z]{2,6})\s*$"#)
+
+    /// The ticker at the end of the text, for whoever fetches prices.
+    static func cashtag(in text: String) -> String? {
+        guard let re = cashtagPattern, !text.isEmpty else { return nil }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
+        else { return nil }
+        return ns.substring(with: m.range(at: 1)).uppercased()
+    }
+
+    /// Whether the text ends in an amount the chip could convert, rate or no
+    /// rate — so the keyboard knows to go and fetch one.
+    static func looksLikeMoney(_ text: String) -> Bool {
+        guard let re = amountPattern, !text.isEmpty else { return false }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
+        else { return false }
+        let unitRange = m.range(at: 1).location != NSNotFound ? m.range(at: 1) : m.range(at: 4)
+        guard unitRange.location != NSNotFound else { return false }
+        let unit = ns.substring(with: unitRange)
+        if unit.count == 1, let c = unit.first { return symbolCurrency[c] != nil }
+        return wordCurrency[unit.lowercased()] != nil
+    }
+
+    /// "$13" here in India → "$13 = ₹1,246"; "₹500" → "₹500 = $5.21";
+    /// "$sol" → "1 SOL = $111.77 · ₹10,718". Nothing without a rate.
+    static func money(in text: String, rates: RatesSnapshot) -> Chip? {
+        if let ticker = cashtag(in: text) {
+            guard let usd = rates.crypto[ticker] else { return nil }
+            var shown = "1 \(ticker) = \(format(usd, in: "USD"))"
+            if rates.local != "USD", let rate = rates.fiat[rates.local] {
+                shown += " · \(format(usd * rate, in: rates.local))"
+            }
+            return .money(shown: shown, insert: " = \(format(usd, in: "USD"))")
+        }
+        guard let re = amountPattern, !text.isEmpty else { return nil }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
+        else { return nil }
+        func group(_ i: Int) -> String? {
+            m.range(at: i).location == NSNotFound ? nil : ns.substring(with: m.range(at: i))
+        }
+        let numberText = group(2) ?? group(3) ?? ""
+        guard let amount = Double(numberText.replacingOccurrences(of: ",", with: "")),
+              amount > 0 else { return nil }
+        let unit = group(1) ?? group(4) ?? ""
+        let from: String
+        if unit.count == 1, let c = unit.first, let code = symbolCurrency[c] {
+            from = code
+        } else if let code = wordCurrency[unit.lowercased()] {
+            from = code
+        } else {
+            return nil
+        }
+        // Where the phone is, or dollars when the amount already is local.
+        let to = from == rates.local ? "USD" : rates.local
+        guard to != from, let fromRate = rates.fiat[from], let toRate = rates.fiat[to],
+              fromRate > 0 else { return nil }
+        let converted = amount / fromRate * toRate
+        let typed = "\(currencySymbol[from] ?? "\(from) ")\(formatNumber(amount, code: from))"
+        let result = format(converted, in: to)
+        return .money(shown: "\(typed) = \(result)", insert: " = \(result)")
+    }
+
+    /// "₹1,246", "$5.21", "AED 47.70": the symbol where one is common, the
+    /// code elsewhere; Indian grouping for rupees.
+    static func format(_ value: Double, in code: String) -> String {
+        "\(currencySymbol[code] ?? "\(code) ")\(formatNumber(value, code: code))"
+    }
+
+    private static func formatNumber(_ value: Double, code: String) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: code == "INR" ? "en_IN" : "en_US")
+        f.maximumFractionDigits = code == "JPY" || code == "KRW" ? 0 : 2
+        f.minimumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? String(value)
     }
 
     // MARK: Payments

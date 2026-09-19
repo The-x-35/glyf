@@ -36,7 +36,7 @@ class _ProfileTabState extends State<ProfileTab> {
   bool _serverUp = false;
   int? _remaining;
   /// Private payments are always on; calendar and contacts when connected.
-  int _connectedTools = 1;
+  int _connectedTools = 0;
   bool _contactsOn = false;
   bool _nearbyOn = false;
   Timer? _poll;
@@ -71,7 +71,7 @@ class _ProfileTabState extends State<ProfileTab> {
       _serverUp = up;
       _remaining = remaining;
       _contactsOn = contacts['enabled'] == true;
-      _connectedTools = 1 + (_contactsOn ? 1 : 0) + (calendar['enabled'] == true ? 1 : 0);
+      _connectedTools = (_contactsOn ? 1 : 0) + (calendar['enabled'] == true ? 1 : 0);
       _nearbyOn = nearby['enabled'] == true;
       _displayName = (onboarding['displayName'] as String?) ??
           Auth.identity().name ??

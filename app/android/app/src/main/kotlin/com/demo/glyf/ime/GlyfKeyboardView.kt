@@ -536,8 +536,10 @@ class GlyfKeyboardView(
         val label: String = when {
             key.char != null -> {
                 // Same optical size as the iOS build (a letter fills about
-                // half the key's height), so the two keyboards are twins.
-                textPaint.textSize = dp(23f)
+                // half the key's height), so the two keyboards are twins —
+                // and, like the system keyboards, capitals are drawn smaller
+                // (22:25 on iOS) so both cases read as one size.
+                textPaint.textSize = dp(if (shifted) 20f else 22f)
                 display(key)
             }
             key.id == "space" -> {

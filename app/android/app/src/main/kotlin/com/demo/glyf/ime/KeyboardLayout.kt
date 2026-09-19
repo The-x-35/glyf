@@ -47,6 +47,17 @@ object KeyboardLayout {
     /** (10 - two 1.5 side keys) / 5 punctuation keys. */
     private fun wide(c: String) = Key(id = c, char = c, units = 1.4f)
 
+    /** The currency on the number layer, where the system keyboards put the
+     *  region's own: ₹ in India, £ in the UK, $ elsewhere. The IME sets it
+     *  from the region the app recorded. */
+    @Volatile var currencyKey: String = "$"
+
+    fun currencyFor(region: String?): String = when (region?.uppercase()) {
+        "IN" -> "₹"; "GB" -> "£"; "JP", "CN" -> "¥"; "KR" -> "₩"
+        "DE", "FR", "ES", "IT", "NL", "IE", "PT", "AT", "BE", "FI", "GR" -> "€"
+        else -> "$"
+    }
+
     fun rows(mode: Mode, numberRow: Boolean, context: KContext): List<List<Key>> {
         if (context.isPad) return padRows(context)
         val out = mutableListOf<List<Key>>()
@@ -62,7 +73,7 @@ object KeyboardLayout {
             }
             Mode.SYMBOLS1 -> {
                 out.add("1234567890".map { ch(it.toString()) })
-                out.add(listOf("-", "/", ":", ";", "(", ")", "$", "&", "@", "\"").map { ch(it) })
+                out.add(listOf("-", "/", ":", ";", "(", ")", currencyKey, "&", "@", "\"").map { ch(it) })
                 out.add(listOf(Key("mode:#+=", units = SIDE_UNITS)) +
                         listOf(".", ",", "?", "!", "'").map { wide(it) } +
                         listOf(Key("delete", units = SIDE_UNITS)))

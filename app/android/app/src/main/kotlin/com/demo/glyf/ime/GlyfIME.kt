@@ -81,6 +81,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // The server turns away anyone without a session; the keyboard reads
         // the app's and sends it with every call.
         com.demo.glyf.ime.BackendClient.bearer = com.demo.glyf.SessionStore.token(this)
+        RatesStore.attach(filesDir)
         KeyboardTyping.prepare(this) { }
         (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
             .addPrimaryClipChangedListener(clipListener)
@@ -226,6 +227,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         android.util.Log.d("GlyfKB", "onStartInputView restarting=$restarting overlay=${overlay != null}")
         settings = SettingsStore.load(this)
         settingsStamp = com.demo.glyf.store.Bridge.file(this, SettingsStore.FILE).lastModified()
+        KeyboardLayout.currencyKey = KeyboardLayout.currencyFor(
+            settings.optString("region").ifEmpty { java.util.Locale.getDefault().country })
         val dark = when (settings.optString("appearance", "auto")) {
             "dark" -> true
             "light" -> false
@@ -921,6 +924,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (stamp == settingsStamp) return
         settingsStamp = stamp
         settings = SettingsStore.load(this)
+        KeyboardLayout.currencyKey = KeyboardLayout.currencyFor(
+            settings.optString("region").ifEmpty { java.util.Locale.getDefault().country })
         keyboard.bindings = settings.optJSONObject("bindings")?.let { b ->
             b.keys().asSequence().associateWith { b.optString(it) }
         } ?: emptyMap()
@@ -962,6 +967,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         keyboard.tourKey = null
         val arranged = tourStep()?.let { "$it|${tourCopied()}" }
         if (arranged != coachedStep) {
+            // A new chat in the tour starts clean: a panel the previous one
+            // left open (its search results, say) would sit over the keys.
+            val chat = tourStep()?.substringBefore(':')
+            val previous = coachedStep?.substringBefore(':')
+            if (chat != null && previous != null && chat != previous) dismissFeaturePanel()
             // A new step, or the address just copied, changes which chips
             // the strip may show.
             coachedStep = arranged
@@ -1558,7 +1568,20 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         val tail = before.takeLast(120)
         val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
-        var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN")
+        var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN",
+                              rates = RatesStore.snapshot(region))
+        // An amount or a ticker with no rate yet: ask for one; the strip is
+        // arranged again when it lands.
+        if (chip == null) {
+            val backendURL = settings.optString("backendURL")
+            val ticker = Smart.cashtag(tail)
+            if (ticker != null) {
+                RatesStore.ensureToken(backendURL, ticker) { updateSuggestions() }
+                RatesStore.ensureFiat(backendURL) { updateSuggestions() }
+            } else if (Smart.looksLikeMoney(tail)) {
+                RatesStore.ensureFiat(backendURL) { updateSuggestions() }
+            }
+        }
         // Nothing in the words, but the model heard the sentence asking for a detail.
         val detail = suggestedDetail
         if (chip == null && detail != null && suggestedFor == tail.trim()) chip = Smart.Chip.Vault(detail)
@@ -1567,6 +1590,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (step != null) {
             val kind = when (chip) {
                 is Smart.Chip.Calc -> "calc"
+                is Smart.Chip.Money -> "money"
                 is Smart.Chip.Vault -> "vault:${chip.field.kind}"
                 is Smart.Chip.Pay -> "pay"
                 is Smart.Chip.Action -> "action"
@@ -1580,8 +1604,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         if (chip != null) cancelSuggestion()
         when (chip) {
-            is Smart.Chip.Calc, is Smart.Chip.Vault -> {
-                stripSmartDetail = if (chip is Smart.Chip.Vault) "vault:${chip.field.kind}" else "calc"
+            is Smart.Chip.Calc, is Smart.Chip.Vault, is Smart.Chip.Money -> {
+                stripSmartDetail = when (chip) {
+                    is Smart.Chip.Vault -> "vault:${chip.field.kind}"
+                    is Smart.Chip.Money -> "money"
+                    else -> "calc"
+                }
                 showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "") {
                     currentInputConnection?.commitText(Smart.insert(chip), 1)
                     hideStripChip()
@@ -2402,8 +2430,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         suggestionsShown = list
         suggestionRow.removeAllViews()
         val ink = ink()
+        val slots = mutableListOf<View>()
         for ((i, item) in list.withIndex()) {
-            val tv = TextView(this).apply {
+            slots += TextView(this).apply {
                 text = when (item.kind) {
                     Suggestion.Kind.LITERAL -> "“${item.text}”"
                     Suggestion.Kind.UNDO -> "↩ ${item.text}"
@@ -2412,7 +2441,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 gravity = Gravity.CENTER
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                textSize = 16f
+                textSize = 17f   // the system bar's size (a 12dp cap height)
                 typeface = if (item.kind == Suggestion.Kind.CORRECTION) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
                 setTextColor(if (item.kind == Suggestion.Kind.LITERAL) Color.argb(150, Color.red(ink), Color.green(ink), Color.blue(ink)) else ink)
                 if (item.kind == Suggestion.Kind.CORRECTION) {
@@ -2424,7 +2453,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 setTag(com.demo.glyf.R.id.qa_id, "suggest:$i")
                 setOnClickListener { suggestionTapped(item) }
             }
-            suggestionRow.addView(tv, LinearLayout.LayoutParams(0, dp(32), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+        }
+        // Always three slots with a hairline between them, like the system
+        // bar: one word sits in its slot and the lines stay where they are.
+        while (list.isNotEmpty() && slots.size < 3) slots += View(this)
+        for ((i, v) in slots.withIndex()) {
+            if (i > 0) suggestionRow.addView(View(this).apply {
+                setBackgroundColor(Color.argb(if (chromeDark) 70 else 40, Color.red(ink), Color.green(ink), Color.blue(ink)))
+            }, LinearLayout.LayoutParams(dp(1), dp(22)).apply { gravity = Gravity.CENTER_VERTICAL })
+            suggestionRow.addView(v, LinearLayout.LayoutParams(0, dp(32), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
         }
         if (list.isEmpty()) toolsPinned = false
         applySuggestionVisibility()
@@ -2547,6 +2584,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "surface:vault" -> { showVaultPanel(); return }
             "surface:translate-hud" -> { runTranslateOnField(); return }
             "surface:tones" -> { dismissFeaturePanel(); showGlyfBar(); return }
+            // C by default: the calendar lives in the keyboard, not the app.
+            "connector:calendar" -> { dismissFeaturePanel(); showCalendarPanel(); return }
         }
         if (glyfId.startsWith("surface:") || glyfId.startsWith("connector:")) {
             openApp()
