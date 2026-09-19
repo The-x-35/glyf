@@ -15,6 +15,7 @@ import { telemetryRoutes } from "./routes/telemetry.js";
 import { gifRoutes } from "./routes/gif.js";
 import { toolsRoutes } from "./routes/tools.js";
 import { searchRoutes } from "./routes/search.js";
+import { ratesRoutes } from "./routes/rates.js";
 import { waitlistRoutes } from "./routes/waitlist.js";
 import { actRoutes } from "./routes/act.js";
 import { walletRoutes } from "./routes/wallet.js";
@@ -82,6 +83,7 @@ export function buildApp(kv: KV = defaultKV()) {
   gifRoutes(app);
   toolsRoutes(app);
   searchRoutes(app, kv, guard);
+  ratesRoutes(app);
   waitlistRoutes(app, kv);
   actRoutes(app, guard, kv);
   walletRoutes(app);
