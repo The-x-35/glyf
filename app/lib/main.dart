@@ -26,6 +26,9 @@ class GlyfApp extends StatefulWidget {
 class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
   // Default to the funnel; flip to home once saved state proves completion.
   bool _onboarded = false;
+  /// What onboarding had saved when the last run was cut short: the step
+  /// to reopen on and the persona picked.
+  Map<String, dynamic> _resume = const {};
   /// Until the saved session has been read, nothing is shown.
   bool _ready = false;
 
@@ -53,6 +56,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _onboarded = state['done'] == true && signedIn;
+      // A run that was cut short (iOS ends the app when Full Access is
+      // granted) picks up at the step it was on.
+      _resume = _onboarded ? const {} : state;
       _ready = true;
     });
     if (signedIn) {
@@ -191,7 +197,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
           ? const Scaffold(backgroundColor: Glass.bg)
           : _onboarded
               ? AppShell(onRerunOnboarding: () => setState(() => _onboarded = false))
-              : OnboardingFlow(onDone: () => setState(() => _onboarded = true)),
+              : OnboardingFlow(resume: _resume, onDone: () => setState(() => _onboarded = true)),
     );
   }
 }

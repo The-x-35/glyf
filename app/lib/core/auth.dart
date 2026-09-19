@@ -33,6 +33,23 @@ abstract final class Auth {
     // Never in a release build.
     if (!kReleaseMode) {
       final args = await GlyfBridge.launchArgs();
+      // `--glyf-test-session=<token>` seeds a real Glyf session (minted on the
+      // server side with its SESSION_SECRET), so an end-to-end run on a
+      // simulator can call the API as a signed-in user without anyone typing
+      // Google or Apple credentials. Saved like a real sign-in, so the
+      // keyboard sees it too.
+      const seed = '--glyf-test-session=';
+      final seeded = args.where((a) => a.startsWith(seed)).map((a) => a.substring(seed.length)).firstOrNull;
+      if (seeded != null && seeded.isNotEmpty) {
+        final account = _Account(
+          token: seeded, id: 'sim-e2e', provider: 'google',
+          email: 'sim-e2e@example.com', name: 'Sim Tester',
+        );
+        await GlyfBridge.sessionSave(account.toJson());
+        _account = account;
+        await GlyfBridge.updateSharedSettings((s) => s..['signedInWith'] = 'google');
+        return true;
+      }
       if (args.contains('--glyf-test-signed-in')) {
         _testSignedIn = true;
         const flag = '--glyf-test-account=';

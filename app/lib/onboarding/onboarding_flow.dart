@@ -23,7 +23,12 @@ import 'tour_scenarios.dart';
 /// One screen, steps slide through an AnimatedSwitcher (no PageView, so
 /// both humans and UI tests can address everything directly).
 class OnboardingFlow extends StatefulWidget {
-  const OnboardingFlow({super.key, required this.onDone});
+  const OnboardingFlow({super.key, required this.onDone, this.resume = const {}});
+
+  /// What a previous run had saved when the app ended (its step and the
+  /// persona picked): iOS kills the app the moment Full Access is granted
+  /// in Settings, so coming back must land there, not on the hello.
+  final Map<String, dynamic> resume;
   final VoidCallback onDone;
 
   @override
@@ -74,6 +79,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   DateTime? _setupSince;
   /// The box the keyboard is asked to turn up in.
   final _try = TextEditingController();
+  final _tryFocus = FocusNode();
   bool _keySounds = true;
   bool _haptics = true;
   /// On by default, like Gboard: what you copy is there to paste later.
@@ -103,6 +109,27 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     super.initState();
     // Already signed in (onboarding was left half way): start after sign-in.
     if (Auth.signedIn) _step = 1;
+    // …and where it was left, when that is known: granting Full Access ends
+    // the app (tccd: "access to kTCCServiceKeyboardNetwork changed"), so
+    // the setup step in particular must survive a relaunch.
+    final resume = widget.resume['step'] as String?;
+    final at = resume == null ? -1 : _steps.indexOf(resume);
+    if (Auth.signedIn && at > 1 && resume != 'tour') {
+      _step = at;
+      _heard.addAll(_steps.take(at));
+      _persona ??= widget.resume['persona'] as String?;
+      // Choices made on the way here were saved as they were made.
+      if (at > _steps.indexOf('feel')) unawaited(_loadFeel());
+      if (resume == 'details') _prefillFromAccount();
+      if (resume == 'setup') {
+        _setupSince = DateTime.now().toUtc();
+        // Ask the keyboard to turn up and say whether it has Full Access
+        // now, instead of leaving the person to find the box.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_fullAccess) _tryFocus.requestFocus();
+        });
+      }
+    }
     _launchStep = _step;
     for (final c in _details.values) {
       c.addListener(_detailsChanged);
@@ -124,7 +151,43 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       configured = false;
     }
     if (!mounted || configured) return;
-    setState(() => _steps = _steps.where((s) => s != 'connect').toList());
+    // Keep the step on screen by name: a resumed run may already be past
+    // the point where the list loses an entry.
+    final name = _steps[_step];
+    setState(() {
+      _steps = _steps.where((s) => s != 'connect').toList();
+      _step = _steps.indexOf(name == 'connect' ? 'tour' : name);
+    });
+    if (_steps[_step] == 'tour') _completing ??= _complete();
+  }
+
+  /// Where we are, for a relaunch. Sign-in has nothing to come back to and
+  /// the tour offer writes "done" itself.
+  void _remember() {
+    final name = _steps[_step];
+    if (name == 'signin' || name == 'tour') return;
+    unawaited(GlyfBridge.saveOnboardingState({'step': name, if (_persona != null) 'persona': _persona}));
+  }
+
+  /// The "Make it yours" switches, kept in shared settings the moment that
+  /// step is left — so a relaunch keeps them, and the keyboard sees them.
+  Future<void> _saveFeel() => GlyfBridge.updateSharedSettings((s) {
+        s['keyClicks'] = _keySounds;
+        s['haptics'] = _haptics;
+        s['clipboardHistory'] = _clipboard;
+        s['clipboardScreenshots'] = _screenshots;
+        return s;
+      });
+
+  Future<void> _loadFeel() async {
+    final s = await GlyfBridge.sharedSettings();
+    if (!mounted) return;
+    setState(() {
+      _keySounds = s['keyClicks'] as bool? ?? _keySounds;
+      _haptics = s['haptics'] as bool? ?? _haptics;
+      _clipboard = s['clipboardHistory'] as bool? ?? _clipboard;
+      _screenshots = s['clipboardScreenshots'] as bool? ?? _screenshots;
+    });
   }
 
   @override
@@ -137,6 +200,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       f.dispose();
     }
     _try.dispose();
+    _tryFocus.dispose();
     super.dispose();
   }
 
@@ -209,6 +273,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           identifier: 'onb:setup:try',
           child: TextField(
             controller: _try,
+            focusNode: _tryFocus,
             autocorrect: false,
             style: const TextStyle(color: Glass.ink, fontSize: 16),
             decoration: InputDecoration(
@@ -252,11 +317,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // while the keyboard is on.
     final said = DateTime.tryParse('${ping?['ts'] ?? ''}');
     final fresh = said != null && _setupSince != null && said.isAfter(_setupSince!);
+    final hadAccess = _fullAccess;
     setState(() {
       _keyboardEnabled = enabled;
       _keyboardSelected = selected;
       _fullAccess = enabled && fresh && ping?['hasFullAccess'] == true;
     });
+    // The keyboard came up to say so. Now that it has, it can go, and the
+    // Continue it was covering comes back.
+    if (!hadAccess && _fullAccess && _tryFocus.hasFocus) _tryFocus.unfocus();
   }
 
   void _advance() {
@@ -264,11 +333,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // The tour offer is the end: its own buttons leave onboarding.
     if (_step >= _steps.length - 1) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    _heard.add(_steps[_step]);
+    final leaving = _steps[_step];
+    _heard.add(leaving);
     setState(() {
       _forward = true;
       _step++;
     });
+    _remember();
+    if (leaving == 'feel') unawaited(_saveFeel());
     if (_steps[_step] == 'details') _prefillFromAccount();
     if (_steps[_step] == 'setup') _setupSince = DateTime.now().toUtc();
     if (_steps[_step] == 'tour') _completing ??= _complete();
@@ -299,6 +371,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _forward = false;
       _step--;
     });
+    _remember();
     if (_steps[_step] == 'setup') _setupSince = DateTime.now().toUtc();
     Telemetry.log('onboarding_step_back', {'step': _steps[_step]});
   }
@@ -362,13 +435,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// Onboarding is done once the tour is offered: settings saved, state
   /// written, so a phone closed on the offer opens to home next time.
   Future<void> _complete() async {
-    await GlyfBridge.updateSharedSettings((s) {
-      s['keyClicks'] = _keySounds;
-      s['haptics'] = _haptics;
-      s['clipboardHistory'] = _clipboard;
-      s['clipboardScreenshots'] = _screenshots;
-      return s;
-    });
+    await _saveFeel();
     await GlyfBridge.saveOnboardingState({
       'done': true,
       'persona': _persona,
