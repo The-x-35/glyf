@@ -36,6 +36,37 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
     'Cocoa': Color(0xFF3A2E24),
   };
 
+  /// What the strip converts a typed amount into. "auto" follows the phone;
+  /// the rest are the ECB's own list, which is what the rates come from —
+  /// offering a currency it doesn't quote would just give a dead chip.
+  static const _currencies = <String, String>{
+    'auto': 'Where I am',
+    'INR': '₹  Indian rupee',
+    'USD': '\$  US dollar',
+    'EUR': '€  Euro',
+    'GBP': '£  Pound sterling',
+    'JPY': '¥  Japanese yen',
+    'AUD': 'A\$  Australian dollar',
+    'CAD': 'C\$  Canadian dollar',
+    'SGD': 'S\$  Singapore dollar',
+    'CHF': 'CHF  Swiss franc',
+    'CNY': 'CN¥  Chinese yuan',
+    'HKD': 'HK\$  Hong Kong dollar',
+    'NZD': 'NZ\$  New Zealand dollar',
+    'ZAR': 'R  South African rand',
+    'BRL': 'R\$  Brazilian real',
+    'MXN': 'MX\$  Mexican peso',
+    'KRW': '₩  South Korean won',
+    'THB': '฿  Thai baht',
+    'PHP': '₱  Philippine peso',
+    'IDR': 'Rp  Indonesian rupiah',
+    'MYR': 'RM  Malaysian ringgit',
+    'SEK': 'kr  Swedish krona',
+    'NOK': 'kr  Norwegian krone',
+    'PLN': 'zł  Polish złoty',
+    'TRY': '₺  Turkish lira',
+  };
+
   static const _gradients = <String, List<Color>>{
     'dusk': [Color(0xFF7C5CFF), Color(0xFFEC6ADE)],
     'ocean': [Color(0xFF3D8BFF), Color(0xFF41E0C8)],
@@ -121,6 +152,9 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
             _switch('Haptic feedback on keypress', 'haptics'),
           ]),
           const SizedBox(height: 18),
+          _label('Money'),
+          _card([_currencyRow()]),
+          const SizedBox(height: 18),
           _label('Clipboard & AI'),
           _card([
             _switch('Keep what you copy', 'clipboardHistory', fallback: true),
@@ -175,6 +209,59 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
         ),
       ]),
     );
+  }
+
+  /// Type "$13" and the strip offers it in this currency. Token prices stay
+  /// in dollars, which is how the market quotes them.
+  Widget _currencyRow() {
+    final value = (_settings['moneyCurrency'] as String?) ?? 'auto';
+    return InkWell(
+      onTap: _pickCurrency,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Row(children: [
+          const Expanded(
+              child: Text('Convert money to', style: TextStyle(fontSize: 15))),
+          Text(_currencies[value] ?? value,
+              style: const TextStyle(fontSize: 14, color: Glass.inkSoft)),
+          const Icon(Icons.chevron_right, size: 18, color: Glass.inkSoft),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _pickCurrency() async {
+    final current = (_settings['moneyCurrency'] as String?) ?? 'auto';
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(left: 4, bottom: 10),
+              child: Text('Convert money to',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+            ),
+            for (final e in _currencies.entries)
+              ListTile(
+                title: Text(e.value, style: const TextStyle(fontSize: 15)),
+                trailing: e.key == current
+                    ? const Icon(Icons.check, size: 19, color: Glass.accent)
+                    : null,
+                onTap: () => Navigator.of(ctx).pop(e.key),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked != null) await _set('moneyCurrency', picked);
   }
 
   Widget _segmented(String title, String key, List<String> options) {

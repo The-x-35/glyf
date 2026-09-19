@@ -74,6 +74,8 @@ object SettingsStore {
         put("translationHUD", false)
         put("proUnlocked", false)
         put("plan", "free")
+        // What the strip converts money into; "auto" follows the region.
+        put("moneyCurrency", "auto")
         put("appearance", "auto")
         put("keyTheme", "site")
         put("themeBg", "")          // "" | color:#RRGGBB | grad:<id>

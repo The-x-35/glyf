@@ -39,6 +39,9 @@ struct GlyfSettings: Codable, Equatable {
     var proUnlocked: Bool? = false
     /// §6.16 plans: "free" | "plus" ($4.99) | "max" ($19.99).
     var plan: String? = "free"
+    /// The currency the strip converts money into ("INR", "USD", …), or
+    /// "auto" to follow where the phone is. The person picks it in the app.
+    var moneyCurrency: String? = "auto"
     /// Keyboard appearance: "auto" follows the host app (Apple behavior);
     /// "light"/"dark" force it.
     var appearance: String? = "auto"

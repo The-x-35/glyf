@@ -273,6 +273,7 @@ class _HomeTabState extends State<HomeTab> {
     final mine = (_settings['customTitles'] as Map<String, dynamic>?) ?? const {};
     const holds = [
       ('surface:vault', '🗂️', 'Vault', null),
+      ('connector:calendar', '📅', 'Calendar', null),
       ('surface:translate-hud', '🌐', 'Translate', null),
       ('surface:tones', '🎚️', 'Rewrite', null),
     ];

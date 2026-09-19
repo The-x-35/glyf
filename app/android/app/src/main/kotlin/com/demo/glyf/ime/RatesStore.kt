@@ -56,13 +56,19 @@ object RatesStore {
         runCatching { f.writeText(JSONObject().put("fiat", JSONObject(fiat)).put("fiatAt", fiatAt).toString()) }
     }
 
-    /** The currency where the phone is: the region the app recorded, else the locale. */
-    fun local(region: String?): String =
-        regionCurrency[region?.uppercase() ?: ""]
+    /** The currency money converts into: the one the person chose in the
+     *  app ("INR", "USD", …), else where the phone is — the region the app
+     *  recorded, then the locale. */
+    fun local(region: String?, chosen: String? = null): String {
+        val pick = chosen?.uppercase()?.takeIf { it != "AUTO" && it.length == 3 }
+        if (pick != null) return pick
+        return regionCurrency[region?.uppercase() ?: ""]
             ?: runCatching { java.util.Currency.getInstance(java.util.Locale.getDefault()).currencyCode }.getOrNull()
             ?: "USD"
+    }
 
-    fun snapshot(region: String?) = Smart.RatesSnapshot(fiat, crypto.toMap(), local(region))
+    fun snapshot(region: String?, chosen: String? = null) =
+        Smart.RatesSnapshot(fiat, crypto.toMap(), local(region, chosen))
 
     /** Fetches the dollar table when missing or stale; `then` runs on the
      *  main thread once something new is in hand. */

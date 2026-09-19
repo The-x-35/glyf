@@ -351,6 +351,26 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// The model's read on what is being typed, and the work in flight.
     private var suggestTask: URLSessionDataTask?
     private var suggestWork: DispatchWorkItem?
+
+    /// Suggestions and the smart strip are recomputed once typing settles,
+    /// never inside the keystroke itself. At speed the old way put the
+    /// engine, two dozen regexes and a strip rebuild between one finger
+    /// going down and the next — long enough to lose the tap. Every key
+    /// schedules this instead, so a burst collapses into a single pass.
+    private var candidatesWork: DispatchWorkItem?
+
+    private func scheduleCandidates() {
+        candidatesWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.candidatesWork = nil
+            self.updateCandidates()
+        }
+        candidatesWork = work
+        // Short enough to feel immediate when the fingers stop, long enough
+        // that a fast run of keys only pays for it once.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)
+    }
     private var suggestedFor = ""
     private var suggestedChip: Smart.Chip?
 
@@ -1021,11 +1041,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
                               rates: RatesStore.shared.snapshot())
         // An amount or a ticker with no rate yet: ask for one; the strip is
         // arranged again when it lands.
-        if chip == nil, hasFullAccess {
-            if let ticker = Smart.cashtag(in: tail) {
+        // A character test first: neither pattern can match without one, and
+        // this runs on text that is usually just words.
+        if chip == nil, hasFullAccess, tail.contains(where: { $0 == "$" || $0.isNumber }) {
+            if tail.contains("$"), let ticker = Smart.cashtag(in: tail) {
                 RatesStore.shared.ensureToken(ticker) { [weak self] in self?.updateCandidates() }
                 RatesStore.shared.ensureFiat { [weak self] in self?.updateCandidates() }
-            } else if Smart.looksLikeMoney(tail) {
+            } else if tail.contains(where: \.isNumber), Smart.looksLikeMoney(tail) {
                 RatesStore.shared.ensureFiat { [weak self] in self?.updateCandidates() }
             }
         }
@@ -1129,6 +1151,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     }
 
     private func updateCandidates() {
+        // A scheduled pass is now redundant, whoever asked for this one.
+        candidatesWork?.cancel()
+        candidatesWork = nil
         defer { applyTourHint() }         // the strip changed under the ring
         if updateSmartChip() { return }   // one chip owns the strip
         let policy = typingPolicy
@@ -1265,7 +1290,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         }
         textDocumentProxy.insertText(text)
         syncAutoShift()
-        updateCandidates()
+        scheduleCandidates()
     }
 
     func kbDeleteBackward() {
@@ -1293,7 +1318,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         }
         wordTouchesFor = current
         syncAutoShift()
-        updateCandidates()
+        scheduleCandidates()
     }
 
     func kbSpaceTapped() {
@@ -1310,7 +1335,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             textDocumentProxy.insertText(". ")
             lastSpaceTap = .distantPast
             syncAutoShift()
-            updateCandidates()
+            scheduleCandidates()
             notifyHUD()
             return
         }
@@ -1327,7 +1352,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             lastCorrection = Correction(original: token, replacement: expansion, fromEngine: false)
             textDocumentProxy.insertText(" ")
             syncAutoShift()
-            updateCandidates()
+            scheduleCandidates()
             notifyHUD()
             return
         }
@@ -1337,7 +1362,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         commitCurrentWord()
         textDocumentProxy.insertText(" ")
         syncAutoShift()
-        updateCandidates()
+        scheduleCandidates()
         notifyHUD()
     }
 

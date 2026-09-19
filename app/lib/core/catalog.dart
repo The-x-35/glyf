@@ -43,6 +43,8 @@ abstract final class Catalog {
     GlyfMeta('surface:vault', 'Vault', 'Vault', '🗂️'),
     GlyfMeta('surface:translate-hud', 'Translate', 'Translate', '🌐'),
     GlyfMeta('surface:tones', 'Rewrite', 'Rewrite', '🎚️'),
+    GlyfMeta('connector:calendar', 'Calendar',
+        'Your day, one hold away', '📅'),
     GlyfMeta('connector:mockcal', 'Calendar picker',
         'Drop an event into your text', '📅'),
     GlyfMeta('surface:notes', 'Notes',

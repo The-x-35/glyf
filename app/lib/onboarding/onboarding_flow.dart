@@ -37,8 +37,10 @@ class OnboardingFlow extends StatefulWidget {
 
 class _OnboardingFlowState extends State<OnboardingFlow> {
   /// 'connect' only when this server can actually sign in with Google.
+  // 'connect' (Google calendar/mail) is out of the flow until the connector
+  // works end to end; it stays reachable from Profile › Connected tools.
   List<String> _steps = const [
-    'signin', 'meet', 'details', 'feel', 'setup', 'nearby', 'connect', 'tour'
+    'signin', 'meet', 'details', 'feel', 'setup', 'nearby', 'tour'
   ];
   int _step = 0;
 

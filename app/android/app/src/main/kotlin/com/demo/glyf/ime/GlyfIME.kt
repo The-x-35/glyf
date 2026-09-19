@@ -813,7 +813,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     keyboard.invalidate()
                 }
                 syncAutoShift()
-                updateSuggestions()
+                scheduleSuggestions()
             }
             id == "delete" -> {
                 val corr = lastCorrection
@@ -845,7 +845,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 while (wordTouches.size > n) wordTouches.removeAt(wordTouches.size - 1)
                 wordTouchesFor = current
                 syncAutoShift()
-                updateSuggestions()
+                scheduleSuggestions()
             }
             id == "space" -> {
                 handleSpace(ic)
@@ -1565,16 +1565,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val tail = before.takeLast(120)
         val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
         var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN",
-                              rates = RatesStore.snapshot(region))
+                              rates = RatesStore.snapshot(region, settings.optString("moneyCurrency")))
         // An amount or a ticker with no rate yet: ask for one; the strip is
         // arranged again when it lands.
-        if (chip == null) {
+        // A character test first: neither pattern can match without one, and
+        // this runs on text that is usually just words.
+        if (chip == null && tail.any { it == '$' || it.isDigit() }) {
             val backendURL = settings.optString("backendURL")
-            val ticker = Smart.cashtag(tail)
+            val ticker = if (tail.contains('$')) Smart.cashtag(tail) else null
             if (ticker != null) {
                 RatesStore.ensureToken(backendURL, ticker) { updateSuggestions() }
                 RatesStore.ensureFiat(backendURL) { updateSuggestions() }
-            } else if (Smart.looksLikeMoney(tail)) {
+            } else if (tail.any { it.isDigit() } && Smart.looksLikeMoney(tail)) {
                 RatesStore.ensureFiat(backendURL) { updateSuggestions() }
             }
         }
@@ -2370,7 +2372,22 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             WordContext.previousWord(before), WordContext.wantsCapital(head), policy)
     }
 
+    /** Suggestions and the smart strip are recomputed once typing settles,
+     *  never inside the keystroke itself. At speed the old way put the
+     *  engine, two dozen regexes and a strip rebuild between one finger
+     *  going down and the next — long enough to lose the tap. Every key
+     *  schedules this instead, so a burst collapses into a single pass.
+     *  (iOS twin: scheduleCandidates.) */
+    private val suggestionsTick = Runnable { updateSuggestions() }
+
+    private fun scheduleSuggestions() {
+        main.removeCallbacks(suggestionsTick)
+        main.postDelayed(suggestionsTick, 30L)
+    }
+
     private fun updateSuggestions() {
+        // A scheduled pass is now redundant, whoever asked for this one.
+        main.removeCallbacks(suggestionsTick)
         if (searchActive || barActive || noteEditActive || overlay != null) { showSuggestions(emptyList()); return }
         val policy = typingPolicy()
         val ic = currentInputConnection

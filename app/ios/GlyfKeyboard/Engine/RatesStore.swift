@@ -25,9 +25,12 @@ final class RatesStore {
         }
     }
 
-    /// The currency where the phone is: the region the app recorded first
+    /// The currency money converts into: the one the person chose in the
+    /// app; otherwise where the phone is — the region the app recorded
     /// (it knows from onboarding), then the locale.
     var local: String {
+        if let chosen = SettingsStore.current.moneyCurrency?.uppercased(),
+           chosen != "AUTO", chosen.count == 3 { return chosen }
         if let region = SettingsStore.current.region?.uppercased(),
            let code = Self.regionCurrency[region] { return code }
         if #available(iOS 16, *), let code = Locale.current.currency?.identifier { return code }
