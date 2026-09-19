@@ -971,7 +971,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         tourLabel = nil
     }
 
-    private func syncAutoShift() {
+    /// `knownBefore` is the text before the cursor when the caller already
+    /// knows it. Reading it from the proxy is a round trip to the HOST app —
+    /// the most expensive thing a keyboard does per key — so a caller that
+    /// just inserted something passes what the field now holds instead of
+    /// asking across the process a second time.
+    private func syncAutoShift(knownBefore: String? = nil) {
         // Respect the FIELD's capitalization type like the system keyboard:
         // .none fields (usernames, searches) never auto-shift.
         let wants: Bool
@@ -979,11 +984,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .none: wants = false
         case .allCharacters: wants = true
         case .words:
-            let before = textDocumentProxy.documentContextBeforeInput
+            let before = knownBefore ?? textDocumentProxy.documentContextBeforeInput
             wants = before?.isEmpty != false || before?.hasSuffix(" ") == true
         default:
             wants = WordTracker.wantsCapital(
-                beforeContext: textDocumentProxy.documentContextBeforeInput)
+                beforeContext: knownBefore ?? textDocumentProxy.documentContextBeforeInput)
         }
         keyboardView.syncAutoShift(wantsCapital: wants)
     }
@@ -1275,12 +1280,19 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             editor.append(text)
             return
         }
+        // The host round trip below is the costliest part of a keystroke, so
+        // it happens at most once: what the field will hold afterwards is
+        // just what it held plus this character.
+        var before: String?
+        var readBefore = false
         if text.count == 1, let ch = text.first {
             if WordTracker.correctionBoundaries.contains(ch) {
                 // Punctuation ends the word: correct it before the mark lands.
                 commitCurrentWord()
             } else if !WordTracker.boundaries.contains(ch) || ch == "'" || ch == "’" {
-                let current = WordTracker.currentWord(beforeContext: textDocumentProxy.documentContextBeforeInput)
+                before = textDocumentProxy.documentContextBeforeInput
+                readBefore = true
+                let current = WordTracker.currentWord(beforeContext: before)
                 if current != wordTouchesFor {
                     wordTouches = Array(repeating: nil, count: current.unicodeScalars.count)
                 }
@@ -1289,7 +1301,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             }
         }
         textDocumentProxy.insertText(text)
-        syncAutoShift()
+        syncAutoShift(knownBefore: readBefore ? (before ?? "") + text : nil)
         scheduleCandidates()
     }
 
@@ -1312,12 +1324,15 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         } else {
             textDocumentProxy.deleteBackward()
         }
-        let current = WordTracker.currentWord(beforeContext: textDocumentProxy.documentContextBeforeInput)
+        // One read of the host's text, reused below: the delete has already
+        // happened, so this IS what the field holds now.
+        let before = textDocumentProxy.documentContextBeforeInput
+        let current = WordTracker.currentWord(beforeContext: before)
         if wordTouches.count > current.unicodeScalars.count {
             wordTouches.removeLast(wordTouches.count - current.unicodeScalars.count)
         }
         wordTouchesFor = current
-        syncAutoShift()
+        syncAutoShift(knownBefore: before)
         scheduleCandidates()
     }
 

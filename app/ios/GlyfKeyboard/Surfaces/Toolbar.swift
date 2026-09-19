@@ -568,9 +568,14 @@ final class GlyfToolbar: UIView {
             panelLabel.frame = CGRect(x: textX, y: band - Glass.stripLift,
                                       width: bounds.width - textX - 10 - actionW, height: h)
         }
-        scroll.frame = CGRect(x: left, y: 0, width: width, height: h)
+        // The tools live INSIDE this scroll view, which clips them, so the
+        // band has to move the scroll itself — offsetting only the stack
+        // pushes the icons out through its bottom edge (that is what ate the
+        // magnifier's handle and the mic's stand on iOS 18).
+        scroll.frame = CGRect(x: left, y: band, width: width, height: h)
         let itemH = min(34, h - 4)
-        itemsStack.frame = CGRect(x: 0, y: mid - itemH / 2, width: width, height: itemH)
+        // …and inside it the stack is band-relative: the strip's own centring.
+        itemsStack.frame = CGRect(x: 0, y: (mid - band) - itemH / 2, width: width, height: itemH)
         scroll.contentSize = CGSize(width: width, height: h)
         candidatesStack.frame = CGRect(x: left, y: mid - (h - 12) / 2,
                                        width: bounds.width - left - 8, height: h - 12)
