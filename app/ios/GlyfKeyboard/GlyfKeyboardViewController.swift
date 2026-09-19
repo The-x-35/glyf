@@ -29,6 +29,21 @@ enum Perf {
         guard on else { return }
         log.log("GLYF_PERF \(what, privacy: .public)")
     }
+
+    /// How many times this event reached across into the host app. Free on
+    /// the simulator, the dominant cost on a phone — so it is counted rather
+    /// than timed, and the count is what to keep down.
+    nonisolated(unsafe) private static var hostReads = 0
+
+    @inline(__always) static func countHostRead() {
+        if on { hostReads += 1 }
+    }
+
+    static func reportHostReads() {
+        guard on else { return }
+        log.log("GLYF_PERF hostReads=\(hostReads, privacy: .public)")
+        hostReads = 0
+    }
 }
 
 final class PassThroughRoot: UIView {
@@ -175,6 +190,16 @@ final class GlyfKeyboardViewController: UIInputViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         log.log("GLYF_KB viewDidLoad")
+        // What a UIPasteControl is allowed to hand us. Without this the
+        // control stays disabled however much is on the clipboard.
+        let paste = UIPasteConfiguration(forAccepting: NSString.self)
+        paste.addTypeIdentifiers(forAccepting: UIImage.self)
+        pasteConfiguration = paste
+    }
+
+    /// Where every system paste button in the keyboard lands.
+    override func paste(itemProviders: [NSItemProvider]) {
+        acceptPasted(itemProviders)
     }
 
     /// Apple behavior: the keyboard follows the HOST (field appearance /
@@ -617,6 +642,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .shell:
             let s = GlyfShell()
             s.delegate = self
+            s.pasteTarget = self
             content.addSubview(s)
             prepareEntrance(s, animated: animated)
             shell = s
@@ -636,6 +662,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .clipboard:
             let c = ClipboardPanel()
             c.delegate = self
+            c.pasteTarget = self
             content.addSubview(c)
             prepareEntrance(c, animated: animated)
             clipboardPanel = c
@@ -697,7 +724,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// Word-commit hook: hand the current draft to the HUD (debounced there).
     private func notifyHUD() {
         guard surface == .none, hudActive else { return }
-        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        let before = beforeContext ?? ""
         ensureHUD().draftChanged(before, consumedBefore: before.count)
     }
 
@@ -733,9 +760,63 @@ final class GlyfKeyboardViewController: UIInputViewController {
         textDocumentProxy.isSecureTextEntry ?? false
     }
 
+    // MARK: The host round trip
+
+    /// `documentContextBeforeInput` reaches across into the host app. On a
+    /// phone that crossing is the most expensive thing a keystroke does — and
+    /// it is invisible on the simulator, where the host is in the same
+    /// process and the same read costs 0.0ms. A single keystroke used to make
+    /// that crossing a dozen times over, once per place that wanted to know
+    /// what came before the caret.
+    ///
+    /// Within one event the answer cannot change, so it is read once and kept
+    /// until the document actually moves. Every edit we make goes through
+    /// `hostInsert`/`hostDelete`/`hostAdjust`, and anything the HOST changes
+    /// arrives as textDidChange or selectionDidChange — all of which drop it.
+    private var cachedBefore: String??
+
+    var beforeContext: String? {
+        if let cachedBefore { return cachedBefore }
+        let value = textDocumentProxy.documentContextBeforeInput
+        cachedBefore = .some(value)
+        Perf.countHostRead()
+        return value
+    }
+
+    /// Forgets the cached context. Cheap, and the safe thing to do whenever
+    /// there is any doubt — a stale answer here edits the wrong text.
+    func forgetBefore() { cachedBefore = nil }
+
+    func hostInsert(_ text: String) {
+        textDocumentProxy.insertText(text)
+        forgetBefore()
+    }
+
+    func hostDelete() {
+        textDocumentProxy.deleteBackward()
+        forgetBefore()
+    }
+
+    func hostAdjust(byCharacterOffset offset: Int) {
+        textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
+        forgetBefore()
+    }
+
+    override func selectionDidChange(_ textInput: UITextInput?) {
+        super.selectionDidChange(textInput)
+        forgetBefore()
+    }
+
+    override func selectionWillChange(_ textInput: UITextInput?) {
+        super.selectionWillChange(textInput)
+        forgetBefore()
+    }
+
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
         let t0 = Perf.mark()
+        forgetBefore() // the document moved — whoever moved it
+        Perf.reportHostReads()
         // The app may have changed settings while we are up (its tour does),
         // but that is a stat of a file on disk and this runs on EVERY
         // keystroke — a few times a second is as often as it can matter.
@@ -833,7 +914,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     }
 
     private func tourState(step: String) -> TourCoach.State {
-        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        let before = beforeContext ?? ""
         let after = textDocumentProxy.documentContextAfterInput ?? ""
         var state = TourCoach.State(step: step, text: before + after)
         state.panel = coachPanel()
@@ -903,7 +984,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             let key = "\(state.step):field:\(ObjectIdentifier(hud ?? content).hashValue)"
             guard tourTyped != key else { return }
             tourTyped = key
-            typeForTour(text, append: { [weak self] in self?.textDocumentProxy.insertText($0) }) { [weak self] in
+            typeForTour(text, append: { [weak self] in self?.hostInsert($0) }) { [weak self] in
                 self?.updateCandidates()
                 self?.notifyHUD()
             }
@@ -1048,11 +1129,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .none: wants = false
         case .allCharacters: wants = true
         case .words:
-            let before = knownBefore ?? textDocumentProxy.documentContextBeforeInput
+            let before = knownBefore ?? beforeContext
             wants = before?.isEmpty != false || before?.hasSuffix(" ") == true
         default:
             wants = WordTracker.wantsCapital(
-                beforeContext: knownBefore ?? textDocumentProxy.documentContextBeforeInput)
+                beforeContext: knownBefore ?? beforeContext)
         }
         keyboardView.syncAutoShift(wantsCapital: wants)
     }
@@ -1093,7 +1174,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.showSmart(nil)
             return false
         }
-        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        let before = beforeContext ?? ""
         let tail = String(before.suffix(120))
         // Something just copied rides in the strip as one chip, never as a
         // second row: history's copy when we already have it, otherwise the
@@ -1188,7 +1269,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             self.suggestTask = BackendClient.shared.suggestAction(text: trimmed, kinds: kinds) {
                 [weak self] intent, label, query in
                 guard let self, self.surface == .none else { return }
-                let before = self.textDocumentProxy.documentContextBeforeInput ?? ""
+                let before = self.beforeContext ?? ""
                 // The sentence moved on while we were asking: drop it.
                 guard String(before.suffix(120))
                     .trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
@@ -1220,7 +1301,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
         candidatesWork?.cancel()
         candidatesWork = nil
         let tC = Perf.mark()
-        defer { Perf.say("candidates=\(Perf.ms(tC))ms chip=\(self.tChip)ms engine=\(self.tEngine)ms strip=\(self.tStrip)ms") }
+        defer {
+            Perf.say("candidates=\(Perf.ms(tC))ms chip=\(self.tChip)ms engine=\(self.tEngine)ms strip=\(self.tStrip)ms")
+            Perf.reportHostReads() // end of the cycle: the whole keystroke's crossings
+        }
         defer { applyTourHint() }         // the strip changed under the ring
         let tCh = Perf.mark()
         let chipOwns = updateSmartChip()
@@ -1231,7 +1315,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.showSuggestions([])
             return
         }
-        let before = textDocumentProxy.documentContextBeforeInput
+        let before = beforeContext
         let word = WordTracker.currentWord(beforeContext: before)
         if word.isEmpty {
             if let corr = lastCorrection {
@@ -1281,7 +1365,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// replacement, or autocorrect it when the engine is sure, then learn
     /// what was actually kept.
     private func commitCurrentWord() {
-        let before = textDocumentProxy.documentContextBeforeInput
+        let before = beforeContext
         let word = WordTracker.currentWord(beforeContext: before)
         defer {
             wordTouches = []
@@ -1320,9 +1404,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// Replace the word being typed (suggestions, autocorrect, replacements).
     private func replaceCurrentWord(with replacement: String) {
         let word = WordTracker.currentWord(
-            beforeContext: textDocumentProxy.documentContextBeforeInput)
-        for _ in 0..<word.count { textDocumentProxy.deleteBackward() }
-        textDocumentProxy.insertText(replacement)
+            beforeContext: beforeContext)
+        for _ in 0..<word.count { hostDelete() }
+        hostInsert(replacement)
     }
 
     /// Put back what was typed before the last correction; an engine
@@ -1330,13 +1414,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
     @discardableResult
     private func undoLastCorrection() -> Bool {
         guard let corr = lastCorrection,
-              let before = textDocumentProxy.documentContextBeforeInput else { return false }
+              let before = beforeContext else { return false }
         let tail = before.hasSuffix(corr.replacement + " ") ? corr.replacement + " "
             : before.hasSuffix(corr.replacement) ? corr.replacement : nil
         guard let tail else { return false }
-        for _ in 0..<tail.count { textDocumentProxy.deleteBackward() }
+        for _ in 0..<tail.count { hostDelete() }
         let spaced = tail.count > corr.replacement.count
-        textDocumentProxy.insertText(spaced ? corr.original + " " : corr.original)
+        hostInsert(spaced ? corr.original + " " : corr.original)
         lastCorrection = nil
         if corr.fromEngine {
             typing?.revert(typed: corr.original, correction: corr.replacement)
@@ -1368,7 +1452,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                 commitCurrentWord()
             } else if !WordTracker.boundaries.contains(ch) || ch == "'" || ch == "’" {
                 let th = Perf.mark()
-                before = textDocumentProxy.documentContextBeforeInput
+                before = beforeContext
                 tHost = Perf.ms(th)
                 readBefore = true
                 let current = WordTracker.currentWord(beforeContext: before)
@@ -1380,7 +1464,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             }
         }
         let tI = Perf.mark()
-        textDocumentProxy.insertText(text)
+        hostInsert(text)
         let tInsert = Perf.ms(tI)
         let tS = Perf.mark()
         syncAutoShift(knownBefore: readBefore ? (before ?? "") + text : nil)
@@ -1397,20 +1481,20 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         // Backspace right after a correction puts back what was typed (and
         // teaches the engine to leave that word alone).
         if let corr = lastCorrection,
-           textDocumentProxy.documentContextBeforeInput?.hasSuffix(corr.replacement + " ") == true {
-            for _ in 0..<(corr.replacement.count + 1) { textDocumentProxy.deleteBackward() }
-            textDocumentProxy.insertText(corr.original)
+           beforeContext?.hasSuffix(corr.replacement + " ") == true {
+            for _ in 0..<(corr.replacement.count + 1) { hostDelete() }
+            hostInsert(corr.original)
             lastCorrection = nil
             if corr.fromEngine {
                 typing?.revert(typed: corr.original, correction: corr.replacement)
                 TypingStore.shared.scheduleSave()
             }
         } else {
-            textDocumentProxy.deleteBackward()
+            hostDelete()
         }
         // One read of the host's text, reused below: the delete has already
         // happened, so this IS what the field holds now.
-        let before = textDocumentProxy.documentContextBeforeInput
+        let before = beforeContext
         let current = WordTracker.currentWord(beforeContext: before)
         if wordTouches.count > current.unicodeScalars.count {
             wordTouches.removeLast(wordTouches.count - current.unicodeScalars.count)
@@ -1429,9 +1513,9 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         let now = Date()
         // Double-space → ". " (§6.1)
         if s.periodShortcut, now.timeIntervalSince(lastSpaceTap) < 0.45,
-           WordTracker.canPeriodShortcut(beforeContext: textDocumentProxy.documentContextBeforeInput) {
-            textDocumentProxy.deleteBackward()
-            textDocumentProxy.insertText(". ")
+           WordTracker.canPeriodShortcut(beforeContext: beforeContext) {
+            hostDelete()
+            hostInsert(". ")
             lastSpaceTap = .distantPast
             syncAutoShift()
             scheduleCandidates()
@@ -1444,12 +1528,12 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         // before autocorrect gets a look. Undo works like autocorrect undo.
         if !isSecureField,
            let token = Shorthand.pendingToken(
-               beforeContext: textDocumentProxy.documentContextBeforeInput),
+               beforeContext: beforeContext),
            let expansion = Shorthand.expansion(for: token, in: VaultStore.shared.load()) {
-            for _ in 0..<token.count { textDocumentProxy.deleteBackward() }
-            textDocumentProxy.insertText(expansion)
+            for _ in 0..<token.count { hostDelete() }
+            hostInsert(expansion)
             lastCorrection = Correction(original: token, replacement: expansion, fromEngine: false)
-            textDocumentProxy.insertText(" ")
+            hostInsert(" ")
             syncAutoShift()
             scheduleCandidates()
             notifyHUD()
@@ -1459,7 +1543,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         // Autocorrect + learning on commit (§6.1, Engine/Typing) — the
         // policy keeps secure fields untouched (§11.9).
         commitCurrentWord()
-        textDocumentProxy.insertText(" ")
+        hostInsert(" ")
         syncAutoShift()
         scheduleCandidates()
         notifyHUD()
@@ -1495,7 +1579,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             return
         }
         commitCurrentWord()
-        textDocumentProxy.insertText("\n")
+        hostInsert("\n")
         syncAutoShift()
         updateCandidates()
     }
@@ -1527,7 +1611,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         }
         let offset = cursorMirror?.offset(forGraphemes: graphemes) ?? graphemes
         guard offset != 0 else { return }
-        textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
+        hostAdjust(byCharacterOffset: offset)
         lastCursorAdjust = CACurrentMediaTime()
     }
 
@@ -1546,7 +1630,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
     }
 
     private func currentCursorMirror() -> CursorMirror {
-        CursorMirror(before: textDocumentProxy.documentContextBeforeInput ?? "",
+        CursorMirror(before: beforeContext ?? "",
                      after: textDocumentProxy.documentContextAfterInput ?? "")
     }
 
@@ -1560,7 +1644,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             // Typed text is the intent: act on it straight away. An empty
             // field (or no Full Access, which the bar explains) gets the
             // prompt bar instead.
-            let before = self.textDocumentProxy.documentContextBeforeInput ?? ""
+            let before = self.beforeContext ?? ""
             let after = self.textDocumentProxy.documentContextAfterInput ?? ""
             let typed = (before + after).trimmingCharacters(in: .whitespacesAndNewlines)
             if !typed.isEmpty, self.hasFullAccess, !self.isSecureField {
@@ -1625,7 +1709,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         actRunInput = input.text
         // Field text is swapped on Insert; clipboard or empty input only inserts.
         actInput = input.source == "field"
-            ? (textDocumentProxy.documentContextBeforeInput ?? "", input.after) : ("", "")
+            ? (beforeContext ?? "", input.after) : ("", "")
         actAccepted = false
         setSurface(.act)
         runAct()
@@ -1739,14 +1823,14 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         actIntent = nil
         actRunInput = input.text
         actInput = input.source == "field"
-            ? (textDocumentProxy.documentContextBeforeInput ?? "", input.after) : ("", "")
+            ? (beforeContext ?? "", input.after) : ("", "")
         actAccepted = false
         setSurface(.act)
         runAct()
     }
 
     private func collectBarInput() -> GlyfBar.Input {
-        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        let before = beforeContext ?? ""
         let after = textDocumentProxy.documentContextAfterInput ?? ""
         let field = (before + after).trimmingCharacters(in: .whitespacesAndNewlines)
         if !field.isEmpty {
@@ -1754,7 +1838,6 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                                  consumedBefore: before.count, after: after)
         }
         if hasFullAccess {
-            ClipboardStore.captureNow() // user opened the bar with no draft
             if let clip = ClipboardStore.load().first?.text, !clip.isEmpty {
                 return GlyfBar.Input(text: clip, source: "clipboard", consumedBefore: 0)
             }
@@ -1772,13 +1855,13 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
         // Swap exactly what the run read — both sides of the cursor.
         if let input = actInput {
             if !input.after.isEmpty {
-                textDocumentProxy.adjustTextPosition(byCharacterOffset: input.after.utf16.count)
+                hostAdjust(byCharacterOffset: input.after.utf16.count)
             }
             for _ in 0..<(input.before.count + input.after.count) {
-                textDocumentProxy.deleteBackward()
+                hostDelete()
             }
         }
-        textDocumentProxy.insertText(text)
+        hostInsert(text)
         actInput = nil
         setSurface(.none)
         syncAutoShift()
@@ -1828,18 +1911,58 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
 
     func clipboardPanelPaste(_ text: String) {
         setSurface(.none)
-        textDocumentProxy.insertText(text)
+        hostInsert(text)
         updateCandidates()
     }
 
-    func clipboardPanelPasteFresh() {
-        setSurface(.none)
-        guard let text = UIPasteboard.general.string,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        ClipContext.markDone()
-        remember(copied: text)
-        textDocumentProxy.insertText(text)
-        updateCandidates()
+    /// The system paste button handed content over. Reaching the clipboard
+    /// this way is the ONE route iOS does not put a banner in front of: the
+    /// tap IS the permission, so there is nothing to approve afterwards.
+    /// Everywhere else, reading `UIPasteboard.general.string` asks again each
+    /// time the copy changes — which is what made Glyf feel like it was
+    /// forever begging.
+    func acceptPasted(_ providers: [NSItemProvider]) {
+        guard let provider = providers.first else { return }
+        if provider.canLoadObject(ofClass: String.self) {
+            _ = provider.loadObject(ofClass: String.self) { [weak self] value, _ in
+                guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return }
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.setSurface(.none)
+                    ClipContext.markDone()
+                    self.remember(copied: value)
+                    self.hostInsert(value)
+                    self.updateCandidates()
+                }
+            }
+            return
+        }
+        // An image cannot go into a host text box from any keyboard (the proxy
+        // types text and nothing else), so it goes where it CAN be used again:
+        // the vault, which is ours to draw.
+        if provider.canLoadObject(ofClass: UIImage.self) {
+            _ = provider.loadObject(ofClass: UIImage.self) { [weak self] value, _ in
+                guard let image = value as? UIImage else { return }
+                DispatchQueue.main.async { self?.keepImage(image) }
+            }
+        }
+    }
+
+    /// Saves a pasted or picked image into the vault and says where it went.
+    func keepImage(_ image: UIImage, label: String = "Image") {
+        // JPEG at 0.85: a screenshot keeps its text crisp and a photo lands
+        // well under the cap, where the original PNG often would not.
+        guard let data = image.jpegData(compressionQuality: 0.85) else {
+            KeyboardToast.show(in: content, text: "Could not read that image")
+            return
+        }
+        if let why = VaultStore.shared.addImage(data: data, label: label) {
+            KeyboardToast.show(in: content, text: why)
+            return
+        }
+        KeyboardToast.show(in: content, text: "Saved to vault")
+        shell?.render()
     }
 
     func clipboardPanelSavedToVault(refusal: String?) {
@@ -1890,7 +2013,7 @@ extension GlyfKeyboardViewController: ClipContextStripDelegate {
         remember(copied: text)
         ClipContext.markDone()
         removeClipStrip()
-        textDocumentProxy.insertText(text)
+        hostInsert(text)
         updateCandidates()
     }
 
@@ -1928,7 +2051,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         // Rewrite is the website's list of versions for what is typed; with
         // nothing typed there is nothing to rewrite, so it asks instead.
         case "rewrite":
-            let before = textDocumentProxy.documentContextBeforeInput ?? ""
+            let before = beforeContext ?? ""
             let after = textDocumentProxy.documentContextAfterInput ?? ""
             if (before + after).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 setSurface(.none); openBar(autoRun: nil)
@@ -2062,7 +2185,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             // holding space does, and do what the chip said. Re-reading a
             // rewritten query could land somewhere else (a Google link for
             // "Tidy this up").
-            startAct(before: textDocumentProxy.documentContextBeforeInput ?? "",
+            startAct(before: beforeContext ?? "",
                      after: textDocumentProxy.documentContextAfterInput ?? "",
                      intent: intent)
             return
@@ -2085,19 +2208,19 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
                     return
                 }
                 remember(copied: read)
-                textDocumentProxy.insertText(read)
+                hostInsert(read)
             } else {
-                textDocumentProxy.insertText(text)
+                hostInsert(text)
             }
         } else {
-            textDocumentProxy.insertText(chip.insert)
+            hostInsert(chip.insert)
         }
         toolbar.showSmart(nil)
         updateCandidates()
     }
 
     func toolbarSuggestionTapped(_ suggestion: GlyfToolbar.Suggestion) {
-        let before = textDocumentProxy.documentContextBeforeInput
+        let before = beforeContext
         let word = WordTracker.currentWord(beforeContext: before)
         let previous = WordTracker.previousWord(beforeContext: before)
         let policy = typingPolicy
@@ -2108,10 +2231,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             // Exactly what they typed, on purpose: keep it and never fix it.
             typing?.keep(word)
             typing?.commit(word: word, previous: previous, autoCapitalized: false, policy: policy)
-            textDocumentProxy.insertText(" ")
+            hostInsert(" ")
         case .correction, .word:
             if !word.isEmpty { replaceCurrentWord(with: suggestion.text) }
-            textDocumentProxy.insertText(word.isEmpty ? suggestion.text + " " : " ")
+            hostInsert(word.isEmpty ? suggestion.text + " " : " ")
             typing?.commit(word: suggestion.text, previous: previous, autoCapitalized: false, policy: policy)
         }
         TypingStore.shared.scheduleSave()
@@ -2166,7 +2289,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             deliveryInFlight = false
             return
         }
-        textDocumentProxy.insertText(transcript)
+        hostInsert(transcript)
         log.log("GLYF_DICT delivered chars=\(transcript.count)")
         KeyboardToast.show(in: content, text: "Dictation inserted")
         syncAutoShift()
@@ -2189,7 +2312,7 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
 
     func shellInsertText(_ text: String) {
         setSurface(.none)
-        textDocumentProxy.insertText(text)
+        hostInsert(text)
     }
 
     func shellOpenApp(path: String) {
@@ -2234,6 +2357,17 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
     func shellEditNote(id: String?, text: String) {
         pendingNote = (id, text)
         setSurface(.noteEdit)
+    }
+
+    func shellCopyImage(id: String) {
+        guard let data = VaultStore.shared.imageData(id: id),
+              let image = UIImage(data: data) else {
+            KeyboardToast.show(in: content, text: "That image could not be opened")
+            return
+        }
+        UIPasteboard.general.image = image
+        setSurface(.none)
+        KeyboardToast.show(in: content, text: "Copied. Hold the text box to paste")
     }
 }
 
@@ -2280,7 +2414,7 @@ extension GlyfKeyboardViewController: SearchSurfaceDelegate {
         // Bypass the inline editor — results land in the host field.
         let target = inlineTarget
         inlineTarget = nil
-        textDocumentProxy.insertText(text)
+        hostInsert(text)
         inlineTarget = target
     }
 
@@ -2324,7 +2458,7 @@ extension GlyfKeyboardViewController: NoteEditSurfaceDelegate {
 extension GlyfKeyboardViewController: EmojiBoardDelegate {
 
     func emojiPicked(_ emoji: String) {
-        textDocumentProxy.insertText(emoji)
+        hostInsert(emoji)
     }
 
     func emojiBackToLetters() {
@@ -2332,7 +2466,7 @@ extension GlyfKeyboardViewController: EmojiBoardDelegate {
     }
 
     func emojiDeleteBackward() {
-        textDocumentProxy.deleteBackward()
+        hostDelete()
         syncAutoShift()
         updateCandidates()
     }
@@ -2366,8 +2500,8 @@ extension GlyfKeyboardViewController: TranslationHUDDelegate {
     }
 
     func hudReplaceDraft(with text: String, consumedBefore: Int) {
-        for _ in 0..<consumedBefore { textDocumentProxy.deleteBackward() }
-        textDocumentProxy.insertText(text)
+        for _ in 0..<consumedBefore { hostDelete() }
+        hostInsert(text)
         syncAutoShift()
         updateCandidates()
     }
@@ -2398,7 +2532,7 @@ extension GlyfKeyboardViewController: ConnectorSurfaceDelegate {
 
     func connectorInsert(_ text: String) {
         setSurface(.none)
-        textDocumentProxy.insertText(text)
+        hostInsert(text)
         syncAutoShift()
         updateCandidates()
     }

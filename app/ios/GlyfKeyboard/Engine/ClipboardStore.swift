@@ -54,36 +54,20 @@ enum ClipboardStore {
     /// Set by the VC each appearance; static because screen builders are static.
     static var fullAccessHint = false
 
-    /// `changeCount` never triggers Apple's paste prompt — reading `.string`
-    /// does. So the keyboard NEVER reads on appearance; it only probes, and
-    /// actually reads at user-intent moments (clipboard screen, bar input),
-    /// where a one-time system prompt is legitimate.
+    /// Glyf never reads the clipboard on its own.
+    ///
+    /// `changeCount` and `hasStrings` are probes — they tell us THAT there is
+    /// something new without telling us what, and iOS asks nothing for them.
+    /// Reading `.string` is what raises "Allow Paste?", and iOS raises it
+    /// again for every new copy, which is what made the keyboard feel like it
+    /// was constantly asking permission. So the probe decides whether to
+    /// OFFER a copy, and the only thing that actually takes it is the system
+    /// paste button the person taps (`UIPasteControl` → `paste(itemProviders:)`
+    /// on the view controller), where the tap itself is the permission.
     static func pasteboardHasNewContent() -> Bool {
         let cc = UIPasteboard.general.changeCount
         let last = (AppGroupStore.readJSON(name: "clip-cc.json")?["cc"] as? Int) ?? -1
         return cc != last
-    }
-
-    private static func markPasteboardSeen() {
-        AppGroupStore.writeJSON(["cc": UIPasteboard.general.changeCount],
-                                name: "clip-cc.json")
-    }
-
-    /// User-intent read (may surface the iOS paste banner once).
-    /// Returns true when something new landed in history.
-    @discardableResult
-    static func captureNow() -> Bool {
-        guard fullAccessHint else { return false }
-        guard pasteboardHasNewContent() else { return false }
-        // Only a read that actually returned something counts as "seen": if
-        // iOS refused (or the person said no), the copy stays on offer.
-        guard UIPasteboard.general.hasStrings,
-              let text = UIPasteboard.general.string else { return false }
-        markPasteboardSeen()
-        let items = load()
-        guard let next = inserting(text, into: items, now: Date()) else { return false }
-        save(next)
-        return true
     }
 
     static func togglePin(_ text: String) {

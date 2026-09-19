@@ -25,10 +25,21 @@ struct VaultSnippet: Codable, Equatable {
     var text: String
 }
 
+/// A picture kept in the vault. Only the description lives in the vault file;
+/// the pixels are a separate encrypted file, so opening the vault to read a
+/// phone number never decrypts megabytes of screenshots.
+struct VaultImage: Codable, Equatable, Identifiable {
+    var id: String
+    var label: String
+    var addedAt: Date
+    var bytes: Int
+}
+
 struct Vault: Codable, Equatable {
     var fields: [VaultField] = []
     var combos: [VaultCombo] = []
     var snippets: [VaultSnippet] = []
+    var images: [VaultImage] = []
 }
 
 /// §6.7/§11.3 hard blocks — pure logic, unit-tested.
@@ -234,6 +245,67 @@ final class VaultStore {
         var vault = load()
         vault.snippets.removeAll { $0.trigger == trigger }
         save(vault)
+    }
+
+    // MARK: - Images
+
+    static let imagesDirName = "vault-images"
+    static let maxImages = 40
+    /// Per picture, after re-encoding. A screenshot lands far under this;
+    /// the cap is what stops a photo library being poured into the vault.
+    static let maxImageBytes = 6 * 1024 * 1024
+
+    private var imagesDir: URL? {
+        guard let root else { return nil }
+        let dir = root.appendingPathComponent(Self.imagesDirName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Stores already-encoded image bytes. Returns a refusal reason, or nil.
+    /// The bytes are sealed with the same key as the rest of the vault — a
+    /// picture of a boarding pass deserves what a phone number gets.
+    func addImage(data: Data, label: String = "Image") -> String? {
+        guard !data.isEmpty else { return "That image is empty" }
+        guard data.count <= Self.maxImageBytes else {
+            return "That image is too large to keep"
+        }
+        var vault = load()
+        guard vault.images.count < Self.maxImages else {
+            return "The vault holds \(Self.maxImages) images — delete one first"
+        }
+        guard let dir = imagesDir, let key = loadOrCreateKey(),
+              let box = try? AES.GCM.seal(data, using: key), let blob = box.combined
+        else { return "Could not save the image" }
+        let id = UUID().uuidString.lowercased()
+        do {
+            try blob.write(to: dir.appendingPathComponent("\(id).enc"), options: .atomic)
+        } catch { return "Could not save the image" }
+        vault.images.insert(
+            VaultImage(id: id, label: label, addedAt: Date(), bytes: data.count), at: 0)
+        guard save(vault) else {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent("\(id).enc"))
+            return "Could not save the vault"
+        }
+        return nil
+    }
+
+    /// The decrypted bytes, read only when something actually shows the image.
+    func imageData(id: String) -> Data? {
+        guard let dir = imagesDir, let key = loadOrCreateKey(),
+              let blob = try? Data(contentsOf: dir.appendingPathComponent("\(id).enc")),
+              let box = try? AES.GCM.SealedBox(combined: blob)
+        else { return nil }
+        return try? AES.GCM.open(box, using: key)
+    }
+
+    func deleteImage(id: String) {
+        var vault = load()
+        vault.images.removeAll { $0.id == id }
+        save(vault)
+        if let dir = imagesDir {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent("\(id).enc"))
+        }
     }
 
     // MARK: - Reads for insertion

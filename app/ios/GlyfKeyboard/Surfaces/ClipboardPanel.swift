@@ -1,11 +1,10 @@
+import OSLog
 import Photos
 import UIKit
 
 protocol ClipboardPanelDelegate: AnyObject {
     func clipboardPanelClosed()
     func clipboardPanelPaste(_ text: String)
-    /// The copy iOS has not handed over yet: tapping is the moment it asks.
-    func clipboardPanelPasteFresh()
     /// A screenshot was copied: iOS keyboards can only type text, so the
     /// image goes on the pasteboard for the person to paste.
     func clipboardPanelCopiedImage()
@@ -23,6 +22,10 @@ protocol ClipboardPanelDelegate: AnyObject {
 final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
 
     weak var delegate: ClipboardPanelDelegate?
+    /// Who receives `paste(itemProviders:)` from the system paste button.
+    /// A keyboard extension's view controller is not in the responder chain
+    /// the control searches by default, so it is handed over explicitly.
+    weak var pasteTarget: UIResponder?
 
     private let header = UIView()
     private let backButton = UIButton(type: .system)
@@ -289,7 +292,9 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || status == .limited else { return [] }
         let options = PHFetchOptions()
-        let since = Date().addingTimeInterval(-3600) as NSDate
+        // The same two days a copy keeps for: a screenshot you took yesterday
+        // is exactly the thing you come to the clipboard looking for.
+        let since = Date().addingTimeInterval(-ClipboardStore.expiry) as NSDate
         #if targetEnvironment(simulator)
         // The simulator cannot take a real screenshot into Photos.
         options.predicate = NSPredicate(format: "creationDate > %@", since)
@@ -383,33 +388,63 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         ], card: card)
     }
 
+    /// The newest copy, which iOS has not handed over yet.
+    ///
+    /// The button is a UIPasteControl rather than one of ours on purpose: a
+    /// tap on it IS the permission, so nothing is asked afterwards. Reading
+    /// `UIPasteboard.general.string` ourselves puts up "Allow Paste?" every
+    /// time the copy changes, which is the banner that kept appearing.
     private func addFreshCard(at y: CGFloat, width: CGFloat) -> CGFloat {
-        let card = UIControl(frame: CGRect(x: M.side, y: y, width: width, height: 48))
+        let card = UIView(frame: CGRect(x: M.side, y: y, width: width, height: 48))
         card.backgroundColor = Glass.surfaceCard
         card.layer.cornerRadius = M.radius
         card.layer.cornerCurve = .continuous
-        card.accessibilityLabel = "Paste what you copied"
-        card.accessibilityIdentifier = "clip:fresh"
-        card.isAccessibilityElement = true
-        card.accessibilityTraits = .button
         let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)))
         icon.tintColor = Glass.accentPrimary
         icon.contentMode = .center
         icon.frame = CGRect(x: M.cardPad - 2, y: 0, width: 24, height: 48)
         card.addSubview(icon)
-        let label = UILabel(frame: CGRect(x: M.cardPad + 30, y: 0, width: width - M.cardPad * 2 - 30, height: 48))
-        label.text = "Paste what you copied"
+
+        // Let the control pick its own size. Forced into a smaller frame it
+        // draws as an empty rectangle — the system reserves the right to
+        // refuse a paste button that has been shrunk or disguised.
+        let cfg = UIPasteControl.Configuration()
+        cfg.displayMode = .iconAndLabel
+        cfg.cornerStyle = .capsule
+        let paste = UIPasteControl(configuration: cfg)
+        paste.target = pasteTarget
+        let fit = Self.pasteSize(paste)
+        paste.frame = CGRect(x: width - M.cardPad - fit.width,
+                             y: (48 - fit.height) / 2,
+                             width: fit.width, height: fit.height)
+        paste.accessibilityIdentifier = "clip:fresh"
+        card.addSubview(paste)
+
+        let labelX = M.cardPad + 30
+        let label = UILabel(frame: CGRect(x: labelX, y: 0,
+                                          width: max(0, paste.frame.minX - labelX - 8), height: 48))
+        label.text = "Something new copied"
         label.font = .systemFont(ofSize: M.textSize, weight: .semibold)
-        label.textColor = Glass.accentPrimary
+        label.textColor = Glass.textPrimary
         card.addSubview(label)
-        card.addAction(UIAction { [weak self] _ in
-            guard let self, !self.editing else { return }
-            self.delegate?.clipboardPanelPasteFresh()
-        }, for: .touchUpInside)
+
         card.tag = Self.contentTag
         scroll.addSubview(card)
         return card.frame.maxY + M.gap
+    }
+
+    /// The size a UIPasteControl actually wants. `sizeThatFits` answers zero
+    /// before the control is in a window; the compressed fitting size reads
+    /// its intrinsic size, which is defined from the start.
+    static func pasteSize(_ control: UIPasteControl) -> CGSize {
+        var fit = control.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+        if fit.width < 40 { fit.width = control.intrinsicContentSize.width }
+        if fit.height < 24 { fit.height = control.intrinsicContentSize.height }
+        if fit.width < 40 || fit.height < 24 { fit = CGSize(width: 104, height: 38) }
+        Logger(subsystem: "so.glyf.keyboard", category: "lifecycle")
+            .log("GLYF_KB pasteSize=\(fit.width)x\(fit.height)")
+        return fit
     }
 
     private func addTip(at y: CGFloat, width: CGFloat, icon: String, text: String) -> CGFloat {

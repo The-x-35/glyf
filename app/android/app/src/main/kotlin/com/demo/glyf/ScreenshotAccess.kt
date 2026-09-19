@@ -21,8 +21,10 @@ object ScreenshotAccess {
 
     data class Shot(val uri: Uri, val takenMs: Long)
 
-    /** Newest first, taken within the last hour. */
-    fun recent(ctx: Context, limit: Int = 6, maxAgeSeconds: Long = 3600): List<Shot> {
+    /** Newest first, taken within the last two days — the same window a copy
+     *  keeps for, since a screenshot from yesterday is exactly what people
+     *  come to the clipboard looking for. Matches iOS's ClipboardPanel. */
+    fun recent(ctx: Context, limit: Int = 6, maxAgeSeconds: Long = 48 * 3600): List<Shot> {
         if (!granted(ctx)) return emptyList()
         val since = System.currentTimeMillis() / 1000 - maxAgeSeconds
         val out = mutableListOf<Shot>()

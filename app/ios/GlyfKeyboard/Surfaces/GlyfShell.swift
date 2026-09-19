@@ -16,6 +16,8 @@ protocol GlyfShellDelegate: AnyObject {
     func shellTileDragEnded(at windowPoint: CGPoint)
     /// Opens the note editor strip (nil id = new note).
     func shellEditNote(id: String?, text: String)
+    /// Puts a vault image back on the clipboard, ready to paste into a field.
+    func shellCopyImage(id: String)
 }
 
 /// §6.3 — the in-keyboard navigation shell. HARD memory rules:
@@ -24,6 +26,8 @@ protocol GlyfShellDelegate: AnyObject {
 final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     weak var delegate: GlyfShellDelegate?
+    /// Who receives `paste(itemProviders:)` from a row's system paste button.
+    weak var pasteTarget: UIResponder?
 
     enum ActionStyle { case plain, accent, danger }
 
@@ -43,6 +47,12 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         case note(GlyfNote)
         /// A ;shorthand: tap inserts its expansion.
         case snippet(trigger: String, text: String)
+        /// A picture kept in the vault: tap puts it back on the clipboard,
+        /// which is as close to "insert" as any keyboard can get.
+        case vaultImage(VaultImage)
+        /// The system paste button, as a row. Whatever is on the clipboard
+        /// comes to us without iOS asking the person to approve it.
+        case pasteInto(title: String, detail: String)
     }
 
     struct Screen {
@@ -72,7 +82,16 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     private let grid = ControlScrollView()
     /// The vault draws as the website's 3-column card grid, not a list.
     private let vaultGrid = ControlScrollView()
-    private var vaultCards: [(label: String, value: String, insert: String)] = []
+    /// A tile in the vault grid. Text tiles insert; an image tile can only
+    /// go back on the clipboard (no keyboard can type a picture into a host
+    /// field); the paste tile is the system button that takes one in.
+    enum VaultCard {
+        case text(label: String, value: String, insert: String)
+        case image(VaultImage)
+        case paste
+    }
+
+    private var vaultCards: [VaultCard] = []
     /// Every tool, in the website's order first. The ids are the strip's, so
     /// any tile can be dragged up to live there. People reorder them by
     /// holding one and moving it (saved as `menuOrder`).
@@ -321,15 +340,26 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         vaultGrid.subviews.forEach { $0.removeFromSuperview() }
         let vault = VaultStore.shared.load()
         vaultCards = vault.fields.map {
-            (label: $0.label.uppercased(), value: $0.value, insert: $0.value)
+            .text(label: $0.label.uppercased(), value: $0.value, insert: $0.value)
         }
         for note in NotesStore.shared.load() {
-            vaultCards.append((label: "NOTE", value: note.text, insert: note.text))
+            vaultCards.append(.text(label: "NOTE", value: note.text, insert: note.text))
         }
+        for image in vault.images {
+            vaultCards.append(.image(image))
+        }
+        vaultCards.append(.paste)
         for (i, item) in vaultCards.enumerated() {
+            let labelText: String
+            let valueText: String
+            switch item {
+            case .text(let l, let v, _): labelText = l; valueText = v
+            case .image(let img): labelText = "IMAGE"; valueText = ShellCell.age(img.addedAt)
+            case .paste: labelText = "KEEP"; valueText = "an image"
+            }
             let cell = UIControl()
             cell.tag = 2000 + i
-            cell.accessibilityLabel = "\(item.label), \(item.value)"
+            cell.accessibilityLabel = "\(labelText), \(valueText)"
             cell.accessibilityIdentifier = "vault:card:\(i)"
             cell.isAccessibilityElement = true
             cell.accessibilityTraits = .button
@@ -346,27 +376,62 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             card.isUserInteractionEnabled = false
             cell.addSubview(card)
 
+            // An image tile is the picture itself, filling the card.
+            if case .image(let img) = item,
+               let data = VaultStore.shared.imageData(id: img.id),
+               let thumb = UIImage(data: data) {
+                let view = UIImageView(image: thumb)
+                view.tag = 4
+                view.contentMode = .scaleAspectFill
+                view.clipsToBounds = true
+                view.layer.cornerRadius = 12
+                view.layer.cornerCurve = .continuous
+                view.isUserInteractionEnabled = false
+                cell.addSubview(view)
+            }
+            // The paste tile carries the system button, which is the only way
+            // to take the clipboard without iOS asking to approve it.
+            if case .paste = item {
+                let cfg = UIPasteControl.Configuration()
+                cfg.displayMode = .iconAndLabel
+                cfg.cornerStyle = .capsule
+                let paste = UIPasteControl(configuration: cfg)
+                paste.target = pasteTarget
+                paste.tag = 5
+                paste.frame = CGRect(origin: .zero, size: ClipboardPanel.pasteSize(paste))
+                cell.addSubview(paste)
+            }
+
             let label = UILabel()
             label.tag = 2
             label.attributedText = NSAttributedString(
-                string: item.label,
+                string: labelText,
                 attributes: [.kern: 0.44,
                              .font: UIFont.systemFont(ofSize: 11, weight: .semibold),
                              .foregroundColor: Glass.textSecondary])
             label.isUserInteractionEnabled = false
+            label.isHidden = { if case .image = item { return true }; return false }()
             cell.addSubview(label)
 
             let value = UILabel()
             value.tag = 3
-            value.text = item.value
+            value.text = valueText
             value.font = .systemFont(ofSize: 13, weight: .medium)
             value.textColor = Glass.textPrimary
             value.lineBreakMode = .byTruncatingTail
             value.isUserInteractionEnabled = false
+            value.isHidden = { if case .text = item { return false }; return true }()
             cell.addSubview(value)
 
             cell.addAction(UIAction { [weak self] _ in
-                self?.delegate?.shellInsertText(item.insert)
+                switch item {
+                case .text(_, _, let insert):
+                    self?.delegate?.shellInsertText(insert)
+                case .image(let img):
+                    self?.delegate?.shellCopyImage(id: img.id)
+                case .paste:
+                    break // the system button inside handles its own tap
+                }
             }, for: .touchUpInside)
             vaultGrid.addSubview(cell)
         }
@@ -385,9 +450,17 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             cell.frame = CGRect(x: side + CGFloat(c) * (w + gap),
                                 y: CGFloat(r) * (h + gap), width: w, height: h)
             cell.viewWithTag(1)?.frame = cell.bounds
+            cell.viewWithTag(4)?.frame = cell.bounds          // image fills it
+            if let paste = cell.viewWithTag(5) {
+                paste.center = CGPoint(x: w / 2, y: h / 2 + 10)
+            }
             let top = (h - 15 - 2 - 17) / 2
             cell.viewWithTag(2)?.frame = CGRect(x: 8, y: top, width: w - 16, height: 15)
             cell.viewWithTag(3)?.frame = CGRect(x: 8, y: top + 17, width: w - 16, height: 17)
+            // On the paste tile the label sits above the button, not centred.
+            if cell.viewWithTag(5) != nil {
+                cell.viewWithTag(2)?.frame = CGRect(x: 8, y: 10, width: w - 16, height: 15)
+            }
         }
         vaultGrid.contentSize = CGSize(width: vaultGrid.bounds.width,
                                        height: CGFloat(rows) * (h + gap) - gap)
@@ -531,7 +604,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             return Screen(id: id, title: "Shorthand", rows: rows, appPath: "vault")
 
         case "clipboard":
-            ClipboardStore.captureNow() // opening the screen is user intent
             var rows: [Row] = ClipboardStore.load().map { .clip($0) }
             if rows.isEmpty {
                 rows.append(.info(title: ClipboardStore.fullAccessHint
@@ -588,6 +660,11 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             for note in NotesStore.shared.load() {
                 rows.append(.note(note))
             }
+            for image in vault.images {
+                rows.append(.vaultImage(image))
+            }
+            rows.append(.pasteInto(title: "Keep an image",
+                                   detail: "Copy one, then Paste"))
             rows.append(.action(title: "＋ New note", style: .accent, handler: {}))
             return Screen(id: id, title: "Vault", rows: rows, appPath: "vault")
 
@@ -641,6 +718,11 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             delegate?.shellInsertText(note.text)
         case .snippet(_, let text):
             delegate?.shellInsertText(text)
+        case .vaultImage(let image):
+            // No keyboard can type a picture into a host text box, so the
+            // most a tap can do is put it back on the clipboard, ready for
+            // one hold-and-paste in the field.
+            delegate?.shellCopyImage(id: image.id)
         case .binding:
             break // unbinding is the ✕ button, never a whole-row surprise
         default:
@@ -926,6 +1008,38 @@ private final class ShellCell: UITableViewCell {
             value.isHidden = false
             value.text = preview(text)
             accessibilityIdentifier = "snippet:\(trigger)"
+        case .vaultImage(let image):
+            setIcon("photo")
+            title.text = image.label
+            value.isHidden = false
+            value.text = Self.age(image.addedAt)
+            accessibilityIdentifier = "vault:image:\(image.id)"
+            // The thumbnail is decrypted here, for this row only — the vault
+            // file itself never carries the pixels.
+            if let data = VaultStore.shared.imageData(id: image.id),
+               let thumb = UIImage(data: data) {
+                let view = UIImageView(image: thumb)
+                view.contentMode = .scaleAspectFill
+                view.clipsToBounds = true
+                view.layer.cornerRadius = 6
+                view.layer.cornerCurve = .continuous
+                view.frame = CGRect(x: 0, y: 0, width: 34, height: 34)
+                setTrailing(view)
+            }
+        case .pasteInto(let t, let detail):
+            title.text = t
+            value.isHidden = false
+            value.text = detail
+            accessibilityIdentifier = "vault:paste"
+            // Sized by the control, never by us: squeezed into a smaller
+            // frame it renders as an empty rectangle.
+            let cfg = UIPasteControl.Configuration()
+            cfg.displayMode = .iconAndLabel
+            cfg.cornerStyle = .capsule
+            let paste = UIPasteControl(configuration: cfg)
+            paste.target = shell.pasteTarget
+            paste.frame = CGRect(origin: .zero, size: ClipboardPanel.pasteSize(paste))
+            setTrailing(paste)
         }
     }
 }
