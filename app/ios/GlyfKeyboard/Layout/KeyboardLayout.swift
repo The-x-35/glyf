@@ -189,3 +189,59 @@ enum KeyboardLayout {
         ]
     }
 }
+
+/// Which key a touch belongs to. Pure geometry over the laid-out key frames,
+/// so it can be swept point by point in tests — KeyboardView owns the views,
+/// this owns the rule.
+///
+/// The rule is Apple's: the key area has NO dead space. A finger that lands
+/// in the gap between two keys, in the margin down the side, or a hair above
+/// the top row still types the nearest key. Only a point more than half a key
+/// away from everything is not a keystroke at all (the strip above).
+enum KeyHit {
+
+    /// Index into `frames` of the key a touch at `point` belongs to.
+    ///
+    /// `area` is the key region. Inside it there is NO cutoff: the middle row
+    /// is indented, so the strip of screen beside A and beside L is further
+    /// than half a key from anything, yet tapping there is unmistakably meant
+    /// as A or L — Apple types them. A distance limit alone leaves those
+    /// edges dead, which is exactly how they felt.
+    static func index(at point: CGPoint, frames: [CGRect], pitch: CGFloat,
+                      area: CGRect) -> Int? {
+        // Directly under a key (with the small give Apple has) wins outright,
+        // so a touch never jumps past the key it is visibly on.
+        for (i, f) in frames.enumerated() where f.insetBy(dx: -3, dy: -5).contains(point) {
+            return i
+        }
+        var best: Int?
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for (i, f) in frames.enumerated() {
+            let dx = max(f.minX - point.x, 0, point.x - f.maxX)
+            let dy = max(f.minY - point.y, 0, point.y - f.maxY)
+            let d = dx * dx + dy * dy
+            if d < bestDistance { bestDistance = d; best = i }
+        }
+        // Anywhere in the key region belongs to a key, however far it sits
+        // from one. Beyond the region, half a key of overshoot and no more —
+        // a tap on the strip above is not a keystroke.
+        if area.contains(point) { return best }
+        let reach = max(pitch, 1) / 2
+        return bestDistance <= reach * reach ? best : nil
+    }
+
+    /// Where a touch may wander before it stops counting as `frame`'s key.
+    ///
+    /// Anchored to WHERE THE FINGER LANDED as well as to the key. A touch
+    /// that came down in a gap was snapped to the NEAREST key, so it is
+    /// legitimately outside that key's frame — measuring only from the frame
+    /// threw the keystroke away on the first tremor, and a real finger always
+    /// moves. That was accepted-then-dropped, and it got worse the faster you
+    /// typed.
+    static func slack(frame: CGRect, start: CGPoint,
+                      dx: CGFloat, dy: CGFloat) -> CGRect {
+        frame.insetBy(dx: -dx, dy: -dy)
+            .union(CGRect(x: start.x - dx, y: start.y - dy,
+                          width: dx * 2, height: dy * 2))
+    }
+}

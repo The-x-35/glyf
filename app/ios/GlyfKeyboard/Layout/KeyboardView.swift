@@ -246,23 +246,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// and only 5pt of give there was a dead band between every row, and at
     /// speed fingers land there constantly. That was the "missing keys".
     private func key(at point: CGPoint) -> KeyView? {
-        if let hit = keys.first(where: { $0.frame.insetBy(dx: -3, dy: -5).contains(point) }) {
-            return hit
-        }
-        // Nothing directly under it: take the closest key instead of losing
-        // the keystroke.
-        var best: KeyView?
-        var bestDistance = CGFloat.greatestFiniteMagnitude
-        for kv in keys {
-            let r = kv.frame
-            let dx = max(r.minX - point.x, 0, point.x - r.maxX)
-            let dy = max(r.minY - point.y, 0, point.y - r.maxY)
-            let d = dx * dx + dy * dy
-            if d < bestDistance { bestDistance = d; best = kv }
-        }
-        // …but only within half a key. A tap on the strip is not a keystroke.
-        let reach = max(keyPitch, 1) / 2
-        return bestDistance <= reach * reach ? best : nil
+        KeyHit.index(at: point, frames: keys.map(\.frame), pitch: keyPitch,
+                     area: bounds)
+            .map { keys[$0] }
     }
 
     /// Where a touch may wander before it stops counting as this key's.
@@ -275,9 +261,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// silently dropped it: that is the missing key, and it got worse the
     /// faster you typed.
     private func slack(_ st: TouchState, dx: CGFloat, dy: CGFloat) -> CGRect {
-        st.key.frame.insetBy(dx: -dx, dy: -dy)
-            .union(CGRect(x: st.start.x - dx, y: st.start.y - dy,
-                          width: dx * 2, height: dy * 2))
+        KeyHit.slack(frame: st.key.frame, start: st.start, dx: dx, dy: dy)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
