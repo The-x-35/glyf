@@ -120,6 +120,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _persona ??= widget.resume['persona'] as String?;
       // Choices made on the way here were saved as they were made.
       if (at > _steps.indexOf('feel')) unawaited(_loadFeel());
+      if (resume == 'nearby') unawaited(_loadLocation());
       if (resume == 'details') _prefillFromAccount();
       if (resume == 'setup') {
         _setupSince = DateTime.now().toUtc();
@@ -188,6 +189,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _clipboard = s['clipboardHistory'] as bool? ?? _clipboard;
       _screenshots = s['clipboardScreenshots'] as bool? ?? _screenshots;
     });
+  }
+
+  /// Nearby search an earlier run already turned on stays on.
+  Future<void> _loadLocation() async {
+    final status = await GlyfBridge.locationStatus();
+    if (!mounted) return;
+    setState(() => _locationOn = status['enabled'] == true);
   }
 
   @override
