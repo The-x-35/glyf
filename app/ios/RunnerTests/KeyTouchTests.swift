@@ -8,15 +8,30 @@ import XCTest
 /// the real geometry rather than sampling a few, because the dead spots that
 /// matter are the ones nobody thinks to try.
 ///
-/// This lives in a unit test on purpose. A simulator cannot test it: its
-/// touch injection only delivers touches that land on an accessibility
-/// element, so a tap in a gap never reaches the process at all — no
-/// hit-test, nothing. Checking it by tapping a simulator proves nothing.
+/// This lives in a unit test on purpose, and the reason is worth keeping.
+///
+/// NO synthetic tap can land in a gap. Neither a simulator-control tap nor
+/// XCUITest's `XCUICoordinate.tap()` reaches the keyboard unless the point
+/// is on an accessibility element: a coordinate tap on a key's centre logs a
+/// hit-test and types, and the same call three points to the side logs
+/// nothing at all. That is provably a harness limit rather than a dead key,
+/// because `KeyView` sets `isUserInteractionEnabled = false` — so to UIKit's
+/// hit-test walk an on-key point and a gap point are the SAME question, both
+/// answered by KeyboardView. UIKit cannot call hitTest for one and not the
+/// other; a missing hit-test means the touch never arrived.
+///
+/// So a UI test here can never tell "the gap is dead" from "the tap was
+/// never delivered" — it fails either way and looks like proof. That is how
+/// dead gaps shipped twice while looking verified. Sweeping the geometry is
+/// the only honest check, and it is what found the real dead strip.
 final class KeyTouchTests: XCTestCase {
 
     /// The letter rows as KeyboardView lays them out, for one screen width.
-    private func frames(width: CGFloat) -> (frames: [CGRect], pitch: CGFloat,
-                                            size: CGSize) {
+    private func frames(width: CGFloat,
+                        mode: KeyboardMode = .letters,
+                        numberRow: Bool = false,
+                        context: KeyboardContext = .text)
+        -> (frames: [CGRect], pitch: CGFloat, size: CGSize) {
         let hGap = KeyMetrics.hGap
         let vGap = KeyMetrics.vGap
         let margin = KeyMetrics.sideMargin
@@ -24,9 +39,10 @@ final class KeyTouchTests: XCTestCase {
         let columns: CGFloat = 10
         let pitch = (availW + hGap) / columns
         let unitWidth = pitch - hGap
-        let rows = KeyboardLayout.rows(mode: .letters, numberRow: false,
-                                       globe: true, context: .text)
+        let rows = KeyboardLayout.rows(mode: mode, numberRow: numberRow,
+                                       globe: true, context: context)
         let height = KeyMetrics.keysHeight(width: width)
+            + (numberRow ? Glass.numberRowExtra : 0)
         let rowH = height / CGFloat(rows.count)
         let keyH = rowH - vGap
 
@@ -52,10 +68,22 @@ final class KeyTouchTests: XCTestCase {
     }
 
     /// Not one point inside the key area may be dead — on a standard phone
-    /// and on the wide class, which have different key sizes and row heights.
+    /// and on the wide class, in EVERY layer the keyboard can show. A dead
+    /// patch in the numbers layer feels exactly like one in the letters.
     func testNoDeadSpaceAnywhereInTheKeyArea() {
+        var cases: [(CGFloat, KeyboardMode, Bool, KeyboardContext, String)] = []
         for width in [CGFloat(390), 402, 420, 440] {
-            let (rects, pitch, size) = frames(width: width)
+            for mode in [KeyboardMode.letters, .symbols1, .symbols2] {
+                cases.append((width, mode, false, .text, "\(mode)"))
+            }
+            cases.append((width, .letters, true, .text, "letters+numberRow"))
+            cases.append((width, .letters, false, .email, "email"))
+            cases.append((width, .letters, false, .url, "url"))
+        }
+        for (width, mode, numberRow, context, label) in cases {
+            let (rects, pitch, size) = frames(width: width, mode: mode,
+                                              numberRow: numberRow,
+                                              context: context)
             let area = CGRect(origin: .zero, size: size)
             // Addressable points only: the view spans 0..<size, so x == width
             // is one point past the last pixel a finger can land on.
@@ -75,11 +103,11 @@ final class KeyTouchTests: XCTestCase {
             if !dead.isEmpty {
                 let ys = Set(dead.map(\.y)).sorted()
                 let xs = Set(dead.map(\.x)).sorted()
-                print("DEADSPACE width=\(width) count=\(dead.count) " +
-                      "y=\(ys.prefix(6))…\(ys.suffix(3)) x=\(xs.prefix(6))…\(xs.suffix(3)) " +
-                      "size=\(size)")
+                print("DEADSPACE \(label) width=\(width) count=\(dead.count) " +
+                      "y=\(ys.prefix(4))…\(ys.suffix(2)) x=\(xs.prefix(4))…\(xs.suffix(2))")
             }
-            XCTAssertTrue(dead.isEmpty, "\(dead.count) dead points at \(width)pt")
+            XCTAssertTrue(dead.isEmpty,
+                          "\(dead.count) dead points, \(label) at \(width)pt")
         }
     }
 
