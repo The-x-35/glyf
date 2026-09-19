@@ -57,7 +57,7 @@ function vaultCoach(k: KbSnapshot, id: string, label: string): Coach {
   if (k.panel === "vault") return { target: `vault:${id}`, label: `Tap ${label}` };
   if (k.mine === id) return { target: "strip:vault", label: "Tap" };
   if (k.panel) return CLOSE;
-  return { target: "key:s", label: "Hold S" };
+  return { target: "key:v", label: "Hold V" };
 }
 
 export const SEMI_WALLET = "8QvS3nE5d1YwZk7pLr2mXh9TbF4cJaGuVy6oKe1RtNqP";
