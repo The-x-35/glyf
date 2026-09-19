@@ -524,8 +524,11 @@ final class GlyfToolbar: UIView {
         super.layoutSubviews()
         // Website strip: a g pill 1.18x the strip height wide and 0.78x tall,
         // then the tools spread across the rest. No divider.
-        let h = bounds.height
-        let mid = h / 2 - Glass.stripLift
+        // Below the band we had to draw ourselves (nothing on iOS 26, which
+        // supplies its own): everything measures off the content box.
+        let band = Glass.stripBand
+        let h = bounds.height - band
+        let mid = band + h / 2 - Glass.stripLift
         let pillW = (h * 1.18).rounded()
         let pillH = (h * 0.78).rounded()
         glyfButton.frame = CGRect(x: 5, y: mid - pillH / 2, width: pillW, height: pillH)
@@ -554,7 +557,7 @@ final class GlyfToolbar: UIView {
         if panelTitle != nil {
             var x = left
             if !panelBack.isHidden {
-                panelBack.frame = CGRect(x: x - 4, y: -Glass.stripLift, width: 30, height: h)
+                panelBack.frame = CGRect(x: x - 4, y: band - Glass.stripLift, width: 30, height: h)
                 x += 28
             }
             panelIcon.frame = CGRect(x: x, y: mid - 12, width: 24, height: 24)
@@ -562,7 +565,7 @@ final class GlyfToolbar: UIView {
             let actionW: CGFloat = panelAction.isHidden ? 0 : 44
             panelAction.frame = CGRect(x: bounds.width - actionW - 4, y: mid - 17,
                                        width: actionW, height: 34)
-            panelLabel.frame = CGRect(x: textX, y: -Glass.stripLift,
+            panelLabel.frame = CGRect(x: textX, y: band - Glass.stripLift,
                                       width: bounds.width - textX - 10 - actionW, height: h)
         }
         scroll.frame = CGRect(x: left, y: 0, width: width, height: h)

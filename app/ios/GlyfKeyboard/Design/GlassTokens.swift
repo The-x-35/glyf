@@ -310,7 +310,18 @@ enum Glass {
     /// that band is its top padding: 16 + 36 + the keys' 6pt top gap lands
     /// the first row 58pt under the sheet's edge, against Apple's 51 and our
     /// old 66. The keys are bottom-anchored, so none of them move.
-    static let toolbarHeight: CGFloat = 36
+    /// The strip's own content box — the same on every iOS.
+    static let stripContent: CGFloat = 36
+    /// …but only iOS 26 draws that band. Older iOS puts our top edge right
+    /// against the keyboard's, so the strip reads as cut off (reported from
+    /// a phone on an older iOS). There we add the band ourselves; the
+    /// contents then sit exactly where iOS 26 puts them.
+    static let sheetBand: CGFloat = 16
+    static var stripBand: CGFloat {
+        if #available(iOS 26, *) { return 0 }
+        return sheetBand
+    }
+    static var toolbarHeight: CGFloat { stripContent + stripBand }
     /// The band already pads the strip from above, so its contents sit this
     /// far above centre to look centred between the sheet edge and the keys.
     static let stripLift: CGFloat = 3

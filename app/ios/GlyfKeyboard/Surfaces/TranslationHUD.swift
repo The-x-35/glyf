@@ -164,21 +164,22 @@ final class TranslationHUD: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let h = bounds.height
-        let mid = h / 2 - Glass.stripLift
+        let band = Glass.stripBand
+        let h = bounds.height - band
+        let mid = band + h / 2 - Glass.stripLift
         let pillH: CGFloat = min(30, h - 10)
         let dirW = min(directionButton.intrinsicContentSize.width, bounds.width * 0.42)
         directionButton.frame = CGRect(x: 8, y: mid - pillH / 2, width: dirW, height: pillH)
         directionButton.layer.cornerRadius = pillH / 2
 
-        closeButton.frame = CGRect(x: bounds.width - 32, y: -Glass.stripLift, width: 28, height: h)
+        closeButton.frame = CGRect(x: bounds.width - 32, y: band - Glass.stripLift, width: 28, height: h)
         let replaceW: CGFloat = 84, replaceH: CGFloat = min(30, h - 10)
         replaceButton.frame = CGRect(x: bounds.width - 32 - replaceW - 6,
                                      y: mid - replaceH / 2,
                                      width: replaceW, height: replaceH)
         replaceButton.layer.cornerRadius = replaceH / 2
         let textX = directionButton.frame.maxX + 10
-        textLabel.frame = CGRect(x: textX, y: -Glass.stripLift,
+        textLabel.frame = CGRect(x: textX, y: band - Glass.stripLift,
                                  width: max(20, replaceButton.frame.minX - textX - 8), height: h)
     }
 }

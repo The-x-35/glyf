@@ -204,8 +204,8 @@ final class GlyfBar: UIView {
         let w = bounds.width
         // The strip's own measures (Toolbar.layoutSubviews): the close sits
         // where the g pill does, the prompt where the tools were.
-        let h = Glass.toolbarHeight
-        let mid = h / 2 - Glass.stripLift
+        let h = Glass.stripContent
+        let mid = Glass.stripBand + h / 2 - Glass.stripLift
         let pillW = (h * 1.18).rounded()
         let pillH = (h * 0.78).rounded()
         closeButton.frame = CGRect(x: 5, y: mid - pillH / 2, width: pillW, height: pillH)
