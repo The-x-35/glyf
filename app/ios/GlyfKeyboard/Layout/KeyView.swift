@@ -14,7 +14,7 @@ final class KeyView: UIControl {
 
     var isBound = false { didSet { updateBinding() } }
     /// Set by KeyboardView on shift changes; letters re-render.
-    var shifted = false { didSet { updateFace() } }
+    var shifted = false { didSet { updateFace(); setNeedsLayout() } }   // capitals sit 1pt lower
 
     init(spec: KeySpec) {
         self.spec = spec

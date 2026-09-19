@@ -131,6 +131,7 @@ server/
 │   │   ├── builder.ts      POST /builder/generate, /builder/test; POST/GET/DELETE /glyfs
 │   │   ├── hub.ts          /skills, /skills/creators, /skills/get, /hub/*, /account/*
 │   │   ├── search.ts       POST /search; GET /search/suggest, /search/photo, /search/staticmap, /search/status
+│   │   ├── rates.ts        GET /rates/fiat (ECB per dollar), GET /rates/crypto?symbols= (Jupiter verified tokens)
 │   │   ├── tools.ts        POST /tools/run
 │   │   ├── connector.ts    OAuth broker, /connectors/*, mock calendar
 │   │   ├── gif.ts          GET /gif/search (GIPHY proxy)
@@ -275,6 +276,8 @@ None of this works across multiple server instances. A deployment must run one i
 | 23 | GET | `/search/photo?ref=` | Google Places photo proxy | No | `routes/search.ts` | Card thumbnails (relative URLs; Android prefixes its backend URL, iOS handling not verified) |
 | 24 | GET | `/search/staticmap?lat=&lon=` | Geoapify static map proxy | No | `routes/search.ts` | Android IME act map card |
 | 25 | GET | `/search/status` | Which search providers are live | No | `routes/search.ts` | None found (diagnostic) |
+| 25a | GET | `/rates/fiat` | ECB rates per dollar (Frankfurter, cached 1h) for the strip's money chip | Session | `routes/rates.ts` | iOS keyboard, Android IME (`RatesStore`) |
+| 25b | GET | `/rates/crypto?symbols=SOL,USDC` | Dollar price of the verified Solana token behind a ticker (Jupiter, cached 60s) | Session | `routes/rates.ts` | iOS keyboard, Android IME (cashtags) |
 | 26 | POST | `/tools/run` | Run one keyless tool | No | `routes/tools.ts` | Client methods exist in both keyboards, no current call sites found |
 | 27 | GET | `/connectors/status?deviceId=` | Provider configured/connected state | No | `routes/connector.ts` | Flutter app |
 | 28 | GET | `/oauth/google/start?deviceId=&scopes=` | Google consent URL | No | `routes/connector.ts` | Flutter app |
