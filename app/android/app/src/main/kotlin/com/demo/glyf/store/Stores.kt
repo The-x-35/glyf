@@ -76,6 +76,8 @@ object SettingsStore {
         put("plan", "free")
         // What the strip converts money into; "auto" follows the region.
         put("moneyCurrency", "auto")
+        // Apply a correction on the space, or only offer it in the strip.
+        put("autocorrectApply", true)
         put("appearance", "auto")
         put("keyTheme", "site")
         put("themeBg", "")          // "" | color:#RRGGBB | grad:<id>

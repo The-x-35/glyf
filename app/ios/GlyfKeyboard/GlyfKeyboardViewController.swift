@@ -383,6 +383,35 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// going down and the next — long enough to lose the tap. Every key
     /// schedules this instead, so a burst collapses into a single pass.
     private var candidatesWork: DispatchWorkItem?
+    /// When the settings file was last stat'ed (textDidChange throttles it).
+    private var lastSettingsCheck: CFTimeInterval = 0
+    /// Slices of the last suggestion pass, for Perf.
+    private var tChip: Double = 0
+    private var tEngine: Double = 0
+    private var tStrip: Double = 0
+    /// The clipboard offer, and when it was last worked out.
+    private var lastClipProbe: CFTimeInterval = 0
+    private var cachedPaste: String?
+
+    /// Whether to offer what was copied. Measured at 14-20ms a call: the
+    /// probe is a cross-process read of UIPasteboard plus two App Group
+    /// files, and it used to run on every keystroke with an empty field.
+    /// Nobody's clipboard changes while they are typing, so it is worked
+    /// out once a second and remembered in between.
+    private func pasteOffer(tailEmpty: Bool) -> String? {
+        guard hasFullAccess, tailEmpty else { return nil }
+        let now = CACurrentMediaTime()
+        guard now - lastClipProbe > 1.0 else { return cachedPaste }
+        lastClipProbe = now
+        // History only knows a copy once it has been read; a newer one shows
+        // as an offer instead of the older text.
+        cachedPaste = ClipContext.isFresh()
+            ? (ClipboardStore.pasteboardHasNewContent()
+                ? "Tap to paste what you copied"
+                : (ClipboardStore.load().first?.text ?? "Tap to paste what you copied"))
+            : nil
+        return cachedPaste
+    }
 
     private func scheduleCandidates() {
         candidatesWork?.cancel()
@@ -706,12 +735,22 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
-        // The app may have changed settings while we are up (its tour does).
-        if SettingsStore.reloadIfChanged() { keyboardView.refreshBindings() }
+        let t0 = Perf.mark()
+        // The app may have changed settings while we are up (its tour does),
+        // but that is a stat of a file on disk and this runs on EVERY
+        // keystroke — a few times a second is as often as it can matter.
+        if CACurrentMediaTime() - lastSettingsCheck > 0.5 {
+            lastSettingsCheck = CACurrentMediaTime()
+            if SettingsStore.reloadIfChanged() { keyboardView.refreshBindings() }
+        }
         // Field flavor can change per focus (email → number pad → text).
         keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
         syncAutoShift()
-        updateCandidates()
+        // Scheduled, not immediate: this fires after our own insert too, so
+        // running the engine and the strip here undid the coalescing that
+        // kbInsert was careful to do.
+        scheduleCandidates()
+        Perf.say("textDidChange=\(Perf.ms(t0))ms")
         // Secure-field entry/exit changes whether the HUD may show (§11.9).
         if surface == .none, heightConstraint?.constant != totalHeight {
             applySurfaceLayout(animated: false)
@@ -1061,11 +1100,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // offer itself (tapping reads, which is the moment iOS asks).
         // History only knows a copy once it has been read; a newer one shows
         // as an offer instead of the older text.
-        let paste: String? = (hasFullAccess && tail.isEmpty && ClipContext.isFresh())
-            ? (ClipboardStore.pasteboardHasNewContent()
-                ? "Tap to paste what you copied"
-                : (ClipboardStore.load().first?.text ?? "Tap to paste what you copied"))
-            : nil
+        let paste = pasteOffer(tailEmpty: tail.isEmpty)
         var chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
                               rates: RatesStore.shared.snapshot())
@@ -1185,9 +1220,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         candidatesWork?.cancel()
         candidatesWork = nil
         let tC = Perf.mark()
-        defer { Perf.say("candidates=\(Perf.ms(tC))ms") }
+        defer { Perf.say("candidates=\(Perf.ms(tC))ms chip=\(self.tChip)ms engine=\(self.tEngine)ms strip=\(self.tStrip)ms") }
         defer { applyTourHint() }         // the strip changed under the ring
-        if updateSmartChip() { return }   // one chip owns the strip
+        let tCh = Perf.mark()
+        let chipOwns = updateSmartChip()
+        tChip = Perf.ms(tCh)
+        if chipOwns { return }            // one chip owns the strip
         let policy = typingPolicy
         guard SettingsStore.current.candidates, policy.contains(.suggestions), surface == .none else {
             toolbar.showSuggestions([])
@@ -1208,10 +1246,15 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return
         }
         lastCorrection = nil
-        guard let s = suggestions(for: word, before: before, policy: policy) else {
+        let tE = Perf.mark()
+        let sMaybe = suggestions(for: word, before: before, policy: policy)
+        tEngine = Perf.ms(tE)
+        guard let s = sMaybe else {
             toolbar.showSuggestions([])
             return
         }
+        let tSt = Perf.mark()
+        defer { tStrip = Perf.ms(tSt) }
         let others = s.alternatives.map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
         if let fix = s.autocorrect {
             toolbar.showSuggestions([.init(text: word, kind: .literal), .init(text: fix, kind: .correction)]
@@ -1259,9 +1302,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
         var kept = word
         if policy.contains(.autocorrect),
            let fix = suggestions(for: word, before: before, policy: policy)?.autocorrect, fix != word {
-            replaceCurrentWord(with: fix)
-            lastCorrection = Correction(original: word, replacement: fix, fromEngine: true)
-            kept = fix
+            // "Correct automatically" off: the word stands exactly as typed.
+            // The strip is already offering the fix, so a tap still takes it
+            // — nothing is changed behind the writer's back.
+            if SettingsStore.current.autocorrectApply != false {
+                replaceCurrentWord(with: fix)
+                lastCorrection = Correction(original: word, replacement: fix, fromEngine: true)
+                kept = fix
+            }
         }
         let autoCapitalized = sentenceStart && SettingsStore.current.autocapitalize
             && textDocumentProxy.autocapitalizationType != UITextAutocapitalizationType.none

@@ -42,6 +42,11 @@ struct GlyfSettings: Codable, Equatable {
     /// The currency the strip converts money into ("INR", "USD", …), or
     /// "auto" to follow where the phone is. The person picks it in the app.
     var moneyCurrency: String? = "auto"
+    /// Whether a correction is applied on the space, or only offered in the
+    /// strip. Off is the "don't change my words" setting: iOS gives no
+    /// third-party keyboard the underline Apple draws, so the honest version
+    /// is to leave the word alone and let a tap take the fix.
+    var autocorrectApply: Bool? = true
     /// Keyboard appearance: "auto" follows the host app (Apple behavior);
     /// "light"/"dark" force it.
     var appearance: String? = "auto"

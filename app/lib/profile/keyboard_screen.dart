@@ -140,6 +140,9 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           _label('Typing'),
           _card([
             _switch('Autocorrect', 'autocorrect'),
+            // Off = the word stays exactly as typed and the fix waits in the
+            // strip. (iOS gives no third-party keyboard Apple's underline.)
+            _switch('Correct automatically', 'autocorrectApply', fallback: true),
             _switch('Suggestions', 'candidates'),
             _switch('Auto-capitalize', 'autocapitalize'),
             _switch('Double-space for period', 'periodShortcut'),

@@ -2551,7 +2551,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             var kept = word
             if (policy and TypingEngine.AUTOCORRECT != 0) {
                 val fix = engineSuggestions(word, before, policy)?.autocorrect
-                if (fix != null && fix != word) {
+                // "Correct automatically" off: the word stands exactly as
+                // typed and the fix waits in the strip for a tap (iOS twin).
+                if (fix != null && fix != word && settings.optBoolean("autocorrectApply", true)) {
                     ic.beginBatchEdit()
                     ic.deleteSurroundingText(word.length, 0)
                     ic.commitText(fix, 1)
