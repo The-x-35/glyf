@@ -240,8 +240,29 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     // MARK: Touch routing
 
+    /// The key under a touch. Apple's keyboard has NO dead space: a finger
+    /// that lands in a gap, or a hair outside the outermost key, still types
+    /// the nearest one. We used to drop those touches — with a 12pt row gap
+    /// and only 5pt of give there was a dead band between every row, and at
+    /// speed fingers land there constantly. That was the "missing keys".
     private func key(at point: CGPoint) -> KeyView? {
-        keys.first { $0.frame.insetBy(dx: -3, dy: -5).contains(point) }
+        if let hit = keys.first(where: { $0.frame.insetBy(dx: -3, dy: -5).contains(point) }) {
+            return hit
+        }
+        // Nothing directly under it: take the closest key instead of losing
+        // the keystroke.
+        var best: KeyView?
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for kv in keys {
+            let r = kv.frame
+            let dx = max(r.minX - point.x, 0, point.x - r.maxX)
+            let dy = max(r.minY - point.y, 0, point.y - r.maxY)
+            let d = dx * dx + dy * dy
+            if d < bestDistance { bestDistance = d; best = kv }
+        }
+        // …but only within half a key. A tap on the strip is not a keystroke.
+        let reach = max(keyPitch, 1) / 2
+        return bestDistance <= reach * reach ? best : nil
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {

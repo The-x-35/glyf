@@ -13,7 +13,7 @@ import os.log
 enum Perf {
     /// Flip off before shipping; the reads themselves are nearly free but
     /// the log line is not worth paying for in someone's pocket.
-    static let on = true
+    static let on = false
     private static let log = Logger(subsystem: "so.glyf.keyboard", category: "perf")
 
     @inline(__always) static func mark() -> CFAbsoluteTime {

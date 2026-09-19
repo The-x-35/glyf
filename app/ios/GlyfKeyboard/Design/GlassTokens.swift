@@ -23,7 +23,10 @@ enum KeyMetrics {
     /// Gap between keys in a row. Constant.
     static let hGap: CGFloat = 6
     /// Row pitch minus key height. Constant.
-    static let vGap: CGFloat = 12
+    /// 11, not 12: measured against the system keyboard on the same screen,
+    /// its keys stand 43pt in a 54pt row and ours stood 42. The extra point
+    /// went into the gap, which is the space that reads as too loose.
+    static let vGap: CGFloat = 11
     /// Plus/Max-class phones (414pt and wider) get the taller key rows.
     static let wideClassWidth: CGFloat = 414
 
