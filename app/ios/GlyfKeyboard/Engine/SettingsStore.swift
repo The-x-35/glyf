@@ -225,6 +225,13 @@ enum SettingsStore {
             for (key, target) in GlyfSettings.defaultBindings where s.bindings[key] == nil {
                 s.bindings[key] = target
             }
+            // A fresh install gets two holds (V and C); someone upgrading from
+            // the canned glyfs keeps the translate HUD on T, which is where
+            // they have been reaching for it. Android's v6 does the same.
+            if !s.bindings.values.contains("surface:translate-hud"),
+               s.bindings["t"] == nil {
+                s.bindings["t"] = "surface:translate-hud"
+            }
             s.schemaVersion = 6
         }
         // v6 → v7: the vault moves to V, the letter it is named for.

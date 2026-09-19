@@ -15,7 +15,9 @@ import org.json.JSONObject
 object ClipboardStore {
     const val FILE = "clipboard.json"
     const val MAX_ITEMS = 20
-    const val EXPIRY_MS = 60 * 60 * 1000L
+    /** Unpinned copies keep for two days; pinning is what makes one
+     *  permanent (prune never drops a pinned item, whatever its age). */
+    const val EXPIRY_MS = 48 * 60 * 60 * 1000L
 
     data class Item(val text: String, val ts: Long, val pinned: Boolean)
 

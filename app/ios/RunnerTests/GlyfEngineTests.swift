@@ -44,12 +44,24 @@ final class GlyfEngineTests: XCTestCase {
         }
         XCTAssertEqual(items.count, ClipboardStore.maxItems)
 
-        // Pinned survives expiry; unpinned older than 1h is dropped.
-        var aged = items.map { ClipItem(text: $0.text, ts: now.addingTimeInterval(-4000), pinned: false) }
+        // A day-old copy is still there to reach for: two days is the window.
+        let yesterday = items.map {
+            ClipItem(text: $0.text, ts: now.addingTimeInterval(-24 * 3600), pinned: false)
+        }
+        XCTAssertEqual(ClipboardStore.prune(yesterday, now: now).count, items.count)
+
+        // Past it, only what was pinned survives — pinning is what makes a
+        // copy permanent, and it outlives any age.
+        var aged = items.map {
+            ClipItem(text: $0.text, ts: now.addingTimeInterval(-49 * 3600), pinned: false)
+        }
         aged[3].pinned = true
         let pruned = ClipboardStore.prune(aged, now: now)
         XCTAssertEqual(pruned.count, 1)
         XCTAssertTrue(pruned[0].pinned)
+        let ancient = [ClipItem(text: "kept", ts: now.addingTimeInterval(-400 * 24 * 3600),
+                                pinned: true)]
+        XCTAssertEqual(ClipboardStore.prune(ancient, now: now).count, 1)
     }
 
     func testClipboardRefusesSecretsAndDuplicates() {
@@ -563,8 +575,8 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.chip(for: "$13", fields: []))
         XCTAssertTrue(Smart.looksLikeMoney("$13"))
         XCTAssertFalse(Smart.looksLikeMoney("flight AI 2021"))
-        XCTAssertEqual(Smart.cashtag("send $sol"), "SOL")
-        XCTAssertNil(Smart.cashtag("$13"))
+        XCTAssertEqual(Smart.cashtag(in: "send $sol"), "SOL")
+        XCTAssertNil(Smart.cashtag(in: "$13"))
         XCTAssertNil(Smart.chip(for: "$usdc", fields: [], rates: rates), "a ticker with no price yet")
         // A sum still wins over a conversion; a dollar amount at home stays quiet.
         XCTAssertEqual(Smart.chip(for: "$10*3", fields: [], rates: rates), .calc(value: "$30", hasEquals: false))

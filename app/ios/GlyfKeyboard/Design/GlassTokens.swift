@@ -13,19 +13,31 @@ import UIKit
 /// what makes Glyf feel like the keyboard people already know.
 ///
 ///     width  margin  gap  key     pitch   row     key height
-///     390    6.67    6    32.33   38.33   53.8    42
-///     402    6.67    6    33.47   39.47   53.8    42
-///     420    6.67    6    35.27   41.27   55.9    44
-///     440    6.67    6    37.27   43.27   55.9    44
+///     390    6.5     6    32.30   38.30   54      43
+///     402    6.5     6    33.50   39.50   54      43
+///     420    6.5     6    35.30   41.30   56      45
+///     440    6.5     6    37.30   43.30   56      45
+///
+/// The row and key-height columns were re-measured on 402 and 440 and came
+/// back whole: 54/43 and 56/45, a constant 11pt gap. The 53.8/42 and 55.9/44
+/// that used to sit here were a measuring artifact, not the keyboard.
 enum KeyMetrics {
     /// Left and right edge inset. Constant across every phone width.
-    static let sideMargin: CGFloat = 6.67
+    /// 6.5 rather than 6.67: it is what the system keyboard measures, and it
+    /// makes keyWidth land on Apple's to the pixel (33.5 at 402, 37.3 at 440).
+    static let sideMargin: CGFloat = 6.5
     /// Gap between keys in a row. Constant.
     static let hGap: CGFloat = 6
-    /// Row pitch minus key height. Constant.
-    /// 11, not 12: measured against the system keyboard on the same screen,
-    /// its keys stand 43pt in a 54pt row and ours stood 42. The extra point
-    /// went into the gap, which is the space that reads as too loose.
+    /// Row pitch minus key height. Constant across widths, as on Apple's.
+    ///
+    ///     402pt  key 43.00  pitch 54.0      440pt  key 45.00  pitch 56.0
+    ///
+    /// Both give a gap of exactly 11. Measure this by sweeping every column
+    /// across a key and keeping the LONGEST vertical run: a single column near
+    /// the key's edge is cut short by the corner radius (reads ~42.7), and a
+    /// brightness-density scan across the row is cut short again (reads ~42.3).
+    /// Either one invites "re-correcting" this constant to a value the system
+    /// keyboard does not use -- it has been wrong both ways already.
     static let vGap: CGFloat = 11
     /// Plus/Max-class phones (414pt and wider) get the taller key rows.
     static let wideClassWidth: CGFloat = 414

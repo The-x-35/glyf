@@ -6,12 +6,22 @@ import XCTest
 /// keys were found by colour, and centres/widths read in points.
 final class KeyMetricsTests: XCTestCase {
 
-    /// width → (key width, shift width, row pitch), Apple, portrait, iOS 26.
-    private let measured: [(width: CGFloat, key: CGFloat, shift: CGFloat, rowPitch: CGFloat)] = [
-        (390, 32.33, 43.66, 53.78),
-        (402, 33.47, 45.30, 53.77),
-        (420, 35.33, 47.66, 55.89),
-        (440, 37.33, 50.00, 55.89),
+    /// width → (key width, shift width, row pitch, key height), Apple,
+    /// portrait, iOS 26. The 402 and 440 rows are direct measurements; 390 and
+    /// 420 follow from them, since margin, gap and the 11pt row gap are all
+    /// constant and only the width class changes the row.
+    ///
+    /// Measure a key by sweeping EVERY column across it and keeping the
+    /// longest vertical run. One column near the edge is cut short by the
+    /// corner radius, and a brightness-density scan across the row is cut
+    /// short again; both under-read the height by roughly a point and have
+    /// twice sent this file's numbers the wrong way.
+    private let measured: [(width: CGFloat, key: CGFloat, shift: CGFloat,
+                            rowPitch: CGFloat, keyHeight: CGFloat)] = [
+        (390, 32.30, 43.66, 54, 43),
+        (402, 33.50, 45.30, 54, 43),
+        (420, 35.30, 47.66, 56, 45),
+        (440, 37.30, 50.00, 56, 45),
     ]
 
     func testKeyWidthMatchesTheSystemKeyboard() {
@@ -31,11 +41,30 @@ final class KeyMetricsTests: XCTestCase {
     /// Plus/Max-class phones get taller rows; everything narrower does not.
     func testRowPitchStepsUpOnWidePhones() {
         for m in measured {
-            XCTAssertEqual(KeyMetrics.rowPitch(width: m.width), m.rowPitch, accuracy: 0.3,
+            XCTAssertEqual(KeyMetrics.rowPitch(width: m.width), m.rowPitch, accuracy: 0.05,
                            "row pitch at \(m.width)pt")
         }
         XCTAssertEqual(KeyMetrics.keysHeight(width: 402), 216, accuracy: 0.001)
         XCTAssertEqual(KeyMetrics.keysHeight(width: 440), 224, accuracy: 0.001)
+    }
+
+    /// A key stands `rowPitch - vGap` tall. This is the number that has drifted
+    /// twice, in both directions, so it is pinned per width class: 43 on a
+    /// standard phone and 45 on the wide class, from one constant 11pt gap.
+    func testKeyHeightMatchesTheSystemKeyboard() {
+        for m in measured {
+            let h = KeyMetrics.rowPitch(width: m.width) - KeyMetrics.vGap
+            XCTAssertEqual(h, m.keyHeight, accuracy: 0.05,
+                           "key height at \(m.width)pt")
+        }
+    }
+
+    /// The gap between rows is one number on every phone, as on Apple's.
+    func testRowGapIsConstantAcrossWidthClasses() {
+        for m in measured {
+            XCTAssertEqual(m.rowPitch - m.keyHeight, KeyMetrics.vGap, accuracy: 0.05,
+                           "row gap at \(m.width)pt")
+        }
     }
 
     /// The whole row must land on the screen exactly: margin, ten keys, nine

@@ -1,6 +1,6 @@
 import UIKit
 
-/// §6.1 clipboard manager: last 20 items, pinnable, 1h expiry unless pinned,
+/// §6.1 clipboard manager: last 20 items, pinnable, 48h expiry unless pinned,
 /// App Group storage, refuses secret-shaped content (SecretScanner).
 struct ClipItem: Codable, Equatable {
     var text: String
@@ -11,7 +11,9 @@ struct ClipItem: Codable, Equatable {
 enum ClipboardStore {
     static let fileName = "clipboard.json"
     static let maxItems = 20
-    static let expiry: TimeInterval = 3600
+    /// Unpinned copies keep for two days; pinning is what makes one permanent
+    /// (`prune` never drops a pinned item, whatever its age).
+    static let expiry: TimeInterval = 48 * 3600
 
     static func load(now: Date = Date()) -> [ClipItem] {
         guard let dir = AppGroupStore.bridgeDir,
