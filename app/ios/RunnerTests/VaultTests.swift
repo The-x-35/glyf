@@ -20,6 +20,42 @@ final class VaultTests: XCTestCase {
         VaultStore(baseDir: tmp, key: key)
     }
 
+    // MARK: A vault written before a field existed still opens
+
+    /// Adding a property to `Vault` must never empty vaults written before
+    /// it. The synthesized decoder does not use default values, so a missing
+    /// key throws, `load()` swallows it and returns nothing — and the next
+    /// save writes that nothing back. `images` shipped exactly that bug.
+    func testVaultWrittenWithoutNewerKeysStillDecodes() throws {
+        let key = SymmetricKey(size: .bits256)
+        // A vault file from before `images` existed: the key is simply absent.
+        let old = #"{"fields":[{"id":"1","kind":"name","label":"Name","value":"Arpit Singh"}],"combos":[],"snippets":[]}"#
+        let sealed = try AES.GCM.seal(Data(old.utf8), using: key)
+        try sealed.combined!.write(to: tmp.appendingPathComponent(VaultStore.fileName))
+
+        let s = store(key: key)
+        let vault = s.load()
+        XCTAssertEqual(vault.fields.count, 1, "an older vault must still open")
+        XCTAssertEqual(vault.fields.first?.value, "Arpit Singh")
+        XCTAssertTrue(vault.images.isEmpty)
+        XCTAssertFalse(s.loadFailed)
+    }
+
+    /// A vault that exists but cannot be read must never be saved over.
+    func testUnreadableVaultIsNeverOverwritten() throws {
+        let url = tmp.appendingPathComponent(VaultStore.fileName)
+        try Data("not a sealed box".utf8).write(to: url)
+        let before = try Data(contentsOf: url)
+
+        let s = store()
+        XCTAssertTrue(s.load().fields.isEmpty)
+        XCTAssertTrue(s.loadFailed, "an unreadable vault is not an empty one")
+        XCTAssertFalse(s.save(Vault()), "refuses to write over it")
+        XCTAssertNotNil(s.upsertField(id: nil, kind: "name", label: "N", value: "V"),
+                        "an edit is refused rather than silently losing the vault")
+        XCTAssertEqual(try Data(contentsOf: url), before, "bytes untouched")
+    }
+
     // MARK: Blocked types are BLOCKED (§6.7, §11.3)
 
     func testBlockedFieldTypes() {

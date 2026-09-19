@@ -40,6 +40,34 @@ struct Vault: Codable, Equatable {
     var combos: [VaultCombo] = []
     var snippets: [VaultSnippet] = []
     var images: [VaultImage] = []
+
+    init(fields: [VaultField] = [], combos: [VaultCombo] = [],
+         snippets: [VaultSnippet] = [], images: [VaultImage] = []) {
+        self.fields = fields
+        self.combos = combos
+        self.snippets = snippets
+        self.images = images
+    }
+
+    /// Decode every key as optional, defaulting to empty.
+    ///
+    /// The synthesized decoder does NOT fall back to the default values above
+    /// — a key missing from the file throws. `load()` swallows that with
+    /// `try?` and hands back an EMPTY vault, so ADDING A FIELD TO THIS STRUCT
+    /// SILENTLY EMPTIES EVERY VAULT WRITTEN BEFORE IT, and the next save
+    /// writes that emptiness back over the real one. `images` did exactly
+    /// that. Decoding key by key is what stops the next addition repeating it.
+    enum CodingKeys: String, CodingKey { case fields, combos, snippets, images }
+
+    /// `Swift.Decoder` qualified: Glyf has its own `Decoder` (the typing
+    /// engine's), which otherwise wins the name here.
+    init(from decoder: Swift.Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fields = try c.decodeIfPresent([VaultField].self, forKey: .fields) ?? []
+        combos = try c.decodeIfPresent([VaultCombo].self, forKey: .combos) ?? []
+        snippets = try c.decodeIfPresent([VaultSnippet].self, forKey: .snippets) ?? []
+        images = try c.decodeIfPresent([VaultImage].self, forKey: .images) ?? []
+    }
 }
 
 /// §6.7/§11.3 hard blocks — pure logic, unit-tested.
@@ -151,24 +179,42 @@ final class VaultStore {
 
     // MARK: - Load / save
 
+    /// True when a vault file EXISTS but could not be read. An empty vault
+    /// then means "we could not open it", not "there is nothing in it" — and
+    /// saving over it would destroy what is still there.
+    private(set) var loadFailed = false
+
     func load() -> Vault {
         if let cached { return cached }
-        guard let root, let key = loadOrCreateKey(),
-              let blob = try? Data(contentsOf: root.appendingPathComponent(Self.fileName)),
-              let box = try? AES.GCM.SealedBox(combined: blob),
-              let plain = try? AES.GCM.open(box, using: key),
-              let vault = try? JSONDecoder().decode(Vault.self, from: plain)
-        else {
+        guard let root else { return Vault() }
+        let url = root.appendingPathComponent(Self.fileName)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            loadFailed = false // genuinely nothing saved yet
             let empty = Vault()
             cached = empty
             return empty
         }
+        guard let key = loadOrCreateKey(),
+              let blob = try? Data(contentsOf: url),
+              let box = try? AES.GCM.SealedBox(combined: blob),
+              let plain = try? AES.GCM.open(box, using: key),
+              let vault = try? JSONDecoder().decode(Vault.self, from: plain)
+        else {
+            // Something IS stored and we could not read it. Do not cache the
+            // emptiness — a later load, after a fix or an unlock, must get
+            // another chance at the real thing.
+            loadFailed = true
+            return Vault()
+        }
+        loadFailed = false
         cached = vault
         return vault
     }
 
     @discardableResult
     func save(_ vault: Vault) -> Bool {
+        // Never write over a vault we failed to read.
+        guard !loadFailed else { return false }
         guard let root, let key = loadOrCreateKey(),
               let plain = try? JSONEncoder().encode(vault),
               let box = try? AES.GCM.seal(plain, using: key),
@@ -181,7 +227,10 @@ final class VaultStore {
         } catch { return false }
     }
 
-    func invalidate() { cached = nil }
+    func invalidate() {
+        cached = nil
+        loadFailed = false // a fresh attempt deserves a fresh verdict
+    }
 
     // MARK: - Mutations (validated — the blocked types are BLOCKED, §6.7)
 

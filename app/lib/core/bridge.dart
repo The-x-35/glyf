@@ -188,6 +188,27 @@ abstract final class GlyfBridge {
   static Future<void> vaultDeleteField(String id) =>
       _call<bool>('vaultDeleteField', {'id': id});
 
+  /// Keeps a picture in the vault, sealed with the same key as everything
+  /// else in it. The bytes go across already encoded (JPEG/PNG).
+  static Future<({bool ok, String? error})> vaultAddImage(
+          Uint8List bytes, {String label = 'Image'}) =>
+      _okCall('vaultAddImage', {'bytes': bytes, 'label': label});
+
+  /// Shows the system photo picker and keeps what is chosen. The picker runs
+  /// in its own process, so this asks for no photo-library permission — the
+  /// app only ever receives the one picture. `ok: false` with a null error
+  /// means the person simply cancelled.
+  static Future<({bool ok, String? error})> vaultPickImage(
+          {String label = 'Image'}) =>
+      _okCall('vaultPickImage', {'label': label});
+
+  /// The decrypted bytes of one vault image, or null if it cannot be opened.
+  static Future<Uint8List?> vaultImageData(String id) =>
+      _call<Uint8List>('vaultImageData', {'id': id});
+
+  static Future<void> vaultDeleteImage(String id) =>
+      _call<bool>('vaultDeleteImage', {'id': id});
+
   static Future<({bool ok, String? error})> vaultUpsertCombo({
     String? id,
     required String label,

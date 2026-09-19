@@ -1,6 +1,7 @@
 import Contacts
 import Flutter
 import Photos
+import PhotosUI
 import UIKit
 
 /// Native side of the `so.glyf/bridge` MethodChannel.
@@ -12,6 +13,8 @@ final class GlyfBridge {
 
     private var channel: FlutterMethodChannel?
     private(set) var lastDeepLink: String?
+    /// Held only while the photo picker is up; it owns the reply.
+    private var picking: ImagePickerCoordinator?
 
     func attach(messenger: FlutterBinaryMessenger) {
         let channel = FlutterMethodChannel(name: "so.glyf/bridge", binaryMessenger: messenger)
@@ -172,6 +175,31 @@ final class GlyfBridge {
             result(["ok": error == nil, "error": error as Any])
         case "vaultDeleteField":
             VaultStore.shared.deleteField(id: (call.arguments as? [String: Any])?["id"] as? String ?? "")
+            result(true)
+        // Images live beside the fields, sealed with the same key but each in
+        // its own file — the app sends raw bytes and gets raw bytes back.
+        case "vaultAddImage":
+            let a = call.arguments as? [String: Any]
+            guard let data = (a?["bytes"] as? FlutterStandardTypedData)?.data else {
+                result(["ok": false, "error": "No image data"])
+                return
+            }
+            let error = VaultStore.shared.addImage(
+                data: data, label: a?["label"] as? String ?? "Image")
+            result(["ok": error == nil, "error": error as Any])
+        case "vaultPickImage":
+            pickImageIntoVault(label: (call.arguments as? [String: Any])?["label"] as? String
+                                      ?? "Image", result: result)
+        case "vaultImageData":
+            let id = (call.arguments as? [String: Any])?["id"] as? String ?? ""
+            if let data = VaultStore.shared.imageData(id: id) {
+                result(FlutterStandardTypedData(bytes: data))
+            } else {
+                result(nil)
+            }
+        case "vaultDeleteImage":
+            VaultStore.shared.deleteImage(
+                id: (call.arguments as? [String: Any])?["id"] as? String ?? "")
             result(true)
         case "vaultUpsertCombo":
             let a = call.arguments as? [String: Any]
@@ -396,5 +424,69 @@ final class GlyfBridge {
               let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
         else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+}
+
+// MARK: - Keeping a picture in the vault
+
+extension GlyfBridge {
+    /// Shows the system photo picker and seals whatever is chosen into the
+    /// vault. `PHPickerViewController` runs in its own process and hands back
+    /// only the picked image, so this needs NO photo-library permission and
+    /// no Info.plist entry — the app never gets to see the library.
+    func pickImageIntoVault(label: String, result: @escaping FlutterResult) {
+        guard let root = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?.rootViewController
+        else {
+            result(["ok": false, "error": "Nowhere to show the picker"])
+            return
+        }
+        var config = PHPickerConfiguration()
+        config.filter = .images
+        config.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: config)
+        let coordinator = ImagePickerCoordinator(label: label) { [weak self] ok, error in
+            self?.picking = nil
+            result(["ok": ok, "error": error as Any])
+        }
+        picker.delegate = coordinator
+        picking = coordinator
+        root.present(picker, animated: true)
+    }
+}
+
+/// PHPickerViewControllerDelegate needs an NSObject, which GlyfBridge is not.
+final class ImagePickerCoordinator: NSObject, PHPickerViewControllerDelegate {
+    private let label: String
+    private let done: (Bool, String?) -> Void
+
+    init(label: String, done: @escaping (Bool, String?) -> Void) {
+        self.label = label
+        self.done = done
+    }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        guard let provider = results.first?.itemProvider else {
+            done(false, nil) // cancelled: nothing to report
+            return
+        }
+        guard provider.canLoadObject(ofClass: UIImage.self) else {
+            done(false, "That image could not be read")
+            return
+        }
+        provider.loadObject(ofClass: UIImage.self) { [label, done] object, _ in
+            // JPEG at 0.85 keeps a screenshot's text crisp and lands a photo
+            // well under the vault's per-image cap, where a PNG often would not.
+            guard let image = object as? UIImage,
+                  let data = image.jpegData(compressionQuality: 0.85) else {
+                DispatchQueue.main.async { done(false, "That image could not be read") }
+                return
+            }
+            let error = VaultStore.shared.addImage(data: data, label: label)
+            DispatchQueue.main.async { done(error == nil, error) }
+        }
     }
 }

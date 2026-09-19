@@ -265,6 +265,21 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         return bestDistance <= reach * reach ? best : nil
     }
 
+    /// Where a touch may wander before it stops counting as this key's.
+    ///
+    /// Anchored to WHERE THE FINGER LANDED as well as to the key. A touch
+    /// that came down in a gap was snapped to the nearest key by `key(at:)`,
+    /// so it is legitimately OUTSIDE that key's frame — measuring only from
+    /// the frame threw it away on the first tremor, and a real finger always
+    /// moves. `touchesBegan` accepted the keystroke and `touchesMoved` then
+    /// silently dropped it: that is the missing key, and it got worse the
+    /// faster you typed.
+    private func slack(_ st: TouchState, dx: CGFloat, dy: CGFloat) -> CGRect {
+        st.key.frame.insetBy(dx: -dx, dy: -dy)
+            .union(CGRect(x: st.start.x - dx, y: st.start.y - dy,
+                          width: dx * 2, height: dy * 2))
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             let p = touch.location(in: self)
@@ -341,14 +356,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 st.space = gesture
                 perform(effects, for: st, event: event)
             case .pending:
-                if !st.key.frame.insetBy(dx: -14, dy: -16).contains(p) {
+                if !slack(st, dx: 14, dy: 16).contains(p) {
                     st.holdTimer?.invalidate()
                     st.key.cancelChargeRing()
                     st.key.setPressed(false)
                     st.mode = .slidAway
                 }
             case .deleteRepeat:
-                if !st.key.frame.insetBy(dx: -20, dy: -24).contains(p) {
+                if !slack(st, dx: 20, dy: 24).contains(p) {
                     st.repeatTimer?.invalidate()
                 }
             default:

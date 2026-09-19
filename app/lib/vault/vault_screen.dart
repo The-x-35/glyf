@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -64,6 +65,42 @@ class _VaultScreenState extends State<VaultScreen> {
 
   List<dynamic> get _fields => (_vault['fields'] as List?) ?? [];
   List<dynamic> get _snippets => (_vault['snippets'] as List?) ?? [];
+  List<dynamic> get _images => (_vault['images'] as List?) ?? [];
+
+  /// The system picker runs out of process, so nothing here asks for photo
+  /// access — the app is handed the one picture and never sees the library.
+  Future<void> _addImage() async {
+    final res = await GlyfBridge.vaultPickImage();
+    if (!mounted) return;
+    if (!res.ok && res.error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(res.error!)));
+    }
+    if (res.ok) _refresh();
+  }
+
+  Widget _imageTile(Map<String, dynamic> img) {
+    final id = img['id'] as String? ?? '';
+    return GestureDetector(
+      onLongPress: () async {
+        await GlyfBridge.vaultDeleteImage(id);
+        _refresh();
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: FutureBuilder<Uint8List?>(
+          future: GlyfBridge.vaultImageData(id),
+          builder: (_, snap) {
+            final bytes = snap.data;
+            if (bytes == null) {
+              return Container(color: Glass.card);
+            }
+            return Image.memory(bytes, fit: BoxFit.cover);
+          },
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -131,6 +168,22 @@ class _VaultScreenState extends State<VaultScreen> {
                   },
                 ),
               if (_snippets.isEmpty) _addRow('Add shorthand', () => _editSnippet(null)),
+
+              const SizedBox(height: 18),
+              _sectionHeader('Images', onAdd: _addImage),
+              if (_images.isNotEmpty)
+                GridView.count(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    for (final img in _images)
+                      _imageTile(img as Map<String, dynamic>),
+                  ],
+                ),
+              if (_images.isEmpty) _addRow('Keep an image', _addImage),
             ],
           ),
         ),
