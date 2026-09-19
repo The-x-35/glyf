@@ -21,6 +21,21 @@ const clock = () => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: 
 
 type Props = { scenario: Scenario; capture?: boolean };
 
+/** The screen each chat is about: a capture stops here, with the Glyf surface open. */
+const MONEY_SHOT: Record<string, (k: KbSnapshot) => boolean> = {
+  neha: (k) => k.act === "rewrite",
+  sakshi: (k) => k.panel === "search" && k.tab === "maps" && k.results > 0,
+  kabir: (k) => k.panel === "search" && k.tab === "google" && k.results > 0,
+  mumma: (k) => k.panel === "vault",
+  zoya: (k) => k.mine === "upi",
+  rohan: (k) => /definately$/i.test(k.text),
+  sofia: (k) => k.panel === "translate" && k.translation === "hasta mañana",
+  semi: (k) => k.wallet?.tab === "send" && k.wallet.stage === "form",
+};
+
+/** How long the live autoplay lingers on an open Glyf screen before acting. */
+const dwell = (k: KbSnapshot | null) => (k && (k.panel || k.act || k.wallet || k.calc || k.mine) ? 1700 : 0);
+
 export default function LiveChat({ scenario, capture = false }: Props) {
   const [run, setRun] = useState(0);
   const [mode, setMode] = useState<"auto" | "you">("auto");
@@ -72,6 +87,8 @@ function Run({ sc, capture, onTakeover, onLoop }: { sc: Scenario; capture: boole
   const [ghost, setGhost] = useState({ x: 0, y: 0, show: false, press: false });
   const [tick, setTick] = useState(0);
   const acted = useRef(false);
+  const frozen = useRef(false);
+  const snapRef = useRef<KbSnapshot | null>(null);
   const piloting = useRef(false);
   const pending = useRef<Msg | null>(null);
   const autoAt = useRef(0);
@@ -154,7 +171,10 @@ function Run({ sc, capture, onTakeover, onLoop }: { sc: Scenario; capture: boole
     })();
   }
 
+  const started = useRef(false);
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     seedNow();
     void startBeat(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,7 +184,7 @@ function Run({ sc, capture, onTakeover, onLoop }: { sc: Scenario; capture: boole
   useEffect(() => {
     if (!th.done || acted.current || capture) return;
     setGhost((g) => ({ ...g, show: false }));
-    const id = window.setTimeout(onLoop, 4200);
+    const id = window.setTimeout(onLoop, 3000);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [th.done]);
@@ -191,6 +211,8 @@ function Run({ sc, capture, onTakeover, onLoop }: { sc: Scenario; capture: boole
   const coach = !th.waiting && !th.done && snap && !snap.auto ? beatNow.coach(snap, { menu, copied: copied?.text ?? null }) : null;
   const coachRef = useRef(coach);
   coachRef.current = coach;
+  snapRef.current = snap;
+  if (capture && snap && !frozen.current && MONEY_SHOT[sc.id]?.(snap)) frozen.current = true;
 
   // The keyboard types for the viewer, exactly as on the site.
   useEffect(() => {
@@ -204,7 +226,7 @@ function Run({ sc, capture, onTakeover, onLoop }: { sc: Scenario; capture: boole
 
   // The pointer: walk to whatever the coach points at, press it, repeat.
   useEffect(() => {
-    if (acted.current || !coach || piloting.current) return;
+    if (acted.current || frozen.current || !coach || piloting.current) return;
     const id = window.setTimeout(() => {
       const c = coachRef.current;
       const box = wrap.current;
@@ -219,8 +241,8 @@ function Run({ sc, capture, onTakeover, onLoop }: { sc: Scenario; capture: boole
         setGhost((g) => (g.show ? { x, y, show: true, press: false } : { x: x + 140, y: y + 110, show: true, press: false }));
         await sleep(40);
         setGhost((g) => ({ ...g, x, y }));
-        await sleep(760);
-        if (!alive.current || acted.current || coachRef.current?.target !== c.target) {
+        await sleep(760 + (capture ? 0 : dwell(snapRef.current)));
+        if (!alive.current || acted.current || frozen.current || coachRef.current?.target !== c.target) {
           piloting.current = false;
           return setTick((n) => n + 1);
         }

@@ -1,0 +1,962 @@
+/* /deck: the pitch deck. One slide per screen, the site's type and tokens,
+   and the site's own chats running live inside the demo slides. */
+
+.deck {
+  --pad-x: clamp(24px, 6vw, 112px);
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.deck-progress {
+  position: absolute;
+  z-index: 20;
+  inset: 0 0 auto;
+  height: 3px;
+}
+
+.deck-progress i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: 0 50%;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 56px var(--pad-x) 88px;
+  background: var(--bg);
+}
+
+.slide--grey {
+  background: var(--bg-2);
+}
+
+.slide--ink {
+  --bg: #000000;
+  --bg-2: #111113;
+  --ink: #f5f5f7;
+  --ink-2: #a1a1a6;
+  --ink-3: #6e6e73;
+  --line: rgba(255, 255, 255, 0.12);
+  --line-2: rgba(255, 255, 255, 0.2);
+  background: #000;
+  color: var(--ink);
+}
+
+.is-capture .slide {
+  padding-bottom: 56px;
+}
+
+.slide-in {
+  width: 100%;
+  max-width: 1320px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.slide-in > * {
+  width: 100%;
+}
+
+/* ── type ──────────────────────────────────────────────── */
+
+.d-eyebrow {
+  margin-bottom: 14px;
+  font-size: clamp(14px, 1.2vw, 18px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+
+.d-title {
+  font-size: clamp(36px, 4.6vw, 76px);
+  font-weight: 600;
+  line-height: 1.03;
+  letter-spacing: -0.045em;
+}
+
+.d-title span {
+  display: block;
+}
+
+.d-title--center {
+  text-align: center;
+}
+
+.d-display {
+  font-size: clamp(54px, 8.4vw, 140px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.d-display > span {
+  display: inline-block;
+}
+
+.d-display .hero-mark {
+  display: inline-flex;
+  align-items: baseline;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+}
+
+.d-display .hero-mark .dot {
+  display: inline-block;
+  width: 0.18em;
+  height: 0.18em;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 0.16em;
+  transform: translateY(-0.74em);
+}
+
+.d-lede {
+  margin-top: clamp(14px, 1.8vw, 24px);
+  font-size: clamp(19px, 2vw, 30px);
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: var(--ink-2);
+}
+
+.d-points {
+  list-style: none;
+  margin-top: clamp(22px, 3vw, 40px);
+  display: grid;
+  gap: clamp(12px, 1.4vw, 18px);
+}
+
+.d-points li {
+  position: relative;
+  padding-left: 26px;
+  font-size: clamp(17px, 1.5vw, 23px);
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+  color: var(--ink-2);
+}
+
+.d-points li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.55em;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ── cover ─────────────────────────────────────────────── */
+
+.d-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.d-cover-mark {
+  font-size: 30px;
+  margin-bottom: clamp(28px, 6vh, 64px);
+}
+
+.d-foot {
+  margin-top: clamp(40px, 8vh, 90px);
+  font-size: 15px;
+  color: var(--ink-3);
+}
+
+/* ── layouts ───────────────────────────────────────────── */
+
+.d-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: clamp(32px, 6vw, 110px);
+  align-items: center;
+}
+
+.d-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.d-demo {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 500px);
+  gap: clamp(32px, 6vw, 120px);
+  align-items: center;
+}
+
+.d-demo-live {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+}
+
+/* ── live chat ─────────────────────────────────────────── */
+
+.lc {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  height: 100%;
+  max-height: 880px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lc-app.app {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  border-radius: 30px;
+}
+
+.lc-app .kb {
+  --key-h: clamp(32px, calc((100svh - 560px) / 5), 46px);
+}
+
+.lc-ghost.ghost {
+  position: absolute;
+  z-index: 50;
+}
+
+.lc-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.lc-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.lc-state i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #30d158;
+  animation: lc-pulse 1.6s ease-in-out infinite;
+}
+
+.lc-state.is-you i {
+  background: var(--accent);
+  animation: none;
+}
+
+@keyframes lc-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.lc-replay {
+  padding: 5px 12px;
+  border-radius: 980px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
+}
+
+.slide--grey .lc-replay {
+  background: var(--bg);
+}
+
+/* ── problem ───────────────────────────────────────────── */
+
+.d-trips {
+  list-style: none;
+  display: grid;
+  gap: 14px;
+}
+
+.d-trips li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px 16px;
+  padding: 18px 22px;
+  border-radius: 20px;
+  background: var(--bg-2);
+}
+
+.d-trips b {
+  font-size: clamp(16px, 1.3vw, 20px);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.d-count {
+  grid-row: 1;
+  grid-column: 2;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ff453a;
+}
+
+.d-steps {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 4px;
+}
+
+.d-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: clamp(13px, 1vw, 15px);
+  color: var(--ink-2);
+}
+
+.d-step i {
+  font-style: normal;
+  color: var(--ink-3);
+}
+
+/* ── solution ──────────────────────────────────────────── */
+
+.d-three {
+  width: 100%;
+  margin-top: clamp(32px, 5vh, 64px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(14px, 1.6vw, 24px);
+}
+
+.d-card {
+  padding: clamp(20px, 2vw, 32px);
+  border-radius: 28px;
+  background: var(--bg);
+}
+
+.slide--grey .d-card {
+  background: var(--bg);
+}
+
+.d-card b {
+  display: block;
+  margin-top: 22px;
+  font-size: clamp(20px, 1.7vw, 26px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.d-card p {
+  margin-top: 6px;
+  font-size: clamp(15px, 1.2vw, 18px);
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.d-card-visual {
+  height: clamp(90px, 13vh, 130px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 18px;
+  background: var(--kb);
+}
+
+.d-key {
+  position: relative;
+  min-width: 52px;
+  height: 56px;
+  padding: 0 14px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+  font-size: 24px;
+  color: var(--kb-ink);
+  background: var(--kb-key);
+  box-shadow: 0 1px 0 var(--kb-edge);
+}
+
+.d-key--wide {
+  min-width: 220px;
+  font-size: 16px;
+  color: color-mix(in srgb, var(--kb-ink) 45%, transparent);
+}
+
+.d-key-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.d-chip {
+  padding: 8px 14px;
+  border-radius: 980px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--kb-ink);
+  background: var(--kb-key);
+  box-shadow: 0 1px 0 var(--kb-edge);
+}
+
+/* ── skills ────────────────────────────────────────────── */
+
+.d-builder {
+  padding: clamp(20px, 2vw, 30px);
+  border-radius: 28px;
+  background: var(--bg);
+  box-shadow: 0 30px 80px -40px rgba(0, 0, 0, 0.3);
+}
+
+.d-builder-ask small,
+.d-plans small,
+.d-road small {
+  display: block;
+  font-size: clamp(13px, 0.9vw, 16px);
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.d-builder-ask p {
+  margin-top: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  font-size: clamp(16px, 1.3vw, 20px);
+  line-height: 1.4;
+  background: var(--bg-2);
+}
+
+.d-builder-steps {
+  list-style: none;
+  margin-top: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.d-builder-steps li {
+  display: grid;
+  grid-template-columns: 28px auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  border-radius: 14px;
+  font-size: clamp(14px, 1vw, 18px);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.d-builder-steps li.d-else {
+  margin-left: 40px;
+}
+
+.d-builder-steps code {
+  font: 600 clamp(12px, 0.85vw, 16px) ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+}
+
+.d-builder-steps span:last-child {
+  color: var(--ink-2);
+}
+
+.d-n {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg-2);
+}
+
+.d-builder-bind {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.d-builder-bind .d-key {
+  background: var(--kb);
+}
+
+/* ── connectors ────────────────────────────────────────── */
+
+.d-cloud {
+  max-width: 1240px;
+  margin-top: clamp(28px, 5vh, 52px);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.d-cloud--soft {
+  margin-top: 18px;
+  gap: 8px;
+}
+
+.d-tag {
+  padding: 9px 16px;
+  border-radius: 980px;
+  font-size: clamp(13px, 1.05vw, 18px);
+  color: var(--ink-2);
+  background: var(--bg-2);
+}
+
+.d-tag--strong {
+  padding: 13px 22px;
+  font-size: clamp(15px, 1.35vw, 24px);
+  font-weight: 600;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  background: var(--bg);
+}
+
+.d-also {
+  margin-top: clamp(28px, 5vh, 48px);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 28px;
+  font-size: clamp(15px, 1.3vw, 22px);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.d-also span::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 9px 2px 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ── trust ─────────────────────────────────────────────── */
+
+.d-grid2 {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.d-grid2 li,
+.d-reasons li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: clamp(16px, 1.6vw, 24px);
+  border-radius: 22px;
+  background: var(--bg-2);
+}
+
+.d-grid2 b,
+.d-reasons b {
+  font-size: clamp(17px, 1.4vw, 25px);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.d-grid2 span,
+.d-reasons span {
+  font-size: clamp(14px, 1.1vw, 19px);
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+/* ── progress ──────────────────────────────────────────── */
+
+.d-stats {
+  width: 100%;
+  margin-top: clamp(28px, 5vh, 56px);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.d-stats div {
+  padding: clamp(18px, 2vw, 30px);
+  border-radius: 24px;
+  background: var(--bg-2);
+}
+
+.d-stats b {
+  display: block;
+  font-size: clamp(36px, 3.8vw, 60px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.d-stats span {
+  display: block;
+  margin-top: 12px;
+  font-size: clamp(14px, 1.1vw, 20px);
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.d-timeline {
+  list-style: none;
+  width: 100%;
+  margin-top: clamp(24px, 4vh, 44px);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  position: relative;
+}
+
+.d-timeline::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 6px;
+  height: 1px;
+  background: var(--line-2);
+}
+
+.d-timeline li {
+  position: relative;
+  padding-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.d-timeline li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--bg);
+}
+
+.d-timeline b {
+  font-size: clamp(15px, 1.1vw, 20px);
+  font-weight: 600;
+}
+
+.d-timeline span {
+  font-size: clamp(14px, 1vw, 18px);
+  color: var(--ink-2);
+}
+
+/* ── why now ───────────────────────────────────────────── */
+
+.d-reasons {
+  list-style: none;
+  display: grid;
+  gap: 14px;
+}
+
+.slide--grey .d-reasons li {
+  background: var(--bg);
+}
+
+/* ── business model ────────────────────────────────────── */
+
+.d-plans {
+  width: 100%;
+  max-width: 1240px;
+  margin-top: clamp(28px, 5vh, 56px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.d-plans div {
+  padding: clamp(22px, 2.4vw, 36px);
+  border-radius: 28px;
+  background: var(--bg-2);
+}
+
+.d-plans .is-max {
+  background: var(--pill);
+  color: var(--pill-ink);
+}
+
+.d-plans .is-max small,
+.d-plans .is-max span {
+  color: color-mix(in srgb, var(--pill-ink) 65%, transparent);
+}
+
+.d-plans b {
+  display: block;
+  margin-top: 14px;
+  font-size: clamp(40px, 4.8vw, 92px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.d-plans em {
+  font-style: normal;
+  font-size: 0.34em;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin-left: 4px;
+}
+
+.d-plans span {
+  display: block;
+  margin-top: 12px;
+  font-size: clamp(15px, 1.3vw, 22px);
+  color: var(--ink-2);
+}
+
+.d-note {
+  margin-top: 28px;
+  font-size: clamp(15px, 1.25vw, 19px);
+  color: var(--ink-2);
+}
+
+/* ── roadmap ───────────────────────────────────────────── */
+
+.d-road {
+  width: 100%;
+  margin-top: clamp(28px, 5vh, 56px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.d-road div {
+  padding: clamp(22px, 2.2vw, 34px);
+  border-radius: 28px;
+  background: var(--bg-2);
+}
+
+.d-road div:first-child small {
+  color: var(--accent);
+}
+
+.d-road ul {
+  list-style: none;
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.d-road li {
+  font-size: clamp(16px, 1.5vw, 27px);
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+}
+
+/* ── team ──────────────────────────────────────────────── */
+
+.d-person {
+  margin-top: 28px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.d-avatar {
+  width: clamp(96px, 10vw, 150px);
+  height: clamp(96px, 10vw, 150px);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: clamp(40px, 4.4vw, 64px);
+  font-weight: 600;
+  color: #fff;
+  background: #1d1d1f;
+}
+
+.d-person b {
+  display: block;
+  font-size: clamp(34px, 3.6vw, 56px);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.d-person div span {
+  display: block;
+  font-size: clamp(18px, 1.6vw, 24px);
+  color: var(--ink-2);
+}
+
+.d-person .d-contact {
+  margin-top: 10px;
+  font-size: 16px;
+  color: var(--ink-3);
+}
+
+/* ── chrome ────────────────────────────────────────────── */
+
+.deck-nav {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 clamp(16px, 3vw, 40px);
+  color: var(--ink-2);
+  pointer-events: none;
+}
+
+.deck-nav > * {
+  pointer-events: auto;
+}
+
+.deck-home {
+  font-size: 20px;
+}
+
+.deck-label {
+  font-size: 14px;
+  color: var(--ink-3);
+}
+
+.deck-ctl {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.deck-ctl button {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--bg-2);
+}
+
+.deck-ctl button:disabled {
+  opacity: 0.35;
+}
+
+.deck-count {
+  min-width: 64px;
+  text-align: center;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.deck-pdf {
+  margin-right: 4px;
+  padding: 7px 14px;
+  border-radius: 980px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--pill-ink);
+  background: var(--pill);
+}
+
+/* ── small screens: stack, and let the slide scroll ────── */
+
+@media (max-width: 900px) {
+  .slide {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 40px 20px 96px;
+  }
+
+  .slide-in {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .d-split,
+  .d-demo {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+
+  .d-demo-live {
+    height: min(760px, 88svh);
+  }
+
+  .d-three,
+  .d-plans,
+  .d-road,
+  .d-grid2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .d-stats,
+  .d-timeline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .d-timeline::before {
+    display: none;
+  }
+
+  .deck-label {
+    display: none;
+  }
+
+  .deck-nav {
+    background: var(--nav);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  .lc-app.app {
+    display: flex;
+    border-radius: 30px;
+    box-shadow: var(--im-shadow), 0 0 0 1px var(--im-window-line);
+  }
+
+  .lc-app .app-chat {
+    position: relative;
+    inset: auto;
+  }
+}
+
+/* ── capture (the PDF): no dev badge, no pointer ───────── */
+
+.is-capture .lc-ghost {
+  display: none;
+}
+
+body:has(.is-capture) nextjs-portal {
+  display: none;
+}
+
+.d-lede--center {
+  text-align: center;
+  max-width: 900px;
+}
