@@ -551,5 +551,16 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         case .medium: mediumImpact.impactOccurred()
         default: lightImpact.impactOccurred()
         }
+        // The Taptic Engine idles down between taps, and a cold one answers
+        // late — which reads as the key itself being late. Warming it for the
+        // next keystroke is what keeps fast typing feeling immediate.
+        warmHaptics()
+    }
+
+    /// Keep the engine ready while someone is typing. Cheap, and iOS drops
+    /// it back to idle on its own a moment after the last call.
+    private func warmHaptics() {
+        guard SettingsStore.current.haptics else { return }
+        lightImpact.prepare()
     }
 }
