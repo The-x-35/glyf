@@ -86,33 +86,14 @@ enum KeyboardLayout {
         "0": ["°"],
         "-": ["–", "—", "•"],
         "/": ["\\"],
-        // Whichever currency is on the key, the others are under it.
+        // $ is the key, like the system keyboard; the rest are under it.
         "$": ["₹", "€", "£", "¥", "₩"],
-        "₹": ["$", "€", "£", "¥", "₩"],
-        "€": ["$", "₹", "£", "¥", "₩"],
-        "£": ["$", "₹", "€", "¥", "₩"],
-        "¥": ["$", "₹", "€", "£", "₩"],
-        "₩": ["$", "₹", "€", "£", "¥"],
         "&": ["§"],
         "\"": ["„", "“", "”", "«", "»"],
         "'": ["‘", "’", "‚", "`"],
         "!": ["¡"],
         "?": ["¿"],
         ".": ["…"],
-    ]
-
-    /// The currency the phone's region writes with, on the number layer where
-    /// the system keyboard puts it: ₹ in India, £ in the UK, $ elsewhere.
-    static var localCurrency: String {
-        let region = SettingsStore.current.region?.uppercased()
-            ?? Locale.current.regionCode?.uppercased() ?? "US"
-        return currencyByRegion[region] ?? "$"
-    }
-
-    private static let currencyByRegion: [String: String] = [
-        "IN": "₹", "GB": "£", "JP": "¥", "CN": "¥", "KR": "₩",
-        "DE": "€", "FR": "€", "ES": "€", "IT": "€", "NL": "€", "IE": "€",
-        "PT": "€", "AT": "€", "BE": "€", "FI": "€", "GR": "€",
     ]
 
     static func rows(mode: KeyboardMode, numberRow: Bool, globe: Bool,
@@ -132,7 +113,7 @@ enum KeyboardLayout {
             result.append(bottomRow(modeLabel: "123", globe: globe, context: context))
         case .symbols1:
             result.append("1234567890".map { key(String($0)) })
-            result.append(["-", "/", ":", ";", "(", ")", localCurrency, "&", "@", "\""].map { key($0) })
+            result.append(["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""].map { key($0) })
             // Apple metrics: the five keys STRETCH between mode and delete.
             result.append([side(.mode("#+="))]
                 + [".", ",", "?", "!", "'"].map { wide(key($0)) }

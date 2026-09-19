@@ -558,7 +558,7 @@ final class GlyfEngineTests: XCTestCase {
                        .money(shown: "₹500 = $5.21", insert: " = $5.21"), "local money reads in dollars")
         XCTAssertEqual(Smart.chip(for: "about 20 euros", fields: [], rates: rates)?.value, "€20 = ₹2,197.57")
         XCTAssertEqual(Smart.chip(for: "buying $sol", fields: [], rates: rates),
-                       .money(shown: "1 SOL = $111.77 · ₹10,716.51", insert: " = $111.77"))
+                       .money(shown: "1 SOL = $111.77", insert: " = $111.77"), "a price is quoted in dollars")
         // No rate, no chip — and the keyboard is told what to fetch.
         XCTAssertNil(Smart.chip(for: "$13", fields: []))
         XCTAssertTrue(Smart.looksLikeMoney("$13"))

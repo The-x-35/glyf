@@ -126,13 +126,14 @@ object Smart {
     }
 
     /** "$13" here in India → "$13 = ₹1,246"; "₹500" → "₹500 = $5.21";
-     *  "$sol" → "1 SOL = $111.77 · ₹10,718". Nothing without a rate. */
+     *  "$sol" → "1 SOL = $111.77". A converted amount reads in the local
+     *  currency (the point of converting); a token price is a price, which
+     *  the market quotes in dollars, so it stays in dollars. */
     fun money(text: String, rates: RatesSnapshot): Chip.Money? {
         cashtag(text)?.let { ticker ->
             val usd = rates.crypto[ticker] ?: return null
-            var shown = "1 $ticker = ${format(usd, "USD")}"
-            if (rates.local != "USD") rates.fiat[rates.local]?.let { shown += " · ${format(usd * it, rates.local)}" }
-            return Chip.Money(shown, " = ${format(usd, "USD")}")
+            val price = format(usd, "USD")
+            return Chip.Money("1 $ticker = $price", " = $price")
         }
         val m = amountPattern.find(text) ?: return null
         val amount = (m.groups[2]?.value ?: m.groups[3]?.value ?: "")

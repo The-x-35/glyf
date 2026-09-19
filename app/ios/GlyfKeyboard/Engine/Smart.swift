@@ -299,15 +299,14 @@ enum Smart {
     }
 
     /// "$13" here in India → "$13 = ₹1,246"; "₹500" → "₹500 = $5.21";
-    /// "$sol" → "1 SOL = $111.77 · ₹10,718". Nothing without a rate.
+    /// "$sol" → "1 SOL = $111.77". A converted amount reads in the local
+    /// currency (that is the point of converting); a token price is a price,
+    /// which the market quotes in dollars, so it stays in dollars.
     static func money(in text: String, rates: RatesSnapshot) -> Chip? {
         if let ticker = cashtag(in: text) {
             guard let usd = rates.crypto[ticker] else { return nil }
-            var shown = "1 \(ticker) = \(format(usd, in: "USD"))"
-            if rates.local != "USD", let rate = rates.fiat[rates.local] {
-                shown += " · \(format(usd * rate, in: rates.local))"
-            }
-            return .money(shown: shown, insert: " = \(format(usd, in: "USD"))")
+            let price = format(usd, in: "USD")
+            return .money(shown: "1 \(ticker) = \(price)", insert: " = \(price)")
         }
         guard let re = amountPattern, !text.isEmpty else { return nil }
         let ns = text as NSString

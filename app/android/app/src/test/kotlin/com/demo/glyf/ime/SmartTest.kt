@@ -29,7 +29,7 @@ class SmartTest {
         assertEquals(Smart.Chip.Money("$13 = ₹1,246.44", " = ₹1,246.44"), Smart.chip("it costs $13", vault, rates = rates))
         assertEquals(Smart.Chip.Money("₹500 = $5.21", " = $5.21"), Smart.chip("₹500", vault, rates = rates))
         assertEquals("€20 = ₹2,197.57", Smart.display(Smart.chip("about 20 euros", vault, rates = rates)!!))
-        assertEquals(Smart.Chip.Money("1 SOL = $111.77 · ₹10,716.51", " = $111.77"), Smart.chip("buying \$sol", vault, rates = rates))
+        assertEquals(Smart.Chip.Money("1 SOL = $111.77", " = $111.77"), Smart.chip("buying \$sol", vault, rates = rates))
         assertNull(Smart.chip("\$13", vault))
         assertEquals(true, Smart.looksLikeMoney("\$13"))
         assertEquals(false, Smart.looksLikeMoney("flight AI 2021"))

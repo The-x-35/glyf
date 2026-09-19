@@ -227,8 +227,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         android.util.Log.d("GlyfKB", "onStartInputView restarting=$restarting overlay=${overlay != null}")
         settings = SettingsStore.load(this)
         settingsStamp = com.demo.glyf.store.Bridge.file(this, SettingsStore.FILE).lastModified()
-        KeyboardLayout.currencyKey = KeyboardLayout.currencyFor(
-            settings.optString("region").ifEmpty { java.util.Locale.getDefault().country })
         val dark = when (settings.optString("appearance", "auto")) {
             "dark" -> true
             "light" -> false
@@ -924,8 +922,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (stamp == settingsStamp) return
         settingsStamp = stamp
         settings = SettingsStore.load(this)
-        KeyboardLayout.currencyKey = KeyboardLayout.currencyFor(
-            settings.optString("region").ifEmpty { java.util.Locale.getDefault().country })
         keyboard.bindings = settings.optJSONObject("bindings")?.let { b ->
             b.keys().asSequence().associateWith { b.optString(it) }
         } ?: emptyMap()
