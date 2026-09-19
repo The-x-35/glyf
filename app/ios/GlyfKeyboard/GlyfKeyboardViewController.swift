@@ -6,6 +6,31 @@ import os.log
 /// sanctioned fix. This root makes the granted size irrelevant: the real
 /// keyboard is BOTTOM-ANCHORED at exactly its designed height, everything
 /// above is transparent, and touches up there fall through to the host app.
+/// Keystroke timing, for the latency work. A keyboard has to answer a key
+/// inside a frame or it reads as lag — Fleksy measures ~19ms a key, the next
+/// one out ~31ms, so anything over ~16ms of our own work is a problem.
+/// Numbers go to the console: `log stream --predicate 'category == "perf"'`.
+enum Perf {
+    /// Flip off before shipping; the reads themselves are nearly free but
+    /// the log line is not worth paying for in someone's pocket.
+    static let on = true
+    private static let log = Logger(subsystem: "so.glyf.keyboard", category: "perf")
+
+    @inline(__always) static func mark() -> CFAbsoluteTime {
+        on ? CFAbsoluteTimeGetCurrent() : 0
+    }
+
+    /// Milliseconds since `start`, to one decimal.
+    @inline(__always) static func ms(_ start: CFAbsoluteTime) -> Double {
+        ((CFAbsoluteTimeGetCurrent() - start) * 1000 * 10).rounded() / 10
+    }
+
+    static func say(_ what: String) {
+        guard on else { return }
+        log.log("GLYF_PERF \(what, privacy: .public)")
+    }
+}
+
 final class PassThroughRoot: UIView {
     var contentHeight: CGFloat = 260
 
@@ -1159,6 +1184,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // A scheduled pass is now redundant, whoever asked for this one.
         candidatesWork?.cancel()
         candidatesWork = nil
+        let tC = Perf.mark()
+        defer { Perf.say("candidates=\(Perf.ms(tC))ms") }
         defer { applyTourHint() }         // the strip changed under the ring
         if updateSmartChip() { return }   // one chip owns the strip
         let policy = typingPolicy
@@ -1283,6 +1310,8 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         // The host round trip below is the costliest part of a keystroke, so
         // it happens at most once: what the field will hold afterwards is
         // just what it held plus this character.
+        let t0 = Perf.mark()
+        var tHost: Double = 0
         var before: String?
         var readBefore = false
         if text.count == 1, let ch = text.first {
@@ -1290,7 +1319,9 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                 // Punctuation ends the word: correct it before the mark lands.
                 commitCurrentWord()
             } else if !WordTracker.boundaries.contains(ch) || ch == "'" || ch == "’" {
+                let th = Perf.mark()
                 before = textDocumentProxy.documentContextBeforeInput
+                tHost = Perf.ms(th)
                 readBefore = true
                 let current = WordTracker.currentWord(beforeContext: before)
                 if current != wordTouchesFor {
@@ -1300,9 +1331,14 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                 wordTouchesFor = current + text
             }
         }
+        let tI = Perf.mark()
         textDocumentProxy.insertText(text)
+        let tInsert = Perf.ms(tI)
+        let tS = Perf.mark()
         syncAutoShift(knownBefore: readBefore ? (before ?? "") + text : nil)
+        let tShift = Perf.ms(tS)
         scheduleCandidates()
+        Perf.say("key total=\(Perf.ms(t0))ms host=\(tHost)ms insert=\(tInsert)ms shift=\(tShift)ms")
     }
 
     func kbDeleteBackward() {
