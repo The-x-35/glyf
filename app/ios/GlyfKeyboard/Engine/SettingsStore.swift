@@ -57,9 +57,13 @@ struct GlyfSettings: Codable, Equatable {
     /// phone, address, UPI, links), so "write my address" and form filling
     /// work. Off means runs never carry your details.
     var aiUsesVault: Bool? = true
-    /// Keep what you copy in the keyboard's clipboard history. iOS may ask to
-    /// allow the paste the first time after a copy from another app.
+    /// Keep what you copy in the keyboard's clipboard history.
     var clipboardHistory: Bool? = true
+    /// Capture EVERY copy, not just the links and numbers iOS will hand over
+    /// silently. Reading arbitrary text raises "Allow Paste?" once per copy
+    /// unless the person sets Settings → Glyf → Paste from Other Apps →
+    /// Allow, which is why this is off until they ask for it.
+    var clipboardCaptureAll: Bool? = false
     /// Screenshots from the last hour in the clipboard (Gboard's setting).
     /// The app asks for Photos access when it is turned on.
     var clipboardScreenshots: Bool? = true

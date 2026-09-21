@@ -70,6 +70,82 @@ enum ClipboardStore {
         return cc != last
     }
 
+    private static func markPasteboardSeen() {
+        AppGroupStore.writeJSON(["cc": UIPasteboard.general.changeCount],
+                                name: "clip-cc.json")
+    }
+
+    /// Puts a new copy straight into history, asking nothing.
+    ///
+    /// Reading `.string` raises "Allow Paste?" for every new copy, which is
+    /// why nothing here reads it. `detectValues` is the exception Apple
+    /// provides: it hands back the ACTUAL text for what iOS can recognise —
+    /// a link, something that looks like a search, a number — and stays
+    /// silent while doing it, so a copied link lands in the list by itself.
+    ///
+    /// Prose it will not answer for. That copy still waits behind the Paste
+    /// button, which is the only way to see arbitrary text without a banner.
+    static func captureDetected(_ done: @escaping (Bool) -> Void) {
+        guard fullAccessHint, pasteboardHasNewContent(),
+              SettingsStore.current.clipboardHistory != false
+        else { return done(false) }
+        // Only the three iOS 14 patterns are plain `DetectionPattern`s; the
+        // later ones (email, phone, address…) are refined onto a different
+        // Swift type and are not reachable through this call.
+        let patterns: Set<UIPasteboard.DetectionPattern> = [
+            .probableWebURL, .probableWebSearch, .number,
+        ]
+        UIPasteboard.general.detectValues(for: patterns) { result in
+            let text: String? = {
+                guard case .success(let values) = result else { return nil }
+                return firstText(in: values)
+            }()
+            DispatchQueue.main.async {
+                guard let text, !text.isEmpty else { return done(false) }
+                markPasteboardSeen()
+                guard let next = inserting(text, into: load(), now: Date()) else {
+                    return done(false)
+                }
+                save(next)
+                done(true)
+            }
+        }
+    }
+
+    /// Everything, including prose — the read iOS may ask about.
+    ///
+    /// Only runs when "Capture everything you copy" is on. Left on Ask, iOS
+    /// raises "Allow Paste?" once per copy; set to Allow (Settings → Glyf →
+    /// Paste from Other Apps) it never asks again and every copy lands here
+    /// by itself. That choice belongs to the person, not to us, which is why
+    /// this is opt-in and `captureDetected` is what runs by default.
+    static func captureEverything(_ done: @escaping (Bool) -> Void) {
+        guard fullAccessHint, pasteboardHasNewContent(),
+              SettingsStore.current.clipboardHistory != false,
+              SettingsStore.current.clipboardCaptureAll == true,
+              UIPasteboard.general.hasStrings,
+              let text = UIPasteboard.general.string
+        else { return done(false) }
+        markPasteboardSeen()
+        guard let next = inserting(text, into: load(), now: Date()) else {
+            return done(false)
+        }
+        save(next)
+        done(true)
+    }
+
+    /// A link first: it is what people copy most and what iOS is surest of.
+    private static func firstText(in values: [UIPasteboard.DetectionPattern: Any]) -> String? {
+        if let url = values[.probableWebURL] as? URL { return url.absoluteString }
+        if let url = values[.probableWebURL] as? String, !url.isEmpty { return url }
+        if let search = values[.probableWebSearch] as? String, !search.isEmpty {
+            return search
+        }
+        if let number = values[.number] as? NSNumber { return number.stringValue }
+        if let number = values[.number] as? String, !number.isEmpty { return number }
+        return nil
+    }
+
     static func togglePin(_ text: String) {
         var items = load()
         if let i = items.firstIndex(where: { $0.text == text }) {

@@ -105,9 +105,49 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
 
     func reload() {
         items = ClipboardStore.load()
-        shots = Self.recentScreenshots()
+        // Draw what we already have FIRST. What you copied lives in the App
+        // Group and is ready immediately; screenshots need Photos, which is
+        // another process and answers when it answers. Waiting for it before
+        // drawing anything is what made the panel feel slow to show a copy.
         rebuildCards()
         askForPhotosIfNeeded()
+        loadScreenshots()
+        // A new copy iOS can name — a link, an address, a number — joins the
+        // list on its own, without the banner that reading it outright
+        // raises. Anything else keeps waiting behind the Paste button.
+        let folded: (Bool) -> Void = { [weak self] added in
+            guard added, let self else { return }
+            self.items = ClipboardStore.load()
+            self.rebuildCards()
+        }
+        ClipboardStore.captureEverything { took in
+            // Only fall back to what iOS hands over silently when the full
+            // read was off or had nothing new.
+            if took { folded(true) } else { ClipboardStore.captureDetected(folded) }
+        }
+    }
+
+    /// Asks Photos off the main thread and folds the answer in when it
+    /// arrives. `shotsRequest` drops a reply that a newer reload replaced.
+    private var shotsRequest = 0
+
+    private func loadScreenshots() {
+        guard SettingsStore.current.clipboardScreenshots != false else {
+            if !shots.isEmpty { shots = []; rebuildCards() }
+            return
+        }
+        shotsRequest += 1
+        let request = shotsRequest
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let found = Self.recentScreenshots()
+            DispatchQueue.main.async {
+                guard let self, self.shotsRequest == request else { return }
+                let before = self.shots.map(\.localIdentifier)
+                guard before != found.map(\.localIdentifier) else { return }
+                self.shots = found
+                self.rebuildCards()
+            }
+        }
     }
 
     /// On unless turned off in the app (Keyboard → Keep what you copy).
@@ -286,7 +326,8 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
 
     private static let removedKey = "clip-removed-shots"
 
-    /// Screenshots from the last hour, newest first, as Gboard keeps them.
+    /// Screenshots from the last two days, newest first, as Gboard keeps
+    /// them. Runs off the main thread — see `loadScreenshots`.
     static func recentScreenshots() -> [PHAsset] {
         guard SettingsStore.current.clipboardScreenshots != false else { return [] }
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)

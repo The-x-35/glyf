@@ -337,9 +337,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
         debugTapTimer?.invalidate()
         debugTapTimer = nil
 #endif
-        // Anything still underlined is provisional. Leaving it that way lets
-        // the host drop it, and the word with it.
-        unmarkWord()
         appearanceFlipped = false
         stopTourWatch()
         TypingStore.shared.saveNow()
@@ -648,9 +645,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     private func setSurface(_ new: Surface, animated: Bool = true) {
         guard surface != new else { return }
-        // A panel is about to own the keys; settle any underlined word so it
-        // cannot be left provisional behind a surface.
-        unmarkWord()
         dismissTonesPopup()
         // Tear down the old overlay — pop = discard data (§6.3).
         switch surface {
@@ -1352,7 +1346,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let before = beforeContext
         let word = WordTracker.currentWord(beforeContext: before)
         if word.isEmpty {
-            unmarkWord() // nothing is being typed, so nothing is provisional
             if let corr = lastCorrection {
                 toolbar.showSuggestions([.init(text: corr.original, kind: .undo)])
             } else if let engine = typing, before?.hasSuffix(" ") == true,
@@ -1369,7 +1362,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let sMaybe = suggestions(for: word, before: before, policy: policy)
         tEngine = Perf.ms(tE)
         guard let s = sMaybe else {
-            unmarkWord()
             toolbar.showSuggestions([])
             return
         }
@@ -1379,18 +1371,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         if let fix = s.autocorrect {
             toolbar.showSuggestions([.init(text: word, kind: .literal), .init(text: fix, kind: .correction)]
                                     + others.prefix(1))
-            // "Correct automatically" off: the word is flagged, not changed.
-            // Tap the strip to take the fix; type on and what you wrote stands.
-            if SettingsStore.current.autocorrectApply == false {
-                markCurrentWord(word)
-            } else {
-                unmarkWord()
-            }
         } else if others.isEmpty {
-            unmarkWord() // nothing to correct: the word is not flagged
             toolbar.showSuggestions([])
         } else {
-            unmarkWord()
             toolbar.showSuggestions([.init(text: word, kind: s.known ? .word : .literal)] + others.prefix(2))
         }
     }
@@ -1448,84 +1431,29 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     /// Replace the word being typed (suggestions, autocorrect, replacements).
     private func replaceCurrentWord(with replacement: String) {
-        unmarkWord() // settle the underline before counting characters
         let word = WordTracker.currentWord(
             beforeContext: beforeContext)
         for _ in 0..<word.count { hostDelete() }
         hostInsert(replacement)
     }
 
-    // MARK: Flagging a word instead of changing it
-
-    /// The word currently underlined in the host, or nil when nothing is
-    /// being composed.
-    private var markedWord: String?
-
-    /// Underlines the word being typed, so a correction is OFFERED rather
-    /// than made behind the writer's back. `setMarkedText` is the same
-    /// mechanism an IME uses to show provisional text, and it is on
-    /// `UITextDocumentProxy` — the one thing a keyboard can draw inside a
-    /// host field.
-    ///
-    /// Its shape is worth knowing: marked text is the composition run, it
-    /// lives AT THE CARET, and there is only ever one. So this can flag the
-    /// word being typed and nothing before it, and the tap target has to be
-    /// the strip — no keyboard can hit-test the host's own text.
-    private func markCurrentWord(_ word: String) {
-        guard !word.isEmpty else { return unmarkWord() }
-        let range = NSRange(location: word.utf16.count, length: 0)
-        if let marked = markedWord {
-            guard marked != word else { return }
-            textDocumentProxy.setMarkedText(word, selectedRange: range)
-            markedWord = word
-            forgetBefore()
-            return
-        }
-        // Entering composition: take the typed letters back and re-enter
-        // them as provisional text. Once per word, never per keystroke —
-        // while composing, each new letter just extends the run.
-        forgetBefore()
-        let live = WordTracker.currentWord(beforeContext: beforeContext)
-        guard live == word else {
-            Perf.say("MARK bail live=\(live) want=\(word)")
-            return
-        }
-        for _ in 0..<word.count { hostDelete() }
-        textDocumentProxy.setMarkedText(word, selectedRange: range)
-        markedWord = word
-        forgetBefore()
-        Perf.say("MARK set \(word) after=\(beforeContext ?? "nil")")
-    }
-
-    /// Settles the underlined word into ordinary text.
-    ///
-    /// Marked text is provisional and a host is entitled to drop it, which
-    /// would take the word with it. So this runs before ANYTHING that is not
-    /// another letter of the same word — a space, a delete, a panel, the
-    /// keyboard going away.
-    func unmarkWord() {
-        guard markedWord != nil else { return }
-        markedWord = nil
-        textDocumentProxy.unmarkText()
-        forgetBefore()
-    }
-
-    /// One letter of the word being composed extends the underlined run.
-    /// `insertText` would settle the run and put the letter after it, so the
-    /// word would appear twice.
-    private func insertOrExtend(_ text: String) {
-        if let marked = markedWord, text.count == 1, let ch = text.first,
-           !WordTracker.boundaries.contains(ch) {
-            let next = marked + text
-            textDocumentProxy.setMarkedText(
-                next, selectedRange: NSRange(location: next.utf16.count, length: 0))
-            markedWord = next
-            forgetBefore()
-            return
-        }
-        unmarkWord()
-        hostInsert(text)
-    }
+    // MARK: Why there is no underline under a flagged word
+    //
+    // `UITextDocumentProxy` does carry `setMarkedText` — the provisional run
+    // an IME composes in — and it works: marking a word and reading back
+    // `documentContextBeforeInput` returns the text WITHOUT it, which is
+    // exactly what a composing run should do.
+    //
+    // That is also why it cannot be used here. Everything this keyboard
+    // knows about what you are writing comes from that context: the word
+    // being typed, the previous word, whether a sentence is starting. Mark
+    // the current word and the keyboard stops being able to see it.
+    //
+    // And it buys nothing: Messages draws no underline under marked text, so
+    // the flag is invisible in the very place it was meant for. The honest
+    // version of "don't change my words" is the one that ships — with
+    // "Correct automatically" off the word stands exactly as typed and the
+    // strip offers the fix for a tap.
 
     /// Put back what was typed before the last correction; an engine
     /// correction is never offered for that word again.
@@ -1567,7 +1495,6 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         if text.count == 1, let ch = text.first {
             if WordTracker.correctionBoundaries.contains(ch) {
                 // Punctuation ends the word: correct it before the mark lands.
-                unmarkWord()
                 commitCurrentWord()
             } else if !WordTracker.boundaries.contains(ch) || ch == "'" || ch == "’" {
                 let th = Perf.mark()
@@ -1583,7 +1510,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             }
         }
         let tI = Perf.mark()
-        insertOrExtend(text)
+        hostInsert(text)
         let tInsert = Perf.ms(tI)
         let tS = Perf.mark()
         syncAutoShift(knownBefore: readBefore ? (before ?? "") + text : nil)
@@ -1597,9 +1524,6 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             editor.deleteBackward()
             return
         }
-        // Settle the underline first: deleting into a composition is the
-        // host's business, and the counts here assume ordinary text.
-        unmarkWord()
         // Backspace right after a correction puts back what was typed (and
         // teaches the engine to leave that word alone).
         if let corr = lastCorrection,

@@ -161,6 +161,11 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           _label('Clipboard & AI'),
           _card([
             _switch('Keep what you copy', 'clipboardHistory', fallback: true),
+            _switch('Capture everything you copy', 'clipboardCaptureAll',
+                fallback: false),
+            _note('Links and numbers are kept on their own. To keep ordinary '
+                'text too, iOS needs Settings → Glyf → Paste from Other Apps '
+                '→ Allow — otherwise it asks once for every copy.'),
             _switch('Recent screenshots', 'clipboardScreenshots',
                 fallback: false, onBeforeOn: GlyfBridge.screenshotAccess),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),
@@ -172,6 +177,14 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
 
   static String _hex(Color c) =>
       'color:#${c.toARGB32().toRadixString(16).substring(2)}';
+
+  /// A line of explanation under the switch it belongs to.
+  Widget _note(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Text(text,
+            style: const TextStyle(
+                fontSize: 12.5, height: 1.35, color: Glass.inkSoft)),
+      );
 
   Widget _label(String text) => Padding(
         padding: const EdgeInsets.only(left: 4, bottom: 8),
