@@ -527,8 +527,13 @@ final class GlyfToolbar: UIView {
         // 17pt: the system bar's "The" stands 12pt tall, which is this size.
         b.titleLabel?.font = .systemFont(ofSize: 17, weight: emphasized ? .semibold : .regular)
         b.setTitleColor(item.kind == .literal ? Glass.textSecondary : Glass.textPrimary, for: .normal)
-        // The website marks the best candidate by weight alone, no pill.
-        b.backgroundColor = (emphasized && !Glass.solidLook) ? Glass.fillBar : .clear
+        // The website marks the best candidate by weight alone, no pill —
+        // but never `.clear`. A keyboard extension throws away touches that
+        // land on transparent pixels, so a clear slot was only tappable on
+        // the letters themselves: you had to hit the word, not its slot,
+        // which is why a suggestion took two or three tries to take.
+        b.backgroundColor = (emphasized && !Glass.solidLook)
+            ? Glass.fillBar : Glass.touchableGrid
         b.layer.cornerRadius = 8
         b.layer.cornerCurve = .continuous
         b.titleLabel?.lineBreakMode = .byTruncatingTail

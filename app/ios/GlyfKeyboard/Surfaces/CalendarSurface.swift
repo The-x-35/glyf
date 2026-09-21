@@ -37,7 +37,7 @@ final class CalendarSurface: UIView {
         month = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: today)) ?? today
         selected = today
         super.init(frame: frame)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
         load()
         build()
         render()

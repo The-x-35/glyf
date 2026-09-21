@@ -66,7 +66,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
     init() {
         super.init(frame: .zero)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
         buildWorking()
         buildResult()
         show(.working)
@@ -152,7 +152,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         mapView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(mapTapped)))
         addSubview(mapView)
 
-        table.backgroundColor = .clear
+        table.backgroundColor = Glass.touchableGrid
         table.separatorStyle = .none
         table.showsVerticalScrollIndicator = false
         table.dataSource = self
@@ -528,7 +528,7 @@ final class OptionCell: UITableViewCell {
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
         selectionStyle = .none
         card.backgroundColor = Glass.surfaceCard
         card.layer.cornerRadius = 14

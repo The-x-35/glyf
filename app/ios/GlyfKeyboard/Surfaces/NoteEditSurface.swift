@@ -24,7 +24,7 @@ final class NoteEditSurface: UIView {
     init(noteId: String?, text: String) {
         self.noteId = noteId
         super.init(frame: .zero)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
 
         editor.accessibilityIdentifier = "noteedit:field"
         if !text.isEmpty { editor.append(text) }

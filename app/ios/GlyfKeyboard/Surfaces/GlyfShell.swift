@@ -113,7 +113,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     init() {
         super.init(frame: .zero)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
 
         backButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
         backButton.tintColor = Glass.textPrimary
@@ -131,7 +131,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         header.addSubview(closeButton)
         addSubview(header)
 
-        table.backgroundColor = .clear
+        table.backgroundColor = Glass.touchableGrid
         table.separatorStyle = .none
         table.rowHeight = Glass.siteLook ? 48 : 52   // website: key height x 1.1
         table.dataSource = self
@@ -754,7 +754,7 @@ private final class ShellCell: UITableViewCell {
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: .default, reuseIdentifier: reuseIdentifier)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
         selectionStyle = .none
 
         // Radius 12 card, flat on the sheet, no outline.
@@ -908,7 +908,7 @@ private final class ShellCell: UITableViewCell {
         case .action(let t, let style, _):
             title.text = t
             title.textAlignment = .center
-            card.backgroundColor = .clear
+            card.backgroundColor = Glass.touchableGrid
             card.layer.borderColor = UIColor.clear.cgColor
             switch style {
             case .accent: title.textColor = Glass.accentPrimary
@@ -919,7 +919,7 @@ private final class ShellCell: UITableViewCell {
             title.text = t
             title.textColor = Glass.textSecondary
             title.textAlignment = .center
-            card.backgroundColor = .clear
+            card.backgroundColor = Glass.touchableGrid
             card.layer.borderColor = UIColor.clear.cgColor
         case .clip(let item):
             // Website row: how long ago on the left, the text beside it.

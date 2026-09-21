@@ -59,7 +59,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
 
     init() {
         super.init(frame: .zero)
-        backgroundColor = .clear   // the system sheet is the board
+        backgroundColor = Glass.touchableGrid // sheet shows through; still tappable
 
         backButton.setImage(UIImage(systemName: "arrow.left"), for: .normal)
         backButton.setPreferredSymbolConfiguration(

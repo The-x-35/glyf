@@ -45,7 +45,7 @@ final class ConnectorSurface: UIView, UITableViewDataSource, UITableViewDelegate
     init(connectorId: String) {
         self.connectorId = connectorId
         super.init(frame: .zero)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
         MemoryLogger.logSurface("connector:\(connectorId)")
 
         titleLabel.text = connectorId == "mockcal" ? "Calendar · today" : connectorId
@@ -76,7 +76,7 @@ final class ConnectorSurface: UIView, UITableViewDataSource, UITableViewDelegate
         searchEditor.addGestureRecognizer(tap)
         addSubview(searchEditor)
 
-        table.backgroundColor = .clear
+        table.backgroundColor = Glass.touchableGrid
         table.separatorColor = Glass.strokeHairline
         table.rowHeight = 44
         table.dataSource = self
@@ -298,7 +298,7 @@ final class ConnectorSurface: UIView, UITableViewDataSource, UITableViewDelegate
     func tableView(_ t: UITableView, cellForRowAt ip: IndexPath) -> UITableViewCell {
         let cell = t.dequeueReusableCell(withIdentifier: "c", for: ip)
         let item = items[ip.row]
-        cell.backgroundColor = .clear
+        cell.backgroundColor = Glass.touchableGrid
         cell.textLabel?.text = "\(item.detail)   \(item.title)"
         cell.textLabel?.font = .systemFont(ofSize: 14)
         cell.textLabel?.textColor = Glass.textPrimary

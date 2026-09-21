@@ -46,7 +46,7 @@ final class GlyfBar: UIView {
 
     init() {
         super.init(frame: .zero)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
 
         // Exactly the strip's close: the g pill's place and shape.
         closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)

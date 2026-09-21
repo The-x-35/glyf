@@ -90,7 +90,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     init(hasFullAccess: Bool) {
         self.hasFullAccess = hasFullAccess
         super.init(frame: .zero)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
 
         closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
         closeButton.setPreferredSymbolConfiguration(.init(pointSize: 13, weight: .semibold),
@@ -154,7 +154,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         statusLabel.textColor = Glass.textSecondary
         addSubview(statusLabel)
 
-        table.backgroundColor = .clear
+        table.backgroundColor = Glass.touchableGrid
         table.separatorStyle = .none
         table.dataSource = self
         table.delegate = self
@@ -571,7 +571,7 @@ class SearchCardCell: UITableViewCell {
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
         selectionStyle = .none
         // One result = one element. VoiceOver reads the whole card in a
         // single swipe instead of five fragments, and it is what exposes the
@@ -674,7 +674,7 @@ final class AnswerCell: SearchCardCell {
 final class SunArcView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
         isUserInteractionEnabled = false
     }
     required init?(coder: NSCoder) { fatalError() }
