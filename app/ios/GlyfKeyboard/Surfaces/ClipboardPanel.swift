@@ -72,22 +72,15 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             }
         }
 
-        /// Anything that starts like a web address counts as a link; the rest
-        /// is text. A clip is one or the other, never both, so the pills add
-        /// up to All.
+        /// A clip is a link or it is text, never both, so the pills add up to
+        /// All. `ClipboardStore.isLink` owns the rule (and is unit-tested).
         func accepts(_ clip: ClipItem) -> Bool {
             switch self {
             case .all: return true
             case .image: return false
-            case .link: return Filter.isLink(clip.text)
-            case .text: return !Filter.isLink(clip.text)
+            case .link: return ClipboardStore.isLink(clip.text)
+            case .text: return !ClipboardStore.isLink(clip.text)
             }
-        }
-
-        static func isLink(_ text: String) -> Bool {
-            let t = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard !t.contains(" ") else { return false }
-            return t.hasPrefix("http://") || t.hasPrefix("https://") || t.hasPrefix("www.")
         }
 
         var showsShots: Bool { self == .all || self == .image }

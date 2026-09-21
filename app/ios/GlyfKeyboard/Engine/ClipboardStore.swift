@@ -162,6 +162,34 @@ enum ClipboardStore {
         return nil
     }
 
+    /// Whether a copy IS a link — the rule behind the clipboard's Link pill.
+    ///
+    /// `NSDataDetector` is what iOS itself uses to find links in text, so a
+    /// bare domain counts exactly as it does everywhere else on the phone:
+    /// tryglyf.com is a link without anyone typing https:// in front of it.
+    ///
+    /// The match has to cover the WHOLE clip. A sentence that happens to
+    /// mention a link is still a sentence, and Text and Link have to stay
+    /// exclusive or the pills stop adding up to All.
+    ///
+    /// An email address is left to Text: `mailto:` is a link to the detector,
+    /// but an address is something you paste into a To: field, not something
+    /// you follow.
+    static func isLink(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 2048 else { return false }
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
+        guard let match = linkDetector?.firstMatch(in: trimmed, options: [], range: range),
+              match.range == range,
+              let url = match.url
+        else { return false }
+        return url.scheme?.lowercased() != "mailto"
+    }
+
+    /// Built once: a detector is expensive to make and this runs per card.
+    private static let linkDetector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue)
+
     static func togglePin(_ text: String) {
         var items = load()
         if let i = items.firstIndex(where: { $0.text == text }) {

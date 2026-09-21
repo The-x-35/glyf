@@ -64,6 +64,29 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(ClipboardStore.prune(ancient, now: now).count, 1)
     }
 
+    /// What counts as a link for the clipboard's Link pill. A bare domain
+    /// must count — copying tryglyf.com and not finding it under Link is
+    /// what sent this rule back for a rewrite.
+    func testWhatCountsAsALink() {
+        for link in ["tryglyf.com", "https://www.tryglyf.com",
+                     "http://example.co.uk/a/b?c=d", "www.apple.com",
+                     "apple.com/watch", "https://x.com/arpitx35"] {
+            XCTAssertTrue(ClipboardStore.isLink(link), "\(link) is a link")
+        }
+        for text in ["Flight PNR QR7GH2 · 14 Oct", "meet me at the pier",
+                     "42 glass lane, Delhi", "hello", "3.14",
+                     // A sentence that mentions a link is still a sentence:
+                     // Text and Link must stay exclusive or the pills stop
+                     // adding up to All.
+                     "check this out https://apple.com",
+                     // An address is something you paste, not something you
+                     // follow.
+                     "arpit@example.com"] {
+            XCTAssertFalse(ClipboardStore.isLink(text), "\(text) is not a link")
+        }
+        XCTAssertFalse(ClipboardStore.isLink("   "))
+    }
+
     func testClipboardRefusesSecretsAndDuplicates() {
         let items = [ClipItem(text: "hello", ts: Date(), pinned: false)]
         XCTAssertNil(ClipboardStore.inserting("4242 4242 4242 4242", into: items, now: Date()))
