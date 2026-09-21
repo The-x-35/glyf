@@ -1,37 +1,15 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { emailProblem, normalizeEmail } from "@/lib/email";
 import { CheckIcon } from "./kb/icons";
-
-const KEY = "glyf-waitlist";
 
 export default function Waitlist({ source }: { source: string }) {
   const id = useId();
   const [email, setEmail] = useState("");
-  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [state, setState] = useState<"idle" | "busy" | "ok" | "error">("idle");
   const [msg, setMsg] = useState("");
-  const [already, setAlready] = useState(false);
   const honey = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(KEY)) setState("done");
-    } catch {}
-    // Both forms (hero + footer) mirror each other.
-    const joined = () => setState("done");
-    const reset = () => {
-      setEmail("");
-      setAlready(false);
-      setState("idle");
-    };
-    window.addEventListener("glyf:joined", joined);
-    window.addEventListener("glyf:reset", reset);
-    return () => {
-      window.removeEventListener("glyf:joined", joined);
-      window.removeEventListener("glyf:reset", reset);
-    };
-  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -51,39 +29,17 @@ export default function Waitlist({ source }: { source: string }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) throw new Error(body.error ?? "Couldn't join right now. Try again in a bit.");
-      try {
-        localStorage.setItem(KEY, "1");
-      } catch {}
-      setAlready(Boolean(body.already));
-      setState("done");
-      window.dispatchEvent(new Event("glyf:joined"));
+      setState("ok");
+      setMsg(body.already ? "You're already on the waitlist." : "Email added to the waitlist.");
     } catch (err) {
       setState("error");
       setMsg(err instanceof Error ? err.message : "Couldn't join right now. Try again in a bit.");
     }
   }
 
-  if (state === "done") {
-    return (
-      <p className="wl-done" role="status">
-        <span className="wl-check"><CheckIcon /></span>
-        {already ? "You're already on the list." : "You're on the list. We'll email you when Glyf ships."}
-        <button
-          type="button"
-          className="wl-again"
-          onClick={() => {
-            try {
-              localStorage.removeItem(KEY);
-            } catch {}
-            window.dispatchEvent(new Event("glyf:reset"));
-          }}
-        >
-          Add another
-        </button>
-      </p>
-    );
-  }
-
+  // The form never goes away. Joining says so underneath and leaves the box
+  // where it was, so a second address takes one edit rather than hunting for
+  // a way back to a form that replaced itself.
   return (
     <form className={`wl${state === "error" ? " wl--error" : ""}`} onSubmit={submit} noValidate>
       <div className="wl-box">
@@ -100,7 +56,7 @@ export default function Waitlist({ source }: { source: string }) {
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
-            if (state === "error") setState("idle");
+            if (state !== "busy") setState("idle");
           }}
           aria-invalid={state === "error"}
           aria-describedby={`${id}-msg`}
@@ -110,7 +66,14 @@ export default function Waitlist({ source }: { source: string }) {
           {state === "busy" ? "Joining…" : "Join the waitlist"}
         </button>
       </div>
-      <p id={`${id}-msg`} className="wl-msg" role="status">{state === "error" ? msg : ""}</p>
+      {state === "ok" ? (
+        <p className="wl-ok" role="status">
+          <span className="wl-ok-check"><CheckIcon /></span>
+          {msg}
+        </p>
+      ) : (
+        <p id={`${id}-msg`} className="wl-msg" role="status">{state === "error" ? msg : ""}</p>
+      )}
     </form>
   );
 }
