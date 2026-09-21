@@ -459,12 +459,31 @@ final class GlyfKeyboardViewController: UIInputViewController {
         lastClipProbe = now
         // History only knows a copy once it has been read; a newer one shows
         // as an offer instead of the older text.
+        if ClipboardStore.pasteboardHasNewContent() { nameTheCopy() }
         cachedPaste = ClipContext.isFresh()
-            ? (ClipboardStore.pasteboardHasNewContent()
-                ? "Tap to paste what you copied"
-                : (ClipboardStore.load().first?.text ?? "Tap to paste what you copied"))
+            ? (ClipboardStore.load().first?.text ?? "Tap to paste what you copied")
             : nil
         return cachedPaste
+    }
+
+    /// Which copy we have already asked iOS to name, so a chip that cannot be
+    /// named is not re-asked on every probe.
+    private var namedCopy = -1
+
+    /// Puts the new copy into history so the chip can show the WORDS rather
+    /// than an offer to paste something unnamed. Silent: it only reads what
+    /// iOS will hand over without a banner, unless "Capture everything you
+    /// copy" says otherwise.
+    private func nameTheCopy() {
+        let cc = UIPasteboard.general.changeCount
+        guard namedCopy != cc else { return }
+        namedCopy = cc
+        ClipboardStore.captureNewCopy { [weak self] added in
+            guard added, let self else { return }
+            self.cachedPaste = nil
+            self.lastClipProbe = 0
+            self.updateCandidates()
+        }
     }
 
     private func scheduleCandidates() {

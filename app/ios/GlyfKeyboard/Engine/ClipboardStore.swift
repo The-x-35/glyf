@@ -112,6 +112,16 @@ enum ClipboardStore {
         }
     }
 
+    /// Takes a new copy into history the quietest way available: everything,
+    /// when that was turned on, and otherwise whatever iOS will name without
+    /// asking. Both the panel and the strip chip go through here, so a copy
+    /// shows its words in the same places for the same reasons.
+    static func captureNewCopy(_ done: @escaping (Bool) -> Void) {
+        captureEverything { took in
+            if took { done(true) } else { captureDetected(done) }
+        }
+    }
+
     /// Everything, including prose — the read iOS may ask about.
     ///
     /// Only runs when "Capture everything you copy" is on. Left on Ask, iOS

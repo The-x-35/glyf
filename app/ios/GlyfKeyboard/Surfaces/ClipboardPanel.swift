@@ -120,11 +120,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             self.items = ClipboardStore.load()
             self.rebuildCards()
         }
-        ClipboardStore.captureEverything { took in
-            // Only fall back to what iOS hands over silently when the full
-            // read was off or had nothing new.
-            if took { folded(true) } else { ClipboardStore.captureDetected(folded) }
-        }
+        ClipboardStore.captureNewCopy(folded)
     }
 
     /// Asks Photos off the main thread and folds the answer in when it
@@ -223,8 +219,12 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         }
         if !recent.isEmpty || !shots.isEmpty {
             y = addSection("RECENT", at: y)
-            if !shots.isEmpty { y = addShots(at: y, colW: colW) }
-            if !recent.isEmpty { y = addGrid(recent, at: y, colW: colW) }
+            // Newest first, whichever kind it is. Screenshots used to sit in
+            // a block above every copy however old they were, so a shot from
+            // yesterday buried the thing you copied a minute ago.
+            let entries = (recent.map(Recent.clip) + shots.map(Recent.shot))
+                .sorted { $0.when > $1.when }
+            y = addRecent(entries, at: y, colW: colW)
         }
         if items.isEmpty && shots.isEmpty && !ClipContext.isFresh() {
             y = addTip(at: y, width: w - M.side * 2, icon: "doc.on.clipboard",
@@ -246,12 +246,48 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         return y + M.sectionH
     }
 
-    /// Two columns, each card as tall as its text needs (Gboard's masonry):
-    /// every card lands in whichever column is shorter.
-    private func addGrid(_ clips: [ClipItem], at top: CGFloat, colW: CGFloat) -> CGFloat {
+    /// One thing in the list, whichever kind it is — they interleave by when
+    /// they happened rather than sitting in blocks by type.
+    private enum Recent {
+        case clip(ClipItem)
+        case shot(PHAsset)
+
+        var when: Date {
+            switch self {
+            case .clip(let item): return item.ts
+            case .shot(let asset): return asset.creationDate ?? .distantPast
+            }
+        }
+    }
+
+    /// Two columns, each card as tall as it needs (Gboard's masonry): every
+    /// card lands in whichever column is shorter, in the order given.
+    private func addRecent(_ entries: [Recent], at top: CGFloat, colW: CGFloat) -> CGFloat {
         var colY: [CGFloat] = [top, top]
+        for entry in entries {
+            let col = colY[0] <= colY[1] ? 0 : 1
+            let x = M.side + CGFloat(col) * (colW + M.gap)
+            let h: CGFloat
+            switch entry {
+            case .clip(let item): h = addClipCard(item, x: x, y: colY[col], colW: colW)
+            case .shot(let asset): h = addShotCard(asset, x: x, y: colY[col], colW: colW)
+            }
+            colY[col] += h + M.gap
+        }
+        return max(colY[0], colY[1])
+    }
+
+    /// Pinned copies, which stay in their own block above the rest.
+    private func addGrid(_ clips: [ClipItem], at top: CGFloat, colW: CGFloat) -> CGFloat {
+        addRecent(clips.map(Recent.clip), at: top, colW: colW)
+    }
+
+    /// Returns the card's height so the column it landed in can move down.
+    @discardableResult
+    private func addClipCard(_ item: ClipItem, x: CGFloat, y cardY: CGFloat,
+                             colW: CGFloat) -> CGFloat {
         let font = UIFont.systemFont(ofSize: M.textSize)
-        for item in clips {
+        do {
             let flat = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
             let textW = colW - M.cardPad * 2
             let lineH = font.lineHeight
@@ -260,10 +296,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
                 options: [.usesLineFragmentOrigin], attributes: [.font: font], context: nil)
             let textH = min(ceil(bounding.height), lineH * CGFloat(M.maxLines))
             let h = textH + M.cardPad * 2
-            let col = colY[0] <= colY[1] ? 0 : 1
-            let x = M.side + CGFloat(col) * (colW + M.gap)
-
-            let card = UIControl(frame: CGRect(x: x, y: colY[col], width: colW, height: h))
+            let card = UIControl(frame: CGRect(x: x, y: cardY, width: colW, height: h))
             card.backgroundColor = Glass.surfaceCard
             card.layer.cornerRadius = M.radius
             card.layer.cornerCurve = .continuous
@@ -305,9 +338,8 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             card.tag = Self.contentTag
             scroll.addSubview(card)
             cardViews.append((card, item))
-            colY[col] += h + M.gap
+            return h
         }
-        return max(colY[0], colY[1])
     }
 
     // MARK: Screenshots
@@ -354,14 +386,13 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     }
 
     /// Two columns of screenshot cards, each showing the top of the shot.
-    private func addShots(at top: CGFloat, colW: CGFloat) -> CGFloat {
-        var colY: [CGFloat] = [top, top]
+    @discardableResult
+    private func addShotCard(_ asset: PHAsset, x: CGFloat, y cardY: CGFloat,
+                             colW: CGFloat) -> CGFloat {
         let h = (colW * 1.25).rounded()
         let scale = UIScreen.main.scale
-        for asset in shots {
-            let col = colY[0] <= colY[1] ? 0 : 1
-            let card = UIControl(frame: CGRect(x: M.side + CGFloat(col) * (colW + M.gap),
-                                               y: colY[col], width: colW, height: h))
+        do {
+            let card = UIControl(frame: CGRect(x: x, y: cardY, width: colW, height: h))
             card.backgroundColor = Glass.surfaceCard
             card.layer.cornerRadius = M.radius
             card.layer.cornerCurve = .continuous
@@ -392,9 +423,8 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             card.tag = Self.contentTag
             scroll.addSubview(card)
             shotViews.append((card, asset))
-            colY[col] += h + M.gap
+            return h
         }
-        return max(colY[0], colY[1])
     }
 
     private func copyShot(_ asset: PHAsset) {
