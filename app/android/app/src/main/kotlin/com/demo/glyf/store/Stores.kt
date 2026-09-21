@@ -172,18 +172,6 @@ object SettingsStore {
             current.put("schemaVersion", 8)
             changed = true
         }
-        // Every load, as on iOS: the vault answers to V and to V alone. It
-        // used to live on S, and anything that rebuilds bindings after the
-        // migration has run can put it back and leave BOTH keys opening it.
-        run {
-            val b = current.optJSONObject("bindings") ?: JSONObject()
-            if (b.optString("v") == "surface:vault" &&
-                b.optString("s") == "surface:vault") {
-                b.remove("s")
-                current.put("bindings", b)
-                changed = true
-            }
-        }
         // Every load, as on iOS: Search leads the strip and the default tools
         // are all present (anyone can hide one; losing one is a bug).
         run {

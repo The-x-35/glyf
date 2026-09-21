@@ -185,16 +185,15 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(s.bindings["v"], "user.v")
     }
 
-    /// Two keys must never both open the vault. The migration moves it to V,
-    /// but anything that rebuilds bindings afterwards — a restore, a seeded
-    /// map — could put S back, and both would open it. That is the state the
-    /// website was caught in: the tour said "hold V" while S did the work.
-    func testVaultNeverAnswersToBothSAndV() {
+    /// Several keys may point at the same thing, and that is the person's
+    /// choice to make. Someone who wants the vault on S as well as V keeps
+    /// both — nothing may quietly unbind a key behind their back.
+    func testTwoKeysMayOpenTheSameThing() {
         var both = GlyfSettings()
-        both.schemaVersion = 7   // past the migration: only the every-load rule can fix it
+        both.schemaVersion = 7
         both.bindings = ["s": "surface:vault", "v": "surface:vault", "t": "surface:translate-hud"]
         let s = SettingsStore.migrated(both)
-        XCTAssertNil(s.bindings["s"], "S must let go of the vault")
+        XCTAssertEqual(s.bindings["s"], "surface:vault", "S keeps what it was given")
         XCTAssertEqual(s.bindings["v"], "surface:vault")
     }
 
