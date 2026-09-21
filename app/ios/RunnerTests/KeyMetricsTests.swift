@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// The system keyboard's geometry, measured off iOS 26 on four simulators and
@@ -85,5 +86,48 @@ final class KeyMetricsTests: XCTestCase {
             let c = KeyMetrics.sideMargin + KeyMetrics.keyWidth(width: w) / 2
             XCTAssertEqual(c, centre, accuracy: 0.25, "q centre at \(w)pt")
         }
+    }
+
+    /// The g on the toolbar pill sits in the middle of it.
+    ///
+    /// It did not: a label centres its line box, and a lowercase g has no
+    /// ascender ink and a long tail, so the letter sank to the floor of the
+    /// pill — 10.3pt of black above it, 2.0pt below — and read as a tail cut
+    /// off by the pill's edge. This walks the same arithmetic the toolbar
+    /// does and checks the ink lands centred instead.
+    func testTheGSitsInTheMiddleOfItsPill() {
+        let font = UIFont.systemFont(ofSize: 22, weight: .bold)
+        let pill: CGFloat = 28          // the pill as it measures on a 402pt phone
+        let scale: CGFloat = 3
+        let insets = Glass.opticalInsets(for: "g", font: font, scale: scale)
+        guard let ink = Glass.inkBounds(of: "g", in: font) else {
+            return XCTFail("the system font has no g")
+        }
+        // Where the letter lands once the button has applied the insets.
+        let baseline = pill / 2 + (font.ascender + font.descender) / 2 + insets.top
+        let above = baseline - ink.maxY
+        let below = pill - (baseline - ink.minY)
+        XCTAssertEqual(above, below, accuracy: 1 / scale,
+                       "black above the g (\(above)pt) vs below it (\(below)pt)")
+        XCTAssertGreaterThan(below, 4, "the tail needs room under it")
+    }
+
+    /// Nothing to centre, nothing to move: the pill also shows a ✕ image in
+    /// panels, and an image ignores title insets anyway.
+    func testOpticalCentringLeavesAnEmptyTitleAlone() {
+        let font = UIFont.systemFont(ofSize: 22, weight: .bold)
+        XCTAssertEqual(Glass.opticalInsets(for: nil, font: font, scale: 3), .zero)
+        XCTAssertEqual(Glass.opticalInsets(for: "", font: font, scale: 3), .zero)
+        XCTAssertEqual(Glass.opticalInsets(for: " ", font: font, scale: 3), .zero)
+    }
+
+    /// A capital fills the line box top to bottom, so it barely moves —
+    /// proof the lift is read off the letter and not baked in.
+    func testACapitalNeedsAlmostNoLift() {
+        let font = UIFont.systemFont(ofSize: 22, weight: .bold)
+        let g = Glass.opticalInsets(for: "g", font: font, scale: 3).bottom
+        let cap = Glass.opticalInsets(for: "G", font: font, scale: 3).bottom
+        XCTAssertGreaterThan(g, 3, "the g needs a real lift")
+        XCTAssertLessThan(abs(cap), 1.5, "a G is already near centre")
     }
 }

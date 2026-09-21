@@ -1,3 +1,4 @@
+import CoreText
 import UIKit
 
 /// Design tokens. The KEYBOARD follows the host like Apple's does: light by
@@ -362,6 +363,51 @@ enum Glass {
     static let numberRowExtra: CGFloat = 42
     static let barExtra: CGFloat = 96      // §5.2
     static let shellExtra: CGFloat = 140   // §6.3
+
+    // MARK: Optical centring
+
+    /// Insets that centre a title's INK in its button, not its line box.
+    ///
+    /// A label centres the line box — a slot as tall as the font's tallest
+    /// ascender plus its deepest descender — and a lowercase "g" occupies
+    /// only the bottom of it: no ascender ink at all, and a long tail. Centre
+    /// the box and the letter sinks to the floor, which is what made the g on
+    /// the toolbar pill read as having its tail sliced off (measured on the
+    /// 28pt pill: 10.3pt of black above the letter, 2.0pt below).
+    ///
+    /// The lift comes from the glyph's own outline, so it is measured rather
+    /// than tuned, and stays right if the letter, the weight or the point
+    /// size changes. On the pill it lands the g at 6.3pt above, 6.0pt below —
+    /// one device pixel from dead centre, which is as close as 3x allows.
+    static func opticalInsets(for title: String?, font: UIFont?,
+                              scale: CGFloat) -> UIEdgeInsets {
+        guard let title, let font, let ink = inkBounds(of: title, in: font),
+              ink.height > 0
+        else { return .zero }
+        // The baseline sits (ascender + descender)/2 below the line box's
+        // centre — descender is negative — and the ink's own centre sits
+        // ink.midY above the baseline. The gap between the two is the lift.
+        let lift = (font.ascender + font.descender) / 2 - ink.midY
+        // Land on a device pixel so the letter stays crisp.
+        let grid = max(scale, 1)
+        let snapped = (lift * grid).rounded() / grid
+        return UIEdgeInsets(top: -snapped, left: 0, bottom: snapped, right: 0)
+    }
+
+    /// The bounding box of a string's drawn outlines, in text space (y up
+    /// from the baseline). Nil when the font has no glyphs for it.
+    static func inkBounds(of text: String, in font: UIFont) -> CGRect? {
+        let chars = Array(text.utf16)
+        guard !chars.isEmpty else { return nil }
+        let ct = font as CTFont
+        var glyphs = [CGGlyph](repeating: 0, count: chars.count)
+        guard CTFontGetGlyphsForCharacters(ct, chars, &glyphs, chars.count) else {
+            return nil
+        }
+        let box = CTFontGetBoundingRectsForGlyphs(ct, .default, glyphs, nil,
+                                                  glyphs.count)
+        return box.isNull || box.isEmpty ? nil : box
+    }
 
     // MARK: Accessibility
 

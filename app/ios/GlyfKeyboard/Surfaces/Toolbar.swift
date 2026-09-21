@@ -568,6 +568,13 @@ final class GlyfToolbar: UIView {
         let pillW = (h * 1.18).rounded()
         let pillH = (h * 0.78).rounded()
         glyfButton.frame = CGRect(x: 5, y: mid - pillH / 2, width: pillW, height: pillH)
+        // The "g" has no ascender ink and a deep tail, so a centred LINE BOX
+        // drops it to the floor of the pill and the tail reads as cut off.
+        // Glass.opticalInsets centres the letter's outline instead.
+        glyfButton.titleEdgeInsets = Glass.opticalInsets(
+            for: glyfButton.currentTitle,
+            font: glyfButton.titleLabel?.font,
+            scale: traitCollection.displayScale)
         brandDot.frame = CGRect(x: pillW - pillW * 0.20 - 6, y: pillH * 0.18, width: 6, height: 6)
         divider.isHidden = Glass.solidLook
         divider.frame = CGRect(x: pillW + 11, y: 10, width: Glass.hairlineWidth * 2,
@@ -638,4 +645,5 @@ final class GlyfToolbar: UIView {
             line.frame = CGRect(x: x.rounded() - 0.5, y: mid - lineH / 2, width: 1, height: lineH)
         }
     }
+
 }
