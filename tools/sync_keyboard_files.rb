@@ -77,6 +77,22 @@ Dir.glob(File.join(KB_DIR, '**/*.swift')).sort.each do |abs|
   end
 end
 
+# Brand artwork travels in the appex's own bundle — an extension cannot read
+# the host app's asset catalogue, so the keyboard needs its own copy of the
+# mark. These are resources, not sources, so they go on the copy phase.
+Dir.glob(File.join(KB_DIR, '**/*.png')).sort.each do |abs|
+  rel = abs.sub("#{KB_DIR}/", '')
+  parts = rel.split('/')
+  group = kb_group
+  parts[0..-2].each { |dir| group = ensure_group(group, dir) }
+  ref = group.files.find { |f| f.path == parts.last }
+  ref ||= group.new_reference(parts.last)
+  next if kb.resources_build_phase.files_references.include?(ref)
+
+  kb.resources_build_phase.add_file_reference(ref, true)
+  added << "kb-res:#{rel}"
+end
+
 # New Swift files under app/ios/Runner/ go into the Runner target.
 runner_group = project.main_group['Runner']
 Dir.glob(File.expand_path('../app/ios/Runner/*.swift', __dir__)).sort.each do |abs|
