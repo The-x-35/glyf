@@ -26,8 +26,6 @@ protocol GlyfShellDelegate: AnyObject {
 final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     weak var delegate: GlyfShellDelegate?
-    /// Who receives `paste(itemProviders:)` from a row's system paste button.
-    weak var pasteTarget: UIResponder?
 
     enum ActionStyle { case plain, accent, danger }
 
@@ -50,9 +48,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         /// A picture kept in the vault: tap puts it back on the clipboard,
         /// which is as close to "insert" as any keyboard can get.
         case vaultImage(VaultImage)
-        /// The system paste button, as a row. Whatever is on the clipboard
-        /// comes to us without iOS asking the person to approve it.
-        case pasteInto(title: String, detail: String)
     }
 
     struct Screen {
@@ -83,12 +78,12 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// The vault draws as the website's 3-column card grid, not a list.
     private let vaultGrid = ControlScrollView()
     /// A tile in the vault grid. Text tiles insert; an image tile can only
-    /// go back on the clipboard (no keyboard can type a picture into a host
-    /// field); the paste tile is the system button that takes one in.
+    /// go back on the clipboard, since no keyboard can type a picture into a
+    /// host field. Adding anything happens in the APP — the keyboard reads
+    /// the vault and puts things into the field, it never edits it.
     enum VaultCard {
         case text(label: String, value: String, insert: String)
         case image(VaultImage)
-        case paste
     }
 
     private var vaultCards: [VaultCard] = []
@@ -348,14 +343,12 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         for image in vault.images {
             vaultCards.append(.image(image))
         }
-        vaultCards.append(.paste)
         for (i, item) in vaultCards.enumerated() {
             let labelText: String
             let valueText: String
             switch item {
             case .text(let l, let v, _): labelText = l; valueText = v
             case .image(let img): labelText = "IMAGE"; valueText = ShellCell.age(img.addedAt)
-            case .paste: labelText = "KEEP"; valueText = "an image"
             }
             let cell = UIControl()
             cell.tag = 2000 + i
@@ -389,18 +382,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                 view.isUserInteractionEnabled = false
                 cell.addSubview(view)
             }
-            // The paste tile carries the system button, which is the only way
-            // to take the clipboard without iOS asking to approve it.
-            if case .paste = item {
-                let cfg = UIPasteControl.Configuration()
-                cfg.displayMode = .iconAndLabel
-                cfg.cornerStyle = .capsule
-                let paste = UIPasteControl(configuration: cfg)
-                paste.target = pasteTarget
-                paste.tag = 5
-                paste.frame = CGRect(origin: .zero, size: ClipboardPanel.pasteSize(paste))
-                cell.addSubview(paste)
-            }
 
             let label = UILabel()
             label.tag = 2
@@ -429,8 +410,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                     self?.delegate?.shellInsertText(insert)
                 case .image(let img):
                     self?.delegate?.shellCopyImage(id: img.id)
-                case .paste:
-                    break // the system button inside handles its own tap
                 }
             }, for: .touchUpInside)
             vaultGrid.addSubview(cell)
@@ -451,16 +430,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                                 y: CGFloat(r) * (h + gap), width: w, height: h)
             cell.viewWithTag(1)?.frame = cell.bounds
             cell.viewWithTag(4)?.frame = cell.bounds          // image fills it
-            if let paste = cell.viewWithTag(5) {
-                paste.center = CGPoint(x: w / 2, y: h / 2 + 10)
-            }
             let top = (h - 15 - 2 - 17) / 2
             cell.viewWithTag(2)?.frame = CGRect(x: 8, y: top, width: w - 16, height: 15)
             cell.viewWithTag(3)?.frame = CGRect(x: 8, y: top + 17, width: w - 16, height: 17)
-            // On the paste tile the label sits above the button, not centred.
-            if cell.viewWithTag(5) != nil {
-                cell.viewWithTag(2)?.frame = CGRect(x: 8, y: 10, width: w - 16, height: 15)
-            }
         }
         vaultGrid.contentSize = CGSize(width: vaultGrid.bounds.width,
                                        height: CGFloat(rows) * (h + gap) - gap)
@@ -663,8 +635,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             for image in vault.images {
                 rows.append(.vaultImage(image))
             }
-            rows.append(.pasteInto(title: "Keep an image",
-                                   detail: "Copy one, then Paste"))
             rows.append(.action(title: "＋ New note", style: .accent, handler: {}))
             return Screen(id: id, title: "Vault", rows: rows, appPath: "vault")
 
@@ -1026,20 +996,6 @@ private final class ShellCell: UITableViewCell {
                 view.frame = CGRect(x: 0, y: 0, width: 34, height: 34)
                 setTrailing(view)
             }
-        case .pasteInto(let t, let detail):
-            title.text = t
-            value.isHidden = false
-            value.text = detail
-            accessibilityIdentifier = "vault:paste"
-            // Sized by the control, never by us: squeezed into a smaller
-            // frame it renders as an empty rectangle.
-            let cfg = UIPasteControl.Configuration()
-            cfg.displayMode = .iconAndLabel
-            cfg.cornerStyle = .capsule
-            let paste = UIPasteControl(configuration: cfg)
-            paste.target = shell.pasteTarget
-            paste.frame = CGRect(origin: .zero, size: ClipboardPanel.pasteSize(paste))
-            setTrailing(paste)
         }
     }
 }

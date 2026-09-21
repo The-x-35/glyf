@@ -677,7 +677,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .shell:
             let s = GlyfShell()
             s.delegate = self
-            s.pasteTarget = self
             content.addSubview(s)
             prepareEntrance(s, animated: animated)
             shell = s

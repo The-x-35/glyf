@@ -185,6 +185,19 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(s.bindings["v"], "user.v")
     }
 
+    /// Two keys must never both open the vault. The migration moves it to V,
+    /// but anything that rebuilds bindings afterwards — a restore, a seeded
+    /// map — could put S back, and both would open it. That is the state the
+    /// website was caught in: the tour said "hold V" while S did the work.
+    func testVaultNeverAnswersToBothSAndV() {
+        var both = GlyfSettings()
+        both.schemaVersion = 7   // past the migration: only the every-load rule can fix it
+        both.bindings = ["s": "surface:vault", "v": "surface:vault", "t": "surface:translate-hud"]
+        let s = SettingsStore.migrated(both)
+        XCTAssertNil(s.bindings["s"], "S must let go of the vault")
+        XCTAssertEqual(s.bindings["v"], "surface:vault")
+    }
+
     /// A canned glyf someone had on T is gone with the rest; T translates.
     func testCannedGlyfOnTGivesWayToTranslate() {
         var old = GlyfSettings()

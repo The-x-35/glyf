@@ -247,6 +247,14 @@ enum SettingsStore {
             s.schemaVersion = 7
         }
         if s.customTitles == nil { s.customTitles = [:] }
+        // Every load, not just the one migration: the vault answers to V and
+        // to V alone. It used to live on S, and anything that rebuilds
+        // bindings after the migration has run — a restore, a seeded test
+        // map — could put it back and leave BOTH keys opening it, which is
+        // the state the website was caught in.
+        if s.bindings["v"] == "surface:vault", s.bindings["s"] == "surface:vault" {
+            s.bindings["s"] = nil
+        }
         // Legacy proUnlocked → the plus plan.
         if s.plan == nil {
             s.plan = (s.proUnlocked ?? false) ? "plus" : "free"
