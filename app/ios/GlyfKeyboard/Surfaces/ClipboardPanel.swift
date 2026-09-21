@@ -46,8 +46,61 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     private var laidOutWidth: CGFloat = -1
     private var cardViews: [(card: UIControl, item: ClipItem)] = []
 
+    /// What the list is showing. All / Text / Link / Image are parallel
+    /// kinds, which is what a row of pills is for; pinned is NOT one of them
+    /// — it is a priority, so it stays a section at the top of whichever
+    /// kind is selected rather than becoming a fourth pill that hides the
+    /// rest.
+    private enum Filter: CaseIterable {
+        case all, text, link, image
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .text: return "Text"
+            case .link: return "Link"
+            case .image: return "Image"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .all: return "line.3.horizontal"
+            case .text: return "textformat"
+            case .link: return "link"
+            case .image: return "photo"
+            }
+        }
+
+        /// Anything that starts like a web address counts as a link; the rest
+        /// is text. A clip is one or the other, never both, so the pills add
+        /// up to All.
+        func accepts(_ clip: ClipItem) -> Bool {
+            switch self {
+            case .all: return true
+            case .image: return false
+            case .link: return Filter.isLink(clip.text)
+            case .text: return !Filter.isLink(clip.text)
+            }
+        }
+
+        static func isLink(_ text: String) -> Bool {
+            let t = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !t.contains(" ") else { return false }
+            return t.hasPrefix("http://") || t.hasPrefix("https://") || t.hasPrefix("www.")
+        }
+
+        var showsShots: Bool { self == .all || self == .image }
+        var showsClips: Bool { self != .image }
+    }
+
+    private var filter: Filter = .all
+    private let filterRow = UIView()
+    private var filterPills: [Filter: UIControl] = [:]
+
     private enum M {
         static let headerH: CGFloat = 52
+        static let filterH: CGFloat = 34
         static let side: CGFloat = 12
         static let gap: CGFloat = 10
         static let cardPad: CGFloat = 14
@@ -86,6 +139,33 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
                              for: .touchUpInside)
         header.addSubview(editButton)
         addSubview(header)
+
+        for kind in Filter.allCases {
+            let pill = UIControl()
+            pill.layer.cornerCurve = .continuous
+            pill.accessibilityIdentifier = "clip:filter:\(kind.title.lowercased())"
+            pill.isAccessibilityElement = true
+            pill.accessibilityLabel = kind.title
+            pill.accessibilityTraits = .button
+            let icon = UIImageView(image: UIImage(systemName: kind.symbol,
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)))
+            icon.tag = 1
+            icon.contentMode = .center
+            icon.isUserInteractionEnabled = false
+            pill.addSubview(icon)
+            let title = UILabel()
+            title.tag = 2
+            title.text = kind.title
+            title.font = .systemFont(ofSize: 13.5, weight: .medium)
+            title.isUserInteractionEnabled = false
+            pill.addSubview(title)
+            pill.addAction(UIAction { [weak self] _ in self?.select(kind) },
+                           for: .touchUpInside)
+            filterRow.addSubview(pill)
+            filterPills[kind] = pill
+        }
+        addSubview(filterRow)
+        paintPills()
 
         scroll.showsVerticalScrollIndicator = false
         scroll.alwaysBounceVertical = true
@@ -149,6 +229,23 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     /// On unless turned off in the app (Keyboard → Keep what you copy).
     private var historyOn: Bool { SettingsStore.current.clipboardHistory != false }
 
+    private func select(_ kind: Filter) {
+        guard filter != kind else { return }
+        filter = kind
+        paintPills()
+        rebuildCards()
+    }
+
+    private func paintPills() {
+        for (kind, pill) in filterPills {
+            let on = kind == filter
+            pill.backgroundColor = on ? Glass.brandInk : Glass.surfaceCard
+            (pill.viewWithTag(1) as? UIImageView)?.tintColor = on ? .white : Glass.textPrimary
+            (pill.viewWithTag(2) as? UILabel)?.textColor = on ? .white : Glass.textPrimary
+            pill.accessibilityTraits = on ? [.button, .selected] : .button
+        }
+    }
+
     private func toggleEditing() {
         editing.toggle()
         editButton.backgroundColor = editing ? Glass.accentPrimary : Glass.surfaceCard
@@ -176,7 +273,22 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         titleLabel.frame = CGRect(x: backButton.frame.maxX + 14, y: 0,
                                   width: editButton.frame.minX - backButton.frame.maxX - 20,
                                   height: M.headerH)
-        scroll.frame = CGRect(x: 0, y: M.headerH, width: w, height: bounds.height - M.headerH)
+        filterRow.frame = CGRect(x: 0, y: M.headerH, width: w, height: M.filterH)
+        var px = M.side
+        for kind in Filter.allCases {
+            guard let pill = filterPills[kind] else { continue }
+            let label = pill.viewWithTag(2) as? UILabel
+            let textW = label?.intrinsicContentSize.width ?? 30
+            let pw = 18 + 16 + 6 + textW + 14
+            let ph = M.filterH - 8
+            pill.frame = CGRect(x: px, y: 4, width: pw, height: ph)
+            pill.layer.cornerRadius = ph / 2
+            pill.viewWithTag(1)?.frame = CGRect(x: 11, y: 0, width: 16, height: ph)
+            label?.frame = CGRect(x: 11 + 16 + 6, y: 0, width: textW, height: ph)
+            px += pw + 7
+        }
+        let top = M.headerH + M.filterH
+        scroll.frame = CGRect(x: 0, y: top, width: w, height: bounds.height - top)
         scrim.frame = bounds
         if scroll.bounds.width > 0, laidOutWidth != scroll.bounds.width {
             laidOutWidth = scroll.bounds.width
@@ -211,24 +323,30 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
             y = addFreshCard(at: y, width: w - M.side * 2)
         }
 
-        let pinned = items.filter(\.pinned)
-        let recent = items.filter { !$0.pinned }
+        // Pinned still leads, but only within the kind being shown: picking
+        // Link should not scroll you past pinned text to reach the links.
+        let clips = filter.showsClips ? items.filter(filter.accepts) : []
+        let visibleShots = filter.showsShots ? shots : []
+        let pinned = clips.filter(\.pinned)
+        let recent = clips.filter { !$0.pinned }
         if !pinned.isEmpty {
             y = addSection("PINNED", at: y)
             y = addGrid(pinned, at: y, colW: colW)
         }
-        if !recent.isEmpty || !shots.isEmpty {
+        if !recent.isEmpty || !visibleShots.isEmpty {
             y = addSection("RECENT", at: y)
             // Newest first, whichever kind it is. Screenshots used to sit in
             // a block above every copy however old they were, so a shot from
             // yesterday buried the thing you copied a minute ago.
-            let entries = (recent.map(Recent.clip) + shots.map(Recent.shot))
+            let entries = (recent.map(Recent.clip) + visibleShots.map(Recent.shot))
                 .sorted { $0.when > $1.when }
             y = addRecent(entries, at: y, colW: colW)
         }
-        if items.isEmpty && shots.isEmpty && !ClipContext.isFresh() {
-            y = addTip(at: y, width: w - M.side * 2, icon: "doc.on.clipboard",
-                       text: "Nothing copied yet")
+        if clips.isEmpty && visibleShots.isEmpty && !ClipContext.isFresh() {
+            y = addTip(at: y, width: w - M.side * 2, icon: filter.symbol,
+                       text: filter == .all
+                           ? "Nothing copied yet"
+                           : "No \(filter.title.lowercased()) copied yet")
         }
         scroll.contentSize = CGSize(width: w, height: y + 12)
     }

@@ -77,14 +77,14 @@ enum ClipboardStore {
 
     /// Puts a new copy straight into history, asking nothing.
     ///
-    /// Reading `.string` raises "Allow Paste?" for every new copy, which is
-    /// why nothing here reads it. `detectValues` is the exception Apple
-    /// provides: it hands back the ACTUAL text for what iOS can recognise —
-    /// a link, something that looks like a search, a number — and stays
-    /// silent while doing it, so a copied link lands in the list by itself.
+    /// `detectValues` hands back the ACTUAL text for what iOS can recognise
+    /// — a link, something search-shaped, a number — and reaches copies that
+    /// a plain `.string` read would only get with Full Access.
     ///
-    /// Prose it will not answer for. That copy still waits behind the Paste
-    /// button, which is the only way to see arbitrary text without a banner.
+    /// It is NOT silent. Handing over the value is a read, and iOS raises
+    /// "Allow Paste?" for it exactly as it does for `.string`; only
+    /// `detectPatterns`, which answers with types and no values, stays quiet.
+    /// So this sits behind the same switch as the full read.
     static func captureDetected(_ done: @escaping (Bool) -> Void) {
         guard fullAccessHint, pasteboardHasNewContent(),
               SettingsStore.current.clipboardHistory != false
@@ -117,6 +117,12 @@ enum ClipboardStore {
     /// asking. Both the panel and the strip chip go through here, so a copy
     /// shows its words in the same places for the same reasons.
     static func captureNewCopy(_ done: @escaping (Bool) -> Void) {
+        // Both routes are reads, so both sit behind the same switch. Left
+        // off, nothing here touches the clipboard and iOS never asks; the
+        // Paste button is how a copy gets in.
+        guard SettingsStore.current.clipboardCaptureAll == true else {
+            return done(false)
+        }
         captureEverything { took in
             if took { done(true) } else { captureDetected(done) }
         }
