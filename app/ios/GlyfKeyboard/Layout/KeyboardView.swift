@@ -264,6 +264,31 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         KeyHit.slack(frame: st.key.frame, start: st.start, dx: dx, dy: dy)
     }
 
+#if DEBUG
+    /// Debug only: runs the real touch decision at a point, including the
+    /// small drift every finger makes between down and up.
+    ///
+    /// This exists because a gap CANNOT be tapped synthetically — the
+    /// simulator control and XCUITest both route a tap to an accessibility
+    /// element, and a gap has none, so the touch never reaches the process.
+    /// Driving the decision directly is the only way to exercise those
+    /// coordinates on a simulator.
+    func debugTap(at p: CGPoint) {
+        guard let kv = key(at: p) else {
+            Perf.say("DEBUGTAP (\(p.x),\(p.y)) -> NO KEY")
+            return
+        }
+        let st = TouchState(key: kv, start: p)
+        let drift = CGPoint(x: p.x + 1.5, y: p.y + 1.5)
+        if !slack(st, dx: 14, dy: 16).contains(drift) {
+            Perf.say("DEBUGTAP (\(p.x),\(p.y)) -> \(kv.spec.id) DROPPED on drift")
+            return
+        }
+        Perf.say("DEBUGTAP (\(p.x),\(p.y)) -> \(kv.spec.id)")
+        tapAction(kv, event: nil, at: p)
+    }
+#endif
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             let p = touch.location(in: self)
