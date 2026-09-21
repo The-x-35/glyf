@@ -326,7 +326,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
         return later(() => set({ panel: st.current.panel === "translate" ? null : "translate" }));
       case "r":
         return later(() => set({ panel: "tones" }));
-      case "s":
+      case "v":
         return later(() => set({ panel: "vault" }));
       case "w": {
         const t = st.current.text;

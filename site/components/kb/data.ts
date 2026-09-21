@@ -99,7 +99,8 @@ export const SKILLS: Record<string, { name: string; hint: string }> = {
   p: { name: "Proofread", hint: "Fixes grammar, keeps your voice" },
   t: { name: "Translate", hint: "Live, as you type" },
   r: { name: "Rewrite", hint: "Pick a tone" },
-  s: { name: "Vault", hint: "Everything about you" },
+  // V, the letter it is named for — the same key the keyboards bind it to.
+  v: { name: "Vault", hint: "Everything about you" },
   w: { name: "Weather", hint: "Live conditions" },
 };
 
