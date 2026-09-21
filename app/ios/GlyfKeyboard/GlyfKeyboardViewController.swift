@@ -2222,6 +2222,17 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         setSurface(.none)
     }
 
+    /// The ✕ on a clipboard chip. The copy is not wanted here, so it is
+    /// marked done and never offered again — it is still in the clipboard
+    /// panel if it turns out it was wanted after all.
+    func toolbarSmartDismissed() {
+        ClipContext.markDone()
+        suggestedChip = nil
+        suggestedFor = ""
+        toolbar.showSmart(nil)
+        updateCandidates()
+    }
+
     func toolbarSmartTapped(_ chip: Smart.Chip) {
         if case .action(_, _, let intent) = chip {
             suggestedChip = nil

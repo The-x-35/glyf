@@ -16,6 +16,8 @@ protocol ToolbarDelegate: AnyObject {
     /// The smart chip (a sum just typed, or a saved detail the sentence asks
     /// for) was tapped.
     func toolbarSmartTapped(_ chip: Smart.Chip)
+    /// The ✕ on a clipboard chip: this copy is not wanted.
+    func toolbarSmartDismissed()
 }
 
 /// §6.2 — the 44pt strip above the keys. When autocorrect candidates show,
@@ -49,6 +51,11 @@ final class GlyfToolbar: UIView {
     private let smartCard = UIControl()
     private let smartKey = UILabel()
     private let smartValue = UILabel()
+    /// Clipboard chips lead with the clipboard mark and end with a way out,
+    /// the way Gboard's do: the pill IS the paste, so it needs no verb, and
+    /// something that appears because you copied must be dismissable.
+    private let smartLead = UIImageView()
+    private let smartClose = UIButton(type: .system)
     private(set) var smartChip: Smart.Chip?
     /// The strip item currently lifted by a hold, if any.
     private var draggingId: String?
@@ -189,6 +196,21 @@ final class GlyfToolbar: UIView {
         smartValue.textColor = Glass.textPrimary
         smartValue.lineBreakMode = .byTruncatingTail
         smartCard.addSubview(smartValue)
+        smartLead.contentMode = .scaleAspectFit
+        smartLead.tintColor = Glass.accentPrimary
+        smartLead.isHidden = true
+        smartCard.addSubview(smartLead)
+        smartClose.setImage(UIImage(systemName: "xmark",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)),
+                            for: .normal)
+        smartClose.tintColor = Glass.textSecondary
+        smartClose.isHidden = true
+        smartClose.accessibilityLabel = "Dismiss"
+        smartClose.accessibilityIdentifier = "strip:smart:close"
+        smartClose.addAction(UIAction { [weak self] _ in
+            self?.delegate?.toolbarSmartDismissed()
+        }, for: .touchUpInside)
+        smartCard.addSubview(smartClose)
         addSubview(smartCard)
 
         reloadItems()
@@ -373,6 +395,15 @@ final class GlyfToolbar: UIView {
         smartChip = chip
         smartCard.isHidden = chip == nil || panelTitle != nil
         if let chip {
+            let isPaste: Bool = { if case .paste = chip { return true }; return false }()
+            smartLead.isHidden = !isPaste
+            smartClose.isHidden = !isPaste
+            smartLead.image = isPaste ? UIImage(systemName: "doc.on.clipboard",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+                : nil
+            // A clipboard pill is the paste: naming the action twice, once as
+            // a word and once as the tap, is what made it read as clutter.
+            smartKey.isHidden = isPaste
             // Content on the left, the action on the right edge.
             if let verb = chip.verb {
                 smartKey.attributedText = nil
@@ -547,12 +578,25 @@ final class GlyfToolbar: UIView {
             let cardH = (h * 0.78).rounded()
             smartCard.frame = CGRect(x: left, y: mid - cardH / 2,
                                      width: max(0, bounds.width - left - 6), height: cardH)
-            let keyW = min(smartKey.intrinsicContentSize.width, 120)
+            let paste = !smartLead.isHidden
+            // Gboard's clipboard suggestion is a pill; the rest stay cards.
+            smartCard.layer.cornerRadius = paste ? cardH / 2 : 12
+            let keyW = smartKey.isHidden ? 0 : min(smartKey.intrinsicContentSize.width, 120)
             smartKey.frame = CGRect(x: smartCard.bounds.width - 14 - keyW, y: 0,
                                     width: keyW, height: cardH)
-            smartValue.frame = CGRect(x: 14, y: 0,
-                                      width: max(0, smartCard.bounds.width - keyW - 38),
-                                      height: cardH)
+            if paste {
+                smartLead.frame = CGRect(x: 13, y: (cardH - 16) / 2, width: 16, height: 16)
+                let c: CGFloat = 30
+                smartClose.frame = CGRect(x: smartCard.bounds.width - c - 3,
+                                          y: (cardH - c) / 2, width: c, height: c)
+                smartValue.frame = CGRect(x: 37, y: 0,
+                                          width: max(0, smartClose.frame.minX - 43),
+                                          height: cardH)
+            } else {
+                smartValue.frame = CGRect(x: 14, y: 0,
+                                          width: max(0, smartCard.bounds.width - keyW - 38),
+                                          height: cardH)
+            }
         }
         if panelTitle != nil {
             var x = left

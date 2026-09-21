@@ -442,7 +442,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         card.layer.cornerCurve = .continuous
         let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)))
-        icon.tintColor = Glass.accentPrimary
+        icon.tintColor = Glass.textSecondary
         icon.contentMode = .center
         icon.frame = CGRect(x: M.cardPad - 2, y: 0, width: 24, height: 48)
         card.addSubview(icon)
@@ -465,9 +465,11 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         let labelX = M.cardPad + 30
         let label = UILabel(frame: CGRect(x: labelX, y: 0,
                                           width: max(0, paste.frame.minX - labelX - 8), height: 48))
-        label.text = "Something new copied"
-        label.font = .systemFont(ofSize: M.textSize, weight: .semibold)
-        label.textColor = Glass.textPrimary
+        // Quiet: the button is the thing to press, so the line beside it is a
+        // label and not a headline competing with it.
+        label.text = "Something you copied"
+        label.font = .systemFont(ofSize: M.textSize - 1)
+        label.textColor = Glass.textSecondary
         card.addSubview(label)
 
         card.tag = Self.contentTag
