@@ -29,6 +29,7 @@ export default function Waitlist({ source }: { source: string }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) throw new Error(body.error ?? "Couldn't join right now. Try again in a bit.");
+      setEmail(""); // the address is in, so the box is ready for the next one
       setState("ok");
       setMsg(body.already ? "You're already on the waitlist." : "Email added to the waitlist.");
     } catch (err) {
@@ -37,9 +38,9 @@ export default function Waitlist({ source }: { source: string }) {
     }
   }
 
-  // The form never goes away. Joining says so underneath and leaves the box
-  // where it was, so a second address takes one edit rather than hunting for
-  // a way back to a form that replaced itself.
+  // The form never goes away. Joining says so underneath and empties the box
+  // ready for the next address, rather than replacing the thing you just used
+  // with a sentence and a link back to it.
   return (
     <form className={`wl${state === "error" ? " wl--error" : ""}`} onSubmit={submit} noValidate>
       <div className="wl-box">
