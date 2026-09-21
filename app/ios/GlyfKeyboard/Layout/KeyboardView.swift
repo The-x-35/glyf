@@ -83,7 +83,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     init() {
         super.init(frame: .zero)
         isMultipleTouchEnabled = true
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
         rebuild()
     }
 
@@ -98,6 +98,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
 
     func rebuild() {
+        backgroundColor = Glass.touchableGrid // appearance may have flipped
         keys.forEach { $0.removeFromSuperview() }
         keys = []
         let s = SettingsStore.current
@@ -262,6 +263,24 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     /// faster you typed.
     private func slack(_ st: TouchState, dx: CGFloat, dy: CGFloat) -> CGRect {
         KeyHit.slack(frame: st.key.frame, start: st.start, dx: dx, dy: dy)
+    }
+
+    /// The whole key area is live, the way Apple's keyboard is.
+    ///
+    /// Keys are not interactive themselves — the container drives every
+    /// touch — so a point that missed every key fell straight THROUGH this
+    /// view: no touchesBegan, no press, nothing lit up. The gaps between
+    /// keys, the margins down each side and the strip beside the indented
+    /// middle row were dead at the HIT TEST, long before `key(at:)` could
+    /// say which key was nearest. All that careful nearest-key work was
+    /// unreachable for exactly the touches it existed to catch.
+    ///
+    /// Claiming the whole bounds is what makes it reachable. `key(at:)`
+    /// still decides WHICH key; this only decides that the touch is ours.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // A real interactive child (the accent popup) gets first refusal.
+        if let hit = super.hitTest(point, with: event), hit !== self { return hit }
+        return bounds.contains(point) ? self : nil
     }
 
 #if DEBUG

@@ -324,6 +324,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
                   let seq = d["seq"] as? Int, seq != self.lastDebugTapSeq,
                   let x = d["x"] as? Double, let y = d["y"] as? Double else { return }
             self.lastDebugTapSeq = seq
+            // Consume it: a left-behind point replays on every appearance.
+            AppGroupStore.writeJSON(["seq": seq, "done": true], name: "debug-tap.json")
             self.keyboardView.debugTap(at: CGPoint(x: x, y: y))
         }
     }

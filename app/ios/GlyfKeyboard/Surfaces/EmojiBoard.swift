@@ -51,7 +51,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     init() {
         super.init(frame: .zero)
-        backgroundColor = .clear
+        backgroundColor = Glass.touchableGrid
 
         searchEditor.onChange = { [weak self] q in
             guard let self else { return }
@@ -96,7 +96,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         layout.minimumLineSpacing = 0
         layout.sectionInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 14)
         collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        collection.backgroundColor = .clear
+        collection.backgroundColor = Glass.touchableGrid
         collection.dataSource = self
         collection.delegate = self
         collection.register(EmojiCell.self, forCellWithReuseIdentifier: "e")

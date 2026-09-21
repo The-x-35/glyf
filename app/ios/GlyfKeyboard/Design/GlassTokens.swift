@@ -181,6 +181,21 @@ enum Glass {
     /// follows the sheet's appearance whatever colour the keys are.
     static var chromeDark: Bool { isDark }
 
+    /// The key grid's own background. NOT `.clear`, and not for looks.
+    ///
+    /// A KEYBOARD EXTENSION discards a touch that lands on a fully
+    /// transparent pixel before hitTest ever runs — unlike an ordinary app,
+    /// where only the view's alpha matters. A clear grid left every gap
+    /// between keys dead at the window: no hitTest, no touchesBegan, no
+    /// press, and the nearest-key rule never got a say.
+    ///
+    /// One part in 255 is invisible over the system sheet and over any theme
+    /// background, and is enough to make the whole area touchable. It
+    /// follows the appearance so it can never tint a dark or themed board.
+    static var touchableGrid: UIColor {
+        (isDark ? UIColor.black : UIColor.white).withAlphaComponent(0.01)
+    }
+
     // MARK: Blur (ONE layer per surface, never per key — §5.2)
 
     static var base: UIBlurEffect {
