@@ -587,9 +587,16 @@ final class GlyfToolbar: UIView {
         // An app icon's corner, not a pill's: iOS rounds its icons to a little
         // under a third of the side, and the app's own tab bar matches.
         glyfButton.layer.cornerRadius = (tile * 0.30).rounded()
-        // The logo inside, at the proportion the app icon uses: mark to edge
-        // is about a sixth of the tile on every side.
-        let inset = (tile * 0.17).rounded()
+        // The logo inside, near edge to edge.
+        //
+        // NOT the app icon's own padding. The icon gives the letter 40% of
+        // its height, which is right at 60pt on a home screen and far too
+        // small at 28 — it measured 10.9pt and read as a letter lost in a
+        // box. A home-screen icon is padded because it sits on wallpaper; a
+        // chip in a toolbar is not. Pulled in to a 2pt margin the same mark
+        // draws its letter at 14.5pt, about what the system "g" it replaced
+        // stood at, and the dot still clears the tile's rounded corner.
+        let inset = (tile * 0.07).rounded()
         let art = glyfButton.bounds.insetBy(dx: inset, dy: inset)
         markView.frame = art
         dotView.frame = art
