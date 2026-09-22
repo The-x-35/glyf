@@ -17,9 +17,10 @@ Two things a 1500x500 banner has to respect that a share card does not:
 
 Run from the repo root:
 
-    python3 tools/make_x_banner.py [out.png]
+    python3 tools/make_x_banner.py            # both, into site/public/brands/
+    python3 tools/make_x_banner.py --dark out.png
 
-Defaults to site/public/brands/glyf-x-banner.png. Needs Pillow.
+Writes glyf-x-banner.png and glyf-x-banner-dark.png. Needs Pillow.
 """
 
 import math
@@ -36,6 +37,21 @@ og.W, og.H, og.S = W, H, 2  # the shared helpers read these
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "site/public/brands/glyf-x-banner.png")
+OUT_DARK = os.path.join(ROOT, "site/public/brands/glyf-x-banner-dark.png")
+
+# The site's own dark tokens, read off app/globals.css :root[data-theme="dark"].
+# Nothing here is invented: --bg, --ink, --ink-2, --kb, --kb-key, --kb-fn, and
+# --kb-edge resolved against the board it sits on.
+DARK = dict(BG=(0, 0, 0), INK=(245, 245, 247), INK_2=(161, 161, 166),
+            INK_3=(110, 110, 115), KB=(31, 31, 34), KEY=(72, 72, 76),
+            KB_FN=(46, 46, 50), EDGE=(9, 9, 10))
+LIGHT = dict(BG=og.BG, INK=og.INK, INK_2=og.INK_2, INK_3=og.INK_3,
+             KB=og.KB, KEY=og.KEY, KB_FN=og.KB_FN, EDGE=og.EDGE)
+
+
+def palette(dark):
+    for k, v in (DARK if dark else LIGHT).items():
+        setattr(og, k, v)
 
 TITLE_SIZE = 86.0
 SUB_SIZE = 25.0
@@ -43,7 +59,7 @@ SUB_SIZE = 25.0
 AVATAR = (24, H - 96, 24 + 150, H)
 
 
-def backdrop():
+def backdrop(dark=False):
     """The hero's keyboard, laid back and faded, sized for a 3:1 banner.
 
     `make_og_image.backdrop()` is tuned for a 630px-tall card: on 500px the
@@ -84,7 +100,7 @@ def backdrop():
             dy = (y * H - H * 0.88) / (H * 0.78)
             dist = math.hypot(dx, dy)
             k = 1.0 if dist <= 0.2 else 0.0 if dist >= 0.76 else 1 - (dist - 0.2) / 0.56
-            vals.append(int(255 * 0.34 * k * rise))
+            vals.append(int(255 * (0.46 if dark else 0.34) * k * rise))
     mask = Image.new("L", (mw, mh))
     mask.putdata(vals)
     mask = mask.resize((og.px(W), og.px(H)), Image.BILINEAR)
@@ -113,10 +129,10 @@ def headline(d, top):
     og.draw_text(d, x, baseline, tail, tf, ttr, og.INK)
 
 
-def main():
-    out_path = sys.argv[1] if len(sys.argv) > 1 else OUT
+def render(dark, out_path):
+    palette(dark)
     canvas = Image.new("RGBA", (og.px(W), og.px(H)), og.BG + (255,))
-    canvas.alpha_composite(backdrop())
+    canvas.alpha_composite(backdrop(dark))
     d = ImageDraw.Draw(canvas)
 
     # The words sit above the middle: the keyboard rises from the bottom, and
@@ -134,6 +150,17 @@ def main():
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     canvas.convert("RGB").resize((W, H), Image.LANCZOS).save(out_path, "PNG", optimize=True)
     print("wrote", os.path.relpath(out_path, ROOT), os.path.getsize(out_path), "bytes")
+
+
+def main():
+    args = [a for a in sys.argv[1:] if a != "--dark"]
+    if "--dark" in sys.argv:
+        render(True, args[0] if args else OUT_DARK)
+    elif args:
+        render(False, args[0])
+    else:
+        render(False, OUT)
+        render(True, OUT_DARK)
 
 
 if __name__ == "__main__":

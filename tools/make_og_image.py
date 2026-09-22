@@ -33,6 +33,11 @@ INK_3 = (161, 161, 166)
 ACCENT = (124, 92, 255)
 KB = (213, 216, 222)
 KB_FN = (181, 186, 195)
+# The key face and the shadow under it. Separate from KB so the same drawing
+# can run in the site's dark palette (see make_x_banner.py), where a key is
+# not white and the edge is not a shade of the board.
+KEY = (255, 255, 255)
+EDGE = None  # None = derive from KB, which is what the light hero does
 
 TITLE = "Type less. Glyf more."
 SUB = "The AI keyboard that does the rest."
@@ -156,7 +161,7 @@ def keyboard_layer():
     rounded(d, (0, 0, px(board_w) - 1, px(board_h) - 1), px(36), KB + (255,))
     col_w = (board_w - 2 * pad - 19 * col_gap) / 20
     letter_f, fn_f, space_f = font(31.2, 400), font(20.4, 400), font(21.6, 500)
-    edge = tuple(int(c * 0.76) for c in KB) + (255,)
+    edge = (EDGE or tuple(int(c * 0.76) for c in KB)) + (255,)
 
     rows = [
         [(k, 2, None) for k in "qwertyuiop"],
@@ -176,7 +181,7 @@ def keyboard_layer():
             fn = key in ("shift", "del", "123", "emoji", ".", "return")
             box = (px(x), px(y), px(x + w), px(y + row_h))
             rounded(d, (box[0], box[1] + px(2), box[2], box[3] + px(2)), px(12), edge)
-            rounded(d, box, px(12), (KB_FN if fn else (255, 255, 255)) + (255,))
+            rounded(d, box, px(12), (KB_FN if fn else KEY) + (255,))
             cx, cy = px(x + w / 2), px(y + row_h / 2)
             if len(key) == 1 and key.isalpha():
                 d.text((cx, cy), key, font=letter_f, fill=INK + (255,), anchor="mm")
