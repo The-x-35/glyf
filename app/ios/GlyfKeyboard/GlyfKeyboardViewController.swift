@@ -471,9 +471,15 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var namedCopy = -1
 
     /// Puts the new copy into history so the chip can show the WORDS rather
-    /// than an offer to paste something unnamed. Silent: it only reads what
-    /// iOS will hand over without a banner, unless "Capture everything you
-    /// copy" says otherwise.
+    /// than an offer to paste something unnamed.
+    ///
+    /// Does nothing at all unless "Capture everything you copy" is on. There
+    /// is no quiet way in: `detectValues` names a link or a number, but
+    /// handing over the value IS a read and iOS raises "Allow Paste?" for it
+    /// exactly as it does for the whole string. Only `detectPatterns`, which
+    /// answers with types and no values, stays silent, and a type is not
+    /// something a chip can show. So the offer to Paste is the default route
+    /// — the tap is the permission — and this is the opt-in one.
     private func nameTheCopy() {
         let cc = UIPasteboard.general.changeCount
         guard namedCopy != cc else { return }

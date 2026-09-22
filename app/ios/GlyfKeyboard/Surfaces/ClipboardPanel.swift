@@ -201,7 +201,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     private var shotsRequest = 0
 
     private func loadScreenshots() {
-        guard SettingsStore.current.clipboardScreenshots != false else {
+        guard SettingsStore.current.clipboardScreenshots == true else {
             if !shots.isEmpty { shots = []; rebuildCards() }
             return
         }
@@ -341,6 +341,18 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
                            ? "Nothing copied yet"
                            : "No \(filter.title.lowercased()) copied yet")
         }
+        // Why a copy might be missing. iOS hands a keyboard nothing from the
+        // clipboard on its own: the Paste button above is a copy arriving by
+        // the one route that needs no permission, because the tap IS the
+        // permission. Everything else has to be asked for, and until it is,
+        // copies made elsewhere never reach this list — which looks exactly
+        // like the clipboard being broken. So it says so.
+        if SettingsStore.current.clipboardCaptureAll != true, filter != .image {
+            y = addTip(at: y, width: w - M.side * 2, icon: "hand.raised",
+                       text: "Only what you Paste above is kept. For every copy: "
+                           + "Glyf app → Keyboard → Capture everything you copy, "
+                           + "then Settings → Glyf → Paste from Other Apps → Allow.")
+        }
         scroll.contentSize = CGSize(width: w, height: y + 12)
     }
 
@@ -459,7 +471,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     /// a keyboard asks on first use. Opening the clipboard with screenshots
     /// turned on is that first use.
     private func askForPhotosIfNeeded() {
-        guard SettingsStore.current.clipboardScreenshots != false,
+        guard SettingsStore.current.clipboardScreenshots == true,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .notDetermined else { return }
         PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
             guard status == .authorized || status == .limited else { return }
@@ -472,7 +484,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     /// Screenshots from the last two days, newest first, as Gboard keeps
     /// them. Runs off the main thread — see `loadScreenshots`.
     static func recentScreenshots() -> [PHAsset] {
-        guard SettingsStore.current.clipboardScreenshots != false else { return [] }
+        guard SettingsStore.current.clipboardScreenshots == true else { return [] }
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || status == .limited else { return [] }
         let options = PHFetchOptions()

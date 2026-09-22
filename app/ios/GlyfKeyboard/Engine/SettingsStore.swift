@@ -65,8 +65,13 @@ struct GlyfSettings: Codable, Equatable {
     /// Allow, which is why this is off until they ask for it.
     var clipboardCaptureAll: Bool? = false
     /// Screenshots from the last hour in the clipboard (Gboard's setting).
-    /// The app asks for Photos access when it is turned on.
-    var clipboardScreenshots: Bool? = true
+    /// The app asks for Photos access when it is turned on, which is the only
+    /// moment the person is ever asked — so this has to stay OFF until they
+    /// turn it on, or the keyboard spends its time fetching from a library it
+    /// was never given. It defaulted to true while the app's own switch
+    /// defaulted to false: the app said screenshots were off, the keyboard
+    /// believed they were on, and no screenshot ever appeared either way.
+    var clipboardScreenshots: Bool? = false
     /// "" | "color:#RRGGBB" | "grad:<id>" — Gboard-style painted backdrop.
     var themeBg: String? = ""
     /// Gboard "borders around keys".
