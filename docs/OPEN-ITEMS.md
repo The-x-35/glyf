@@ -2,7 +2,7 @@
 
 Everything pending, blocked or owed, in one place. **Owner** is who has to act: Arpit (accounts, keys, money, logins, design calls) or Build (code work). Area docs have more detail: [WEBSITE.md](WEBSITE.md), [APPS.md](APPS.md), [BACKEND.md](BACKEND.md).
 
-Last updated: Wed 16 Sep 2026 (IST).
+Last updated: Tue 22 Sep 2026 (IST).
 
 ---
 
@@ -80,3 +80,17 @@ Found by reading the code on 16 Sep. Nothing was changed, because that task was 
 | R1 | The gate recordings `docs/evidence/*.mp4` exist only on the dev Mac (too big for GitHub). Back them up somewhere (Git LFS, Drive) if they matter | Arpit |
 | R2 | The stray Xcode template project in `/glyf` (its own git repo, unrelated to the app) can be deleted if not needed | Arpit |
 | R3 | Re-run `python3 tools/make_og_image.py` whenever the hero copy or styles change | Build |
+
+## 6. Open as of 22 Sep 2026
+
+| # | Item | Owner |
+|---|---|---|
+| N1 | **Set Paste from Other Apps to Allow** (Settings → Glyf) on the test phone. Until then iOS asks once per copy, which is the only thing between the clipboard and filling itself. No app can write this setting | Arpit |
+| N2 | **Turn on Recent screenshots** once (Glyf app → Keyboard). That tap is the only moment Glyf can ask for the photo library | Arpit |
+| N3 | Confirm on a real device whether tapping "Allow Paste" on iOS's own banner also flips the per-app setting, or only allows that one read. The simulator cannot settle it | Arpit |
+| N4 | Bump the build past 7 before the next TestFlight upload. Everything since build 7 (the whole toolbar and clipboard run) is unreleased | Build |
+| N5 | About fifteen local commits are unpushed. Arpit pushes | Arpit |
+| N6 | Android parity for this week's iOS work: the vault's images, the clipboard's categories and screenshots, and the toolbar's apps grid are iOS-only. Android has not been run since | Build |
+| N7 | `Surfaces/ClipContextStrip.swift` is dead code (never instantiated) and its comment claims `UIPasteControl` is inert, which is wrong. Delete it | Build |
+| N8 | The site has a pre-existing hydration mismatch in `BackdropKeys` (NaN transforms on first paint). It renders correctly after hydration but logs two console errors | Build |
+| N9 | App strings still contain em dashes; only the site was cleaned (D88 era) | Build |

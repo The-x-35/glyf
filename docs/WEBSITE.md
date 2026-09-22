@@ -67,9 +67,25 @@ So every feature is taught by a friend needing something, and the visitor does i
 
 **Phones (900px and below):** a full-screen iMessage conversation. The glass back button shows the unread count and slides in a "Messages" list screen (large title, rows with time and chevron, blue unread dots, bottom search pill). A short headline for the current chat sits above the conversation.
 
-### 3.3 Scroll story
+### 3.3 Scroll story: one scroll, one action (22 Sep 2026)
 
-- The section is `N` chapters tall (`--n` = 8). Desktop height `calc(var(--n) * 78svh + 100svh)`, phones `calc(var(--n) * 70svh + 100svh)`. The inner `.xp-pin` is sticky, so the stage stays pinned while scroll progress picks the active chat.
+The stage is a **timeline of steps**, not a list of chats. One step of scroll performs one action: tap whatever the coach is pointing at, or, when a chat is finished, open the next one. **A chat changes because it is done, never because the page moved.**
+
+- The section is `TICKS` steps tall (76). Desktop height `calc(var(--ticks) * 9svh + 100svh)`, phones `calc(var(--ticks) * 8.5svh + 100svh)`. The inner `.xp-pin` is sticky, so the stage stays pinned for the whole timeline and the page moving changes nothing on screen.
+- `spent` is how many steps the demo has actually taken; `want` is how many the scroll has paid for. When `want` runs ahead the pointer performs the next one. When the visitor runs ahead by doing it themselves, the page is wound forward to meet them (`syncScroll`, forward only), so they never have to scroll back through a stretch their own taps already paid for.
+- Both are counted by the same thing: the identity of the step on screen (`stepKey` = active chat, beat, and the coach's target, or "done"). Landing on a new one is a step, whoever caused it. The visitor and the pointer can therefore never disagree about how far along the demo is.
+- A step that cannot happen yet does not burn a notch. While the friend is typing there is no coach target, so the step stays bought and fires the moment the chat is ready. A fast scroll never skids past a reply nobody saw.
+- Scrolling up rewinds nothing. `spent` is a high-water mark; scrolling back down resumes where it was, and scrolling further up simply leaves the section.
+- Sixty steps covered the whole demo when it was measured a notch at a time. The budget is 76; the slack is for a visitor going their own way (opening a panel they then close costs two steps, a nudged answer costs a couple more).
+
+**Why it changed.** Scroll used to address the chat: `active = floor(progress × chats)`. A conversation therefore ended when its slice of the page ran out rather than when it was finished, so scrolling walked out of a chat halfway through. Arpit (22 Sep): "the scroll feels a little unnatural, i said if user doesnt perform actions they should perform on scrol but scrol is taking to next chat ... so like consider everystep as a scroll action ... and if he scrolls further, the next action happens".
+
+**The chat list is a shortcut, not a position.** Picking a chat from the list (or a banner) sets the active chat directly. It used to scroll to that chat's slice of the page, which is the same arithmetic that made plain scrolling leave a chat unfinished.
+
+**Scroll position is read off the section, not through `useScroll`.** One `getBoundingClientRect` and one subtraction in a passive `scroll` listener. Framer's `useScroll` with a `target` is a motion value polled on rAF; the plain listener is easier to reason about and has no opinion about when it is allowed to measure. Trap when testing: `window.scrollBy()` called from a devtools/CDP evaluation does **not** dispatch `scroll` events, so a probe written that way sees a frozen timeline and looks like a bug in the page. Drive it with real wheel events instead.
+
+Other chapter behaviour, unchanged:
+
 - Changing chat animates the headline (blur and rise), swaps the thread, resets the keyboard for that chat and starts the friend's first messages the first time the chat is opened.
 - Finishing a chat shows the friend's tapback on your bubble, their reply, then a notification banner from the next friend. The banner slides away after 6 seconds (iOS style), so on phones it never sits over the back button. After the last chat the banner reads "That's everyone. Get Glyf first →" and tapping it scrolls to the finale form.
 
@@ -94,9 +110,10 @@ Messages sent while the friend is still typing are queued and judged once they f
 Arpit (15 Sep, 19:10): "if the user is nto doing actions and just scrolling, u shud do the action on further scrolling and maybe use a fake mouse pointer and perform it".
 
 - If a visitor only scrolls, a pointer (a Mac arrow on desktop, a fingertip on touch) glides to the coached target and performs that step.
-- The first step comes at 14% of the chapter's scroll, then one more step for every further 7.5%.
+- One step of scroll buys one action (section 3.3). It used to be a per-chapter budget: the first step at 14% of the chapter's scroll, then one more every 7.5%, which is why a chat could run out of page before it ran out of steps.
 - It holds keys when the coach label starts with "Hold", taps otherwise, opens the Copy menu on Semi's address bubble, and so on.
-- Any real input in that chat (a trusted pointer press or a letter key) hands the chat back to the visitor and stops the autopilot for it.
+- Doing a step yourself does **not** stop the pointer any more. It used to: a single real touch handed that chat back for good, so a visitor who tapped once and then scrolled got nothing but a jump to the next chat. Both routes now count the same step, and scrolling on continues from wherever the visitor got to.
+- When the pointer is behind by more than one step the visitor is scrolling quickly, so it stops explaining itself: the dwell before a tap drops from 560ms to 180ms.
 - Before acting it re-checks that the chat and the coached target are unchanged. Key holds are also cancelled when the chat changes, so a hold started in Neha's chat can never fire in Rohan's (this was a real bug: Rohan's chat was opening the AI panel).
 - Autopilot is skipped for reduced-motion visitors.
 

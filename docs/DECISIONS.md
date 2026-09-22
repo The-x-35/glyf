@@ -335,6 +335,48 @@ Details live in the area docs: [WEBSITE.md](WEBSITE.md), [APPS.md](APPS.md), [BA
 
 ---
 
+## Wed 17 to Fri 19 Sep 2026: accounts, the API goes live, keys measured
+
+**D93. Sign in with Apple and Google only, and no Privy.** Email and password went, then Privy went with it. The phones send Apple's or Google's ID token, the server verifies it and mints a Glyf session, and every route sits behind that session. The Profile screen shows the account email and Sign out, never a UID.
+
+**D94. The API is live on Railway, and Arpit deploys it.** `api.tryglyf.com`, Singapore. A push to `main` is a deploy, so the assistant commits and Arpit pushes. Hard limits are counted server side where they cannot be lost.
+
+**D95. The launch animation is Lens Focus.** A frame-paced timeline that hands off to the sign-in orb, over a plain native splash.
+
+**D96. Onboarding must survive the relaunch that granting Full Access causes.** Turning on Full Access restarts the app; the flow resumes on the step it was on, with a back button on every step and no "Save as main" mid-form.
+
+**D97. Keys are measured, not guessed.** iOS 26 on four widths (390, 402, 420, 440pt). Margin 6.5, gap 6, and a row gap of exactly 11 on every phone; the key stands 43pt on a standard phone and 45 on the wide class. Pinned in `KeyMetrics` with tests, because the number had already drifted twice in both directions. Measure a key by sweeping every column and keeping the longest run: a single column near the edge is cut short by the corner radius, and a density scan is cut short again.
+
+**D98. Money lives in the strip.** "$13 = ₹1,246" and "$sol → 1 SOL = $112", from the server's `/rates`, in a currency the person picks.
+
+---
+
+## Sat 20 to Mon 21 Sep 2026: touches, the vault, and the clipboard
+
+**D99. Every part of the keyboard is sensitive edge to edge.** "still empty space feels no touch, every area should b sensitive like apple fucking research and do it". The cause was not the hit test: **a keyboard extension discards touches that land on fully transparent pixels**, before `hitTest` is consulted. Found by painting the grid red, which Arpit confirmed himself ("ok now gaps work in the red keyboar du made"). Then "so i feel instead of clear, you can set th ecolour based on the phone dark or light mode etc" gave `Glass.touchableGrid`, the sheet's own colour at 1% alpha, on every surface that has to take a touch.
+
+**D100. A vault must never be lost to a new field.** Adding `images` emptied it: Swift's synthesized decoder ignores property defaults, so a missing key threw and the file read as empty. Every field now decodes with `decodeIfPresent`, and a vault that fails to read is never saved over (`loadFailed`).
+
+**D101. Several keys may open the same thing.** "i think in app one thing can be pointed by many keys like in app both s and v can open vault". A rule that dropped `s` when `v` held the vault was reverted. Nothing unbinds a key behind the person.
+
+**D102. The clipboard shows what you copied, in time order, under kind pills.** All / Text / Link / Image as pills, PINNED and RECENT as sections (pinned is not a kind). RECENT interleaves copies and screenshots by when they happened. A bare domain is a link, by `NSDataDetector`, so `tryglyf.com` belongs under Link.
+
+**D103. `detectValues` is not silent.** It reads like a quiet way to learn what was copied and it is not: handing over a value is a read, and iOS raises "Allow Paste?" for it exactly as for the whole string. Only `detectPatterns`, which answers with types and no values, stays quiet. There is therefore no silent route to content, and the Paste button (where the tap is the consent) is the one that needs no permission.
+
+---
+
+## Tue 22 Sep 2026: the strip, the stage, and the clipboard filling itself
+
+**D104. The strip's first slot says what it opens, not whose it is.** Five passes (the whole history is in [APPS.md 8.4](APPS.md)): the system "g" was mis-centred, then became the real brand mark, then a bigger mark, then a mark with no tile, and finally left for a drawn apps grid at Arpit's direction: "use some icon like this only, dont use glyf logo". The brand artwork added along the way was deleted again.
+
+**D105. The toolbar is spaced by one gap, not by slots.** One number is both the air between any two icons and the air at each end, and the stack is handed exactly the width that produces it. Equal slots space the centres evenly but leave the margins to whatever the first and last icons measure, which came out 14pt against 21.3. Measured after: 19.0 and 19.3, gaps 46.7 to 47.3.
+
+**D106. The site's stage is a timeline of steps, not a list of chats.** "consider everystep as a scroll action ... so if user does that action it happens and move to that timeline and if he scrolls further , the next action happens , and all this needs to be super smooth". One scroll step performs one action; a chat changes because it is done, never because the page moved. Doing a step yourself advances the same counter and winds the page forward to meet you. Details in [WEBSITE.md 3.3](WEBSITE.md).
+
+**D107. The clipboard fills itself.** "i want it should auto get evrrything from new ss to new copied things". Both clipboard switches ship on, and a settings file written before the change is migrated (v7 to v8) because Swift decodes the missing keys as nil rather than as the new default. A stored no is left alone. What is left is two permissions neither of which a keyboard can grant itself: **Settings → Glyf → Paste from Other Apps → Allow** for copies, and the app's own Photos ask for screenshots. The panel now names whichever is missing instead of showing empty space.
+
+---
+
 ## Standing rules (apply to all future work)
 
 These came out of the decisions above and Arpit's feedback. [WORKING-AGREEMENTS.md](WORKING-AGREEMENTS.md) has the full list with context.

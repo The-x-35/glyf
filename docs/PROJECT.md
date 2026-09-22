@@ -2,7 +2,7 @@
 
 Start here. This is the map of the whole project: what Glyf is, what exists, where everything lives, which accounts and keys it depends on, and where to find the details.
 
-Last updated: Wed 16 Sep 2026 (IST).
+Last updated: Tue 22 Sep 2026 (IST).
 
 ---
 
@@ -48,15 +48,16 @@ Plus:
 
 | Area | State |
 |---|---|
-| iOS app + keyboard | Built and tested on the simulator through M7 cores plus a large feature set beyond the spec. Arpit runs it on his iPhone. TestFlight build 2 uploaded; build 3 prepared (compliance key set) |
+| iOS app + keyboard | Built and tested on the simulator through M7 cores plus a large feature set beyond the spec. Arpit runs it on his iPhone. **TestFlight build 7** uploaded; everything since (the toolbar and clipboard run of 21 to 22 Sep) is unreleased and needs a bump |
 | Android app + keyboard | Built and verified on the emulator with iOS styling and the main features. The keyboard still trails iOS: no delete key repeat, multi-touch, accents or caps lock; holding the Translate, Vault or Calendar keys opens the app; the vault refuses 6 field types (see [APPS.md](APPS.md) section 6). Not published |
-| Backend (`server/`) | Built and tested (about 90 tests). Runs locally only. Not deployed; `api.tryglyf.com` does not exist yet, so release app builds have no working AI |
-| Website (`site/`) | v8, **live on https://www.tryglyf.com** (Vercel, deployed 16 Sep). Waitlist writes to Neon |
+| Backend (`server/`) | Built and tested (about 90 tests). **Live on Railway (Singapore) at https://api.tryglyf.com since 18 Sep.** A push to `main` deploys it, so the assistant commits and Arpit pushes. Every route sits behind a Glyf session |
+| Website (`site/`) | v8, **live on https://www.tryglyf.com** (Vercel, deployed 16 Sep). Waitlist writes to Neon. The chat stage became a step timeline on 22 Sep: one scroll, one action ([WEBSITE.md](WEBSITE.md) 3.3) |
+| Accounts | Sign in with Apple or Google only, verified server side (no Privy, no email and password). Account rows in Neon |
 | Crypto wallet (M8) | Not started, on purpose. The site demos a private Solana payment UI only |
 | Repo | Private GitHub `The-x-35/glyf`, history cleaned of AI attribution |
 | Docs | This folder |
 
-Latest test counts (15 Sep): server 90, iOS unit 61, Android unit 17. The iOS UI gate suite (`GlyfGateUITests`) and Flutter tests were passing at their last runs.
+Latest test counts (15 Sep): server 90, iOS unit 61, Android unit 17. The iOS UI gate suite (`GlyfGateUITests`) and Flutter tests were passing at their last runs. The iOS unit suite has grown since with the key-geometry, touch-sweep, vault-decoding and clipboard-migration tests; it was green on 22 Sep.
 
 ---
 

@@ -125,3 +125,39 @@ The work ran in three chat sessions:
 - **After 02:20** "use the hero section as the og image" gives a generated 1200×630 share image. "make navbar a little bigger ... logo in navbar to be bigger ... glyf ... should be our wordmark logo" gives a 64px nav, a 28px wordmark, and the wordmark inside the headline.
 - **03:09** Arpit commits everything so far ("fixes") and pushes. **The website goes live on Vercel at https://www.tryglyf.com**, with `tryglyf.com` redirecting to www. Checked: the share image and tags are live, and the waitlist API answers. The canonical and share URLs pointed at the redirecting apex, so the default moved to www.
 - **03:17 to 03:18** The www fix is pushed; Vercel auto-deploys from `main` and the live page uses www for canonical and share URLs within a minute.
+
+## Thu 17 Sep 2026
+
+- **15:02 to 15:45** The website's eight chats become a **tour on the real keyboard**. Sign-in lands (Google, Apple or email at first) with the account in Postgres. Calendar arrives in the keyboard and Connected tools is rebuilt. Saved details start coming up from everyday words. Explainer lines go from the wallet and onboarding. A screenshot copied on iOS says how to paste it.
+- **18:05 to 19:21** Android test flags apply to one launch only. The onboarding orb holds the real Glyf symbol and the official Google G. "Hi, I'm glyf" uses the wordmark. Keyboard setup is rebuilt twice: it shows an AI keyboard and names the exact switches to flip, then becomes one Settings card.
+- **19:43 to 20:21** The **Ask Glyf bar**: one prompt in the strip, answers in the act panel. Sign-in narrows to **Apple or Google only**, then drops Privy entirely and verifies the ID tokens directly. The Google connector counts as set up only when its secret is present.
+- **22:08 to 23:52** The **Lens Focus** launch animation. Onboarding gets a back button, safer details and a tour offer; Profile shows the account email and Sign out, no UID. A crash after closing the name sheet is fixed. Setup steps tick off, nearby shows the map before it asks, and the whole thing collapses to one screen where tapping a row turns it on.
+
+## Fri 18 Sep 2026
+
+- **00:12 to 00:50** The calendar panel shows the day's events with Month as a button. Screenshots ask for photos when switched on. The setup rows say where to walk in Settings.
+- **12:59 to 14:00** The setup step can no longer dead-end on Full Access, and the photo switch says why it is asking. No false ticks; the rows go in order and there is a way to prove the step is done. The app gets a page of its own in Settings, and the documented way in is kept with a note on why (deep links into Settings do not work: see SPIKES).
+- **14:17 to 16:12** Hard limits on the API, counted where they cannot be lost. **Every route goes behind a session** and the phones send it. The web tab answers with the model when no search key is set. **The API is live on Railway** (`api.tryglyf.com`, Singapore); a push to `main` deploys it.
+
+## Sat 19 Sep 2026
+
+- **11:41 to 11:57** Onboarding survives the relaunch that granting Full Access causes, and nearby search stays on when it resumes there.
+- **12:56 to 13:39** `/rates` for the strip: a dollar table and a token's price. The site's tour moves the vault to **V**. Keys are redrawn like the system keyboard's, money goes in the strip, V and C are the two default binds. Lowercase settles at 24.5pt with boxes and ink within a pixel of Apple's; capitals take their 1pt nudge on every shift.
+- **14:56 to 17:52** Build 4, then typing keeps up with fast fingers and money converts to a currency the person picks. Build 5.
+- **18:26 to 22:22** The sheet band is drawn by Glyf on iOS below 26. The Taptic Engine is kept warm between keystrokes. The keystroke is measured instead of guessed at. The clipboard stops probing on every keystroke. **A touch in a gap types the nearest key**, keys match Apple's height, and copies keep for two days. The clipboard stops asking permission and the vault can hold pictures.
+
+## Sun 20 to Mon 21 Sep 2026
+
+- **Sun 00:20 to 01:32** A snapped key is no longer thrown away on the first tremor, and vaults open again (the `images` field had emptied them: see D100). The edges beside A and L type again. Every layer is sensitive edge to edge and the gap rule is provable.
+- **Mon 09:56 to 10:48** The site's vault moves to V. A way to actually drive a gap on a simulator, and proof the gaps type. **The real cause of the dead gaps: the grid was transparent** (D99). The vault answers to V alone and the keyboard stops trying to edit it.
+- **Mon 11:41 to 11:51** Several keys may open the same thing; nothing unbinds a key behind you. Build 6.
+- **Mon 12:48 to 12:51** Joining the waitlist says so underneath, the form stays where it was, and joining empties the box for the next address.
+- **Mon 13:17 to 15:23** A copy lands in the clipboard by itself and the autocorrect underline goes. The clipboard chip becomes a dismissable pill like Gboard's. A suggestion takes one tap, and so does everything on a clear surface. The chip shows **what** you copied and RECENT runs in time order. All / Text / Link / Image pills arrive and the panel stops asking to paste. A bare domain is a link. Build 7.
+- **Mon 16:13 to 22:03** The "g" is centred on its own outline, then the pill becomes the real app mark in a square tile.
+
+## Tue 22 Sep 2026
+
+- **06:56 to 11:22** The mark fills its tile, then loses the tile altogether, then leaves the slot: the first slot becomes a drawn **apps grid** ("use some icon like this only, dont use glyf logo"). Its steps are made even and its geometry derived rather than eyeballed, after the turned tile was found overlapping its neighbours by 0.4pt.
+- **13:05** **The site's stage becomes a timeline**: one scroll, one action, and a chat changes because it is done (D106).
+- **14:26 to 14:32** Equal air everywhere on the strip and the row on its middle: margins 19.0 and 19.3, gaps 46.7 to 47.3, and the contents lifted to the strip's true centre. The close button loses its fill, which was a 50 by 32 pill because the fill was the whole tap target.
+- **14:49 to 15:26** "i took a ss but it doesnt come in clipboard automatically and also its missing many things i copied". Two faults: the screenshot default disagreed between the app and the keyboard, and the app's note claimed links and numbers were kept when that had stopped being true. Then **the clipboard fills itself** (D107): both switches on, older installs migrated, and the panel names whichever permission is still missing.

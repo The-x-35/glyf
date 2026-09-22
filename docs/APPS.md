@@ -366,7 +366,8 @@ SPEC 4.1 says a keyboard cannot call `UIApplication.shared.open()`. Features tha
 
 ### 4.3 Engineering rules learned the hard way (keep following them)
 
-- **Never read `UIPasteboard` when the keyboard appears.** It fires Apple's paste permission prompt over the keyboard, every time. Probe `changeCount` and `hasStrings` (prompt-free) and read only on a user action (opening the clipboard screen, tapping the copied-text strip, the bar falling back to the clipboard). See `ClipboardStore.captureNow()` and `ClipContext`.
+- **A keyboard extension throws away touches that land on fully transparent pixels.** Not `alpha` on the view, which is the rule everywhere else: the rendered pixel. A `.clear` background makes a view invisible to touch before `hitTest` is ever consulted. This is the single cause behind three separate bug reports (dead gaps between keys, suggestions needing several taps, dead rows in panels), and it was found only by painting the grid red and watching the gaps start working. Every surface that must take a touch is painted with `Glass.touchableGrid`, which is the sheet's own colour at 1% alpha. Arpit, after two wrong diagnoses: "i think you are just spiraling arounf, research first , see why its not working, search web too and then fix".
+- **There is no silent way to read the pasteboard.** `changeCount` and `hasStrings` are prompt-free but tell you nothing; `detectPatterns` names the pattern without the value; **`detectValues` is not silent** despite reading like it should be, because handing over a value is a read. The only quiet route to content is `UIPasteControl`, where the person's tap is the consent. Section 5.11 has the table.
 - **One blur layer per surface, never per key.** Keys are translucent fills over one `UIVisualEffectView`. The hold ripple animates each key's own tint layer; the blur is never touched.
 - **Take once, insert once** for anything delivered from the app (section 3.8).
 - **Any in-keyboard search or text field must collapse its surface to a strip** so the letter keys show underneath (emoji search, connector search, search suite, note editor). Found from Arpit's device report: "i can’t search in emojis because keyboard not showing".
@@ -439,8 +440,12 @@ Android: the IME root is a vertical `LinearLayout` (toolbar 44dp + key view 216d
 
 **iOS (`Surfaces/Toolbar.swift`)**, 44pt strip above the keys:
 
-- **g button**, always leftmost: a black keycap (`Glass.brandInk`) with a bold white "g" and a glowing purple dot, on dark chrome with a faint white ring. It opens the in-keyboard menu (section 5.9). Before 2026-09-12 22:26 it was a washed-out white square; Arpit: "why is glyf button so dull and sad, saw how acti was soo good and bright".
-- Items (SF Symbols, 20pt, order from `toolbarOrder`, hideable): Search, Clipboard, Vault, Dictation (mic), Emoji, Translate, Settings. Long-press an item to open its settings page in the menu.
+- **The menu button, always leftmost: an apps grid** (three rounded tiles and a fourth stood on its corner), drawn as a path in `appsGridPath`, not an SF Symbol. It opens the in-keyboard menu (section 5.9), and when a panel is open it becomes a plain ✕ that closes it. Section 8.4 has the whole design history of that slot, which took five passes.
+- Items (SF Symbols, **pointSize 21 regular**, order from `toolbarOrder`, hideable): Search, Clipboard, Vault, Dictation (mic), Emoji, Translate, Settings. Long-press an item to open its settings page in the menu.
+- **The row is spaced by one gap, not by slots.** `layoutSubviews` solves for a single number that is both the air between any two icons and the air at each end, then hands the stack exactly the width that produces it (`distribution = .equalSpacing`). Measured result at 402pt: margins 19.0 and 19.3, gaps 46.7 to 47.3. Spacing by equal **slots** instead (each icon centred in a slot of one width) spaces the centres evenly but leaves the end margins to whatever the first and last icons happen to measure, which came out 14pt against 21.3 because the apps grid is 20pt wide and the translate symbol is 32.
+- **Every icon gets 12pt of tap padding either side**, the same on both sides, so padding a target never moves an icon off the rhythm.
+- **The apps grid carries 3pt of extra air (`gridSlack`)** because an SF Symbol does not fill the box it is drawn in and a drawn path does. Without it the grid sat 3pt nearer its neighbour, and 3pt nearer the screen edge, than anything else on the row.
+- **The strip's contents sit `Glass.stripLift` = 5pt above centre.** Measured on iOS 26: the sheet's top edge at 531pt and the first key row at 588.33 leave the strip 57.3pt, so its middle is 559.67. At a lift of 3 the icons measured 561.83, two points low, which read as more air above the row than below.
 - **Runs chip** at the right edge when 8 or fewer runs are left today.
 - **Suggestions replace the tools** when there are candidates (never two strips, SPEC 6.2). Tapping g while suggestions show brings the tools back without opening the menu. Up to three slots: what you typed (in quotes, tap keeps it and teaches the engine), what space will insert (emphasized), the next best. After a correction, a single "↩ original" slot undoes it. After a space, the strip predicts the next word.
 
@@ -632,14 +637,43 @@ SPEC 6.3: the user should rarely need to leave the keyboard; the container app i
 - App: `app/lib/notes/notes_screen.dart` (Profile → Notes).
 - Keyboard: on 2026-09-13 Arpit said "notes shud be editable from here also , we can remove notes and vault can serve the feature and shorthand can be another thing". So notes now live **inside the Vault screen** (with ✎ to edit), Shorthand got its own tile, and notes can be written without leaving the keyboard: `Surfaces/NoteEditSurface.swift` is a strip above the letter keys (✕, the note, a black Save; Return adds a new line). Android has the same strip (`enterNoteEdit`). `surface:notes` bindings open the Vault screen.
 
-### 5.11 Clipboard history and the copied-text strip
+### 5.11 Clipboard: history, categories, screenshots, and what iOS allows
 
-**Clipboard history (iOS, `Engine/ClipboardStore.swift`).** The last 20 items; unpinned items expire after 1 hour; pinned items never expire or get evicted; at most 4000 characters; duplicates collapse; secret-shaped text (per `SecretScanner`) is never stored. Because reading the pasteboard on keyboard appearance raises Apple's paste prompt over the keyboard every time (SPIKES finding 10), the keyboard only probes `changeCount` and captures at user-intent moments: opening the Clipboard screen, the bar falling back to the clipboard, tapping the copied-text strip, and Copy in the bar or act surface (which also writes to the system pasteboard). The Clipboard screen lists items with a pin toggle and "Clear unpinned". Android has no clipboard history: its toolbar Clipboard pastes the current clip.
+Rewritten 21 to 22 Sep 2026. The panel is `Surfaces/ClipboardPanel.swift`, the store is `Engine/ClipboardStore.swift`.
 
-**Copied-text strip** (Acti's copied-context card, built 2026-09-14/15).
+**What the panel shows.** A two column masonry of cards under a row of filter pills.
 
-- iOS `Surfaces/ClipContextStrip.swift`: when something was copied in the last 10 minutes, a strip saying "Copied text" appears above the toolbar **without reading it** (iOS gives no copy time, so the clock starts when the keyboard first sees a new `changeCount`). Tapping it reads the pasteboard (the moment where Apple's banner may appear once) and shows the text quoted; tapping again acts on it through `/act` without touching the field; ✕ dismisses that copy for good.
-- Android: uses `primaryClipDescription.timestamp` for freshness, shows the text straight away (the default IME may read the clipboard), tap acts, ✕ dismisses (remembered in the IME's `glyf_ime` preferences).
+- **Pills: All / Text / Link / Image.** Kinds, which is what a row of pills is for. Pinned is not a kind, so it stays a section: researched against Gboard and Acti before building.
+- **PINNED then RECENT**, and pinned leads only within the kind being shown, so picking Link never scrolls you past pinned text to reach the links.
+- **RECENT runs in time order**, copies and screenshots interleaved by when they happened. Screenshots used to sit in a block above every copy however old, so a shot from yesterday buried something copied a minute ago.
+- **Hold a card** and the rest dim while a menu offers Paste, Save to vault, Pin / Unpin, Delete.
+- Store rules: last 20 items, unpinned expire after **48h** (a copy from yesterday is exactly what you come looking for), pinned never expire or get evicted, 4000 characters max, duplicates collapse, and secret-shaped text (`SecretScanner`) is never stored.
+
+**What counts as a Link.** `NSDataDetector`, the same detector iOS uses everywhere, so a bare domain counts without anyone typing `https://`: `tryglyf.com` belongs under Link. The match has to cover the **whole** clip (a sentence mentioning a link is still a sentence, and Text and Link must stay exclusive or the pills stop adding up to All), and a `mailto:` is left to Text because an address is something you paste into a To: field, not something you follow.
+
+**The permission model, which is the whole difficulty.** iOS hands a keyboard nothing from the clipboard on its own.
+
+| Call | Gives you | Silent? |
+|---|---|---|
+| `changeCount`, `hasStrings` | that something changed, not what | yes |
+| `detectPatterns` | which patterns are present, no values | yes |
+| `detectValues` | the actual link / number | **no** |
+| `.string` | everything | **no** |
+| `UIPasteControl` → `paste(itemProviders:)` | everything the person tapped for | yes, the tap **is** the consent |
+
+`detectValues` being loud is the trap, and it cost a build to learn: handing over a value is a read, and iOS raises "Allow Paste?" for it exactly as it does for the whole string. Only `detectPatterns`, which answers with types and no values, stays quiet, and a type is not something a chip can show. So there is **no silent way to know what was copied**, and the two honest routes are the Paste button (no permission needed) and an opt-in that asks per copy.
+
+**Defaults and the migration (22 Sep).** Both clipboard switches ship **on**, because a clipboard that misses what you copied reads as broken. Arpit: "i want it should auto get evrrything from new ss to new copied things".
+
+- `clipboardCaptureAll` on: every copy is taken. iOS asks once per copy until the person sets **Settings → Glyf → Paste from Other Apps → Allow**, after which it never asks again. No app can write that setting.
+- `clipboardScreenshots` on: this is the **wish**, not the permission. Only the container app can ask for the photo library, and the ask is the moment that switch is turned on. When the wish is on and the library is not granted, the panel says which of the two is missing rather than showing empty space.
+- A settings file written before this decodes both as `nil`, not as the new default (Swift's synthesized decoder does not apply property defaults), so schema **v7 to v8** fills a blank with yes. A stored `false` is a real answer and is left alone. Tests: `testOlderInstallsGetTheClipboardFillingItself`, `testTurningTheClipboardOffSurvivesTheMigration`.
+
+**The panel says what is in the way.** `blockers()` lists the yeses still missing, in the order they cost you, as tip cards at the end of the list. A clipboard quietly missing things looks broken; one that names the setting looks unfinished, which is what it is.
+
+**Two defaults that disagreed (found 22 Sep).** `clipboardScreenshots` defaulted to `true` in Swift and `false` in the app's switch, and the keyboard's guard was `!= false`. So the app said screenshots were off, the keyboard believed they were on and went to a photo library it had never been given, and no screenshot ever appeared either way. Both are `true` now and the keyboard wants an explicit `== true`.
+
+**The strip chip.** When something has been copied, the strip offers it as a Gboard-style pill: the clipboard mark, the words themselves where they are known, and a ✕ that dismisses that copy for good. It shows the **content** rather than "Paste what you copied" whenever the content is available, which is what capture being on buys. `Surfaces/ClipContextStrip.swift` is dead code from the older design and is not instantiated.
 
 ### 5.12 Emoji
 
@@ -1020,8 +1054,26 @@ Glyf's stated edges over Acti (SPEC 0.1): chaining with conditionals in Glyfs, p
 | 2026-09-15 14:44 | "i like ui ux on website dont copy mobile for that, its shit in mobile rn" | App work paused for the website launch; **an app UI redesign is implied but not started** |
 | 2026-09-15 (design questions) | "i need both light and dark modes both in site and later in apps too" | **Supersedes the white-only lock for the apps.** Pending |
 | 2026-09-16 02:13 | "remove the em dashes from everywhere in website, they look fucking disgusting ai made" | Done on the site; app strings not yet cleaned |
+| 2026-09-19 to 09-21 | "i feel our keyboard is a little above from bottom than apple / fucking get pixels correctly", "and the space between also set like apple does" | Key geometry re-measured against iOS 26 on four widths and pinned in `KeyMetrics` with tests. The row gap is one constant (11pt) on every phone; the key stands 43pt on a standard phone and 45 on the wide class |
+| 2026-09-20 to 09-21 | "touc landing in between is not working the fuck cant u do a simple thing", "still empty space feels no touch, every area should b sensitive like apple fucking research and do it" | Two wrong diagnoses (blaming the automation, then the hit test) before the real cause: a keyboard extension discards touches on fully transparent pixels. Found by painting the grid red. Arpit confirmed it himself: "ok now gaps work in the red keyboar du made". Then "so i feel instead of clear, you can set th ecolour based on the phone dark or light mode etc" gave `Glass.touchableGrid` |
+| 2026-09-21 | "i dont need paste here in vault, image additiong and other options etc will be thru app only in vault" | Paste removed from the vault; images are added in the app |
+| 2026-09-21 | "i think in app one thing can be pointed by many keys like in app both s and v can open vault" | A rule that dropped `s` when `v` held the vault was reverted. Nothing unbinds a key behind the person; pinned by `testTwoKeysMayOpenTheSameThing` |
+| 2026-09-21 to 09-22 | "i think u need to work on the g logo in top bar, its cutting the bottom part i feel" | Five passes on one slot, see 8.5 |
 
-### 8.4 Design artifacts and references outside the code
+### 8.4 The toolbar's first slot: five passes on one icon (21 to 22 Sep 2026)
+
+Worth recording because each step was a real measurement and the end point is not where it started.
+
+1. **The tail looked cut off**, and was: a `UIButton` centres its title's **line box**, and a lowercase "g" has no ascender ink and a deep descender, so it sank to the floor of the pill. Measured 10.33pt of black above the letter against 2.00pt below. Fixed by centring the glyph's own outline (`CTFontGetBoundingRectsForGlyphs`), which landed it at 6.33 and 6.00.
+2. **"this still looks shit and nothing like our logo ... instead of rectangle why arent we have squarish logo here".** The system "g" was replaced with the real mark from `assets/brand/glyf-symbol.png`, reversed out of a 28pt square. An extension cannot read the host app's artwork, so the mark shipped with the appex.
+3. **"the g looks very small here".** It was 10.9pt, because the app icon gives its letter only 40% of its height. That is right at 60pt on a home screen, where the padding separates the icon from wallpaper, and far too small at 28pt where the tile already separates it. Pulled in to a 2pt margin: 14.3pt.
+4. **"i think not have the black bg and make g bigger".** Off its tile the letter reached 19.3pt, because a tile has to hold the mark **and** its margins. The accent dot moved to the letter's shoulder: at the logo's own offset it clipped the top of a 36pt strip, and read as a stray mark rather than composition once the tile was gone.
+5. **"use some icon like this only, dont use glyf logo"**, with a reference image. The logo left the slot entirely for a drawn apps grid. The brand artwork added in step 2 was deleted again. The turned tile is not decoration: it is what separates this icon from the Skills hub's own `square.grid.2x2`, which someone may well put on the same strip.
+
+Then "looks bad, spacing isnt perfect" and "cross looks bad" gave the row's spacing rules (section 5.3) and took the fill off the close button, which was a 50 by 32 pill because the fill was the whole tap target.
+
+
+### 8.5 Design artifacts and references outside the code
 
 - **Mobbin** was used on 2026-09-12 and 2026-09-13 (Wispr Flow's keyboard setup flow as the onboarding benchmark, Raycast iOS, Dot's settings, Brave Leo, Opera's Light/System/Dark control, Sora and Philips Hue dark keyboards, Snapchat's theme grid). Later the Mobbin connector needed re-authorization and could not be used; authorize it before relying on it.
 - **Paper** (design tool, 2026-09-14 19:24): Arpit asked to "port all app and website design to paper now with all screens and flows". Built in the Paper file named "Humble hill" in the "glyf" team: a design system page (wordmark, icon, palette, type scale, buttons, keycaps, chips, cards, 51 tokens), an onboarding page (8 screens) and an app screens page (Home, Profile, Build, Keyboard settings and Paywall sheets, Themes, Vault & shorthand, Notes). The keyboard page is empty and the website page was never started: Paper's weekly limit blocked further work (it resets weekly or with Paper Pro). Paper cannot create prototype links. Page links are in `docs/history/transcript-2026-09-14.md`.

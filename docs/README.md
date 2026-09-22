@@ -7,8 +7,8 @@ Everything about Glyf, written down: what it is, every decision and why, what wa
 | Doc | Read it for |
 |---|---|
 | [PROJECT.md](PROJECT.md) | The overview: what Glyf is, status, repo map, stack, identifiers, accounts and keys |
-| [DECISIONS.md](DECISIONS.md) | Every decision in order (D1 to D92), with Arpit's words and what replaced what |
-| [TIMELINE.md](TIMELINE.md) | What happened each day from 11 Sep 2026 |
+| [DECISIONS.md](DECISIONS.md) | Every decision in order (D1 to D107), with Arpit's words and what replaced what |
+| [TIMELINE.md](TIMELINE.md) | What happened each day from 11 Sep to 22 Sep 2026 |
 | [OPEN-ITEMS.md](OPEN-ITEMS.md) | Everything pending, blocked or owed, and who acts |
 | [WORKING-AGREEMENTS.md](WORKING-AGREEMENTS.md) | How Arpit wants the work done: design, product, engineering, tools, privacy |
 
