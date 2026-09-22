@@ -1,0 +1,13 @@
+{
+  "name": "glyf-promo",
+  "private": true,
+  "type": "module",
+  "description": "Renders the waitlist film to MP4, frame by frame. See render.mjs.",
+  "scripts": {
+    "render": "node render.mjs",
+    "still": "node render.mjs --still"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

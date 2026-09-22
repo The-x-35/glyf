@@ -1,0 +1,357 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Glyf waitlist film</title>
+<!--
+  The waitlist film, one frame at a time.
+
+  Nothing here animates by itself: `seek(f)` draws frame f and only frame f.
+  That is what makes the render deterministic, and it is the same contract
+  Remotion and Flute use under their own hoods. render.mjs drives it.
+
+  The keyboard is the real one's geometry, taken from
+  app/ios/GlyfKeyboard/Design/GlassTokens.swift: 6.5pt margins, 6pt between
+  keys, a 54pt row pitch and a 43pt key on a 402pt screen. Apple's keys and
+  Glyf's occupy exactly the same places, which is the point of the cut: the
+  keyboard does not move, it gains.
+-->
+<style>
+  @font-face {
+    font-family: "Inter";
+    src: url("../../site/public/fonts/Inter-Variable.ttf") format("truetype");
+    font-weight: 100 900;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 1080px; height: 1920px; overflow: hidden; background: #000;
+    font-family: Inter, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* The film is authored in iPhone points and blown up once. */
+  #stage {
+    position: absolute; top: 0; left: 0;
+    width: 402px; height: 715px;
+    transform: scale(2.686567); transform-origin: 0 0;
+    background: #fff;
+  }
+  .abs { position: absolute; }
+
+  /* ---------- the phone above the keyboard ---------- */
+  #chat { position: absolute; inset: 0 0 343px 0; background: #fff; }
+  #statusbar { position: absolute; top: 0; left: 0; right: 0; height: 54px; }
+  #statusbar .time { position: absolute; left: 34px; top: 17px; font: 700 15px Inter; color: #1d1d1f; }
+  #statusbar .notch { position: absolute; left: 50%; top: 11px; width: 106px; height: 30px;
+                      margin-left: -53px; background: #000; border-radius: 16px; }
+  #statusbar .batt { position: absolute; right: 30px; top: 19px; width: 24px; height: 11px;
+                     border: 1.4px solid #1d1d1f; border-radius: 3px; opacity: .9; }
+  #statusbar .batt i { position: absolute; inset: 1.5px; background: #1d1d1f; border-radius: 1px; }
+
+  #head { position: absolute; top: 54px; left: 0; right: 0; height: 58px;
+          border-bottom: .5px solid rgba(0,0,0,.12); }
+  #head .av { position: absolute; left: 50%; top: 6px; width: 34px; height: 34px; margin-left: -17px;
+              border-radius: 50%; background: #e9e9ee; font: 400 19px Inter; line-height: 34px;
+              text-align: center; }
+  #head .nm { position: absolute; left: 0; right: 0; top: 41px; text-align: center;
+              font: 500 11.5px Inter; color: #1d1d1f; }
+
+  .bub { position: absolute; max-width: 250px; padding: 9px 14px; border-radius: 18px;
+         font: 400 16.5px/1.28 Inter; letter-spacing: -.01em; }
+  .them { left: 14px; background: #e9e9eb; color: #1d1d1f; }
+  .me   { right: 14px; background: #007aff; color: #fff; }
+
+  #field { position: absolute; left: 14px; right: 14px; bottom: 12px; height: 36px;
+           border: 1px solid rgba(0,0,0,.14); border-radius: 18px; }
+  #field .txt { position: absolute; left: 14px; top: 9px; font: 400 16px Inter; color: #1d1d1f;
+                white-space: pre; }
+  #caret { position: absolute; top: 8px; width: 2px; height: 19px; background: #007aff; border-radius: 1px; }
+
+  /* ---------- the keyboard sheet ---------- */
+  #sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 343px; background: #d1d3d9; }
+  .key { position: absolute; border-radius: 5px; background: #fff;
+         box-shadow: 0 1px 0 rgba(0,0,0,.28); will-change: transform, opacity; }
+  .key span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+              font: 400 24.5px Inter; color: #1d1d1f; letter-spacing: -.01em; }
+  .key.fn { background: #adb0b9; }
+  .key.fn span { font-size: 16px; }
+  .key .dot { position: absolute; width: 4.5px; height: 4.5px; border-radius: 50%;
+              background: #7c5cff; right: 4.5px; top: 4.5px; opacity: 0; }
+  .key.space span { font-size: 15px; color: rgba(29,29,31,.42); }
+
+  #tools { position: absolute; left: 0; right: 0; top: 0; height: 57px; will-change: transform, opacity; }
+  .tool { position: absolute; top: 18px; }
+  #bottomrow { position: absolute; left: 0; right: 0; bottom: 0; height: 70px; }
+  #bottomrow .g { position: absolute; left: 22px; top: 12px; }
+  #bottomrow .m { position: absolute; right: 22px; top: 12px; }
+  #homebar { position: absolute; left: 50%; bottom: 8px; width: 139px; height: 5px;
+             margin-left: -69.5px; border-radius: 3px; background: rgba(0,0,0,.32); }
+
+  /* ---------- the end card ---------- */
+  #card { position: absolute; inset: 0; background: #000; opacity: 0; }
+  /* Every line is broken by hand and every block has its own lane: the
+     headline had been left to wrap, found a third line, and sat on top of
+     the sentence underneath it. */
+  #card h1 { position: absolute; left: 28px; right: 28px; top: 236px; text-align: center;
+             font: 600 36px/1.1 Inter; letter-spacing: -.035em; color: #f5f5f7; }
+  #card .sub { position: absolute; left: 30px; right: 30px; top: 344px; text-align: center;
+               font: 500 16.5px/1.42 Inter; letter-spacing: -.01em; color: #a1a1a6; }
+  #card .cta { position: absolute; left: 50%; top: 424px; transform: translateX(-50%);
+               padding: 13px 26px; border-radius: 24px; background: #f5f5f7;
+               font: 600 16px Inter; letter-spacing: -.01em; color: #000; white-space: nowrap; }
+  #card .url { position: absolute; left: 0; right: 0; top: 516px; text-align: center;
+               font: 500 15px Inter; letter-spacing: .01em; color: #6e6e73; }
+  .wm { position: absolute; left: 50%; top: 152px; transform: translateX(-50%);
+        font: 700 30px Inter; letter-spacing: -.045em; color: #f5f5f7; }
+  .wm i { position: absolute; right: -11px; top: 3px; width: 6px; height: 6px;
+          border-radius: 50%; background: #7c5cff; font-style: normal; }
+</style>
+
+<div id="stage">
+  <div id="chat">
+    <div id="statusbar"><div class="time">9:41</div><div class="notch"></div><div class="batt"><i></i></div></div>
+    <div id="head"><div class="av">🏏</div><div class="nm">Rohan</div></div>
+    <div class="bub them" id="b1" style="top:130px">match kal? 🏏</div>
+    <div class="bub me"   id="b2" style="top:186px">haan pakka</div>
+    <div class="bub them" id="b3" style="top:242px">7 baje gate pe</div>
+    <div id="field"><div class="txt" id="draft"></div><div id="caret"></div></div>
+  </div>
+
+  <div id="sheet">
+    <div id="tools"></div>
+    <div id="keys"></div>
+    <div id="bottomrow">
+      <svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" stroke-width="1.5">
+        <circle cx="12" cy="12" r="9.2"/><ellipse cx="12" cy="12" rx="4" ry="9.2"/><path d="M3 12h18M4.6 7h14.8M4.6 17h14.8"/>
+      </svg>
+      <svg class="m" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" stroke-width="1.6">
+        <rect x="9" y="2.6" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.4"/>
+      </svg>
+      <div id="homebar"></div>
+    </div>
+  </div>
+
+  <div id="card">
+    <div class="wm">glyf<i></i></div>
+    <h1>The AI keyboard<br>that does the rest.</h1>
+    <div class="sub">Search, rewrite, translate and paste your<br>own details, without leaving the chat.</div>
+    <div class="cta">Join the waitlist</div>
+    <div class="url">tryglyf.com</div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------- geometry
+// The real keyboard's numbers (GlassTokens.swift) at a 402pt screen.
+const W = 402, MARGIN = 6.5, HGAP = 6, PITCH = 54, KEYH = 43;
+const KEYW = (W - MARGIN * 2 - HGAP * 9) / 10;      // 33.5
+const SIDEW = KEYW * 1.35;                           // shift and delete
+const SHEET_TOP = 715 - 343, KEYS_TOP = SHEET_TOP + 57;
+const BOUND = new Set(["v", "c"]);                   // what ships bound
+
+const ROWS = [
+  "qwertyuiop".split("").map(k => ({ k, w: KEYW })),
+  "asdfghjkl".split("").map(k => ({ k, w: KEYW })),
+  [{ k: "⇧", w: SIDEW, fn: 1 }, ..."zxcvbnm".split("").map(k => ({ k, w: KEYW })), { k: "⌫", w: SIDEW, fn: 1 }],
+  [{ k: "123", w: SIDEW, fn: 1 }, { k: "☺", w: KEYW, fn: 1 }, { k: "space", w: 0 }, { k: "⏎", w: SIDEW, fn: 1 }],
+];
+
+const keysEl = document.getElementById("keys");
+const cells = [];
+ROWS.forEach((row, r) => {
+  const used = row.reduce((s, c) => s + c.w, 0) + HGAP * (row.length - 1);
+  const space = row.find(c => c.k === "space");
+  if (space) space.w = W - MARGIN * 2 - (used - space.w);
+  let x = MARGIN;
+  if (r === 1) x = MARGIN + (KEYW + HGAP) / 2;       // the home row sits half a key in
+  row.forEach((c, i) => {
+    const el = document.createElement("div");
+    el.className = "key" + (c.fn ? " fn" : "") + (c.k === "space" ? " space" : "");
+    el.style.left = x + "px";
+    el.style.top = (KEYS_TOP - SHEET_TOP + r * PITCH) + "px";
+    el.style.width = c.w + "px";
+    el.style.height = KEYH + "px";
+    const s = document.createElement("span");
+    s.textContent = c.k === "space" ? "" : c.k;
+    el.appendChild(s);
+    const dot = document.createElement("i");
+    dot.className = "dot";
+    el.appendChild(dot);
+    keysEl.appendChild(el);
+    cells.push({ el, span: s, dot, ...c, x, row: r, col: i });
+    x += c.w + HGAP;
+  });
+});
+
+// The strip: the apps grid, then the tools, spaced the way the real one is.
+const TOOLS = [
+  { t: "grid" },
+  { t: "path", d: "M10.2 3.6a6.6 6.6 0 1 0 0 13.2 6.6 6.6 0 0 0 0-13.2ZM15.2 15.2l5 5" },
+  { t: "path", d: "M6.4 2.8h7.2a2 2 0 0 1 2 2v9.6a2 2 0 0 1-2 2H6.4a2 2 0 0 1-2-2V4.8a2 2 0 0 1 2-2Z M8.6 6.2h9a2 2 0 0 1 2 2v9.6a2 2 0 0 1-2 2h-7.2a2 2 0 0 1-2-2" },
+  { t: "path", d: "M3.4 4.6h17.2a1.8 1.8 0 0 1 1.8 1.8v11.2a1.8 1.8 0 0 1-1.8 1.8H3.4a1.8 1.8 0 0 1-1.8-1.8V6.4a1.8 1.8 0 0 1 1.8-1.8Z M7.6 12.4a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z M4.4 16.4c.6-1.8 1.9-2.6 3.2-2.6s2.6.8 3.2 2.6 M14 9.4h5 M14 12.6h5" },
+  { t: "path", d: "M12 2.6a3 3 0 0 1 3 3v5.8a3 3 0 1 1-6 0V5.6a3 3 0 0 1 3-3Z M5.4 11.2a6.6 6.6 0 0 0 13.2 0 M12 17.8v3.6" },
+  { t: "path", d: "M2.6 5.2h9 M7.1 3.2v2 M9.4 12.4c-2.6-.9-4.4-3-4.8-7.2 M3 12.4c3.6 0 6.6-2.2 7.4-7.2 M12.8 20.8l4.2-10 4.2 10 M14.3 17.6h5.4" },
+];
+const toolsEl = document.getElementById("tools");
+const toolEls = [];
+{
+  const NS = "http://www.w3.org/2000/svg";
+  const GLYPH = 20, PAD = 12, M = 16, GRIDSLACK = 3;
+  // Measure like the real strip: one gap for the row and for both margins.
+  const boxes = TOOLS.map((t, i) => (i === 0 ? GLYPH + 2 * (PAD + GRIDSLACK) : GLYPH + 2 * PAD));
+  const gap = (W - 2 * (M - PAD) - boxes.reduce((a, b) => a + b, 0)) / (TOOLS.length - 1);
+  let x = M - PAD - GRIDSLACK;
+  TOOLS.forEach((t, i) => {
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "tool");
+    svg.setAttribute("width", GLYPH); svg.setAttribute("height", GLYPH);
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "#1d1d1f"); svg.setAttribute("stroke-width", "1.7");
+    svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
+    if (t.t === "grid") {
+      // three tiles and a fourth on its corner, as the keyboard draws it
+      const tile = (cx, cy, s, r, rot) => {
+        const p = document.createElementNS(NS, "rect");
+        p.setAttribute("x", cx - s / 2); p.setAttribute("y", cy - s / 2);
+        p.setAttribute("width", s); p.setAttribute("height", s); p.setAttribute("rx", r);
+        if (rot) p.setAttribute("transform", `rotate(45 ${cx} ${cy})`);
+        svg.appendChild(p);
+      };
+      tile(6.9, 6.9, 9.2, 1.9); tile(6.9, 17.1, 9.2, 1.9); tile(17.1, 17.1, 9.2, 1.9);
+      tile(17.1, 6.9, 7.5, 1.7, true);
+    } else {
+      t.d.trim().split(/\s+M/).forEach((seg, j) => {
+        const p = document.createElementNS(NS, "path");
+        p.setAttribute("d", (j ? "M" + seg : seg));
+        svg.appendChild(p);
+      });
+    }
+    svg.style.left = (x + (i === 0 ? PAD + GRIDSLACK : PAD)) + "px";
+    toolsEl.appendChild(svg);
+    toolEls.push(svg);
+    x += boxes[i] + gap;
+  });
+}
+
+// ---------------------------------------------------------------- easing
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const t = (f, a, b) => clamp01((f - a) / (b - a));
+const outCubic = x => 1 - Math.pow(1 - x, 3);
+const inCubic = x => x * x * x;
+const outQuint = x => 1 - Math.pow(1 - x, 5);
+const inOutCubic = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+/** A settle with one small overshoot: what a key that has landed does. */
+const settle = (x, bounce = 1.7) =>
+  x >= 1 ? 1 : 1 - Math.pow(2, -9 * x) * Math.cos(x * Math.PI * bounce);
+const mix = (a, b, x) => a + (b - a) * x;
+
+// ---------------------------------------------------------------- timeline
+const FPS = 60;
+const T = {
+  idle:      [0, 66],      // Apple's keyboard, a caret, a draft
+  wipe:      [66, 150],    // the draft goes, then the keys go with it
+  fall:      [140, 272],   // Glyf's keys drop in
+  strip:     [232, 292],   // the tool strip arrives
+  live:      [284, 372],   // the dots light and the space bar takes its name
+  toCard:    [372, 432],   // the phone gives way
+  card:      [404, 540],   // the words
+};
+const LAST = 552;
+
+const DRAFT = "wait let me check the";
+const chat = document.getElementById("chat");
+const sheet = document.getElementById("sheet");
+const draft = document.getElementById("draft");
+const caret = document.getElementById("caret");
+const card = document.getElementById("card");
+const bubs = [document.getElementById("b1"), document.getElementById("b2"), document.getElementById("b3")];
+
+function seek(f) {
+  // --- the draft, typed then taken away ---------------------------------
+  const typed = Math.round(mix(0, DRAFT.length, outCubic(t(f, 4, 58))));
+  const kept = f < T.wipe[0] ? typed
+    : Math.round(mix(DRAFT.length, 0, t(f, T.wipe[0], T.wipe[0] + 26)));
+  draft.textContent = DRAFT.slice(0, Math.max(0, kept));
+  caret.style.left = (14 + draft.getBoundingClientRect().width / 2.686567) + "px";
+  caret.style.opacity = f > T.wipe[0] + 30 ? 0 : (Math.floor(f / 26) % 2 ? .25 : 1);
+
+  bubs.forEach((b, i) => {
+    const a = t(f, i * 9, i * 9 + 22);
+    b.style.opacity = a;
+    b.style.transform = `translateY(${mix(10, 0, outCubic(a))}px)`;
+  });
+
+  // --- Apple's keys leave, Glyf's arrive ---------------------------------
+  cells.forEach((c, i) => {
+    // Leaving: a wave that runs down the board, each key dropping out.
+    const order = c.row * 10 + c.col;
+    const goA = T.wipe[0] + 24 + order * 1.15;
+    const gone = t(f, goA, goA + 20);
+    // Arriving: the same wave, running the other way, springing home.
+    const back = LAST - 0;
+    const inA = T.fall[0] + (3 - c.row) * 13 + c.col * 2.6;
+    const land = t(f, inA, inA + 46);
+
+    let y, o, s = 1, rot = 0;
+    if (f < inA) {
+      y = mix(0, 46, inCubic(gone));
+      o = 1 - gone;
+      rot = mix(0, 7 * (c.col % 2 ? 1 : -1), gone);
+      s = mix(1, .88, gone);
+    } else {
+      const k = settle(land);
+      y = mix(-430 - c.row * 40, 0, k);
+      o = clamp01(land * 3.2);
+      rot = mix(4 * (c.col % 2 ? 1 : -1), 0, outQuint(land));
+      s = mix(1.06, 1, outQuint(land));
+    }
+    c.el.style.opacity = o;
+    c.el.style.transform = `translateY(${y}px) rotate(${rot}deg) scale(${s})`;
+
+    if (c.k === "space") {
+      c.span.textContent = f > T.live[0] + 18 ? "glyf" : "";
+      c.span.style.opacity = t(f, T.live[0] + 18, T.live[0] + 40);
+    }
+    if (BOUND.has(c.k)) {
+      const p = t(f, T.live[0] + c.col * 3, T.live[0] + 26 + c.col * 3);
+      c.dot.style.opacity = p;
+      c.dot.style.transform = `scale(${settle(p, 2.2)})`;
+    }
+  });
+
+  // --- the strip drops in last -------------------------------------------
+  const st = t(f, T.strip[0], T.strip[1]);
+  toolsEl.style.opacity = f < T.strip[0] ? 0 : clamp01(st * 2.4);
+  toolsEl.style.transform = `translateY(${mix(-64, 0, settle(st, 1.3))}px)`;
+  toolEls.forEach((el, i) => {
+    const a = t(f, T.strip[0] + i * 4, T.strip[0] + 34 + i * 4);
+    el.style.opacity = a;
+    el.style.transform = `translateY(${mix(-14, 0, outQuint(a))}px) scale(${mix(.7, 1, settle(a, 1.6))})`;
+  });
+
+  // --- the phone gives way to the words ----------------------------------
+  const out = inOutCubic(t(f, T.toCard[0], T.toCard[1]));
+  chat.style.opacity = 1 - clamp01(out * 1.6);
+  sheet.style.transform = `translateY(${mix(0, 360, out)}px)`;
+  sheet.style.opacity = 1 - clamp01((out - .35) / .65);
+  document.getElementById("stage").style.background = out > .02 ? "#000" : "#fff";
+
+  card.style.opacity = clamp01(t(f, T.card[0], T.card[0] + 26));
+  const rise = (el, a, b, dy) => {
+    const k = outQuint(t(f, a, b));
+    el.style.opacity = k;
+    el.style.transform = `translate(${el.dataset.cx ? "-50%" : "0"}, ${mix(dy, 0, k)}px)`;
+  };
+  const q = s => card.querySelector(s);
+  rise(q(".wm"), T.card[0] + 6, T.card[0] + 44, 18);
+  rise(q("h1"), T.card[0] + 16, T.card[0] + 62, 26);
+  rise(q(".sub"), T.card[0] + 30, T.card[0] + 74, 22);
+  rise(q(".cta"), T.card[0] + 44, T.card[0] + 90, 20);
+  rise(q(".url"), T.card[0] + 56, T.card[0] + 100, 16);
+}
+card.querySelector(".wm").dataset.cx = 1;
+card.querySelector(".cta").dataset.cx = 1;
+
+window.seek = seek;
+window.TOTAL = LAST;
+window.FPS = FPS;
+seek(0);
+document.body.dataset.ready = "1";
+</script>
