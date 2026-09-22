@@ -365,22 +365,29 @@ enum Glass {
 
     // MARK: The brand mark
 
-    /// The app's own logo, in two pieces so each keeps its own colour.
+    /// The app's own letterform, trimmed to its outline.
     ///
     /// The source is `assets/brand/glyf-symbol.png` — the mark the app icon
-    /// and the launch screen use — split by colour into the letter and the
-    /// accent dot, and shipped with the appex because an extension cannot
-    /// read the host app's artwork. Both are drawn on the SAME square canvas,
-    /// so handing the two views one identical frame lands them in the logo's
-    /// own composition: letter low and left, dot high and right.
+    /// and the launch screen use — with the accent dot lifted off and the
+    /// letter cropped to its own bounds, so a frame IS the letter and there
+    /// is no padding to place around. It ships with the appex because an
+    /// extension cannot read the host app's artwork.
     ///
-    /// They are templates: the letter takes whatever colour reads against
-    /// the tile it sits on, and the dot stays brand purple.
-    static let brandMark = template("glyf-mark")
-    static let brandMarkDot = template("glyf-dot")
+    /// A template: the letter takes whatever ink reads against the surface
+    /// behind it, dark on the light sheet and white on the dark one.
+    ///
+    /// The dot is not artwork — it is a circle, drawn as one, so it stays
+    /// crisp at any size. The logo sets it a long way up and right of the
+    /// letter, which reads as composition inside the app icon's square but
+    /// as a stray mark on a bare strip (and would clip the top of a 36pt
+    /// toolbar). On the strip it sits at the letter's shoulder instead, the
+    /// way the "glyf" wordmark tucks it.
+    static let brandMark = UIImage(named: "glyf-mark")?
+        .withRenderingMode(.alwaysTemplate)
 
-    private static func template(_ name: String) -> UIImage? {
-        UIImage(named: name)?.withRenderingMode(.alwaysTemplate)
+    /// The letter's width for a given height, from the artwork (274 x 410).
+    static func brandMarkWidth(height: CGFloat) -> CGFloat {
+        (height * 274 / 410).rounded()
     }
 
     // MARK: Accessibility

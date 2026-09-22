@@ -55,7 +55,6 @@
 		753C44428381110779FCE51D /* GlydTrie.swift in Sources */ = {isa = PBXBuildFile; fileRef = 420BCE51F821608027ACDA01 /* GlydTrie.swift */; };
 		766B89438D8A7F5C1E326099 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60BFE26B50FE956967CF026 /* SettingsStore.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
-		7A1B22E0377057BE9771EF9E /* glyf-dot@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = F158F6FCC8BCC928608E3C66 /* glyf-dot@2x.png */; };
 		7B15D2A5E11C0989CAE367E6 /* IntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B2E745F387CCCC496C13F0 /* IntentStore.swift */; };
 		7F06F8B50C201C5ADE91869E /* KeyMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */; };
 		81364F0B50AAA933D02723D5 /* CalendarText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7C9B275603B0968648339E /* CalendarText.swift */; };
@@ -84,7 +83,6 @@
 		A560F79106F9F14FF065A3A7 /* SearchRecents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */; };
 		A6FBB7E0213DB2EAFE7E9C62 /* ControlScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB08610153E93D016950991C /* ControlScrollView.swift */; };
 		A7E9D6421F758C2BC141CA25 /* SearchRecents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */; };
-		AAEBE1FB079C1F6A8A8D4DA1 /* glyf-dot@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = BEA7C6AD6F012BB974732668 /* glyf-dot@3x.png */; };
 		B0850AA732C33E25139D7C5A /* GlyfKeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */; };
 		B970FCED18EE8126F58A8355 /* ConnectorSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C613956FFF2C3CEE732AF10E /* ConnectorSurface.swift */; };
 		BA72E8D676DCA4E6E9A8213E /* HostAppOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A24DFFE40F4D4F81C63DEE5 /* HostAppOpener.swift */; };
@@ -104,7 +102,6 @@
 		D2233E8056469F8AE7549D4B /* NoteEditSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22621FA28A0473C913A2802 /* NoteEditSurface.swift */; };
 		D26EE5F01C8B4F264AE6FCFF /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60BFE26B50FE956967CF026 /* SettingsStore.swift */; };
 		D347769C9985CCBFECBE4EE8 /* Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */; };
-		D4B4E17929002665149A361E /* glyf-dot.png in Resources */ = {isa = PBXBuildFile; fileRef = 4C3A40B1F4F0E750F3220C64 /* glyf-dot.png */; };
 		D6DE1FAF1136DF33AD4EF4AE /* GlyfShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF6DB2DF0F83FB95AAE78ADA /* GlyfShell.swift */; };
 		D94ED266C32F80F11D11432B /* SearchSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B3144CD598A0B2C3FC5AC6 /* SearchSurface.swift */; };
 		D98CD97CD6A126A663A97E32 /* GlyfBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4FA32D8AB8A81BFE76AF575 /* GlyfBar.swift */; };
@@ -212,7 +209,6 @@
 		4223D5E2A46414C673A83747 /* Contracts.generated.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Contracts.generated.swift; sourceTree = "<group>"; };
 		425B52CBFA3C0F3F3A7C0B44 /* BackendClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackendClient.swift; sourceTree = "<group>"; };
 		48E9A1D4AE4314BBD7EBCE01 /* SignIn.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SignIn.swift; sourceTree = "<group>"; };
-		4C3A40B1F4F0E750F3220C64 /* glyf-dot.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = "glyf-dot.png"; sourceTree = "<group>"; };
 		4DDCD668B425F7D836701C6A /* IntentStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IntentStoreTests.swift; sourceTree = "<group>"; };
 		4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Decoder.swift; sourceTree = "<group>"; };
 		4E97DFE2A588F7A69880F23A /* InlineEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InlineEditor.swift; sourceTree = "<group>"; };
@@ -259,7 +255,6 @@
 		BB08610153E93D016950991C /* ControlScrollView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ControlScrollView.swift; sourceTree = "<group>"; };
 		BCD273F58EDF622C4D76884F /* GlyfKeyboard.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = GlyfKeyboard.entitlements; sourceTree = "<group>"; };
 		BCE797239D0E0CC7B33D5D0D /* glyf-mark@3x.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = "glyf-mark@3x.png"; sourceTree = "<group>"; };
-		BEA7C6AD6F012BB974732668 /* glyf-dot@3x.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = "glyf-dot@3x.png"; sourceTree = "<group>"; };
 		BF6DB2DF0F83FB95AAE78ADA /* GlyfShell.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfShell.swift; sourceTree = "<group>"; };
 		C5EDE3074B7BAC0173FA466A /* GlyfScenarioUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfScenarioUITests.swift; sourceTree = "<group>"; };
 		C60BFE26B50FE956967CF026 /* SettingsStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
@@ -278,7 +273,6 @@
 		E4FA32D8AB8A81BFE76AF575 /* GlyfBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfBar.swift; sourceTree = "<group>"; };
 		EBF13C3419D7D5D10B0F0884 /* CalendarSync.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CalendarSync.swift; sourceTree = "<group>"; };
 		ED172FBD98BD64B321D6F03F /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		F158F6FCC8BCC928608E3C66 /* glyf-dot@2x.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = "glyf-dot@2x.png"; sourceTree = "<group>"; };
 		F22621FA28A0473C913A2802 /* NoteEditSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteEditSurface.swift; sourceTree = "<group>"; };
 		F2E78F3328F27A5F72F19B32 /* ThumbLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThumbLoader.swift; sourceTree = "<group>"; };
 		F69B8F550E5B5270B4D18FCA /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -326,9 +320,6 @@
 		045210190D0BB732C32B6893 /* Brand */ = {
 			isa = PBXGroup;
 			children = (
-				4C3A40B1F4F0E750F3220C64 /* glyf-dot.png */,
-				F158F6FCC8BCC928608E3C66 /* glyf-dot@2x.png */,
-				BEA7C6AD6F012BB974732668 /* glyf-dot@3x.png */,
 				AD6F718E7467007297451FE0 /* glyf-mark.png */,
 				7DD2E7696DBFF2CED89EEC52 /* glyf-mark@2x.png */,
 				BCE797239D0E0CC7B33D5D0D /* glyf-mark@3x.png */,
@@ -736,9 +727,6 @@
 			files = (
 				A402B2AE8E9B78B4BE8B8D51 /* packs.json in Resources */,
 				0008D316C6CB6724A07EAECE /* en.glyd in Resources */,
-				D4B4E17929002665149A361E /* glyf-dot.png in Resources */,
-				7A1B22E0377057BE9771EF9E /* glyf-dot@2x.png in Resources */,
-				AAEBE1FB079C1F6A8A8D4DA1 /* glyf-dot@3x.png in Resources */,
 				2FED6D2687889B675663A493 /* glyf-mark.png in Resources */,
 				53C8DB3933422ACF991A6692 /* glyf-mark@2x.png in Resources */,
 				F2F47532637213597CB23BCB /* glyf-mark@3x.png in Resources */,

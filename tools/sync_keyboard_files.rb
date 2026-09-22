@@ -93,6 +93,18 @@ Dir.glob(File.join(KB_DIR, '**/*.png')).sort.each do |abs|
   added << "kb-res:#{rel}"
 end
 
+# ...and drop the ones that are gone. A resource reference outliving its file
+# fails the build outright ("Build input file cannot be found"), so deleting
+# artwork has to be as easy as adding it.
+kb.resources_build_phase.files.dup.each do |bf|
+  path = bf.file_ref&.real_path.to_s
+  next unless path.start_with?("#{KB_DIR}/")
+  next if File.exist?(path)
+
+  added << "kb-res-gone:#{path.sub("#{KB_DIR}/", '')}"
+  bf.file_ref.remove_from_project
+end
+
 # New Swift files under app/ios/Runner/ go into the Runner target.
 runner_group = project.main_group['Runner']
 Dir.glob(File.expand_path('../app/ios/Runner/*.swift', __dir__)).sort.each do |abs|

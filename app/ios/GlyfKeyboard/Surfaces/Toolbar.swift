@@ -35,10 +35,11 @@ final class GlyfToolbar: UIView {
     private let itemsStack = UIStackView()
     private let candidatesStack = UIStackView()
     private let runsChip = UIButton(type: .system)
-    /// The logo's two halves, drawn on one shared square so they land in the
-    /// mark's own composition (see Glass.brandMark).
+    /// The logo: the letterform, and the accent dot at its shoulder.
     private let markView = UIImageView()
-    private let dotView = UIImageView()
+    private let brandDot = CALayer()
+    /// True while a panel has turned the logo into a close button.
+    private var panelOpen = false
     /// Panel mode (website parity): the strip keeps its place, the brand pill
     /// turns into a close button and the rest becomes "icon + panel name".
     private let panelLabel = UILabel()
@@ -91,27 +92,20 @@ final class GlyfToolbar: UIView {
     init() {
         super.init(frame: .zero)
 
-        // The app's icon IS the button: the real logo — the letterform from
-        // the brand mark, not a system "g" — reversed out of a square ink
-        // tile, exactly the keycap the app's own tab bar shows.
-        //
-        // Brand tile is ALWAYS ink; textPrimary flips white on dark chrome
-        // and would swallow the mark.
-        glyfButton.backgroundColor = Glass.brandInk
+        // The logo IS the button: the app's own letterform, standing on the
+        // strip like every other tool rather than boxed in a tile. No ground
+        // of its own — but not a clear one either: iOS throws away touches
+        // that land on fully transparent pixels in a keyboard extension, so
+        // the button is painted with the grid's near-invisible ink.
+        glyfButton.backgroundColor = Glass.touchableGrid
         glyfButton.layer.cornerCurve = .continuous
-        glyfButton.layer.shadowOpacity = 0.28
-        glyfButton.layer.shadowOffset = CGSize(width: 0, height: 2)
-        glyfButton.layer.shadowRadius = 3
-        glyfButton.layer.shadowColor = UIColor.black.cgColor
         markView.image = Glass.brandMark
-        markView.tintColor = .white
-        dotView.image = Glass.brandMarkDot
-        dotView.tintColor = Glass.accentPrimary
-        for v in [markView, dotView] {
-            v.contentMode = .scaleAspectFit
-            v.isUserInteractionEnabled = false
-            glyfButton.addSubview(v)
-        }
+        markView.tintColor = Glass.textPrimary
+        markView.contentMode = .scaleAspectFit
+        markView.isUserInteractionEnabled = false
+        glyfButton.addSubview(markView)
+        brandDot.backgroundColor = Glass.accentPrimary.cgColor
+        glyfButton.layer.addSublayer(brandDot)
         glyfButton.accessibilityIdentifier = "toolbar:glyf"
         glyfButton.accessibilityLabel = "Glyf"
         glyfButton.addTarget(self, action: #selector(glyfTapped), for: .touchUpInside)
@@ -234,14 +228,11 @@ final class GlyfToolbar: UIView {
         let words = suggestions
         suggestions = []
         if !words.isEmpty { showSuggestions(words) }
-        // On dark chrome the ink pill needs a faint ring to stay separate
-        // from the backdrop (black-on-black otherwise). The website uses a
-        // half-point ring at 18% and no drop shadow.
-        glyfButton.layer.borderWidth = Glass.chromeDark ? (Glass.solidLook ? 0.5 : 1) : 0
-        glyfButton.layer.borderColor = UIColor.white
-            .withAlphaComponent(Glass.solidLook ? 0.18 : 0.35).cgColor
-        glyfButton.layer.shadowOpacity = Glass.solidLook ? 0 : 0.28
-        glyfButton.backgroundColor = Glass.solidLook && Glass.isDark ? .black : Glass.brandInk
+        // The letter stands on the sheet with no ground of its own, so it
+        // takes the sheet's ink: dark on the light one, white on the dark.
+        markView.tintColor = Glass.textPrimary
+        brandDot.backgroundColor = Glass.accentPrimary.cgColor
+        if !panelOpen { glyfButton.backgroundColor = Glass.touchableGrid }
         reloadItems()
     }
 
@@ -366,15 +357,18 @@ final class GlyfToolbar: UIView {
             glyfButton.accessibilityIdentifier = "toolbar:close"
             glyfButton.accessibilityLabel = "Close"
             markView.isHidden = true
-            dotView.isHidden = true
+            brandDot.isHidden = true
         } else {
             glyfButton.setImage(nil, for: .normal)
-            glyfButton.backgroundColor = Glass.solidLook && Glass.isDark ? .black : Glass.brandInk
+            // Back to no ground of its own, but still painted: a clear
+            // button would stop taking touches at all (see init).
+            glyfButton.backgroundColor = Glass.touchableGrid
             glyfButton.accessibilityIdentifier = "toolbar:glyf"
             glyfButton.accessibilityLabel = "Glyf"
             markView.isHidden = false
-            dotView.isHidden = false
+            brandDot.isHidden = false
         }
+        panelOpen = open
         setNeedsLayout()
     }
 
@@ -574,41 +568,44 @@ final class GlyfToolbar: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // Website strip: an app-icon tile 0.78x the strip height, SQUARE like
-        // the icon it is, then the tools spread across the rest. No divider.
+        // Website strip: the logo at the left, then the tools across the rest.
         // Below the band we had to draw ourselves (nothing on iOS 26, which
         // supplies its own): everything measures off the content box.
         let band = Glass.stripBand
         let h = bounds.height - band
         let mid = band + h / 2 - Glass.stripLift
-        let tile = (h * 0.78).rounded()
-        let pillW = tile
-        glyfButton.frame = CGRect(x: 5, y: mid - tile / 2, width: tile, height: tile)
-        // An app icon's corner, not a pill's: iOS rounds its icons to a little
-        // under a third of the side, and the app's own tab bar matches.
-        glyfButton.layer.cornerRadius = (tile * 0.30).rounded()
-        // The logo inside, near edge to edge.
-        //
-        // NOT the app icon's own padding. The icon gives the letter 40% of
-        // its height, which is right at 60pt on a home screen and far too
-        // small at 28 — it measured 10.9pt and read as a letter lost in a
-        // box. A home-screen icon is padded because it sits on wallpaper; a
-        // chip in a toolbar is not. Pulled in to a 2pt margin the same mark
-        // draws its letter at 14.5pt, about what the system "g" it replaced
-        // stood at, and the dot still clears the tile's rounded corner.
-        let inset = (tile * 0.07).rounded()
-        let art = glyfButton.bounds.insetBy(dx: inset, dy: inset)
-        markView.frame = art
-        dotView.frame = art
+        // Off its tile the letter is free to be a letter: 0.56 of the strip,
+        // which is 20pt here — the weight the tool icons beside it carry. In
+        // a tile the same strip only bought 14, because a tile has to hold
+        // the mark AND its margins.
+        let letterH = (h * 0.56).rounded()
+        let letterW = Glass.brandMarkWidth(height: letterH)
+        let dot = (letterH * 0.20).rounded()
+        let gap = (letterH * 0.08).rounded()
+        let inkW = letterW + gap + dot
+        // Nothing is drawn behind the letter now, so the button has to carry
+        // its own target: the ink plus a margin all round.
+        let padX: CGFloat = 6, padY: CGFloat = 7
+        let inkX: CGFloat = 7
+        glyfButton.frame = CGRect(x: inkX - padX, y: mid - letterH / 2 - padY,
+                                  width: inkW + padX * 2, height: letterH + padY * 2)
+        glyfButton.layer.cornerRadius = 9
+        markView.frame = CGRect(x: padX, y: padY, width: letterW, height: letterH)
+        // At the letter's shoulder, not the logo's own far corner: see
+        // Glass.brandMark for why the mark tucks its dot in at this size.
+        brandDot.frame = CGRect(x: padX + letterW + gap, y: padY,
+                                width: dot, height: dot)
+        brandDot.cornerRadius = dot / 2
+        let markRight = inkX + inkW
         divider.isHidden = Glass.solidLook
-        divider.frame = CGRect(x: pillW + 11, y: 10, width: Glass.hairlineWidth * 2,
+        divider.frame = CGRect(x: markRight + 10, y: 10, width: Glass.hairlineWidth * 2,
                                height: h - 20)
         let chipW: CGFloat = runsChip.isHidden ? 0 : 64
         if !runsChip.isHidden {
             runsChip.frame = CGRect(x: bounds.width - chipW - 6, y: 11,
                                     width: chipW, height: h - 22)
         }
-        let left = pillW + (Glass.solidLook ? 11 : 17)
+        let left = markRight + (Glass.solidLook ? 11 : 17)
         let width = bounds.width - left - chipW - 6
         if !smartCard.isHidden {
             let cardH = (h * 0.78).rounded()
