@@ -354,7 +354,13 @@ enum Glass {
     static var toolbarHeight: CGFloat { stripContent + stripBand }
     /// The band already pads the strip from above, so its contents sit this
     /// far above centre to look centred between the sheet edge and the keys.
-    static let stripLift: CGFloat = 3
+    ///
+    /// Measured on iOS 26: the sheet's top edge at 531pt and the first row of
+    /// keys at 588.33 leave the strip 57.3pt to sit in, so its middle is
+    /// 559.67. At a lift of 3 the icons came out at 561.83 — two points low,
+    /// which is what made the row look like it had more air above it than
+    /// below. Five puts them on the middle.
+    static let stripLift: CGFloat = 5
     static func keysHeight(width: CGFloat) -> CGFloat { KeyMetrics.keysHeight(width: width) }
     static func keyboardBaseHeight(width: CGFloat) -> CGFloat {
         toolbarHeight + keysHeight(width: width)

@@ -88,6 +88,21 @@ final class GlyfToolbar: UIView {
     /// User tapped Glyf to restore tools while candidates were up.
     private var userPinnedTools = false
 
+    /// The air at each end of the strip — and, because the row is spaced by
+    /// one gap, the air between any two icons follows from it.
+    static let margin: CGFloat = 16
+    /// How far each icon's tap target reaches past the icon, sideways. Equal
+    /// on both sides of every control, so padding a target never moves an
+    /// icon off the rhythm.
+    static let itemPad: CGFloat = 12
+    /// An SF Symbol does not fill the box it is drawn in — measured on this
+    /// strip, about three points of air sit inside each one's edge. The apps
+    /// grid is a path, so it fills its box exactly, and laid out on the same
+    /// arithmetic it ended up three points nearer its neighbour than they are
+    /// to each other, and three points nearer the screen edge. This is the
+    /// air a symbol would have brought with it.
+    static let gridSlack: CGFloat = 3
+
     init() {
         super.init(frame: .zero)
 
@@ -112,9 +127,15 @@ final class GlyfToolbar: UIView {
         scroll.showsHorizontalScrollIndicator = false
         addSubview(scroll)
         itemsStack.axis = .horizontal
-        itemsStack.spacing = 6
-        // The website spreads the six tools evenly across the strip.
-        itemsStack.distribution = .fillEqually
+        itemsStack.spacing = 0
+        // Equal GAPS, not equal slots. Slots of one width put each icon in the
+        // middle of its own, which spaces the centres evenly but leaves the
+        // ends of the row to whatever the first and last icons happen to
+        // measure — 14pt of margin at one end against 21 at the other. Spacing
+        // by the gap between them puts the same air everywhere, the margins
+        // included; `layoutSubviews` solves for the gap and hands the stack
+        // exactly the width that produces it.
+        itemsStack.distribution = .equalSpacing
         scroll.addSubview(itemsStack)
 
         dropMarker.backgroundColor = Glass.accentPrimary
@@ -273,6 +294,11 @@ final class GlyfToolbar: UIView {
             b.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 21, weight: .regular),
                                               forImageIn: .normal)
             b.tintColor = Glass.textPrimary.withAlphaComponent(0.78)
+            // The icon is the thing you see; this is the thing you hit. Same
+            // on both sides, so padding a target never shifts an icon off the
+            // rhythm the gaps set.
+            b.contentEdgeInsets = UIEdgeInsets(top: 0, left: Self.itemPad,
+                                               bottom: 0, right: Self.itemPad)
             b.layer.cornerRadius = 10
             b.layer.cornerCurve = .continuous
             b.accessibilityIdentifier = "toolbar:\(id)"
@@ -571,13 +597,11 @@ final class GlyfToolbar: UIView {
         // then some tools.
         let glyph = (h * 0.56).rounded()
         // Nothing is drawn behind it, so the button has to carry its own
-        // target: the glyph plus a margin all round.
-        let padX: CGFloat = 7, padY: CGFloat = 6
-        // The strip's left margin. The tools are centred in equal slots, which
-        // leaves about 20pt of slack outside the last one, so the grid needs
-        // its own margin in that neighbourhood or it reads as shoved into the
-        // corner while the other end breathes.
-        let inkX: CGFloat = 14
+        // target: the glyph plus a margin all round. The sideways half is the
+        // tools' own padding plus the air a symbol keeps inside its box, so
+        // the grid sits on the same rhythm they do.
+        let padX = Self.itemPad + Self.gridSlack, padY: CGFloat = 6
+        let inkX = Self.margin + Self.gridSlack
         glyfButton.frame = CGRect(x: inkX - padX, y: mid - glyph / 2 - padY,
                                   width: glyph + padX * 2, height: glyph + padY * 2)
         glyfButton.layer.cornerRadius = 9
@@ -632,28 +656,26 @@ final class GlyfToolbar: UIView {
             panelLabel.frame = CGRect(x: textX, y: band - Glass.stripLift,
                                       width: bounds.width - textX - 10 - actionW, height: h)
         }
-        // The tools start further right than everything else on the strip,
-        // and the number is worked out rather than picked.
+        // One gap for the whole row, margins included.
         //
-        // The grid and the tools read as one row of controls, so the step
-        // from the grid to the first tool has to be the step between any two
-        // tools. The stack spreads its items equally across whatever width
-        // it is handed, so that width sets the step — meaning the start has
-        // to be solved for, not guessed. It used to be a constant, and the
-        // first step came out 54.7pt against 72.5 everywhere else: the grid
-        // looked shoved into the corner.
+        // The grid and the tools are one set of controls, so the air between
+        // any two of them is the same, and the air at each end is that margin.
+        // Everything else falls out of it: the icons keep whatever widths SF
+        // Symbols gives them, the stack gets exactly the width that spaces
+        // them by `gap`, and the row lands on the right margin on its own.
         //
-        //     step  = itemW + spacing               (what the stack gives)
-        //     first = toolsLeft + itemW / 2          (…and where it starts)
-        //     first - gridCentre = step              (what we want)
+        //     width - 2 × (margin - itemPad) = every frame + n gaps
         //
-        // Solved for itemW, with n items between toolsLeft and `end`.
-        let gridCentre = inkX + glyph / 2
-        let end = bounds.width - chipW - 6
-        let gap = itemsStack.spacing
+        // The pad cancels: each target is padded the same on both sides, so
+        // the frames grow inward and the icons stay on the gap's rhythm.
+        let end = bounds.width - chipW - Self.margin + Self.itemPad
+        let x0 = glyfButton.frame.minX
         let n = CGFloat(max(itemsStack.arrangedSubviews.count, 1))
-        let itemW = max(0, (end - gridCentre - gap * n) / (n + 0.5))
-        let toolsLeft = min(end, gridCentre + gap + itemW / 2)
+        let tools = itemsStack.arrangedSubviews.reduce(CGFloat(0)) {
+            $0 + $1.intrinsicContentSize.width
+        }
+        let gap = max(4, (end - x0 - glyfButton.frame.width - tools) / n)
+        let toolsLeft = x0 + glyfButton.frame.width + gap
         // Halfway between the grid and the first tool, when a look draws it.
         divider.frame = CGRect(x: ((markRight + toolsLeft) / 2).rounded(), y: 10,
                                width: Glass.hairlineWidth * 2, height: h - 20)
@@ -663,6 +685,7 @@ final class GlyfToolbar: UIView {
         // magnifier's handle and the mic's stand on iOS 18).
         let toolsW = max(0, end - toolsLeft)
         scroll.frame = CGRect(x: toolsLeft, y: band, width: toolsW, height: h)
+        itemsStack.spacing = 0
         let itemH = min(34, h - 4)
         // …and inside it the stack is band-relative: the strip's own centring.
         itemsStack.frame = CGRect(x: 0, y: (mid - band) - itemH / 2,
