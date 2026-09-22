@@ -363,33 +363,6 @@ enum Glass {
     static let barExtra: CGFloat = 96      // §5.2
     static let shellExtra: CGFloat = 140   // §6.3
 
-    // MARK: The brand mark
-
-    /// The app's own letterform, trimmed to its outline.
-    ///
-    /// The source is `assets/brand/glyf-symbol.png` — the mark the app icon
-    /// and the launch screen use — with the accent dot lifted off and the
-    /// letter cropped to its own bounds, so a frame IS the letter and there
-    /// is no padding to place around. It ships with the appex because an
-    /// extension cannot read the host app's artwork.
-    ///
-    /// A template: the letter takes whatever ink reads against the surface
-    /// behind it, dark on the light sheet and white on the dark one.
-    ///
-    /// The dot is not artwork — it is a circle, drawn as one, so it stays
-    /// crisp at any size. The logo sets it a long way up and right of the
-    /// letter, which reads as composition inside the app icon's square but
-    /// as a stray mark on a bare strip (and would clip the top of a 36pt
-    /// toolbar). On the strip it sits at the letter's shoulder instead, the
-    /// way the "glyf" wordmark tucks it.
-    static let brandMark = UIImage(named: "glyf-mark")?
-        .withRenderingMode(.alwaysTemplate)
-
-    /// The letter's width for a given height, from the artwork (274 x 410).
-    static func brandMarkWidth(height: CGFloat) -> CGFloat {
-        (height * 274 / 410).rounded()
-    }
-
     // MARK: Accessibility
 
     static var reduceTransparency: Bool { UIAccessibility.isReduceTransparencyEnabled }

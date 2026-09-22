@@ -22,7 +22,6 @@
 		21C14BE98D0CD059C5EC3C2E /* SpaceGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07E305711B11F34700D4CCDE /* SpaceGesture.swift */; };
 		22D65AB7F68DF03931D9BEA4 /* GlyfSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */; };
 		264770223DD8226DB4B988F0 /* ActSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */; };
-		2FED6D2687889B675663A493 /* glyf-mark.png in Resources */ = {isa = PBXBuildFile; fileRef = AD6F718E7467007297451FE0 /* glyf-mark.png */; };
 		301F473B5F209817B6C95E96 /* AccentPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603D199225C0A5A5986ECBD5 /* AccentPopup.swift */; };
 		31A5DBAC5940AE8D66750E8C /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
@@ -36,7 +35,6 @@
 		4ADAFEE41C95B9EC1027E1D1 /* TranslationHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EBDAF6797DA60917F2CADBD /* TranslationHUD.swift */; };
 		4B759E29785C7F2263CF60D4 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D580A139E7DF9CB049153E03 /* KeyboardLayout.swift */; };
 		50553C7711A43B097A732A2B /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7508C7D7086528DBA50605BC /* GlassTokens.swift */; };
-		53C8DB3933422ACF991A6692 /* glyf-mark@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 7DD2E7696DBFF2CED89EEC52 /* glyf-mark@2x.png */; };
 		57353ACE229EF65D43370F78 /* CalendarSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF13C3419D7D5D10B0F0884 /* CalendarSync.swift */; };
 		5B4D75708ECDD5C6F417F4D2 /* Smart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 397338FD53A5248DAFEBD08F /* Smart.swift */; };
 		5C544F3EFFA3927D874C208B /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
@@ -118,7 +116,6 @@
 		ED2E6632145F625290245147 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F0849F07512C2072EB2EB9C /* KeyboardView.swift */; };
 		F05081D9183D7B365F98DF91 /* GlyfEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74BB8405F8AB9A49632A3940 /* GlyfEngineTests.swift */; };
 		F1D3EBC57AB8F7FF8D71C1D9 /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
-		F2F47532637213597CB23BCB /* glyf-mark@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = BCE797239D0E0CC7B33D5D0D /* glyf-mark@3x.png */; };
 		F3F70A9CD2E23F0F6A54E6AE /* GlyfScenarioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5EDE3074B7BAC0173FA466A /* GlyfScenarioUITests.swift */; };
 		F4B50347186E7B2550BBB6B0 /* ToneProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F870C03E48C1149F7284D509 /* ToneProfile.swift */; };
 		F570CD64F4CF68669044375C /* IntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B2E745F387CCCC496C13F0 /* IntentStore.swift */; };
@@ -229,7 +226,6 @@
 		79A18448EF0F4C763B35281E /* VaultTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultTests.swift; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		7B45C4A1A9F02EC32C4EC037 /* EmojiBoard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmojiBoard.swift; sourceTree = "<group>"; };
-		7DD2E7696DBFF2CED89EEC52 /* glyf-mark@2x.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = "glyf-mark@2x.png"; sourceTree = "<group>"; };
 		8234BE4687484A021A8CC2FA /* en.glyd */ = {isa = PBXFileReference; includeInIndex = 1; name = en.glyd; path = ../dict/en.glyd; sourceTree = SOURCE_ROOT; };
 		8780A09C43898372745A2010 /* TypingEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingEngine.swift; sourceTree = "<group>"; };
 		8EBDAF6797DA60917F2CADBD /* TranslationHUD.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TranslationHUD.swift; sourceTree = "<group>"; };
@@ -248,13 +244,11 @@
 		9FDE3921B98C38CD61A63DE1 /* GlyfM0UITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfM0UITests.swift; sourceTree = "<group>"; };
 		A6A1C1B829364960405CA876 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfKeyboardViewController.swift; sourceTree = "<group>"; };
-		AD6F718E7467007297451FE0 /* glyf-mark.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = "glyf-mark.png"; sourceTree = "<group>"; };
 		ADB9E43E6C30DA5026053D1C /* LocationOnce.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationOnce.swift; sourceTree = "<group>"; };
 		AFE66C54DAD5E930746E0526 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		BAEEBB996F46607AAF62836B /* TypingEngineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingEngineTests.swift; sourceTree = "<group>"; };
 		BB08610153E93D016950991C /* ControlScrollView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ControlScrollView.swift; sourceTree = "<group>"; };
 		BCD273F58EDF622C4D76884F /* GlyfKeyboard.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = GlyfKeyboard.entitlements; sourceTree = "<group>"; };
-		BCE797239D0E0CC7B33D5D0D /* glyf-mark@3x.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = "glyf-mark@3x.png"; sourceTree = "<group>"; };
 		BF6DB2DF0F83FB95AAE78ADA /* GlyfShell.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfShell.swift; sourceTree = "<group>"; };
 		C5EDE3074B7BAC0173FA466A /* GlyfScenarioUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfScenarioUITests.swift; sourceTree = "<group>"; };
 		C60BFE26B50FE956967CF026 /* SettingsStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
@@ -320,9 +314,6 @@
 		045210190D0BB732C32B6893 /* Brand */ = {
 			isa = PBXGroup;
 			children = (
-				AD6F718E7467007297451FE0 /* glyf-mark.png */,
-				7DD2E7696DBFF2CED89EEC52 /* glyf-mark@2x.png */,
-				BCE797239D0E0CC7B33D5D0D /* glyf-mark@3x.png */,
 			);
 			name = Brand;
 			path = Brand;
@@ -727,9 +718,6 @@
 			files = (
 				A402B2AE8E9B78B4BE8B8D51 /* packs.json in Resources */,
 				0008D316C6CB6724A07EAECE /* en.glyd in Resources */,
-				2FED6D2687889B675663A493 /* glyf-mark.png in Resources */,
-				53C8DB3933422ACF991A6692 /* glyf-mark@2x.png in Resources */,
-				F2F47532637213597CB23BCB /* glyf-mark@3x.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
