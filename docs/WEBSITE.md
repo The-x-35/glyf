@@ -40,7 +40,7 @@ Opens on http://localhost:3000. The waitlist needs `DATABASE_URL` in `site/.env.
 4. **Hero** (`section.hero#top`):
    - Headline: **"Type less. glyf more."** where "glyf" is the wordmark itself (lowercase, weight 700, tight tracking, raised purple dot), per Arpit on 16 Sep: "glyf more text in hero, glyf should be our wordmark logo in there". One line on desktop, two lines on phones ("Type less." / "glyf• more.").
    - Subline: **"The AI keyboard that does the rest."**
-   - Greyed store badges: "Coming soon on the App Store" and "Coming soon on Google Play" (not clickable, `aria-disabled`, 32% opacity, grayscale).
+   - Greyed store badges: "Coming soon on App Store" and "Coming soon on Google Play" (the small line is the same on both, so the pair reads as a pair; Apple's own badge says "Download on the", Google's says "GET IT ON") (not clickable, `aria-disabled`, 32% opacity, grayscale).
    - Waitlist form (`source="hero"`).
 5. **The chat experience** (`div#try > components/chat/Experience.tsx`): a pinned, scroll-driven iMessage stage with 8 chats. Each chat is a small level where a friend asks for something and the visitor does it on the Glyf keyboard.
 6. **Finale** (`section.finale#join`): **"Made for your thumbs."** plus a second waitlist form (`source="footer"`).

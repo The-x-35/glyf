@@ -25,7 +25,7 @@ const StoreBadges = () => (
     <span className="store" aria-disabled="true">
       <AppleMark />
       <span className="store-lines">
-        <small>Coming soon on the</small>
+        <small>Coming soon on</small>
         <b>App Store</b>
       </span>
     </span>

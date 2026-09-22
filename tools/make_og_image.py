@@ -371,10 +371,10 @@ def main():
 
     # badges: measure first, then centre the pair
     probe = Image.new("RGBA", (10, 10))
-    w1 = store_badge(probe, 0, 0, "apple", "Coming soon on the", "App Store")
+    w1 = store_badge(probe, 0, 0, "apple", "Coming soon on", "App Store")
     w2 = store_badge(probe, 0, 0, "play", "Coming soon on", "Google Play")
     bx = (W - (w1 + 12 + w2)) / 2
-    store_badge(canvas, bx, y, "apple", "Coming soon on the", "App Store")
+    store_badge(canvas, bx, y, "apple", "Coming soon on", "App Store")
     store_badge(canvas, bx + w1 + 12, y, "play", "Coming soon on", "Google Play")
     y += 52 + 31.2
 
