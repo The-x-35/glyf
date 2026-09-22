@@ -369,11 +369,16 @@ final class GlyfToolbar: UIView {
             applyCandidatesVisibility(toolsVisible: !showingCandidates || userPinnedTools)
         }
         if open {
+            // The ✕ stands in the grid's slot, so it stands the way the grid
+            // does: no ground of its own, drawn at the size the tools beside
+            // it are drawn. It used to sit on a soft fill, and because the
+            // slot is a tap target — wider than it is tall — that fill read
+            // as a squat pill parked at the end of an otherwise clean row.
             glyfButton.setImage(UIImage(systemName: "xmark"), for: .normal)
             glyfButton.setPreferredSymbolConfiguration(
-                UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold), forImageIn: .normal)
+                UIImage.SymbolConfiguration(pointSize: 21, weight: .regular), forImageIn: .normal)
             glyfButton.tintColor = Glass.textPrimary
-            glyfButton.backgroundColor = Glass.fillSoft
+            glyfButton.backgroundColor = Glass.touchableGrid
             glyfButton.accessibilityIdentifier = "toolbar:close"
             glyfButton.accessibilityLabel = "Close"
             appsGrid.isHidden = true
