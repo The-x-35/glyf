@@ -189,7 +189,7 @@ final class GlyfEngineTests: XCTestCase {
             "s": "surface:vault",        // old vault key → moves to V
         ]
         let s = SettingsStore.migrated(old)
-        XCTAssertEqual(s.schemaVersion, 7)
+        XCTAssertEqual(s.schemaVersion, 8)
         XCTAssertEqual(s.bindings["t"], "surface:translate-hud")
         XCTAssertEqual(s.bindings["n"], "user.abc")
         XCTAssertNil(s.bindings["p"])
@@ -218,6 +218,32 @@ final class GlyfEngineTests: XCTestCase {
         let s = SettingsStore.migrated(both)
         XCTAssertEqual(s.bindings["s"], "surface:vault", "S keeps what it was given")
         XCTAssertEqual(s.bindings["v"], "surface:vault")
+    }
+
+    /// The clipboard fills itself now, and an install from before the change
+    /// gets that too. A file written earlier has no answer for these at all —
+    /// it decodes as nil, not as the new default — so the migration is the
+    /// only thing that can hand it one.
+    func testOlderInstallsGetTheClipboardFillingItself() {
+        var old = GlyfSettings()
+        old.schemaVersion = 7
+        old.clipboardCaptureAll = nil
+        old.clipboardScreenshots = nil
+        let s = SettingsStore.migrated(old)
+        XCTAssertEqual(s.clipboardCaptureAll, true)
+        XCTAssertEqual(s.clipboardScreenshots, true)
+    }
+
+    /// …but a no is a no. Someone who turned either off keeps it off: the
+    /// migration fills a blank, it does not overrule an answer.
+    func testTurningTheClipboardOffSurvivesTheMigration() {
+        var said = GlyfSettings()
+        said.schemaVersion = 7
+        said.clipboardCaptureAll = false
+        said.clipboardScreenshots = false
+        let s = SettingsStore.migrated(said)
+        XCTAssertEqual(s.clipboardCaptureAll, false)
+        XCTAssertEqual(s.clipboardScreenshots, false)
     }
 
     /// A canned glyf someone had on T is gone with the rest; T translates.

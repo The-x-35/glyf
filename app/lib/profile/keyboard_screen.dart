@@ -162,13 +162,12 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           _card([
             _switch('Keep what you copy', 'clipboardHistory', fallback: true),
             _switch('Capture everything you copy', 'clipboardCaptureAll',
-                fallback: false),
-            _note('Off, only what you paste with the keyboard\'s Paste button '
-                'is kept — iOS hands a keyboard nothing from the clipboard on '
-                'its own. On, every copy is kept, and iOS asks once per copy '
-                'until you set Settings → Glyf → Paste from Other Apps → Allow.'),
+                fallback: true),
+            _note('Every copy lands in the clipboard by itself. iOS asks '
+                'once per copy until you set Settings → Glyf → Paste from '
+                'Other Apps → Allow; after that it never asks again.'),
             _switch('Recent screenshots', 'clipboardScreenshots',
-                fallback: false, onBeforeOn: GlyfBridge.screenshotAccess),
+                fallback: true, onBeforeOn: GlyfBridge.screenshotAccess),
             _note('Shots from the last hour, beside what you copied. Turning '
                 'this on is when Glyf asks for your photos.'),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),

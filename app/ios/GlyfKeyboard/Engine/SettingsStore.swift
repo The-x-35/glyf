@@ -5,7 +5,7 @@ import Foundation
 struct GlyfSettings: Codable, Equatable {
     /// Bumped when defaults change; load() migrates older files additively.
     /// Optional so files written before the field existed still decode.
-    var schemaVersion: Int? = 7
+    var schemaVersion: Int? = 8
     var haptics: Bool = true
     var keyClicks: Bool = true
     var numberRow: Bool = false
@@ -59,19 +59,24 @@ struct GlyfSettings: Codable, Equatable {
     var aiUsesVault: Bool? = true
     /// Keep what you copy in the keyboard's clipboard history.
     var clipboardHistory: Bool? = true
-    /// Capture EVERY copy, not just the links and numbers iOS will hand over
-    /// silently. Reading arbitrary text raises "Allow Paste?" once per copy
-    /// unless the person sets Settings → Glyf → Paste from Other Apps →
-    /// Allow, which is why this is off until they ask for it.
-    var clipboardCaptureAll: Bool? = false
-    /// Screenshots from the last hour in the clipboard (Gboard's setting).
-    /// The app asks for Photos access when it is turned on, which is the only
-    /// moment the person is ever asked — so this has to stay OFF until they
-    /// turn it on, or the keyboard spends its time fetching from a library it
-    /// was never given. It defaulted to true while the app's own switch
-    /// defaulted to false: the app said screenshots were off, the keyboard
-    /// believed they were on, and no screenshot ever appeared either way.
-    var clipboardScreenshots: Bool? = false
+    /// Take every copy into the clipboard, rather than waiting to be handed
+    /// one by the Paste button.
+    ///
+    /// On by default, because a clipboard that misses what you copied reads
+    /// as broken. There is no quiet way to do it: any read of the pasteboard
+    /// raises "Allow Paste?" once per copy until the person sets Settings →
+    /// Glyf → Paste from Other Apps → Allow, and that setting is theirs to
+    /// make — no app can write it. So the keyboard asks for each copy, once,
+    /// and the clipboard says where the switch is that stops the asking.
+    var clipboardCaptureAll: Bool? = true
+    /// Recent screenshots in the clipboard, beside what you copied.
+    ///
+    /// This is the WISH, not the permission: on by default, and the photo
+    /// library is a separate yes that only the app can ask for. When the wish
+    /// is on and the library is not, the clipboard says so rather than
+    /// showing an empty space — which is what it did when the two defaults
+    /// disagreed, the app reading false and the keyboard true.
+    var clipboardScreenshots: Bool? = true
     /// "" | "color:#RRGGBB" | "grad:<id>" — Gboard-style painted backdrop.
     var themeBg: String? = ""
     /// Gboard "borders around keys".
@@ -254,6 +259,16 @@ enum SettingsStore {
                 s.bindings["v"] = "surface:vault"
             }
             s.schemaVersion = 7
+        }
+        // v7 → v8: the clipboard fills itself. These two shipped off, which
+        // read as a clipboard that loses things, so they are on now — but a
+        // file written before this decodes them as nil, not as the new
+        // default, so say it here. A stored false is a real answer and is
+        // left alone; only "never asked" becomes yes.
+        if (s.schemaVersion ?? 1) < 8 {
+            if s.clipboardCaptureAll == nil { s.clipboardCaptureAll = true }
+            if s.clipboardScreenshots == nil { s.clipboardScreenshots = true }
+            s.schemaVersion = 8
         }
         if s.customTitles == nil { s.customTitles = [:] }
         // Legacy proUnlocked → the plus plan.

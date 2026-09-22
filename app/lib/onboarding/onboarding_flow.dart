@@ -87,7 +87,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// On by default, like Gboard: what you copy is there to paste later.
   bool _clipboard = true;
   /// Off until asked for: turning it on is what asks for the photo library.
-  bool _screenshots = false;
+  bool _screenshots = true;
   bool _keyboardEnabled = false;
   bool _fullAccess = false;
   bool _keyboardSelected = false;

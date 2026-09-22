@@ -341,17 +341,12 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
                            ? "Nothing copied yet"
                            : "No \(filter.title.lowercased()) copied yet")
         }
-        // Why a copy might be missing. iOS hands a keyboard nothing from the
-        // clipboard on its own: the Paste button above is a copy arriving by
-        // the one route that needs no permission, because the tap IS the
-        // permission. Everything else has to be asked for, and until it is,
-        // copies made elsewhere never reach this list — which looks exactly
-        // like the clipboard being broken. So it says so.
-        if SettingsStore.current.clipboardCaptureAll != true, filter != .image {
-            y = addTip(at: y, width: w - M.side * 2, icon: "hand.raised",
-                       text: "Only what you Paste above is kept. For every copy: "
-                           + "Glyf app → Keyboard → Capture everything you copy, "
-                           + "then Settings → Glyf → Paste from Other Apps → Allow.")
+        // What is still in the way of everything arriving by itself. Both of
+        // these are permissions only the person can give, and a clipboard
+        // quietly missing things looks broken rather than unfinished — so it
+        // says which one is missing, and where it lives.
+        for stop in blockers() {
+            y = addTip(at: y, width: w - M.side * 2, icon: stop.icon, text: stop.text)
         }
         scroll.contentSize = CGSize(width: w, height: y + 12)
     }
@@ -484,9 +479,8 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     /// Screenshots from the last two days, newest first, as Gboard keeps
     /// them. Runs off the main thread — see `loadScreenshots`.
     static func recentScreenshots() -> [PHAsset] {
-        guard SettingsStore.current.clipboardScreenshots == true else { return [] }
-        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard status == .authorized || status == .limited else { return [] }
+        guard SettingsStore.current.clipboardScreenshots == true, photosAllowed()
+        else { return [] }
         let options = PHFetchOptions()
         // The same two days a copy keeps for: a screenshot you took yesterday
         // is exactly the thing you come to the clipboard looking for.
@@ -641,6 +635,40 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
         Logger(subsystem: "so.glyf.keyboard", category: "lifecycle")
             .log("GLYF_KB pasteSize=\(fit.width)x\(fit.height)")
         return fit
+    }
+
+    /// The yeses that are still missing, in the order they cost you.
+    ///
+    /// Both switches ship on, so anything not arriving is a permission the
+    /// person has yet to give — and neither can be given from in here. The
+    /// paste one is not even a prompt this keyboard raises: iOS asks for each
+    /// copy until the person sets it once in Settings, and that setting is
+    /// not writable by any app.
+    private func blockers() -> [(icon: String, text: String)] {
+        var out: [(String, String)] = []
+        if filter != .image, SettingsStore.current.clipboardCaptureAll != true {
+            out.append(("hand.raised",
+                        "Only what you Paste above is kept. To keep every copy, "
+                            + "turn on Capture everything you copy in the Glyf app."))
+        } else if filter != .image, ClipContext.isFresh() {
+            // Something is sitting on the clipboard that we were not allowed
+            // to read. One copy could be a coincidence; the setting is not.
+            out.append(("hand.raised",
+                        "iOS asks before a keyboard may read a copy. To stop it "
+                            + "asking: Settings → Glyf → Paste from Other Apps → Allow."))
+        }
+        if filter.showsShots, SettingsStore.current.clipboardScreenshots == true,
+           !Self.photosAllowed() {
+            out.append(("photo",
+                        "Screenshots need your photo library. Glyf app → Keyboard "
+                            + "→ Recent screenshots turns it on and asks."))
+        }
+        return out
+    }
+
+    static func photosAllowed() -> Bool {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        return status == .authorized || status == .limited
     }
 
     private func addTip(at y: CGFloat, width: CGFloat, icon: String, text: String) -> CGFloat {
