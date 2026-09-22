@@ -756,7 +756,10 @@ a {
 
 .xp {
   position: relative;
-  height: calc(var(--n) * 78svh + 100svh);
+  /* One step of the timeline per tick, a wheel notch's worth of page each.
+     It used to be a slice per CHAT, which is what let a scroll walk out of a
+     conversation halfway through it. */
+  height: calc(var(--ticks) * 9svh + 100svh);
 }
 
 .xp-pin {
@@ -3399,7 +3402,7 @@ html.has-cursor * {
   }
 
   .xp {
-    height: calc(var(--n) * 70svh + 100svh);
+    height: calc(var(--ticks) * 8.5svh + 100svh);
   }
 
   .xp-pin {

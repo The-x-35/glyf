@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion, useMotionValueEvent, useScroll } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { solAddress } from "../kb/data";
 import { MagicBlockLogo, SolIcon, UsdcIcon } from "../kb/brands";
@@ -23,6 +23,24 @@ type Thread = {
 };
 
 const N = SCENARIOS.length;
+
+/** How many steps the stage's scroll is cut into.
+ *
+ *  The stage is a timeline, not a list of chats: ONE step of scroll performs
+ *  ONE action — tap the key the coach is pointing at, or, when a chat is
+ *  finished, open the next one. Scroll used to address the CHAT instead
+ *  (`floor(progress × chats)`), which is why it would leave for the next
+ *  conversation in the middle of the one you were doing.
+ *
+ *  Run straight through, the eight chats take about fifty steps — measured,
+ *  by scrolling the whole stage a notch at a time. The rest is slack for a
+ *  visitor who goes their own way: opening a panel they then close costs two,
+ *  and an answer the friend nudges back costs a couple more. Each tick is
+ *  nine hundredths of the viewport, near enough one notch of a wheel that a
+ *  notch does one thing.
+ */
+const TICKS = 76;
+
 const ease = [0.22, 1, 0.36, 1] as const;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
@@ -205,7 +223,6 @@ export function Bubble({
 export default function Experience() {
   const section = useRef<HTMLElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({ target: section, offset: ["start start", "end end"] });
   const [active, setActive] = useState(0);
   const [threads, setThreads] = useState<Record<string, Thread>>(() =>
     Object.fromEntries(SCENARIOS.map((s) => [s.id, { msgs: [], beat: 0, typing: false, waiting: true, done: false, status: null }])),
@@ -227,13 +244,17 @@ export default function Experience() {
   const pending = useRef(new Map<string, Msg>());
   const autoAt = useRef(0);
 
-  // Scroll autopilot: a visitor who only scrolls still sees every step happen.
+  // The scroll timeline. `spent` is how many steps the demo has actually
+  // taken — by the visitor's own hand or the pointer's — and `want` is how
+  // many the scroll has paid for. Whenever want runs ahead, the pointer
+  // performs the next one; whenever the visitor runs ahead, the scroll is
+  // wound forward to meet them, which costs nothing to look at because the
+  // stage is pinned and nothing on it moves with the page.
   const kbApi = useRef<KeyboardApi>(null);
   const coachRef = useRef<ReturnType<Scenario["beats"][number]["coach"]>>(null);
-  const local = useRef(0);
+  const spent = useRef(0);
+  const want = useRef(0);
   const inStage = useRef(false);
-  const acted = useRef(new Set<string>());
-  const steps = useRef(new Map<string, number>());
   const piloting = useRef(false);
   const [ghost, setGhost] = useState({ x: 0, y: 0, show: false, press: false });
 
@@ -254,19 +275,56 @@ export default function Experience() {
 
   const hideGhost = () => setGhost((g) => (g.show ? { ...g, show: false, press: false } : g));
 
-  const tryGhost = () => {
+  /** Wind the page forward to the step the demo has actually reached.
+   *
+   *  Only ever forward, and only while the stage is pinned — where the page
+   *  moving changes nothing on screen. This is what keeps a visitor who does
+   *  the tapping themselves from then having to scroll back through the
+   *  stretch of page their own taps already paid for. */
+  const syncScroll = () => {
+    const el = section.current;
+    if (!el || !inStage.current) return;
+    const span = el.offsetHeight - window.innerHeight;
+    if (span <= 0) return;
+    const top = el.getBoundingClientRect().top + window.scrollY;
+    const to = top + (span * Math.min(spent.current, TICKS)) / TICKS;
+    if (to <= window.scrollY + 1) return;
+    window.scrollTo({ top: to });
+    // Keep the two in step without waiting on the scroll event, so the next
+    // notch is the next action rather than a repeat of this one.
+    want.current = Math.min(spent.current, TICKS);
+  };
+
+  /** Take the next step, if the scroll has paid for one and there is one to
+   *  take. Nothing is forced: while the friend is still typing there is no
+   *  action to perform, so the step stays bought and happens the moment the
+   *  chat is ready — which is what stops a fast scroll from skidding past a
+   *  reply the visitor never saw. */
+  const pump = () => {
     if (piloting.current || !inStage.current) return;
+    if (want.current <= spent.current) return hideGhost();
+    const i = activeRef.current;
+    const t = threadsRef.current[SCENARIOS[i].id];
+    // A finished chat: this step opens the next one.
+    if (t.done) {
+      if (i + 1 >= N) return hideGhost();
+      piloting.current = true;
+      hideGhost();
+      setActive(i + 1);
+      window.setTimeout(() => {
+        piloting.current = false;
+        pump();
+      }, 260);
+      return;
+    }
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const sc = SCENARIOS[activeRef.current];
-    const t = threadsRef.current[sc.id];
-    if (acted.current.has(sc.id) || t.done) return hideGhost();
-    if (local.current < 0.14) return;
-    const budget = Math.floor((local.current - 0.14) / 0.075) + 1;
-    if (budget <= (steps.current.get(sc.id) ?? 0)) return;
     const c = coachRef.current;
     const el = appRef.current?.querySelector<HTMLElement>(".is-coach") ?? kbApi.current?.target();
     if (!c || !el || t.waiting) return;
     piloting.current = true;
+    // Behind by more than a step means the visitor is scrolling quickly; the
+    // pointer stops explaining itself and just keeps up.
+    const hurry = want.current - spent.current > 1;
     void (async () => {
       const r = el.getBoundingClientRect();
       setGhost((g) => ({
@@ -281,10 +339,10 @@ export default function Experience() {
         await sleep(60);
         setGhost((g) => ({ ...g, x: r.left + r.width / 2, y: r.top + r.height / 2 }));
       }
-      await sleep(720);
-      if (activeRef.current !== SCENARIOS.indexOf(sc) || acted.current.has(sc.id) || coachRef.current?.target !== c.target) {
+      await sleep(hurry ? 180 : 560);
+      if (activeRef.current !== i || coachRef.current?.target !== c.target) {
         piloting.current = false;
-        return;
+        return pump();
       }
       setGhost((g) => ({ ...g, press: true }));
       if (c.target === "bubble:addr") openCopyMenu();
@@ -292,23 +350,43 @@ export default function Experience() {
       else await kbApi.current?.run(c.target, /^hold/i.test(c.label));
       await sleep(160);
       setGhost((g) => ({ ...g, press: false }));
-      steps.current.set(sc.id, (steps.current.get(sc.id) ?? 0) + 1);
-      await sleep(420);
+      await sleep(hurry ? 140 : 320);
       piloting.current = false;
-      tryGhost();
+      pump();
     })();
   };
   const ghostShown = useRef(false);
 
-  useMotionValueEvent(scrollYProgress, "change", (v) => {
-    const f = v * N;
-    const i = Math.max(0, Math.min(N - 1, Math.floor(f)));
-    inStage.current = v > 0.001 && v < 0.999;
-    local.current = f - i;
-    if (i !== activeRef.current) setActive(i);
-    if (!inStage.current) hideGhost();
-    else tryGhost();
-  });
+  /** How far through the stage the page is, 0 to 1 — read off the section
+   *  itself rather than through `useScroll`.
+   *
+   *  `useScroll` with a `target` measured nothing on a cold load here: the
+   *  progress stayed at 0 and its change event never fired, so the timeline
+   *  sat still until an edit remounted the component. One rect and one
+   *  subtraction have no such opinion about when they are allowed to run. */
+  const pumpRef = useRef(pump);
+  pumpRef.current = pump;
+  useEffect(() => {
+    const read = () => {
+      const el = section.current;
+      const span = el ? el.offsetHeight - window.innerHeight : 0;
+      if (!el || span <= 0) return;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const v = (window.scrollY - top) / span;
+      inStage.current = v > 0.001 && v < 0.999;
+      want.current = Math.round(Math.min(1, Math.max(0, v)) * TICKS);
+      if (!inStage.current) return hideGhost();
+      pumpRef.current();
+    };
+    read();
+    window.addEventListener("scroll", read, { passive: true });
+    window.addEventListener("resize", read);
+    return () => {
+      window.removeEventListener("scroll", read);
+      window.removeEventListener("resize", read);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Updates are computed eagerly so async flows always read the latest thread. */
   const patch = (id: string, fn: (t: Thread) => Partial<Thread>) => {
@@ -424,13 +502,14 @@ export default function Experience() {
     else judge(index, msg);
   };
 
+  /** The chat list is a shortcut, not a scroll position: the timeline runs on
+   *  steps now, so picking a chat just opens it and scrolling carries on from
+   *  there. (It used to scroll to that chat's slice of the page, which is the
+   *  same arithmetic that made plain scrolling leave a chat unfinished.) */
   const jump = (i: number) => {
-    const el = section.current;
     setListOpen(false);
-    if (!el) return;
-    const top = el.getBoundingClientRect().top + window.scrollY;
-    const seg = (el.offsetHeight - window.innerHeight) / N;
-    window.scrollTo({ top: top + seg * i + Math.min(seg * 0.2, 60), behavior: "smooth" });
+    hideGhost();
+    setActive(i);
   };
 
   const sc = SCENARIOS[active];
@@ -439,21 +518,35 @@ export default function Experience() {
   const coach = !th.waiting && !th.done && snap && !snap.auto ? beatNow.coach(snap, { menu, copied: copied?.text ?? null }) : null;
   coachRef.current = coach;
 
-  // A new coach step may be ready for the autopilot (after replies, typing, panels opening).
+  /** The one action the stage is waiting on: what the coach is pointing at,
+   *  or the chat being finished. It is null while the friend is typing —
+   *  there is nothing to do then, and nothing to charge for.
+   *
+   *  Landing on a NEW one of these is a step, whoever caused it. That is the
+   *  whole timeline: the visitor doing it themselves and the pointer doing it
+   *  for them are the same event, so the two can never disagree about how far
+   *  along the demo is. */
+  const stepKey = th.done ? `${active}:done` : coach ? `${active}:${th.beat}:${coach.target}` : null;
+  const lastStep = useRef<string | null>(null);
   useEffect(() => {
-    const id = window.setTimeout(tryGhost, 250);
+    if (stepKey === null || stepKey === lastStep.current) return;
+    const opening = lastStep.current === null;
+    lastStep.current = stepKey;
+    if (!opening) spent.current += 1;
+    // The visitor got here on their own, so bring the page with them.
+    if (!piloting.current) syncScroll();
+    const id = window.setTimeout(pump, 200);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coach?.target, coach?.label, active, th.waiting]);
+  }, [stepKey]);
 
-  // Any real input hands the chat back to the visitor.
+  // A chat that has just become ready may owe the visitor a step they have
+  // already scrolled for.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (inStage.current && e.key.length === 1 && !e.metaKey && !e.ctrlKey) acted.current.add(SCENARIOS[activeRef.current].id);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    const id = window.setTimeout(pump, 220);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [th.waiting, th.typing, active]);
   const lastMsg = th.msgs[th.msgs.length - 1];
   const unread = SCENARIOS.filter((c, i) => i !== active && !threads[c.id].done).length;
 
@@ -504,7 +597,7 @@ export default function Experience() {
     });
 
   return (
-    <section ref={section} className="xp" style={{ "--n": N } as CSSProperties} aria-label="Try Glyf">
+    <section ref={section} className="xp" style={{ "--ticks": TICKS } as CSSProperties} aria-label="Try Glyf">
       <div className="xp-pin">
         <div className="wrap xp-grid">
           <div className="xp-head">
@@ -530,11 +623,10 @@ export default function Experience() {
             ref={appRef}
             className="app"
             data-list={listOpen ? "open" : "closed"}
+            // The visitor's own hand: the pointer gets out of the way, and the
+            // step they are about to take is counted by `stepKey` like any other.
             onPointerDownCapture={(e) => {
-              if (e.isTrusted) {
-                acted.current.add(sc.id);
-                hideGhost();
-              }
+              if (e.isTrusted) hideGhost();
             }}
           >
             {/* Phones: the Messages screen, one tap back from the conversation */}
