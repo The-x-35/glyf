@@ -569,30 +569,31 @@ final class GlyfToolbar: UIView {
         // The grid stands at the tool icons' own size (they are 21pt symbols),
         // so the row reads as one set of controls rather than a badge and
         // then some tools.
-        let glyph = (h * 0.61).rounded()
+        let glyph = (h * 0.56).rounded()
         // Nothing is drawn behind it, so the button has to carry its own
         // target: the glyph plus a margin all round.
         let padX: CGFloat = 7, padY: CGFloat = 6
-        let inkX: CGFloat = 7
+        // The strip's left margin. The tools are centred in equal slots, which
+        // leaves about 20pt of slack outside the last one, so the grid needs
+        // its own margin in that neighbourhood or it reads as shoved into the
+        // corner while the other end breathes.
+        let inkX: CGFloat = 14
         glyfButton.frame = CGRect(x: inkX - padX, y: mid - glyph / 2 - padY,
                                   width: glyph + padX * 2, height: glyph + padY * 2)
         glyfButton.layer.cornerRadius = 9
         let box = CGRect(x: padX, y: padY, width: glyph, height: glyph)
         appsGrid.frame = glyfButton.bounds
         let scale = max(traitCollection.displayScale, 1)
-        appsGrid.lineWidth = max(1, (glyph * 0.082 * scale).rounded() / scale)
+        appsGrid.lineWidth = max(1, (glyph * 0.072 * scale).rounded() / scale)
         appsGrid.path = GlyfToolbar.appsGridPath(in: box).cgPath
         let markRight = inkX + glyph
         divider.isHidden = Glass.solidLook
-        divider.frame = CGRect(x: markRight + 10, y: 10, width: Glass.hairlineWidth * 2,
-                               height: h - 20)
         let chipW: CGFloat = runsChip.isHidden ? 0 : 64
         if !runsChip.isHidden {
             runsChip.frame = CGRect(x: bounds.width - chipW - 6, y: 11,
                                     width: chipW, height: h - 22)
         }
         let left = markRight + (Glass.solidLook ? 11 : 17)
-        let width = bounds.width - left - chipW - 6
         if !smartCard.isHidden {
             let cardH = (h * 0.78).rounded()
             smartCard.frame = CGRect(x: left, y: mid - cardH / 2,
@@ -631,15 +632,42 @@ final class GlyfToolbar: UIView {
             panelLabel.frame = CGRect(x: textX, y: band - Glass.stripLift,
                                       width: bounds.width - textX - 10 - actionW, height: h)
         }
+        // The tools start further right than everything else on the strip,
+        // and the number is worked out rather than picked.
+        //
+        // The grid and the tools read as one row of controls, so the step
+        // from the grid to the first tool has to be the step between any two
+        // tools. The stack spreads its items equally across whatever width
+        // it is handed, so that width sets the step — meaning the start has
+        // to be solved for, not guessed. It used to be a constant, and the
+        // first step came out 54.7pt against 72.5 everywhere else: the grid
+        // looked shoved into the corner.
+        //
+        //     step  = itemW + spacing               (what the stack gives)
+        //     first = toolsLeft + itemW / 2          (…and where it starts)
+        //     first - gridCentre = step              (what we want)
+        //
+        // Solved for itemW, with n items between toolsLeft and `end`.
+        let gridCentre = inkX + glyph / 2
+        let end = bounds.width - chipW - 6
+        let gap = itemsStack.spacing
+        let n = CGFloat(max(itemsStack.arrangedSubviews.count, 1))
+        let itemW = max(0, (end - gridCentre - gap * n) / (n + 0.5))
+        let toolsLeft = min(end, gridCentre + gap + itemW / 2)
+        // Halfway between the grid and the first tool, when a look draws it.
+        divider.frame = CGRect(x: ((markRight + toolsLeft) / 2).rounded(), y: 10,
+                               width: Glass.hairlineWidth * 2, height: h - 20)
         // The tools live INSIDE this scroll view, which clips them, so the
         // band has to move the scroll itself — offsetting only the stack
         // pushes the icons out through its bottom edge (that is what ate the
         // magnifier's handle and the mic's stand on iOS 18).
-        scroll.frame = CGRect(x: left, y: band, width: width, height: h)
+        let toolsW = max(0, end - toolsLeft)
+        scroll.frame = CGRect(x: toolsLeft, y: band, width: toolsW, height: h)
         let itemH = min(34, h - 4)
         // …and inside it the stack is band-relative: the strip's own centring.
-        itemsStack.frame = CGRect(x: 0, y: (mid - band) - itemH / 2, width: width, height: itemH)
-        scroll.contentSize = CGSize(width: width, height: h)
+        itemsStack.frame = CGRect(x: 0, y: (mid - band) - itemH / 2,
+                                  width: toolsW, height: itemH)
+        scroll.contentSize = CGSize(width: toolsW, height: h)
         candidatesStack.frame = CGRect(x: left, y: mid - (h - 12) / 2,
                                        width: bounds.width - left - 8, height: h - 12)
         // A hairline on each boundary between the three equal slots, drawn
@@ -658,30 +686,48 @@ final class GlyfToolbar: UIView {
     /// grid of four" — and it is also what tells this apart from the Skills
     /// hub's own `square.grid.2x2`, should someone put that on the strip too.
     ///
-    /// Proportions are fractions of the box, so it draws at any size. The
-    /// turned tile is 0.89 of the others: turning a tile pushes its corners
-    /// out by root two, and that is what brings them back to the same reach
-    /// as the ones standing square.
+    /// Everything below is derived from two numbers — the stroke and the gap
+    /// between tiles — so the four cells stay a true 2x2 that exactly fills
+    /// the box at any size. Picking the centres by eye instead is what put
+    /// the turned tile 0.4pt INSIDE its neighbours on the first attempt:
+    /// at 160px in a mock the overlap was invisible, and at 20pt on the
+    /// phone the shapes ran into each other.
+    ///
+    /// The turned tile is smaller than the others because turning a tile
+    /// throws its corners out by root two; `turnedSide` is solved so that
+    /// after the turn it reaches exactly as far as a standing tile does.
     static func appsGridPath(in box: CGRect) -> UIBezierPath {
         let n = min(box.width, box.height)
-        func tile(_ cx: CGFloat, _ cy: CGFloat, _ side: CGFloat,
-                  _ radius: CGFloat) -> UIBezierPath {
-            let s = side * n
+        let root2 = (2 as CGFloat).squareRoot()
+        /// Matches the layer's own lineWidth ratio: the stroke straddles the
+        /// path, so a tile's ink is this much wider than the path it follows.
+        let stroke: CGFloat = 0.072
+        let gap: CGFloat = 0.09
+        let cell = (1 - gap) / 2            // a tile's ink, corner to corner
+        let side = cell - stroke            // …and the path inside it
+        let radius = side * 0.21
+        let turnedRadius = side * 0.18
+        // Solve the turned tile back from the reach we want it to have.
+        let reach = cell / 2
+        let turnedSide = (reach - stroke / 2 + turnedRadius * (root2 - 1)) / (root2 / 2)
+        let near = cell / 2, far = 1 - cell / 2
+
+        func tile(_ cx: CGFloat, _ cy: CGFloat, _ s: CGFloat,
+                  _ r: CGFloat) -> UIBezierPath {
+            let w = s * n
             return UIBezierPath(
-                roundedRect: CGRect(x: cx * n - s / 2, y: cy * n - s / 2,
-                                    width: s, height: s),
-                cornerRadius: radius * n)
+                roundedRect: CGRect(x: cx * n - w / 2, y: cy * n - w / 2,
+                                    width: w, height: w),
+                cornerRadius: r * n)
         }
-        let left: CGFloat = 0.245, right: CGFloat = 0.750
-        let top: CGFloat = 0.248, bottom: CGFloat = 0.755
         let path = UIBezierPath()
-        path.append(tile(left, top, 0.40, 0.105))
-        path.append(tile(left, bottom, 0.40, 0.105))
-        path.append(tile(right, bottom, 0.40, 0.105))
+        path.append(tile(near, near, side, radius))
+        path.append(tile(near, far, side, radius))
+        path.append(tile(far, far, side, radius))
         // Built about the origin so it turns on its own centre, then moved.
-        let turned = tile(0, 0, 0.355, 0.095)
+        let turned = tile(0, 0, turnedSide, turnedRadius)
         turned.apply(CGAffineTransform(rotationAngle: .pi / 4))
-        turned.apply(CGAffineTransform(translationX: right * n, y: top * n))
+        turned.apply(CGAffineTransform(translationX: far * n, y: near * n))
         path.append(turned)
         path.apply(CGAffineTransform(translationX: box.minX, y: box.minY))
         return path
