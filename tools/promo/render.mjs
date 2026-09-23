@@ -41,10 +41,14 @@ const run = (cmd, args) =>
 
 const main = async () => {
   const browser = await chromium.launch();
-  const page = await browser.newPage({
-    viewport: { width: 1080, height: 1920 },
-    deviceScaleFactor: SCALE,
-  });
+  // The scene says how big it is, so the aspect lives in one place.
+  const probe = await browser.newPage();
+  await probe.goto(SCENE);
+  await probe.waitForSelector("body[data-ready]");
+  const size = await probe.evaluate(() => window.SIZE || { width: 1080, height: 1920 });
+  await probe.close();
+
+  const page = await browser.newPage({ viewport: size, deviceScaleFactor: SCALE });
   await page.goto(SCENE);
   await page.waitForSelector("body[data-ready]");
   await page.evaluate(() => document.fonts.ready);
