@@ -4,30 +4,34 @@
 <!--
   The waitlist film, one frame at a time. 1920x1080.
 
-  One folding phone, closed, that opens on camera: the cover screen swings
-  away on the hinge, a light runs across the inner display as it flattens,
-  and the app lands on a screen twice as wide. Headline on the left, the
-  device on the right, the way the desktop site is laid out.
+  The device is an iPhone Duo, drawn from Apple's published numbers rather
+  than from an idea of what a foldable looks like:
 
-    0  the fold opens, the keyboard forms   Type less. glyf more.
-    1  a bill split                         Do the math. Get paid.
-    2  a private payment                    Pay on Solana. Privately.
-    3  a rewrite                            Type it messy. Send it polished.
-    4  the card                             The AI keyboard that does the rest.
+    folded   117.8 x  84.1 x 11.3 mm      cover display 5.4in, 1398 x 2034
+    open     117.8 x 164.6 x  5.2 mm      inner display 7.6in, 1878 x 2670
 
-  The fold is real 3D: the left half is a panel hinged on its right edge,
-  carrying the inner display on its front and the cover screen on its back.
-  Rotate it from -180 to 0 and the phone opens exactly as a book does. The app
-  is a flat layer over the open screen rather than a third copy inside the
-  panels, so it fades up once the hinge is flat.
+  The width does not change and the height nearly doubles, so the hinge runs
+  ACROSS the phone and it opens UPWARD, like a wallet. It is not a Galaxy-style
+  book fold opening sideways, which is what the previous cut had. Folded it is
+  a wide, short slab whose cover display can only lie landscape in an 117.8 by
+  84.1 body; open it is a tall portrait screen. Grade 5 titanium, night sky.
+
+  No Apple footage is used anywhere: the device is built here from those
+  dimensions, which is also why it can hold Glyf's own UI.
+
+    0  the Duo opens, the keyboard forms   Type less. glyf more.
+    1  a bill split                        Do the math. Get paid.
+    2  a private payment                   Pay on Solana. Privately.
+    3  a rewrite                           Type it messy. Send it polished.
+    4  the card                            The AI keyboard that does the rest.
 
   Typing is typed: every character is a keystroke at a fixed cadence, the key
   it came from dips as it lands, the number layer comes up for the sum, and
   the strip carries real candidates for the word in progress.
 
   Nothing animates by itself: `seek(f)` draws frame f and only frame f.
-  The keyboard is the real one's arithmetic (GlassTokens.swift), widened to
-  the open screen by the same formula the phone uses.
+  The keyboard is the phone's own formula (GlassTokens.swift) at the Duo's
+  inner width instead of 402pt.
 -->
 <style>
   @font-face { font-family: "Inter"; src: url("../../site/public/fonts/Inter-Variable.ttf") format("truetype"); font-weight: 100 900; }
@@ -38,155 +42,152 @@
           background: radial-gradient(circle, rgba(124,92,255,.17), rgba(124,92,255,0) 62%); filter: blur(30px); }
 
   /* ---------------- left: the words ---------------- */
-  #left { position: absolute; left: 116px; top: 0; width: 760px; height: 1080px; }
+  #left { position: absolute; left: 112px; top: 0; width: 720px; height: 1080px; }
   #eyebrow { position: absolute; top: 366px; font: 600 17px Inter; letter-spacing: .14em;
              text-transform: uppercase; color: #7c5cff; }
-  #head { position: absolute; top: 404px; width: 760px; font: 600 76px/1.04 Inter;
+  #head { position: absolute; top: 404px; width: 720px; font: 600 74px/1.04 Inter;
           letter-spacing: -.045em; color: #f5f5f7; }
   #head b { display: block; font-weight: 600; } #head b.dim { color: #8b8b93; }
-  #note { position: absolute; top: 604px; width: 620px; font: 500 22px/1.45 Inter;
+  #note { position: absolute; top: 596px; width: 600px; font: 500 21px/1.45 Inter;
           letter-spacing: -.012em; color: #a1a1a6; }
 
-  /* ---------------- right: the folding phone ---------------- */
-  /* 744 x 900 open, two 372-wide panels on a hinge down the middle. */
-  #rigwrap { position: absolute; left: 998px; top: 60px; width: 786px; height: 950px;
-             perspective: 2600px; perspective-origin: 50% 44%; }
-  #rig { position: absolute; left: 21px; top: 25px; width: 744px; height: 900px;
-         transform-style: preserve-3d; }
-  .half { position: absolute; top: 0; width: 372px; height: 900px; transform-style: preserve-3d; }
-  #rightH { left: 372px; }
-  #leftH { left: 0; transform-origin: 100% 50%; }
-  .face { position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden;
-          background: #0a0a0d; }
-  #innerR { border-radius: 0 38px 38px 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }
-  #innerL { border-radius: 38px 0 0 38px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }
-  #cover { transform: rotateY(180deg); border-radius: 38px;
-           box-shadow: inset 0 0 0 1px rgba(255,255,255,.09), 0 0 0 12px #17171a,
-                       0 0 0 13px rgba(255,255,255,.09), 0 60px 130px -40px rgba(0,0,0,.95); }
+  /* ---------------- right: the iPhone Duo ----------------
+     Body 688 x 960 open (117.8 x 164.6mm at 5.83px per mm), hinge across the
+     middle, each half 688 x 480. */
+  #rigwrap { position: absolute; left: 1038px; top: 60px; width: 688px; height: 960px;
+             perspective: 2300px; perspective-origin: 50% 50%; }
+  #rig { position: absolute; inset: 0; transform-style: preserve-3d; }
+  .half { position: absolute; left: 0; width: 688px; height: 480px; transform-style: preserve-3d; }
+  #botH { top: 480px; }
+  #topH { top: 0; transform-origin: 50% 100%; }
+  .face { position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden; background: #0c0c10;
+          box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.1); }
+  #innerB { border-radius: 0 0 34px 34px; }
+  #innerT { border-radius: 34px 34px 0 0; }
+  #cover { transform: rotateX(180deg); border-radius: 34px;
+           box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.12), 0 40px 90px -30px rgba(0,0,0,.95); }
   .wall { position: absolute; inset: 0;
-          background: radial-gradient(130% 80% at 50% 4%, #332a63 0%, #15152c 46%, #08080c 100%); }
-  /* The crease: a fold leaves one down the middle, and leaving it out is the
-     quickest way to make a foldable look like a tablet. */
-  #crease { position: absolute; left: 368px; top: 0; width: 8px; height: 900px; opacity: 0;
-            background: linear-gradient(90deg, rgba(0,0,0,.34), rgba(255,255,255,.05) 45%,
+          background: radial-gradient(120% 120% at 50% 0%, #342b66 0%, #15152c 48%, #08080c 100%); }
+  #innerB .wall { background: radial-gradient(120% 140% at 50% -60%, #342b66 0%, #15152c 48%, #08080c 100%); }
+  /* The crease runs ACROSS this phone, not down it. */
+  #crease { position: absolute; left: 0; top: 476px; width: 688px; height: 8px; opacity: 0;
+            background: linear-gradient(180deg, rgba(0,0,0,.34), rgba(255,255,255,.05) 45%,
                         rgba(255,255,255,.05) 55%, rgba(0,0,0,.34)); }
-  /* The light that runs across the panel as it flattens. */
-  #sweep { position: absolute; inset: 0; opacity: 0; pointer-events: none;
-           background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.4) 50%, transparent 62%); }
+  #sweep { position: absolute; inset: 0; opacity: 0;
+           background: linear-gradient(170deg, transparent 36%, rgba(255,255,255,.34) 50%, transparent 66%); }
 
-  /* the cover screen */
-  #cover .lk { position: absolute; left: 0; right: 0; top: 96px; text-align: center; font: 400 20px Inter; color: rgba(255,255,255,.8); }
-  #cover .date { position: absolute; left: 0; right: 0; top: 140px; text-align: center; font: 500 17px Inter; color: rgba(255,255,255,.72); }
-  #cover .time { position: absolute; left: 0; right: 0; top: 166px; text-align: center;
-                 font: 300 88px Inter; letter-spacing: -.04em; color: #fff; }
-  #cover .note { position: absolute; left: 18px; right: 18px; top: 330px; height: 78px; border-radius: 20px;
-                 background: rgba(255,255,255,.15); opacity: 0; }
-  #cover .note b { position: absolute; left: 16px; top: 14px; font: 600 12px Inter; letter-spacing: .06em; color: rgba(255,255,255,.72); }
-  #cover .note span { position: absolute; left: 16px; right: 16px; top: 36px; font: 400 15px/1.3 Inter; color: #fff; }
-  #cover .bar2 { position: absolute; left: 50%; bottom: 13px; width: 130px; height: 5px; margin-left: -65px;
-                 border-radius: 3px; background: rgba(255,255,255,.55); }
+  /* the cover display: landscape, the only way 112 x 77mm fits a folded body
+     that is 117.8 wide and 84.1 tall */
+  #cover .lk { position: absolute; left: 36px; top: 42px; font: 400 19px Inter; color: rgba(255,255,255,.8); }
+  #cover .time { position: absolute; left: 36px; top: 70px; font: 300 96px Inter; letter-spacing: -.045em; color: #fff; }
+  #cover .date { position: absolute; left: 42px; top: 196px; font: 500 17px Inter; color: rgba(255,255,255,.72); }
+  #cover .note { position: absolute; right: 32px; top: 76px; width: 300px; height: 86px; border-radius: 20px;
+                 background: rgba(255,255,255,.16); opacity: 0; }
+  #cover .note b { position: absolute; left: 17px; top: 15px; font: 600 12px Inter; letter-spacing: .06em; color: rgba(255,255,255,.72); }
+  #cover .note span { position: absolute; left: 17px; right: 17px; top: 38px; font: 400 15px/1.3 Inter; color: #fff; }
+  #cover .bar2 { position: absolute; left: 50%; bottom: 13px; width: 150px; height: 5px; margin-left: -75px;
+                 border-radius: 3px; background: rgba(255,255,255,.5); }
 
-  /* ---------------- the app, flat over the open screen ---------------- */
-  #app { position: absolute; left: 1019px; top: 85px; width: 744px; height: 900px; opacity: 0;
-         border-radius: 38px; overflow: hidden; background: #fff;
-         /* the shell, drawn as a ring so the app stays a plain rectangle */
-         box-shadow: 0 0 0 12px #17171a, 0 0 0 13px rgba(255,255,255,.09),
-                     0 70px 150px -40px rgba(0,0,0,.95), 0 0 200px -40px rgba(124,92,255,.45); }
-  #statusbar { position: absolute; top: 0; left: 0; right: 0; height: 48px; z-index: 3; }
-  #statusbar .t { position: absolute; left: 30px; top: 15px; font: 700 14px Inter; color: #1d1d1f; }
-  #statusbar .b { position: absolute; right: 28px; top: 17px; width: 24px; height: 11px;
+  /* ---------------- the app, flat over the open inner screen ---------------- */
+  #app { position: absolute; left: 1058px; top: 80px; width: 648px; height: 920px; opacity: 0;
+         border-radius: 26px; overflow: hidden; background: #fff; }
+  /* The titanium shell, drawn as a ring so the app underneath stays a plain
+     rectangle and needs no clipping of its own. */
+  #shell { position: absolute; left: 1038px; top: 60px; width: 688px; height: 960px; opacity: 0;
+           border-radius: 34px;
+           box-shadow: inset 0 0 0 20px #16161a, inset 0 0 0 21.5px rgba(255,255,255,.12),
+                       0 70px 150px -40px rgba(0,0,0,.95), 0 0 200px -40px rgba(124,92,255,.45); }
+  #statusbar { position: absolute; top: 0; left: 0; right: 0; height: 46px; z-index: 3; }
+  #statusbar .t { position: absolute; left: 28px; top: 14px; font: 700 14px Inter; color: #1d1d1f; }
+  #statusbar .b { position: absolute; right: 26px; top: 16px; width: 24px; height: 11px;
                   border: 1.4px solid #1d1d1f; border-radius: 3px; opacity: .85; }
   #statusbar .b i { position: absolute; inset: 1.5px; background: #1d1d1f; border-radius: 1px; }
 
-  /* left pane: the chat list, as on a wide screen */
-  #list { position: absolute; left: 0; top: 48px; width: 268px; bottom: 382px;
+  #list { position: absolute; left: 0; top: 46px; width: 228px; bottom: 348px;
           background: #f6f6f8; border-right: .5px solid rgba(0,0,0,.09); }
-  #list .hd { position: absolute; left: 18px; top: 14px; font: 700 25px Inter; letter-spacing: -.03em; color: #1d1d1f; }
-  .row { position: absolute; left: 8px; right: 8px; height: 62px; border-radius: 12px; }
-  .row .av { position: absolute; left: 10px; top: 13px; width: 36px; height: 36px; border-radius: 50%;
-             font: 600 14px/36px Inter; text-align: center; color: #fff; }
-  .row .nm { position: absolute; left: 56px; top: 12px; font: 600 14.5px Inter; color: #1d1d1f; }
-  .row .pv { position: absolute; left: 56px; right: 10px; top: 32px; font: 400 13px Inter; color: #8b8b93;
+  #list .hd { position: absolute; left: 16px; top: 12px; font: 700 23px Inter; letter-spacing: -.03em; color: #1d1d1f; }
+  .row { position: absolute; left: 7px; right: 7px; height: 58px; border-radius: 11px; }
+  .row .av { position: absolute; left: 9px; top: 12px; width: 34px; height: 34px; border-radius: 50%;
+             font: 600 13px/34px Inter; text-align: center; color: #fff; }
+  .row .nm { position: absolute; left: 51px; top: 11px; font: 600 14px Inter; color: #1d1d1f; }
+  .row .pv { position: absolute; left: 51px; right: 9px; top: 30px; font: 400 12.5px Inter; color: #8b8b93;
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row .on { position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: 12px;
-             background: #e6e6ea; opacity: 0; }
-  .row .dot { position: absolute; right: 12px; top: 27px; width: 8px; height: 8px; border-radius: 50%; background: #7c5cff; opacity: 0; }
+  .row .on { position: absolute; inset: 0; border-radius: 11px; background: #e6e6ea; opacity: 0; }
+  .row .dot { position: absolute; right: 11px; top: 25px; width: 8px; height: 8px; border-radius: 50%; background: #7c5cff; opacity: 0; }
 
-  /* right pane: the conversation */
-  #pane { position: absolute; left: 268px; right: 0; top: 48px; bottom: 382px; }
-  #who { position: absolute; top: 0; left: 0; right: 0; height: 56px; border-bottom: .5px solid rgba(0,0,0,.09); }
-  #who .av { position: absolute; left: 20px; top: 10px; width: 36px; height: 36px; border-radius: 50%;
+  #pane { position: absolute; left: 228px; right: 0; top: 46px; bottom: 348px; }
+  #who { position: absolute; top: 0; left: 0; right: 0; height: 54px; border-bottom: .5px solid rgba(0,0,0,.09); }
+  #who .av { position: absolute; left: 18px; top: 9px; width: 36px; height: 36px; border-radius: 50%;
              font: 600 14px/36px Inter; text-align: center; color: #fff; }
-  #who .nm { position: absolute; left: 66px; top: 18px; font: 600 16px Inter; color: #1d1d1f; letter-spacing: -.01em; }
-  #thread { position: absolute; left: 0; right: 0; top: 56px; bottom: 54px; }
-  .msg { position: absolute; max-width: 300px; padding: 9px 15px; border-radius: 19px;
-         font: 400 16.5px/1.32 Inter; letter-spacing: -.012em; will-change: transform, opacity; }
-  .msg.them { left: 18px; background: #e9e9eb; color: #1d1d1f; }
-  .msg.me { right: 18px; background: #007aff; color: #fff; }
-  .msg.addr { font: 400 12.5px/1.35 Inter; word-break: break-all; max-width: 250px; }
-  .msg.pay { background: #1d1d1f; color: #fff; padding: 12px 17px 14px; width: 210px; }
+  #who .nm { position: absolute; left: 63px; top: 17px; font: 600 16px Inter; color: #1d1d1f; letter-spacing: -.01em; }
+  #thread { position: absolute; left: 0; right: 0; top: 54px; bottom: 52px; }
+  .msg { position: absolute; max-width: 288px; padding: 9px 14px; border-radius: 18px;
+         font: 400 16px/1.32 Inter; letter-spacing: -.012em; will-change: transform, opacity; }
+  .msg.them { left: 16px; background: #e9e9eb; color: #1d1d1f; }
+  .msg.me { right: 16px; background: #007aff; color: #fff; }
+  .msg.addr { font: 400 12px/1.35 Inter; word-break: break-all; max-width: 240px; }
+  .msg.pay { background: #1d1d1f; color: #fff; padding: 12px 16px 13px; width: 200px; }
   .msg.pay .lock { font: 500 11.5px Inter; color: #a1a1a6; }
-  .msg.pay .amt { display: block; margin-top: 3px; font: 700 27px Inter; letter-spacing: -.03em; }
+  .msg.pay .amt { display: block; margin-top: 3px; font: 700 26px Inter; letter-spacing: -.03em; }
   .msg.pay .chain { display: block; margin-top: 5px; font: 500 11px Inter; color: #8b8b93; }
-  #field { position: absolute; left: 18px; right: 18px; bottom: 9px; height: 38px;
-           border: 1px solid rgba(0,0,0,.13); border-radius: 19px; background: #fff; }
-  #field .tx { position: absolute; left: 15px; top: 9px; right: 40px; font: 400 16px Inter; color: #1d1d1f;
+  #field { position: absolute; left: 16px; right: 16px; bottom: 8px; height: 36px;
+           border: 1px solid rgba(0,0,0,.13); border-radius: 18px; background: #fff; }
+  #field .tx { position: absolute; left: 14px; top: 8px; right: 38px; font: 400 15.5px Inter; color: #1d1d1f;
                white-space: pre; overflow: hidden; }
-  #caret { position: absolute; top: 9px; width: 2px; height: 19px; background: #007aff; border-radius: 1px; }
+  #caret { position: absolute; top: 8px; width: 2px; height: 19px; background: #007aff; border-radius: 1px; }
 
-  /* ---------------- the keyboard, the width of the open screen ---------------- */
-  #sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 382px; background: #d1d3d9; }
-  .key { position: absolute; border-radius: 7px; background: #fff; box-shadow: 0 1.5px 0 rgba(0,0,0,.24);
+  /* the keyboard, the width of the Duo's inner screen */
+  #sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 348px; background: #d1d3d9; }
+  .key { position: absolute; border-radius: 6px; background: #fff; box-shadow: 0 1.4px 0 rgba(0,0,0,.24);
          will-change: transform, opacity; }
   .key span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-              font: 400 29px Inter; color: #1d1d1f; letter-spacing: -.01em; }
-  .key.fn { background: #adb0b9; } .key.fn span { font-size: 18px; }
-  .key .dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #7c5cff;
-              right: 7px; top: 7px; opacity: 0; }
-  .key.space span { font-size: 18px; color: rgba(29,29,31,.4); }
+              font: 400 27px Inter; color: #1d1d1f; letter-spacing: -.01em; }
+  .key.fn { background: #adb0b9; } .key.fn span { font-size: 17px; }
+  .key .dot { position: absolute; width: 5.5px; height: 5.5px; border-radius: 50%; background: #7c5cff;
+              right: 6px; top: 6px; opacity: 0; }
+  .key.space span { font-size: 17px; color: rgba(29,29,31,.4); }
   #num { opacity: 0; }
 
-  #tools { position: absolute; left: 0; right: 0; top: 0; height: 62px; will-change: transform, opacity; }
-  .tool { position: absolute; top: 19px; }
-  #sugg { position: absolute; left: 0; right: 0; top: 0; height: 62px; opacity: 0; }
-  #sugg .s { position: absolute; top: 17px; height: 28px; text-align: center; font: 400 19px/28px Inter;
+  #tools { position: absolute; left: 0; right: 0; top: 0; height: 58px; will-change: transform, opacity; }
+  .tool { position: absolute; top: 17px; }
+  #sugg { position: absolute; left: 0; right: 0; top: 0; height: 58px; opacity: 0; }
+  #sugg .s { position: absolute; top: 15px; height: 28px; text-align: center; font: 400 18px/28px Inter;
              color: #1d1d1f; letter-spacing: -.012em; overflow: hidden; }
   #sugg .s.pick { font-weight: 600; }
-  #sugg .ln { position: absolute; top: 19px; width: 1px; height: 24px; background: rgba(0,0,0,.14); }
+  #sugg .ln { position: absolute; top: 17px; width: 1px; height: 24px; background: rgba(0,0,0,.14); }
 
-  #chip { position: absolute; left: 300px; right: 14px; top: 12px; height: 38px; border-radius: 19px;
+  #chip { position: absolute; left: 262px; right: 12px; top: 11px; height: 36px; border-radius: 18px;
           background: #fff; opacity: 0; box-shadow: 0 1px 4px rgba(0,0,0,.12); will-change: transform, opacity; }
-  #chip .k { position: absolute; left: 15px; top: 10px; font: 600 17px Inter; color: #7c5cff; }
-  #chip .v { position: absolute; top: 10px; font: 500 17px Inter; color: #1d1d1f; white-space: nowrap; }
-  #chip .tap { position: absolute; right: 14px; top: 12px; font: 600 14px Inter; color: #8b8b93; }
+  #chip .k { position: absolute; left: 14px; top: 9px; font: 600 16px Inter; color: #7c5cff; }
+  #chip .v { position: absolute; top: 9px; font: 500 16px Inter; color: #1d1d1f; white-space: nowrap; }
+  #chip .tap { position: absolute; right: 13px; top: 11px; font: 600 13px Inter; color: #8b8b93; }
 
-  #wallet { position: absolute; right: 0; bottom: 0; width: 372px; height: 320px; background: #f2f2f5;
-            border-radius: 18px 0 0 0; opacity: 0; will-change: transform, opacity; }
-  #wallet .hd { position: absolute; left: 22px; top: 18px; font: 600 19px Inter; color: #1d1d1f; letter-spacing: -.02em; }
-  #wallet .to { position: absolute; left: 22px; right: 22px; top: 52px; font: 400 12.5px Inter; color: #8b8b93; word-break: break-all; }
-  #wallet .big { position: absolute; left: 22px; top: 92px; font: 700 46px Inter; color: #1d1d1f; letter-spacing: -.035em; }
-  #wallet .tok { position: absolute; left: 22px; top: 150px; font: 500 14px Inter; color: #6e6e73; }
-  #wallet .priv { position: absolute; left: 22px; right: 22px; top: 188px; height: 44px; border-radius: 13px;
+  #wallet { position: absolute; right: 0; bottom: 0; width: 324px; height: 300px; background: #f2f2f5;
+            border-radius: 16px 0 0 0; opacity: 0; will-change: transform, opacity; }
+  #wallet .hd { position: absolute; left: 20px; top: 16px; font: 600 18px Inter; color: #1d1d1f; letter-spacing: -.02em; }
+  #wallet .to { position: absolute; left: 20px; right: 20px; top: 48px; font: 400 12px Inter; color: #8b8b93; word-break: break-all; }
+  #wallet .big { position: absolute; left: 20px; top: 86px; font: 700 42px Inter; color: #1d1d1f; letter-spacing: -.035em; }
+  #wallet .tok { position: absolute; left: 20px; top: 140px; font: 500 13px Inter; color: #6e6e73; }
+  #wallet .priv { position: absolute; left: 20px; right: 20px; top: 176px; height: 42px; border-radius: 12px;
                   background: rgba(124,92,255,.1); }
-  #wallet .priv span { position: absolute; left: 14px; top: 14px; font: 500 13.5px Inter; color: #6f52e8; }
-  #wallet .go { position: absolute; left: 22px; right: 22px; top: 248px; height: 50px; border-radius: 25px; background: #1d1d1f; }
-  #wallet .go span { position: absolute; inset: 0; text-align: center; color: #fff; font: 600 17px/50px Inter; }
+  #wallet .priv span { position: absolute; left: 13px; top: 13px; font: 500 13px Inter; color: #6f52e8; }
+  #wallet .go { position: absolute; left: 20px; right: 20px; top: 234px; height: 48px; border-radius: 24px; background: #1d1d1f; }
+  #wallet .go span { position: absolute; inset: 0; text-align: center; color: #fff; font: 600 16px/48px Inter; }
 
-  #think { position: absolute; left: 300px; right: 14px; top: 12px; height: 38px; border-radius: 19px;
+  #think { position: absolute; left: 262px; right: 12px; top: 11px; height: 36px; border-radius: 18px;
            background: #fff; opacity: 0; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
-  #think .d { position: absolute; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: #7c5cff; }
-  #think .lb { position: absolute; left: 58px; top: 10px; font: 500 17px Inter; color: #8b8b93; }
+  #think .d { position: absolute; top: 15px; width: 6px; height: 6px; border-radius: 50%; background: #7c5cff; }
+  #think .lb { position: absolute; left: 56px; top: 9px; font: 500 16px Inter; color: #8b8b93; }
 
-  #bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; }
-  #bottom svg { position: absolute; top: 14px; } #bottom .g { left: 26px; } #bottom .m { right: 26px; }
-  #homebar { position: absolute; left: 50%; bottom: 9px; width: 150px; height: 5px; margin-left: -75px;
+  #bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 58px; }
+  #bottom svg { position: absolute; top: 12px; } #bottom .g { left: 24px; } #bottom .m { right: 24px; }
+  #homebar { position: absolute; left: 50%; bottom: 8px; width: 140px; height: 5px; margin-left: -70px;
              border-radius: 3px; background: rgba(0,0,0,.3); }
 
-  #ptr { position: absolute; width: 34px; height: 34px; border-radius: 50%; opacity: 0; z-index: 6;
+  #ptr { position: absolute; width: 32px; height: 32px; border-radius: 50%; opacity: 0; z-index: 6;
          background: rgba(124,92,255,.22); border: 1.6px solid rgba(124,92,255,.75);
-         margin: -17px 0 0 -17px; will-change: transform, opacity; }
+         margin: -16px 0 0 -16px; will-change: transform, opacity; }
 
-  /* ---------------- the end card ---------------- */
   #card { position: absolute; inset: 0; opacity: 0; }
   #card .wm { position: absolute; left: 50%; top: 336px; transform: translateX(-50%); font: 700 46px Inter;
               letter-spacing: -.045em; color: #f5f5f7; }
@@ -203,12 +204,12 @@
 <div id="left"><div id="eyebrow"></div><div id="head"></div><div id="note"></div></div>
 
 <div id="rigwrap"><div id="rig">
-  <div class="half" id="rightH"><div class="face" id="innerR"><div class="wall"></div></div></div>
-  <div class="half" id="leftH">
-    <div class="face" id="innerL"><div class="wall"></div><div id="sweep"></div></div>
+  <div class="half" id="botH"><div class="face" id="innerB"><div class="wall"></div></div></div>
+  <div class="half" id="topH">
+    <div class="face" id="innerT"><div class="wall"></div><div id="sweep"></div></div>
     <div class="face" id="cover">
-      <div class="wall"></div><div class="lk">🔒</div>
-      <div class="date">Tuesday, 23 September</div><div class="time">9:41</div>
+      <div class="wall"></div><div class="lk">&#128274;</div>
+      <div class="time">9:41</div><div class="date">Tuesday, 23 September</div>
       <div class="note"><b>MESSAGES</b><span>Sam: you around this evening?</span></div>
       <div class="bar2"></div>
     </div>
@@ -233,18 +234,19 @@
       <div class="hd">Send USDC</div>
       <div class="to">To 8QvS3nE5d1YwZk7pLr2mXh9TbF4cJaGuVy6oKe1RtNqP</div>
       <div class="big">$200.00</div><div class="tok">USDC on Solana</div>
-      <div class="priv"><span>🔒 Private transfer · MagicBlock</span></div>
+      <div class="priv"><span>&#128274; Private transfer &middot; MagicBlock</span></div>
       <div class="go"><span>Send privately</span></div>
     </div>
     <div id="bottom">
-      <svg class="g" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" stroke-width="1.5">
+      <svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" stroke-width="1.5">
         <circle cx="12" cy="12" r="9.2"/><ellipse cx="12" cy="12" rx="4" ry="9.2"/><path d="M3 12h18M4.6 7h14.8M4.6 17h14.8"/></svg>
-      <svg class="m" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" stroke-width="1.6">
+      <svg class="m" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" stroke-width="1.6">
         <rect x="9" y="2.6" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.4"/></svg>
       <div id="homebar"></div>
     </div>
   </div>
 </div>
+<div id="shell"></div>
 <div id="ptr"></div>
 
 <div id="card">
@@ -255,7 +257,6 @@
 </div>
 
 <script>
-// ======================================================== easing
 const cl = v => v < 0 ? 0 : v > 1 ? 1 : v;
 const seg = (f, a, b) => cl((f - a) / (b - a));
 const outQuint = x => 1 - Math.pow(1 - x, 5);
@@ -266,10 +267,10 @@ const settle = (x, b = 1.25) => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x) * Math.cos
 const mix = (a, b, x) => a + (b - a) * x;
 const pulse = (f, a, b, r = 20, fo = 18) => Math.min(outQuint(seg(f, a, a + r)), 1 - outQuint(seg(f, b - fo, b)));
 
-// ======================================================== keyboard
-// The phone's own formula, at the open screen's width.
-const W = 744, MARGIN = 12, HGAP = 11, PITCH = 64, KEYH = 52;
-const KEYW = (W - MARGIN * 2 - HGAP * 9) / 10, SIDEW = KEYW * 1.35, TOOLS_H = 62;
+// ---- the keyboard: the phone's formula at the Duo's inner width ----------
+const W = 648, MARGIN = 11, HGAP = 10, PITCH = 58, KEYH = 48;
+const KEYW = (W - MARGIN * 2 - HGAP * 9) / 10, SIDEW = KEYW * 1.35, TOOLS_H = 58;
+const SHEET_H = 348, APP_X = 1058, APP_Y = 80, APP_H = 920;
 const BOUND = new Set(["v", "c"]);
 const LAYERS = {
   abc: [
@@ -317,10 +318,8 @@ const TOOLS = ["grid",
   "M2.6 5.2h9|M7.1 3.2v2|M9.4 12.4c-2.6-.9-4.4-3-4.8-7.2|M3 12.4c3.6 0 6.6-2.2 7.4-7.2|M12.8 20.8l4.2-10 4.2 10|M14.3 17.6h5.4"];
 const toolsEl = document.getElementById("tools"), toolEls = [];
 {
-  const G = 24, PAD = 14, M = 20, SLACK = 3;
+  const G = 22, PAD = 13, M = 18, SLACK = 3, span = 262;
   const boxes = TOOLS.map((_, i) => G + 2 * (PAD + (i ? 0 : SLACK)));
-  // The tools keep to the left half of a wide board; the chip takes the right.
-  const span = 300;
   const gap = (span - 2 * (M - PAD) - boxes.reduce((a, b) => a + b, 0)) / (TOOLS.length - 1);
   let x = M - PAD - SLACK;
   TOOLS.forEach((d, i) => {
@@ -343,16 +342,15 @@ const toolsEl = document.getElementById("tools"), toolEls = [];
 }
 const suggEl = document.getElementById("sugg"), slots = [];
 {
-  const w = (W - 24) / 3;
+  const w = (W - 22) / 3;
   for (let i = 0; i < 3; i++) {
     const s = document.createElement("div"); s.className = "s" + (i === 1 ? " pick" : "");
-    s.style.left = (12 + i * w) + "px"; s.style.width = w + "px";
+    s.style.left = (11 + i * w) + "px"; s.style.width = w + "px";
     suggEl.appendChild(s); slots.push(s);
-    if (i) { const ln = document.createElement("div"); ln.className = "ln"; ln.style.left = (12 + i * w) + "px"; suggEl.appendChild(ln); }
+    if (i) { const ln = document.createElement("div"); ln.className = "ln"; ln.style.left = (11 + i * w) + "px"; suggEl.appendChild(ln); }
   }
 }
 
-// ======================================================== typing
 const FPC = 5.2;
 function typing(f, start, text) {
   const n = Math.max(0, Math.min(text.length, Math.floor((f - start) / FPC)));
@@ -377,7 +375,6 @@ function suggestFor(text) {
   return SUGG[w] || SUGG[w.slice(0, 3)] || SUGG[w.slice(0, 2)] || null;
 }
 
-// ======================================================== script
 const ADDR = "8QvS3nE5d1YwZk7pLr2mXh9TbF4cJaGuVy6oKe1RtNqP";
 const ACTS = [
   { at: 0, who: ["S", "#ff9f0a", "Sam"], eyebrow: "", head: ["Type less.", "glyf more."],
@@ -405,50 +402,47 @@ ACTS[1].beats = [ACTS[1].at + 8, ACTS[1].at + 30, ACTS[1].at + 96, ACTS[1].at + 
 ACTS[2].beats = [ACTS[2].at + 8, ACTS[2].at + 30, ACTS[2].at + 96, ACTS[2].at + 376];
 ACTS[3].beats = [ACTS[3].at + 8, ACTS[3].at + 30, ACTS[3].at + 350];
 
-// the chat list down the left pane
 const listEl = document.getElementById("list"), rows = [];
-const PREVIEW = ["you around this evening?", "dinner was $348 for the fo…", "can you send $200 USDC…", "Could you send the Q3 deck…"];
+const PREVIEW = ["you around this evening?", "dinner was $348 for the…", "can you send $200 USDC…", "Could you send the Q3…"];
 ACTS.forEach((a, i) => {
   const d = document.createElement("div"); d.className = "row";
-  d.style.top = (54 + i * 66) + "px";
+  d.style.top = (48 + i * 62) + "px";
   d.innerHTML = `<span class="on"></span><span class="av" style="background:${a.who[1]}">${a.who[0]}</span>` +
     `<span class="nm">${a.who[2]}</span><span class="pv">${PREVIEW[i]}</span><span class="dot"></span>`;
   listEl.appendChild(d); rows.push(d);
 });
-
 const threadEl = document.getElementById("thread");
 ACTS.forEach(a => {
   a.el = a.msgs.map(m => {
     const d = document.createElement("div");
     d.className = "msg " + m.s + (m.cls ? " " + m.cls : "");
-    if (m.cls === "pay") d.innerHTML = '<span class="lock">🔒 Sent privately</span><b class="amt">$200.00</b>' +
-      '<span class="chain">USDC on Solana · MagicBlock</span>';
+    if (m.cls === "pay") d.innerHTML = '<span class="lock">&#128274; Sent privately</span><b class="amt">$200.00</b>' +
+      '<span class="chain">USDC on Solana &middot; MagicBlock</span>';
     else d.textContent = m.t;
     d.style.opacity = 0; threadEl.appendChild(d); return d;
   });
 });
-const THREAD_H = 900 - 48 - 382 - 56 - 54, GAP = 8;
+const THREAD_H = APP_H - 46 - SHEET_H - 54 - 52, GAP = 7;
 ACTS.forEach(a => {
   const h = a.el.map(e => e.getBoundingClientRect().height);
   a.y = a.el.map(() => []);
   for (let k = 1; k <= a.el.length; k++) {
-    let bottom = THREAD_H - 8;
+    let bottom = THREAD_H - 6;
     for (let i = k - 1; i >= 0; i--) { bottom -= h[i]; a.y[i][k] = bottom; bottom -= GAP; }
   }
 });
 
-// ======================================================== drawing
 const $ = s => document.querySelector(s);
 const S = { head: $("#head"), eyebrow: $("#eyebrow"), note: $("#note"), av: $("#who .av"), nm: $("#who .nm"),
   tx: $("#field .tx"), caret: $("#caret"), chip: $("#chip"), chipK: $("#chip .k"), chipV: $("#chip .v"),
   think: $("#think"), wallet: $("#wallet"), ptr: $("#ptr"), card: $("#card"), glow: $("#glow"), left: $("#left"),
-  app: $("#app"), rigwrap: $("#rigwrap"), rig: $("#rig"), leftH: $("#leftH"), crease: $("#crease"),
-  sweep: $("#sweep"), cover: $("#cover"), coverNote: $("#cover .note"), sheet: $("#sheet"), field: $("#field") };
+  app: $("#app"), shell: $("#shell"), rigwrap: $("#rigwrap"), rig: $("#rig"), topH: $("#topH"),
+  crease: $("#crease"), sweep: $("#sweep"), coverNote: $("#cover .note"), sheet: $("#sheet"), field: $("#field") };
 let headKey = "";
 
-// The fold: closed at -180, flat at 0. Everything else follows from it.
-const OPEN_A = 150, OPEN_B = 268;
-function foldAngle(f) { return mix(-180, 0, inOutCubic(seg(f, OPEN_A, OPEN_B))); }
+// The Duo opens UPWARD: the top half is hinged on its bottom edge and lies
+// folded down over the bottom half when shut. 180 closed, 0 flat.
+const OPEN_A = 150, OPEN_B = 272;
 
 function tapAt(f, a, x, y, hold = 24) {
   const come = outQuint(seg(f, a - 22, a));
@@ -456,8 +450,7 @@ function tapAt(f, a, x, y, hold = 24) {
   const press = pulse(f, a, a + 13, 5, 7);
   if (vis > Number(S.ptr.style.opacity || 0)) {
     S.ptr.style.opacity = vis;
-    // the app sits at 1019,85 in frame coordinates
-    S.ptr.style.transform = `translate(${1019 + mix(x - 50, x, come)}px, ${85 + mix(y + 64, y, come)}px) scale(${mix(1, .72, press)})`;
+    S.ptr.style.transform = `translate(${APP_X + mix(x - 48, x, come)}px, ${APP_Y + mix(y + 60, y, come)}px) scale(${mix(1, .72, press)})`;
   }
   return press;
 }
@@ -468,7 +461,7 @@ function dipFor(layer, ch, since) {
 }
 function caretTo(f, hidden) {
   S.caret.style.opacity = hidden ? 0 : (Math.floor(f / 28) % 2 ? .3 : 1);
-  S.caret.style.left = (15 + S.tx.getBoundingClientRect().width) + "px";
+  S.caret.style.left = (14 + S.tx.getBoundingClientRect().width) + "px";
 }
 
 function draw(f) {
@@ -514,36 +507,37 @@ function draw(f) {
   A0(f); A1(f); A2(f); A3(f); A4(f);
 }
 
-// ---- the fold itself ---------------------------------------------------
 function drawFold(f) {
-  const a = foldAngle(f), t = seg(f, OPEN_A, OPEN_B);
+  const t = seg(f, OPEN_A, OPEN_B), e = inOutCubic(t);
+  const a = mix(180, 0, e);
   const arrive = outQuint(seg(f, 0, 70));
-  // Closed, the right panel alone is what you see, so the rig slides across
-  // as it opens and the device stays where the eye already is.
-  const slide = mix(-186, 0, inOutCubic(t));
-  // A little turn into the light as it flattens, settling face on.
-  const turn = mix(-13, 0, outQuint(seg(f, OPEN_A + 20, OPEN_B + 46)));
+  // Shut, only the bottom half is there to look at, so the rig rides up as it
+  // opens and the device stays where the eye already is.
+  const slide = mix(-240, 0, e);
+  const tilt = mix(9, 0, outQuint(seg(f, OPEN_A + 20, OPEN_B + 50)));
   S.rigwrap.style.opacity = arrive;
   S.rig.style.transform =
-    `translateX(${slide}px) translateY(${mix(48, 0, arrive) + Math.sin(f / 118) * 4}px) ` +
-    `rotateY(${turn}deg) scale(${mix(.94, 1, arrive)})`;
-  S.leftH.style.transform = `rotateY(${a}deg)`;
+    `translateY(${slide + mix(48, 0, arrive) + Math.sin(f / 118) * 4}px) ` +
+    `rotateX(${tilt}deg) scale(${mix(.94, 1, arrive)})`;
+  S.topH.style.transform = `rotateX(${a}deg)`;
   S.crease.style.opacity = t > .001 ? mix(0, .85, t) : 0;
-  // the cover screen's notification, read before the phone opens
+
   const nk = outQuint(seg(f, 86, 118));
   S.coverNote.style.opacity = nk * (1 - seg(f, OPEN_A, OPEN_A + 24));
   S.coverNote.style.transform = `translateY(${mix(16, 0, nk)}px) scale(${mix(.94, 1, settle(nk, 1.1))})`;
-  // the light that runs across the inner panel as it comes flat
-  const sw = pulse(f, OPEN_A + 40, OPEN_B + 30, 26, 26);
-  S.sweep.style.opacity = sw * .8;
-  S.sweep.style.transform = `translateX(${mix(-420, 420, seg(f, OPEN_A + 40, OPEN_B + 30))}px)`;
-  // the app arrives once the hinge is flat
-  S.app.style.opacity = outQuint(seg(f, OPEN_B - 16, OPEN_B + 30));
-  S.app.style.transform = `translateX(${slide}px) translateY(${Math.sin(f / 118) * 4}px) scale(${mix(1.02, 1, outQuint(seg(f, OPEN_B - 16, OPEN_B + 40)))})`;
+  const sw = pulse(f, OPEN_A + 44, OPEN_B + 30, 26, 26);
+  S.sweep.style.opacity = sw * .5;
+  S.sweep.style.transform = `translateY(${mix(-430, 430, seg(f, OPEN_A + 44, OPEN_B + 30))}px)`;
+
+  const up = outQuint(seg(f, OPEN_B - 16, OPEN_B + 32));
+  const glide = `translateY(${slide + Math.sin(f / 118) * 4}px)`;
+  S.app.style.opacity = up;
+  S.app.style.transform = `${glide} scale(${mix(1.02, 1, up)})`;
+  S.shell.style.opacity = up;
+  S.shell.style.transform = glide;
   S.glow.style.transform = `translate(${Math.sin(f / 200) * 60}px, ${Math.cos(f / 240) * 40}px)`;
 }
 
-// ---- act 0 -------------------------------------------------------------
 function A0(f) {
   if (f >= 620 - 18) return;
   const T = typing(f, 420, "what time works for");
@@ -557,12 +551,11 @@ function A0(f) {
     slots.forEach((s, i) => { s.textContent = i === 0 ? `"${sg[0]}"` : sg[i]; s.style.opacity = sg[i] ? 1 : .25; });
   }
 }
-// ---- act 1: the bill ---------------------------------------------------
 function A1(f) {
   const a = ACTS[1].at;
   if (f < a - 18 || f > ACTS[2].at - 18) return;
   const n123 = abc.find("123");
-  tapAt(f, a + 156, n123.cx, 900 - 382 + n123.cy, 8);
+  tapAt(f, a + 156, n123.cx, APP_H - SHEET_H + n123.cy, 8);
   const T = typing(f, a + 184, "348/4");
   const cleared = f > a + 332;
   S.tx.textContent = cleared ? "" : T.out;
@@ -572,33 +565,31 @@ function A1(f) {
   if (chip > .01) {
     S.chip.style.opacity = chip;
     S.chip.style.transform = `translateY(${mix(10, 0, outQuint(seg(f, a + 234, a + 258)))}px)`;
-    S.chipK.textContent = "348 ÷ 4"; S.chipV.style.left = "96px"; S.chipV.textContent = "= $87";
+    S.chipK.textContent = "348 ÷ 4"; S.chipV.style.left = "92px"; S.chipV.textContent = "= $87";
     toolsEl.style.opacity = Number(toolsEl.style.opacity) * (1 - chip * .3);
   }
-  tapAt(f, a + 316, 520, 900 - 382 + 31, 10);
+  tapAt(f, a + 316, 450, APP_H - SHEET_H + 29, 10);
 }
-// ---- act 2: the payment ------------------------------------------------
 function A2(f) {
   const a = ACTS[2].at;
   if (f < a - 18 || f > ACTS[3].at - 18) return;
   S.tx.textContent = ""; caretTo(f, true);
-  tapAt(f, a + 160, 400, 300, 8);
+  tapAt(f, a + 160, 360, 330, 8);
   const chip = pulse(f, a + 186, a + 260, 16, 12);
   if (chip > .01) {
     S.chip.style.opacity = chip;
     S.chip.style.transform = `translateY(${mix(10, 0, outQuint(seg(f, a + 186, a + 208)))}px)`;
-    S.chipK.textContent = "Pay"; S.chipV.style.left = "52px"; S.chipV.textContent = "$200 USDC to Dev";
+    S.chipK.textContent = "Pay"; S.chipV.style.left = "50px"; S.chipV.textContent = "$200 USDC to Dev";
     toolsEl.style.opacity = Number(toolsEl.style.opacity) * (1 - chip * .3);
   }
-  tapAt(f, a + 242, 520, 900 - 382 + 31, 8);
+  tapAt(f, a + 242, 450, APP_H - SHEET_H + 29, 8);
   const w = pulse(f, a + 256, a + 366, 22, 16);
   if (w > .01) {
     S.wallet.style.opacity = w;
-    S.wallet.style.transform = `translateY(${mix(320, 0, settle(seg(f, a + 256, a + 310), 1.1))}px)`;
+    S.wallet.style.transform = `translateY(${mix(300, 0, settle(seg(f, a + 256, a + 310), 1.1))}px)`;
   }
-  tapAt(f, a + 342, 558, 900 - 382 + 273, 8);
+  tapAt(f, a + 342, 486, APP_H - SHEET_H + 258, 8);
 }
-// ---- act 3: the rewrite ------------------------------------------------
 const MESSY = "ya ill send it soon dont worry";
 function A3(f) {
   const a = ACTS[3].at;
@@ -616,22 +607,21 @@ function A3(f) {
   const sp = abc.find("space");
   const hold = pulse(f, a + 252, a + 288, 8, 8);
   if (sp && hold > .2) sp.el.style.filter = "brightness(.93)";
-  tapAt(f, a + 260, 372, 900 - 382 + TOOLS_H + 3 * PITCH + KEYH / 2, 24);
+  tapAt(f, a + 260, 324, APP_H - SHEET_H + TOOLS_H + 3 * PITCH + KEYH / 2, 24);
   const th = pulse(f, a + 274, a + 336, 16, 12);
   if (th > .01) {
     S.think.style.opacity = th; suggEl.style.opacity = 0;
     toolsEl.style.opacity = Number(toolsEl.style.opacity) * (1 - th * .3);
   }
   document.querySelectorAll("#think .d").forEach((d, i) => {
-    d.style.left = (22 + i * 12) + "px";
+    d.style.left = (21 + i * 11) + "px";
     d.style.opacity = .35 + .65 * Math.max(0, Math.sin((f / 9 + i * .9) % 6));
   });
 }
-// ---- act 4: the card ---------------------------------------------------
 function A4(f) {
   const out = inOutQuint(seg(f, CARD - 40, CARD + 60));
   if (out <= 0) return;
-  [S.rigwrap, S.app].forEach(el => {
+  [S.rigwrap, S.app, S.shell].forEach(el => {
     el.style.opacity = Number(el.style.opacity) * (1 - cl(out * 1.5));
     el.style.transform += ` translateX(${mix(0, 150, out)}px)`;
   });
@@ -645,16 +635,15 @@ function A4(f) {
   rise(".wm", 10, 22); rise("h1", 22, 30); rise(".cta", 40, 26); rise(".url", 54, 20);
 }
 
-// ---- the keys ----------------------------------------------------------
 function drawKeyboard(f) {
   const a1 = ACTS[1].at;
   const onNum = f > a1 + 166 && f < a1 + 346;
   num.host.style.opacity = onNum ? 1 : 0;
   abc.host.style.opacity = onNum ? 0 : 1;
 
-  const rise = outQuint(seg(f, 286, 344));
-  S.sheet.style.transform = `translateY(${mix(382, 0, rise)}px)`;
-  S.field.style.opacity = outQuint(seg(f, 282, 326));
+  const rise = outQuint(seg(f, 290, 348));
+  S.sheet.style.transform = `translateY(${mix(SHEET_H, 0, rise)}px)`;
+  S.field.style.opacity = outQuint(seg(f, 286, 330));
 
   abc.cells.forEach(c => {
     const order = c.row * 10 + c.col;
@@ -662,11 +651,11 @@ function drawKeyboard(f) {
     const inA = 568 + (3 - c.row) * 11 + c.col * 2.2, land = seg(f, inA, inA + 52);
     let y, o, s, rot;
     if (f < inA) {
-      y = mix(0, 44, inCubic(gone)); o = 1 - gone;
+      y = mix(0, 42, inCubic(gone)); o = 1 - gone;
       rot = mix(0, 6 * (c.col % 2 ? 1 : -1), gone); s = mix(1, .9, gone);
     } else {
       const kk = settle(land, 1.15);
-      y = mix(-560 - c.row * 30, 0, kk); o = cl(land * 3.4);
+      y = mix(-540 - c.row * 30, 0, kk); o = cl(land * 3.4);
       rot = mix(3 * (c.col % 2 ? 1 : -1), 0, outQuint(land)); s = mix(1.04, 1, outQuint(land));
     }
     c.el.style.opacity = o;
@@ -681,7 +670,7 @@ function drawKeyboard(f) {
 
   const st = seg(f, 618, 674);
   toolsEl.style.opacity = f < 618 ? 0 : cl(st * 2.4);
-  toolsEl.style.transform = `translateY(${mix(-64, 0, settle(st, 1.1))}px)`;
+  toolsEl.style.transform = `translateY(${mix(-62, 0, settle(st, 1.1))}px)`;
   toolEls.forEach((el, i) => {
     const k = seg(f, 618 + i * 4, 654 + i * 4);
     el.style.opacity = k;
