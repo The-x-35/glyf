@@ -71,12 +71,19 @@ class _WalletScreenState extends State<WalletScreen> {
       });
       return;
     }
+    if (cfg['ok'] == false) {
+      // The server answered but turned us away (a session that lapsed, a
+      // rate limit): that is not "payments are off", so say what it is.
+      setState(() {
+        _loading = false;
+        _error = (cfg['error'] as String?) ?? 'Cannot reach the Glyf server.';
+      });
+      return;
+    }
     if (cfg['ready'] != true) {
       setState(() {
         _loading = false;
-        _setupNeeded = (cfg['privyAppId'] as String?)?.isNotEmpty == true
-            ? 'Add PRIVY_APP_CLIENT_ID to server/.env (Privy dashboard, Clients).'
-            : 'Add PRIVY_APP_ID and PRIVY_APP_CLIENT_ID to server/.env.';
+        _setupNeeded = 'Private payments are not switched on for this Glyf server yet.';
       });
       return;
     }

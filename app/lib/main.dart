@@ -10,7 +10,10 @@ import 'launch/launch_overlay.dart';
 import 'onboarding/demo_chat.dart';
 import 'wallet/wallet_screen.dart';
 import 'onboarding/onboarding_flow.dart';
+import 'profile/connected_tools_screen.dart';
+import 'profile/keyboard_screen.dart';
 import 'shell/app_shell.dart';
+import 'vault/vault_screen.dart';
 
 void main() => runApp(const GlyfApp());
 
@@ -113,10 +116,27 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       _openWallet(path.queryParameters['to'], path.queryParameters['amount']);
       return;
     }
-    if (uri.host == 'open' && uri.queryParameters['path'] == 'build') {
-      // "Build your own" from the keyboard's My glyfs list.
-      AppShell.requestedTab.value = 1;
-      return;
+    if (uri.host == 'open') {
+      // The keyboard's "Open in Glyf app" footers and its Connect button
+      // name the screen they came from; each lands on its counterpart here.
+      switch (uri.queryParameters['path'] ?? '') {
+        case 'build': // "Build your own" from the keyboard's My glyfs list.
+          AppShell.requestedTab.value = 1;
+          return;
+        case 'keys':
+          AppShell.requestedTab.value = 0;
+          return;
+        case 'vault':
+          _push((_) => const VaultScreen());
+          return;
+        case 'connectors':
+        case 'connected':
+          _push((_) => const ConnectedToolsScreen());
+          return;
+        case 'settings':
+          _push((_) => const KeyboardScreen());
+          return;
+      }
     }
     if (uri.host == 'demo') {
       _openDemo();
@@ -137,6 +157,12 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
               ? 'Google connected'
               : 'Google connection didn’t finish')));
     }
+  }
+
+  void _push(WidgetBuilder builder) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return;
+    Navigator.of(ctx).push(MaterialPageRoute(builder: builder));
   }
 
   void _openWallet(String? to, String? amount) {

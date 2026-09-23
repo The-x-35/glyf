@@ -229,7 +229,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         let trimmed = intent.trimmingCharacters(in: .whitespacesAndNewlines)
         intentLabel.text = trimmed.isEmpty ? nil
             : "“\(trimmed.count > 80 ? String(trimmed.prefix(80)) + "…" : trimmed)”"
-        markLabel.text = keyLetter?.uppercased() ?? "g"
+        markLabel.text = (keyLetter?.isEmpty == false) ? keyLetter!.uppercased() : "g"
         workingTitle.text = title
         show(.working)
     }

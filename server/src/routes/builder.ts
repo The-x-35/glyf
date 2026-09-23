@@ -3,7 +3,7 @@ import { z } from "zod";
 import { env } from "../env.js";
 import { GlyfDefSchema } from "../schemas/glyfdef.js";
 import type { Guard } from "../lib/guard.js";
-import { runGlyf } from "../lib/glyfengine.js";
+import { runGlyf, userFacingRunError } from "../lib/glyfengine.js";
 import { completeStreaming } from "../providers/openrouter.js";
 import { GlyfLibrary, SaveGlyfSchema, validateUserDef, ensureInputWired } from "../lib/userglyfs.js";
 
@@ -138,7 +138,10 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard:
       });
       return { text, ms: Date.now() - started };
     } catch (err) {
-      return reply.code(422).send({ error: String((err as Error).message ?? err) });
+      req.log.warn({ err: String((err as Error).message ?? err) }, "builder_test_failed");
+      return reply.code(422).send({
+        error: userFacingRunError(err, "Couldn't try it just now. Tap to try again."),
+      });
     }
   });
 

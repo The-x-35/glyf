@@ -101,21 +101,35 @@ enum Glass {
         }
     }
 
-    /// A gradient theme runs across the whole key grid; KeyboardView masks
-    /// it to the key shapes, so every key carries its own slice.
-    static var keyGradient: [UIColor]? {
+    /// The board a colour or gradient theme paints, with the dim applied;
+    /// empty with no theme. The VC lays it under the keys (see
+    /// applyBoardPaint), which is what the app's Look tiles show.
+    static var boardColors: [UIColor] { themeColors }
+
+    /// The one colour a painted board reads as: the colour, or the middle of
+    /// the gradient. Decides whether the keys and the ink go light or dark.
+    private static var boardSeed: UIColor? {
         let colors = themeColors
-        return colors.count > 1 ? colors.map(liftedOffSheet) : nil
+        guard let first = colors.first, let last = colors.last else { return nil }
+        return colors.count > 1 ? first.blend(last, 0.5) : first
     }
 
-    /// One key's colour: Apple's, the theme's, or the middle of a gradient
-    /// theme (for balloons, where a slice would look torn).
+    /// The app's KeyPalette rule, kept in step: a board brighter than this
+    /// carries white keys and dark ink; a darker one lifted keys and white ink.
+    static var boardIsLight: Bool { (boardSeed?.glyfLuminance ?? 1) > 0.34 }
+
+    /// Keys used to carry slices of the gradient; now the board carries it
+    /// and every key is one colour, as on the tiles. Kept for KeyboardView.
+    static var keyGradient: [UIColor]? { nil }
+
+    /// One key's colour: Apple's on the system sheet, or the key the app's
+    /// tile draws on this board (white on a light board, the board lifted
+    /// towards white on a dark one) — the same numbers as KeyPalette.
     static var keyColor: UIColor {
-        let colors = themeColors
-        guard let first = colors.first, let last = colors.last else {
+        guard let seed = boardSeed else {
             return isDark ? appleKeyDark : appleKeyLight
         }
-        return liftedOffSheet(colors.count > 1 ? first.blend(last, 0.5) : first)
+        return boardIsLight ? .white : seed.blend(.white, 0.185)
     }
 
     /// Keys need to stand off the sheet the way Apple's do: a near-black
@@ -177,9 +191,16 @@ enum Glass {
     }
 
     static var themedBgActive: Bool { !themeBgColors().isEmpty }
-    /// Chrome (the strip, panels, hairlines) sits on the system sheet, so it
-    /// follows the sheet's appearance whatever colour the keys are.
-    static var chromeDark: Bool { isDark }
+
+    /// Apple's sheet, for the one case we paint it: a forced light or dark
+    /// on a host whose own sheet is the other way. Measured off iOS 26.
+    static func sheetPaint(dark: Bool) -> UIColor {
+        dark ? UIColor(white: 0.16, alpha: 1)
+             : UIColor(red: 0.82, green: 0.83, blue: 0.85, alpha: 1)
+    }
+    /// Chrome (the strip, panels, hairlines) sits on whatever is behind it:
+    /// the system sheet, or a painted board, whose brightness decides.
+    static var chromeDark: Bool { themedBgActive ? !boardIsLight : isDark }
 
     /// The key grid's own background. NOT `.clear`, and not for looks.
     ///
@@ -193,7 +214,7 @@ enum Glass {
     /// background, and is enough to make the whole area touchable. It
     /// follows the appearance so it can never tint a dark or themed board.
     static var touchableGrid: UIColor {
-        (isDark ? UIColor.black : UIColor.white).withAlphaComponent(0.01)
+        (chromeDark ? UIColor.black : UIColor.white).withAlphaComponent(0.01)
     }
 
     // MARK: Blur (ONE layer per surface, never per key — §5.2)
@@ -226,13 +247,20 @@ enum Glass {
             return isDark ? UIColor.white.withAlphaComponent(0.40)
                           : UIColor.white.withAlphaComponent(0.92)
         }
+        if let seed = boardSeed {
+            return boardIsLight ? keyColor.blend(seed, 0.55) : keyColor.blend(.white, 0.11)
+        }
         return keyColor.blend(keyInk, 0.14)
     }
     /// Solid version regardless of theme (press balloons).
     static var fillKeySolid: UIColor { keyColor }
     /// Function keys (shift, delete, 123, emoji, return) wear the letter
-    /// colour, as they do on iOS 26.
-    static var fillKeyFn: UIColor { fillKey }
+    /// colour, as they do on iOS 26; on a painted board they take the tile's
+    /// darker (or lighter) function-key shade.
+    static var fillKeyFn: UIColor {
+        guard let seed = boardSeed else { return fillKey }
+        return boardIsLight ? seed.blend(.black, 0.14) : seed.blend(.white, 0.07)
+    }
     static var fillKeyFnPressed: UIColor { fillKeyPressed }
     static var fillKeySpecial: UIColor { fillKeyFn }
     static var fillKeyGlyf: UIColor { fillKey }
@@ -246,19 +274,23 @@ enum Glass {
                : UIColor.white.withAlphaComponent(0.72)
     }
     static var fillField: UIColor {
-        isDark ? UIColor(red: 0.17, green: 0.17, blue: 0.18, alpha: 1)
-               : UIColor(red: 0.93, green: 0.94, blue: 0.96, alpha: 1)
+        chromeDark ? UIColor(red: 0.17, green: 0.17, blue: 0.18, alpha: 1)
+                   : UIColor(red: 0.93, green: 0.94, blue: 0.96, alpha: 1)
     }
     /// Cards INSIDE keyboard surfaces (clips, tiles, results): Apple's key
-    /// colour, so they read as part of the same keyboard on either sheet.
-    static var surfaceCard: UIColor { isDark ? appleKeyDark : appleKeyLight }
+    /// colour, so they read as part of the same keyboard on either sheet; on
+    /// a painted board, the board's own key colour.
+    static var surfaceCard: UIColor {
+        if themedBgActive { return keyColor }
+        return isDark ? appleKeyDark : appleKeyLight
+    }
     /// Soft chip/field fill over the sheet (the web's --kb-soft).
     static var fillSoft: UIColor {
-        isDark ? UIColor.white.withAlphaComponent(0.08) : UIColor.white.withAlphaComponent(0.6)
+        chromeDark ? UIColor.white.withAlphaComponent(0.08) : UIColor.white.withAlphaComponent(0.6)
     }
     /// Dims a panel behind a menu, over whatever the sheet is.
     static var scrim: UIColor {
-        isDark ? UIColor.black.withAlphaComponent(0.55) : UIColor.white.withAlphaComponent(0.62)
+        chromeDark ? UIColor.black.withAlphaComponent(0.55) : UIColor.white.withAlphaComponent(0.62)
     }
 
     // MARK: Strokes
@@ -287,10 +319,10 @@ enum Glass {
     /// Text on the sheet and on cards. Glyphs on keys use `keyInk`, which
     /// follows the key colour instead.
     static var textPrimary: UIColor {
-        isDark ? .white : UIColor(white: 0.07, alpha: 1)
+        chromeDark ? .white : UIColor(white: 0.07, alpha: 1)
     }
     static var textSecondary: UIColor {
-        isDark ? UIColor(white: 0.63, alpha: 1) : UIColor(white: 0.42, alpha: 1)
+        chromeDark ? UIColor(white: 0.63, alpha: 1) : UIColor(white: 0.42, alpha: 1)
     }
     /// The one thing that stays constant either way: the brand keycap.
     static let brandInk = UIColor(white: 0.07, alpha: 1)

@@ -202,6 +202,17 @@ export class Users {
     return stored;
   }
 
+  /** Puts a plan on their row (creating the row if sign-in never did). */
+  async setPlan(id: string, plan: "free" | "plus" | "max"): Promise<void> {
+    await this.ensureSchema();
+    const sql = await this.sql();
+    await sql(
+      `insert into glyf_users (user_id, plan) values ($1, $2)
+       on conflict (user_id) do update set plan = excluded.plan, last_seen_at = now()`,
+      [id, plan],
+    );
+  }
+
   /** The plan on their row; free for anyone not on one. */
   async plan(id: string): Promise<"free" | "plus" | "max"> {
     await this.ensureSchema();

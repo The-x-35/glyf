@@ -305,6 +305,8 @@ enum Smart {
     static func money(in text: String, rates: RatesSnapshot) -> Chip? {
         if let ticker = cashtag(in: text) {
             guard let usd = rates.crypto[ticker] else { return nil }
+            // "1 SOL = $112" is already the answer; do not price the price.
+            if text.replacingOccurrences(of: "$\(ticker.lowercased())", with: "").trimmingCharacters(in: .whitespaces).hasSuffix("=") { return nil }
             let price = format(usd, in: "USD")
             return .money(shown: "1 \(ticker) = \(price)", insert: " = \(price)")
         }
@@ -312,6 +314,10 @@ enum Smart {
         let ns = text as NSString
         guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
         else { return nil }
+        // The right-hand side of a conversion the chip itself put in ("$13 =
+        // ₹1,246"): converting that back would be a loop, not help.
+        let head = ns.substring(to: m.range.location).trimmingCharacters(in: .whitespaces)
+        if head.hasSuffix("=") { return nil }
         func group(_ i: Int) -> String? {
             m.range(at: i).location == NSNotFound ? nil : ns.substring(with: m.range(at: i))
         }

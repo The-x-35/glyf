@@ -31,6 +31,7 @@ final class CalendarSurface: UIView {
     private let agendaStack = UIStackView()
     private let freeButton = UIButton(type: .system)
     private let connectButton = UIButton(type: .system)
+    private let dateButton = UIButton(type: .system)
 
     override init(frame: CGRect) {
         let today = Calendar.current.startOfDay(for: Date())
@@ -114,6 +115,17 @@ final class CalendarSurface: UIView {
         freeButton.addAction(UIAction { [weak self] _ in self?.shareFree() }, for: .touchUpInside)
         addSubview(freeButton)
 
+        // The day itself is the thing people most often type: "September 24".
+        styleAction(dateButton, title: "Insert date")
+        dateButton.backgroundColor = Glass.surfaceCard
+        dateButton.setTitleColor(Glass.textPrimary, for: .normal)
+        dateButton.accessibilityIdentifier = "calendar:date"
+        dateButton.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.delegate?.connectorInsert(Self.dateText(self.selected))
+        }, for: .touchUpInside)
+        addSubview(dateButton)
+
         styleAction(connectButton, title: "Connect calendar")
         connectButton.accessibilityIdentifier = "calendar:connect"
         connectButton.addAction(UIAction { [weak self] _ in
@@ -174,6 +186,14 @@ final class CalendarSurface: UIView {
         delegate?.connectorInsert(CalendarText.freeTime(on: selected, in: events, calendar: cal))
     }
 
+    /// "September 24", in the phone's own order for month and day.
+    static func dateText(_ day: Date, locale: Locale = .current) -> String {
+        let f = DateFormatter()
+        f.locale = locale
+        f.setLocalizedDateFormatFromTemplate("MMMM d")
+        return f.string(from: day)
+    }
+
     // MARK: render
 
     private func render() {
@@ -219,10 +239,16 @@ final class CalendarSurface: UIView {
             for (i, e) in dayEvents.enumerated() {
                 agendaStack.addArrangedSubview(row(e, index: i))
             }
+        } else if !showingMonth {
+            // Not connected yet: say so, rather than leave a blank band
+            // between the date and the button that fixes it.
+            agendaStack.addArrangedSubview(note("Your calendar is not connected yet"))
         }
         agenda.isHidden = showingMonth
         freeButton.isHidden = !connected || showingMonth
         connectButton.isHidden = connected || showingMonth
+        dateButton.isHidden = showingMonth
+        dateButton.accessibilityLabel = "Insert \(Self.dateText(selected))"
         setNeedsLayout()
     }
 
@@ -334,7 +360,12 @@ final class CalendarSurface: UIView {
         let w = bounds.width - pad * 2
         let actionH: CGFloat = 38
         let actionY = bounds.height - actionH - 8
-        freeButton.frame = CGRect(x: pad, y: actionY, width: w, height: actionH)
+        // Two pills on one row: the date on the left, the calendar's own
+        // action (share free time, or connect) on the right.
+        let dateW = ((w - 8) * 0.42).rounded()
+        dateButton.frame = CGRect(x: pad, y: actionY, width: dateW, height: actionH)
+        dateButton.layer.cornerRadius = actionH / 2
+        freeButton.frame = CGRect(x: pad + dateW + 8, y: actionY, width: w - dateW - 8, height: actionH)
         freeButton.layer.cornerRadius = actionH / 2
         connectButton.frame = freeButton.frame
         connectButton.layer.cornerRadius = actionH / 2

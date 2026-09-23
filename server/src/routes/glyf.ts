@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { env } from "../env.js";
 import { profileBlock } from "../lib/act.js";
 import { RunRequestSchema } from "../schemas/glyfdef.js";
-import { loadRegistry, runGlyf } from "../lib/glyfengine.js";
+import { loadRegistry, runGlyf, userFacingRunError } from "../lib/glyfengine.js";
 import { completeStreaming } from "../providers/openrouter.js";
 import { TTLCache } from "../lib/cache.js";
 import type { Guard } from "../lib/guard.js";
@@ -75,7 +75,11 @@ export function glyfRoutes(
     };
 
     if (!parsed.success) return fail("Bad request");
-    const { glyfId, input, vars, deviceId, pro, plan, profile } = parsed.data;
+    const { glyfId, input, vars, deviceId, pro, plan, profile, lat, lon } = parsed.data;
+    // Where the phone is, for the tools that can use it (Weather with no
+    // place named): a var like any other, "" when the app never got a fix.
+    const located: Record<string, string> =
+      lat != null && lon != null ? { lat: String(lat), lon: String(lon) } : {};
     const def = registry.get(glyfId) ?? library.resolve(deviceId, glyfId);
     if (!def) return fail(`Unknown glyf '${glyfId}'`);
 
@@ -109,7 +113,7 @@ export function glyfRoutes(
 
     try {
       const text = await runGlyf({
-        def, input, vars: withProfile(vars, profile),
+        def, input, vars: withProfile({ ...located, ...vars }, profile),
         connections: connectionsFor(deviceId),
         complete: async (tier, prompt, onToken) => {
           const res = await completeStreaming(
@@ -129,10 +133,10 @@ export function glyfRoutes(
       if (!abort.signal.aborted) {
         const message = String((err as Error).message ?? err);
         req.log.warn({ glyfId, err: message }, "glyf_failed");
-        // Tool/ask errors are user-meaningful; transport errors get the
-        // standard quiet-retry line (§6.4).
-        fail(message.startsWith("needs input") || message.includes("tool")
-          ? message : "Couldn't reach Glyf. Tap to retry.");
+        // Tool/ask errors are user-meaningful; a model that did not answer
+        // is ours to own, and the line says so without blaming the network
+        // (the request did reach us) or naming what failed (§6.4).
+        fail(userFacingRunError(err, "Glyf is busy right now. Tap to retry."));
         return;
       }
     }

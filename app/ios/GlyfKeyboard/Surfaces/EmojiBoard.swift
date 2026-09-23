@@ -160,6 +160,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     /// A category button: straight to the start of its section.
     private func jump(to section: Int) {
+        dismissTonePopup()
         guard section < sections.count, collection.numberOfItems(inSection: section) > 0 else { return }
         collection.scrollToItem(at: IndexPath(item: 0, section: section), at: .left, animated: false)
         highlightTab(section)
@@ -181,6 +182,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if scrollView === collection, tonePopup != nil { dismissTonePopup() }
         guard !searchActive, scrollView === collection else { return }
         // The section under the left edge names the grid, as Apple's does.
         let probe = CGPoint(x: scrollView.contentOffset.x + 24, y: 20)
@@ -271,7 +273,15 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
     }
 
     func collectionView(_ cv: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        dismissTonePopup()
         pick(emoji(at: indexPath))
+    }
+
+    /// The tone popup only means something over the emoji it came from: a
+    /// tap anywhere else, a category jump or a scroll puts it away.
+    private func dismissTonePopup() {
+        tonePopup?.removeFromSuperview()
+        tonePopup = nil
     }
 
     private func pick(_ e: String) {

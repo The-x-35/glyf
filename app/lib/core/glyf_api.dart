@@ -267,14 +267,29 @@ abstract final class GlyfApi {
 
   // ---- §6.16 meter -------------------------------------------------------
 
-  static Future<int?> meterRemaining() async {
+  static Future<int?> meterRemaining() async => (await meterStatus())?.remaining;
+
+  /// What the server is enforcing: runs left today, on which plan, out of
+  /// how many. The plan card shows this, never the phone's own claim.
+  static Future<({int remaining, String plan, int perDay})?> meterStatus() async {
     try {
       final obj = await _getJson('/meter/${await _deviceId()}');
-      return obj['remaining'] as int?;
+      final remaining = obj['remaining'] as int?;
+      if (remaining == null) return null;
+      return (
+        remaining: remaining,
+        plan: (obj['plan'] as String?) ?? 'free',
+        perDay: (obj['perDay'] as int?) ?? 40,
+      );
     } catch (_) {
       return null;
     }
   }
+
+  /// POST /me/plan — the paywall's pick. The server decides whether it may
+  /// (self-serve is a dev/TestFlight switch); the answer is what we keep.
+  static Future<Map<String, dynamic>> setPlan(String plan) =>
+      _postJson('/me/plan', {'plan': plan}, timeout: const Duration(seconds: 10));
 
   // ---- §12 telemetry sink ------------------------------------------------
 
@@ -296,6 +311,7 @@ abstract final class GlyfApi {
       final base = await _baseUrl();
       final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
       final req = await client.getUrl(Uri.parse('$base/wallet/config'));
+      _signIn(req);
       final res = await req.close().timeout(const Duration(seconds: 6));
       final body = await res.transform(utf8.decoder).join();
       client.close();
@@ -317,6 +333,7 @@ abstract final class GlyfApi {
       final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
       final req = await client.postUrl(Uri.parse('$base/wallet/transfer'));
       req.headers.contentType = ContentType.json;
+      _signIn(req);
       req.write(jsonEncode({
         'from': from, 'to': to, 'amount': amount, 'mint': mint, 'private': true,
       }));

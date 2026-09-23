@@ -72,13 +72,28 @@ final class IntentStoreTests: XCTestCase {
         XCTAssertNil(s.pendingIntent(), "pending pointer cleared after take")
     }
 
-    func testExpiredResultNotDelivered() throws {
+    func testFinishedResultOutlivesTheIntentTTL() throws {
+        // The TTL guards the hop INTO the app. A result the app already wrote
+        // is the person's own dictation; reading the review for a couple of
+        // minutes must not throw it away.
         let s = store()
         let intent = try XCTUnwrap(s.createIntent(kind: "dictation", source: "glyf"))
         _ = s.consume(id: intent.id)
         _ = s.writeResult(intentId: intent.id, status: "success",
                           payload: ["transcript": "late"])
         clock = clock.addingTimeInterval(IntentStore.ttl + 5)
-        XCTAssertNil(s.takeResultForPending(), "keyboard must not insert an expired handoff")
+        XCTAssertEqual(s.pendingIntent()?.id, intent.id, "an answered intent is still pending")
+        XCTAssertEqual(s.takeResultForPending()?.1.payload["transcript"], "late")
+    }
+
+    func testStaleResultNotDelivered() throws {
+        let s = store()
+        let intent = try XCTUnwrap(s.createIntent(kind: "dictation", source: "glyf"))
+        _ = s.consume(id: intent.id)
+        _ = s.writeResult(intentId: intent.id, status: "success",
+                          payload: ["transcript": "late"])
+        clock = clock.addingTimeInterval(IntentStore.resultGrace + 5)
+        XCTAssertNil(s.pendingIntent(), "a result nobody came back for is dropped")
+        XCTAssertNil(s.takeResultForPending(), "keyboard must not insert a stale handoff")
     }
 }

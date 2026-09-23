@@ -9,6 +9,12 @@
  *  for people who are not users: signing in, the website's waitlist, the
  *  OAuth callbacks a provider redirects to, the shared /p/ pages, and a
  *  health check. Those are held down by IP instead.
+ *
+ *  Rate limits count per ACCOUNT once a session is verified. An address is
+ *  not a person: phones on Jio and Airtel sit behind carrier-grade NAT, an
+ *  office shares one exit, and a tight per-IP count there takes the
+ *  keyboard away from everyone at once. The per-IP number is only an abuse
+ *  ceiling, set high enough that a building of users never reaches it.
  */
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { verifySession } from "./identity.js";
@@ -37,10 +43,13 @@ export function isOpen(path: string): boolean {
 export interface ProtectDeps {
   limits: Limiter;
   verify?: (token: string) => Promise<string | null>;
-  /** Requests a single IP may make per minute, signed in or not. */
+  /** Requests a single IP may make per minute, signed in or not: an abuse
+   *  ceiling, not a budget (many people share one address). */
   perIpPerMinute?: number;
   /** Requests an unauthenticated IP may make per minute on the open paths. */
   openPerIpPerMinute?: number;
+  /** Requests one signed-in account may make per minute, across its phones. */
+  perUserPerMinute?: number;
 }
 
 declare module "fastify" {
@@ -59,22 +68,23 @@ function ip(req: FastifyRequest): string {
 /** The gate, in front of everything. */
 export function protectRoutes(app: FastifyInstance, deps: ProtectDeps): void {
   const verify = deps.verify ?? (async (t: string) => verifySession(t));
-  const perIp = deps.perIpPerMinute ?? 60;
-  const openPerIp = deps.openPerIpPerMinute ?? 12;
+  const perIp = deps.perIpPerMinute ?? 600;
+  const openPerIp = deps.openPerIpPerMinute ?? 60;
+  const perUser = deps.perUserPerMinute ?? 150;
 
   app.addHook("onRequest", async (req, reply) => {
     // One address can only ask so often, whoever it says it is. This runs
     // before any work, so a flood costs a counter and nothing else.
     const address = `ip:${ip(req)}`;
     if (await deps.limits.spend(address, "minute", perIp) < 0) {
-      return reply.code(429).send({ ok: false, error: "Too many requests — slow down" });
+      return reply.code(429).send({ ok: false, error: "Too many requests. Slow down a little." });
     }
 
     if (isOpen(req.url)) {
       // Nobody is signed in here, so the address is the only thing holding
       // the door: a tighter count on top of the one above.
       if (await deps.limits.spend(`${address}|open`, "minute", openPerIp) < 0) {
-        return reply.code(429).send({ ok: false, error: "Too many requests — slow down" });
+        return reply.code(429).send({ ok: false, error: "Too many requests. Slow down a little." });
       }
       return;
     }
@@ -84,6 +94,10 @@ export function protectRoutes(app: FastifyInstance, deps: ProtectDeps): void {
     const user = token ? await verify(token).catch(() => null) : null;
     if (!user) {
       return reply.code(401).send({ ok: false, error: "Sign in to use Glyf" });
+    }
+    // Now that we know who it is, the count that matters is theirs.
+    if (await deps.limits.spend(`user:${user}|req`, "minute", perUser) < 0) {
+      return reply.code(429).send({ ok: false, error: "Too many requests. Slow down a little." });
     }
     req.glyfUser = user;
   });

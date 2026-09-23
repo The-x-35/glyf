@@ -293,7 +293,7 @@ None of this works across multiple server instances. A deployment must run one i
 | 38 | POST | `/waitlist` | Legacy waitlist signup | No | `routes/waitlist.ts` | None (the site now uses Neon) |
 | 39 | GET | `/waitlist/count` | Legacy waitlist count | No | `routes/waitlist.ts` | None |
 
-No route has real authentication, CORS configuration or a global rate limiter. Fastify's default JSON body limit applies.
+Every route except the open paths in `lib/protect.ts` (`/health`, `/auth/*`, `/waitlist`, `/p/*`, OAuth callbacks, `/connectors/status`) needs a Glyf session (`Authorization: Bearer`). Rate limits count **per account** once the session is verified (150 requests a minute across a person's phones); the per-address counts are only abuse ceilings (600 a minute, 60 a minute on the open paths), because phones on carrier-grade NAT and offices share one address and a tight per-IP count there would take the keyboard away from everyone at once. Fastify's default JSON body limit applies.
 
 ### 4.2 Health and meter
 
@@ -303,8 +303,11 @@ No route has real authentication, CORS configuration or a global rate limiter. F
 - It reports only the OpenRouter key, not Gemini or Groq keys.
 
 **`GET /meter/:deviceId`**
-- Response: `{ remaining: number }`, computed against the free cap (it does not know the device's plan). Capped at 9999.
-- Powers the remaining-runs chip.
+- Response: `{ remaining: number, plan: "free" | "plus" | "max", perDay: number }`: what is left today, on the plan the server is enforcing (the account's row when signed in, free for a phone alone). Capped at 9999.
+- Powers the keyboard's remaining-runs chip and the app's plan card, so the two read the same numbers.
+
+**`POST /me/plan`** (`routes/me.ts`)
+- Body `{ plan: "free" | "plus" | "max" }`. The paywall's pick. Changes the account's row only when `PLAN_SELF_SERVE=true` (development and TestFlight); otherwise 403 "Plans arrive with the App Store build". Response `{ ok, stored, plan }`. StoreKit receipts replace this switch at ship.
 
 ### 4.3 AI runs
 
@@ -327,7 +330,8 @@ No route has real authentication, CORS configuration or a global rate limiter. F
   - `event: token` with `{ t: string }`, zero or more times.
   - `event: done` with `{ text, remaining, ms }` (plus `model: "cache"` on a cache hit).
   - `event: error` with `{ message }`.
-- Errors always arrive as an `error` frame on an HTTP 200 stream: bad request, unknown glyf, and cap reached ("Daily free runs used up" on free; on paid plans a "Daily runs used up" message). For failures during the run, a message that starts with `needs input` (an `ask` step) or contains the word `tool` (unknown tool, tool rate limit) is passed through verbatim. Every other failure, including model exhaustion, upstream API errors and the "Connect <Provider> in the Glyf app first" message, becomes "Couldn't reach Glyf. Tap to retry." ([known issue 27](#16-known-issues)).
+- Errors always arrive as an `error` frame on an HTTP 200 stream: bad request, unknown glyf, and cap reached ("Daily free runs used up" on free; on paid plans a "Daily runs used up" message). For failures during the run, a message that starts with `needs input` (an `ask` step), contains the word `tool` (unknown tool, tool rate limit) or was thrown as a `ToolError` (a tool's refusal worded for the person, such as Weather's "Which place? Hold W on a city name, or turn on Nearby search in the Glyf app.") is passed through verbatim (`userFacingRunError` in `lib/glyfengine.ts`, shared with `/builder/test`). Every other failure, including model exhaustion and upstream API errors, becomes "Glyf is busy right now. Tap to retry." (the request did reach the server, so the line no longer blames the network, and never names a model or a key).
+- The body may carry `lat`/`lon` (the phone's coarse fix); they reach steps as `{{lat}}`/`{{lon}}` vars and are never stored. `keyless.weather` uses them when the field names no place.
 - Resolution order: shipped registry, then the device's own glyfs, then glyfs the device installed from the hub. A user glyf cannot shadow a shipped id.
 - The meter is consumed before the cache check, so cache hits still count.
 - If the client disconnects mid-stream, the upstream model request is aborted. The abort listens on `reply.raw` "close" while the response is unfinished. Listening on the request's "close" (the first implementation) fired as soon as the body was read and killed every run (fixed 2026-09-12).
@@ -1215,6 +1219,7 @@ Names only. Values live in `server/.env` (never committed). "Example" says wheth
 | `SMART_MODELS` | Comma-separated smart-tier chain | No | `openrouter/free` | In comments only | `env.ts` |
 | `CACHE_TTL_MS` | `/glyf/run` output cache TTL in ms | No | `86400000` (24 h) | No | `env.ts` |
 | `FREE_RUNS_PER_DAY` | Free plan daily cap (Plus is 10 times this) | No | `40` | Yes | `env.ts` |
+| `PLAN_SELF_SERVE` | `true` lets `POST /me/plan` change an account's plan without a receipt. Development and TestFlight only; never on the shipped server | No | off | Yes | `routes/me.ts` |
 
 `PORT`, `FREE_RUNS_PER_DAY` and `CACHE_TTL_MS` fall back to their defaults when the value is not a positive number.
 

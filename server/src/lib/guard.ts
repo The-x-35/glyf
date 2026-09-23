@@ -60,8 +60,16 @@ export class Guard {
 
   /** What is left today, spending nothing. */
   async left(req: FastifyRequest, deviceId: string, now = new Date()): Promise<number> {
+    return (await this.status(req, deviceId, now)).remaining;
+  }
+
+  /** What is left today and on which plan, so the app's plan card and the
+   *  keyboard's runs chip read the same numbers. */
+  async status(req: FastifyRequest, deviceId: string, now = new Date()):
+    Promise<{ remaining: number; plan: Plan; perDay: number }> {
     const { key, plan } = await this.who(req, deviceId);
     const caps = capsFor(plan, this.deps.freePerDay);
-    return this.deps.limits.left(key, "day", caps.runsPerDay, now);
+    const remaining = await this.deps.limits.left(key, "day", caps.runsPerDay, now);
+    return { remaining, plan, perDay: caps.runsPerDay };
   }
 }

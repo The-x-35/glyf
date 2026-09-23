@@ -289,7 +289,12 @@ async function mockStream(
   const tagMatch = user.match(/^\[\[(.+?)\]\]/m);
   const tag = tagMatch ? tagMatch[1] : "run";
   const input = user.split("\n").slice(-1)[0]?.slice(0, 140) ?? "";
-  const text = `MOCK ${tag}: ${input}`;
+  // A rewrite asks for JSON, one key per style; the mock keeps that shape
+  // (a plain echo would be the model talking about the message, which the
+  // real path rightly refuses to offer).
+  const text = tag === "act.rewrite.options"
+    ? JSON.stringify({ basic: input, work: `MOCK professional: ${input}`, shorter: `MOCK shorter: ${input}` })
+    : `MOCK ${tag}: ${input}`;
   for (const word of text.split(/(?<= )/)) {
     if (handlers.signal?.aborted) break;
     handlers.onToken(word);

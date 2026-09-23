@@ -10,17 +10,19 @@ import Foundation
 enum AppGroupStore {
     static let groupID = "group.so.glyf.shared"
 
-    static var containerURL: URL? {
+    /// Looked up once: the container's location never changes while the
+    /// process lives, and asking the system for it on every read used to be
+    /// the keyboard's single most frequent call (a dozen times a second idle).
+    static let containerURL: URL? =
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID)
-    }
 
     /// bridge/ subdirectory inside the group container; created on first use.
-    static var bridgeDir: URL? {
+    static let bridgeDir: URL? = {
         guard let base = containerURL else { return nil }
         let dir = base.appendingPathComponent("bridge", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
-    }
+    }()
 
     @discardableResult
     static func writeJSON(_ payload: [String: Any], name: String) -> Bool {

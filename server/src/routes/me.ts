@@ -26,6 +26,8 @@ const DeviceSchema = z.object({
 
 const PrefsSchema = z.object({ prefs: z.record(z.string(), z.unknown()) });
 
+const PlanSchema = z.object({ plan: z.enum(["free", "plus", "max"]) });
+
 const EventsSchema = z.object({
   events: z.array(z.object({
     name: z.string().min(1).max(64),
@@ -83,6 +85,29 @@ export function meRoutes(app: FastifyInstance, deps: MeDeps = {}): void {
     } catch (err) {
       req.log.error({ err: err instanceof Error ? err.message : String(err) }, "me_prefs_failed");
       return reply.code(503).send({ ok: false, error: "Could not save settings right now" });
+    }
+  });
+
+  /** The plan, as the paywall picks it. Until App Store receipts land this
+   *  is a self-serve switch, and it is OFF unless PLAN_SELF_SERVE=true (dev
+   *  and TestFlight): a shipped server never hands out plans for a tap.
+   *  Whatever it says, the app and the keyboard then read the same answer
+   *  back from /meter, so the two never disagree about what a person has. */
+  app.post("/me/plan", async (req, reply) => {
+    const id = await who(req, reply);
+    if (!id) return reply;
+    const parsed = PlanSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ ok: false, error: "Bad request" });
+    if (process.env.PLAN_SELF_SERVE !== "true") {
+      return reply.code(403).send({ ok: false, error: "Plans arrive with the App Store build" });
+    }
+    if (!users.enabled) return { ok: true, stored: false, plan: parsed.data.plan };
+    try {
+      await users.setPlan(id, parsed.data.plan);
+      return { ok: true, stored: true, plan: parsed.data.plan };
+    } catch (err) {
+      req.log.error({ err: err instanceof Error ? err.message : String(err) }, "me_plan_failed");
+      return reply.code(503).send({ ok: false, error: "Could not change your plan right now" });
     }
   });
 

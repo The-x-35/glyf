@@ -35,6 +35,10 @@ class _ProfileTabState extends State<ProfileTab> {
   String _displayName = 'You';
   bool _serverUp = false;
   int? _remaining;
+  /// The plan the server is enforcing, when it answered; the phone's own
+  /// claim is only a fallback while offline.
+  String? _serverPlan;
+  int? _perDay;
   /// Private payments are always on; calendar and contacts when connected.
   int _connectedTools = 0;
   bool _contactsOn = false;
@@ -45,7 +49,9 @@ class _ProfileTabState extends State<ProfileTab> {
   void initState() {
     super.initState();
     _refresh();
-    _poll = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
+    // Local state is cheap to re-read; the two server calls in here are
+    // not, and every 5 s was 24 requests a minute from one idle screen.
+    _poll = Timer.periodic(const Duration(seconds: 15), (_) => _refresh());
   }
 
   @override
@@ -61,15 +67,16 @@ class _ProfileTabState extends State<ProfileTab> {
     final calendar = await GlyfBridge.calendarStatus();
     final nearby = await GlyfBridge.locationStatus();
     final up = await GlyfApi.healthy();
-    final remaining =
-        settings['proUnlocked'] == true ? null : await GlyfApi.meterRemaining();
+    final meter = await GlyfApi.meterStatus();
     final onboarding = await GlyfBridge.onboardingState();
     if (!mounted) return;
     setState(() {
       _settings = settings;
       _tone = tone;
       _serverUp = up;
-      _remaining = remaining;
+      _remaining = meter?.remaining;
+      _serverPlan = meter?.plan;
+      _perDay = meter?.perDay;
       _contactsOn = contacts['enabled'] == true;
       _connectedTools = (_contactsOn ? 1 : 0) + (calendar['enabled'] == true ? 1 : 0);
       _nearbyOn = nearby['enabled'] == true;
@@ -79,9 +86,35 @@ class _ProfileTabState extends State<ProfileTab> {
     });
   }
 
+  /// Turning a feature off is one tap on a row that reads like navigation,
+  /// so it asks first, the way turning it on does.
+  Future<bool> _confirmOff(String title, String body) async {
+    final go = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text('\n$body'),
+        actions: [
+          CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Turn off')),
+        ],
+      ),
+    );
+    return go == true;
+  }
+
   /// Gboard-style contacts search: explain, ask the OS, sync locally.
   Future<void> _toggleContacts() async {
     if (_contactsOn) {
+      if (!await _confirmOff('Turn off Contacts search?',
+          'The keyboard forgets the names, numbers and emails it kept.')) {
+        return;
+      }
       await GlyfBridge.contactsDisable();
       _refresh();
       return;
@@ -93,7 +126,7 @@ class _ProfileTabState extends State<ProfileTab> {
         title: const Text('Contacts search'),
         content: const Text(
           '\nLook up names, numbers and emails right from the keyboard. '
-          'Contacts stay on this device — nothing is uploaded.',
+          'Contacts stay on this device. Nothing is uploaded.',
         ),
         actions: [
           CupertinoDialogAction(
@@ -123,6 +156,10 @@ class _ProfileTabState extends State<ProfileTab> {
   /// keyboard cannot ask for location itself, so the app owns this.
   Future<void> _toggleNearby() async {
     if (_nearbyOn) {
+      if (!await _confirmOff('Turn off Nearby search?',
+          'The keyboard forgets where you are, so "near me" goes back to plain search.')) {
+        return;
+      }
       await GlyfBridge.locationDisable();
       _refresh();
       return;
@@ -155,7 +192,7 @@ class _ProfileTabState extends State<ProfileTab> {
         ? 'Nearby search is on'
         : switch (res['error']) {
             'denied' => 'Allow location access in Settings to use this',
-            'nofix' => 'No recent location yet — open Maps once, then retry',
+            'nofix' => 'No recent location yet. Open Maps once, then retry.',
             _ => 'Location isn\u2019t available on this device',
           };
     ScaffoldMessenger.of(context)
@@ -163,7 +200,10 @@ class _ProfileTabState extends State<ProfileTab> {
     _refresh();
   }
 
-  String get _plan => (_settings['plan'] as String?) ??
+  /// The server's plan when it answered (that is the one being enforced);
+  /// the phone's own record only while offline.
+  String get _plan => _serverPlan ??
+      (_settings['plan'] as String?) ??
       (_settings['proUnlocked'] == true ? 'plus' : 'free');
 
   /// Who is signed in, and Sign out beside it: under the name, where it is
@@ -327,10 +367,10 @@ class _ProfileTabState extends State<ProfileTab> {
                         Text(
                             _plan == 'max'
                                 ? 'Unlimited runs'
-                                : _plan == 'plus'
-                                    ? '400 runs a day'
-                                    : _remaining != null
-                                        ? '$_remaining runs left today'
+                                : _remaining != null
+                                    ? '$_remaining of ${_perDay ?? (_plan == 'plus' ? 400 : 40)} runs left today'
+                                    : _plan == 'plus'
+                                        ? '400 runs a day'
                                         : '40 runs a day',
                             style: const TextStyle(
                                 color: Glass.inkSoft, fontSize: 12.5)),
@@ -527,8 +567,14 @@ class _ProfileTabState extends State<ProfileTab> {
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              // Stretch, or the sheet shrinks to its longest line and floats
+              // in the middle of the screen with gaps on either side.
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
             const Text('Tone profile',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                     color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 10),
@@ -538,6 +584,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     color: Glass.inkSoft, fontSize: 14, height: 1.5)),
             const SizedBox(height: 8),
             const Text('On this device only. Never your words.',
+                textAlign: TextAlign.center,
                 style: TextStyle(color: Color(0xFFB6BAC3), fontSize: 12)),
             const SizedBox(height: 14),
             TextButton(

@@ -268,7 +268,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _locationOn = res['ok'] == true;
       _locationNote = switch (res['error']) {
         'denied' => 'Location is off for Glyf. You can enable it in Settings.',
-        'nofix' => 'No recent location yet — open Maps once, then try again.',
+        'nofix' => 'No recent location yet. Open Maps once, then try again.',
         'unavailable' => 'Location isn\u2019t available on this device.',
         _ => null,
       };
@@ -956,7 +956,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     } on GlyfApiException catch (e) {
       setState(() => _connectNote = e.message);
     } catch (_) {
-      setState(() => _connectNote = 'Engine offline — connect later from Profile');
+      setState(() => _connectNote = 'Engine offline. Connect later from Profile.');
     }
   }
 

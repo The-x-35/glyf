@@ -15,6 +15,8 @@ final class KeyView: UIControl {
     var isBound = false { didSet { updateBinding() } }
     /// Set by KeyboardView on shift changes; letters re-render.
     var shifted = false { didSet { updateFace(); setNeedsLayout() } }   // capitals sit 1pt lower
+    /// The return key's word when the field named its action; nil = the glyph.
+    var returnLabel: String? { didSet { updateFace() } }
 
     init(spec: KeySpec) {
         self.spec = spec
@@ -110,7 +112,13 @@ final class KeyView: UIControl {
             text = "glyf"
             label.font = .systemFont(ofSize: 15, weight: .regular)
         case .ret:
-            image = UIImage(systemName: "return")
+            if let returnLabel, !returnLabel.isEmpty {
+                // "search", "go", "send": Apple's key says it, so does this one.
+                text = returnLabel
+                label.font = .systemFont(ofSize: 16, weight: .regular)
+            } else {
+                image = UIImage(systemName: "return")
+            }
         case .delete:
             image = UIImage(systemName: "delete.left")
         case .shift:

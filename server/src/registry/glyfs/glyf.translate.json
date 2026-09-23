@@ -1,18 +1,18 @@
 {
   "id": "glyf.translate",
-  "version": 1,
+  "version": 2,
   "name": "Translate",
   "icon": "translate",
   "input": "field",
   "requires": { "fullAccess": true, "connectors": [], "wallet": false },
   "discloses": ["the text in your current field"],
-  "vars": { "target": "English" },
+  "vars": { "primary": "English", "secondary": "Hindi" },
   "steps": [
     {
       "id": "s1",
       "type": "llm",
       "model": "fast",
-      "prompt": "[[translate:{{target}}]]\nTranslate the message below into {{target}}. Keep the tone and register. Reply with ONLY the translation.\n\nMessage:\n{{input}}",
+      "prompt": "[[translate]]\nThe writer's two languages are {{primary}} and {{secondary}}. Detect the language of the message below. If it is {{primary}}, translate it into {{secondary}}; otherwise translate it into {{primary}}. Keep the tone and register. Reply with ONLY the translation.\n\nMessage:\n{{input}}",
       "out": "final"
     }
   ],

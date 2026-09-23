@@ -254,6 +254,10 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
       context: context,
       backgroundColor: Colors.white,
       isScrollControlled: true,
+      // Fifteen currencies outgrow the screen: keep the sheet under the
+      // status bar and let the list scroll instead of the title going under it.
+      useSafeArea: true,
+      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
       shape: const RoundedRectangleBorder(
           borderRadius:
               BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),

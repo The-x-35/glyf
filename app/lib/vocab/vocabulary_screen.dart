@@ -239,7 +239,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
     } on GlyfApiException catch (e) {
       _snack(e.message);
     } catch (_) {
-      _snack("Couldn't reach Glyf — try again");
+      _snack("Couldn't reach Glyf. Try again.");
     } finally {
       if (mounted) setState(() => _making = false);
     }

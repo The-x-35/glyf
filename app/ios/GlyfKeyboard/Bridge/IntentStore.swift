@@ -9,6 +9,12 @@ import Foundation
 
 final class IntentStore {
     static let ttl: TimeInterval = 120  // §7.3
+    /// How long a FINISHED result waits for the keyboard. The TTL bounds the
+    /// hop into the app (the part replay and stale links could abuse); once
+    /// the app has consumed the intent and written a result, the person may
+    /// read the review for a while before the keyboard is next up, and that
+    /// must not lose their dictation.
+    static let resultGrace: TimeInterval = 15 * 60
     static let shared = IntentStore()
 
     private let baseDir: URL?
@@ -118,10 +124,16 @@ final class IntentStore {
         return intent
     }
 
-    /// The keyboard's pending intent, when still valid.
+    /// A result the app finished recently enough to still hand over.
+    func hasFreshResult(_ id: String) -> Bool {
+        guard let result = readResult(intentId: id), result.status == "success" else { return false }
+        return now().timeIntervalSince(result.completedAt) <= Self.resultGrace
+    }
+
+    /// The keyboard's pending intent: still valid, or already answered.
     func pendingIntent() -> GlyfIntent? {
         guard let id = readPointer(), let intent = loadIntent(id: id),
-              !isExpired(intent) else { return nil }
+              !isExpired(intent) || hasFreshResult(id) else { return nil }
         return intent
     }
 
@@ -154,7 +166,7 @@ final class IntentStore {
     /// Keyboard side: read-and-clear in one step (results are single-read).
     func takeResultForPending() -> (GlyfIntent, GlyfResult)? {
         guard let id = readPointer(), let intent = loadIntent(id: id) else { return nil }
-        guard !isExpired(intent) else {
+        guard !isExpired(intent) || hasFreshResult(id) else {
             clearPending()
             return nil
         }

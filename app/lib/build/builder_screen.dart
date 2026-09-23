@@ -377,7 +377,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
           alignment: Alignment.centerRight,
           child: _bubble(
             color: Glass.pill,
-            child: _testing || _result.isEmpty
+            child: _testing
                 ? const Row(mainAxisSize: MainAxisSize.min, children: [
                     SizedBox(
                         width: 14,
@@ -388,6 +388,18 @@ class _BuilderScreenState extends State<BuilderScreen> {
                     Text('Writing…',
                         style: TextStyle(color: Colors.white70, fontSize: 15)),
                   ])
+                : _result.isEmpty
+                    // The test failed (the banner above says so): a spinner
+                    // here would claim it is still writing. Offer the retry.
+                    ? GestureDetector(
+                        onTap: _test,
+                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.refresh_rounded, size: 16, color: Colors.white70),
+                          SizedBox(width: 8),
+                          Text('Try again',
+                              style: TextStyle(color: Colors.white70, fontSize: 15)),
+                        ]),
+                      )
                 : Semantics(
                     identifier: 'builder:test-result',
                     child: Text(_result,

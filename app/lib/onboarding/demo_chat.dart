@@ -139,12 +139,14 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
     if (raw == null || !mounted) return;
     try {
       final fields = (jsonDecode(raw) as Map)['fields'] as List? ?? const [];
-      String? of(String kind) => fields
+      List<String> all(String kind) => fields
           .whereType<Map>()
           .where((f) => f['kind'] == kind && (f['value'] as String? ?? '').isNotEmpty)
           .map((f) => f['value'] as String)
-          .firstOrNull;
-      setState(() => _vault = TourVault(address: of('address'), upi: of('upi')));
+          .toList();
+      String? of(String kind) => all(kind).firstOrNull;
+      setState(() => _vault = TourVault(
+          address: of('address'), upi: of('upi'), addresses: all('address')));
     } catch (_) {}
   }
 
@@ -596,6 +598,8 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
         TextButton(
           onPressed: () {
             Telemetry.log('demo_skip', {'chat': _sc.id});
+            // Skipped is behind you too: the chats-left count moves on.
+            _patch(() => _th.done = true);
             _active + 1 < tourScenarios.length ? _open(_active + 1) : _finish();
           },
           child: Text(_active + 1 < tourScenarios.length ? 'Skip' : 'Done',
@@ -682,7 +686,7 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
         child: Center(
           child: Text.rich(TextSpan(children: [
             const TextSpan(text: 'Today ', style: TextStyle(fontWeight: FontWeight.w600)),
-            TextSpan(text: msgs.isNotEmpty ? msgs.first.at : '9:41 AM'),
+            TextSpan(text: msgs.isNotEmpty ? msgs.first.at : _clock()),
           ]), style: const TextStyle(fontSize: 11, color: _imMeta)),
         ),
       ),

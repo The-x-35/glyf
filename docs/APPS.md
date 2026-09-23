@@ -405,6 +405,8 @@ Each feature lists what it does, how it works on iOS, Android and in the Flutter
 - **Auto-capitalization follows the field**, like Apple's: `none` never, `allCharacters` always, `words` after spaces, `sentences` after `. ! ?`. Controlled by the `autocapitalize` setting. Flutter text fields must set `textCapitalization` for this to work (the Home try field uses `sentences`).
 - Delete fires on touch-down, repeats after 0.45 s at 90 ms, then 45 ms after 18 repeats.
 - Double space within 0.45 s after a letter or digit types ". " (`periodShortcut`).
+- **The return key says what it does** when the field has told it (`returnKeyType`): search, go, send, done, next, join, route, continue, call; the plain ⏎ glyph otherwise.
+- **WebKit number fields** (`type=number`, which iOS reports as `numbersAndPunctuation`) open on the 123 page, as Apple's keyboard does; every new field starts on the letters again.
 - Long-press a letter with accents (and no binding) for 320 ms: an accent popup drawn **inside** the keyboard frame (extensions cannot draw outside). Slide to pick. Includes `₹` on `$`.
 - Globe: tap switches keyboard; long-press shows the input mode list.
 - One-handed mode: 56pt inset on the left or right (`oneHanded`).
@@ -441,7 +443,7 @@ Android: the IME root is a vertical `LinearLayout` (toolbar 44dp + key view 216d
 **iOS (`Surfaces/Toolbar.swift`)**, 44pt strip above the keys:
 
 - **The menu button, always leftmost: an apps grid** (three rounded tiles and a fourth stood on its corner), drawn as a path in `appsGridPath`, not an SF Symbol. It opens the in-keyboard menu (section 5.9), and when a panel is open it becomes a plain ✕ that closes it. Section 8.4 has the whole design history of that slot, which took five passes.
-- Items (SF Symbols, **pointSize 21 regular**, order from `toolbarOrder`, hideable): Search, Clipboard, Vault, Dictation (mic), Emoji, Translate, Settings. Long-press an item to open its settings page in the menu.
+- Items (SF Symbols, **pointSize 21 regular**, order from `toolbarOrder`, hideable): Search, Clipboard, Vault, Dictation (mic), Emoji, Translate, Settings. Hold an item and it lifts: slide sideways to reorder, or drag it below the strip to hide it (it stays reachable in the g menu, and the menu's Settings → Toolbar items brings it back). A plain hold with no movement opens that Toolbar items screen.
 - **The row is spaced by one gap, not by slots.** `layoutSubviews` solves for a single number that is both the air between any two icons and the air at each end, then hands the stack exactly the width that produces it (`distribution = .equalSpacing`). Measured result at 402pt: margins 19.0 and 19.3, gaps 46.7 to 47.3. Spacing by equal **slots** instead (each icon centred in a slot of one width) spaces the centres evenly but leaves the end margins to whatever the first and last icons happen to measure, which came out 14pt against 21.3 because the apps grid is 20pt wide and the translate symbol is 32.
 - **Every icon gets 12pt of tap padding either side**, the same on both sides, so padding a target never moves an icon off the rhythm.
 - **The apps grid carries 3pt of extra air (`gridSlack`)** because an SF Symbol does not fill the box it is drawn in and a drawn path does. Without it the grid sat 3pt nearer its neighbour, and 3pt nearer the screen edge, than anything else on the row.
@@ -635,7 +637,7 @@ SPEC 6.3: the user should rarely need to leave the keyboard; the container app i
 
 - Store: `Engine/NotesStore.swift` and Kotlin `NotesStore` (`notes.json`, plain JSON because notes are user content they can already read; at most 2000 characters; secrets refused by `SecretScanner`).
 - App: `app/lib/notes/notes_screen.dart` (Profile → Notes).
-- Keyboard: on 2026-09-13 Arpit said "notes shud be editable from here also , we can remove notes and vault can serve the feature and shorthand can be another thing". So notes now live **inside the Vault screen** (with ✎ to edit), Shorthand got its own tile, and notes can be written without leaving the keyboard: `Surfaces/NoteEditSurface.swift` is a strip above the letter keys (✕, the note, a black Save; Return adds a new line). Android has the same strip (`enterNoteEdit`). `surface:notes` bindings open the Vault screen.
+- Keyboard: on 2026-09-13 Arpit said "notes shud be editable from here also , we can remove notes and vault can serve the feature and shorthand can be another thing". So notes now live **inside the Vault screen**, Shorthand got its own tile, and notes can be written without leaving the keyboard: `Surfaces/NoteEditSurface.swift` is a strip above the letter keys (✕, the note, a black Save; Return adds a new line). In the default look the Vault screen is the three-column card grid: notes are cards (tap inserts, **hold edits**) and the last card is **＋ New note**; the list-style screen of the other looks has the same ✎ and "＋ New note" row. Android has the same strip (`enterNoteEdit`). `surface:notes` bindings open the Vault screen.
 
 ### 5.11 Clipboard: history, categories, screenshots, and what iOS allows
 
@@ -732,6 +734,7 @@ UI test: `test03b_SearchSuiteCardsAndPasteFormat` (needs the mock server).
 - Tap a row → an inline menu (a pill row, because `UIAlertController` gets clipped in the keyboard window): **Link**, **Time + title**, **Details**.
 - **Month view** (Arpit, 2026-09-12 19:15: "in calendar option i also need a button to view months calendar along with my todays tasks"): a Month / Today toggle; the grid shows event dots and a pill on today; tapping a day inserts the date (for example "September 14"). At 22:26 Arpit asked "why does the month have soo much gap below it": the grid now stretches to fill the surface (rows computed from the days, cell height up to 62).
 - Tapping search collapses the surface to a 184pt strip with the letter keys below (same rule as emoji search).
+- The phone's own calendar (`Surfaces/CalendarSurface.swift`, Connected tools → Calendar): the day's events full width, **Insert date** ("September 24") beside **Share free time**, a Month grid to jump days, "Nothing planned" on an empty day and "Your calendar is not connected yet" plus **Connect calendar** before the app has synced one (`calendar.json`). Connect calendar opens the app's Connected tools screen.
 - The action "New event from my text" currently only opens the app. Offline shows "Offline" plus a hint to start the server.
 - UI test `test12_ConnectorSurface_C_InsertsEvent`.
 
@@ -804,7 +807,7 @@ SPEC 6.6: keyboard extensions cannot use the microphone, so the app records. "Po
 
 **Appearance** (`appearance`, 2026-09-13 00:54 after "fix dark mode too"): `auto` follows the host field's `keyboardAppearance` or the system style, like Apple's keyboard; `light` and `dark` force it. `resolveAppearance()` recomputes the tokens on every appearance and trait change and re-skins the chrome. The dark palette matches the system dark keyboard (0.42 gray keys, white glyphs, dark blur). Before this, the keyboard was forced light because of the white-only lock. Evidence: `docs/evidence/v4-light-keyboard.png`, `v4-dark-keyboard.png`.
 
-**Painted themes** (Profile → Themes, `app/lib/profile/themes_screen.dart`, 2026-09-13 15:04 after Gboard's theme screens): Default (Glass, Classic, Glow), **Colors** (six: ink `#17181C`, purple `#7C5CFF`, blue `#1F72E0`, green `#1FA968`, pink `#E0568C`, brown `#8A5A2E`), **Gradients** (Dusk, Ocean, Ember, Forest, identical color pairs in Flutter, Swift and Kotlin), and **Edit** (borders around keys, background dim slider 0 to 0.6). A painted theme replaces the blur, keys become white 24%, and all ink flips to white (`Glass.chromeDark`). On iOS the painted layer is a `CAGradientLayer` at index 0 and must be applied right after the first build. Not built: photo backgrounds and per-part color pickers.
+**Painted themes** (Profile → Keyboard → Look, `app/lib/profile/keyboard_screen.dart`, 2026-09-13 15:04 after Gboard's theme screens): Glyf (the system sheet), Glass, the colour boards (Stone, Lilac, Sky, Mint, Sand, Blush, Ink, Indigo, Midnight, Pine, Plum, Cocoa) and the gradients (Dusk, Ocean, Ember, Forest, identical colour pairs in Flutter, Swift and Kotlin), plus borders around keys and a dim slider. A colour or gradient **paints the board** the tile shows: on iOS a `CAGradientLayer` under the keys (`applyBoardPaint()`), the keys as the app's `KeyPalette` draws them (white on a light board, the board lifted 18.5% towards white on a dark one; function keys a shade darker or lighter), and the strip, panels and cards taking their ink from the board's brightness (`Glass.chromeDark`). Only the 16pt band iOS draws above every third-party keyboard keeps the system colour. Forcing **light** or **dark** in Appearance on a host whose sheet is the other way paints the matching Apple sheet colour under everything (`Glass.sheetPaint`), so keys and chrome agree; in **auto** nothing is painted and the host's sheet shows. Not built: photo backgrounds and per-part colour pickers.
 
 **Key style cards** also sit at the top of Profile → Keyboard, each a live mini preview of three keys with a check on the active one (pattern from Snapchat's theme grid on Mobbin). The in-keyboard Settings screen has segmented controls for Appearance and Key style.
 
@@ -870,7 +873,7 @@ On finish the app writes key sounds, haptics and the chosen keys into settings a
 
 - The server meter enforces caps per plan. The keyboard shows a runs chip at 8 or fewer and "Daily free runs used up" when capped. **No purchase UI ever appears inside the keyboard** (SPEC 6.3 and 6.16).
 - The paywall (`app/lib/profile/paywall_sheet.dart`) is a two-card sheet (Plus, Max badged "Best"), titled "You’re out of runs today" when opened by a cap. It opens from the Profile plan card and when a Builder test run hits the cap.
-- **Today the paywall grants the plan locally**: tapping Get Plus or Get Max writes `plan` and `proUnlocked` into settings with no payment, and the server trusts the plan the device sends. This was a deliberate stand-in ("StoreKit and receipt validation replace the same toggle at ship"). It must be replaced before any public release (section 11.2).
+- **The plan is the server's word.** Tapping Get Plus or Get Max calls `POST /me/plan`; the server changes the account's row only when `PLAN_SELF_SERVE=true` (dev and TestFlight), and answers 403 "Plans arrive with the App Store build" otherwise. The app writes the plan locally only after the server accepted it. The plan card and the keyboard's runs chip both read `GET /meter/:deviceId` (`remaining`, `plan`, `perDay`), so they can never disagree about what a person has. StoreKit and receipt validation replace the self-serve switch at ship (section 11.2).
 - UI test `test15_PaywallRenders`.
 
 ### 5.22 Tone profile (on-device learning of writing style)
@@ -1459,12 +1462,12 @@ There is no hosted CI pipeline; the scripts are run by hand.
 
 These were found by reading the code on 2026-09-16. None were reproduced at runtime.
 
-1. **Plans are free to take.** `paywall_sheet.dart` writes `plan` (and `proUnlocked`) to settings without any purchase, and the server honors the plan a device sends.
+1. **Plans have no receipts yet.** The paywall asks the server (`POST /me/plan`), which only says yes when `PLAN_SELF_SERVE=true`; production must keep that off until StoreKit lands (section 5.21).
 2. **Android refuses vault kinds the app offers.** `vault_screen.dart` offers `name, email, phone, address, upi, gst, wallet, link, social, bio, reply, custom`; Android `VaultStore.kt` only allows `address, upi, email, phone, handle, link, custom`, so saving a name, GST number, wallet, social link, bio or saved reply fails on Android with "That kind of info can't be stored".
 3. **Android vault rules are weaker than iOS**: no label check (password, pin, cvv and so on), no government-ID check, no 2000-character cap, a different trigger rule (lowercase letters and digits only), combos not validated against existing fields, and the keyboard's vault panel does not list combos. `SecretScanner.kt` patterns also differ from Swift.
 4. **Android keyboard gaps**: no delete repeat, single-pointer touch only, no caps lock, no accent popups, no one-handed mode, no globe key, the bottom-row emoji key does nothing, `surface:` and `connector:` bindings open the app, no tone outcome recording or tone hint, and the toolbar order and hidden settings are ignored.
 5. **Android emoji data has a corrupted token** (a Unicode replacement character followed by the word "against") in the sports group of `GlyfIME.kt`, masked by a filter. Harmless, but clean it up.
-6. **`glyf://open?path=...` deep links are not routed** in `main.dart` (only `intent` and `connected` are handled), so the keyboard's "Open in Glyf app" footer and the connector action only bring the app forward.
+6. ~~`glyf://open?path=...` deep links are not routed~~ Fixed 2026-09-24: `main.dart` routes `build`, `keys`, `vault`, `connectors`/`connected`, `settings` and `wallet` to their screens.
 7. **Profile → My Glyfs and Creator stats** do nothing when tapped.
 8. **Profile → Connected tools** has Connect and Disconnect only for Google.
 9. **iOS in-keyboard menu**: the Glyfs and Packs rows do nothing; Connectors is demo-only with a "soon" line; the Account screen always says "Free" (it ignores `plan`) and cannot be reached from the grid; the list-based `root` screen definition (with Notes and Account rows) is dead code behind the grid.

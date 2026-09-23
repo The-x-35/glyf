@@ -1,7 +1,7 @@
 import { signedInApp } from "./helpers.js";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { listInsert, parsePlan, parseRewriteOptions, planByRules, rewriteStyles } from "../src/lib/act.js";
+import { listInsert, looksLikeRewrite, parsePlan, parseRewriteOptions, planByRules, rewriteStyles } from "../src/lib/act.js";
 import type { PlaceCard } from "../src/lib/searchcards.js";
 import { renderPage } from "../src/lib/pages.js";
 
@@ -169,5 +169,24 @@ describe("rewrite options", () => {
       'here: {"work":"I will send it by 6 PM.","basic":"ya ok, will send it by 6","polite":"","shorter":"By 6."}',
       styles);
     expect(out.map(o => o.label)).toEqual(["Basic", "Professional", "Shorter"]);
+  });
+});
+
+describe("a plain reply standing in for the rewrite", () => {
+  const typed = "hey im late dont order without me";
+
+  it("accepts a message-shaped reply", () => {
+    expect(looksLikeRewrite("Hey, I'm late. Don't order without me!", typed)).toBe(true);
+  });
+
+  it("refuses the model's working, however it starts", () => {
+    expect(looksLikeRewrite(
+      "We need to rewrite the message in each style, preserving facts exactly. The message: hey im late", typed)).toBe(false);
+    expect(looksLikeRewrite("Here are the versions you asked for:", typed)).toBe(false);
+    expect(looksLikeRewrite('{"basic": "Hey, I\'m late"', typed)).toBe(false);
+  });
+
+  it("refuses an essay for a one-line message", () => {
+    expect(looksLikeRewrite("Hey. ".repeat(80), typed)).toBe(false);
   });
 });

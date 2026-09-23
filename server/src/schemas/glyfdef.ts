@@ -82,5 +82,9 @@ export const RunRequestSchema = z.object({
   plan: z.enum(["free", "plus", "max"]).default("free"),
   /** Shareable vault details; a prompt opts in with {{profile}}. */
   profile: z.record(z.string().max(40), z.string().max(400)).optional(),
+  /** The phone's coarse fix (the app's one, rounded); a tool step opts in
+   *  with {{lat}}/{{lon}}. Never stored. */
+  lat: z.number().min(-90).max(90).optional(),
+  lon: z.number().min(-180).max(180).optional(),
 });
 export type RunRequest = z.infer<typeof RunRequestSchema>;

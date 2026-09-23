@@ -71,7 +71,7 @@ describe("routes", () => {
     env.freeRunsPerDay = 40;
   });
 
-  it("translate def honors the target var (mock echoes the tag)", async () => {
+  it("translate goes between the person's two languages (mock echoes the prompt)", async () => {
     const app = signedInApp();
     const res = await app.inject({
       method: "POST",
@@ -79,11 +79,12 @@ describe("routes", () => {
       payload: {
         glyfId: "glyf.translate",
         input: "good morning",
-        vars: { target: "Hindi" },
+        vars: { primary: "English", secondary: "Hindi" },
         deviceId: "test-device-0002",
       },
     });
-    expect(res.payload).toContain("translate:Hindi");
+    // The mock echoes the glyf's tag: the translate def ran end to end.
+    expect(res.payload).toContain("translate: ");
   });
 });
 

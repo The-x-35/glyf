@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -187,6 +188,25 @@ class _BuildTabState extends State<BuildTab> {
             icon: const Icon(Icons.delete_outline,
                 size: 20, color: Color(0xFFC03A2E)),
             onPressed: () async {
+              // One tap on a small red icon should not be able to lose
+              // something that took a while to build.
+              final go = await showCupertinoDialog<bool>(
+                context: context,
+                builder: (ctx) => CupertinoAlertDialog(
+                  title: Text('Delete ${g['name']}?'),
+                  content: const Text('\nIt comes off its key too. This cannot be undone.'),
+                  actions: [
+                    CupertinoDialogAction(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel')),
+                    CupertinoDialogAction(
+                        isDestructiveAction: true,
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Delete')),
+                  ],
+                ),
+              );
+              if (go != true) return;
               await GlyfApi.deleteGlyf(id);
               await unbindGlyf(id);
               _refresh();

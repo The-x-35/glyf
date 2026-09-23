@@ -107,6 +107,9 @@ final class GlyfBridge {
                let dir = AppGroupStore.bridgeDir,
                let data = json.data(using: .utf8) {
                 try? data.write(to: dir.appendingPathComponent("settings.json"), options: .atomic)
+                // The native store's cached copy is now stale; the next
+                // native update must start from this file, not overwrite it.
+                SettingsStore.invalidate()
                 result(true)
             } else {
                 result(false)

@@ -92,6 +92,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var actRunInput = ""
     private var actHasResult = false
     private var actAccepted = false
+    /// Free models answer late or not at all a few times an hour. One run
+    /// gets one quiet second try before the person is told anything.
+    private var actRetryBudget = 0
     private var emoji: EmojiBoard?
     /// Gboard's clipboard: its own header, pinned and recent as card columns.
     private var clipboardPanel: ClipboardPanel?
@@ -202,6 +205,39 @@ final class GlyfKeyboardViewController: UIInputViewController {
         acceptPasted(itemProviders)
     }
 
+    /// The keyboard type the traits were last read for, so a focus moving
+    /// between fields (Safari's next arrow) is noticed without resetting the
+    /// page on every keystroke.
+    private var lastKeyboardType: UIKeyboardType?
+
+    /// What the field says about its keys: a return key that names its
+    /// action, and WebKit's number fields (numbers-and-punctuation), which
+    /// Apple's keyboard opens on the 123 page. A new field starts on the
+    /// letters, the way the system keyboard does.
+    private func adoptFieldTraits(fresh: Bool) {
+        let type = textDocumentProxy.keyboardType
+        keyboardView.returnLabel = Self.returnLabel(for: textDocumentProxy.returnKeyType)
+        guard fresh || type != lastKeyboardType else { return }
+        lastKeyboardType = type
+        keyboardView.setMode(type == .numbersAndPunctuation ? .symbols1 : .letters)
+    }
+
+    /// Apple's return key says what it does when the field has told it.
+    static func returnLabel(for type: UIReturnKeyType?) -> String? {
+        switch type {
+        case .go: return "go"
+        case .search, .google, .yahoo: return "search"
+        case .send: return "send"
+        case .done: return "done"
+        case .next: return "next"
+        case .join: return "join"
+        case .route: return "route"
+        case .continue: return "continue"
+        case .emergencyCall: return "call"
+        default: return nil
+        }
+    }
+
     /// Apple behavior: the keyboard follows the HOST (field appearance /
     /// system style), unless the user forces light or dark in settings.
     private func resolveAppearance() {
@@ -221,6 +257,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let dim = SettingsStore.current.themeBrightness ?? 0
         overrideUserInterfaceStyle =
             pref == "light" ? .light : pref == "dark" ? .dark : .unspecified
+        // iOS draws the sheet for the HOST's appearance whatever we say, so a
+        // forced light or dark that disagrees with it paints its own sheet;
+        // in auto the host's sheet is right and nothing is painted.
+        forcedSheet = (pref != "auto" && dark != hostDark) ? Glass.sheetPaint(dark: dark) : nil
+        backdrop?.backgroundColor = forcedSheet ?? .clear
         if Glass.isDark != dark || Glass.keyTheme != theme
             || Glass.themeBg != bg || Glass.keyBorders != borders
             || Glass.themeDim != dim {
@@ -239,11 +280,42 @@ final class GlyfKeyboardViewController: UIInputViewController {
         guard didBuild else { return }
         toolbar.applyPalette()
         keyboardView.rebuild()
+        applyBoardPaint()
+    }
+
+    /// The painted board of a colour or gradient theme.
+    private var boardLayer: CAGradientLayer?
+
+    /// A colour or gradient theme paints the board the tiles in the app
+    /// promise (Gboard's themes do the same); with none, the system's own
+    /// sheet shows through, or the forced one when the person overrode the
+    /// host's appearance.
+    private func applyBoardPaint() {
+        guard let backdrop else { return }
+        let colors = Glass.boardColors
+        guard !colors.isEmpty else {
+            boardLayer?.removeFromSuperlayer()
+            boardLayer = nil
+            backdrop.backgroundColor = forcedSheet ?? .clear
+            return
+        }
+        let layer = boardLayer ?? CAGradientLayer()
+        layer.frame = backdrop.bounds
+        layer.colors = (colors.count == 1 ? [colors[0], colors[0]] : colors).map(\.cgColor)
+        layer.startPoint = CGPoint(x: 0, y: 0)
+        layer.endPoint = CGPoint(x: 1, y: 1)
+        if boardLayer == nil { backdrop.layer.insertSublayer(layer, at: 0) }
+        boardLayer = layer
+        backdrop.backgroundColor = .clear
     }
 
     /// Set once light/dark changes while the keyboard is up; cleared when it
     /// goes away, so the next field's own appearance is read fresh.
     private var appearanceFlipped = false
+
+    /// The sheet we paint when the person forces an appearance the host does
+    /// not have; nil (transparent) whenever the host's own sheet is right.
+    private var forcedSheet: UIColor?
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
         super.traitCollectionDidChange(previous)
@@ -294,6 +366,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         if didBuild, surface != .none { setSurface(.none, animated: false) }
         keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
         log.log("GLYF_KB ctx autocap=\(self.textDocumentProxy.autocapitalizationType?.rawValue ?? -1) kbType=\(self.textDocumentProxy.keyboardType?.rawValue ?? -1)")
+        adoptFieldTraits(fresh: true)
         keyboardView.rebuild()
         keyboardView.refreshBindings()
         toolbar.reloadItems()
@@ -373,6 +446,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
         layoutSurfaces()
+        if let boardLayer, boardLayer.frame != backdrop.bounds {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            boardLayer.frame = backdrop.bounds
+            CATransaction.commit()
+        }
     }
 
     private func build() {
@@ -390,7 +469,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // inside it only shows up as a second, mismatched band. The keys sit
         // on the system's sheet, in every theme (see Glass: keys on the sheet).
         backdrop = UIView()
-        backdrop.backgroundColor = .clear
+        backdrop.backgroundColor = forcedSheet ?? .clear
         backdrop.isUserInteractionEnabled = false
         backdrop.frame = content.bounds
         backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -402,6 +481,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         keyboardView.delegate = self
         keyboardView.clipsToBounds = false
         content.addSubview(keyboardView)
+        applyBoardPaint()
     }
 
     // MARK: Surface layout
@@ -879,6 +959,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         // Field flavor can change per focus (email → number pad → text).
         keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
+        adoptFieldTraits(fresh: false)
         syncAutoShift()
         // Scheduled, not immediate: this fires after our own insert too, so
         // running the engine and the strip here undid the coalescing that
@@ -921,8 +1002,16 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// keyboard looks again a few times a second while it is up.
     private func startTourWatch() {
         tourTimer?.invalidate()
-        tourTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
-            self?.applyTourHint()
+        // A few times a second while a tour is coaching; otherwise only
+        // often enough to notice one starting. Each tick is a stat of the
+        // settings file, and the idle keyboard used to do it 13 times a
+        // second across the App Group.
+        let interval: TimeInterval = tourStep != nil ? 0.4 : 2.0
+        tourTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.applyTourHint()
+            let wanted: TimeInterval = self.tourStep != nil ? 0.4 : 2.0
+            if self.tourTimer?.timeInterval != wanted { self.startTourWatch() }
         }
     }
 
@@ -948,8 +1037,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 applySurfaceLayout(animated: true)
             }
             // A new step, or the address just copied, changes which chips
-            // the strip may show.
+            // the strip may show. The copy is looked at NOW, not when the
+            // pasteboard probe's throttle next allows it: the tour's Pay chip
+            // used to wait for the next keystroke.
             coachedStep = arranged
+            lastClipProbe = 0
+            cachedPaste = nil
             updateCandidates()
             return
         }
@@ -1234,7 +1327,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // offer itself (tapping reads, which is the moment iOS asks).
         // History only knows a copy once it has been read; a newer one shows
         // as an offer instead of the older text.
-        let paste = pasteOffer(tailEmpty: tail.isEmpty)
+        var paste = pasteOffer(tailEmpty: tail.isEmpty)
+        // A digit pad can only take digits: a copied link is no offer there.
+        if keyboardView.context.isPad, let p = paste,
+           !p.allSatisfy({ $0.isNumber || "+-() .".contains($0) }) {
+            paste = nil
+        }
         var chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
                               rates: RatesStore.shared.snapshot())
@@ -1394,7 +1492,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         defer { tStrip = Perf.ms(tSt) }
         let others = s.alternatives.map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
         if let fix = s.autocorrect {
-            toolbar.showSuggestions([.init(text: word, kind: .literal), .init(text: fix, kind: .correction)]
+            // With "Correct automatically" off the space keeps the word, so
+            // the fix is offered as a plain word rather than promised in bold.
+            let fixKind: GlyfToolbar.Suggestion.Kind =
+                SettingsStore.current.autocorrectApply == false ? .word : .correction
+            toolbar.showSuggestions([.init(text: word, kind: .literal), .init(text: fix, kind: fixKind)]
                                     + others.prefix(1))
         } else if others.isEmpty {
             toolbar.showSuggestions([])
@@ -1405,6 +1507,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     private func suggestions(for word: String, before: String?, policy: TypingEngine.Policy) -> TypingEngine.Suggestions? {
         guard let engine = typing else { return nil }
+        // A number is not a misspelt word, and a ;trigger is on its way to
+        // becoming shorthand: neither wants the dictionary's guesses.
+        guard let first = word.first, !first.isNumber, first != ";" else { return nil }
         let head = String((before ?? "").dropLast(word.count))
         return engine.suggestions(
             typed: word,
@@ -1744,6 +1849,18 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         applySurfaceLayout(animated: true)
     }
 
+    /// Spends the retry on a failed run; true when the run is being tried again.
+    private func retryAct(after message: String) -> Bool {
+        guard actRetryBudget > 0, surface == .act else { return false }
+        actRetryBudget -= 1
+        log.log("GLYF_RUN retry after: \(message, privacy: .public)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let self, self.surface == .act else { return }
+            self.runAct()
+        }
+        return true
+    }
+
     private func startAct(clipboard text: String) {
         actSkill = nil
         actSkillTitle = nil
@@ -1752,6 +1869,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         actInput = ("", "") // a copied text is acted on, never deleted from the field
         actRunInput = text.trimmingCharacters(in: .whitespacesAndNewlines)
         actAccepted = false
+        actRetryBudget = 1
         setSurface(.act)
         runAct()
     }
@@ -1764,6 +1882,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         actInput = (before, after)
         actRunInput = (before + after).trimmingCharacters(in: .whitespacesAndNewlines)
         actAccepted = false
+        actRetryBudget = 1
         setSurface(.act)
         runAct()
     }
@@ -1778,6 +1897,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         actSkillTitle = nil
         actVars = [:]
         actRunInput = input.text
+        actRetryBudget = 1
         // Field text is swapped on Insert; clipboard or empty input only inserts.
         actInput = input.source == "field"
             ? (beforeContext ?? "", input.after) : ("", "")
@@ -1793,10 +1913,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         if let skill = actSkill {
             let title = actSkillTitle ?? GlyfCatalog.title(for: skill.glyfId)
             act.showWorking(intent: actRunInput, title: title, keyLetter: skill.letter)
-            var vars = actVars
-            if skill.glyfId == "glyf.translate" {
-                vars["target"] = SettingsStore.current.translateTarget
-            }
+            let vars = actVars   // BackendClient adds the two languages for glyf.translate
             var streamed = ""
             actTask = BackendClient.shared.run(
                 glyfId: skill.glyfId, input: actRunInput, vars: vars,
@@ -1812,6 +1929,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                 },
                 onError: { [weak self] message in
                     guard let self, self.surface == .act else { return }
+                    if self.retryAct(after: message) { return }
                     self.act?.showFailure(message)
                 })
             return
@@ -1829,6 +1947,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                                  text: result.text, insert: result.insert ?? result.text ?? "")
         }, onError: { [weak self] message in
             guard let self, self.surface == .act else { return }
+            if self.retryAct(after: message) { return }
             self.act?.showFailure(message)
         })
     }
@@ -1893,6 +2012,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         actVars = vars
         actIntent = nil
         actRunInput = input.text
+        actRetryBudget = 1
         actInput = input.source == "field"
             ? (beforeContext ?? "", input.after) : ("", "")
         actAccepted = false
@@ -2273,7 +2393,11 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             return
         }
         if case .pay(let address, let amount) = chip {
-            // The keyboard never signs: the app's Privy wallet does.
+            // The keyboard never signs: the app's Privy wallet does. The copy
+            // has now been used: the chip must not come back for it on every
+            // empty field until something else is copied.
+            ClipContext.markDone()
+            cachedPaste = nil
             var path = "wallet?to=\(address)"
             if let amount { path += "&amount=\(amount)" }
             openApp(path: path)
@@ -2402,8 +2526,14 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
     }
 
     func shellStateChanged() {
-        // Settings toggles may change layout-affecting state.
+        // A setting changed under the menu: appearance and one-handed re-skin
+        // the keys, the number row changes the height. All of it lands now,
+        // not the next time the keyboard comes up.
+        resolveAppearance()
+        keyboardView.rebuild()
         keyboardView.refreshBindings()
+        if heightConstraint?.constant != totalHeight { applySurfaceLayout(animated: true) }
+        toolbar.reloadItems()
         // The strip shows which panel screen is open.
         let header = panelHeader()
         lastPanelTitle = .some(header.1)
@@ -2433,7 +2563,9 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
 
     func shellRunGlyf(_ id: String) {
         setSurface(.none)
-        startSkill(glyfId: id, letter: "")
+        // The HUD shows the letter the glyf sits on; one with no key wears the g.
+        let letter = SettingsStore.current.bindings.first { $0.value == id }?.key ?? ""
+        startSkill(glyfId: id, letter: letter)
     }
 
     func shellEditNote(id: String?, text: String) {
@@ -2496,8 +2628,15 @@ extension GlyfKeyboardViewController: SearchSurfaceDelegate {
         // Bypass the inline editor — results land in the host field.
         let target = inlineTarget
         inlineTarget = nil
-        hostInsert(text)
+        hostInsert(Self.spaced(text, after: beforeContext))
         inlineTarget = target
+    }
+
+    /// A pasted card or contact must not weld itself onto the word before
+    /// the caret ("...ooSunset is at" was what a tap gave).
+    static func spaced(_ text: String, after before: String?) -> String {
+        guard let last = before?.last, !last.isWhitespace, !last.isNewline else { return text }
+        return " " + text
     }
 
     func searchOpenTranslate() {
@@ -2614,7 +2753,7 @@ extension GlyfKeyboardViewController: ConnectorSurfaceDelegate {
 
     func connectorInsert(_ text: String) {
         setSurface(.none)
-        hostInsert(text)
+        hostInsert(Self.spaced(text, after: beforeContext))
         syncAutoShift()
         updateCandidates()
     }

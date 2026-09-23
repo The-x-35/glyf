@@ -9,9 +9,11 @@ import 'dart:ui' show Color;
 /// a fixed rewrite), the check here accepts what the real keyboard produces.
 
 class TourVault {
-  const TourVault({this.address, this.upi});
+  const TourVault({this.address, this.upi, this.addresses = const []});
   final String? address;
   final String? upi;
+  /// Every saved address: whichever one is sent answers "what's your address?".
+  final List<String> addresses;
 }
 
 class TourBeat {
@@ -114,8 +116,8 @@ final tourScenarios = <TourScenario>[
     beats: [
       TourBeat(
         them: ['hi beta 🎉', 'sending you something for your birthday', "what's your address?"],
-        goal: (t, v) => v.address != null
-            ? _has(t, v.address!)
+        goal: (t, v) => v.addresses.isNotEmpty
+            ? v.addresses.any((a) => _has(t, a))
             : RegExp(r'\d').hasMatch(t) && t.trim().length > 12,
         reply: (_) => ['got it beta ❤️', "it'll be there by friday"],
         tapback: '❤️',

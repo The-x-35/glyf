@@ -73,6 +73,14 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         if mergedVars["toneHint"] == nil {
             mergedVars["toneHint"] = ToneProfile.currentHint()
         }
+        // Translate goes between the person's two languages, whichever way
+        // the text is facing: the same pair the T-key strip uses, so the
+        // toolbar, the bar and the strip never disagree on the destination.
+        if glyfId == "glyf.translate" {
+            let pair = Self.translatePair
+            if mergedVars["primary"] == nil { mergedVars["primary"] = pair.primary }
+            if mergedVars["secondary"] == nil { mergedVars["secondary"] = pair.secondary }
+        }
         var body: [String: Any] = [
             "glyfId": glyfId,
             "input": input,
@@ -82,6 +90,9 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
             "plan": s.plan ?? "free",      // §6.16 (receipt validation: M7-ship)
         ]
         if let profile = Self.shareableProfile() { body["profile"] = profile }
+        // Where the phone is (coarse, the app's one fix), so a skill like
+        // Weather can answer for here when the field names no place.
+        if let lat = s.lastLat, let lon = s.lastLon { body["lat"] = lat; body["lon"] = lon }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         let task = session.dataTask(with: req)

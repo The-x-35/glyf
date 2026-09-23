@@ -133,12 +133,24 @@ export async function runTool(
       return `[${rows.join(",")}]`;
     }
     case "weather.now": {
-      const place = args.place || "Bengaluru";
-      const geo = await fetchJSON(
-        `https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(place)}`,
-        meta.timeoutMs) as { results?: { latitude: number; longitude: number; name: string; country: string }[] };
-      const hit = geo.results?.[0];
-      if (!hit) throw new Error(`couldn't find '${place}'`);
+      // What was in the field is rarely just a place: "hey are you coming
+      // tonight" used to go to the geocoder whole and fail. Try the text as
+      // a place, then any place named inside it, then where the phone is.
+      type Hit = { latitude: number; longitude: number; name: string };
+      let hit: Hit | undefined;
+      for (const name of placeCandidates(args.place ?? "")) {
+        const geo = await fetchJSON(
+          `https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(name)}`,
+          meta.timeoutMs) as { results?: Hit[] };
+        if (geo.results?.[0]) { hit = geo.results[0]; break; }
+      }
+      const lat = Number(args.lat), lon = Number(args.lon);
+      if (!hit && args.lat && args.lon && Number.isFinite(lat) && Number.isFinite(lon)) {
+        hit = { latitude: lat, longitude: lon, name: "Here" };
+      }
+      if (!hit) {
+        throw new ToolError("Which place? Hold W on a city name, or turn on Nearby search in the Glyf app.");
+      }
       const wx = await fetchJSON(
         `https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}` +
         `&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m` +
@@ -507,6 +519,29 @@ export async function runTool(
     default:
       throw new Error(`tool '${id}' has no executor`);
   }
+}
+
+/** A tool's refusal that the person can act on, worded for them; the run
+ *  route shows these as they are, unlike the errors we own. */
+export class ToolError extends Error {
+  readonly userFacing = true;
+}
+
+/** Names that could be a place, most likely first: the text itself when it
+ *  is short and plain, whatever follows "in"/"at", then capitalised words. */
+export function placeCandidates(text: string): string[] {
+  const out: string[] = [];
+  const clean = text.replace(/[?!.,;:]+\s*$/g, "").trim();
+  if (!clean) return out;
+  const words = clean.split(/\s+/);
+  if (words.length <= 4 && !/[?!.,;:]/.test(clean)) out.push(clean);
+  const after = clean.match(/\b(?:in|at|for|to)\s+([A-Z][\p{L}'-]*(?:\s+[A-Z][\p{L}'-]*){0,2})/u);
+  if (after && !out.includes(after[1])) out.push(after[1]);
+  for (const w of words) {
+    const bare = w.replace(/[^\p{L}'-]/gu, "");
+    if (/^[A-Z][\p{L}'-]{2,}$/u.test(bare) && !out.includes(bare)) out.push(bare);
+  }
+  return out.slice(0, 4);
 }
 
 /** §8.4-style determinism for tests: canned tool outputs in mock mode. */

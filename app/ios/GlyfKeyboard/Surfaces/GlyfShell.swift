@@ -84,6 +84,10 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     enum VaultCard {
         case text(label: String, value: String, insert: String)
         case image(VaultImage)
+        /// A note inserts on tap and opens for editing on a hold.
+        case note(GlyfNote)
+        /// The one card that adds something: a note written right here.
+        case newNote
     }
 
     private var vaultCards: [VaultCard] = []
@@ -338,16 +342,19 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             .text(label: $0.label.uppercased(), value: $0.value, insert: $0.value)
         }
         for note in NotesStore.shared.load() {
-            vaultCards.append(.text(label: "NOTE", value: note.text, insert: note.text))
+            vaultCards.append(.note(note))
         }
         for image in vault.images {
             vaultCards.append(.image(image))
         }
+        vaultCards.append(.newNote)
         for (i, item) in vaultCards.enumerated() {
             let labelText: String
             let valueText: String
             switch item {
             case .text(let l, let v, _): labelText = l; valueText = v
+            case .note(let n): labelText = "NOTE"; valueText = n.text
+            case .newNote: labelText = ""; valueText = "＋ New note"
             case .image(let img): labelText = "IMAGE"; valueText = ShellCell.age(img.addedAt)
             }
             let cell = UIControl()
@@ -391,29 +398,54 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                              .font: UIFont.systemFont(ofSize: 11, weight: .semibold),
                              .foregroundColor: Glass.textSecondary])
             label.isUserInteractionEnabled = false
-            label.isHidden = { if case .image = item { return true }; return false }()
+            label.isHidden = {
+                switch item { case .image, .newNote: return true; default: return false }
+            }()
             cell.addSubview(label)
 
             let value = UILabel()
             value.tag = 3
             value.text = valueText
             value.font = .systemFont(ofSize: 13, weight: .medium)
-            value.textColor = Glass.textPrimary
+            value.textColor = { if case .newNote = item { return Glass.accentPrimary }; return Glass.textPrimary }()
             value.lineBreakMode = .byTruncatingTail
             value.isUserInteractionEnabled = false
-            value.isHidden = { if case .text = item { return false }; return true }()
+            value.isHidden = { if case .image = item { return true }; return false }()
+            if case .newNote = item {
+                value.textAlignment = .center
+                value.numberOfLines = 1
+            }
             cell.addSubview(value)
 
             cell.addAction(UIAction { [weak self] _ in
                 switch item {
                 case .text(_, _, let insert):
                     self?.delegate?.shellInsertText(insert)
+                case .note(let n):
+                    self?.delegate?.shellInsertText(n.text)
+                case .newNote:
+                    self?.delegate?.shellEditNote(id: nil, text: "")
                 case .image(let img):
                     self?.delegate?.shellCopyImage(id: img.id)
                 }
             }, for: .touchUpInside)
+            if case .note = item {
+                let hold = UILongPressGestureRecognizer(target: self, action: #selector(noteCardHeld(_:)))
+                hold.minimumPressDuration = 0.4
+                cell.addGestureRecognizer(hold)
+                cell.accessibilityHint = "Hold to edit"
+            }
             vaultGrid.addSubview(cell)
         }
+    }
+
+    /// Holding a note card opens it in the editor strip, the way the list's
+    /// ✎ does; a tap keeps inserting.
+    @objc private func noteCardHeld(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began, let cell = g.view,
+              vaultCards.indices.contains(cell.tag - 2000),
+              case .note(let n) = vaultCards[cell.tag - 2000] else { return }
+        delegate?.shellEditNote(id: n.id, text: n.text)
     }
 
     private func layoutVaultGrid() {
@@ -521,6 +553,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                 .toggle(title: "Autocorrect",
                         value: { SettingsStore.current.autocorrect },
                         set: { v in SettingsStore.update { $0.autocorrect = v } }),
+                .toggle(title: "Correct automatically",
+                        value: { SettingsStore.current.autocorrectApply ?? true },
+                        set: { v in SettingsStore.update { $0.autocorrectApply = v } }),
                 .toggle(title: "Auto-capitalize",
                         value: { SettingsStore.current.autocapitalize },
                         set: { v in SettingsStore.update { $0.autocapitalize = v } }),
@@ -695,6 +730,11 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             delegate?.shellCopyImage(id: image.id)
         case .binding:
             break // unbinding is the ✕ button, never a whole-row surprise
+        case .toggle(_, let valueFn, let set):
+            // The switch is small and sits at the card's edge, where a
+            // thumb's tap often lands just past it; the whole card flips it.
+            set(!valueFn())
+            render()
         default:
             break
         }
@@ -870,9 +910,13 @@ private final class ShellCell: UITableViewCell {
         reset()
 
         switch row {
-        case .nav(let icon, let t, _, let target):
+        case .nav(let icon, let t, let detail, let target):
             setIcon(icon)
             title.text = t
+            if let detail, !detail.isEmpty {
+                value.isHidden = false
+                value.text = detail
+            }
             if target != "!none" { setTrailing(chevron()) }
         case .insert(let icon, let t, _):
             setIcon(icon)
@@ -891,6 +935,7 @@ private final class ShellCell: UITableViewCell {
             }, for: .valueChanged)
             sw.frame = CGRect(x: 0, y: 0, width: 42, height: 26)
             setTrailing(sw)
+            accessibilityIdentifier = "toggle:\(t)"
         case .segmented(let t, let options, let valueFn, let set):
             title.text = t
             let seg = UISegmentedControl(items: options)

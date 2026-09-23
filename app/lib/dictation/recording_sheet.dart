@@ -44,6 +44,9 @@ class _RecordingSheetState extends State<RecordingSheet> {
   Timer? _ticker;
   DateTime? _stopAt;
   int? _readyMs;
+  /// "Nothing was heard" can simply be tried again; a microphone or speech
+  /// permission that was refused cannot, and that one points at Settings.
+  bool _retryable = false;
 
   static const _maxSeconds = 60;
 
@@ -72,9 +75,20 @@ class _RecordingSheetState extends State<RecordingSheet> {
     } else {
       setState(() {
         _phase = _Phase.error;
+        _retryable = false;
         _error = res.error ?? 'Could not start recording';
       });
     }
+  }
+
+  Future<void> _tryAgain() async {
+    setState(() {
+      _phase = _Phase.starting;
+      _live = '';
+      _seconds = 0;
+      _error = null;
+    });
+    await _start();
   }
 
   Future<void> _stop() async {
@@ -86,7 +100,8 @@ class _RecordingSheetState extends State<RecordingSheet> {
     if (raw.isEmpty) {
       setState(() {
         _phase = _Phase.error;
-        _error = 'Nothing was heard — try again closer to the mic';
+        _retryable = true;
+        _error = 'Nothing was heard. Try again a little closer to the mic.';
       });
       return;
     }
@@ -107,7 +122,9 @@ class _RecordingSheetState extends State<RecordingSheet> {
       if (!mounted) return;
       setState(() {
         assign(text.trim());
-        if (isDefault && _stopAt != null) {
+        // "ready in N ms" is a claim about text that arrived, so an empty
+        // answer (the server gave up) leaves the line off.
+        if (isDefault && _stopAt != null && text.trim().isNotEmpty) {
           _readyMs = DateTime.now().difference(_stopAt!).inMilliseconds;
         }
       });
@@ -135,7 +152,7 @@ class _RecordingSheetState extends State<RecordingSheet> {
     final messenger = ScaffoldMessenger.maybeOf(context);
     Navigator.of(context).pop();
     messenger?.showSnackBar(const SnackBar(
-      content: Text('Ready — switch back to where you were typing'),
+      content: Text('Ready. Switch back to where you were typing.'),
       duration: Duration(seconds: 2),
     ));
   }
@@ -281,12 +298,12 @@ class _RecordingSheetState extends State<RecordingSheet> {
               : SingleChildScrollView(
                   child: Text(
                     current.isEmpty
-                        ? 'Cleanup unavailable — Raw still works'
+                        ? 'Cleanup is not available right now. Raw still works.'
                         : current,
                     style: TextStyle(
                         color: current.isEmpty
                             ? Glass.warning
-                            : Colors.white,
+                            : Glass.ink,
                         fontSize: 16,
                         height: 1.45),
                   ),
@@ -319,13 +336,18 @@ class _RecordingSheetState extends State<RecordingSheet> {
       Text(_error ?? 'Something went wrong',
           textAlign: TextAlign.center,
           style: TextStyle(color: Glass.ink, fontSize: 16)),
-      const SizedBox(height: 8),
-      Text('Microphone & speech permissions live in Settings → Glyf',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-              color: Glass.inkSoft, fontSize: 13)),
+      if (!_retryable) ...[
+        const SizedBox(height: 8),
+        Text('Microphone and speech permissions live in Settings > Apps > Glyf',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: Glass.inkSoft, fontSize: 13)),
+      ],
       const Spacer(),
-      PillButton(label: 'Open Settings', onPressed: GlyfBridge.openSettings),
+      if (_retryable)
+        PillButton(label: 'Try again', onPressed: _tryAgain)
+      else
+        PillButton(label: 'Open Settings', onPressed: GlyfBridge.openSettings),
       TextButton(
           onPressed: _cancel,
           child: Text('Close',

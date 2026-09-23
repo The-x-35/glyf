@@ -1,17 +1,35 @@
 {
   "id": "keyless.weather",
-  "version": 1,
+  "version": 2,
   "name": "Weather",
   "icon": "cloud.sun",
   "input": "field",
-  "requires": { "fullAccess": true, "connectors": [], "wallet": false },
-  "discloses": ["the place name in your field (sent to Open-Meteo)"],
-  "vars": { "place": "" },
-  "steps": [
-    { "id": "s1", "type": "if", "cond": "{{input}} != ''", "then": ["s2"], "else": ["s3"] },
-    { "id": "s2", "type": "format", "template": "{{input}}", "out": "place2" },
-    { "id": "s3", "type": "format", "template": "Bengaluru", "out": "place2" },
-    { "id": "s4", "type": "tool", "tool": "weather.now", "args": { "place": "{{place2}}" }, "out": "final" }
+  "requires": {
+    "fullAccess": true,
+    "connectors": [],
+    "wallet": false
+  },
+  "discloses": [
+    "the place name in your field, or your approximate location (sent to Open-Meteo)"
   ],
-  "output": { "mode": "preview", "from": "final" }
+  "vars": {
+    "place": ""
+  },
+  "steps": [
+    {
+      "id": "s1",
+      "type": "tool",
+      "tool": "weather.now",
+      "args": {
+        "place": "{{input}}",
+        "lat": "{{lat}}",
+        "lon": "{{lon}}"
+      },
+      "out": "final"
+    }
+  ],
+  "output": {
+    "mode": "preview",
+    "from": "final"
+  }
 }

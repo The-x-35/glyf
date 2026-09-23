@@ -284,6 +284,9 @@ enum SettingsStore {
               let data = try? JSONEncoder().encode(s) else { return }
         let url = dir.appendingPathComponent(fileName)
         try? merged(data, over: try? Data(contentsOf: url)).write(to: url, options: .atomic)
+        // Our own write is not "the app changed it": remember the stamp so the
+        // next reloadIfChanged() does not throw the cache away for nothing.
+        loadedStamp = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
         NotificationCenter.default.post(name: changedNote, object: nil)
     }
 
@@ -302,6 +305,11 @@ enum SettingsStore {
     }
 
     static func update(_ mutate: (inout GlyfSettings) -> Void) {
+        // The app and the keyboard both write this file, and the app writes
+        // it from two places (Dart's raw write and the native store). A copy
+        // cached before the other side's write would put every old value
+        // back, so always start from what is on disk.
+        reloadIfChanged()
         var s = current
         mutate(&s)
         save(s)

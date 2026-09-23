@@ -92,6 +92,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     // MARK: Build + layout
 
     var needsGlobe = false
+    /// What the return key says ("search", "send"…), nil for the plain glyph.
+    var returnLabel: String? {
+        didSet { if returnLabel != oldValue { rebuild() } }
+    }
     /// The focused field's flavor — email/URL space rows, digit pads (§6.1).
     var context: KeyboardContext = .text {
         didSet { if context != oldValue { rebuild() } }
@@ -108,6 +112,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             for spec in row {
                 let kv = KeyView(spec: spec)
                 kv.isUserInteractionEnabled = false // container drives touches
+                if case .ret = spec.kind { kv.returnLabel = returnLabel }
                 if let c = spec.char { kv.isBound = s.bindings[c] != nil }
                 kv.shifted = shiftActive
                 kv.setShiftState(shift)

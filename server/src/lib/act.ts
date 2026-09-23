@@ -78,6 +78,25 @@ export function parseRewriteOptions(reply: string, styles: { id: string; label: 
   }
 }
 
+/** A plain (non-JSON) reply can stand in as the one rewrite, but only when
+ *  it reads as the message and not as the model talking ABOUT the message.
+ *  Free models sometimes answer with their working ("We need to rewrite the
+ *  message in each style, preserving facts…"), and that must never be
+ *  offered for insertion. */
+export function looksLikeRewrite(text: string, typed: string): boolean {
+  const t = text.trim();
+  if (!t || t.includes("{") || t.includes("}")) return false;
+  if (t.length > typed.length * 4 + 120) return false;
+  const opening = t.slice(0, 80).toLowerCase();
+  if (/^(we need|we should|we have|here (is|are)|here's|sure[,!.]|okay[,!.]|ok[,!.]|let's|i (will|can|need|'ll|have)|the (message|user|text|writer)|first,|to rewrite|rewrit)/.test(opening)) {
+    return false;
+  }
+  if (/\b(rewrite|rewriting|rewritten|json|preserving facts|the message below|in each style|each of these styles)\b/i.test(t)) {
+    return false;
+  }
+  return true;
+}
+
 export interface ActOptions {
   /** Publishes a list as a live mini-app page and returns its public URL. */
   publish?: (title: string, places: PlaceCard[]) => string | undefined;
@@ -236,9 +255,12 @@ async function written(
   return { intent: "write", title: typed, cards: [], text, insert: text, provider };
 }
 
-async function modelText(prompt: string): Promise<string> {
+/** `stallMs` is how long a silent model gets before the next provider is
+ *  tried: five seconds for a line or two, longer for six versions of a
+ *  message in one JSON, which the free models take their time over. */
+async function modelText(prompt: string, stallMs = 5000): Promise<string> {
   const res = await completeStreaming("fast", [{ role: "user", content: prompt }],
-    { onToken: () => {}, stallMs: 5000 });
+    { onToken: () => {}, stallMs });
   return res.text.trim();
 }
 
@@ -338,16 +360,20 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
         "writer that is listed below, fill it in.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
         "\nReply with JSON only, one key per style: {" +
         styles.map(st => `"${st.id}":"..."`).join(",") + "}" +
-        profileBlock(opts.profile) + "\n\nMessage:\n" + typed);
+        profileBlock(opts.profile) + "\n\nMessage:\n" + typed, 12_000);
       let options = parseRewriteOptions(reply, styles);
       if (options.length === 0) {
-        // A reply that is not the JSON is still a rewrite: offer it as Basic.
+        // No JSON came back. A plain reply can still be the one rewrite, but
+        // only if it reads as the message and not as the model's working.
         const plain = reply.replace(/^```\w*|```$/g, "").trim();
-        options = plain ? [{ id: "basic", label: "Basic", text: plain }] : [];
+        options = plain && looksLikeRewrite(plain, typed)
+          ? [{ id: "basic", label: "Basic", text: plain }] : [];
       }
-      const first = options[0]?.text ?? typed;
+      if (options.length === 0) throw new Error("rewrite: no usable version");
+      const first = options[0].text;
+      // One version is a result with Copy and Insert, not a list of one.
       return { intent: "rewrite", title: "Rewrite", cards: [], text: first,
-        insert: first, options, provider: "model" };
+        insert: first, options: options.length > 1 ? options : undefined, provider: "model" };
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/bridge.dart';
+import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 
@@ -21,9 +22,27 @@ Future<bool> showPaywall(BuildContext context, {String? reason}) async {
     builder: (ctx) => _PaywallSheet(reason: reason),
   );
   if (plan != null) {
+    // The server's word first: caps are enforced there, so a plan the phone
+    // merely believes in would show 400 runs while the keyboard counts 40.
+    String? refusal;
+    try {
+      final res = await GlyfApi.setPlan(plan);
+      if (res['ok'] != true) refusal = (res['error'] as String?) ?? 'Could not change the plan';
+    } on GlyfApiException catch (e) {
+      refusal = e.message;
+    } catch (_) {
+      refusal = "Couldn't reach Glyf. Try again.";
+    }
+    if (refusal != null) {
+      if (context.mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(refusal)));
+      }
+      Telemetry.log('plan_refused', {'plan': plan, 'reason': reason ?? 'profile'});
+      return false;
+    }
     await GlyfBridge.updateSharedSettings((s) {
       s['plan'] = plan;
-      s['proUnlocked'] = true;
+      s['proUnlocked'] = plan != 'free';
       return s;
     });
     Telemetry.log('plan_selected', {'plan': plan, 'reason': reason ?? 'profile'});

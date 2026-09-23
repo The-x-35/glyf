@@ -103,6 +103,16 @@ export interface RunOptions {
  *  referenced by any if/then/else or map — those run only when their branch
  *  activates. Streaming tokens are only emitted for the step feeding the
  *  declared output, so chains don't leak intermediates (§6.8). */
+/** What to tell the person when a run fails. A tool's refusal and "needs
+ *  input" are theirs to act on and pass through; everything else (a model
+ *  that timed out, a provider that answered 503, a key that is missing) is
+ *  ours, and the message says so without naming models or keys. */
+export function userFacingRunError(err: unknown, fallback: string): string {
+  const message = String((err as Error)?.message ?? err ?? "");
+  if ((err as { userFacing?: boolean })?.userFacing === true) return message;
+  return message.startsWith("needs input") || message.includes("tool") ? message : fallback;
+}
+
 export async function runGlyf(opts: RunOptions): Promise<string> {
   const { def, input, vars, complete, onToken } = opts;
   const ctx: Record<string, string> = { ...def.vars, ...vars, input };

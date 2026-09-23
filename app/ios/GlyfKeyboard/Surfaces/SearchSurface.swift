@@ -132,6 +132,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         }
 
         queryEditor.accessibilityIdentifier = "search:query"
+        queryEditor.onChange = { [weak self] t in self?.queryChanged(t) }
         addSubview(queryEditor)
         let tap = UITapGestureRecognizer(target: self, action: #selector(activateQuery))
         queryEditor.addGestureRecognizer(tap)
@@ -280,28 +281,28 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     func showLanding() {
         task?.cancel()
         let vertical = tab.vertical
+        // Results from the tab just left must not sit under this one's rows.
+        expandedForResults = false
         // Three rows, like the website's landing: any more would slide under
-        // the keys, which stay live here.
-        let recents = SearchRecents.list(vertical ?? "web").prefix(3).map { q -> Card in
-            var c = Card(kind: "query", id: "recent-\(q)", title: q, url: "")
-            c.source = "recent"
-            return c
-        }
-        cards = Array(recents)
+        // the keys, which stay live here. Contacts keeps no recents: a name
+        // is not a search, and the web tab's history has no place there.
+        let recents: [Card] = tab == .contacts ? [] :
+            SearchRecents.list(vertical ?? "web").prefix(3).map { q -> Card in
+                var c = Card(kind: "query", id: "recent-\(q)", title: q, url: "")
+                c.source = "recent"
+                return c
+            }
+        cards = recents
         status = ""
         landingActive = true
         if tab == .contacts {
             status = AppGroupStore.readContacts().isEmpty
                 ? "Turn on Contacts search in the Glyf app"
                 : "Type a name"
-            if cards.isEmpty { setNeedsLayout(); return }
             showRows(); return
         }
-        if !cards.isEmpty { showRows() }
-        guard let vertical, hasFullAccess else {
-            if cards.isEmpty { setNeedsLayout() }
-            return
-        }
+        showRows()   // even empty: the table forgets the last tab's rows
+        guard let vertical, hasFullAccess else { return }
         task = BackendClient.shared.runSuggest(vertical: vertical,
             onResult: { [weak self] out in
                 guard let self, out.vertical == self.tab.vertical else { return }
@@ -355,7 +356,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
     /// Local contacts synced by the app (Profile → Contacts search). Never
     /// leaves the device — no vertical, no request.
-    private func showContactMatches(_ q: String) {
+    private func showContactMatches(_ q: String, live: Bool = false) {
         let lower = q.lowercased()
         let contacts = AppGroupStore.readContacts()
         guard !contacts.isEmpty else {
@@ -378,8 +379,23 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
                 if rows.isEmpty { rows.append(row(c.name, c.name, "person")) }
                 return rows
             }
-        status = cards.isEmpty ? "No contact matches" : ""
-        expand()
+        status = cards.isEmpty ? "No contacts named “\(q)”" : ""
+        if live {
+            // Typing a name: the matches show above keys that stay live, the
+            // way the landing rows do, so the next letter narrows them.
+            expandedForResults = false
+            landingActive = true
+            showRows()
+        } else {
+            expand()
+        }
+    }
+
+    /// The query changed under the keys: contacts filter as you type.
+    func queryChanged(_ text: String) {
+        guard tab == .contacts else { return }
+        let q = text.trimmingCharacters(in: .whitespaces)
+        if q.isEmpty { showLanding() } else { showContactMatches(q, live: true) }
     }
 
     /// Re-lays out the suggestion list while the keyboard stays put.
