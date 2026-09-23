@@ -4,61 +4,64 @@
 <!--
   The waitlist film, one frame at a time. 1920x1080.
 
-  Laid out like the desktop site: the headline on the left, the phone on the
-  right, the headline changing as the phone proves it. Four acts, each a
-  scenario of two or three messages, none of them language-specific.
+  Laid out like the desktop site: headline left, devices right. Two phones,
+  the hero doing the work and a second one behind it holding the menu open,
+  because one phone in a 16:9 frame leaves half the picture empty.
 
-    0  the keyboard forms      Type less. glyf more.
-    1  a bill split            Do the math. Get paid.
-    2  a private payment       Pay on Solana. Privately.
-    3  a rewrite               Type it messy. Send it polished.
-    4  the card                The AI keyboard that does the rest.
+    0  cold open, then the keyboard forms   Type less. glyf more.
+    1  a bill split                         Do the math. Get paid.
+    2  a private payment                    Pay on Solana. Privately.
+    3  a rewrite                            Type it messy. Send it polished.
+    4  the card                             The AI keyboard that does the rest.
+
+  Typing is typed. Every character is a keystroke at a fixed cadence, the key
+  it belongs to dips as it lands, the number layer comes up for the sum, and
+  the suggestion strip carries what the real one would carry for the word in
+  progress. Text that simply appears is the tell that a demo was faked.
 
   Nothing animates by itself: `seek(f)` draws frame f and only frame f, which
   is what makes the render deterministic. render.mjs walks the timeline.
 
   The keyboard is the real one's arithmetic, out of GlassTokens.swift: 6.5pt
-  margins, 6pt between keys, a 54pt row pitch, a 43pt key at 402pt wide. Apple's
-  keys and Glyf's land in exactly the same places, which is the point of act 0.
+  margins, 6pt between keys, a 54pt row pitch, a 43pt key at 402pt wide.
 -->
 <style>
-  @font-face {
-    font-family: "Inter";
-    src: url("../../site/public/fonts/Inter-Variable.ttf") format("truetype");
-    font-weight: 100 900;
-  }
+  @font-face { font-family: "Inter"; src: url("../../site/public/fonts/Inter-Variable.ttf") format("truetype"); font-weight: 100 900; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 1920px; height: 1080px; overflow: hidden; background: #08080a;
                font-family: Inter, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
-
-  /* A light that moves: without it 24 seconds of flat black reads as a still. */
-  #glow { position: absolute; width: 1700px; height: 1700px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(124,92,255,.17), rgba(124,92,255,0) 62%);
-          left: 700px; top: -500px; filter: blur(30px); }
+  #glow { position: absolute; width: 1800px; height: 1800px; border-radius: 50%; left: 760px; top: -560px;
+          background: radial-gradient(circle, rgba(124,92,255,.18), rgba(124,92,255,0) 62%); filter: blur(28px); }
 
   /* ---------------- left: the words ---------------- */
-  #left { position: absolute; left: 132px; top: 0; width: 860px; height: 1080px; }
-  #eyebrow { position: absolute; top: 386px; font: 600 17px Inter; letter-spacing: .14em;
+  #left { position: absolute; left: 118px; top: 0; width: 800px; height: 1080px; }
+  #eyebrow { position: absolute; top: 372px; font: 600 17px Inter; letter-spacing: .14em;
              text-transform: uppercase; color: #7c5cff; }
-  #head { position: absolute; top: 424px; width: 860px;
-          font: 600 82px/1.03 Inter; letter-spacing: -.045em; color: #f5f5f7; }
+  #head { position: absolute; top: 410px; width: 800px; font: 600 80px/1.03 Inter;
+          letter-spacing: -.045em; color: #f5f5f7; }
   #head b { display: block; font-weight: 600; }
   #head b.dim { color: #8b8b93; }
-  #note { position: absolute; top: 640px; width: 700px;
-          font: 500 24px/1.45 Inter; letter-spacing: -.012em; color: #a1a1a6; }
+  #note { position: absolute; top: 622px; width: 660px; font: 500 23px/1.45 Inter;
+          letter-spacing: -.012em; color: #a1a1a6; }
 
-  /* ---------------- right: the phone ---------------- */
-  #phone { position: absolute; left: 1214px; top: 62px; width: 442px; height: 956px;
-           border-radius: 56px; background: #18181b; padding: 11px;
-           box-shadow: 0 60px 120px -40px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.07),
-                       0 0 140px -30px rgba(124,92,255,.35); }
-  #screen { position: relative; width: 420px; height: 934px; border-radius: 46px;
-            overflow: hidden; background: #fff; }
-  /* Authored in iPhone points, blown up once. 420/402 = 1.0448 */
-  #ui { position: absolute; left: 0; top: 0; width: 402px; height: 894px;
-        transform: scale(1.04478); transform-origin: 0 0; background: #fff; }
+  /* ---------------- right: two phones ---------------- */
+  .phone { position: absolute; border-radius: 54px; background: #17171a; padding: 10px;
+           box-shadow: 0 60px 130px -40px rgba(0,0,0,.95), 0 0 0 1px rgba(255,255,255,.08); }
+  .phone .glass { border-radius: 44px; overflow: hidden; background: #000; position: relative; }
+  #back { left: 958px; top: 150px; width: 372px; height: 806px; }
+  #back .glass { width: 352px; height: 786px; }
+  #back .veil { position: absolute; inset: 0; background: rgba(8,8,10,.5); }
+  #hero { left: 1302px; top: 40px; width: 478px; height: 1030px;
+          box-shadow: 0 70px 150px -40px rgba(0,0,0,.95), 0 0 0 1px rgba(255,255,255,.09),
+                      0 0 190px -40px rgba(124,92,255,.5); }
+  #hero .glass { width: 458px; height: 1010px; }
+  /* Authored in iPhone points and blown up once: 458/402. */
+  #ui { position: absolute; left: 0; top: 0; width: 402px; height: 887px;
+        transform: scale(1.13930); transform-origin: 0 0; background: #fff; }
+  #menuUi { position: absolute; left: 0; top: 0; width: 402px; height: 898px;
+            transform: scale(.87562); transform-origin: 0 0; background: #fff; }
 
-  .bar { position: absolute; top: 0; left: 0; right: 0; height: 54px; }
+  .bar { position: absolute; top: 0; left: 0; right: 0; height: 54px; z-index: 3; }
   .bar .t { position: absolute; left: 32px; top: 17px; font: 700 15px Inter; color: #1d1d1f; }
   .bar .n { position: absolute; left: 50%; top: 11px; width: 104px; height: 30px; margin-left: -52px;
             background: #000; border-radius: 16px; }
@@ -66,21 +69,19 @@
             border: 1.4px solid #1d1d1f; border-radius: 3px; opacity: .85; }
   .bar .b i { position: absolute; inset: 1.5px; background: #1d1d1f; border-radius: 1px; }
 
-  #who { position: absolute; top: 54px; left: 0; right: 0; height: 60px;
-         border-bottom: .5px solid rgba(0,0,0,.1); }
+  #who { position: absolute; top: 54px; left: 0; right: 0; height: 60px; border-bottom: .5px solid rgba(0,0,0,.1); }
   #who .av { position: absolute; left: 50%; top: 5px; width: 36px; height: 36px; margin-left: -18px;
              border-radius: 50%; font: 600 15px/36px Inter; text-align: center; color: #fff; }
-  #who .nm { position: absolute; left: 0; right: 0; top: 43px; text-align: center;
-             font: 500 12px Inter; color: #1d1d1f; }
+  #who .nm { position: absolute; left: 0; right: 0; top: 43px; text-align: center; font: 500 12px Inter; color: #1d1d1f; }
 
   #thread { position: absolute; left: 0; right: 0; top: 114px; bottom: 343px; }
   .msg { position: absolute; max-width: 262px; padding: 9px 14px; border-radius: 19px;
          font: 400 16.5px/1.3 Inter; letter-spacing: -.012em; will-change: transform, opacity; }
   .msg.them { left: 13px; background: #e9e9eb; color: #1d1d1f; }
   .msg.me { right: 13px; background: #007aff; color: #fff; }
-  .msg.addr { font: 400 13px/1.35 Inter; word-break: break-all; max-width: 246px; }
+  .msg.addr { font: 400 12.5px/1.35 Inter; word-break: break-all; max-width: 244px; }
   .msg.pay { background: #1d1d1f; color: #fff; padding: 12px 16px 13px; width: 196px; }
-  .msg.pay .lock { font: 500 11.5px Inter; color: #a1a1a6; letter-spacing: -.005em; }
+  .msg.pay .lock { font: 500 11.5px Inter; color: #a1a1a6; }
   .msg.pay .amt { display: block; margin-top: 3px; font: 700 26px Inter; letter-spacing: -.03em; }
   .msg.pay .chain { display: block; margin-top: 5px; font: 500 11px Inter; color: #8b8b93; }
 
@@ -89,120 +90,146 @@
   #field .tx { position: absolute; left: 15px; top: 9px; right: 42px; font: 400 16px Inter;
                color: #1d1d1f; white-space: pre; overflow: hidden; }
   #caret { position: absolute; top: 9px; width: 2px; height: 19px; background: #007aff; border-radius: 1px; }
-  #send { position: absolute; right: 4px; top: 4px; width: 29px; height: 29px; border-radius: 50%;
-          background: #007aff; opacity: 0; }
-  #send:after { content: "↑"; position: absolute; inset: 0; color: #fff; font: 700 16px/29px Inter;
-                text-align: center; }
 
   /* ---------------- the keyboard ---------------- */
   #sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 343px; background: #d1d3d9; }
-  .key { position: absolute; border-radius: 5px; background: #fff;
-         box-shadow: 0 1px 0 rgba(0,0,0,.26); will-change: transform, opacity; }
+  .key { position: absolute; border-radius: 5px; background: #fff; box-shadow: 0 1px 0 rgba(0,0,0,.26);
+         will-change: transform, opacity; }
   .key span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
               font: 400 24.5px Inter; color: #1d1d1f; letter-spacing: -.01em; }
-  .key.fn { background: #adb0b9; }
-  .key.fn span { font-size: 16px; }
-  .key .dot { position: absolute; width: 4.5px; height: 4.5px; border-radius: 50%;
-              background: #7c5cff; right: 4.5px; top: 4.5px; opacity: 0; }
+  .key.fn { background: #adb0b9; } .key.fn span { font-size: 15px; }
+  .key .dot { position: absolute; width: 4.5px; height: 4.5px; border-radius: 50%; background: #7c5cff;
+              right: 4.5px; top: 4.5px; opacity: 0; }
   .key.space span { font-size: 15px; color: rgba(29,29,31,.4); }
+  #num { opacity: 0; }
 
   #tools { position: absolute; left: 0; right: 0; top: 0; height: 57px; will-change: transform, opacity; }
   .tool { position: absolute; top: 18px; }
-  /* The strip's chip, where a sum or a payment is offered. */
+
+  /* The three candidate slots, as the real strip draws them. */
+  #sugg { position: absolute; left: 0; right: 0; top: 0; height: 57px; opacity: 0; }
+  #sugg .s { position: absolute; top: 16px; height: 24px; text-align: center; font: 400 17px/24px Inter;
+             color: #1d1d1f; letter-spacing: -.012em; overflow: hidden; }
+  #sugg .s.pick { font-weight: 600; }
+  #sugg .ln { position: absolute; top: 18px; width: 1px; height: 20px; background: rgba(0,0,0,.14); }
+
   #chip { position: absolute; left: 44px; right: 8px; top: 11px; height: 35px; border-radius: 17.5px;
-          background: #fff; opacity: 0; will-change: transform, opacity;
-          box-shadow: 0 1px 3px rgba(0,0,0,.1); }
-  #chip .k { position: absolute; left: 13px; top: 9px; font: 600 15px Inter; color: #7c5cff;
-             letter-spacing: -.01em; }
-  #chip .v { position: absolute; left: 13px; top: 9px; font: 500 15px Inter; color: #1d1d1f;
-             letter-spacing: -.01em; white-space: nowrap; }
+          background: #fff; opacity: 0; box-shadow: 0 1px 3px rgba(0,0,0,.1); will-change: transform, opacity; }
+  #chip .k { position: absolute; left: 13px; top: 9px; font: 600 15px Inter; color: #7c5cff; }
+  #chip .v { position: absolute; top: 9px; font: 500 15px Inter; color: #1d1d1f; white-space: nowrap; }
   #chip .tap { position: absolute; right: 12px; top: 10px; font: 600 13px Inter; color: #8b8b93; }
 
-  /* The wallet sheet that slides over the keys for a payment. */
   #wallet { position: absolute; left: 0; right: 0; bottom: 0; height: 286px; background: #f2f2f5;
             border-radius: 16px 16px 0 0; opacity: 0; will-change: transform, opacity; }
-  #wallet .hd { position: absolute; left: 18px; top: 16px; font: 600 17px Inter; color: #1d1d1f;
-                letter-spacing: -.02em; }
-  #wallet .to { position: absolute; left: 18px; right: 18px; top: 48px; font: 400 12px Inter;
-                color: #8b8b93; word-break: break-all; }
-  #wallet .big { position: absolute; left: 18px; top: 84px; font: 700 40px Inter; color: #1d1d1f;
-                 letter-spacing: -.035em; }
+  #wallet .hd { position: absolute; left: 18px; top: 16px; font: 600 17px Inter; color: #1d1d1f; letter-spacing: -.02em; }
+  #wallet .to { position: absolute; left: 18px; right: 18px; top: 48px; font: 400 12px Inter; color: #8b8b93; word-break: break-all; }
+  #wallet .big { position: absolute; left: 18px; top: 84px; font: 700 40px Inter; color: #1d1d1f; letter-spacing: -.035em; }
   #wallet .tok { position: absolute; left: 18px; top: 136px; font: 500 13px Inter; color: #6e6e73; }
-  #wallet .priv { position: absolute; left: 18px; right: 18px; top: 170px; height: 40px;
-                  border-radius: 12px; background: rgba(124,92,255,.1); }
+  #wallet .priv { position: absolute; left: 18px; right: 18px; top: 170px; height: 40px; border-radius: 12px;
+                  background: rgba(124,92,255,.1); }
   #wallet .priv span { position: absolute; left: 13px; top: 12px; font: 500 13px Inter; color: #6f52e8; }
-  #wallet .go { position: absolute; left: 18px; right: 18px; top: 224px; height: 46px;
-                border-radius: 23px; background: #1d1d1f; }
-  #wallet .go span { position: absolute; inset: 0; text-align: center; color: #fff;
-                     font: 600 16px/46px Inter; letter-spacing: -.01em; }
+  #wallet .go { position: absolute; left: 18px; right: 18px; top: 224px; height: 46px; border-radius: 23px; background: #1d1d1f; }
+  #wallet .go span { position: absolute; inset: 0; text-align: center; color: #fff; font: 600 16px/46px Inter; }
 
-  /* Where the AI is working, over the strip. */
   #think { position: absolute; left: 44px; right: 8px; top: 11px; height: 35px; border-radius: 17.5px;
            background: #fff; opacity: 0; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
   #think .d { position: absolute; top: 15px; width: 5px; height: 5px; border-radius: 50%; background: #7c5cff; }
   #think .lb { position: absolute; left: 52px; top: 9px; font: 500 15px Inter; color: #8b8b93; }
 
   #bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 70px; }
-  #bottom svg { position: absolute; top: 12px; }
-  #bottom .g { left: 22px; } #bottom .m { right: 22px; }
-  #homebar { position: absolute; left: 50%; bottom: 8px; width: 139px; height: 5px;
-             margin-left: -69.5px; border-radius: 3px; background: rgba(0,0,0,.3); }
+  #bottom svg { position: absolute; top: 12px; } #bottom .g { left: 22px; } #bottom .m { right: 22px; }
+  #homebar { position: absolute; left: 50%; bottom: 8px; width: 139px; height: 5px; margin-left: -69.5px;
+             border-radius: 3px; background: rgba(0,0,0,.3); }
 
-  /* The pointer that does the tapping. */
-  #ptr { position: absolute; width: 30px; height: 30px; border-radius: 50%; opacity: 0;
+  /* The lock screen the film opens on. */
+  #lock { position: absolute; inset: 0; z-index: 4; }
+  #lock .wp { position: absolute; inset: 0;
+              background: radial-gradient(120% 80% at 50% 6%, #2e2657 0%, #14142a 46%, #08080c 100%); }
+  #lock .lk { position: absolute; left: 0; right: 0; top: 78px; text-align: center; font: 400 20px Inter; color: rgba(255,255,255,.8); }
+  #lock .date { position: absolute; left: 0; right: 0; top: 124px; text-align: center;
+                font: 500 17px Inter; color: rgba(255,255,255,.72); }
+  #lock .time { position: absolute; left: 0; right: 0; top: 150px; text-align: center;
+                font: 300 92px Inter; letter-spacing: -.04em; color: #fff; }
+  #lock .note { position: absolute; left: 20px; right: 20px; top: 320px; height: 76px; border-radius: 20px;
+                background: rgba(255,255,255,.15); opacity: 0; }
+  #lock .note b { position: absolute; left: 16px; top: 13px; font: 600 12px Inter; letter-spacing: .06em;
+                  color: rgba(255,255,255,.72); }
+  #lock .note span { position: absolute; left: 16px; right: 16px; top: 34px; font: 400 14.5px/1.3 Inter; color: #fff; }
+  #lock .bar2 { position: absolute; left: 50%; bottom: 12px; width: 139px; height: 5px; margin-left: -69.5px;
+                border-radius: 3px; background: rgba(255,255,255,.6); }
+
+  /* The second phone: the menu, open. */
+  #menu { position: absolute; inset: 0; background: #d1d3d9; }
+  #menu .top { position: absolute; left: 0; right: 0; top: 0; bottom: 343px; background: #fff; }
+  #menu .top .hd { position: absolute; left: 20px; top: 128px; font: 700 27px Inter; letter-spacing: -.03em; color: #1d1d1f; }
+  #menu .top .sub { position: absolute; left: 20px; right: 20px; top: 170px; font: 400 15px/1.4 Inter; color: #8b8b93; }
+  #menu .strip { position: absolute; left: 0; right: 0; top: 0; height: 57px; }
+  #menu .x { position: absolute; left: 16px; top: 17px; font: 300 22px Inter; color: #1d1d1f; }
+  #menu .tile { position: absolute; border-radius: 14px; background: #fff; }
+  #menu .tile .em { position: absolute; left: 0; right: 0; top: 15px; text-align: center; font: 400 22px Inter; }
+  #menu .tile .lb { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center;
+                    font: 500 12px Inter; color: #1d1d1f; letter-spacing: -.01em; }
+
+  #ptr { position: absolute; width: 30px; height: 30px; border-radius: 50%; opacity: 0; z-index: 5;
          background: rgba(124,92,255,.22); border: 1.5px solid rgba(124,92,255,.75);
          margin: -15px 0 0 -15px; will-change: transform, opacity; }
 
   /* ---------------- the end card ---------------- */
   #card { position: absolute; inset: 0; opacity: 0; }
-  #card .wm { position: absolute; left: 50%; top: 344px; transform: translateX(-50%);
-              font: 700 46px Inter; letter-spacing: -.045em; color: #f5f5f7; }
-  #card .wm i { position: absolute; right: -17px; top: 5px; width: 9px; height: 9px;
-                border-radius: 50%; background: #7c5cff; }
-  #card h1 { position: absolute; left: 0; right: 0; top: 442px; text-align: center;
-             font: 600 78px/1.05 Inter; letter-spacing: -.045em; color: #f5f5f7; }
-  #card .cta { position: absolute; left: 50%; top: 660px; transform: translateX(-50%);
-               padding: 19px 40px; border-radius: 34px; background: #f5f5f7;
-               font: 600 23px Inter; letter-spacing: -.015em; color: #000; white-space: nowrap; }
-  #card .url { position: absolute; left: 0; right: 0; top: 756px; text-align: center;
-               font: 500 21px Inter; letter-spacing: .01em; color: #6e6e73; }
+  #card .wm { position: absolute; left: 50%; top: 336px; transform: translateX(-50%); font: 700 46px Inter;
+              letter-spacing: -.045em; color: #f5f5f7; }
+  #card .wm i { position: absolute; right: -17px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: #7c5cff; }
+  #card h1 { position: absolute; left: 0; right: 0; top: 434px; text-align: center; font: 600 78px/1.05 Inter;
+             letter-spacing: -.045em; color: #f5f5f7; }
+  #card .cta { position: absolute; left: 50%; top: 652px; transform: translateX(-50%); padding: 19px 40px;
+               border-radius: 34px; background: #f5f5f7; font: 600 23px Inter; letter-spacing: -.015em; color: #000; }
+  #card .url { position: absolute; left: 0; right: 0; top: 748px; text-align: center; font: 500 21px Inter;
+               letter-spacing: .01em; color: #6e6e73; }
 </style>
 
 <div id="glow"></div>
+<div id="left"><div id="eyebrow"></div><div id="head"></div><div id="note"></div></div>
 
-<div id="left">
-  <div id="eyebrow"></div>
-  <div id="head"></div>
-  <div id="note"></div>
-</div>
+<div class="phone" id="back"><div class="glass"><div id="menuUi">
+  <div class="bar"><div class="t">9:41</div><div class="n"></div><div class="b"><i></i></div></div>
+  <div id="menu">
+    <div class="top"><div class="hd">Everything, one tap in.</div>
+      <div class="sub">Bind any of them to a key, and hold it.</div></div>
+    <div class="strip"><div class="x">✕</div></div>
+  </div>
+</div><div class="veil"></div></div></div>
 
-<div id="phone"><div id="screen"><div id="ui">
+<div class="phone" id="hero"><div class="glass"><div id="ui">
   <div class="bar"><div class="t">9:41</div><div class="n"></div><div class="b"><i></i></div></div>
   <div id="who"><div class="av"></div><div class="nm"></div></div>
   <div id="thread"></div>
-  <div id="field"><div class="tx"></div><div id="caret"></div><div id="send"></div></div>
+  <div id="field"><div class="tx"></div><div id="caret"></div></div>
   <div id="sheet">
     <div id="tools"></div>
+    <div id="sugg"></div>
     <div id="chip"><span class="k"></span><span class="v"></span><span class="tap">Tap</span></div>
     <div id="think"><i class="d"></i><i class="d"></i><i class="d"></i><span class="lb">Rewriting</span></div>
-    <div id="keys"></div>
+    <div id="abc"></div><div id="num"></div>
     <div id="wallet">
       <div class="hd">Send USDC</div>
       <div class="to">To 8QvS3nE5d1YwZk7pLr2mXh9TbF4cJaGuVy6oKe1RtNqP</div>
-      <div class="big">$200.00</div>
-      <div class="tok">USDC on Solana</div>
+      <div class="big">$200.00</div><div class="tok">USDC on Solana</div>
       <div class="priv"><span>🔒 Private transfer · MagicBlock</span></div>
       <div class="go"><span>Send privately</span></div>
     </div>
     <div id="bottom">
       <svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" stroke-width="1.5">
-        <circle cx="12" cy="12" r="9.2"/><ellipse cx="12" cy="12" rx="4" ry="9.2"/><path d="M3 12h18M4.6 7h14.8M4.6 17h14.8"/>
-      </svg>
+        <circle cx="12" cy="12" r="9.2"/><ellipse cx="12" cy="12" rx="4" ry="9.2"/><path d="M3 12h18M4.6 7h14.8M4.6 17h14.8"/></svg>
       <svg class="m" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" stroke-width="1.6">
-        <rect x="9" y="2.6" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.4"/>
-      </svg>
+        <rect x="9" y="2.6" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.4"/></svg>
       <div id="homebar"></div>
     </div>
+  </div>
+  <div id="lock">
+    <div class="wp"></div><div class="lk">🔒</div>
+    <div class="date">Tuesday, 23 September</div><div class="time">9:41</div>
+    <div class="note"><b>MESSAGES</b><span>Sam: you around this evening?</span></div>
+    <div class="bar2"></div>
   </div>
   <div id="ptr"></div>
 </div></div></div>
@@ -219,52 +246,55 @@
 const cl = v => v < 0 ? 0 : v > 1 ? 1 : v;
 const seg = (f, a, b) => cl((f - a) / (b - a));
 const outQuint = x => 1 - Math.pow(1 - x, 5);
-const outCubic = x => 1 - Math.pow(1 - x, 3);
 const inCubic = x => x * x * x;
 const inOutQuint = x => x < .5 ? 16 * x ** 5 : 1 - Math.pow(-2 * x + 2, 5) / 2;
-/** Lands with one small overshoot and stops. Lower bounce than a real spring:
- *  on a 24 second film anything springier reads as wobble. */
-const settle = (x, bounce = 1.25) =>
-  x >= 1 ? 1 : 1 - Math.pow(2, -10 * x) * Math.cos(x * Math.PI * bounce);
+const settle = (x, b = 1.25) => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x) * Math.cos(x * Math.PI * b);
 const mix = (a, b, x) => a + (b - a) * x;
-/** In and out again: for something that appears, holds, and leaves. */
-const pulse = (f, a, b, riseF = 20, fallF = 18) =>
-  Math.min(outQuint(seg(f, a, a + riseF)), 1 - outQuint(seg(f, b - fallF, b)));
+const pulse = (f, a, b, r = 20, fo = 18) => Math.min(outQuint(seg(f, a, a + r)), 1 - outQuint(seg(f, b - fo, b)));
 
 // ======================================================== keyboard
 const W = 402, MARGIN = 6.5, HGAP = 6, PITCH = 54, KEYH = 43;
-const KEYW = (W - MARGIN * 2 - HGAP * 9) / 10;
-const SIDEW = KEYW * 1.35;
-const SHEET_H = 343, TOOLS_H = 57;
+const KEYW = (W - MARGIN * 2 - HGAP * 9) / 10, SIDEW = KEYW * 1.35, TOOLS_H = 57;
+const SCALE = 1.1393, SCREEN_H = 887;
 const BOUND = new Set(["v", "c"]);
-const ROWS = [
-  "qwertyuiop".split("").map(k => ({ k, w: KEYW })),
-  "asdfghjkl".split("").map(k => ({ k, w: KEYW })),
-  [{ k: "⇧", w: SIDEW, fn: 1 }, ..."zxcvbnm".split("").map(k => ({ k, w: KEYW })), { k: "⌫", w: SIDEW, fn: 1 }],
-  [{ k: "123", w: SIDEW, fn: 1 }, { k: "☺", w: KEYW, fn: 1 }, { k: "space", w: 0 }, { k: "⏎", w: SIDEW, fn: 1 }],
-];
-const keysEl = document.getElementById("keys");
-const cells = [];
-ROWS.forEach((row, r) => {
-  const sp = row.find(c => c.k === "space");
-  if (sp) sp.w = W - MARGIN * 2 - (row.reduce((s, c) => s + c.w, 0) + HGAP * (row.length - 1));
-  let x = r === 1 ? MARGIN + (KEYW + HGAP) / 2 : MARGIN;
-  row.forEach((c, i) => {
-    const el = document.createElement("div");
-    el.className = "key" + (c.fn ? " fn" : "") + (c.k === "space" ? " space" : "");
-    Object.assign(el.style, { left: x + "px", top: (TOOLS_H + r * PITCH) + "px",
-                              width: c.w + "px", height: KEYH + "px" });
-    const s = document.createElement("span");
-    s.textContent = c.k === "space" ? "" : c.k;
-    const dot = document.createElement("i"); dot.className = "dot";
-    el.append(s, dot); keysEl.appendChild(el);
-    cells.push({ el, span: s, dot, ...c, row: r, col: i, cx: x + c.w / 2, cy: TOOLS_H + r * PITCH + KEYH / 2 });
-    x += c.w + HGAP;
+const LAYERS = {
+  abc: [
+    "qwertyuiop".split("").map(k => ({ k, w: KEYW })),
+    "asdfghjkl".split("").map(k => ({ k, w: KEYW })),
+    [{ k: "⇧", w: SIDEW, fn: 1 }, ..."zxcvbnm".split("").map(k => ({ k, w: KEYW })), { k: "⌫", w: SIDEW, fn: 1 }],
+    [{ k: "123", w: SIDEW, fn: 1 }, { k: "☺", w: KEYW, fn: 1 }, { k: "space", w: 0 }, { k: "⏎", w: SIDEW, fn: 1 }],
+  ],
+  num: [
+    "1234567890".split("").map(k => ({ k, w: KEYW })),
+    "-/:;()$&@\"".split("").map(k => ({ k, w: KEYW })),
+    [{ k: "#+=", w: SIDEW, fn: 1 }, ...".,?!'".split("").map(k => ({ k, w: KEYW * 1.34 })), { k: "⌫", w: SIDEW, fn: 1 }],
+    [{ k: "ABC", w: SIDEW, fn: 1 }, { k: "☺", w: KEYW, fn: 1 }, { k: "space", w: 0 }, { k: "⏎", w: SIDEW, fn: 1 }],
+  ],
+};
+const layers = {};
+for (const [name, rows] of Object.entries(LAYERS)) {
+  const host = document.getElementById(name);
+  const cells = [];
+  rows.forEach((row, r) => {
+    const sp = row.find(c => c.k === "space");
+    if (sp) sp.w = W - MARGIN * 2 - (row.reduce((s, c) => s + c.w, 0) + HGAP * (row.length - 1));
+    const used = row.reduce((s, c) => s + c.w, 0) + HGAP * (row.length - 1);
+    let x = name === "abc" && r === 1 ? MARGIN + (KEYW + HGAP) / 2 : MARGIN + (W - MARGIN * 2 - used) / 2;
+    row.forEach((c, i) => {
+      const el = document.createElement("div");
+      el.className = "key" + (c.fn ? " fn" : "") + (c.k === "space" ? " space" : "");
+      Object.assign(el.style, { left: x + "px", top: (TOOLS_H + r * PITCH) + "px", width: c.w + "px", height: KEYH + "px" });
+      const s = document.createElement("span"); s.textContent = c.k === "space" ? "" : c.k;
+      const dot = document.createElement("i"); dot.className = "dot";
+      el.append(s, dot); host.appendChild(el);
+      cells.push({ el, span: s, dot, ...c, row: r, col: i, cx: x + c.w / 2, cy: TOOLS_H + r * PITCH + KEYH / 2 });
+      x += c.w + HGAP;
+    });
   });
-});
-const key = k => cells.find(c => c.k === k);
+  layers[name] = { host, cells, find: k => cells.find(c => c.k === k) };
+}
+const abc = layers.abc, num = layers.num;
 
-// The tool strip, spaced by one gap the way the real one is.
 const NS = "http://www.w3.org/2000/svg";
 const TOOLS = ["grid",
   "M10.2 3.6a6.6 6.6 0 1 0 0 13.2 6.6 6.6 0 0 0 0-13.2Z|M15.2 15.2l5 5",
@@ -281,131 +311,164 @@ const toolsEl = document.getElementById("tools"), toolEls = [];
   TOOLS.forEach((d, i) => {
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("class", "tool"); svg.setAttribute("width", G); svg.setAttribute("height", G);
-    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none");
-    svg.setAttribute("stroke", "#1d1d1f"); svg.setAttribute("stroke-width", "1.7");
-    svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "#1d1d1f");
+    svg.setAttribute("stroke-width", "1.7"); svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
     if (d === "grid") {
       const tile = (cx, cy, s, r, rot) => {
         const p = document.createElementNS(NS, "rect");
         p.setAttribute("x", cx - s / 2); p.setAttribute("y", cy - s / 2);
         p.setAttribute("width", s); p.setAttribute("height", s); p.setAttribute("rx", r);
-        if (rot) p.setAttribute("transform", `rotate(45 ${cx} ${cy})`);
-        svg.appendChild(p);
+        if (rot) p.setAttribute("transform", `rotate(45 ${cx} ${cy})`); svg.appendChild(p);
       };
-      tile(6.9, 6.9, 9.2, 1.9); tile(6.9, 17.1, 9.2, 1.9); tile(17.1, 17.1, 9.2, 1.9);
-      tile(17.1, 6.9, 7.5, 1.7, true);
-    } else d.split("|").forEach(seg => {
-      const p = document.createElementNS(NS, "path"); p.setAttribute("d", seg); svg.appendChild(p);
-    });
+      tile(6.9, 6.9, 9.2, 1.9); tile(6.9, 17.1, 9.2, 1.9); tile(17.1, 17.1, 9.2, 1.9); tile(17.1, 6.9, 7.5, 1.7, true);
+    } else d.split("|").forEach(g => { const p = document.createElementNS(NS, "path"); p.setAttribute("d", g); svg.appendChild(p); });
     svg.style.left = (x + PAD + (i ? 0 : SLACK)) + "px";
-    toolsEl.appendChild(svg); toolEls.push(svg);
-    x += boxes[i] + gap;
+    toolsEl.appendChild(svg); toolEls.push(svg); x += boxes[i] + gap;
+  });
+}
+const suggEl = document.getElementById("sugg"), slots = [];
+{
+  const w = (W - 16) / 3;
+  for (let i = 0; i < 3; i++) {
+    const s = document.createElement("div"); s.className = "s" + (i === 1 ? " pick" : "");
+    s.style.left = (8 + i * w) + "px"; s.style.width = w + "px";
+    suggEl.appendChild(s); slots.push(s);
+    if (i) { const ln = document.createElement("div"); ln.className = "ln"; ln.style.left = (8 + i * w) + "px"; suggEl.appendChild(ln); }
+  }
+}
+{
+  const TILES = [["🔍","Search"],["✨","Rewrite"],["🌐","Translate"],["🪪","Vault"],
+                 ["📅","Calendar"],["📋","Clipboard"],["🙂","Emoji"],["✦","Ask Glyf"],
+                 ["▶","YouTube"],["📍","Maps"],["＋","Math"],["⌨","Keys"]];
+  const host = document.getElementById("menu");
+  const pad = 10, gap = 8, cols = 4, tw = (W - pad * 2 - gap * (cols - 1)) / cols, th = 72;
+  TILES.forEach(([em, lb], i) => {
+    const d = document.createElement("div"); d.className = "tile";
+    Object.assign(d.style, { left: (pad + (i % cols) * (tw + gap)) + "px",
+      top: (898 - 343 + TOOLS_H + Math.floor(i / cols) * (th + gap)) + "px", width: tw + "px", height: th + "px" });
+    d.innerHTML = `<span class="em">${em}</span><span class="lb">${lb}</span>`;
+    host.appendChild(d);
   });
 }
 
-// ======================================================== the script
+// ======================================================== typing
+/** Types at a steady cadence and says which key just landed. Every character
+ *  is a keystroke: that is the difference between a demo and a video of text
+ *  fading in, and it was the tell in the last cut. */
+const FPC = 5.2;   // frames per character, about eleven a second
+function typing(f, start, text) {
+  const n = Math.max(0, Math.min(text.length, Math.floor((f - start) / FPC)));
+  return { n, out: text.slice(0, n), ch: n ? text[n - 1] : null,
+           since: f - (start + (n - 1) * FPC), done: n >= text.length };
+}
+const KEYNAME = c => c === " " ? "space" : c;
+/** What the strip offers for the word in progress. Real words, real fixes. */
+const SUGG = {
+  ya: ["ya", "yeah", "yay"], il: ["il", "I'll", "ill"], ill: ["ill", "I'll", "ails"],
+  se: ["se", "see", "send"], sen: ["sen", "send", "sent"], send: ["send", "send", "sent"],
+  it: ["it", "it", "its"], so: ["so", "so", "soon"], soo: ["soo", "soon", "soot"],
+  soon: ["soon", "soon", "sooner"], do: ["do", "do", "don't"], don: ["don", "don't", "done"],
+  dont: ["dont", "don't", "done"], wo: ["wo", "won't", "wow"], wor: ["wor", "work", "worry"],
+  worr: ["worr", "worry", "worried"], worry: ["worry", "worry", "worried"],
+  wh: ["wh", "what", "when"], wha: ["wha", "what", "whats"], what: ["what", "what", "whats"],
+  ti: ["ti", "time", "till"], tim: ["tim", "time", "timer"], time: ["time", "time", "times"],
+  wor2: ["", "", ""], fo: ["fo", "for", "form"], for: ["for", "for", "fork"],
+};
+function suggestFor(text) {
+  const w = (text.split(" ").pop() || "").toLowerCase();
+  if (w.length < 2) return null;
+  return SUGG[w] || SUGG[w.slice(0, 3)] || SUGG[w.slice(0, 2)] || null;
+}
+
+// ======================================================== script
 const ADDR = "8QvS3nE5d1YwZk7pLr2mXh9TbF4cJaGuVy6oKe1RtNqP";
 const ACTS = [
   { at: 0, who: ["S", "#ff9f0a", "Sam"], eyebrow: "", head: ["Type less.", "glyf more."],
-    note: "The keyboard you already know. With everything it never had.", msgs: [] },
-  { at: 300, who: ["M", "#ff375f", "Mia"], eyebrow: "Split a bill", head: ["Do the math.", "Get paid."],
+    note: "The keyboard you already know. With everything it never had.",
+    msgs: [{ s: "them", t: "you around this evening?" }] },
+  { at: 470, who: ["M", "#ff375f", "Mia"], eyebrow: "Split a bill", head: ["Do the math.", "Get paid."],
     note: "The sum is in the strip before you reach for a calculator.",
     msgs: [{ s: "them", t: "dinner was $348 for the four of us 🍝" },
-           { s: "them", t: "what do I owe you?" },
-           { s: "me", t: "$87" }] },
-  { at: 690, who: ["D", "#bf5af2", "Dev"], eyebrow: "Pay on Solana", head: ["Pay on Solana.", "Privately."],
+           { s: "them", t: "what do I owe you?" }, { s: "me", t: "$87" }] },
+  { at: 940, who: ["D", "#bf5af2", "Dev"], eyebrow: "Pay on Solana", head: ["Pay on Solana.", "Privately."],
     note: "USDC, sent from the keyboard. Nobody onchain sees who paid.",
     msgs: [{ s: "them", t: "can you send $200 USDC for the servers?" },
-           { s: "them", t: ADDR, cls: "addr" },
-           { s: "me", cls: "pay" }] },
-  { at: 1140, who: ["A", "#5e5ce6", "Alex"], eyebrow: "Ask Glyf", head: ["Type it messy.", "Send it polished."],
+           { s: "them", t: ADDR, cls: "addr" }, { s: "me", cls: "pay" }] },
+  { at: 1400, who: ["A", "#5e5ce6", "Alex"], eyebrow: "Ask Glyf", head: ["Type it messy.", "Send it polished."],
     note: "Hold the space bar. It rewrites what you meant to say.",
     msgs: [{ s: "them", t: "Could you send the Q3 deck to the client by EOD?" },
-           { s: "me", t: "Absolutely, I'll have it over to them by 6." }] },
+           { s: "me", t: "Absolutely, I'll have it over to them shortly." }] },
 ];
-const CARD = 1500, LAST = 1710;
+const CARD = 1830, LAST = 2050;
+ACTS[0].beats = [206];   // lands as the lock clears, so the screen is never blank
+ACTS[1].beats = [ACTS[1].at + 26, ACTS[1].at + 92, ACTS[1].at + 340];
+ACTS[2].beats = [ACTS[2].at + 26, ACTS[2].at + 92, ACTS[2].at + 376];
+ACTS[3].beats = [ACTS[3].at + 26, ACTS[3].at + 350];
 
-// Build every act's bubbles once; the thread shows one act at a time.
 const threadEl = document.getElementById("thread");
 ACTS.forEach(a => {
-  a.el = [];
-  a.msgs.forEach(m => {
+  a.el = a.msgs.map(m => {
     const d = document.createElement("div");
     d.className = "msg " + m.s + (m.cls ? " " + m.cls : "");
-    if (m.cls === "pay") {
-      d.innerHTML = '<span class="lock">🔒 Sent privately</span>' +
-                    '<b class="amt">$200.00</b><span class="chain">USDC on Solana · MagicBlock</span>';
-    } else d.textContent = m.t;
-    d.style.opacity = 0;
-    threadEl.appendChild(d); a.el.push(d);
+    if (m.cls === "pay") d.innerHTML = '<span class="lock">🔒 Sent privately</span><b class="amt">$200.00</b>' +
+      '<span class="chain">USDC on Solana · MagicBlock</span>';
+    else d.textContent = m.t;
+    d.style.opacity = 0; threadEl.appendChild(d); return d;
   });
 });
-// Lay each act out from the bottom: y[i][k] is where bubble i sits once k are up.
-const THREAD_H = 894 - 114 - 343, GAP = 7;
+const THREAD_H = SCREEN_H - 114 - 343, GAP = 7;
 ACTS.forEach(a => {
-  const h = a.el.map(e => e.getBoundingClientRect().height / 1.04478);
+  const h = a.el.map(e => e.getBoundingClientRect().height / SCALE);
   a.y = a.el.map(() => []);
   for (let k = 1; k <= a.el.length; k++) {
     let bottom = THREAD_H - 10;
     for (let i = k - 1; i >= 0; i--) { bottom -= h[i]; a.y[i][k] = bottom; bottom -= GAP; }
   }
-  a.el.forEach((e, i) => { e.style.top = "0px"; });
 });
 
 // ======================================================== drawing
-const S = {
-  head: document.getElementById("head"), eyebrow: document.getElementById("eyebrow"),
-  note: document.getElementById("note"), av: document.querySelector("#who .av"),
-  nm: document.querySelector("#who .nm"), tx: document.querySelector("#field .tx"),
-  caret: document.getElementById("caret"), send: document.getElementById("send"),
-  chip: document.getElementById("chip"), chipK: document.querySelector("#chip .k"),
-  chipV: document.querySelector("#chip .v"), chipTap: document.querySelector("#chip .tap"),
-  think: document.getElementById("think"), wallet: document.getElementById("wallet"),
-  ptr: document.getElementById("ptr"), phone: document.getElementById("phone"),
-  card: document.getElementById("card"), glow: document.getElementById("glow"),
-  left: document.getElementById("left"),
-};
+const $ = s => document.querySelector(s);
+const S = { head: $("#head"), eyebrow: $("#eyebrow"), note: $("#note"), av: $("#who .av"), nm: $("#who .nm"),
+  tx: $("#field .tx"), caret: $("#caret"), field: $("#field"), sheet: $("#sheet"),
+  chip: $("#chip"), chipK: $("#chip .k"), chipV: $("#chip .v"), think: $("#think"), wallet: $("#wallet"),
+  ptr: $("#ptr"), hero: $("#hero"), back: $("#back"), card: $("#card"), glow: $("#glow"), left: $("#left"),
+  lock: $("#lock"), lockNote: $("#lock .note") };
 let headKey = "";
 
-/** The pointer: glides to a point, presses, and goes. */
-function tapAt(f, a, x, y, hold = 26) {
+function tapAt(f, a, x, y, hold = 24) {
   const come = outQuint(seg(f, a - 22, a));
   const vis = pulse(f, a - 22, a + hold + 16, 16, 14);
   const press = pulse(f, a, a + 13, 5, 7);
-  S.ptr.style.opacity = Math.max(Number(S.ptr.style.opacity) || 0, vis);
-  if (vis > 0.01) {
-    const fromX = x - 46, fromY = y + 60;
-    S.ptr.style.transform =
-      `translate(${mix(fromX, x, come)}px, ${mix(fromY, y, come)}px) scale(${mix(1, .72, press)})`;
+  if (vis > Number(S.ptr.style.opacity || 0)) {
+    S.ptr.style.opacity = vis;
+    S.ptr.style.transform = `translate(${mix(x - 46, x, come)}px, ${mix(y + 60, y, come)}px) scale(${mix(1, .72, press)})`;
   }
   return press;
 }
-/** A key dips when it is pressed. */
-function press(cell, k) { if (cell) cell.el.style.filter = k > .2 ? "brightness(.9)" : ""; }
+function dipFor(layer, ch, since) {
+  if (!ch) return;
+  const c = layer.find(KEYNAME(ch)) || layer.find(String(ch).toLowerCase());
+  if (c && since >= 0 && since < 7) c.el.style.filter = "brightness(.9)";
+}
+function caretTo(f, hidden) {
+  S.caret.style.opacity = hidden ? 0 : (Math.floor(f / 28) % 2 ? .3 : 1);
+  S.caret.style.left = (15 + S.tx.getBoundingClientRect().width / SCALE) + "px";
+}
 
 function draw(f) {
-  // --- which act -------------------------------------------------------
-  // The swap happens in the DARK, 18 frames before the act starts: the old
-  // words fade out, the text is exchanged while nothing is on screen, and the
-  // new words fade in. Swapping on the way in instead left a stretch with no
-  // headline at all, which reads as a dropped frame.
   let act = ACTS[0], idx = 0;
   ACTS.forEach((a, i) => { if (f >= a.at - 18) { act = a; idx = i; } });
   const nextAt = idx < ACTS.length - 1 ? ACTS[idx + 1].at : 1e9;
-  const swapOut = nextAt - 18;
-  const alive = f < swapOut - 22 ? 1 : 1 - outQuint(seg(f, swapOut - 22, swapOut));
+  const alive = f < nextAt - 40 ? 1 : 1 - outQuint(seg(f, nextAt - 40, nextAt - 18));
 
   S.ptr.style.opacity = 0;
-  cells.forEach(c => { c.el.style.filter = ""; });
+  [abc, num].forEach(L => L.cells.forEach(c => { c.el.style.filter = ""; }));
+  S.chip.style.opacity = 0; S.think.style.opacity = 0; S.wallet.style.opacity = 0; suggEl.style.opacity = 0;
 
-  // --- the left column, crossfading ------------------------------------
-  const inHead = outQuint(seg(f, act.at - 26, act.at + 20));
-  const k = `${idx}`;
-  if (headKey !== k) {
-    headKey = k;
+  if (headKey !== String(idx)) {
+    headKey = String(idx);
     S.head.innerHTML = `<b>${act.head[0]}</b><b class="dim">${act.head[1]}</b>`;
-    S.eyebrow.textContent = act.eyebrow;
-    S.note.textContent = act.note;
+    S.eyebrow.textContent = act.eyebrow; S.note.textContent = act.note;
     S.av.textContent = act.who[0]; S.av.style.background = act.who[1]; S.nm.textContent = act.who[2];
   }
   [[S.eyebrow, 0], [S.head, 6], [S.note, 12]].forEach(([el, d]) => {
@@ -414,148 +477,157 @@ function draw(f) {
     el.style.transform = `translateY(${mix(26, 0, a) - (1 - alive) * 16}px)`;
   });
 
-  // --- the phone: a slow float so nothing is ever quite still -----------
+  const arrive = outQuint(seg(f, 0, 68));
   const bob = Math.sin(f / 118) * 5 + Math.sin(f / 61) * 1.6;
-  S.phone.style.transform = `translateY(${bob}px)`;
+  S.hero.style.opacity = arrive;
+  S.hero.style.transform = `translateY(${mix(60, 0, arrive) + bob}px) scale(${mix(.95, 1, arrive)})`;
+  const back = outQuint(seg(f, 30, 110));
+  S.back.style.opacity = back;
+  S.back.style.transform = `rotate(-7deg) translateY(${mix(76, 0, back) + Math.sin(f / 134 + 1.7) * 6}px) scale(${mix(.94, 1, back)})`;
   S.glow.style.transform = `translate(${Math.sin(f / 200) * 60}px, ${Math.cos(f / 240) * 40}px)`;
 
-  // --- bubbles ----------------------------------------------------------
-  ACTS.forEach((a, i) => {
-    const mine = i === idx;
-    a.el.forEach((el, j) => {
-      if (!mine) { el.style.opacity = 0; return; }
-      // The thread leaves with the words it belonged to.
-      const born = (a.beats || [])[j] ?? (a.at + 40 + j * 46);
-      const shown = a.el.filter((_, n) => f >= ((a.beats || [])[n] ?? (a.at + 40 + n * 46))).length;
-      const app = outQuint(seg(f, born, born + 24));
-      const yNow = a.y[j][Math.max(shown, j + 1)] ?? a.y[j][j + 1];
-      const yPrev = a.y[j][Math.max(shown - 1, j + 1)] ?? yNow;
-      const slide = outQuint(seg(f, born + (shown - 1 - j) * 0, born + 26));
-      el.style.opacity = app * alive;
-      el.style.top = mix(yPrev, yNow, 1) + "px";
-      el.style.transform =
-        `translateY(${mix(16, 0, app)}px) scale(${mix(.86, 1, settle(app, 1.1))})`;
-      el.style.transformOrigin = el.classList.contains("me") ? "100% 100%" : "0 100%";
-    });
-  });
+  ACTS.forEach((a, i) => a.el.forEach((el, j) => {
+    if (i !== idx) { el.style.opacity = 0; return; }
+    const born = a.beats[j];
+    const shown = a.el.filter((_, n) => f >= a.beats[n]).length;
+    const app = outQuint(seg(f, born, born + 24));
+    el.style.opacity = app * alive;
+    el.style.top = (a.y[j][Math.max(shown, j + 1)] ?? a.y[j][j + 1]) + "px";
+    el.style.transform = `translateY(${mix(16, 0, app)}px) scale(${mix(.86, 1, settle(app, 1.1))})`;
+    el.style.transformOrigin = el.classList.contains("me") ? "100% 100%" : "0 100%";
+  }));
 
-  // --- the acts themselves ---------------------------------------------
   drawKeyboard(f);
   A0(f); A1(f); A2(f); A3(f); A4(f);
 }
 
-// ---- act 0: the keyboard forms ----------------------------------------
-const DRAFT0 = "hey, what time works for";
+// ---- act 0: the phone wakes, then the keyboard forms -------------------
 function A0(f) {
-  const typed = Math.round(mix(0, DRAFT0.length, outCubic(seg(f, 16, 92))));
-  const kept = f < 104 ? typed : Math.round(mix(DRAFT0.length, 0, seg(f, 104, 130)));
-  if (f < 300) {
-    S.tx.textContent = DRAFT0.slice(0, Math.max(0, kept));
-    S.caret.style.opacity = f > 136 ? 0 : (Math.floor(f / 28) % 2 ? .3 : 1);
-    S.caret.style.left = (15 + S.tx.getBoundingClientRect().width / 1.04478) + "px";
-    S.send.style.opacity = 0;
+  const up = outQuint(seg(f, 156, 204));
+  S.lock.style.opacity = f < 30 ? 0 : 1 - seg(f, 186, 206);
+  S.lock.style.transform = `translateY(${mix(0, -SCREEN_H, up)}px)`;
+  const nk = outQuint(seg(f, 84, 116));
+  S.lockNote.style.opacity = nk;
+  S.lockNote.style.transform = `translateY(${mix(16, 0, nk)}px) scale(${mix(.94, 1, settle(nk, 1.1))})`;
+  if (f < 200) tapAt(f, 170, 201, 860, 6);
+  if (f >= 470 - 18) return;
+
+  const T = typing(f, 300, "what time works for");
+  const gone = f > 372;
+  S.tx.textContent = gone ? "" : T.out;
+  dipFor(abc, gone ? null : T.ch, T.since);
+  caretTo(f, gone);
+  const sg = !gone && !T.done && T.out.length ? suggestFor(T.out) : null;
+  if (sg && f > 262) {
+    suggEl.style.opacity = 1; toolsEl.style.opacity = 0;
+    slots.forEach((s, i) => { s.textContent = i === 0 ? `"${sg[0]}"` : sg[i]; s.style.opacity = sg[i] ? 1 : .25; });
   }
 }
 // ---- act 1: the bill ---------------------------------------------------
-ACTS[1].beats = [ACTS[1].at + 30, ACTS[1].at + 96, ACTS[1].at + 286];
 function A1(f) {
   const a = ACTS[1].at;
-  if (f < a - 26 || f > ACTS[2].at - 26) return;
-  const draft = "348/4";
-  const typed = Math.round(mix(0, draft.length, outCubic(seg(f, a + 150, a + 196))));
-  const cleared = f > a + 276;
-  S.tx.textContent = cleared ? "" : draft.slice(0, typed);
-  S.caret.style.opacity = cleared ? 0 : (Math.floor(f / 28) % 2 ? .3 : 1);
-  S.caret.style.left = (15 + S.tx.getBoundingClientRect().width / 1.04478) + "px";
-  S.send.style.opacity = 0;
+  if (f < a - 18 || f > ACTS[2].at - 18) return;
+  const n123 = abc.find("123");
+  tapAt(f, a + 156, n123.cx, n123.cy, 8);
+  const T = typing(f, a + 184, "348/4");
+  const cleared = f > a + 332;
+  S.tx.textContent = cleared ? "" : T.out;
+  dipFor(num, cleared ? null : T.ch, T.since);
+  caretTo(f, cleared);
 
-  // the sum arrives in the strip, gets tapped, and becomes the message
-  const chip = pulse(f, a + 200, a + 286, 18, 14);
-  S.chip.style.opacity = chip;
-  S.chip.style.transform = `translateY(${mix(10, 0, outQuint(seg(f, a + 200, a + 224)))}px)`;
-  S.chipK.textContent = "348 ÷ 4"; S.chipV.textContent = "";
-  S.chipV.style.left = "84px"; S.chipV.textContent = "= $87";
-  S.chipTap.style.opacity = 1;
-  toolsEl.style.opacity = Math.min(1, 1 - chip * .95);
-  tapAt(f, a + 262, 200, 57 + 11 + 17, 10);
+  const chip = pulse(f, a + 234, a + 340, 18, 14);
+  if (chip > .01) {
+    S.chip.style.opacity = chip;
+    S.chip.style.transform = `translateY(${mix(10, 0, outQuint(seg(f, a + 234, a + 258)))}px)`;
+    S.chipK.textContent = "348 ÷ 4"; S.chipV.style.left = "84px"; S.chipV.textContent = "= $87";
+    toolsEl.style.opacity = Number(toolsEl.style.opacity) * (1 - chip * .96);
+  }
+  tapAt(f, a + 316, 200, 28, 10);
 }
 // ---- act 2: the payment ------------------------------------------------
-ACTS[2].beats = [ACTS[2].at + 26, ACTS[2].at + 92, ACTS[2].at + 366];
 function A2(f) {
   const a = ACTS[2].at;
-  if (f < a - 26 || f > ACTS[3].at - 26) return;
-  S.tx.textContent = ""; S.caret.style.opacity = 0; S.send.style.opacity = 0;
-
-  // tap the address, the strip offers to pay, the wallet slides up
-  const tapAddr = tapAt(f, a + 150, 130, 300, 8);
-  const chip = pulse(f, a + 176, a + 250, 16, 12);
-  S.chip.style.opacity = Math.max(S.chip.style.opacity || 0, chip);
+  if (f < a - 18 || f > ACTS[3].at - 18) return;
+  S.tx.textContent = ""; caretTo(f, true);
+  tapAt(f, a + 160, 130, 300, 8);
+  const chip = pulse(f, a + 186, a + 260, 16, 12);
   if (chip > .01) {
-    S.chip.style.transform = `translateY(${mix(10, 0, outQuint(seg(f, a + 176, a + 198)))}px)`;
-    S.chipK.textContent = "Pay"; S.chipV.style.left = "46px";
-    S.chipV.textContent = "$200 USDC to Dev"; S.chipTap.style.opacity = 1;
+    S.chip.style.opacity = chip;
+    S.chip.style.transform = `translateY(${mix(10, 0, outQuint(seg(f, a + 186, a + 208)))}px)`;
+    S.chipK.textContent = "Pay"; S.chipV.style.left = "46px"; S.chipV.textContent = "$200 USDC to Dev";
+    toolsEl.style.opacity = Number(toolsEl.style.opacity) * (1 - chip * .96);
   }
-  toolsEl.style.opacity = Math.min(toolsEl.style.opacity === "" ? 1 : Number(toolsEl.style.opacity),
-                                   1 - Math.max(chip, 0) * .95);
-  tapAt(f, a + 232, 200, 85, 8);
-
-  const w = pulse(f, a + 246, a + 356, 22, 16);
-  S.wallet.style.opacity = w;
-  S.wallet.style.transform = `translateY(${mix(286, 0, settle(seg(f, a + 246, a + 300), 1.1))}px)`;
-  tapAt(f, a + 330, 200, 343 - 286 + 247, 8);
+  tapAt(f, a + 242, 200, 28, 8);
+  const w = pulse(f, a + 256, a + 366, 22, 16);
+  if (w > .01) {
+    S.wallet.style.opacity = w;
+    S.wallet.style.transform = `translateY(${mix(286, 0, settle(seg(f, a + 256, a + 310), 1.1))}px)`;
+  }
+  tapAt(f, a + 342, 200, 304, 8);
 }
 // ---- act 3: the rewrite ------------------------------------------------
-ACTS[3].beats = [ACTS[3].at + 26, ACTS[3].at + 276];
-const MESSY = "ya ill send it by 6 dont worry";
+const MESSY = "ya ill send it soon dont worry";
 function A3(f) {
   const a = ACTS[3].at;
-  if (f < a - 26 || f > CARD - 26) return;
-  const typed = Math.round(mix(0, MESSY.length, outCubic(seg(f, a + 74, a + 168))));
-  const done = f > a + 262;
-  S.tx.textContent = done ? "" : MESSY.slice(0, typed);
-  S.caret.style.opacity = done ? 0 : (Math.floor(f / 28) % 2 ? .3 : 1);
-  S.caret.style.left = (15 + S.tx.getBoundingClientRect().width / 1.04478) + "px";
+  if (f < a - 18 || f > CARD - 18) return;
+  const T = typing(f, a + 64, MESSY);
+  const done = f > a + 336;
+  S.tx.textContent = done ? "" : T.out;
+  dipFor(abc, done ? null : T.ch, T.since);
+  caretTo(f, done);
 
-  // hold the space bar, the strip thinks, the words change
-  const sp = key("space");
-  const hold = pulse(f, a + 178, a + 214, 8, 8);
-  if (sp) sp.el.style.filter = hold > .2 ? "brightness(.93)" : "";
-  tapAt(f, a + 186, 201, 57 + 3 * PITCH + KEYH / 2, 24);
-
-  const th = pulse(f, a + 200, a + 262, 16, 12);
-  S.think.style.opacity = th;
-  toolsEl.style.opacity = Math.min(1, 1 - th * .95);
+  const sg = !done && !T.done && T.out.length ? suggestFor(T.out) : null;
+  if (sg) {
+    suggEl.style.opacity = 1; toolsEl.style.opacity = 0;
+    slots.forEach((s, i) => { s.textContent = i === 0 ? `"${sg[0]}"` : sg[i]; s.style.opacity = sg[i] ? 1 : .25; });
+  }
+  const sp = abc.find("space");
+  const hold = pulse(f, a + 252, a + 288, 8, 8);
+  if (sp && hold > .2) sp.el.style.filter = "brightness(.93)";
+  tapAt(f, a + 260, 201, TOOLS_H + 3 * PITCH + KEYH / 2, 24);
+  const th = pulse(f, a + 274, a + 336, 16, 12);
+  if (th > .01) {
+    S.think.style.opacity = th; suggEl.style.opacity = 0;
+    toolsEl.style.opacity = Number(toolsEl.style.opacity) * (1 - th * .96);
+  }
   document.querySelectorAll("#think .d").forEach((d, i) => {
-    const t = (f / 9 + i * .9) % 6;
     d.style.left = (20 + i * 11) + "px";
-    d.style.opacity = .35 + .65 * Math.max(0, Math.sin(t));
+    d.style.opacity = .35 + .65 * Math.max(0, Math.sin((f / 9 + i * .9) % 6));
   });
 }
 // ---- act 4: the card ---------------------------------------------------
 function A4(f) {
   const out = inOutQuint(seg(f, CARD - 40, CARD + 60));
-  S.phone.style.opacity = 1 - cl(out * 1.5);
-  S.phone.style.transform += ` translateX(${mix(0, 150, out)}px) scale(${mix(1, .94, out)})`;
+  if (out <= 0) return;
+  [S.hero, S.back].forEach((el, i) => {
+    el.style.opacity = Number(el.style.opacity) * (1 - cl(out * 1.5));
+    el.style.transform += ` translateX(${mix(0, 150 + i * 40, out)}px) scale(${mix(1, .94, out)})`;
+  });
   S.left.style.opacity = 1 - cl(out * 1.8);
   S.card.style.opacity = cl(seg(f, CARD + 6, CARD + 40));
   const rise = (sel, d, dy) => {
-    const el = S.card.querySelector(sel);
-    const a = outQuint(seg(f, CARD + d, CARD + d + 46));
-    el.style.opacity = a;
-    const cx = sel === "h1" || sel === ".url" ? "" : "translateX(-50%) ";
-    el.style.transform = `${cx}translateY(${mix(dy, 0, a)}px)`;
+    const el = S.card.querySelector(sel), k = outQuint(seg(f, CARD + d, CARD + d + 46));
+    el.style.opacity = k;
+    el.style.transform = `${sel === "h1" || sel === ".url" ? "" : "translateX(-50%) "}translateY(${mix(dy, 0, k)}px)`;
   };
   rise(".wm", 10, 22); rise("h1", 22, 30); rise(".cta", 40, 26); rise(".url", 54, 20);
 }
 
-// ---- the keys, forming in act 0 then staying ---------------------------
+// ---- the keys: Apple's rise, leave, and Glyf's land --------------------
 function drawKeyboard(f) {
-  cells.forEach(c => {
+  const a1 = ACTS[1].at;
+  const onNum = f > a1 + 166 && f < a1 + 346;
+  num.host.style.opacity = onNum ? 1 : 0;
+  abc.host.style.opacity = onNum ? 0 : 1;
+
+  const rise = outQuint(seg(f, 204, 262));
+  S.sheet.style.transform = `translateY(${mix(343, 0, rise)}px)`;
+  S.field.style.opacity = outQuint(seg(f, 196, 240));
+
+  abc.cells.forEach(c => {
     const order = c.row * 10 + c.col;
-    const goA = 118 + order * 1.05;
-    const gone = seg(f, goA, goA + 18);
-    const inA = 186 + (3 - c.row) * 11 + c.col * 2.2;
-    const land = seg(f, inA, inA + 52);
+    const goA = 380 + order * 1.05, gone = seg(f, goA, goA + 18);
+    const inA = 448 + (3 - c.row) * 11 + c.col * 2.2, land = seg(f, inA, inA + 52);
     let y, o, s, rot;
     if (f < inA) {
       y = mix(0, 40, inCubic(gone)); o = 1 - gone;
@@ -567,36 +639,26 @@ function drawKeyboard(f) {
     }
     c.el.style.opacity = o;
     c.el.style.transform = `translateY(${y}px) rotate(${rot}deg) scale(${s})`;
-    if (c.k === "space") {
-      c.span.textContent = f > 268 ? "glyf" : "";
-      c.span.style.opacity = seg(f, 268, 292);
-    }
+    if (c.k === "space") { c.span.textContent = f > 530 ? "glyf" : ""; c.span.style.opacity = seg(f, 530, 554); }
     if (BOUND.has(c.k)) {
-      const p = seg(f, 262 + c.col * 3, 292 + c.col * 3);
+      const p = seg(f, 524 + c.col * 3, 554 + c.col * 3);
       c.dot.style.opacity = p; c.dot.style.transform = `scale(${settle(p, 1.6)})`;
     }
   });
-  const st = seg(f, 236, 292);
-  toolsEl.style.opacity = f < 236 ? 0 : cl(st * 2.4);
+  num.cells.forEach(c => { c.el.style.opacity = 1; c.el.style.transform = "none"; });
+
+  const st = seg(f, 498, 554);
+  toolsEl.style.opacity = f < 498 ? 0 : cl(st * 2.4);
   toolsEl.style.transform = `translateY(${mix(-60, 0, settle(st, 1.1))}px)`;
   toolEls.forEach((el, i) => {
-    const a = seg(f, 236 + i * 4, 272 + i * 4);
-    el.style.opacity = a;
-    el.style.transform = `translateY(${mix(-12, 0, outQuint(a))}px) scale(${mix(.74, 1, settle(a, 1.3))})`;
+    const k = seg(f, 498 + i * 4, 534 + i * 4);
+    el.style.opacity = k;
+    el.style.transform = `translateY(${mix(-12, 0, outQuint(k))}px) scale(${mix(.74, 1, settle(k, 1.3))})`;
   });
-  if (f < 236) { S.chip.style.opacity = 0; S.think.style.opacity = 0; S.wallet.style.opacity = 0; }
 }
 
-// The per-frame entry point. Everything an act may leave behind is cleared
-// here first, so a frame never inherits the one before it: the render jumps
-// around the timeline and each frame has to stand on its own.
-window.seek = f => {
-  S.chip.style.opacity = 0; S.think.style.opacity = 0; S.wallet.style.opacity = 0;
-  draw(f);
-};
-window.TOTAL = LAST;
-window.FPS = 60;
-window.SIZE = { width: 1920, height: 1080 };
+window.seek = f => draw(f);
+window.TOTAL = LAST; window.FPS = 60; window.SIZE = { width: 1920, height: 1080 };
 window.seek(0);
 document.body.dataset.ready = "1";
 </script>
