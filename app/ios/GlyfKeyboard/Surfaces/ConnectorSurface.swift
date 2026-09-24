@@ -8,6 +8,9 @@ protocol ConnectorSurfaceDelegate: AnyObject {
     /// Search focus collapses the surface so letter keys can show below.
     func connectorLayoutChanged()
     func connectorSearchDismissed()
+    /// A word for the person after the surface has closed (the toast
+    /// otherwise leaves with it).
+    func connectorToast(_ text: String)
 }
 
 /// §6.12 — the ConnectorSurface: search field (36pt) · result list (44pt

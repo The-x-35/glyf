@@ -12,7 +12,7 @@ describe("who may call this server", () => {
     expect(isOpen("/p/abc123")).toBe(true);
     expect(isOpen("/waitlist")).toBe(true);
     expect(isOpen("/oauth/google/callback?code=x")).toBe(true);
-    for (const path of ["/act", "/glyf/run", "/suggest", "/translate", "/vocab/generate",
+    for (const path of ["/act", "/glyf/run", "/translate", "/vocab/generate",
       "/builder/generate", "/search/web", "/tools/run", "/me", "/meter/dev", "/glyfs",
       "/telemetry", "/hub/skills"]) {
       expect(isOpen(path), path).toBe(false);

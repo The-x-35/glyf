@@ -180,6 +180,8 @@ async function calendarOn() {
     }
   }
   tool("calendaron");
+  // Google Calendar and Meet off unless a scenario connects the stand-in.
+  tool("googlefake");
   await sleep(300);
 }
 
@@ -205,8 +207,26 @@ async function screenshotsOn() {
   };
 }
 
-// The stand-in Cal.com and Resend (qa/fake-scheduling.mjs), on this Mac.
+// The stand-in Cal.com (qa/fake-scheduling.mjs), on this Mac.
 const FAKE = "http://127.0.0.1:8796";
+// The stand-in Google (qa/fake-google.mjs): this Mac reads its log on
+// 127.0.0.1, the emulator reaches it on 10.0.2.2.
+const FAKE_GOOGLE = "http://127.0.0.1:8797";
+const FAKE_GOOGLE_FOR_PHONE = "http://10.0.2.2:8797";
+
+// New Event's rows scroll when the panel is short, and a row below the fold
+// still has a place in the dump: drag the rows up from the Starts row (always
+// in view, on the labels' side, away from the switches), then read again.
+async function rowInView(id) {
+  const from = await waitFor(byId("event:starts:time"), 3000) || await waitFor(byId("event:starts:date"), 1000);
+  const header = await waitFor(byId("event:add"), 1000);
+  if (!from || !header) return await waitFor(byId(id), 2000);
+  const w = Number(shell("wm size").match(/(\d+)x(\d+)/)[1]);
+  const x = Math.round(w * 0.25);
+  shell(`input swipe ${x} ${from.y} ${x} ${header.y} 400`);
+  await sleep(700);
+  return await waitFor(byId(id), 2000);
+}
 
 const byId = id => v => v.id === id;
 const idStarts = p => v => v.id.startsWith(p);
@@ -261,22 +281,6 @@ const scenarios = [
     if (!chip) return { pass: false, note: "no UPI chip" };
     const r = await tapFor(chip, x => x.includes("@"));
     return { pass: /^my upi is \S+@\S+/i.test(r.t), note: `'${r.t}'${second(r)}` };
-  } },
-  { id: "S90", title: "A rough message offers Tidy this up", run: async () => {
-    await fresh();
-    await type("ya ok will send the deck before six tmrw ");
-    const chip = await waitFor(v => v.id === "strip:smart", 10000);
-    if (!chip) return { pass: false, note: "no chip after 10s" };
-    const s = await state();
-    const label = s.views.filter(v => v.text).map(v => v.text).find(t => /tidy|places|look/i.test(t)) ?? "";
-    await tapXY(chip.x, chip.y);
-    // The free models behind the dev server can take 15 s or more, so the
-    // wait is generous and the note says how long it took.
-    const t0 = Date.now();
-    const option = await waitFor(idStarts("act:option:"), 25000);
-    const secs = ((Date.now() - t0) / 1000).toFixed(1);
-    return { pass: /tidy/i.test(label) && !!option,
-      note: `chip '${label}', versions ${option ? `shown after ${secs}s` : `missing after ${secs}s`}` };
   } },
   { id: "S91", title: "Hold space: pick the Professional version", run: async () => {
     await fresh();
@@ -420,6 +424,11 @@ const scenarios = [
     const hint = (find(await state(), byId("event:hint")) || {}).text || "";
     await key("return");
     const starts = await waitFor(byId("event:starts:time"), 3000);
+    // Share in chat off: this one is for the day's list.
+    const share = await rowInView("event:share");
+    if (!share) return { pass: false, note: "no Share in chat row" };
+    await tapXY(share.x, share.y);
+    await sleep(300);
     const add = await waitFor(byId("event:add"), 2000);
     if (!add) return { pass: false, note: `no Add; hint '${hint}'` };
     await tapXY(add.x, add.y);
@@ -504,40 +513,6 @@ const scenarios = [
       tool("bookinglink");
     }
   } },
-  { id: "S119", title: "New Event with an invitee emails the invite", run: async () => {
-    await calendarOn();
-    await fresh();
-    tool("calendar");
-    const plus = await waitFor(byId("calendar:new"), 4000);
-    if (!plus) return { pass: false, note: "no + on the calendar" };
-    const title = await tapOpen(plus, byId("event:title"));
-    if (!title) return { pass: false, note: "New Event didn't open" };
-    if (!(await tapOpen(title, byId("event:title:field")))) return { pass: false, note: "no title strip" };
-    await type("review friday 3pm");
-    await key("return");
-    const invitees = await waitFor(byId("event:invitees"), 3000);
-    if (!invitees) return { pass: false, note: "no Invitees row" };
-    if (!(await tapOpen(invitees, byId("event:invitees:field")))) return { pass: false, note: "no invitees strip" };
-    await type("sam@example.com");
-    await key("return");
-    const shown = await waitFor(textHas("sam@example.com"), 3000);
-    const before = (await (await fetch(`${FAKE}/_log`)).json()).emails.length;
-    const add = await waitFor(byId("event:add"), 3000);
-    if (!add) return { pass: false, note: "no Add" };
-    await tapXY(add.x, add.y);
-    let mailed = null;
-    for (let i = 0; i < 20 && !mailed; i++) {
-      await sleep(500);
-      const emails = (await (await fetch(`${FAKE}/_log`)).json()).emails;
-      if (emails.length > before) mailed = emails.at(-1);
-    }
-    if (!mailed) return { pass: false, note: `no invite was sent; invitees row '${shown?.text}'` };
-    const row = await waitFor(v => v.text === "Review", 5000);
-    const ics = mailed.ics || "";
-    return { pass: JSON.stringify(mailed.to) === JSON.stringify(["sam@example.com"]) &&
-      ics.includes("SUMMARY:Review") && ics.includes("METHOD:REQUEST") && !!row,
-      note: `invitees row '${shown?.text}'; mailed '${mailed.subject}' to ${mailed.to}; row ${row ? "shown" : "missing"}` };
-  } },
   { id: "S120", title: "Someone's booking page in a message offers Book", run: async () => {
     await fetch(`${FAKE}/_reset`);
     await calendarOn();
@@ -576,6 +551,96 @@ const scenarios = [
     const booked = (await (await fetch(`${FAKE}/_log`)).json()).bookings.at(-1) || {};
     return { pass: r.t.includes("/intro Booked for") && booked.username === "sam-lee" && booked.eventTypeSlug === "intro",
       note: `chip '${words}'; booked on ${booked.username}/${booked.eventTypeSlug} as ${booked.attendee?.name} <${booked.attendee?.email}>; message '${r.t}'${second(r)}` };
+  } },
+  // Google Calendar and Meet (2026-09-24), against qa/fake-google.mjs: the
+  // keyboard talks to "Google" itself, so no real account is touched.
+  { id: "S125", title: "A Meet link from the calendar, with Google connected", run: async () => {
+    await fetch(`${FAKE_GOOGLE}/_reset`);
+    await calendarOn();
+    tool("googlefake", `--es text ${FAKE_GOOGLE_FOR_PHONE}`);
+    try {
+      await fresh();
+      tool("calendar");
+      const call = await waitFor(byId("calendar:call"), 4000);
+      if (!call) return { pass: false, note: "no call button on the calendar" };
+      const r = await tapFor(call, x => x.includes("https://meet.google.com/"), 6000);
+      const made = (await (await fetch(`${FAKE_GOOGLE}/_log`)).json()).spaces.length;
+      return { pass: /Join me on a call: https:\/\/meet\.google\.com\//.test(r.t) && made >= 1,
+        note: `message '${r.t}'; Meet links made ${made}${second(r)}` };
+    } finally {
+      tool("googlefake");
+    }
+  } },
+  { id: "S126", title: "New Event with a guest goes to Google Calendar, which invites them", run: async () => {
+    await fetch(`${FAKE_GOOGLE}/_reset`);
+    await calendarOn();
+    tool("googlefake", `--es text ${FAKE_GOOGLE_FOR_PHONE}`);
+    try {
+      await fresh();
+      tool("calendar");
+      const plus = await waitFor(byId("calendar:new"), 4000);
+      if (!plus) return { pass: false, note: "no + on the calendar" };
+      const title = await tapOpen(plus, byId("event:title"));
+      if (!title) return { pass: false, note: "New Event didn't open" };
+      if (!(await tapOpen(title, byId("event:title:field")))) return { pass: false, note: "no title strip" };
+      await type("review friday 3pm");
+      await key("return");
+      const invitees = await waitFor(byId("event:invitees"), 3000);
+      if (!invitees) return { pass: false, note: "no Invitees row with Google connected" };
+      if (!(await tapOpen(invitees, byId("event:invitees:field")))) return { pass: false, note: "no invitees strip" };
+      await type("sam@example.com");
+      await key("return");
+      const video = await rowInView("event:video");
+      if (!video) return { pass: false, note: "no Video call row" };
+      await tapXY(video.x, video.y);
+      await sleep(300);
+      const add = await waitFor(byId("event:add"), 3000);
+      if (!add) return { pass: false, note: "no Add" };
+      // Share in chat is on from +: the event lands in the message too.
+      const r = await tapFor(add, x => x.includes("Review") && x.includes("https://meet.google.com/"), 8000);
+      const last = (await (await fetch(`${FAKE_GOOGLE}/_log`)).json()).events.at(-1) || {};
+      const guests = (last.body?.attendees || []).map(a => a.email);
+      const ok = JSON.stringify(guests) === JSON.stringify(["sam@example.com"]) &&
+        last.query?.sendUpdates === "all" && !!last.body?.conferenceData?.createRequest &&
+        r.t.includes("Review") && r.t.includes("https://meet.google.com/");
+      return { pass: ok, note: `event '${last.body?.summary}' for ${guests}, sendUpdates=${last.query?.sendUpdates}; message '${r.t}'${second(r)}` };
+    } finally {
+      tool("googlefake");
+    }
+  } },
+  { id: "S127", title: "Without Google, New Event goes into the message", run: async () => {
+    await calendarOn();
+    await fresh();
+    tool("calendar");
+    const plus = await waitFor(byId("calendar:new"), 4000);
+    if (!plus) return { pass: false, note: "no + on the calendar" };
+    const title = await tapOpen(plus, byId("event:title"));
+    if (!title) return { pass: false, note: "New Event didn't open" };
+    const invitees = find(await state(), byId("event:invitees"));
+    if (!(await tapOpen(title, byId("event:title:field")))) return { pass: false, note: "no title strip" };
+    await type("lunch with sam tomorrow 1pm");
+    await key("return");
+    const add = await waitFor(byId("event:add"), 3000);
+    if (!add) return { pass: false, note: "no Add" };
+    const r = await tapFor(add, x => x.includes("📅 Lunch with sam"), 6000);
+    return { pass: !invitees && r.t.includes("📅 Lunch with sam"),
+      note: `${invitees ? "an Invitees row showed without Google; " : ""}message '${r.t}'${second(r)}` };
+  } },
+  { id: "S128", title: "A key held for a Meet link", run: async () => {
+    await fetch(`${FAKE_GOOGLE}/_reset`);
+    tool("googlefake", `--es text ${FAKE_GOOGLE_FOR_PHONE}`);
+    tool("bind", "--es text m=connector:meet");
+    try {
+      await fresh();
+      const s = await state();
+      if (!s.keys.m) return { pass: false, note: "no M key" };
+      await hold(s.keys.m[0], s.keys.m[1], 900);
+      const t = await waitText(x => x.includes("https://meet.google.com/"), 8000);
+      return { pass: /Join me on a call: https:\/\/meet\.google\.com\//.test(t), note: `message '${t}'` };
+    } finally {
+      tool("bind", "--es text m=");
+      tool("googlefake");
+    }
   } },
   { id: "S97", title: "Slide left from delete removes whole words", run: async () => {
     await fresh();

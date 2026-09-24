@@ -26,17 +26,20 @@ interface StripField {
 /**
  * New Event, the twin of EventComposer.swift: Cancel, the name and Add along
  * the top, then rows that scroll: Title, Invitees, Starts, Ends, Video call,
- * All-day, the way Calendar's own sheet has them. The title takes a whole
- * plan in one line ("Lunch with Sam tomorrow 1pm") and fills the times;
- * invitees are email addresses, sent a calendar invite when the event is
- * added. The date and time pills open wheels (day, hour, minute, AM/PM) in
- * place of the rows.
+ * Share in chat, All-day, the way Calendar's own sheet has them. The title
+ * takes a whole plan in one line ("Lunch with Sam tomorrow 1pm") and fills
+ * the times. Invitees show only with Google Calendar connected: the event then
+ * goes to Google, which emails each one the invite. Share in chat puts the
+ * event in the message, for the person the chat is with. The date and time
+ * pills open wheels (day, hour, minute, AM/PM) in place of the rows.
  */
 class EventComposerView(
     ctx: Context,
     private val palette: GlyfKeyboardView.KeyPalette,
     start: Draft,
     private val canAdd: Boolean,
+    /** Google Calendar is connected: invitees can be asked. */
+    private val google: Boolean,
     private val onCancel: () -> Unit,
     private val onAdd: (Draft) -> Unit,
     /** true: a field is being typed, the letter keys should come up under a
@@ -52,8 +55,10 @@ class EventComposerView(
         val allDay: Boolean,
         /** Make a call link and put it in the event (its location). */
         val videoCall: Boolean = false,
-        /** Emailed a calendar invite once the event is added. */
+        /** Google emails each one the invite (Google Calendar connected). */
         val invitees: List<String> = emptyList(),
+        /** Once added, the event goes into the message for the chat. */
+        val share: Boolean = false,
     )
 
     private enum class Field { TITLE, INVITEES }
@@ -89,6 +94,7 @@ class EventComposerView(
     private val endTime = pill("event:ends:time") { pick(2) }
     private val allDay = Switch(ctx)
     private val video = Switch(ctx)
+    private val share = Switch(ctx)
     private val note = LinearLayout(ctx)
     private val wheels = LinearLayout(ctx)
     private val dayWheel = NumberPicker(ctx)
@@ -138,7 +144,7 @@ class EventComposerView(
             titleValue.apply { textSize = 16f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
             addView(titleValue, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }, rowParams())
-        if (canAdd) {
+        if (canAdd && google) {
             card.addView(line())
             card.addView(row().apply {
                 tag(this, "event:invitees")
@@ -162,7 +168,9 @@ class EventComposerView(
             addView(endDate); addView(space()); addView(endTime)
         }, rowParams())
         if (canAdd) {
-            for ((toggle, name, id) in listOf(Triple(video, "Video call", "event:video"), Triple(allDay, "All-day", "event:allday"))) {
+            for ((toggle, name, id) in listOf(Triple(video, "Video call", "event:video"),
+                                              Triple(share, "Share in chat", "event:share"),
+                                              Triple(allDay, "All-day", "event:allday"))) {
                 card.addView(line())
                 tag(toggle, id)
                 card.addView(row().apply {
@@ -171,6 +179,7 @@ class EventComposerView(
                 }, rowParams())
             }
             video.setOnCheckedChangeListener { _, on -> draft = draft.copy(videoCall = on) }
+            share.setOnCheckedChangeListener { _, on -> draft = draft.copy(share = on) }
             allDay.setOnCheckedChangeListener { _, on -> allDayChanged(on) }
         }
         rows.isVerticalScrollBarEnabled = false
@@ -296,7 +305,7 @@ class EventComposerView(
         if (editing != null) endStrip()
         if (!canAdd) return
         val title = draft.title.trim().ifEmpty { "New Event" }
-        onAdd(draft.copy(title = title, invitees = EventParse.people(inviteLine).second))
+        onAdd(draft.copy(title = title, invitees = if (google) EventParse.people(inviteLine).second else emptyList()))
     }
 
     private fun begin(field: Field) {
@@ -446,8 +455,9 @@ class EventComposerView(
         endDate.visibility = if (sameDay && !draft.allDay) GONE else VISIBLE
         if (allDay.isChecked != draft.allDay) allDay.isChecked = draft.allDay
         if (video.isChecked != draft.videoCall) video.isChecked = draft.videoCall
+        if (share.isChecked != draft.share) share.isChecked = draft.share
         hint.text = when {
-            editing == Field.INVITEES && invitees.isEmpty() -> "They get an email invite when it's added"
+            editing == Field.INVITEES && invitees.isEmpty() -> "Google emails each one the invite"
             editing == Field.INVITEES -> "Invite ${invitees.joinToString(", ")}"
             draft.allDay -> CalendarText.dayLabel(draft.start)
             else -> "${CalendarText.dayLabel(draft.start)}, ${CalendarText.range(draft.start, draft.end)}"

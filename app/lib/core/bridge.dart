@@ -89,6 +89,22 @@ abstract final class GlyfBridge {
 
   static Future<void> signOutProviders() => _call<bool>('signOutProviders');
 
+  /// Google Calendar and Meet for the keyboard: connected or not, as whom,
+  /// and for what (`connected`, `email`, `calendar`, `meet`). The grant stays
+  /// on the phone; the keyboard talks to Google itself.
+  static Future<Map<String, dynamic>> googleStatus() async =>
+      Map<String, dynamic>.from(await _call<Map>('googleStatus') ?? const {'connected': false});
+
+  /// Asks Google for Calendar and Meet: its page with the iOS client id on
+  /// the iPhone, Play services' consent on Android. The new status, or `error`.
+  static Future<Map<String, dynamic>> googleConnect({String? clientId, String? loginHint}) async =>
+      Map<String, dynamic>.from(
+          await _call<Map>('googleConnect', {'clientId': ?clientId, 'loginHint': ?loginHint}) ??
+              const {'error': 'failed'});
+
+  /// Takes the grant back from Google and off the phone.
+  static Future<void> googleDisconnect() => _call<bool>('googleDisconnect');
+
   /// The Glyf session, kept in the Keychain (iOS) or encrypted with a
   /// Keystore key (Android).
   static Future<String?> sessionLoad() => _call<String>('sessionLoad');

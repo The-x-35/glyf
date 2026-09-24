@@ -95,6 +95,34 @@ final class EventParseTests: XCTestCase {
         XCTAssertEqual(EventParse.people("<Arpit Singh> (arpit@gmail.com)").name, "Arpit Singh")
     }
 
+    func testGoogleEventBody() {
+        let tz = TimeZone(identifier: "Asia/Kolkata")!
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        let start = cal.date(from: DateComponents(year: 2026, month: 9, day: 25, hour: 15))!
+        let timed = GoogleEvent.body(title: "Review", start: start, end: start.addingTimeInterval(3600),
+                                     allDay: false, guests: ["sam@example.com"], video: true,
+                                     timeZone: tz, requestId: "r1")
+        XCTAssertEqual(timed["summary"] as? String, "Review")
+        XCTAssertEqual((timed["start"] as? [String: String])?["dateTime"], "2026-09-25T15:00:00+05:30")
+        XCTAssertEqual((timed["end"] as? [String: String])?["dateTime"], "2026-09-25T16:00:00+05:30")
+        XCTAssertEqual((timed["end"] as? [String: String])?["timeZone"], "Asia/Kolkata")
+        XCTAssertEqual((timed["attendees"] as? [[String: String]])?.map { $0["email"] }, ["sam@example.com"])
+        let create = (timed["conferenceData"] as? [String: Any])?["createRequest"] as? [String: Any]
+        XCTAssertEqual((create?["conferenceSolutionKey"] as? [String: String])?["type"], "hangoutsMeet")
+        XCTAssertEqual(create?["requestId"] as? String, "r1")
+
+        // All day: days, Google's end day not included; nobody asked, no call.
+        let day = cal.date(from: DateComponents(year: 2026, month: 9, day: 25))!
+        let allDay = GoogleEvent.body(title: "Offsite", start: day, end: day.addingTimeInterval(86_400),
+                                      allDay: true, guests: [], video: false, timeZone: tz)
+        XCTAssertEqual((allDay["start"] as? [String: String])?["date"], "2026-09-25")
+        XCTAssertEqual((allDay["end"] as? [String: String])?["date"], "2026-09-26")
+        XCTAssertNil(allDay["attendees"])
+        XCTAssertNil(allDay["conferenceData"])
+        XCTAssertEqual(GoogleEvent.query, "sendUpdates=all&conferenceDataVersion=1")
+    }
+
     func testBookingPages() {
         XCTAssertEqual(Smart.bookingLink(in: "grab a slot: cal.com/sam/intro", own: nil), "cal.com/sam/intro")
         XCTAssertEqual(Smart.bookingLink(in: "book me here https://calendly.com/ria", own: nil), "https://calendly.com/ria")

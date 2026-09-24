@@ -30,8 +30,10 @@
 		354BE17C3BF7DC577342EC3C /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
 		398AA6DA2628909F7C59DB31 /* NotesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9781AA84DE222D4BBC690481 /* NotesStore.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
+		43AD8CC4547819EF844356CB /* GoogleEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25E808ECB86F3613221456A /* GoogleEvent.swift */; };
 		49740A143ABEAF1269AAC45E /* Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */; };
 		4981B7628978DB909E4C478F /* CalendarSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C660509749B9F4AFCF76EE7 /* CalendarSurface.swift */; };
+		4AD916DFA12768049AF666E6 /* GoogleClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EFCFE2FDC403F70635CFDE6 /* GoogleClient.swift */; };
 		4ADAFEE41C95B9EC1027E1D1 /* TranslationHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EBDAF6797DA60917F2CADBD /* TranslationHUD.swift */; };
 		4AEF058C22BE42A8AC70ED7F /* MediaGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B91BDDF5ACD1D415C5AC2E /* MediaGrid.swift */; };
 		4B759E29785C7F2263CF60D4 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D580A139E7DF9CB049153E03 /* KeyboardLayout.swift */; };
@@ -57,6 +59,7 @@
 		766B89438D8A7F5C1E326099 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60BFE26B50FE956967CF026 /* SettingsStore.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		7B15D2A5E11C0989CAE367E6 /* IntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B2E745F387CCCC496C13F0 /* IntentStore.swift */; };
+		7C790C9704BCE2E111609C54 /* GoogleAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11231DCD6CA4C179B56BBB /* GoogleAccess.swift */; };
 		7F06F8B50C201C5ADE91869E /* KeyMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */; };
 		81364F0B50AAA933D02723D5 /* CalendarText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7C9B275603B0968648339E /* CalendarText.swift */; };
 		86507FC08D2603FB1EEAF708 /* SearchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E6DFEACD2A44AAB2AA5FA2 /* SearchCard.swift */; };
@@ -89,6 +92,7 @@
 		A7E9D6421F758C2BC141CA25 /* SearchRecents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */; };
 		AAC1E7223335C4588A9AC595 /* EventParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB882BCA6F90D372D5921104 /* EventParse.swift */; };
 		B0850AA732C33E25139D7C5A /* GlyfKeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */; };
+		B1206CCFBC7B411E70F86631 /* GoogleEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25E808ECB86F3613221456A /* GoogleEvent.swift */; };
 		B970FCED18EE8126F58A8355 /* ConnectorSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C613956FFF2C3CEE732AF10E /* ConnectorSurface.swift */; };
 		BA72E8D676DCA4E6E9A8213E /* HostAppOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A24DFFE40F4D4F81C63DEE5 /* HostAppOpener.swift */; };
 		BE57D750120B6EF9501EC318 /* SpaceGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07E305711B11F34700D4CCDE /* SpaceGesture.swift */; };
@@ -104,6 +108,7 @@
 		C98A8C076412853AB1D442E1 /* ClipboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 707C5A7E74F5BA1712F4091F /* ClipboardStore.swift */; };
 		CD83D22C7C73F30CDB7318A7 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D7BD628E919BD87B27B98432 /* Pods_RunnerTests.framework */; };
 		CFE402D105D9636BC65D745E /* TonesPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 969AE566AACBB47939055C04 /* TonesPopup.swift */; };
+		D033B5F0AA58522508224FF1 /* GoogleAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11231DCD6CA4C179B56BBB /* GoogleAccess.swift */; };
 		D221E86E5C3D2FB9F380264C /* EventComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B22A11BA0072E4967928DF4 /* EventComposer.swift */; };
 		D2233E8056469F8AE7549D4B /* NoteEditSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22621FA28A0473C913A2802 /* NoteEditSurface.swift */; };
 		D26EE5F01C8B4F264AE6FCFF /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60BFE26B50FE956967CF026 /* SettingsStore.swift */; };
@@ -225,6 +230,7 @@
 		5950219DD87CBFD3056204A6 /* PersonalLexicon.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PersonalLexicon.swift; sourceTree = "<group>"; };
 		5C547E8287421DF9172C2964 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		5D8C4C96456B2A323C0EE8F0 /* GlyfCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfCatalog.swift; sourceTree = "<group>"; };
+		5EFCFE2FDC403F70635CFDE6 /* GoogleClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleClient.swift; sourceTree = "<group>"; };
 		603D199225C0A5A5986ECBD5 /* AccentPopup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AccentPopup.swift; sourceTree = "<group>"; };
 		64E80BA037A9998D346C4C78 /* KeyView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyView.swift; sourceTree = "<group>"; };
 		707C5A7E74F5BA1712F4091F /* ClipboardStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardStore.swift; sourceTree = "<group>"; };
@@ -274,6 +280,7 @@
 		D7BD628E919BD87B27B98432 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		D82BB17847C2DCF9BBACCBD1 /* Runner.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		DACF0028C0693E817D1AC231 /* ClipboardPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardPanel.swift; sourceTree = "<group>"; };
+		DD11231DCD6CA4C179B56BBB /* GoogleAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleAccess.swift; sourceTree = "<group>"; };
 		DF986CE579005D015F108B53 /* TypingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingStore.swift; sourceTree = "<group>"; };
 		E0EE95049BBCC290AFF096F5 /* Settings.bundle */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 		E0F6D71A3FD3BDF87B2412DD /* EventParseTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EventParseTests.swift; sourceTree = "<group>"; };
@@ -283,6 +290,7 @@
 		EBF13C3419D7D5D10B0F0884 /* CalendarSync.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CalendarSync.swift; sourceTree = "<group>"; };
 		ED172FBD98BD64B321D6F03F /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		F22621FA28A0473C913A2802 /* NoteEditSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteEditSurface.swift; sourceTree = "<group>"; };
+		F25E808ECB86F3613221456A /* GoogleEvent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleEvent.swift; sourceTree = "<group>"; };
 		F2E78F3328F27A5F72F19B32 /* ThumbLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThumbLoader.swift; sourceTree = "<group>"; };
 		F69B8F550E5B5270B4D18FCA /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F86BBFF0BD8D616E31EFFF2B /* DictationEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DictationEngine.swift; sourceTree = "<group>"; };
@@ -441,6 +449,7 @@
 				235F44B4001D69C6942D575B /* RatesStore.swift */,
 				AB882BCA6F90D372D5921104 /* EventParse.swift */,
 				35B41E8E3E2121B722B9B38C /* CalendarWriter.swift */,
+				F25E808ECB86F3613221456A /* GoogleEvent.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -540,6 +549,8 @@
 				4223D5E2A46414C673A83747 /* Contracts.generated.swift */,
 				90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */,
 				8E94BD8FF3D9C3658E2ED995 /* MediaClient.swift */,
+				DD11231DCD6CA4C179B56BBB /* GoogleAccess.swift */,
+				5EFCFE2FDC403F70635CFDE6 /* GoogleClient.swift */,
 			);
 			name = Bridge;
 			path = Bridge;
@@ -928,6 +939,9 @@
 				6A6E71A800F77CCC9EFA713C /* CalendarWriter.swift in Sources */,
 				D221E86E5C3D2FB9F380264C /* EventComposer.swift in Sources */,
 				92616F350B02F5621F92407E /* BookingSheet.swift in Sources */,
+				7C790C9704BCE2E111609C54 /* GoogleAccess.swift in Sources */,
+				4AD916DFA12768049AF666E6 /* GoogleClient.swift in Sources */,
+				43AD8CC4547819EF844356CB /* GoogleEvent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -967,6 +981,7 @@
 				D9BF5D7CFA97FB6F3174DF4D /* KeyTouchTests.swift in Sources */,
 				99BF66CC97C5F3CE3E814B27 /* EventParse.swift in Sources */,
 				5BD908AC081B1766CD6B2082 /* EventParseTests.swift in Sources */,
+				B1206CCFBC7B411E70F86631 /* GoogleEvent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1002,6 +1017,7 @@
 				57353ACE229EF65D43370F78 /* CalendarSync.swift in Sources */,
 				96246651528C4638ED7A2433 /* SignIn.swift in Sources */,
 				22D65AB7F68DF03931D9BEA4 /* GlyfSession.swift in Sources */,
+				D033B5F0AA58522508224FF1 /* GoogleAccess.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

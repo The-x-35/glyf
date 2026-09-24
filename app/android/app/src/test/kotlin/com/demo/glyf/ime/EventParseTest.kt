@@ -82,6 +82,29 @@ class EventParseTest {
         assertEquals("5 people are coming | 2026-09-23 11:00 – 2026-09-23 12:00 | ", read("at 5 people are coming"))
     }
 
+    @Test fun googleEventBody() {
+        val start = Calendar.getInstance(tz).apply { clear(); set(2026, Calendar.SEPTEMBER, 25, 15, 0) }.timeInMillis
+        val timed = GoogleEvent.body("Review", start, start + 3_600_000L, false, listOf("sam@example.com"),
+            true, tz, "r1")
+        assertEquals("Review", timed.getString("summary"))
+        assertEquals("2026-09-25T15:00:00+05:30", timed.getJSONObject("start").getString("dateTime"))
+        assertEquals("2026-09-25T16:00:00+05:30", timed.getJSONObject("end").getString("dateTime"))
+        assertEquals("Asia/Kolkata", timed.getJSONObject("end").getString("timeZone"))
+        assertEquals("sam@example.com", timed.getJSONArray("attendees").getJSONObject(0).getString("email"))
+        val create = timed.getJSONObject("conferenceData").getJSONObject("createRequest")
+        assertEquals("hangoutsMeet", create.getJSONObject("conferenceSolutionKey").getString("type"))
+        assertEquals("r1", create.getString("requestId"))
+
+        // All day: days, Google's end day not included; nobody asked, no call.
+        val day = Calendar.getInstance(tz).apply { clear(); set(2026, Calendar.SEPTEMBER, 25) }.timeInMillis
+        val allDay = GoogleEvent.body("Offsite", day, day + 86_400_000L, true, emptyList(), false, tz)
+        assertEquals("2026-09-25", allDay.getJSONObject("start").getString("date"))
+        assertEquals("2026-09-26", allDay.getJSONObject("end").getString("date"))
+        assertFalse(allDay.has("attendees"))
+        assertFalse(allDay.has("conferenceData"))
+        assertEquals("sendUpdates=all&conferenceDataVersion=1", GoogleEvent.QUERY)
+    }
+
     @Test fun peopleLine() {
         assertEquals("Sam Lee" to listOf("sam@x.com", "ria@y.com"), EventParse.people("Sam Lee sam@x.com, Ria@Y.com"))
         assertEquals("" to listOf("a@b.co"), EventParse.people("a@b.co a@b.co"))

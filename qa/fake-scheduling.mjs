@@ -1,19 +1,17 @@
-// A stand-in for Cal.com's API (v2 slots, event types, bookings) and for
-// Resend's email API, so the keyboard's Book a time and email invites can be
-// tried end to end without booking a real person's calendar or sending real
-// mail. Start it, then start the Glyf server with
+// A stand-in for Cal.com's API (v2 slots, event types, bookings), so the
+// keyboard's Book a time can be tried end to end without booking a real
+// person's calendar. Start it, then start the Glyf server with
 //
 //   PORT=8796 node qa/fake-scheduling.mjs
-//   CALCOM_API_BASE=http://127.0.0.1:8796/v2 RESEND_API_KEY=re_fake \
-//   RESEND_API_BASE=http://127.0.0.1:8796/emails npm run dev
+//   CALCOM_API_BASE=http://127.0.0.1:8796/v2 npm run dev
 //
 // Every page has open times each day at 10:00, 11:30, 15:00 and 17:30 in the
-// zone asked for. GET /_log lists what was booked and mailed. Never deploy
-// this; it exists only so a phone can exercise the real code.
+// zone asked for. GET /_log lists what was booked. Never deploy this; it
+// exists only so a phone can exercise the real code.
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.PORT ?? 8796);
-const log = { bookings: [], emails: [] };
+const log = { bookings: [] };
 
 function send(res, status, body) {
   res.writeHead(status, { "content-type": "application/json" });
@@ -50,7 +48,6 @@ createServer((req, res) => {
     if (url.pathname === "/_log") return send(res, 200, log);
     if (url.pathname === "/_reset") {
       log.bookings.length = 0;
-      log.emails.length = 0;
       return send(res, 200, log);
     }
     if (url.pathname === "/v2/slots") {
@@ -75,12 +72,6 @@ createServer((req, res) => {
         meetingUrl: `https://app.cal.com/video/bk_${log.bookings.length}`,
       } });
     }
-    if (url.pathname === "/emails" && req.method === "POST") {
-      const m = JSON.parse(body || "{}");
-      log.emails.push({ to: m.to, subject: m.subject, reply_to: m.reply_to,
-        ics: m.attachments?.[0]?.content ? Buffer.from(m.attachments[0].content, "base64").toString("utf8") : null });
-      return send(res, 200, { id: `em_${log.emails.length}` });
-    }
     send(res, 404, { status: "error" });
   });
-}).listen(PORT, "127.0.0.1", () => console.log(`fake Cal.com + Resend on http://127.0.0.1:${PORT}`));
+}).listen(PORT, "127.0.0.1", () => console.log(`fake Cal.com on http://127.0.0.1:${PORT}`));

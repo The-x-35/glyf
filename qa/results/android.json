@@ -42,25 +42,18 @@
   "note": "'my upi is arpit@okbank'"
  },
  {
-  "id": "S90",
-  "area": "Android",
-  "title": "A rough message offers Tidy this up",
-  "verdict": "pass",
-  "note": "chip 'Tidy this up', versions shown after 5.9s. Re-run: in the full run the emulator's test account had already spent today's runs (353 on the day's scenario runs), so the dev server's daily cap was raised for this re-run"
- },
- {
   "id": "S91",
   "area": "Android",
   "title": "Hold space: pick the Professional version",
-  "verdict": "pass",
-  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'I will send the deck before 6:00 PM.' Re-run with the raised daily cap (see S90)"
+  "verdict": "fail",
+  "note": "no Professional version after 25s. Gemini's models were answering 503 \"high demand\" and OpenRouter's free model took up to 22 s"
  },
  {
   "id": "S92",
   "area": "Android",
   "title": "Hold space on a place search sends places",
   "verdict": "pass",
-  "note": "'best biryani near indiranagar http://127.0.0.1:8787/p/4O_ldHLesp1X'. Re-run with the raised daily cap (see S90)"
+  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/fFtVeXlBFLoZ' (took a second tap)"
  },
  {
   "id": "S93",
@@ -81,7 +74,7 @@
   "area": "Android",
   "title": "Translate as you type, then Replace",
   "verdict": "pass",
-  "note": "strip 'Let's meet tomorrow after office.', message 'Let's meet tomorrow after office.' Re-run alone: straight after S90 to S92 its six translations hit the free plan's 8 runs a minute"
+  "note": "strip 'We will meet after office tomorrow', message 'We will meet after office tomorrow'"
  },
  {
   "id": "S96",
@@ -101,15 +94,15 @@
   "id": "S107",
   "area": "Android",
   "title": "The GIF tab shows GIFs and hands one over",
-  "verdict": "pass",
-  "note": "clipboard now holds image/gif (GIF)"
+  "verdict": "fail",
+  "note": "the keyboard didn't answer the dump within 6 s while the GIF tab loaded; the GIF reached the clipboard late (S108 found it). Re-run alone: the emulator's DNS had failed (it couldn't resolve api.klipy.com), so no GIFs loaded; KLIPY answered from the Mac"
  },
  {
   "id": "S108",
   "area": "Android",
   "title": "The Stickers tab shows stickers and hands one over",
-  "verdict": "pass",
-  "note": "clipboard now holds image/gif (Sticker)"
+  "verdict": "fail",
+  "note": "clipboard still held S107's late GIF (image/gif). Re-run alone: the emulator's DNS had failed, so no stickers loaded from KLIPY"
  },
  {
   "id": "S111",
@@ -130,21 +123,14 @@
   "area": "Android",
   "title": "A call link from the keyboard's calendar",
   "verdict": "pass",
-  "note": "message 'Join me on a call: https://meet.jit.si/Glyf-aVrCEOcmZE'"
+  "note": "message 'Join me on a call: https://meet.jit.si/Glyf-Y2VCWdPHKt'"
  },
  {
   "id": "S118",
   "area": "Android",
   "title": "Book a time on your own page for someone, with a guest",
   "verdict": "pass",
-  "note": "hint 'Sam lee · sam@example.com · 1 guest'; booked Sam lee <sam@example.com> + ria@example.com; message 'Booked for Fri 25 Sep, 10:00 AM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1'"
- },
- {
-  "id": "S119",
-  "area": "Android",
-  "title": "New Event with an invitee emails the invite",
-  "verdict": "pass",
-  "note": "invitees row 'sam@example.com'; mailed 'Invitation: Review · Fri 25 Sept, 3:00 PM' to sam@example.com; row shown"
+  "note": "hint 'Sam lee · sam@example.com · 1 guest'; booked Sam lee <sam@example.com> + ria@example.com; message 'Booked for Fri 25 Sep, 10:00 AM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1'. Re-run alone: in the full run the dev server answered one request with a 500 before reaching the stand-in"
  },
  {
   "id": "S120",
@@ -152,6 +138,34 @@
   "title": "Someone's booking page in a message offers Book",
   "verdict": "pass",
   "note": "chip 'A time on cal.com/sam-lee/intro'; booked on sam-lee/intro as Sim Tester <sim-e2e@example.com>; message 'grab a time cal.com/sam-lee/intro Booked for Fri 25 Sep, 10:00 AM. The invite is on its way to sim-e2e@example.com. Call: https://app.cal.com/video/bk_1'"
+ },
+ {
+  "id": "S125",
+  "area": "Android",
+  "title": "A Meet link from the calendar, with Google connected",
+  "verdict": "pass",
+  "note": "message 'Join me on a call: https://meet.google.com/rrj-cyam-mfe'; Meet links made 1"
+ },
+ {
+  "id": "S126",
+  "area": "Android",
+  "title": "New Event with a guest goes to Google Calendar, which invites them",
+  "verdict": "pass",
+  "note": "event 'Review' for sam@example.com, sendUpdates=all; message '📅 Review · Fri 25 Sep, 3:00–4:00 PM · https://meet.google.com/hkj-gccv-dpu'"
+ },
+ {
+  "id": "S127",
+  "area": "Android",
+  "title": "Without Google, New Event goes into the message",
+  "verdict": "pass",
+  "note": "message '📅 Lunch with sam · Fri 25 Sep, 1:00–2:00 PM'"
+ },
+ {
+  "id": "S128",
+  "area": "Android",
+  "title": "A key held for a Meet link",
+  "verdict": "pass",
+  "note": "message 'Join me on a call: https://meet.google.com/giy-naiz-htk'"
  },
  {
   "id": "S97",

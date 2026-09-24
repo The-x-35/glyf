@@ -144,42 +144,6 @@
   "note": "441 (rerun)"
  },
  {
-  "id": "S17",
-  "area": "Suggestions",
-  "title": "A rough message gets 'Tidy this up'",
-  "verdict": "pass",
-  "ms": 5514,
-  "status": 200,
-  "note": "{\"intent\":\"rewrite\",\"label\":\"Tidy this up\",\"action\":\"act\",\"query\":\"ya ok will send the deck before 6 tmrw\"}"
- },
- {
-  "id": "S18",
-  "area": "Suggestions",
-  "title": "A place list gets 'Show me places'",
-  "verdict": "pass",
-  "ms": 553,
-  "status": 200,
-  "note": "{\"intent\":\"places\",\"label\":\"Show me places\",\"action\":\"act\",\"query\":\"any good italian places in koramangala\"}"
- },
- {
-  "id": "S19",
-  "area": "Suggestions",
-  "title": "A plain question gets no 'Look it up' chip",
-  "verdict": "pass",
-  "ms": 3866,
-  "status": 200,
-  "note": "null"
- },
- {
-  "id": "S20",
-  "area": "Suggestions",
-  "title": "Three words in, no chip yet",
-  "verdict": "pass",
-  "ms": 4623,
-  "status": 200,
-  "note": "null"
- },
- {
   "id": "S21",
   "area": "Translate",
   "title": "Hinglish 'kal milte hain office ke baad' comes out in English",
@@ -412,15 +376,6 @@
   "ms": 11774,
   "status": 200,
   "note": "Shorter: I arrived at 7 but the event moved to another hall without notice, so we missed the first session. Since we paid for the full day, please provide the recording or slides."
- },
- {
-  "id": "S47",
-  "area": "Suggestions",
-  "title": "A message in Hinglish still gets 'Tidy this up'",
-  "verdict": "pass",
-  "ms": 5839,
-  "status": 200,
-  "note": "{\"intent\":\"rewrite\",\"label\":\"Tidy this up\",\"action\":\"act\",\"query\":\"bhai kal ka plan cancel kar de yaar mood nahi hai\"}"
  },
  {
   "id": "S48",

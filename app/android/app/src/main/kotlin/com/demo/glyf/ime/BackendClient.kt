@@ -160,41 +160,6 @@ object BackendClient {
         }
     }
 
-    /** POST /suggest — the model names what Glyf could do with the sentence
-     *  ("Tidy this up", "Show me places"), or nothing. Silent on failure. */
-    fun suggestAction(
-        backendURL: String,
-        text: String,
-        deviceId: String,
-        kinds: List<String> = emptyList(),
-        onResult: (intent: String, label: String, query: String) -> Unit,
-    ): () -> Unit {
-        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
-        pool.execute {
-            try {
-                val c = (URL("$backendURL/suggest").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    connectTimeout = 4000
-                    readTimeout = 8000
-                    setRequestProperty("Content-Type", "application/json")
-                    signIn()
-                }
-                val body = JSONObject().put("text", text).put("deviceId", deviceId)
-                // The kinds of detail saved, never the details.
-                if (kinds.isNotEmpty()) body.put("kinds", org.json.JSONArray(kinds))
-                c.outputStream.use { it.write(body.toString().toByteArray()) }
-                if (c.responseCode !in 200..299 || cancelled.get()) return@execute
-                val json = JSONObject(c.inputStream.bufferedReader().readText())
-                val s = json.optJSONObject("suggestion") ?: return@execute
-                val intent = s.optStringOrNull("intent") ?: return@execute
-                val label = s.optStringOrNull("label") ?: return@execute
-                if (!cancelled.get()) onResult(intent, label, s.optStringOrNull("query") ?: text)
-            } catch (_: Exception) { /* no chip */ }
-        }
-        return { cancelled.set(true) }
-    }
-
     /** GET /search/suggest — the landing state for a tab (trending searches,
      *  popular videos, nearby places). The user's own recents stay on the
      *  device and are merged in by the caller. */

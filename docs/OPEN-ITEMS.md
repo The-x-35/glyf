@@ -37,8 +37,8 @@ Last updated: Thu 24 Sep 2026 (IST).
 | B9 | About $10 of OpenRouter credit, if OpenRouter stays in the model chain | Arpit |
 | B10 | Benchmark Hinglish quality on the chosen models with about 50 real messages once keys are in | Build |
 | B11 | Gemini free tier terms: it trains on what's sent and excludes apps likely used by under-18s. Paying removes most of this | Arpit (decision) |
-| B12 | Email invites for events added in the keyboard: a Resend account (free for 3,000 emails a month), tryglyf.com verified there (its DNS records at Porkbun), then `RESEND_API_KEY` (and `INVITES_FROM` if the sender isn't `invites@tryglyf.com`) in `server/.env` and on Railway. Until then New Event adds the event and says "Added. Email invites aren't set up yet". Booking on a Cal.com page doesn't need it | Arpit |
-| B13 | Optional: `DAILY_API_KEY` (daily.co, free for 10,000 minutes a month) so call links start without anyone signing in. Without it they are Jitsi Meet links, where the first person in signs in with Google, GitHub or Facebook to start the call | Arpit |
+| B12 | Google Calendar and Meet for the keyboard, in the Google Cloud project that holds the sign-in clients: enable the **Google Calendar API** and the **Google Meet REST API**; on the OAuth consent screen add the scopes `.../auth/calendar.events.owned` and `.../auth/meetings.space.created`; keep yourself and testers listed as test users. No server key or secret is needed: the phone talks to Google. Until Google verifies the app for these two sensitive scopes, Google's page warns that the app is unverified (at Google sign-in too, since sign-in asks for them; `SignIn.askCalendarAtSignIn` moves the ask to Connected tools only). In Testing, Google expires the grant after 7 days and people reconnect | Arpit |
+| B13 | Optional: `DAILY_API_KEY` (daily.co, free for 10,000 minutes a month) so call links start without anyone signing in, for people who haven't connected Google. Without it they are Jitsi Meet links, where the first person in signs in with Google, GitHub or Facebook to start the call | Arpit |
 | B14 | Calendly: open times and booking inside the keyboard need Calendly's OAuth app (the `CALENDLY_*` pair in B7) and the host's own sign-in; today a Calendly link is offered as its page on the chosen day | Arpit (if wanted) + Build |
 
 ## 3. Apps
@@ -59,6 +59,7 @@ Last updated: Thu 24 Sep 2026 (IST).
 | A12 | Mobbin connector: authorize it if design references from Mobbin are wanted | Arpit |
 | A13 | Check on a real iPhone that the keyboard can add an event (EventKit from the keyboard with Full Access on). It works on the iOS 26.5 simulator; if a device refuses, New Event falls back to asking the app | Arpit (device) + Build |
 | A14 | Add your own Cal.com or Calendly link under Profile → Connected tools → Booking link to see Book a time on your page. The device tests used a stand-in for Cal.com, never a real person's calendar | Arpit |
+| A15 | Once B12 is done, sign in with Google on a real iPhone and an Android phone (or connect it under Connected tools), then try the camera, a New Event with an invitee, and a key bound to Meet link. The device tests used a stand-in for Google's APIs, never a real account | Arpit (device) + Build |
 
 ## 4. Code problems found while writing the docs (not fixed yet)
 

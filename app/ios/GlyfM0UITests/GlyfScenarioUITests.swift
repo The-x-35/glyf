@@ -153,7 +153,10 @@ final class GlyfScenarioUITests: XCTestCase {
     }
 
     private func open(_ args: [String] = []) {
-        app.launchArguments = ["--glyf-skip-onboarding", "--glyf-seed-vault", "--glyf-clear-tour"] + args
+        // Google Calendar and Meet stay off unless a test connects the
+        // stand-in (qa/fake-google.mjs): an earlier run must not decide.
+        let google = args.contains("--glyf-test-google") ? [] : ["--glyf-test-google", ""]
+        app.launchArguments = ["--glyf-skip-onboarding", "--glyf-seed-vault", "--glyf-clear-tour"] + google + args
         app.launch()
         sleep(1)
         for attempt in 0..<2 {
@@ -332,17 +335,6 @@ final class GlyfScenarioUITests: XCTestCase {
         }
         chip.tap()
         XCTAssertTrue(waitValue(3) { $0.contains(id) }, "got '\(value)' for chip '\(offered)'")
-    }
-
-    func testS63_RoughMessageOffersTidyThisUp() throws {
-        open()
-        clear()
-        type("ya ok will send the deck before six tmrw ")
-        guard let chip = wait("strip:smart", 10) else { return XCTFail("no suggestion chip") }
-        note("chip: '\(chip.label)'")
-        XCTAssertTrue(chip.label.localizedCaseInsensitiveContains("tidy"), "chip says '\(chip.label)'")
-        chip.tap()
-        XCTAssertNotNil(wait("act:option:work", 15), "tapping the chip should offer versions")
     }
 
     // MARK: - Hold space
@@ -598,6 +590,8 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("key:return")
         let starts = el("event:starts:time").label
         XCTAssertTrue(starts.contains("1:00"), "starts at '\(starts)', read '\(hint)'")
+        // Share in chat off: this one is for the list.
+        tap("event:share", 3)
         tap("event:add")
         // Back on that day, the new event in the list, read from the calendar itself.
         let row = eventRow("Lunch with sam")
@@ -699,8 +693,39 @@ final class GlyfScenarioUITests: XCTestCase {
         note("hint '\(hint)'; message '\(value)'")
     }
 
-    func testS116_NewEventEmailsItsInvitees() throws {
-        open()
+    // MARK: Google Calendar and Meet (qa/fake-google.mjs on 8797)
+
+    private static let fakeGoogle = "http://127.0.0.1:8797"
+
+    private func resetGoogle() {
+        guard let url = URL(string: "\(Self.fakeGoogle)/_reset") else { return }
+        _ = try? Data(contentsOf: url)
+    }
+
+    /// What the stand-in Google recorded: Meet links made, events added.
+    private func googleLog() -> [String: Any] {
+        guard let url = URL(string: "\(Self.fakeGoogle)/_log"),
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        return json
+    }
+
+    func testS121_MeetLinkFromTheCalendar() throws {
+        resetGoogle()
+        open(["--glyf-test-google", Self.fakeGoogle])
+        clear()
+        guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
+        c.press(forDuration: 0.7)
+        tap("calendar:call", 6)
+        XCTAssertTrue(waitValue(8) { $0.contains("Join me on a call: https://meet.google.com/") }, "got '\(value)'")
+        let made = (googleLog()["spaces"] as? [[String: Any]])?.count ?? 0
+        XCTAssertEqual(made, 1, "Meet links made")
+        note("message '\(value)'")
+    }
+
+    func testS122_NewEventWithAGuestGoesToGoogleCalendar() throws {
+        resetGoogle()
+        open(["--glyf-test-google", Self.fakeGoogle])
         clear()
         guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
         c.press(forDuration: 0.7)
@@ -711,23 +736,49 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("event:invitees", 4)
         type("sam@example.com")
         tap("key:return")
-        let invitees = el("event:invitees").label
-        XCTAssertTrue(invitees.contains("sam@example.com"), "invitees row says '\(invitees)'")
-        let before = (fakeLog()["emails"] as? [[String: Any]] ?? []).count
+        tap("event:video", 3)
         tap("event:add")
-        let deadline = Date().addingTimeInterval(10)
-        var mailed: [String: Any]?
-        while Date() < deadline, mailed == nil {
-            let emails = fakeLog()["emails"] as? [[String: Any]] ?? []
-            if emails.count > before { mailed = emails.last }
-            usleep(500_000)
-        }
-        guard let mailed else { return XCTFail("no invite was sent") }
-        XCTAssertEqual(mailed["to"] as? [String], ["sam@example.com"])
-        let ics = mailed["ics"] as? String ?? ""
-        XCTAssertTrue(ics.contains("SUMMARY:Review") && ics.contains("METHOD:REQUEST"), "invite: \(ics.prefix(200))")
-        XCTAssertTrue(eventRow("Review").waitForExistence(timeout: 4), "the event isn't in the day's list")
-        note("mailed '\(mailed["subject"] ?? "")'")
+        // Share in chat is on from +: the event lands in the message too.
+        XCTAssertTrue(waitValue(10) { $0.contains("Review") && $0.contains("https://meet.google.com/") }, "got '\(value)'")
+        let events = googleLog()["events"] as? [[String: Any]] ?? []
+        let last = events.last ?? [:]
+        let body = last["body"] as? [String: Any] ?? [:]
+        let query = last["query"] as? [String: String] ?? [:]
+        XCTAssertEqual((body["attendees"] as? [[String: String]])?.map { $0["email"] }, ["sam@example.com"])
+        XCTAssertEqual(query["sendUpdates"], "all", "Google emails the guest")
+        XCTAssertNotNil((body["conferenceData"] as? [String: Any])?["createRequest"], "a Meet call was asked for")
+        let guests = (body["attendees"] as? [[String: String]])?.compactMap { $0["email"] }.joined(separator: ", ") ?? ""
+        note("event '\(body["summary"] ?? "")' for \(guests), sendUpdates=\(query["sendUpdates"] ?? ""); message '\(value)'")
+    }
+
+    func testS123_WithoutGoogleNewEventGoesInTheMessage() throws {
+        open()
+        clear()
+        guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
+        c.press(forDuration: 0.7)
+        tap("calendar:new", 6)
+        guard wait("event:title", 4) != nil else { return XCTFail("New Event didn't open") }
+        XCTAssertFalse(el("event:invitees").exists, "Invitees shows only with Google Calendar")
+        tap("event:title", 4)
+        type("lunch with sam tomorrow 1pm")
+        tap("key:return")
+        tap("event:add")
+        XCTAssertTrue(waitValue(8) { $0.contains("📅 Lunch with sam") }, "got '\(value)'")
+        note("message '\(value)'")
+    }
+
+    func testS124_AKeyHeldForAMeetLink() throws {
+        resetGoogle()
+        open(["--glyf-test-google", Self.fakeGoogle, "--glyf-bind", "m=connector:meet"])
+        clear()
+        guard let m = wait("key:m", 3) else { return XCTFail("no M key") }
+        m.press(forDuration: 0.8)
+        let sent = waitValue(8) { $0.contains("Join me on a call: https://meet.google.com/") }
+        let message = value
+        // M goes back to typing M.
+        open(["--glyf-bind", "m="])
+        XCTAssertTrue(sent, "got '\(message)'")
+        note("message '\(message)'")
     }
 
     func testS114_NewEventWithAVideoCall() throws {
@@ -741,6 +792,8 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("key:return")
         guard let video = wait("event:video", 4) else { return XCTFail("no Video call row") }
         video.tap()
+        // Share in chat off: this one is looked for in the day's list.
+        tap("event:share", 3)
         tap("event:add")
         let row = eventRow("Sync")
         XCTAssertTrue(row.waitForExistence(timeout: 8), "the event isn't in the day's list")

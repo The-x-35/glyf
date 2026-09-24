@@ -1,7 +1,9 @@
 package com.demo.glyf
 
+import android.accounts.Account
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.os.CancellationSignal
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -15,6 +17,14 @@ import androidx.credentials.exceptions.ClearCredentialException
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
+import com.demo.glyf.ime.GoogleClient
+import com.demo.glyf.store.GoogleAccess
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.AuthorizationResult
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
+import com.google.android.gms.common.api.Scope
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import org.json.JSONObject
@@ -71,6 +81,92 @@ object SignIn {
                     }))
                 }
             })
+    }
+
+    // MARK: Google Calendar and Meet
+
+    /** The consent screen's request code, answered in MainActivity. */
+    const val AUTH_REQUEST = 7301
+    private var authDone: ((Map<String, Any?>) -> Unit)? = null
+    private var authEmail: String? = null
+
+    /** Asks Google, through Play services, for Calendar and Meet on the
+     *  account: right after signing in with Google, or from Connected tools.
+     *  Google shows its consent screen only when it needs to ask; what it
+     *  grants goes to GoogleAccess for the keyboard. */
+    fun authorizeGoogle(activity: Activity, email: String?, done: (Map<String, Any?>) -> Unit) {
+        val request = AuthorizationRequest.builder()
+            .setRequestedScopes(GoogleAccess.SCOPES.map { Scope(it) })
+            .apply { if (!email.isNullOrEmpty()) setAccount(Account(email, "com.google")) }
+            .build()
+        Identity.getAuthorizationClient(activity).authorize(request)
+            .addOnSuccessListener { r ->
+                if (!r.hasResolution()) return@addOnSuccessListener finishAuthorization(activity, r, email, done)
+                val pending = r.pendingIntent ?: return@addOnSuccessListener done(mapOf("error" to "failed"))
+                authDone?.invoke(mapOf("error" to "cancelled"))
+                authDone = done
+                authEmail = email
+                try {
+                    activity.startIntentSenderForResult(pending.intentSender, AUTH_REQUEST, null, 0, 0, 0)
+                } catch (_: Exception) {
+                    authDone = null
+                    done(mapOf("error" to "failed"))
+                }
+            }
+            .addOnFailureListener { done(mapOf("error" to "failed")) }
+    }
+
+    /** MainActivity hands the consent screen's answer back here. */
+    fun onAuthorizationResult(activity: Activity, data: Intent?) {
+        val done = authDone ?: return
+        authDone = null
+        try {
+            val r = Identity.getAuthorizationClient(activity).getAuthorizationResultFromIntent(data)
+            finishAuthorization(activity, r, authEmail, done)
+        } catch (e: ApiException) {
+            done(mapOf("error" to if (e.statusCode == CommonStatusCodes.CANCELED) "cancelled" else "failed"))
+        }
+    }
+
+    private fun finishAuthorization(ctx: Context, r: AuthorizationResult, email: String?,
+                                    done: (Map<String, Any?>) -> Unit) {
+        val granted = r.grantedScopes.filter { it in GoogleAccess.SCOPES }.toSet()
+        if (granted.isEmpty()) return done(mapOf("error" to "not_granted"))
+        val account = runCatching { r.toGoogleSignInAccount()?.email }.getOrNull() ?: email
+        GoogleAccess.save(ctx, GoogleAccess.Grant(account, granted))
+        done(googleStatus(ctx))
+    }
+
+    /** What Connected tools shows: connected or not, as whom, and what for. */
+    fun googleStatus(ctx: Context): Map<String, Any?> {
+        val g = GoogleAccess.load(ctx) ?: return mapOf("connected" to false)
+        return mapOf("connected" to true, "email" to g.email,
+            "calendar" to (GoogleAccess.CALENDAR in g.scopes), "meet" to (GoogleAccess.MEET in g.scopes))
+    }
+
+    /** Takes the grant back from Google too, not just off the phone. */
+    fun disconnectGoogle(ctx: Context, done: () -> Unit) {
+        val g = GoogleAccess.load(ctx) ?: return done()
+        if (g.fakeBase != null) {
+            GoogleAccess.clear(ctx)
+            return done()
+        }
+        GoogleClient.accessToken(ctx) { token, _ ->
+            GoogleAccess.clear(ctx)
+            if (token == null) return@accessToken done()
+            Thread {
+                runCatching {
+                    val c = java.net.URL("https://oauth2.googleapis.com/revoke?token=" +
+                        java.net.URLEncoder.encode(token, "UTF-8")).openConnection() as java.net.HttpURLConnection
+                    c.requestMethod = "POST"
+                    c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                    c.connectTimeout = 6000
+                    c.readTimeout = 6000
+                    c.responseCode
+                }
+                ctx.mainExecutor.execute { done() }
+            }.start()
+        }
     }
 
     /** Forgets which Google account was picked, so the next sign-in asks. */

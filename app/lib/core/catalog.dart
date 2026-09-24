@@ -47,6 +47,8 @@ abstract final class Catalog {
         'Your day, one hold away', '📅'),
     GlyfMeta('connector:mockcal', 'Calendar picker',
         'Drop an event into your text', '📅'),
+    GlyfMeta('connector:meet', 'Meet link',
+        'A fresh call link, one hold away', '📹'),
     GlyfMeta('surface:notes', 'Notes',
         'Your notes, one hold away', '📝'),
   ];

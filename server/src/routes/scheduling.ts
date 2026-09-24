@@ -1,8 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { buildInvite } from "../lib/invite.js";
-import { Users } from "../lib/users.js";
 
 /**
  * Call links and booking links for the keyboard's calendar.
@@ -24,11 +22,10 @@ import { Users } from "../lib/users.js";
  * page with the attendee's name and email and any guests' emails, the way
  * Cal.com's own page does, and Cal.com emails everyone the invite. No key.
  *
- * Invites for the keyboard's own events: `POST /invites/send` emails a
- * calendar invite (.ics) to the invitees, with the signed-in person as the
- * organizer. The phone's calendar can't invite anyone (iOS has no API for
- * attendees), so the email comes from here, through Resend
- * (`RESEND_API_KEY`, from `INVITES_FROM` on a verified domain).
+ * Invites for the keyboard's own events don't come through here: with
+ * Google connected the keyboard adds the event to the person's Google
+ * Calendar itself and Google emails the guests; without it, the event goes
+ * into the message. Google's tokens stay on the phone.
  * Researched 2026-09-24; see docs/BACKEND.md.
  */
 
@@ -146,9 +143,7 @@ function calMessage(body: unknown): string {
   return typeof m === "string" ? m : Array.isArray(m) ? m.join(", ") : "";
 }
 
-export function schedulingRoutes(app: FastifyInstance, deps: { users?: Users } = {}) {
-  // Tests never reach the real database (the limiter's rule too).
-  const users = deps.users ?? (process.env.VITEST ? new Users("") : new Users());
+export function schedulingRoutes(app: FastifyInstance) {
   app.post("/meetings/new", async () => {
     const key = process.env.DAILY_API_KEY?.trim();
     if (key) {
@@ -313,72 +308,6 @@ export function schedulingRoutes(app: FastifyInstance, deps: { users?: Users } =
     } catch (err) {
       app.log.warn({ err: String(err) }, "cal.com booking failed");
       return reply.code(502).send({ error: "Cal.com didn't answer. Try again" });
-    }
-  });
-
-  const inviteBody = z.object({
-    title: z.string().trim().min(1).max(200),
-    start: z.string().datetime({ offset: true }),
-    end: z.string().datetime({ offset: true }),
-    allDay: z.boolean().default(false),
-    location: z.string().trim().max(500).optional(),
-    emails: z.array(z.string().trim().email().max(200)).min(1).max(20),
-    organizer: z.object({ name: z.string().trim().max(120).optional(), email: z.string().trim().email().optional() }).optional(),
-    tz: z.string().max(64).default("UTC"),
-  });
-
-  app.post("/invites/send", async (req, reply) => {
-    const parsed = inviteBody.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      const email = parsed.error.issues.some(i => i.path[0] === "emails");
-      return reply.code(400).send({ error: email ? "Check the email addresses" : "Bad request" });
-    }
-    const b = parsed.data;
-    const key = process.env.RESEND_API_KEY?.trim();
-    if (!key) return reply.code(503).send({ error: "Email invites aren't set up yet" });
-    const account = req.glyfUser ? await users.profile(req.glyfUser).catch(() => null) : null;
-    const organizer = { name: account?.name ?? b.organizer?.name, email: account?.email ?? b.organizer?.email };
-    if (!organizer.email) return reply.code(400).send({ error: "Add your email in Glyf so people can reply" });
-    const tz = validZone(b.tz) ? b.tz : "UTC";
-    const start = new Date(b.start);
-    const end = new Date(b.end);
-    const emails = [...new Set(b.emails.map(e => e.toLowerCase()))];
-    const ics = buildInvite({
-      title: b.title, start, end, allDay: b.allDay, location: b.location,
-      description: b.location?.startsWith("http") ? `Join: ${b.location}` : undefined,
-      timeZone: tz, organizer: { name: organizer.name, email: organizer.email }, attendees: emails,
-    });
-    const when = b.allDay
-      ? start.toLocaleDateString("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short" })
-      : `${start.toLocaleDateString("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short" })}, ${
-        start.toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" })}`;
-    const who = organizer.name ?? organizer.email;
-    const lines = [`${who} invited you: ${b.title}`, when, ...(b.location ? [b.location] : [])];
-    const from = process.env.INVITES_FROM?.trim() || "Glyf <invites@tryglyf.com>";
-    try {
-      const res = await fetch(process.env.RESEND_API_BASE?.trim() || "https://api.resend.com/emails", {
-        method: "POST",
-        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          from, to: emails, reply_to: organizer.email,
-          subject: `Invitation: ${b.title} · ${when}`,
-          text: `${lines.join("\n")}\n\nThe invite is attached: open it to add it to your calendar.`,
-          attachments: [{
-            filename: "invite.ics",
-            content: Buffer.from(ics, "utf8").toString("base64"),
-            content_type: "text/calendar; charset=utf-8; method=REQUEST",
-          }],
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!res.ok) {
-        app.log.warn({ status: res.status, body: (await res.text()).slice(0, 300) }, "invite email refused");
-        return reply.code(502).send({ error: "The invite didn't send. Try again" });
-      }
-      return { sent: emails.length, to: emails };
-    } catch (err) {
-      app.log.warn({ err: String(err) }, "invite email failed");
-      return reply.code(502).send({ error: "The invite didn't send. Try again" });
     }
   });
 }

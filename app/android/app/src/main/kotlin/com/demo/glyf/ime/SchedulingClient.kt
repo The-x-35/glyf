@@ -11,11 +11,10 @@ import java.util.TimeZone
 import java.util.concurrent.Executors
 
 /**
- * Call links, booking links and invites, the twin of the Swift
- * BackendClient's scheduling calls: POST /meetings/new, GET
- * /scheduling/slots, POST /scheduling/book, POST /invites/send. Answers come
- * back on the main thread; an error is the server's own words when it has
- * them.
+ * Call links and booking links, the twin of the Swift BackendClient's
+ * scheduling calls: POST /meetings/new, GET /scheduling/slots, POST
+ * /scheduling/book. Answers come back on the main thread; an error is the
+ * server's own words when it has them.
  */
 object SchedulingClient {
 
@@ -112,30 +111,6 @@ object SchedulingClient {
                 } else error = json?.optString("error")?.takeIf { it.isNotEmpty() }
             }.onFailure { error = null }
             main.post { done(booked, error) }
-        }
-    }
-
-    /** Emails a calendar invite to the invitees, from the signed-in person. */
-    fun sendInvites(backendURL: String, title: String, start: Long, end: Long, allDay: Boolean,
-                    location: String?, emails: List<String>, organizerName: String?, organizerEmail: String?,
-                    done: (Int?, String?) -> Unit) {
-        pool.execute {
-            var sent: Int? = null
-            var error: String? = null
-            runCatching {
-                val c = open("$backendURL/invites/send", "POST")
-                val body = JSONObject().put("title", title).put("start", iso(start)).put("end", iso(end))
-                    .put("allDay", allDay).put("emails", JSONArray(emails)).put("tz", TimeZone.getDefault().id)
-                if (!location.isNullOrEmpty()) body.put("location", location)
-                val who = JSONObject()
-                if (!organizerName.isNullOrEmpty()) who.put("name", organizerName)
-                if (!organizerEmail.isNullOrEmpty()) who.put("email", organizerEmail)
-                if (who.length() > 0) body.put("organizer", who)
-                c.outputStream.use { it.write(body.toString().toByteArray()) }
-                val json = c.json()
-                if (c.responseCode == 200) sent = json?.optInt("sent") else error = json?.optString("error")?.takeIf { it.isNotEmpty() }
-            }
-            main.post { done(sent, error) }
         }
     }
 

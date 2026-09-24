@@ -55,6 +55,9 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    // Google Calendar and Meet for the keyboard: Play services' authorization
+    // hands out access tokens; the version Credential Manager already brings.
+    implementation("com.google.android.gms:play-services-auth:21.1.1")
     // JVM unit tests for the IME's pure logic (gestures, typing engine) —
     // the same cases RunnerTests covers on iOS.
     testImplementation("junit:junit:4.13.2")

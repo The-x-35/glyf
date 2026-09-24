@@ -81,7 +81,32 @@ abstract final class Auth {
     final clientId = google is Map ? (Platform.isIOS ? google['iosClientId'] : google['webClientId']) : null;
     if (clientId is! String || clientId.isEmpty) return 'Google sign-in is not set up yet.';
     final nonce = _nonce();
-    return _finish('google', await GlyfBridge.signInGoogle(clientId: clientId, nonce: nonce), nonce);
+    final error = await _finish('google', await GlyfBridge.signInGoogle(clientId: clientId, nonce: nonce), nonce);
+    // Google Calendar and Meet come with signing in with Google: the
+    // iPhone's Google page asked for them already, Android asks right after.
+    if (error == null && Platform.isAndroid) {
+      await GlyfBridge.googleConnect(loginHint: _account?.email);
+    }
+    return error;
+  }
+
+  /// Connected tools' Connect for Google Calendar and Meet. Null when it
+  /// worked or the person closed Google's page; otherwise what to tell them.
+  static Future<String?> connectGoogle() async {
+    String? clientId;
+    if (Platform.isIOS) {
+      final config = await _config();
+      if (config == null) return _offline;
+      final google = config['google'];
+      clientId = google is Map ? google['iosClientId'] as String? : null;
+      if (clientId == null || clientId.isEmpty) return 'Google is not set up yet.';
+    }
+    final res = await GlyfBridge.googleConnect(
+        clientId: clientId, loginHint: _account?.provider == 'google' ? _account?.email : null);
+    final error = res['error'];
+    if (error == null) return null;
+    if (error == 'not_granted') return 'Calendar and Meet were left unticked.';
+    return _friendly('$error');
   }
 
   static Future<String?> signInWithApple() async {

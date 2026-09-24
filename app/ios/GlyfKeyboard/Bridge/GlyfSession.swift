@@ -16,7 +16,8 @@ enum GlyfSession {
     /// differs between a personal build and a team one, so it is learned from
     /// the keychain itself rather than hard-coded. nil means "this build has
     /// no group" (the simulator, where every item is reachable anyway).
-    private static let group: String? = {
+    /// GoogleAccess keeps its grant in the same group.
+    static let group: String? = {
         let probe: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "so.glyf.group-probe",

@@ -2,7 +2,7 @@
 
 Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 September): the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
 
-118 pass, 2 need a key, 0 fail, of 120.
+114 pass, 2 need a key, 3 fail, of 119.
 
 | ID | Where | Scenario | Result |
 | --- | --- | --- | --- |
@@ -22,10 +22,6 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 | S14 | Server | 'weather in bangalore tomorrow' is a live answer, not a guess | needs a key |
 | S15 | Server | Nothing found inserts nothing (no link pasted) | pass |
 | S16 | Server | Maths in a question: '18% of 2450' answers 441 | pass |
-| S17 | Server | A rough message gets 'Tidy this up' | pass |
-| S18 | Server | A place list gets 'Show me places' | pass |
-| S19 | Server | A plain question gets no 'Look it up' chip | pass |
-| S20 | Server | Three words in, no chip yet | pass |
 | S21 | Server | Hinglish 'kal milte hain office ke baad' comes out in English | pass |
 | S22 | Server | English goes to your other language (Hindi) | pass |
 | S23 | Server | Devanagari detected without asking the model | pass |
@@ -52,7 +48,6 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 | S44 | Server | Emoji-heavy banter keeps its meaning | pass |
 | S45 | Server | A normal rewrite comes back in under 6 seconds | pass |
 | S46 | Server | A long rambling message still gets every version | pass |
-| S47 | Server | A message in Hinglish still gets 'Tidy this up' | pass |
 | S48 | Server | 'Fix my grammar' becomes a glyf that works on a sample | pass |
 | S49 | Server | Mixed Hinglish with English words detected as Hindi | pass |
 | S50 | Server | A place's own name finds that place | pass |
@@ -68,7 +63,6 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 | S60 | iPhone | A sum in a message offers the answer | pass |
 | S61 | iPhone | Asked for your address, it is one tap away | pass |
 | S62 | iPhone | Asked for your UPI, it is one tap away | pass |
-| S63 | iPhone | A rough message offers Tidy this up | pass |
 | S64 | iPhone | Hold space: pick the Professional version | pass |
 | S65 | iPhone | Holding a version copies it instead | pass |
 | S66 | iPhone | Hold space on a place search sends places | pass |
@@ -95,8 +89,7 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 | S87 | Android | A sum in a message offers the answer | pass |
 | S88 | Android | Asked for your address, it is one tap away | pass |
 | S89 | Android | Asked for your UPI, it is one tap away | pass |
-| S90 | Android | A rough message offers Tidy this up | pass |
-| S91 | Android | Hold space: pick the Professional version | pass |
+| S91 | Android | Hold space: pick the Professional version | fail |
 | S92 | Android | Hold space on a place search sends places | pass |
 | S93 | Android | The g button opens the tool menu | pass |
 | S94 | Android | Copied text pastes from the strip | pass |
@@ -112,8 +105,8 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 | S104 | iPhone | The Stickers tab shows stickers and copies one | pass |
 | S105 | iPhone | GIF search shows results for the word | pass |
 | S106 | Android | Emoticons type straight into the message | pass |
-| S107 | Android | The GIF tab shows GIFs and hands one over | pass |
-| S108 | Android | The Stickers tab shows stickers and hands one over | pass |
+| S107 | Android | The GIF tab shows GIFs and hands one over | fail |
+| S108 | Android | The Stickers tab shows stickers and hands one over | fail |
 | S109 | iPhone | New Event from the keyboard's calendar lands in the calendar | pass |
 | S110 | iPhone | A plan in a message offers Add to calendar | pass |
 | S111 | Android | New Event from the keyboard's calendar lands in the calendar | pass |
@@ -121,11 +114,17 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 | S113 | iPhone | A call link, then a time on a Cal.com page | pass |
 | S114 | iPhone | New Event with a video call | pass |
 | S115 | iPhone | Book a time on your page for someone, with a guest | pass |
-| S116 | iPhone | New Event emails its invitees | pass |
 | S117 | Android | A call link from the keyboard's calendar | pass |
 | S118 | Android | Book a time on your own page for someone, with a guest | pass |
-| S119 | Android | New Event with an invitee emails the invite | pass |
 | S120 | Android | Someone's booking page in a message offers Book | pass |
+| S121 | iPhone | A Meet link from the calendar, with Google connected | pass |
+| S122 | iPhone | New Event with a guest goes to Google Calendar, which invites them | pass |
+| S123 | iPhone | Without Google, New Event goes into the message | pass |
+| S124 | iPhone | A key held for a Meet link | pass |
+| S125 | Android | A Meet link from the calendar, with Google connected | pass |
+| S126 | Android | New Event with a guest goes to Google Calendar, which invites them | pass |
+| S127 | Android | Without Google, New Event goes into the message | pass |
+| S128 | Android | A key held for a Meet link | pass |
 
 ## Fixed during the run
 
@@ -163,8 +162,8 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 ## Needs a key or account
 
 - GIFs and stickers in the emoji board: KLIPY_APP_KEY on Railway (it is in the local server/.env since 24 September). Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. Real KLIPY GIFs and stickers were checked on both keyboards with the local key.
-- Email invites for events you add: A Resend key and tryglyf.com verified in Resend (RESEND_API_KEY on the server). Without it New Event adds the event and says email invites aren't set up yet. Booking on a Cal.com page needs no key: Cal.com mails those. S115, S116 and S118 to S120 ran against qa/fake-scheduling.mjs, never a real person's calendar.
-- Call links anyone can start: Daily API key (optional, free tier). Without it call links are Jitsi Meet, where the first person in signs in to start the call.
+- Google Calendar and Meet: The Calendar API and Meet REST API switched on, and their two scopes added to the consent screen, in Google Cloud. No key or secret: the phone talks to Google. S121 to S128 ran against qa/fake-google.mjs, and the booking scenarios against qa/fake-scheduling.mjs, never a real account or a real person's calendar.
+- Call links for people without Google: Daily API key (optional, free tier). Without it those call links are Jitsi Meet, where the first person in signs in to start the call.
 - Web results: Brave Search API key. S27 shows only the Google hand-off row without it.
 - Weather answers: Google Weather or web search key. S14 honestly says nothing found without it.
 - Google sign-in: OAuth client id and secret. The onboarding step stays hidden until then.

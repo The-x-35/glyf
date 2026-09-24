@@ -185,8 +185,18 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
             "signInApple" -> result.success(mapOf("error" to "apple_unavailable"))
             "signOutProviders" -> {
                 SignIn.signOut(ctx)
-                result.success(true)
+                // Signing out takes the Calendar and Meet grant with it.
+                SignIn.disconnectGoogle(ctx) { result.success(true) }
             }
+            // Google Calendar and Meet for the keyboard (GoogleAccess): Play
+            // services holds the grant; the keyboard talks to Google itself.
+            "googleStatus" -> result.success(SignIn.googleStatus(ctx))
+            "googleConnect" -> {
+                val a = activity
+                if (a == null) result.success(mapOf("error" to "failed"))
+                else SignIn.authorizeGoogle(a, call.argument<String>("loginHint")) { result.success(it) }
+            }
+            "googleDisconnect" -> SignIn.disconnectGoogle(ctx) { result.success(true) }
             "sessionLoad" -> result.success(SessionStore.load(ctx))
             "sessionSave" -> result.success(SessionStore.save(ctx, call.argument<String>("json") ?: ""))
             "sessionClear" -> {

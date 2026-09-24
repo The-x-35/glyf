@@ -72,6 +72,26 @@ import UIKit
       let link = args[i + 1]
       SettingsStore.update { s in s.bookingLink = link.isEmpty ? nil : link }
     }
+    #if DEBUG
+    if let i = args.firstIndex(of: "--glyf-test-google"), i + 1 < args.count {
+      // Scenario tests: Google Calendar and Meet as if connected, pointed at
+      // the stand-in for Google's APIs (qa/fake-google.mjs); "" disconnects.
+      let base = args[i + 1]
+      if base.isEmpty {
+        GoogleAccess.clear()
+      } else {
+        GoogleAccess.save(GoogleGrant(refreshToken: "fake-refresh", clientId: "fake.apps.googleusercontent.com",
+                                      scopes: GoogleAccess.scopes, email: "sim@example.com", apiBase: base))
+      }
+    }
+    if let i = args.firstIndex(of: "--glyf-bind"), i + 1 < args.count {
+      // Scenario tests: "m=connector:meet" holds M for a Meet link; "m=" frees it.
+      let pair = args[i + 1].split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+      if pair.count == 2, pair[0].count == 1 {
+        SettingsStore.update { s in s.bindings[pair[0]] = pair[1].isEmpty ? nil : pair[1] }
+      }
+    }
+    #endif
     if args.contains("--glyf-seed-holds") {
       // Scenario tests: just the holds the keyboard ships with.
       SettingsStore.update { s in

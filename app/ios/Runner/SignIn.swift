@@ -6,7 +6,8 @@ import UIKit
 /// AuthenticationServices, and Google through its OAuth page in the system's
 /// secure browser sheet (code flow with PKCE, the iOS client id from Google
 /// Cloud Console). Either way the result is the provider's ID token, which
-/// the Glyf server checks before it issues a session.
+/// the Glyf server checks before it issues a session. Google also grants
+/// Calendar and Meet, kept for the keyboard in GoogleAccess.
 ///
 /// Results are plain dictionaries for the bridge: `idToken` (plus `name` and
 /// `email` when Apple shares them) on success, `error` otherwise, where
@@ -46,13 +47,101 @@ final class SignIn: NSObject {
 
     private static let googleAuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
     private static let googleTokenURL = "https://oauth2.googleapis.com/token"
+    private static let googleRevokeURL = "https://oauth2.googleapis.com/revoke"
+
+    /// Signing in with Google also asks for Google Calendar and Meet, so the
+    /// keyboard can add events (Google emails the guests) and make Meet
+    /// links. Google shows them as boxes the person can untick. Until Google
+    /// verifies the app for these scopes, its consent page warns that the
+    /// app is unverified; false here asks only in Connected tools.
+    static let askCalendarAtSignIn = true
 
     func google(clientId: String, nonce: String, done: @escaping ([String: Any]) -> Void) {
+        let scope = (["openid", "email", "profile"]
+            + (Self.askCalendarAtSignIn ? GoogleAccess.scopes : [])).joined(separator: " ")
+        authorizeGoogle(clientId: clientId, scope: scope, nonce: nonce, loginHint: nil,
+                        prompt: "select_account") { json, error in
+            guard let json else { return done(["error": error ?? "failed"]) }
+            guard let token = json["id_token"] as? String else { return done(["error": "failed"]) }
+            Self.keepGrant(json, clientId: clientId)
+            done(["idToken": token])
+        }
+    }
+
+    /// Connected tools' Connect: Calendar and Meet on its own, for someone
+    /// who signed in with Apple, or who unticked them at sign-in.
+    func connectGoogle(clientId: String, loginHint: String?, done: @escaping ([String: Any]) -> Void) {
+        let scope = (["openid", "email"] + GoogleAccess.scopes).joined(separator: " ")
+        authorizeGoogle(clientId: clientId, scope: scope, nonce: nil, loginHint: loginHint,
+                        prompt: "consent") { json, error in
+            guard let json else { return done(["error": error ?? "failed"]) }
+            guard Self.keepGrant(json, clientId: clientId) else { return done(["error": "not_granted"]) }
+            done(Self.googleStatus())
+        }
+    }
+
+    /// Takes the grant back from Google too, not just off the phone.
+    func disconnectGoogle(done: @escaping () -> Void) {
+        let grant = GoogleAccess.load()
+        GoogleAccess.clear()
+        guard let grant, grant.apiBase == nil,
+              var components = URLComponents(string: Self.googleRevokeURL) else { return done() }
+        components.queryItems = [URLQueryItem(name: "token", value: grant.refreshToken)]
+        guard let url = components.url else { return done() }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        URLSession.shared.dataTask(with: request) { _, _, _ in
+            DispatchQueue.main.async { done() }
+        }.resume()
+    }
+
+    /// What Connected tools shows: connected or not, as whom, and what for.
+    static func googleStatus() -> [String: Any] {
+        guard let grant = GoogleAccess.load() else { return ["connected": false] }
+        var out: [String: Any] = [
+            "connected": true,
+            "calendar": grant.scopes.contains(GoogleAccess.calendarScope),
+            "meet": grant.scopes.contains(GoogleAccess.meetScope),
+        ]
+        if let email = grant.email { out["email"] = email }
+        return out
+    }
+
+    /// Keeps what Google granted for the keyboard, when it granted Calendar
+    /// or Meet. True when it did.
+    @discardableResult
+    private static func keepGrant(_ json: [String: Any], clientId: String) -> Bool {
+        let scopes = GoogleAccess.granted(json["scope"] as? String)
+        guard !scopes.isEmpty, let refresh = json["refresh_token"] as? String, !refresh.isEmpty else {
+            return false
+        }
+        let email = (json["id_token"] as? String).flatMap(Self.claims)?["email"] as? String
+        return GoogleAccess.save(GoogleGrant(refreshToken: refresh, clientId: clientId, scopes: scopes,
+                                             email: email ?? GoogleAccess.load()?.email))
+    }
+
+    /// The claims of a JWT, unchecked: only the email is read, for display.
+    private static func claims(_ jwt: String) -> [String: Any]? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count == 3 else { return nil }
+        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while payload.count % 4 != 0 { payload += "=" }
+        guard let data = Data(base64Encoded: payload) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    /// Google's OAuth page in the secure browser sheet, then the code traded
+    /// for tokens. The token response, or why there isn't one.
+    private func authorizeGoogle(clientId: String, scope: String, nonce: String?, loginHint: String?,
+                                 prompt: String, done: @escaping ([String: Any]?, String?) -> Void) {
         // "123-abc.apps.googleusercontent.com" → "com.googleusercontent.apps.123-abc",
         // the redirect scheme Google gives every iOS client.
         let scheme = clientId.split(separator: ".").reversed().joined(separator: ".")
         guard clientId.hasSuffix(".apps.googleusercontent.com"), !scheme.isEmpty else {
-            done(["error": "not_configured"])
+            done(nil, "not_configured")
             return
         }
         let redirect = "\(scheme):/oauth2redirect"
@@ -61,40 +150,44 @@ final class SignIn: NSObject {
         let state = Self.randomString(bytes: 16)
 
         var components = URLComponents(string: Self.googleAuthURL)!
-        components.queryItems = [
+        var items = [
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "redirect_uri", value: redirect),
             URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: "openid email profile"),
+            URLQueryItem(name: "scope", value: scope),
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "nonce", value: nonce),
-            URLQueryItem(name: "prompt", value: "select_account"),
+            URLQueryItem(name: "prompt", value: prompt),
+            // Whatever was granted before stays granted.
+            URLQueryItem(name: "include_granted_scopes", value: "true"),
         ]
+        if let nonce { items.append(URLQueryItem(name: "nonce", value: nonce)) }
+        if let loginHint, !loginHint.isEmpty { items.append(URLQueryItem(name: "login_hint", value: loginHint)) }
+        components.queryItems = items
         guard let url = components.url else {
-            done(["error": "not_configured"])
+            done(nil, "not_configured")
             return
         }
         webSession?.cancel()
         let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { [weak self] callback, error in
             self?.webSession = nil
             if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
-                done(["error": "cancelled"])
+                done(nil, "cancelled")
                 return
             }
             guard let callback,
                   let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems else {
-                done(["error": error?.localizedDescription ?? "failed"])
+                done(nil, error?.localizedDescription ?? "failed")
                 return
             }
             func item(_ name: String) -> String? { items.first { $0.name == name }?.value }
             if let problem = item("error") {
-                done(["error": problem == "access_denied" ? "cancelled" : problem])
+                done(nil, problem == "access_denied" ? "cancelled" : problem)
                 return
             }
             guard item("state") == state, let code = item("code") else {
-                done(["error": "failed"])
+                done(nil, "failed")
                 return
             }
             Self.exchange(code: code, clientId: clientId, redirect: redirect, verifier: verifier, done: done)
@@ -106,14 +199,14 @@ final class SignIn: NSObject {
         webSession = session
         if !session.start() {
             webSession = nil
-            done(["error": "failed"])
+            done(nil, "failed")
         }
     }
 
     /// The code from Google's page, traded for tokens. An iOS client proves
     /// itself with the PKCE verifier; there is no client secret on a phone.
     private static func exchange(code: String, clientId: String, redirect: String, verifier: String,
-                                 done: @escaping ([String: Any]) -> Void) {
+                                 done: @escaping ([String: Any]?, String?) -> Void) {
         var request = URLRequest(url: URL(string: googleTokenURL)!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -131,12 +224,12 @@ final class SignIn: NSObject {
         URLSession.shared.dataTask(with: request) { data, _, error in
             let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             DispatchQueue.main.async {
-                if let token = json?["id_token"] as? String {
-                    done(["idToken": token])
+                if let json, json["access_token"] != nil || json["id_token"] != nil {
+                    done(json, nil)
                 } else if error != nil {
-                    done(["error": "network"])
+                    done(nil, "network")
                 } else {
-                    done(["error": (json?["error"] as? String) ?? "failed"])
+                    done(nil, (json?["error"] as? String) ?? "failed")
                 }
             }
         }.resume()

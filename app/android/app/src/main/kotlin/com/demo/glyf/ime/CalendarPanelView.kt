@@ -21,8 +21,9 @@ import java.util.Locale
  * The keyboard's calendar, the twin of CalendarSurface on iOS: the day's
  * events, full width, because that is what you reach for mid-message. Tap one
  * to put it in the message, or share when you are free that day. Month opens
- * the grid to jump to another day. + makes an event (with invitees emailed an
- * invite, and a call link if asked), the camera puts a call link in the
+ * the grid to jump to another day. + makes an event (in Google Calendar,
+ * which emails the invitees, when Google is connected; with a call link if
+ * asked; into the message if shared), the camera puts a call link in the
  * message, and Book a time shows the open times on the person's Cal.com page.
  */
 class CalendarPanelView(
@@ -178,6 +179,7 @@ class CalendarPanelView(
      *  else the chosen day at the next hour (9 AM on another day). */
     fun compose(plan: EventParse.Plan?) {
         val draft = if (plan != null) {
+            // The plan is in the message already: nothing more goes in.
             EventComposerView.Draft(plan.title, plan.start, plan.end, plan.allDay)
         } else {
             val now = System.currentTimeMillis()
@@ -187,10 +189,13 @@ class CalendarPanelView(
                     set(Calendar.MILLISECOND, 0); add(Calendar.HOUR_OF_DAY, 1)
                 }.timeInMillis
             } else selected + 9 * 3_600_000L
-            EventComposerView.Draft("", start, start + 3_600_000L, false)
+            // Made from the calendar in a chat, it is most often for the person
+            // the chat is with: it goes into the message once added.
+            EventComposerView.Draft("", start, start + 3_600_000L, false, share = true)
         }
         composer?.let { removeView(it) }
         val c = EventComposerView(context, palette, draft, CalendarText.canAdd(context),
+            google = com.demo.glyf.store.GoogleAccess.hasCalendar(context),
             onCancel = { closeComposer() },
             onAdd = { add(it) },
             onEditTitle = { editing -> onTitleEditing(editing) },
@@ -244,34 +249,93 @@ class CalendarPanelView(
         return fields.firstOrNull { it.kind == "name" }?.value to fields.firstOrNull { it.kind == "email" }?.value
     }
 
-    /** A call link, straight into the message. */
+    /** A call link, straight into the message: the person's own Google Meet
+     *  when Google is connected. */
     private fun insertCallLink(button: View) {
         button.isEnabled = false
-        SchedulingClient.newMeeting(backendURL) { link ->
+        CallLink.make(context, backendURL) { url, note ->
             button.isEnabled = true
-            onInsert("Join me on a call: ${link ?: SchedulingClient.localCallLink()}")
+            onInsert("Join me on a call: $url")
+            note?.let { toast(it) }
         }
+    }
+
+    /** "sam@x.com", "sam@x.com and ria@y.com", "sam@x.com and 2 others". */
+    private fun people(emails: List<String>): String = when (emails.size) {
+        0 -> ""
+        1 -> emails[0]
+        2 -> "${emails[0]} and ${emails[1]}"
+        else -> "${emails[0]} and ${emails.size - 1} others"
     }
 
     private fun toast(text: String) =
         android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
 
+    /** With Google Calendar connected the event goes there, where Google
+     *  emails the invitees and makes the Meet call; otherwise the phone's
+     *  calendar takes it. Either way Share in chat puts it in the message. */
     private fun add(d: EventComposerView.Draft) {
         if (adding) return
-        if (!d.videoCall) return save(d, null)
-        // The call link first, so the event carries it and so does the invite.
         adding = true
-        SchedulingClient.newMeeting(backendURL) { link ->
-            adding = false
-            save(d, link ?: SchedulingClient.localCallLink())
+        if (!com.demo.glyf.store.GoogleAccess.hasCalendar(context)) return saveHere(d, null)
+        GoogleClient.addEvent(context, d.title, d.start, d.end, d.allDay, d.invitees, d.videoCall) { added, failure ->
+            if (added != null) {
+                adding = false
+                addedToGoogle(d, added.meet)
+            } else {
+                // Not lost: the phone's calendar takes it, and the toast says
+                // why Google didn't (and so nobody was emailed).
+                saveHere(d, GoogleClient.say(failure ?: GoogleClient.Failure.REFUSED))
+            }
         }
     }
 
-    private fun save(d: EventComposerView.Draft, callLink: String?) {
+    private fun saveHere(d: EventComposerView.Draft, note: String?) {
+        if (!d.videoCall) {
+            adding = false
+            return save(d, null, note)
+        }
+        // The call link first, so the event carries it and so does the message.
+        CallLink.make(context, backendURL) { url, meetNote ->
+            adding = false
+            save(d, url, note ?: meetNote)
+        }
+    }
+
+    private fun addedToGoogle(d: EventComposerView.Draft, meet: String?) {
+        val said = if (d.invitees.isEmpty()) "Added to Google Calendar"
+            else "Added. Google emailed the invite to ${people(d.invitees)}"
+        if (d.share) {
+            closeComposer()
+            onInsert(CalendarText.insert(CalendarText.Event(d.title, d.start, d.end, d.allDay, location = meet)))
+            toast(said)
+            return
+        }
+        // Google's calendar reaches the phone's on its next sync: show the day.
+        selected = CalendarText.startOfDay(d.start)
+        month = Calendar.getInstance().apply {
+            timeInMillis = selected; set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        showingMonth = false
+        closeComposer()
+        loadEvents()
+        render()
+        toast(said)
+    }
+
+    private fun save(d: EventComposerView.Draft, callLink: String?, note: String?) {
         val added = CalendarText.add(context, d.title, d.start, d.end, d.allDay,
             location = callLink, notes = callLink?.let { "Join the call: $it" })
         if (added == null) {
             toast("Couldn't add the event. Try again")
+            return
+        }
+        val said = "Added to ${added.second}" + (note?.let { ". $it" } ?: "")
+        if (d.share) {
+            closeComposer()
+            onInsert(CalendarText.insert(added.first))
+            toast(said)
             return
         }
         selected = CalendarText.startOfDay(d.start)
@@ -284,24 +348,12 @@ class CalendarPanelView(
         closeComposer()
         loadEvents()
         render()
-        if (d.invitees.isEmpty()) toast("Added to ${added.second}") else invite(d, callLink)
+        toast(said)
         postDelayed({
             justAdded = null
             (litRow?.background as? GradientDrawable)?.setStroke(0, Color.TRANSPARENT)
             litRow = null
         }, 2500)
-    }
-
-    /** The invitees get a calendar invite by email, from the person: the
-     *  phone's calendar has no way to invite anyone itself. */
-    private fun invite(d: EventComposerView.Draft, location: String?) {
-        val (name, email) = me()
-        toast("Added. Sending the invite…")
-        SchedulingClient.sendInvites(backendURL, d.title, d.start, d.end, d.allDay, location,
-            d.invitees, name, email) { sent, error ->
-            if (sent != null) toast(if (sent == 1) "Invite sent to ${d.invitees[0]}" else "Invite sent to $sent people")
-            else toast("Added. ${error ?: "The invite didn't send"}")
-        }
     }
 
     private fun arrow(label: String, id: String, onTap: () -> Unit) = TextView(context).apply {

@@ -20,7 +20,6 @@ import { ratesRoutes } from "./routes/rates.js";
 import { waitlistRoutes } from "./routes/waitlist.js";
 import { actRoutes } from "./routes/act.js";
 import { walletRoutes } from "./routes/wallet.js";
-import { suggestRoutes } from "./routes/suggest.js";
 import { translateRoutes } from "./routes/translate.js";
 import { vocabRoutes } from "./routes/vocab.js";
 import { authRoutes } from "./routes/auth.js";
@@ -89,7 +88,6 @@ export function buildApp(kv: KV = defaultKV()) {
   waitlistRoutes(app, kv);
   actRoutes(app, guard, kv);
   walletRoutes(app);
-  suggestRoutes(app, guard);
   translateRoutes(app, guard);
   vocabRoutes(app, guard);
   authRoutes(app);

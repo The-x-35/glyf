@@ -82,6 +82,19 @@ final class GlyfBridge {
             let args = call.arguments as? [String: Any]
             SignIn.shared.google(clientId: args?["clientId"] as? String ?? "",
                                  nonce: args?["nonce"] as? String ?? "") { result($0) }
+        // Google Calendar and Meet for the keyboard (GoogleAccess): the grant
+        // stays on the phone and the keyboard talks to Google itself.
+        case "googleStatus":
+            result(SignIn.googleStatus())
+        case "googleConnect":
+            let args = call.arguments as? [String: Any]
+            SignIn.shared.connectGoogle(clientId: args?["clientId"] as? String ?? "",
+                                        loginHint: args?["loginHint"] as? String) { result($0) }
+        case "googleDisconnect":
+            SignIn.shared.disconnectGoogle { result(true) }
+        case "signOutProviders":
+            // Signing out takes the Calendar and Meet grant with it.
+            SignIn.shared.disconnectGoogle { result(true) }
         case "sessionLoad":
             result(SessionKeychain.load())
         case "sessionSave":

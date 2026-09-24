@@ -109,16 +109,6 @@
   "verdict": "pass"
  },
  {
-  "id": "S63",
-  "surface": "iPhone",
-  "area": "Strip",
-  "title": "A rough message offers Tidy this up",
-  "input": "ya ok will send the deck before six tmrw ␣",
-  "outcome": "chip “Tidy this up” → versions",
-  "verdict": "pass",
-  "fixed": true
- },
- {
   "id": "S64",
   "surface": "iPhone",
   "area": "Hold space",
@@ -411,12 +401,42 @@
   "fixed": false
  },
  {
-  "id": "S116",
+  "id": "S121",
   "surface": "iPhone",
   "area": "Calendar",
-  "title": "New Event emails its invitees",
-  "input": "hold C → + → “review friday 3pm” → Invitees “sam@example.com” → Add",
-  "outcome": "“Invitation: Review · Fri 25 Sept, 3:00 PM” mailed to sam@example.com with the calendar file (stand-in Resend)",
+  "title": "A Meet link from the calendar, with Google connected",
+  "input": "Google connected (stand-in) → hold C → camera",
+  "outcome": "“Join me on a call: https://meet.google.com/llq-kjkt-aiv”: the person's own Meet link, made by the keyboard itself",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S122",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "New Event with a guest goes to Google Calendar, which invites them",
+  "input": "Google connected (stand-in) → hold C → + → “review friday 3pm” → Invitees “sam@example.com” → Video call → Add",
+  "outcome": "The event went to Google Calendar for sam@example.com with sendUpdates=all and a Meet call; the message got “📅 Review · Fri, Sep 25, 3:00–4:00 PM · https://meet.google.com/…”",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S123",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "Without Google, New Event goes into the message",
+  "input": "Google not connected → hold C → + → “lunch with sam tomorrow 1pm” → Add",
+  "outcome": "No Invitees row; the message got “📅 Lunch with sam · Fri, Sep 25, 1:00–2:00 PM”",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S124",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "A key held for a Meet link",
+  "input": "M bound to Meet link, Google connected (stand-in) → hold M",
+  "outcome": "“Join me on a call: https://meet.google.com/txd-sefv-kfh”",
   "verdict": "pass",
   "fixed": false
  }

@@ -21,6 +21,7 @@ TEST_SHARED = %w[
   Engine/Smart.swift
   Engine/CalendarText.swift
   Engine/EventParse.swift
+  Engine/GoogleEvent.swift
   Engine/Typing/TypingText.swift
   Engine/Typing/GlydTrie.swift
   Engine/Typing/Decoder.swift
@@ -34,6 +35,7 @@ TEST_SHARED = %w[
 # Shared implementations compiled into the Runner APP as well (§4 bridge).
 RUNNER_SHARED = %w[
   Bridge/AppGroupStore.swift
+  Bridge/GoogleAccess.swift
   Bridge/IntentStore.swift
   Engine/SecretScanner.swift
   Engine/VaultStore.swift

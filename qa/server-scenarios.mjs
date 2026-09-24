@@ -100,24 +100,6 @@ const scenarios = [
     check: r => JSON.stringify(r.json).includes("441"),
     show: r => (r.json.text ?? (r.json.cards ?? [])[0]?.value ?? r.json.insert ?? "") },
 
-  // --- The strip reads the sentence and offers one move ---
-  { id: "S17", area: "Suggestions", title: "A rough message gets 'Tidy this up'",
-    run: () => post("/suggest", { text: "ya ok will send the deck before 6 tmrw" }),
-    check: r => r.json.suggestion?.label === "Tidy this up",
-    show: r => JSON.stringify(r.json.suggestion) },
-  { id: "S18", area: "Suggestions", title: "A place list gets 'Show me places'",
-    run: () => post("/suggest", { text: "any good italian places in koramangala" }),
-    check: r => r.json.suggestion?.label === "Show me places",
-    show: r => JSON.stringify(r.json.suggestion) },
-  { id: "S19", area: "Suggestions", title: "A plain question gets no 'Look it up' chip",
-    run: () => post("/suggest", { text: "what time does the match start today" }),
-    check: r => r.json.suggestion === null || r.json.suggestion?.label !== "Look it up",
-    show: r => JSON.stringify(r.json.suggestion) },
-  { id: "S20", area: "Suggestions", title: "Three words in, no chip yet",
-    run: () => post("/suggest", { text: "hey how are" }),
-    check: r => r.json.suggestion === null,
-    show: r => JSON.stringify(r.json.suggestion) },
-
   // --- Translate, Google style ---
   { id: "S21", area: "Translate", title: "Hinglish 'kal milte hain office ke baad' comes out in English",
     run: () => post("/translate", { text: "kal milte hain office ke baad", primary: "English", secondary: "Hindi" }),
@@ -238,10 +220,6 @@ const scenarios = [
     run: () => act("so basically what happened was i reached the venue at like 7 and nobody was there and then i called rahul and he said the event got moved to the other hall which nobody told us about and by the time we found it the first session was already over so can we please get the recording or at least the slides because we did pay for the full day"),
     check: r => (r.json.options ?? []).length >= 4 && r.json.options.find(o => o.id === "shorter")?.text.length < 200,
     show: r => (r.json.options ?? []).filter(o => o.id === "shorter" || o.id === "professional").map(o => `${o.label}: ${o.text}`).join(" | ") },
-  { id: "S47", area: "Suggestions", title: "A message in Hinglish still gets 'Tidy this up'",
-    run: () => post("/suggest", { text: "bhai kal ka plan cancel kar de yaar mood nahi hai" }),
-    check: r => r.json.suggestion === null || r.json.suggestion?.intent === "rewrite",
-    show: r => JSON.stringify(r.json.suggestion) },
   { id: "S48", area: "Builder", title: "'Fix my grammar' becomes a glyf that works on a sample",
     run: async () => {
       const g = await post("/builder/generate", { description: "Fix my grammar and spelling" });

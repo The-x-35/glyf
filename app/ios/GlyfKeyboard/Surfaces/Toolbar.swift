@@ -428,15 +428,8 @@ final class GlyfToolbar: UIView {
             // a word and once as the tap, is what made it read as clutter.
             smartKey.isHidden = isPaste
             // Content on the left, the action on the right edge.
-            if let verb = chip.verb {
-                smartKey.attributedText = nil
-                smartKey.text = verb
-            } else {
-                let spark = NSTextAttachment(image: UIImage(systemName: "sparkles",
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))?
-                    .withTintColor(Glass.accentPrimary, renderingMode: .alwaysOriginal) ?? UIImage())
-                smartKey.attributedText = NSAttributedString(attachment: spark)
-            }
+            smartKey.attributedText = nil
+            smartKey.text = chip.verb
             if case .vault(let field) = chip {
                 let line = NSMutableAttributedString(string: field.label + "  ", attributes: [
                     .foregroundColor: Glass.textSecondary,

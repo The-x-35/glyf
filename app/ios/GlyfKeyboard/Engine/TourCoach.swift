@@ -55,7 +55,7 @@ enum TourCoach {
 
     /// While a step is being coached the strip only offers what that step is
     /// about: any other chip would cover the tool the coach points at.
-    /// Kinds: "calc", "vault:<kind>", "paste", "pay", "action".
+    /// Kinds: "calc", "vault:<kind>", "paste", "pay", "event", "booking".
     static func allowsChip(_ kind: String, step: String, copied: Bool = false) -> Bool {
         switch step {
         case "mumma:0": return kind == "vault:address"

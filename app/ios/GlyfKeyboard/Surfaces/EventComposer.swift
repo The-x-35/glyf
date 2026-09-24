@@ -2,10 +2,12 @@ import UIKit
 
 /// New Event, the way Calendar's own sheet has it: Cancel, the name and Add
 /// along the top, then rows that scroll: Title, Invitees, Starts, Ends, Video
-/// call, All-day. The title takes a whole plan in one line ("Lunch with Sam
-/// tomorrow 1pm") and fills the times from it; invitees are email addresses,
-/// sent a calendar invite when the event is added. The date and time pills
-/// open Apple's wheels in place of the rows.
+/// call, Share in chat, All-day. The title takes a whole plan in one line
+/// ("Lunch with Sam tomorrow 1pm") and fills the times from it. Invitees show
+/// only with Google Calendar connected: the event then goes to Google, which
+/// emails each one the invite. Share in chat puts the event in the message,
+/// for the person the chat is with. The date and time pills open Apple's
+/// wheels in place of the rows.
 final class EventComposer: UIView {
 
     struct Draft: Equatable {
@@ -15,8 +17,10 @@ final class EventComposer: UIView {
         var allDay: Bool
         /// Make a call link and put it in the event (its location).
         var videoCall: Bool = false
-        /// Emailed a calendar invite once the event is added.
+        /// Google emails each one the invite (Google Calendar connected).
         var invitees: [String] = []
+        /// Once added, the event goes into the message for the chat.
+        var share: Bool = false
     }
 
     var onCancel: (() -> Void)?
@@ -45,6 +49,8 @@ final class EventComposer: UIView {
     private var picking: Picking?
     private enum Picking { case start, end }
     private var access: CalendarWriter.Access
+    /// Google Calendar is connected: invitees can be asked.
+    private let google: Bool
 
     private let cancelButton = UIButton(type: .system)
     private let addButton = UIButton(type: .system)
@@ -60,21 +66,24 @@ final class EventComposer: UIView {
     private let endsLabel = UILabel()
     private let allDayLabel = UILabel()
     private let videoLabel = UILabel()
+    private let shareLabel = UILabel()
     private let startDate = UIButton(type: .custom)
     private let startTime = UIButton(type: .custom)
     private let endDate = UIButton(type: .custom)
     private let endTime = UIButton(type: .custom)
     private let allDaySwitch = UISwitch()
     private let videoSwitch = UISwitch()
+    private let shareSwitch = UISwitch()
     private var separators: [UIView] = []
     private let picker = UIDatePicker()
     private let hint = UILabel()
     private let note = UILabel()
     private let noteButton = UIButton(type: .system)
 
-    init(draft: Draft, access: CalendarWriter.Access) {
+    init(draft: Draft, access: CalendarWriter.Access, google: Bool = GoogleAccess.hasCalendar) {
         self.draft = draft
         self.access = access
+        self.google = google
         super.init(frame: .zero)
         typed = draft.title
         inviteLine = draft.invitees.joined(separator: " ")
@@ -128,7 +137,8 @@ final class EventComposer: UIView {
         titleRow.addSubview(titleValue)
 
         for (label, text) in [(startsLabel, "Starts"), (endsLabel, "Ends"), (allDayLabel, "All-day"),
-                              (videoLabel, "Video call"), (inviteLabel, "Invitees")] {
+                              (videoLabel, "Video call"), (shareLabel, "Share in chat"),
+                              (inviteLabel, "Invitees")] {
             label.text = text
             label.font = .systemFont(ofSize: 16)
             label.textColor = Glass.textPrimary
@@ -153,7 +163,8 @@ final class EventComposer: UIView {
             pill.addAction(UIAction { [weak self] _ in self?.pick(which) }, for: .touchUpInside)
             card.addSubview(pill)
         }
-        for (toggle, id) in [(allDaySwitch, "event:allday"), (videoSwitch, "event:video")] {
+        for (toggle, id) in [(allDaySwitch, "event:allday"), (videoSwitch, "event:video"),
+                             (shareSwitch, "event:share")] {
             toggle.accessibilityIdentifier = id
             toggle.onTintColor = Glass.accentPrimary
             card.addSubview(toggle)
@@ -162,7 +173,10 @@ final class EventComposer: UIView {
         videoSwitch.addAction(UIAction { [weak self] _ in
             self?.draft.videoCall = self?.videoSwitch.isOn ?? false
         }, for: .valueChanged)
-        for _ in 0..<5 {
+        shareSwitch.addAction(UIAction { [weak self] _ in
+            self?.draft.share = self?.shareSwitch.isOn ?? false
+        }, for: .valueChanged)
+        for _ in 0..<6 {
             let line = UIView()
             line.backgroundColor = Glass.strokeSeparator
             line.isUserInteractionEnabled = false
@@ -226,7 +240,7 @@ final class EventComposer: UIView {
         var d = draft
         d.title = d.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if d.title.isEmpty { d.title = "New Event" }
-        d.invitees = EventParse.people(inviteLine).emails
+        d.invitees = google ? EventParse.people(inviteLine).emails : []
         onAdd?(d)
     }
 
@@ -359,9 +373,10 @@ final class EventComposer: UIView {
         endDate.isHidden = sameDay && !draft.allDay
         allDaySwitch.isOn = draft.allDay
         videoSwitch.isOn = draft.videoCall
+        shareSwitch.isOn = draft.share
 
         if editing == .invitees {
-            hint.text = draft.invitees.isEmpty ? "They get an email invite when it's added"
+            hint.text = draft.invitees.isEmpty ? "Google emails each one the invite"
                 : "Invite \(draft.invitees.joined(separator: ", "))"
         } else {
             hint.text = draft.allDay
@@ -423,7 +438,8 @@ final class EventComposer: UIView {
         let rowH: CGFloat = max(34, min(40, floor((bounds.height - headerH - 6 - (showNote ? 44 : 0)) / 5)))
         // Without the calendar, only what can be seen is shown; the note says why.
         let order: [UIView] = showNote ? [titleRow, startsLabel, endsLabel]
-                                       : [titleRow, inviteRow, startsLabel, endsLabel, videoLabel, allDayLabel]
+            : (google ? [titleRow, inviteRow] : [titleRow])
+                + [startsLabel, endsLabel, videoLabel, shareLabel, allDayLabel]
         let noteH: CGFloat = showNote ? 44 : 0
         rows.frame = CGRect(x: pad, y: headerH + 2, width: w - pad * 2,
                             height: max(0, bounds.height - headerH - 6 - noteH))
@@ -434,7 +450,7 @@ final class EventComposer: UIView {
 
         titleRow.frame = CGRect(x: 0, y: rowY(titleRow), width: cw, height: rowH)
         titleValue.frame = CGRect(x: 14, y: 0, width: cw - 28, height: rowH)
-        inviteRow.isHidden = showNote
+        inviteRow.isHidden = showNote || !google
         inviteRow.frame = CGRect(x: 0, y: rowY(inviteRow), width: cw, height: rowH)
         inviteLabel.frame = CGRect(x: 14, y: 0, width: 90, height: rowH)
         inviteValue.frame = CGRect(x: 104, y: 0, width: cw - 118, height: rowH)
@@ -455,10 +471,13 @@ final class EventComposer: UIView {
         place([startDate, startTime], y: rowY(startsLabel))
         place([endDate, endTime], y: rowY(endsLabel))
 
-        for v in [allDayLabel, allDaySwitch, videoLabel, videoSwitch] as [UIView] { v.isHidden = showNote }
+        for v in [allDayLabel, allDaySwitch, videoLabel, videoSwitch, shareLabel, shareSwitch] as [UIView] {
+            v.isHidden = showNote
+        }
         if !showNote {
-            for (l, toggle) in [(videoLabel, videoSwitch), (allDayLabel, allDaySwitch)] {
+            for (l, toggle) in [(videoLabel, videoSwitch), (shareLabel, shareSwitch), (allDayLabel, allDaySwitch)] {
                 label(l)
+                l.frame.size.width = 140
                 let s = toggle.intrinsicContentSize
                 toggle.frame = CGRect(x: cw - s.width - 12, y: rowY(l) + (rowH - s.height) / 2,
                                       width: s.width, height: s.height)

@@ -27,8 +27,6 @@ SERVER_INPUT = {
     "S10": "best biryani near indiranagar", "S11": "nearest atm", "S12": "cafes near me",
     "S13": "send me the dune part 2 trailer", "S14": "weather in bangalore tomorrow",
     "S15": "zxqv plorb wibble score today", "S16": "18% of 2450",
-    "S17": "ya ok will send the deck before 6 tmrw", "S18": "any good italian places in koramangala",
-    "S19": "what time does the match start today", "S20": "hey how are",
     "S21": "kal milte hain office ke baad", "S22": "see you after office tomorrow",
     "S23": "मुझे कल छुट्टी चाहिए", "S24": "நாளை சந்திப்போம்",
     "S25": "happy birthday, have a great year (→ Spanish)", "S26": "nos vemos mañana en la oficina",
@@ -41,7 +39,7 @@ SERVER_INPUT = {
     "S40": "what is a black hole", "S41": "sunset", "S42": "lofi beats playlist",
     "S43": "good hotels in goa", "S44": "omg 😂😂 that was sooo funny cant breathe",
     "S45": "hey r u free for a call at 5 today", "S46": "so basically what happened was i reached the venue at like 7…",
-    "S47": "bhai kal ka plan cancel kar de yaar mood nahi hai", "S48": "i has went to the store yesterday and buyed milk",
+    "S48": "i has went to the store yesterday and buyed milk",
     "S49": "meeting postpone ho gayi hai, kal 4 baje rakhte hain", "S50": "Phoenix Marketcity Bangalore",
 }
 
@@ -51,7 +49,7 @@ SERVER_FIXED = {"S01", "S05", "S06", "S10", "S11", "S15", "S25", "S30", "S32", "
 ANDROID_INPUT = {
     "S84": "i think teh plan works", "S85": "sry running late omw", "S86": "call at 5 ␣",
     "S87": "split is 3480/4", "S88": "sure my address is ␣", "S89": "my upi is ␣",
-    "S90": "ya ok will send the deck before six tmrw ␣", "S91": "ya ok will send deck b4 6 (hold ␣)",
+    "S91": "ya ok will send deck b4 6 (hold ␣)",
     "S92": "best biryani near indiranagar (hold ␣)", "S93": "tap g", "S94": "copy “Flight AI 2021 lands at 6:40”",
     "S95": "kal milte hain office ke baad ␣", "S96": "what a finish ␣ → 😊 key → 😂",
     "S97": "see you at the park tomorrow, slide left from ⌫",
@@ -64,10 +62,13 @@ ANDROID_INPUT = {
     "S112": "dinner friday 8pm → tap the chip → Add",
     "S117": "calendar → camera",
     "S118": "Booking link cal.com/fake-host/30min → calendar → Book a time → first time → “sam lee sam@example.com ria@example.com” → Book it",
-    "S119": "calendar → + → “review friday 3pm” → Invitees “sam@example.com” → Add",
     "S120": "“grab a time cal.com/sam-lee/intro” → tap the Book chip → first time → Book it",
+    "S125": "Google connected (stand-in) → calendar → camera",
+    "S126": "Google connected (stand-in) → calendar → + → “review friday 3pm” → Invitees “sam@example.com” → Video call → Add",
+    "S127": "Google not connected → calendar → + → “lunch with sam tomorrow 1pm” → Add",
+    "S128": "M bound to Meet link, Google connected (stand-in) → hold M",
 }
-ANDROID_FIXED = {"S85", "S86", "S87", "S88", "S89", "S90", "S91"}
+ANDROID_FIXED = {"S85", "S86", "S87", "S88", "S89", "S91"}
 
 FIXES = [
     ("Server", "Card numbers, CVVs, OTPs, PINs, passwords, ID numbers, API keys and recovery phrases went to the AI models inside messages.",
@@ -135,10 +136,10 @@ FIXES = [
 NEEDS_YOU = [
     ("GIFs and stickers in the emoji board", "KLIPY_APP_KEY on Railway (it is in the local server/.env since 24 September)",
      "Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. Real KLIPY GIFs and stickers were checked on both keyboards with the local key."),
-    ("Email invites for events you add", "A Resend key and tryglyf.com verified in Resend (RESEND_API_KEY on the server)",
-     "Without it New Event adds the event and says email invites aren't set up yet. Booking on a Cal.com page needs no key: Cal.com mails those. S115, S116 and S118 to S120 ran against qa/fake-scheduling.mjs, never a real person's calendar."),
-    ("Call links anyone can start", "Daily API key (optional, free tier)",
-     "Without it call links are Jitsi Meet, where the first person in signs in to start the call."),
+    ("Google Calendar and Meet", "The Calendar API and Meet REST API switched on, and their two scopes added to the consent screen, in Google Cloud",
+     "No key or secret: the phone talks to Google. S121 to S128 ran against qa/fake-google.mjs, and the booking scenarios against qa/fake-scheduling.mjs, never a real account or a real person's calendar."),
+    ("Call links for people without Google", "Daily API key (optional, free tier)",
+     "Without it those call links are Jitsi Meet, where the first person in signs in to start the call."),
     ("Web results", "Brave Search API key", "S27 shows only the Google hand-off row without it."),
     ("Weather answers", "Google Weather or web search key", "S14 honestly says nothing found without it."),
     ("Google sign-in", "OAuth client id and secret", "The onboarding step stays hidden until then."),

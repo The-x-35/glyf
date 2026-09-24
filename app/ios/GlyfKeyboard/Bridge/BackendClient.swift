@@ -288,37 +288,6 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         return task
     }
 
-    @discardableResult
-    /// POST /suggest — what Glyf could do about what is being typed. Cheap
-    /// and cancellable: the strip asks after a pause, never on every key.
-    func suggestAction(text: String, kinds: [String] = [],
-                       onResult: @escaping (String, String, String) -> Void)
-    -> URLSessionDataTask? {
-        let s = SettingsStore.current
-        guard let url = URL(string: "\(s.backendURL)/suggest") else { return nil }
-        var req = URLRequest(url: url)
-        req.glyfSession()
-        req.httpMethod = "POST"
-        req.timeoutInterval = 8
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: Any] = ["text": text, "deviceId": s.deviceId]
-        // The kinds of detail saved, never the details.
-        if !kinds.isEmpty { body["kinds"] = kinds }
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        let task = session.dataTask(with: req) { data, _, _ in
-            guard let data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let suggestion = json["suggestion"] as? [String: Any],
-                  let intent = suggestion["intent"] as? String,
-                  let label = suggestion["label"] as? String
-            else { return }
-            let query = suggestion["query"] as? String ?? text
-            DispatchQueue.main.async { onResult(intent, label, query) }
-        }
-        task.resume()
-        return task
-    }
-
     /// A call link for an event or a chat: a Daily room when the server has a
     /// key, a Jitsi link when it hasn't. Nil when the server can't be reached.
     func newMeeting(done: @escaping (String?) -> Void) {
@@ -406,35 +375,6 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
                                      meetingUrl: json?["meetingUrl"] as? String,
                                      invited: json?["invited"] as? [String] ?? []) : nil
             DispatchQueue.main.async { done(booked, ok ? nil : json?["error"] as? String) }
-        }.resume()
-    }
-
-    /// Emails a calendar invite to the invitees, from the signed-in person.
-    /// How many it went to, or the server's words for why not.
-    func sendInvites(title: String, start: Date, end: Date, allDay: Bool, location: String?,
-                     emails: [String], organizer: (name: String?, email: String?),
-                     done: @escaping (Int?, String?) -> Void) {
-        guard let url = URL(string: "\(SettingsStore.current.backendURL)/invites/send") else { return done(nil, nil) }
-        var req = URLRequest(url: url)
-        req.glyfSession()
-        req.httpMethod = "POST"
-        req.timeoutInterval = 15
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let iso = ISO8601DateFormatter()
-        var body: [String: Any] = [
-            "title": title, "start": iso.string(from: start), "end": iso.string(from: end),
-            "allDay": allDay, "emails": emails, "tz": TimeZone.current.identifier,
-        ]
-        if let location, !location.isEmpty { body["location"] = location }
-        var who: [String: String] = [:]
-        if let n = organizer.name, !n.isEmpty { who["name"] = n }
-        if let e = organizer.email, !e.isEmpty { who["email"] = e }
-        if !who.isEmpty { body["organizer"] = who }
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        session.dataTask(with: req) { data, response, _ in
-            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-            let sent = (response as? HTTPURLResponse)?.statusCode == 200 ? json?["sent"] as? Int : nil
-            DispatchQueue.main.async { done(sent, sent == nil ? json?["error"] as? String : nil) }
         }.resume()
     }
 

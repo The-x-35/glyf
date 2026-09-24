@@ -56,6 +56,13 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 
+    // Google's consent screen for Calendar and Meet answers here.
+    @Deprecated("FlutterActivity still routes results through it")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SignIn.AUTH_REQUEST) SignIn.onAuthorizationResult(this, data)
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray,
     ) {

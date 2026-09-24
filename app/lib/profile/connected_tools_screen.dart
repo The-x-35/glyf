@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
+import '../core/auth.dart';
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
@@ -8,7 +9,7 @@ import '../wallet/wallet_screen.dart';
 import 'brand_marks.dart';
 
 /// What Glyf reaches beyond the keyboard: private payments, the phone's own
-/// calendar and contacts, and the apps coming next.
+/// calendar and contacts, Google Calendar and Meet, and the apps coming next.
 class ConnectedToolsScreen extends StatefulWidget {
   const ConnectedToolsScreen({super.key});
 
@@ -21,6 +22,8 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
   bool _contacts = false;
   /// The person's Cal.com or Calendly page, for the keyboard's Book a time.
   String? _booking;
+  /// Google Calendar and Meet: `connected`, `email`, `calendar`, `meet`.
+  Map<String, dynamic> _google = const {'connected': false};
   String? _note;
 
   @override
@@ -33,8 +36,10 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
     final cal = await GlyfBridge.calendarStatus();
     final contacts = await GlyfBridge.contactsStatus();
     final shared = await GlyfBridge.sharedSettings();
+    final google = await GlyfBridge.googleStatus();
     if (!mounted) return;
     setState(() {
+      _google = google;
       _calendar = cal['enabled'] == true;
       _contacts = contacts['enabled'] == true;
       final link = (shared['bookingLink'] as String?)?.trim() ?? '';
@@ -155,6 +160,25 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
     Telemetry.log('tool_connected', {'tool': 'calendar', 'ok': _calendar});
   }
 
+  /// Meet links, and events in Google Calendar whose guests Google emails.
+  Future<void> _toggleGoogle(bool on) async {
+    if (!on) {
+      await GlyfBridge.googleDisconnect();
+      if (!mounted) return;
+      setState(() => _google = const {'connected': false});
+      Telemetry.log('tool_disconnected', {'tool': 'google'});
+      return;
+    }
+    final error = await Auth.connectGoogle();
+    final status = await GlyfBridge.googleStatus();
+    if (!mounted) return;
+    setState(() {
+      _google = status;
+      _note = error;
+    });
+    Telemetry.log('tool_connected', {'tool': 'google', 'ok': status['connected'] == true});
+  }
+
   Future<void> _toggleContacts(bool on) async {
     if (!on) {
       await GlyfBridge.contactsDisable();
@@ -200,6 +224,15 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
           ),
           const SizedBox(height: 12),
           _toolCard(
+            brand: 'gcal',
+            title: 'Google Calendar and Meet',
+            useCase: _google['connected'] == true
+                ? (_google['email'] as String? ?? 'Connected')
+                : 'Meet links, and invites Google sends for you.',
+            trailing: _switch(_google['connected'] == true, _toggleGoogle, 'tools:google'),
+          ),
+          const SizedBox(height: 12),
+          _toolCard(
             brand: 'contacts',
             title: 'Contacts',
             useCase: 'Find a number or email without leaving the keyboard.',
@@ -218,7 +251,6 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
           ),
           for (final (brand, title, useCase) in const [
             ('gmail', 'Gmail', 'Answer an email from whatever chat you’re in.'),
-            ('gcal', 'Google Calendar', 'Drop a meeting link and a time in one tap.'),
             ('notion', 'Notion', 'Share a page or add a task while you type.'),
             ('slack', 'Slack', 'Send a thread to a friend without switching apps.'),
             ('spotify', 'Spotify', 'Send the song you’re playing right now.'),

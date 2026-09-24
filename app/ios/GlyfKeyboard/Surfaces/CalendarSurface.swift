@@ -99,6 +99,7 @@ final class CalendarSurface: UIView {
     func compose(plan: EventParse.Plan? = nil) {
         let draft: EventComposer.Draft
         if let plan {
+            // The plan is in the message already: nothing more goes in.
             draft = .init(title: plan.title, start: plan.start, end: plan.end, allDay: plan.allDay)
         } else {
             let now = Date()
@@ -110,7 +111,10 @@ final class CalendarSurface: UIView {
                 start = cal.date(byAdding: .hour, value: 9, to: selected) ?? selected
             }
             if !cal.isDate(start, inSameDayAs: selected) { start = selected }
-            draft = .init(title: "", start: start, end: start.addingTimeInterval(3600), allDay: false)
+            // Made from the calendar in a chat, it is most often for the
+            // person the chat is with: it goes into the message once added.
+            draft = .init(title: "", start: start, end: start.addingTimeInterval(3600), allDay: false,
+                          share: true)
         }
         composer?.removeFromSuperview()
         let c = EventComposer(draft: draft, access: CalendarWriter.access(hasFullAccess: hasFullAccess))
@@ -161,33 +165,25 @@ final class CalendarSurface: UIView {
         setNeedsLayout()
     }
 
-    /// A call link, straight into the message.
+    /// A call link, straight into the message: the person's own Google Meet
+    /// when Google is connected.
     private func insertCallLink() {
         callButton.isEnabled = false
-        BackendClient.shared.newMeeting { [weak self] link in
+        CallLink.make { [weak self] url, note in
             guard let self else { return }
             self.callButton.isEnabled = true
-            let url = link ?? CalendarWriter.localCallLink()
             self.delegate?.connectorInsert("Join me on a call: \(url)")
+            if let note { self.delegate?.connectorToast(note) }
         }
     }
 
-    /// The invitees get a calendar invite by email, from the person: the
-    /// phone's calendar has no way to invite anyone itself.
-    private func invite(_ d: EventComposer.Draft, location: String?) {
-        let fields = VaultStore.shared.load().fields
-        let organizer = (name: fields.first(where: { $0.kind == "name" })?.value,
-                         email: fields.first(where: { $0.kind == "email" })?.value)
-        KeyboardToast.show(in: self, text: "Added. Sending the invite…")
-        BackendClient.shared.sendInvites(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
-                                         location: location, emails: d.invitees, organizer: organizer) {
-            [weak self] sent, error in
-            guard let self else { return }
-            if let sent {
-                KeyboardToast.show(in: self, text: sent == 1 ? "Invite sent to \(d.invitees[0])" : "Invite sent to \(sent) people")
-            } else {
-                KeyboardToast.show(in: self, text: "Added. \(error ?? "The invite didn't send")")
-            }
+    /// "sam@x.com", "sam@x.com and ria@y.com", "sam@x.com and 2 others".
+    private static func people(_ emails: [String]) -> String {
+        switch emails.count {
+        case 0: return ""
+        case 1: return emails[0]
+        case 2: return "\(emails[0]) and \(emails[1])"
+        default: return "\(emails[0]) and \(emails.count - 1) others"
         }
     }
 
@@ -200,22 +196,73 @@ final class CalendarSurface: UIView {
         delegate?.connectorLayoutChanged()
     }
 
+    /// With Google Calendar connected the event goes there, where Google
+    /// emails the invitees and makes the Meet call; otherwise the phone's
+    /// calendar takes it. Either way Share in chat puts it in the message.
     private func add(_ d: EventComposer.Draft) {
         guard !adding else { return }
-        guard d.videoCall else { return save(d, callLink: nil) }
-        // The call link first, so the event carries it and so does the message.
         adding = true
-        BackendClient.shared.newMeeting { [weak self] link in
-            self?.adding = false
-            self?.save(d, callLink: link ?? CalendarWriter.localCallLink())
+        guard GoogleAccess.hasCalendar else { return saveHere(d, note: nil) }
+        GoogleClient.shared.addEvent(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
+                                     guests: d.invitees, video: d.videoCall) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let added):
+                self.adding = false
+                self.addedToGoogle(d, meet: added.meet)
+            case .failure(let failure):
+                // Not lost: the phone's calendar takes it, and the toast says
+                // why Google didn't (and so nobody was emailed).
+                self.saveHere(d, note: GoogleClient.say(failure))
+            }
         }
     }
 
-    private func save(_ d: EventComposer.Draft, callLink: String?) {
+    private func saveHere(_ d: EventComposer.Draft, note: String?) {
+        guard d.videoCall else {
+            adding = false
+            return save(d, callLink: nil, note: note)
+        }
+        // The call link first, so the event carries it and so does the message.
+        CallLink.make { [weak self] url, meetNote in
+            self?.adding = false
+            self?.save(d, callLink: url, note: note ?? meetNote)
+        }
+    }
+
+    private func addedToGoogle(_ d: EventComposer.Draft, meet: String?) {
+        let said = d.invitees.isEmpty ? "Added to Google Calendar"
+            : "Added. Google emailed the invite to \(Self.people(d.invitees))"
+        if d.share {
+            closeComposer()
+            let event = CalendarText.Event(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
+                                           location: meet, color: nil)
+            delegate?.connectorInsert(CalendarText.insert(event, calendar: cal))
+            delegate?.connectorToast(said)
+            return
+        }
+        // Google's calendar reaches the phone's on its next sync: show the day.
+        selected = cal.startOfDay(for: d.start)
+        month = cal.date(from: cal.dateComponents([.year, .month], from: selected)) ?? month
+        showingMonth = false
+        closeComposer()
+        load()
+        render()
+        KeyboardToast.show(in: self, text: said)
+    }
+
+    private func save(_ d: EventComposer.Draft, callLink: String?, note: String?) {
         let notes = callLink.map { "Join the call: \($0)" }
         switch CalendarWriter.add(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
                                   location: callLink, url: callLink.flatMap(URL.init(string:)), notes: notes) {
         case .success(let added):
+            let said = "Added to \(added.calendarName)" + (note.map { ". \($0)" } ?? "")
+            if d.share {
+                closeComposer()
+                delegate?.connectorInsert(CalendarText.insert(added.event, calendar: cal))
+                delegate?.connectorToast(said)
+                return
+            }
             selected = cal.startOfDay(for: d.start)
             month = cal.date(from: cal.dateComponents([.year, .month], from: selected)) ?? month
             showingMonth = false
@@ -223,11 +270,7 @@ final class CalendarSurface: UIView {
             closeComposer()
             load()
             render()
-            if d.invitees.isEmpty {
-                KeyboardToast.show(in: self, text: "Added to \(added.calendarName)")
-            } else {
-                invite(d, location: callLink)
-            }
+            KeyboardToast.show(in: self, text: said)
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
                 self?.justAdded = nil
                 self?.litRow?.layer.borderWidth = 0

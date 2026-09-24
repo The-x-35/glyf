@@ -52,6 +52,7 @@ enum GlyfCatalog {
         case "surface:translate-hud": return "Translate"
         case "surface:tones": return "Rewrite"
         case "connector:mockcal": return "Calendar picker"
+        case "connector:meet": return "Meet link"
         default: break
         }
         if let known = all.first(where: { $0.id == id }) { return known.title }

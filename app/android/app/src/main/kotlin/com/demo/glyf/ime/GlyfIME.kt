@@ -127,6 +127,28 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 // What Connected tools → Calendar sets, for the scenarios.
                 "calendaron" -> this@GlyfIME.getSharedPreferences("glyf", android.content.Context.MODE_PRIVATE).edit()
                     .putBoolean("calendarOn", true).apply()
+                // Google Calendar and Meet as if connected, pointed at the
+                // stand-in for Google's APIs (qa/fake-google.mjs); no text
+                // disconnects.
+                "googlefake" -> {
+                    val base = intent.getStringExtra("text").orEmpty()
+                    if (base.isEmpty()) com.demo.glyf.store.GoogleAccess.clear(this@GlyfIME)
+                    else com.demo.glyf.store.GoogleAccess.save(this@GlyfIME, com.demo.glyf.store.GoogleAccess.Grant(
+                        "emulator@example.com", com.demo.glyf.store.GoogleAccess.SCOPES.toSet(), base))
+                }
+                // "m=connector:meet" holds M for a Meet link; "m=" frees it.
+                "bind" -> {
+                    val pair = intent.getStringExtra("text").orEmpty().split("=", limit = 2)
+                    if (pair.size == 2 && pair[0].length == 1) {
+                        val s = SettingsStore.load(this@GlyfIME)
+                        val b = s.optJSONObject("bindings") ?: org.json.JSONObject()
+                        if (pair[1].isEmpty()) b.remove(pair[0]) else b.put(pair[0], pair[1])
+                        s.put("bindings", b)
+                        com.demo.glyf.store.Bridge.write(this@GlyfIME, SettingsStore.FILE, s.toString())
+                        settings = s
+                        keyboard.bindings = b.keys().asSequence().associateWith { b.optString(it) }
+                    }
+                }
                 // What Connected tools → Booking link sets ("" clears it).
                 "bookinglink" -> {
                     val s = SettingsStore.load(this@GlyfIME)
@@ -1580,18 +1602,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         return vaultFieldsCache
     }
 
-    private var suggestedChip: Smart.Chip.Action? = null
-    /** A saved detail the model says the sentence is leading into. */
-    private var suggestedDetail: Smart.Field? = null
-    private var suggestedFor = ""
-    private var suggestCancel: (() -> Unit)? = null
-    private val suggestWork = Runnable { askForSuggestion() }
-
     /** The website's smart strip: a sum just typed, the saved detail the
-     *  sentence asks for, a payment address, or what the model says Glyf could
-     *  do with the sentence. One chip, which owns the strip. True when shown. */
+     *  sentence asks for, a payment address, a plan or a booking page. One
+     *  chip, which owns the strip, and every one of them comes from the phone
+     *  itself: nothing typed goes to a model until the person holds space or
+     *  taps a tool. True when shown. */
     private fun updateSmartChip(before: String): Boolean {
-        val smartKinds = setOf("smart", "pay", "action", "event", "booking")
+        val smartKinds = setOf("smart", "pay", "event", "booking")
         if (searchActive || barActive || noteEditActive || overlay != null || featurePanel != null ||
             isSecureField() || translateStrip != null) {
             if (stripChipKind in smartKinds) hideStripChip()
@@ -1616,9 +1633,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 RatesStore.ensureFiat(backendURL) { updateSuggestions() }
             }
         }
-        // Nothing in the words, but the model heard the sentence asking for a detail.
-        val detail = suggestedDetail
-        if (chip == null && detail != null && suggestedFor == tail.trim()) chip = Smart.Chip.Vault(detail)
         // The tour keeps the strip for the step it is coaching.
         val step = tourStep()
         if (step != null) {
@@ -1627,7 +1641,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 is Smart.Chip.Money -> "money"
                 is Smart.Chip.Vault -> "vault:${chip.field.kind}"
                 is Smart.Chip.Pay -> "pay"
-                is Smart.Chip.Action -> "action"
                 is Smart.Chip.Event -> "event"
                 is Smart.Chip.Booking -> "booking"
                 null -> null
@@ -1638,7 +1651,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 return false
             }
         }
-        if (chip != null) cancelSuggestion()
         when (chip) {
             is Smart.Chip.Calc, is Smart.Chip.Vault, is Smart.Chip.Money -> {
                 stripSmartDetail = when (chip) {
@@ -1646,7 +1658,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     is Smart.Chip.Money -> "money"
                     else -> "calc"
                 }
-                showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "") {
+                showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip)) {
                     currentInputConnection?.commitText(Smart.insert(chip), 1)
                     hideStripChip()
                     updateSuggestions()
@@ -1678,65 +1690,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             else -> {}
         }
-        val trimmed = tail.trim()
-        val cached = suggestedChip
-        if (cached != null && suggestedFor == trimmed) {
-            showStripChip("action", null, cached.label, "") {
-                suggestedChip = null
-                suggestedFor = ""
-                hideStripChip()
-                val ic = currentInputConnection
-                startAct(ic?.getTextBeforeCursor(4000, 0)?.toString() ?: "",
-                    ic?.getTextAfterCursor(4000, 0)?.toString() ?: "", cached.intent)
-            }
-            return true
-        }
         if (stripChipKind in smartKinds) hideStripChip()
-        scheduleSuggestion(trimmed)
         return false
-    }
-
-    /** Debounced and never for a half-typed thought: a 700ms pause on a real
-     *  sentence is the only thing that spends a request. */
-    private fun scheduleSuggestion(text: String) {
-        main.removeCallbacks(suggestWork)
-        if (text.length < 12 || text.split(" ").size < 3 || text == suggestedFor ||
-            !settings.optBoolean("candidates", true)) return
-        main.postDelayed(suggestWork, 700)
-    }
-
-    private fun askForSuggestion() {
-        val ic = currentInputConnection ?: return
-        val text = (ic.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
-        if (text.length < 12) return
-        suggestCancel?.invoke()
-        val fields = vaultFields()
-        suggestCancel = BackendClient.suggestAction(
-            backendURL = settings.optString("backendURL"),
-            text = text,
-            deviceId = settings.optString("deviceId"),
-            kinds = if (settings.optBoolean("aiUsesVault", true)) fields.map { it.kind }.distinct() else emptyList(),
-        ) { intent, label, query -> main.post {
-            val now = (currentInputConnection?.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
-            // The sentence moved on while we were asking: drop it.
-            if (now != text) return@post
-            suggestedFor = text
-            if (intent == "detail") {
-                // The model named the kind; the value is this phone's own.
-                suggestedDetail = fields.firstOrNull { it.kind == label } ?: return@post
-                suggestedChip = null
-            } else {
-                suggestedDetail = null
-                suggestedChip = Smart.Chip.Action(label, query, intent)
-            }
-            updateSuggestions()
-        } }
-    }
-
-    private fun cancelSuggestion() {
-        main.removeCallbacks(suggestWork)
-        suggestCancel?.invoke()
-        suggestCancel = null
     }
 
     private fun refreshClipCard() {
@@ -1811,11 +1766,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(ink())
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        if (verb.isEmpty()) {
-            // The model's suggestion: its words are the action, a sparkle marks it.
-            chip.addView(ToolIcon(this, "ask", Color.rgb(0x7C, 0x5C, 0xFF)),
-                LinearLayout.LayoutParams(dp(22), dp(22)).apply { leftMargin = dp(8) })
-        } else chip.addView(TextView(this).apply {
+        chip.addView(TextView(this).apply {
             text = verb
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
@@ -2666,6 +2617,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "surface:tones" -> { dismissFeaturePanel(); showGlyfBar(); return }
             // C by default: the calendar lives in the keyboard, not the app.
             "connector:calendar" -> { dismissFeaturePanel(); showCalendarPanel(); return }
+            "connector:meet" -> { insertMeetLink(); return }
         }
         if (glyfId.startsWith("surface:") || glyfId.startsWith("connector:")) {
             openApp()
@@ -2673,6 +2625,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         if (isSecureField()) return // no AI in password fields
         startSkill(char, glyfId)
+    }
+
+    /** A fresh call link, straight into the message: the person's own Google
+     *  Meet when Google is connected. */
+    private fun insertMeetLink() {
+        CallLink.make(this, settings.optString("backendURL")) { url, note ->
+            val ic = currentInputConnection ?: return@make
+            val last = ic.getTextBeforeCursor(1, 0)?.lastOrNull()
+            ic.commitText((if (last != null && !last.isWhitespace()) " " else "") + "Join me on a call: $url", 1)
+            note?.let { android.widget.Toast.makeText(this, it, android.widget.Toast.LENGTH_SHORT).show() }
+            updateSuggestions()
+        }
     }
 
     private fun dismissOverlay() {
@@ -2881,6 +2845,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 "surface:vault" -> "Vault"
                 "surface:translate-hud" -> "Translate"
                 "surface:tones" -> "Rewrite"
+                "connector:calendar" -> "Calendar"
+                "connector:meet" -> "Meet link"
                 else -> skillTitle(target)
             }
             cardRow(body, "Hold ${letter.uppercase()}", title) {}
