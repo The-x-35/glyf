@@ -244,7 +244,7 @@ class KeyPalette {
       _light ? _blend(key, board, 0.55) : _blend(key, Colors.white, 0.11);
   Color get fn => _light
       ? _blend(board, Colors.black, 0.14)
-      : _blend(board, Colors.white, 0.07);
+      : _blend(board, Colors.white, 0.12);
   Color get ink => _light
       ? HSVColor.fromColor(board).withSaturation(
               HSVColor.fromColor(board).saturation.clamp(0.0, 0.10))

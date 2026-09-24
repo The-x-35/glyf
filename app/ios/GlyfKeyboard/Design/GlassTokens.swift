@@ -256,10 +256,12 @@ enum Glass {
     static var fillKeySolid: UIColor { keyColor }
     /// Function keys (shift, delete, 123, emoji, return) wear the letter
     /// colour, as they do on iOS 26; on a painted board they take the tile's
-    /// darker (or lighter) function-key shade.
+    /// darker (or lighter) function-key shade. On a dark board that shade
+    /// is lifted 12%, which puts it where Apple's own dark keys sit against
+    /// their sheet: a step below the letters, never sunk into the board.
     static var fillKeyFn: UIColor {
         guard let seed = boardSeed else { return fillKey }
-        return boardIsLight ? seed.blend(.black, 0.14) : seed.blend(.white, 0.07)
+        return boardIsLight ? seed.blend(.black, 0.14) : seed.blend(.white, 0.12)
     }
     static var fillKeyFnPressed: UIColor { fillKeyPressed }
     static var fillKeySpecial: UIColor { fillKeyFn }

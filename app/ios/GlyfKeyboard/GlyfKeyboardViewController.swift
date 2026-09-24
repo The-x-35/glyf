@@ -193,6 +193,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         log.log("GLYF_KB viewDidLoad")
+        // The settings file changed under us (the app's Keyboard screen, the
+        // tour, our own shell): whichever check noticed, the keyboard that is
+        // up takes the new look, bindings and appearance. Deferred a turn so
+        // a rebuild never lands inside the caller that did the noticing.
+        NotificationCenter.default.addObserver(
+            forName: SettingsStore.changedNote, object: nil, queue: nil) { [weak self] _ in
+            DispatchQueue.main.async { self?.settingsChanged() }
+        }
         // What a UIPasteControl is allowed to hand us. Without this the
         // control stays disabled however much is on the clipboard.
         let paste = UIPasteConfiguration(forAccepting: NSString.self)
@@ -272,6 +280,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
             Glass.themeDim = dim
             refreshPalette()
         }
+    }
+
+    /// A look, appearance or binding changed on disk: apply what differs
+    /// (both calls are no-ops when nothing did).
+    private func settingsChanged() {
+        guard didBuild else { return }
+        keyboardView.refreshBindings()
+        resolveAppearance()
     }
 
     /// Re-skins the long-lived chrome after an appearance flip; transient
@@ -955,7 +971,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // keystroke — a few times a second is as often as it can matter.
         if CACurrentMediaTime() - lastSettingsCheck > 0.5 {
             lastSettingsCheck = CACurrentMediaTime()
-            if SettingsStore.reloadIfChanged() { keyboardView.refreshBindings() }
+            SettingsStore.reloadIfChanged() // settingsChanged() does the rest
         }
         // Field flavor can change per focus (email → number pad → text).
         keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)

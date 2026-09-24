@@ -102,14 +102,14 @@ class GlyfKeyboardView(
                 val light = luminance(board) > 0.34f
                 val key = if (light) Color.WHITE else blend(board, Color.WHITE, 0.185f)
                 val fn = if (light) blend(board, Color.BLACK, 0.14f)
-                         else blend(board, Color.WHITE, 0.07f)
+                         else blend(board, Color.WHITE, 0.12f)
                 val ink = if (light) tinted(board, 0.10f, 0.12f) else tinted(board, 0.04f, 0.965f)
                 return KeyPalette(
                     board = board,
                     key = key,
                     keyPressed = if (light) blend(key, board, 0.55f) else blend(key, Color.WHITE, 0.11f),
                     fn = fn,
-                    fnPressed = if (light) blend(fn, Color.WHITE, 0.18f) else blend(fn, Color.WHITE, 0.06f),
+                    fnPressed = if (light) blend(fn, Color.WHITE, 0.18f) else blend(fn, Color.WHITE, 0.08f),
                     ink = ink,
                     inkSoft = blend(ink, board, if (light) 0.42f else 0.40f),
                     edge = Color.argb(if (light) 61 else 179, 0, 0, 0),

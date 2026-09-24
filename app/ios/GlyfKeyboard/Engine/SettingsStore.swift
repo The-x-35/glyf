@@ -330,6 +330,9 @@ enum SettingsStore {
         guard stamp != loadedStamp else { return false }
         loadedStamp = stamp
         cached = nil
+        // Whoever noticed (the tour watch, a keystroke), everyone who shows
+        // a setting hears about it once.
+        NotificationCenter.default.post(name: changedNote, object: nil)
         return true
     }
 }
