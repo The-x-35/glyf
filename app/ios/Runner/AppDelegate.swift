@@ -67,6 +67,11 @@ import UIKit
     if args.contains("--glyf-clear-tour") {
       SettingsStore.update { s in s.tourHint = nil }
     }
+    if let i = args.firstIndex(of: "--glyf-booking-link"), i + 1 < args.count {
+      // Scenario tests: the booking page Connected tools would save.
+      let link = args[i + 1]
+      SettingsStore.update { s in s.bookingLink = link.isEmpty ? nil : link }
+    }
     if args.contains("--glyf-seed-holds") {
       // Scenario tests: just the holds the keyboard ships with.
       SettingsStore.update { s in

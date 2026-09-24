@@ -28,7 +28,10 @@ class MainActivity : FlutterActivity() {
         }
         b.requestCalendarPermission = { done ->
             pendingPermission = done
-            requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 74)
+            // Reading shows the day; writing adds events from the keyboard.
+            // One calendar dialog answers both.
+            requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR,
+                android.Manifest.permission.WRITE_CALENDAR), 74)
         }
         b.requestImagesPermission = { done ->
             pendingPermission = done

@@ -60,6 +60,12 @@ ANDROID_INPUT = {
     "S106": "see you ␣ → 😊 key → :-) → Classic → tap the first emoticon",
     "S107": "😊 key → GIF → Trending → tap a GIF",
     "S108": "😊 key → Stickers → Trending → tap a sticker",
+    "S111": "calendar → + → Title “lunch with sam tomorrow 1pm” → Add → tap the event",
+    "S112": "dinner friday 8pm → tap the chip → Add",
+    "S117": "calendar → camera",
+    "S118": "Booking link cal.com/fake-host/30min → calendar → Book a time → first time → “sam lee sam@example.com ria@example.com” → Book it",
+    "S119": "calendar → + → “review friday 3pm” → Invitees “sam@example.com” → Add",
+    "S120": "“grab a time cal.com/sam-lee/intro” → tap the Book chip → first time → Book it",
 }
 ANDROID_FIXED = {"S85", "S86", "S87", "S88", "S89", "S90", "S91"}
 
@@ -122,11 +128,17 @@ FIXES = [
      "Only text (or a web link) counts as a copy for the chip, Paste, the g bar, skills and history; a picture is left as a picture."),
     ("Both", "Refusals and limit messages used dashes (“Too fast — wait a moment”).",
      "Plain sentences: “Too fast. Wait a moment and try again”."),
+    ("Android", "Book a time glued its line to the link before it (“cal.com/sam-lee/introBooked for…”).",
+     "Whatever the calendar types is a sentence of its own, as on iPhone."),
 ]
 
 NEEDS_YOU = [
-    ("GIFs and stickers in the emoji board", "KLIPY app key (free, partner.klipy.com) as KLIPY_APP_KEY on the server",
-     "Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. S103 to S105, S107 and S108 ran against qa/fake-klipy.mjs."),
+    ("GIFs and stickers in the emoji board", "KLIPY_APP_KEY on Railway (it is in the local server/.env since 24 September)",
+     "Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. Real KLIPY GIFs and stickers were checked on both keyboards with the local key."),
+    ("Email invites for events you add", "A Resend key and tryglyf.com verified in Resend (RESEND_API_KEY on the server)",
+     "Without it New Event adds the event and says email invites aren't set up yet. Booking on a Cal.com page needs no key: Cal.com mails those. S115, S116 and S118 to S120 ran against qa/fake-scheduling.mjs, never a real person's calendar."),
+    ("Call links anyone can start", "Daily API key (optional, free tier)",
+     "Without it call links are Jitsi Meet, where the first person in signs in to start the call."),
     ("Web results", "Brave Search API key", "S27 shows only the Google hand-off row without it."),
     ("Weather answers", "Google Weather or web search key", "S14 honestly says nothing found without it."),
     ("Google sign-in", "OAuth client id and secret", "The onboarding step stays hidden until then."),

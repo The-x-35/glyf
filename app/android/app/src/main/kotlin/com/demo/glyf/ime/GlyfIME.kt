@@ -112,7 +112,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 // Everything on top of the keys: a hold-space panel too, or
                 // it stays open under keys that came back and takes the
                 // next scenario's result.
-                "close" -> { dismissOverlay(); dismissFeaturePanel() }
+                // Translate as you type too: left on, it keeps every strip
+                // chip away from the scenarios after it.
+                "close" -> { dismissOverlay(); dismissFeaturePanel(); if (translateStrip != null) exitTranslate() }
                 "dump" -> writeQaState()
                 "seedvault" -> {
                     // The scenarios ask for an address and a UPI id: add
@@ -121,6 +123,17 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     if ("address" !in kinds) VaultStore.upsertField(this@GlyfIME, null, "address", "Home",
                         "42 Glass Lane, Indiranagar, Bengaluru 560038")
                     if ("upi" !in kinds) VaultStore.upsertField(this@GlyfIME, null, "upi", "UPI", "arpit@okbank")
+                }
+                // What Connected tools → Calendar sets, for the scenarios.
+                "calendaron" -> this@GlyfIME.getSharedPreferences("glyf", android.content.Context.MODE_PRIVATE).edit()
+                    .putBoolean("calendarOn", true).apply()
+                // What Connected tools → Booking link sets ("" clears it).
+                "bookinglink" -> {
+                    val s = SettingsStore.load(this@GlyfIME)
+                    val link = intent.getStringExtra("text").orEmpty()
+                    if (link.isEmpty()) s.remove("bookingLink") else s.put("bookingLink", link)
+                    com.demo.glyf.store.Bridge.write(this@GlyfIME, SettingsStore.FILE, s.toString())
+                    settings = s
                 }
                 "clear" -> currentInputConnection?.let { ic ->
                     ic.finishComposingText()
@@ -776,6 +789,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     // MARK: key handling
 
     override fun onKey(id: String, char: String?) {
+        // The calendar's fields take the letters while one is being typed:
+        // New Event's title or invitees, or who a booking is for.
+        (featurePanel as? CalendarPanelView)?.typing?.let { f ->
+            typeIntoStrip(id, char, f.stripText, { f.setStripText(it) }) { f.endStrip() }
+            // A title starts with a capital, then letters are lowercase.
+            if (char != null && keyboard.shifted) { keyboard.shifted = false; keyboard.invalidate() }
+            return
+        }
         // The emoji board's search field takes the letters while it is open.
         emojiBoard?.takeIf { it.searchActive }?.let { board ->
             if (id == "shift" || id.startsWith("mode:")) typeIntoStrip(id, char, "", {}) {}
@@ -1570,7 +1591,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  sentence asks for, a payment address, or what the model says Glyf could
      *  do with the sentence. One chip, which owns the strip. True when shown. */
     private fun updateSmartChip(before: String): Boolean {
-        val smartKinds = setOf("smart", "pay", "action")
+        val smartKinds = setOf("smart", "pay", "action", "event", "booking")
         if (searchActive || barActive || noteEditActive || overlay != null || featurePanel != null ||
             isSecureField() || translateStrip != null) {
             if (stripChipKind in smartKinds) hideStripChip()
@@ -1579,7 +1600,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val tail = before.takeLast(120)
         val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
         var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN",
-                              rates = RatesStore.snapshot(region, settings.optString("moneyCurrency")))
+                              rates = RatesStore.snapshot(region, settings.optString("moneyCurrency")),
+                              ownBooking = settings.optString("bookingLink"))
         // An amount or a ticker with no rate yet: ask for one; the strip is
         // arranged again when it lands.
         // A character test first: neither pattern can match without one, and
@@ -1606,6 +1628,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 is Smart.Chip.Vault -> "vault:${chip.field.kind}"
                 is Smart.Chip.Pay -> "pay"
                 is Smart.Chip.Action -> "action"
+                is Smart.Chip.Event -> "event"
+                is Smart.Chip.Booking -> "booking"
                 null -> null
             }
             if (kind != null && !TourCoach.allowsChip(kind, step, tourCopied())) chip = null
@@ -1626,6 +1650,22 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     currentInputConnection?.commitText(Smart.insert(chip), 1)
                     hideStripChip()
                     updateSuggestions()
+                }
+                return true
+            }
+            is Smart.Chip.Event -> {
+                // Nothing is typed: the plan becomes a New Event to check and add.
+                showStripChip("event", null, Smart.display(chip), "Add", lead = "calendar") {
+                    hideStripChip()
+                    showCalendarPanel().compose(chip.plan)
+                }
+                return true
+            }
+            is Smart.Chip.Booking -> {
+                // Their page's open times, to book one as the person.
+                showStripChip("booking", null, Smart.display(chip), "Book", lead = "calendar") {
+                    hideStripChip()
+                    showCalendarPanel().openBooking(chip.link)
                 }
                 return true
             }
@@ -1715,6 +1755,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (stripChipKind == "paste") hideStripChip()
             return
         }
+        // Someone's booking page, just copied: book it instead of pasting it.
+        val booking = Smart.bookingLink(text, settings.optString("bookingLink"))
+        if (booking != null) {
+            showStripChip("paste", null, Smart.display(Smart.Chip.Booking(booking)), "Book", lead = "calendar") {
+                imePrefs.edit().putLong("clipDone", stamp).apply()
+                hideStripChip()
+                showCalendarPanel().openBooking(booking)
+            }
+            return
+        }
         showStripChip("paste", null, text.replace('\n', ' '), "Paste") {
             imePrefs.edit().putLong("clipDone", stamp).apply()
             currentInputConnection?.commitText(text, 1)
@@ -1733,7 +1783,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** One chip across the strip: content on the left, the action on the right. */
     private fun showStripChip(kind: String, label: String?, value: String, verb: String,
-                              onTap: () -> Unit) {
+                              lead: String? = null, onTap: () -> Unit) {
         hideStripChip()
         val chip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1746,6 +1796,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTag(com.demo.glyf.R.id.qa_id, "strip:smart")
             setOnClickListener { onTap() }
         }
+        if (lead != null) chip.addView(ToolIcon(this, lead, ink()),
+            LinearLayout.LayoutParams(dp(18), dp(18)).apply { rightMargin = dp(8) })
         if (label != null) chip.addView(TextView(this).apply {
             text = label
             textSize = 13f
@@ -2896,22 +2948,39 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** The Calendar tool: a month and the chosen day's events, in place of
      *  the keys (iOS CalendarSurface). */
-    private fun showCalendarPanel() {
+    private fun showCalendarPanel(): CalendarPanelView {
         dismissFeaturePanel()
+        val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
         keyboard.visibility = View.GONE
-        val panel = CalendarPanelView(
+        lateinit var panel: CalendarPanelView
+        panel = CalendarPanelView(
             this, keyboard.palette(),
+            backendURL = settings.optString("backendURL"),
+            bookingLink = settings.optString("bookingLink").trim().takeIf { it.isNotEmpty() },
             onInsert = { text ->
-                currentInputConnection?.commitText(text, 1)
+                // A sentence of its own, never glued to the last word (iOS spaced()).
+                val ic = currentInputConnection
+                val last = ic?.getTextBeforeCursor(1, 0)?.lastOrNull()
+                ic?.commitText(if (last != null && !last.isWhitespace()) " $text" else text, 1)
                 dismissFeaturePanel()
             },
             onClose = { dismissFeaturePanel() },
             onConnect = { dismissFeaturePanel(); openAppPath("connected") },
+            // A field being typed: a strip over the letter keys, like emoji search.
+            onTitleEditing = { editing ->
+                keyboard.visibility = if (editing) View.VISIBLE else View.GONE
+                panel.layoutParams = (panel.layoutParams as android.widget.LinearLayout.LayoutParams).apply {
+                    height = if (editing) dp(92) else keysH
+                }
+                if (editing) { keyboard.mode = Mode.LETTERS; keyboard.shifted = true; keyboard.rebuild() }
+            },
         )
-        root.addView(panel, root.indexOfChild(keyboard) + 1,
+        // Above the keys, so the title strip sits over them when they show.
+        root.addView(panel, root.indexOfChild(keyboard),
             android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, keyboard.height))
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, keysH))
         featurePanel = panel
+        return panel
     }
 
     /** A screenshot goes in as an image where the field takes images (chat

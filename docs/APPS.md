@@ -272,6 +272,9 @@ The default map was 10 keys in M5 (`t r s c j p e x w q`). On 2026-09-12 it was 
 | `GET /search/staticmap` | Android IME | Map image above a place card (Geoapify key needed). iOS draws its own map with MapKit. |
 | `GET /meter/:deviceId` | iOS keyboard, Flutter app | Runs left today |
 | `GET /connector/mockcal/events?q=`, `GET /connector/mockcal/month` | iOS keyboard (ConnectorSurface) | Demo calendar: today's events and the month grid |
+| `POST /meetings/new` | both keyboards (calendar) | A call link: Daily with the server's key, else Jitsi Meet (section 5.28) |
+| `GET /scheduling/slots`, `POST /scheduling/book` | both keyboards (Book a time) | Open times on a Cal.com page; booking one for someone, guests included |
+| `POST /invites/send` | both keyboards (New Event) | Emails the invitees a calendar invite |
 | `POST /builder/generate`, `POST /builder/test` | Flutter Builder | Plain English to a Glyf definition; test run |
 | `POST /glyfs`, `GET /glyfs?deviceId=`, `DELETE /glyfs/:id` | Flutter Build tab | Save, list, delete your Glyfs |
 | `POST /hub/publish` | Flutter Build tab | Publish your Glyf |
@@ -738,7 +741,7 @@ UI test: `test03b_SearchSuiteCardsAndPasteFormat` (needs the mock server).
 - Tap a row → an inline menu (a pill row, because `UIAlertController` gets clipped in the keyboard window): **Link**, **Time + title**, **Details**.
 - **Month view** (Arpit, 2026-09-12 19:15: "in calendar option i also need a button to view months calendar along with my todays tasks"): a Month / Today toggle; the grid shows event dots and a pill on today; tapping a day inserts the date (for example "September 14"). At 22:26 Arpit asked "why does the month have soo much gap below it": the grid now stretches to fill the surface (rows computed from the days, cell height up to 62).
 - Tapping search collapses the surface to a 184pt strip with the letter keys below (same rule as emoji search).
-- The phone's own calendar (`Surfaces/CalendarSurface.swift`, Connected tools → Calendar): the day's events full width, **Insert date** ("September 24") beside **Share free time**, a Month grid to jump days, "Nothing planned" on an empty day and "Your calendar is not connected yet" plus **Connect calendar** before the app has synced one (`calendar.json`). Connect calendar opens the app's Connected tools screen.
+- The phone's own calendar (`Surfaces/CalendarSurface.swift`, Connected tools → Calendar): the day's events full width, **Insert date** ("September 24") beside **Share free time**, a Month grid to jump days, "Nothing planned" on an empty day and "Your calendar is not connected yet" plus **Connect calendar** before the app has synced one (`calendar.json`). Connect calendar opens the app's Connected tools screen. Adding events, booking pages, call links and invites: section 5.28.
 - The action "New event from my text" currently only opens the app. Offline shows "Offline" plus a hint to start the server.
 - UI test `test12_ConnectorSurface_C_InsertsEvent`.
 
@@ -936,6 +939,27 @@ Arpit on 2026-09-12: "we can aslo add gif and stickers support like gboard has i
 
 The spec's crypto connector (Privy Solana wallet, Jupiter swaps, paste guard) is a separate, later release. **No wallet code, no Privy SDK, and no crypto UI exist in either app**, by design (SPEC 9 and 13). Findings kept for later: Spike B showed `privy_flutter` 0.10.1 can sign and broadcast Solana transactions, so no native bridge is needed; on iOS its bridge ignores `rpcUrl` and defaults to mainnet if `cluster` is omitted; the plugin needs iOS 17 (the app targets 15); versioned (v0) transaction signing is the one untested unknown. Privy credentials were authenticated server-side on 2026-09-12 and sit only in `server/.env`. The website's chat demo shows a private MagicBlock payment and a Jupiter swap screen, but that is website-only mock UI. The keyboard's `SecretScanner` already refuses long base58 strings (Solana secret keys).
 
+### 5.28 The keyboard's calendar: new events, Book a time, call links, invites
+
+Built 2026-09-24 on both keyboards, after Arpit asked: "i need calendar to support adding events and maybe meetings too or maybe try if we can integrate cal.com or calnedly as well", then "also need email and like add quest email like we book with someone on cal.com etc". The server side is BACKEND.md section 4.12.
+
+**What changed in the calendar** (hold C, or the calendar tool): the header gains a camera button and Calendar's own **+**, and the buttons at the foot gain **Book a time** once the person has a booking page.
+
+- **+ opens New Event**, laid out like Calendar's own sheet: Cancel, New Event and Add along the top, then Title, Invitees, Starts, Ends, Video call and All-day. The title takes a whole plan in one line ("Lunch with Sam tomorrow 1pm") and fills in the times as it is typed; the line under the strip says what it read ("Fri 25 Sep, 1:00–2:00 PM"). Title and Invitees are typed with the keyboard's own keys under a strip, the way emoji search works (iOS `EventComposer.swift`, Android `EventComposerView.kt`); Return goes back to the rows. The date and time pills open wheels (day, hour, minute, AM/PM) in place of the rows, and moving the start keeps the length.
+- **Add** saves to the phone's calendar and shows the day with the new event lit and scrolled into view. On iOS it is written from the keyboard itself with EventKit, which works with Full Access on and the app's calendar permission (checked on the iOS 26.5 simulator; a real iPhone is still to be checked). On Android it goes through the calendar provider (the app asks for read and write), into the primary writable calendar or, on a phone with no account, a local "Glyf" calendar made once.
+- **Video call** makes a call link first (`POST /meetings/new`) and puts it in the event's location and notes. **Invitees** are email addresses ("sam@x.com ria@y.com"); once the event is added they get an email invite from the person, with an .ics file their mail app shows as an invitation (`POST /invites/send`, needs the server's Resend key). Neither iOS nor Android can invite anyone from the phone's own calendar, which is why the email comes from the server. Toasts: "Added to <calendar>", "Added. Sending the invite…", "Invite sent to sam@x.com", or "Added. <what went wrong>".
+- **The camera** puts "Join me on a call: <link>" in the message without making an event.
+- **Book a time** (the person's own page, set in the app under Profile → Connected tools → Booking link, stored as `bookingLink` in the shared settings): the chosen day's open times on their Cal.com page as pills, four to a row, with ‹ › for other days. Tapping a time asks who it is for in one line: a name, an email, then any guests' emails ("Sam Lee sam@x.com ria@y.com"); the strip opens by itself when no email is known yet. **Book it** books it on Cal.com for that person, and Cal.com emails the host, the person and every guest the invite. The message gets "Booked for Thu 24 Sep, 5:30 PM. The invite is on its way to sam@x.com and ria@y.com. Call: <link>". **Send the link** puts the page (or that time on it) in the message instead: "How about Thu 24 Sep at 5:30 PM? Book it here: <link>", or "Pick a time that works for you: <page>" before a time is picked. A Calendly page shows no times (Calendly shares them only with the host's own sign-in), so it says so and sends the page on that day.
+- **Someone else's page** in the message or just copied ("cal.com/sam/30min", "calendly.com/ria") brings a strip chip, "A time on cal.com/sam/30min" with **Book**. It opens the same Book a time on their page, starting from the person's own name and email in the vault ("You"). The person's own link never brings the chip.
+- **A plan in the message** ("dinner friday 8pm", "kal 5 baje milte hain") brings a chip, "Dinner · Tomorrow 8:00 PM" (or "Fri 25 Sep 8:00 PM" further out) with **Add**, which opens New Event filled in; nothing is typed. The rules are `EventParse` (Swift and Kotlin twins with the same test cases): weekdays, "tomorrow", "tonight", dates both ways round by region, ranges ("10:30-11:30am", "from 5 to 7"), durations, "in 30 mins", "all day", noon and midnight, Hinglish ("kal", "parso", "baje", "shaam"). "I'm free…", "busy", "booked" and whatever the calendar itself typed (the 📅 lines) never bring the chip.
+- Everything the calendar puts in the message is a sentence of its own: a space goes in first when the text before the cursor doesn't end in one.
+
+**In the app**: Profile → Connected tools has a **Booking link** card (Cal.com and Calendly marks) with a sheet to paste the link, save or remove it.
+
+**Test ids**: `calendar:new`, `calendar:call`, `calendar:book`, `event:title`, `event:title:field`, `event:invitees`, `event:invitees:field`, `event:hint`, `event:starts:time`, `event:video`, `event:allday`, `event:add`, `booking:slot:N`, `booking:who:field`, `booking:who:hint`, `booking:book`, `booking:link`, `booking:next`, `booking:status`, `booking:back`. Debug hooks: `--glyf-booking-link <link>` on iOS (an empty value clears it), and the Android debug tools `calendaron` and `bookinglink --es text <link>`.
+
+**Scenarios** (all passing on 2026-09-24, against `qa/fake-scheduling.mjs` where they book or mail): iOS S109 (New Event from the calendar), S110 (a plan offers Add), S113 (a call link, then Send the link), S114 (New Event with a video call), S115 (book for someone with a guest), S116 (invitees get the email). Android S111, S112, S117 (call link), S118 (book for someone with a guest), S119 (invitee emailed), S120 (someone's page in the message offers Book).
+
 ---
 
 ## 6. iOS vs Android parity
@@ -965,6 +989,7 @@ Arpit on 2026-09-13 16:30: "why the fuck does android and ios apps look so diff,
 | Translation HUD strip | Yes | No |
 | Tones popup | Yes | No |
 | ConnectorSurface (calendar, month view) | Yes (demo calendar) | No |
+| Phone calendar: day list, month, free time, New Event, invitees, call links, Book a time, plan and booking chips (section 5.28) | Yes | Yes (no Insert date button) |
 | Toolbar | Yes, reorderable and hideable | Same items, fixed order |
 | Toolbar Clipboard | History screen with pins | Pastes the current clip |
 | Clipboard history store | Yes | No |

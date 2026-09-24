@@ -415,10 +415,14 @@ final class GlyfToolbar: UIView {
         smartCard.isHidden = chip == nil || panelTitle != nil
         if let chip {
             let isPaste: Bool = { if case .paste = chip { return true }; return false }()
-            smartLead.isHidden = !isPaste
+            let isEvent: Bool = {
+                switch chip { case .event, .booking: return true; default: return false }
+            }()
+            smartLead.isHidden = !isPaste && !isEvent
             smartClose.isHidden = !isPaste
-            smartLead.image = isPaste ? UIImage(systemName: "doc.on.clipboard",
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+            smartLead.image = isPaste || isEvent
+                ? UIImage(systemName: isPaste ? "doc.on.clipboard" : "calendar",
+                          withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
                 : nil
             // A clipboard pill is the paste: naming the action twice, once as
             // a word and once as the tap, is what made it read as clutter.

@@ -23,6 +23,8 @@ object CalendarText {
         val allDay: Boolean,
         val location: String? = null,
         val color: Int? = null,
+        /** The provider's event id, when known: the one just added is lit by it. */
+        val id: Long? = null,
     )
 
     fun granted(ctx: Context): Boolean =
@@ -44,6 +46,7 @@ object CalendarText {
             CalendarContract.Instances.TITLE, CalendarContract.Instances.BEGIN,
             CalendarContract.Instances.END, CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.EVENT_LOCATION, CalendarContract.Instances.DISPLAY_COLOR,
+            CalendarContract.Instances.EVENT_ID,
         )
         val out = mutableListOf<Event>()
         runCatching {
@@ -62,11 +65,101 @@ object CalendarText {
                         start = start, end = maxOf(end, start), allDay = allDay,
                         location = c.getString(4)?.takeIf { it.isNotBlank() },
                         color = if (c.isNull(5)) null else c.getInt(5),
+                        id = c.getLong(6),
                     )
                 }
             }
         }
         return out
+    }
+
+    /** Adding events needs the write half of the calendar permission, which
+     *  installs from before New Event never asked for. */
+    fun canAdd(ctx: Context): Boolean =
+        connected(ctx) && ctx.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Where new events go: the phone's primary calendar people can write to,
+     *  else any writable one, else a local "Glyf" calendar made once (a phone
+     *  with no account, like a fresh emulator, has none). */
+    fun writableCalendar(ctx: Context): Pair<Long, String>? {
+        val cols = arrayOf(
+            CalendarContract.Calendars._ID, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Calendars.IS_PRIMARY,
+        )
+        val where = "${CalendarContract.Calendars.VISIBLE}=1 AND " +
+            "${CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL}>=${CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR}"
+        var best: Pair<Long, String>? = null
+        runCatching {
+            ctx.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, cols, where, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val row = c.getLong(0) to (c.getString(1) ?: "Calendar")
+                    if (best == null || c.getInt(2) == 1) best = row
+                    if (c.getInt(2) == 1) break
+                }
+            }
+        }
+        return best ?: makeLocalCalendar(ctx)
+    }
+
+    private fun makeLocalCalendar(ctx: Context): Pair<Long, String>? = runCatching {
+        val uri = CalendarContract.Calendars.CONTENT_URI.buildUpon()
+            .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, "Glyf")
+            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+            .build()
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Calendars.ACCOUNT_NAME, "Glyf")
+            put(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+            put(CalendarContract.Calendars.NAME, "Glyf")
+            put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, "Glyf")
+            put(CalendarContract.Calendars.CALENDAR_COLOR, 0xFF7C5CFF.toInt())
+            put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.CAL_ACCESS_OWNER)
+            put(CalendarContract.Calendars.OWNER_ACCOUNT, "Glyf")
+            put(CalendarContract.Calendars.VISIBLE, 1)
+            put(CalendarContract.Calendars.SYNC_EVENTS, 1)
+            put(CalendarContract.Calendars.CALENDAR_TIME_ZONE, TimeZone.getDefault().id)
+        }
+        val made = ctx.contentResolver.insert(uri, values) ?: return@runCatching null
+        android.content.ContentUris.parseId(made) to "Glyf"
+    }.getOrNull()
+
+    /** Saves the event; the added event and its calendar's name, or null.
+     *  A call link goes in as the location, where Calendar shows it. */
+    fun add(ctx: Context, title: String, start: Long, end: Long, allDay: Boolean,
+            location: String? = null, notes: String? = null): Pair<Event, String>? {
+        if (!canAdd(ctx)) return null
+        val (calendarId, name) = writableCalendar(ctx) ?: return null
+        return runCatching {
+            val values = android.content.ContentValues().apply {
+                put(CalendarContract.Events.CALENDAR_ID, calendarId)
+                put(CalendarContract.Events.TITLE, title)
+                if (!location.isNullOrEmpty()) put(CalendarContract.Events.EVENT_LOCATION, location)
+                if (!notes.isNullOrEmpty()) put(CalendarContract.Events.DESCRIPTION, notes)
+                if (allDay) {
+                    // All-day events live on UTC midnights.
+                    put(CalendarContract.Events.DTSTART, localDayToUtc(start))
+                    put(CalendarContract.Events.DTEND, localDayToUtc(end))
+                    put(CalendarContract.Events.ALL_DAY, 1)
+                    put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+                } else {
+                    put(CalendarContract.Events.DTSTART, start)
+                    put(CalendarContract.Events.DTEND, maxOf(end, start))
+                    put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+                }
+            }
+            val uri = ctx.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) ?: return@runCatching null
+            Event(title, start, maxOf(end, start), allDay, location = location?.takeIf { it.isNotEmpty() },
+                id = android.content.ContentUris.parseId(uri)) to name
+        }.getOrNull()
+    }
+
+    private fun localDayToUtc(ms: Long): Long {
+        val local = Calendar.getInstance().apply { timeInMillis = ms }
+        return Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            clear()
+            set(local.get(Calendar.YEAR), local.get(Calendar.MONTH), local.get(Calendar.DAY_OF_MONTH))
+        }.timeInMillis
     }
 
     private fun utcDayToLocal(ms: Long): Long {

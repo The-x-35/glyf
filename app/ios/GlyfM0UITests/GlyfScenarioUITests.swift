@@ -79,7 +79,8 @@ final class GlyfScenarioUITests: XCTestCase {
     }
 
     private func note(_ text: String) {
-        NSLog("GLYF_SCENARIO \(name) \(text)")
+        // The text is data, never the format: a link's %3A would read as one.
+        NSLog("%@", "GLYF_SCENARIO \(name) \(text)")
     }
 
     // MARK: - Typing like a person
@@ -575,6 +576,179 @@ final class GlyfScenarioUITests: XCTestCase {
         let section = el("emoji:section").label
         XCTAssertTrue(section.contains("CAT"), "section says '\(section)'")
         tap("emoji:mode:emoji")
+    }
+
+    /// A row in the calendar's day list whose words include `text`.
+    /// The event Add just made: earlier runs leave events with the same
+    /// name, and the new one says "Just added" until the list is redrawn.
+    private func eventRow(_ text: String) -> XCUIElement {
+        host.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH 'calendar:event:' AND label CONTAINS %@ AND value == 'Just added'", text)).firstMatch
+    }
+
+    func testS109_NewEventFromTheKeyboardCalendar() throws {
+        open()
+        clear()
+        guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
+        c.press(forDuration: 0.7)
+        tap("calendar:new", 6)
+        tap("event:title", 4)
+        type("lunch with sam tomorrow 1pm")
+        let hint = el("event:hint").label
+        tap("key:return")
+        let starts = el("event:starts:time").label
+        XCTAssertTrue(starts.contains("1:00"), "starts at '\(starts)', read '\(hint)'")
+        tap("event:add")
+        // Back on that day, the new event in the list, read from the calendar itself.
+        let row = eventRow("Lunch with sam")
+        XCTAssertTrue(row.waitForExistence(timeout: 6), "the new event isn't in the day's list")
+        note("added '\(row.label)'; the title strip read '\(hint)'")
+        row.tap()
+        XCTAssertTrue(waitValue(4) { $0.contains("Lunch with sam") }, "got '\(value)'")
+    }
+
+    func testS110_APlanInAMessageOffersAddToCalendar() throws {
+        open()
+        clear()
+        type("dinner friday 8pm")
+        guard let chip = wait("strip:smart", 4) else { return XCTFail("no chip for a plan") }
+        let label = chip.label
+        XCTAssertTrue(label.contains("Dinner") && label.contains("8:00"), "chip says '\(label)'")
+        chip.tap()
+        XCTAssertNotNil(wait("event:add", 4), "New Event didn't open")
+        let starts = el("event:starts:time").label
+        XCTAssertTrue(starts.contains("8:00"), "starts at '\(starts)'")
+        tap("event:add")
+        XCTAssertTrue(eventRow("Dinner").waitForExistence(timeout: 6), "the event isn't in the calendar")
+        note("chip '\(label)'")
+        // Nothing was typed into the message by the chip.
+        XCTAssertEqual(value.trimmingCharacters(in: .whitespaces).lowercased(), "dinner friday 8pm")
+    }
+
+    func testS113_CallLinkAndBookATime() throws {
+        open(["--glyf-booking-link", "cal.com/rick"])
+        clear()
+        guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
+        c.press(forDuration: 0.7)
+        // A call link, straight into the message.
+        tap("calendar:call", 6)
+        XCTAssertTrue(waitValue(8) { $0.contains("Join me on a call: https://") }, "got '\(value)'")
+        let call = value
+        // No clear() here: its tap lands inside a link this long (the field
+        // shows the start of it), and the rest of the link would trail the
+        // next insert. The time goes in after the call link instead.
+        c.press(forDuration: 0.7)
+        tap("calendar:book", 6)
+        // Rick's open times on Cal.com, live; a day with none steps on.
+        var slot = wait("booking:slot:0", 12)
+        for _ in 0..<5 where slot == nil {
+            tap("booking:next", 2)
+            slot = wait("booking:slot:0", 10)
+        }
+        guard let slot else { return XCTFail("no open time; the sheet says '\(el("booking:status").label)'") }
+        let time = slot.label
+        slot.tap()
+        // Who it's for comes up first; this one just sends the time instead.
+        XCTAssertNotNil(wait("booking:who:field", 4), "no who field")
+        tap("key:return")
+        tap("booking:link", 4)
+        XCTAssertTrue(waitValue(4) { $0.hasPrefix(call + " How about ") && $0.contains("Book it here: https://") && $0.contains("slot=") }, "got '\(value)'")
+        note("call '\(call)'; sent \(time): '\(value)'")
+    }
+
+    /// Clears what the stand-in booked and mailed, so a run can book again.
+    private func resetFake() {
+        guard let url = URL(string: "http://127.0.0.1:8796/_reset") else { return }
+        _ = try? Data(contentsOf: url)
+    }
+
+    /// What the stand-in Cal.com and Resend (qa/fake-scheduling.mjs) recorded.
+    private func fakeLog() -> [String: Any] {
+        guard let url = URL(string: "http://127.0.0.1:8796/_log"),
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        return json
+    }
+
+    func testS115_BookATimeForSomeoneWithAGuest() throws {
+        resetFake()
+        open(["--glyf-booking-link", "cal.com/fake-host/30min"])
+        clear()
+        guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
+        c.press(forDuration: 0.7)
+        tap("calendar:book", 6)
+        var slot = wait("booking:slot:0", 10)
+        for _ in 0..<3 where slot == nil {
+            tap("booking:next", 2)
+            slot = wait("booking:slot:0", 8)
+        }
+        guard let slot else { return XCTFail("no open time; the sheet says '\(el("booking:status").label)'") }
+        slot.tap()
+        XCTAssertNotNil(wait("booking:who:field", 4), "no who field")
+        type("sam lee sam@example.com ria@example.com")
+        let hint = el("booking:who:hint").label
+        tap("key:return")
+        tap("booking:book", 4)
+        XCTAssertTrue(waitValue(10) { $0.contains("Booked for") && $0.contains("sam@example.com") }, "got '\(value)'")
+        let bookings = fakeLog()["bookings"] as? [[String: Any]] ?? []
+        let last = bookings.last ?? [:]
+        let attendee = last["attendee"] as? [String: Any] ?? [:]
+        XCTAssertEqual(attendee["email"] as? String, "sam@example.com")
+        XCTAssertEqual((attendee["name"] as? String)?.lowercased(), "sam lee")
+        XCTAssertEqual(last["guests"] as? [String], ["ria@example.com"])
+        note("hint '\(hint)'; message '\(value)'")
+    }
+
+    func testS116_NewEventEmailsItsInvitees() throws {
+        open()
+        clear()
+        guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
+        c.press(forDuration: 0.7)
+        tap("calendar:new", 6)
+        tap("event:title", 4)
+        type("review friday 3pm")
+        tap("key:return")
+        tap("event:invitees", 4)
+        type("sam@example.com")
+        tap("key:return")
+        let invitees = el("event:invitees").label
+        XCTAssertTrue(invitees.contains("sam@example.com"), "invitees row says '\(invitees)'")
+        let before = (fakeLog()["emails"] as? [[String: Any]] ?? []).count
+        tap("event:add")
+        let deadline = Date().addingTimeInterval(10)
+        var mailed: [String: Any]?
+        while Date() < deadline, mailed == nil {
+            let emails = fakeLog()["emails"] as? [[String: Any]] ?? []
+            if emails.count > before { mailed = emails.last }
+            usleep(500_000)
+        }
+        guard let mailed else { return XCTFail("no invite was sent") }
+        XCTAssertEqual(mailed["to"] as? [String], ["sam@example.com"])
+        let ics = mailed["ics"] as? String ?? ""
+        XCTAssertTrue(ics.contains("SUMMARY:Review") && ics.contains("METHOD:REQUEST"), "invite: \(ics.prefix(200))")
+        XCTAssertTrue(eventRow("Review").waitForExistence(timeout: 4), "the event isn't in the day's list")
+        note("mailed '\(mailed["subject"] ?? "")'")
+    }
+
+    func testS114_NewEventWithAVideoCall() throws {
+        open()
+        clear()
+        guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
+        c.press(forDuration: 0.7)
+        tap("calendar:new", 6)
+        tap("event:title", 4)
+        type("sync tomorrow 4pm")
+        tap("key:return")
+        guard let video = wait("event:video", 4) else { return XCTFail("no Video call row") }
+        video.tap()
+        tap("event:add")
+        let row = eventRow("Sync")
+        XCTAssertTrue(row.waitForExistence(timeout: 8), "the event isn't in the day's list")
+        let label = row.label
+        XCTAssertTrue(label.contains("https://"), "the event has no call link: '\(label)'")
+        row.tap()
+        XCTAssertTrue(waitValue(4) { $0.contains("Sync") && $0.contains("https://") }, "got '\(value)'")
+        note("event '\(label)'")
     }
 
     func testS75_EmojiPagesSwipeSideways() throws {

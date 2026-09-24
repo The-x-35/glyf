@@ -319,6 +319,125 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         return task
     }
 
+    /// A call link for an event or a chat: a Daily room when the server has a
+    /// key, a Jitsi link when it hasn't. Nil when the server can't be reached.
+    func newMeeting(done: @escaping (String?) -> Void) {
+        guard let url = URL(string: "\(SettingsStore.current.backendURL)/meetings/new") else { return done(nil) }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.httpMethod = "POST"
+        req.timeoutInterval = 8
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = Data("{}".utf8)
+        session.dataTask(with: req) { data, _, _ in
+            let link = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["url"] as? String
+            DispatchQueue.main.async { done(link) }
+        }.resume()
+    }
+
+    struct BookingDay { let date: String; let slots: [(start: Date, url: String)] }
+    struct BookingSlots {
+        let provider: String
+        /// The page itself on the chosen day.
+        let bookingUrl: String
+        let days: [BookingDay]
+    }
+
+    /// Open times on a Cal.com link (Calendly gives only its link), from the
+    /// chosen day. The error is the server's own words when it has them.
+    func bookingSlots(link: String, date: String, days: Int = 1,
+                      done: @escaping (BookingSlots?, String?) -> Void) {
+        var comps = URLComponents(string: "\(SettingsStore.current.backendURL)/scheduling/slots")
+        comps?.queryItems = [
+            URLQueryItem(name: "link", value: link), URLQueryItem(name: "date", value: date),
+            URLQueryItem(name: "days", value: String(days)),
+            URLQueryItem(name: "tz", value: TimeZone.current.identifier),
+        ]
+        guard let url = comps?.url else { return done(nil, nil) }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.timeoutInterval = 12
+        session.dataTask(with: req) { data, response, _ in
+            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200, let json, let provider = json["provider"] as? String,
+                  let page = json["bookingUrl"] as? String else {
+                DispatchQueue.main.async { done(nil, json?["error"] as? String) }
+                return
+            }
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let rows = (json["days"] as? [[String: Any]] ?? []).compactMap { d -> BookingDay? in
+                guard let date = d["date"] as? String else { return nil }
+                let slots = (d["slots"] as? [[String: Any]] ?? []).compactMap { s -> (Date, String)? in
+                    guard let start = (s["start"] as? String).flatMap(iso.date(from:)),
+                          let u = s["url"] as? String else { return nil }
+                    return (start, u)
+                }
+                return BookingDay(date: date, slots: slots)
+            }
+            DispatchQueue.main.async { done(BookingSlots(provider: provider, bookingUrl: page, days: rows), nil) }
+        }.resume()
+    }
+
+    struct Booked { let start: Date?; let meetingUrl: String?; let invited: [String] }
+
+    /// Books a time on a Cal.com page with the attendee and guests; Cal.com
+    /// emails everyone the invite. The error is the server's own words.
+    func bookSlot(link: String, start: Date, name: String, email: String, guests: [String],
+                  done: @escaping (Booked?, String?) -> Void) {
+        guard let url = URL(string: "\(SettingsStore.current.backendURL)/scheduling/book") else { return done(nil, nil) }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.httpMethod = "POST"
+        req.timeoutInterval = 15
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let iso = ISO8601DateFormatter()
+        req.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "link": link, "start": iso.string(from: start), "name": name, "email": email,
+            "guests": guests, "tz": TimeZone.current.identifier,
+        ])
+        session.dataTask(with: req) { data, response, _ in
+            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200 && json?["ok"] as? Bool == true
+            let iso2 = ISO8601DateFormatter()
+            iso2.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let booked = ok ? Booked(start: (json?["start"] as? String).flatMap { iso2.date(from: $0) ?? iso.date(from: $0) },
+                                     meetingUrl: json?["meetingUrl"] as? String,
+                                     invited: json?["invited"] as? [String] ?? []) : nil
+            DispatchQueue.main.async { done(booked, ok ? nil : json?["error"] as? String) }
+        }.resume()
+    }
+
+    /// Emails a calendar invite to the invitees, from the signed-in person.
+    /// How many it went to, or the server's words for why not.
+    func sendInvites(title: String, start: Date, end: Date, allDay: Bool, location: String?,
+                     emails: [String], organizer: (name: String?, email: String?),
+                     done: @escaping (Int?, String?) -> Void) {
+        guard let url = URL(string: "\(SettingsStore.current.backendURL)/invites/send") else { return done(nil, nil) }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.httpMethod = "POST"
+        req.timeoutInterval = 15
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let iso = ISO8601DateFormatter()
+        var body: [String: Any] = [
+            "title": title, "start": iso.string(from: start), "end": iso.string(from: end),
+            "allDay": allDay, "emails": emails, "tz": TimeZone.current.identifier,
+        ]
+        if let location, !location.isEmpty { body["location"] = location }
+        var who: [String: String] = [:]
+        if let n = organizer.name, !n.isEmpty { who["name"] = n }
+        if let e = organizer.email, !e.isEmpty { who["email"] = e }
+        if !who.isEmpty { body["organizer"] = who }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        session.dataTask(with: req) { data, response, _ in
+            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let sent = (response as? HTTPURLResponse)?.statusCode == 200 ? json?["sent"] as? Int : nil
+            DispatchQueue.main.async { done(sent, sent == nil ? json?["error"] as? String : nil) }
+        }.resume()
+    }
+
     func runAct(text: String,
                 intent: String? = nil,
                 onResult: @escaping (ActResult) -> Void,

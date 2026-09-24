@@ -334,8 +334,11 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
             }
             "calendarEnable" -> {
                 val prefs = ctx.getSharedPreferences("glyf", Context.MODE_PRIVATE)
-                val granted = ctx.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) ==
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                // Both halves: an install from before New Event has only read.
+                val granted = listOf(android.Manifest.permission.READ_CALENDAR,
+                    android.Manifest.permission.WRITE_CALENDAR).all {
+                    ctx.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                }
                 if (granted) {
                     prefs.edit().putBoolean("calendarOn", true).apply()
                     result.success(JSONObject(mapOf("ok" to true)).toString())

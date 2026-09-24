@@ -166,6 +166,16 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                     c.drawCircle(cx + col * dp(3.8f), cy + dp(1.4f) + row * dp(3.2f), dp(0.9f), fill)
                 }
             }
+            // A call link: a camera, the way Calendar marks a video call.
+            "video" -> {
+                c.drawRoundRect(cx - dp(8.4f), cy - dp(5f), cx + dp(2.8f), cy + dp(5f),
+                    dp(2.2f), dp(2.2f), p)
+                val path = Path().apply {
+                    moveTo(cx + dp(3.6f), cy - dp(1.4f)); lineTo(cx + dp(8.4f), cy - dp(4.4f))
+                    lineTo(cx + dp(8.4f), cy + dp(4.4f)); lineTo(cx + dp(3.6f), cy + dp(1.4f)); close()
+                }
+                c.drawPath(path, p)
+            }
             // The emoji board's tabs, after Apple's emoji keyboard.
             "clock" -> {
                 c.drawCircle(cx, cy, dp(7f), p)

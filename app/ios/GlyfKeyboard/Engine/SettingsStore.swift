@@ -127,6 +127,9 @@ struct GlyfSettings: Codable, Equatable {
     /// The language besides the phone's own that this person types in, as
     /// translate last detected it. Where English drafts get translated to.
     var translateOther: String? = nil
+    /// The person's Cal.com or Calendly booking page, set in the app
+    /// (Connected tools → Booking link). The calendar's Book a time uses it.
+    var bookingLink: String? = nil
 
     /// The deployed API. Changing the domain? This is the only place.
     static let productionBackend = "https://api.tryglyf.com"

@@ -12,6 +12,8 @@ enum CalendarText {
         var allDay: Bool
         var location: String?
         var color: String?
+        /// The calendar's own id, when read from EventKit.
+        var id: String? = nil
     }
 
     static func events(fromJSON json: [String: Any]?) -> [Event] {

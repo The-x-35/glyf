@@ -6,6 +6,7 @@ class BrandMark extends StatelessWidget {
   const BrandMark(this.brand, {super.key, this.size = 44});
 
   /// magicblock | calendar | contacts | gmail | gcal | notion | slack | spotify
+  /// | calcom | calendly | booking
   final String brand;
   final double size;
 
@@ -13,6 +14,7 @@ class BrandMark extends StatelessWidget {
   Widget build(BuildContext context) {
     final (bg, border) = switch (brand) {
       'magicblock' => (const Color(0xFF111111), null),
+      'calcom' => (const Color(0xFF111111), null),
       'notion' => (Colors.white, const Color(0x22000000)),
       'spotify' => (const Color(0xFF121212), null),
       'contacts' => (const Color(0xFFE9EAEE), null),
@@ -126,6 +128,30 @@ class _MarkPainter extends CustomPainter {
           final rect = Rect.fromCenter(center: Offset(s / 2, s * y + s * 0.12), width: s * w * 1.4, height: s * 0.3);
           canvas.drawArc(rect, 3.14159 * 1.18, 3.14159 * 0.64, false, arc);
         }
+      case 'calcom':
+        // Cal.com's wordmark, white on its black tile.
+        _text(canvas, 'Cal', Offset(s / 2, s / 2 + s * 0.01), s * 0.36, Colors.white, FontWeight.w800);
+      case 'calendly':
+        // Calendly's blue ring, open on the right like its C.
+        final ring = Paint()
+          ..color = const Color(0xFF006BFF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = s * 0.12
+          ..strokeCap = StrokeCap.round;
+        canvas.drawArc(Rect.fromCircle(center: Offset(s / 2, s / 2), radius: s * 0.24),
+            3.14159 * 0.28, 3.14159 * 1.44, false, ring);
+      case 'booking':
+        // Two links of a chain: a page people book from.
+        final link = Paint()
+          ..color = const Color(0xFF1C1C1E)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = s * 0.07;
+        canvas.save();
+        canvas.translate(s / 2, s / 2);
+        canvas.rotate(-0.785);
+        canvas.drawRRect(RRect.fromLTRBR(-s * 0.3, -s * 0.1, s * 0.02, s * 0.1, Radius.circular(s * 0.1)), link);
+        canvas.drawRRect(RRect.fromLTRBR(-s * 0.02, -s * 0.1, s * 0.3, s * 0.1, Radius.circular(s * 0.1)), link);
+        canvas.restore();
       case 'contacts':
         canvas.drawCircle(Offset(s / 2, s * 0.4), s * 0.14, fill(const Color(0xFF8E8E93)));
         canvas.drawOval(Rect.fromLTRB(s * 0.24, s * 0.58, s * 0.76, s * 0.92), fill(const Color(0xFF8E8E93)));

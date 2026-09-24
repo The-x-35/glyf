@@ -46,21 +46,21 @@
   "area": "Android",
   "title": "A rough message offers Tidy this up",
   "verdict": "pass",
-  "note": "chip 'Tidy this up', versions shown after 7.1s"
+  "note": "chip 'Tidy this up', versions shown after 5.9s. Re-run: in the full run the emulator's test account had already spent today's runs (353 on the day's scenario runs), so the dev server's daily cap was raised for this re-run"
  },
  {
   "id": "S91",
   "area": "Android",
   "title": "Hold space: pick the Professional version",
   "verdict": "pass",
-  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'Yes, I will send the deck before 6.'"
+  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'I will send the deck before 6:00 PM.' Re-run with the raised daily cap (see S90)"
  },
  {
   "id": "S92",
   "area": "Android",
   "title": "Hold space on a place search sends places",
   "verdict": "pass",
-  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/wPp6q9Idrzbo'"
+  "note": "'best biryani near indiranagar http://127.0.0.1:8787/p/4O_ldHLesp1X'. Re-run with the raised daily cap (see S90)"
  },
  {
   "id": "S93",
@@ -81,7 +81,7 @@
   "area": "Android",
   "title": "Translate as you type, then Replace",
   "verdict": "pass",
-  "note": "strip 'Let's meet tomorrow after office.', message 'Let's meet tomorrow after office.'"
+  "note": "strip 'Let's meet tomorrow after office.', message 'Let's meet tomorrow after office.' Re-run alone: straight after S90 to S92 its six translations hit the free plan's 8 runs a minute"
  },
  {
   "id": "S96",
@@ -110,6 +110,48 @@
   "title": "The Stickers tab shows stickers and hands one over",
   "verdict": "pass",
   "note": "clipboard now holds image/gif (Sticker)"
+ },
+ {
+  "id": "S111",
+  "area": "Android",
+  "title": "New Event from the keyboard's calendar lands in the calendar",
+  "verdict": "pass",
+  "note": "starts '1:00 PM', hint 'Fri 25 Sep, 1:00–2:00 PM', message '📅 Lunch with sam · Fri 25 Sep, 1:00–2:00 PM'"
+ },
+ {
+  "id": "S112",
+  "area": "Android",
+  "title": "A plan in a message offers Add to calendar",
+  "verdict": "pass",
+  "note": "chip 'Dinner · Tomorrow 8:00 PM', starts '8:00 PM', message 'dinner friday 8pm'"
+ },
+ {
+  "id": "S117",
+  "area": "Android",
+  "title": "A call link from the keyboard's calendar",
+  "verdict": "pass",
+  "note": "message 'Join me on a call: https://meet.jit.si/Glyf-aVrCEOcmZE'"
+ },
+ {
+  "id": "S118",
+  "area": "Android",
+  "title": "Book a time on your own page for someone, with a guest",
+  "verdict": "pass",
+  "note": "hint 'Sam lee · sam@example.com · 1 guest'; booked Sam lee <sam@example.com> + ria@example.com; message 'Booked for Fri 25 Sep, 10:00 AM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1'"
+ },
+ {
+  "id": "S119",
+  "area": "Android",
+  "title": "New Event with an invitee emails the invite",
+  "verdict": "pass",
+  "note": "invitees row 'sam@example.com'; mailed 'Invitation: Review · Fri 25 Sept, 3:00 PM' to sam@example.com; row shown"
+ },
+ {
+  "id": "S120",
+  "area": "Android",
+  "title": "Someone's booking page in a message offers Book",
+  "verdict": "pass",
+  "note": "chip 'A time on cal.com/sam-lee/intro'; booked on sam-lee/intro as Sim Tester <sim-e2e@example.com>; message 'grab a time cal.com/sam-lee/intro Booked for Fri 25 Sep, 10:00 AM. The invite is on its way to sim-e2e@example.com. Call: https://app.cal.com/video/bk_1'"
  },
  {
   "id": "S97",

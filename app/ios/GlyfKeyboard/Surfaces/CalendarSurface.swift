@@ -3,15 +3,35 @@ import UIKit
 /// The keyboard's calendar: the day's events, full width, because that is
 /// what you reach for mid-message. Tap one to put it in the message, or share
 /// when you are free that day. Month opens the grid to jump to another day.
-/// Events come from the phone's calendar through the app (calendar.json);
-/// without them it is still a calendar, and offers to connect.
+/// Events come straight from the phone's calendar when the keyboard may read
+/// it (Full Access, and the app allowed), else from the app's copy
+/// (calendar.json); without either it is still a calendar, and offers to
+/// connect. + opens New Event (EventComposer).
 final class CalendarSurface: UIView {
 
     weak var delegate: ConnectorSurfaceDelegate?
 
     private let cal = Calendar.current
+    private let hasFullAccess: Bool
     private var events: [CalendarText.Event] = []
     private var connected = false
+    /// Read from EventKit itself rather than the app's copy.
+    private var live = false
+    private var composer: EventComposer?
+    private var booking: BookingSheet?
+    /** The person's Cal.com or Calendly page, set in the app. */
+    private var bookingLink: String? {
+        let link = SettingsStore.current.bookingLink?.trimmingCharacters(in: .whitespaces) ?? ""
+        return link.isEmpty ? nil : link
+    }
+    /// The event just added, drawn out for a moment in the day's list.
+    private var justAdded: CalendarText.Event?
+    /// Its row, scrolled into view once laid out, the way Calendar shows a new event.
+    private weak var justAddedRow: UIView?
+    /// The lit row, so the light can go out without rebuilding the list.
+    private weak var litRow: UIView?
+    /// Add was tapped and the call link is on its way: once is enough.
+    private var adding = false
     private var month: Date
     private var selected: Date
 
@@ -22,6 +42,9 @@ final class CalendarSurface: UIView {
     private let prevButton = UIButton(type: .system)
     private let nextButton = UIButton(type: .system)
     private let modeButton = UIButton(type: .system)
+    private let newButton = UIButton(type: .system)
+    private let callButton = UIButton(type: .system)
+    private let bookButton = UIButton(type: .system)
     private var weekdayLabels: [UILabel] = []
     private var dayButtons: [UIButton] = []
     /// The event dot under each day (kept apart from the buttons' tags).
@@ -33,11 +56,12 @@ final class CalendarSurface: UIView {
     private let connectButton = UIButton(type: .system)
     private let dateButton = UIButton(type: .system)
 
-    override init(frame: CGRect) {
+    init(hasFullAccess: Bool = false) {
         let today = Calendar.current.startOfDay(for: Date())
         month = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: today)) ?? today
         selected = today
-        super.init(frame: frame)
+        self.hasFullAccess = hasFullAccess
+        super.init(frame: .zero)
         backgroundColor = Glass.touchableGrid
         load()
         build()
@@ -47,9 +71,172 @@ final class CalendarSurface: UIView {
     required init?(coder: NSCoder) { fatalError() }
 
     private func load() {
+        if CalendarWriter.access(hasFullAccess: hasFullAccess) == .ready, CalendarWriter.canRead {
+            live = true
+            connected = true
+            let from = cal.date(byAdding: .day, value: -7, to: month) ?? month
+            let to = cal.date(byAdding: .day, value: 45, to: month) ?? month
+            events = CalendarWriter.events(from: from, to: to)
+            return
+        }
         let json = AppGroupStore.readJSON(name: "calendar.json")
         connected = json != nil
         events = CalendarText.events(fromJSON: json)
+    }
+
+    /// While a title or a who is typed the panel is a strip over the keys.
+    var editingTitle: Bool { composer?.editingTitle == true || booking?.editingWho == true }
+    var composing: Bool { composer != nil }
+
+    /// Return on the keys: the title (or the who) is done.
+    func returnPressed() {
+        composer?.endTitle()
+        booking?.endWho()
+    }
+
+    /// New Event, filled from a plan when there is one ("dinner friday 8pm"),
+    /// else the chosen day at the next hour (9 AM on another day).
+    func compose(plan: EventParse.Plan? = nil) {
+        let draft: EventComposer.Draft
+        if let plan {
+            draft = .init(title: plan.title, start: plan.start, end: plan.end, allDay: plan.allDay)
+        } else {
+            let now = Date()
+            var start: Date
+            if cal.isDate(selected, inSameDayAs: now) {
+                let hour = cal.dateInterval(of: .hour, for: now)?.start ?? now
+                start = cal.date(byAdding: .hour, value: 1, to: hour) ?? now
+            } else {
+                start = cal.date(byAdding: .hour, value: 9, to: selected) ?? selected
+            }
+            if !cal.isDate(start, inSameDayAs: selected) { start = selected }
+            draft = .init(title: "", start: start, end: start.addingTimeInterval(3600), allDay: false)
+        }
+        composer?.removeFromSuperview()
+        let c = EventComposer(draft: draft, access: CalendarWriter.access(hasFullAccess: hasFullAccess))
+        c.onCancel = { [weak self] in self?.closeComposer() }
+        c.onAdd = { [weak self] d in self?.add(d) }
+        c.onEditTitle = { [weak self] editor in self?.delegate?.connectorSearchActivated(editor) }
+        c.onLayoutChange = { [weak self] in
+            guard let self else { return }
+            if self.composer?.editingTitle != true { self.delegate?.connectorSearchDismissed() }
+            self.delegate?.connectorLayoutChanged()
+        }
+        c.onOpenApp = { [weak self] path in self?.delegate?.connectorOpenApp(path: path) }
+        addSubview(c)
+        composer = c
+        // Laid out before it shows, so no control flashes at the corner.
+        c.frame = bounds
+        c.layoutIfNeeded()
+        render()
+        setNeedsLayout()
+        delegate?.connectorLayoutChanged()
+    }
+
+    /// Book a time on the person's own page, or on someone else's (a link in
+    /// the chat): then it starts from their own name and email in the vault.
+    func openBooking(link other: String? = nil) {
+        guard let link = other ?? bookingLink else { return }
+        let fields = VaultStore.shared.load().fields
+        let me = [fields.first(where: { $0.kind == "name" })?.value,
+                  fields.first(where: { $0.kind == "email" })?.value].compactMap { $0 }.joined(separator: " ")
+        let b = BookingSheet(link: link, day: selected, mine: other == nil, me: me)
+        b.onBack = { [weak self] in
+            self?.booking?.removeFromSuperview()
+            self?.booking = nil
+            self?.render()
+        }
+        b.onInsert = { [weak self] text in self?.delegate?.connectorInsert(text) }
+        b.onEditWho = { [weak self] editor in self?.delegate?.connectorSearchActivated(editor) }
+        b.onLayoutChange = { [weak self] in
+            guard let self else { return }
+            if self.booking?.editingWho != true { self.delegate?.connectorSearchDismissed() }
+            self.delegate?.connectorLayoutChanged()
+        }
+        addSubview(b)
+        booking = b
+        b.frame = bounds
+        b.layoutIfNeeded()
+        render()
+        setNeedsLayout()
+    }
+
+    /// A call link, straight into the message.
+    private func insertCallLink() {
+        callButton.isEnabled = false
+        BackendClient.shared.newMeeting { [weak self] link in
+            guard let self else { return }
+            self.callButton.isEnabled = true
+            let url = link ?? CalendarWriter.localCallLink()
+            self.delegate?.connectorInsert("Join me on a call: \(url)")
+        }
+    }
+
+    /// The invitees get a calendar invite by email, from the person: the
+    /// phone's calendar has no way to invite anyone itself.
+    private func invite(_ d: EventComposer.Draft, location: String?) {
+        let fields = VaultStore.shared.load().fields
+        let organizer = (name: fields.first(where: { $0.kind == "name" })?.value,
+                         email: fields.first(where: { $0.kind == "email" })?.value)
+        KeyboardToast.show(in: self, text: "Added. Sending the invite…")
+        BackendClient.shared.sendInvites(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
+                                         location: location, emails: d.invitees, organizer: organizer) {
+            [weak self] sent, error in
+            guard let self else { return }
+            if let sent {
+                KeyboardToast.show(in: self, text: sent == 1 ? "Invite sent to \(d.invitees[0])" : "Invite sent to \(sent) people")
+            } else {
+                KeyboardToast.show(in: self, text: "Added. \(error ?? "The invite didn't send")")
+            }
+        }
+    }
+
+    private func closeComposer() {
+        let wasEditing = composer?.editingTitle == true
+        composer?.removeFromSuperview()
+        composer = nil
+        if wasEditing { delegate?.connectorSearchDismissed() }
+        render()
+        delegate?.connectorLayoutChanged()
+    }
+
+    private func add(_ d: EventComposer.Draft) {
+        guard !adding else { return }
+        guard d.videoCall else { return save(d, callLink: nil) }
+        // The call link first, so the event carries it and so does the message.
+        adding = true
+        BackendClient.shared.newMeeting { [weak self] link in
+            self?.adding = false
+            self?.save(d, callLink: link ?? CalendarWriter.localCallLink())
+        }
+    }
+
+    private func save(_ d: EventComposer.Draft, callLink: String?) {
+        let notes = callLink.map { "Join the call: \($0)" }
+        switch CalendarWriter.add(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
+                                  location: callLink, url: callLink.flatMap(URL.init(string:)), notes: notes) {
+        case .success(let added):
+            selected = cal.startOfDay(for: d.start)
+            month = cal.date(from: cal.dateComponents([.year, .month], from: selected)) ?? month
+            showingMonth = false
+            justAdded = added.event
+            closeComposer()
+            load()
+            render()
+            if d.invitees.isEmpty {
+                KeyboardToast.show(in: self, text: "Added to \(added.calendarName)")
+            } else {
+                invite(d, location: callLink)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                self?.justAdded = nil
+                self?.litRow?.layer.borderWidth = 0
+            }
+        case .failure(.noCalendar):
+            KeyboardToast.show(in: self, text: "No calendar to add it to")
+        case .failure(.saveFailed):
+            KeyboardToast.show(in: self, text: "Couldn't add the event. Try again")
+        }
     }
 
     // MARK: build
@@ -78,6 +265,33 @@ final class CalendarSurface: UIView {
         modeButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 11, bottom: 0, right: 11)
         modeButton.addAction(UIAction { [weak self] _ in self?.toggleMonth() }, for: .touchUpInside)
         addSubview(modeButton)
+
+        // Calendar's own + for a new event, at the end of the header.
+        newButton.setImage(UIImage(systemName: "plus",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)), for: .normal)
+        newButton.tintColor = Glass.textPrimary
+        newButton.backgroundColor = Glass.surfaceCard
+        newButton.accessibilityIdentifier = "calendar:new"
+        newButton.accessibilityLabel = "New event"
+        newButton.addAction(UIAction { [weak self] _ in self?.compose() }, for: .touchUpInside)
+        addSubview(newButton)
+
+        // A call link for the chat, without making an event.
+        callButton.setImage(UIImage(systemName: "video",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)), for: .normal)
+        callButton.tintColor = Glass.textPrimary
+        callButton.backgroundColor = Glass.surfaceCard
+        callButton.accessibilityIdentifier = "calendar:call"
+        callButton.accessibilityLabel = "Send a call link"
+        callButton.addAction(UIAction { [weak self] _ in self?.insertCallLink() }, for: .touchUpInside)
+        addSubview(callButton)
+
+        styleAction(bookButton, title: "Book a time")
+        bookButton.backgroundColor = Glass.surfaceCard
+        bookButton.setTitleColor(Glass.textPrimary, for: .normal)
+        bookButton.accessibilityIdentifier = "calendar:book"
+        bookButton.addAction(UIAction { [weak self] _ in self?.openBooking() }, for: .touchUpInside)
+        addSubview(bookButton)
 
         let symbols = cal.veryShortStandaloneWeekdaySymbols
         for i in 0..<7 {
@@ -149,10 +363,15 @@ final class CalendarSurface: UIView {
         if showingMonth {
             guard let m = cal.date(byAdding: .month, value: direction, to: month) else { return }
             month = m
+            if live { load() }
         } else {
             guard let d = cal.date(byAdding: .day, value: direction, to: selected) else { return }
             selected = d
-            month = cal.date(from: cal.dateComponents([.year, .month], from: d)) ?? month
+            let m = cal.date(from: cal.dateComponents([.year, .month], from: d)) ?? month
+            if m != month {
+                month = m
+                if live { load() }
+            }
         }
         render()
     }
@@ -197,6 +416,20 @@ final class CalendarSurface: UIView {
     // MARK: render
 
     private func render() {
+        let composing = composer != nil || booking != nil
+        for v in [titleLabel, prevButton, nextButton, modeButton, newButton, callButton, agenda] as [UIView] {
+            v.isHidden = composing
+        }
+        bookButton.isHidden = composing || showingMonth || bookingLink == nil
+        guard !composing else {
+            weekdayLabels.forEach { $0.isHidden = true }
+            dayButtons.forEach { $0.isHidden = true }
+            freeButton.isHidden = true
+            connectButton.isHidden = true
+            dateButton.isHidden = true
+            setNeedsLayout()
+            return
+        }
         let monthFormat = DateFormatter()
         monthFormat.setLocalizedDateFormatFromTemplate("MMMM yyyy")
         titleLabel.text = showingMonth ? monthFormat.string(from: month) : CalendarText.dayLabel(selected)
@@ -237,7 +470,18 @@ final class CalendarSurface: UIView {
                 agendaStack.addArrangedSubview(note("Nothing planned"))
             }
             for (i, e) in dayEvents.enumerated() {
-                agendaStack.addArrangedSubview(row(e, index: i))
+                let r = row(e, index: i)
+                if let added = justAdded,
+                   added.id.map({ $0 == e.id }) ?? (added.title == e.title && added.start == e.start) {
+                    // What was just added, lit for a moment so the eye finds it.
+                    r.layer.borderWidth = 1.5
+                    r.layer.borderColor = Glass.accentPrimary.cgColor
+                    // Said as well as shown, until the list is next drawn.
+                    r.accessibilityValue = "Just added"
+                    justAddedRow = r
+                    litRow = r
+                }
+                agendaStack.addArrangedSubview(r)
             }
         } else if !showingMonth {
             // Not connected yet: say so, rather than leave a blank band
@@ -330,8 +574,21 @@ final class CalendarSurface: UIView {
         let pad: CGFloat = 12
         let headerH: CGFloat = 32
 
+        if let composer {
+            composer.frame = bounds
+            return
+        }
+        if let booking {
+            booking.frame = bounds
+            return
+        }
+
+        newButton.frame = CGRect(x: bounds.width - pad - 30, y: 1, width: 30, height: 30)
+        newButton.layer.cornerRadius = 15
+        callButton.frame = CGRect(x: newButton.frame.minX - 36, y: 1, width: 30, height: 30)
+        callButton.layer.cornerRadius = 15
         let modeW: CGFloat = showingMonth ? 66 : 76
-        modeButton.frame = CGRect(x: bounds.width - pad - modeW, y: 1, width: modeW, height: 30)
+        modeButton.frame = CGRect(x: callButton.frame.minX - 6 - modeW, y: 1, width: modeW, height: 30)
         modeButton.layer.cornerRadius = 15
         nextButton.frame = CGRect(x: modeButton.frame.minX - 34, y: 1, width: 30, height: 30)
         prevButton.frame = CGRect(x: nextButton.frame.minX - 30, y: 1, width: 30, height: 30)
@@ -360,13 +617,20 @@ final class CalendarSurface: UIView {
         let w = bounds.width - pad * 2
         let actionH: CGFloat = 38
         let actionY = bounds.height - actionH - 8
-        // Two pills on one row: the date on the left, the calendar's own
-        // action (share free time, or connect) on the right.
-        let dateW = ((w - 8) * 0.42).rounded()
-        dateButton.frame = CGRect(x: pad, y: actionY, width: dateW, height: actionH)
-        dateButton.layer.cornerRadius = actionH / 2
-        freeButton.frame = CGRect(x: pad + dateW + 8, y: actionY, width: w - dateW - 8, height: actionH)
-        freeButton.layer.cornerRadius = actionH / 2
+        // Pills on one row: the date on the left, the calendar's own action
+        // (share free time, or connect), and Book a time with a booking link.
+        if bookButton.isHidden {
+            let dateW = ((w - 8) * 0.42).rounded()
+            dateButton.frame = CGRect(x: pad, y: actionY, width: dateW, height: actionH)
+            freeButton.frame = CGRect(x: pad + dateW + 8, y: actionY, width: w - dateW - 8, height: actionH)
+        } else {
+            let third = ((w - 16) / 3).rounded(.down)
+            dateButton.frame = CGRect(x: pad, y: actionY, width: third, height: actionH)
+            freeButton.frame = CGRect(x: pad + third + 8, y: actionY, width: third, height: actionH)
+            bookButton.frame = CGRect(x: pad + (third + 8) * 2, y: actionY, width: w - (third + 8) * 2, height: actionH)
+            for b in [dateButton, freeButton, bookButton] { b.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold) }
+        }
+        for b in [dateButton, freeButton, bookButton] { b.layer.cornerRadius = actionH / 2 }
         connectButton.frame = freeButton.frame
         connectButton.layer.cornerRadius = actionH / 2
         agenda.frame = CGRect(x: pad, y: headerH + 2, width: w, height: max(0, actionY - headerH - 10))
@@ -375,6 +639,11 @@ final class CalendarSurface: UIView {
             withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
         agendaStack.frame = CGRect(x: 0, y: 0, width: w, height: stackH)
         agenda.contentSize = CGSize(width: w, height: stackH)
+        if let row = justAddedRow {
+            agendaStack.layoutIfNeeded()
+            agenda.scrollRectToVisible(row.frame.insetBy(dx: 0, dy: -4), animated: false)
+            justAddedRow = nil
+        }
     }
 }
 

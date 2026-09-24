@@ -26,6 +26,12 @@ object Smart {
          *  `shown` is the whole line, `insert` what a tap adds after the
          *  amount. Never offered without a live rate. */
         data class Money(val shown: String, val insert: String) : Chip()
+        /** A plan in the message ("dinner friday 8pm"): one tap opens New
+         *  Event with it filled in, nothing typed. */
+        data class Event(val plan: EventParse.Plan) : Chip()
+        /** Someone's Cal.com or Calendly page, in the message or just copied:
+         *  one tap shows its open times to book, with the person's own details. */
+        data class Booking(val link: String) : Chip()
     }
 
     /** The rates the keyboard has at hand (from the server, via RatesStore):
@@ -43,6 +49,8 @@ object Smart {
     /** What a tap does, on the chip's right edge; null for the model's own words. */
     fun verb(chip: Chip): String? = when (chip) {
         is Chip.Calc, is Chip.Vault, is Chip.Money -> "Insert"
+        is Chip.Event -> "Add"
+        is Chip.Booking -> "Book"
         is Chip.Pay -> "Pay"
         is Chip.Action -> null
     }
@@ -53,6 +61,8 @@ object Smart {
         is Chip.Vault -> chip.field.value
         is Chip.Action -> chip.label
         is Chip.Money -> chip.shown
+        is Chip.Event -> EventParse.summary(chip.plan)
+        is Chip.Booking -> "A time on ${shortLink(chip.link)}"
         is Chip.Pay -> {
             val a = chip.address
             val short = if (a.length > 12) "${a.take(4)}…${a.takeLast(4)}" else a
@@ -65,8 +75,25 @@ object Smart {
         is Chip.Calc -> if (chip.hasEquals) " ${chip.result}" else " = ${chip.result}"
         is Chip.Vault -> chip.field.value
         is Chip.Money -> chip.insert
-        is Chip.Action, is Chip.Pay -> ""
+        is Chip.Action, is Chip.Pay, is Chip.Event, is Chip.Booking -> ""
     }
+
+    private val bookingPattern = Regex(
+        """(?:https?://)?(?:[a-z0-9-]+\.)?(?:cal\.com|calendly\.com)/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?""",
+        RegexOption.IGNORE_CASE)
+    private val scheme = Regex("""^https?://(www\.)?""", RegexOption.IGNORE_CASE)
+
+    /** A Cal.com or Calendly booking page in the text ("cal.com/sam/30min",
+     *  "https://calendly.com/sam"), unless it is the person's own. */
+    fun bookingLink(text: String, own: String? = null): String? {
+        val link = bookingPattern.find(text)?.value ?: return null
+        fun bare(s: String) = s.lowercase().replace(scheme, "")
+        if (!own.isNullOrBlank() && (bare(own.trim()).startsWith(bare(link)) || bare(link).startsWith(bare(own.trim())))) return null
+        return link
+    }
+
+    /** "cal.com/sam/30min" without the scheme. */
+    fun shortLink(link: String): String = link.replace(scheme, "")
 
     /** Vault fields out of the decrypted vault JSON. */
     fun fields(vault: org.json.JSONObject): List<Field> {
@@ -81,11 +108,13 @@ object Smart {
     /** One chip at most, in the website's order: a payment, a sum, an amount
      *  in another currency, a detail. */
     fun chip(text: String, fields: List<Field>, indianGrouping: Boolean = true,
-             rates: RatesSnapshot = RatesSnapshot.EMPTY): Chip? {
+             rates: RatesSnapshot = RatesSnapshot.EMPTY, ownBooking: String? = null): Chip? {
         payment(text)?.let { return Chip.Pay(it.first, it.second ?: amountAsked(text)) }
         calc(text, indianGrouping)?.let { return Chip.Calc(it.first, it.second) }
         money(text, rates)?.let { return it }
         vaultMatch(text, fields)?.let { return Chip.Vault(it) }
+        EventParse.looksLikePlan(text)?.let { return Chip.Event(it) }
+        bookingLink(text, ownBooking)?.let { return Chip.Booking(it) }
         return null
     }
 

@@ -25,9 +25,16 @@ enum Smart {
         /// `shown` is the whole line, `insert` what a tap adds after the
         /// amount. Never shown without a live rate.
         case money(shown: String, insert: String)
+        /// A plan in the message ("dinner friday 8pm"): one tap opens New
+        /// Event with it filled in, nothing typed.
+        case event(plan: EventParse.Plan)
+        /// Someone's Cal.com or Calendly page, in the message or just copied:
+        /// one tap shows its open times to book, with the person's own details.
+        case booking(link: String)
 
         var key: String {
             switch self {
+            case .event, .booking: return "Calendar"
             case .calc, .money: return "="
             case .vault(let f): return f.label
             case .paste: return "Paste"
@@ -40,6 +47,8 @@ enum Smart {
         var verb: String? {
             switch self {
             case .calc, .vault, .money: return "Insert"
+            case .event: return "Add"
+            case .booking: return "Book"
             case .paste: return "Paste"
             case .pay: return "Pay"
             case .action: return nil
@@ -52,6 +61,8 @@ enum Smart {
             case .paste(let t): return t.replacingOccurrences(of: "\n", with: " ")
             case .action(let label, _, _): return label
             case .money(let shown, _): return shown
+            case .event(let plan): return EventParse.summary(plan)
+            case .booking(let link): return "A time on \(Smart.shortLink(link))"
             case .pay(let address, let amount):
                 let short = address.count > 12
                     ? "\(address.prefix(4))…\(address.suffix(4))" : address
@@ -66,9 +77,28 @@ enum Smart {
             case .paste(let t): return t
             case .money(_, let insert): return insert
             case .pay: return ""       // handled by the app, never typed
+            case .event: return ""     // opens New Event instead of typing
+            case .booking: return ""   // opens Book a time instead of typing
             case .action: return ""    // runs a glyf instead of typing
             }
         }
+    }
+
+    /// A Cal.com or Calendly booking page in the text ("cal.com/sam/30min",
+    /// "https://calendly.com/sam"), unless it is the person's own.
+    static func bookingLink(in text: String, own: String? = SettingsStore.current.bookingLink) -> String? {
+        let pattern = #"(?:https?://)?(?:[a-z0-9-]+\.)?(?:cal\.com|calendly\.com)/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?"#
+        guard let r = text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) else { return nil }
+        let link = String(text[r])
+        let bare = { (s: String) in s.lowercased().replacingOccurrences(of: #"^https?://(www\.)?"#, with: "",
+                                                                        options: .regularExpression) }
+        if let own, !own.isEmpty, bare(own).hasPrefix(bare(link)) || bare(link).hasPrefix(bare(own)) { return nil }
+        return link
+    }
+
+    /// "cal.com/sam/30min" without the scheme.
+    static func shortLink(_ link: String) -> String {
+        link.replacingOccurrences(of: #"^https?://(www\.)?"#, with: "", options: [.regularExpression, .caseInsensitive])
     }
 
     /// The rates the keyboard has at hand (from the server, via RatesStore).
@@ -125,6 +155,12 @@ enum Smart {
         if let c = calc(text) { return .calc(value: c.value, hasEquals: c.hasEquals) }
         if let m = money(in: text, rates: rates) { return m }
         if let f = vaultMatch(text, fields: fields) { return .vault(field: f) }
+        if let plan = EventParse.looksLikePlan(text, dayFirst: EventParse.regionDayFirst) {
+            return .event(plan: plan)
+        }
+        if let link = bookingLink(in: text) ?? paste.flatMap({ bookingLink(in: $0) }) {
+            return .booking(link: link)
+        }
         // A form asking for something we already know: one tap fills it.
         if text.isEmpty, field.empty, let kind = field.kind,
            let f = fields.first(where: { $0.kind == kind }) {

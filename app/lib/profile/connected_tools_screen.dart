@@ -19,6 +19,8 @@ class ConnectedToolsScreen extends StatefulWidget {
 class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
   bool _calendar = false;
   bool _contacts = false;
+  /// The person's Cal.com or Calendly page, for the keyboard's Book a time.
+  String? _booking;
   String? _note;
 
   @override
@@ -30,11 +32,111 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
   Future<void> _load() async {
     final cal = await GlyfBridge.calendarStatus();
     final contacts = await GlyfBridge.contactsStatus();
+    final shared = await GlyfBridge.sharedSettings();
     if (!mounted) return;
     setState(() {
       _calendar = cal['enabled'] == true;
       _contacts = contacts['enabled'] == true;
+      final link = (shared['bookingLink'] as String?)?.trim() ?? '';
+      _booking = link.isEmpty ? null : link;
     });
+  }
+
+  /// Which service a booking link belongs to ("calcom", "calendly"), or null
+  /// when it is neither or names no page.
+  static String? bookingProvider(String link) {
+    final s = link.trim().toLowerCase()
+        .replaceFirst(RegExp(r'^https?://'), '')
+        .replaceFirst(RegExp(r'^www\.'), '');
+    final parts = s.split('/').where((p) => p.isNotEmpty).toList();
+    if (parts.length < 2) return null;
+    final host = parts.first;
+    if (host == 'calendly.com') return 'calendly';
+    if (host == 'cal.com' || host.endsWith('.cal.com')) return 'calcom';
+    return null;
+  }
+
+  Future<void> _editBooking() async {
+    final field = TextEditingController(text: _booking ?? '');
+    String? error;
+    final saved = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 10, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(
+              child: Container(
+                width: 36, height: 5,
+                decoration: BoxDecoration(color: const Color(0x26000000), borderRadius: BorderRadius.circular(3)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Booking link', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: Glass.ink)),
+            const SizedBox(height: 14),
+            Semantics(
+              identifier: 'booking:field',
+              child: TextField(
+                controller: field,
+                autofocus: true,
+                autocorrect: false,
+                keyboardType: TextInputType.url,
+                decoration: InputDecoration(
+                  hintText: 'cal.com/you or calendly.com/you',
+                  errorText: error,
+                  filled: true,
+                  fillColor: const Color(0xFFF2F2F7),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(children: [
+              if (_booking != null)
+                Semantics(
+                  identifier: 'booking:remove',
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx, ''),
+                    child: const Text('Remove', style: TextStyle(color: Color(0xFFFF3B30), fontSize: 15)),
+                  ),
+                ),
+              const Spacer(),
+              Semantics(
+                identifier: 'booking:save',
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: Glass.ink, minimumSize: const Size(96, 44)),
+                  onPressed: () {
+                    final v = field.text.trim();
+                    if (bookingProvider(v) == null) {
+                      setSheet(() => error = 'That isn’t a Cal.com or Calendly link');
+                      return;
+                    }
+                    Navigator.pop(ctx, v);
+                  },
+                  child: const Text('Save', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+    if (saved == null || !mounted) return;
+    final link = saved.isEmpty ? null : saved;
+    await GlyfBridge.updateSharedSettings((s) {
+      if (link == null) {
+        s.remove('bookingLink');
+      } else {
+        s['bookingLink'] = link;
+      }
+      return s;
+    });
+    if (!mounted) return;
+    setState(() => _booking = link);
+    Telemetry.log(link == null ? 'tool_disconnected' : 'tool_connected', {'tool': 'booking'});
   }
 
   Future<void> _toggleCalendar(bool on) async {
@@ -88,6 +190,13 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
             title: 'Calendar',
             useCase: 'Share an event, or when you’re free, straight into a chat.',
             trailing: _switch(_calendar, _toggleCalendar, 'tools:calendar'),
+          ),
+          const SizedBox(height: 12),
+          _toolCard(
+            brand: _booking == null ? 'booking' : (bookingProvider(_booking!) ?? 'booking'),
+            title: 'Booking link',
+            useCase: _booking ?? 'Cal.com or Calendly: send times people can book, from the keyboard.',
+            trailing: _actionPill(_booking == null ? 'Add' : 'Edit', 'tools:booking', _editBooking),
           ),
           const SizedBox(height: 12),
           _toolCard(
@@ -205,6 +314,19 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
   Widget _switch(bool value, ValueChanged<bool> onChanged, String id) => Semantics(
         identifier: id,
         child: CupertinoSwitch(value: value, activeTrackColor: Glass.ink, onChanged: onChanged),
+      );
+
+  Widget _actionPill(String label, String id, VoidCallback onTap) => Semantics(
+        identifier: id,
+        button: true,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(color: Glass.ink, borderRadius: BorderRadius.circular(20)),
+            child: Text(label, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Colors.white)),
+          ),
+        ),
       );
 
   Widget _soon() => Container(

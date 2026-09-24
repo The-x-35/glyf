@@ -359,5 +359,65 @@
   "outcome": "All four tour levels done on real keys, 80 to 94 seconds a run; passed 8 of the last 8 runs. The Google step is left out while Google sign-in isn’t set up.",
   "verdict": "pass",
   "fixed": true
+ },
+ {
+  "id": "S109",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "New Event from the keyboard's calendar lands in the calendar",
+  "input": "hold C → + → Title “lunch with sam tomorrow 1pm” → Add → tap the event",
+  "outcome": "The strip read “Fri, Sep 25, 1:00–2:00 PM”; the event is in the day's list and the message got “📅 Lunch with sam · Fri, Sep 25, 1:00–2:00 PM”",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S110",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "A plan in a message offers Add to calendar",
+  "input": "dinner friday 8pm (on a Thursday)",
+  "outcome": "Chip “Dinner · Tomorrow 8:00 PM” with Add; it opened New Event filled in at 8:00 PM",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S113",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "A call link, then a time on a Cal.com page",
+  "input": "Booking link cal.com/rick → hold C → camera; hold C → Book a time → first time → Return → Send the link",
+  "outcome": "“Join me on a call: https://meet.jit.si/Glyf-…”, then “How about Fri, Sep 25 at 10:00 AM? Book it here: https://cal.com/rick/30min?month=2026-09&date=2026-09-25&slot=…” in the same message (stand-in Cal.com)",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S114",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "New Event with a video call",
+  "input": "hold C → + → “sync tomorrow 4pm” → Video call on → Add → tap the event",
+  "outcome": "“📅 Sync · Fri, Sep 25, 4:00–5:00 PM · https://meet.jit.si/Glyf-…”: the new event carries its own call link, and so does the message",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S115",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "Book a time on your page for someone, with a guest",
+  "input": "Booking link cal.com/fake-host/30min → hold C → Book a time → first time → “sam lee sam@example.com ria@example.com” → Book it",
+  "outcome": "“Booked for Fri, Sep 25, 10:00 AM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1” (stand-in Cal.com, which recorded Sam Lee plus the guest)",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S116",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "New Event emails its invitees",
+  "input": "hold C → + → “review friday 3pm” → Invitees “sam@example.com” → Add",
+  "outcome": "“Invitation: Review · Fri 25 Sept, 3:00 PM” mailed to sam@example.com with the calendar file (stand-in Resend)",
+  "verdict": "pass",
+  "fixed": false
  }
 ]

@@ -171,6 +171,21 @@ export class Users {
     );
   }
 
+  /** The name and verified email the account signed in with, for things
+   *  sent on the person's behalf (a calendar invite's organizer). */
+  async profile(id: string): Promise<{ email?: string; name?: string } | null> {
+    if (!this.enabled) return null;
+    await this.ensureSchema();
+    const sql = await this.sql();
+    const rows = await sql(`select email, name from glyf_users where user_id = $1`, [id]);
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      email: typeof row.email === "string" && row.email ? row.email : undefined,
+      name: typeof row.name === "string" && row.name ? row.name : undefined,
+    };
+  }
+
   async savePrefs(id: string, prefs: Record<string, unknown>): Promise<void> {
     await this.ensureSchema();
     const sql = await this.sql();

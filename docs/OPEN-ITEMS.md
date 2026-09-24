@@ -2,7 +2,7 @@
 
 Everything pending, blocked or owed, in one place. **Owner** is who has to act: Arpit (accounts, keys, money, logins, design calls) or Build (code work). Area docs have more detail: [WEBSITE.md](WEBSITE.md), [APPS.md](APPS.md), [BACKEND.md](BACKEND.md).
 
-Last updated: Tue 22 Sep 2026 (IST).
+Last updated: Thu 24 Sep 2026 (IST).
 
 ---
 
@@ -37,6 +37,9 @@ Last updated: Tue 22 Sep 2026 (IST).
 | B9 | About $10 of OpenRouter credit, if OpenRouter stays in the model chain | Arpit |
 | B10 | Benchmark Hinglish quality on the chosen models with about 50 real messages once keys are in | Build |
 | B11 | Gemini free tier terms: it trains on what's sent and excludes apps likely used by under-18s. Paying removes most of this | Arpit (decision) |
+| B12 | Email invites for events added in the keyboard: a Resend account (free for 3,000 emails a month), tryglyf.com verified there (its DNS records at Porkbun), then `RESEND_API_KEY` (and `INVITES_FROM` if the sender isn't `invites@tryglyf.com`) in `server/.env` and on Railway. Until then New Event adds the event and says "Added. Email invites aren't set up yet". Booking on a Cal.com page doesn't need it | Arpit |
+| B13 | Optional: `DAILY_API_KEY` (daily.co, free for 10,000 minutes a month) so call links start without anyone signing in. Without it they are Jitsi Meet links, where the first person in signs in with Google, GitHub or Facebook to start the call | Arpit |
+| B14 | Calendly: open times and booking inside the keyboard need Calendly's OAuth app (the `CALENDLY_*` pair in B7) and the host's own sign-in; today a Calendly link is offered as its page on the chosen day | Arpit (if wanted) + Build |
 
 ## 3. Apps
 
@@ -54,6 +57,8 @@ Last updated: Tue 22 Sep 2026 (IST).
 | A10 | M8 crypto (Privy wallet, Jupiter swaps, platform fee) as a separate release; Privy dashboard setup | Arpit + Build, later |
 | A11 | Paper design port: the keyboard page and website page were unfinished when the Paper free plan's weekly MCP limit hit. Resume after the reset or on Paper Pro | Arpit (plan) + Build |
 | A12 | Mobbin connector: authorize it if design references from Mobbin are wanted | Arpit |
+| A13 | Check on a real iPhone that the keyboard can add an event (EventKit from the keyboard with Full Access on). It works on the iOS 26.5 simulator; if a device refuses, New Event falls back to asking the app | Arpit (device) + Build |
+| A14 | Add your own Cal.com or Calendly link under Profile → Connected tools → Booking link to see Book a time on your page. The device tests used a stand-in for Cal.com, never a real person's calendar | Arpit |
 
 ## 4. Code problems found while writing the docs (not fixed yet)
 

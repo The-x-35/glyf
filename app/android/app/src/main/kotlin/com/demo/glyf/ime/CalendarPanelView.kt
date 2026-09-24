@@ -21,7 +21,9 @@ import java.util.Locale
  * The keyboard's calendar, the twin of CalendarSurface on iOS: the day's
  * events, full width, because that is what you reach for mid-message. Tap one
  * to put it in the message, or share when you are free that day. Month opens
- * the grid to jump to another day.
+ * the grid to jump to another day. + makes an event (with invitees emailed an
+ * invite, and a call link if asked), the camera puts a call link in the
+ * message, and Book a time shows the open times on the person's Cal.com page.
  */
 class CalendarPanelView(
     ctx: Context,
@@ -29,10 +31,33 @@ class CalendarPanelView(
     private val onInsert: (String) -> Unit,
     private val onClose: () -> Unit,
     private val onConnect: () -> Unit,
+    /** A field is being typed (true) or done (false): the letter keys come
+     *  up under a strip while it is. */
+    private val onTitleEditing: (Boolean) -> Unit = {},
+    private val backendURL: String = "",
+    /** The person's own Cal.com or Calendly page, set in the app. */
+    private val bookingLink: String? = null,
 ) : FrameLayout(ctx) {
 
     private val accent = Color.rgb(0x7C, 0x5C, 0xFF)
     private val connected = CalendarText.connected(ctx)
+    /** New Event, while it is open. */
+    var composer: EventComposerView? = null
+        private set
+    /** Book a time, while it is open. */
+    var booking: BookingPanelView? = null
+        private set
+    /** Whatever is taking the keys: New Event's title or invitees, or who a
+     *  booking is for. */
+    val typing: StripField?
+        get() = composer?.takeIf { it.editingTitle } ?: booking?.takeIf { it.editingWho }
+    private val panelBody = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+    /** The event just added, lit for a moment in the day's list. */
+    private var justAdded: Long? = null
+    /** Its row, so the light can go out without rebuilding the list. */
+    private var litRow: View? = null
+    /** Add was tapped and the call link is on its way: once is enough. */
+    private var adding = false
     private var month: Calendar = Calendar.getInstance().apply {
         set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
@@ -49,6 +74,7 @@ class CalendarPanelView(
     private val agendaScroll = ScrollView(ctx)
     private val agenda = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     private val action = TextView(ctx)
+    private val actions = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
 
     private fun dp(v: Float) = v * resources.displayMetrics.density
     private fun dpi(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -57,7 +83,7 @@ class CalendarPanelView(
 
     init {
         loadEvents()
-        val root = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val root = panelBody
         // Header: close, then the tool's name, like the other panels.
         val header = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -94,6 +120,20 @@ class CalendarPanelView(
         }
         dayRow.addView(modeButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dpi(30))
             .apply { leftMargin = dpi(6) })
+        // A call link for the chat, without making an event.
+        dayRow.addView(FrameLayout(ctx).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(palette.card) }
+            setTag(com.demo.glyf.R.id.qa_id, "calendar:call"); contentDescription = "Send a call link"
+            addView(ToolIcon(ctx, "video", palette.ink), LayoutParams(dpi(20), dpi(20), Gravity.CENTER))
+            setOnClickListener { v -> insertCallLink(v) }
+        }, LinearLayout.LayoutParams(dpi(30), dpi(30)).apply { leftMargin = dpi(6) })
+        // Calendar's own + for a new event, at the end of the row.
+        dayRow.addView(TextView(ctx).apply {
+            text = "+"; textSize = 20f; setTextColor(palette.ink); gravity = Gravity.CENTER
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(palette.card) }
+            setTag(com.demo.glyf.R.id.qa_id, "calendar:new"); contentDescription = "New event"
+            setOnClickListener { compose(null) }
+        }, LinearLayout.LayoutParams(dpi(30), dpi(30)).apply { leftMargin = dpi(6) })
         root.addView(dayRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(36)))
 
         // One space, holding either the events or the month.
@@ -115,12 +155,153 @@ class CalendarPanelView(
                 if (connected) onInsert(CalendarText.freeTime(selected, events)) else onConnect()
             }
         }
-        root.addView(action, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(38)).apply {
+        actions.addView(action, LinearLayout.LayoutParams(0, dpi(38), 1f))
+        // The person's own booking page, when the app has one.
+        if (bookingLink != null) {
+            actions.addView(TextView(ctx).apply {
+                text = "Book a time"
+                textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(palette.ink); gravity = Gravity.CENTER
+                background = GradientDrawable().apply { cornerRadius = dp(19f); setColor(palette.card) }
+                setTag(com.demo.glyf.R.id.qa_id, "calendar:book")
+                setOnClickListener { openBooking() }
+            }, LinearLayout.LayoutParams(0, dpi(38), 1f).apply { leftMargin = dpi(8) })
+        }
+        root.addView(actions, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(38)).apply {
             leftMargin = dpi(12); rightMargin = dpi(12); bottomMargin = dpi(8); topMargin = dpi(4)
         })
 
         addView(root, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         render()
+    }
+
+    /** New Event, filled from a plan when there is one ("dinner friday 8pm"),
+     *  else the chosen day at the next hour (9 AM on another day). */
+    fun compose(plan: EventParse.Plan?) {
+        val draft = if (plan != null) {
+            EventComposerView.Draft(plan.title, plan.start, plan.end, plan.allDay)
+        } else {
+            val now = System.currentTimeMillis()
+            val start = if (selected == CalendarText.startOfDay(now)) {
+                Calendar.getInstance().apply {
+                    timeInMillis = now; set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0); add(Calendar.HOUR_OF_DAY, 1)
+                }.timeInMillis
+            } else selected + 9 * 3_600_000L
+            EventComposerView.Draft("", start, start + 3_600_000L, false)
+        }
+        composer?.let { removeView(it) }
+        val c = EventComposerView(context, palette, draft, CalendarText.canAdd(context),
+            onCancel = { closeComposer() },
+            onAdd = { add(it) },
+            onEditTitle = { editing -> onTitleEditing(editing) },
+            onConnect = onConnect,
+        )
+        addView(c, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        composer = c
+        panelBody.visibility = View.INVISIBLE
+    }
+
+    private fun closeComposer() {
+        val wasEditing = composer?.editingTitle == true
+        composer?.let { removeView(it) }
+        composer = null
+        panelBody.visibility = View.VISIBLE
+        if (wasEditing) onTitleEditing(false)
+        render()
+    }
+
+    /** Book a time on the person's own page, or on someone else's (a link in
+     *  the chat): then it starts from their own name and email in the vault. */
+    fun openBooking(other: String? = null) {
+        val link = other ?: bookingLink ?: return
+        if (composer != null) closeComposer()
+        closeBooking()
+        val (name, email) = me()
+        val b = BookingPanelView(context, palette, backendURL, link, selected, mine = other == null,
+            me = listOfNotNull(name, email).joinToString(" "),
+            onBack = { closeBooking() },
+            onInsert = onInsert,
+            onEditWho = { editing -> onTitleEditing(editing) },
+        )
+        addView(b, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        booking = b
+        panelBody.visibility = View.INVISIBLE
+    }
+
+    private fun closeBooking() {
+        val b = booking ?: return
+        val wasEditing = b.editingWho
+        removeView(b)
+        booking = null
+        panelBody.visibility = View.VISIBLE
+        if (wasEditing) onTitleEditing(false)
+        render()
+    }
+
+    /** The person's name and email, from the vault. */
+    private fun me(): Pair<String?, String?> {
+        val fields = Smart.fields(com.demo.glyf.store.VaultStore.load(context))
+        return fields.firstOrNull { it.kind == "name" }?.value to fields.firstOrNull { it.kind == "email" }?.value
+    }
+
+    /** A call link, straight into the message. */
+    private fun insertCallLink(button: View) {
+        button.isEnabled = false
+        SchedulingClient.newMeeting(backendURL) { link ->
+            button.isEnabled = true
+            onInsert("Join me on a call: ${link ?: SchedulingClient.localCallLink()}")
+        }
+    }
+
+    private fun toast(text: String) =
+        android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+
+    private fun add(d: EventComposerView.Draft) {
+        if (adding) return
+        if (!d.videoCall) return save(d, null)
+        // The call link first, so the event carries it and so does the invite.
+        adding = true
+        SchedulingClient.newMeeting(backendURL) { link ->
+            adding = false
+            save(d, link ?: SchedulingClient.localCallLink())
+        }
+    }
+
+    private fun save(d: EventComposerView.Draft, callLink: String?) {
+        val added = CalendarText.add(context, d.title, d.start, d.end, d.allDay,
+            location = callLink, notes = callLink?.let { "Join the call: $it" })
+        if (added == null) {
+            toast("Couldn't add the event. Try again")
+            return
+        }
+        selected = CalendarText.startOfDay(d.start)
+        month = Calendar.getInstance().apply {
+            timeInMillis = selected; set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        showingMonth = false
+        justAdded = added.first.id
+        closeComposer()
+        loadEvents()
+        render()
+        if (d.invitees.isEmpty()) toast("Added to ${added.second}") else invite(d, callLink)
+        postDelayed({
+            justAdded = null
+            (litRow?.background as? GradientDrawable)?.setStroke(0, Color.TRANSPARENT)
+            litRow = null
+        }, 2500)
+    }
+
+    /** The invitees get a calendar invite by email, from the person: the
+     *  phone's calendar has no way to invite anyone itself. */
+    private fun invite(d: EventComposerView.Draft, location: String?) {
+        val (name, email) = me()
+        toast("Added. Sending the invite…")
+        SchedulingClient.sendInvites(backendURL, d.title, d.start, d.end, d.allDay, location,
+            d.invitees, name, email) { sent, error ->
+            if (sent != null) toast(if (sent == 1) "Invite sent to ${d.invitees[0]}" else "Invite sent to $sent people")
+            else toast("Added. ${error ?: "The invite didn't send"}")
+        }
     }
 
     private fun arrow(label: String, id: String, onTap: () -> Unit) = TextView(context).apply {
@@ -189,10 +370,11 @@ class CalendarPanelView(
         modeButton.contentDescription = if (showingMonth) "Close the month" else "Open the month"
         grid.visibility = if (showingMonth) View.VISIBLE else View.GONE
         agendaScroll.visibility = if (showingMonth) View.GONE else View.VISIBLE
-        action.visibility = if (showingMonth) View.GONE else View.VISIBLE
+        actions.visibility = if (showingMonth) View.GONE else View.VISIBLE
         grid.invalidate()
 
         agenda.removeAllViews()
+        litRow = null
         if (!connected || showingMonth) return
         val day = CalendarText.on(selected, events)
         if (day.isEmpty()) {
@@ -202,9 +384,17 @@ class CalendarPanelView(
             })
         }
         for ((i, e) in day.withIndex()) {
-            agenda.addView(eventRow(e, i), LinearLayout.LayoutParams(
+            val row = eventRow(e, i)
+            agenda.addView(row, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { bottomMargin = dpi(8) })
+            if (e.id != null && e.id == justAdded) {
+                litRow = row
+                // Said as well as shown, until the list is next drawn.
+                if (android.os.Build.VERSION.SDK_INT >= 30) row.stateDescription = "Just added"
+                // Into view once laid out, the way Calendar shows a new event.
+                agendaScroll.post { agendaScroll.smoothScrollTo(0, maxOf(0, row.top - dpi(4))) }
+            }
         }
     }
 
@@ -213,7 +403,11 @@ class CalendarPanelView(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dpi(8), dpi(9), dpi(10), dpi(9))
-            background = GradientDrawable().apply { cornerRadius = dp(12f); setColor(palette.card) }
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12f); setColor(palette.card)
+                // What was just added, lit for a moment so the eye finds it.
+                if (e.id != null && e.id == justAdded) setStroke(dpi(2), accent)
+            }
             setTag(com.demo.glyf.R.id.qa_id, "calendar:event:$index")
             contentDescription = CalendarText.insert(e)
             setOnClickListener { onInsert(CalendarText.insert(e)) }

@@ -179,6 +179,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return search?.expandedForResults == true
                 ? base : base + Glass.barExtra + (search?.landingExtra ?? 0)
         case .noteEdit: return base + NoteEditSurface.stripHeight
+        // A New Event title being typed: its strip rides over the keys, like
+        // emoji search.
+        case .connector where calendarView?.editingTitle == true:
+            return base + EventComposer.editStripHeight
         case .shell, .connector, .act, .clipboard: return base
         }
     }
@@ -677,6 +681,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = true
             shell?.frame = panelRect(w, h)
+        case .connector where calendarView?.editingTitle == true:
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            keyboardView.isHidden = false
+            calendarView?.frame = CGRect(x: 0, y: Glass.toolbarHeight, width: w,
+                                         height: EventComposer.editStripHeight)
+            let keysY = Glass.toolbarHeight + EventComposer.editStripHeight
+            keyboardView.frame = CGRect(x: 0, y: keysY, width: w, height: max(0, h - keysY))
         case .connector:
             toolbar.isHidden = connector?.searchActive == true
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
@@ -830,7 +842,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             clipboardPanel = c
             MemoryLogger.logSurface("clipboard")
         case .connector(let id) where id == "calendar" || id == "mockcal":
-            let c = CalendarSurface()
+            let c = CalendarSurface(hasFullAccess: hasFullAccess)
             c.delegate = self
             content.addSubview(c)
             prepareEntrance(c, animated: animated)
@@ -1408,6 +1420,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .paste: return "paste"
         case .pay: return "pay"
         case .action: return "action"
+        case .event: return "event"
+        case .booking: return "booking"
         }
     }
 
@@ -1768,6 +1782,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         }
         if inlineTarget != nil, case .connector = surface {
             connector?.exitSearch()
+            calendarView?.returnPressed()
             return
         }
         if let editor = inlineTarget, surface == .noteEdit {
@@ -2420,6 +2435,20 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             startAct(before: beforeContext ?? "",
                      after: textDocumentProxy.documentContextAfterInput ?? "",
                      intent: intent)
+            return
+        }
+        if case .booking(let link) = chip {
+            // Their page, with the person's own details ready to book.
+            toolbar.showSmart(nil)
+            setSurface(.connector("calendar"))
+            calendarView?.openBooking(link: link)
+            return
+        }
+        if case .event(let plan) = chip {
+            // Nothing is typed: the plan becomes a New Event to check and add.
+            toolbar.showSmart(nil)
+            setSurface(.connector("calendar"))
+            calendarView?.compose(plan: plan)
             return
         }
         if case .pay(let address, let amount) = chip {

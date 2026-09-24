@@ -19,6 +19,8 @@ TEST_SHARED = %w[
   Design/GlassTokens.swift
   Engine/SpaceGesture.swift
   Engine/Smart.swift
+  Engine/CalendarText.swift
+  Engine/EventParse.swift
   Engine/Typing/TypingText.swift
   Engine/Typing/GlydTrie.swift
   Engine/Typing/Decoder.swift

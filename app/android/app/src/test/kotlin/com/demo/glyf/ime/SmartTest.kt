@@ -2,6 +2,7 @@ package com.demo.glyf.ime
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The same cases as the iOS Smart tests: both strips must agree. */
@@ -41,8 +42,20 @@ class SmartTest {
         assertNull(Smart.chip("\$13", vault, rates = home))
     }
 
+    @Test fun bookingPages() {
+        assertEquals("cal.com/sam/intro", Smart.bookingLink("grab a slot: cal.com/sam/intro"))
+        assertEquals("https://calendly.com/ria", Smart.bookingLink("book me here https://calendly.com/ria"))
+        assertEquals("physics.cal.com/rick/15min", Smart.bookingLink("physics.cal.com/rick/15min?x=1"))
+        assertNull(Smart.bookingLink("mail sam@cal.com"))
+        // The person's own page is theirs to send, not to book.
+        assertNull(Smart.bookingLink("cal.com/me/15min", own = "https://cal.com/me"))
+        assertEquals("A time on calendly.com/ria", Smart.display(Smart.Chip.Booking("https://calendly.com/ria")))
+        assertEquals(Smart.Chip.Booking("cal.com/sam/intro"), Smart.chip("grab a slot: cal.com/sam/intro", vault))
+    }
+
     @Test fun notSums() {
-        assertNull(Smart.chip("call me at 5", vault))
+        // Not a sum; a plan, which the calendar offers to add instead.
+        assertTrue(Smart.chip("call me at 5", vault) is Smart.Chip.Event)
         assertNull(Smart.chip("flight AI 2021", vault))
         assertNull(Smart.chip("4/0", vault))
         assertNull(Smart.evaluate("2+abc"))

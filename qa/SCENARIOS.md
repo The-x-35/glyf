@@ -2,7 +2,7 @@
 
 Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 September): the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
 
-106 pass, 2 need a key, 0 fail, of 108.
+118 pass, 2 need a key, 0 fail, of 120.
 
 | ID | Where | Scenario | Result |
 | --- | --- | --- | --- |
@@ -114,6 +114,18 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 | S106 | Android | Emoticons type straight into the message | pass |
 | S107 | Android | The GIF tab shows GIFs and hands one over | pass |
 | S108 | Android | The Stickers tab shows stickers and hands one over | pass |
+| S109 | iPhone | New Event from the keyboard's calendar lands in the calendar | pass |
+| S110 | iPhone | A plan in a message offers Add to calendar | pass |
+| S111 | Android | New Event from the keyboard's calendar lands in the calendar | pass |
+| S112 | Android | A plan in a message offers Add to calendar | pass |
+| S113 | iPhone | A call link, then a time on a Cal.com page | pass |
+| S114 | iPhone | New Event with a video call | pass |
+| S115 | iPhone | Book a time on your page for someone, with a guest | pass |
+| S116 | iPhone | New Event emails its invitees | pass |
+| S117 | Android | A call link from the keyboard's calendar | pass |
+| S118 | Android | Book a time on your own page for someone, with a guest | pass |
+| S119 | Android | New Event with an invitee emails the invite | pass |
+| S120 | Android | Someone's booking page in a message offers Book | pass |
 
 ## Fixed during the run
 
@@ -146,10 +158,13 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 - Android: The keyboard asked the photo index for screenshots on its main thread; right after a screenshot, with storage busy, Android reported it as not responding. Screenshots load in the background and join the clipboard when found; GIF and sticker files are written off the main thread too.
 - Android: After a screenshot was copied, the strip’s paste chip read the image as text: its label held the PNG’s bytes, about 200,000 characters, read on the main thread. Only text (or a web link) counts as a copy for the chip, Paste, the g bar, skills and history; a picture is left as a picture.
 - Both: Refusals and limit messages used dashes (“Too fast — wait a moment”). Plain sentences: “Too fast. Wait a moment and try again”.
+- Android: Book a time glued its line to the link before it (“cal.com/sam-lee/introBooked for…”). Whatever the calendar types is a sentence of its own, as on iPhone.
 
 ## Needs a key or account
 
-- GIFs and stickers in the emoji board: KLIPY app key (free, partner.klipy.com) as KLIPY_APP_KEY on the server. Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. S103 to S105, S107 and S108 ran against qa/fake-klipy.mjs.
+- GIFs and stickers in the emoji board: KLIPY_APP_KEY on Railway (it is in the local server/.env since 24 September). Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. Real KLIPY GIFs and stickers were checked on both keyboards with the local key.
+- Email invites for events you add: A Resend key and tryglyf.com verified in Resend (RESEND_API_KEY on the server). Without it New Event adds the event and says email invites aren't set up yet. Booking on a Cal.com page needs no key: Cal.com mails those. S115, S116 and S118 to S120 ran against qa/fake-scheduling.mjs, never a real person's calendar.
+- Call links anyone can start: Daily API key (optional, free tier). Without it call links are Jitsi Meet, where the first person in signs in to start the call.
 - Web results: Brave Search API key. S27 shows only the Google hand-off row without it.
 - Weather answers: Google Weather or web search key. S14 honestly says nothing found without it.
 - Google sign-in: OAuth client id and secret. The onboarding step stays hidden until then.

@@ -38,11 +38,13 @@
 		50553C7711A43B097A732A2B /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7508C7D7086528DBA50605BC /* GlassTokens.swift */; };
 		57353ACE229EF65D43370F78 /* CalendarSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF13C3419D7D5D10B0F0884 /* CalendarSync.swift */; };
 		5B4D75708ECDD5C6F417F4D2 /* Smart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 397338FD53A5248DAFEBD08F /* Smart.swift */; };
+		5BD908AC081B1766CD6B2082 /* EventParseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F6D71A3FD3BDF87B2412DD /* EventParseTests.swift */; };
 		5C544F3EFFA3927D874C208B /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		5E0A6309E93806626CBD55BA /* TypingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF986CE579005D015F108B53 /* TypingStore.swift */; };
 		60C4A7BDE1ACB619E5799149 /* SecretScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26C1C3564E6011D2D3389969 /* SecretScanner.swift */; };
 		6882768AEA9C9C2BEF7AACA8 /* Toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CECC849C144A1C00C88586B /* Toolbar.swift */; };
 		6A45548726FFED051CF2E9B2 /* ThumbLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E78F3328F27A5F72F19B32 /* ThumbLoader.swift */; };
+		6A6E71A800F77CCC9EFA713C /* CalendarWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B41E8E3E2121B722B9B38C /* CalendarWriter.swift */; };
 		6B502FA1491B78CA9CCF7F63 /* InlineEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E97DFE2A588F7A69880F23A /* InlineEditor.swift */; };
 		6D705D6C53780C162B803930 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F69B8F550E5B5270B4D18FCA /* Pods_Runner.framework */; };
 		735137DEAC3D31AC61DBBBFB /* CalendarText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7C9B275603B0968648339E /* CalendarText.swift */; };
@@ -64,6 +66,7 @@
 		8FDA6AA2F6697F472DBE6E53 /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7508C7D7086528DBA50605BC /* GlassTokens.swift */; };
 		91E3A56EB8244E365BC6E1F6 /* RatesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235F44B4001D69C6942D575B /* RatesStore.swift */; };
 		922265267F1A3B7BEDDF5E3C /* MemoryLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C778BE7B854B6E1973814E1F /* MemoryLogger.swift */; };
+		92616F350B02F5621F92407E /* BookingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C9E98EC46A38521768AD6A /* BookingSheet.swift */; };
 		94D6346E4E0082C52FA6C582 /* NotesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9781AA84DE222D4BBC690481 /* NotesStore.swift */; };
 		9593A6FEA7701CB8761D55D2 /* TypingText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2800A99C3DD59CFC155C03C /* TypingText.swift */; };
 		96246651528C4638ED7A2433 /* SignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48E9A1D4AE4314BBD7EBCE01 /* SignIn.swift */; };
@@ -72,6 +75,7 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		99BF66CC97C5F3CE3E814B27 /* EventParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB882BCA6F90D372D5921104 /* EventParse.swift */; };
 		99CD0A1E92AFD104D6057384 /* VaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00522630AB9AC3B92A56A844 /* VaultStore.swift */; };
 		9A138A47EC4BCBD1AB3E1E6B /* GlyfM0UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FDE3921B98C38CD61A63DE1 /* GlyfM0UITests.swift */; };
 		9B83FF7AC3AF28555C3CBADB /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
@@ -83,6 +87,7 @@
 		A560F79106F9F14FF065A3A7 /* SearchRecents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */; };
 		A6FBB7E0213DB2EAFE7E9C62 /* ControlScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB08610153E93D016950991C /* ControlScrollView.swift */; };
 		A7E9D6421F758C2BC141CA25 /* SearchRecents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */; };
+		AAC1E7223335C4588A9AC595 /* EventParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB882BCA6F90D372D5921104 /* EventParse.swift */; };
 		B0850AA732C33E25139D7C5A /* GlyfKeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */; };
 		B970FCED18EE8126F58A8355 /* ConnectorSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C613956FFF2C3CEE732AF10E /* ConnectorSurface.swift */; };
 		BA72E8D676DCA4E6E9A8213E /* HostAppOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A24DFFE40F4D4F81C63DEE5 /* HostAppOpener.swift */; };
@@ -99,6 +104,7 @@
 		C98A8C076412853AB1D442E1 /* ClipboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 707C5A7E74F5BA1712F4091F /* ClipboardStore.swift */; };
 		CD83D22C7C73F30CDB7318A7 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D7BD628E919BD87B27B98432 /* Pods_RunnerTests.framework */; };
 		CFE402D105D9636BC65D745E /* TonesPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 969AE566AACBB47939055C04 /* TonesPopup.swift */; };
+		D221E86E5C3D2FB9F380264C /* EventComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B22A11BA0072E4967928DF4 /* EventComposer.swift */; };
 		D2233E8056469F8AE7549D4B /* NoteEditSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22621FA28A0473C913A2802 /* NoteEditSurface.swift */; };
 		D26EE5F01C8B4F264AE6FCFF /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60BFE26B50FE956967CF026 /* SettingsStore.swift */; };
 		D347769C9985CCBFECBE4EE8 /* Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */; };
@@ -183,6 +189,7 @@
 		07E305711B11F34700D4CCDE /* SpaceGesture.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpaceGesture.swift; sourceTree = "<group>"; };
 		08B2E745F387CCCC496C13F0 /* IntentStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IntentStore.swift; sourceTree = "<group>"; };
 		0A24DFFE40F4D4F81C63DEE5 /* HostAppOpener.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HostAppOpener.swift; sourceTree = "<group>"; };
+		0B22A11BA0072E4967928DF4 /* EventComposer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EventComposer.swift; sourceTree = "<group>"; };
 		0C0FDF2D786A27FD2070E82B /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		0D9D8885275D1F06008B0F94 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0F7C9B275603B0968648339E /* CalendarText.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CalendarText.swift; sourceTree = "<group>"; };
@@ -199,6 +206,7 @@
 		28614EBB79A828A460549683 /* KeyTouchTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyTouchTests.swift; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		35B41E8E3E2121B722B9B38C /* CalendarWriter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CalendarWriter.swift; sourceTree = "<group>"; };
 		38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppGroupStore.swift; sourceTree = "<group>"; };
 		397338FD53A5248DAFEBD08F /* Smart.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Smart.swift; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
@@ -249,6 +257,7 @@
 		A2B91BDDF5ACD1D415C5AC2E /* MediaGrid.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MediaGrid.swift; sourceTree = "<group>"; };
 		A6A1C1B829364960405CA876 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfKeyboardViewController.swift; sourceTree = "<group>"; };
+		AB882BCA6F90D372D5921104 /* EventParse.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EventParse.swift; sourceTree = "<group>"; };
 		ADB9E43E6C30DA5026053D1C /* LocationOnce.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationOnce.swift; sourceTree = "<group>"; };
 		AFE66C54DAD5E930746E0526 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		BAEEBB996F46607AAF62836B /* TypingEngineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingEngineTests.swift; sourceTree = "<group>"; };
@@ -267,6 +276,7 @@
 		DACF0028C0693E817D1AC231 /* ClipboardPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardPanel.swift; sourceTree = "<group>"; };
 		DF986CE579005D015F108B53 /* TypingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingStore.swift; sourceTree = "<group>"; };
 		E0EE95049BBCC290AFF096F5 /* Settings.bundle */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
+		E0F6D71A3FD3BDF87B2412DD /* EventParseTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EventParseTests.swift; sourceTree = "<group>"; };
 		E2800A99C3DD59CFC155C03C /* TypingText.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingText.swift; sourceTree = "<group>"; };
 		E46B9884C62D41962509FCA0 /* KeyboardToast.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardToast.swift; sourceTree = "<group>"; };
 		E4FA32D8AB8A81BFE76AF575 /* GlyfBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfBar.swift; sourceTree = "<group>"; };
@@ -277,6 +287,7 @@
 		F69B8F550E5B5270B4D18FCA /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F86BBFF0BD8D616E31EFFF2B /* DictationEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DictationEngine.swift; sourceTree = "<group>"; };
 		F870C03E48C1149F7284D509 /* ToneProfile.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ToneProfile.swift; sourceTree = "<group>"; };
+		F9C9E98EC46A38521768AD6A /* BookingSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BookingSheet.swift; sourceTree = "<group>"; };
 		FAA53A6A1AB978CDAB577A80 /* packs.json */ = {isa = PBXFileReference; includeInIndex = 1; name = packs.json; path = ../assets/vocab/packs.json; sourceTree = SOURCE_ROOT; };
 		FE6DDF87D668D2D26A406049 /* EmoticonData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmoticonData.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -349,6 +360,7 @@
 				BAEEBB996F46607AAF62836B /* TypingEngineTests.swift */,
 				50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */,
 				28614EBB79A828A460549683 /* KeyTouchTests.swift */,
+				E0F6D71A3FD3BDF87B2412DD /* EventParseTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -402,6 +414,8 @@
 				10257BEA0ADE02D15D7C04F8 /* TourLabelView.swift */,
 				1C660509749B9F4AFCF76EE7 /* CalendarSurface.swift */,
 				A2B91BDDF5ACD1D415C5AC2E /* MediaGrid.swift */,
+				0B22A11BA0072E4967928DF4 /* EventComposer.swift */,
+				F9C9E98EC46A38521768AD6A /* BookingSheet.swift */,
 			);
 			name = Surfaces;
 			path = Surfaces;
@@ -425,6 +439,8 @@
 				9F09C0ACA1F1B45C6AC46AA4 /* TourCoach.swift */,
 				0F7C9B275603B0968648339E /* CalendarText.swift */,
 				235F44B4001D69C6942D575B /* RatesStore.swift */,
+				AB882BCA6F90D372D5921104 /* EventParse.swift */,
+				35B41E8E3E2121B722B9B38C /* CalendarWriter.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -908,6 +924,10 @@
 				F8DD9815DF048F962E77F85D /* MediaClient.swift in Sources */,
 				9F62851B8A37CBEE6573357F /* EmoticonData.swift in Sources */,
 				4AEF058C22BE42A8AC70ED7F /* MediaGrid.swift in Sources */,
+				AAC1E7223335C4588A9AC595 /* EventParse.swift in Sources */,
+				6A6E71A800F77CCC9EFA713C /* CalendarWriter.swift in Sources */,
+				D221E86E5C3D2FB9F380264C /* EventComposer.swift in Sources */,
+				92616F350B02F5621F92407E /* BookingSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -945,6 +965,8 @@
 				C1DFF717F0874CFA159D8E3F /* TourCoach.swift in Sources */,
 				735137DEAC3D31AC61DBBBFB /* CalendarText.swift in Sources */,
 				D9BF5D7CFA97FB6F3174DF4D /* KeyTouchTests.swift in Sources */,
+				99BF66CC97C5F3CE3E814B27 /* EventParse.swift in Sources */,
+				5BD908AC081B1766CD6B2082 /* EventParseTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

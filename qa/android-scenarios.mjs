@@ -110,6 +110,18 @@ async function tapFor(view, effect, ms = 3000) {
 }
 const second = r => r.retried ? " (took a second tap)" : "";
 
+// The same for a control that opens something in the keyboard: tapped once
+// more when nothing opened and the control is still there.
+async function tapOpen(view, pred, ms = 3000) {
+  await tapXY(view.x, view.y);
+  const v = await waitFor(pred, ms);
+  if (v) return v;
+  const again = view.id ? await waitFor(byId(view.id), 500) : null;
+  if (!again) return null;
+  await tapXY(again.x, again.y);
+  return await waitFor(pred, ms);
+}
+
 async function fresh() {
   tool("close");
   tool("clear");
@@ -157,6 +169,20 @@ async function screenshotInClipboard() {
     note: `tapped the screenshot: clipboard now holds ${s.clipMime || "nothing"} (${s.clipLabel})` };
 }
 
+// The calendar allowed (read and write) and switched on, as Connected tools →
+// Calendar leaves it. Permissions granted here are revoked when the run ends.
+async function calendarOn() {
+  for (const perm of ["android.permission.READ_CALENDAR", "android.permission.WRITE_CALENDAR"]) {
+    const granted = new RegExp(`${perm.split(".").pop()}: granted=true`).test(shell(`dumpsys package ${PKG} | grep "${perm}: granted"`));
+    if (!granted) {
+      shell(`pm grant ${PKG} ${perm}`);
+      atEnd.push(() => shell(`pm revoke ${PKG} ${perm}`));
+    }
+  }
+  tool("calendaron");
+  await sleep(300);
+}
+
 // Work to do once every scenario has run. Revoking a permission makes Android
 // kill the app (and the keyboard with it), so it can't happen mid-run.
 const atEnd = [];
@@ -178,6 +204,9 @@ async function screenshotsOn() {
     if (settings.clipboardScreenshots === false) write(before);
   };
 }
+
+// The stand-in Cal.com and Resend (qa/fake-scheduling.mjs), on this Mac.
+const FAKE = "http://127.0.0.1:8796";
 
 const byId = id => v => v.id === id;
 const idStarts = p => v => v.id.startsWith(p);
@@ -375,6 +404,178 @@ const scenarios = [
     await sleep(3000);
     const s = await state();
     return { pass: s.clipMime.startsWith("image/") && s.clipLabel === "Sticker", note: `clipboard now holds ${s.clipMime} (${s.clipLabel})` };
+  } },
+  // New Event in the keyboard's calendar (2026-09-24): the phone's calendar
+  // provider, a local "Glyf" calendar when the phone has no account.
+  { id: "S111", title: "New Event from the keyboard's calendar lands in the calendar", run: async () => {
+    await calendarOn();
+    await fresh();
+    tool("calendar");
+    const plus = await waitFor(byId("calendar:new"), 4000);
+    if (!plus) return { pass: false, note: "no + on the calendar" };
+    const title = await tapOpen(plus, byId("event:title"));
+    if (!title) return { pass: false, note: "New Event didn't open" };
+    if (!(await tapOpen(title, byId("event:title:field")))) return { pass: false, note: "no title strip" };
+    await type("lunch with sam tomorrow 1pm");
+    const hint = (find(await state(), byId("event:hint")) || {}).text || "";
+    await key("return");
+    const starts = await waitFor(byId("event:starts:time"), 3000);
+    const add = await waitFor(byId("event:add"), 2000);
+    if (!add) return { pass: false, note: `no Add; hint '${hint}'` };
+    await tapXY(add.x, add.y);
+    if (!(await waitFor(v => v.text === "Lunch with sam", 5000))) {
+      return { pass: false, note: `the event isn't in the day's list; starts '${starts?.text}', hint '${hint}'` };
+    }
+    // The list scrolls the new event into view. Earlier runs left events
+    // with the same name on that day, scrolled out of sight now but still in
+    // the dump, so tap the one between the day's header and its buttons.
+    await sleep(800);
+    const s = await state();
+    const top = (find(s, byId("calendar:new")) || { y: 0 }).y;
+    const bottom = (find(s, byId("calendar:free")) || find(s, byId("calendar:connect")) || { y: 1e9 }).y;
+    const row = s.views.find(v => v.text === "Lunch with sam" && v.y > top + 40 && v.y < bottom - 40);
+    if (!row) return { pass: false, note: "the new event isn't in view" };
+    await screenshot("S111-added");
+    const r = await tapFor(row, x => x.includes("Lunch with sam"), 3000);
+    return { pass: (starts?.text || "").includes("1:00") && r.t.includes("Lunch with sam"),
+      note: `starts '${starts?.text}', hint '${hint}', message '${r.t}'${second(r)}` };
+  } },
+  { id: "S112", title: "A plan in a message offers Add to calendar", run: async () => {
+    await calendarOn();
+    await fresh();
+    await type("dinner friday 8pm");
+    const chip = await waitFor(byId("strip:smart"), 4000);
+    if (!chip) return { pass: false, note: "no chip for a plan" };
+    const words = (await state()).views.map(v => v.text).find(t => /Dinner/.test(t || "")) || "";
+    await tapXY(chip.x, chip.y);
+    const add = await waitFor(byId("event:add"), 4000);
+    if (!add) return { pass: false, note: `chip '${words}' didn't open New Event` };
+    const starts = (find(await state(), byId("event:starts:time")) || {}).text || "";
+    await tapXY(add.x, add.y);
+    const row = await waitFor(v => v.text === "Dinner", 5000);
+    const t = await text();
+    return { pass: !!row && starts.includes("8:00") && t.toLowerCase().trim() === "dinner friday 8pm",
+      note: `chip '${words}', starts '${starts}', message '${t}'` };
+  } },
+  // Call links, Book a time and invites (2026-09-24). S118 to S120 need the
+  // stand-in Cal.com and Resend (qa/fake-scheduling.mjs on 8796) behind the
+  // dev server; they never book or mail anyone real.
+  { id: "S117", title: "A call link from the keyboard's calendar", run: async () => {
+    await calendarOn();
+    await fresh();
+    tool("calendar");
+    const call = await waitFor(byId("calendar:call"), 4000);
+    if (!call) return { pass: false, note: "no call button on the calendar" };
+    const r = await tapFor(call, x => /Join me on a call: https:\/\/\S+/.test(x), 6000);
+    return { pass: /Join me on a call: https:\/\/\S+/.test(r.t), note: `message '${r.t}'${second(r)}` };
+  } },
+  { id: "S118", title: "Book a time on your own page for someone, with a guest", run: async () => {
+    await fetch(`${FAKE}/_reset`);
+    tool("bookinglink", "--es text cal.com/fake-host/30min");
+    try {
+      await calendarOn();
+      await fresh();
+      tool("calendar");
+      const book = await waitFor(byId("calendar:book"), 4000);
+      if (!book) return { pass: false, note: "no Book a time on the calendar" };
+      if (!(await tapOpen(book, byId("booking:back")))) return { pass: false, note: "Book a time didn't open" };
+      let slot = await waitFor(byId("booking:slot:0"), 10000);
+      // Late in the day there may be nothing left today.
+      for (let i = 0; i < 3 && !slot; i++) {
+        const next = await waitFor(byId("booking:next"), 2000);
+        if (next) await tapXY(next.x, next.y);
+        slot = await waitFor(byId("booking:slot:0"), 8000);
+      }
+      if (!slot) return { pass: false, note: `no open time; the panel says '${(find(await state(), byId("booking:status")) || {}).text}'` };
+      if (!(await tapOpen(slot, byId("booking:who:field")))) return { pass: false, note: "no who field" };
+      await type("sam lee sam@example.com ria@example.com");
+      const hint = (find(await state(), byId("booking:who:hint")) || {}).text || "";
+      await key("return");
+      const go = await waitFor(byId("booking:book"), 4000);
+      if (!go) return { pass: false, note: `no Book it; hint '${hint}'` };
+      const r = await tapFor(go, x => x.includes("Booked for"), 10000);
+      const booked = (await (await fetch(`${FAKE}/_log`)).json()).bookings.at(-1) || {};
+      const ok = r.t.includes("Booked for") && r.t.includes("sam@example.com") &&
+        booked.attendee?.email === "sam@example.com" && booked.attendee?.name?.toLowerCase() === "sam lee" &&
+        JSON.stringify(booked.guests) === JSON.stringify(["ria@example.com"]);
+      await screenshot("S118-booked");
+      return { pass: ok, note: `hint '${hint}'; booked ${booked.attendee?.name} <${booked.attendee?.email}> + ${booked.guests}; message '${r.t}'${second(r)}` };
+    } finally {
+      tool("bookinglink");
+    }
+  } },
+  { id: "S119", title: "New Event with an invitee emails the invite", run: async () => {
+    await calendarOn();
+    await fresh();
+    tool("calendar");
+    const plus = await waitFor(byId("calendar:new"), 4000);
+    if (!plus) return { pass: false, note: "no + on the calendar" };
+    const title = await tapOpen(plus, byId("event:title"));
+    if (!title) return { pass: false, note: "New Event didn't open" };
+    if (!(await tapOpen(title, byId("event:title:field")))) return { pass: false, note: "no title strip" };
+    await type("review friday 3pm");
+    await key("return");
+    const invitees = await waitFor(byId("event:invitees"), 3000);
+    if (!invitees) return { pass: false, note: "no Invitees row" };
+    if (!(await tapOpen(invitees, byId("event:invitees:field")))) return { pass: false, note: "no invitees strip" };
+    await type("sam@example.com");
+    await key("return");
+    const shown = await waitFor(textHas("sam@example.com"), 3000);
+    const before = (await (await fetch(`${FAKE}/_log`)).json()).emails.length;
+    const add = await waitFor(byId("event:add"), 3000);
+    if (!add) return { pass: false, note: "no Add" };
+    await tapXY(add.x, add.y);
+    let mailed = null;
+    for (let i = 0; i < 20 && !mailed; i++) {
+      await sleep(500);
+      const emails = (await (await fetch(`${FAKE}/_log`)).json()).emails;
+      if (emails.length > before) mailed = emails.at(-1);
+    }
+    if (!mailed) return { pass: false, note: `no invite was sent; invitees row '${shown?.text}'` };
+    const row = await waitFor(v => v.text === "Review", 5000);
+    const ics = mailed.ics || "";
+    return { pass: JSON.stringify(mailed.to) === JSON.stringify(["sam@example.com"]) &&
+      ics.includes("SUMMARY:Review") && ics.includes("METHOD:REQUEST") && !!row,
+      note: `invitees row '${shown?.text}'; mailed '${mailed.subject}' to ${mailed.to}; row ${row ? "shown" : "missing"}` };
+  } },
+  { id: "S120", title: "Someone's booking page in a message offers Book", run: async () => {
+    await fetch(`${FAKE}/_reset`);
+    await calendarOn();
+    await fresh();
+    // Committed straight into the field (autocorrect would split a link
+    // typed key by key); the strip reads the message all the same.
+    // `input text` drops a key now and then ("…/intr"): type it again.
+    const want = "grab a time cal.com/sam-lee/intro";
+    for (let i = 0; i < 2; i++) {
+      shell("input text 'grab%sa%stime%scal.com/sam-lee/intro'");
+      if ((await waitText(x => x === want, 3000)) === want) break;
+      tool("clear");
+      await sleep(500);
+    }
+    const chip = await waitFor(v => v.id === "strip:smart", 5000);
+    const words = (await state()).views.map(v => v.text).find(t => /A time on/.test(t || "")) || "";
+    if (!chip || !words) return { pass: false, note: `no Book chip (strip says '${words}')` };
+    if (!(await tapOpen(chip, byId("booking:back")))) return { pass: false, note: `chip '${words}' didn't open Book a time` };
+    let slot = await waitFor(byId("booking:slot:0"), 10000);
+    for (let i = 0; i < 3 && !slot; i++) {
+      const next = await waitFor(byId("booking:next"), 2000);
+      if (next) await tapXY(next.x, next.y);
+      slot = await waitFor(byId("booking:slot:0"), 8000);
+    }
+    if (!slot) return { pass: false, note: `chip '${words}' opened no open times` };
+    await tapXY(slot.x, slot.y);
+    // Their page: it books you, from the vault's name and email, unless the
+    // vault has no email (then it asks).
+    if (await waitFor(byId("booking:who:field"), 1500)) {
+      await type("ria k ria@example.com");
+      await key("return");
+    }
+    const go = await waitFor(byId("booking:book"), 4000);
+    if (!go) return { pass: false, note: "no Book it" };
+    const r = await tapFor(go, x => x.includes("Booked for"), 10000);
+    const booked = (await (await fetch(`${FAKE}/_log`)).json()).bookings.at(-1) || {};
+    return { pass: r.t.includes("/intro Booked for") && booked.username === "sam-lee" && booked.eventTypeSlug === "intro",
+      note: `chip '${words}'; booked on ${booked.username}/${booked.eventTypeSlug} as ${booked.attendee?.name} <${booked.attendee?.email}>; message '${r.t}'${second(r)}` };
   } },
   { id: "S97", title: "Slide left from delete removes whole words", run: async () => {
     await fresh();

@@ -13,6 +13,7 @@ import { hubRoutes } from "./routes/hub.js";
 import { connectorRoutes } from "./routes/connector.js";
 import { telemetryRoutes } from "./routes/telemetry.js";
 import { mediaRoutes } from "./routes/media.js";
+import { schedulingRoutes } from "./routes/scheduling.js";
 import { toolsRoutes } from "./routes/tools.js";
 import { searchRoutes } from "./routes/search.js";
 import { ratesRoutes } from "./routes/rates.js";
@@ -81,6 +82,7 @@ export function buildApp(kv: KV = defaultKV()) {
   connectorRoutes(app, kv);
   telemetryRoutes(app, kv);
   mediaRoutes(app);
+  schedulingRoutes(app);
   toolsRoutes(app);
   searchRoutes(app, kv, guard);
   ratesRoutes(app);
