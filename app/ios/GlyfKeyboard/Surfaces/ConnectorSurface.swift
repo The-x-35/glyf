@@ -157,7 +157,7 @@ final class ConnectorSurface: UIView, UITableViewDataSource, UITableViewDelegate
                 guard let data,
                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let events = obj["events"] as? [[String: Any]] else {
-                    self.statusLabel.text = "Offline — start the Glyf server"
+                    self.statusLabel.text = "Couldn't load. Try again in a moment"
                     return
                 }
                 self.items = events.map { e in
@@ -170,7 +170,7 @@ final class ConnectorSurface: UIView, UITableViewDataSource, UITableViewDelegate
                         detail: "\(start)–\(end)",
                         insertLink: link.isEmpty ? title : link,
                         insertFull: link.isEmpty ? "\(title) (\(start)–\(end))"
-                                                 : "\(title) (\(start)–\(end)) — \(link)")
+                                                 : "\(title) (\(start)–\(end)): \(link)")
                 }
                 self.statusLabel.text = self.items.isEmpty ? "No matches" : " "
                 Self.cache[self.connectorId] = (self.items, Date())

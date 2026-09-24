@@ -1,7 +1,7 @@
 import { signedInApp } from "./helpers.js";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { listInsert, looksLikeRewrite, mathQuestion, parsePlan, parseRewriteOptions, planByRules, rewriteStyles } from "../src/lib/act.js";
+import { keepsNumbers, listInsert, looksLikeRewrite, mathQuestion, parsePlan, parseRewriteOptions, planByRules, rewriteStyles } from "../src/lib/act.js";
 import { withCategory } from "../src/lib/search.js";
 import type { PlaceCard } from "../src/lib/searchcards.js";
 import { renderPage } from "../src/lib/pages.js";
@@ -180,6 +180,29 @@ describe("rewrite options", () => {
       'here: {"work":"I will send it by 6 PM.","basic":"ya ok, will send it by 6","polite":"","shorter":"By 6."}',
       styles);
     expect(out.map(o => o.label)).toEqual(["Basic", "Professional", "Shorter"]);
+  });
+});
+
+describe("a version keeps the numbers the writer typed", () => {
+  it("drops a version that reads b4 6 as before you", () => {
+    const typed = "ya ok will send deck b4 6";
+    expect(keepsNumbers(typed, "Yes, I will send the deck before 6.")).toBe(true);
+    expect(keepsNumbers(typed, "Yes, I will send the deck before six.")).toBe(true);
+    expect(keepsNumbers(typed, "Haan ok, deck b4 6 bhej dunga.")).toBe(true);
+    expect(keepsNumbers(typed, "Yes, I will send the deck before you.")).toBe(false);
+  });
+  it("reads amounts, times and counts however they are written", () => {
+    expect(keepsNumbers("pay 2,450 by 5pm", "Please pay 2450 by 5 PM.")).toBe(true);
+    expect(keepsNumbers("pay 2,450 by 5pm", "Please pay by 5 PM.")).toBe(false);
+    expect(keepsNumbers("table for 4", "A table for four, please.")).toBe(true);
+    expect(keepsNumbers("call me at 6:30", "Call me at 6:30.")).toBe(true);
+    expect(keepsNumbers("call me at 6:30", "Call me at 6.")).toBe(false);
+  });
+  it("leaves shorthand and masked details alone", () => {
+    expect(keepsNumbers("this is 4 u", "This is for you.")).toBe(true);
+    expect(keepsNumbers("going 2 the mall gr8", "Going to the mall, great.")).toBe(true);
+    expect(keepsNumbers("give me 1 min", "Give me a minute.")).toBe(true);
+    expect(keepsNumbers("see u 2day, card is [[S1]]", "See you today. My card is [[S1]].")).toBe(true);
   });
 });
 

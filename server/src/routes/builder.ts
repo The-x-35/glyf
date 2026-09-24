@@ -110,7 +110,7 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard:
       }
     }
     return reply.code(422).send({
-      error: "Couldn't produce a valid glyf for that — try describing the action differently",
+      error: "Couldn't make a glyf from that. Try describing the action differently",
     });
   });
 

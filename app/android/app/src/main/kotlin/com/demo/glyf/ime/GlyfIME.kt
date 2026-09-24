@@ -109,15 +109,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("",
                         intent.getStringExtra("text") ?: ""))
                 }
-                "close" -> dismissFeaturePanel()
+                // Everything on top of the keys: a hold-space panel too, or
+                // it stays open under keys that came back and takes the
+                // next scenario's result.
+                "close" -> { dismissOverlay(); dismissFeaturePanel() }
                 "dump" -> writeQaState()
                 "seedvault" -> {
-                    val fields = VaultStore.load(this@GlyfIME).optJSONArray("fields")
-                    if (fields == null || fields.length() == 0) {
-                        VaultStore.upsertField(this@GlyfIME, null, "address", "Home",
-                            "42 Glass Lane, Indiranagar, Bengaluru 560038")
-                        VaultStore.upsertField(this@GlyfIME, null, "upi", "UPI", "arpit@okbank")
-                    }
+                    // The scenarios ask for an address and a UPI id: add
+                    // whichever the vault doesn't have, and touch nothing else.
+                    val kinds = Smart.fields(VaultStore.load(this@GlyfIME)).map { it.kind }.toSet()
+                    if ("address" !in kinds) VaultStore.upsertField(this@GlyfIME, null, "address", "Home",
+                        "42 Glass Lane, Indiranagar, Bengaluru 560038")
+                    if ("upi" !in kinds) VaultStore.upsertField(this@GlyfIME, null, "upi", "UPI", "arpit@okbank")
                 }
                 "clear" -> currentInputConnection?.let { ic ->
                     ic.finishComposingText()
@@ -141,6 +144,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  happened. Keys come from the canvas; everything else from the views. */
     private fun writeQaState() {
         val out = org.json.JSONObject()
+        // When it was written: a runner reading an older file knows this
+        // keyboard didn't answer (another keyboard is active, or it crashed).
+        out.put("at", System.currentTimeMillis())
         val keys = org.json.JSONObject()
         if (keyboard.isShown) {
             for ((id, xy) in keyboard.keyCenters()) keys.put(id, org.json.JSONArray(listOf(xy[0], xy[1])))
@@ -421,8 +427,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private fun pasteClipboard() {
-        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.let {
+        com.demo.glyf.store.ClipboardStore.clipText(this)?.let {
             currentInputConnection?.commitText(it, 1)
         }
     }
@@ -1312,8 +1317,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if ((before + after).isNotBlank()) {
             return BarInput(before + after, "field")
         }
-        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        val clip = cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
+        val clip = com.demo.glyf.store.ClipboardStore.clipText(this)
         if (!clip.isNullOrBlank()) return BarInput(clip, "clipboard")
         return BarInput("", "empty")
     }
@@ -1699,7 +1703,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (!::root.isInitialized || !::toolIcons.isInitialized) return
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         val stamp = cm.primaryClipDescription?.timestamp ?: 0L
-        val text = cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.trim().orEmpty()
+        val text = com.demo.glyf.store.ClipboardStore.clipText(this)?.trim().orEmpty()
         val busy = searchActive || barActive || noteEditActive || overlay != null ||
             featurePanel != null || isSecureField()
         val fresh = stamp > 0 && System.currentTimeMillis() - stamp < 10 * 60 * 1000 &&
@@ -1828,10 +1832,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             actRunInput = before + after
         } else {
             // Nothing typed: the skill reads the clipboard and Insert only adds.
-            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
             actBefore = ""
             actAfter = ""
-            actRunInput = cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: ""
+            actRunInput = com.demo.glyf.store.ClipboardStore.clipText(this) ?: ""
         }
         runAct()
     }
@@ -2915,21 +2918,29 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  apps do), the way Gboard sends one; anywhere else it is copied so it
      *  can be pasted by hand. */
     private fun insertImage(uri: android.net.Uri) {
-        val mimes = currentInputEditorInfo?.contentMimeTypes ?: emptyArray()
-        val type = contentResolver.getType(uri) ?: "image/png"
-        val accepts = mimes.any { android.content.ClipDescription.compareMimeTypes(type, it) }
-        if (accepts) {
-            val info = android.view.inputmethod.InputContentInfo(uri,
-                android.content.ClipDescription("Screenshot", arrayOf(type)))
-            val sent = currentInputConnection?.commitContent(info,
-                android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
-                null) == true
-            if (sent) return
-        }
-        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        cm.setPrimaryClip(android.content.ClipData.newUri(contentResolver, "Screenshot", uri))
-        android.widget.Toast.makeText(this, "Screenshot copied",
-            android.widget.Toast.LENGTH_SHORT).show()
+        // MediaStore is asked on a worker: while it indexes a screenshot that
+        // was just taken it can take seconds to answer, and the keyboard
+        // must keep taking touches meanwhile.
+        Thread {
+            val type = runCatching { contentResolver.getType(uri) }.getOrNull() ?: "image/png"
+            val clip = runCatching { android.content.ClipData.newUri(contentResolver, "Screenshot", uri) }
+                .getOrElse { android.content.ClipData("Screenshot", arrayOf(type), android.content.ClipData.Item(uri)) }
+            main.post {
+                val mimes = currentInputEditorInfo?.contentMimeTypes ?: emptyArray()
+                if (mimes.any { android.content.ClipDescription.compareMimeTypes(type, it) }) {
+                    val info = android.view.inputmethod.InputContentInfo(uri,
+                        android.content.ClipDescription("Screenshot", arrayOf(type)))
+                    val sent = currentInputConnection?.commitContent(info,
+                        android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
+                        null) == true
+                    if (sent) return@post
+                }
+                val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(clip)
+                android.widget.Toast.makeText(this, "Screenshot copied",
+                    android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }.start()
     }
 
     private fun showShorthandPanel() {
@@ -3087,30 +3098,36 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             val gif = bytes[0] == 'G'.code.toByte() && bytes[1] == 'I'.code.toByte() && bytes[2] == 'F'.code.toByte()
             val mime = if (gif) "image/gif" else "image/png"
-            val file = runCatching {
-                val dir = java.io.File(cacheDir, "media").apply { mkdirs() }
-                // Only the latest few stay: they are handed over, not kept.
-                dir.listFiles()?.sortedBy { it.lastModified() }?.dropLast(4)?.forEach { it.delete() }
-                java.io.File(dir, "glyf-${System.currentTimeMillis()}.${if (gif) "gif" else "png"}")
-                    .apply { writeBytes(bytes) }
-            }.getOrNull()
-            if (file == null) { done(false); return@fullData }
-            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.media", file)
-            val accepted = currentInputEditorInfo?.contentMimeTypes.orEmpty()
-            val fits = accepted.any { android.content.ClipDescription.compareMimeTypes(mime, it) }
-            val ic = currentInputConnection
-            if (fits && ic != null) {
-                val info = android.view.inputmethod.InputContentInfo(
-                    uri, android.content.ClipDescription(noun, arrayOf(mime)), null)
-                val ok = ic.commitContent(info,
-                    android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
-                if (ok) { done(true); return@fullData }
-            }
-            val clip = android.content.ClipData.newUri(contentResolver, noun, uri)
-            (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(clip)
-            android.widget.Toast.makeText(this, "$noun copied. Paste it in the message",
-                android.widget.Toast.LENGTH_SHORT).show()
-            done(true)
+            // The file is written on a worker (a GIF can be megabytes and the
+            // disk can be busy); only the hand-over runs on the main thread.
+            Thread {
+                val uri = runCatching {
+                    val dir = java.io.File(cacheDir, "media").apply { mkdirs() }
+                    // Only the latest few stay: they are handed over, not kept.
+                    dir.listFiles()?.sortedBy { it.lastModified() }?.dropLast(4)?.forEach { it.delete() }
+                    val file = java.io.File(dir, "glyf-${System.currentTimeMillis()}.${if (gif) "gif" else "png"}")
+                        .apply { writeBytes(bytes) }
+                    androidx.core.content.FileProvider.getUriForFile(this, "$packageName.media", file)
+                }.getOrNull()
+                main.post {
+                    if (uri == null) { done(false); return@post }
+                    val accepted = currentInputEditorInfo?.contentMimeTypes.orEmpty()
+                    val fits = accepted.any { android.content.ClipDescription.compareMimeTypes(mime, it) }
+                    val ic = currentInputConnection
+                    if (fits && ic != null) {
+                        val info = android.view.inputmethod.InputContentInfo(
+                            uri, android.content.ClipDescription(noun, arrayOf(mime)), null)
+                        val ok = ic.commitContent(info,
+                            android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
+                        if (ok) { done(true); return@post }
+                    }
+                    val clip = android.content.ClipData(noun, arrayOf(mime), android.content.ClipData.Item(uri))
+                    (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(clip)
+                    android.widget.Toast.makeText(this, "$noun copied. Paste it in the message",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                    done(true)
+                }
+            }.start()
         }
     }
 

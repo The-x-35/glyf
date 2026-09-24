@@ -710,7 +710,7 @@ Built 2026-09-14 night to 2026-09-15 for parity with Acti's launch video: hold s
 | `places` | `search("maps")` | Top 4 cards. If a public page base exists, publishes all places (max 8) as `/p/:id` and inserts the typed text plus the page link; otherwise a numbered list with rating, address and a maps link per place |
 | `video` | `search("yt")` | First video card; insert is URL then "🎥 title" |
 | `answer` | `search("web")` | An answer card if one exists (insert is value plus sub line). Else, with links, one fast-tier call answers in at most three lines using only those results or replies `UNKNOWN`; the insert is the summary plus the first link. With no links, the Google handoff card |
-| `rewrite` | one fast-tier call (`[[act.rewrite]]`) | Text only, keeping the writer's meaning, language and tone |
+| `rewrite` | one fast-tier call (`[[act.rewrite.options]]`) | Versions in each style (`rewriteStyles()`: Basic, Professional, Polite, Shorter, Hinglish where people write it, Emoji), keeping the writer's meaning and every fact. `keepsNumbers()` drops a version that lost a number the writer typed ("b4 6" read as "before you"). A number counts as kept in digits or in words ("six", "sixth"); shorthand such as "b4", "4 u" or "1 min" is not a fact. If no version survives, one retry names the numbers |
 
 **Page base** (`pageBase()` in `routes/act.ts`): `PUBLIC_BASE_URL` if set; otherwise `http://127.0.0.1:<PORT>` outside production and no pages in production.
 

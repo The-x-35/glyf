@@ -11,7 +11,7 @@ object SecretScanner {
         if (looksLikeCardNumber(t)) return "Card numbers can't be saved"
         if (looksLikeSeedPhrase(t)) return "Seed phrases can't be saved anywhere in Glyf"
         if (looksLikeKeyOrToken(t)) return "Keys and tokens can't be saved"
-        if (looksLikeOTP(t)) return "One-time codes expire — not worth saving"
+        if (looksLikeOTP(t)) return "One-time codes aren't worth saving"
         return null
     }
 

@@ -97,6 +97,39 @@ export function looksLikeRewrite(text: string, typed: string): boolean {
   return true;
 }
 
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+  "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+const ORDINAL_WORDS = ["zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
+  "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth",
+  "nineteenth", "twentieth"];
+
+/** The numbers a writer typed as facts: times, amounts, counts. Digits
+ *  glued to letters are shorthand, not facts ("b4", "gr8", "2day", a masked
+ *  [[S1]]), except a time or amount ("5pm", "10k"). A lone 2 or 4 before a
+ *  word is usually "to" or "for" ("4 u"), and a lone 1 is often "a" ("1 min"). */
+function typedNumbers(typed: string): string[] {
+  const t = typed.replace(/(?<=\d),(?=\d)/g, "");
+  const out = new Set<string>();
+  for (const m of t.matchAll(/(?<![A-Za-z\d])(\d+)(?=(am|pm|k|hrs?|h|mins?)?(?![A-Za-z\d]))/gi)) {
+    const n = m[1];
+    if (["1", "2", "4"].includes(n) && /^\s+[A-Za-z]/.test(t.slice((m.index ?? 0) + n.length))) continue;
+    out.add(n);
+  }
+  return [...out];
+}
+
+/** Whether a version still carries every number the writer typed, as digits
+ *  or in words ("before 6" or "before six", "on the 3" or "on the third").
+ *  Prompts ask for this, but a model can still read "b4 6" as "before you". */
+export function keepsNumbers(typed: string, version: string): boolean {
+  const v = version.toLowerCase().replace(/(?<=\d)[,\s](?=\d)/g, "");
+  return typedNumbers(typed).every(n => {
+    if (v.includes(n)) return true;
+    const i = Number(n);
+    return i <= 20 && new RegExp(`\\b(${NUMBER_WORDS[i]}|${ORDINAL_WORDS[i]})\\b`).test(v);
+  });
+}
+
 export interface ActOptions {
   /** Publishes a list as a live mini-app page and returns its public URL. */
   publish?: (title: string, places: PlaceCard[]) => string | undefined;
@@ -375,22 +408,31 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
 
     case "rewrite": {
       const styles = rewriteStyles(ctx);
-      const reply = await modelText(
-        "[[act.rewrite.options]]\nRewrite the message below in each of these styles, keeping the " +
-        "writer's meaning. Keep every fact exactly: times, dates, numbers, amounts, names and places " +
-        "(\"b4 6\" is \"before 6\", a time; \"u\" is \"you\"; \"tmrw\" is \"tomorrow\"). " +
-        "Never add facts that are not in the message. If the message asks for a detail about the " +
-        "writer that is listed below, fill it in.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
-        "\nReply with JSON only, one key per style: {" +
-        styles.map(st => `"${st.id}":"..."`).join(",") + "}" +
-        profileBlock(opts.profile) + "\n\nMessage:\n" + typed, 12_000);
-      let options = parseRewriteOptions(reply, styles);
+      const ask = async (reminder: string) => {
+        const reply = await modelText(
+          "[[act.rewrite.options]]\nRewrite the message below in each of these styles, keeping the " +
+          "writer's meaning. Keep every fact exactly: times, dates, numbers, amounts, names and places " +
+          "(\"b4 6\" is \"before 6\", a time; \"u\" is \"you\"; \"tmrw\" is \"tomorrow\"). " + reminder +
+          "Never add facts that are not in the message. If the message asks for a detail about the " +
+          "writer that is listed below, fill it in.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
+          "\nReply with JSON only, one key per style: {" +
+          styles.map(st => `"${st.id}":"..."`).join(",") + "}" +
+          profileBlock(opts.profile) + "\n\nMessage:\n" + typed, 12_000);
+        let found = parseRewriteOptions(reply, styles);
+        if (found.length === 0) {
+          // No JSON came back. A plain reply can still be the one rewrite, but
+          // only if it reads as the message and not as the model's working.
+          const plain = reply.replace(/^```\w*|```$/g, "").trim();
+          found = plain && looksLikeRewrite(plain, typed)
+            ? [{ id: "basic", label: "Basic", text: plain }] : [];
+        }
+        // A version that lost a number the writer typed says something else.
+        return found.filter(o => keepsNumbers(typed, o.text));
+      };
+      let options = await ask("");
       if (options.length === 0) {
-        // No JSON came back. A plain reply can still be the one rewrite, but
-        // only if it reads as the message and not as the model's working.
-        const plain = reply.replace(/^```\w*|```$/g, "").trim();
-        options = plain && looksLikeRewrite(plain, typed)
-          ? [{ id: "basic", label: "Basic", text: plain }] : [];
+        const numbers = typedNumbers(typed);
+        if (numbers.length > 0) options = await ask(`Every version must include ${numbers.join(", ")}. `);
       }
       if (options.length === 0) throw new Error("rewrite: no usable version");
       const first = options[0].text;

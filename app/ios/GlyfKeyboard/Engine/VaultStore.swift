@@ -85,13 +85,13 @@ enum VaultRules {
         let lowerLabel = label.lowercased()
         if ["password", "passcode", "pin", "otp", "cvv", "seed", "private key",
             "recovery"].contains(where: lowerLabel.contains) {
-            return "Glyf never stores passwords, PINs, or recovery secrets — use your password manager"
+            return "Glyf never stores passwords, PINs or recovery secrets. Use your password manager"
         }
         switch SecretScanner.scan(value) {
         case .cardNumber:
             return "Card numbers can't be stored in the vault"
         case .seedPhrase:
-            return "That looks like a seed phrase — Glyf will never store one"
+            return "That looks like a seed phrase. Glyf never stores one"
         case .privateKeyOrToken:
             return "Private keys and API tokens can't be stored in the vault"
         case .otpCode:
@@ -106,7 +106,7 @@ enum VaultRules {
             return "Nothing to save"
         }
         if value.count > 2000 {
-            return "Too long — vault entries cap at 2000 characters"
+            return "Too long. Vault entries hold up to 2000 characters"
         }
         return nil
     }
@@ -128,7 +128,7 @@ enum VaultRules {
     static func snippetRefusal(trigger: String, text: String) -> String? {
         guard trigger.hasPrefix(";"), trigger.count >= 2, trigger.count <= 12,
               !trigger.dropFirst().contains(where: { $0 == " " || $0 == ";" })
-        else { return "Triggers look like ;sig — a semicolon plus a short word" }
+        else { return "Triggers look like ;sig: a semicolon and a short word" }
         return refusalReason(kind: "custom", label: "snippet", value: text)
     }
 }
@@ -321,7 +321,7 @@ final class VaultStore {
         }
         var vault = load()
         guard vault.images.count < Self.maxImages else {
-            return "The vault holds \(Self.maxImages) images — delete one first"
+            return "The vault holds \(Self.maxImages) images. Delete one first"
         }
         guard let dir = imagesDir, let key = loadOrCreateKey(),
               let box = try? AES.GCM.seal(data, using: key), let blob = box.combined

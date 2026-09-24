@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-RUN_DATE = "17 September 2026"
+RUN_DATE = "24 September 2026"
 
 # What a person typed or did, for the server scenarios (their titles carry
 # the situation; this is the literal input).
@@ -57,6 +57,9 @@ ANDROID_INPUT = {
     "S97": "see you at the park tomorrow, slide left from ⌫",
     "S98": "take a screenshot → g → Clipboard → tap it",
     "S101": "system dark mode, then light",
+    "S106": "see you ␣ → 😊 key → :-) → Classic → tap the first emoticon",
+    "S107": "😊 key → GIF → Trending → tap a GIF",
+    "S108": "😊 key → Stickers → Trending → tap a sticker",
 }
 ANDROID_FIXED = {"S85", "S86", "S87", "S88", "S89", "S90", "S91"}
 
@@ -101,13 +104,33 @@ FIXES = [
      "Each level brings the keyboard up attached to the message box."),
     ("Both", "A tour closed by force left its rings on the keyboard.",
      "Hints expire and are cleared when the app starts."),
+    ("iPhone", "The g button, the suggestion card and Close sat 3pt above the keyboard’s top edge, where VoiceOver and UI tests can’t reach them.",
+     "They stay inside the keyboard and keep their centre."),
+    ("Server", "“18% of 2450” and “what is 12 x 12?” were tidied as messages; an answer pasted as “441 — 18% of 2450”.",
+     "Worded sums reach the calculator and paste the card’s sentence: “18% of 2450 is 441”."),
+    ("Server", "The Tidy this up chip took about 9 seconds: two model calls ran one after the other.",
+     "They run together; the chip shows in about 3.5 seconds."),
+    ("Android", "Search suggestions went out without the signed-in session and were turned away.",
+     "They carry the session like every other call."),
+    ("Both", "A 38-character webhook secret (whsec_…) reached clipboard history, and Android refused a copied Ethereum address.",
+     "One shared filter on both keyboards: known key prefixes (webhook, Stripe, GitLab, AWS, Google and more), JWTs and random tokens are never kept; wallet addresses are."),
+    ("Both", "An emoticon glued itself to the word before it (“swqaerm:-)”).",
+     "It is spaced off the word, the way an emoji is."),
+    ("Android", "The keyboard asked the photo index for screenshots on its main thread; right after a screenshot, with storage busy, Android reported it as not responding.",
+     "Screenshots load in the background and join the clipboard when found; GIF and sticker files are written off the main thread too."),
+    ("Android", "After a screenshot was copied, the strip’s paste chip read the image as text: its label held the PNG’s bytes, about 200,000 characters, read on the main thread.",
+     "Only text (or a web link) counts as a copy for the chip, Paste, the g bar, skills and history; a picture is left as a picture."),
+    ("Both", "Refusals and limit messages used dashes (“Too fast — wait a moment”).",
+     "Plain sentences: “Too fast. Wait a moment and try again”."),
 ]
 
 NEEDS_YOU = [
+    ("GIFs and stickers in the emoji board", "KLIPY app key (free, partner.klipy.com) as KLIPY_APP_KEY on the server",
+     "Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. S103 to S105, S107 and S108 ran against qa/fake-klipy.mjs."),
     ("Web results", "Brave Search API key", "S27 shows only the Google hand-off row without it."),
     ("Weather answers", "Google Weather or web search key", "S14 honestly says nothing found without it."),
     ("Google sign-in", "OAuth client id and secret", "The onboarding step stays hidden until then."),
-    ("Ratings and open now", "Google Places key (or Geoapify, free, for no-card places)", "Places come from OpenStreetMap on the dev server today."),
+    ("Ratings and open now", "Google Places key", "Places come from Geoapify on the dev server today, without ratings."),
 ]
 
 
@@ -197,7 +220,8 @@ def build_html(rows, out):
 def build_md(rows):
     lines = [
         "# Glyf scenario run", "",
-        f"Run on {RUN_DATE}: the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) "
+        f"Run on {RUN_DATE} (the two app flows, S99 and S100, by hand on 17 September): the real "
+        "keyboards (iPhone 17 Pro simulator, Android API 36 emulator) "
         "and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, "
         "`app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.", "",
         f"{sum(r['verdict'] == 'pass' for r in rows)} pass, "

@@ -46,21 +46,21 @@
   "area": "Android",
   "title": "A rough message offers Tidy this up",
   "verdict": "pass",
-  "note": "chip 'Tidy this up', versions shown"
+  "note": "chip 'Tidy this up', versions shown after 7.1s"
  },
  {
   "id": "S91",
   "area": "Android",
   "title": "Hold space: pick the Professional version",
   "verdict": "pass",
-  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'I acknowledge your request and will send the presentation deck before 6:00.'"
+  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'Yes, I will send the deck before 6.'"
  },
  {
   "id": "S92",
   "area": "Android",
   "title": "Hold space on a place search sends places",
   "verdict": "pass",
-  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/Md8IQwlh-ueY'"
+  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/wPp6q9Idrzbo'"
  },
  {
   "id": "S93",
@@ -91,6 +91,27 @@
   "note": "'what a finish 😂'"
  },
  {
+  "id": "S106",
+  "area": "Android",
+  "title": "Emoticons type straight into the message",
+  "verdict": "pass",
+  "note": "'see you :-)'"
+ },
+ {
+  "id": "S107",
+  "area": "Android",
+  "title": "The GIF tab shows GIFs and hands one over",
+  "verdict": "pass",
+  "note": "clipboard now holds image/gif (GIF)"
+ },
+ {
+  "id": "S108",
+  "area": "Android",
+  "title": "The Stickers tab shows stickers and hands one over",
+  "verdict": "pass",
+  "note": "clipboard now holds image/gif (Sticker)"
+ },
+ {
   "id": "S97",
   "area": "Android",
   "title": "Slide left from delete removes whole words",
@@ -102,7 +123,7 @@
   "area": "Android",
   "title": "A screenshot you just took is in the clipboard",
   "verdict": "pass",
-  "note": "tapped the screenshot: clipboard now holds image/png (Screenshot). Rerun after the test was changed to save a real screen capture; the emulator ignores the screenshot key."
+  "note": "tapped the screenshot: clipboard now holds image/png (Screenshot)"
  },
  {
   "id": "S101",

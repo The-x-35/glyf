@@ -157,8 +157,8 @@ export async function allow(
 }
 
 export function refusal(reason: "day" | "burst" | undefined, plan: Plan): string {
-  if (reason === "burst") return "Too fast — wait a moment and try again";
+  if (reason === "burst") return "Too fast. Wait a moment and try again";
   return plan === "free"
-    ? "Daily free runs used up — they come back tomorrow"
-    : "Daily runs used up — they come back tomorrow";
+    ? "Daily free runs used up. They come back tomorrow"
+    : "Daily runs used up. They come back tomorrow";
 }

@@ -305,7 +305,7 @@
   "verdict": "pass"
  },
  {
-  "id": "S101",
+  "id": "S102",
   "surface": "iPhone",
   "area": "Emoji board",
   "title": "Emoticons type straight into the message",
@@ -314,7 +314,7 @@
   "verdict": "pass"
  },
  {
-  "id": "S102",
+  "id": "S103",
   "surface": "iPhone",
   "area": "Emoji board",
   "title": "The GIF tab shows GIFs and copies one",
@@ -323,7 +323,7 @@
   "verdict": "pass"
  },
  {
-  "id": "S103",
+  "id": "S104",
   "surface": "iPhone",
   "area": "Emoji board",
   "title": "The Stickers tab shows stickers and copies one",
@@ -332,7 +332,7 @@
   "verdict": "pass"
  },
  {
-  "id": "S104",
+  "id": "S105",
   "surface": "iPhone",
   "area": "Emoji board",
   "title": "GIF search shows results for the word",

@@ -49,7 +49,7 @@ final class NotesStore {
         case .cardNumber: return "Card numbers can't be saved as notes"
         case .seedPhrase: return "Seed phrases can't be saved anywhere in Glyf"
         case .privateKeyOrToken: return "Keys and tokens can't be saved as notes"
-        case .otpCode: return "One-time codes expire — not worth a note"
+        case .otpCode: return "One-time codes aren't worth a note"
         }
         var notes = load()
         let now = Date()

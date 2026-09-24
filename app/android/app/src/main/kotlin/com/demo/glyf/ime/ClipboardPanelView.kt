@@ -49,6 +49,10 @@ class ClipboardPanelView(
     private var menu: View? = null
     private var editing = false
 
+    /** Recent screenshots, asked of MediaStore off the main thread (see
+     *  loadShots). Declared before init: init's reload() reads it. */
+    private var shotList: List<com.demo.glyf.ScreenshotAccess.Shot> = emptyList()
+
     init {
         setBackgroundColor(palette.board)
         val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
@@ -59,7 +63,29 @@ class ClipboardPanelView(
         addView(column, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(scrim, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         reload()
+        loadShots()
     }
+
+    /** Screenshots come from MediaStore off the main thread: while it indexes
+     *  one that was just taken it can take seconds to answer, and a keyboard
+     *  that waits on it stops taking touches (an ANR). The copies show at
+     *  once; screenshots join them when the answer comes. */
+    private fun loadShots() {
+        if (!screenshotsOn()) return
+        val app = context.applicationContext
+        Thread {
+            val found = com.demo.glyf.ScreenshotAccess.recent(app)
+            post {
+                if (found.map { it.uri } != shotList.map { it.uri }) {
+                    shotList = found
+                    reload()
+                }
+            }
+        }.start()
+    }
+
+    private fun screenshotsOn(): Boolean =
+        com.demo.glyf.store.SettingsStore.load(context).optBoolean("clipboardScreenshots", true)
 
     // ---- header ------------------------------------------------------------
 
@@ -128,10 +154,9 @@ class ClipboardPanelView(
     /** Screenshots from the last hour, when turned on in the app, minus the
      *  ones removed from the clipboard here. */
     private fun shots(): List<Entry> {
-        val s = com.demo.glyf.store.SettingsStore.load(context)
-        if (!s.optBoolean("clipboardScreenshots", true)) return emptyList()
+        if (!screenshotsOn()) return emptyList()
         val removed = prefs.getStringSet("removedShots", emptySet()) ?: emptySet()
-        return com.demo.glyf.ScreenshotAccess.recent(context)
+        return shotList
             .filter { it.uri.toString() !in removed }
             .map { Entry.Image(it) }
     }

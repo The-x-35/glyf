@@ -65,13 +65,25 @@ object ClipboardStore {
         return next.take(MAX_ITEMS)
     }
 
+    /** What was copied, as text, or null when it isn't text. A picture on
+     *  the clipboard (a screenshot, a GIF) is a content URI, and
+     *  coerceToText opens it and reads its bytes as if they were words: a
+     *  200 KB screenshot became the strip's "text", read on the main thread.
+     *  A web link copied as a link is text. */
+    fun clipText(ctx: Context): String? {
+        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE)
+            as? android.content.ClipboardManager ?: return null
+        val item = try {
+            cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+        } catch (_: Exception) { null } ?: return null
+        item.text?.let { return it.toString() }
+        val uri = item.uri ?: return null
+        return if (uri.scheme == "http" || uri.scheme == "https") uri.toString() else null
+    }
+
     /** Reads the system clipboard and files it. True when something new landed. */
     fun captureNow(ctx: Context): Boolean {
-        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE)
-            as? android.content.ClipboardManager ?: return false
-        val text = try {
-            cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString()
-        } catch (_: Exception) { null } ?: return false
+        val text = clipText(ctx) ?: return false
         val next = inserting(text, load(ctx), System.currentTimeMillis()) ?: return false
         save(ctx, next)
         return true

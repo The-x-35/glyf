@@ -1,8 +1,8 @@
 # Glyf scenario run
 
-Run on 17 September 2026: the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
+Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 September): the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
 
-103 pass, 2 need a key, 0 fail, of 105.
+106 pass, 2 need a key, 0 fail, of 108.
 
 | ID | Where | Scenario | Result |
 | --- | --- | --- | --- |
@@ -106,11 +106,14 @@ Run on 17 September 2026: the real keyboards (iPhone 17 Pro simulator, Android A
 | S98 | Android | A screenshot you just took is in the clipboard | pass |
 | S99 | App | Make a glyf from an idea and hold its key | pass |
 | S100 | App | Onboarding, then the guided tour | pass |
-| S101 | iPhone | Emoticons type straight into the message | pass |
 | S101 | Android | Dark mode keys are dark, light mode keys are light | pass |
-| S102 | iPhone | The GIF tab shows GIFs and copies one | pass |
-| S103 | iPhone | The Stickers tab shows stickers and copies one | pass |
-| S104 | iPhone | GIF search shows results for the word | pass |
+| S102 | iPhone | Emoticons type straight into the message | pass |
+| S103 | iPhone | The GIF tab shows GIFs and copies one | pass |
+| S104 | iPhone | The Stickers tab shows stickers and copies one | pass |
+| S105 | iPhone | GIF search shows results for the word | pass |
+| S106 | Android | Emoticons type straight into the message | pass |
+| S107 | Android | The GIF tab shows GIFs and hands one over | pass |
+| S108 | Android | The Stickers tab shows stickers and hands one over | pass |
 
 ## Fixed during the run
 
@@ -134,10 +137,20 @@ Run on 17 September 2026: the real keyboards (iPhone 17 Pro simulator, Android A
 - Both: glyf:// links (the tour, Build your own, Pay) opened a second Home on top of the right screen, and a link that started the app was dropped. The app handles its own links, including the one that launched it.
 - App: On Android the tour started with the keyboard down, or up but not reading the message. Each level brings the keyboard up attached to the message box.
 - Both: A tour closed by force left its rings on the keyboard. Hints expire and are cleared when the app starts.
+- iPhone: The g button, the suggestion card and Close sat 3pt above the keyboard’s top edge, where VoiceOver and UI tests can’t reach them. They stay inside the keyboard and keep their centre.
+- Server: “18% of 2450” and “what is 12 x 12?” were tidied as messages; an answer pasted as “441 — 18% of 2450”. Worded sums reach the calculator and paste the card’s sentence: “18% of 2450 is 441”.
+- Server: The Tidy this up chip took about 9 seconds: two model calls ran one after the other. They run together; the chip shows in about 3.5 seconds.
+- Android: Search suggestions went out without the signed-in session and were turned away. They carry the session like every other call.
+- Both: A 38-character webhook secret (whsec_…) reached clipboard history, and Android refused a copied Ethereum address. One shared filter on both keyboards: known key prefixes (webhook, Stripe, GitLab, AWS, Google and more), JWTs and random tokens are never kept; wallet addresses are.
+- Both: An emoticon glued itself to the word before it (“swqaerm:-)”). It is spaced off the word, the way an emoji is.
+- Android: The keyboard asked the photo index for screenshots on its main thread; right after a screenshot, with storage busy, Android reported it as not responding. Screenshots load in the background and join the clipboard when found; GIF and sticker files are written off the main thread too.
+- Android: After a screenshot was copied, the strip’s paste chip read the image as text: its label held the PNG’s bytes, about 200,000 characters, read on the main thread. Only text (or a web link) counts as a copy for the chip, Paste, the g bar, skills and history; a picture is left as a picture.
+- Both: Refusals and limit messages used dashes (“Too fast — wait a moment”). Plain sentences: “Too fast. Wait a moment and try again”.
 
 ## Needs a key or account
 
+- GIFs and stickers in the emoji board: KLIPY app key (free, partner.klipy.com) as KLIPY_APP_KEY on the server. Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. S103 to S105, S107 and S108 ran against qa/fake-klipy.mjs.
 - Web results: Brave Search API key. S27 shows only the Google hand-off row without it.
 - Weather answers: Google Weather or web search key. S14 honestly says nothing found without it.
 - Google sign-in: OAuth client id and secret. The onboarding step stays hidden until then.
-- Ratings and open now: Google Places key (or Geoapify, free, for no-card places). Places come from OpenStreetMap on the dev server today.
+- Ratings and open now: Google Places key. Places come from Geoapify on the dev server today, without ratings.

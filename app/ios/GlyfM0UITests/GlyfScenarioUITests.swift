@@ -511,7 +511,7 @@ final class GlyfScenarioUITests: XCTestCase {
 
     // MARK: - Stickers, GIFs and emoticons (Gboard's tabs, Apple's look)
 
-    func testS101_EmoticonsTypeStraightIntoTheField() throws {
+    func testS102_EmoticonsTypeStraightIntoTheField() throws {
         open()
         clear()
         tap("key:emojikey")
@@ -528,7 +528,7 @@ final class GlyfScenarioUITests: XCTestCase {
 
     /// Needs a GIF provider key on the server; without one the board says so
     /// and this fails with its words (reported as blocked, not a bug).
-    func testS102_GIFTabShowsGIFsAndCopiesOne() throws {
+    func testS103_GIFTabShowsGIFsAndCopiesOne() throws {
         open()
         tap("key:emojikey")
         tap("emoji:mode:gifs")
@@ -545,7 +545,7 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("emoji:mode:emoji")
     }
 
-    func testS103_StickerTabShowsStickersAndCopiesOne() throws {
+    func testS104_StickerTabShowsStickersAndCopiesOne() throws {
         open()
         tap("key:emojikey")
         tap("emoji:mode:stickers")
@@ -562,7 +562,7 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("emoji:mode:emoji")
     }
 
-    func testS104_GIFSearchShowsResultsForTheWord() throws {
+    func testS105_GIFSearchShowsResultsForTheWord() throws {
         open()
         tap("key:emojikey")
         tap("emoji:mode:gifs")
