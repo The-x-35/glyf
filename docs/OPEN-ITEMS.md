@@ -33,7 +33,7 @@ Last updated: Tue 22 Sep 2026 (IST).
 | B5 | YouTube Data API key: add restrictions, file the quota extension early (default 100 searches a day), regenerate after deploy | Arpit |
 | B6 | Google OAuth client (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`) with redirect URIs for local and `https://api.tryglyf.com/oauth/google/callback` | Arpit |
 | B7 | OAuth client pairs for Notion, Slack, GitHub, Linear, Todoist, Calendly, Zoom, Spotify (each lights up when its pair is in `server/.env`) | Arpit |
-| B8 | `KLIPY_APP_KEY` for GIFs (free at partner.klipy.com; request production access once "Search KLIPY" shows). The GIF, sticker and emoticon tabs are built; stickers work without it (Noto) | Arpit |
+| B8 | `KLIPY_APP_KEY` on Railway. The key arrived on 2026-09-24 and is in the local `server/.env`; real KLIPY GIFs and stickers were checked end to end on both keyboards (iOS S102 to S105, Android S106 to S108). Still to do: set it on Railway, and request production access from KLIPY once "Search KLIPY" is live | Arpit |
 | B9 | About $10 of OpenRouter credit, if OpenRouter stays in the model chain | Arpit |
 | B10 | Benchmark Hinglish quality on the chosen models with about 50 real messages once keys are in | Build |
 | B11 | Gemini free tier terms: it trains on what's sent and excludes apps likely used by under-18s. Paying removes most of this | Arpit (decision) |

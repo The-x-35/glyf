@@ -1494,7 +1494,7 @@ Status is as of the last notes (2026-09-16) and was not re-checked in `server/.e
 | 7 | **Regenerate and IP-restrict the YouTube key** after deploy | Security | It was pasted in chat |
 | 8 | **Google OAuth client** (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) with both redirect URIs, consent screen, test users | Google sign-in, calendar tool, liked videos | Start Google's verification for sensitive scopes early |
 | 9 | Notion and Slack OAuth apps, plus any of GitHub, Linear, Todoist, Calendly, Zoom, Spotify | Those connectors | Each needs only its two variables and a registered redirect URI |
-| 10 | `KLIPY_APP_KEY` (partner.klipy.com, free; production access once "Search KLIPY" is live) | GIFs and KLIPY stickers in the emoji board | Stickers already work without it (Noto) |
+| 10 | `KLIPY_APP_KEY` (partner.klipy.com, free; production access once "Search KLIPY" is live) | GIFs and KLIPY stickers in the emoji board | In the local `server/.env` since 2026-09-24; not yet on Railway. Stickers work without it (Noto) |
 | 11 | App Store Connect subscription products for Plus and Max, and the shared secret for receipt validation; Play Billing later | Real plans instead of client-asserted ones | |
 | 12 | **Rotate secrets pasted in chat**: OpenRouter key, Privy app secret, YouTube key, Neon password | Security | Update `server/.env`, `site/.env.local` and Vercel afterwards |
 | 13 | Privy dashboard configuration (Solana enabled) and a Jupiter API key | M8 crypto | Not before the separate crypto release |
