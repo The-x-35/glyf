@@ -307,8 +307,8 @@ final class GlyfGateUITests: XCTestCase {
         // Push Settings, flip a toggle, come back.
         (firstExisting([app.staticTexts["Settings"], springboard.staticTexts["Settings"]]))?.tap()
         sleep(1)
-        XCTAssertTrue(staticTextContaining("Haptics").exists
-                      || staticTextContaining("Haptics", in: springboard).exists,
+        XCTAssertTrue(staticTextContaining("Haptic").exists
+                      || staticTextContaining("Haptic", in: springboard).exists,
                       "settings screen did not render")
         kb("shell:back")?.tap()
         sleep(1)

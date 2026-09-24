@@ -254,7 +254,16 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // takes focus: Messages opened in dark mode keeps reporting .dark
         // after the phone switches to light. The trait (which the system
         // sheet follows) does change, so after a live flip it wins.
-        let traitDark = traitCollection.userInterfaceStyle == .dark
+        // The host's appearance is the trait ABOVE our view: our own
+        // override (set a few lines down) reaches our view and everything
+        // in it, and reading it back here would make a forced dark look
+        // like a dark host, dropping the sheet we paint for the difference.
+        if let above = view.superview?.traitCollection {
+            hostTraitDark = above.userInterfaceStyle == .dark
+        } else if overrideUserInterfaceStyle == .unspecified {
+            hostTraitDark = traitCollection.userInterfaceStyle == .dark
+        }
+        let traitDark = hostTraitDark
         let hostDark = appearanceFlipped
             ? traitDark
             : textDocumentProxy.keyboardAppearance == .dark || traitDark
@@ -328,6 +337,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// Set once light/dark changes while the keyboard is up; cleared when it
     /// goes away, so the next field's own appearance is read fresh.
     private var appearanceFlipped = false
+
+    /// The last appearance the host handed down (see resolveAppearance).
+    private var hostTraitDark = false
 
     /// The sheet we paint when the person forces an appearance the host does
     /// not have; nil (transparent) whenever the host's own sheet is right.

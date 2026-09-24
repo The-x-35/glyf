@@ -301,6 +301,12 @@ enum Glass {
         chromeDark ? UIColor.white.withAlphaComponent(0.10)
                    : UIColor.black.withAlphaComponent(0.08)
     }
+    /// The line between two rows of a grouped list: Settings draws its own
+    /// at about a sixth of black, firmer than the hairline around a card.
+    static var strokeSeparator: UIColor {
+        chromeDark ? UIColor.white.withAlphaComponent(0.14)
+                   : UIColor.black.withAlphaComponent(0.16)
+    }
     /// Gboard "borders around keys": a firmer outline than the hairline.
     static var strokeKeyBorder: UIColor {
         chromeDark ? UIColor.white.withAlphaComponent(0.34)

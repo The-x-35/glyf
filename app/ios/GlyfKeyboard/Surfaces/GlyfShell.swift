@@ -31,10 +31,15 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     enum Row {
         case nav(icon: String, title: String, detail: String?, target: String)
-        case toggle(title: String, value: () -> Bool, set: (Bool) -> Void)
+        /// `moveUp` adds a ↑ beside the switch for rows whose order matters
+        /// (the toolbar's items); nil draws the switch alone.
+        case toggle(title: String, value: () -> Bool, set: (Bool) -> Void,
+                    moveUp: (() -> Void)? = nil)
         case segmented(title: String, options: [String], value: () -> String, set: (String) -> Void)
         case action(title: String, style: ActionStyle, handler: () -> Void)
         case info(title: String, detail: String?)
+        /// A section's title, in small capitals above the group it opens.
+        case header(title: String)
         /// Generic tap-to-insert row (notes, snippets…).
         case insert(icon: String, title: String, text: String)
         case clip(ClipItem)
@@ -136,8 +141,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         addSubview(header)
 
         table.backgroundColor = Glass.touchableGrid
-        table.separatorStyle = .none
-        table.rowHeight = Glass.siteLook ? 48 : 52   // website: key height x 1.1
+        table.separatorStyle = .none   // the cells draw the group's own hairlines
+        table.contentInset.bottom = 8
         table.dataSource = self
         table.delegate = self
         table.register(ShellCell.self, forCellReuseIdentifier: "c")
@@ -536,36 +541,44 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             return Screen(id: id, title: "Glyf", rows: [], showOpenInApp: false)
 
         case "settings":
+            // The same sections and words as the app's Keyboard screen, so
+            // a setting reads the same wherever it is found.
             return Screen(id: id, title: "Settings", rows: [
                 .segmented(title: "Appearance",
                            options: ["auto", "light", "dark"],
                            value: { SettingsStore.current.appearance ?? "auto" },
                            set: { v in SettingsStore.update { $0.appearance = v } }),
-                .toggle(title: "Haptics",
-                        value: { SettingsStore.current.haptics },
-                        set: { v in SettingsStore.update { $0.haptics = v } }),
-                .toggle(title: "Key sounds",
-                        value: { SettingsStore.current.keyClicks },
-                        set: { v in SettingsStore.update { $0.keyClicks = v } }),
-                .toggle(title: "Number row",
-                        value: { SettingsStore.current.numberRow },
-                        set: { v in SettingsStore.update { $0.numberRow = v } }),
+                .header(title: "Typing"),
                 .toggle(title: "Autocorrect",
                         value: { SettingsStore.current.autocorrect },
                         set: { v in SettingsStore.update { $0.autocorrect = v } }),
                 .toggle(title: "Correct automatically",
                         value: { SettingsStore.current.autocorrectApply ?? true },
                         set: { v in SettingsStore.update { $0.autocorrectApply = v } }),
+                .toggle(title: "Suggestions",
+                        value: { SettingsStore.current.candidates },
+                        set: { v in SettingsStore.update { $0.candidates = v } }),
                 .toggle(title: "Auto-capitalize",
                         value: { SettingsStore.current.autocapitalize },
                         set: { v in SettingsStore.update { $0.autocapitalize = v } }),
-                .toggle(title: "\".\" shortcut",
+                .toggle(title: "Double-space for period",
                         value: { SettingsStore.current.periodShortcut },
                         set: { v in SettingsStore.update { $0.periodShortcut = v } }),
+                .toggle(title: "Number row",
+                        value: { SettingsStore.current.numberRow },
+                        set: { v in SettingsStore.update { $0.numberRow = v } }),
                 .segmented(title: "One-handed",
                            options: ["off", "left", "right"],
                            value: { SettingsStore.current.oneHanded },
                            set: { v in SettingsStore.update { $0.oneHanded = v } }),
+                .header(title: "Feel"),
+                .toggle(title: "Sound on keypress",
+                        value: { SettingsStore.current.keyClicks },
+                        set: { v in SettingsStore.update { $0.keyClicks = v } }),
+                .toggle(title: "Haptic feedback on keypress",
+                        value: { SettingsStore.current.haptics },
+                        set: { v in SettingsStore.update { $0.haptics = v } }),
+                .header(title: "More"),
                 .toggle(title: "Paste title with link",
                         value: { (SettingsStore.current.pasteStyle ?? "titleAndLink") == "titleAndLink" },
                         set: { on in
@@ -576,8 +589,17 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             ], showOpenInApp: false)
 
         case "toolbar":
+            // One row per item: its switch, and a ↑ that moves it a place
+            // up the strip (the first item has nowhere to go).
             var rows: [Row] = []
-            for itemId in SettingsStore.current.toolbarOrder {
+            for (position, itemId) in SettingsStore.current.toolbarOrder.enumerated() {
+                let moveUp: (() -> Void)? = position == 0 ? nil : {
+                    SettingsStore.update { s in
+                        if let i = s.toolbarOrder.firstIndex(of: itemId), i > 0 {
+                            s.toolbarOrder.swapAt(i, i - 1)
+                        }
+                    }
+                }
                 rows.append(.toggle(
                     title: itemId.capitalized,
                     value: { !SettingsStore.current.toolbarHidden.contains(itemId) },
@@ -586,14 +608,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                             s.toolbarHidden.removeAll { $0 == itemId }
                             if !visible { s.toolbarHidden.append(itemId) }
                         }
-                    }))
-                rows.append(.action(title: "    ↑ move \(itemId) up", style: .plain, handler: {
-                    SettingsStore.update { s in
-                        if let i = s.toolbarOrder.firstIndex(of: itemId), i > 0 {
-                            s.toolbarOrder.swapAt(i, i - 1)
-                        }
-                    }
-                }))
+                    },
+                    moveUp: moveUp))
             }
             return Screen(id: id, title: "Toolbar", rows: rows, showOpenInApp: false)
 
@@ -686,8 +702,50 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     func tableView(_ t: UITableView, cellForRowAt ip: IndexPath) -> UITableViewCell {
         let cell = t.dequeueReusableCell(withIdentifier: "c", for: ip) as! ShellCell
-        cell.configure(row: screen.rows[ip.row], shell: self)
+        cell.configure(row: screen.rows[ip.row], shell: self, place: place(of: ip.row))
         return cell
+    }
+
+    func tableView(_ t: UITableView, heightForRowAt ip: IndexPath) -> CGFloat {
+        switch screen.rows[ip.row] {
+        case .header: return ShellCell.headerHeight
+        case .info: return ShellCell.footerHeight
+        default:
+            return (Glass.solidLook ? ShellCell.rowHeight : ShellCell.twoLineHeight)
+                + place(of: ip.row).gap
+        }
+    }
+
+    /// Rows join the group of their neighbours unless a title, a footer or
+    /// a standalone action (an accent or danger button, in its own card the
+    /// way Settings sets "Sign Out" apart) comes between. The first row of
+    /// a group with no title above it keeps some air instead.
+    private func place(of i: Int) -> ShellCell.Place {
+        let rows = screen.rows
+        func carded(_ r: Row) -> Bool {
+            switch r {
+            case .header, .info: return false
+            default: return true
+            }
+        }
+        func solo(_ r: Row) -> Bool {
+            if case .action(_, let style, _) = r { return style != .plain }
+            return false
+        }
+        let me = rows[i]
+        let prev = i > 0 ? rows[i - 1] : nil
+        let next = i + 1 < rows.count ? rows[i + 1] : nil
+        let first = prev.map { !carded($0) || solo($0) || solo(me) } ?? true
+        let last = next.map { !carded($0) || solo($0) || solo(me) } ?? true
+        var gap: CGFloat = 0
+        if first {
+            if let prev {
+                if case .header = prev { gap = 0 } else { gap = ShellCell.groupGap }
+            } else {
+                gap = 6
+            }
+        }
+        return ShellCell.Place(first: first, last: last, gap: gap)
     }
 
     func tableView(_ t: UITableView, didSelectRowAt ip: IndexPath) {
@@ -730,11 +788,14 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             delegate?.shellCopyImage(id: image.id)
         case .binding:
             break // unbinding is the ✕ button, never a whole-row surprise
-        case .toggle(_, let valueFn, let set):
-            // The switch is small and sits at the card's edge, where a
-            // thumb's tap often lands just past it; the whole card flips it.
-            set(!valueFn())
-            render()
+        case .toggle(_, let valueFn, let set, _):
+            // The switch sits at the row's edge, where a thumb's tap often
+            // lands just past it; the whole row flips it, and the switch
+            // animates as if the thumb had landed on it.
+            let on = !valueFn()
+            (t.cellForRow(at: ip) as? ShellCell)?.toggle?.setOn(on, animated: true)
+            set(on)
+            rowChanged(reload: false)
         default:
             break
         }
@@ -749,16 +810,57 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         delegate?.shellEditNote(id: note.id, text: note.text)
     }
 
-    fileprivate func rowChanged() { render() }
+    /// A control on a row changed a setting. The keyboard applies it first
+    /// (appearance re-skins the keys, the number row changes the height),
+    /// then the rows are rebuilt so the next dequeue reads the new value.
+    /// The list is only reloaded when asked: a reload cuts a switch's own
+    /// animation short, and a toggle never changes another row's look.
+    fileprivate func rowChanged(reload: Bool) {
+        delegate?.shellStateChanged()
+        screen = Self.build(id: stack.last ?? "root")
+        saveState()
+        if reload { table.reloadData() }
+    }
 }
 
 // MARK: - Cell
 
+/// One row of an inset-grouped list, the way Settings draws one: the rows
+/// of a group share a single rounded card, a hairline runs between them from
+/// where the text starts, a section's title sits above its group in small
+/// capitals, and the whole row answers a tap. Titles and footers are the
+/// only rows without a card.
 private final class ShellCell: UITableViewCell {
     private weak var shell: GlyfShell?
 
-    // Card anatomy: [chip][title  value][trailing]
+    /// Where a row sits in its group: which corners it rounds, whether a
+    /// hairline runs under it, and the air above a group with no title.
+    struct Place {
+        var first = true
+        var last = true
+        var gap: CGFloat = 0
+    }
+
+    static let rowHeight: CGFloat = 44
+    static let twoLineHeight: CGFloat = 52
+    static let headerHeight: CGFloat = 32
+    static let footerHeight: CGFloat = 32
+    /// Between two groups when no title separates them.
+    static let groupGap: CGFloat = 10
+    /// The card's inset from the panel's edge, and the text's from the card.
+    static let sideInset: CGFloat = 12
+    static let textInset: CGFloat = 16
+    static let radius: CGFloat = 12
+
+    private enum Kind { case cell, header, footer }
+    private var kind = Kind.cell
+    private var place = Place()
+    /// A nav row's detail sits at the right in grey, beside the chevron.
+    private var detailRight = false
+
+    // Row anatomy: [chip][title  value][trailing]
     private let card = UIView()
+    private let separator = UIView()
     private let chip = UIView()
     private let chipIcon = UIImageView()
     private let chipLetter = UILabel()
@@ -766,6 +868,9 @@ private final class ShellCell: UITableViewCell {
     private let title = UILabel()
     private let value = UILabel()
     private var trailing: UIView?
+    /// A toggle row's switch, so a tap anywhere on the row flips it with
+    /// the same animation a thumb on the switch gets.
+    private(set) var toggle: UISwitch?
 
     /// Display name for a binding — NEVER a raw id like "glyf.summarize".
     static func displayTitle(_ glyfId: String) -> String {
@@ -797,17 +902,16 @@ private final class ShellCell: UITableViewCell {
         backgroundColor = Glass.touchableGrid
         selectionStyle = .none
 
-        // Radius 12 card, flat on the sheet, no outline.
-        card.layer.cornerRadius = Glass.siteLook ? 12 : 13
+        card.layer.cornerRadius = Self.radius
         card.layer.cornerCurve = .continuous
-        card.layer.borderWidth = Glass.siteLook ? 0 : Glass.hairlineWidth
         contentView.addSubview(card)
+        card.addSubview(separator)
 
-        chip.layer.cornerRadius = 8
+        chip.layer.cornerRadius = 7
         chip.layer.cornerCurve = .continuous
         card.addSubview(chip)
         chipIcon.contentMode = .center
-        chipIcon.preferredSymbolConfiguration = .init(pointSize: 13.5, weight: .medium)
+        chipIcon.preferredSymbolConfiguration = .init(pointSize: 14, weight: .medium)
         chip.addSubview(chipIcon)
         chipLetter.font = .systemFont(ofSize: 14, weight: .bold)
         chipLetter.textAlignment = .center
@@ -815,9 +919,10 @@ private final class ShellCell: UITableViewCell {
         chipDot.layer.cornerRadius = 2
         chip.addSubview(chipDot)
 
-        title.font = .systemFont(ofSize: Glass.siteLook ? 14 : 14.5, weight: .semibold)
+        title.font = .systemFont(ofSize: 15)
         card.addSubview(title)
-        value.font = .systemFont(ofSize: Glass.siteLook ? 14 : 12.5)
+        value.font = .systemFont(ofSize: 15)
+        value.lineBreakMode = .byTruncatingTail
         card.addSubview(value)
     }
 
@@ -825,36 +930,84 @@ private final class ShellCell: UITableViewCell {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        card.frame = contentView.bounds.insetBy(dx: 10, dy: 3)
+        let b = contentView.bounds
+        let textX = Self.sideInset + Self.textInset
+        switch kind {
+        case .header:
+            // The title hangs just above its group, on the text's own line.
+            card.frame = b
+            title.frame = CGRect(x: textX, y: b.height - 24, width: b.width - textX * 2, height: 18)
+            return
+        case .footer:
+            card.frame = b
+            title.frame = b.insetBy(dx: textX, dy: 0)
+            return
+        case .cell:
+            break
+        }
+
+        card.frame = CGRect(x: Self.sideInset, y: place.gap,
+                            width: b.width - Self.sideInset * 2, height: b.height - place.gap)
+        var corners: CACornerMask = []
+        if place.first { corners.formUnion([.layerMinXMinYCorner, .layerMaxXMinYCorner]) }
+        if place.last { corners.formUnion([.layerMinXMaxYCorner, .layerMaxXMaxYCorner]) }
+        card.layer.maskedCorners = corners
+
+        let cb = card.bounds
         let hasChip = !chip.isHidden
-        chip.frame = CGRect(x: 10, y: (card.bounds.height - 28) / 2, width: 28, height: 28)
+        chip.frame = CGRect(x: Self.textInset, y: (cb.height - 28) / 2, width: 28, height: 28)
         chipIcon.frame = chip.bounds
         chipLetter.frame = chip.bounds
         chipDot.frame = CGRect(x: 20, y: 4, width: 4, height: 4)
-        let x: CGFloat = hasChip ? 48 : 14
-        let trailW: CGFloat = trailing.map { $0.frame.width + 12 } ?? 10
-        let w = card.bounds.width - x - trailW
+        let x = hasChip ? Self.textInset + 28 + 12 : Self.textInset
+        var right = cb.width - Self.textInset
+        if let tv = trailing {
+            tv.frame = CGRect(x: right - tv.frame.width, y: (cb.height - tv.frame.height) / 2,
+                              width: tv.frame.width, height: tv.frame.height)
+            right = tv.frame.minX - 8
+        }
+        separator.isHidden = place.last
+        separator.frame = CGRect(x: x, y: cb.height - Glass.hairlineWidth,
+                                 width: cb.width - x, height: Glass.hairlineWidth)
+
+        let w = max(0, right - x)
         if value.isHidden {
-            title.frame = CGRect(x: x, y: 0, width: w, height: card.bounds.height)
-        } else if Glass.siteLook {
+            title.frame = CGRect(x: x, y: 0, width: w, height: cb.height)
+        } else if detailRight {
+            // Settings' own arrangement: the title left, the detail in grey
+            // at the right, beside the chevron.
+            let dw = min(ceil(value.intrinsicContentSize.width), w * 0.55)
+            value.frame = CGRect(x: x + w - dw, y: 0, width: dw, height: cb.height)
+            title.frame = CGRect(x: x, y: 0, width: max(0, w - dw - 10), height: cb.height)
+        } else if Glass.solidLook {
             // One line: a fixed key column, then the value (website rows).
             let keyW: CGFloat = min(92, w * 0.42)
-            title.frame = CGRect(x: x, y: 0, width: keyW, height: card.bounds.height)
+            title.frame = CGRect(x: x, y: 0, width: keyW, height: cb.height)
             value.frame = CGRect(x: x + keyW + 10, y: 0,
-                                 width: max(0, w - keyW - 10), height: card.bounds.height)
+                                 width: max(0, w - keyW - 10), height: cb.height)
         } else {
-            title.frame = CGRect(x: x, y: 7, width: w, height: 18)
-            value.frame = CGRect(x: x, y: 25, width: w, height: 15)
-        }
-        if let tv = trailing {
-            tv.center = CGPoint(x: card.bounds.width - trailW / 2 - 2,
-                                y: card.bounds.height / 2)
+            title.frame = CGRect(x: x, y: 8, width: w, height: 19)
+            value.frame = CGRect(x: x, y: 28, width: w, height: 16)
         }
     }
 
+    /// A finger on a row darkens its card a touch, as Settings does.
+    override func setHighlighted(_ highlighted: Bool, animated: Bool) {
+        super.setHighlighted(highlighted, animated: animated)
+        guard kind == .cell else { return }
+        let base = Glass.surfaceCard
+        card.backgroundColor = highlighted ? base.blend(Glass.textPrimary, 0.08) : base
+    }
+
     private func reset() {
+        kind = .cell
+        place = Place()
+        detailRight = false
         card.backgroundColor = Glass.surfaceCard
-        card.layer.borderColor = Glass.strokeHairline.cgColor
+        card.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
+                                    .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        separator.backgroundColor = Glass.strokeSeparator
+        separator.isHidden = false
         chip.isHidden = true
         chipIcon.image = nil
         chipLetter.text = nil
@@ -864,13 +1017,18 @@ private final class ShellCell: UITableViewCell {
         chipLetter.textColor = Glass.textPrimary
         chipDot.backgroundColor = Glass.accentPrimary
         title.text = nil
+        title.attributedText = nil
+        title.font = .systemFont(ofSize: 15)
         title.textColor = Glass.textPrimary
         title.textAlignment = .natural
         value.text = nil
         value.isHidden = true
+        value.font = .systemFont(ofSize: 15)
         value.textColor = Glass.textSecondary
+        value.textAlignment = .natural
         trailing?.removeFromSuperview()
         trailing = nil
+        toggle = nil
         accessibilityIdentifier = nil
     }
 
@@ -887,9 +1045,10 @@ private final class ShellCell: UITableViewCell {
 
     private func chevron() -> UIView {
         let iv = UIImageView(image: UIImage(systemName: "chevron.right"))
-        iv.tintColor = Glass.textSecondary.withAlphaComponent(0.6)
-        iv.preferredSymbolConfiguration = .init(pointSize: 11, weight: .semibold)
-        iv.frame = CGRect(x: 0, y: 0, width: 16, height: 16)
+        iv.tintColor = Glass.textSecondary.withAlphaComponent(0.55)
+        iv.preferredSymbolConfiguration = .init(pointSize: 14, weight: .semibold)
+        iv.contentMode = .center
+        iv.frame = CGRect(x: 0, y: 0, width: 14, height: 20)
         return iv
     }
 
@@ -897,7 +1056,7 @@ private final class ShellCell: UITableViewCell {
                             action: @escaping () -> Void) -> UIButton {
         let b = UIButton(type: .system)
         b.setImage(UIImage(systemName: name), for: .normal)
-        b.setPreferredSymbolConfiguration(.init(pointSize: 13, weight: .semibold),
+        b.setPreferredSymbolConfiguration(.init(pointSize: 14, weight: .semibold),
                                           forImageIn: .normal)
         b.tintColor = tint
         b.frame = CGRect(x: 0, y: 0, width: 34, height: 34)
@@ -905,70 +1064,109 @@ private final class ShellCell: UITableViewCell {
         return b
     }
 
-    func configure(row: GlyfShell.Row, shell: GlyfShell) {
+    func configure(row: GlyfShell.Row, shell: GlyfShell, place: Place) {
         self.shell = shell
         reset()
+        self.place = place
 
         switch row {
+        case .header(let t):
+            kind = .header
+            card.backgroundColor = .clear
+            separator.isHidden = true
+            title.attributedText = NSAttributedString(
+                string: t.uppercased(),
+                attributes: [.font: UIFont.systemFont(ofSize: 13),
+                             .foregroundColor: Glass.textSecondary,
+                             .kern: 0.4])
+        case .info(let t, _):
+            kind = .footer
+            card.backgroundColor = .clear
+            separator.isHidden = true
+            title.text = t
+            title.font = .systemFont(ofSize: 13)
+            title.textColor = Glass.textSecondary
+            title.textAlignment = .center
         case .nav(let icon, let t, let detail, let target):
             setIcon(icon)
             title.text = t
             if let detail, !detail.isEmpty {
                 value.isHidden = false
                 value.text = detail
+                value.textAlignment = .right
+                detailRight = true
             }
             if target != "!none" { setTrailing(chevron()) }
         case .insert(let icon, let t, _):
             setIcon(icon)
             title.text = preview(t)
             accessibilityIdentifier = "note:\(preview(t))"
-        case .toggle(let t, let valueFn, let set):
+        case .toggle(let t, let valueFn, let set, let moveUp):
             title.text = t
             let sw = UISwitch()
             sw.isOn = valueFn()
             sw.onTintColor = Glass.accentPrimary
-            sw.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
+            sw.sizeToFit()
             sw.addAction(UIAction { [weak self] a in
                 guard let s = a.sender as? UISwitch else { return }
                 set(s.isOn)
-                self?.shell?.rowChanged()
+                self?.shell?.rowChanged(reload: false)
             }, for: .valueChanged)
-            sw.frame = CGRect(x: 0, y: 0, width: 42, height: 26)
-            setTrailing(sw)
+            toggle = sw
+            if let moveUp {
+                // [↑][switch], the arrow a full tap target of its own.
+                let up = iconButton("arrow.up", tint: Glass.textSecondary) { [weak self] in
+                    moveUp()
+                    self?.shell?.rowChanged(reload: true)
+                }
+                up.accessibilityIdentifier = "toggle:\(t):up"
+                let pair = UIView(frame: CGRect(x: 0, y: 0,
+                                                width: up.frame.width + 6 + sw.frame.width,
+                                                height: max(up.frame.height, sw.frame.height)))
+                up.frame.origin = CGPoint(x: 0, y: (pair.bounds.height - up.frame.height) / 2)
+                sw.frame.origin = CGPoint(x: pair.bounds.width - sw.frame.width,
+                                          y: (pair.bounds.height - sw.frame.height) / 2)
+                pair.addSubview(up)
+                pair.addSubview(sw)
+                setTrailing(pair)
+            } else {
+                setTrailing(sw)
+            }
             accessibilityIdentifier = "toggle:\(t)"
         case .segmented(let t, let options, let valueFn, let set):
             title.text = t
-            let seg = UISegmentedControl(items: options)
+            let seg = UISegmentedControl(items: options.map(\.capitalized))
             seg.selectedSegmentIndex = options.firstIndex(of: valueFn()) ?? 0
             seg.selectedSegmentTintColor = Glass.accentPrimary
-            seg.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 11.5)], for: .normal)
+            seg.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 13, weight: .medium),
+                                        .foregroundColor: Glass.textPrimary], for: .normal)
+            seg.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 13, weight: .semibold),
+                                        .foregroundColor: UIColor.white], for: .selected)
             seg.addAction(UIAction { [weak self] a in
                 guard let s = a.sender as? UISegmentedControl,
                       s.selectedSegmentIndex >= 0 else { return }
                 set(options[s.selectedSegmentIndex])
-                self?.shell?.rowChanged()
+                // Appearance re-skins everything, this list included.
+                self?.shell?.rowChanged(reload: true)
             }, for: .valueChanged)
-            seg.frame = CGRect(x: 0, y: 0, width: 150, height: 28)
+            seg.sizeToFit()
+            seg.frame = CGRect(x: 0, y: 0, width: max(seg.frame.width, 168), height: 30)
             setTrailing(seg)
         case .action(let t, let style, _):
             title.text = t
-            title.textAlignment = .center
-            card.backgroundColor = Glass.touchableGrid
-            card.layer.borderColor = UIColor.clear.cgColor
             switch style {
-            case .accent: title.textColor = Glass.accentPrimary
-            case .danger: title.textColor = Glass.accentDanger
-            case .plain: title.textColor = Glass.textSecondary
+            case .accent:
+                title.textAlignment = .center
+                title.textColor = Glass.accentPrimary
+            case .danger:
+                title.textAlignment = .center
+                title.textColor = Glass.accentDanger
+            case .plain:
+                title.textColor = Glass.textSecondary
             }
-        case .info(let t, _):
-            title.text = t
-            title.textColor = Glass.textSecondary
-            title.textAlignment = .center
-            card.backgroundColor = Glass.touchableGrid
-            card.layer.borderColor = UIColor.clear.cgColor
         case .clip(let item):
             // Website row: how long ago on the left, the text beside it.
-            if Glass.siteLook {
+            if Glass.solidLook {
                 title.text = Self.age(item.ts)
                 value.text = preview(item.text)
                 value.isHidden = false
@@ -980,11 +1178,11 @@ private final class ShellCell: UITableViewCell {
                                    tint: item.pinned ? Glass.accentPrimary
                                                      : Glass.textSecondary) { [weak self] in
                 ClipboardStore.togglePin(item.text)
-                self?.shell?.rowChanged()
+                self?.shell?.rowChanged(reload: true)
             })
         case .binding(let key, let glyfId):
             chip.isHidden = false
-            chip.backgroundColor = Glass.surfaceCard
+            chip.backgroundColor = Glass.fillField
             chipLetter.text = key.uppercased()
             chipDot.isHidden = false
             title.text = Self.displayTitle(glyfId ?? "")
@@ -1016,7 +1214,7 @@ private final class ShellCell: UITableViewCell {
             })
         case .snippet(let trigger, let text):
             chip.isHidden = false
-            chip.backgroundColor = Glass.surfaceCard
+            chip.backgroundColor = Glass.fillField
             chipLetter.text = ";"
             chipLetter.textColor = Glass.accentPrimary
             title.text = trigger
