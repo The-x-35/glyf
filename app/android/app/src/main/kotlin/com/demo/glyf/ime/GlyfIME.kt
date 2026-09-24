@@ -771,6 +771,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     // MARK: key handling
 
     override fun onKey(id: String, char: String?) {
+        // The emoji board's search field takes the letters while it is open.
+        emojiBoard?.takeIf { it.searchActive }?.let { board ->
+            if (id == "shift" || id.startsWith("mode:")) typeIntoStrip(id, char, "", {}) {}
+            else {
+                board.type(id, char)
+                // A search is lowercase unless asked: shift is one letter's.
+                if (char != null && keyboard.shifted) { keyboard.shifted = false; keyboard.invalidate() }
+            }
+            return
+        }
         if (searchActive) {
             typeIntoStrip(id, char, searchQuery, { searchQuery = it; renderQuery() }) {
                 submitSearch()
@@ -2626,6 +2636,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun dismissFeaturePanel() {
         featurePanel?.let { root.removeView(it) }
         featurePanel = null
+        emojiBoard = null
         gPill?.text = "g"
         dropMarker?.let { if (::toolIcons.isInitialized) toolIcons.removeView(it) }
         dropMarker = null
@@ -3008,38 +3019,98 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         toolbar.visibility = View.VISIBLE
     }
 
-    private val emojiCats = linkedMapOf(
-        "😊" to "😀 😃 😄 😁 😆 😅 😂 🤣 😊 🙂 😉 😍 🥰 😘 😗 😙 😚 🤗 🤩 🥳 😎 🤓 😏 😌",
-        "👋" to "👋 🤚 ✋ 🖐 👌 🤌 ✌️ 🤞 🤟 🤘 👍 👎 👊 ✊ 🤛 🤜 👏 🙌 👐 🤲 🙏 💪 🫶 🤝",
-        "❤️" to "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ♥️ 💌 💋 😻 🫀",
-        "🐶" to "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🦄 🐝 🦋 🐢 🐬 🐳",
-        "🍕" to "🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍒 🥭 🍍 🥥 🍅 🥑 🍕 🍔 🍟 🌮 🍣 🍜 🍩 ☕",
-        "⚽" to "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 ⛳ 🛹 🛼 🏄 🏊 🚴 🎮 🎲 🎯 �against 🎤 🎧 🎬",
-    )
+    // MARK: emoji board (EmojiBoard.swift twin: Emoji, Stickers, GIFs, Emoticons)
+
+    private var emojiBoard: EmojiBoardView? = null
+    /** The board's full height: the strip plus the keys it stands in for. */
+    private var emojiBoardFull = 0
+
+    private val emojiHost = object : EmojiBoardView.Host {
+        override val backendURL: String get() = settings.optString("backendURL")
+        override val palette: GlyfKeyboardView.KeyPalette get() = keyboard.palette()
+        override val dark: Boolean get() = chromeDark
+        override val online: Boolean get() {
+            val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            return cm.activeNetwork != null
+        }
+        override fun commitText(text: String, spaced: Boolean) {
+            val ic = currentInputConnection ?: return
+            val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+            // ":-)" is a word of its own; glued to the last one it reads "later:-)".
+            val out = if (spaced && before.isNotEmpty() && !before.last().isWhitespace()) " $text" else text
+            ic.commitText(out, 1)
+        }
+        override fun deleteBackward() = onKey("delete", null)
+        override fun backToLetters() = dismissFeaturePanel()
+        override fun searchChanged(active: Boolean) {
+            val board = emojiBoard ?: return
+            // Searching shows the letter keys under a strip (Apple's and
+            // Gboard's emoji search); closing it gives the board back its keys.
+            keyboard.visibility = if (active) View.VISIBLE else View.GONE
+            board.layoutParams = (board.layoutParams as LinearLayout.LayoutParams).apply {
+                height = if (active) dp(96) else emojiBoardFull
+            }
+            // The field's auto-capital shift is not the search's: start lower.
+            if (active) { keyboard.mode = Mode.LETTERS; keyboard.shifted = false; keyboard.rebuild() }
+        }
+        override fun sendMedia(item: MediaItem, kind: MediaKind, done: (Boolean) -> Unit) =
+            sendMediaItem(item, kind, done)
+    }
 
     private fun showEmojiPanel() {
-        val (_, body) = panelShell("Emoji", bottomBar = true)
-        for ((_, list) in emojiCats) {
-            val emojis = list.split(" ").filter { it.isNotBlank() && !it.contains("against") }
-            var i = 0
-            while (i < emojis.size) {
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                }
-                for (j in i until minOf(i + 8, emojis.size)) {
-                    val e = emojis[j]
-                    row.addView(TextView(this).apply {
-                        text = e; textSize = 24f; gravity = Gravity.CENTER
-                        setPadding(0, dp(5), 0, dp(5))
-                        setOnClickListener {
-                            currentInputConnection?.commitText(e, 1)
-                        }
-                    }, LinearLayout.LayoutParams(0,
-                        LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                }
-                body.addView(row)
-                i += 8
+        dismissFeaturePanel()
+        val barH = if (toolbar.height > 0) toolbar.height else dp(47)
+        val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
+        emojiBoardFull = barH + keysH
+        val board = EmojiBoardView(this, emojiHost)
+        toolbar.visibility = View.GONE
+        keyboard.visibility = View.GONE
+        root.addView(board, 0, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, emojiBoardFull))
+        featurePanel = board
+        emojiBoard = board
+    }
+
+    /**
+     * A GIF or sticker into the field. Android lets a keyboard hand an image
+     * to a field that says it takes one (`commitContent`, what Gboard does):
+     * then it simply arrives in the message. Anywhere else it is copied, the
+     * way iOS always has to, and the person pastes it.
+     */
+    private fun sendMediaItem(item: MediaItem, kind: MediaKind, done: (Boolean) -> Unit) {
+        val noun = if (kind == MediaKind.GIFS) "GIF" else "Sticker"
+        MediaClient.fullData(item.url) { bytes ->
+            if (bytes == null || bytes.size < 8) {
+                android.widget.Toast.makeText(this, "That ${noun.lowercase()} didn't download. Try again",
+                    android.widget.Toast.LENGTH_SHORT).show()
+                done(false)
+                return@fullData
             }
+            val gif = bytes[0] == 'G'.code.toByte() && bytes[1] == 'I'.code.toByte() && bytes[2] == 'F'.code.toByte()
+            val mime = if (gif) "image/gif" else "image/png"
+            val file = runCatching {
+                val dir = java.io.File(cacheDir, "media").apply { mkdirs() }
+                // Only the latest few stay: they are handed over, not kept.
+                dir.listFiles()?.sortedBy { it.lastModified() }?.dropLast(4)?.forEach { it.delete() }
+                java.io.File(dir, "glyf-${System.currentTimeMillis()}.${if (gif) "gif" else "png"}")
+                    .apply { writeBytes(bytes) }
+            }.getOrNull()
+            if (file == null) { done(false); return@fullData }
+            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.media", file)
+            val accepted = currentInputEditorInfo?.contentMimeTypes.orEmpty()
+            val fits = accepted.any { android.content.ClipDescription.compareMimeTypes(mime, it) }
+            val ic = currentInputConnection
+            if (fits && ic != null) {
+                val info = android.view.inputmethod.InputContentInfo(
+                    uri, android.content.ClipDescription(noun, arrayOf(mime)), null)
+                val ok = ic.commitContent(info,
+                    android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
+                if (ok) { done(true); return@fullData }
+            }
+            val clip = android.content.ClipData.newUri(contentResolver, noun, uri)
+            (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(clip)
+            android.widget.Toast.makeText(this, "$noun copied. Paste it in the message",
+                android.widget.Toast.LENGTH_SHORT).show()
+            done(true)
         }
     }
 

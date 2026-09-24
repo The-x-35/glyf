@@ -60,6 +60,17 @@
                 android:name="android.view.im"
                 android:resource="@xml/method"/>
         </service>
+        <!-- GIFs and stickers the keyboard hands to a field (commitContent)
+             or copies: files it just downloaded, read-only, per grant. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.media"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/media_paths"/>
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

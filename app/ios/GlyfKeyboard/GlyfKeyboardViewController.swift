@@ -2737,6 +2737,9 @@ extension GlyfKeyboardViewController: EmojiBoardDelegate {
 
     func emojiSearchActivated(_ editor: InlineEditor) {
         inlineTarget = editor
+        // Apple's emoji search starts in lowercase, whatever capital the
+        // message field was about to get.
+        keyboardView.syncAutoShift(wantsCapital: false)
     }
 
     var emojiBoardHasFullAccess: Bool { hasFullAccess }

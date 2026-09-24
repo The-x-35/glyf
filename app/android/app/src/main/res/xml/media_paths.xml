@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The only files the keyboard shares: GIFs and stickers it just fetched. -->
+<paths>
+    <cache-path name="media" path="media/"/>
+</paths>

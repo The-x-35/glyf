@@ -25,6 +25,24 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(SecretScanner.scan("privy_app_secret_abcdefgh12345678"), .privateKeyOrToken)
         XCTAssertEqual(SecretScanner.scan(String(repeating: "a1", count: 32)), .privateKeyOrToken)
         XCTAssertEqual(SecretScanner.scan("-----BEGIN PRIVATE KEY-----\nxx"), .privateKeyOrToken)
+        // Found on a real clipboard (2026-09-24): a 38-character webhook
+        // signing secret went into history under the old rules.
+        XCTAssertEqual(SecretScanner.scan("whsec_Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z"), .privateKeyOrToken)
+        XCTAssertEqual(SecretScanner.scan("github_pat_11ABCDEFG0123456789_abcdefghij"), .privateKeyOrToken)
+        XCTAssertEqual(SecretScanner.scan("AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW"), .privateKeyOrToken)
+        XCTAssertEqual(SecretScanner.scan("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abcdefghijklmnop"), .privateKeyOrToken)
+        XCTAssertEqual(SecretScanner.scan("Zq8Lr2Tx5Vm9Kc3Pw7Jd1Hs6Gf4Nb0Ya"), .privateKeyOrToken)
+        // Ordinary copies stay: words, a link, a skim-length id.
+        XCTAssertEqual(SecretScanner.scan("See you at Sunset Boulevard at 7pm"), .clean)
+        XCTAssertEqual(SecretScanner.scan("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), .clean)
+        XCTAssertEqual(SecretScanner.scan("sk-"), .clean)
+        // Wallet addresses are for sharing (the pay chip reads a copied one).
+        XCTAssertEqual(SecretScanner.scan("8QvSMrFfYYo2RwoDN6bNpS2d3F8JKTzN8Cw2vAh3tNqP"), .clean)
+        XCTAssertEqual(SecretScanner.scan("0x52908400098527886E0F7030069857D2E4169EE7"), .clean)
+        XCTAssertEqual(SecretScanner.scan("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"), .clean)
+        // Their keys are not.
+        XCTAssertEqual(SecretScanner.scan(String(repeating: "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3", count: 1)
+            + "4YxN2QkHj7Lm9Pq3Rs6Tv8Wx1Yz2Ab3Cd4Ef"), .privateKeyOrToken)
     }
 
     func testOTPRefusedButPINsAreNotWorthKeepingEither() {

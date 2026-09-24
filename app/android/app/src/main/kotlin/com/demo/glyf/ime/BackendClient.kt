@@ -219,6 +219,9 @@ object BackendClient {
                     requestMethod = "GET"
                     connectTimeout = 5000
                     readTimeout = 12000
+                    // The gate turns away a request without a session; the
+                    // landing rows were silently empty without this.
+                    signIn()
                 }
                 val json = JSONObject(conn.inputStream.bufferedReader().readText())
                 onCards(json.optString("vertical", vertical), parseCards(json))
