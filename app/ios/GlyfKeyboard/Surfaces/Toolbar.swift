@@ -607,10 +607,11 @@ final class GlyfToolbar: UIView {
         // the grid sits on the same rhythm they do.
         let padX = Self.itemPad + Self.gridSlack, padY: CGFloat = 6
         let inkX = Self.margin + Self.gridSlack
-        glyfButton.frame = CGRect(x: inkX - padX, y: mid - glyph / 2 - padY,
-                                  width: glyph + padX * 2, height: glyph + padY * 2)
+        let target = Glass.stripBox(height: glyph + padY * 2, mid: mid)
+        glyfButton.frame = CGRect(x: inkX - padX, y: target.y,
+                                  width: glyph + padX * 2, height: target.height)
         glyfButton.layer.cornerRadius = 9
-        let box = CGRect(x: padX, y: padY, width: glyph, height: glyph)
+        let box = CGRect(x: padX, y: (target.height - glyph) / 2, width: glyph, height: glyph)
         appsGrid.frame = glyfButton.bounds
         let scale = max(traitCollection.displayScale, 1)
         appsGrid.lineWidth = max(1, (glyph * 0.072 * scale).rounded() / scale)
@@ -624,8 +625,9 @@ final class GlyfToolbar: UIView {
         }
         let left = markRight + (Glass.solidLook ? 11 : 17)
         if !smartCard.isHidden {
-            let cardH = (h * 0.78).rounded()
-            smartCard.frame = CGRect(x: left, y: mid - cardH / 2,
+            let card = Glass.stripBox(height: (h * 0.78).rounded(), mid: mid)
+            let cardH = card.height
+            smartCard.frame = CGRect(x: left, y: card.y,
                                      width: max(0, bounds.width - left - 6), height: cardH)
             let paste = !smartLead.isHidden
             // Gboard's clipboard suggestion is a pill; the rest stay cards.
@@ -649,17 +651,19 @@ final class GlyfToolbar: UIView {
         }
         if panelTitle != nil {
             var x = left
+            let row = Glass.stripBox(height: h, mid: mid)
             if !panelBack.isHidden {
-                panelBack.frame = CGRect(x: x - 4, y: band - Glass.stripLift, width: 30, height: h)
+                panelBack.frame = CGRect(x: x - 4, y: row.y, width: 30, height: row.height)
                 x += 28
             }
             panelIcon.frame = CGRect(x: x, y: mid - 12, width: 24, height: 24)
             let textX = panelIcon.isHidden ? x : x + 30
             let actionW: CGFloat = panelAction.isHidden ? 0 : 44
-            panelAction.frame = CGRect(x: bounds.width - actionW - 4, y: mid - 17,
-                                       width: actionW, height: 34)
-            panelLabel.frame = CGRect(x: textX, y: band - Glass.stripLift,
-                                      width: bounds.width - textX - 10 - actionW, height: h)
+            let action = Glass.stripBox(height: 34, mid: mid)
+            panelAction.frame = CGRect(x: bounds.width - actionW - 4, y: action.y,
+                                       width: actionW, height: action.height)
+            panelLabel.frame = CGRect(x: textX, y: row.y,
+                                      width: bounds.width - textX - 10 - actionW, height: row.height)
         }
         // One gap for the whole row, margins included.
         //
@@ -691,10 +695,9 @@ final class GlyfToolbar: UIView {
         let toolsW = max(0, end - toolsLeft)
         scroll.frame = CGRect(x: toolsLeft, y: band, width: toolsW, height: h)
         itemsStack.spacing = 0
-        let itemH = min(34, h - 4)
         // …and inside it the stack is band-relative: the strip's own centring.
-        itemsStack.frame = CGRect(x: 0, y: (mid - band) - itemH / 2,
-                                  width: toolsW, height: itemH)
+        let items = Glass.stripBox(height: min(34, h - 4), mid: mid - band)
+        itemsStack.frame = CGRect(x: 0, y: items.y, width: toolsW, height: items.height)
         scroll.contentSize = CGSize(width: toolsW, height: h)
         candidatesStack.frame = CGRect(x: left, y: mid - (h - 12) / 2,
                                        width: bounds.width - left - 8, height: h - 12)

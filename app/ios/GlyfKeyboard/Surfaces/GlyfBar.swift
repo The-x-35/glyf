@@ -207,10 +207,11 @@ final class GlyfBar: UIView {
         let h = Glass.stripContent
         let mid = Glass.stripBand + h / 2 - Glass.stripLift
         let pillW = (h * 1.18).rounded()
-        let pillH = (h * 0.78).rounded()
-        closeButton.frame = CGRect(x: 5, y: mid - pillH / 2, width: pillW, height: pillH)
+        let pill = Glass.stripBox(height: (h * 0.78).rounded(), mid: mid)
+        let pillH = pill.height
+        closeButton.frame = CGRect(x: 5, y: pill.y, width: pillW, height: pillH)
         let left = pillW + 11
-        let field = CGRect(x: left, y: mid - pillH / 2, width: max(0, w - left - 6), height: pillH)
+        let field = CGRect(x: left, y: pill.y, width: max(0, w - left - 6), height: pillH)
         promptEditor.frame = field
         promptEditor.layer.cornerRadius = pillH / 2
         let runD = pillH - 6

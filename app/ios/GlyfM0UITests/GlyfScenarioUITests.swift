@@ -308,9 +308,15 @@ final class GlyfScenarioUITests: XCTestCase {
         clear()
         type("sure my address is ")
         guard let chip = wait("strip:smart", 4) else { return XCTFail("no address chip") }
-        XCTAssertTrue(chip.label.contains("Glass Lane"), "chip says '\(chip.label)'")
+        // The first address in the vault: the seed on a fresh simulator, or
+        // whatever the person saved (the seed never overwrites a vault).
+        let offered = chip.label
+        XCTAssertTrue(offered.range(of: #"\d"#, options: .regularExpression) != nil,
+                      "chip says '\(offered)'")
         chip.tap()
-        XCTAssertTrue(waitValue(3) { $0.contains("42 Glass Lane") }, "got '\(value)'")
+        let tail = String(offered.suffix(12))
+        XCTAssertTrue(waitValue(3) { $0.localizedCaseInsensitiveContains(tail) },
+                      "got '\(value)' for chip '\(offered)'")
     }
 
     func testS62_AskedForUPIItIsOneTapAway() throws {
@@ -318,9 +324,13 @@ final class GlyfScenarioUITests: XCTestCase {
         clear()
         type("my upi is ")
         guard let chip = wait("strip:smart", 4) else { return XCTFail("no UPI chip") }
-        XCTAssertTrue(chip.label.contains("arpit@okbank"), "chip says '\(chip.label)'")
+        // The vault's UPI id, whichever it is (see S61).
+        let offered = chip.label
+        guard let id = offered.split(separator: " ").last(where: { $0.contains("@") }) else {
+            return XCTFail("chip says '\(offered)'")
+        }
         chip.tap()
-        XCTAssertTrue(waitValue(3) { $0.contains("arpit@okbank") }, "got '\(value)'")
+        XCTAssertTrue(waitValue(3) { $0.contains(id) }, "got '\(value)' for chip '\(offered)'")
     }
 
     func testS63_RoughMessageOffersTidyThisUp() throws {
@@ -497,6 +507,74 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertTrue(waitValue(3) { $0.contains("😂") }, "got '\(value)'")
         if el("emoji:letters").exists { tap("emoji:letters") } else { tap("emoji:abc") }
         XCTAssertNotNil(wait("key:a", 3), "ABC should bring the letters back")
+    }
+
+    // MARK: - Stickers, GIFs and emoticons (Gboard's tabs, Apple's look)
+
+    func testS101_EmoticonsTypeStraightIntoTheField() throws {
+        open()
+        clear()
+        tap("key:emojikey")
+        tap("emoji:mode:emoticons")
+        tap("emoji:chip:classic")
+        guard let first = wait("emoji:emoticon:0", 3) else { return XCTFail("no emoticons") }
+        let text = first.label
+        first.tap()
+        XCTAssertTrue(waitValue(3) { $0.contains(text) }, "got '\(value)' after tapping '\(text)'")
+        tap("emoji:mode:emoji")
+        XCTAssertTrue(app.staticTexts["😂"].firstMatch.waitForExistence(timeout: 3),
+                      "the emoji glyph should bring the emoji back")
+    }
+
+    /// Needs a GIF provider key on the server; without one the board says so
+    /// and this fails with its words (reported as blocked, not a bug).
+    func testS102_GIFTabShowsGIFsAndCopiesOne() throws {
+        open()
+        tap("key:emojikey")
+        tap("emoji:mode:gifs")
+        tap("emoji:chip:trending")
+        guard let gif = wait("emoji:media:0", 12) else {
+            return XCTFail("no GIFs; the board says '\(el("emoji:status").label)'")
+        }
+        gif.tap()
+        let toast = wait("kb:toast", 12)
+        XCTAssertTrue(toast?.label.contains("copied") == true, "toast '\(toast?.label ?? "none")'")
+        XCTAssertTrue(UIPasteboard.general.contains(pasteboardTypes: ["com.compuserve.gif"]),
+                      "the GIF should be on the pasteboard, ready to paste")
+        note("GIF copied; toast '\(toast?.label ?? "")'")
+        tap("emoji:mode:emoji")
+    }
+
+    func testS103_StickerTabShowsStickersAndCopiesOne() throws {
+        open()
+        tap("key:emojikey")
+        tap("emoji:mode:stickers")
+        tap("emoji:chip:trending")
+        guard let sticker = wait("emoji:media:0", 12) else {
+            return XCTFail("no stickers; the board says '\(el("emoji:status").label)'")
+        }
+        sticker.tap()
+        let toast = wait("kb:toast", 12)
+        XCTAssertTrue(toast?.label.contains("copied") == true, "toast '\(toast?.label ?? "none")'")
+        XCTAssertTrue(UIPasteboard.general.contains(pasteboardTypes: ["com.compuserve.gif"])
+                      || UIPasteboard.general.contains(pasteboardTypes: ["public.png"]),
+                      "the sticker should be on the pasteboard")
+        tap("emoji:mode:emoji")
+    }
+
+    func testS104_GIFSearchShowsResultsForTheWord() throws {
+        open()
+        tap("key:emojikey")
+        tap("emoji:mode:gifs")
+        tap("emoji:search")
+        type("cat")
+        tap("key:return")
+        guard wait("emoji:media:0", 12) != nil else {
+            return XCTFail("no results; the board says '\(el("emoji:status").label)'")
+        }
+        let section = el("emoji:section").label
+        XCTAssertTrue(section.contains("CAT"), "section says '\(section)'")
+        tap("emoji:mode:emoji")
     }
 
     func testS75_EmojiPagesSwipeSideways() throws {

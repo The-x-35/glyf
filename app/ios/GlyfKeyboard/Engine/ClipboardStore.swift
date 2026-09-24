@@ -75,6 +75,10 @@ enum ClipboardStore {
                                 name: "clip-cc.json")
     }
 
+    /// The keyboard just put something there itself (a GIF to paste): that
+    /// is not a copy of the person's to offer back or keep.
+    static func ignoreNextChange() { markPasteboardSeen() }
+
     /// Puts a new copy straight into history, asking nothing.
     ///
     /// `detectValues` hands back the ACTUAL text for what iOS can recognise

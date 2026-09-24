@@ -4,6 +4,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8787";
+// Every route but a few open ones needs a Glyf session since the gate went
+// in: GLYF_TOKEN=<session> node qa/server-scenarios.mjs
+const AUTH = process.env.GLYF_TOKEN ? { authorization: `Bearer ${process.env.GLYF_TOKEN}` } : {};
 const DEVICE = "qa-scenarios";
 const IN = { country: "IN", tz: "Asia/Kolkata", lat: 12.9719, lon: 77.6412 };
 
@@ -11,7 +14,7 @@ async function post(path, body) {
   const started = Date.now();
   const res = await fetch(BASE + path, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...AUTH },
     body: JSON.stringify({ deviceId: DEVICE, ...body }),
   });
   const json = await res.json().catch(() => ({}));
@@ -179,7 +182,7 @@ const scenarios = [
 
   // --- Private payments ---
   { id: "S34", area: "Pay", title: "Wallet config is there for the app's Privy login",
-    run: async () => { const res = await fetch(BASE + "/wallet/config"); return { status: res.status, json: await res.json() }; },
+    run: async () => { const res = await fetch(BASE + "/wallet/config", { headers: AUTH }); return { status: res.status, json: await res.json() }; },
     check: r => r.status === 200 && r.json.ready === true && r.json.privyAppId.length > 5,
     show: r => `ready: ${r.json.ready}, cluster: ${r.json.cluster}` },
 

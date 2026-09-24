@@ -58,6 +58,17 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
     const kinds = (parsed.data.kinds ?? []).filter((k): k is DetailKind =>
       (DETAIL_KINDS as readonly string[]).includes(k));
 
+    // Both questions (is this asking for a saved detail? what would Glyf do
+    // with it?) go to the model at once: one after the other they took
+    // about nine seconds on the free models, and a chip that late arrives
+    // after the message has gone. `plan` never rejects (a failed model is
+    // a rewrite), so an answer nobody waits for costs nothing but the call.
+    const key = TTLCache.key(["suggest", text.toLowerCase()]);
+    const cached = cache.get(key);
+    const planning: Promise<{ intent: ActIntent; query: string }> = cached
+      ? Promise.resolve(JSON.parse(cached) as { intent: ActIntent; query: string })
+      : plan(text).then(p => { cache.set(key, JSON.stringify(p)); return p; });
+
     // About to share one of their own details? The keyboard fills it in.
     if (kinds.length > 0) {
       const dkey = TTLCache.key(["detail", text.toLowerCase(), kinds.slice().sort().join(",")]);
@@ -72,12 +83,7 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
       }
     }
 
-    const key = TTLCache.key(["suggest", text.toLowerCase()]);
-    const cached = cache.get(key);
-    const planned = cached
-      ? JSON.parse(cached) as { intent: ActIntent; query: string }
-      : await plan(text);
-    if (!cached) cache.set(key, JSON.stringify(planned));
+    const planned = await planning;
     if (!worthSuggesting(text, planned.intent)) {
       return { ok: true, suggestion: null };
     }

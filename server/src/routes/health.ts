@@ -44,7 +44,7 @@ export function healthRoutes(app: FastifyInstance, kv?: KV): void {
         googlePlaces: has("GOOGLE_PLACES_KEY"),
         googleWeather: has("GOOGLE_WEATHER_KEY") || has("GOOGLE_PLACES_KEY"),
         geoapify: has("GEOAPIFY_KEY"),
-        giphy: has("GIPHY_API_KEY"),
+        klipy: has("KLIPY_APP_KEY"),
       },
       connectors,
       storage: kv?.status?.() ?? { driver: "unknown", ready: true, collections: 0 },

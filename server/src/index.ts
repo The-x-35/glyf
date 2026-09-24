@@ -12,7 +12,7 @@ import { builderRoutes } from "./routes/builder.js";
 import { hubRoutes } from "./routes/hub.js";
 import { connectorRoutes } from "./routes/connector.js";
 import { telemetryRoutes } from "./routes/telemetry.js";
-import { gifRoutes } from "./routes/gif.js";
+import { mediaRoutes } from "./routes/media.js";
 import { toolsRoutes } from "./routes/tools.js";
 import { searchRoutes } from "./routes/search.js";
 import { ratesRoutes } from "./routes/rates.js";
@@ -80,7 +80,7 @@ export function buildApp(kv: KV = defaultKV()) {
   hubRoutes(app, library, kv);
   connectorRoutes(app, kv);
   telemetryRoutes(app, kv);
-  gifRoutes(app);
+  mediaRoutes(app);
   toolsRoutes(app);
   searchRoutes(app, kv, guard);
   ratesRoutes(app);

@@ -452,6 +452,19 @@ const GEOAPIFY_CATEGORIES: [RegExp, string][] = [
   [/\b(bakery|bread)\b/i, "commercial.food_and_drink.bakery"],
 ];
 
+/** A cash machine is named after the bank that runs it: "Citibank", 330 m
+ *  away, does not say it is the ATM that was asked for. The kinds that are
+ *  named after their operator say what they are. */
+const OPERATOR_NAMED: Record<string, string> = {
+  "service.financial.atm": "ATM",
+};
+
+export function withCategory(title: string, category: string): string {
+  const label = OPERATOR_NAMED[category];
+  if (!label || new RegExp(`\\b${label}\\b`, "i").test(title)) return title;
+  return `${title} ${label}`;
+}
+
 interface GeoapifyFeature {
   properties?: {
     name?: string; formatted?: string; address_line2?: string;
@@ -514,7 +527,7 @@ async function geoapifyPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[
         limit: "8", apiKey: key,
       }), 7000);
     const rows = cards(data.features ?? []);
-    if (rows.length) return rows;
+    if (rows.length) return rows.map(r => ({ ...r, title: withCategory(r.title, category) }));
   }
 
   const params = new URLSearchParams({ text: term, limit: "8", apiKey: key });

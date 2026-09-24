@@ -305,6 +305,42 @@
   "verdict": "pass"
  },
  {
+  "id": "S101",
+  "surface": "iPhone",
+  "area": "Emoji board",
+  "title": "Emoticons type straight into the message",
+  "input": "emoji key → :-) → Classic → tap the first emoticon",
+  "outcome": "“:-)” is typed, with a space when it follows a word",
+  "verdict": "pass"
+ },
+ {
+  "id": "S102",
+  "surface": "iPhone",
+  "area": "Emoji board",
+  "title": "The GIF tab shows GIFs and copies one",
+  "input": "emoji key → GIF → Trending → tap a GIF",
+  "outcome": "“GIF copied. Hold the text box and tap Paste”, a com.compuserve.gif on the pasteboard; pasted into a Messages draft it shows as an image. Run against qa/fake-klipy.mjs (no KLIPY key yet)",
+  "verdict": "pass"
+ },
+ {
+  "id": "S103",
+  "surface": "iPhone",
+  "area": "Emoji board",
+  "title": "The Stickers tab shows stickers and copies one",
+  "input": "emoji key → Stickers → Trending → tap a sticker",
+  "outcome": "“Sticker copied…”, the sticker GIF on the pasteboard; without a KLIPY key the tab shows Noto animated emoji instead",
+  "verdict": "pass"
+ },
+ {
+  "id": "S104",
+  "surface": "iPhone",
+  "area": "Emoji board",
+  "title": "GIF search shows results for the word",
+  "input": "emoji key → GIF → tap Search KLIPY → type “cat” → return",
+  "outcome": "the grid shows the cat GIF under “CAT”; KLIPY's autocomplete appears as chips while typing",
+  "verdict": "pass"
+ },
+ {
   "id": "S99",
   "surface": "App",
   "area": "Build your own",

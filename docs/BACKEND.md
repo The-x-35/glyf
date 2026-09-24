@@ -134,7 +134,7 @@ server/
 │   │   ├── rates.ts        GET /rates/fiat (ECB per dollar), GET /rates/crypto?symbols= (Jupiter verified tokens)
 │   │   ├── tools.ts        POST /tools/run
 │   │   ├── connector.ts    OAuth broker, /connectors/*, mock calendar
-│   │   ├── gif.ts          GET /gif/search (GIPHY proxy)
+│   │   ├── media.ts        GET /media/config, /media/emoji-stickers (GIFs and stickers)
 │   │   ├── telemetry.ts    POST /telemetry, GET /telemetry/funnel
 │   │   └── waitlist.ts     POST /waitlist, GET /waitlist/count (legacy)
 │   ├── lib/
@@ -287,7 +287,7 @@ None of this works across multiple server instances. A deployment must run one i
 | 32 | POST | `/connectors/disconnect` | Delete a stored connection | No | `routes/connector.ts` | Flutter app |
 | 33 | GET | `/connector/mockcal/events?q=` | Demo calendar events | No | `routes/connector.ts` | iOS keyboard ConnectorSurface |
 | 34 | GET | `/connector/mockcal/month?year=&month=` | Demo month grid | No | `routes/connector.ts` | iOS keyboard ConnectorSurface |
-| 35 | GET | `/gif/search?q=&limit=` | GIPHY search proxy | No | `routes/gif.ts` | None found (no GIF tab yet) |
+| 35 | GET | `/media/config`, `/media/emoji-stickers?q=&page=` | KLIPY key for the phone; Noto animated emoji stickers | Yes | `routes/media.ts` | iOS emoji board (`MediaClient.swift`) |
 | 36 | POST | `/telemetry` | Event batch sink | No | `routes/telemetry.ts` | Flutter app |
 | 37 | GET | `/telemetry/funnel` | Aggregated counts | No | `routes/telemetry.ts` | None found |
 | 38 | POST | `/waitlist` | Legacy waitlist signup | No | `routes/waitlist.ts` | None (the site now uses Neon) |
@@ -480,12 +480,18 @@ Every route except the open paths in `lib/protect.ts` (`/health`, `/auth/*`, `/w
 
 Full broker design: [section 8](#8-connectors-and-the-oauth-broker).
 
-### 4.9 GIF search
+### 4.9 GIFs and stickers (`routes/media.ts`)
 
-**`GET /gif/search?q=&limit=`**
-- Response: `{ gifs: [{ id, title, preview, url }] }` from GIPHY search (or trending when `q` is empty). `limit` defaults to 24, max 50. Rating `pg-13`. Query truncated to 80 chars.
-- 503 naming `GIPHY_API_KEY` when unset, 502 on provider error.
-- Why it exists: keyboards cannot type images. Gboard's pattern is to copy the GIF to the pasteboard for the user to paste. Search goes through the server so the key stays server-side. No keyboard GIF tab has been built (2026-09-12 decision, still waiting on a GIPHY key).
+Tenor's API closed on 2026-06-30 and GIPHY forbids proxying (and charges past 100 calls an hour), so the old `/gif/search` GIPHY proxy is gone. GIFs and most stickers come from **KLIPY**, whose terms want every API call and file load to come from the person's device: this server does not search KLIPY, it hands a signed-in phone the app key and the keyboard calls KLIPY itself. Stickers also work with no key, from Google's **Noto Animated Emoji** (CC BY 4.0). Research and the keyboard side: APPS.md section 5.24.
+
+**`GET /media/config`** (session required)
+- Response: `{ klipy: { key, base, contentFilter: "high" } | null, emojiStickers: true }`. `klipy` is null without `KLIPY_APP_KEY`; the keyboard then says "GIFs aren't set up yet" and stickers fall back to Noto. `base` is `https://api.klipy.com/api/v1/` unless `KLIPY_BASE_URL` points phones at a test double (`qa/fake-klipy.mjs`; never set in production).
+- The key never ships in the app, can be rotated here, and reaches only someone with a Glyf session (a request without one gets 401 and no key).
+
+**`GET /media/emoji-stickers?q=&page=`** (session required)
+- Response: `{ items: [{ id: "noto:<codepoint>", title, preview, pw, ph, url, w, h }], next: "<page>" | null, attribution: "Noto Emoji by Google · CC BY 4.0" }`, 30 a page. `preview` is Google's 128px PNG still, `url` the 512px animated GIF, both on `fonts.gstatic.com/s/e/notoemoji/latest/<codepoint>/`.
+- The catalogue is bundled: `registry/stickers/noto.json`, 611 base emoji (skin-tone variants left out) from Google's `api.json`, most popular first. An empty `q` is the whole list by popularity; a search scores the emoji's own names (exact name, a word of it, a prefix) plus a synonym table for the words people search stickers with ("sad" finds crying, pensive, disappointed and pleading faces; "hello" finds the wave) and category words ("food").
+- Tests: `test/media.test.ts`.
 
 ### 4.10 Telemetry
 
@@ -1239,7 +1245,8 @@ Names only. Values live in `server/.env` (never committed). "Example" says wheth
 | `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET` | Zoom | To enable Zoom | unset | No | `routes/connector.ts` |
 | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | Spotify | To enable Spotify | unset | No | `routes/connector.ts` |
 | `PUBLIC_BASE_URL` | Origin for live mini-app page links (`<base>/p/<id>`) | For pages in production | `http://127.0.0.1:<PORT>` outside production, none in production | No | `routes/act.ts` |
-| `GIPHY_API_KEY` | GIF search proxy | To enable GIFs | unset | Yes (commented) | `routes/gif.ts` |
+| `KLIPY_APP_KEY` | KLIPY app key, handed to signed-in phones by `/media/config` | To enable GIFs and KLIPY stickers | unset | Yes (commented) | `routes/media.ts` |
+| `KLIPY_BASE_URL` | Points phones at a fake KLIPY for tests | Never in production | `https://api.klipy.com/api/v1/` | Yes (commented) | `routes/media.ts` |
 
 ### 11.3 Search suite
 
@@ -1300,7 +1307,7 @@ npm run typecheck   # tsc --noEmit
 ### 12.4 Not covered
 
 - No test calls a real provider. OAuth callbacks, token exchange, Brave, Serper, Places, Geoapify, YouTube and every live tool executor are untested.
-- `/search`, `/search/suggest`, `/search/photo`, `/gif/search`, `/connectors/disconnect`, the generic `/oauth/:provider/*` routes and `/account/*` have no route tests.
+- `/search`, `/search/suggest`, `/search/photo`, `/connectors/disconnect`, the generic `/oauth/:provider/*` routes and `/account/*` have no route tests.
 - Model streaming (`drainSSE`, the fallback loop against real HTTP) is only tested through its helpers.
 - The CI secrets guard is not tested ([known issue 1](#16-known-issues)).
 
@@ -1383,7 +1390,8 @@ Status values: **Active** (in force), **Superseded** (replaced by a later row), 
 | 2026-09-12 | Plans: Free 40/day, Plus $4.99 (10 times), Max $19.99 (unlimited); plan enum in requests, legacy `pro` maps to Plus; client-asserted until receipts | Arpit: "one 5 $ plan and one 20$"; research against Wispr Flow and Grammarly | Active (receipts pending) |
 | 2026-09-12 | Expand the registry with free, no-key APIs; leave out categories that need paid keys (flights, movies and TV, news wires) | Arpit: "integrate as much free tools as possible" | Active |
 | 2026-09-12 | Strip leaked `[[directive]]` tags from model output | A live model returned "[[tighten]]" on empty input | Active |
-| 2026-09-12 | GIF search goes through a server GIPHY proxy; the keyboard would copy to the pasteboard | Keyboards cannot type images; key stays server-side | Pending (needs `GIPHY_API_KEY` and a client tab) |
+| 2026-09-12 | GIF search goes through a server GIPHY proxy; the keyboard would copy to the pasteboard | Keyboards cannot type images; key stays server-side | Replaced 2026-09-24 |
+| 2026-09-24 | GIFs and stickers from KLIPY, called from the phone with a key the server hands out; Noto animated emoji as keyless stickers; GIPHY proxy removed | Tenor's API closed 2026-06-30; GIPHY is paid past 100 calls an hour and forbids proxies; KLIPY is free but wants device-side calls | Active |
 | 2026-09-12 | Mock calendar routes (events, then a month grid) power the in-keyboard calendar until OAuth exists | Keep the ConnectorSurface testable; Arpit asked for "a button to view months calendar along with my todays tasks" | Active |
 | 2026-09-13 | Deploy the server to Fly.io or Railway so TestFlight testers get AI | Builds pointed at `127.0.0.1` | Pending (no account or token provided) |
 | 2026-09-13 | Server-side data stays attached across app updates because it hangs off the persisted device id; lock the bundle id before real users | Update persistence verified experimentally | Active |
@@ -1458,7 +1466,7 @@ Found by reading the code while writing this doc (2026-09-16). None were fixed, 
 | 18 | Low | The meter day is UTC (resets at 05:30 IST), and `GET /meter/:deviceId` always computes against the free cap, even for Plus and Max devices | `lib/meter.ts`, `routes/meter.ts` | Accept the plan, or store it per device |
 | 19 | Low | `/glyf/run` returns HTTP 200 for every failure, including bad requests and cap reached; clients must read the `error` frame | `routes/glyf.ts` | Acceptable for SSE; document for new clients |
 | 20 | Low | `/health` reports only whether an OpenRouter key exists, not Gemini or Groq | `routes/health.ts` | Report presence per provider |
-| 21 | Low | Unused routes remain: `/waitlist`, `/waitlist/count`, `/hub/list`, `/hub/install`, and the client methods for `/tools/run`; `/gif/search` has no client | several | Remove or wire them up |
+| 21 | Low | Unused routes remain: `/waitlist`, `/waitlist/count`, `/hub/list`, `/hub/install`, and the client methods for `/tools/run` | several | Remove or wire them up |
 | 22 | Low | The maps provider label defaults to `openstreetmap` even when nothing answered, including in production where Nominatim is disabled | `searchMaps()` in `lib/search.ts` | Default to `none` |
 | 23 | Medium | Paid search providers (Brave, Places, Weather) have no per-device limit; only the shared 10-minute cache protects the keys | `routes/search.ts` | Per-device daily search caps once paid keys are added |
 | 24 | Low | Plan promises are not implemented: Plus "priority" and Max "smartest models" use the same chains as Free | `lib/meter.ts`, `providers/openrouter.ts` | Choose chains by plan |
@@ -1486,7 +1494,7 @@ Status is as of the last notes (2026-09-16) and was not re-checked in `server/.e
 | 7 | **Regenerate and IP-restrict the YouTube key** after deploy | Security | It was pasted in chat |
 | 8 | **Google OAuth client** (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) with both redirect URIs, consent screen, test users | Google sign-in, calendar tool, liked videos | Start Google's verification for sensitive scopes early |
 | 9 | Notion and Slack OAuth apps, plus any of GitHub, Linear, Todoist, Calendly, Zoom, Spotify | Those connectors | Each needs only its two variables and a registered redirect URI |
-| 10 | `GIPHY_API_KEY` | GIF search | A client GIF tab also has to be built |
+| 10 | `KLIPY_APP_KEY` (partner.klipy.com, free; production access once "Search KLIPY" is live) | GIFs and KLIPY stickers in the emoji board | Stickers already work without it (Noto) |
 | 11 | App Store Connect subscription products for Plus and Max, and the shared secret for receipt validation; Play Billing later | Real plans instead of client-asserted ones | |
 | 12 | **Rotate secrets pasted in chat**: OpenRouter key, Privy app secret, YouTube key, Neon password | Security | Update `server/.env`, `site/.env.local` and Vercel afterwards |
 | 13 | Privy dashboard configuration (Solana enabled) and a Jupiter API key | M8 crypto | Not before the separate crypto release |
@@ -1506,7 +1514,7 @@ Status is as of the last notes (2026-09-16) and was not re-checked in `server/.e
 **Feature work still open**
 - Real connector surfaces: Gmail unread and draft reply, Notion recents, Drive, Slack, contacts through the server, Meet link, LinkedIn summon (needs a web search key).
 - Wire the in-keyboard calendar surface to the real `calendar.today` data instead of the demo calendar.
-- A GIF tab in the keyboards.
+- GIF and sticker tabs in the Android keyboard (iOS built 2026-09-24).
 - Server-side version pinning and re-consent for hub installs.
 - Interactive `ask` steps and the visual chain editor (M9).
 - M8: `swap`, `risk`, `jupiter`, `solana` and `storekit` providers, `POST /execute`, fee display with `GLYF_FEE_BPS`.
@@ -1645,7 +1653,7 @@ Names only, no values here. Same names the local `server/.env` uses, so they can
 | `FREE_RUNS_PER_DAY` | Daily free cap, default 40. Plus is ten times it |
 | `CACHE_TTL_MS` | Run cache lifetime, default 24 hours |
 | `YOUTUBE_API_KEY`, `GEOAPIFY_KEY` or `GOOGLE_PLACES_KEY`, `GOOGLE_WEATHER_KEY`, `BRAVE_SEARCH_KEY`, `SERPER_API_KEY` | The search suite. Each vertical degrades without its key rather than failing; `GET /search/status` reports which are live |
-| `GIPHY_API_KEY` | GIF search |
+| `KLIPY_APP_KEY` | GIFs and KLIPY stickers (phones call KLIPY; the server only hands out the key) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and scopes. Register `https://api.tryglyf.com/oauth/google/callback` in the Google console first |
 | `NOTION_`, `SLACK_`, `GITHUB_`, `LINEAR_`, `TODOIST_`, `CALENDLY_`, `ZOOM_`, `SPOTIFY_` plus `_CLIENT_ID` and `_CLIENT_SECRET` | One pair per connector wanted. Each provider is dormant until its pair exists |
 

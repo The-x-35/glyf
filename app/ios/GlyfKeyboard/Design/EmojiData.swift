@@ -5,8 +5,48 @@ import Foundation
 /// extension doesn't have. Search covers the common-name map below.
 enum EmojiData {
 
-    static let categories: [(id: String, symbol: String, emoji: [String])] = [
-        ("smileys", "face.smiling", [
+    /// Apple's emoji keyboard has nine tabs: Frequently Used, Smileys &
+    /// People, Animals & Nature, Food & Drink, Activity, Travel & Places,
+    /// Objects, Symbols and Flags. The lists below are kept by theme; the
+    /// board shows them in Apple's order and with Apple-like tab glyphs.
+    static let categories: [(id: String, symbol: String, emoji: [String])] = {
+        let byId = Dictionary(uniqueKeysWithValues: raw.map { ($0.id, $0.emoji) })
+        func list(_ id: String) -> [String] { byId[id] ?? [] }
+        return [
+            ("smileys", "face.smiling", list("smileys") + list("people")),
+            ("animals", "teddybear", list("animals")),
+            ("food", "takeoutbag.and.cup.and.straw", list("food")),
+            ("activity", "soccerball", list("activity")),
+            ("travel", "car", list("travel")),
+            ("objects", "lightbulb", list("objects")),
+            ("symbols", "heart", list("symbols")),
+            ("flags", "flag", flags),
+        ]
+    }()
+
+    /// Country flags from their ISO codes (two regional-indicator letters
+    /// each), alphabetical by English name as Apple lists them, after the
+    /// handful of flags that are not countries.
+    static let flags: [String] = {
+        let codes = """
+        AF AL DZ AR AM AU AT AZ BH BD BE BT BO BA BR BG KH CA CL CN CO CR HR CU CY \
+        CZ DK DO EC EG SV EE ET FI FR GE DE GH GR GT HN HK HU IS IN ID IR IQ IE IL \
+        IT JM JP JO KZ KE KW LA LV LB LT LU MY MV MT MX MN MA MM NP NL NZ NG NO OM \
+        PK PA PY PE PH PL PT QA RO RU SA RS SG SK SI ZA KR ES LK SE CH TW TZ TH TR \
+        UG UA AE GB US UY UZ VE VN YE ZM ZW
+        """
+        let country = codes.split(separator: " ").compactMap { code -> String? in
+            let scalars = code.unicodeScalars.compactMap {
+                Unicode.Scalar(0x1F1E6 + $0.value - 65)
+            }
+            guard scalars.count == 2 else { return nil }
+            return String(String.UnicodeScalarView(scalars))
+        }
+        return ["🏁", "🚩", "🎌", "🏴", "🏳️", "🏳️‍🌈", "🏳️‍⚧️", "🏴‍☠️", "🇺🇳"] + country
+    }()
+
+    private static let raw: [(id: String, emoji: [String])] = [
+        ("smileys", [
             "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🥲", "☺️", "😊", "😇", "🙂", "🙃", "😉",
             "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓",
             "😎", "🥸", "🤩", "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫",
@@ -15,7 +55,7 @@ enum EmojiData {
             "😴", "🤤", "😪", "😮‍💨", "🤢", "🤮", "🤧", "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "🤡",
             "💀", "☠️", "👻", "👽", "🤖", "💩", "🔥", "✨", "💫", "💯", "💢", "💥", "💦", "💤",
         ]),
-        ("people", "hand.wave", [
+        ("people", [
             "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🫰", "🤟", "🤘", "🤙", "👈",
             "👉", "👆", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "🫶", "👐", "🤲",
             "🤝", "🙏", "✍️", "💅", "🤳", "💪", "🦾", "🧠", "👀", "👁️", "👄", "🫦", "👶", "🧒", "👦",
@@ -23,14 +63,14 @@ enum EmojiData {
             "🧏", "🙇", "🤦", "🤷", "👮", "🕵️", "💂", "👷", "🫅", "🤴", "👸", "👳", "👲", "🧕", "🤵",
             "👰", "🤰", "🤱", "👼", "🎅", "🤶", "🦸", "🦹", "🧙", "🧚", "🧛", "🧜", "🧝", "🧞", "🧟",
         ]),
-        ("animals", "pawprint", [
+        ("animals", [
             "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸",
             "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🦆", "🦅", "🦉", "🦇", "🐺",
             "🐗", "🐴", "🦄", "🐝", "🪱", "🐛", "🦋", "🐌", "🐞", "🐜", "🦟", "🦗", "🕷️", "🦂", "🐢",
             "🐍", "🦎", "🦖", "🦕", "🐙", "🦑", "🦐", "🦞", "🦀", "🐡", "🐠", "🐟", "🐬", "🐳", "🐋",
             "🦈", "🐊", "🐅", "🐆", "🦓", "🦍", "🦧", "🐘", "🦛", "🦏", "🐪", "🐫", "🦒", "🦘", "🐃",
         ]),
-        ("food", "fork.knife", [
+        ("food", [
             "🍏", "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍",
             "🥥", "🥝", "🍅", "🍆", "🥑", "🥦", "🥬", "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅",
             "🥔", "🍠", "🥐", "🥯", "🍞", "🥖", "🥨", "🧀", "🥚", "🍳", "🧈", "🥞", "🧇", "🥓", "🥩",
@@ -39,7 +79,7 @@ enum EmojiData {
             "🍡", "🍧", "🍨", "🍦", "🥧", "🧁", "🍰", "🎂", "🍮", "🍭", "🍬", "🍫", "🍿", "🍩", "🍪",
             "☕", "🍵", "🧋", "🥤", "🧃", "🍺", "🍻", "🥂", "🍷", "🥃", "🍸", "🍹", "🍾",
         ]),
-        ("activity", "figure.run", [
+        ("activity", [
             "⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀", "🏓", "🏸", "🏒", "🏑",
             "🥍", "🏏", "🪃", "🥅", "⛳", "🪁", "🏹", "🎣", "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷",
             "⛸️", "🥌", "🎿", "⛷️", "🏂", "🏋️", "🤼", "🤸", "⛹️", "🤺", "🤾", "🏌️", "🏇", "🧘", "🏄",
@@ -47,7 +87,7 @@ enum EmojiData {
             "🎪", "🤹", "🎭", "🩰", "🎨", "🎬", "🎤", "🎧", "🎼", "🎹", "🥁", "🪘", "🎷", "🎺", "🪗",
             "🎸", "🪕", "🎻", "🎲", "♟️", "🎯", "🎳", "🎮", "🎰", "🧩",
         ]),
-        ("travel", "car", [
+        ("travel", [
             "🚗", "🚕", "🚙", "🚌", "🚎", "🏎️", "🚓", "🚑", "🚒", "🚐", "🛻", "🚚", "🚛", "🚜", "🦯",
             "🦽", "🦼", "🛴", "🚲", "🛵", "🏍️", "🛺", "🚨", "🚔", "🚍", "🚘", "🚖", "🚡", "🚠", "🚟",
             "🚃", "🚋", "🚞", "🚝", "🚄", "🚅", "🚈", "🚂", "🚆", "🚇", "🚊", "🚉", "✈️", "🛫", "🛬",
@@ -55,7 +95,7 @@ enum EmojiData {
             "⛽", "🚧", "🚦", "🚥", "🗺️", "🗿", "🗽", "🗼", "🏰", "🏯", "🏟️", "🎡", "🎢", "🎠", "⛲",
             "⛱️", "🏖️", "🏝️", "🏜️", "🌋", "⛰️", "🏔️", "🗻", "🏕️", "⛺", "🛖", "🏠", "🏡", "🏘️", "🏚️",
         ]),
-        ("objects", "lightbulb", [
+        ("objects", [
             "⌚", "📱", "📲", "💻", "⌨️", "🖥️", "🖨️", "🖱️", "🖲️", "🕹️", "🗜️", "💽", "💾", "💿", "📀",
             "📼", "📷", "📸", "📹", "🎥", "📽️", "🎞️", "📞", "☎️", "📟", "📠", "📺", "📻", "🎙️", "🎚️",
             "🎛️", "🧭", "⏱️", "⏲️", "⏰", "🕰️", "⌛", "⏳", "📡", "🔋", "🪫", "🔌", "💡", "🔦", "🕯️",
@@ -63,7 +103,7 @@ enum EmojiData {
             "🪛", "🔧", "🔨", "⚒️", "🛠️", "⛏️", "🪚", "🔩", "⚙️", "🪤", "🧱", "⛓️", "🧲", "🔫", "💣",
             "🧨", "🪓", "🔪", "🗡️", "⚔️", "🛡️", "🚬", "⚰️", "🪦", "⚱️", "🏺", "🔮", "📿", "🧿", "💈",
         ]),
-        ("symbols", "heart", [
+        ("symbols", [
             "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❤️‍🔥", "❤️‍🩹", "❣️", "💕", "💞",
             "💓", "💗", "💖", "💘", "💝", "💟", "☮️", "✝️", "☪️", "🕉️", "☸️", "✡️", "🔯", "🕎", "☯️",
             "☦️", "🛐", "⛎", "♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓",
@@ -133,6 +173,10 @@ enum EmojiData {
         ("snow", "❄️"), ("rainbow", "🌈"), ("flower", "🌸"), ("rose", "🌹"), ("plant", "🪴"),
         ("tree", "🌳"), ("leaf", "🍃"), ("gift", "🎁"), ("balloon", "🎈"), ("confetti", "🎊"),
         ("celebrate", "🎉"), ("crown", "👑"), ("ring", "💍"), ("glasses", "🕶️"), ("bag", "👜"),
+        ("flag", "🏳️"), ("rainbow flag", "🏳️‍🌈"), ("pirate", "🏴‍☠️"), ("finish", "🏁"),
+        ("india", "🇮🇳"), ("usa", "🇺🇸"), ("america", "🇺🇸"), ("uk", "🇬🇧"), ("britain", "🇬🇧"),
+        ("canada", "🇨🇦"), ("australia", "🇦🇺"), ("japan", "🇯🇵"), ("germany", "🇩🇪"),
+        ("france", "🇫🇷"), ("uae", "🇦🇪"), ("singapore", "🇸🇬"), ("brazil", "🇧🇷"),
     ]
 
     static func search(_ query: String) -> [String] {

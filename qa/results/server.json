@@ -4,25 +4,25 @@
   "area": "Rewrite",
   "title": "Rough reply to a manager: 'ya ok will send deck b4 6'",
   "verdict": "pass",
-  "ms": 3465,
+  "ms": 10322,
   "status": 200,
-  "note": "Basic: Ya, ok, I will send the deck before 6. | Professional: I will send the deck before 6:00. | Polite: Yes, that is okay. I will be sure to send the deck before 6. | Shorter: I'll send the deck before 6. | Hinglish: Ya theek hai, deck 6 baje se pehle bhej dunga. | Emoji: Ya ok, will send the deck before 6! 📁✨"
+  "note": "Basic: Yeah, ok, will send deck before 6. | Professional: Yes, I will send the deck before 6. | Polite: Yes, that's fine. I will send the deck before 6. | Shorter: Yes, I'll send the deck before 6. | Hinglish: Haan ok, deck b4 6 bhej dunga. | Emoji: Yeah ok! Will send the deck before 6 📊👍"
  },
  {
   "id": "S02",
   "area": "Rewrite",
   "title": "Apology for being late: 'sry running late traffic is crazy'",
   "verdict": "pass",
-  "ms": 3245,
+  "ms": 6851,
   "status": 200,
-  "note": "Basic: Sorry, I am running late; traffic is crazy. | Professional: Please accept my apologies, but I am running late due to heavy traffic. | Polite: I am so sorry, but I am running late as the traffic is crazy. Thank you for your patience."
+  "note": "Basic: Sorry, I am running late; traffic is crazy. | Professional: I apologize, but I am running late due to heavy traffic. | Polite: I am so sorry, but I am running late as the traffic is quite crazy today."
  },
  {
   "id": "S03",
   "area": "Rewrite",
   "title": "Hinglish offered in India: 'kal meeting shift kar do please'",
   "verdict": "pass",
-  "ms": 2827,
+  "ms": 9604,
   "status": 200,
   "note": "Basic, Professional, Polite, Shorter, Hinglish, Emoji"
  },
@@ -31,7 +31,7 @@
   "area": "Rewrite",
   "title": "No Hinglish row for someone in the US",
   "verdict": "pass",
-  "ms": 1959,
+  "ms": 8032,
   "status": 200,
   "note": "Basic, Professional, Polite, Shorter, Emoji"
  },
@@ -40,16 +40,16 @@
   "area": "Rewrite",
   "title": "Shorter version is actually shorter",
   "verdict": "pass",
-  "ms": 2761,
+  "ms": 8419,
   "status": 200,
-  "note": "Basic(129): Hey, just wanted to check if you had a chance to look at the proposal I sent over last week, because we need to decide by Friday. | Shorter(76): Have you reviewed the proposal from last week? We need a decision by Friday."
+  "note": "Basic(129): Hey, just wanted to check if you had a chance to look at the proposal I sent over last week, because we need to decide by Friday. | Shorter(63): Checking on last week's proposal; we need a decision by Friday."
  },
  {
   "id": "S06",
   "area": "Rewrite",
   "title": "A rewrite never pastes a Google link",
   "verdict": "pass",
-  "ms": 3043,
+  "ms": 9005,
   "status": 200,
   "note": "rewrite: Tidy this up, please. It's for the client."
  },
@@ -58,7 +58,7 @@
   "area": "Rewrite",
   "title": "Chip intent forced to rewrite keeps the whole sentence",
   "verdict": "pass",
-  "ms": 4711,
+  "ms": 4307,
   "status": 200,
   "note": "Basic: Who is coming tonight? Let me know. | Professional: Please let me know who will be attending tonight."
  },
@@ -67,7 +67,7 @@
   "area": "Vault in AI",
   "title": "Friend asks for your address; your saved address fills in",
   "verdict": "pass",
-  "ms": 1690,
+  "ms": 5810,
   "status": 200,
   "note": "Sure, my address is 42 Glass Lane, Indiranagar, Bengaluru 560038."
  },
@@ -76,7 +76,7 @@
   "area": "Vault in AI",
   "title": "Details are never volunteered where nobody asked",
   "verdict": "pass",
-  "ms": 2094,
+  "ms": 4935,
   "status": 200,
   "note": "See you at the game tonight."
  },
@@ -85,34 +85,34 @@
   "area": "Places",
   "title": "'best biryani near indiranagar' gives a list of places",
   "verdict": "pass",
-  "ms": 1168,
+  "ms": 2008,
   "status": 200,
-  "note": "Indian Biryani (820 m) · Aramane Donne Biryani (830 m) · Biryani Bhojana (1.0 km)"
+  "note": "Meghana Biryani (780 m) · Biryani Palace (810 m) · Indian Biryani (820 m)"
  },
  {
   "id": "S11",
   "area": "Places",
   "title": "'nearest atm' gives the one place",
   "verdict": "pass",
-  "ms": 1092,
+  "ms": 1732,
   "status": 200,
-  "note": "place: SBI ATM 1.7 km"
+  "note": "place: Citibank ATM 330 m (rerun)"
  },
  {
   "id": "S12",
   "area": "Places",
   "title": "'cafes near me' uses the phone's rough location",
   "verdict": "pass",
-  "ms": 1104,
+  "ms": 1727,
   "status": 200,
-  "note": "Bootstrapped Cafe · BeCafe · Lavonne Cafe"
+  "note": "The Ants Cafe · Chai Days · Acai Theory"
  },
  {
   "id": "S13",
   "area": "Video",
   "title": "'send me the dune part 2 trailer' finds the video",
   "verdict": "pass",
-  "ms": 909,
+  "ms": 1553,
   "status": 200,
   "note": "Dune: Part Two | Official Trailer"
  },
@@ -121,7 +121,7 @@
   "area": "Answers",
   "title": "'weather in bangalore tomorrow' is a live answer, not a guess",
   "verdict": "blocked: live weather needs a web search or weather key",
-  "ms": 4,
+  "ms": 1477,
   "status": 200,
   "note": "answer: Nothing found for that. | insert=\"\""
  },
@@ -130,7 +130,7 @@
   "area": "Answers",
   "title": "Nothing found inserts nothing (no link pasted)",
   "verdict": "pass",
-  "ms": 1706,
+  "ms": 3551,
   "status": 200,
   "note": "answer: insert=\"\" text=Nothing found for that."
  },
@@ -139,16 +139,16 @@
   "area": "Answers",
   "title": "Maths in a question: '18% of 2450' answers 441",
   "verdict": "pass",
-  "ms": 994,
+  "ms": 573,
   "status": 200,
-  "note": "441"
+  "note": "441 (rerun)"
  },
  {
   "id": "S17",
   "area": "Suggestions",
   "title": "A rough message gets 'Tidy this up'",
   "verdict": "pass",
-  "ms": 2222,
+  "ms": 5514,
   "status": 200,
   "note": "{\"intent\":\"rewrite\",\"label\":\"Tidy this up\",\"action\":\"act\",\"query\":\"ya ok will send the deck before 6 tmrw\"}"
  },
@@ -157,7 +157,7 @@
   "area": "Suggestions",
   "title": "A place list gets 'Show me places'",
   "verdict": "pass",
-  "ms": 2,
+  "ms": 553,
   "status": 200,
   "note": "{\"intent\":\"places\",\"label\":\"Show me places\",\"action\":\"act\",\"query\":\"any good italian places in koramangala\"}"
  },
@@ -166,7 +166,7 @@
   "area": "Suggestions",
   "title": "A plain question gets no 'Look it up' chip",
   "verdict": "pass",
-  "ms": 1399,
+  "ms": 3866,
   "status": 200,
   "note": "null"
  },
@@ -175,7 +175,7 @@
   "area": "Suggestions",
   "title": "Three words in, no chip yet",
   "verdict": "pass",
-  "ms": 1346,
+  "ms": 4623,
   "status": 200,
   "note": "null"
  },
@@ -184,7 +184,7 @@
   "area": "Translate",
   "title": "Hinglish 'kal milte hain office ke baad' comes out in English",
   "verdict": "pass",
-  "ms": 1,
+  "ms": 2460,
   "status": 200,
   "note": "Hindi → English: Let's meet tomorrow after office."
  },
@@ -193,7 +193,7 @@
   "area": "Translate",
   "title": "English goes to your other language (Hindi)",
   "verdict": "pass",
-  "ms": 1511,
+  "ms": 3019,
   "status": 200,
   "note": "English → Hindi: कल ऑफिस के बाद मिलते हैं"
  },
@@ -202,34 +202,34 @@
   "area": "Translate",
   "title": "Devanagari detected without asking the model",
   "verdict": "pass",
-  "ms": 1374,
+  "ms": 3448,
   "status": 200,
-  "note": "Hindi → English: I need leave tomorrow."
+  "note": "Hindi → English: I want a leave tomorrow."
  },
  {
   "id": "S24",
   "area": "Translate",
   "title": "Tamil message comes back in English",
   "verdict": "pass",
-  "ms": 1025,
+  "ms": 3126,
   "status": 200,
-  "note": "Tamil → English: See you tomorrow"
+  "note": "Tamil → English: Let's meet tomorrow"
  },
  {
   "id": "S25",
   "area": "Translate",
   "title": "Tapping the direction to Spanish sends it to Spanish",
   "verdict": "pass",
-  "ms": 992,
+  "ms": 2899,
   "status": 200,
-  "note": "English → Spanish: feliz cumpleaños, que tengas un gran año"
+  "note": "English → Spanish: Feliz cumpleaños, que tengas un gran año"
  },
  {
   "id": "S26",
   "area": "Translate",
   "title": "A Spanish-speaking phone: Spanish text goes to English second language",
   "verdict": "pass",
-  "ms": 871,
+  "ms": 2344,
   "status": 200,
   "note": "Spanish → English: see you tomorrow at the office"
  },
@@ -238,7 +238,7 @@
   "area": "Search",
   "title": "Web search for 'ipl points table'",
   "verdict": "blocked: web results need BRAVE_SEARCH_KEY",
-  "ms": 1,
+  "ms": 5450,
   "status": 200,
   "note": "See all results for “ipl points table”"
  },
@@ -247,52 +247,52 @@
   "area": "Search",
   "title": "YouTube search for 'arijit singh live'",
   "verdict": "pass",
-  "ms": 692,
+  "ms": 586,
   "status": 200,
-  "note": "Arijit Singh with his soulful performance | 6th Royal Stag Mirchi Music Awards | Radio Mirchi · Arijit Singh Live Mashup Mirchi Awards"
+  "note": "Arijit Singh with his soulful performance | 6th Royal Stag Mirchi Music Awards | Radio Mirchi · Arijit Singh Full Mirchi Music Awards Stage Performance |"
  },
  {
   "id": "S29",
   "area": "Search",
   "title": "Maps search for 'third wave coffee'",
   "verdict": "pass",
-  "ms": 171,
+  "ms": 909,
   "status": 200,
-  "note": "Third Wave Coffee (Lavelle Road, D'Souza Layout, Bengaluru 560001) · Third Wave Coffee (17th Cross Road, Parangipalya, Bengaluru 560102)"
+  "note": "Third Wave Coffee (Lavelle Road, Ashokanagar, Bengaluru - 560001, KA, India) · Third Wave Coffee (24, Vittal Mallya Road, Ashokanagar, Bengaluru - 560001, KA, India)"
  },
  {
   "id": "S30",
   "area": "Builder",
   "title": "Tap 'Say no, politely' and a glyf is made",
   "verdict": "pass",
-  "ms": 22756,
+  "ms": 4753,
   "status": 200,
-  "note": "Polite Decline: 1 step(s) (rerun)"
+  "note": "Say No Politely: 1 step(s)"
  },
  {
   "id": "S31",
   "area": "Builder",
   "title": "Tap 'Turn it into a LinkedIn post' and it is made",
   "verdict": "pass",
-  "ms": 3645,
+  "ms": 4201,
   "status": 200,
-  "note": "LinkedIn Post Creator (rerun)"
+  "note": "LinkedIn Post"
  },
  {
   "id": "S32",
   "area": "Builder",
   "title": "The preview runs the new glyf on a sample message",
   "verdict": "pass",
-  "ms": 1192,
+  "ms": 4256,
   "status": 200,
-  "note": "hey, report kal morning tak bhej sakte ho? thanks! (rerun)"
+  "note": "hey, report kal morning tak bhej sakte ho? thanks!"
  },
  {
   "id": "S33",
   "area": "Builder",
   "title": "A description too short to build is refused cleanly",
   "verdict": "pass",
-  "ms": 1,
+  "ms": 165,
   "status": 400,
   "note": "400 {\"error\":\"Bad request\"}"
  },
@@ -310,16 +310,16 @@
   "area": "Safety",
   "title": "A card number is hidden from the model and comes back exactly in every version",
   "verdict": "pass",
-  "ms": 3279,
+  "ms": 18807,
   "status": 200,
-  "note": "Basic: My card is 4111 1111 1111 1111, exp 12/29, CVV 123. Please pay the bill. | Professional: Please find my payment details: card number 4111 1111 1111 1111, expiration 12/29, and CVV 123. Please process the bill."
+  "note": "Basic: My card is 4111 1111 1111 1111, exp 12/29, cvv 123. Please pay the bill. | Professional: Please pay the bill using my card: 4111 1111 1111 1111, expiration 12/29, CVV 123."
  },
  {
   "id": "S36",
   "area": "Safety",
   "title": "Bad requests get a 400, not a crash",
   "verdict": "pass",
-  "ms": 1,
+  "ms": 196,
   "status": 400,
   "note": "400"
  },
@@ -328,34 +328,34 @@
   "area": "Safety",
   "title": "An OTP in a message survives every rewrite untouched",
   "verdict": "pass",
-  "ms": 3991,
+  "ms": 3891,
   "status": 200,
-  "note": "Basic: OTP is 482913. Don't share it with anyone, OK? | Professional: The OTP is 482913. Please ensure that you do not share this with anyone."
+  "note": "Basic: OTP is 482913. Don't share it with anyone, okay? | Professional: Your OTP is 482913. Please do not share this code with anyone."
  },
  {
   "id": "S38",
   "area": "Safety",
   "title": "Translating a message keeps the account number exactly",
   "verdict": "pass",
-  "ms": 2216,
+  "ms": 5749,
   "status": 200,
-  "note": "Hindi → English: My account number is 4111111111111111, please send the money"
+  "note": "Hindi → English: My account number is 4111111111111111, send the money"
  },
  {
   "id": "S39",
   "area": "Answers",
   "title": "'100 usd to inr' converts at today's rate",
   "verdict": "pass",
-  "ms": 198,
+  "ms": 886,
   "status": 200,
-  "note": "9,596 INR — 100 USD · today's rate"
+  "note": "9,574 INR — 100 USD · today's rate"
  },
  {
   "id": "S40",
   "area": "Answers",
   "title": "'what is a black hole' answers from Wikipedia",
   "verdict": "pass",
-  "ms": 2361,
+  "ms": 3981,
   "status": 200,
   "note": "Black hole — A black hole is an astronomical body so compact that its gravity prevents anything, including light, from e"
  },
@@ -364,16 +364,16 @@
   "area": "Answers",
   "title": "'sunset' gives today's sunset where you are",
   "verdict": "pass",
-  "ms": 15,
+  "ms": 287,
   "status": 200,
-  "note": "6:21 PM — Sunset · today"
+  "note": "6:16 PM — Sunset · today"
  },
  {
   "id": "S42",
   "area": "Video",
   "title": "'lofi beats playlist' finds a video to send",
   "verdict": "pass",
-  "ms": 767,
+  "ms": 677,
   "status": 200,
   "note": "https://youtu.be/lTRiuFIWV54 / 🎥 1 A.M Study Session 📚 [lofi hip hop]"
  },
@@ -382,7 +382,7 @@
   "area": "Places",
   "title": "'hotels in goa' lists hotels in Goa",
   "verdict": "pass",
-  "ms": 1177,
+  "ms": 3041,
   "status": 200,
   "note": "Hotel Embassy (Rua de Natal, São Tomé, Panaji 403001) · GMC Girls Hostel (NH66, Panaji 403202) · Resident Doctors Hostel (NH66, Panaji 403202)"
  },
@@ -391,34 +391,34 @@
   "area": "Rewrite",
   "title": "Emoji-heavy banter keeps its meaning",
   "verdict": "pass",
-  "ms": 1746,
+  "ms": 4200,
   "status": 200,
-  "note": "Basic: OMG 😂😂 that was so funny, I can't breathe. | Professional: That was very humorous; I found it quite entertaining. | Polite: Oh my goodness, that was so funny that I can hardly breathe!"
+  "note": "Basic: OMG! 😂😂😂 That was so funny, I can't breathe. | Professional: That was very humorous; I am quite amused. | Polite: Oh my goodness, that was so funny that I can hardly breathe! 😂"
  },
  {
   "id": "S45",
   "area": "Speed",
   "title": "A normal rewrite comes back in under 6 seconds",
   "verdict": "pass",
-  "ms": 2377,
+  "ms": 3714,
   "status": 200,
-  "note": "2377 ms"
+  "note": "3714 ms"
  },
  {
   "id": "S46",
   "area": "Rewrite",
   "title": "A long rambling message still gets every version",
   "verdict": "pass",
-  "ms": 4864,
+  "ms": 11774,
   "status": 200,
-  "note": "Shorter: I arrived at 7:00, but the event moved to another hall without notice. Since I missed the first session, please share the recording or slides for the full day we paid for."
+  "note": "Shorter: I arrived at 7 but the event moved to another hall without notice, so we missed the first session. Since we paid for the full day, please provide the recording or slides."
  },
  {
   "id": "S47",
   "area": "Suggestions",
   "title": "A message in Hinglish still gets 'Tidy this up'",
   "verdict": "pass",
-  "ms": 1162,
+  "ms": 5839,
   "status": 200,
   "note": "{\"intent\":\"rewrite\",\"label\":\"Tidy this up\",\"action\":\"act\",\"query\":\"bhai kal ka plan cancel kar de yaar mood nahi hai\"}"
  },
@@ -427,26 +427,26 @@
   "area": "Builder",
   "title": "'Fix my grammar' becomes a glyf that works on a sample",
   "verdict": "pass",
-  "ms": 958,
+  "ms": 5309,
   "status": 200,
-  "note": "I went to the store yesterday and bought milk."
+  "note": "I went to the store yesterday and bought milk"
  },
  {
   "id": "S49",
   "area": "Translate",
   "title": "Mixed Hinglish with English words detected as Hindi",
   "verdict": "pass",
-  "ms": 1033,
+  "ms": 2650,
   "status": 200,
-  "note": "Hindi → English: The meeting has been postponed, let's keep it for tomorrow at 4 o'clock."
+  "note": "Hindi → English: The meeting has been postponed, let's keep it for 4 o'clock tomorrow."
  },
  {
   "id": "S50",
   "area": "Places",
   "title": "A place's own name finds that place",
   "verdict": "pass",
-  "ms": 1167,
+  "ms": 2032,
   "status": 200,
-  "note": "Phoenix Marketcity Bangalore (Whitefield Main Road, West End Road, ITI Industrial Estate)"
+  "note": "Bagmane Phoenix (Dodda Nekkundi, Bangalore - 560048, KA, India)"
  }
 ]

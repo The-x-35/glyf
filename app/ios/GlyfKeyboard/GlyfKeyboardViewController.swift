@@ -306,6 +306,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         toolbar.applyPalette()
         keyboardView.rebuild()
         applyBoardPaint()
+        emoji?.applyPalette()
     }
 
     /// The painted board of a colour or gradient theme.
@@ -1760,8 +1761,9 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             return
         }
         if inlineTarget != nil, surface == .emoji {
-            // Return = done searching; the full grid comes back.
-            emoji?.exitSearch()
+            // Return = done searching: emoji go back to the full grid, a
+            // GIF or sticker query runs and its results become the board.
+            emoji?.returnPressed()
             return
         }
         if inlineTarget != nil, case .connector = surface {
@@ -2735,6 +2737,40 @@ extension GlyfKeyboardViewController: EmojiBoardDelegate {
 
     func emojiSearchActivated(_ editor: InlineEditor) {
         inlineTarget = editor
+    }
+
+    var emojiBoardHasFullAccess: Bool { hasFullAccess }
+
+    func emojiBoardType(_ text: String) {
+        // ":-)" is a word of its own: glued to the one before it reads as
+        // "later:-)". Emoji need no space; emoticons do.
+        hostInsert(Self.spaced(text, after: beforeContext))
+        syncAutoShift()
+        updateCandidates()
+    }
+
+    /// No keyboard can type a picture into another app, so a GIF or sticker
+    /// goes on the pasteboard and the person pastes it, which is how Gboard
+    /// for iPhone does it. The board stays up for the next one.
+    func emojiBoardSend(_ item: MediaItem, kind: MediaKind, done: @escaping (Bool) -> Void) {
+        let noun = kind == .gifs ? "GIF" : "Sticker"
+        guard hasFullAccess else {
+            KeyboardToast.show(in: content, text: "Turn on Full Access to send a \(noun.lowercased())")
+            done(false)
+            return
+        }
+        MediaClient.shared.fullData(item.url) { [weak self] data in
+            guard let self else { return }
+            guard let data, MediaClient.copyToPasteboard(data) else {
+                KeyboardToast.show(in: self.content, text: "That \(noun.lowercased()) didn't download. Try again")
+                done(false)
+                return
+            }
+            ClipboardStore.ignoreNextChange()
+            MediaRecents.push(item, kind: kind)
+            KeyboardToast.show(in: self.content, text: "\(noun) copied. Hold the text box and tap Paste")
+            done(true)
+        }
     }
 }
 

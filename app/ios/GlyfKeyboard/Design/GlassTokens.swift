@@ -401,6 +401,19 @@ enum Glass {
     /// which is what made the row look like it had more air above it than
     /// below. Five puts them on the middle.
     static let stripLift: CGFloat = 5
+
+    /// A control centred on the strip's lifted middle, kept inside the view.
+    /// The lift puts a full-height control a few points ABOVE the keyboard's
+    /// top edge, and iOS cannot place an element that starts outside its
+    /// view: VoiceOver and UI tests got it at the top of the screen and could
+    /// not press it (the g button, the suggestion card, Close). So a box that
+    /// would poke above the top is trimmed evenly top and bottom instead: the
+    /// centre, which is what the eye reads, does not move.
+    static func stripBox(height: CGFloat, mid: CGFloat) -> (y: CGFloat, height: CGFloat) {
+        let top = mid - height / 2
+        guard top < 0 else { return (top, height) }
+        return (0, max(0, mid * 2))
+    }
     static func keysHeight(width: CGFloat) -> CGFloat { KeyMetrics.keysHeight(width: width) }
     static func keyboardBaseHeight(width: CGFloat) -> CGFloat {
         toolbarHeight + keysHeight(width: width)

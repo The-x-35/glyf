@@ -9,7 +9,10 @@ final class InlineEditor: UIView {
     private let label = UILabel()
     private let caret = UIView()
     private let icon = UIImageView()
-    private let placeholderText: String
+    /// Grey text shown while empty (the emoji board changes it per mode).
+    var placeholder: String {
+        didSet { render() }
+    }
     private let searchStyle: Bool
     var onChange: ((String) -> Void)?
 
@@ -34,7 +37,7 @@ final class InlineEditor: UIView {
     /// `searchStyle` draws Apple's search pill: a magnifier, no outline.
     /// `symbol` leads an outlined pill with an accent icon (Ask Glyf's sparkle).
     init(placeholder: String, searchStyle: Bool = false, symbol: String? = nil) {
-        placeholderText = placeholder
+        self.placeholder = placeholder
         self.searchStyle = searchStyle
         super.init(frame: .zero)
         backgroundColor = Glass.surfaceCard
@@ -84,7 +87,7 @@ final class InlineEditor: UIView {
 
     private func render() {
         if text.isEmpty {
-            label.text = placeholderText
+            label.text = placeholder
             label.textColor = Glass.textSecondary
         } else {
             label.text = text

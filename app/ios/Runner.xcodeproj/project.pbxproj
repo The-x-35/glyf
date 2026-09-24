@@ -33,6 +33,7 @@
 		49740A143ABEAF1269AAC45E /* Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */; };
 		4981B7628978DB909E4C478F /* CalendarSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C660509749B9F4AFCF76EE7 /* CalendarSurface.swift */; };
 		4ADAFEE41C95B9EC1027E1D1 /* TranslationHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EBDAF6797DA60917F2CADBD /* TranslationHUD.swift */; };
+		4AEF058C22BE42A8AC70ED7F /* MediaGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B91BDDF5ACD1D415C5AC2E /* MediaGrid.swift */; };
 		4B759E29785C7F2263CF60D4 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D580A139E7DF9CB049153E03 /* KeyboardLayout.swift */; };
 		50553C7711A43B097A732A2B /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7508C7D7086528DBA50605BC /* GlassTokens.swift */; };
 		57353ACE229EF65D43370F78 /* CalendarSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF13C3419D7D5D10B0F0884 /* CalendarSync.swift */; };
@@ -75,6 +76,7 @@
 		9A138A47EC4BCBD1AB3E1E6B /* GlyfM0UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FDE3921B98C38CD61A63DE1 /* GlyfM0UITests.swift */; };
 		9B83FF7AC3AF28555C3CBADB /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		9CCA8D9E6CBC94270F9C9BA9 /* VaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00522630AB9AC3B92A56A844 /* VaultStore.swift */; };
+		9F62851B8A37CBEE6573357F /* EmoticonData.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6DDF87D668D2D26A406049 /* EmoticonData.swift */; };
 		A0A41F9CEBB4A5F3D00777DC /* PersonalLexicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5950219DD87CBFD3056204A6 /* PersonalLexicon.swift */; };
 		A0E22D0B77BCECE12142A56D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ED172FBD98BD64B321D6F03F /* Foundation.framework */; };
 		A402B2AE8E9B78B4BE8B8D51 /* packs.json in Resources */ = {isa = PBXBuildFile; fileRef = FAA53A6A1AB978CDAB577A80 /* packs.json */; };
@@ -121,6 +123,7 @@
 		F570CD64F4CF68669044375C /* IntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B2E745F387CCCC496C13F0 /* IntentStore.swift */; };
 		F697C4D3635DA73ACB9B61D7 /* SecretScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26C1C3564E6011D2D3389969 /* SecretScanner.swift */; };
 		F7175286A6F8440707A27AF8 /* DictationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F86BBFF0BD8D616E31EFFF2B /* DictationEngine.swift */; };
+		F8DD9815DF048F962E77F85D /* MediaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E94BD8FF3D9C3658E2ED995 /* MediaClient.swift */; };
 		FA6A93D5D04A8E09F95C2C35 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D580A139E7DF9CB049153E03 /* KeyboardLayout.swift */; };
 		FB38F463042BC6A1270BD92E /* PersonalLexicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5950219DD87CBFD3056204A6 /* PersonalLexicon.swift */; };
 /* End PBXBuildFile section */
@@ -228,6 +231,7 @@
 		7B45C4A1A9F02EC32C4EC037 /* EmojiBoard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmojiBoard.swift; sourceTree = "<group>"; };
 		8234BE4687484A021A8CC2FA /* en.glyd */ = {isa = PBXFileReference; includeInIndex = 1; name = en.glyd; path = ../dict/en.glyd; sourceTree = SOURCE_ROOT; };
 		8780A09C43898372745A2010 /* TypingEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingEngine.swift; sourceTree = "<group>"; };
+		8E94BD8FF3D9C3658E2ED995 /* MediaClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MediaClient.swift; sourceTree = "<group>"; };
 		8EBDAF6797DA60917F2CADBD /* TranslationHUD.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TranslationHUD.swift; sourceTree = "<group>"; };
 		90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfSession.swift; sourceTree = "<group>"; };
 		9185252D8BB3209B13267E60 /* GlyfKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GlyfKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -242,6 +246,7 @@
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9F09C0ACA1F1B45C6AC46AA4 /* TourCoach.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TourCoach.swift; sourceTree = "<group>"; };
 		9FDE3921B98C38CD61A63DE1 /* GlyfM0UITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfM0UITests.swift; sourceTree = "<group>"; };
+		A2B91BDDF5ACD1D415C5AC2E /* MediaGrid.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MediaGrid.swift; sourceTree = "<group>"; };
 		A6A1C1B829364960405CA876 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfKeyboardViewController.swift; sourceTree = "<group>"; };
 		ADB9E43E6C30DA5026053D1C /* LocationOnce.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationOnce.swift; sourceTree = "<group>"; };
@@ -273,6 +278,7 @@
 		F86BBFF0BD8D616E31EFFF2B /* DictationEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DictationEngine.swift; sourceTree = "<group>"; };
 		F870C03E48C1149F7284D509 /* ToneProfile.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ToneProfile.swift; sourceTree = "<group>"; };
 		FAA53A6A1AB978CDAB577A80 /* packs.json */ = {isa = PBXFileReference; includeInIndex = 1; name = packs.json; path = ../assets/vocab/packs.json; sourceTree = SOURCE_ROOT; };
+		FE6DDF87D668D2D26A406049 /* EmoticonData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmoticonData.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -395,6 +401,7 @@
 				BB08610153E93D016950991C /* ControlScrollView.swift */,
 				10257BEA0ADE02D15D7C04F8 /* TourLabelView.swift */,
 				1C660509749B9F4AFCF76EE7 /* CalendarSurface.swift */,
+				A2B91BDDF5ACD1D415C5AC2E /* MediaGrid.swift */,
 			);
 			name = Surfaces;
 			path = Surfaces;
@@ -516,6 +523,7 @@
 				08B2E745F387CCCC496C13F0 /* IntentStore.swift */,
 				4223D5E2A46414C673A83747 /* Contracts.generated.swift */,
 				90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */,
+				8E94BD8FF3D9C3658E2ED995 /* MediaClient.swift */,
 			);
 			name = Bridge;
 			path = Bridge;
@@ -527,6 +535,7 @@
 				CFAFFC06C09A0F4C0BC665EE /* EmojiData.swift */,
 				7508C7D7086528DBA50605BC /* GlassTokens.swift */,
 				045210190D0BB732C32B6893 /* Brand */,
+				FE6DDF87D668D2D26A406049 /* EmoticonData.swift */,
 			);
 			name = Design;
 			path = Design;
@@ -896,6 +905,9 @@
 				4981B7628978DB909E4C478F /* CalendarSurface.swift in Sources */,
 				737B2D28D4945E95B7BCC5E5 /* GlyfSession.swift in Sources */,
 				91E3A56EB8244E365BC6E1F6 /* RatesStore.swift in Sources */,
+				F8DD9815DF048F962E77F85D /* MediaClient.swift in Sources */,
+				9F62851B8A37CBEE6573357F /* EmoticonData.swift in Sources */,
+				4AEF058C22BE42A8AC70ED7F /* MediaGrid.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

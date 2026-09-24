@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-export type RegistryName = "glyfs" | "tools";
+export type RegistryName = "glyfs" | "tools" | "stickers";
 
 const memo = new Map<RegistryName, string>();
 

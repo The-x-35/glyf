@@ -1,7 +1,8 @@
 import { signedInApp } from "./helpers.js";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { listInsert, looksLikeRewrite, parsePlan, parseRewriteOptions, planByRules, rewriteStyles } from "../src/lib/act.js";
+import { listInsert, looksLikeRewrite, mathQuestion, parsePlan, parseRewriteOptions, planByRules, rewriteStyles } from "../src/lib/act.js";
+import { withCategory } from "../src/lib/search.js";
 import type { PlaceCard } from "../src/lib/searchcards.js";
 import { renderPage } from "../src/lib/pages.js";
 
@@ -105,7 +106,17 @@ describe("POST /act", () => {
   it("answers computable questions from the web vertical", async () => {
     const { body } = await post("sunset");
     expect(body.intent).toBe("answer");
-    expect(body.insert).toBe("6:13 PM — Sunset · today");
+    // The mock card carries no sentence of its own, so value and sub are
+    // joined; a real card pastes its `say` line (see the next test).
+    expect(body.insert).toBe("6:13 PM, Sunset · today");
+  });
+
+  it("routes a sum asked in words to an answer, not a rewrite", async () => {
+    // Search is mocked here (a fixed card), so this pins the routing; the
+    // calculator's sentence is pinned in search.test.ts.
+    const { body } = await post("what is 18% of 2450?");
+    expect(body.intent).toBe("answer");
+    expect(planByRules("what is 18% of 2450?")).toEqual({ intent: "answer", query: "18% of 2450" });
   });
 
   it("tidies an ordinary message instead of looking anything up", async () => {
@@ -188,5 +199,27 @@ describe("a plain reply standing in for the rewrite", () => {
 
   it("refuses an essay for a one-line message", () => {
     expect(looksLikeRewrite("Hey. ".repeat(80), typed)).toBe(false);
+  });
+});
+
+describe("mathQuestion", () => {
+  it("finds the sum inside a question about one", () => {
+    expect(mathQuestion("18% of 2450")).toBe("18% of 2450");
+    expect(mathQuestion("what's 18% of 2450?")).toBe("18% of 2450");
+    expect(mathQuestion("how much is 12 x 12")).toBe("12 * 12");
+    expect(mathQuestion("calculate 2450/4")).toBe("2450/4");
+  });
+  it("leaves messages that only mention numbers alone", () => {
+    expect(mathQuestion("meet at 5, table for 4")).toBeNull();
+    expect(mathQuestion("what is the plan for 2025")).toBeNull();
+    expect(mathQuestion("see you at 10-11")).toBeNull();
+  });
+});
+
+describe("withCategory", () => {
+  it("says a bank-named cash machine is an ATM, once", () => {
+    expect(withCategory("Citibank", "service.financial.atm")).toBe("Citibank ATM");
+    expect(withCategory("HDFC Bank ATM", "service.financial.atm")).toBe("HDFC Bank ATM");
+    expect(withCategory("Blue Tokai", "catering.cafe")).toBe("Blue Tokai");
   });
 });

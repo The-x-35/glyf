@@ -128,6 +128,21 @@ const PLACE_WORDS =
 const CUISINES = "italian|chinese|indian|thai|mexican|japanese|korean|vietnamese|french|spanish|greek|" +
   "lebanese|turkish|south indian|north indian|vegan|vegetarian";
 
+/** The calculation inside a question about one, or null: "what's 18% of
+ *  2450?" gives "18% of 2450", "how much is 12 x 12" gives "12 * 12". Only a
+ *  percentage phrase or digits joined by operators count, so a message that
+ *  merely contains numbers ("meet at 5, table for 4") is left alone. */
+export function mathQuestion(text: string): string | null {
+  const q = text.trim()
+    .replace(/^(what('|’)?s|what is|how much is|calculate|calc|solve)\s+/i, "")
+    .replace(/[\s?=!.]+$/, "")
+    .trim();
+  if (/^[\d.,]+\s*%\s*of\s*[\d.,]+$/i.test(q)) return q;
+  const expr = q.replace(/(\d)\s*[x×]\s*(?=\d)/gi, "$1 * ");
+  if (/\d\s*[+\-*/÷^%]\s*[\d(]/.test(expr) && /^[\d\s.,+\-*/÷^()%]+$/.test(expr)) return expr;
+  return null;
+}
+
 /** Cheap first pass. Returns null when the text needs the model to decide. */
 export function planByRules(text: string): ActPlan | null {
   const t = text.trim().replace(/\s+/g, " ");
@@ -136,6 +151,11 @@ export function planByRules(text: string): ActPlan | null {
 
   // Arithmetic and conversions have computed answers on the web vertical.
   if (/\d/.test(t) && /^[\d\s.,+\-*/×÷^()%=]+$/.test(t)) return { intent: "answer", query: t };
+  // The same sums asked in words ("18% of 2450", "what is 12*12?", "how
+  // much is 2450/4") are still sums: left to the model they read as a
+  // message and come back tidied instead of answered.
+  const sum = mathQuestion(t);
+  if (sum) return { intent: "answer", query: sum };
   if (/^\s*\d+(\.\d+)?\s*[a-z]{3}\s+(to|in)\s+[a-z]{3}\s*$/i.test(t)) return { intent: "answer", query: t };
   if (/\b(sunset|sunrise|golden hour|weather|temperature|what time is it|time in)\b/.test(lower)) {
     return { intent: "answer", query: t };
@@ -310,7 +330,10 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
       const res = await search("web", p.query, ctx, { model: false });
       const answer = res.cards.find(c => c.kind === "answer");
       if (answer && answer.kind === "answer") {
-        const line = answer.sub ? `${answer.value} — ${answer.sub}` : answer.value;
+        // The sentence the search card pastes ("18% of 2450 is 441"), so the
+        // two ways of asking put the same words in the message.
+        const line = answer.say?.trim()
+          || (answer.sub ? `${answer.value}, ${answer.sub}` : answer.value);
         return { intent: "answer", title: answer.title, cards: [answer],
           insert: line, provider: res.provider };
       }

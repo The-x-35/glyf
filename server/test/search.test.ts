@@ -115,6 +115,10 @@ describe("sunTimes", () => {
     expect(composeInsert(card!, "titleAndLink")).toBe(card!.say);
     // An unknown zone and no location: no guess at all.
     expect(await instantAnswer("sunset time today", { tz: "Antarctica/Troll" })).toBeNull();
+    // A percentage pastes as a sentence (what /act inserts for "18% of 2450").
+    const pct = await instantAnswer("18% of 2450", {});
+    expect(pct?.value).toBe("441");
+    expect(pct?.say).toBe("18% of 2450 is 441");
     // A shared location wins and names no city.
     const here = await instantAnswer("what time is sunset", { lat: 19.07, lon: 72.87, tz: "Asia/Kolkata" });
     expect(here?.sub).toBe("Sunset · today");

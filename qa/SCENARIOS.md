@@ -2,7 +2,7 @@
 
 Run on 17 September 2026: the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
 
-99 pass, 2 need a key, 0 fail, of 101.
+103 pass, 2 need a key, 0 fail, of 105.
 
 | ID | Where | Scenario | Result |
 | --- | --- | --- | --- |
@@ -106,7 +106,11 @@ Run on 17 September 2026: the real keyboards (iPhone 17 Pro simulator, Android A
 | S98 | Android | A screenshot you just took is in the clipboard | pass |
 | S99 | App | Make a glyf from an idea and hold its key | pass |
 | S100 | App | Onboarding, then the guided tour | pass |
+| S101 | iPhone | Emoticons type straight into the message | pass |
 | S101 | Android | Dark mode keys are dark, light mode keys are light | pass |
+| S102 | iPhone | The GIF tab shows GIFs and copies one | pass |
+| S103 | iPhone | The Stickers tab shows stickers and copies one | pass |
+| S104 | iPhone | GIF search shows results for the word | pass |
 
 ## Fixed during the run
 
