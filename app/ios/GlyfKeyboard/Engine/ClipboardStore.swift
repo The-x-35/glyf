@@ -90,7 +90,7 @@ enum ClipboardStore {
     /// `detectPatterns`, which answers with types and no values, stays quiet.
     /// So this sits behind the same switch as the full read.
     static func captureDetected(_ done: @escaping (Bool) -> Void) {
-        guard fullAccessHint, pasteboardHasNewContent(),
+        guard !reading, fullAccessHint, pasteboardHasNewContent(),
               SettingsStore.current.clipboardHistory != false
         else { return done(false) }
         // Only the three iOS 14 patterns are plain `DetectionPattern`s; the
@@ -140,19 +140,37 @@ enum ClipboardStore {
     /// by itself. That choice belongs to the person, not to us, which is why
     /// this is opt-in and `captureDetected` is what runs by default.
     static func captureEverything(_ done: @escaping (Bool) -> Void) {
-        guard fullAccessHint, pasteboardHasNewContent(),
+        guard !reading, fullAccessHint, pasteboardHasNewContent(),
               SettingsStore.current.clipboardHistory != false,
               SettingsStore.current.clipboardCaptureAll == true,
-              UIPasteboard.general.hasStrings,
-              let text = UIPasteboard.general.string
+              UIPasteboard.general.hasStrings
         else { return done(false) }
-        markPasteboardSeen()
-        guard let next = inserting(text, into: load(), now: Date()) else {
-            return done(false)
+        // Reading `.string` can raise "Allow Paste?", and the read waits for
+        // the answer. On the main thread that froze the whole keyboard (no
+        // keys, no strip) until the person answered; off it, the keyboard
+        // keeps working while iOS asks.
+        let changeCount = UIPasteboard.general.changeCount
+        reading = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let text = UIPasteboard.general.string
+            DispatchQueue.main.async {
+                reading = false
+                // Seen either way: a refused read is not asked again for the
+                // same copy.
+                AppGroupStore.writeJSON(["cc": changeCount], name: "clip-cc.json")
+                guard let text, !text.isEmpty,
+                      let next = inserting(text, into: load(), now: Date()) else {
+                    return done(false)
+                }
+                save(next)
+                done(true)
+            }
         }
-        save(next)
-        done(true)
     }
+
+    /// A read is waiting on iOS (and maybe on the person): no second one.
+    /// Main thread only.
+    private static var reading = false
 
     /// A link first: it is what people copy most and what iOS is surest of.
     private static func firstText(in values: [UIPasteboard.DetectionPattern: Any]) -> String? {
