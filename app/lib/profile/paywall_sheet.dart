@@ -10,8 +10,14 @@ import '../core/theme.dart';
 /// Free: 40 runs/day · Plus $4.99: 400 runs/day + priority · Max $19.99:
 /// unlimited + the smartest models. This build unlocks locally; App Store
 /// products + server receipt validation replace the same toggle at ship.
+
+/// Plus and Max can't be bought yet: App Store and Play subscriptions are
+/// the next update. Until then the plans show greyed out as Coming soon,
+/// and nothing here can change a plan.
+const plansOnSale = false;
+
 Future<bool> showPaywall(BuildContext context, {String? reason}) async {
-  Telemetry.log('paywall_shown', {'reason': reason ?? 'profile'});
+  Telemetry.log('paywall_shown', {'reason': reason ?? 'profile', 'onSale': plansOnSale});
   final plan = await showModalBottomSheet<String>(
     context: context,
     backgroundColor: Colors.white,
@@ -21,7 +27,7 @@ Future<bool> showPaywall(BuildContext context, {String? reason}) async {
             BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
     builder: (ctx) => _PaywallSheet(reason: reason),
   );
-  if (plan != null) {
+  if (plan != null && plansOnSale) {
     // The server's word first: caps are enforced there, so a plan the phone
     // merely believes in would show 400 runs while the keyboard counts 40.
     String? refusal;
@@ -71,10 +77,15 @@ class _PaywallSheetState extends State<_PaywallSheet> {
           Text(
             widget.reason == 'cap'
                 ? 'You’re out of runs today'
-                : 'Upgrade Glyf',
+                : plansOnSale ? 'Upgrade Glyf' : 'Glyf Pro',
             style: const TextStyle(
                 color: Glass.ink, fontSize: 21, fontWeight: FontWeight.w800),
           ),
+          if (widget.reason == 'cap') ...[
+            const SizedBox(height: 4),
+            const Text('They come back tomorrow.',
+                style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
+          ],
           const SizedBox(height: 18),
           Row(children: [
             Expanded(
@@ -95,7 +106,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                 id: 'max',
                 name: 'Max',
                 price: '\$19.99',
-                badge: 'Best',
+                badge: plansOnSale ? 'Best' : null,
                 features: const [
                   'Unlimited Glyf runs',
                   'The smartest models',
@@ -110,13 +121,15 @@ class _PaywallSheetState extends State<_PaywallSheet> {
             identifier: 'paywall:unlock',
             button: true,
             child: PillButton(
-                label: _selected == 'max' ? 'Get Max' : 'Get Plus',
-                onPressed: () => Navigator.of(context).pop(_selected)),
+                label: plansOnSale
+                    ? (_selected == 'max' ? 'Get Max' : 'Get Plus')
+                    : 'Coming soon',
+                onPressed: plansOnSale ? () => Navigator.of(context).pop(_selected) : null),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(null),
-            child: const Text('Not now',
-                style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
+            child: Text(plansOnSale ? 'Not now' : 'Close',
+                style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
           ),
         ]),
       ),
@@ -130,9 +143,9 @@ class _PaywallSheetState extends State<_PaywallSheet> {
     String? badge,
     required List<String> features,
   }) {
-    final selected = _selected == id;
-    return GestureDetector(
-      onTap: () => setState(() => _selected = id),
+    final selected = plansOnSale && _selected == id;
+    final card = GestureDetector(
+      onTap: plansOnSale ? () => setState(() => _selected = id) : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(14),
@@ -194,8 +207,28 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                     ),
                   ]),
             ),
+          if (!plansOnSale) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F2F5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('Coming soon',
+                  style: TextStyle(color: Glass.inkSoft, fontSize: 11, fontWeight: FontWeight.w700)),
+            ),
+          ],
         ]),
       ),
+    );
+    if (plansOnSale) return card;
+    // Not for sale yet: shown so people see what is coming, greyed so
+    // nobody mistakes it for something to buy.
+    return Semantics(
+      identifier: 'paywall:$id',
+      label: '$name, coming soon',
+      child: Opacity(opacity: 0.5, child: card),
     );
   }
 }

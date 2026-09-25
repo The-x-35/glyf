@@ -423,12 +423,16 @@ class _ProfileTabState extends State<ProfileTab> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Glass.ink,
+                      // Greyed until Plus and Max can be bought in the store.
+                      color: plansOnSale ? Glass.ink : const Color(0xFFF1F2F5),
                       borderRadius: BorderRadius.circular(15),
                     ),
-                    child: Text(_plan == 'plus' ? 'Upgrade' : 'Go Pro',
-                        style: const TextStyle(
-                            color: Colors.white,
+                    child: Text(
+                        !plansOnSale
+                            ? 'Pro coming soon'
+                            : _plan == 'plus' ? 'Upgrade' : 'Go Pro',
+                        style: TextStyle(
+                            color: plansOnSale ? Colors.white : Glass.inkSoft,
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700)),
                   ),
