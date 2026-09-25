@@ -17,6 +17,7 @@
 		0B545E6619BFA8152F0DD00A /* TypingText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2800A99C3DD59CFC155C03C /* TypingText.swift */; };
 		0E08430B71036E4ED4D917CB /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ED172FBD98BD64B321D6F03F /* Foundation.framework */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
+		16146E50196031FA02DE7296 /* GlyfMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F9E78CD043DC8AAFC3C7B62 /* GlyfMark.swift */; };
 		1CAC13D36C427C7132889EF1 /* ClipboardPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACF0028C0693E817D1AC231 /* ClipboardPanel.swift */; };
 		20A21D92D3A57F8A1719908F /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
 		21C14BE98D0CD059C5EC3C2E /* SpaceGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07E305711B11F34700D4CCDE /* SpaceGesture.swift */; };
@@ -25,6 +26,7 @@
 		301F473B5F209817B6C95E96 /* AccentPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603D199225C0A5A5986ECBD5 /* AccentPopup.swift */; };
 		31A5DBAC5940AE8D66750E8C /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
+		33594247452A6609B5959E9A /* GlyfMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F9E78CD043DC8AAFC3C7B62 /* GlyfMark.swift */; };
 		338DFF9C537EFE2A4F8227D8 /* TypingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8780A09C43898372745A2010 /* TypingEngine.swift */; };
 		3489B9F0BB84217F14041102 /* VaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00522630AB9AC3B92A56A844 /* VaultStore.swift */; };
 		354BE17C3BF7DC577342EC3C /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
@@ -243,6 +245,7 @@
 		79A18448EF0F4C763B35281E /* VaultTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultTests.swift; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		7B45C4A1A9F02EC32C4EC037 /* EmojiBoard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmojiBoard.swift; sourceTree = "<group>"; };
+		7F9E78CD043DC8AAFC3C7B62 /* GlyfMark.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfMark.swift; sourceTree = "<group>"; };
 		8234BE4687484A021A8CC2FA /* en.glyd */ = {isa = PBXFileReference; includeInIndex = 1; name = en.glyd; path = ../dict/en.glyd; sourceTree = SOURCE_ROOT; };
 		8780A09C43898372745A2010 /* TypingEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingEngine.swift; sourceTree = "<group>"; };
 		8E94BD8FF3D9C3658E2ED995 /* MediaClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MediaClient.swift; sourceTree = "<group>"; };
@@ -563,6 +566,7 @@
 				7508C7D7086528DBA50605BC /* GlassTokens.swift */,
 				045210190D0BB732C32B6893 /* Brand */,
 				FE6DDF87D668D2D26A406049 /* EmoticonData.swift */,
+				7F9E78CD043DC8AAFC3C7B62 /* GlyfMark.swift */,
 			);
 			name = Design;
 			path = Design;
@@ -942,6 +946,7 @@
 				7C790C9704BCE2E111609C54 /* GoogleAccess.swift in Sources */,
 				4AD916DFA12768049AF666E6 /* GoogleClient.swift in Sources */,
 				43AD8CC4547819EF844356CB /* GoogleEvent.swift in Sources */,
+				33594247452A6609B5959E9A /* GlyfMark.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -982,6 +987,7 @@
 				99BF66CC97C5F3CE3E814B27 /* EventParse.swift in Sources */,
 				5BD908AC081B1766CD6B2082 /* EventParseTests.swift in Sources */,
 				B1206CCFBC7B411E70F86631 /* GoogleEvent.swift in Sources */,
+				16146E50196031FA02DE7296 /* GlyfMark.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -345,21 +345,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         toolbar.removeAllViews()
         val ink = if (dark) Color.WHITE else Color.rgb(18, 18, 20)
 
-        val g = TextView(this).apply {
-            text = "g"
+        // Glyf's own key, the same as iOS's: black, the app icon's g and the
+        // violet dot (GlyfMark), black on every sheet with a faint ring on a
+        // dark one. The view is the tap target; the key is drawn inside it.
+        val g = GlyfKeyView(this, dp(28).toFloat())
+        g.dark = dark
+        g.ink = ink
+        g.apply {
             setTag(com.demo.glyf.R.id.qa_id, "toolbar:glyf")
             contentDescription = "Glyf menu"
-            setTextColor(Color.WHITE)
-            textSize = 19f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(Color.rgb(18, 18, 20))
-                // The brand pill stays black everywhere; on dark chrome a
-                // faint ring keeps it from melting into the backdrop.
-                if (dark) setStroke(dp(1), Color.argb(96, 255, 255, 255))
-            }
             setOnClickListener {
                 // While suggestions fill the strip, g brings the tools back (iOS §6.2).
                 if (featurePanel is ToolMenuView) {
@@ -371,7 +365,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             setOnLongClickListener { openApp(); true }
         }
-        toolbar.addView(g, LinearLayout.LayoutParams(dp(38), dp(30)))
+        toolbar.addView(g, LinearLayout.LayoutParams(dp(44), dp(36)))
         toolIcons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -397,7 +391,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         gPill = g
     }
 
-    private var gPill: TextView? = null
+    private var gPill: GlyfKeyView? = null
 
     private fun stripTools(): List<String> {
         val known = ToolIcon.TOOLS.map { it.first }.toSet()
@@ -2358,7 +2352,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         background = GradientDrawable().apply {
             cornerRadius = dp(13).toFloat(); setColor(Color.rgb(18, 18, 20))
         }
-        addView(TextView(context).apply {
+        // The space bar's act wears the icon's own g; a held key its letter.
+        addView(if (glyph == "g") GlyfLetterView(context, dp(27).toFloat()) else TextView(context).apply {
             text = glyph; textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
@@ -2795,7 +2790,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         featurePanel?.let { root.removeView(it) }
         featurePanel = null
         emojiBoard = null
-        gPill?.text = "g"
+        gPill?.closing = false
         dropMarker?.let { if (::toolIcons.isInitialized) toolIcons.removeView(it) }
         dropMarker = null
         keyboard.visibility = View.VISIBLE
@@ -2904,7 +2899,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         root.addView(menu, root.indexOfChild(keyboard) + 1,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, panelH))
         featurePanel = menu
-        gPill?.text = "✕"
+        gPill?.closing = true
     }
 
     private var dropMarker: View? = null

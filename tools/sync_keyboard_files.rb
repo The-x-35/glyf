@@ -17,6 +17,7 @@ TEST_SHARED = %w[
   Engine/NotesStore.swift
   Layout/KeyboardLayout.swift
   Design/GlassTokens.swift
+  Design/GlyfMark.swift
   Engine/SpaceGesture.swift
   Engine/Smart.swift
   Engine/CalendarText.swift

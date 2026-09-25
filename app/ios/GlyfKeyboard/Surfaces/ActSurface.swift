@@ -39,6 +39,9 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     private let ringsLayer = CALayer()
     private let mark = UIView()
     private let markLabel = UILabel()
+    /// The brand’s own g (GlyfMark) when a space-bar act works; a held
+    /// key's letter uses the label.
+    private let markG = CAShapeLayer()
     private let markDot = UIView()
     private let intentLabel = UILabel()
     /// A skill's name over its keycap while it works ("Proofread").
@@ -87,6 +90,8 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         markLabel.textColor = .white
         markLabel.textAlignment = .center
         mark.addSubview(markLabel)
+        markG.fillColor = UIColor.white.cgColor
+        mark.layer.addSublayer(markG)
         markDot.backgroundColor = Glass.accentPrimary
         markDot.layer.cornerRadius = 3.5
         mark.addSubview(markDot)
@@ -230,6 +235,9 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         intentLabel.text = trimmed.isEmpty ? nil
             : "“\(trimmed.count > 80 ? String(trimmed.prefix(80)) + "…" : trimmed)”"
         markLabel.text = (keyLetter?.isEmpty == false) ? keyLetter!.uppercased() : "g"
+        let brand = markLabel.text == "g"
+        markLabel.isHidden = brand
+        markG.isHidden = !brand
         workingTitle.text = title
         show(.working)
     }
@@ -427,6 +435,12 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         mark.center = centre
         markLabel.frame = mark.bounds.offsetBy(dx: 0, dy: -2)
         markDot.frame = CGRect(x: markSize - 13, y: 6, width: 7, height: 7)
+        // The icon's g at the size the label's letter had, a point left of
+        // centre so the dot keeps its corner.
+        let gh: CGFloat = 27
+        markG.frame = mark.bounds
+        markG.path = GlyfMark.gPath(in: CGRect(x: (markSize - gh * GlyfMark.gAspect) / 2 - 1,
+                                                y: (markSize - gh) / 2, width: gh * GlyfMark.gAspect, height: gh))
         intentLabel.frame = CGRect(x: 24, y: centre.y + markSize / 2 + 12, width: w - 48, height: 40)
         workingTitle.frame = CGRect(x: 24, y: 14, width: w - 48, height: 22)
         cancelButton.frame = CGRect(x: (w - 36) / 2, y: h - 52, width: 36, height: 36)

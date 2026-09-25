@@ -67,7 +67,7 @@
   "area": "Android",
   "title": "The g button opens the tool menu",
   "verdict": "pass",
-  "note": "tiles: Search, Rewrite, Translate, Vault, Clipboard, Emoji"
+  "note": "tiles: Search, Rewrite, Translate, Vault, Clipboard, Emoji (rerun 25 Sep with the drawn key)"
  },
  {
   "id": "S94",
@@ -194,5 +194,12 @@
   "title": "Dark mode keys are dark, light mode keys are light",
   "verdict": "pass",
   "note": "key face 0.21 dark, 1.00 light"
+ },
+ {
+  "id": "S130",
+  "area": "Android",
+  "title": "The strip starts with Glyf's key, black with the violet dot, light and dark",
+  "verdict": "pass",
+  "note": "light: face 0.07, dot 124 92 255; dark: face 0.07, dot 124 92 255; tap opens the menu"
  }
 ]

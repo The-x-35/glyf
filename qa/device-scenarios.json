@@ -449,5 +449,15 @@
   "outcome": "“Join me on a call: https://meet.google.com/txd-sefv-kfh”",
   "verdict": "pass",
   "fixed": false
+ },
+ {
+  "id": "S129",
+  "surface": "iPhone",
+  "area": "Strip",
+  "title": "The strip starts with Glyf's key, black with the violet dot, light and dark",
+  "input": "open the keyboard in Glyf (light), then in Messages with the phone dark; tap the key",
+  "outcome": "face 0.07 and dot #7C5CFF on both sheets; the key opens the Glyf menu",
+  "verdict": "pass",
+  "fixed": false
  }
 ]

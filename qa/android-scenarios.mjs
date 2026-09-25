@@ -717,6 +717,50 @@ const scenarios = [
       shell("cmd uimode night no");
     }
   } },
+  { id: "S130", title: "The strip starts with Glyf's key, black with the violet dot, light and dark", run: async () => {
+    await fresh();
+    // The key is drawn 28dp tall in the middle of its 44dp view (GlyfKeyView):
+    // sample its face beside the letter and the middle of its dot.
+    const look = async () => {
+      const s = await state();
+      const g = find(s, v => v.id === "toolbar:glyf");
+      if (!g) return null;
+      const dp = g.w / 44, kh = Math.round(28 * dp), kw = Math.round(kh * 1.154);
+      const left = g.x - kw / 2, top = g.y - kh / 2;
+      const face = [Math.round(left + 0.1 * kh), Math.round(g.y + 0.1 * kh)];
+      const dot = [Math.round(left + kw - 0.135 * kh - 0.096 * kh), Math.round(top + 0.135 * kh + 0.096 * kh)];
+      const png = execFileSync(ADB, ["exec-out", "screencap", "-p"], { maxBuffer: 64e6 });
+      const file = new URL("./results/android-key.png", import.meta.url);
+      writeFileSync(file, png);
+      const [f, d] = JSON.parse(execFileSync("python3", ["-c",
+        `from PIL import Image; import json; im=Image.open('${file.pathname}').convert('RGB'); print(json.dumps([im.getpixel((${face})), im.getpixel((${dot}))]))`],
+        { encoding: "utf8" }).trim());
+      return { face: (0.299 * f[0] + 0.587 * f[1] + 0.114 * f[2]) / 255, dot: d,
+        violet: d[2] > 200 && d[0] > 80 && d[0] < 175 && d[1] < 140, g };
+    };
+    const light = await look();
+    if (!light) return { pass: false, note: "no Glyf key on the strip" };
+    await screenshot("S130-light");
+    await tapXY(light.g.x, light.g.y);
+    await sleep(600);
+    const menu = (await state()).views.some(v => v.text === "Search" || v.id === "Search");
+    tool("close");
+    let dark;
+    try {
+      shell("cmd uimode night yes");
+      await sleep(3000);
+      tool("close"); tool("clear");
+      await sleep(800);
+      dark = await look();
+      await screenshot("S130-dark");
+    } finally {
+      shell("cmd uimode night no");
+    }
+    const ok = x => x && x.face < 0.15 && x.violet;
+    const fmt = x => x ? `face ${x.face.toFixed(2)}, dot ${x.dot.join(" ")}` : "no key";
+    return { pass: ok(light) && ok(dark) && menu,
+      note: `light: ${fmt(light)}; dark: ${fmt(dark)}; tap opens the menu: ${menu}` };
+  } },
 ];
 
 const only = process.env.ONLY ? new Set(process.env.ONLY.split(",")) : null;

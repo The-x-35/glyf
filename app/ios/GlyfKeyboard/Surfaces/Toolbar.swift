@@ -35,8 +35,11 @@ final class GlyfToolbar: UIView {
     private let itemsStack = UIStackView()
     private let candidatesStack = UIStackView()
     private let runsChip = UIButton(type: .system)
-    /// The apps grid that opens the Glyf menu.
-    private let appsGrid = CAShapeLayer()
+    /// The brand key that opens the Glyf menu: the app icon's g and violet
+    /// dot on a black key (GlyfMark). Three layers, drawn from outlines.
+    private let keycap = CAShapeLayer()
+    private let keycapG = CAShapeLayer()
+    private let keycapDot = CAShapeLayer()
     /// True while a panel has turned it into a close button.
     private var panelOpen = false
     /// Panel mode (website parity): the strip keeps its place, the brand pill
@@ -96,26 +99,32 @@ final class GlyfToolbar: UIView {
     /// icon off the rhythm.
     static let itemPad: CGFloat = 12
     /// An SF Symbol does not fill the box it is drawn in — measured on this
-    /// strip, about three points of air sit inside each one's edge. The apps
-    /// grid is a path, so it fills its box exactly, and laid out on the same
-    /// arithmetic it ended up three points nearer its neighbour than they are
-    /// to each other, and three points nearer the screen edge. This is the
-    /// air a symbol would have brought with it.
+    /// strip, about three points of air sit inside each one's edge. The brand
+    /// key is a filled shape, so it fills its box exactly, and laid out on the
+    /// same arithmetic it would sit three points nearer its neighbour than
+    /// they are to each other, and three points nearer the screen edge. This
+    /// is the air a symbol would have brought with it.
     static let gridSlack: CGFloat = 3
 
     init() {
         super.init(frame: .zero)
 
-        // What the button opens, not whose it is: the apps grid. It stands on
-        // the strip like every other tool — no ground of its own, but not a
-        // clear one either, because iOS throws away touches that land on
-        // fully transparent pixels in a keyboard extension.
+        // Glyf's own key, the way Android's strip starts: black, the icon's
+        // g in white and the violet dot, the same in every look. The button
+        // around it is the tap target and is painted, not clear, because iOS
+        // throws away touches that land on fully transparent pixels in a
+        // keyboard extension.
         glyfButton.backgroundColor = Glass.touchableGrid
         glyfButton.layer.cornerCurve = .continuous
-        appsGrid.fillColor = nil
-        appsGrid.strokeColor = Glass.textPrimary.cgColor
-        appsGrid.lineCap = .round
-        glyfButton.layer.addSublayer(appsGrid)
+        keycap.fillColor = Glass.brandInk.cgColor
+        keycap.lineWidth = 1
+        keycapG.fillColor = UIColor.white.cgColor
+        keycapDot.fillColor = Glass.accentPrimary.cgColor
+        for layer in [keycap, keycapG, keycapDot] {
+            layer.contentsScale = UIScreen.main.scale
+            glyfButton.layer.addSublayer(layer)
+        }
+        applyKeycapRing()
         glyfButton.accessibilityIdentifier = "toolbar:glyf"
         glyfButton.accessibilityLabel = "Glyf"
         glyfButton.addTarget(self, action: #selector(glyfTapped), for: .touchUpInside)
@@ -230,6 +239,12 @@ final class GlyfToolbar: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The key stays black on every sheet. On a dark one a faint ring keeps
+    /// it from melting into the backdrop (Android's pill does the same).
+    private func applyKeycapRing() {
+        keycap.strokeColor = Glass.chromeDark ? UIColor.white.withAlphaComponent(0.16).cgColor : nil
+    }
+
     /// Re-skins after an appearance flip (items re-tint via reloadItems;
     /// the brand keycap stays constant by design).
     func applyPalette() {
@@ -244,9 +259,7 @@ final class GlyfToolbar: UIView {
         let words = suggestions
         suggestions = []
         if !words.isEmpty { showSuggestions(words) }
-        // The grid stands on the sheet with no ground of its own, so it takes
-        // the sheet's ink: dark on the light one, white on the dark.
-        appsGrid.strokeColor = Glass.textPrimary.cgColor
+        applyKeycapRing()
         if !panelOpen { glyfButton.backgroundColor = Glass.touchableGrid }
         reloadItems()
     }
@@ -369,9 +382,8 @@ final class GlyfToolbar: UIView {
             applyCandidatesVisibility(toolsVisible: !showingCandidates || userPinnedTools)
         }
         if open {
-            // The ✕ stands in the grid's slot, so it stands the way the grid
-            // does: no ground of its own, drawn at the size the tools beside
-            // it are drawn. It used to sit on a soft fill, and because the
+            // The ✕ stands in the key's slot with no ground of its own, drawn
+            // at the size the tools beside it are drawn. It used to sit on a soft fill, and because the
             // slot is a tap target — wider than it is tall — that fill read
             // as a squat pill parked at the end of an otherwise clean row.
             glyfButton.setImage(UIImage(systemName: "xmark"), for: .normal)
@@ -381,7 +393,7 @@ final class GlyfToolbar: UIView {
             glyfButton.backgroundColor = Glass.touchableGrid
             glyfButton.accessibilityIdentifier = "toolbar:close"
             glyfButton.accessibilityLabel = "Close"
-            appsGrid.isHidden = true
+            for layer in [keycap, keycapG, keycapDot] { layer.isHidden = true }
         } else {
             glyfButton.setImage(nil, for: .normal)
             // Back to no ground of its own, but still painted: a clear
@@ -389,7 +401,7 @@ final class GlyfToolbar: UIView {
             glyfButton.backgroundColor = Glass.touchableGrid
             glyfButton.accessibilityIdentifier = "toolbar:glyf"
             glyfButton.accessibilityLabel = "Glyf"
-            appsGrid.isHidden = false
+            for layer in [keycap, keycapG, keycapDot] { layer.isHidden = false }
         }
         panelOpen = open
         setNeedsLayout()
@@ -601,26 +613,29 @@ final class GlyfToolbar: UIView {
         let band = Glass.stripBand
         let h = bounds.height - band
         let mid = band + h / 2 - Glass.stripLift
-        // The grid stands at the tool icons' own size (they are 21pt symbols),
-        // so the row reads as one set of controls rather than a badge and
-        // then some tools.
-        let glyph = (h * 0.56).rounded()
-        // Nothing is drawn behind it, so the button has to carry its own
-        // target: the glyph plus a margin all round. The sideways half is the
-        // tools' own padding plus the air a symbol keeps inside its box, so
-        // the grid sits on the same rhythm they do.
-        let padX = Self.itemPad + Self.gridSlack, padY: CGFloat = 6
+        // The key is as tall as the suggestion card (26pt on this strip: the
+        // lifted middle leaves no more above it), and a little wider than
+        // tall, so the dot has its own corner, clear of the letter.
+        let target = Glass.stripBox(height: 38, mid: mid)
+        let keyH = min((h * 0.72).rounded(), target.height)
+        let keyW = GlyfMark.keycapWidth(height: keyH)
+        // The button carries its own target: the key plus the tools' padding
+        // sideways, plus the air a symbol keeps inside its box, so the key
+        // sits on the same rhythm they do.
+        let padX = Self.itemPad + Self.gridSlack
         let inkX = Self.margin + Self.gridSlack
-        let target = Glass.stripBox(height: glyph + padY * 2, mid: mid)
         glyfButton.frame = CGRect(x: inkX - padX, y: target.y,
-                                  width: glyph + padX * 2, height: target.height)
+                                  width: keyW + padX * 2, height: target.height)
         glyfButton.layer.cornerRadius = 9
-        let box = CGRect(x: padX, y: (target.height - glyph) / 2, width: glyph, height: glyph)
-        appsGrid.frame = glyfButton.bounds
-        let scale = max(traitCollection.displayScale, 1)
-        appsGrid.lineWidth = max(1, (glyph * 0.072 * scale).rounded() / scale)
-        appsGrid.path = GlyfToolbar.appsGridPath(in: box).cgPath
-        let markRight = inkX + glyph
+        let cap = GlyfMark.Keycap(height: keyH, x: padX, midY: mid - target.y)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for layer in [keycap, keycapG, keycapDot] { layer.frame = glyfButton.bounds }
+        keycap.path = UIBezierPath(roundedRect: cap.key, cornerRadius: cap.radius).cgPath
+        keycapG.path = GlyfMark.gPath(in: cap.letter)
+        keycapDot.path = CGPath(ellipseIn: cap.dot, transform: nil)
+        CATransaction.commit()
+        let markRight = inkX + keyW
         divider.isHidden = Glass.solidLook
         let chipW: CGFloat = runsChip.isHidden ? 0 : 64
         if !runsChip.isHidden {
@@ -714,57 +729,5 @@ final class GlyfToolbar: UIView {
                 + candidatesStack.spacing * CGFloat(i) + candidatesStack.spacing / 2
             line.frame = CGRect(x: x.rounded() - 0.5, y: mid - lineH / 2, width: 1, height: lineH)
         }
-    }
-
-    /// The apps grid: four rounded tiles, the top-right one stood on its
-    /// corner. The turned tile is what says "more in here" rather than "a
-    /// grid of four" — and it is also what tells this apart from the Skills
-    /// hub's own `square.grid.2x2`, should someone put that on the strip too.
-    ///
-    /// Everything below is derived from two numbers — the stroke and the gap
-    /// between tiles — so the four cells stay a true 2x2 that exactly fills
-    /// the box at any size. Picking the centres by eye instead is what put
-    /// the turned tile 0.4pt INSIDE its neighbours on the first attempt:
-    /// at 160px in a mock the overlap was invisible, and at 20pt on the
-    /// phone the shapes ran into each other.
-    ///
-    /// The turned tile is smaller than the others because turning a tile
-    /// throws its corners out by root two; `turnedSide` is solved so that
-    /// after the turn it reaches exactly as far as a standing tile does.
-    static func appsGridPath(in box: CGRect) -> UIBezierPath {
-        let n = min(box.width, box.height)
-        let root2 = (2 as CGFloat).squareRoot()
-        /// Matches the layer's own lineWidth ratio: the stroke straddles the
-        /// path, so a tile's ink is this much wider than the path it follows.
-        let stroke: CGFloat = 0.072
-        let gap: CGFloat = 0.09
-        let cell = (1 - gap) / 2            // a tile's ink, corner to corner
-        let side = cell - stroke            // …and the path inside it
-        let radius = side * 0.21
-        let turnedRadius = side * 0.18
-        // Solve the turned tile back from the reach we want it to have.
-        let reach = cell / 2
-        let turnedSide = (reach - stroke / 2 + turnedRadius * (root2 - 1)) / (root2 / 2)
-        let near = cell / 2, far = 1 - cell / 2
-
-        func tile(_ cx: CGFloat, _ cy: CGFloat, _ s: CGFloat,
-                  _ r: CGFloat) -> UIBezierPath {
-            let w = s * n
-            return UIBezierPath(
-                roundedRect: CGRect(x: cx * n - w / 2, y: cy * n - w / 2,
-                                    width: w, height: w),
-                cornerRadius: r * n)
-        }
-        let path = UIBezierPath()
-        path.append(tile(near, near, side, radius))
-        path.append(tile(near, far, side, radius))
-        path.append(tile(far, far, side, radius))
-        // Built about the origin so it turns on its own centre, then moved.
-        let turned = tile(0, 0, turnedSide, turnedRadius)
-        turned.apply(CGAffineTransform(rotationAngle: .pi / 4))
-        turned.apply(CGAffineTransform(translationX: far * n, y: near * n))
-        path.append(turned)
-        path.apply(CGAffineTransform(translationX: box.minX, y: box.minY))
-        return path
     }
 }

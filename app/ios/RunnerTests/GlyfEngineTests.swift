@@ -663,6 +663,21 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.chip(for: "$13", fields: [], rates: home))
     }
 
+    // MARK: The brand key
+
+    func testTheMarkIsTheIconsLetterAndItsDotKeepsClear() {
+        // The outline spans its ink box exactly: 1 tall, the icon's aspect wide.
+        let box = GlyfMark.gPath(in: CGRect(x: 0, y: 0, width: 0, height: 100)).boundingBoxOfPath
+        XCTAssertEqual(box.height, 100, accuracy: 0.5)
+        XCTAssertEqual(box.width / box.height, GlyfMark.gAspect, accuracy: 0.002)
+        // The strip's key: 30 by 26, the dot inside it and clear of the letter.
+        let cap = GlyfMark.Keycap(height: 26, x: 0, midY: 13)
+        XCTAssertEqual(cap.key.size, CGSize(width: 30, height: 26))
+        XCTAssertTrue(cap.key.contains(cap.dot))
+        XCTAssertTrue(cap.key.contains(cap.letter))
+        XCTAssertGreaterThan(cap.dot.minX - cap.letter.maxX, 3, "the dot has its own corner")
+    }
+
     // MARK: The model's suggestion
 
     func testModelSuggestionIsItsOwnActionAndTypesNothing() {

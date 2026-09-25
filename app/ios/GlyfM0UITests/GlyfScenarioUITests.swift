@@ -915,6 +915,69 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertNotNil(wait("vault:card:0", 4), "holding S should open the vault")
     }
 
+    // MARK: - The brand key
+
+    /// The strip starts with Glyf's own key, as on Android: black, the app
+    /// icon's g in white and the violet dot, on a light sheet and a dark one.
+    func testS129_TheStripStartsWithGlyfsKey() throws {
+        open()
+        guard let key = wait("toolbar:glyf", 3) else { return XCTFail("no Glyf key on the strip") }
+        let light = keycapColors(key)
+        keepScreenshot("strip-light")
+        note(String(format: "light sheet: face %.2f, dot rgb %.0f %.0f %.0f", light.face, light.dot.r, light.dot.g, light.dot.b))
+        XCTAssertLessThan(light.face, 0.15, "the key's face is black")
+        XCTAssertTrue(light.violet, "the dot is Glyf violet")
+        key.tap()
+        XCTAssertNotNil(wait("shell:tile:search", 3), "the key opens the Glyf menu")
+        tap("toolbar:close")
+
+        // Messages follows the system, so it shows the key on a dark sheet.
+        let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
+        host = messages
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light; messages.terminate() }
+        XCUIDevice.shared.system.open(URL(string: "sms:+15555648583&body=hi")!)
+        XCTAssertTrue(messages.wait(for: .runningForeground, timeout: 8))
+        sleep(2)
+        if !switchToGlyf() { return XCTFail("Glyf keyboard not up in Messages") }
+        guard let darkKey = wait("toolbar:glyf", 3) else { return XCTFail("no Glyf key on the dark strip") }
+        let dark = keycapColors(darkKey)
+        keepScreenshot("strip-dark")
+        note(String(format: "dark sheet: face %.2f, dot rgb %.0f %.0f %.0f", dark.face, dark.dot.r, dark.dot.g, dark.dot.b))
+        XCTAssertLessThan(dark.face, 0.15, "the key stays black on a dark sheet")
+        XCTAssertTrue(dark.violet, "the dot is Glyf violet on a dark sheet")
+    }
+
+    /// The key's face beside its letter, and the middle of its dot. The key
+    /// sits 15pt inside its button (the tools' padding plus a symbol's air),
+    /// is 30 by 26 and centred on the button, with the dot 3.5pt in from its
+    /// top right corner (GlyfMark.Keycap).
+    private func keycapColors(_ button: XCUIElement) -> (face: CGFloat, dot: (r: CGFloat, g: CGFloat, b: CGFloat), violet: Bool) {
+        let shot = XCUIScreen.main.screenshot().image
+        guard let cg = shot.cgImage, let data = cg.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(data) else { return (1, (0, 0, 0), false) }
+        let scale = CGFloat(cg.width) / shot.size.width
+        let bpp = cg.bitsPerPixel / 8
+        func rgb(_ p: CGPoint) -> (r: CGFloat, g: CGFloat, b: CGFloat) {
+            let i = Int(p.y * scale) * cg.bytesPerRow + Int(p.x * scale) * bpp
+            return (CGFloat(bytes[i]), CGFloat(bytes[i + 1]), CGFloat(bytes[i + 2]))
+        }
+        let f = button.frame
+        let keyX = f.minX + 15, keyTop = f.midY - 13
+        let face = rgb(CGPoint(x: keyX + 3.5, y: f.midY + 2))
+        let dot = rgb(CGPoint(x: keyX + 30 - 3.5 - 2.5, y: keyTop + 3.5 + 2.5))
+        let lum = (0.299 * face.r + 0.587 * face.g + 0.114 * face.b) / 255
+        let violet = dot.b > 200 && dot.r > 80 && dot.r < 175 && dot.g < 140
+        return (lum, dot, violet)
+    }
+
+    private func keepScreenshot(_ name: String) {
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.lifetime = .keepAlways
+        shot.name = name
+        add(shot)
+    }
+
     // MARK: - Look
 
     /// Luminance of the key's face, sampled away from its glyph.
