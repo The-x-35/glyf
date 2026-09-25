@@ -93,6 +93,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                 id: 'plus',
                 name: 'Plus',
                 price: '\$4.99',
+                yearly: 'or \$39.99 a year, save 33%',
                 features: const [
                   '400 runs a day',
                   'Priority speed',
@@ -106,6 +107,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                 id: 'max',
                 name: 'Max',
                 price: '\$19.99',
+                yearly: 'or \$159.99 a year, save 33%',
                 badge: plansOnSale ? 'Best' : null,
                 features: const [
                   'Unlimited Glyf runs',
@@ -140,6 +142,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
     required String id,
     required String name,
     required String price,
+    String? yearly,
     String? badge,
     required List<String> features,
   }) {
@@ -189,6 +192,10 @@ class _PaywallSheetState extends State<_PaywallSheet> {
             const Text(' /mo',
                 style: TextStyle(color: Glass.inkSoft, fontSize: 12)),
           ]),
+          if (yearly != null)
+            Text(yearly,
+                style: const TextStyle(
+                    color: Glass.accent, fontSize: 11.5, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           for (final f in features)
             Padding(
