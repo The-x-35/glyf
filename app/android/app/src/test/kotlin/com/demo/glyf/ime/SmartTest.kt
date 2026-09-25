@@ -53,6 +53,14 @@ class SmartTest {
         assertEquals(Smart.Chip.Booking("cal.com/sam/intro"), Smart.chip("grab a slot: cal.com/sam/intro", vault))
     }
 
+    @Test fun modelSuggestion() {
+        // A sparkle marks it: its words are the action, and a tap types nothing.
+        val chip = Smart.Chip.Action("Tidy this up", "ya ok will send the deck", "rewrite")
+        assertNull(Smart.verb(chip))
+        assertEquals("Tidy this up", Smart.display(chip))
+        assertEquals("", Smart.insert(chip))
+    }
+
     @Test fun notSums() {
         // Not a sum; a plan, which the calendar offers to add instead.
         assertTrue(Smart.chip("call me at 5", vault) is Smart.Chip.Event)

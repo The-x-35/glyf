@@ -282,6 +282,22 @@ const scenarios = [
     const r = await tapFor(chip, x => x.includes("@"));
     return { pass: /^my upi is \S+@\S+/i.test(r.t), note: `'${r.t}'${second(r)}` };
   } },
+  { id: "S90", title: "A rough message offers Tidy this up", run: async () => {
+    await fresh();
+    await type("ya ok will send the deck before six tmrw ");
+    const chip = await waitFor(v => v.id === "strip:smart", 10000);
+    if (!chip) return { pass: false, note: "no chip after 10s" };
+    const s = await state();
+    const label = s.views.filter(v => v.text).map(v => v.text).find(t => /tidy|places|look/i.test(t)) ?? "";
+    await tapXY(chip.x, chip.y);
+    // The free models behind the dev server can take 15 s or more, so the
+    // wait is generous and the note says how long it took.
+    const t0 = Date.now();
+    const option = await waitFor(idStarts("act:option:"), 25000);
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    return { pass: /tidy/i.test(label) && !!option,
+      note: `chip '${label}', versions ${option ? `shown after ${secs}s` : `missing after ${secs}s`}` };
+  } },
   { id: "S91", title: "Hold space: pick the Professional version", run: async () => {
     await fresh();
     await type("ya ok will send deck b4 6");

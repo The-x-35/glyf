@@ -126,7 +126,8 @@ server/
 │   │   ├── health.ts       GET /health
 │   │   ├── meter.ts        GET /meter/:deviceId
 │   │   ├── glyf.ts         GET /glyf/catalog, POST /glyf/run (SSE)
-│   │   ├── act.ts          POST /act, GET /p/:id
+│   │   ├── act.ts          POST /act (JSON, or streamed with `stream: true`), GET /p/:id
+│   │   ├── suggest.ts      POST /suggest: the strip's chip for a paused sentence
 │   │   ├── vocab.ts        POST /vocab/generate
 │   │   ├── builder.ts      POST /builder/generate, /builder/test; POST/GET/DELETE /glyfs
 │   │   ├── hub.ts          /skills, /skills/creators, /skills/get, /hub/*, /account/*
@@ -142,7 +143,9 @@ server/
 │   │   ├── userglyfs.ts    GlyfLibrary: user glyfs, hub, installs, moderation
 │   │   ├── skills.ts       Skills list, derived categories, creators, official install counts
 │   │   ├── tools.ts        tool registry loader, per-tool rate limit, all tool executors, mock outputs
-│   │   ├── act.ts          hold-space intent planner and executor
+│   │   ├── act.ts          hold-space intent planner and executor; OptionStream (versions as they're written)
+│   │   ├── details.ts      rules for a sentence leading into one of the person's own details
+│   │   ├── reading.ts      the strip's one model read (intent + saved-detail kind) on SUGGEST_MODELS
 │   │   ├── pages.ts        live mini-app pages (create, get, render HTML)
 │   │   ├── search.ts       search engine: web, YouTube, maps provider chains; nearby; provider status
 │   │   ├── answers.ts      instant answers: math, sunset, time, weather, currency, Wikipedia
@@ -255,7 +258,8 @@ None of this works across multiple server instances. A deployment must run one i
 | 2 | GET | `/meter/:deviceId` | Remaining runs today | No | `routes/meter.ts` | iOS keyboard, Flutter app |
 | 3 | GET | `/glyf/catalog` | Shipped glyf list | No | `routes/glyf.ts` | Flutter app |
 | 4 | POST | `/glyf/run` | Run a glyf, streamed over SSE | Yes | `routes/glyf.ts` | iOS keyboard, Android IME, Flutter app |
-| 5 | POST | `/act` | Hold space: act on typed text | Yes | `routes/act.ts` | iOS keyboard, Android IME |
+| 5 | POST | `/act` | Hold space: act on typed text (streamed with `stream: true`) | Yes | `routes/act.ts` | iOS keyboard, Android IME |
+| 5a | POST | `/suggest` | The strip's chip: what Glyf could do with a paused sentence | Own allowance, never a run | `routes/suggest.ts` | iOS keyboard, Android IME |
 | 6 | GET | `/p/:id` | Live mini-app page (HTML) | No | `routes/act.ts` | Message recipients in a browser |
 | 7 | POST | `/vocab/generate` | AI vocabulary pack | Yes | `routes/vocab.ts` | Flutter app |
 | 8 | POST | `/builder/generate` | Plain English to glyf definition | **No** | `routes/builder.ts` | Flutter app |
@@ -340,14 +344,23 @@ Every route except the open paths in `lib/protect.ts` (`/health`, `/auth/*`, `/w
 - Connected accounts: before running, the route loads the device's unexpired OAuth access tokens so `tool` steps like `calendar.today` can use them. Tokens never leave the server.
 
 **`POST /act`**
-- Request: `{ text (1 to 2000), deviceId (1 to 80), plan, lat?, lon?, country? (2 letters), tz? }`. Location is optional, forwarded from the app's cached fix, and never stored.
-- Response (200): `{ ok: true, remaining, intent, title, cards, text?, insert, page?, provider }`.
-  - `intent`: `place`, `places`, `answer`, `video` or `rewrite`.
+- Request: `{ text (1 to 2000), deviceId (1 to 80), plan, lat?, lon?, country? (2 letters), tz?, profile?, intent?, stream? }`. Location is optional, forwarded from the app's cached fix, and never stored. `intent` (`place`, `places`, `answer`, `video`, `rewrite`, `write`) is set when a strip chip was tapped and skips routing.
+- Response (200): `{ ok: true, remaining, intent, title, cards, text?, insert, page?, options?, provider }`.
+  - `intent`: `place`, `places`, `answer`, `video`, `rewrite` or `write`.
   - `cards`: search-suite cards (see [6.1](#61-shape-and-card-contract)).
   - `insert`: the exact text the keyboard drops into the field.
   - `page`: live mini-app URL for a places list, when publishing is possible.
+  - `options`: a rewrite's versions, `{ id, label, text }` each.
+- `stream: true` (both keyboards since 2026-09-25) answers `text/event-stream` instead, with the same headers as `/glyf/run`: `event: option` with `{ id, label, text }` the moment each version of a rewrite is finished; `event: text` with `{ t }` as a `write` is written; `event: reset` when the model was dropped midway (discard what was shown, the next model starts over); then `event: done` with the whole JSON result above, or `event: error` with `{ error }`. A refusal before the stream opens (400, 429) is still one JSON body. Without `stream`, older keyboards get the one JSON reply.
 - Errors: 400 bad request, 429 cap reached, 502 "Couldn't do that right now. Tap to retry."
 - How it decides and what it returns: [5.6](#56-act-engine-hold-space).
+
+**`POST /suggest`**
+- Request: `{ text (4 to 600), deviceId (1 to 80), kinds? }`. `kinds` are the kinds of detail saved in the keyboard's vault (`address`, `phone`, `upi`...), never the values. The keyboards ask after a 700 ms pause on at least 12 characters and three words, never in a secure field, never during the tour, and not when a local chip (a sum, a plan, a detail the rules found) already owns the strip.
+- Response: `{ ok: true, suggestion }`, where `suggestion` is null or `{ intent, label, action: "act", query }` with the labels "Tidy this up" (`rewrite`, four words or more), "Show me places", "Find it on the map", "Find the video", "Write it for me". "Look it up" (`answer`) is never offered: holding space already does that. A saved detail the sentence leads into comes back as `{ intent: "detail", field: <kind>, action: "vault" }`, and the keyboard offers its own saved value.
+- Rules first, for nothing: `detailByRules()` then `planByRules()`. Otherwise one call on the `suggest` tier ([5.1](#51-model-router-serversrcprovidersopenrouterts)) asks for both at once (`lib/reading.ts`); a detail is dropped when the sentence asks someone for theirs ("what's your address"). No model answering means no chip, never a guessed "Tidy this up". Answers are cached per sentence and kinds for 60 s.
+- Never spends a run: `Guard.suggest` counts it under its own `suggest:` key ([5.9](#59-metering-and-plans)). 429 "No more suggestions today. They come back tomorrow" or "Too fast". Tapping the chip is an `/act` with the chip's `intent`, which is a run.
+- Logged: the intent and detail kind only, never the text.
 
 **`GET /p/:id`**
 - Serves a small self-contained HTML page listing the places from an `/act` list result. Light and dark via `prefers-color-scheme`, "Made with glyf" footer.
@@ -547,10 +560,11 @@ The file keeps its original name, but since 2026-09-15 it routes to any OpenAI-c
 |---|---|---|---|
 | `fast` | glyf `llm` steps with `model: "fast"`, act routing and rewrites, answer summaries, vocab packs | `FAST_MODELS` | 1500 |
 | `smart` | Builder generation, glyf steps with `model: "smart"` or `"strict"` | `SMART_MODELS` | 4000 |
+| `suggest` | The strip's chip (`POST /suggest`): a read nobody asked for | `SUGGEST_MODELS` | 200 |
 
 SPEC §8.3 also names a `strict` tier (JSON validated against a schema, one retry, fail closed). In code `strict` maps to the `smart` chain; the strict behaviour lives in the Builder route, which validates and retries.
 
-**Chains.** `FAST_MODELS` and `SMART_MODELS` are comma-separated lists, most preferred first. Both default to `openrouter/free` (OpenRouter's Free Models Router). SPEC §8.2 forbids relying on one hard-coded `:free` id because free models rotate out without notice.
+**Chains.** `FAST_MODELS` and `SMART_MODELS` are comma-separated lists, most preferred first. Both default to `openrouter/free` (OpenRouter's Free Models Router). SPEC §8.2 forbids relying on one hard-coded `:free` id because free models rotate out without notice. `SUGGEST_MODELS` defaults to three small paid OpenRouter models, `google/gemini-2.5-flash-lite,mistralai/mistral-small-24b-instruct-2501,qwen/qwen3-30b-a3b-instruct-2507` ([5.10](#510-model-choices-over-time-research-and-costs)); a model gets 2.5 s to start answering (4 s on `fast`, 20 s on `smart`). An OpenRouter id may end in `:nitro`, OpenRouter's own "fastest provider first".
 
 **Provider prefixes** (`endpointFor()`):
 
@@ -575,6 +589,7 @@ A model whose provider has no key is skipped (recorded as `no-key`) and the chai
 | Groq, Qwen model | `reasoning_effort: "none"` (otherwise Groq returns raw `<think>` text) |
 | Gemini, `gemini-2.5-flash` (not Flash-Lite) | `reasoning_effort: none (fast) or low (smart)` |
 | Everything else (for example Gemini 2.5 Flash-Lite, Mistral) | only `max_tokens` |
+| `suggest` tier, any model | also `temperature: 0`; on OpenRouter `provider: { data_collection: "deny" }` (only providers that neither keep nor train on what they are sent: it is someone's typing) and `reasoning: { enabled: false }` unless the model is `gpt-oss` |
 
 **Walking the chain** (`completeStreaming()`):
 
@@ -585,6 +600,7 @@ A model whose provider has no key is skipped (recorded as `no-key`) and the chai
 5. The first model that returns a real answer wins: `{ text, model }`.
 6. If all fail, throw `ModelExhaustedError` listing every attempt, for example `all models failed: a(429), b(no-key)`.
 7. If the client aborted, the abort error is rethrown immediately.
+8. A model dropped after it had already streamed something (it stalled, came back empty or turned out to be a classifier) calls `onRestart`, so a listener showing the words can clear them before the next model starts. `/act`'s stream turns that into `event: reset`.
 
 **Rate-limit cooldown** (added 2026-09-15). When a model returns 429 it is skipped until it recovers, so an exhausted free quota does not cost every request a failed round trip. The wait is the `Retry-After` header in seconds, capped at 600 seconds, defaulting to 60 seconds.
 
@@ -731,7 +747,8 @@ Built 2026-09-14 night to 2026-09-15 for parity with Acti's launch video: hold s
 | `places` | `search("maps")` | Top 4 cards. If a public page base exists, publishes all places (max 8) as `/p/:id` and inserts the typed text plus the page link; otherwise a numbered list with rating, address and a maps link per place |
 | `video` | `search("yt")` | First video card; insert is URL then "🎥 title" |
 | `answer` | `search("web")` | An answer card if one exists (insert is value plus sub line). Else, with links, one fast-tier call answers in at most three lines using only those results or replies `UNKNOWN`; the insert is the summary plus the first link. With no links, the Google handoff card |
-| `rewrite` | one fast-tier call (`[[act.rewrite.options]]`) | Versions in each style (`rewriteStyles()`: Basic, Professional, Polite, Shorter, Hinglish where people write it, Emoji), keeping the writer's meaning and every fact. `keepsNumbers()` drops a version that lost a number the writer typed ("b4 6" read as "before you"). A number counts as kept in digits or in words ("six", "sixth"); shorthand such as "b4", "4 u" or "1 min" is not a fact. If no version survives, one retry names the numbers |
+| `rewrite` | one fast-tier call (`[[act.rewrite.options]]`) | Versions in each style (`rewriteStyles()`: Basic, Professional, Polite, Shorter, Hinglish where people write it, Emoji), keeping the writer's meaning and every fact. `keepsNumbers()` drops a version that lost a number the writer typed ("b4 6" read as "before you"). A number counts as kept in digits or in words ("six", "sixth"); shorthand such as "b4", "4 u" or "1 min" is not a fact. If no version survives, one retry names the numbers. Streamed, `OptionStream` lets each version through the moment its closing quote arrives, with the same checks; a reply cut off before its closing brace still yields the versions it finished |
+| `write` | one fast-tier call | The thing asked for, ready to use; streamed as it is written |
 
 **Page base** (`pageBase()` in `routes/act.ts`): `PUBLIC_BASE_URL` if set; otherwise `http://127.0.0.1:<PORT>` outside production and no pages in production.
 
@@ -767,6 +784,7 @@ Examples that were verified live on 2026-09-14/15: "Times Square Starbucks" retu
 
 - Arpit asked on 2026-09-12: "we can give some slow free replies with ai in free and ask to update accordingly one 5 $ plan and one 20$". The assistant researched Wispr Flow ($12 to 15/month with a hard free cap) and Grammarly's keyboard (about $12/month) and proposed undercutting with Plus and out-featuring with Max.
 - Metered routes: `/glyf/run`, `/act`, `/vocab/generate`. One request is one run.
+- `/suggest` never spends a run (since 2026-09-25): the strip asks on a pause in typing, not the person. `Guard.suggest` counts it under its own key (`suggest:user:<id>` or `suggest:device:<id>` in `glyf_usage`): `FREE_SUGGESTIONS_PER_DAY` (300) a day and 20 a minute on free, 10 times that and 30 a minute on plus, 25 times on max (`suggestCapsFor()` in `lib/limits.ts`).
 - Counts are per device per UTC day (reset at 05:30 IST), in memory. Responses cap `remaining` at 9999.
 - The plan is asserted by the client until StoreKit receipt validation exists (the "M7-ship TODO"). The in-app paywall currently unlocks locally. The legacy `pro: true` flag maps to `plus`.
 - The "priority" and "smart models for Max" promises are not implemented: every plan uses the same chains.
@@ -781,6 +799,7 @@ Examples that were verified live on 2026-09-14/15: "Times Square Starbucks" retu
 | 2026-09-12 | Default `openrouter/free` | First live runs: about 23 s per rewrite on the unfunded free tier; 14.6 s tone rewrite; keyless tools 0.4 to 1.6 s. The assistant repeatedly recommended putting $10 on OpenRouter (unfunded accounts get 50 free requests per day, funded ones 1,000; 20 per minute either way, per SPEC §8.2) |
 | About 2026-09-14/15 | Pinned OpenRouter free models: fast `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `openrouter/free`; smart `nvidia/nemotron-3-super-120b-a12b:free`, `google/gemma-4-31b-it:free`, `openrouter/free` | `openrouter/free` landed on content-safety classifiers; free models returned 429, overload and 12 to 20 s latency; the daily free quota was exhausted during testing, causing 502s |
 | 2026-09-15 | No-card chain in `.env.example`: fast `gemini:gemini-2.5-flash-lite`, `groq:qwen/qwen3.8-27b`, `groq:openai/gpt-oss-20b`, `openrouter/free`; smart `groq:openai/gpt-oss-120b`, `groq:qwen/qwen3.8-27b`, `gemini:gemini-2.5-flash` | Arpit: "find me good and v cheap ai model to use here, i heard groq is good but ig they stopped sharing dev apis" |
+| 2026-09-25 | Suggest (new): `google/gemini-2.5-flash-lite`, `mistralai/mistral-small-24b-instruct-2501`, `qwen/qwen3-30b-a3b-instruct-2507`. Fast: `google/gemini-2.5-flash-lite:nitro`, `meta-llama/llama-3.3-70b-instruct:nitro`, `gemini:gemini-flash-lite-latest`, `openrouter/free` | Arpit wanted the chip back on "some v cheap small model", then "5.4 s is too much, cant we find some faster ai". The fast chain had been `gemini:gemini-3.1-flash-lite` first, which was over its free quota (429) and slow; `flash-lite-latest` took about 4 s for six versions |
 
 Per the 2026-09-15 context snapshot, `server/.env` was set to the Gemini/Groq chain with the pinned OpenRouter free models kept as the tail, and the `GEMINI_API_KEY` and `GROQ_API_KEY` lines were left empty for Arpit to fill. This was not re-checked while writing (the file was not opened). Until those keys exist, live AI depends on the OpenRouter free tier, which was out of quota at the time.
 
@@ -797,6 +816,13 @@ Per the 2026-09-15 context snapshot, `server/.env` was set to the Gemini/Groq ch
 - Extra free pools if keys are added: `mistral:mistral-small-2603` (free plan credits) and `inception:mercury-2.5` (free tokens).
 - Premium alternatives were about 10 times the price.
 - There is no independent Hinglish benchmark for these models. The suggested check is to run about 50 real messages once keys exist.
+
+**Measured 2026-09-25** (OpenRouter models API prices per 1M tokens in / out; timings from Bangkok to each API, streamed):
+
+- The strip's read (about 230 tokens in, 10 out; 16 test sentences in English and Hinglish, including three that lead into a saved detail and one asking someone else for theirs): Gemini 2.5 Flash-Lite 15 of 16 right, median 0.7 s ($0.10 / $0.40, about $27 a million reads); Mistral Small 24B (2501) 14 of 16, 0.8 s ($0.05 / $0.08, about $20); Qwen3 30B A3B Instruct 15 of 16, 0.5 to 1 s ($0.10 / $0.30). Cheaper ones fell short: Mistral Nemo 12 of 16, Llama 3.1 8B 12 of 16, GPT-4.1 nano 9 of 16, Granite 4.0 micro 11 of 16; gpt-oss-20b took 4 s (it thinks first); Mercury 2.5 spent its tokens thinking and answered nothing. Every small model read "what's your address" as the person's own, hence the rule in `lib/details.ts`.
+- Gemini's own API: `gemini-2.5-flash-lite` is "no longer available to new users" (404), `gemini-3.1-flash-lite` answered 429 (free quota exceeded), `flash-lite-latest` 16 of 16 but 0.9 s, and its free tier keeps what it is sent, which a keyboard's passive read should not do.
+- Six versions of a message (about 480 tokens in, 250 out): Gemini 2.5 Flash-Lite through OpenRouter, first version 0.7 to 1 s and all six 1.2 to 1.5 s (about $0.15 per 1,000 taps); Llama 3.3 70B on Groq through OpenRouter (`:nitro`), first 0.3 s and all 0.7 s (about $0.50 per 1,000; Groq's $0.59 / $0.79), but it added facts ("as planned", "subah"); Qwen3 30B 0.5 s first, 1.7 to 2.9 s all; Mercury 2.5 0.9 s all at once; `gemini:gemini-flash-lite-latest` 1.6 s first, 4 s all. Through the dev server with streaming: first version 1 to 2 s, all six 1.3 to 2.4 s (was 5.4 s to anything).
+- OpenRouter answered paid models on a key with $0 credit that day (usage went negative by half a cent of tests); that won't last. Without credit the suggestion chain has nothing to fall back on (no chip beyond the phone's rules) and the fast chain falls back to Gemini's free tier.
 
 **Caveats that still apply**
 
@@ -1417,7 +1443,9 @@ Status values: **Active** (in force), **Superseded** (replaced by a later row), 
 | 2026-09-24 | Keyboard calendar books and invites: Cal.com's public v2 API for open times and bookings (no key); Calendly as a link only; invites for the keyboard's own events as .ics email through Resend; call links from Daily with a key, else Jitsi | Arpit asked for events, meetings, Cal.com or Calendly, and guest emails "like we book with someone on cal.com". Cal.com v1 is shut down; Calendly availability and booking need the host's OAuth; iOS can't add attendees | Invites and Meet replaced the same day (next row) |
 | 2026-09-24 | Invites from the person's own Google Calendar (Google emails the guests), Meet links from their own Google account, both called by the keyboard with a grant kept on the phone; without Google the event goes into the chat; Resend and `/invites/send` removed; Google Calendar and Meet asked for at Google sign-in; a Meet link key | Arpit: "i dont wanna setup resend ... or google calendar, i think that also sends mails, else lets just have it like we paste the details on the text box" and "google meet links creation permission while google sign in" | Active |
 | 2026-09-25 | Call links are Google Meet only: the Jitsi and Daily fallbacks and `POST /meetings/new` removed; without Google the keyboard sends no link and asks for Google. Calendar permission and Google sign-in (with Calendar and Meet) are asked in onboarding only; Connected tools' Calendar and Google switches removed | Arpit: "why the fuck have u integrated this shit jitsi ... who told u so ... i need google meet" (nobody had: it was the assistant's own fallback); "calendar permissions and this google login will happen on onboarding only" | Active |
-| 2026-09-24 | The strip's model-read chip ("Tidy this up") and `POST /suggest` removed | It asked a model on every paused sentence and spent a daily run each time (the test account reached 353 runs in a day); Arpit: "does this use ai ? we can actually remove this suggestion" | Active |
+| 2026-09-24 | The strip's model-read chip ("Tidy this up") and `POST /suggest` removed | It asked a model on every paused sentence and spent a daily run each time (the test account reached 353 runs in a day); Arpit: "does this use ai ? we can actually remove this suggestion" | Reversed 2026-09-25 (next row) |
+| 2026-09-25 | The chip is back: `POST /suggest` on its own small paid chain (`SUGGEST_MODELS`), one model call a pause for both the action and the saved detail, its own allowance so it never spends a run, no chip when no model answers | Arpit: "i need ai suggestions they were pretty cool / we can use some v cheap small model for it ... thats are fucking pitch we are giving that cool thing, users will pay for that" | Active |
+| 2026-09-25 | Hold space and chip taps on a faster chain (Gemini 2.5 Flash-Lite, then Llama 3.3 70B on Groq, both through OpenRouter) and streamed: each version shows as it is written. `/act` takes `intent: "write"` (the "Write it for me" chip used to get a 400) and the planner accepts a model's `write` (it used to become a tidy-up) | Arpit: "5.4 s is too much, cant we find some faster ai , and maybe add streams so it looks better" | Active |
 | 2026-09-24 | GIFs and stickers from KLIPY, called from the phone with a key the server hands out; Noto animated emoji as keyless stickers; GIPHY proxy removed | Tenor's API closed 2026-06-30; GIPHY is paid past 100 calls an hour and forbids proxies; KLIPY is free but wants device-side calls | Active |
 | 2026-09-12 | Mock calendar routes (events, then a month grid) power the in-keyboard calendar until OAuth exists | Keep the ConnectorSurface testable; Arpit asked for "a button to view months calendar along with my todays tasks" | Active |
 | 2026-09-13 | Deploy the server to Fly.io or Railway so TestFlight testers get AI | Builds pointed at `127.0.0.1` | Pending (no account or token provided) |

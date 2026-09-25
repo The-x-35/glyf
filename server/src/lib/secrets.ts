@@ -138,9 +138,13 @@ export class SecretVault {
 
   /** Streams tokens back with values restored, holding a placeholder that
    *  is split across tokens until it is whole. */
-  restoringStream(forward: (t: string) => void): { push: (t: string) => void; flush: () => void } {
+  restoringStream(forward: (t: string) => void): { push: (t: string) => void; flush: () => void; reset: () => void } {
     let held = "";
     return {
+      /** The model was dropped mid-answer: what it half-said is not kept. */
+      reset: () => {
+        held = "";
+      },
       push: (t: string) => {
         held += t;
         const partial = held.match(/\[(?:\[\s*(?:S\d*\s*(?:\])?)?)?$/);

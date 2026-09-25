@@ -247,9 +247,31 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         delegate?.actRetryAvailable(false)
     }
 
+    /// One version, the moment the model finishes it: the rows fill in one
+    /// by one while the rest are still being written, and a row can already
+    /// be tapped. The whole list arrives at the end through showOptions.
+    func addOption(_ option: BackendClient.RewriteOption) {
+        guard phase == .result, !options.isEmpty else {
+            showOptions([option])
+            delegate?.actRetryAvailable(false)
+            return
+        }
+        guard !options.contains(where: { $0.id == option.id }) else { return }
+        options.append(option)
+        table.insertRows(at: [IndexPath(row: options.count - 1, section: 0)],
+                         with: Glass.reduceMotion ? .none : .fade)
+        delegate?.actRetryAvailable(false)
+    }
+
     /// A rewrite's versions as rows: the style on the left, the message on
     /// the right. Tap one to put it in; hold one to copy it.
     func showOptions(_ options: [BackendClient.RewriteOption]) {
+        if phase == .result, self.options == options {
+            // The stream already showed these: leave the rows (and where the
+            // list was scrolled to) as they are, and bring back ↻.
+            show(.result)
+            return
+        }
         self.options = options
         cards = []
         insertText = ""

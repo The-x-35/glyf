@@ -37,27 +37,43 @@ export function endpointFor(spec: string): Endpoint | null {
     key: env.openrouterKey, model, openrouter: true } : null;
 }
 
+/** "fast" answers someone holding space, "smart" builds and rewrites at
+ *  length, and "suggest" reads a pause in typing for the strip's chip: a
+ *  read nobody asked for, so it has its own small, cheap chain. */
+export type Tier = "fast" | "smart" | "suggest";
+
+function chainFor(tier: Tier): string[] {
+  return tier === "smart" ? env.smartModels : tier === "suggest" ? env.suggestModels : env.fastModels;
+}
+
 /** Per-model request settings. Reasoning models think before the first
  *  token unless told not to — seconds a keyboard can't spend — and some put
  *  that thinking into the answer text. */
-export function requestOptions(ep: Endpoint, tier: "fast" | "smart"): Record<string, unknown> {
-  const opts: Record<string, unknown> = { max_tokens: tier === "fast" ? 1500 : 4000 };
+export function requestOptions(ep: Endpoint, tier: Tier): Record<string, unknown> {
+  const opts: Record<string, unknown> = { max_tokens: tier === "suggest" ? 200 : tier === "fast" ? 1500 : 4000 };
+  const quick = tier !== "smart";
   const id = ep.model.toLowerCase();
+  if (tier === "suggest") {
+    // A few words of JSON, the same every time, and only to providers that
+    // neither keep nor train on what they are sent: it is someone's typing.
+    opts.temperature = 0;
+    if (ep.openrouter) opts.provider = { data_collection: "deny" };
+  }
   if (ep.openrouter) {
     opts.reasoning = id.includes("gpt-oss")
-      ? { effort: tier === "fast" ? "low" : "medium", exclude: true }
-      : { exclude: true };
+      ? { effort: quick ? "low" : "medium", exclude: true }
+      : tier === "suggest" ? { enabled: false } : { exclude: true };
     return opts;
   }
   if (id.includes("gpt-oss")) {
-    opts.reasoning_effort = tier === "fast" ? "low" : "medium";
+    opts.reasoning_effort = quick ? "low" : "medium";
   } else if (ep.url.includes("groq.com") && id.includes("qwen")) {
     // Groq returns Qwen's thinking as raw <think> text otherwise.
     opts.reasoning_effort = "none";
   } else if (ep.url.includes("googleapis.com") && /gemini-[\d.]+-(flash|pro)(?!-lite)/.test(id)) {
     // Gemini's full flash/pro models think first; the lite ones don't take the
     // option at all (400 Invalid argument), so never send it to them.
-    opts.reasoning_effort = tier === "fast" ? "none" : "low";
+    opts.reasoning_effort = quick ? "none" : "low";
   }
   return opts;
 }
@@ -82,8 +98,9 @@ export function resetCooldowns(): void {
   coolingUntil.clear();
 }
 
-/** How long a model gets to start answering before the next one is tried. */
-export const FIRST_BYTE_MS = { fast: 4000, smart: 20000 };
+/** How long a model gets to start answering before the next one is tried.
+ *  A suggestion that comes late comes after the message has gone. */
+export const FIRST_BYTE_MS: Record<Tier, number> = { fast: 4000, smart: 20000, suggest: 2500 };
 
 export interface StreamHandlers {
   onToken: (t: string) => void;
@@ -92,6 +109,9 @@ export interface StreamHandlers {
    *  person): a model that goes quiet this long mid-answer is dropped for
    *  the next one instead of holding the reply hostage. */
   stallMs?: number;
+  /** A model that had started answering was dropped for the next one: what
+   *  it streamed so far is void, and the next model starts over. */
+  onRestart?: () => void;
 }
 
 export class ModelExhaustedError extends Error {
@@ -109,7 +129,7 @@ export class ModelExhaustedError extends Error {
  * back into the reply: no model ever reads one.
  */
 export async function completeStreaming(
-  tier: "fast" | "smart",
+  tier: Tier,
   messages: { role: string; content: string }[],
   handlers: StreamHandlers,
 ): Promise<{ text: string; model: string }> {
@@ -120,7 +140,8 @@ export async function completeStreaming(
     safe[last] = { ...safe[last], content: safe[last].content + KEEP_PLACEHOLDERS };
   }
   const stream = vault.restoringStream(handlers.onToken);
-  const res = await completeMasked(tier, safe, { ...handlers, onToken: stream.push });
+  const res = await completeMasked(tier, safe, { ...handlers, onToken: stream.push,
+    onRestart: () => { stream.reset(); handlers.onRestart?.(); } });
   stream.flush();
   return { text: vault.restore(res.text), model: res.model };
 }
@@ -129,7 +150,7 @@ export async function completeStreaming(
 export let lastOutboundForTests: { role: string; content: string }[] = [];
 
 async function completeMasked(
-  tier: "fast" | "smart",
+  tier: Tier,
   messages: { role: string; content: string }[],
   handlers: StreamHandlers,
 ): Promise<{ text: string; model: string }> {
@@ -137,9 +158,20 @@ async function completeMasked(
   if (env.mockAI) {
     return mockStream(messages, handlers);
   }
-  const models = readyModels(tier === "smart" ? env.smartModels : env.fastModels);
+  const models = readyModels(chainFor(tier));
   const attempts: { model: string; status: number | string }[] = [];
 
+  // Whether the model being tried has put anything in front of the person:
+  // if it then fails, they are told to discard it before the next one starts.
+  let spoke = false;
+  const forward = (t: string) => {
+    spoke = true;
+    handlers.onToken(t);
+  };
+  const dropped = () => {
+    if (spoke) handlers.onRestart?.();
+    spoke = false;
+  };
   for (const model of models) {
     const ep = endpointFor(model);
     if (!ep) {
@@ -151,7 +183,7 @@ async function completeMasked(
     // on to the next one rather than wait it out.
     const attempt = new AbortController();
     let stallTimer: ReturnType<typeof setTimeout> | undefined;
-    const stuck = setTimeout(() => attempt.abort(), tier === "fast" ? FIRST_BYTE_MS.fast : FIRST_BYTE_MS.smart);
+    const stuck = setTimeout(() => attempt.abort(), FIRST_BYTE_MS[tier]);
     const onAbort = () => attempt.abort();
     handlers.signal?.addEventListener("abort", onAbort);
     try {
@@ -175,7 +207,7 @@ async function completeMasked(
         attempts.push({ model, status: res.status });
         continue;
       }
-      const gate = new VerdictGate(handlers.onToken);
+      const gate = new VerdictGate(forward);
       const text = await drainSSE(res.body, { ...handlers, onToken: t => gate.push(t) }, () => {
         if (!handlers.stallMs) return;
         clearTimeout(stallTimer);
@@ -183,18 +215,21 @@ async function completeMasked(
       });
       if (text.trim().length === 0) {
         attempts.push({ model, status: "empty" });
+        dropped();
         continue;
       }
       if (gate.finish(text)) {
         // A router picked a moderation model: its verdict is not an answer,
         // and none of it reached the client — try the next model.
         attempts.push({ model, status: "classifier" });
+        dropped();
         continue;
       }
       return { text, model };
     } catch (err) {
       if (handlers.signal?.aborted) throw err;
       attempts.push({ model, status: attempt.signal.aborted ? "slow" : (err as Error).name || "error" });
+      dropped();
     } finally {
       clearTimeout(stuck);
       clearTimeout(stallTimer);

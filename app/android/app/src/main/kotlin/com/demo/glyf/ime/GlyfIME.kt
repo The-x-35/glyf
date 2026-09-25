@@ -1608,13 +1608,19 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         return vaultFieldsCache
     }
 
+    private var suggestedChip: Smart.Chip.Action? = null
+    /** A saved detail the model says the sentence is leading into. */
+    private var suggestedDetail: Smart.Field? = null
+    private var suggestedFor = ""
+    private var suggestCancel: (() -> Unit)? = null
+    private val suggestWork = Runnable { askForSuggestion() }
+
     /** The website's smart strip: a sum just typed, the saved detail the
-     *  sentence asks for, a payment address, a plan or a booking page. One
-     *  chip, which owns the strip, and every one of them comes from the phone
-     *  itself: nothing typed goes to a model until the person holds space or
-     *  taps a tool. True when shown. */
+     *  sentence asks for, a payment address, a plan, a booking page, or what
+     *  the model says Glyf could do with the sentence. One chip, which owns
+     *  the strip. True when shown. */
     private fun updateSmartChip(before: String): Boolean {
-        val smartKinds = setOf("smart", "pay", "event", "booking")
+        val smartKinds = setOf("smart", "pay", "action", "event", "booking")
         if (searchActive || barActive || noteEditActive || overlay != null || featurePanel != null ||
             isSecureField() || translateStrip != null) {
             if (stripChipKind in smartKinds) hideStripChip()
@@ -1639,6 +1645,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 RatesStore.ensureFiat(backendURL) { updateSuggestions() }
             }
         }
+        // Nothing in the words, but the model heard the sentence asking for a detail.
+        val detail = suggestedDetail
+        if (chip == null && detail != null && suggestedFor == tail.trim()) chip = Smart.Chip.Vault(detail)
         // The tour keeps the strip for the step it is coaching.
         val step = tourStep()
         if (step != null) {
@@ -1647,6 +1656,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 is Smart.Chip.Money -> "money"
                 is Smart.Chip.Vault -> "vault:${chip.field.kind}"
                 is Smart.Chip.Pay -> "pay"
+                is Smart.Chip.Action -> "action"
                 is Smart.Chip.Event -> "event"
                 is Smart.Chip.Booking -> "booking"
                 null -> null
@@ -1657,6 +1667,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 return false
             }
         }
+        if (chip != null) cancelSuggestion()
         when (chip) {
             is Smart.Chip.Calc, is Smart.Chip.Vault, is Smart.Chip.Money -> {
                 stripSmartDetail = when (chip) {
@@ -1664,7 +1675,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     is Smart.Chip.Money -> "money"
                     else -> "calc"
                 }
-                showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip)) {
+                showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "") {
                     currentInputConnection?.commitText(Smart.insert(chip), 1)
                     hideStripChip()
                     updateSuggestions()
@@ -1696,8 +1707,66 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             else -> {}
         }
+        val trimmed = tail.trim()
+        val cached = suggestedChip
+        if (cached != null && suggestedFor == trimmed) {
+            showStripChip("action", null, cached.label, "") {
+                suggestedChip = null
+                suggestedFor = ""
+                hideStripChip()
+                val ic = currentInputConnection
+                startAct(ic?.getTextBeforeCursor(4000, 0)?.toString() ?: "",
+                    ic?.getTextAfterCursor(4000, 0)?.toString() ?: "", cached.intent)
+            }
+            return true
+        }
         if (stripChipKind in smartKinds) hideStripChip()
+        scheduleSuggestion(trimmed)
         return false
+    }
+
+    /** Debounced and never for a half-typed thought: a 700ms pause on a real
+     *  sentence is the only thing that asks. It never spends a run:
+     *  suggestions have their own allowance on the server. */
+    private fun scheduleSuggestion(text: String) {
+        main.removeCallbacks(suggestWork)
+        if (text.length < 12 || text.split(" ").size < 3 || text == suggestedFor ||
+            !settings.optBoolean("candidates", true)) return
+        main.postDelayed(suggestWork, 700)
+    }
+
+    private fun askForSuggestion() {
+        val ic = currentInputConnection ?: return
+        val text = (ic.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
+        if (text.length < 12) return
+        suggestCancel?.invoke()
+        val fields = vaultFields()
+        suggestCancel = BackendClient.suggestAction(
+            backendURL = settings.optString("backendURL"),
+            text = text,
+            deviceId = settings.optString("deviceId"),
+            kinds = if (settings.optBoolean("aiUsesVault", true)) fields.map { it.kind }.distinct() else emptyList(),
+        ) { intent, label, query -> main.post {
+            val now = (currentInputConnection?.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
+            // The sentence moved on while we were asking: drop it.
+            if (now != text) return@post
+            suggestedFor = text
+            if (intent == "detail") {
+                // The model named the kind; the value is this phone's own.
+                suggestedDetail = fields.firstOrNull { it.kind == label } ?: return@post
+                suggestedChip = null
+            } else {
+                suggestedDetail = null
+                suggestedChip = Smart.Chip.Action(label, query, intent)
+            }
+            updateSuggestions()
+        } }
+    }
+
+    private fun cancelSuggestion() {
+        main.removeCallbacks(suggestWork)
+        suggestCancel?.invoke()
+        suggestCancel = null
     }
 
     private fun refreshClipCard() {
@@ -1772,7 +1841,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(ink())
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        chip.addView(TextView(this).apply {
+        if (verb.isEmpty()) {
+            // The model's suggestion: its words are the action, a sparkle marks it.
+            chip.addView(ToolIcon(this, "ask", Color.rgb(0x7C, 0x5C, 0xFF)),
+                LinearLayout.LayoutParams(dp(22), dp(22)).apply { leftMargin = dp(8) })
+        } else chip.addView(TextView(this).apply {
             text = verb
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
@@ -1811,6 +1884,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** What the run reads: the field text, or the clipboard for a skill. */
     private var actRunInput = ""
     private var actStreamView: TextView? = null
+    /** The rows of a rewrite being streamed, while its versions arrive. */
+    private var actOptionList: LinearLayout? = null
 
     /** What a tapped tool asked for (Rewrite); null lets the server decide. */
     private var actIntent: String? = null
@@ -1898,6 +1973,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         val intent = actRunInput
         buildActWorking(panel, intent)
+        // Versions show one by one as the model finishes each, and written
+        // text as it comes: the first row is up well before the last.
+        val streamed = mutableListOf<BackendClient.RewriteOption>()
+        val written = StringBuilder()
+        val current = { generation == actGeneration && overlay === panel }
         val lat = if (settings.has("lastLat")) settings.optDouble("lastLat") else null
         val lon = if (settings.has("lastLon")) settings.optDouble("lastLon") else null
         BackendClient.act(
@@ -1911,8 +1991,26 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             tz = java.util.TimeZone.getDefault().id,
             intent = actIntent,
             profile = shareableProfile(),
+            onOption = { o -> main.post {
+                if (!current() || streamed.any { it.id == o.id }) return@post
+                streamed.add(o)
+                appendActOption(panel, o, streamed.toList())
+            } },
+            onText = { t -> main.post {
+                if (!current()) return@post
+                written.append(t)
+                val shown = written.toString().trim()
+                if (shown.isNotEmpty()) showActStreaming(panel, intent, shown)
+            } },
+            onReset = { main.post {
+                if (!current()) return@post
+                streamed.clear()
+                written.setLength(0)
+                actStreamView = null
+                buildActWorking(panel, intent)
+            } },
             onResult = { r -> main.post {
-                if (generation == actGeneration && overlay === panel) showActResult(panel, r)
+                if (current()) showActResult(panel, r)
             } },
             onError = { message -> main.post {
                 if (generation == actGeneration && overlay === panel) showActFailure(panel, message)
@@ -1941,6 +2039,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     private fun buildActWorking(panel: FrameLayout, intent: String,
                                 title: String? = null, letter: String? = null) {
+        actOptionList = null
         panel.removeAllViews()
         panel.addView(ActRingsView(this, ink()), FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -2024,11 +2123,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }, LinearLayout.LayoutParams(dp(40), dp(34)))
     }
 
-    private fun showActResult(panel: FrameLayout, r: BackendClient.ActResult) {
+    /** `streaming`: versions are still arriving, so ↻ waits for the last. */
+    private fun showActResult(panel: FrameLayout, r: BackendClient.ActResult, streaming: Boolean = false) {
         actStreamView = null
+        actOptionList = null
         panel.removeAllViews()
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        outer.addView(actHeader(retry = true), LinearLayout.LayoutParams(
+        outer.addView(actHeader(retry = !streaming), LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2043,33 +2144,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (r.options.isNotEmpty()) {
             // The website's rows: the style, then the message. Tap to put it
             // in; hold to copy it.
-            for (o in r.options) {
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    setPadding(dp(14), dp(12), dp(14), dp(12))
-                    setTag(com.demo.glyf.R.id.qa_id, "act:option:${o.id}")
-                    contentDescription = "${o.label}: ${o.text}"
-                    background = GradientDrawable().apply {
-                        cornerRadius = dp(14).toFloat(); setColor(card())
-                    }
-                    setOnClickListener { actInsert(o.text) }
-                    setOnLongClickListener { actCopy(o.text); true }
-                }
-                row.addView(TextView(this).apply {
-                    text = o.label
-                    textSize = 13f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
-                }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
-                row.addView(TextView(this).apply {
-                    text = o.text
-                    textSize = 15f
-                    maxLines = 3
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setTextColor(ink())
-                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                list.addView(row, gap())
-            }
+            for (o in r.options) list.addView(optionRow(o), gap())
+            actOptionList = list
         } else if (!r.text.isNullOrBlank()) {
             list.addView(TextView(this).apply {
                 text = r.text
@@ -2146,6 +2222,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     @Suppress("UNUSED_PARAMETER")
     private fun showActStreaming(panel: FrameLayout, title: String, text: String) {
         actStreamView?.let { it.text = text; return }
+        actOptionList = null
         panel.removeAllViews()
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         outer.addView(actHeader(retry = false), LinearLayout.LayoutParams(
@@ -2174,7 +2251,59 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         actStreamView = body
     }
 
+    /** One version of a rewrite, the website's row: the style, then the
+     *  message. Tap to put it in; hold to copy it. */
+    private fun optionRow(o: BackendClient.RewriteOption): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setTag(com.demo.glyf.R.id.qa_id, "act:option:${o.id}")
+            contentDescription = "${o.label}: ${o.text}"
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat(); setColor(card())
+            }
+            setOnClickListener { actInsert(o.text) }
+            setOnLongClickListener { actCopy(o.text); true }
+        }
+        row.addView(TextView(this).apply {
+            text = o.label
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+        }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
+        row.addView(TextView(this).apply {
+            text = o.text
+            textSize = 15f
+            maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(ink())
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        return row
+    }
+
+    /** One version the moment the model finishes it: the list fills in while
+     *  the rest are written, and a row can already be tapped. The whole
+     *  result redraws the panel at the end, with ↻ back in the strip. */
+    private fun appendActOption(panel: FrameLayout, o: BackendClient.RewriteOption,
+                                all: List<BackendClient.RewriteOption>) {
+        val list = actOptionList
+        if (list == null) {
+            showActResult(panel, BackendClient.ActResult(intent = "rewrite", title = "Rewrite",
+                cards = emptyList(), text = null, insert = "", remaining = null, options = all),
+                streaming = true)
+            return
+        }
+        val row = optionRow(o)
+        list.addView(row, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            .apply { setMargins(0, 0, 0, dp(8)) })
+        // A property animation: with animations off in Settings it lands at once.
+        row.alpha = 0f
+        row.animate().alpha(1f).setDuration(180).start()
+    }
+
     private fun showActFailure(panel: FrameLayout, message: String) {
+        actOptionList = null
         panel.removeAllViews()
         panel.addView(TextView(this).apply {
             text = message

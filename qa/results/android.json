@@ -42,18 +42,25 @@
   "note": "'my upi is arpit@okbank'"
  },
  {
+  "id": "S90",
+  "area": "Android",
+  "title": "A rough message offers Tidy this up",
+  "verdict": "pass",
+  "note": "chip 'Tidy this up', versions shown after 2.8s (streamed; the server had all six in 1.3s). Rerun 25 Sep"
+ },
+ {
   "id": "S91",
   "area": "Android",
   "title": "Hold space: pick the Professional version",
-  "verdict": "fail",
-  "note": "no Professional version after 25s. Gemini's models were answering 503 \"high demand\" and OpenRouter's free model took up to 22 s"
+  "verdict": "pass",
+  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'Understood. I will send the deck before 6.' Rerun 25 Sep on the new fast chain (Gemini 2.5 Flash-Lite through OpenRouter)"
  },
  {
   "id": "S92",
   "area": "Android",
   "title": "Hold space on a place search sends places",
   "verdict": "pass",
-  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/fFtVeXlBFLoZ' (took a second tap)"
+  "note": "'best biryani near indiranagar' + its list page link (took a second tap). Rerun 25 Sep"
  },
  {
   "id": "S93",

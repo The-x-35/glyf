@@ -46,6 +46,8 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         var onError: (String) -> Void
         var fullText = ""
         var finished = false
+        /// A streamed /act: every event goes here with its JSON.
+        var onAct: ((String, Data) -> Void)?
     }
 
     private var streams: [Int: Stream] = [:]
@@ -362,8 +364,47 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         }.resume()
     }
 
+    @discardableResult
+    /// POST /suggest — what Glyf could do about what is being typed. Cheap
+    /// and cancellable: the strip asks after a pause, never on every key,
+    /// and it never spends one of the person's runs.
+    func suggestAction(text: String, kinds: [String] = [],
+                       onResult: @escaping (String, String, String) -> Void)
+    -> URLSessionDataTask? {
+        let s = SettingsStore.current
+        guard let url = URL(string: "\(s.backendURL)/suggest") else { return nil }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.httpMethod = "POST"
+        req.timeoutInterval = 8
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["text": text, "deviceId": s.deviceId]
+        // The kinds of detail saved, never the details.
+        if !kinds.isEmpty { body["kinds"] = kinds }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let task = session.dataTask(with: req) { data, _, _ in
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let suggestion = json["suggestion"] as? [String: Any],
+                  let intent = suggestion["intent"] as? String,
+                  let label = suggestion["label"] as? String
+            else { return }
+            let query = suggestion["query"] as? String ?? text
+            DispatchQueue.main.async { onResult(intent, label, query) }
+        }
+        task.resume()
+        return task
+    }
+
+    /// POST /act as a stream: each version of a rewrite the moment the model
+    /// finishes it, written text as it comes, then the whole result. A
+    /// `reset` means the model was swapped midway: drop what was shown.
+    /// Callbacks arrive on the main queue.
     func runAct(text: String,
                 intent: String? = nil,
+                onOption: @escaping (RewriteOption) -> Void,
+                onText: @escaping (String) -> Void,
+                onReset: @escaping () -> Void,
                 onResult: @escaping (ActResult) -> Void,
                 onError: @escaping (String) -> Void) -> URLSessionDataTask? {
         let s = SettingsStore.current
@@ -372,7 +413,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         }
         var body: [String: Any] = [
             "text": text, "deviceId": s.deviceId, "plan": s.plan ?? "free",
-            "tz": TimeZone.current.identifier,
+            "tz": TimeZone.current.identifier, "stream": true,
         ]
         if let lat = s.lastLat, let lon = s.lastLon { body["lat"] = lat; body["lon"] = lon }
         if let region = s.region, region.count == 2 { body["country"] = region }
@@ -384,22 +425,35 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         req.httpMethod = "POST"
         req.timeoutInterval = 40
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        let task = URLSession.shared.dataTask(with: req) { data, response, err in
-            DispatchQueue.main.async {
-                if let err = err as NSError?, err.code == NSURLErrorCancelled { return }
-                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                guard err == nil, let data,
-                      let out = try? JSONDecoder().decode(ActResult.self, from: data) else {
-                    self.log.error("act failed http=\(code, privacy: .public)")
-                    onError("Couldn't reach Glyf. Tap to retry.")
-                    return
+        let failed = "Couldn't do that right now. Tap to retry."
+        let task = session.dataTask(with: req)
+        var stream = Stream(onToken: { _ in }, onDone: { _, _ in }, onError: onError)
+        stream.onAct = { [weak self] type, data in
+            let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            switch type {
+            case "option":
+                if let option = try? JSONDecoder().decode(RewriteOption.self, from: data) { onOption(option) }
+            case "text":
+                if let t = obj?["t"] as? String { onText(t) }
+            case "reset":
+                onReset()
+            case "done":
+                guard let out = try? JSONDecoder().decode(ActResult.self, from: data) else {
+                    self?.log.error("act done unreadable")
+                    return onError(failed)
                 }
                 if let remaining = out.remaining { GlyfCatalog.cacheRunsRemaining(remaining) }
-                if out.ok { onResult(out) } else { onError(out.error ?? "Couldn't do that right now. Tap to retry.") }
+                onResult(out)
+            case "error":
+                onError(obj?["error"] as? String ?? failed)
+            default:
+                break
             }
         }
+        streams[task.taskIdentifier] = stream
         task.resume()
         return task
     }
@@ -472,6 +526,11 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         guard let data = payload.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
+        if let onAct = stream.onAct {
+            if type == "done" || type == "error" { stream.finished = true }
+            onAct(type, data)
+            return
+        }
 
         switch type {
         case "token":
@@ -500,7 +559,14 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
             log.log("GLYF_RUN transport error: \(error.localizedDescription, privacy: .public)")
             if !stream.finished { stream.onError("Couldn't reach Glyf. Tap to retry.") }
         } else if !stream.finished {
-            if let http = task.response as? HTTPURLResponse, http.statusCode == 429 {
+            // A refusal before the stream opened (the day's runs, a lost
+            // session) is one JSON body: say what the server said.
+            if stream.onAct != nil,
+               let data = stream.buffer.data(using: .utf8),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let message = obj["error"] as? String {
+                stream.onError(message)
+            } else if let http = task.response as? HTTPURLResponse, http.statusCode == 429 {
                 stream.onError("Daily free runs used up")
             } else {
                 stream.onError("Couldn't reach Glyf. Tap to retry.")

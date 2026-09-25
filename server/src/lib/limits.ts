@@ -33,6 +33,18 @@ export function capsFor(plan: Plan, freePerDay: number): Caps {
   }
 }
 
+/** The strip's suggestions are asked for by a pause in typing, not by the
+ *  person, so they never spend a run. Their own allowance is sized for a
+ *  day of chatting on a model that costs tens of dollars a million reads,
+ *  and still has a ceiling, so a stolen session can't run up a bill. */
+export function suggestCapsFor(plan: Plan, freePerDay: number): Caps {
+  switch (plan) {
+    case "max": return { runsPerDay: freePerDay * 25, burstPerMinute: 30 };
+    case "plus": return { runsPerDay: freePerDay * 10, burstPerMinute: 30 };
+    default: return { runsPerDay: freePerDay, burstPerMinute: 20 };
+  }
+}
+
 export type Window = "day" | "minute";
 
 export function windowStart(kind: Window, now: Date): string {

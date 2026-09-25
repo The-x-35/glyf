@@ -23,9 +23,17 @@ export const env = {
   cerebrasKey: process.env.CEREBRAS_API_KEY ?? "",
   mockAI: process.env.MOCK_AI === "true",
   freeRunsPerDay: num("FREE_RUNS_PER_DAY", 40),
+  /** The strip's suggestions have their own allowance and never spend a run. */
+  freeSuggestionsPerDay: num("FREE_SUGGESTIONS_PER_DAY", 300),
   /** §8.3 fallback chain, most-preferred first. Never hard-code one :free id. */
   fastModels: (process.env.FAST_MODELS ?? "openrouter/free").split(",").map(s => s.trim()),
   smartModels: (process.env.SMART_MODELS ?? "openrouter/free").split(",").map(s => s.trim()),
+  /** What reads a pause in typing for the strip's chip: small, paid, cheap
+   *  (tens of dollars a million reads) and never a free tier that keeps
+   *  what it is sent. */
+  suggestModels: (process.env.SUGGEST_MODELS
+    ?? "google/gemini-2.5-flash-lite,mistralai/mistral-small-24b-instruct-2501,qwen/qwen3-30b-a3b-instruct-2507")
+    .split(",").map(s => s.trim()),
   cacheTtlMs: num("CACHE_TTL_MS", 24 * 3600 * 1000),
   // Privy creds are parked here for M8's backend integration — NEVER sent to
   // clients, NEVER used before the crypto connector milestone (SPEC §6.14).

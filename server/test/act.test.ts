@@ -45,6 +45,11 @@ describe("parsePlan", () => {
       .toEqual({ intent: "answer", query: "World Cup today" });
     expect(parsePlan("no json here", "x")).toBeNull();
   });
+
+  it("takes the model's word when it says something should be written", () => {
+    expect(parsePlan('{"intent":"write","query":"birthday message for mom"}', "x"))
+      .toEqual({ intent: "write", query: "birthday message for mom" });
+  });
 });
 
 describe("listInsert", () => {

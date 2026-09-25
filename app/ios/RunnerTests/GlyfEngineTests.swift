@@ -662,4 +662,13 @@ final class GlyfEngineTests: XCTestCase {
         let home = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88], crypto: [:], local: "USD")
         XCTAssertNil(Smart.chip(for: "$13", fields: [], rates: home))
     }
+
+    // MARK: The model's suggestion
+
+    func testModelSuggestionIsItsOwnActionAndTypesNothing() {
+        let chip = Smart.Chip.action(label: "Tidy this up", query: "ya ok will send the deck", intent: "rewrite")
+        XCTAssertNil(chip.verb, "a sparkle marks it: its words are already the action")
+        XCTAssertEqual(chip.value, "Tidy this up")
+        XCTAssertEqual(chip.insert, "", "a tap runs hold space on the sentence instead of typing")
+    }
 }

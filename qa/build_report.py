@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-RUN_DATE = "24 September 2026"
+RUN_DATE = "24 and 25 September 2026"
 
 # What a person typed or did, for the server scenarios (their titles carry
 # the situation; this is the literal input).
@@ -27,6 +27,8 @@ SERVER_INPUT = {
     "S10": "best biryani near indiranagar", "S11": "nearest atm", "S12": "cafes near me",
     "S13": "send me the dune part 2 trailer", "S14": "weather in bangalore tomorrow",
     "S15": "zxqv plorb wibble score today", "S16": "18% of 2450",
+    "S17": "ya ok will send the deck before 6 tmrw", "S18": "any good italian places in koramangala",
+    "S19": "what time does the match start today", "S20": "hey how are",
     "S21": "kal milte hain office ke baad", "S22": "see you after office tomorrow",
     "S23": "मुझे कल छुट्टी चाहिए", "S24": "நாளை சந்திப்போம்",
     "S25": "happy birthday, have a great year (→ Spanish)", "S26": "nos vemos mañana en la oficina",
@@ -39,7 +41,7 @@ SERVER_INPUT = {
     "S40": "what is a black hole", "S41": "sunset", "S42": "lofi beats playlist",
     "S43": "good hotels in goa", "S44": "omg 😂😂 that was sooo funny cant breathe",
     "S45": "hey r u free for a call at 5 today", "S46": "so basically what happened was i reached the venue at like 7…",
-    "S48": "i has went to the store yesterday and buyed milk",
+    "S47": "bhai kal ka plan cancel kar de yaar mood nahi hai", "S48": "i has went to the store yesterday and buyed milk",
     "S49": "meeting postpone ho gayi hai, kal 4 baje rakhte hain", "S50": "Phoenix Marketcity Bangalore",
 }
 
@@ -49,7 +51,7 @@ SERVER_FIXED = {"S01", "S05", "S06", "S10", "S11", "S15", "S25", "S30", "S32", "
 ANDROID_INPUT = {
     "S84": "i think teh plan works", "S85": "sry running late omw", "S86": "call at 5 ␣",
     "S87": "split is 3480/4", "S88": "sure my address is ␣", "S89": "my upi is ␣",
-    "S91": "ya ok will send deck b4 6 (hold ␣)",
+    "S90": "ya ok will send the deck before six tmrw ␣", "S91": "ya ok will send deck b4 6 (hold ␣)",
     "S92": "best biryani near indiranagar (hold ␣)", "S93": "tap g", "S94": "copy “Flight AI 2021 lands at 6:40”",
     "S95": "kal milte hain office ke baad ␣", "S96": "what a finish ␣ → 😊 key → 😂",
     "S97": "see you at the park tomorrow, slide left from ⌫",
@@ -68,7 +70,7 @@ ANDROID_INPUT = {
     "S127": "Google not connected → calendar → + → “lunch with sam tomorrow 1pm” → Add",
     "S128": "M bound to Meet link, Google connected (stand-in) → hold M",
 }
-ANDROID_FIXED = {"S85", "S86", "S87", "S88", "S89", "S91"}
+ANDROID_FIXED = {"S85", "S86", "S87", "S88", "S89", "S90", "S91"}
 
 FIXES = [
     ("Server", "Card numbers, CVVs, OTPs, PINs, passwords, ID numbers, API keys and recovery phrases went to the AI models inside messages.",
@@ -134,6 +136,8 @@ FIXES = [
 ]
 
 NEEDS_YOU = [
+    ("AI suggestions and quick hold space", "Credit on OpenRouter (the $10), and FAST_MODELS on Railway set to the new chain in server/.env.example",
+     "The strip's suggestions read on small paid models through OpenRouter (about $20 to $30 a million reads) and never spend a run; hold space and chip taps write on Gemini 2.5 Flash-Lite through OpenRouter, all six versions in about 1.3 s. The key answered on 25 September with no credit, which won't last: without it the chip shows only what the phone's rules catch, and hold space falls back to Gemini's free tier (about 4 s)."),
     ("GIFs and stickers in the emoji board", "KLIPY_APP_KEY on Railway (it is in the local server/.env since 24 September)",
      "Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. Real KLIPY GIFs and stickers were checked on both keyboards with the local key."),
     ("Google Calendar and Meet", "The Calendar API and Meet REST API switched on, and their two scopes added to the consent screen, in Google Cloud",

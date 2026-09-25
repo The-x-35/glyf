@@ -337,6 +337,17 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertTrue(waitValue(3) { $0.contains(id) }, "got '\(value)' for chip '\(offered)'")
     }
 
+    func testS63_RoughMessageOffersTidyThisUp() throws {
+        open()
+        clear()
+        type("ya ok will send the deck before six tmrw ")
+        guard let chip = wait("strip:smart", 10) else { return XCTFail("no suggestion chip") }
+        note("chip: '\(chip.label)'")
+        XCTAssertTrue(chip.label.localizedCaseInsensitiveContains("tidy"), "chip says '\(chip.label)'")
+        chip.tap()
+        XCTAssertNotNil(wait("act:option:work", 15), "tapping the chip should offer versions")
+    }
+
     // MARK: - Hold space
 
     func testS64_HoldSpaceOffersVersionsAndProfessionalReplacesTheMessage() throws {

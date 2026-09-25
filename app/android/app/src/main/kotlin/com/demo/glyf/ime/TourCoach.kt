@@ -37,7 +37,7 @@ object TourCoach {
         val step: String,
         val text: String,
         val panel: Panel = Panel.None,
-        /** "calc", "vault:<kind>", "pay", "paste", "event", "booking", "fill" or null. */
+        /** "calc", "vault:<kind>", "pay", "paste", "action", "event", "booking", "fill" or null. */
         val chip: String? = null,
         val suggestions: List<String> = emptyList(),
         val fields: List<Smart.Field> = emptyList(),

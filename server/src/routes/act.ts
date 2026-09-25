@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../env.js";
-import { act } from "../lib/act.js";
+import { act, type ActResult, type ActStream } from "../lib/act.js";
 import type { Guard } from "../lib/guard.js";
 import { createPage, getPage, renderPage } from "../lib/pages.js";
 import type { KV } from "../lib/store.js";
@@ -21,7 +21,11 @@ const ActSchema = z.object({
   /** Shareable vault details, when the writer allows it (see ActOptions). */
   profile: z.record(z.string().max(40), z.string().max(400)).optional(),
   /** Set when a suggestion chip was tapped: do what the chip said. */
-  intent: z.enum(["place", "places", "answer", "video", "rewrite"]).optional(),
+  intent: z.enum(["place", "places", "answer", "video", "rewrite", "write"]).optional(),
+  /** Answer as a stream of events: each version as soon as it is written,
+   *  written text as it comes, then the whole result. Older keyboards leave
+   *  it out and get one JSON reply, as before. */
+  stream: z.boolean().optional(),
 });
 
 /** Where shared pages live. Unset in dev → this server, which is enough to
@@ -47,27 +51,61 @@ export function actRoutes(app: FastifyInstance, guard: Guard, kv: KV): void {
       req.log.warn({ issues: parsed.error.issues }, "act bad request");
       return reply.code(400).send({ ok: false, error: "Bad request" });
     }
-    const { text, deviceId, plan, lat, lon, country, tz, profile, intent } = parsed.data;
+    const { text, deviceId, plan, lat, lon, country, tz, profile, intent, stream } = parsed.data;
 
     const gate = await guard.spend(req, deviceId);
     if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
     const remaining = gate.remaining;
 
     const started = Date.now();
+    const base = pageBase();
+    const run = (live?: ActStream) => act(text, { lat, lon, country: country?.toUpperCase(), tz }, {
+      profile,
+      intent,
+      publish: base ? (title, places) => `${base}/p/${createPage(kv, title, places)}` : undefined,
+      stream: live,
+    });
+    // §12: events and timings only — never the typed text.
+    const logDone = (result: ActResult) => req.log.info({ deviceId, intent: result.intent,
+      provider: result.provider, cards: result.cards.length, inputChars: text.length,
+      ms: Date.now() - started, streamed: !!stream }, "act");
+    const failed = "Couldn't do that right now. Tap to retry.";
+
+    if (!stream) {
+      try {
+        const result = await run();
+        logDone(result);
+        return { ok: true, remaining, ...result };
+      } catch (err) {
+        req.log.warn({ deviceId, err: err instanceof Error ? err.message : String(err) }, "act failed");
+        return reply.code(502).send({ ok: false, error: failed });
+      }
+    }
+
+    // The same headers as /glyf/run, so nothing in between holds the events
+    // back until the end.
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    reply.raw.flushHeaders?.();
+    const send = (event: string, data: unknown) => {
+      if (!reply.raw.writableEnded) reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
     try {
-      const base = pageBase();
-      const result = await act(text, { lat, lon, country: country?.toUpperCase(), tz }, {
-        profile,
-        intent,
-        publish: base ? (title, places) => `${base}/p/${createPage(kv, title, places)}` : undefined,
+      const result = await run({
+        option: o => send("option", o),
+        text: t => send("text", { t }),
+        reset: () => send("reset", {}),
       });
-      // §12: events and timings only — never the typed text.
-      req.log.info({ deviceId, intent: result.intent, provider: result.provider,
-        cards: result.cards.length, inputChars: text.length, ms: Date.now() - started }, "act");
-      return { ok: true, remaining, ...result };
+      logDone(result);
+      send("done", { ok: true, remaining, ...result });
     } catch (err) {
       req.log.warn({ deviceId, err: err instanceof Error ? err.message : String(err) }, "act failed");
-      return reply.code(502).send({ ok: false, error: "Couldn't do that right now. Tap to retry." });
+      send("error", { ok: false, error: failed });
     }
+    reply.raw.end();
   });
 }

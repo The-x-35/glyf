@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { signedInApp } from "./helpers.js";
 import { env } from "../src/env.js";
 import {
-  MemoryLimiter, PostgresLimiter, allow, capsFor, windowStart, type SqlLike,
+  MemoryLimiter, PostgresLimiter, allow, capsFor, suggestCapsFor, windowStart, type SqlLike,
 } from "../src/lib/limits.js";
 
 /** A stand-in Postgres that behaves like the real statements do: the insert
@@ -43,6 +43,9 @@ describe("hard limits", () => {
     expect(capsFor("plus", 40).runsPerDay).toBe(400);
     expect(capsFor("max", 40).runsPerDay).toBe(1000);
     expect(Number.isFinite(capsFor("max", 40).runsPerDay)).toBe(true);
+    // Suggestions are counted apart, with a ceiling of their own on every plan.
+    expect(suggestCapsFor("free", 300)).toEqual({ runsPerDay: 300, burstPerMinute: 20 });
+    expect(suggestCapsFor("max", 300).runsPerDay).toBe(7500);
   });
 
   it("spends a day's runs and then refuses", async () => {

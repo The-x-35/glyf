@@ -19,6 +19,7 @@ import { composeInsert, type PlaceCard, type SearchCard } from "./searchcards.js
  */
 
 export type ActIntent = "place" | "places" | "answer" | "video" | "rewrite" | "write";
+export const ACT_INTENTS: readonly ActIntent[] = ["place", "places", "answer", "video", "rewrite", "write"];
 
 export interface ActPlan {
   intent: ActIntent;
@@ -64,17 +65,74 @@ export function rewriteStyles(ctx: SearchContext): { id: string; label: string; 
   return styles;
 }
 
-/** Reads the model's JSON of versions; missing or empty ones are dropped. */
+/** One finished `"style":"text"` pair in a model's JSON, open or closed. */
+const PAIR = /"([a-z]+)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+
+/** Reads the model's JSON of versions; missing or empty ones are dropped. A
+ *  reply cut off before its closing brace still gives the versions it
+ *  finished, the same ones a stream of it showed. */
 export function parseRewriteOptions(reply: string, styles: { id: string; label: string }[]): RewriteOption[] {
+  let obj: Record<string, unknown> = {};
   const match = reply.match(/\{[\s\S]*\}/);
-  if (!match) return [];
   try {
-    const obj = JSON.parse(match[0]) as Record<string, unknown>;
-    return styles
-      .map(st => ({ id: st.id, label: st.label, text: typeof obj[st.id] === "string" ? (obj[st.id] as string).trim() : "" }))
-      .filter(o => o.text.length > 0);
+    obj = match ? JSON.parse(match[0]) as Record<string, unknown> : {};
   } catch {
-    return [];
+    obj = {};
+  }
+  if (Object.keys(obj).length === 0 && reply.includes("{")) {
+    for (const m of reply.matchAll(PAIR)) {
+      try {
+        obj[m[1]] ??= JSON.parse(`"${m[2]}"`) as string;
+      } catch {
+        // A pair the model mangled is one version fewer, not an error.
+      }
+    }
+  }
+  return styles
+    .map(st => ({ id: st.id, label: st.label, text: typeof obj[st.id] === "string" ? (obj[st.id] as string).trim() : "" }))
+    .filter(o => o.text.length > 0);
+}
+
+/** Picks each version out of the model's JSON the moment its closing quote
+ *  arrives, so the rows appear one by one while the rest is still being
+ *  written. Only what the full reply would keep is let through: a style
+ *  that was asked for, not empty, with every number the writer typed. */
+export class OptionStream {
+  private text = "";
+  private from = 0;
+  private readonly sent = new Set<string>();
+
+  constructor(
+    private readonly styles: { id: string; label: string }[],
+    private readonly typed: string,
+    private readonly emit: (o: RewriteOption) => void,
+  ) {}
+
+  push(token: string): void {
+    this.text += token;
+    const re = new RegExp(PAIR.source, "g");
+    re.lastIndex = this.from;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(this.text))) {
+      this.from = re.lastIndex;
+      const style = this.styles.find(st => st.id === m![1]);
+      if (!style || this.sent.has(style.id)) continue;
+      this.sent.add(style.id);
+      let value = "";
+      try {
+        value = (JSON.parse(`"${m[2]}"`) as string).trim();
+      } catch {
+        continue;
+      }
+      if (value && keepsNumbers(this.typed, value)) this.emit({ id: style.id, label: style.label, text: value });
+    }
+  }
+
+  /** The model was dropped midway: the next one's versions start over. */
+  reset(): void {
+    this.text = "";
+    this.from = 0;
+    this.sent.clear();
   }
 }
 
@@ -143,6 +201,15 @@ export interface ActOptions {
   profile?: Record<string, string>;
   /** What a tapped suggestion chip promised; skips routing when set. */
   intent?: ActIntent;
+  /** For a streamed /act: each version the moment it is written, the
+   *  written text as it comes, and a reset when a model is dropped midway. */
+  stream?: ActStream;
+}
+
+export interface ActStream {
+  option?: (o: RewriteOption) => void;
+  text?: (t: string) => void;
+  reset?: () => void;
 }
 
 /** The profile as prompt lines, or "" when there is nothing to say. */
@@ -224,8 +291,7 @@ export function parsePlan(reply: string, fallbackQuery: string): ActPlan | null 
   if (!match) return null;
   try {
     const obj = JSON.parse(match[0]) as { intent?: string; query?: string };
-    const intents: ActIntent[] = ["place", "places", "answer", "video", "rewrite"];
-    if (!obj.intent || !intents.includes(obj.intent as ActIntent)) return null;
+    if (!obj.intent || !ACT_INTENTS.includes(obj.intent as ActIntent)) return null;
     const query = typeof obj.query === "string" && obj.query.trim() ? obj.query.trim() : fallbackQuery;
     return { intent: obj.intent as ActIntent, query: query.slice(0, 200) };
   } catch {
@@ -243,14 +309,16 @@ write   — they are asking for something to BE written or worked out: "write an
 rewrite — a message they are writing to someone; nothing to look up.
 Typed: """${text.replace(/"""/g, "'")}"""`;
 
+/** Deterministic offline routing for tests: questions look things up,
+ *  everything else is a message to tidy. */
+export function mockPlan(text: string): ActPlan {
+  const t = text.trim();
+  if (/^(write|draft|compose|explain)\b/i.test(t)) return { intent: "write", query: t };
+  return { intent: t.endsWith("?") ? "answer" : "rewrite", query: t };
+}
+
 async function planWithModel(text: string): Promise<ActPlan> {
-  if (env.mockAI) {
-    // Deterministic offline routing for tests: questions look things up,
-    // everything else is a message to tidy.
-    const t = text.trim();
-    if (/^(write|draft|compose|explain)\b/i.test(t)) return { intent: "write", query: t };
-    return { intent: t.endsWith("?") ? "answer" : "rewrite", query: t };
-  }
+  if (env.mockAI) return mockPlan(text);
   try {
     const res = await completeStreaming("fast",
       [{ role: "user", content: ROUTER_PROMPT(text) }], { onToken: () => {}, stallMs: 4000 });
@@ -300,7 +368,8 @@ async function written(
 ): Promise<ActResult> {
   let text = "";
   try {
-    text = await modelText(prompt + profileBlock(opts.profile));
+    text = await modelText(prompt + profileBlock(opts.profile), 5000,
+      opts.stream?.text ? { onToken: opts.stream.text, onRestart: opts.stream.reset } : undefined);
   } catch {
     text = "";
   }
@@ -311,9 +380,12 @@ async function written(
 /** `stallMs` is how long a silent model gets before the next provider is
  *  tried: five seconds for a line or two, longer for six versions of a
  *  message in one JSON, which the free models take their time over. */
-async function modelText(prompt: string, stallMs = 5000): Promise<string> {
+async function modelText(
+  prompt: string, stallMs = 5000,
+  live?: { onToken: (t: string) => void; onRestart?: () => void },
+): Promise<string> {
   const res = await completeStreaming("fast", [{ role: "user", content: prompt }],
-    { onToken: () => {}, stallMs });
+    { onToken: live?.onToken ?? (() => {}), onRestart: live?.onRestart, stallMs });
   return res.text.trim();
 }
 
@@ -408,7 +480,9 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
 
     case "rewrite": {
       const styles = rewriteStyles(ctx);
+      const option = opts.stream?.option;
       const ask = async (reminder: string) => {
+        const live = option ? new OptionStream(styles, typed, option) : null;
         const reply = await modelText(
           "[[act.rewrite.options]]\nRewrite the message below in each of these styles, keeping the " +
           "writer's meaning. Keep every fact exactly: times, dates, numbers, amounts, names and places " +
@@ -417,7 +491,8 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
           "writer that is listed below, fill it in.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
           "\nReply with JSON only, one key per style: {" +
           styles.map(st => `"${st.id}":"..."`).join(",") + "}" +
-          profileBlock(opts.profile) + "\n\nMessage:\n" + typed, 12_000);
+          profileBlock(opts.profile) + "\n\nMessage:\n" + typed, 12_000,
+          live ? { onToken: t => live.push(t), onRestart: () => { live.reset(); opts.stream?.reset?.(); } } : undefined);
         let found = parseRewriteOptions(reply, styles);
         if (found.length === 0) {
           // No JSON came back. A plain reply can still be the one rewrite, but

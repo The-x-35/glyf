@@ -160,6 +160,42 @@ object BackendClient {
         }
     }
 
+    /** POST /suggest — the model names what Glyf could do with the sentence
+     *  ("Tidy this up", "Show me places"), or nothing. Silent on failure, and
+     *  never one of the person's runs: suggestions have their own allowance. */
+    fun suggestAction(
+        backendURL: String,
+        text: String,
+        deviceId: String,
+        kinds: List<String> = emptyList(),
+        onResult: (intent: String, label: String, query: String) -> Unit,
+    ): () -> Unit {
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        pool.execute {
+            try {
+                val c = (URL("$backendURL/suggest").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 4000
+                    readTimeout = 8000
+                    setRequestProperty("Content-Type", "application/json")
+                    signIn()
+                }
+                val body = JSONObject().put("text", text).put("deviceId", deviceId)
+                // The kinds of detail saved, never the details.
+                if (kinds.isNotEmpty()) body.put("kinds", org.json.JSONArray(kinds))
+                c.outputStream.use { it.write(body.toString().toByteArray()) }
+                if (c.responseCode !in 200..299 || cancelled.get()) return@execute
+                val json = JSONObject(c.inputStream.bufferedReader().readText())
+                val s = json.optJSONObject("suggestion") ?: return@execute
+                val intent = s.optStringOrNull("intent") ?: return@execute
+                val label = s.optStringOrNull("label") ?: return@execute
+                if (!cancelled.get()) onResult(intent, label, s.optStringOrNull("query") ?: text)
+            } catch (_: Exception) { /* no chip */ }
+        }
+        return { cancelled.set(true) }
+    }
+
     /** GET /search/suggest — the landing state for a tab (trending searches,
      *  popular videos, nearby places). The user's own recents stay on the
      *  device and are merged in by the caller. */
@@ -258,8 +294,11 @@ object BackendClient {
     )
 
     /** POST /act — hold space on typed text: the server routes the intent
-     *  (place, list, answer, video, rewrite). Callbacks land on the pool
-     *  thread; callers post to the main looper. */
+     *  (place, list, answer, video, rewrite, write). With `onOption` the
+     *  answer streams: each version of a rewrite the moment the model
+     *  finishes it, written text as it comes (`onText`), and `onReset` when
+     *  the model was swapped midway. Callbacks land on the pool thread;
+     *  callers post to the main looper. */
     fun act(
         backendURL: String,
         text: String,
@@ -271,18 +310,24 @@ object BackendClient {
         tz: String? = null,
         intent: String? = null,
         profile: Map<String, String>? = null,
+        onOption: ((RewriteOption) -> Unit)? = null,
+        onText: ((String) -> Unit)? = null,
+        onReset: (() -> Unit)? = null,
         onResult: (ActResult) -> Unit,
         onError: (String) -> Unit,
     ) {
+        val failed = "Couldn't do that right now. Tap to retry."
         pool.execute {
             var conn: HttpURLConnection? = null
             try {
+                val streaming = onOption != null
                 val c = (URL("$backendURL/act").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     doOutput = true
                     connectTimeout = 5000
                     readTimeout = 40000
                     setRequestProperty("Content-Type", "application/json")
+                    if (streaming) setRequestProperty("Accept", "text/event-stream")
                     signIn()
                 }
                 conn = c
@@ -295,32 +340,45 @@ object BackendClient {
                     if (tz != null) put("tz", tz)
                     if (intent != null) put("intent", intent)
                     if (!profile.isNullOrEmpty()) put("profile", JSONObject(profile))
+                    if (streaming) put("stream", true)
                 }
                 c.outputStream.use { it.write(body.toString().toByteArray()) }
                 val ok = c.responseCode in 200..299
-                val raw = (if (ok) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
-                val json = if (raw.isNotBlank()) JSONObject(raw) else JSONObject()
-                if (!ok || !json.optBoolean("ok")) {
-                    onError(json.optStringOrNull("error") ?: "Couldn't do that right now. Tap to retry.")
+                val sse = c.contentType?.startsWith("text/event-stream") == true
+                if (!ok || !sse) {
+                    val raw = (if (ok) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
+                    val json = if (raw.isNotBlank()) JSONObject(raw) else JSONObject()
+                    if (!ok || !json.optBoolean("ok")) onError(json.optStringOrNull("error") ?: failed)
+                    else onResult(parseActResult(json))
                     return@execute
                 }
-                val textOut = json.optStringOrNull("text")
-                onResult(ActResult(
-                    intent = json.optString("intent", "rewrite"),
-                    title = json.optString("title"),
-                    cards = parseCards(json),
-                    text = textOut,
-                    insert = json.optStringOrNull("insert") ?: textOut ?: "",
-                    remaining = if (json.has("remaining")) json.optInt("remaining") else null,
-                    options = json.optJSONArray("options")?.let { arr ->
-                        (0 until arr.length()).mapNotNull { i ->
-                            arr.optJSONObject(i)?.let { o ->
-                                RewriteOption(o.optString("id"), o.optString("label"), o.optString("text"))
-                                    .takeIf { it.text.isNotBlank() }
+                // Server-sent events: "event: <type>" then "data: <json>", a
+                // blank line after each.
+                var event = "message"
+                val data = StringBuilder()
+                var finished = false
+                c.inputStream.bufferedReader().useLines { lines ->
+                    for (line in lines) {
+                        when {
+                            line.startsWith("event:") -> event = line.removePrefix("event:").trim()
+                            line.startsWith("data:") -> data.append(line.removePrefix("data:").trim())
+                            line.isEmpty() && data.isNotEmpty() -> {
+                                val json = JSONObject(data.toString())
+                                data.setLength(0)
+                                when (event) {
+                                    "option" -> RewriteOption(json.optString("id"), json.optString("label"),
+                                        json.optString("text")).takeIf { it.text.isNotBlank() }?.let { onOption?.invoke(it) }
+                                    "text" -> json.optStringOrNull("t")?.let { onText?.invoke(it) }
+                                    "reset" -> onReset?.invoke()
+                                    "done" -> { finished = true; onResult(parseActResult(json)) }
+                                    "error" -> { finished = true; onError(json.optStringOrNull("error") ?: failed) }
+                                }
+                                event = "message"
                             }
                         }
-                    } ?: emptyList(),
-                ))
+                    }
+                }
+                if (!finished) onError("Couldn't reach Glyf. Tap to retry.")
             } catch (e: Exception) {
                 android.util.Log.e("GlyfKB", "act failed: $e")
                 onError("Couldn't reach Glyf. Tap to retry.")
@@ -328,6 +386,26 @@ object BackendClient {
                 conn?.disconnect()
             }
         }
+    }
+
+    private fun parseActResult(json: JSONObject): ActResult {
+        val textOut = json.optStringOrNull("text")
+        return ActResult(
+            intent = json.optString("intent", "rewrite"),
+            title = json.optString("title"),
+            cards = parseCards(json),
+            text = textOut,
+            insert = json.optStringOrNull("insert") ?: textOut ?: "",
+            remaining = if (json.has("remaining")) json.optInt("remaining") else null,
+            options = json.optJSONArray("options")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    arr.optJSONObject(i)?.let { o ->
+                        RewriteOption(o.optString("id"), o.optString("label"), o.optString("text"))
+                            .takeIf { it.text.isNotBlank() }
+                    }
+                }
+            } ?: emptyList(),
+        )
     }
 
     private fun parseCards(json: JSONObject): List<SearchCard> {

@@ -109,12 +109,22 @@
   "verdict": "pass"
  },
  {
+  "id": "S63",
+  "surface": "iPhone",
+  "area": "Strip",
+  "title": "A rough message offers Tidy this up",
+  "input": "ya ok will send the deck before six tmrw ␣",
+  "outcome": "chip “Tidy this up” → the six versions stream in, each as soon as it is written",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
   "id": "S64",
   "surface": "iPhone",
   "area": "Hold space",
   "title": "Hold space: pick the Professional version",
   "input": "ya ok will send deck b4 6",
-  "outcome": "Basic · Professional · Polite · Shorter · Hinglish · Emoji → “I will send the deck before 6:00 PM.”",
+  "outcome": "Basic · Professional · Polite · Shorter · Hinglish · Emoji, streamed in → “Understood. I will send the deck by 6 PM.”",
   "verdict": "pass",
   "fixed": true
  },

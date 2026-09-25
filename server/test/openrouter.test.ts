@@ -101,6 +101,17 @@ describe("requestOptions", () => {
     expect(requestOptions(ep("https://openrouter.ai/api/v1/chat/completions", "openai/gpt-oss-20b", true), "fast"))
       .toMatchObject({ reasoning: { effort: "low", exclude: true } });
   });
+
+  it("keeps the strip's reads short, steady, unthinking and away from providers that keep them", () => {
+    const or = (m: string) => ep("https://openrouter.ai/api/v1/chat/completions", m, true);
+    expect(requestOptions(or("google/gemini-2.5-flash-lite"), "suggest")).toEqual({
+      max_tokens: 200, temperature: 0, provider: { data_collection: "deny" }, reasoning: { enabled: false } });
+    expect(requestOptions(or("openai/gpt-oss-20b"), "suggest"))
+      .toMatchObject({ provider: { data_collection: "deny" }, reasoning: { effort: "low", exclude: true } });
+    const direct = requestOptions(ep(gemini, "gemini-2.5-flash"), "suggest");
+    expect(direct).toMatchObject({ max_tokens: 200, temperature: 0, reasoning_effort: "none" });
+    expect(direct).not.toHaveProperty("provider");
+  });
 });
 
 describe("rate-limit cooldown", () => {

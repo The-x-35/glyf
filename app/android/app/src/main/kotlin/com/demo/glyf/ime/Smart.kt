@@ -18,6 +18,8 @@ object Smart {
         data class Calc(val result: String, val hasEquals: Boolean) : Chip()
         /** "my upi id is " -> the saved UPI. */
         data class Vault(val field: Field) : Chip()
+        /** The model read the sentence and named what Glyf could do with it. */
+        data class Action(val label: String, val query: String, val intent: String) : Chip()
         /** A Solana address on screen: one tap opens the wallet with it. */
         data class Pay(val address: String, val amount: String?) : Chip()
         /** "$13" → "$13 = ₹1,246" where the phone is; "$sol" → "1 SOL = $112".
@@ -44,18 +46,20 @@ object Smart {
     /** The small label on the chip's left, when there is one. */
     fun key(chip: Chip): String? = (chip as? Chip.Vault)?.field?.label
 
-    /** What a tap does, on the chip's right edge. */
-    fun verb(chip: Chip): String = when (chip) {
+    /** What a tap does, on the chip's right edge; null for the model's own words. */
+    fun verb(chip: Chip): String? = when (chip) {
         is Chip.Calc, is Chip.Vault, is Chip.Money -> "Insert"
         is Chip.Event -> "Add"
         is Chip.Booking -> "Book"
         is Chip.Pay -> "Pay"
+        is Chip.Action -> null
     }
 
     /** What the chip says. */
     fun display(chip: Chip): String = when (chip) {
         is Chip.Calc -> chip.result
         is Chip.Vault -> chip.field.value
+        is Chip.Action -> chip.label
         is Chip.Money -> chip.shown
         is Chip.Event -> EventParse.summary(chip.plan)
         is Chip.Booking -> "A time on ${shortLink(chip.link)}"
@@ -71,7 +75,7 @@ object Smart {
         is Chip.Calc -> if (chip.hasEquals) " ${chip.result}" else " = ${chip.result}"
         is Chip.Vault -> chip.field.value
         is Chip.Money -> chip.insert
-        is Chip.Pay, is Chip.Event, is Chip.Booking -> ""
+        is Chip.Action, is Chip.Pay, is Chip.Event, is Chip.Booking -> ""
     }
 
     private val bookingPattern = Regex(

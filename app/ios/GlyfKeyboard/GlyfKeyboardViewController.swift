@@ -540,6 +540,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
     }
 
+    /// The model's read on what is being typed, and the work in flight.
+    private var suggestTask: URLSessionDataTask?
+    private var suggestWork: DispatchWorkItem?
+
     /// Suggestions and the smart strip are recomputed once typing settles,
     /// never inside the keystroke itself. At speed the old way put the
     /// engine, two dozen regexes and a strip rebuild between one finger
@@ -613,6 +617,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // that a fast run of keys only pays for it once.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)
     }
+    private var suggestedFor = ""
+    private var suggestedChip: Smart.Chip?
+
     /// The tool being dragged onto or around the strip, and its ghost.
     private var draggingToolId: String?
     private var dragGhost: UIImageView?
@@ -1388,8 +1395,19 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.showSmart(chip)
             return chip != nil
         }
-        // Every chip comes from the phone itself: nothing typed goes to a
-        // model until the person holds space or taps a tool.
+        // Nothing local to say? Let the model look at the sentence and name
+        // the thing Glyf could do with it (the website's coach).
+        if chip == nil {
+            // The answer is stored for the trimmed sentence: people end with a space.
+            if let cached = suggestedChip,
+               suggestedFor == tail.trimmingCharacters(in: .whitespacesAndNewlines) {
+                chip = cached
+            } else {
+                askForSuggestion(tail)
+            }
+        } else {
+            cancelSuggestion()
+        }
         toolbar.showSmart(chip)
         return chip != nil
     }
@@ -1401,6 +1419,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .vault(let f): return "vault:\(f.kind)"
         case .paste: return "paste"
         case .pay: return "pay"
+        case .action: return "action"
         case .event: return "event"
         case .booking: return "booking"
         }
@@ -1425,6 +1444,51 @@ final class GlyfKeyboardViewController: UIInputViewController {
             kind = "name"
         }
         return Smart.FieldHint(kind: kind, empty: emptyField)
+    }
+
+    /// Debounced, cancellable, and never for a half-typed word: a pause of
+    /// 700ms on a real sentence is the only thing that asks. It never spends
+    /// a run: suggestions have their own allowance on the server.
+    private func askForSuggestion(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard hasFullAccess, !isSecureField, surface == .none,
+              SettingsStore.current.candidates,
+              trimmed.count >= 12, trimmed.split(separator: " ").count >= 3,
+              trimmed != suggestedFor
+        else { return }
+        cancelSuggestion()
+        let fields = VaultStore.shared.load().fields
+        let kinds = SettingsStore.current.aiUsesVault == false ? [] : Array(Set(fields.map(\.kind))).sorted()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.suggestTask = BackendClient.shared.suggestAction(text: trimmed, kinds: kinds) {
+                [weak self] intent, label, query in
+                guard let self, self.surface == .none else { return }
+                let before = self.beforeContext ?? ""
+                // The sentence moved on while we were asking: drop it.
+                guard String(before.suffix(120))
+                    .trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
+                if intent == "detail" {
+                    // The model named the kind; the value is this phone's own.
+                    guard let field = fields.first(where: { $0.kind == label }) else { return }
+                    self.suggestedFor = trimmed
+                    self.suggestedChip = .vault(field: field)
+                } else {
+                    self.suggestedFor = trimmed
+                    self.suggestedChip = .action(label: label, query: query, intent: intent)
+                }
+                self.updateCandidates()
+            }
+        }
+        suggestWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
+    }
+
+    private func cancelSuggestion() {
+        suggestWork?.cancel()
+        suggestWork = nil
+        suggestTask?.cancel()
+        suggestTask = nil
     }
 
     private func updateCandidates() {
@@ -1917,8 +1981,23 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             return
         }
         act.showWorking(intent: actRunInput)
+        // Versions show one by one as the model finishes each, and written
+        // text as it comes: the first row is up well before the last.
+        var written = ""
         actTask = BackendClient.shared.runAct(text: actRunInput, intent: actIntent,
-                                              onResult: { [weak self] result in
+                                              onOption: { [weak self] option in
+            guard let self, self.surface == .act else { return }
+            self.act?.addOption(option)
+        }, onText: { [weak self] t in
+            guard let self, self.surface == .act else { return }
+            written += t
+            let shown = written.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !shown.isEmpty { self.act?.showStreaming(title: self.actRunInput, text: shown) }
+        }, onReset: { [weak self] in
+            guard let self, self.surface == .act else { return }
+            written = ""
+            self.act?.showWorking(intent: self.actRunInput)
+        }, onResult: { [weak self] result in
             guard let self, self.surface == .act else { return }
             self.actHasResult = true
             if let options = result.options, !options.isEmpty {
@@ -2366,11 +2445,26 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// panel if it turns out it was wanted after all.
     func toolbarSmartDismissed() {
         ClipContext.markDone()
+        suggestedChip = nil
+        suggestedFor = ""
         toolbar.showSmart(nil)
         updateCandidates()
     }
 
     func toolbarSmartTapped(_ chip: Smart.Chip) {
+        if case .action(_, _, let intent) = chip {
+            suggestedChip = nil
+            suggestedFor = ""
+            toolbar.showSmart(nil)
+            // The chip is about what was typed: act on that sentence, the way
+            // holding space does, and do what the chip said. Re-reading a
+            // rewritten query could land somewhere else (a Google link for
+            // "Tidy this up").
+            startAct(before: beforeContext ?? "",
+                     after: textDocumentProxy.documentContextAfterInput ?? "",
+                     intent: intent)
+            return
+        }
         if case .booking(let link) = chip {
             // Their page, with the person's own details ready to book.
             toolbar.showSmart(nil)

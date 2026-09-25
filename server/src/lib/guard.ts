@@ -7,7 +7,7 @@
  */
 import type { FastifyRequest } from "fastify";
 import { verifySession } from "./identity.js";
-import { allow, capsFor, refusal, type Allowance, type Limiter, type Plan } from "./limits.js";
+import { allow, capsFor, refusal, suggestCapsFor, type Allowance, type Limiter, type Plan } from "./limits.js";
 import { Users } from "./users.js";
 
 export interface GuardDeps {
@@ -15,6 +15,8 @@ export interface GuardDeps {
   users?: Users;
   verify?: (token: string) => Promise<string | null>;
   freePerDay: number;
+  /** The strip's suggestions a free plan gets a day (their own count). */
+  freeSuggestionsPerDay?: number;
 }
 
 export interface Verdict extends Allowance {
@@ -56,6 +58,18 @@ export class Guard {
     const caps = capsFor(plan, this.deps.freePerDay);
     const verdict = await allow(this.deps.limits, key, caps, now);
     return { ...verdict, plan, key, message: refusal(verdict.reason, plan) };
+  }
+
+  /** Spends one of the strip's suggestions, never a run: they are counted
+   *  under their own key, so a day of chatting can't use up the runs someone
+   *  holds space for. */
+  async suggest(req: FastifyRequest, deviceId: string, now = new Date()): Promise<Verdict> {
+    const { key, plan } = await this.who(req, deviceId);
+    const caps = suggestCapsFor(plan, this.deps.freeSuggestionsPerDay ?? 300);
+    const verdict = await allow(this.deps.limits, `suggest:${key}`, caps, now);
+    const message = verdict.reason === "burst" ? refusal("burst", plan)
+      : "No more suggestions today. They come back tomorrow";
+    return { ...verdict, plan, key, message };
   }
 
   /** What is left today, spending nothing. */

@@ -34,6 +34,7 @@ export function healthRoutes(app: FastifyInstance, kv?: KV): void {
       // Never echo secrets: presence booleans only (§1.6).
       hasOpenRouterKey: models.openrouter,
       smartModels: env.smartModels,
+      suggestModels: env.suggestModels,
       /** True when this deploy can actually answer: a real model, not mock. */
       live: !env.mockAI && Object.values(models).some(Boolean),
       models,
