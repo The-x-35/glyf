@@ -107,8 +107,8 @@ Not in git: `server/.env`, `site/.env.local`, build output, `docs/evidence/*.mp4
 
 | What | Value |
 |---|---|
-| iOS app bundle ID | `com.demo.glyf` |
-| iOS keyboard bundle ID | `com.demo.glyf.keyboard` |
+| iOS app bundle ID | `com.arpit.glyf` (since 2026-09-25, Arpit's own account; was `com.demo.glyf`) |
+| iOS keyboard bundle ID | `com.arpit.glyf.keyboard` (App Group `group.com.arpit.glyf`) |
 | Android application ID | `com.demo.glyf` (IME `com.demo.glyf/.ime.GlyfIME`) |
 | Apple signing team | `XFSL58LKTQ` |
 | App Group | `group.so.glyf.shared` |

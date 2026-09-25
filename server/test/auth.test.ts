@@ -3,7 +3,7 @@ import Fastify from "fastify";
 import { beforeEach, describe, expect, it } from "vitest";
 import { authRoutes } from "../src/routes/auth.js";
 import {
-  issueSession, resetKeyCacheForTests, signInConfig, verifyIdToken, verifySession,
+  audiences, issueSession, resetKeyCacheForTests, signInConfig, verifyIdToken, verifySession,
 } from "../src/lib/identity.js";
 import { Users, type SqlQuery } from "../src/lib/users.js";
 
@@ -73,17 +73,23 @@ describe("Apple and Google ID tokens", () => {
   it("checks Apple's nonce as its SHA-256 and Apple's audience as the bundle id", async () => {
     const { privateKey, jwk } = rsa();
     const apple = {
-      iss: "https://appleid.apple.com", aud: "com.demo.glyf", sub: "001234.abcd",
+      iss: "https://appleid.apple.com", aud: "com.arpit.glyf", sub: "001234.abcd",
       email: "x7@privaterelay.appleid.com", email_verified: "true", iat: SEC - 5, exp: SEC + 600,
       nonce: createHash("sha256").update(NONCE).digest("hex"),
     };
-    const opts = { nonce: NONCE, audiences: ["com.demo.glyf"], fetchImpl: keysFetch(jwk), now: NOW };
+    const opts = { nonce: NONCE, audiences: ["com.arpit.glyf"], fetchImpl: keysFetch(jwk), now: NOW };
     expect(await verifyIdToken("apple", idToken(privateKey, apple), opts))
       .toEqual({ provider: "apple", sub: "001234.abcd", email: "x7@privaterelay.appleid.com", name: undefined });
     expect(await verifyIdToken("apple", idToken(privateKey, { ...apple, nonce: NONCE }), opts)).toBeNull();
     expect(await verifyIdToken("apple", idToken(privateKey, { ...apple, aud: "com.other.app" }), opts)).toBeNull();
     // A Google token is not an Apple one.
     expect(await verifyIdToken("apple", idToken(privateKey, google), opts)).toBeNull();
+  });
+
+  it("takes Apple's audience from APPLE_BUNDLE_ID, one id or a list, and defaults to the shipping app", () => {
+    expect(audiences("apple", {})).toEqual(["com.arpit.glyf"]);
+    expect(audiences("apple", { APPLE_BUNDLE_ID: "com.arpit.glyf, com.demo.glyf" }))
+      .toEqual(["com.arpit.glyf", "com.demo.glyf"]);
   });
 
   it("fetches the keys again when a token names one it has not seen", async () => {

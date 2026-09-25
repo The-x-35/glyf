@@ -193,6 +193,21 @@ abstract final class Auth {
     _testAccount = null;
   }
 
+  /// Deletes the account and everything the server keeps for it (DELETE
+  /// /me: the account, its synced settings and its app events), then signs
+  /// out. False when the server couldn't be reached or refused: nothing is
+  /// signed out then, so it can be tried again. A session the server no
+  /// longer knows (401) has nothing left to delete.
+  static Future<bool> deleteAccount() async {
+    final token = _account?.token;
+    if (token != null) {
+      final reply = await _send('DELETE', '/me', token: token);
+      if (reply == null || (reply.status >= 400 && reply.status != 401)) return false;
+    }
+    await signOut();
+    return true;
+  }
+
   // ── what the server learns ──────────────────────────────────────────────
 
   static Map<String, Object?> _device() {

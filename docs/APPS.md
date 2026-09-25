@@ -37,11 +37,11 @@ Written on 2026-09-16 from the repo state at that time (app code as of commit `c
 
 | Item | Value | Where it is set |
 |---|---|---|
-| iOS app bundle ID | `com.demo.glyf` | `app/ios/Runner.xcodeproj/project.pbxproj` (Runner, 3 configs) |
-| iOS keyboard extension bundle ID | `com.demo.glyf.keyboard` | same file (GlyfKeyboard, 3 configs) |
-| Android applicationId / namespace | `com.demo.glyf` | `app/android/app/build.gradle.kts` |
+| iOS app bundle ID | `com.arpit.glyf` (since 2026-09-25; was `com.demo.glyf`) | `app/ios/Runner.xcodeproj/project.pbxproj` (Runner, 3 configs) |
+| iOS keyboard extension bundle ID | `com.arpit.glyf.keyboard` | same file (GlyfKeyboard, 3 configs) |
+| Android applicationId / namespace | `com.demo.glyf` (unchanged: the iOS move was for the App Store account) | `app/android/app/build.gradle.kts` |
 | Android IME component | `com.demo.glyf/.ime.GlyfIME` | `app/android/app/src/main/AndroidManifest.xml` |
-| App Group (iOS) | `group.so.glyf.shared` | `app/ios/Runner/Runner.entitlements`, `app/ios/GlyfKeyboard/GlyfKeyboard.entitlements` |
+| App Group (iOS) | `group.com.arpit.glyf` (since 2026-09-25; was `group.so.glyf.shared`) | `app/ios/Runner/Runner.entitlements`, `app/ios/GlyfKeyboard/GlyfKeyboard.entitlements`, `AppGroupStore.groupID` |
 | Keychain access group (iOS) | `$(AppIdentifierPrefix)so.glyf.shared` | both entitlements files |
 | Vault key (iOS Keychain) | service `so.glyf.vault`, account `vault-key-v1` | `app/ios/GlyfKeyboard/Engine/VaultStore.swift` |
 | Vault key (Android Keystore) | alias `so.glyf.vault` | `app/android/app/src/main/kotlin/com/demo/glyf/store/VaultStore.kt` |
@@ -106,7 +106,7 @@ The product spec is `SPEC.md` (a working copy of the original `GLYF_BUILD_PROMPT
                           tools, OAuth tokens, meter, Skills hub, telemetry
 ```
 
-- **Flutter container app** (`app/lib`, Dart package `glyf`). Runs unchanged on iOS (Runner) and Android (MainActivity). It owns onboarding, the Home tab (live key map and binding editor), the Build tab (Builder, Packs, your Glyfs, Skills), the Profile tab (plan, settings, vault, notes, vocabulary, themes, contacts search, nearby search, connected tools, tone profile), the dictation recording sheet, and the paywall. The only Dart dependency beyond Flutter is `cupertino_icons`. All platform work goes through the app's own `so.glyf/bridge` channel, not third-party plugins.
+- **Flutter container app** (`app/lib`, Dart package `glyf`). Runs unchanged on iOS (Runner) and Android (MainActivity). It owns onboarding, the Home tab (live key map and binding editor), the Build tab (Builder, Packs, your Glyfs, Skills), the Profile tab (plan, settings, vault, notes, vocabulary, themes, contacts search, nearby search, connected tools, tone profile, and Delete account at the foot: it confirms, calls `DELETE /me` and signs out; the vault and notes stay on the phone), the dictation recording sheet, and the paywall. The only Dart dependency beyond Flutter is `cupertino_icons`. All platform work goes through the app's own `so.glyf/bridge` channel, not third-party plugins.
 - **iOS keyboard extension** (`app/ios/GlyfKeyboard`). Native Swift and UIKit, `UIInputViewController` subclass `GlyfKeyboardViewController`. It is a separate process with a tight memory cap, embedded in `Runner.app/PlugIns/GlyfKeyboard.appex`. **No Flutter, ever** (SPEC 1.1). A build phase ("Glyf CI Guard") fails the Runner build if Flutter links into it.
 - **iOS native host code** (`app/ios/Runner`): `GlyfBridge.swift` (MethodChannel handler), `DictationEngine.swift` (on-device speech), `LocationOnce.swift` (one coarse location fix), `AppDelegate.swift` (test launch arguments, channel attach), `SceneDelegate.swift` (deep links arrive through the scene lifecycle in Flutter 3.44's template).
 - **Swift files compiled into more than one target** (so the app and keyboard share one implementation): `Bridge/AppGroupStore.swift`, `Bridge/IntentStore.swift`, `Bridge/Contracts.generated.swift`, `Engine/SecretScanner.swift`, `Engine/VaultStore.swift`, `Engine/SettingsStore.swift`, `Engine/ToneProfile.swift`, `Engine/NotesStore.swift`. The list lives in `tools/sync_keyboard_files.rb` (`RUNNER_SHARED`).
@@ -163,6 +163,8 @@ These `so.glyf.*` identifiers were **deliberately left unchanged** and must stay
 | URL scheme `glyf://` | The OAuth callback and dictation handoff use it. |
 
 These are reverse-DNS names, not domains. When the domain became tryglyf.com (2026-09-14), only real URLs changed (backend URL, OAuth redirect base, JSON Schema `$id`s, demo text). Reverse-DNS names are a convention, not proof of owning a domain, so the bundle ID also stays `com.demo.glyf`.
+
+**2026-09-25: moved to Arpit's own developer account.** "we need to push at appstore today with our own acc, we were using a friends acc till now, so we can move from com.demo.glyf to com.arpit.glyf". The Console Labs India team (`XFSL58LKTQ`) was a friend's; its App IDs (`com.demo.glyf`, `com.demo.glyf.keyboard`) and App Group (`group.so.glyf.shared`) are registered there and can't be used from another team, so the iOS bundle IDs became `com.arpit.glyf` / `com.arpit.glyf.keyboard` and the App Group `group.com.arpit.glyf`. Arpit: "its okay if old users lose account". Sign in with Apple gives each team different user ids anyway, so nothing would have carried over. The rules in the table above protect people updating the same app; the App Store app is a new one. The keychain group name `so.glyf.shared` was kept: keychain groups carry the team prefix and are never registered. `DEVELOPMENT_TEAM` is empty until Arpit's own team is chosen in Xcode. The server accepts Apple tokens for every id in `APPLE_BUNDLE_ID` (comma-separated). Android stays `com.demo.glyf`.
 
 The keyboard-enabled check in the app is **derived** from the running bundle ID (`Bundle.main.bundleIdentifier + ".keyboard"` in `GlyfBridge.swift`), so it works for any bundle ID. Never hard-code it again (the rename broke it once).
 
@@ -1210,7 +1212,7 @@ xcrun simctl boot 04652CB6-3351-4F5E-934D-EF7A0B7F8585
 open -a Simulator
 xcrun simctl install booted build/ios/iphonesimulator/Runner.app
 pkill -f GlyfKeyboard.appex        # the old extension process survives reinstalls
-xcrun simctl launch booted com.demo.glyf
+xcrun simctl launch booted com.arpit.glyf
 ```
 
 SPEC 10.2 still says `so.glyf.app` for the launch command; the bundle ID is now `com.demo.glyf`.
@@ -1239,7 +1241,7 @@ Manually: **Settings → General → Keyboard → Keyboards → Add New Keyboard
 
 Automation facts:
 
-- On iOS 26, enabled keyboards live in `.GlobalPreferences` under `AppleKeyboards` (entry `com.demo.glyf.keyboard`), not in `com.apple.Preferences`. Pre-enable for CI with `xcrun simctl spawn booted defaults write .GlobalPreferences AppleKeyboards -array "en_US@sw=QWERTY;hw=Automatic" "emoji@sw=Emoji" "com.demo.glyf.keyboard"` and reboot the simulator (`docs/SPIKES.md` shows the old ID).
+- On iOS 26, enabled keyboards live in `.GlobalPreferences` under `AppleKeyboards` (entry `com.arpit.glyf.keyboard` since 2026-09-25), and the keyboard a field opens with is `KeyboardLastUsed` / `KeyboardLastUsedForLanguage` in `com.apple.keyboard.preferences`. The UI tests rely on Glyf being the last used one: they can't find the globe on iOS 26's bottom row. After a bundle rename, rewrite both and reboot the simulator (the old entry `com.demo.glyf.keyboard`), not in `com.apple.Preferences`. Pre-enable for CI with `xcrun simctl spawn booted defaults write .GlobalPreferences AppleKeyboards -array "en_US@sw=QWERTY;hw=Automatic" "emoji@sw=Emoji" "com.demo.glyf.keyboard"` and reboot the simulator (`docs/SPIKES.md` shows the old ID).
 - Full Access has no known defaults key. `test00_GrantFullAccess` drives the real Settings app. The switch's accessible frame spans the whole row, so a center tap hits the label: tap at 94% of the frame width, then tap the alert's last button ("Allow").
 - The first keyboard presentation shows the QuickPath "slide to type" interstitial with a Continue button; tests dismiss it.
 - A new keyboard bundle identity resets Full Access, and a keyboard process started before the grant must be killed (`pkill -f GlyfKeyboard.appex`).
@@ -1379,11 +1381,11 @@ There is no hosted CI pipeline; the scripts are run by hand.
 
 ### 10.9 Signing, App Store Connect, TestFlight
 
-**Team and IDs.** Glyf ships under **Console Labs India Private Limited, team `XFSL58LKTQ`** (Arpit's only paid team; his Apple ID also has a free personal team). Automatic signing on Runner and GlyfKeyboard, all configurations. App ID `com.demo.glyf`, extension `com.demo.glyf.keyboard` (an extension's ID must start with the app's ID). The App Store Connect app record uses `com.demo.glyf`.
+**Team and IDs.** Since 2026-09-25 Glyf ships under **Arpit's own individual developer account**: App ID `com.arpit.glyf`, extension `com.arpit.glyf.keyboard` (an extension's ID must start with the app's ID), App Group `group.com.arpit.glyf`. Automatic signing on Runner and GlyfKeyboard, all configurations; `DEVELOPMENT_TEAM` is empty in the project until his team is picked in Xcode (Signing & Capabilities, both targets), and the first archive from the Xcode GUI registers both App IDs, the App Group and Sign in with Apple. Until then the TestFlight builds lived under a friend's team, **Console Labs India Private Limited (`XFSL58LKTQ`)**, as `com.demo.glyf`; that App Store Connect record may still hold the name "Glyf".
 
 **Capabilities** (Arpit asked "what are the capabilities i need to add to apple app store" on 2026-09-12 20:29; answer updated to the current IDs):
 
-- **Needed now, on both App IDs**: **App Groups**, with the group `group.so.glyf.shared` registered and assigned. **Keychain Sharing** on both targets with group `so.glyf.shared` (added in Xcode; there is no portal checkbox). Both entitlements files already declare them.
+- **Needed now, on both App IDs**: **App Groups**, with the group `group.com.arpit.glyf` registered and assigned. **Keychain Sharing** on both targets with group `so.glyf.shared` (added in Xcode; there is no portal checkbox). **Sign in with Apple** on the app. The entitlements files already declare them.
 - **Later**: **In-App Purchase** on the app (StoreKit 2 subscriptions; enabled by default on App IDs, add the capability in Xcode and create the products in App Store Connect). **Sign in with Apple** only if M8's login offers third-party social sign-in (Guideline 4.8).
 - **Not needed**: Associated Domains (only if deep links move from `glyf://` to universal links), Push Notifications.
 - **Not capabilities but reviewed**: microphone and speech recognition usage strings plus App Privacy answers; `RequestsOpenAccess` (Full Access) in the keyboard's Info.plist, which App Review asks you to justify.

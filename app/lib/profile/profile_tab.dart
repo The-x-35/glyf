@@ -295,6 +295,41 @@ class _ProfileTabState extends State<ProfileTab> {
     widget.onRerunOnboarding();
   }
 
+  /// App Store rule 5.1.1(v): an account made in the app can be deleted in
+  /// the app. What stays on this phone (vault, notes, keyboard settings)
+  /// stays until the app is deleted.
+  Future<void> _deleteAccount() async {
+    final email = Auth.identity().email;
+    final go = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Delete your Glyf account?'),
+        content: Text('${email == null || email.isEmpty ? '' : '\n$email\n\n'}'
+            'Your account and what Glyf keeps for it are deleted for good. '
+            'Your vault and notes stay on this phone.'),
+        actions: [
+          CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (go != true) return;
+    final done = await Auth.deleteAccount();
+    if (!mounted) return;
+    if (!done) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Couldn't reach Glyf. Try again in a moment")));
+      return;
+    }
+    Telemetry.log('account_deleted', {});
+    widget.onRerunOnboarding();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -475,6 +510,18 @@ class _ProfileTabState extends State<ProfileTab> {
             title: 'Replay onboarding',
             onTap: widget.onRerunOnboarding,
           ),
+          if (Auth.signedIn)
+            Center(
+              child: TextButton(
+                key: const Key('profile:delete-account'),
+                onPressed: _deleteAccount,
+                child: const Text('Delete account',
+                    style: TextStyle(
+                        color: Glass.danger,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ),
           const SizedBox(height: 14),
 
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [

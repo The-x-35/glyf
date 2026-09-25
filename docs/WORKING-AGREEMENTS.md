@@ -53,7 +53,7 @@ How Arpit wants Glyf built. These rules come from his direct instructions and fr
   - Keys belong in env files, not pasted in chat.
   - Never print the Neon connection string. Rotate it before launch, because it was pasted in chat.
   - Don't reuse the exposed YouTube key for billed APIs; regenerate it after deploy.
-- **Identifiers:** don't change the `so.glyf.*` App Group, Keychain, MethodChannel or logger names (it would wipe user data on update). The bundle IDs are `com.demo.glyf` and `com.demo.glyf.keyboard`.
+- **Identifiers:** don't change the App Group, Keychain, MethodChannel or logger names of a shipped app (it would wipe user data on update). Since the move to Arpit's own account (2026-09-25) the iOS bundle IDs are `com.arpit.glyf` and `com.arpit.glyf.keyboard` and the App Group is `group.com.arpit.glyf`; Android is still `com.demo.glyf`.
 - **Updates keep user data.** The vault, notes and settings must survive app updates.
 - **Production wiring:** release builds point at `https://api.tryglyf.com`, and debug builds at local servers.
 - **Website builds:** run `next build` in a copy of `site/`, not in place, or the dev server loses its CSS.

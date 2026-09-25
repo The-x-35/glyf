@@ -45,9 +45,9 @@ final class GlyfBridge {
             lastDeepLink = nil
         // §6.18 funnel signals
         case "keyboardEnabled":
-            // Derived, not hardcoded — survives bundle-id changes (device
-            // personal-team builds use com.demo.glyf, the sim so.glyf.app).
-            let kbId = (Bundle.main.bundleIdentifier ?? "so.glyf.app") + ".keyboard"
+            // Derived, not hardcoded: it survives bundle-id changes (the app
+            // was so.glyf.app, then com.demo.glyf, and ships as com.arpit.glyf).
+            let kbId = (Bundle.main.bundleIdentifier ?? "com.arpit.glyf") + ".keyboard"
             let enabled = UITextInputMode.activeInputModes.contains {
                 $0.value(forKey: "identifier") as? String == kbId
             }

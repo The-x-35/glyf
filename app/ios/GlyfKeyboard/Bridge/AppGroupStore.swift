@@ -1,6 +1,6 @@
 import Foundation
 
-/// File-based bridge over the App Group container (`group.so.glyf.shared`).
+/// File-based bridge over the App Group container (`group.com.arpit.glyf`).
 /// Compiled into BOTH the keyboard extension and the Runner app — this file is
 /// the single implementation of the shared store (SPEC §4).
 ///
@@ -8,7 +8,7 @@ import Foundation
 /// Later milestones replace the payloads with intents/results/vault/glyfs
 /// (SPEC §7) and move bulk data to shared SQLite; keep this API shape.
 enum AppGroupStore {
-    static let groupID = "group.so.glyf.shared"
+    static let groupID = "group.com.arpit.glyf"
 
     /// Looked up once: the container's location never changes while the
     /// process lives, and asking the system for it on every read used to be

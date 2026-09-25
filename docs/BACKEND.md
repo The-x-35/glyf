@@ -312,6 +312,9 @@ Every route except the open paths in `lib/protect.ts` (`/health`, `/auth/*`, `/w
 - Response: `{ remaining: number, plan: "free" | "plus" | "max", perDay: number }`: what is left today, on the plan the server is enforcing (the account's row when signed in, free for a phone alone). Capped at 9999.
 - Powers the keyboard's remaining-runs chip and the app's plan card, so the two read the same numbers.
 
+**`DELETE /me`** (`routes/me.ts`)
+- Deletes the signed-in account: its `glyf_users` row, and with it (`on delete cascade`) its synced settings (`glyf_user_prefs`) and app events (`glyf_events`). Response `{ ok: true }`; 503 "Could not delete your account right now" when the database fails. Called by the app's Profile → Delete account since 2026-09-25 (App Store rule 5.1.1(v): an account made in the app can be deleted in the app), which then signs out. Revoking the person's Sign in with Apple token, which Apple also asks for, needs a Sign in with Apple key from the developer account and is not done yet.
+
 **`POST /me/plan`** (`routes/me.ts`)
 - Body `{ plan: "free" | "plus" | "max" }`. The paywall's pick. Changes the account's row only when `PLAN_SELF_SERVE=true` (development and TestFlight); otherwise 403 "Plans arrive with the App Store build". Response `{ ok, stored, plan }`. StoreKit receipts replace this switch at ship.
 

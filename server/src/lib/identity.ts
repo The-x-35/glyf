@@ -12,7 +12,9 @@ import { createHash, createHmac, createPublicKey, timingSafeEqual, verify, type 
  * Config (all public ids except the session secret):
  *   GOOGLE_CLIENT_ID      web client: the audience Android's sign-in asks for
  *   GOOGLE_IOS_CLIENT_ID  iOS client: the audience of tokens from iPhones
- *   APPLE_BUNDLE_ID       the app's bundle id, Apple's audience (com.demo.glyf)
+ *   APPLE_BUNDLE_ID       the app's bundle id, Apple's audience (com.arpit.glyf);
+ *                         a comma-separated list is accepted, so builds from
+ *                         an older bundle id can sign in while they last
  *   SESSION_SECRET        signs Glyf sessions; never leaves the server
  */
 
@@ -59,7 +61,7 @@ async function providerKeys(provider: Provider, fetchImpl: typeof fetch, fresh =
 export function audiences(provider: Provider, env: NodeJS.ProcessEnv = process.env): string[] {
   const ids = provider === "google"
     ? [env.GOOGLE_CLIENT_ID, env.GOOGLE_IOS_CLIENT_ID]
-    : [env.APPLE_BUNDLE_ID || "com.demo.glyf"];
+    : (env.APPLE_BUNDLE_ID || "com.arpit.glyf").split(",");
   return ids.map(s => s?.trim() ?? "").filter(Boolean);
 }
 

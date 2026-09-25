@@ -59,7 +59,7 @@ cd app
 flutter build ios --simulator --debug
 xcrun simctl boot "iPhone 17 Pro"
 xcrun simctl install booted build/ios/iphonesimulator/Runner.app
-xcrun simctl launch booted com.demo.glyf
+xcrun simctl launch booted com.arpit.glyf
 ```
 
 Enable the keyboard once per simulator reset:

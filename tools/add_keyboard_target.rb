@@ -10,9 +10,9 @@
 require 'xcodeproj'
 
 PROJECT_PATH = File.expand_path('../app/ios/Runner.xcodeproj', __dir__)
-GROUP_ID = 'group.so.glyf.shared'
-APP_BUNDLE_ID = 'com.demo.glyf'
-KB_BUNDLE_ID = 'com.demo.glyf.keyboard'
+GROUP_ID = 'group.com.arpit.glyf'
+APP_BUNDLE_ID = 'com.arpit.glyf'
+KB_BUNDLE_ID = 'com.arpit.glyf.keyboard'
 
 project = Xcodeproj::Project.open(PROJECT_PATH)
 runner = project.targets.find { |t| t.name == 'Runner' }
