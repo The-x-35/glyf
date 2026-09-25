@@ -141,7 +141,12 @@ export default function Privacy() {
             <li>
               <strong>Google Calendar and Meet.</strong> If you connect Google, the keyboard adds events to your
               Google Calendar and makes Meet links directly from your phone. The access stays on your phone; we never
-              see your calendar.
+              see your calendar. Glyf uses what Google gives it only for the event or Meet link you ask for, and its
+              use of information received from Google APIs adheres to the{" "}
+              <a href="https://developers.google.com/terms/api-services-user-data-policy">
+                Google API Services User Data Policy
+              </a>
+              , including the Limited Use requirements.
             </li>
             <li>
               <strong>Wallet.</strong> If you use Glyf&rsquo;s wallet, sign-in and signing are handled by Privy or

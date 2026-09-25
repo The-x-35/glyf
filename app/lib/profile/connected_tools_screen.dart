@@ -1,15 +1,17 @@
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
+import '../core/auth.dart';
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 import '../wallet/wallet_screen.dart';
 import 'brand_marks.dart';
 
-/// What Glyf reaches beyond the keyboard: private payments, a booking page,
-/// contacts, and the apps coming next. The calendar and Google Calendar and
-/// Meet are asked for during onboarding and nowhere else.
+/// What Glyf reaches beyond the keyboard: private payments, the phone's
+/// calendar, Google Meet, a booking page, contacts, and the apps coming next.
+/// Onboarding asks for the calendar and Google Meet; this is where someone
+/// who said "Not now" turns them on later.
 class ConnectedToolsScreen extends StatefulWidget {
   const ConnectedToolsScreen({super.key});
 
@@ -18,7 +20,12 @@ class ConnectedToolsScreen extends StatefulWidget {
 }
 
 class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
+  bool _calendar = false;
   bool _contacts = false;
+  /// Google Calendar and Meet: `connected`, `email`, `calendar`, `meet`.
+  Map<String, dynamic> _google = const {'connected': false};
+  /// Google's page is open, or the grant is being taken back.
+  bool _googleBusy = false;
   /// The person's Cal.com or Calendly page, for the keyboard's Book a time.
   String? _booking;
   String? _note;
@@ -30,14 +37,62 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
   }
 
   Future<void> _load() async {
+    final cal = await GlyfBridge.calendarStatus();
+    final google = await GlyfBridge.googleStatus();
     final contacts = await GlyfBridge.contactsStatus();
     final shared = await GlyfBridge.sharedSettings();
     if (!mounted) return;
     setState(() {
+      _calendar = _calendarOn(cal);
+      _google = google;
       _contacts = contacts['enabled'] == true;
       final link = (shared['bookingLink'] as String?)?.trim() ?? '';
       _booking = link.isEmpty ? null : link;
     });
+  }
+
+  /// On when the keyboard can use it: turned on, and still allowed.
+  static bool _calendarOn(Map<String, dynamic> status) =>
+      status['enabled'] == true && (status['permission'] == 'granted' || status['permission'] == 'writeOnly');
+
+  /// The phone asks once; after a refusal only Settings can allow it, and
+  /// taking it back is Settings' too, so there is no off here.
+  Future<void> _enableCalendar() async {
+    final res = await GlyfBridge.calendarEnable();
+    final status = await GlyfBridge.calendarStatus();
+    if (!mounted) return;
+    setState(() {
+      _calendar = res['ok'] == true && _calendarOn(status);
+      _note = _calendar ? null : 'Calendar is off for Glyf. You can allow it in Settings.';
+    });
+    Telemetry.log('tool_connected', {'tool': 'calendar', 'ok': _calendar});
+  }
+
+  /// Meet links, and events in Google Calendar whose guests Google emails.
+  /// The same Google page onboarding opens; off takes the grant back from
+  /// Google too.
+  Future<void> _toggleGoogle(bool on) async {
+    if (_googleBusy) return;
+    setState(() => _googleBusy = true);
+    if (!on) {
+      await GlyfBridge.googleDisconnect();
+      if (!mounted) return;
+      setState(() {
+        _googleBusy = false;
+        _google = const {'connected': false};
+      });
+      Telemetry.log('tool_disconnected', {'tool': 'google'});
+      return;
+    }
+    final error = await Auth.connectGoogle();
+    final status = await GlyfBridge.googleStatus();
+    if (!mounted) return;
+    setState(() {
+      _googleBusy = false;
+      _google = status;
+      _note = error;
+    });
+    Telemetry.log('tool_connected', {'tool': 'google', 'ok': status['meet'] == true});
   }
 
   /// Which service a booking link belongs to ("calcom", "calendly"), or null
@@ -166,6 +221,22 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
         padding: const EdgeInsets.fromLTRB(20, 6, 20, 40),
         children: [
           _magicBlock(),
+          const SizedBox(height: 12),
+          _toolCard(
+            brand: 'calendar',
+            title: 'Calendar',
+            useCase: 'Share an event, or when you’re free, straight into a chat.',
+            trailing: _calendar ? _onBadge('tools:calendar') : _actionPill('Turn on', 'tools:calendar', _enableCalendar),
+          ),
+          const SizedBox(height: 12),
+          _toolCard(
+            brand: 'meet',
+            title: 'Google Meet',
+            useCase: _google['meet'] == true
+                ? (_google['email'] as String? ?? 'Connected')
+                : 'Send a Meet link or a calendar invite from the keyboard.',
+            trailing: _switch(_google['meet'] == true, _toggleGoogle, 'tools:google'),
+          ),
           const SizedBox(height: 12),
           _toolCard(
             brand: _booking == null ? 'booking' : (bookingProvider(_booking!) ?? 'booking'),
@@ -300,6 +371,15 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
             decoration: BoxDecoration(color: Glass.ink, borderRadius: BorderRadius.circular(20)),
             child: Text(label, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Colors.white)),
           ),
+        ),
+      );
+
+  Widget _onBadge(String id) => Semantics(
+        identifier: id,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          decoration: BoxDecoration(color: const Color(0x1F1FA968), borderRadius: BorderRadius.circular(20)),
+          child: const Text('On', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Glass.success)),
         ),
       );
 

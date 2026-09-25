@@ -134,7 +134,7 @@ object GoogleClient {
  *  Google connected, or when Google says no, there is no link and `note`
  *  says what to do. The twin of CallLink in GoogleClient.swift. */
 object CallLink {
-    const val CONNECT_FIRST = "Sign in with Google in Glyf to make Meet links"
+    const val CONNECT_FIRST = "Connect Google Meet in Glyf › Connected tools"
 
     fun make(ctx: Context, done: (url: String?, note: String?) -> Unit) {
         if (!GoogleAccess.hasMeet(ctx)) {

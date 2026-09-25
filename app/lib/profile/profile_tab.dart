@@ -65,6 +65,7 @@ class _ProfileTabState extends State<ProfileTab> {
     final tone = await GlyfBridge.toneProfile();
     final contacts = await GlyfBridge.contactsStatus();
     final calendar = await GlyfBridge.calendarStatus();
+    final google = await GlyfBridge.googleStatus();
     final nearby = await GlyfBridge.locationStatus();
     final up = await GlyfApi.healthy();
     final meter = await GlyfApi.meterStatus();
@@ -78,7 +79,13 @@ class _ProfileTabState extends State<ProfileTab> {
       _serverPlan = meter?.plan;
       _perDay = meter?.perDay;
       _contactsOn = contacts['enabled'] == true;
-      _connectedTools = (_contactsOn ? 1 : 0) + (calendar['enabled'] == true ? 1 : 0);
+      final booking = (settings['bookingLink'] as String?)?.trim() ?? '';
+      _connectedTools = [
+        _contactsOn,
+        calendar['enabled'] == true,
+        google['meet'] == true,
+        booking.isNotEmpty,
+      ].where((on) => on).length;
       _nearbyOn = nearby['enabled'] == true;
       _displayName = (onboarding['displayName'] as String?) ??
           Auth.identity().name ??

@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 class BrandMark extends StatelessWidget {
   const BrandMark(this.brand, {super.key, this.size = 44});
 
-  /// magicblock | calendar | contacts | gmail | gcal | notion | slack | spotify
-  /// | calcom | calendly | booking
+  /// magicblock | calendar | contacts | gmail | gcal | meet | notion | slack |
+  /// spotify | calcom | calendly | booking
   final String brand;
   final double size;
 
@@ -29,9 +29,11 @@ class BrandMark extends StatelessWidget {
         border: border == null ? null : Border.all(color: border, width: 0.8),
       ),
       clipBehavior: Clip.antiAlias,
-      child: brand == 'calendar'
-          ? _PhoneCalendar(size)
-          : CustomPaint(painter: _MarkPainter(brand)),
+      child: switch (brand) {
+        'calendar' => _PhoneCalendar(size),
+        'meet' => Center(child: GoogleMeetMark(size: size * 0.58)),
+        _ => CustomPaint(painter: _MarkPainter(brand)),
+      },
     );
   }
 }

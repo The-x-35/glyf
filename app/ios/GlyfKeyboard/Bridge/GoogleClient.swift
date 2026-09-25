@@ -153,7 +153,7 @@ final class GoogleClient {
 /// Google connected, or when Google says no, there is no link and `note`
 /// says what to do.
 enum CallLink {
-    static let connectFirst = "Sign in with Google in Glyf to make Meet links"
+    static let connectFirst = "Connect Google Meet in Glyf › Connected tools"
 
     static func make(_ done: @escaping (_ url: String?, _ note: String?) -> Void) {
         guard GoogleAccess.hasMeet else {

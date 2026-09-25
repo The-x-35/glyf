@@ -798,6 +798,91 @@ final class GlyfScenarioUITests: XCTestCase {
         note("message '\(message)'")
     }
 
+    func testS135_ACalendarNeverAskedForPointsToConnectedTools() throws {
+        // Run with the calendar never asked for (`simctl privacy reset
+        // calendar`), as after "Not now" in onboarding: Settings has no
+        // Calendars switch for Glyf until the app has asked once.
+        open()
+        clear()
+        guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
+        c.press(forDuration: 0.7)
+        let hint = host.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Connected tools")).firstMatch
+        XCTAssertTrue(hint.waitForExistence(timeout: 6), "the calendar doesn't say where to turn it on")
+        note("calendar says '\(hint.label)'")
+        keepScreenshot("calendar-never-asked")
+    }
+
+    func testS136_ConnectedToolsTurnsOnCalendarAndGoogleMeetLater() throws {
+        // Straight after S135: the calendar still never asked for, and Google
+        // Meet connected through the stand-in, as whom it says.
+        resetGoogle()
+        app.launchArguments = ["--glyf-skip-onboarding", "--glyf-test-signed-in",
+                               "--glyf-test-google", Self.fakeGoogle]
+        app.launch()
+        guard let profile = wait("tab:profile", 10) else { return XCTFail("no Profile tab") }
+        sleep(2)
+        profile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Connected tools")).firstMatch
+        for _ in 0..<4 where !(row.exists && row.isHittable) {
+            app.swipeUp()
+            usleep(600_000)
+        }
+        guard row.waitForExistence(timeout: 4) else { return XCTFail("no Connected tools on Profile") }
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+
+        guard let meet = wait("tools:google", 8) else { return XCTFail("no Google Meet in Connected tools") }
+        // Each card reads as one label: its title, then the account or the pitch.
+        func card(_ text: String) -> XCUIElement {
+            app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        }
+        XCTAssertTrue(card("sim@example.com").waitForExistence(timeout: 3),
+                      "Google Meet doesn't show the connected account")
+        XCTAssertEqual("\(meet.value ?? "")", "1", "Google Meet's switch should be on")
+        guard let calendar = wait("tools:calendar", 3) else { return XCTFail("no Calendar in Connected tools") }
+        XCTAssertTrue(calendar.label.contains("Turn on"), "calendar reads '\(calendar.label)'")
+        note("before: calendar '\(calendar.label)', meet switch \(meet.value ?? "?")")
+
+        // The phone's own question, answered yes.
+        calendar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        var asked = ""
+        for host in [springboard, app] where host.alerts.firstMatch.waitForExistence(timeout: 5) {
+            let alert = host.alerts.firstMatch
+            asked = alert.label
+            let allow = alert.buttons["Allow Full Access"]
+            (allow.exists ? allow : alert.buttons.element(boundBy: alert.buttons.count - 1)).tap()
+            break
+        }
+        XCTAssertFalse(asked.isEmpty, "turning Calendar on didn't ask the phone")
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, el("tools:calendar").label != "On" { usleep(300_000) }
+        XCTAssertEqual(el("tools:calendar").label, "On", "Calendar didn't turn on")
+        keepScreenshot("tools-on")
+
+        // Off takes the grant back.
+        meet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let pitch = card("Send a Meet link")
+        XCTAssertTrue(pitch.waitForExistence(timeout: 5), "Google Meet didn't turn off")
+        XCTAssertFalse(card("sim@example.com").exists, "the account is still shown")
+        XCTAssertEqual("\(el("tools:google").value ?? "")", "0", "Google Meet's switch should be off")
+        keepScreenshot("tools-meet-off")
+
+        // On again opens Google's own page. The test stops at the phone's
+        // "wants to use google.com" and cancels: never a real account.
+        el("tools:google").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        var sheet = ""
+        for host in [springboard, app] where host.alerts.firstMatch.waitForExistence(timeout: 8) {
+            let alert = host.alerts.firstMatch
+            sheet = alert.label
+            let cancel = alert.buttons["Cancel"]
+            (cancel.exists ? cancel : alert.buttons.element(boundBy: 0)).tap()
+            break
+        }
+        XCTAssertTrue(sheet.contains("google.com"), "Connect didn't open Google's sign-in (saw '\(sheet)')")
+        XCTAssertTrue(pitch.waitForExistence(timeout: 4), "a cancelled Connect should leave Google Meet off")
+        note("calendar asked '\(asked)'; connect asked '\(sheet)'")
+    }
+
     func testS114_NewEventWithAMeetCallOnThePhone() throws {
         // Meet granted, Calendar unticked: the event is the phone's own, with
         // a Google Meet link of the person's.

@@ -521,12 +521,16 @@ final class CalendarSurface: UIView {
                 agendaStack.addArrangedSubview(r)
             }
         } else if !showingMonth {
-            // The calendar is asked for during onboarding; after that it is
-            // the phone's to allow, so say where.
+            // The app asks for the calendar (onboarding, or Connected tools
+            // for someone who said "Not now"). Settings only lists Calendars
+            // for Glyf once the app has asked, so a refusal is Settings' to
+            // undo and a question never asked is the app's.
             agendaStack.addArrangedSubview(note(
                 CalendarWriter.access(hasFullAccess: hasFullAccess) == .needsFullAccess
                     ? "Turn on Allow Full Access for Glyf in Settings"
-                    : "Allow Calendars in Settings › Apps › Glyf"))
+                    : CalendarWriter.neverAsked
+                        ? "Turn on Calendar in Glyf › Connected tools"
+                        : "Allow Calendars in Settings › Apps › Glyf"))
         }
         agenda.isHidden = showingMonth
         freeButton.isHidden = !connected || showingMonth

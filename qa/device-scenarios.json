@@ -454,9 +454,9 @@
   "id": "S129",
   "surface": "iPhone",
   "area": "Strip",
-  "title": "The strip starts with Glyf's key, the site's pill a little taller, light and dark",
+  "title": "The strip starts with Glyf's key, the app icon's mark, light and dark",
   "input": "open the keyboard in Glyf (light), then in Messages with the phone dark; tap the key",
-  "outcome": "face #1D1D1F (0.11) on light and black (0.00) on dark, dot #7C5CFF on both; the key opens the Glyf menu",
+  "outcome": "face #17181C (0.09) on light and white (1.00) on dark, violet #7C5CFF where the icon puts the dot on both; the key opens the Glyf menu",
   "verdict": "pass",
   "fixed": false
  },
@@ -479,5 +479,25 @@
   "outcome": "3 lives; score 90 after two seconds; back shows the games",
   "verdict": "pass",
   "fixed": false
+ },
+ {
+  "id": "S135",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "A calendar never asked for points to Connected tools",
+  "input": "calendar permission reset (as after “Not now” in onboarding) → hold C",
+  "outcome": "“Turn on Calendar in Glyf › Connected tools”: iOS Settings has no Calendars switch for Glyf until the app has asked",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S136",
+  "surface": "iPhone",
+  "area": "Calendar",
+  "title": "Connected tools turns on Calendar and Google Meet later",
+  "input": "Google Meet connected (stand-in), calendar never asked → Profile → Connected tools → Turn on → Allow Full Access → Google Meet off → on",
+  "outcome": "Calendar reads On after the phone’s “Glyf would like full access to your Calendar”; Google Meet showed the account, turned off, and on again opened “Glyf wants to use accounts.google.com to Sign In” (cancelled there)",
+  "verdict": "pass",
+  "fixed": true
  }
 ]

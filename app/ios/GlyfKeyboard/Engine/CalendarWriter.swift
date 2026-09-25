@@ -32,6 +32,12 @@ enum CalendarWriter {
         }
     }
 
+    /// The app has never asked for the calendar, so Settings has no switch
+    /// for it yet.
+    static var neverAsked: Bool {
+        EKEventStore.authorizationStatus(for: .event) == .notDetermined
+    }
+
     /// Whether events can be read too (write-only access adds but can't list).
     static var canRead: Bool {
         EKEventStore.authorizationStatus(for: .event) == .fullAccess

@@ -49,10 +49,16 @@ final class CalendarSync {
         }
     }
 
+    /// UI tests' seeded day (`--glyf-seed-calendar`) stays as written.
+    var keepSeed = false
+
     /// Refreshes the file when calendar is on; called at launch and whenever
-    /// the app comes back, so the keyboard sees today's changes.
+    /// the app comes back, so the keyboard sees today's changes. Once the
+    /// phone no longer allows the calendar, the old copy goes too: the
+    /// keyboard would otherwise keep showing it as if it were allowed.
     func refreshIfEnabled() {
-        guard enabled, permission == "granted" else { return }
+        guard enabled, !keepSeed else { return }
+        guard permission == "granted" else { return disable() }
         _ = sync()
     }
 

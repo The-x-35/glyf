@@ -46,6 +46,7 @@ import UIKit
     }
     if args.contains("--glyf-seed-calendar"), let dir = AppGroupStore.bridgeDir {
       // UI tests: a known day in the keyboard's calendar.
+      CalendarSync.shared.keepSeed = true
       let cal = Calendar.current
       let iso = ISO8601DateFormatter()
       let today = cal.startOfDay(for: Date())
