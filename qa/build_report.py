@@ -70,6 +70,8 @@ ANDROID_INPUT = {
     "S127": "Google not connected → calendar → + → “lunch with sam tomorrow 1pm” → Add",
     "S128": "M bound to Meet link, Google connected (stand-in) → hold M",
     "S130": "open the keyboard, light then dark (uimode night); tap the key",
+    "S133": "g → Games → Snake → swipe up → tap",
+    "S134": "g → Games → Chomp → tap, wait 2s → swipe down → ‹",
 }
 ANDROID_FIXED = {"S85", "S86", "S87", "S88", "S89", "S90", "S91"}
 

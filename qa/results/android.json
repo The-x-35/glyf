@@ -198,8 +198,22 @@
  {
   "id": "S130",
   "area": "Android",
-  "title": "The strip starts with Glyf's key, black with the violet dot, light and dark",
+  "title": "The strip starts with Glyf's key, the site's pill a little taller, light and dark",
   "verdict": "pass",
-  "note": "light: face 0.07, dot 124 92 255; dark: face 0.07, dot 124 92 255; tap opens the menu"
+  "note": "light: face 0.11, dot 124 92 255; dark: face 0.00, dot 124 92 255; tap opens the menu"
+ },
+ {
+  "id": "S133",
+  "area": "Android",
+  "title": "Snake from the g menu turns with a swipe",
+  "verdict": "pass",
+  "note": "'ready, score 0, heading right, length 3' → swipe up → 'playing, heading up' → tap → 'paused'"
+ },
+ {
+  "id": "S134",
+  "area": "Android",
+  "title": "Chomp eats its way along the maze",
+  "verdict": "pass",
+  "note": "'ready, score 0, lives 3, level 1' → tap, 2s → 'playing, score 90'; back shows the games"
  }
 ]

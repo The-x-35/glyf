@@ -206,6 +206,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 views.put(org.json.JSONObject()
                     .put("id", qaId ?: v.contentDescription?.toString() ?: "")
                     .put("text", (v as? TextView)?.text?.toString() ?: "")
+                    .put("desc", v.contentDescription?.toString() ?: "")
                     .put("x", loc[0] + v.width / 2).put("y", loc[1] + v.height / 2)
                     .put("w", v.width).put("h", v.height))
             }
@@ -345,10 +346,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         toolbar.removeAllViews()
         val ink = if (dark) Color.WHITE else Color.rgb(18, 18, 20)
 
-        // Glyf's own key, the same as iOS's: black, the app icon's g and the
-        // violet dot (GlyfMark), black on every sheet with a faint ring on a
-        // dark one. The view is the tap target; the key is drawn inside it.
-        val g = GlyfKeyView(this, dp(28).toFloat())
+        // Glyf's own key, the same as iOS's and the site's: a black pill 41 by
+        // 30 with the white g and the violet dot (GlyfMark), a faint ring on a
+        // dark sheet. The view is the tap target; the key is drawn inside it.
+        val g = GlyfKeyView(this, dp(30).toFloat())
         g.dark = dark
         g.ink = ink
         g.apply {
@@ -365,7 +366,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             setOnLongClickListener { openApp(); true }
         }
-        toolbar.addView(g, LinearLayout.LayoutParams(dp(44), dp(36)))
+        toolbar.addView(g, LinearLayout.LayoutParams(dp(52), dp(38)))
         toolIcons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -423,6 +424,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "dictation" -> { dismissFeaturePanel(); startVoiceTyping() }
             "vault" -> showVaultPanel()
             "calendar" -> showCalendarPanel()
+            "games" -> showGamesPanel()
             "glyfs" -> showMyGlyfsPanel()
             "shorthand" -> showShorthandPanel()
             "keys" -> showKeysPanel()
@@ -2787,6 +2789,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var featurePanel: View? = null
 
     private fun dismissFeaturePanel() {
+        (featurePanel as? GamesPanelView)?.stop()
         featurePanel?.let { root.removeView(it) }
         featurePanel = null
         emojiBoard = null
@@ -3048,6 +3051,19 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** The Calendar tool: a month and the chosen day's events, in place of
      *  the keys (iOS CalendarSurface). */
+    /** g menu → Games: Snake and Chomp over the keys, the strip staying put. */
+    private fun showGamesPanel() {
+        dismissFeaturePanel()
+        val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
+        keyboard.visibility = View.GONE
+        val panel = GamesPanelView(this, keyboard.palette())
+        root.addView(panel, root.indexOfChild(keyboard),
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, keysH))
+        featurePanel = panel
+        gPill?.closing = true
+    }
+
     private fun showCalendarPanel(): CalendarPanelView {
         dismissFeaturePanel()
         val keysH = if (keyboard.height > 0) keyboard.height else dp(216)

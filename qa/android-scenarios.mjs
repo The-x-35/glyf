@@ -719,16 +719,17 @@ const scenarios = [
   } },
   { id: "S130", title: "The strip starts with Glyf's key, black with the violet dot, light and dark", run: async () => {
     await fresh();
-    // The key is drawn 28dp tall in the middle of its 44dp view (GlyfKeyView):
-    // sample its face beside the letter and the middle of its dot.
+    // The key is drawn 41 by 30dp in the middle of its 52dp view
+    // (GlyfKeyView): sample its face beside the letter and the middle of its
+    // 6dp dot, 18% down and 20% in from the right.
     const look = async () => {
       const s = await state();
       const g = find(s, v => v.id === "toolbar:glyf");
       if (!g) return null;
-      const dp = g.w / 44, kh = Math.round(28 * dp), kw = Math.round(kh * 1.154);
+      const dp = g.w / 52, kh = 30 * dp, kw = Math.round(kh * 1.367);
       const left = g.x - kw / 2, top = g.y - kh / 2;
-      const face = [Math.round(left + 0.1 * kh), Math.round(g.y + 0.1 * kh)];
-      const dot = [Math.round(left + kw - 0.135 * kh - 0.096 * kh), Math.round(top + 0.135 * kh + 0.096 * kh)];
+      const face = [Math.round(left + 5 * dp), Math.round(g.y)];
+      const dot = [Math.round(left + kw * 0.8 - 0.1 * kh), Math.round(top + 0.18 * kh + 0.1 * kh)];
       const png = execFileSync(ADB, ["exec-out", "screencap", "-p"], { maxBuffer: 64e6 });
       const file = new URL("./results/android-key.png", import.meta.url);
       writeFileSync(file, png);
@@ -761,7 +762,69 @@ const scenarios = [
     return { pass: ok(light) && ok(dark) && menu,
       note: `light: ${fmt(light)}; dark: ${fmt(dark)}; tap opens the menu: ${menu}` };
   } },
+  { id: "S133", title: "Snake from the g menu turns with a swipe", run: async () => {
+    const board = await openGame("snake");
+    if (!board) return { pass: false, note: "g menu → Games → Snake didn't open" };
+    const ready = board.desc;
+    shell(`input swipe ${board.x} ${board.y + 60} ${board.x} ${board.y - 90} 120`);
+    await sleep(1000);
+    const moving = find(await state(), v => v.id === "games:board")?.desc ?? "";
+    await screenshot("S133-snake");
+    await tapXY(board.x, board.y);
+    await sleep(500);
+    const paused = find(await state(), v => v.id === "games:board")?.desc ?? "";
+    tool("close");
+    return { pass: ready.startsWith("ready") && moving.includes("playing") && moving.includes("heading up")
+      && paused.startsWith("paused"), note: `'${ready}' → swipe up → '${moving}' → tap → '${paused}'` };
+  } },
+  { id: "S134", title: "Chomp eats its way along the maze", run: async () => {
+    const board = await openGame("chomp");
+    if (!board) return { pass: false, note: "g menu → Games → Chomp didn't open" };
+    const ready = board.desc;
+    await tapXY(board.x, board.y);
+    await sleep(2000);
+    const running = find(await state(), v => v.id === "games:board")?.desc ?? "";
+    shell(`input swipe ${board.x} ${board.y - 60} ${board.x} ${board.y + 90} 120`);
+    await sleep(800);
+    await screenshot("S134-chomp");
+    const score = Number((running.match(/score (\d+)/) ?? [])[1] ?? 0);
+    const back = find(await state(), v => v.id === "games:back");
+    if (back) await tapXY(back.x, back.y);
+    await sleep(500);
+    const picker = !!find(await state(), v => v.id === "games:chomp");
+    tool("close");
+    return { pass: ready.includes("lives 3") && score > 0 && picker,
+      note: `'${ready}' → tap, 2s → '${running}'; back shows the games: ${picker}` };
+  } },
 ];
+
+// g menu → Games (scrolling the grid to the tile, as a thumb would) → a game.
+async function openGame(game) {
+  await fresh();
+  let s = await state();
+  const g = find(s, v => v.id === "toolbar:glyf");
+  if (!g) return null;
+  await tapXY(g.x, g.y);
+  await sleep(600);
+  // The grid scrolls inside the panel: swipe it up until the tile's bottom
+  // clears the gesture bar at the foot of the screen.
+  const screenH = Number(shell("wm size").match(/(\d+)x(\d+)/)[2]);
+  for (let i = 0; i < 5; i++) {
+    s = await state();
+    const tile = find(s, v => v.id === "shell:tile:games");
+    if (!tile) return null;
+    if (tile.y + tile.h / 2 < screenH - 170) { await tapXY(tile.x, tile.y); break; }
+    shell(`input swipe ${g.x + 200} ${screenH - 300} ${g.x + 200} ${screenH - 700} 300`);
+    await sleep(600);
+  }
+  await sleep(600);
+  s = await state();
+  const card = find(s, v => v.id === `games:${game}`);
+  if (!card) return null;
+  await tapXY(card.x, card.y);
+  await sleep(600);
+  return find(await state(), v => v.id === "games:board");
+}
 
 const only = process.env.ONLY ? new Set(process.env.ONLY.split(",")) : null;
 const results = [];

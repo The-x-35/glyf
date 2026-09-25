@@ -2,7 +2,7 @@
 
 Run on 24 and 25 September 2026 (the two app flows, S99 and S100, by hand on 17 September): the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
 
-124 pass, 2 need a key, 2 fail, of 128.
+128 pass, 2 need a key, 2 fail, of 132.
 
 | ID | Where | Scenario | Result |
 | --- | --- | --- | --- |
@@ -132,8 +132,12 @@ Run on 24 and 25 September 2026 (the two app flows, S99 and S100, by hand on 17 
 | S126 | Android | New Event with a guest goes to Google Calendar, which invites them | pass |
 | S127 | Android | Without Google, New Event goes into the message | pass |
 | S128 | Android | A key held for a Meet link | pass |
-| S129 | iPhone | The strip starts with Glyf's key, black with the violet dot, light and dark | pass |
-| S130 | Android | The strip starts with Glyf's key, black with the violet dot, light and dark | pass |
+| S129 | iPhone | The strip starts with Glyf's key, the site's pill a little taller, light and dark | pass |
+| S130 | Android | The strip starts with Glyf's key, the site's pill a little taller, light and dark | pass |
+| S131 | iPhone | Snake from the g menu turns with a swipe | pass |
+| S132 | iPhone | Chomp eats its way along the maze | pass |
+| S133 | Android | Snake from the g menu turns with a swipe | pass |
+| S134 | Android | Chomp eats its way along the maze | pass |
 
 ## Fixed during the run
 

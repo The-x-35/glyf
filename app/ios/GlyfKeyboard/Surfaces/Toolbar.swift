@@ -84,6 +84,7 @@ final class GlyfToolbar: UIView {
         "keys": "keyboard",
         "pay": "creditcard",
         "calendar": "calendar",
+        "games": "gamecontroller",
         "settings": "gearshape",
     ]
 
@@ -116,8 +117,7 @@ final class GlyfToolbar: UIView {
         // keyboard extension.
         glyfButton.backgroundColor = Glass.touchableGrid
         glyfButton.layer.cornerCurve = .continuous
-        keycap.fillColor = Glass.brandInk.cgColor
-        keycap.lineWidth = 1
+        keycap.lineWidth = 0.5
         keycapG.fillColor = UIColor.white.cgColor
         keycapDot.fillColor = Glass.accentPrimary.cgColor
         for layer in [keycap, keycapG, keycapDot] {
@@ -239,10 +239,11 @@ final class GlyfToolbar: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// The key stays black on every sheet. On a dark one a faint ring keeps
-    /// it from melting into the backdrop (Android's pill does the same).
+    /// The site's key: near-black on a light sheet, black with a faint ring
+    /// on a dark one so it doesn't melt into the backdrop.
     private func applyKeycapRing() {
-        keycap.strokeColor = Glass.chromeDark ? UIColor.white.withAlphaComponent(0.16).cgColor : nil
+        keycap.fillColor = GlyfMark.face(dark: Glass.chromeDark).cgColor
+        keycap.strokeColor = Glass.chromeDark ? UIColor.white.withAlphaComponent(0.18).cgColor : nil
     }
 
     /// Re-skins after an appearance flip (items re-tint via reloadItems;
@@ -613,11 +614,13 @@ final class GlyfToolbar: UIView {
         let band = Glass.stripBand
         let h = bounds.height - band
         let mid = band + h / 2 - Glass.stripLift
-        // The key is as tall as the suggestion card (26pt on this strip: the
-        // lifted middle leaves no more above it), and a little wider than
-        // tall, so the dot has its own corner, clear of the letter.
+        // The key is 41 by 30, the site's pill a little taller. The lifted
+        // middle leaves only 13pt above it on iOS 26, which clips anything
+        // drawn above the strip, so a key this tall stands on the strip's
+        // top edge instead: its centre two points under the icons'.
         let target = Glass.stripBox(height: 38, mid: mid)
-        let keyH = min((h * 0.72).rounded(), target.height)
+        let keyH: CGFloat = 30
+        let keyMid = max(mid, keyH / 2)
         let keyW = GlyfMark.keycapWidth(height: keyH)
         // The button carries its own target: the key plus the tools' padding
         // sideways, plus the air a symbol keeps inside its box, so the key
@@ -627,7 +630,7 @@ final class GlyfToolbar: UIView {
         glyfButton.frame = CGRect(x: inkX - padX, y: target.y,
                                   width: keyW + padX * 2, height: target.height)
         glyfButton.layer.cornerRadius = 9
-        let cap = GlyfMark.Keycap(height: keyH, x: padX, midY: mid - target.y)
+        let cap = GlyfMark.Keycap(height: keyH, x: padX, midY: keyMid - target.y)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for layer in [keycap, keycapG, keycapDot] { layer.frame = glyfButton.bounds }

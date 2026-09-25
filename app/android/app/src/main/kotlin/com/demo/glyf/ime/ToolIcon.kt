@@ -322,6 +322,15 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 c.drawLine(cx - dp(8.4f), cy - dp(2f), cx + dp(8.4f), cy - dp(2f), p)
                 c.drawLine(cx - dp(5.6f), cy + dp(2.8f), cx - dp(1.6f), cy + dp(2.8f), p)
             }
+            // A game controller: a rounded body, a cross on the left, two buttons.
+            "games" -> {
+                c.drawRoundRect(cx - dp(9f), cy - dp(5.6f), cx + dp(9f), cy + dp(5.6f),
+                    dp(5.6f), dp(5.6f), p)
+                c.drawLine(cx - dp(6f), cy, cx - dp(2f), cy, p)
+                c.drawLine(cx - dp(4f), cy - dp(2f), cx - dp(4f), cy + dp(2f), p)
+                c.drawCircle(cx + dp(3.2f), cy + dp(1f), dp(1f), fill)
+                c.drawCircle(cx + dp(5.6f), cy - dp(1.4f), dp(1f), fill)
+            }
         }
     }
 
@@ -346,7 +355,7 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
             "vault" to "Vault", "calendar" to "Calendar", "clipboard" to "Clipboard", "emoji" to "Emoji",
             "ask" to "Ask Glyf", "dictation" to "Voice", "glyfs" to "My glyfs",
             "shorthand" to "Shorthand", "keys" to "Keys", "pay" to "Pay",
-            "settings" to "Settings",
+            "games" to "Games", "settings" to "Settings",
         )
     }
 }

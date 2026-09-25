@@ -663,19 +663,134 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.chip(for: "$13", fields: [], rates: home))
     }
 
+    // MARK: Games
+
+    func testSnakeTurnsWrapsAndNeverDoublesBack() {
+        let game = SnakeGame(cols: 10, rows: 5, seed: 7)
+        XCTAssertEqual(game.body.first, Games.Cell(x: 5, y: 2))
+        game.step()
+        XCTAssertEqual(game.body.first, Games.Cell(x: 6, y: 2))
+        game.turn(.left)                       // straight back: ignored
+        game.turn(.up)
+        game.step()
+        XCTAssertEqual(game.body.first, Games.Cell(x: 6, y: 1))
+        game.step(); game.step()
+        XCTAssertEqual(game.body.first, Games.Cell(x: 6, y: 4), "off the top, in at the bottom")
+        XCTAssertEqual(game.body.count, 3)
+    }
+
+    func testSnakeGrowsWhenItEatsAndFoodNeverLandsOnIt() {
+        let game = SnakeGame(cols: 12, rows: 6, seed: 3)
+        var steps = 0
+        while game.score < 3 && steps < 400 {
+            // Head for the food: across first, then up or down.
+            let head = game.body[0], food = game.food
+            if head.x != food.x { game.turn(food.x > head.x ? .right : .left) }
+            else if head.y != food.y { game.turn(food.y > head.y ? .down : .up) }
+            XCTAssertFalse(game.body.contains(food))
+            if game.step() == .crashed { break }
+            steps += 1
+        }
+        XCTAssertEqual(game.score, 3)
+        XCTAssertEqual(game.body.count, 6)
+        XCTAssertLessThan(game.interval, 0.151)
+    }
+
+    func testSnakeEndsWhenItRunsIntoItself() {
+        let body = (0..<6).map { Games.Cell(x: 6 - $0, y: 3) }   // head at 6, heading right
+        let game = SnakeGame(cols: 12, rows: 6, seed: 1, body: body)
+        game.turn(.up); game.step()
+        game.turn(.left); game.step()
+        game.turn(.down)
+        XCTAssertEqual(game.step(), .crashed)
+        XCTAssertTrue(game.over)
+    }
+
+    func testChompMazeIsOneWholeMaze() {
+        let game = ChompGame(seed: 1)
+        XCTAssertEqual(game.pellets.count, 107)
+        XCTAssertEqual(game.powers.count, 4)
+        // Every pellet can be reached from the start, through the side tunnel too.
+        var seen: Set<Games.Cell> = [game.start], queue = [game.start]
+        while let c = queue.popLast() {
+            for d in Games.Dir.allCases {
+                let n = game.next(c, d)
+                if game.open(n), seen.insert(n).inserted { queue.append(n) }
+            }
+        }
+        XCTAssertTrue(game.pellets.isSubset(of: seen))
+        XCTAssertTrue(game.powers.isSubset(of: seen))
+    }
+
+    func testChompEatsAsItRunsAndTurnsWhenTheMazeLetsIt() {
+        let game = ChompGame(seed: 1)
+        game.wanted = .up                      // a wall above the start: kept for later
+        game.step(); game.step(); game.step()
+        XCTAssertEqual(game.player, Games.Cell(x: 7, y: 7))
+        XCTAssertEqual(game.score, 30)
+        game.step()
+        XCTAssertEqual(game.player, Games.Cell(x: 7, y: 6), "turned up at the first opening")
+        XCTAssertEqual(game.heading, .up)
+    }
+
+    func testGhostsLeaveThePenThroughTheDoor() {
+        let game = ChompGame(seed: 1)
+        var through = false
+        for _ in 0..<6 {
+            game.step()
+            if game.ghosts[0].at == game.door { through = true }
+        }
+        XCTAssertTrue(through)
+        XCTAssertEqual(game.ghosts[0].state, .roaming)
+        XCTAssertFalse(game.open(game.door), "Chomp can't go in")
+    }
+
+    func testAPowerPelletMakesGhostsEdible() {
+        let game = ChompGame(seed: 1)
+        game.stage(player: Games.Cell(x: 2, y: 1), heading: .left, ghost: Games.Cell(x: 8, y: 1))
+        XCTAssertEqual(game.step(), [.power])
+        XCTAssertTrue(game.ghosts[0].scared)
+        XCTAssertGreaterThan(game.frightened, 0)
+        game.stage(player: Games.Cell(x: 1, y: 1), heading: .right, ghost: Games.Cell(x: 2, y: 1))
+        let events = game.step()
+        XCTAssertTrue(events.contains(.ghost(200)))
+        XCTAssertEqual(game.score, 50 + 10 + 200)
+        // An eaten ghost is back in the pen, waiting to come out again.
+        XCTAssertEqual(game.ghosts[0].at, game.pen[0])
+        if case .home = game.ghosts[0].state {} else { XCTFail("an eaten ghost waits in the pen") }
+    }
+
+    func testAGhostCostsALifeAndClearingTheMazeStartsTheNext() {
+        let game = ChompGame(seed: 1)
+        game.stage(player: Games.Cell(x: 5, y: 3), heading: .right, ghost: Games.Cell(x: 6, y: 3), ghostDir: .left)
+        XCTAssertTrue(game.step().contains(.caught))
+        XCTAssertEqual(game.lives, 2)
+        XCTAssertEqual(game.player, game.start)
+        XCTAssertGreaterThan(game.pause, 0)
+        game.stage(player: Games.Cell(x: 2, y: 3), heading: .left, pellets: [Games.Cell(x: 1, y: 3)])
+        XCTAssertEqual(game.step(), [.pellet, .cleared])
+        XCTAssertEqual(game.level, 2)
+        XCTAssertEqual(game.pellets.count, 107)
+        XCTAssertLessThan(game.interval, 0.14)
+    }
+
     // MARK: The brand key
 
-    func testTheMarkIsTheIconsLetterAndItsDotKeepsClear() {
-        // The outline spans its ink box exactly: 1 tall, the icon's aspect wide.
+    func testTheKeyIsTheSitesGWithItsDotAtTheShoulder() {
+        // The outline spans its ink box exactly: 1 tall, the letter's aspect wide.
         let box = GlyfMark.gPath(in: CGRect(x: 0, y: 0, width: 0, height: 100)).boundingBoxOfPath
         XCTAssertEqual(box.height, 100, accuracy: 0.5)
         XCTAssertEqual(box.width / box.height, GlyfMark.gAspect, accuracy: 0.002)
-        // The strip's key: 30 by 26, the dot inside it and clear of the letter.
-        let cap = GlyfMark.Keycap(height: 26, x: 0, midY: 13)
-        XCTAssertEqual(cap.key.size, CGSize(width: 30, height: 26))
+        // The strip's key: 41 by 30, the letter centred on its bowl, the 6pt
+        // dot beside the letter's top, clear of it and inside the key.
+        let cap = GlyfMark.Keycap(height: 30, x: 0, midY: 15)
+        XCTAssertEqual(cap.key.size, CGSize(width: 41, height: 30))
+        XCTAssertEqual(cap.dot.size, CGSize(width: 6, height: 6))
         XCTAssertTrue(cap.key.contains(cap.dot))
         XCTAssertTrue(cap.key.contains(cap.letter))
-        XCTAssertGreaterThan(cap.dot.minX - cap.letter.maxX, 3, "the dot has its own corner")
+        XCTAssertEqual(cap.letter.midX, cap.key.midX, accuracy: 0.01)
+        XCTAssertGreaterThan(cap.dot.minX, cap.letter.maxX, "the dot never touches the letter")
+        XCTAssertLessThan(cap.dot.minY, cap.letter.minY, "the dot sits at the letter's shoulder")
     }
 
     // MARK: The model's suggestion

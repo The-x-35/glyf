@@ -454,9 +454,29 @@
   "id": "S129",
   "surface": "iPhone",
   "area": "Strip",
-  "title": "The strip starts with Glyf's key, black with the violet dot, light and dark",
+  "title": "The strip starts with Glyf's key, the site's pill a little taller, light and dark",
   "input": "open the keyboard in Glyf (light), then in Messages with the phone dark; tap the key",
-  "outcome": "face 0.07 and dot #7C5CFF on both sheets; the key opens the Glyf menu",
+  "outcome": "face #1D1D1F (0.11) on light and black (0.00) on dark, dot #7C5CFF on both; the key opens the Glyf menu",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S131",
+  "surface": "iPhone",
+  "area": "Games",
+  "title": "Snake from the g menu turns with a swipe",
+  "input": "g → Games → Snake → swipe up → tap",
+  "outcome": "ready → playing, heading up → paused",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S132",
+  "surface": "iPhone",
+  "area": "Games",
+  "title": "Chomp eats its way along the maze",
+  "input": "g → Games → Chomp → tap, wait 2s → swipe down → ‹",
+  "outcome": "3 lives; score 90 after two seconds; back shows the games",
   "verdict": "pass",
   "fixed": false
  }

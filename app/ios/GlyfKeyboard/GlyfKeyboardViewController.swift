@@ -98,6 +98,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var emoji: EmojiBoard?
     /// Gboard's clipboard: its own header, pinned and recent as card columns.
     private var clipboardPanel: ClipboardPanel?
+    /// g menu → Games: Snake and Chomp over the key area.
+    private var games: GamesSurface?
     private var connector: ConnectorSurface?
     /// The Calendar tool: a month and the chosen day's events.
     private var calendarView: CalendarSurface?
@@ -113,7 +115,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var cursorMirror: CursorMirror?
     private var lastCursorAdjust: CFTimeInterval = 0
 
-    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard }
+    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard, games }
     private var surface: Surface = .none
 
     /// When set, key input routes into an inline editor (bar prompt / emoji search).
@@ -183,7 +185,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // emoji search.
         case .connector where calendarView?.editingTitle == true:
             return base + EventComposer.editStripHeight
-        case .shell, .connector, .act, .clipboard: return base
+        case .shell, .connector, .act, .clipboard, .games: return base
         }
     }
 
@@ -535,6 +537,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // (The g menu keeps the tools on the strip: see keepTools below.)
         case .emoji where emoji?.searchActive != true: return ("face.smiling", "Emoji")
         case .act: return ("sparkles", "Glyf")
+        case .games: return ("gamecontroller", "Games")
         case .connector where connector?.searchActive != true: return ("calendar", "Calendar")
         default: return (nil, nil)
         }
@@ -736,6 +739,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = true
             act?.frame = panelRect(w, h)
+        case .games:
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            keyboardView.isHidden = true
+            games?.frame = panelRect(w, h)
         case .clipboard:
             // Gboard's clipboard owns the whole keyboard, strip included.
             toolbar.isHidden = true
@@ -765,7 +773,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             for overlay in [self.shell, self.bar, self.emoji, self.connector,
                             self.search, self.noteEdit, self.hud, self.calendarView,
                             self.tonesPopup, self.act, self.clipStrip,
-                            self.clipboardPanel] as [UIView?] {
+                            self.clipboardPanel, self.games] as [UIView?] {
                 overlay?.alpha = 1
             }
             self.view.layoutIfNeeded()
@@ -806,6 +814,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             actTask?.cancel(); actTask = nil
             act?.removeFromSuperview(); act = nil
         case .clipboard: clipboardPanel?.removeFromSuperview(); clipboardPanel = nil
+        case .games: games?.stop(); games?.removeFromSuperview(); games = nil
         case .none: break
         }
         inlineTarget = nil
@@ -878,6 +887,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
             content.addSubview(a)
             prepareEntrance(a, animated: animated)
             act = a
+        case .games:
+            let g = GamesSurface()
+            content.addSubview(g)
+            prepareEntrance(g, animated: animated)
+            games = g
+            MemoryLogger.logSurface("games")
         case .none:
             break
         }
@@ -1142,6 +1157,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return .other(close: emoji?.searchActive == true ? "emoji:close" : "emoji:abc|emoji:letters")
         case .connector:
             return .other(close: "toolbar:close|connector:close")
+        case .games:
+            return .other(close: "toolbar:close")
         case .noteEdit:
             return .other(close: "noteedit:close")
         case .bar:
@@ -2328,6 +2345,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         // Paying is signed in the app's wallet, never in the keyboard.
         case "pay": setSurface(.none); openApp(path: "wallet")
         case "calendar": setSurface(.connector("calendar"))
+        case "games": setSurface(.games)
         case "vault", "glyfs", "shorthand", "keys", "settings":
             if surface != .shell { setSurface(.shell) }
             shell?.push(id)

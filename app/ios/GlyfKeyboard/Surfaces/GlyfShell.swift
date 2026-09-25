@@ -104,7 +104,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         ("vault", "Vault"), ("calendar", "Calendar"), ("clipboard", "Clipboard"), ("emoji", "Emoji"),
         ("ask", "Ask Glyf"), ("dictation", "Voice"), ("glyfs", "My glyfs"),
         ("shorthand", "Shorthand"), ("keys", "Keys"), ("pay", "Pay"),
-        ("settings", "Settings"),
+        ("games", "Games"), ("settings", "Settings"),
     ]
 
     /// The saved order, with tools added since it was saved at the end.

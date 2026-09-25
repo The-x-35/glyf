@@ -915,6 +915,62 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertNotNil(wait("vault:card:0", 4), "holding S should open the vault")
     }
 
+    // MARK: - Games
+
+    /// g menu → Games, scrolling the grid to the tile the way a thumb would.
+    private func openGames() -> Bool {
+        tap("toolbar:glyf")
+        guard let first = wait("shell:tile:search", 3) else { return false }
+        let tile = el("shell:tile:games")
+        for _ in 0..<4 where !(tile.exists && tile.isHittable) {
+            first.swipeUp()
+            usleep(400_000)
+        }
+        guard tile.exists else { return false }
+        tile.tap()
+        return wait("games:snake", 3) != nil
+    }
+
+    private var boardState: String { (el("games:board").value as? String) ?? "" }
+
+    func testS131_SnakeFromTheMenuTurnsWithASwipe() throws {
+        open()
+        XCTAssertTrue(openGames(), "g menu → Games shows the games")
+        keepScreenshot("games-picker")
+        tap("games:snake")
+        guard let board = wait("games:board", 3) else { return XCTFail("no board") }
+        XCTAssertTrue(boardState.hasPrefix("ready"), "waits for a swipe: \(boardState)")
+        board.swipeUp()
+        sleep(1)
+        note("after a swipe up: \(boardState)")
+        XCTAssertTrue(boardState.contains("playing"), boardState)
+        XCTAssertTrue(boardState.contains("heading up"), boardState)
+        keepScreenshot("snake")
+        board.tap()
+        XCTAssertTrue(boardState.hasPrefix("paused"), "a tap pauses: \(boardState)")
+        tap("toolbar:close")
+        XCTAssertNotNil(wait("key:a", 3), "closing the game brings the letters back")
+    }
+
+    func testS132_ChompEatsItsWayAlong() throws {
+        open()
+        XCTAssertTrue(openGames(), "g menu → Games shows the games")
+        tap("games:chomp")
+        guard let board = wait("games:board", 3) else { return XCTFail("no board") }
+        XCTAssertTrue(boardState.contains("lives 3"), boardState)
+        board.tap()
+        sleep(2)
+        note("two seconds in: \(boardState)")
+        let score = Int(boardState.components(separatedBy: "score ").last?.prefix { $0.isNumber } ?? "") ?? 0
+        XCTAssertGreaterThan(score, 0, "Chomp eats the pellets in its way")
+        board.swipeDown()
+        sleep(1)
+        keepScreenshot("chomp")
+        tap("games:back")
+        XCTAssertNotNil(wait("games:chomp", 3), "back goes to the games")
+        tap("toolbar:close")
+    }
+
     // MARK: - The brand key
 
     /// The strip starts with Glyf's own key, as on Android: black, the app
@@ -949,9 +1005,10 @@ final class GlyfScenarioUITests: XCTestCase {
     }
 
     /// The key's face beside its letter, and the middle of its dot. The key
-    /// sits 15pt inside its button (the tools' padding plus a symbol's air),
-    /// is 30 by 26 and centred on the button, with the dot 3.5pt in from its
-    /// top right corner (GlyfMark.Keycap).
+    /// sits 15pt inside its button (the tools' padding plus a symbol's air)
+    /// and, 41 by 30 on iOS 26, stands on the strip's top edge with the
+    /// button; its 6pt dot is 18% down and 20% in from the right
+    /// (GlyfMark.Keycap).
     private func keycapColors(_ button: XCUIElement) -> (face: CGFloat, dot: (r: CGFloat, g: CGFloat, b: CGFloat), violet: Bool) {
         let shot = XCUIScreen.main.screenshot().image
         guard let cg = shot.cgImage, let data = cg.dataProvider?.data,
@@ -963,9 +1020,9 @@ final class GlyfScenarioUITests: XCTestCase {
             return (CGFloat(bytes[i]), CGFloat(bytes[i + 1]), CGFloat(bytes[i + 2]))
         }
         let f = button.frame
-        let keyX = f.minX + 15, keyTop = f.midY - 13
-        let face = rgb(CGPoint(x: keyX + 3.5, y: f.midY + 2))
-        let dot = rgb(CGPoint(x: keyX + 30 - 3.5 - 2.5, y: keyTop + 3.5 + 2.5))
+        let keyX = f.minX + 15, keyTop = f.minY
+        let face = rgb(CGPoint(x: keyX + 5, y: keyTop + 15))
+        let dot = rgb(CGPoint(x: keyX + 41 * 0.8 - 3, y: keyTop + 30 * 0.18 + 3))
         let lum = (0.299 * face.r + 0.587 * face.g + 0.114 * face.b) / 255
         let violet = dot.b > 200 && dot.r > 80 && dot.r < 175 && dot.g < 140
         return (lum, dot, violet)
