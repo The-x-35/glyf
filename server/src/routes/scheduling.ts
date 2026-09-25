@@ -1,16 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
 /**
- * Call links and booking links for the keyboard's calendar.
+ * Booking links for the keyboard's calendar.
  *
- * A call link: `POST /meetings/new`. With `DAILY_API_KEY` it is a Daily room
- * (anyone joins in the browser, no accounts; Daily's free tier is 10,000
- * minutes a month). Without it, a Jitsi Meet link: free, but since August
- * 2023 the first person in signs in (Google, GitHub or Facebook) to start the
- * call, and guests wait until then. Google Meet and Zoom need the person's
- * own sign-in and an app review, so they wait for the OAuth broker.
+ * Call links are Google Meet only, made by the keyboard itself with the
+ * person's own Google grant (nothing here).
  *
  * Booking links: `GET /scheduling/slots?link=` reads a Cal.com or Calendly
  * link. Cal.com's API answers a public event's open times with no key (v2
@@ -72,12 +67,6 @@ export function bookingUrl(link: BookingLink, date?: string, slotUtc?: string): 
   }
   if (slotUtc && link.provider === "calcom") u.searchParams.set("slot", slotUtc);
   return u.toString();
-}
-
-export function jitsiLink(): string {
-  // Unguessable enough that nobody wanders in: 10 random letters and digits.
-  const id = randomBytes(12).toString("base64url").replace(/[-_]/g, "").slice(0, 10);
-  return `https://meet.jit.si/Glyf-${id}`;
 }
 
 /** `CALCOM_API_BASE` points at a fake for device tests; never set in production. */
@@ -144,33 +133,6 @@ function calMessage(body: unknown): string {
 }
 
 export function schedulingRoutes(app: FastifyInstance) {
-  app.post("/meetings/new", async () => {
-    const key = process.env.DAILY_API_KEY?.trim();
-    if (key) {
-      try {
-        const res = await fetch("https://api.daily.co/v1/rooms", {
-          method: "POST",
-          headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-          // A week to use it, the pre-join screen so people check their camera.
-          body: JSON.stringify({
-            privacy: "public",
-            properties: { exp: Math.floor(Date.now() / 1000) + 7 * 86_400, enable_prejoin_ui: true },
-          }),
-          signal: AbortSignal.timeout(6000),
-        });
-        if (res.ok) {
-          const room = await res.json() as { url?: string };
-          if (room.url) return { url: room.url, provider: "daily" };
-        } else {
-          app.log.warn({ status: res.status }, "daily room refused");
-        }
-      } catch (err) {
-        app.log.warn({ err: String(err) }, "daily room failed");
-      }
-    }
-    return { url: jitsiLink(), provider: "jitsi" };
-  });
-
   const slotsQuery = z.object({
     link: z.string().min(3).max(300),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

@@ -53,7 +53,6 @@ final class CalendarSurface: UIView {
     private let agenda = UIScrollView()
     private let agendaStack = UIStackView()
     private let freeButton = UIButton(type: .system)
-    private let connectButton = UIButton(type: .system)
     private let dateButton = UIButton(type: .system)
 
     init(hasFullAccess: Bool = false) {
@@ -126,7 +125,6 @@ final class CalendarSurface: UIView {
             if self.composer?.editingTitle != true { self.delegate?.connectorSearchDismissed() }
             self.delegate?.connectorLayoutChanged()
         }
-        c.onOpenApp = { [weak self] path in self?.delegate?.connectorOpenApp(path: path) }
         addSubview(c)
         composer = c
         // Laid out before it shows, so no control flashes at the corner.
@@ -165,15 +163,18 @@ final class CalendarSurface: UIView {
         setNeedsLayout()
     }
 
-    /// A call link, straight into the message: the person's own Google Meet
-    /// when Google is connected.
+    /// The person's own Google Meet link, straight into the message. Without
+    /// Google connected the calendar stays open and says how to get one.
     private func insertCallLink() {
         callButton.isEnabled = false
         CallLink.make { [weak self] url, note in
             guard let self else { return }
             self.callButton.isEnabled = true
-            self.delegate?.connectorInsert("Join me on a call: \(url)")
-            if let note { self.delegate?.connectorToast(note) }
+            if let url {
+                self.delegate?.connectorInsert("Join me on a call: \(url)")
+            } else if let note {
+                KeyboardToast.show(in: self, text: note)
+            }
         }
     }
 
@@ -383,12 +384,6 @@ final class CalendarSurface: UIView {
         }, for: .touchUpInside)
         addSubview(dateButton)
 
-        styleAction(connectButton, title: "Connect calendar")
-        connectButton.accessibilityIdentifier = "calendar:connect"
-        connectButton.addAction(UIAction { [weak self] _ in
-            self?.delegate?.connectorOpenApp(path: "connected")
-        }, for: .touchUpInside)
-        addSubview(connectButton)
     }
 
     private func styleAction(_ b: UIButton, title: String) {
@@ -468,7 +463,6 @@ final class CalendarSurface: UIView {
             weekdayLabels.forEach { $0.isHidden = true }
             dayButtons.forEach { $0.isHidden = true }
             freeButton.isHidden = true
-            connectButton.isHidden = true
             dateButton.isHidden = true
             setNeedsLayout()
             return
@@ -527,13 +521,15 @@ final class CalendarSurface: UIView {
                 agendaStack.addArrangedSubview(r)
             }
         } else if !showingMonth {
-            // Not connected yet: say so, rather than leave a blank band
-            // between the date and the button that fixes it.
-            agendaStack.addArrangedSubview(note("Your calendar is not connected yet"))
+            // The calendar is asked for during onboarding; after that it is
+            // the phone's to allow, so say where.
+            agendaStack.addArrangedSubview(note(
+                CalendarWriter.access(hasFullAccess: hasFullAccess) == .needsFullAccess
+                    ? "Turn on Allow Full Access for Glyf in Settings"
+                    : "Allow Calendars in Settings › Apps › Glyf"))
         }
         agenda.isHidden = showingMonth
         freeButton.isHidden = !connected || showingMonth
-        connectButton.isHidden = connected || showingMonth
         dateButton.isHidden = showingMonth
         dateButton.accessibilityLabel = "Insert \(Self.dateText(selected))"
         setNeedsLayout()
@@ -674,8 +670,6 @@ final class CalendarSurface: UIView {
             for b in [dateButton, freeButton, bookButton] { b.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold) }
         }
         for b in [dateButton, freeButton, bookButton] { b.layer.cornerRadius = actionH / 2 }
-        connectButton.frame = freeButton.frame
-        connectButton.layer.cornerRadius = actionH / 2
         agenda.frame = CGRect(x: pad, y: headerH + 2, width: w, height: max(0, actionY - headerH - 10))
         let stackH = agendaStack.systemLayoutSizeFitting(
             CGSize(width: w, height: UIView.layoutFittingCompressedSize.height),

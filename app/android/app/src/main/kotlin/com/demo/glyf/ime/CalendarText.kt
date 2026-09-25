@@ -31,9 +31,9 @@ object CalendarText {
         ctx.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
-    /** Allowed, and turned on in the app's Connected tools. */
-    fun connected(ctx: Context): Boolean =
-        granted(ctx) && ctx.getSharedPreferences("glyf", Context.MODE_PRIVATE).getBoolean("calendarOn", false)
+    /** Allowed. The calendar is asked for during onboarding, and after that
+     *  it is Android's to allow in Settings: allowed means on. */
+    fun connected(ctx: Context): Boolean = granted(ctx)
 
     /** Events touching [fromMs, toMs), from every calendar on the phone. */
     fun load(ctx: Context, fromMs: Long, toMs: Long): List<Event> {

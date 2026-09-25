@@ -469,14 +469,18 @@ const scenarios = [
   // Call links, Book a time and invites (2026-09-24). S118 to S120 need the
   // stand-in Cal.com and Resend (qa/fake-scheduling.mjs on 8796) behind the
   // dev server; they never book or mail anyone real.
-  { id: "S117", title: "A call link from the keyboard's calendar", run: async () => {
+  { id: "S117", title: "Without Google, the camera sends no other kind of call link", run: async () => {
     await calendarOn();
     await fresh();
     tool("calendar");
     const call = await waitFor(byId("calendar:call"), 4000);
     if (!call) return { pass: false, note: "no call button on the calendar" };
-    const r = await tapFor(call, x => /Join me on a call: https:\/\/\S+/.test(x), 6000);
-    return { pass: /Join me on a call: https:\/\/\S+/.test(r.t), note: `message '${r.t}'${second(r)}` };
+    await tapXY(call.x, call.y);
+    await sleep(2500);
+    // Call links are Google Meet only: the keyboard asks for Google instead.
+    const t = await text();
+    const still = await waitFor(byId("calendar:call"), 1000);
+    return { pass: t === "" && !!still, note: `message '${t}'; calendar ${still ? "still open" : "closed"}` };
   } },
   { id: "S118", title: "Book a time on your own page for someone, with a guest", run: async () => {
     await fetch(`${FAKE}/_reset`);
@@ -617,14 +621,15 @@ const scenarios = [
     const title = await tapOpen(plus, byId("event:title"));
     if (!title) return { pass: false, note: "New Event didn't open" };
     const invitees = find(await state(), byId("event:invitees"));
+    const video = find(await state(), byId("event:video"));
     if (!(await tapOpen(title, byId("event:title:field")))) return { pass: false, note: "no title strip" };
     await type("lunch with sam tomorrow 1pm");
     await key("return");
     const add = await waitFor(byId("event:add"), 3000);
     if (!add) return { pass: false, note: "no Add" };
     const r = await tapFor(add, x => x.includes("📅 Lunch with sam"), 6000);
-    return { pass: !invitees && r.t.includes("📅 Lunch with sam"),
-      note: `${invitees ? "an Invitees row showed without Google; " : ""}message '${r.t}'${second(r)}` };
+    return { pass: !invitees && !video && r.t.includes("📅 Lunch with sam"),
+      note: `${invitees ? "an Invitees row showed without Google; " : ""}${video ? "a Video call row showed without Google; " : ""}message '${r.t}'${second(r)}` };
   } },
   { id: "S128", title: "A key held for a Meet link", run: async () => {
     await fetch(`${FAKE_GOOGLE}/_reset`);

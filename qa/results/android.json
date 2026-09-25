@@ -109,28 +109,28 @@
   "area": "Android",
   "title": "New Event from the keyboard's calendar lands in the calendar",
   "verdict": "pass",
-  "note": "starts '1:00 PM', hint 'Fri 25 Sep, 1:00–2:00 PM', message '📅 Lunch with sam · Fri 25 Sep, 1:00–2:00 PM'"
+  "note": "starts '1:00 PM', hint 'Sat 26 Sep, 1:00–2:00 PM', message '📅 Lunch with sam · Sat 26 Sep, 1:00–2:00 PM'"
  },
  {
   "id": "S112",
   "area": "Android",
   "title": "A plan in a message offers Add to calendar",
   "verdict": "pass",
-  "note": "chip 'Dinner · Tomorrow 8:00 PM', starts '8:00 PM', message 'dinner friday 8pm'"
+  "note": "chip 'Dinner · Fri 2 Oct 8:00 PM', starts '8:00 PM', message 'dinner friday 8pm'"
  },
  {
   "id": "S117",
   "area": "Android",
-  "title": "A call link from the keyboard's calendar",
+  "title": "Without Google, the camera sends no other kind of call link",
   "verdict": "pass",
-  "note": "message 'Join me on a call: https://meet.jit.si/Glyf-Y2VCWdPHKt'"
+  "note": "message ''; calendar still open"
  },
  {
   "id": "S118",
   "area": "Android",
   "title": "Book a time on your own page for someone, with a guest",
   "verdict": "pass",
-  "note": "hint 'Sam lee · sam@example.com · 1 guest'; booked Sam lee <sam@example.com> + ria@example.com; message 'Booked for Fri 25 Sep, 10:00 AM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1'. Re-run alone: in the full run the dev server answered one request with a 500 before reaching the stand-in"
+  "note": "hint 'Sam lee · sam@example.com · 1 guest'; booked Sam lee <sam@example.com> + ria@example.com; message 'Booked for Fri 25 Sep, 10:00 AM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1'"
  },
  {
   "id": "S120",
@@ -144,28 +144,28 @@
   "area": "Android",
   "title": "A Meet link from the calendar, with Google connected",
   "verdict": "pass",
-  "note": "message 'Join me on a call: https://meet.google.com/rrj-cyam-mfe'; Meet links made 1"
+  "note": "message 'Join me on a call: https://meet.google.com/bxj-bpag-msz'; Meet links made 1"
  },
  {
   "id": "S126",
   "area": "Android",
   "title": "New Event with a guest goes to Google Calendar, which invites them",
   "verdict": "pass",
-  "note": "event 'Review' for sam@example.com, sendUpdates=all; message '📅 Review · Fri 25 Sep, 3:00–4:00 PM · https://meet.google.com/hkj-gccv-dpu'"
+  "note": "event 'Review' for sam@example.com, sendUpdates=all; message '📅 Review · Fri 2 Oct, 3:00–4:00 PM · https://meet.google.com/cvk-vvbc-fbl'"
  },
  {
   "id": "S127",
   "area": "Android",
   "title": "Without Google, New Event goes into the message",
   "verdict": "pass",
-  "note": "message '📅 Lunch with sam · Fri 25 Sep, 1:00–2:00 PM'"
+  "note": "message '📅 Lunch with sam · Sat 26 Sep, 1:00–2:00 PM'"
  },
  {
   "id": "S128",
   "area": "Android",
   "title": "A key held for a Meet link",
   "verdict": "pass",
-  "note": "message 'Join me on a call: https://meet.google.com/giy-naiz-htk'"
+  "note": "message 'Join me on a call: https://meet.google.com/tna-vxfm-ckc'"
  },
  {
   "id": "S97",

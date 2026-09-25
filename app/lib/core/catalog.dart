@@ -55,8 +55,13 @@ abstract final class Catalog {
 
   static GlyfMeta byId(String id) => glyfs.firstWhere(
         (g) => g.id == id,
-        orElse: () => GlyfMeta(id, _customTitles[id] ?? id, 'Custom glyf', '✨'),
+        orElse: () => GlyfMeta(id, _customTitles[id] ?? untitled(id), 'Custom glyf', '✨'),
       );
+
+  /// What a glyf is called when its name is lost: never its id
+  /// ("user.d24774a1" means nothing to anyone).
+  static String untitled(String id) =>
+      id.startsWith('user.') || id.startsWith('hub.') ? 'Untitled glyf' : id;
 
   /// Display names for builder/hub glyfs, mirrored from shared settings
   /// (`customTitles`) by whoever loads settings — keeps byId() sync.

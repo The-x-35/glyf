@@ -336,9 +336,9 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
             "calendarStatus" -> {
                 val granted = ctx.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) ==
                     android.content.pm.PackageManager.PERMISSION_GRANTED
-                val on = ctx.getSharedPreferences("glyf", Context.MODE_PRIVATE).getBoolean("calendarOn", false)
+                // Allowed means on: the calendar is asked for during onboarding.
                 result.success(JSONObject(mapOf(
-                    "enabled" to (granted && on),
+                    "enabled" to granted,
                     "permission" to if (granted) "granted" else "denied",
                 )).toString())
             }

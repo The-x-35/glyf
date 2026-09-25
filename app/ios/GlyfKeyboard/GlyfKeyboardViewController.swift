@@ -1954,14 +1954,16 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             case "surface:tones":
                 self.showTonesPopup()
             case "connector:meet":
-                // A fresh call link, straight into the message: the person's
-                // own Google Meet when Google is connected.
+                // A fresh Google Meet link, straight into the message.
                 CallLink.make { [weak self] url, note in
                     guard let self else { return }
-                    self.hostInsert(Self.spaced("Join me on a call: \(url)", after: self.beforeContext))
-                    self.syncAutoShift()
-                    self.updateCandidates()
-                    if let note { KeyboardToast.show(in: self.content, text: note) }
+                    if let url {
+                        self.hostInsert(Self.spaced("Join me on a call: \(url)", after: self.beforeContext))
+                        self.syncAutoShift()
+                        self.updateCandidates()
+                    } else if let note {
+                        KeyboardToast.show(in: self.content, text: note)
+                    }
                 }
             case let id where id.hasPrefix("surface:"):
                 // Other "surface:" bindings open shell screens (M4: S → vault).

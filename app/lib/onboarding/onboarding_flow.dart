@@ -18,8 +18,10 @@ import 'tour_preview.dart';
 import 'tour_scenarios.dart';
 
 /// Onboarding: sign in with Apple or Google, meet the orb, tell it what to
-/// remember, make the keyboard yours, turn it on, then an offer to see the
-/// website's chats played on the real keyboard (or skip straight to home).
+/// remember, make the keyboard yours, turn it on, nearby search, the
+/// calendar (the phone's, and Google Calendar and Meet when sign-in didn't
+/// bring them: these are asked here and nowhere else), then an offer to see
+/// the website's chats played on the real keyboard (or skip straight to home).
 /// One screen, steps slide through an AnimatedSwitcher (no PageView, so
 /// both humans and UI tests can address everything directly).
 class OnboardingFlow extends StatefulWidget {
@@ -40,7 +42,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   // 'connect' (Google calendar/mail) is out of the flow until the connector
   // works end to end; it stays reachable from Profile › Connected tools.
   List<String> _steps = const [
-    'signin', 'meet', 'details', 'feel', 'setup', 'nearby', 'tour'
+    'signin', 'meet', 'details', 'feel', 'setup', 'nearby', 'calendar', 'tour'
   ];
   int _step = 0;
 
@@ -96,6 +98,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   String? _connectNote;
   bool _locationOn = false;
   String? _locationNote;
+  /// The calendar step: the phone's calendar for the keyboard, and Google
+  /// Meet (Google Calendar and Meet) when sign-in didn't bring it.
+  bool _calendarOn = false;
+  bool _calendarAsked = false;
+  bool _meetOn = false;
+  String? _calendarNote;
   Timer? _poll;
 
   // Sign-in
@@ -123,6 +131,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       // Choices made on the way here were saved as they were made.
       if (at > _steps.indexOf('feel')) unawaited(_loadFeel());
       if (resume == 'nearby') unawaited(_loadLocation());
+      if (resume == 'calendar') unawaited(_loadCalendarStep());
       if (resume == 'details') _prefillFromAccount();
       if (resume == 'setup') {
         _setupSince = DateTime.now().toUtc();
@@ -276,6 +285,42 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     Telemetry.log('onboarding_location', {'granted': _locationOn});
   }
 
+  /// What the calendar step starts from: a Google sign-in may have brought
+  /// Google Calendar and Meet already.
+  Future<void> _loadCalendarStep() async {
+    final cal = await GlyfBridge.calendarStatus();
+    final google = await GlyfBridge.googleStatus();
+    if (!mounted) return;
+    setState(() {
+      _calendarOn = cal['enabled'] == true;
+      _meetOn = google['meet'] == true;
+    });
+  }
+
+  Future<void> _enableCalendar() async {
+    final res = await GlyfBridge.calendarEnable();
+    if (!mounted) return;
+    setState(() {
+      _calendarAsked = true;
+      _calendarOn = res['ok'] == true;
+      _calendarNote = _calendarOn ? null : 'Calendar is off for Glyf. You can allow it in Settings.';
+    });
+    Telemetry.log('onboarding_calendar', {'granted': _calendarOn});
+  }
+
+  Future<void> _connectMeet() async {
+    setState(() => _busy = true);
+    final error = await Auth.connectGoogle();
+    final google = await GlyfBridge.googleStatus();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _meetOn = google['meet'] == true;
+      _calendarNote = error;
+    });
+    Telemetry.log('onboarding_google_meet', {'granted': _meetOn});
+  }
+
   /// Where the keyboard gets to speak for itself: type one letter with Glyf
   /// and it reports Full Access, which nothing else on the phone can tell us.
   Widget _tryHere() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -353,6 +398,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (leaving == 'feel') unawaited(_saveFeel());
     if (_steps[_step] == 'details') _prefillFromAccount();
     if (_steps[_step] == 'setup') _setupSince = DateTime.now().toUtc();
+    if (_steps[_step] == 'calendar') unawaited(_loadCalendarStep());
     if (_steps[_step] == 'tour') _completing ??= _complete();
     if (_steps[_step] == 'connect' && _googleScopes.isEmpty) {
       // Persona decides the SUGGESTION; the checklist is the user's call.
@@ -856,6 +902,37 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           if (_locationOn) const SizedBox(height: 20),
         ]);
 
+      case 'calendar':
+        final calendarDone = _calendarOn || _calendarAsked;
+        return _frame(children: [
+          const Spacer(flex: 2),
+          const Text('Plan it where you chat',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
+          const SizedBox(height: 22),
+          _statusRow(const Text('📅', style: TextStyle(fontSize: 20)), 'Calendar', _calendarOn,
+              'onb:calendar:phone'),
+          const SizedBox(height: 10),
+          _statusRow(const GoogleMeetMark(size: 24), 'Google Meet', _meetOn, 'onb:calendar:google'),
+          if (_calendarNote != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(_calendarNote!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
+            ),
+          const Spacer(flex: 3),
+          if (!calendarDone)
+            _pill('Turn on calendar', onTap: _enableCalendar)
+          else if (!_meetOn)
+            _pill('Connect Google Meet', onTap: _busy ? null : _connectMeet)
+          else
+            _pill('Continue', onTap: _advance),
+          if (!(calendarDone && _meetOn)) _skip(label: 'Not now'),
+          if (calendarDone && _meetOn) const SizedBox(height: 20),
+        ]);
+
       case 'connect':
         return _frame(children: [
           const SizedBox(height: 30),
@@ -1027,6 +1104,25 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           onPressed: onTap ?? _advance,
           child: Text(label,
               style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
+        ),
+      );
+
+  /// One thing the step turns on, and whether it is on.
+  Widget _statusRow(Widget lead, String label, bool on, String id) => Semantics(
+        identifier: id,
+        label: '$label, ${on ? 'on' : 'off'}',
+        child: GlassCard(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(children: [
+            SizedBox(width: 26, child: Center(child: lead)),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Text(label,
+                  style: const TextStyle(color: Glass.ink, fontSize: 15.5, fontWeight: FontWeight.w700)),
+            ),
+            Icon(on ? Icons.check_circle_rounded : Icons.circle_outlined,
+                size: 22, color: on ? Glass.success : const Color(0xFFD3D6DD)),
+          ]),
         ),
       );
 

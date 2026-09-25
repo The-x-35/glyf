@@ -39,11 +39,13 @@ object GoogleAccess {
             .putString("googleEmail", grant.email)
             .putString("googleScopes", grant.scopes.joinToString(" "))
             .putString("googleFakeBase", grant.fakeBase)
-            .apply()
+            .commit()
     }
 
     fun clear(ctx: Context) {
-        prefs(ctx).edit().remove("googleEmail").remove("googleScopes").remove("googleFakeBase").apply()
+        // At once, not later: a sign-out or a test run can end the process
+        // right after, and a grant that outlives it would still be used.
+        prefs(ctx).edit().remove("googleEmail").remove("googleScopes").remove("googleFakeBase").commit()
     }
 
     fun hasCalendar(ctx: Context) = load(ctx)?.scopes?.contains(CALENDAR) == true

@@ -111,15 +111,15 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 | S110 | iPhone | A plan in a message offers Add to calendar | pass |
 | S111 | Android | New Event from the keyboard's calendar lands in the calendar | pass |
 | S112 | Android | A plan in a message offers Add to calendar | pass |
-| S113 | iPhone | A call link, then a time on a Cal.com page | pass |
-| S114 | iPhone | New Event with a video call | pass |
+| S113 | iPhone | A Meet link, then a time on a Cal.com page | pass |
+| S114 | iPhone | A Meet-only grant: the event on the phone with a Meet link | pass |
 | S115 | iPhone | Book a time on your page for someone, with a guest | pass |
-| S117 | Android | A call link from the keyboard's calendar | pass |
+| S117 | Android | Without Google, the camera sends no other kind of call link | pass |
 | S118 | Android | Book a time on your own page for someone, with a guest | pass |
 | S120 | Android | Someone's booking page in a message offers Book | pass |
 | S121 | iPhone | A Meet link from the calendar, with Google connected | pass |
 | S122 | iPhone | New Event with a guest goes to Google Calendar, which invites them | pass |
-| S123 | iPhone | Without Google, New Event goes into the message | pass |
+| S123 | iPhone | Without Google: no call link, no Video call, the event goes into the message | pass |
 | S124 | iPhone | A key held for a Meet link | pass |
 | S125 | Android | A Meet link from the calendar, with Google connected | pass |
 | S126 | Android | New Event with a guest goes to Google Calendar, which invites them | pass |
@@ -163,7 +163,6 @@ Run on 24 September 2026 (the two app flows, S99 and S100, by hand on 17 Septemb
 
 - GIFs and stickers in the emoji board: KLIPY_APP_KEY on Railway (it is in the local server/.env since 24 September). Without it the GIF tab says GIFs aren't set up yet and Stickers shows Noto animated emoji. Real KLIPY GIFs and stickers were checked on both keyboards with the local key.
 - Google Calendar and Meet: The Calendar API and Meet REST API switched on, and their two scopes added to the consent screen, in Google Cloud. No key or secret: the phone talks to Google. S121 to S128 ran against qa/fake-google.mjs, and the booking scenarios against qa/fake-scheduling.mjs, never a real account or a real person's calendar.
-- Call links for people without Google: Daily API key (optional, free tier). Without it those call links are Jitsi Meet, where the first person in signs in to start the call.
 - Web results: Brave Search API key. S27 shows only the Google hand-off row without it.
 - Weather answers: Google Weather or web search key. S14 honestly says nothing found without it.
 - Google sign-in: OAuth client id and secret. The onboarding step stays hidden until then.

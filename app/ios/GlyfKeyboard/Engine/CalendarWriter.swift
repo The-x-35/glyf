@@ -89,13 +89,6 @@ enum CalendarWriter {
         return .success(Added(event: row, calendarName: calendar.title))
     }
 
-    /// A call link made on the phone when the server can't be reached: Jitsi
-    /// needs no account to hand one out (the first person in signs in).
-    static func localCallLink() -> String {
-        let letters = Array("abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789")
-        return "https://meet.jit.si/Glyf-" + String((0..<10).map { _ in letters.randomElement()! })
-    }
-
     private static func hex(_ color: CGColor) -> String? {
         guard let srgb = CGColorSpace(name: CGColorSpace.sRGB),
               let c = color.converted(to: srgb, intent: .defaultIntent, options: nil),

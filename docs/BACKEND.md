@@ -288,7 +288,6 @@ None of this works across multiple server instances. A deployment must run one i
 | 33 | GET | `/connector/mockcal/events?q=` | Demo calendar events | No | `routes/connector.ts` | iOS keyboard ConnectorSurface |
 | 34 | GET | `/connector/mockcal/month?year=&month=` | Demo month grid | No | `routes/connector.ts` | iOS keyboard ConnectorSurface |
 | 35 | GET | `/media/config`, `/media/emoji-stickers?q=&page=` | KLIPY key for the phone; Noto animated emoji stickers | Yes | `routes/media.ts` | iOS emoji board (`MediaClient.swift`) |
-| 35a | POST | `/meetings/new` | A call link when Google isn't connected: a Daily room with `DAILY_API_KEY`, else Jitsi Meet | Session | `routes/scheduling.ts` | iOS keyboard, Android IME (calendar, Meet link key) |
 | 35b | GET | `/scheduling/slots?link=&date=&days=&tz=` | Open times on a Cal.com page, each with a link that opens on it; a Calendly link comes back as its page only | Session | `routes/scheduling.ts` | iOS keyboard, Android IME (Book a time) |
 | 35c | POST | `/scheduling/book` | Books a Cal.com time for an attendee and guests; Cal.com emails the invites | Session | `routes/scheduling.ts` | iOS keyboard, Android IME (Book a time) |
 | 36 | POST | `/telemetry` | Event batch sink | No | `routes/telemetry.ts` | Flutter app |
@@ -513,18 +512,11 @@ Tenor's API closed on 2026-06-30 and GIPHY forbids proxying (and charges past 10
 - Stores lowercased, deduplicated emails in the `waitlist` collection, capped at 50,000. Returns `{ ok: true, count }`. No throttle.
 - Built 2026-09-13 for the first website, which proxied its form here through a `GLYF_API` variable. On 2026-09-15 the site switched to a direct Neon Postgres insert. Nothing calls these routes now; they can be removed.
 
-### 4.12 Call links and booking pages (`routes/scheduling.ts`)
+### 4.12 Booking pages (`routes/scheduling.ts`)
 
-Built 2026-09-24 after Arpit asked for the keyboard's calendar to add events and meetings, to "integrate cal.com or calnedly", and to "add quest email like we book with someone on cal.com". The keyboard side is APPS.md section 5.28. All three routes need a Glyf session.
+Built 2026-09-24 after Arpit asked for the keyboard's calendar to add events and meetings, to "integrate cal.com or calnedly", and to "add quest email like we book with someone on cal.com". The keyboard side is APPS.md section 5.28. Both routes need a Glyf session.
 
-**What doesn't come through here: Google.** A person who connects Google (at Google sign-in, or in Connected tools) gets Meet links and events in their own Google Calendar, whose guests Google emails. The keyboard makes those calls to Google itself with a grant that stays on the phone, so this server holds no Google token, needs no `GOOGLE_CLIENT_SECRET`, and never sees anyone's calendar. The same day an email-invite route (`POST /invites/send`, an .ics through Resend) was built and then removed, because Arpit didn't want to set up Resend; without Google, the keyboard puts the event into the chat instead.
-
-**`POST /meetings/new`**
-- Response: `{ url, provider: "daily" | "jitsi" }`.
-- With `DAILY_API_KEY`: a Daily room (`privacy: public`, pre-join screen on, expires after 7 days). Anyone joins in the browser with no account. Daily's free tier covers 10,000 participant minutes a month.
-- Without it: `https://meet.jit.si/Glyf-<10 random letters>`. Free and keyless, but since August 2023 meet.jit.si makes the first person in sign in (Google, GitHub or Facebook) to start the call; guests wait until then.
-- It is the fallback: a person with Google connected gets their own Meet link from the keyboard, straight from Google. Zoom was left out (it needs the person's sign-in and an app review).
-- The keyboards make a link on the phone (`meet.jit.si`) when this route can't be reached.
+**What doesn't come through here: Google.** A person who connects Google (at Google sign-in, or in Connected tools) gets Meet links and events in their own Google Calendar, whose guests Google emails. The keyboard makes those calls to Google itself with a grant that stays on the phone, so this server holds no Google token, needs no `GOOGLE_CLIENT_SECRET`, and never sees anyone's calendar. The same day an email-invite route (`POST /invites/send`, an .ics through Resend) was built and then removed, because Arpit didn't want to set up Resend; without Google, the keyboard puts the event into the chat instead. A `POST /meetings/new` route (a Daily room with a key, else Jitsi Meet) went too: call links are Google Meet only.
 
 **`GET /scheduling/slots?link=&date=YYYY-MM-DD&days=1..7&tz=`** (`days` defaults to 3; the keyboards ask for 1)
 - `link` is a Cal.com page (`cal.com/rick/15min`, `https://physics.cal.com/rick/15min`, an org subdomain, or just `cal.com/rick`) or a Calendly page (`calendly.com/sam`, with or without an event).
@@ -537,7 +529,7 @@ Built 2026-09-24 after Arpit asked for the keyboard's calendar to add events and
 - Response: `{ ok: true, uid, start, end, title, meetingUrl?, invited: [email, ...guests] }`.
 - Errors: 400 "Check the email addresses", 400 "Calendly books only on its own page. Send the link instead", 403 "This page only takes bookings on Cal.com itself. Send the link instead" (pages that require the booker's own sign-in), 409 "That time was just taken. Pick another", 502 "Cal.com said: ..." or "Cal.com couldn't book it. Try again".
 
-**Trying it without real people**: `qa/fake-scheduling.mjs` stands in for Cal.com's v2 API (open times at 10:00, 11:30, 15:00 and 17:30 every day; `GET /_log` lists what was booked; `/_reset` clears it). Start the dev server with `CALCOM_API_BASE=http://127.0.0.1:8796/v2`; never set it in production. `qa/fake-google.mjs` stands in for Google's token, Meet and Calendar endpoints, which the keyboards call directly in debug builds after a scenario connects "Google" to it. Tests: `test/scheduling.test.ts` (11 cases).
+**Trying it without real people**: `qa/fake-scheduling.mjs` stands in for Cal.com's v2 API (open times at 10:00, 11:30, 15:00 and 17:30 every day; `GET /_log` lists what was booked; `/_reset` clears it). Start the dev server with `CALCOM_API_BASE=http://127.0.0.1:8796/v2`; never set it in production. `qa/fake-google.mjs` stands in for Google's token, Meet and Calendar endpoints, which the keyboards call directly in debug builds after a scenario connects "Google" to it. Tests: `test/scheduling.test.ts` (9 cases).
 
 ---
 
@@ -1276,7 +1268,6 @@ Names only. Values live in `server/.env` (never committed). "Example" says wheth
 | `PUBLIC_BASE_URL` | Origin for live mini-app page links (`<base>/p/<id>`) | For pages in production | `http://127.0.0.1:<PORT>` outside production, none in production | No | `routes/act.ts` |
 | `KLIPY_APP_KEY` | KLIPY app key, handed to signed-in phones by `/media/config` | To enable GIFs and KLIPY stickers | unset | Yes (commented) | `routes/media.ts` |
 | `KLIPY_BASE_URL` | Points phones at a fake KLIPY for tests | Never in production | `https://api.klipy.com/api/v1/` | Yes (commented) | `routes/media.ts` |
-| `DAILY_API_KEY` | Daily rooms for call links (no one signs in to start the call) | No (Jitsi links without it) | unset | Yes (commented) | `routes/scheduling.ts` |
 | `CALCOM_API_BASE` | Points the server at `qa/fake-scheduling.mjs` for tests | Never in production | Cal.com's own API | Yes (commented, tests only) | `routes/scheduling.ts` |
 
 ### 11.3 Search suite
@@ -1329,7 +1320,7 @@ npm run typecheck   # tsc --noEmit
 | `test/act.test.ts` | 14 | `planByRules` routing and leaving ambiguous text to the model; `parsePlan` reads JSON inside prose and rejects unknown intents; `listInsert` format; `POST /act` places (with a dev page link and insert), page served with every place and 404 for unknown ids, video paste format, computed answer, rewrite for an ordinary message, metering returns 429; static map only with a key and valid coordinates; empty text rejected; `renderPage` escapes HTML and never emits a `javascript:` link |
 | `test/search.test.ts` | 14 | `composeInsert` paste formats (title and link, link only, address line, no emoji for web, no title); `evaluateMath` precedence, right-associative power, commas, rejection of non-math, division by zero and identifiers; `sunTimes` plausible Bengaluru sunset, ordering of sunrise, golden hour and sunset, midnight sun and polar night, seasons; duration and distance formatters |
 | `test/skills.test.ts` | 6 | Category derivation for shipped and community glyfs; skills list mixes official and community rows with real per-device install counts and hides `custom.prompt` and dictation; creators appear only after publishing and never include device ids; `/skills` filters by category and search, `/skills/get` for official and missing ids, `/skills/creators`; `/hub/list` does not leak the publisher's device id |
-| `test/scheduling.test.ts` | 11 | Cal.com and Calendly links however they were typed; the page opened on a day and Cal.com on the time itself; Jitsi without a Daily key, a Daily room with one and Jitsi again when Daily refuses; the session gate; Calendly's link on the day; Cal.com's open times, each opening on its slot; the shortest shown event for a bare link; errors in words; booking with the attendee and guests; a taken time, and Calendly kept to its own page |
+| `test/scheduling.test.ts` | 9 | Cal.com and Calendly links however they were typed; the page opened on a day and Cal.com on the time itself; the session gate; Calendly's link on the day; Cal.com's open times, each opening on its slot; the shortest shown event for a bare link; errors in words; booking with the attendee and guests; a taken time, and Calendly kept to its own page |
 | `test/vocab.test.ts` | 3 | `cleanWord` keeps Hinglish, Devanagari, apostrophes and hyphens and drops digits, emails, URLs and long strings; `parsePack` dedupes and drops junk; `POST /vocab/generate` returns a pack and validates input |
 
 ### 12.3 History of the server test count
@@ -1425,6 +1416,7 @@ Status values: **Active** (in force), **Superseded** (replaced by a later row), 
 | 2026-09-12 | GIF search goes through a server GIPHY proxy; the keyboard would copy to the pasteboard | Keyboards cannot type images; key stays server-side | Replaced 2026-09-24 |
 | 2026-09-24 | Keyboard calendar books and invites: Cal.com's public v2 API for open times and bookings (no key); Calendly as a link only; invites for the keyboard's own events as .ics email through Resend; call links from Daily with a key, else Jitsi | Arpit asked for events, meetings, Cal.com or Calendly, and guest emails "like we book with someone on cal.com". Cal.com v1 is shut down; Calendly availability and booking need the host's OAuth; iOS can't add attendees | Invites and Meet replaced the same day (next row) |
 | 2026-09-24 | Invites from the person's own Google Calendar (Google emails the guests), Meet links from their own Google account, both called by the keyboard with a grant kept on the phone; without Google the event goes into the chat; Resend and `/invites/send` removed; Google Calendar and Meet asked for at Google sign-in; a Meet link key | Arpit: "i dont wanna setup resend ... or google calendar, i think that also sends mails, else lets just have it like we paste the details on the text box" and "google meet links creation permission while google sign in" | Active |
+| 2026-09-25 | Call links are Google Meet only: the Jitsi and Daily fallbacks and `POST /meetings/new` removed; without Google the keyboard sends no link and asks for Google. Calendar permission and Google sign-in (with Calendar and Meet) are asked in onboarding only; Connected tools' Calendar and Google switches removed | Arpit: "why the fuck have u integrated this shit jitsi ... who told u so ... i need google meet" (nobody had: it was the assistant's own fallback); "calendar permissions and this google login will happen on onboarding only" | Active |
 | 2026-09-24 | The strip's model-read chip ("Tidy this up") and `POST /suggest` removed | It asked a model on every paused sentence and spent a daily run each time (the test account reached 353 runs in a day); Arpit: "does this use ai ? we can actually remove this suggestion" | Active |
 | 2026-09-24 | GIFs and stickers from KLIPY, called from the phone with a key the server hands out; Noto animated emoji as keyless stickers; GIPHY proxy removed | Tenor's API closed 2026-06-30; GIPHY is paid past 100 calls an hour and forbids proxies; KLIPY is free but wants device-side calls | Active |
 | 2026-09-12 | Mock calendar routes (events, then a month grid) power the in-keyboard calendar until OAuth exists | Keep the ConnectorSurface testable; Arpit asked for "a button to view months calendar along with my todays tasks" | Active |
@@ -1535,7 +1527,6 @@ Status is as of the last notes (2026-09-16) and was not re-checked in `server/.e
 | 13 | Privy dashboard configuration (Solana enabled) and a Jupiter API key | M8 crypto | Not before the separate crypto release |
 | 14 | AI privacy decision (opt-out flags, provider training) | Privacy policy accuracy | Deferred by Arpit on 2026-09-15 |
 | 15 | **Google Cloud, in the project that holds the sign-in clients**: enable the **Google Calendar API** and the **Google Meet REST API**; on the OAuth consent screen add the scopes `.../auth/calendar.events.owned` and `.../auth/meetings.space.created`; keep test users listed while the app is in Testing | Meet links and Google Calendar invites from the keyboard | No server key or secret: the phone talks to Google. Both scopes are sensitive, so Google's consent page warns that the app is unverified until Google verifies it (a privacy policy, a demo video); in Testing, refresh tokens expire after 7 days and people reconnect |
-| 16 | `DAILY_API_KEY` (optional, daily.co, free tier 10,000 minutes a month) | Call links that start without anyone signing in, for people without Google | Without it, those links are Jitsi Meet, where the first person in signs in to start |
 
 ### 17.2 Engineering work
 

@@ -258,6 +258,43 @@ Path svgPath(String d, {PathFillType fill = PathFillType.evenOdd}) {
   return path;
 }
 
+/// Google Meet's mark (the 2020 camera, 87.5x72), from Google's own icon,
+/// for wherever the app says Google Meet.
+class GoogleMeetMark extends StatelessWidget {
+  const GoogleMeetMark({super.key, this.size = 22});
+
+  /// The width; the mark is a little wider than tall.
+  final double size;
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size(size, size * 72 / 87.5), painter: _GoogleMeetPainter());
+}
+
+class _GoogleMeetPainter extends CustomPainter {
+  static const _parts = <(int, String)>[
+    (0xFF00832D, 'M49.5 36l8.53 9.75 11.47 7.33 2-17.02-2-16.64-11.69 6.44z'),
+    (0xFF0066DA, 'M0 51.5V66c0 3.315 2.685 6 6 6h14.5l3-10.96-3-9.54-9.95-3z'),
+    (0xFFE94235, 'M20.5 0L0 20.5l10.55 3 9.95-3 2.95-9.41z'),
+    (0xFF2684FC, 'M20.5 20.5H0v31h20.5z'),
+    (0xFF00AC47, 'M82.6 8.68L69.5 19.42v33.66l13.16 10.79c1.97 1.54 4.85.135 4.85-2.37V11c0-2.535-2.945-3.925-4.91-2.32zM49.5 36v15.5h-29V72h43c3.315 0 6-2.685 6-6V53.08z'),
+    (0xFFFFBA00, 'M63.5 0h-43v20.5h29V36l20-16.57V6c0-3.315-2.685-6-6-6z'),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 87.5, size.height / 72);
+    for (final (color, d) in _parts) {
+      canvas.drawPath(svgPath(d, fill: PathFillType.nonZero), Paint()..color = Color(color)..isAntiAlias = true);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_GoogleMeetPainter oldDelegate) => false;
+}
+
 /// Google's "G", in its standard colours: the pre-approved logo geometry
 /// from Google's Sign in with Google assets (48x48), never redrawn.
 class GoogleG extends StatelessWidget {

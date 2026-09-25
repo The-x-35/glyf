@@ -1,12 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bookingUrl, jitsiLink, parseBookingLink } from "../src/routes/scheduling.js";
+import { bookingUrl, parseBookingLink } from "../src/routes/scheduling.js";
 import { signedInApp } from "./helpers.js";
-
-const savedDaily = process.env.DAILY_API_KEY;
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (savedDaily === undefined) delete process.env.DAILY_API_KEY; else process.env.DAILY_API_KEY = savedDaily;
 });
 
 /** A fetch that answers from a table of URL prefixes, and records what it was asked. */
@@ -49,37 +46,13 @@ describe("booking links", () => {
   });
 });
 
-describe("POST /meetings/new", () => {
-  it("makes a Jitsi link when there is no Daily key", async () => {
-    delete process.env.DAILY_API_KEY;
-    const res = await signedInApp().inject({ method: "POST", url: "/meetings/new", payload: {} });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().provider).toBe("jitsi");
-    expect(res.json().url).toMatch(/^https:\/\/meet\.jit\.si\/Glyf-[A-Za-z0-9]{10}$/);
-    expect(jitsiLink()).not.toBe(jitsiLink());
-  });
-
-  it("makes a Daily room with the key, and falls back to Jitsi when Daily says no", async () => {
-    process.env.DAILY_API_KEY = "daily-test";
-    const asked = fakeFetch({ "https://api.daily.co/v1/rooms": { body: { url: "https://glyf.daily.co/abc123" } } });
-    const res = await signedInApp().inject({ method: "POST", url: "/meetings/new", payload: {} });
-    expect(res.json()).toEqual({ url: "https://glyf.daily.co/abc123", provider: "daily" });
-    expect((asked[0].init?.headers as Record<string, string>).authorization).toBe("Bearer daily-test");
-
-    vi.restoreAllMocks();
-    fakeFetch({ "https://api.daily.co/v1/rooms": { status: 401, body: { error: "authentication-error" } } });
-    const fallback = await signedInApp().inject({ method: "POST", url: "/meetings/new", payload: {} });
-    expect(fallback.json().provider).toBe("jitsi");
-  });
-
+describe("GET /scheduling/slots", () => {
   it("is behind the session gate", async () => {
     const { buildApp } = await import("../src/index.js");
-    const res = await buildApp().inject({ method: "POST", url: "/meetings/new", payload: {} });
+    const res = await buildApp().inject({ method: "GET", url: "/scheduling/slots?link=cal.com/jane" });
     expect(res.statusCode).toBe(401);
   });
-});
 
-describe("GET /scheduling/slots", () => {
   it("gives Calendly's link on the day, since its times need the host's sign-in", async () => {
     const asked = fakeFetch({});
     const res = await signedInApp().inject({

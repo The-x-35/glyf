@@ -148,7 +148,7 @@ class CalendarPanelView(
         root.addView(body, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
         action.apply {
-            text = if (connected) "Share free time" else "Connect calendar"
+            text = if (connected) "Share free time" else "Allow Calendar in Settings"
             textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.WHITE); gravity = Gravity.CENTER
             background = GradientDrawable().apply { cornerRadius = dp(19f); setColor(accent) }
             setTag(com.demo.glyf.R.id.qa_id, if (connected) "calendar:free" else "calendar:connect")
@@ -196,6 +196,8 @@ class CalendarPanelView(
         composer?.let { removeView(it) }
         val c = EventComposerView(context, palette, draft, CalendarText.canAdd(context),
             google = com.demo.glyf.store.GoogleAccess.hasCalendar(context),
+            meet = com.demo.glyf.store.GoogleAccess.hasCalendar(context) ||
+                com.demo.glyf.store.GoogleAccess.hasMeet(context),
             onCancel = { closeComposer() },
             onAdd = { add(it) },
             onEditTitle = { editing -> onTitleEditing(editing) },
@@ -249,14 +251,13 @@ class CalendarPanelView(
         return fields.firstOrNull { it.kind == "name" }?.value to fields.firstOrNull { it.kind == "email" }?.value
     }
 
-    /** A call link, straight into the message: the person's own Google Meet
-     *  when Google is connected. */
+    /** The person's own Google Meet link, straight into the message. Without
+     *  Google connected the calendar stays open and says how to get one. */
     private fun insertCallLink(button: View) {
         button.isEnabled = false
-        CallLink.make(context, backendURL) { url, note ->
+        CallLink.make(context) { url, note ->
             button.isEnabled = true
-            onInsert("Join me on a call: $url")
-            note?.let { toast(it) }
+            if (url != null) onInsert("Join me on a call: $url") else note?.let { toast(it) }
         }
     }
 
@@ -295,8 +296,8 @@ class CalendarPanelView(
             adding = false
             return save(d, null, note)
         }
-        // The call link first, so the event carries it and so does the message.
-        CallLink.make(context, backendURL) { url, meetNote ->
+        // The Meet link first, so the event carries it and so does the message.
+        CallLink.make(context) { url, meetNote ->
             adding = false
             save(d, url, note ?: meetNote)
         }

@@ -288,22 +288,6 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         return task
     }
 
-    /// A call link for an event or a chat: a Daily room when the server has a
-    /// key, a Jitsi link when it hasn't. Nil when the server can't be reached.
-    func newMeeting(done: @escaping (String?) -> Void) {
-        guard let url = URL(string: "\(SettingsStore.current.backendURL)/meetings/new") else { return done(nil) }
-        var req = URLRequest(url: url)
-        req.glyfSession()
-        req.httpMethod = "POST"
-        req.timeoutInterval = 8
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = Data("{}".utf8)
-        session.dataTask(with: req) { data, _, _ in
-            let link = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["url"] as? String
-            DispatchQueue.main.async { done(link) }
-        }.resume()
-    }
-
     struct BookingDay { let date: String; let slots: [(start: Date, url: String)] }
     struct BookingSlots {
         let provider: String

@@ -620,13 +620,14 @@ final class GlyfScenarioUITests: XCTestCase {
     }
 
     func testS113_CallLinkAndBookATime() throws {
-        open(["--glyf-booking-link", "cal.com/rick"])
+        resetGoogle()
+        open(["--glyf-booking-link", "cal.com/rick", "--glyf-test-google", Self.fakeGoogle])
         clear()
         guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
         c.press(forDuration: 0.7)
-        // A call link, straight into the message.
+        // A Google Meet link, straight into the message.
         tap("calendar:call", 6)
-        XCTAssertTrue(waitValue(8) { $0.contains("Join me on a call: https://") }, "got '\(value)'")
+        XCTAssertTrue(waitValue(8) { $0.contains("Join me on a call: https://meet.google.com/") }, "got '\(value)'")
         let call = value
         // No clear() here: its tap lands inside a link this long (the field
         // shows the start of it), and the rest of the link would trail the
@@ -756,9 +757,14 @@ final class GlyfScenarioUITests: XCTestCase {
         clear()
         guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
         c.press(forDuration: 0.7)
+        // Call links are Google Meet only: without Google nothing goes in.
+        tap("calendar:call", 6)
+        sleep(2)
+        XCTAssertEqual(value, "", "a call link went in without Google")
         tap("calendar:new", 6)
         guard wait("event:title", 4) != nil else { return XCTFail("New Event didn't open") }
         XCTAssertFalse(el("event:invitees").exists, "Invitees shows only with Google Calendar")
+        XCTAssertFalse(el("event:video").exists, "Video call is a Google Meet call: only with Google")
         tap("event:title", 4)
         type("lunch with sam tomorrow 1pm")
         tap("key:return")
@@ -781,8 +787,11 @@ final class GlyfScenarioUITests: XCTestCase {
         note("message '\(message)'")
     }
 
-    func testS114_NewEventWithAVideoCall() throws {
-        open()
+    func testS114_NewEventWithAMeetCallOnThePhone() throws {
+        // Meet granted, Calendar unticked: the event is the phone's own, with
+        // a Google Meet link of the person's.
+        resetGoogle()
+        open(["--glyf-test-google", Self.fakeGoogle, "--glyf-test-google-scopes", "meet"])
         clear()
         guard let c = wait("key:c", 3) else { return XCTFail("no C key") }
         c.press(forDuration: 0.7)
@@ -790,6 +799,7 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("event:title", 4)
         type("sync tomorrow 4pm")
         tap("key:return")
+        XCTAssertFalse(el("event:invitees").exists, "Invitees shows only with Google Calendar")
         guard let video = wait("event:video", 4) else { return XCTFail("no Video call row") }
         video.tap()
         // Share in chat off: this one is looked for in the day's list.
@@ -798,9 +808,9 @@ final class GlyfScenarioUITests: XCTestCase {
         let row = eventRow("Sync")
         XCTAssertTrue(row.waitForExistence(timeout: 8), "the event isn't in the day's list")
         let label = row.label
-        XCTAssertTrue(label.contains("https://"), "the event has no call link: '\(label)'")
+        XCTAssertTrue(label.contains("https://meet.google.com/"), "the event has no Meet link: '\(label)'")
         row.tap()
-        XCTAssertTrue(waitValue(4) { $0.contains("Sync") && $0.contains("https://") }, "got '\(value)'")
+        XCTAssertTrue(waitValue(4) { $0.contains("Sync") && $0.contains("https://meet.google.com/") }, "got '\(value)'")
         note("event '\(label)'")
     }
 

@@ -58,6 +58,8 @@ enum GlyfCatalog {
         if let known = all.first(where: { $0.id == id }) { return known.title }
         // Builder/hub glyfs: the app records a display name on bind (§6.8).
         if let custom = SettingsStore.current.customTitles?[id] { return custom }
+        // A built glyf whose name was lost: never its id ("user.d24774a1").
+        if id.hasPrefix("user.") || id.hasPrefix("hub.") { return "Untitled glyf" }
         return id
     }
 

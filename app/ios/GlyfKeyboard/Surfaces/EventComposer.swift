@@ -29,7 +29,6 @@ final class EventComposer: UIView {
     var onEditTitle: ((InlineEditor) -> Void)?
     /// Typing ended, or the shape changed (strip, rows, wheels).
     var onLayoutChange: (() -> Void)?
-    var onOpenApp: ((String) -> Void)?
 
     /// Height of the strip over the keys while a field is typed.
     static let editStripHeight: CGFloat = 92
@@ -51,6 +50,8 @@ final class EventComposer: UIView {
     private var access: CalendarWriter.Access
     /// Google Calendar is connected: invitees can be asked.
     private let google: Bool
+    /// A Google Meet call can be made: Video call is offered.
+    private let meet: Bool
 
     private let cancelButton = UIButton(type: .system)
     private let addButton = UIButton(type: .system)
@@ -78,12 +79,13 @@ final class EventComposer: UIView {
     private let picker = UIDatePicker()
     private let hint = UILabel()
     private let note = UILabel()
-    private let noteButton = UIButton(type: .system)
 
-    init(draft: Draft, access: CalendarWriter.Access, google: Bool = GoogleAccess.hasCalendar) {
+    init(draft: Draft, access: CalendarWriter.Access, google: Bool = GoogleAccess.hasCalendar,
+         meet: Bool = GoogleAccess.hasCalendar || GoogleAccess.hasMeet) {
         self.draft = draft
         self.access = access
         self.google = google
+        self.meet = meet
         super.init(frame: .zero)
         typed = draft.title
         inviteLine = draft.invitees.joined(separator: " ")
@@ -208,12 +210,6 @@ final class EventComposer: UIView {
         note.numberOfLines = 2
         note.isHidden = true
         addSubview(note)
-        noteButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-        noteButton.tintColor = Glass.accentPrimary
-        noteButton.accessibilityIdentifier = "event:open-app"
-        noteButton.isHidden = true
-        noteButton.addAction(UIAction { [weak self] _ in self?.onOpenApp?("connected") }, for: .touchUpInside)
-        addSubview(noteButton)
     }
 
     // MARK: behaviour
@@ -384,20 +380,17 @@ final class EventComposer: UIView {
                 : "\(Self.text(draft.start, template: "EEE d MMM")), \(CalendarText.range(draft.start, draft.end))"
         }
 
+        // The calendar is asked for during onboarding; after that it is the
+        // phone's to allow, so the note says where, with nothing to tap.
         switch access {
         case .ready:
             note.isHidden = true
-            noteButton.isHidden = true
         case .needsFullAccess:
             note.text = "Turn on Allow Full Access for Glyf in Settings to add events."
-            noteButton.setTitle("How", for: .normal)
             note.isHidden = rowsHidden
-            noteButton.isHidden = rowsHidden
         case .needsPermission:
-            note.text = "Let Glyf use your calendar to add events."
-            noteButton.setTitle("Connect", for: .normal)
+            note.text = "Allow Calendars in Settings › Apps › Glyf to add events."
             note.isHidden = rowsHidden
-            noteButton.isHidden = rowsHidden
         }
         setNeedsLayout()
     }
@@ -439,7 +432,7 @@ final class EventComposer: UIView {
         // Without the calendar, only what can be seen is shown; the note says why.
         let order: [UIView] = showNote ? [titleRow, startsLabel, endsLabel]
             : (google ? [titleRow, inviteRow] : [titleRow])
-                + [startsLabel, endsLabel, videoLabel, shareLabel, allDayLabel]
+                + [startsLabel, endsLabel] + (meet ? [videoLabel] : []) + [shareLabel, allDayLabel]
         let noteH: CGFloat = showNote ? 44 : 0
         rows.frame = CGRect(x: pad, y: headerH + 2, width: w - pad * 2,
                             height: max(0, bounds.height - headerH - 6 - noteH))
@@ -471,11 +464,15 @@ final class EventComposer: UIView {
         place([startDate, startTime], y: rowY(startsLabel))
         place([endDate, endTime], y: rowY(endsLabel))
 
-        for v in [allDayLabel, allDaySwitch, videoLabel, videoSwitch, shareLabel, shareSwitch] as [UIView] {
+        for v in [allDayLabel, allDaySwitch, shareLabel, shareSwitch] as [UIView] {
             v.isHidden = showNote
         }
+        // A video call is a Google Meet call: only with Google.
+        videoLabel.isHidden = showNote || !meet
+        videoSwitch.isHidden = showNote || !meet
         if !showNote {
-            for (l, toggle) in [(videoLabel, videoSwitch), (shareLabel, shareSwitch), (allDayLabel, allDaySwitch)] {
+            for (l, toggle) in [(videoLabel, videoSwitch), (shareLabel, shareSwitch), (allDayLabel, allDaySwitch)]
+            where !l.isHidden {
                 label(l)
                 l.frame.size.width = 140
                 let s = toggle.intrinsicContentSize
@@ -488,11 +485,7 @@ final class EventComposer: UIView {
             line.frame = CGRect(x: 14, y: rowH * CGFloat(i + 1) - 0.5, width: cw - 14, height: 0.5)
         }
         if showNote {
-            let noteY = rows.frame.maxY + 4
-            noteButton.sizeToFit()
-            let bw = noteButton.bounds.width + 8
-            noteButton.frame = CGRect(x: w - pad - bw, y: noteY, width: bw, height: 34)
-            note.frame = CGRect(x: pad + 4, y: noteY, width: noteButton.frame.minX - pad - 10, height: 34)
+            note.frame = CGRect(x: pad + 4, y: rows.frame.maxY + 4, width: w - pad * 2 - 8, height: 34)
         }
     }
 }

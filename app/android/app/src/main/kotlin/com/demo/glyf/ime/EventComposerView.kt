@@ -40,6 +40,8 @@ class EventComposerView(
     private val canAdd: Boolean,
     /** Google Calendar is connected: invitees can be asked. */
     private val google: Boolean,
+    /** A Google Meet call can be made: Video call is offered. */
+    private val meet: Boolean,
     private val onCancel: () -> Unit,
     private val onAdd: (Draft) -> Unit,
     /** true: a field is being typed, the letter keys should come up under a
@@ -168,9 +170,11 @@ class EventComposerView(
             addView(endDate); addView(space()); addView(endTime)
         }, rowParams())
         if (canAdd) {
-            for ((toggle, name, id) in listOf(Triple(video, "Video call", "event:video"),
-                                              Triple(share, "Share in chat", "event:share"),
-                                              Triple(allDay, "All-day", "event:allday"))) {
+            // A video call is a Google Meet call: only with Google.
+            val toggles = listOfNotNull(if (meet) Triple(video, "Video call", "event:video") else null,
+                                        Triple(share, "Share in chat", "event:share"),
+                                        Triple(allDay, "All-day", "event:allday"))
+            for ((toggle, name, id) in toggles) {
                 card.addView(line())
                 tag(toggle, id)
                 card.addView(row().apply {
@@ -192,11 +196,11 @@ class EventComposerView(
             note.orientation = LinearLayout.HORIZONTAL
             note.gravity = Gravity.CENTER_VERTICAL
             note.addView(TextView(ctx).apply {
-                text = "Let Glyf use your calendar to add events."
+                text = "Allow Calendar for Glyf to add events."
                 textSize = 13f; setTextColor(soft(150))
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             note.addView(TextView(ctx).apply {
-                text = "Connect"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(accent)
+                text = "Settings"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(accent)
                 setPadding(dpi(10), dpi(6), dpi(4), dpi(6))
                 tag(this, "event:open-app")
                 setOnClickListener { onConnect() }

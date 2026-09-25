@@ -120,13 +120,20 @@ class _BuildTabState extends State<BuildTab> {
   }
 
   /// The keyboard's "My glyfs" list reads names from shared settings, so
-  /// every glyf made here is listed there, bound to a key or not.
+  /// every glyf made here is listed there, bound to a key or not. A glyf
+  /// still on a key keeps the name it had even when the server's list leaves
+  /// it out (the store moved, a new device id): a key never reads as its id.
   Future<void> _syncTitles(List<Map<String, dynamic>> mine) async {
-    final titles = {
+    final titles = <String, dynamic>{
       for (final g in mine)
         g['id'] as String: (g['name'] as String?) ?? g['id'] as String,
     };
     await GlyfBridge.updateSharedSettings((s) {
+      final bound = ((s['bindings'] as Map<String, dynamic>?) ?? const {}).values.toSet();
+      final had = (s['customTitles'] as Map<String, dynamic>?) ?? const {};
+      for (final e in had.entries) {
+        if (bound.contains(e.key) && !titles.containsKey(e.key)) titles[e.key] = e.value;
+      }
       s['customTitles'] = titles;
       return s;
     });

@@ -50,19 +50,6 @@ object SchedulingClient {
 
     private fun parseTime(s: String): Long? = runCatching { java.time.OffsetDateTime.parse(s).toInstant().toEpochMilli() }.getOrNull()
 
-    /** A call link: a Daily room when the server has a key, else Jitsi. Null
-     *  when the server can't be reached. */
-    fun newMeeting(backendURL: String, done: (String?) -> Unit) {
-        pool.execute {
-            val link = runCatching {
-                val c = open("$backendURL/meetings/new", "POST")
-                c.outputStream.use { it.write("{}".toByteArray()) }
-                c.json()?.optString("url")?.takeIf { it.startsWith("http") }
-            }.getOrNull()
-            main.post { done(link) }
-        }
-    }
-
     /** Open times on a Cal.com link (Calendly gives only its link) from a day. */
     fun slots(backendURL: String, link: String, date: String, done: (Slots?, String?) -> Unit) {
         pool.execute {
@@ -112,11 +99,5 @@ object SchedulingClient {
             }.onFailure { error = null }
             main.post { done(booked, error) }
         }
-    }
-
-    /** A call link made on the phone when the server can't be reached. */
-    fun localCallLink(): String {
-        val letters = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        return "https://meet.jit.si/Glyf-" + (1..10).map { letters.random() }.joinToString("")
     }
 }

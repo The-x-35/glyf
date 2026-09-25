@@ -27,7 +27,7 @@ object GoogleClient {
 
     /** What to tell the person when Google didn't do it. */
     fun say(f: Failure): String = when (f) {
-        Failure.RECONNECT -> "Reconnect Google in the Glyf app"
+        Failure.RECONNECT -> "Sign in with Google again in Glyf"
         Failure.UNREACHABLE -> "Couldn't reach Google"
         else -> "Google said no"
     }
@@ -130,18 +130,19 @@ object GoogleClient {
     }
 }
 
-/** A link to call on: the person's own Google Meet when they connected
- *  Google, else the server's (a Daily room with its key, a Jitsi one
- *  without), else one made right here. `note` says why Meet wasn't used,
- *  when it was meant to be. The twin of CallLink in GoogleClient.swift. */
+/** A call link: the person's own Google Meet, and nothing else. Without
+ *  Google connected, or when Google says no, there is no link and `note`
+ *  says what to do. The twin of CallLink in GoogleClient.swift. */
 object CallLink {
-    fun make(ctx: Context, backendURL: String, done: (url: String, note: String?) -> Unit) {
-        fun fallback(note: String?) = SchedulingClient.newMeeting(backendURL) { link ->
-            done(link ?: SchedulingClient.localCallLink(), note)
+    const val CONNECT_FIRST = "Sign in with Google in Glyf to make Meet links"
+
+    fun make(ctx: Context, done: (url: String?, note: String?) -> Unit) {
+        if (!GoogleAccess.hasMeet(ctx)) {
+            Handler(Looper.getMainLooper()).post { done(null, CONNECT_FIRST) }
+            return
         }
-        if (!GoogleAccess.hasMeet(ctx)) return fallback(null)
         GoogleClient.newMeet(ctx) { url, failure ->
-            if (url != null) done(url, null) else fallback(GoogleClient.say(failure ?: GoogleClient.Failure.REFUSED))
+            if (url != null) done(url, null) else done(null, GoogleClient.say(failure ?: GoogleClient.Failure.REFUSED))
         }
     }
 }

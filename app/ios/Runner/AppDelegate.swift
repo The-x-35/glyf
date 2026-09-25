@@ -77,11 +77,18 @@ import UIKit
       // Scenario tests: Google Calendar and Meet as if connected, pointed at
       // the stand-in for Google's APIs (qa/fake-google.mjs); "" disconnects.
       let base = args[i + 1]
+      // "--glyf-test-google-scopes meet" grants Meet alone, the way someone
+      // who unticked Calendar on Google's page would have it.
+      var scopes = GoogleAccess.scopes
+      if let j = args.firstIndex(of: "--glyf-test-google-scopes"), j + 1 < args.count {
+        scopes = args[j + 1] == "meet" ? [GoogleAccess.meetScope]
+          : args[j + 1] == "calendar" ? [GoogleAccess.calendarScope] : scopes
+      }
       if base.isEmpty {
         GoogleAccess.clear()
       } else {
         GoogleAccess.save(GoogleGrant(refreshToken: "fake-refresh", clientId: "fake.apps.googleusercontent.com",
-                                      scopes: GoogleAccess.scopes, email: "sim@example.com", apiBase: base))
+                                      scopes: scopes, email: "sim@example.com", apiBase: base))
       }
     }
     if let i = args.firstIndex(of: "--glyf-bind"), i + 1 < args.count {

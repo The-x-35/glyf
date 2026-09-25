@@ -132,9 +132,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 // disconnects.
                 "googlefake" -> {
                     val base = intent.getStringExtra("text").orEmpty()
+                    // "--es scopes meet" grants Meet alone (Calendar unticked).
+                    val scopes = when (intent.getStringExtra("scopes")) {
+                        "meet" -> setOf(com.demo.glyf.store.GoogleAccess.MEET)
+                        "calendar" -> setOf(com.demo.glyf.store.GoogleAccess.CALENDAR)
+                        else -> com.demo.glyf.store.GoogleAccess.SCOPES.toSet()
+                    }
                     if (base.isEmpty()) com.demo.glyf.store.GoogleAccess.clear(this@GlyfIME)
                     else com.demo.glyf.store.GoogleAccess.save(this@GlyfIME, com.demo.glyf.store.GoogleAccess.Grant(
-                        "emulator@example.com", com.demo.glyf.store.GoogleAccess.SCOPES.toSet(), base))
+                        "emulator@example.com", scopes, base))
                 }
                 // "m=connector:meet" holds M for a Meet link; "m=" frees it.
                 "bind" -> {
@@ -1846,6 +1852,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  names the app recorded for builder/hub glyfs, then a tidy id. */
     private fun skillTitle(glyfId: String): String {
         settings.optJSONObject("customTitles")?.optString(glyfId)?.takeIf { it.isNotBlank() }?.let { return it }
+        // A built glyf whose name was lost: never its id ("user.d24774a1").
+        if (glyfId.startsWith("user.") || glyfId.startsWith("hub.")) return "Untitled glyf"
         return mapOf(
             "rewrite.polite" to "Make it polite", "rewrite.tighten" to "Tighten",
             "rewrite.professional" to "Professional", "glyf.translate" to "Translate",
@@ -2627,14 +2635,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         startSkill(char, glyfId)
     }
 
-    /** A fresh call link, straight into the message: the person's own Google
-     *  Meet when Google is connected. */
+    /** A fresh Google Meet link, straight into the message. */
     private fun insertMeetLink() {
-        CallLink.make(this, settings.optString("backendURL")) { url, note ->
+        CallLink.make(this) { url, note ->
+            if (url == null) {
+                note?.let { android.widget.Toast.makeText(this, it, android.widget.Toast.LENGTH_SHORT).show() }
+                return@make
+            }
             val ic = currentInputConnection ?: return@make
             val last = ic.getTextBeforeCursor(1, 0)?.lastOrNull()
             ic.commitText((if (last != null && !last.isWhitespace()) " " else "") + "Join me on a call: $url", 1)
-            note?.let { android.widget.Toast.makeText(this, it, android.widget.Toast.LENGTH_SHORT).show() }
             updateSuggestions()
         }
     }
@@ -2931,7 +2941,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 dismissFeaturePanel()
             },
             onClose = { dismissFeaturePanel() },
-            onConnect = { dismissFeaturePanel(); openAppPath("connected") },
+            // The calendar is asked for during onboarding; after that it is
+            // Android's to allow, on Glyf's own page in Settings.
+            onConnect = {
+                dismissFeaturePanel()
+                runCatching {
+                    startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.fromParts("package", packageName, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            },
             // A field being typed: a strip over the letter keys, like emoji search.
             onTitleEditing = { editing ->
                 keyboard.visibility = if (editing) View.VISIBLE else View.GONE

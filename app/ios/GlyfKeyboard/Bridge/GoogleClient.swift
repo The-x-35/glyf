@@ -19,7 +19,7 @@ final class GoogleClient {
     /// What to tell the person when Google didn't do it.
     static func say(_ failure: Failure) -> String {
         switch failure {
-        case .reconnect: return "Reconnect Google in the Glyf app"
+        case .reconnect: return "Sign in with Google again in Glyf"
         case .unreachable: return "Couldn't reach Google"
         case .refused, .notConnected: return "Google said no"
         }
@@ -149,20 +149,20 @@ final class GoogleClient {
     }
 }
 
-/// A link to call on: the person's own Google Meet when they connected
-/// Google, else the server's (a Daily room with its key, a Jitsi one
-/// without), else one made right here. `note` says why Meet wasn't used,
-/// when it was meant to be.
+/// A call link: the person's own Google Meet, and nothing else. Without
+/// Google connected, or when Google says no, there is no link and `note`
+/// says what to do.
 enum CallLink {
-    static func make(_ done: @escaping (_ url: String, _ note: String?) -> Void) {
-        func fallback(_ note: String?) {
-            BackendClient.shared.newMeeting { link in done(link ?? CalendarWriter.localCallLink(), note) }
+    static let connectFirst = "Sign in with Google in Glyf to make Meet links"
+
+    static func make(_ done: @escaping (_ url: String?, _ note: String?) -> Void) {
+        guard GoogleAccess.hasMeet else {
+            return DispatchQueue.main.async { done(nil, connectFirst) }
         }
-        guard GoogleAccess.hasMeet else { return fallback(nil) }
         GoogleClient.shared.newMeet { result in
             switch result {
             case .success(let url): done(url, nil)
-            case .failure(let failure): fallback(GoogleClient.say(failure))
+            case .failure(let failure): done(nil, GoogleClient.say(failure))
             }
         }
     }
