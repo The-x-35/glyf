@@ -371,6 +371,9 @@ final class GlyfToolbar: UIView {
         if open {
             scroll.isHidden = hideTools
             candidatesStack.isHidden = true
+            // The lines between suggestion slots go with the suggestions:
+            // a panel's title never has slots.
+            for line in slotLines { line.isHidden = true }
             runsChip.isHidden = true
             divider.isHidden = hideTools || Glass.solidLook
         } else {
@@ -472,6 +475,7 @@ final class GlyfToolbar: UIView {
         } else {
             scroll.isHidden = true
             candidatesStack.isHidden = true
+            for line in slotLines { line.isHidden = true }
             divider.isHidden = true
             runsChip.isHidden = true
         }

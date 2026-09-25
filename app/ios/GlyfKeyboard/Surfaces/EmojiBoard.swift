@@ -416,7 +416,11 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     /// Apple's section names: small capitals, lighter than body text.
     private static var sectionGrey: UIColor {
-        Glass.chromeDark ? UIColor(white: 0.60, alpha: 1) : UIColor(red: 0.55, green: 0.56, blue: 0.58, alpha: 1)
+        // Apple's grey is made for Apple's sheet. On a painted board (Dusk,
+        // Ocean…) it all but vanishes, and KLIPY's "Powered by" line has to
+        // be readable, so there the board's own ink is softened instead.
+        if Glass.themedBgActive { return Glass.textPrimary.withAlphaComponent(0.72) }
+        return Glass.chromeDark ? UIColor(white: 0.60, alpha: 1) : UIColor(red: 0.55, green: 0.56, blue: 0.58, alpha: 1)
     }
     /// The soft circle Apple puts behind the chosen category.
     private static var thumbColor: UIColor {

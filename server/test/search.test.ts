@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { composeInsert } from "../src/lib/searchcards.js";
-import { evaluateMath, instantAnswer, isLive } from "../src/lib/answers.js";
+import { evaluateMath, instantAnswer, isLive, locationFitsZone } from "../src/lib/answers.js";
 import { env } from "../src/env.js";
 import { aiAnswer, formatDistance, formatDuration, nameMatch, placeQuery, search } from "../src/lib/search.js";
 import { clockIn, sunTimes } from "../src/lib/sun.js";
@@ -122,6 +122,22 @@ describe("sunTimes", () => {
     // A shared location wins and names no city.
     const here = await instantAnswer("what time is sunset", { lat: 19.07, lon: 72.87, tz: "Asia/Kolkata" });
     expect(here?.sub).toBe("Sunset · today");
+    // A location from the other side of the world (saved before a flight)
+    // loses to the phone's zone: never San Francisco's sunset in Bangkok time.
+    const away = await instantAnswer("sunset time today", { lat: 37.79, lon: -122.41, tz: "Asia/Bangkok" });
+    expect(away?.sub).toBe("Sunset in Bangkok · today");
+    expect(away?.value).toMatch(/ PM$/);
+  });
+
+  it("knows which saved locations fit the phone's time zone", () => {
+    const sept = new Date("2026-09-25T12:00:00Z");
+    expect(locationFitsZone(72.87, "Asia/Kolkata", sept)).toBe(true);    // Mumbai
+    expect(locationFitsZone(75.99, "Asia/Shanghai", sept)).toBe(true);   // Kashgar, three hours off
+    expect(locationFitsZone(-3.7, "Europe/Madrid", sept)).toBe(true);    // Madrid in summer time
+    expect(locationFitsZone(-157.4, "Pacific/Kiritimati", sept)).toBe(true); // UTC+14, across the date line
+    expect(locationFitsZone(-122.41, "Asia/Bangkok", sept)).toBe(false);
+    expect(locationFitsZone(72.87, "America/New_York", sept)).toBe(false);
+    expect(locationFitsZone(72.87, undefined, sept)).toBe(true);
   });
 
   it("tracks the seasons — a London summer day is longer than a winter one", () => {

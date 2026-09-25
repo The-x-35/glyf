@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../core/bridge.dart';
+import '../core/dismiss_keyboard.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
@@ -219,6 +220,9 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
   Future<void> _make() async {
     final description = _describe.text.trim();
     if (description.length < 3 || _making) return;
+    // The review sheet would hand focus back to the field, and the
+    // keyboard would come back up over the new pack.
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _making = true);
     try {
       final res = await GlyfApi.vocabGenerate(description);
@@ -381,7 +385,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Glass.bg,
-      body: SafeArea(
+      body: DismissKeyboard(child: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator(color: Glass.ink, strokeWidth: 2))
             : ListView(
@@ -413,7 +417,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
                   ],
                 ],
               ),
-      ),
+      )),
     );
   }
 

@@ -51,6 +51,8 @@ enum GlyfCatalog {
         case "surface:vault": return "Vault"
         case "surface:translate-hud": return "Translate"
         case "surface:tones": return "Rewrite"
+        case "surface:notes": return "Notes"
+        case "connector:calendar": return "Calendar"
         case "connector:mockcal": return "Calendar picker"
         case "connector:meet": return "Meet link"
         default: break

@@ -1539,7 +1539,7 @@ These were found by reading the code on 2026-09-16. None were reproduced at runt
 5. **Android emoji data has a corrupted token** (a Unicode replacement character followed by the word "against") in the sports group of `GlyfIME.kt`, masked by a filter. Harmless, but clean it up.
 6. ~~`glyf://open?path=...` deep links are not routed~~ Fixed 2026-09-24: `main.dart` routes `build`, `keys`, `vault`, `connectors`/`connected`, `settings` and `wallet` to their screens.
 7. **Profile → My Glyfs and Creator stats** do nothing when tapped.
-8. **Profile → Connected tools** has Connect and Disconnect only for Google.
+8. ~~**Profile → Connected tools** has Connect and Disconnect only for Google.~~ 25 Sep: Connected tools has Calendar and Google Meet (section 5.28), Booking link and Contacts; the other providers are Coming soon.
 9. **iOS in-keyboard menu**: the Glyfs and Packs rows do nothing; Connectors is demo-only with a "soon" line; the Account screen always says "Free" (it ignores `plan`) and cannot be reached from the grid; the list-based `root` screen definition (with Notes and Account rows) is dead code behind the grid.
 10. **ConnectorSurface action "New event from my text"** only opens the app.
 11. **Onboarding "Connect your Google" says "Read-only"**, but the Calendar scope is `calendar.events` (read and write) and Gmail is `gmail.compose` (creates drafts).
@@ -1553,6 +1553,28 @@ These were found by reading the code on 2026-09-16. None were reproduced at runt
 19. **Android settings defaults** omit `search` from `toolbarOrder` and have no `vocabPacks` / `vocabLearning` keys (the code falls back correctly, but the files differ from iOS).
 20. **Unused code**: `DraggableOrb` in `orb.dart`; the `POST /tools/run` client helpers on both keyboards.
 21. **Onboarding's location error messages** expect a `nofix` code that only Android returns; iOS reports "unavailable" for the same situation.
+
+### 11.4b Found by using every feature (audit, 25 Sep 2026 evening)
+
+A fresh install on the iPhone 17 Pro simulator (iOS 26.5), taken through sign-in, all eight onboarding steps, the eight tour chats, every tab and Profile screen and every keyboard panel, then the Android keyboard on the emulator. Fixed the same evening:
+
+- **Backspace put a corrected word back in the wrong place.** Holding delete over "I'm free Fri, Sep 25, 7:30–8:00 PM" left "I'm from": the backspace-undo of an autocorrection only checked that the text ended with the corrected word, so a later "free" in other text matched and was swapped for "from". The undo is now tied to the exact text the correction left (both keyboards).
+- **Android's keyboard messages were invisible.** All eleven used system toasts, and Android draws a keyboard's window above toasts and above its own popup windows, so "Copied", "Screenshot copied" and "Connect Google Meet in Glyf › Connected tools" sat under the keys. They are drawn on the keyboard's own overlay now (`GlyfIME.notice`); scenario S137.
+- **Translate bar** re-translated its own output after Replace and sat on "…" (both keyboards).
+- **Clipboard paste** glued onto the word before it ("10.8QvS…"); pastes are spaced like every other insert (both keyboards).
+- **"Tidy this up"** was offered on the text a rewrite had just written (both keyboards).
+- **A ;trigger** got dictionary suggestions ("it's", "its") while typed (both keyboards).
+- **Sunset and weather** used a saved location from another time zone: the simulator's San Francisco location with the Mac's Bangkok zone gave "Sunset 9:03 AM". On a phone that is a location saved before a flight. The phone's zone now wins (`locationFitsZone`, server).
+- **Vocabulary "Make words"** failed ("no usable words") whenever the model's word list ran past its length limit; the cut-off list is recovered (server).
+- **Meet link** could not be bound: it was in the catalog but not in Home's key sheet. It is now, with Google Meet's mark.
+- **No privacy policy link in the app** (App Store 5.1.1): on the sign-in screen and at the bottom of Profile.
+- **Keys list** in the keyboard said "Connector:calendar" (iOS).
+- **Stray slot lines** beside panel titles (Calendar, Glyf) and between the g menu's icons (iOS).
+- **Emoji board labels** ("Frequently used", "Trending", KLIPY's required "Powered by KLIPY") were near-invisible on painted looks (iOS).
+- **Keyboard stayed up** on Vocabulary, Wallet, Builder and Vault when tapping outside a field, and came back over a new pack; **the shorthand trigger field** was autocorrected ("omw" became "On my way!").
+- **Contacts permission text** had an em dash.
+
+Still open from the audit: "Get Plus" and "Get Max" grant a plan without payment (item 1; App Review will reject a paywall that grants for free), and the symbols page does not switch back to letters after ";" or an apostrophe the way Apple's does.
 
 ### 11.5 Stale or inconsistent docs
 

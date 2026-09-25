@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../core/dismiss_keyboard.dart';
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
@@ -104,7 +105,7 @@ class _VaultScreenState extends State<VaultScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return DismissKeyboard(child: Scaffold(
       body: GlyfBackground(
         child: SafeArea(
           child: ListView(
@@ -188,7 +189,7 @@ class _VaultScreenState extends State<VaultScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _sectionHeader(String title, {VoidCallback? onAdd}) {
@@ -347,6 +348,12 @@ class _VaultScreenState extends State<VaultScreen> {
       builder: (setSheetState, showError) => [
         TextField(
             controller: trigCtl,
+            // A trigger is typed exactly: nothing may correct or expand it
+            // ("omw" would come back as "On my way!").
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
+            keyboardType: TextInputType.visiblePassword,
             style: const TextStyle(color: Glass.ink),
             decoration: _dec('Shortcut, like ;sig')),
         const SizedBox(height: 10),

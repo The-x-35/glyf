@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:privy_flutter/privy_flutter.dart';
 
+import '../core/dismiss_keyboard.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
@@ -200,7 +201,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return DismissKeyboard(child: Scaffold(
       backgroundColor: Glass.bg,
       appBar: AppBar(
         backgroundColor: Glass.bg,
@@ -236,7 +237,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 
   Widget _card({required List<Widget> children}) => Container(

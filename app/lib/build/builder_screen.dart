@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/dismiss_keyboard.dart';
 import '../core/bridge.dart';
 import '../core/catalog.dart';
 import '../core/glyf_api.dart';
@@ -185,7 +186,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
   @override
   Widget build(BuildContext context) {
     final def = _def;
-    return Scaffold(
+    return DismissKeyboard(child: Scaffold(
       backgroundColor: Glass.bg,
       appBar: AppBar(
         backgroundColor: Glass.bg,
@@ -250,7 +251,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
           ],
         ],
       ),
-    );
+    ));
   }
 
   // ── pieces ──────────────────────────────────────────────────────────────

@@ -28,6 +28,9 @@ import com.demo.glyf.ime.typing.WordContext
 import org.json.JSONObject
 import kotlin.math.abs
 
+/** How much text before the cursor a correction's anchor holds. */
+private const val ANCHOR_CHARS = 64
+
 /**
  * Glyf for Android — the native IME (SPEC §1: keyboards are native per
  * platform; Flutter never runs in here). M-Android-1 slice: full typing
@@ -54,8 +57,24 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private data class Suggestion(val text: String, val kind: Kind) {
         enum class Kind { LITERAL, CORRECTION, WORD, UNDO, FILL }
     }
-    private data class Correction(val original: String, val replacement: String, val fromEngine: Boolean)
+    /** [anchor] is the text before the cursor right after the correction and
+     *  its space went in: undo works from exactly there (iOS twin). */
+    private data class Correction(val original: String, val replacement: String, val fromEngine: Boolean,
+                                  var anchor: String? = null)
     private var lastCorrection: Correction? = null
+
+    /** The last correction, while the cursor is still right after it and its
+     *  space. Otherwise a backspace that later reaches the same word in other
+     *  text ("free" in a pasted line) would swap it back. */
+    private fun undoableCorrection(before: String): Correction? {
+        val corr = lastCorrection ?: return null
+        val anchor = corr.anchor ?: return null
+        // Callers read different lengths before the cursor; compare the
+        // stretch the anchor holds.
+        return corr.takeIf { before.takeLast(ANCHOR_CHARS) == anchor && before.endsWith(corr.replacement + " ") }
+    }
+    private fun anchorHere(ic: android.view.inputmethod.InputConnection): String? =
+        ic.getTextBeforeCursor(ANCHOR_CHARS, 0)?.toString()
     /** Where each letter of the word being typed was touched. */
     private val wordTouches = ArrayList<FloatArray?>()
     private var wordTouchesFor = ""
@@ -221,6 +240,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         out.put("cursor", before.length)
         val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClipDescription
         out.put("clipMime", clip?.takeIf { it.mimeTypeCount > 0 }?.getMimeType(0) ?: "")
+        // The notice over the keys lives on the overlay, outside the views above.
+        out.put("notice", (noticeView as? TextView)?.text?.toString() ?: "")
         out.put("clipLabel", clip?.label?.toString() ?: "")
         val dir = java.io.File(filesDir, "qa").apply { mkdirs() }
         // Written whole, then swapped in: a reader never sees half a file.
@@ -447,8 +468,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 }
             }
         }
-        android.widget.Toast.makeText(this, "No voice typing on this phone",
-            android.widget.Toast.LENGTH_SHORT).show()
+        notice("No voice typing on this phone")
     }
 
     private fun openAppPath(path: String) {
@@ -464,9 +484,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private fun pasteClipboard() {
-        com.demo.glyf.store.ClipboardStore.clipText(this)?.let {
-            currentInputConnection?.commitText(it, 1)
-        }
+        com.demo.glyf.store.ClipboardStore.clipText(this)?.let { insertSpaced(it) }
+    }
+
+    /** A pasted copy is its own piece of text: never glued onto the word
+     *  before it ("10.8QvS…"). iOS twin: `spaced(_:after:)`. */
+    private fun insertSpaced(text: String) {
+        val ic = currentInputConnection ?: return
+        val last = ic.getTextBeforeCursor(1, 0)?.lastOrNull()
+        ic.commitText(if (last == null || last.isWhitespace()) text else " $text", 1)
     }
 
     private fun insertVaultFirst() {
@@ -784,8 +810,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         (getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager)
             ?.setPrimaryClip(android.content.ClipData.newPlainText("glyf", text))
-        android.widget.Toast.makeText(
-            this, "Inserted · copied", android.widget.Toast.LENGTH_SHORT).show()
+        notice("Inserted · copied")
     }
 
     private fun dismissSearchResults() {
@@ -876,9 +901,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 scheduleSuggestions()
             }
             id == "delete" -> {
-                val corr = lastCorrection
                 val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
-                if (corr != null && before.endsWith(corr.replacement + " ")) {
+                val corr = undoableCorrection(before)
+                if (corr == null) lastCorrection = null
+                if (corr != null) {
                     // Backspace right after a correction puts back what was typed
                     // (and teaches the engine to leave that word alone).
                     ic.deleteSurroundingText(corr.replacement.length + 1, 0)
@@ -1608,6 +1634,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** A saved detail the model says the sentence is leading into. */
     private var suggestedDetail: Smart.Field? = null
     private var suggestedFor = ""
+    /** What Glyf itself just wrote into the field (a rewrite, an answer):
+     *  offering to tidy that up would be asking about its own work. */
+    private var glyfWrote = ""
     private var suggestCancel: (() -> Unit)? = null
     private val suggestWork = Runnable { askForSuggestion() }
 
@@ -1727,6 +1756,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun scheduleSuggestion(text: String) {
         main.removeCallbacks(suggestWork)
         if (text.length < 12 || text.split(" ").size < 3 || text == suggestedFor ||
+            (glyfWrote.isNotEmpty() && text.trim().endsWith(glyfWrote)) ||
             !settings.optBoolean("candidates", true)) return
         main.postDelayed(suggestWork, 700)
     }
@@ -2329,13 +2359,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             ic.commitText(text, 1)
             ic.endBatchEdit()
         }
+        glyfWrote = text.trim()
         actClose()
     }
 
     private fun actCopy(text: String) {
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         cm.setPrimaryClip(android.content.ClipData.newPlainText("Glyf", text))
-        android.widget.Toast.makeText(this, "Copied", android.widget.Toast.LENGTH_SHORT).show()
+        notice("Copied")
     }
 
     private fun actClose() {
@@ -2474,7 +2505,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     if (s.optString("trigger") == token) {
                         ic.deleteSurroundingText(token.length, 0)
                         ic.commitText(s.optString("text") + " ", 1)
-                        lastCorrection = Correction(token, s.optString("text"), fromEngine = false)
+                        lastCorrection = Correction(token, s.optString("text"), fromEngine = false,
+                            anchor = anchorHere(ic))
                         syncAutoShift()
                         updateSuggestions()
                         return
@@ -2486,6 +2518,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // password and address fields untouched.
         commitCurrentWord(ic)
         ic.commitText(" ", 1)
+        // A correction this space just made is undoable from here only.
+        lastCorrection?.let { if (it.anchor == null) it.anchor = anchorHere(ic) }
         syncAutoShift()
         updateSuggestions()
     }
@@ -2523,7 +2557,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     private fun engineSuggestions(word: String, before: String, policy: Int): TypingEngine.Suggestions? {
         val engine = KeyboardTyping.engine ?: return null
+        // A number, or a ;trigger on its way to becoming shorthand, wants
+        // none of the dictionary's guesses (iOS twin).
+        val first = word.firstOrNull() ?: return null
+        if (first.isDigit() || first == ';') return null
         val head = before.substring(0, before.length - word.length)
+        if (head.endsWith(";")) return null
         return engine.suggestions(word, if (wordTouchesFor == word) ArrayList(wordTouches) else null,
             WordContext.previousWord(before), WordContext.wantsCapital(head), policy)
     }
@@ -2571,7 +2610,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (updateSmartChip(before)) return
         refreshClipCard()
         if (word.isEmpty()) {
-            val corr = lastCorrection
+            val corr = undoableCorrection(before)
             val previous = WordContext.previousWord(before)
             showSuggestions(when {
                 corr != null -> listOf(Suggestion(corr.original, Suggestion.Kind.UNDO))
@@ -2663,7 +2702,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             Suggestion.Kind.UNDO -> {
                 val corr = lastCorrection ?: return
-                if (before.endsWith(corr.replacement + " ")) {
+                if (undoableCorrection(before) != null) {
                     ic.deleteSurroundingText(corr.replacement.length + 1, 0)
                     ic.commitText(corr.original + " ", 1)
                     if (corr.fromEngine) engine?.revert(corr.original, corr.replacement)
@@ -2771,7 +2810,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun insertMeetLink() {
         CallLink.make(this) { url, note ->
             if (url == null) {
-                note?.let { android.widget.Toast.makeText(this, it, android.widget.Toast.LENGTH_SHORT).show() }
+                note?.let { notice(it) }
                 return@make
             }
             val ic = currentInputConnection ?: return@make
@@ -2956,8 +2995,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         SettingsStore.save(this, settings.toString())
         dismissFeaturePanel()
         buildToolbar(keyboard.isDark || keyboard.themeBg.isNotEmpty())
-        android.widget.Toast.makeText(this, "Added to the strip",
-            android.widget.Toast.LENGTH_SHORT).show()
+        notice("Added to the strip")
     }
 
     /** The glyfs this person built in the app; tap one to run it on what is
@@ -2988,6 +3026,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 "surface:vault" -> "Vault"
                 "surface:translate-hud" -> "Translate"
                 "surface:tones" -> "Rewrite"
+                "surface:notes" -> "Notes"
                 "connector:calendar" -> "Calendar"
                 "connector:meet" -> "Meet link"
                 else -> skillTitle(target)
@@ -3039,7 +3078,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 toolbar.visibility = View.VISIBLE
             },
             onPaste = { text ->
-                currentInputConnection?.commitText(text, 1)
+                insertSpaced(text)
                 dismissFeaturePanel()
                 toolbar.visibility = View.VISIBLE
             },
@@ -3137,8 +3176,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 }
                 val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 cm.setPrimaryClip(clip)
-                android.widget.Toast.makeText(this, "Screenshot copied",
-                    android.widget.Toast.LENGTH_SHORT).show()
+                notice("Screenshot copied")
             }
         }.start()
     }
@@ -3216,7 +3254,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun saveNote() {
         val err = com.demo.glyf.store.NotesStore.upsert(this, noteEditId, noteEditText)
         if (err != null) {
-            android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_SHORT).show()
+            notice(err)
             return
         }
         exitNoteEdit()
@@ -3291,8 +3329,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val noun = if (kind == MediaKind.GIFS) "GIF" else "Sticker"
         MediaClient.fullData(item.url) { bytes ->
             if (bytes == null || bytes.size < 8) {
-                android.widget.Toast.makeText(this, "That ${noun.lowercase()} didn't download. Try again",
-                    android.widget.Toast.LENGTH_SHORT).show()
+                notice("That ${noun.lowercase()} didn't download. Try again")
                 done(false)
                 return@fullData
             }
@@ -3323,8 +3360,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     }
                     val clip = android.content.ClipData(noun, arrayOf(mime), android.content.ClipData.Item(uri))
                     (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(clip)
-                    android.widget.Toast.makeText(this, "$noun copied. Paste it in the message",
-                        android.widget.Toast.LENGTH_SHORT).show()
+                    notice("$noun copied. Paste it in the message")
                     done(true)
                 }
             }.start()
@@ -3335,6 +3371,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     // MARK: Translate strip (iOS TranslationHUD twin)
 
     private var translateStrip: LinearLayout? = null
+    /** What Replace just put in; see applyTranslation. */
+    private var translateReplaced = ""
     private var translateDir: TextView? = null
     private var translateText: TextView? = null
     private var translateReplace: TextView? = null
@@ -3440,7 +3478,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val before = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
         val text = before.takeLast(280).trim()
         translateConsumed = before.length
-        if (text.isEmpty() || text == translateSource) return
+        if (text.isEmpty() || text == translateSource || text == translateReplaced) return
+        translateReplaced = ""
         translateSource = text
         translateResult = ""
         translateText?.text = "…"
@@ -3484,11 +3523,58 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val ic = currentInputConnection ?: return
         ic.deleteSurroundingText(translateConsumed, 0)
         ic.commitText(translateResult, 1)
+        // The draft is now the translation: don't translate it back, and
+        // rest rather than show "…" as if waiting (iOS twin).
+        translateReplaced = translateResult.trim()
         translateSource = ""
         translateResult = ""
-        translateText?.text = "…"
+        translateText?.text = ""
         translateReplace?.alpha = 0.3f
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    private var noticeView: View? = null
+    private val hideNotice = Runnable {
+        noticeView?.let { if (::root.isInitialized) root.overlay.remove(it) }
+        noticeView = null
+    }
+
+    /** A short message over the keys ("Copied", "Connect Google Meet in
+     *  Glyf › Connected tools"). Not a system Toast, and not a PopupWindow:
+     *  Android draws a keyboard's window above both, so either one sits
+     *  under the keys where nobody sees it. It goes on the keyboard's own
+     *  overlay instead. iOS twin: KeyboardToast. */
+    fun notice(text: String) {
+        main.post {
+            if (!::root.isInitialized || !root.isShown || root.width == 0) {
+                android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
+                return@post
+            }
+            main.removeCallbacks(hideNotice)
+            noticeView?.let { root.overlay.remove(it) }
+            val label = TextView(this).apply {
+                this.text = text
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(9), dp(16), dp(9))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(18).toFloat()
+                    setColor(Color.argb(235, 0x1C, 0x1C, 0x1E))
+                }
+                setTag(com.demo.glyf.R.id.qa_id, "kb:notice")
+            }
+            label.measure(
+                View.MeasureSpec.makeMeasureSpec((root.width * 0.86f).toInt(), View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            // Just under the strip, centred over the keys.
+            val left = (root.width - label.measuredWidth) / 2
+            val top = dp(54)
+            label.layout(left, top, left + label.measuredWidth, top + label.measuredHeight)
+            root.overlay.add(label)
+            noticeView = label
+            main.postDelayed(hideNotice, 2400)
+        }
+    }
 }

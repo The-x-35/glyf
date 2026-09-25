@@ -312,8 +312,7 @@ class ClipboardPanelView(
             Triple("🔒", "Save to vault") {
                 val refusal = com.demo.glyf.store.NotesStore.upsert(context, null, item.text)
                 dismissMenu()
-                android.widget.Toast.makeText(context, refusal ?: "Saved to vault",
-                    android.widget.Toast.LENGTH_SHORT).show()
+                (context as? GlyfIME)?.notice(refusal ?: "Saved to vault") ?: android.widget.Toast.makeText(context, refusal ?: "Saved to vault", android.widget.Toast.LENGTH_SHORT).show()
             },
             Triple("📌", if (item.pinned) "Unpin" else "Pin") {
                 ClipboardStore.togglePin(context, item.text); dismissMenu(); reload()

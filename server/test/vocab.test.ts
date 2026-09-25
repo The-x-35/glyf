@@ -32,6 +32,14 @@ describe("vocab packs", () => {
     expect(parsePack('{"words": ["yaar"]}', "Hinglish")?.name).toBe("Hinglish");
   });
 
+  it("keeps the words of a reply the length limit cut off", () => {
+    const cut = '```json\n{\n  "name": "Mumbai Dental",\n  "words": [\n    "scaling",\n    "RCT",\n    "acha",\n    "yaa';
+    expect(parsePack(cut, "fallback")).toEqual({ name: "Mumbai Dental", words: ["scaling", "RCT", "acha"], phrases: [] });
+    const inPhrases = '{"name": "Gym", "words": ["PR", "deload"], "phrases": ["leg day", "see you at';
+    expect(parsePack(inPhrases, "x")).toEqual({ name: "Gym", words: ["PR", "deload"], phrases: ["leg day"] });
+    expect(parsePack('{"name": "Empty", "words": [', "x")).toBeNull();
+  });
+
   it("POST /vocab/generate returns a reviewed-shape pack and validates input", async () => {
     const app = signedInApp();
     const ok = await app.inject({

@@ -655,7 +655,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 13.5, color: Glass.danger)),
             ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 6),
+          Center(
+            child: TextButton(
+              key: const Key('onb:privacy'),
+              onPressed: () => GlyfBridge.openURL(privacyPolicyURL),
+              child: const Text('Privacy policy',
+                  style: TextStyle(fontSize: 13, color: Glass.inkSoft, fontWeight: FontWeight.w500)),
+            ),
+          ),
+          const SizedBox(height: 4),
         ]);
 
       case 'meet':

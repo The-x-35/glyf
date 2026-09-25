@@ -499,5 +499,15 @@
   "outcome": "Calendar reads On after the phone’s “Glyf would like full access to your Calendar”; Google Meet showed the account, turned off, and on again opened “Glyf wants to use accounts.google.com to Sign In” (cancelled there)",
   "verdict": "pass",
   "fixed": true
+ },
+ {
+  "id": "S137",
+  "surface": "Android",
+  "area": "Calendar",
+  "title": "Without Google, the Meet key says where to connect it",
+  "input": "Google not connected → M bound to Meet link → hold M",
+  "outcome": "notice over the keys: “Connect Google Meet in Glyf › Connected tools”, nothing typed (a system toast used to sit hidden under the keyboard)",
+  "verdict": "pass",
+  "fixed": true
  }
 ]

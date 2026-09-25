@@ -8,6 +8,7 @@ import '../core/catalog.dart';
 import '../build/builder_screen.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
+import '../profile/brand_marks.dart';
 import 'keyboard_visual.dart';
 
 /// Home — your keyboard, drawn live. Bound keys glow on the visual; tap a
@@ -188,8 +189,11 @@ class _HomeTabState extends State<HomeTab> {
                             fontSize: 16,
                             fontWeight: FontWeight.w600)),
                   ),
-                  Text(Catalog.byId(e.value).emoji,
-                      style: const TextStyle(fontSize: 20)),
+                  if (e.value == 'connector:meet')
+                    const GoogleMeetMark(size: 22)
+                  else
+                    Text(Catalog.byId(e.value).emoji,
+                        style: const TextStyle(fontSize: 20)),
                   const SizedBox(width: 6),
                   const Icon(Icons.chevron_right,
                       color: Color(0xFFB9BEC7), size: 20),
@@ -276,6 +280,8 @@ class _HomeTabState extends State<HomeTab> {
       ('connector:calendar', '📅', 'Calendar', null),
       ('surface:translate-hud', '🌐', 'Translate', null),
       ('surface:tones', '🎚️', 'Rewrite', null),
+      // Google Meet's own mark, drawn below, never an emoji or the Google G.
+      ('connector:meet', '', 'Meet link', null),
     ];
     showModalBottomSheet<void>(
       context: context,
@@ -296,7 +302,10 @@ class _HomeTabState extends State<HomeTab> {
                   _setBinding(letter, id);
                 },
                 child: Row(children: [
-                  Text(emoji, style: const TextStyle(fontSize: 22)),
+                  if (id == 'connector:meet')
+                    const SizedBox(width: 26, child: Center(child: GoogleMeetMark(size: 24)))
+                  else
+                    Text(emoji, style: const TextStyle(fontSize: 22)),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -372,7 +381,10 @@ class _HomeTabState extends State<HomeTab> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(22, 20, 22, 12),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text(g.emoji, style: const TextStyle(fontSize: 34)),
+            if (glyfId == 'connector:meet')
+              const GoogleMeetMark(size: 38)
+            else
+              Text(g.emoji, style: const TextStyle(fontSize: 34)),
             const SizedBox(height: 8),
             Text(g.title,
                 style: const TextStyle(

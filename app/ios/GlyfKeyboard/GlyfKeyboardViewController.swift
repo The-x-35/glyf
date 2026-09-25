@@ -128,8 +128,21 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let replacement: String
         /// Engine corrections teach on undo; shorthand expansions don't.
         let fromEngine: Bool
+        /// What came before the caret right after the correction and its
+        /// space went in. Undo works from exactly there: anything written,
+        /// deleted or moved to since leaves the correction behind.
+        var anchor: String? = nil
     }
     private var lastCorrection: Correction?
+
+    /// The last correction, while the caret is still right after it and its
+    /// space. Otherwise a backspace that later reaches the same word in other
+    /// text ("free" in a pasted line) would swap it back.
+    private func undoableCorrection(before: String?) -> Correction? {
+        guard let corr = lastCorrection, let anchor = corr.anchor, let before,
+              before == anchor, before.hasSuffix(corr.replacement + " ") else { return nil }
+        return corr
+    }
     /// Where each letter of the word being typed was touched.
     private var wordTouches: [(Float, Float)?] = []
     private var wordTouchesFor = ""
@@ -622,6 +635,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     }
     private var suggestedFor = ""
     private var suggestedChip: Smart.Chip?
+    /// What Glyf itself just wrote into the field (a rewrite, an answer).
+    /// Offering to tidy that up would be asking about its own work.
+    private var glyfWrote = ""
 
     /// The tool being dragged onto or around the strip, and its ghost.
     private var draggingToolId: String?
@@ -1471,7 +1487,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         guard hasFullAccess, !isSecureField, surface == .none,
               SettingsStore.current.candidates,
               trimmed.count >= 12, trimmed.split(separator: " ").count >= 3,
-              trimmed != suggestedFor
+              trimmed != suggestedFor,
+              glyfWrote.isEmpty || !trimmed.hasSuffix(glyfWrote)
         else { return }
         cancelSuggestion()
         let fields = VaultStore.shared.load().fields
@@ -1530,7 +1547,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let before = beforeContext
         let word = WordTracker.currentWord(beforeContext: before)
         if word.isEmpty {
-            if let corr = lastCorrection {
+            if let corr = undoableCorrection(before: before) {
                 toolbar.showSuggestions([.init(text: corr.original, kind: .undo)])
             } else if let engine = typing, before?.hasSuffix(" ") == true,
                       let previous = WordTracker.previousWord(beforeContext: before) {
@@ -1572,6 +1589,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // becoming shorthand: neither wants the dictionary's guesses.
         guard let first = word.first, !first.isNumber, first != ";" else { return nil }
         let head = String((before ?? "").dropLast(word.count))
+        // ";" splits words, so a trigger reaches here as "otw" with the
+        // semicolon just before it.
+        if head.last == ";" { return nil }
         return engine.suggestions(
             typed: word,
             touches: wordTouchesFor == word ? wordTouches : nil,
@@ -1650,7 +1670,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// correction is never offered for that word again.
     @discardableResult
     private func undoLastCorrection() -> Bool {
-        guard let corr = lastCorrection,
+        guard let corr = undoableCorrection(before: beforeContext),
               let before = beforeContext else { return false }
         let tail = before.hasSuffix(corr.replacement + " ") ? corr.replacement + " "
             : before.hasSuffix(corr.replacement) ? corr.replacement : nil
@@ -1717,8 +1737,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         }
         // Backspace right after a correction puts back what was typed (and
         // teaches the engine to leave that word alone).
-        if let corr = lastCorrection,
-           beforeContext?.hasSuffix(corr.replacement + " ") == true {
+        if let corr = undoableCorrection(before: beforeContext) {
             for _ in 0..<(corr.replacement.count + 1) { hostDelete() }
             hostInsert(corr.original)
             lastCorrection = nil
@@ -1727,6 +1746,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                 TypingStore.shared.scheduleSave()
             }
         } else {
+            lastCorrection = nil
             hostDelete()
         }
         // One read of the host's text, reused below: the delete has already
@@ -1771,6 +1791,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             hostInsert(expansion)
             lastCorrection = Correction(original: token, replacement: expansion, fromEngine: false)
             hostInsert(" ")
+            lastCorrection?.anchor = beforeContext
             syncAutoShift()
             scheduleCandidates()
             notifyHUD()
@@ -1781,6 +1802,8 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         // policy keeps secure fields untouched (§11.9).
         commitCurrentWord()
         hostInsert(" ")
+        // A correction this space just made is undoable from here only.
+        if let corr = lastCorrection, corr.anchor == nil { lastCorrection?.anchor = beforeContext }
         syncAutoShift()
         scheduleCandidates()
         notifyHUD()
@@ -2143,6 +2166,7 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
             }
         }
         hostInsert(text)
+        glyfWrote = text.trimmingCharacters(in: .whitespacesAndNewlines)
         actInput = nil
         setSurface(.none)
         syncAutoShift()
@@ -2192,7 +2216,9 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
 
     func clipboardPanelPaste(_ text: String) {
         setSurface(.none)
-        hostInsert(text)
+        // A copy is its own piece of text: it never glues onto the word
+        // before it ("10.8QvS…").
+        hostInsert(Self.spaced(text, after: beforeContext))
         updateCandidates()
     }
 
@@ -2213,7 +2239,7 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
                     self.setSurface(.none)
                     ClipContext.markDone()
                     self.remember(copied: value)
-                    self.hostInsert(value)
+                    self.hostInsert(Self.spaced(value, after: self.beforeContext))
                     self.updateCandidates()
                 }
             }
@@ -2519,9 +2545,9 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
                     return
                 }
                 remember(copied: read)
-                hostInsert(read)
+                hostInsert(Self.spaced(read, after: beforeContext))
             } else {
-                hostInsert(text)
+                hostInsert(Self.spaced(text, after: beforeContext))
             }
         } else {
             hostInsert(chip.insert)

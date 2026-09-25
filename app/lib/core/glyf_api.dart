@@ -7,6 +7,9 @@ import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'auth.dart';
 import 'bridge.dart';
 
+/// The privacy policy, on the website (App Store 5.1.1 wants it in the app too).
+const privacyPolicyURL = 'https://www.tryglyf.com/privacy';
+
 /// The app's own client for POST /glyf/run (SSE). The APP may talk to the
 /// backend freely; the keyboard has its own Swift client behind Full Access.
 abstract final class GlyfApi {

@@ -26,6 +26,9 @@ final class TranslationHUD: UIView {
     private var lastSource = ""
     private var lastTranslation = ""
     private var lastConsumed = 0
+    /// What Replace just put in: the draft is now a translation, and asking
+    /// to translate it back would leave the strip on "…" for nothing.
+    private var justReplaced = ""
     private var detected: String?
     private var target: String?
     /// Set when the person tapped the direction; nil lets detection decide.
@@ -122,7 +125,8 @@ final class TranslationHUD: UIView {
     func draftChanged(_ draft: String, consumedBefore: Int) {
         let text = String(draft.suffix(280)).trimmingCharacters(in: .whitespacesAndNewlines)
         lastConsumed = consumedBefore
-        guard !text.isEmpty, text != lastSource else { return }
+        guard !text.isEmpty, text != lastSource, text != justReplaced else { return }
+        justReplaced = ""
         lastSource = text
         // The draft moved on: never leave the previous translation standing.
         lastTranslation = ""
@@ -155,10 +159,13 @@ final class TranslationHUD: UIView {
 
     private func applyTapped() {
         guard !lastTranslation.isEmpty else { return }
-        delegate?.hudReplaceDraft(with: lastTranslation, consumedBefore: lastConsumed)
+        let replaced = lastTranslation
+        delegate?.hudReplaceDraft(with: replaced, consumedBefore: lastConsumed)
+        justReplaced = replaced.trimmingCharacters(in: .whitespacesAndNewlines)
         lastSource = ""
         lastTranslation = ""
-        textLabel.text = "…"
+        // Done, not waiting: the strip rests until the next word is typed.
+        textLabel.text = ""
         updateReplaceEnabled()
     }
 

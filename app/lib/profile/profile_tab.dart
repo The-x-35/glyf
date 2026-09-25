@@ -529,6 +529,14 @@ class _ProfileTabState extends State<ProfileTab> {
                         fontWeight: FontWeight.w600)),
               ),
             ),
+          Center(
+            child: TextButton(
+              key: const Key('profile:privacy'),
+              onPressed: () => GlyfBridge.openURL(privacyPolicyURL),
+              child: const Text('Privacy policy',
+                  style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w500)),
+            ),
+          ),
           const SizedBox(height: 14),
 
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [

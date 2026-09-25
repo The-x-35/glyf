@@ -191,11 +191,46 @@ const ZONE_CITIES: Record<string, [number, number, string]> = {
   "Pacific/Auckland": [-36.8485, 174.7633, "Auckland"],
 };
 
+/** Hours ahead of UTC a zone's clocks are right now, or null for an
+ *  unknown zone. */
+function zoneOffsetHours(tz: string, at = new Date()): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hourCycle: "h23",
+      year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric",
+    }).formatToParts(at);
+    const n = (type: string) => Number(parts.find(p => p.type === type)?.value);
+    const local = Date.UTC(n("year"), n("month") - 1, n("day"), n("hour"), n("minute"));
+    return (local - Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate(),
+      at.getUTCHours(), at.getUTCMinutes())) / 3_600_000;
+  } catch {
+    return null;
+  }
+}
+
+/** A place whose sun keeps a clock hours away from the caller's zone is not
+ *  where the caller is now: a location saved before a flight, say. Answering
+ *  for it would give San Francisco's sunset in Bangkok time ("9:03 AM"). */
+export function locationFitsZone(lon: number, tz: string | undefined, at = new Date()): boolean {
+  if (!tz) return true;
+  const offset = zoneOffsetHours(tz, at);
+  if (offset === null) return true;
+  const gap = Math.abs(offset - lon / 15) % 24;
+  // Real zones sit up to three hours off their longitude (western China).
+  return Math.min(gap, 24 - gap) <= 3.5;
+}
+
 function sunAnswer(q: string, ctx: AnswerContext): AnswerCard | null {
   if (!/\bsun\s?(set|rise)\b|\bgolden hour\b/i.test(q)) return null;
   // A place named in the query is not necessarily where the caller is.
   if (/\b(?:in|at)\s+[a-zÀ-ɏ]/i.test(q)) return null;
   let lat = ctx.lat, lon = ctx.lon, city: string | null = null;
+  // The time zone is the phone's own and always current; the location may
+  // be one saved elsewhere. When they disagree, the zone wins.
+  if (lon !== undefined && !locationFitsZone(lon, ctx.tz)) {
+    lat = undefined;
+    lon = undefined;
+  }
   if (lat === undefined || lon === undefined) {
     const zone = ctx.tz ? ZONE_CITIES[ctx.tz] : undefined;
     if (!zone) return null;
@@ -251,6 +286,8 @@ const WEATHER_WORDS: Record<string, string> = {
 async function weatherAnswer(q: string, ctx: AnswerContext): Promise<AnswerCard | null> {
   if (!/\bweather\b|\btemperature\b|how (hot|cold)\b|\braining\b/i.test(q)) return null;
   if (ctx.lat === undefined || ctx.lon === undefined) return null;
+  // A saved location from another time zone is not where the caller is.
+  if (!locationFitsZone(ctx.lon, ctx.tz)) return null;
   if (/\b(?:in|at)\s+[a-zÀ-ɏ]/i.test(q)) return null;
   const key = process.env.GOOGLE_WEATHER_KEY || process.env.GOOGLE_PLACES_KEY;
   if (!key) return null;

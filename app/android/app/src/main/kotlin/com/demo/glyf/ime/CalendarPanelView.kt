@@ -270,7 +270,7 @@ class CalendarPanelView(
     }
 
     private fun toast(text: String) =
-        android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+        (context as? GlyfIME)?.notice(text) ?: android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
 
     /** With Google Calendar connected the event goes there, where Google
      *  emails the invitees and makes the Meet call; otherwise the phone's

@@ -38,16 +38,47 @@ export function cleanPhrase(raw: unknown): string | null {
   return p;
 }
 
-/** Pulls the pack out of a model reply, keeping only what a keyboard can use. */
-export function parsePack(reply: string, fallbackName: string): VocabPack | null {
+type RawPack = { name?: unknown; words?: unknown; phrases?: unknown };
+
+function parseObject(reply: string): RawPack | null {
   const match = reply.match(/\{[\s\S]*\}/);
   if (!match) return null;
-  let obj: { name?: unknown; words?: unknown; phrases?: unknown };
   try {
-    obj = JSON.parse(match[0]);
+    return JSON.parse(match[0]);
   } catch {
     return null;
   }
+}
+
+/** A reply the length limit cut off mid-list is still mostly words: keep
+ *  every complete string in the lists it reached. */
+function salvage(reply: string): RawPack | null {
+  const list = (key: string): string[] => {
+    const start = reply.search(new RegExp(`"${key}"\\s*:\\s*\\[`));
+    if (start < 0) return [];
+    const rest = reply.slice(reply.indexOf("[", start) + 1);
+    const end = rest.indexOf("]");
+    const body = end >= 0 ? rest.slice(0, end) : rest;
+    const out: string[] = [];
+    for (const m of body.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
+      try {
+        out.push(JSON.parse(`"${m[1]}"`));
+      } catch {
+        // a broken escape: skip that one
+      }
+    }
+    return out;
+  };
+  const words = list("words");
+  if (words.length === 0) return null;
+  const name = reply.match(/"name"\s*:\s*"((?:[^"\\\n]|\\.)*)"/)?.[1];
+  return { name, words, phrases: list("phrases") };
+}
+
+/** Pulls the pack out of a model reply, keeping only what a keyboard can use. */
+export function parsePack(reply: string, fallbackName: string): VocabPack | null {
+  const obj = parseObject(reply) ?? salvage(reply);
+  if (!obj) return null;
   const seen = new Set<string>();
   const words: string[] = [];
   for (const raw of Array.isArray(obj.words) ? obj.words : []) {

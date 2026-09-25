@@ -647,6 +647,24 @@ const scenarios = [
     return { pass: !invitees && !video && r.t.includes("📅 Lunch with sam"),
       note: `${invitees ? "an Invitees row showed without Google; " : ""}${video ? "a Video call row showed without Google; " : ""}message '${r.t}'${second(r)}` };
   } },
+  { id: "S137", title: "Without Google, the Meet key says where to connect it", run: async () => {
+    tool("googlefake");
+    tool("bind", "--es text m=connector:meet");
+    try {
+      await fresh();
+      const s = await state();
+      if (!s.keys.m) return { pass: false, note: "no M key" };
+      await hold(s.keys.m[0], s.keys.m[1], 900);
+      let notice = "";
+      for (let i = 0; i < 8 && !notice; i++) { notice = (await state()).notice || ""; if (!notice) await sleep(200); }
+      await screenshot("S137-notice");
+      const t = (await state()).text;
+      return { pass: notice === "Connect Google Meet in Glyf › Connected tools" && !t.includes("meet.google.com"),
+        note: `notice '${notice}', message '${t}'` };
+    } finally {
+      tool("bind", "--es text m=");
+    }
+  } },
   { id: "S128", title: "A key held for a Meet link", run: async () => {
     await fetch(`${FAKE_GOOGLE}/_reset`);
     tool("googlefake", `--es text ${FAKE_GOOGLE_FOR_PHONE}`);
