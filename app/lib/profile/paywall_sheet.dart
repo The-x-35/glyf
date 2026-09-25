@@ -7,7 +7,7 @@ import '../core/theme.dart';
 
 /// §6.16 — two plans over free (priced against Wispr Flow $12–15/mo and
 /// Grammarly ~$12/mo: we undercut with Plus and out-feature with Max).
-/// Free: 40 runs/day · Plus $4.99: 400 runs/day + priority · Max $19.99:
+/// Free: 40 runs/day · Plus $1.99: 400 runs/day + priority · Max $4.99:
 /// unlimited + the smartest models. This build unlocks locally; App Store
 /// products + server receipt validation replace the same toggle at ship.
 
@@ -92,8 +92,8 @@ class _PaywallSheetState extends State<_PaywallSheet> {
               child: _planCard(
                 id: 'plus',
                 name: 'Plus',
-                price: '\$4.99',
-                yearly: 'or \$39.99 a year, save 33%',
+                price: '\$1.99',
+                yearly: 'or \$15.99 a year, save 33%',
                 features: const [
                   '400 runs a day',
                   'Priority speed',
@@ -106,8 +106,8 @@ class _PaywallSheetState extends State<_PaywallSheet> {
               child: _planCard(
                 id: 'max',
                 name: 'Max',
-                price: '\$19.99',
-                yearly: 'or \$159.99 a year, save 33%',
+                price: '\$4.99',
+                yearly: 'or \$39.99 a year, save 33%',
                 badge: plansOnSale ? 'Best' : null,
                 features: const [
                   'Unlimited Glyf runs',

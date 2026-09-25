@@ -46,7 +46,7 @@ Last updated: Fri 25 Sep 2026 (IST).
 | # | Item | Owner |
 |---|---|---|
 | A1 | Upload TestFlight build 3 (version 1.0.0, build 3, export compliance set). Build 2 is the last confirmed upload | Arpit |
-| A2 | Purchases, next update: sign the Paid Apps Agreement, join the Small Business Program, create the "Glyf Pro" group with `com.arpit.glyf.plus.monthly` ($4.99), `com.arpit.glyf.plus.yearly` ($39.99), `com.arpit.glyf.max.monthly` ($19.99) and `com.arpit.glyf.max.yearly` ($159.99), then RevenueCat; Build adds the purchase flow and flips `plansOnSale` (Plus and Max show as Coming soon until then). Steps: the Glyf Store Setup page (https://claude.ai/artifact/Ev2659pwAEPeKWa5rhQhQG) | Arpit, then Build |
+| A2 | Purchases, next update: sign the Paid Apps Agreement, join the Small Business Program, create the "Glyf Pro" group with `com.arpit.glyf.plus.monthly` ($1.99), `com.arpit.glyf.plus.yearly` ($15.99), `com.arpit.glyf.max.monthly` ($4.99) and `com.arpit.glyf.max.yearly` ($39.99), then RevenueCat; Build adds the purchase flow and flips `plansOnSale` (Plus and Max show as Coming soon until then). Steps: the Glyf Store Setup page (https://claude.ai/artifact/Ev2659pwAEPeKWa5rhQhQG) | Arpit, then Build |
 | A3 | Google Play Console setup and a signed Android release build | Arpit + Build |
 | A4 | Real-device checks the simulator can't do: the 45 MB keyboard memory budget, haptics, the real microphone for dictation, the ripple performance profile | Arpit (device) + Build |
 | A5 | ~~Lock the final bundle IDs~~ **25 Sep:** the iPhone app moved to Arpit's own developer account as `com.arpit.glyf` / `com.arpit.glyf.keyboard`, App Group `group.com.arpit.glyf` (Android keeps `com.demo.glyf`). The signing team is still to pick: A16 | Arpit |

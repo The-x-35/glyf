@@ -37,7 +37,7 @@ struct GlyfSettings: Codable, Equatable {
     /// §6.16 — set by the app after a (locally validated) purchase.
     /// Legacy boolean; superseded by `plan` (kept for old files).
     var proUnlocked: Bool? = false
-    /// §6.16 plans: "free" | "plus" ($4.99) | "max" ($19.99).
+    /// §6.16 plans: "free" | "plus" ($1.99) | "max" ($4.99).
     var plan: String? = "free"
     /// The currency the strip converts money into ("INR", "USD", …), or
     /// "auto" to follow where the phone is. The person picks it in the app.

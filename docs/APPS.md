@@ -873,15 +873,15 @@ On finish the app writes key sounds, haptics and the chosen keys into settings a
 
 ### 5.21 Plans and the paywall
 
-**Not on sale yet (26 Sep 2026).** Arpit: "greyout the pro features as coming soon for now in app". `plansOnSale = false` in `lib/profile/paywall_sheet.dart`: the sheet still shows Plus and Max, greyed and marked Coming soon, with a disabled Coming soon button, and cannot change a plan; Profile's plan card says "Pro coming soon" in grey. Purchases come in the next update through Apple and Google billing with RevenueCat (Razorpay and Dodo can't sell a plan inside the iPhone app; Dodo costs about as much as Apple on a $4.99 plan). Monthly and yearly ("we can yearly pay too and give discounts"): Plus $4.99 a month or $39.99 a year, Max $19.99 a month or $159.99 a year, both yearly plans a third off; the sheet shows the yearly price under each. Product IDs, group "Glyf Pro": `com.arpit.glyf.plus.monthly`, `com.arpit.glyf.plus.yearly`, `com.arpit.glyf.max.monthly`, `com.arpit.glyf.max.yearly` (Max on level 1, Plus on level 2). An optional introductory offer (a week free on the yearly plans) is Arpit's call. Flip `plansOnSale` when purchases are in.
+**Not on sale yet (26 Sep 2026).** Arpit: "greyout the pro features as coming soon for now in app". `plansOnSale = false` in `lib/profile/paywall_sheet.dart`: the sheet still shows Plus and Max, greyed and marked Coming soon, with a disabled Coming soon button, and cannot change a plan; Profile's plan card says "Pro coming soon" in grey. Purchases come in the next update through Apple and Google billing with RevenueCat (Razorpay and Dodo can't sell a plan inside the iPhone app; Dodo costs about as much as Apple on a $4.99 plan). Monthly and yearly ("we can yearly pay too and give discounts"), then cheaper ("i think 5$ and 20$ are too high for keboard and for beggining no? we should make 2$ and 5$ ig", 26 Sep): Plus $1.99 a month or $15.99 a year, Max $4.99 a month or $39.99 a year, both yearly plans a third off; the sheet shows the yearly price under each. Product IDs, group "Glyf Pro": `com.arpit.glyf.plus.monthly`, `com.arpit.glyf.plus.yearly`, `com.arpit.glyf.max.monthly`, `com.arpit.glyf.max.yearly` (Max on level 1, Plus on level 2). An optional introductory offer (a week free on the yearly plans) is Arpit's call. Flip `plansOnSale` when purchases are in.
 
 **Plans** (decided 2026-09-12 19:15 after Arpit's "i think we can give some slow free replies with ai in free and ask to update accordingly one 5 $ plan and one 20$ iguess, research on this too"; priced against Wispr Flow at $12 to 15 a month and Grammarly's keyboard at about $12):
 
 | Plan | Price | Runs | Also |
 |---|---|---|---|
 | Free | $0 | 40 a day (`FREE_RUNS_PER_DAY`), fast models | |
-| Plus | $4.99 / month | 400 a day, priority | every tool and connector |
-| Max | $19.99 / month | unlimited | the smartest models, unlimited custom Glyfs, early features |
+| Plus | $1.99 / month or $15.99 / year | 400 a day, priority | every tool and connector |
+| Max | $4.99 / month or $39.99 / year | 1,000 a day (the card says unlimited) | the smartest models (not built: every plan gets the same models), unlimited custom Glyfs, early features |
 
 - The server meter enforces caps per plan. The keyboard shows a runs chip at 8 or fewer and "Daily free runs used up" when capped. **No purchase UI ever appears inside the keyboard** (SPEC 6.3 and 6.16).
 - The paywall (`app/lib/profile/paywall_sheet.dart`) is a two-card sheet (Plus, Max badged "Best"), titled "You’re out of runs today" when opened by a cap. It opens from the Profile plan card and when a Builder test run hits the cap.
@@ -1629,7 +1629,8 @@ Times are IST. In the "Why" column, text in quotation marks is Arpit's own words
 | 2026-09-12 18:42 | Google sign-in at the end of onboarding with user-chosen scopes, preset by persona | "we can have this at the end of onboarding flow based on the answered questions we will aks perms in google login" | Active in code, blocked on credentials; to be reworked by the 2026-09-15 sign-up decision |
 | 2026-09-12 18:42 | Keep the key card list below the key map; tap outside dismisses the keyboard | "i liked the previous key list more"; "i should be able to close keyboard by clicking outside" | Active |
 | 2026-09-12 19:15 | Generic OAuth broker for 9 providers; keyless tools expanded; month view in the calendar picker | "did u add notion, slack , and other thigs"; "i also need a button to view months calendar" | Active |
-| 2026-09-12 19:15 | Plans: Free 40/day, Plus $4.99, Max $19.99; local unlock until StoreKit | "one 5 $ plan and one 20$ iguess, research on this too" | Active; StoreKit pending |
+| 2026-09-12 19:15 | Plans: Free 40/day, Plus $4.99, Max $19.99; local unlock until StoreKit | "one 5 $ plan and one 20$ iguess, research on this too" | Superseded 26 Sep: new prices below |
+| 2026-09-26 | Plans cheaper for launch: Plus $1.99 a month or $15.99 a year, Max $4.99 a month or $39.99 a year; greyed as Coming soon until App Store and Play purchases are built | "i think 5$ and 20$ are too high for keboard and for beggining no? we should make 2$ and 5$ ig"; "we can yearly pay too and give discounts" | Active |
 | 2026-09-12 20:47 | Archive with "Any iOS Device (arm64)" | The Mac destination produced a Mac archive (90242, 90236) | Active |
 | 2026-09-12 20:59 | Team `XFSL58LKTQ` (Console Labs India Private Limited) on both targets | The team in the project (`246K6T9TPL`) belonged to no account | Active |
 | 2026-09-12 21:05 | Bundle IDs `com.demo.glyf` and `com.demo.glyf.keyboard`; keep `so.glyf.*` group, keychain, channel, scheme | "i have the app id as com.demo.glyf not what u put, fix that"; renaming the group would orphan data | Active, permanent |

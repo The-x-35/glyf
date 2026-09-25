@@ -3,8 +3,8 @@
  *  when the hub needs durable state (M5/M6).
  *
  *  Plans (researched against Wispr Flow $12–15/mo, Grammarly ~$12/mo):
- *  free = the shipped daily cap on the fast tier; plus ($4.99) = 10× the cap
- *  and priority; max ($19.99) = unlimited + smart tier. Caps are enforced
+ *  free = the shipped daily cap on the fast tier; plus ($1.99) = 10× the cap
+ *  and priority; max ($4.99) = 25× the cap. Caps are enforced
  *  HERE; the plan itself is client-asserted until StoreKit receipts land
  *  (M7-ship TODO, same seam). */
 export type Plan = "free" | "plus" | "max";
