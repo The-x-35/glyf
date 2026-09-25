@@ -2,7 +2,7 @@
 
 Everything pending, blocked or owed, in one place. **Owner** is who has to act: Arpit (accounts, keys, money, logins, design calls) or Build (code work). Area docs have more detail: [WEBSITE.md](WEBSITE.md), [APPS.md](APPS.md), [BACKEND.md](BACKEND.md).
 
-Last updated: Thu 24 Sep 2026 (IST).
+Last updated: Fri 25 Sep 2026 (IST).
 
 ---
 
@@ -49,7 +49,7 @@ Last updated: Thu 24 Sep 2026 (IST).
 | A2 | App Store Connect: create the Plus ($4.99) and Max ($19.99) in-app purchase products; then Build adds StoreKit and server receipt validation | Arpit, then Build |
 | A3 | Google Play Console setup and a signed Android release build | Arpit + Build |
 | A4 | Real-device checks the simulator can't do: the 45 MB keyboard memory budget, haptics, the real microphone for dictation, the ripple performance profile | Arpit (device) + Build |
-| A5 | Lock the final bundle IDs and signing team before real users (changing later breaks update persistence) | Arpit |
+| A5 | ~~Lock the final bundle IDs~~ **25 Sep:** the iPhone app moved to Arpit's own developer account as `com.arpit.glyf` / `com.arpit.glyf.keyboard`, App Group `group.com.arpit.glyf` (Android keeps `com.demo.glyf`). The signing team is still to pick: A16 | Arpit |
 | A6 | App sign-up page backed by the Neon database, then onboarding, then incremental Google permission requests (Arpit's plan from 15 Sep) | Build |
 | A7 | Light and dark mode in the apps (the site has it; the keyboard already follows the host) | Build |
 | A8 | Android round 2: in-keyboard AI prompt bar and clipboard history parity, automated tests | Build |
@@ -60,6 +60,7 @@ Last updated: Thu 24 Sep 2026 (IST).
 | A13 | Check on a real iPhone that the keyboard can add an event (EventKit from the keyboard with Full Access on). It works on the iOS 26.5 simulator; if a device refuses, New Event falls back to asking the app | Arpit (device) + Build |
 | A14 | Add your own Cal.com or Calendly link under Profile → Connected tools → Booking link to see Book a time on your page. The device tests used a stand-in for Cal.com, never a real person's calendar | Arpit |
 | A15 | Once B12 is done, sign in with Google on a real iPhone and an Android phone (onboarding asks for Calendar and Meet), then try the camera, a New Event with an invitee, and a key bound to Meet link. The device tests used a stand-in for Google's APIs, never a real account | Arpit (device) + Build |
+| A16 | App Store from your own account: in Xcode pick your team for Runner and GlyfKeyboard (`DEVELOPMENT_TEAM` is empty), which registers `com.arpit.glyf`, `com.arpit.glyf.keyboard` and `group.com.arpit.glyf`; create the App Store Connect record; push `main` so https://www.tryglyf.com/privacy is live and put it in the record's Privacy Policy URL; answer App Privacy to match that page. On Railway, `APPLE_BUNDLE_ID` must include `com.arpit.glyf` if it is set at all (unset means `com.arpit.glyf`) | Arpit |
 
 ## 4. Code problems found while writing the docs (not fixed yet)
 

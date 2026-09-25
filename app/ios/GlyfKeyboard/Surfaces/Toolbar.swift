@@ -117,8 +117,6 @@ final class GlyfToolbar: UIView {
         // keyboard extension.
         glyfButton.backgroundColor = Glass.touchableGrid
         glyfButton.layer.cornerCurve = .continuous
-        keycap.lineWidth = 0.5
-        keycapG.fillColor = UIColor.white.cgColor
         keycapDot.fillColor = Glass.accentPrimary.cgColor
         for layer in [keycap, keycapG, keycapDot] {
             layer.contentsScale = UIScreen.main.scale
@@ -239,11 +237,11 @@ final class GlyfToolbar: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// The site's key: near-black on a light sheet, black with a faint ring
-    /// on a dark one so it doesn't melt into the backdrop.
+    /// The app icon's colours: its black with the letter white on a light
+    /// sheet, and on a dark one the icon itself, white with its black g.
     private func applyKeycapRing() {
         keycap.fillColor = GlyfMark.face(dark: Glass.chromeDark).cgColor
-        keycap.strokeColor = Glass.chromeDark ? UIColor.white.withAlphaComponent(0.18).cgColor : nil
+        keycapG.fillColor = GlyfMark.letterColor(dark: Glass.chromeDark).cgColor
     }
 
     /// Re-skins after an appearance flip (items re-tint via reloadItems;

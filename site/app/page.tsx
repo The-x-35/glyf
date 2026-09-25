@@ -96,7 +96,7 @@ export default function Page() {
           <a className="wordmark" href="#top" aria-label="Glyf home">
             glyf<span className="dot" />
           </a>
-          <p className="footer-legal">© 2026 Glyf · iPhone and Android</p>
+          <p className="footer-legal">© 2026 Glyf · iPhone and Android · <a href="/privacy">Privacy</a></p>
         </div>
       </footer>
     </>

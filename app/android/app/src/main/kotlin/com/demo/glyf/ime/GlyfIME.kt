@@ -2354,8 +2354,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         background = GradientDrawable().apply {
             cornerRadius = dp(13).toFloat(); setColor(Color.rgb(18, 18, 20))
         }
-        // The space bar's act wears the icon's own g; a held key its letter.
-        addView(if (glyph == "g") GlyfLetterView(context, dp(27).toFloat()) else TextView(context).apply {
+        // The space bar's act wears the app icon's mark, dot and all; a held
+        // key its letter, with the dot in the corner like a bound key's.
+        if (glyph == "g") {
+            addView(GlyfMarkView(context, dp(6).toFloat()), FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            return@apply
+        }
+        addView(TextView(context).apply {
             text = glyph; textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)

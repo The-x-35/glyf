@@ -44,7 +44,9 @@ Opens on http://localhost:3000. The waitlist needs `DATABASE_URL` in `site/.env.
    - Waitlist form (`source="hero"`).
 5. **The chat experience** (`div#try > components/chat/Experience.tsx`): a pinned, scroll-driven iMessage stage with 8 chats. Each chat is a small level where a friend asks for something and the visitor does it on the Glyf keyboard.
 6. **Finale** (`section.finale#join`): **"Made for your thumbs."** plus a second waitlist form (`source="footer"`).
-7. **Footer**: wordmark and "© 2026 Glyf · iPhone and Android".
+7. **Footer**: wordmark and "© 2026 Glyf · iPhone and Android · Privacy".
+
+One more page: **`/privacy`** (`app/privacy/page.tsx`, since 25 Sep 2026), the privacy policy the App Store asks for, written from what the apps and server actually do: what stays on the phone, what the keyboard sends and when (AI features, strip suggestions, saved details, search, location), secret masking, the account data kept, every outside service (OpenRouter and its providers, the Gemini API with its unpaid-tier training note, search providers, KLIPY, Cal.com, Google Calendar and Meet from the phone, Privy or the wallet app, Railway, Neon, Vercel), the waitlist, Delete account, children under 13, and a contact address (arpit@tryglyf.com). The same nav and footer, one 680px column, styles under `.legal` in `globals.css`. Change it whenever a feature starts sending something new, and drop the Gemini line once production no longer uses Gemini's free tier.
 
 There are no explainer lines anywhere, no pricing, no FAQ and no feature grid. Those existed in earlier versions and were removed on purpose (section 13).
 

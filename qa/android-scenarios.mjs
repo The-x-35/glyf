@@ -717,11 +717,11 @@ const scenarios = [
       shell("cmd uimode night no");
     }
   } },
-  { id: "S130", title: "The strip starts with Glyf's key, black with the violet dot, light and dark", run: async () => {
+  { id: "S130", title: "The strip starts with Glyf's key, the app icon's mark, light and dark", run: async () => {
     await fresh();
     // The key is drawn 41 by 30dp in the middle of its 52dp view
     // (GlyfKeyView): sample its face beside the letter and the middle of its
-    // 6dp dot, 18% down and 20% in from the right.
+    // dot, where the app icon has it (GlyfMark.drawMark).
     const look = async () => {
       const s = await state();
       const g = find(s, v => v.id === "toolbar:glyf");
@@ -729,7 +729,9 @@ const scenarios = [
       const dp = g.w / 52, kh = 30 * dp, kw = Math.round(kh * 1.367);
       const left = g.x - kw / 2, top = g.y - kh / 2;
       const face = [Math.round(left + 5 * dp), Math.round(g.y)];
-      const dot = [Math.round(left + kw * 0.8 - 0.1 * kh), Math.round(top + 0.18 * kh + 0.1 * kh)];
+      const h = (kh - kh * 0.083 * 2) / 1.6565;
+      const letterX = left + kw / 2 - h * 0.6699 / 2, letterY = g.y - h * 1.6565 / 2 + h * 0.6565;
+      const dot = [Math.round(letterX + h * 1.0379), Math.round(letterY - h * 0.4927)];
       const png = execFileSync(ADB, ["exec-out", "screencap", "-p"], { maxBuffer: 64e6 });
       const file = new URL("./results/android-key.png", import.meta.url);
       writeFileSync(file, png);
@@ -757,9 +759,10 @@ const scenarios = [
     } finally {
       shell("cmd uimode night no");
     }
-    const ok = x => x && x.face < 0.15 && x.violet;
+    // The icon's colours: black on a light sheet, white on a dark one.
+    const ok = (x, isDark) => x && (isDark ? x.face > 0.85 : x.face < 0.15) && x.violet;
     const fmt = x => x ? `face ${x.face.toFixed(2)}, dot ${x.dot.join(" ")}` : "no key";
-    return { pass: ok(light) && ok(dark) && menu,
+    return { pass: ok(light, false) && ok(dark, true) && menu,
       note: `light: ${fmt(light)}; dark: ${fmt(dark)}; tap opens the menu: ${menu}` };
   } },
   { id: "S133", title: "Snake from the g menu turns with a swipe", run: async () => {

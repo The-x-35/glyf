@@ -776,21 +776,23 @@ final class GlyfEngineTests: XCTestCase {
 
     // MARK: The brand key
 
-    func testTheKeyIsTheSitesGWithItsDotAtTheShoulder() {
-        // The outline spans its ink box exactly: 1 tall, the letter's aspect wide.
+    func testTheKeyCarriesTheAppIconsMark() {
+        // The outline spans its ink box exactly: 1 tall, the icon letter's aspect wide.
         let box = GlyfMark.gPath(in: CGRect(x: 0, y: 0, width: 0, height: 100)).boundingBoxOfPath
         XCTAssertEqual(box.height, 100, accuracy: 0.5)
         XCTAssertEqual(box.width / box.height, GlyfMark.gAspect, accuracy: 0.002)
-        // The strip's key: 41 by 30, the letter centred on its bowl, the 6pt
-        // dot beside the letter's top, clear of it and inside the key.
+        // The strip's key: 41 by 30; the letter centred across it, the dot
+        // where the 1024pt icon has it (centre 1.0379 letter-heights right of
+        // the letter, 0.4927 above it, 0.3276 wide), the mark centred down it.
         let cap = GlyfMark.Keycap(height: 30, x: 0, midY: 15)
+        let h = cap.letter.height
         XCTAssertEqual(cap.key.size, CGSize(width: 41, height: 30))
-        XCTAssertEqual(cap.dot.size, CGSize(width: 6, height: 6))
-        XCTAssertTrue(cap.key.contains(cap.dot))
-        XCTAssertTrue(cap.key.contains(cap.letter))
         XCTAssertEqual(cap.letter.midX, cap.key.midX, accuracy: 0.01)
-        XCTAssertGreaterThan(cap.dot.minX, cap.letter.maxX, "the dot never touches the letter")
-        XCTAssertLessThan(cap.dot.minY, cap.letter.minY, "the dot sits at the letter's shoulder")
+        XCTAssertEqual(cap.dot.midX - cap.letter.minX, h * 1.0379, accuracy: 0.01)
+        XCTAssertEqual(cap.letter.minY - cap.dot.midY, h * 0.4927, accuracy: 0.01)
+        XCTAssertEqual(cap.dot.width, h * 0.3276, accuracy: 0.01)
+        XCTAssertEqual((cap.dot.minY + cap.letter.maxY) / 2, cap.key.midY, accuracy: 0.01)
+        XCTAssertTrue(cap.key.contains(cap.dot) && cap.key.contains(cap.letter))
     }
 
     // MARK: The model's suggestion

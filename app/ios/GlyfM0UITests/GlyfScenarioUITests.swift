@@ -973,8 +973,9 @@ final class GlyfScenarioUITests: XCTestCase {
 
     // MARK: - The brand key
 
-    /// The strip starts with Glyf's own key, as on Android: black, the app
-    /// icon's g in white and the violet dot, on a light sheet and a dark one.
+    /// The strip starts with Glyf's own key, as on Android: the app icon's
+    /// mark in a pill, black with the g white on a light sheet and white with
+    /// the icon's black g on a dark one, the violet dot where the icon has it.
     func testS129_TheStripStartsWithGlyfsKey() throws {
         open()
         guard let key = wait("toolbar:glyf", 3) else { return XCTFail("no Glyf key on the strip") }
@@ -1000,15 +1001,14 @@ final class GlyfScenarioUITests: XCTestCase {
         let dark = keycapColors(darkKey)
         keepScreenshot("strip-dark")
         note(String(format: "dark sheet: face %.2f, dot rgb %.0f %.0f %.0f", dark.face, dark.dot.r, dark.dot.g, dark.dot.b))
-        XCTAssertLessThan(dark.face, 0.15, "the key stays black on a dark sheet")
+        XCTAssertGreaterThan(dark.face, 0.85, "on a dark sheet the key is the icon's white")
         XCTAssertTrue(dark.violet, "the dot is Glyf violet on a dark sheet")
     }
 
     /// The key's face beside its letter, and the middle of its dot. The key
     /// sits 15pt inside its button (the tools' padding plus a symbol's air)
     /// and, 41 by 30 on iOS 26, stands on the strip's top edge with the
-    /// button; its 6pt dot is 18% down and 20% in from the right
-    /// (GlyfMark.Keycap).
+    /// button; the dot is where the icon has it (GlyfMark.Keycap).
     private func keycapColors(_ button: XCUIElement) -> (face: CGFloat, dot: (r: CGFloat, g: CGFloat, b: CGFloat), violet: Bool) {
         let shot = XCUIScreen.main.screenshot().image
         guard let cg = shot.cgImage, let data = cg.dataProvider?.data,
@@ -1022,7 +1022,9 @@ final class GlyfScenarioUITests: XCTestCase {
         let f = button.frame
         let keyX = f.minX + 15, keyTop = f.minY
         let face = rgb(CGPoint(x: keyX + 5, y: keyTop + 15))
-        let dot = rgb(CGPoint(x: keyX + 41 * 0.8 - 3, y: keyTop + 30 * 0.18 + 3))
+        let h = (30 - 30 * 0.083 * 2) / 1.6565
+        let letterX = 41 / 2 - h * 0.6699 / 2, letterY = 15 - h * 1.6565 / 2 + h * 0.6565
+        let dot = rgb(CGPoint(x: keyX + letterX + h * 1.0379, y: keyTop + letterY - h * 0.4927))
         let lum = (0.299 * face.r + 0.587 * face.g + 0.114 * face.b) / 255
         let violet = dot.b > 200 && dot.r > 80 && dot.r < 175 && dot.g < 140
         return (lum, dot, violet)
