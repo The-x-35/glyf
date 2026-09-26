@@ -1,5 +1,19 @@
 import UIKit
 
+/// How the return key looks for the focused field, measured against
+/// Apple's keyboard on the iOS 26.5 simulator and an iPhone 16 Pro: its
+/// glyph (or a word Apple spells out) and, for go, search, send and done,
+/// the blue key with a white glyph.
+struct ReturnFace: Equatable {
+    var symbol: String?
+    var pointSize: CGFloat = 19.5
+    var weight: UIImage.SymbolWeight = .light
+    var text: String?
+    var primary = false
+
+    static let plain = ReturnFace(symbol: "return")
+}
+
 /// One key. Glass fill + hairline stroke + shadow per §5.1; press scales to
 /// 0.96 and brightens (§5.2). Carries its own charge-ring and ripple-tint
 /// layers so RippleEngine never touches the blur backdrop (§5.3).
@@ -7,6 +21,8 @@ final class KeyView: UIControl {
 
     let spec: KeySpec
     private let label = UILabel()
+    /// The letters under a pad digit.
+    private let subtitle = UILabel()
     private let icon = UIImageView()
     private let accentDot = CALayer()
     let tintLayer = CALayer()          // ripple overlay, opacity 0 at rest
@@ -15,8 +31,10 @@ final class KeyView: UIControl {
     var isBound = false { didSet { updateBinding() } }
     /// Set by KeyboardView on shift changes; letters re-render.
     var shifted = false { didSet { updateFace(); setNeedsLayout() } }   // capitals sit 1pt lower
-    /// The return key's word when the field named its action; nil = the glyph.
-    var returnLabel: String? { didSet { updateFace() } }
+    /// The return key's look for the focused field.
+    var returnFace = ReturnFace.plain { didSet { updateFace(); updateFill(pressed: false) } }
+    /// Greyed while a field that enables its return key automatically is empty.
+    var returnEnabled = true { didSet { updateFace(); updateFill(pressed: false) } }
 
     init(spec: KeySpec) {
         self.spec = spec
@@ -34,6 +52,9 @@ final class KeyView: UIControl {
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.6
         addSubview(label)
+        subtitle.textAlignment = .center
+        subtitle.isHidden = true
+        addSubview(subtitle)
         icon.contentMode = .center
         // Measured against iOS: shift and delete draw ~19.7 x 17pt, which is
         // this symbol size. Ours used to come out a tenth small.
@@ -57,7 +78,8 @@ final class KeyView: UIControl {
 
         // Match the id XCUITest uses; display strings vary with shift.
         accessibilityIdentifier = "key:\(spec.id)"
-        isAccessibilityElement = true
+        // The number pad's empty corner is not a key at all.
+        isAccessibilityElement = !(spec.disabled && spec.char == "")
         accessibilityTraits = .keyboardKey
     }
 
@@ -65,9 +87,21 @@ final class KeyView: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // The system keyboard sits its capitals 1pt below where a centred
-        // label puts them; lowercase already lands on Apple's row.
-        label.frame = spec.isChar && shifted ? bounds.offsetBy(dx: 0, dy: 1) : bounds
+        if let base = padBaseline {
+            // Apple's pads, measured: a digit's baseline 2.7pt below the
+            // middle and its letters' 18pt below, whether or not the key has
+            // letters; the bare corner labels a little higher than centred.
+            let f = label.font ?? .systemFont(ofSize: 22)
+            label.frame = CGRect(x: 0, y: bounds.midY + base - f.ascender,
+                                 width: bounds.width, height: f.lineHeight)
+            let sf = subtitle.font ?? .systemFont(ofSize: 9)
+            subtitle.frame = CGRect(x: 0, y: bounds.midY + 18 - sf.ascender,
+                                    width: bounds.width, height: sf.lineHeight)
+        } else {
+            // The system keyboard sits its capitals 1pt below where a centred
+            // label puts them; lowercase already lands on Apple's row.
+            label.frame = spec.isChar && shifted && !spec.pad ? bounds.offsetBy(dx: 0, dy: 1) : bounds
+        }
         icon.frame = bounds
         tintLayer.frame = bounds
         accentDot.frame = CGRect(x: bounds.width - 10.5, y: 5.5, width: 5, height: 5)
@@ -94,10 +128,57 @@ final class KeyView: UIControl {
         }
     }
 
+    /// Blue: the field named go, search, send or done, and it may be sent.
+    private var isPrimaryReturn: Bool {
+        if case .ret = spec.kind { return returnFace.primary && returnEnabled }
+        return false
+    }
+
+    /// Where a pad label's baseline sits below the key's middle; nil for
+    /// labels that are simply centred.
+    private var padBaseline: CGFloat? {
+        guard spec.pad else { return nil }
+        switch spec.kind {
+        case .char(let c) where c.count == 1 && c.first?.isNumber == true && spec.title == nil:
+            return 2.7
+        case .char(let c) where spec.bare && !c.isEmpty:
+            return 5.3   // the decimal pad's separator
+        case .mode:
+            return 6
+        default:
+            return nil
+        }
+    }
+
+    /// Letter-spaced text with no spacing after the last character, so it
+    /// stays centred.
+    private static func spaced(_ text: String, font: UIFont, color: UIColor,
+                               kern: CGFloat) -> NSAttributedString {
+        let out = NSMutableAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
+        let n = (text as NSString).length
+        if n > 1 { out.addAttribute(.kern, value: kern, range: NSRange(location: 0, length: n - 1)) }
+        return out
+    }
+
     private func updateFace() {
         var text: String?
         var image: UIImage?
         switch spec.kind {
+        case .char(let c) where spec.pad:
+            // Apple's pads, measured by ink: digits 22pt, "*", "#" and "+"
+            // 30pt, "pause" and "wait" 16.5pt.
+            text = spec.title ?? c
+            if spec.title != nil {
+                label.font = .systemFont(ofSize: 16.5, weight: .regular)
+            } else if c.count == 1, "*#+".contains(c) {
+                label.font = .systemFont(ofSize: 30, weight: .regular)
+            } else {
+                label.font = .systemFont(ofSize: 22, weight: .regular)
+            }
+        case .char(let c) where c.count > 1:
+            // ".com": Apple sets it at 19pt, like a word, never in capitals.
+            text = c
+            label.font = .systemFont(ofSize: 19, weight: .regular)
         case .char(let c):
             text = shifted ? c.uppercased() : c
             // Measured against the system keyboard on the same simulator, by
@@ -112,22 +193,30 @@ final class KeyView: UIControl {
             text = "glyf"
             label.font = .systemFont(ofSize: 15, weight: .regular)
         case .ret:
-            if let returnLabel, !returnLabel.isEmpty {
-                // "search", "go", "send": Apple's key says it, so does this one.
-                text = returnLabel
+            if let word = returnFace.text {
+                text = word
                 label.font = .systemFont(ofSize: 16, weight: .regular)
             } else {
-                image = UIImage(systemName: "return")
+                image = UIImage(systemName: returnFace.symbol ?? "return")
+                icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+                    pointSize: returnFace.pointSize, weight: returnFace.weight)
             }
         case .delete:
             image = UIImage(systemName: "delete.left")
+            if spec.pad {
+                // Apple's pad draws a bigger one: 24.7 x 20.3pt of light ink.
+                icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 23.5, weight: .light)
+            }
         case .shift:
             image = UIImage(systemName: "shift")
         case .globe:
             image = UIImage(systemName: "globe")
         case .mode(let m):
             text = m
-            label.font = .systemFont(ofSize: 17.5, weight: .regular)
+            // Apple, by ink: "123" and "ABC" 18pt, "#+=" 13pt; on the phone
+            // pad "+*#" 23pt, letter-spaced, and "123" 21pt.
+            let size: CGFloat = spec.pad ? (m == "+*#" ? 23 : 21) : (m == "#+=" ? 13 : 18)
+            label.font = .systemFont(ofSize: size, weight: .regular)
         case .emoji:
             image = UIImage(systemName: "face.smiling")
         }
@@ -135,13 +224,31 @@ final class KeyView: UIControl {
         label.isHidden = text == nil
         icon.image = image
         icon.isHidden = image == nil
-        label.textColor = Glass.keyInk
-        icon.tintColor = Glass.keyInk
+        var ink = Glass.keyInk
+        if isPrimaryReturn { ink = .white }
+        // Greyed: the phone pad's digits behind +*#, and a return key the
+        // field won't take yet. #A6A6A6 on white, as Apple draws them.
+        if spec.disabled { ink = Glass.keyInk.withAlphaComponent(0.35) }
+        if case .ret = spec.kind, !returnEnabled { ink = Glass.keyInk.withAlphaComponent(0.35) }
+        label.textColor = ink
+        icon.tintColor = ink
         if case .space = spec.kind {
             label.textColor = Glass.watermark
         }
+        if spec.pad, case .mode("+*#") = spec.kind, let font = label.font {
+            label.attributedText = Self.spaced("+*#", font: font, color: ink, kern: 3)
+        }
+        if let letters = spec.subtitle {
+            // Apple's letters: 9pt semibold, 2pt apart (ABC, PQRS, JKL by ink).
+            subtitle.attributedText = Self.spaced(letters, font: .systemFont(ofSize: 9, weight: .semibold),
+                                                  color: ink, kern: 2)
+            subtitle.isHidden = false
+        } else {
+            subtitle.isHidden = true
+        }
         // XCUITest addressing: letters by face, specials by stable id.
         accessibilityLabel = spec.isChar ? text : spec.id
+        setNeedsLayout()
     }
 
     /// Trackpad look during a space-bar glide: glyphs and the binding dot
@@ -173,6 +280,22 @@ final class KeyView: UIControl {
     }
 
     func updateFill(pressed: Bool) {
+        if spec.bare {
+            // Apple's pad function keys have no cap; a press shows one.
+            backgroundColor = pressed && !spec.disabled ? Glass.fillKey : .clear
+            layer.borderWidth = 0
+            layer.shadowOpacity = 0
+            return
+        }
+        if isPrimaryReturn {
+            backgroundColor = pressed ? Glass.returnBluePressed : Glass.returnBlue
+            layer.borderWidth = 0
+            layer.shadowColor = Glass.keyShadowColor.cgColor
+            layer.shadowOpacity = Glass.keyShadowOpacity
+            layer.shadowRadius = Glass.keyShadowRadius
+            layer.shadowOffset = Glass.keyShadowOffset
+            return
+        }
         if isBound && !pressed && Glass.keyTheme == "glow" {
             // Glow theme: faint wash + accent UNDER-GLOW (Acti's M-key
             // move). Never an outline ring — borders were the noise.
@@ -208,8 +331,10 @@ final class KeyView: UIControl {
         // INSTANT, like Apple: fill change + balloon on the same frame.
         // No scale animation — animated transforms read as lag under fast
         // typing; the balloon/darkening IS the feedback.
+        guard !spec.disabled else { return }
         updateFill(pressed: pressed)
-        if spec.isChar {
+        // Apple's pads and its .com key show no balloon.
+        if spec.isChar, !spec.pad, (spec.char?.count ?? 0) == 1 {
             if pressed { showPreview() } else { hidePreview() }
         }
     }
@@ -316,11 +441,7 @@ final class KeyView: UIControl {
         fade.duration = Glass.Ripple.perKeyTint
         tintLayer.add(fade, forKey: "settle")
         tintLayer.opacity = 0
-        label.textColor = Glass.keyInk
-        icon.tintColor = Glass.keyInk
-        if case .space = spec.kind {
-            label.textColor = Glass.watermark
-        }
+        updateFace()
     }
 }
 

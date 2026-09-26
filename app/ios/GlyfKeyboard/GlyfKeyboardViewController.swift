@@ -162,7 +162,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let w = view.bounds.width > 0 ? view.bounds.width
                                       : UIScreen.main.bounds.width
         let base = Glass.keysHeight(width: w)
-        return SettingsStore.current.numberRow ? base + Glass.numberRowExtra : base
+        // A digit pad is Apple's four rows whatever the number-row setting.
+        let numberRow = SettingsStore.current.numberRow && !keyboardView.context.isPad
+        return numberRow ? base + Glass.numberRowExtra : base
     }
 
     /// §6.13 T: the Translation HUD adds a 44pt strip while enabled — never
@@ -243,25 +245,41 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// letters, the way the system keyboard does.
     private func adoptFieldTraits(fresh: Bool) {
         let type = textDocumentProxy.keyboardType
-        keyboardView.returnLabel = Self.returnLabel(for: textDocumentProxy.returnKeyType)
+        keyboardView.returnFace = Self.returnFace(for: textDocumentProxy.returnKeyType)
+        // Apple greys the key while a field that enables it automatically is
+        // empty. Drawn only: the proxy's view of the text can lag, and a
+        // return that does nothing would be worse than one drawn a shade off.
+        keyboardView.returnEnabled = textDocumentProxy.enablesReturnKeyAutomatically != true
+            || textDocumentProxy.hasText
         guard fresh || type != lastKeyboardType else { return }
         lastKeyboardType = type
         keyboardView.setMode(type == .numbersAndPunctuation ? .symbols1 : .letters)
     }
 
-    /// Apple's return key says what it does when the field has told it.
-    static func returnLabel(for type: UIReturnKeyType?) -> String? {
+    /// Apple's return key for each action, measured on the iOS 26.5
+    /// simulator (web fields with each enterkeyhint, Safari's address bar)
+    /// and on an iPhone 16 Pro: go, search, send and done are blue with a
+    /// white glyph, next is a chevron, plain return is the ⏎ glyph. Symbol
+    /// sizes are matched to Apple's ink (go 17.3 x 14pt, search 18 x 18.3,
+    /// send 14 x 17.3, done 16 x 15.7, next 6.7 x 16). The rest were not
+    /// measured and keep their word.
+    static func returnFace(for type: UIReturnKeyType?) -> ReturnFace {
         switch type {
-        case .go: return "go"
-        case .search, .google, .yahoo: return "search"
-        case .send: return "send"
-        case .done: return "done"
-        case .next: return "next"
-        case .join: return "join"
-        case .route: return "route"
-        case .continue: return "continue"
-        case .emergencyCall: return "call"
-        default: return nil
+        case .go:
+            return ReturnFace(symbol: "arrow.right", pointSize: 18.5, weight: .medium, primary: true)
+        case .search, .google, .yahoo:
+            return ReturnFace(symbol: "magnifyingglass", pointSize: 19, weight: .light, primary: true)
+        case .send:
+            return ReturnFace(symbol: "arrow.up", pointSize: 18.5, weight: .medium, primary: true)
+        case .done:
+            return ReturnFace(symbol: "checkmark", pointSize: 18.5, weight: .medium, primary: true)
+        case .next:
+            return ReturnFace(symbol: "chevron.right", pointSize: 19, weight: .light)
+        case .join: return ReturnFace(text: "join")
+        case .route: return ReturnFace(text: "route")
+        case .continue: return ReturnFace(text: "continue")
+        case .emergencyCall: return ReturnFace(text: "call")
+        default: return .plain
         }
     }
 

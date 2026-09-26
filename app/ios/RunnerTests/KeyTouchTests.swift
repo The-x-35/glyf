@@ -26,45 +26,21 @@ import XCTest
 /// the only honest check, and it is what found the real dead strip.
 final class KeyTouchTests: XCTestCase {
 
-    /// The letter rows as KeyboardView lays them out, for one screen width.
+    /// The rows as KeyboardView lays them out, for one screen width: the
+    /// same KeyboardLayout.frames the view calls.
     private func frames(width: CGFloat,
                         mode: KeyboardMode = .letters,
                         numberRow: Bool = false,
-                        context: KeyboardContext = .text)
+                        context: KeyboardContext = .text,
+                        globe: Bool = true)
         -> (frames: [CGRect], pitch: CGFloat, size: CGSize) {
-        let hGap = KeyMetrics.hGap
-        let vGap = KeyMetrics.vGap
-        let margin = KeyMetrics.sideMargin
-        let availW = width - margin * 2
-        let columns: CGFloat = 10
-        let pitch = (availW + hGap) / columns
-        let unitWidth = pitch - hGap
         let rows = KeyboardLayout.rows(mode: mode, numberRow: numberRow,
-                                       globe: true, context: context)
+                                       globe: globe, context: context)
         let height = KeyMetrics.keysHeight(width: width)
-            + (numberRow ? Glass.numberRowExtra : 0)
-        let rowH = height / CGFloat(rows.count)
-        let keyH = rowH - vGap
-
-        var out: [CGRect] = []
-        for (r, row) in rows.enumerated() {
-            let fixedUnits = row.map(\.units).filter { $0 > 0 }.reduce(0, +)
-            let flexUnits = max(1, columns - fixedUnits)
-            let rowUnits = row.contains { $0.units < 0 } ? columns : fixedUnits
-            let rowWidth = rowUnits * pitch - hGap
-            var x = margin + (availW - rowWidth) / 2
-            let y = CGFloat(r) * rowH + vGap / 2
-            for spec in row {
-                let units = spec.units < 0 ? flexUnits : spec.units
-                let block = units * pitch - hGap
-                let w = spec.sideKey
-                    ? KeyMetrics.sideKeyWidth(keyWidth: unitWidth) : block
-                out.append(CGRect(x: spec.gapLeading ? x + block - w : x, y: y,
-                                  width: w, height: keyH))
-                x += units * pitch
-            }
-        }
-        return (out, pitch, CGSize(width: width, height: height))
+            + (numberRow && !context.isPad ? Glass.numberRowExtra : 0)
+        let size = CGSize(width: width, height: height)
+        let grid = KeyboardLayout.frames(rows: rows, size: size, context: context)
+        return (grid.frames, grid.pitch, size)
     }
 
     /// Not one point inside the key area may be dead — on a standard phone
@@ -79,6 +55,13 @@ final class KeyTouchTests: XCTestCase {
             cases.append((width, .letters, true, .text, "letters+numberRow"))
             cases.append((width, .letters, false, .email, "email"))
             cases.append((width, .letters, false, .url, "url"))
+            cases.append((width, .letters, false, .webSearch, "webSearch"))
+            cases.append((width, .letters, false, .twitter, "twitter"))
+            cases.append((width, .symbols1, false, .numbers, "numbers"))
+            cases.append((width, .letters, false, .numberPad, "numberPad"))
+            cases.append((width, .letters, false, .decimalPad, "decimalPad"))
+            cases.append((width, .letters, false, .phonePad, "phonePad"))
+            cases.append((width, .symbols1, false, .phonePad, "phonePad symbols"))
         }
         for (width, mode, numberRow, context, label) in cases {
             let (rects, pitch, size) = frames(width: width, mode: mode,
@@ -109,6 +92,74 @@ final class KeyTouchTests: XCTestCase {
             XCTAssertTrue(dead.isEmpty,
                           "\(dead.count) dead points, \(label) at \(width)pt")
         }
+    }
+
+    /// Apple's rows for each field type, measured on the iOS 26.5 simulator
+    /// at 402pt (and Safari's address bar on an iPhone 16 Pro): which keys,
+    /// in which order, and how wide.
+    func testFieldTypeRowsMatchApple() {
+        func bottom(_ context: KeyboardContext, mode: KeyboardMode = .letters) -> [KeySpec] {
+            KeyboardLayout.rows(mode: mode, numberRow: false, globe: false, context: context).last!
+        }
+        func ids(_ row: [KeySpec]) -> [String] { row.map(\.id) }
+        XCTAssertEqual(ids(bottom(.text)), ["mode:123", "emojikey", "space", "return"])
+        XCTAssertEqual(ids(bottom(.email)), ["mode:123", "emojikey", "space", "@", ".", "return"])
+        // A web address has no space bar; Safari's address bar (a search
+        // field) keeps its space bar and has no slash.
+        XCTAssertEqual(ids(bottom(.url)), ["mode:123", "emojikey", ".", "/", ".com", "return"])
+        XCTAssertEqual(ids(bottom(.webSearch)), ["mode:123", "emojikey", "space", ".", "return"])
+        XCTAssertFalse(bottom(.webSearch).contains { $0.char == "/" })
+        XCTAssertEqual(ids(bottom(.twitter)), ["mode:123", "emojikey", "space", "@", "#", "return"])
+        XCTAssertEqual(ids(bottom(.numbers, mode: .symbols1)), ["mode:ABC", "space", "return"])
+
+        // Widths at 402pt, in points, against Apple's (a Face ID phone: the
+        // system draws the globe below the keys).
+        func widths(_ context: KeyboardContext, mode: KeyboardMode = .letters) -> [CGFloat] {
+            let (rects, _, _) = frames(width: 402, mode: mode, context: context, globe: false)
+            let lastY = rects.map(\.minY).max()!
+            return rects.filter { abs($0.minY - lastY) < 0.5 }.map(\.width)
+        }
+        func near(_ got: [CGFloat], _ want: [CGFloat], _ label: String) {
+            XCTAssertEqual(got.count, want.count, label)
+            for (g, w) in zip(got, want) { XCTAssertEqual(g, w, accuracy: 0.6, "\(label): \(got) vs \(want)") }
+        }
+        near(widths(.email), [43.3, 43.3, 92.7, 43.3, 43.3, 93.0], "email")
+        near(widths(.url), [43.3, 43.3, 59.7, 60.0, 59.7, 93.0], "url")
+        near(widths(.webSearch), [43.3, 43.3, 181.7, 33.3, 63.0], "webSearch")
+        near(widths(.numbers, mode: .symbols1), [92.7, 191.3, 93.0], "numbers")
+    }
+
+    /// Apple's digit pads at 402pt: three 126pt keys across the full width,
+    /// 48pt tall on a 54pt pitch; the corner is empty (number), the decimal
+    /// separator (decimal) or +*# (phone), drawn bare like delete.
+    func testDigitPadsMatchApple() {
+        for context in [KeyboardContext.numberPad, .decimalPad, .phonePad] {
+            let (rects, _, _) = frames(width: 402, context: context)
+            XCTAssertEqual(rects.count, 12)
+            XCTAssertEqual(rects[0].minX, 5.5, accuracy: 0.6)
+            XCTAssertEqual(rects[2].maxX, 402 - 5.5, accuracy: 0.6)
+            for r in rects {
+                XCTAssertEqual(r.width, 126, accuracy: 0.6, "\(context)")
+                XCTAssertEqual(r.height, 48, accuracy: 0.01, "\(context)")
+            }
+            XCTAssertEqual(rects[3].minY - rects[0].minY, 54, accuracy: 0.01)
+            let rows = KeyboardLayout.rows(mode: .letters, numberRow: false, globe: false, context: context)
+            XCTAssertEqual(rows[1][1].subtitle, "JKL")
+            XCTAssertTrue(rows[3][2].bare, "delete has no key cap")
+            XCTAssertTrue(rows[3][0].bare, "the corner has no key cap")
+        }
+        let number = KeyboardLayout.rows(mode: .letters, numberRow: false, globe: false, context: .numberPad)
+        XCTAssertTrue(number[3][0].disabled, "the number pad's corner is empty")
+        let phone = KeyboardLayout.rows(mode: .letters, numberRow: false, globe: false, context: .phonePad)
+        XCTAssertEqual(phone[3][0].id, "mode:+*#")
+        // Behind +*#: pause and wait, * and #, and +, over greyed digits.
+        let more = KeyboardLayout.rows(mode: .symbols1, numberRow: false, globe: false, context: .phonePad)
+        XCTAssertEqual(more[1].map { $0.title ?? $0.id }, ["pause", "5", "wait"])
+        XCTAssertEqual(more[1][0].char, ",")
+        XCTAssertEqual(more[1][2].char, ";")
+        XCTAssertEqual(more[2].map(\.id), ["*", "8", "#"])
+        XCTAssertEqual(more[3].map(\.id), ["mode:123", "+", "delete"])
+        XCTAssertTrue(more[0].allSatisfy(\.disabled))
     }
 
     /// The strip down each side of the MIDDLE row, which is indented: beside

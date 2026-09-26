@@ -92,9 +92,18 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     // MARK: Build + layout
 
     var needsGlobe = false
-    /// What the return key says ("search", "send"…), nil for the plain glyph.
-    var returnLabel: String? {
-        didSet { if returnLabel != oldValue { rebuild() } }
+    /// How the return key looks for the focused field: Apple's glyph or
+    /// word, and blue for go, search, send and done.
+    var returnFace = ReturnFace.plain {
+        didSet { if returnFace != oldValue { rebuild() } }
+    }
+    /// False while a field that enables its return key automatically is
+    /// empty: Apple draws the key greyed then.
+    var returnEnabled = true {
+        didSet {
+            guard returnEnabled != oldValue else { return }
+            for kv in keys { if case .ret = kv.spec.kind { kv.returnEnabled = returnEnabled } }
+        }
     }
     /// The focused field's flavor — email/URL space rows, digit pads (§6.1).
     var context: KeyboardContext = .text {
@@ -112,8 +121,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             for spec in row {
                 let kv = KeyView(spec: spec)
                 kv.isUserInteractionEnabled = false // container drives touches
-                if case .ret = spec.kind { kv.returnLabel = returnLabel }
-                if let c = spec.char { kv.isBound = s.bindings[c] != nil }
+                if case .ret = spec.kind {
+                    kv.returnFace = returnFace
+                    kv.returnEnabled = returnEnabled
+                }
+                // A digit pad is Apple's pad: no bound keys on it.
+                if let c = spec.char, !spec.pad { kv.isBound = s.bindings[c] != nil }
                 kv.shifted = shiftActive
                 kv.setShiftState(shift)
                 addSubview(kv)
@@ -126,7 +139,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     func refreshBindings() {
         let s = SettingsStore.current
         for kv in keys {
-            if let c = kv.spec.char { kv.isBound = s.bindings[c] != nil }
+            if let c = kv.spec.char, !kv.spec.pad { kv.isBound = s.bindings[c] != nil }
         }
     }
 
@@ -136,45 +149,17 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         super.layoutSubviews()
         guard !rows.isEmpty, bounds.width > 100 else { return }
         let s = SettingsStore.current
-        // Every number here is measured off the system keyboard (KeyMetrics):
-        // a 10-column grid with constant margins and gaps, so the keys land
-        // where iOS puts them on whatever phone this is.
-        let hGap = KeyMetrics.hGap
-        let vGap = KeyMetrics.vGap
-        var left = KeyMetrics.sideMargin
-        var right = KeyMetrics.sideMargin
-        if s.oneHanded == "left" { right += 56 }
-        if s.oneHanded == "right" { left += 56 }
-        let availW = bounds.width - left - right
-        // Digit pads have 3 wide columns; QWERTY sizes off 10 columns.
-        let columns: CGFloat = context.isPad ? 3 : 10
-        let padInset: CGFloat = context.isPad ? 80 : 0
-        keyPitch = (availW - padInset + hGap) / columns
-        unitWidth = keyPitch - hGap
-        let rowH = bounds.height / CGFloat(rows.count)
-        let keyH = min(rowH - vGap, context.isPad ? 50 : .greatestFiniteMagnitude)
-        rowHeight = rowH
-
-        var idx = 0
-        for (r, row) in rows.enumerated() {
-            let fixedUnits = row.map { $0.units }.filter { $0 > 0 }.reduce(0, +)
-            let flexUnits = max(1, columns - fixedUnits)
-            let rowUnits = row.contains { $0.units < 0 } ? columns : fixedUnits
-            let rowWidth = rowUnits * keyPitch - hGap
-            var x = left + (availW - rowWidth) / 2
-            let y = CGFloat(r) * rowH + vGap / 2
-            for spec in row {
-                let units = spec.units < 0 ? flexUnits : spec.units
-                let block = units * keyPitch - hGap
-                // shift / delete / mode sit at 1.35 letters, which leaves the
-                // wider gap iOS draws beside them.
-                let w = spec.sideKey ? KeyMetrics.sideKeyWidth(keyWidth: unitWidth) : block
-                keys[idx].frame = CGRect(x: spec.gapLeading ? x + block - w : x, y: y,
-                                         width: w, height: keyH)
-                x += units * keyPitch
-                idx += 1
-            }
-        }
+        // Every number here is measured off the system keyboard (KeyMetrics
+        // and KeyboardLayout.frames), so the keys land where iOS puts them
+        // on whatever phone this is.
+        let grid = KeyboardLayout.frames(
+            rows: rows, size: bounds.size, context: context,
+            leftInset: s.oneHanded == "right" ? 56 : 0,
+            rightInset: s.oneHanded == "left" ? 56 : 0)
+        keyPitch = grid.pitch
+        unitWidth = grid.unitWidth
+        rowHeight = grid.rowHeight
+        for (kv, frame) in zip(keys, grid.frames) { kv.frame = frame }
         layoutKeyGradient()
     }
 
@@ -201,7 +186,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         gradient.startPoint = CGPoint(x: 0, y: 0)
         gradient.endPoint = CGPoint(x: 1, y: 1)
         let shapes = UIBezierPath()
-        for kv in keys {
+        for kv in keys where !kv.spec.bare {
             shapes.append(UIBezierPath(roundedRect: kv.frame, cornerRadius: Glass.radiusKey))
         }
         let mask = (gradient.mask as? CAShapeLayer) ?? CAShapeLayer()
@@ -316,7 +301,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             let p = touch.location(in: self)
-            guard let kv = key(at: p) else { continue }
+            // The phone pad's greyed digits and the number pad's empty
+            // corner take the touch and do nothing, as on Apple's.
+            guard let kv = key(at: p), !kv.spec.disabled else { continue }
             let st = TouchState(key: kv, start: p)
             touchStates[ObjectIdentifier(touch)] = st
             kv.setPressed(true)
@@ -328,7 +315,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 delegate?.kbDeleteBackward()
                 startDeleteRepeat(st)
             case .char(let c):
-                let bound = SettingsStore.current.bindings[c]
+                let bound = kv.spec.pad ? nil : SettingsStore.current.bindings[c]
                 if bound != nil {
                     kv.startChargeRing()
                 }
@@ -496,7 +483,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             lastTapOffset = point.map { p in
                 (Float((p.x - kv.frame.midX) / keyPitch), Float((p.y - kv.frame.midY) / keyPitch))
             }
-            insertFromKey(shiftActive ? c.uppercased() : c)
+            // ".com" and the pad's symbols type as they are, shift or not.
+            insertFromKey(shiftActive && c.count == 1 && !kv.spec.pad ? c.uppercased() : c)
             lastTapOffset = nil
             // Apple's: an apostrophe from the symbols goes straight back to letters.
             if mode != .letters, c == "'" { setMode(.letters) }
@@ -516,7 +504,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             lastShiftTap = now
         case .mode(let m):
             switch m {
-            case "123": setMode(.symbols1)
+            // On the phone pad "+*#" opens its second page and "123" comes back.
+            case "123": setMode(context.isPad ? .letters : .symbols1)
+            case "+*#": setMode(.symbols1)
             case "ABC": setMode(.letters)
             case "#+=": setMode(.symbols2)
             default: break

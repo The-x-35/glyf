@@ -264,6 +264,13 @@ enum Glass {
         return boardIsLight ? seed.blend(.black, 0.14) : seed.blend(.white, 0.12)
     }
     static var fillKeyFnPressed: UIColor { fillKeyPressed }
+    /// Apple's blue return key for go, search, send and done: #007AFF,
+    /// measured on the iOS 26.5 simulator; the dark twin is iOS's dark blue.
+    static var returnBlue: UIColor {
+        isDark ? UIColor(red: 10 / 255, green: 132 / 255, blue: 1, alpha: 1)
+               : UIColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
+    }
+    static var returnBluePressed: UIColor { returnBlue.blend(.black, 0.18) }
     static var fillKeySpecial: UIColor { fillKeyFn }
     static var fillKeyGlyf: UIColor { fillKey }
     /// Bound key wash — barely-there accent over the key surface.

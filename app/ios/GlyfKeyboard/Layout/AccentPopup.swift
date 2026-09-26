@@ -15,8 +15,10 @@ final class AccentPopup: UIView {
 
     init(base: String, accents: [String], shifted: Bool) {
         super.init(frame: .zero)
-        let baseShown = shifted ? base.uppercased() : base
-        options = [baseShown] + accents.map { shifted ? $0.uppercased() : $0 }
+        // Shift makes capitals of letters, never of ".com" and its domains.
+        let caps = { (t: String) in shifted && t.count == 1 ? t.uppercased() : t }
+        let baseShown = caps(base)
+        options = [baseShown] + accents.map(caps)
 
         // Apple's accent bubble: a card on the sheet, whatever the keys wear.
         backgroundColor = Glass.surfaceCard

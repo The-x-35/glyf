@@ -26,6 +26,18 @@ struct KeySpec: Equatable {
     /// Which side the air is on (delete keeps its right edge).
     var gapLeading: Bool = false
     var accents: [String] = []
+    /// A digit-pad key: Apple's pad typography (22pt digits, their letters
+    /// under them) and no press balloon.
+    var pad: Bool = false
+    /// The letters under a pad digit ("ABC").
+    var subtitle: String? = nil
+    /// Drawn without a key cap, like the function keys on Apple's pads.
+    var bare: Bool = false
+    /// Shown instead of what the key types ("pause" types a comma).
+    var title: String? = nil
+    /// Greyed and inert: the digits under the phone pad's symbols page, and
+    /// the number pad's empty corner.
+    var disabled: Bool = false
 
     var isChar: Bool { if case .char = kind { return true }; return false }
 
@@ -49,14 +61,20 @@ struct KeySpec: Equatable {
 enum KeyboardMode { case letters, symbols1, symbols2 }
 
 /// What the focused field asked for (§6.1 "behave like the system keyboard
-/// everywhere"): plain text, email/URL (handy keys on the space row), or a
+/// everywhere"): plain text, the keys an email, web address, search or
+/// Twitter field needs on the space row, WebKit's number fields, or a
 /// digit pad for number/phone/decimal fields.
-enum KeyboardContext { case text, email, url, numberPad, decimalPad, phonePad
+enum KeyboardContext { case text, email, url, webSearch, twitter, numbers,
+                            numberPad, decimalPad, phonePad
 
     init(keyboardType: UIKeyboardType?) {
         switch keyboardType {
         case .emailAddress: self = .email
-        case .URL, .webSearch: self = .url
+        case .URL: self = .url
+        // Safari's address bar: it takes searches too, so it keeps a space bar.
+        case .webSearch: self = .webSearch
+        case .twitter: self = .twitter
+        case .numbersAndPunctuation: self = .numbers
         case .numberPad, .asciiCapableNumberPad: self = .numberPad
         case .decimalPad: self = .decimalPad
         case .phonePad, .namePhonePad: self = .phonePad
@@ -98,7 +116,7 @@ enum KeyboardLayout {
 
     static func rows(mode: KeyboardMode, numberRow: Bool, globe: Bool,
                      context: KeyboardContext = .text) -> [[KeySpec]] {
-        if context.isPad { return padRows(context: context) }
+        if context.isPad { return padRows(context: context, mode: mode) }
         var result: [[KeySpec]] = []
         switch mode {
         case .letters:
@@ -147,46 +165,148 @@ enum KeyboardLayout {
         return s
     }
 
+    /// The long press on .com, like Apple's.
+    static let domains = [".net", ".org", ".edu", ".io", ".co"]
+
     /// 10 columns again: 1.25 + 1.25 + space + 2.5 on iOS, and the globe
     /// takes a column of its own where the system still asks us to draw it.
+    /// Each field type gets the row Apple's keyboard shows it, measured on
+    /// the iOS 26.5 simulator (402pt) and on an iPhone 16 Pro:
+    ///
+    ///     text        123 · emoji · space · return
+    ///     email       123 · emoji · space (2.5) · @ · . · return
+    ///     web address 123 · emoji · . · / · .com (5 columns shared) · return
+    ///     search bar  123 · emoji · space · . (1) · return (1.75)
+    ///     twitter     123 · emoji · space · @ · # · return
+    ///     numbers     ABC (2.5) · space · return, no emoji
+    ///
+    /// Safari's address bar is the search bar: it takes searches, so it keeps
+    /// the space bar and has no slash.
     private static func bottomRow(modeLabel: String, globe: Bool,
                                   context: KeyboardContext = .text) -> [KeySpec] {
+        if context == .numbers {
+            return [KeySpec(kind: .mode(modeLabel), units: 2.5),
+                    KeySpec(kind: .space, units: -1),
+                    KeySpec(kind: .ret, units: 2.5)]
+        }
         var row: [KeySpec] = [KeySpec(kind: .mode(modeLabel), units: 1.25)]
         if globe { row.append(KeySpec(kind: .globe, units: 1.25)) }
-        // Email/URL fields: the keys those fields actually need, where the
-        // system keyboard puts them (§6.1).
+        row.append(KeySpec(kind: .emoji, units: 1.25))
+        let dot = KeySpec(kind: .char("."), units: 1.25, accents: accents["."] ?? [])
         switch context {
         case .email:
+            row.append(KeySpec(kind: .space, units: -1))
             row.append(KeySpec(kind: .char("@"), units: 1.25))
-            row.append(KeySpec(kind: .space, units: -1))
-            row.append(KeySpec(kind: .char("."), units: 1.25, accents: accents["."] ?? []))
+            row.append(dot)
         case .url:
-            row.append(KeySpec(kind: .char("."), units: 1.25, accents: accents["."] ?? []))
+            // No space bar: a web address has no spaces. The three share
+            // what is left.
+            row.append(KeySpec(kind: .char("."), units: -1, accents: accents["."] ?? []))
+            row.append(KeySpec(kind: .char("/"), units: -1, accents: accents["/"] ?? []))
+            row.append(KeySpec(kind: .char(".com"), units: -1, accents: domains))
+        case .webSearch:
             row.append(KeySpec(kind: .space, units: -1))
-            row.append(KeySpec(kind: .char("/"), units: 1.25, accents: accents["/"] ?? []))
+            var narrowDot = dot
+            narrowDot.units = 1
+            row.append(narrowDot)
+            row.append(KeySpec(kind: .ret, units: 1.75))
+            return row
+        case .twitter:
+            row.append(KeySpec(kind: .space, units: -1))
+            row.append(KeySpec(kind: .char("@"), units: 1.25))
+            row.append(KeySpec(kind: .char("#"), units: 1.25))
         default:
-            row.append(KeySpec(kind: .emoji, units: 1.25))
             row.append(KeySpec(kind: .space, units: -1))
         }
         row.append(KeySpec(kind: .ret, units: 2.5))
         return row
     }
 
-    /// System-style digit pad for number/phone/decimal fields: 3×4 grid.
-    private static func padRows(context: KeyboardContext) -> [[KeySpec]] {
-        func pad(_ c: String) -> KeySpec { KeySpec(kind: .char(c), units: 1) }
+    /// The letters under each digit, as on Apple's pads.
+    static let padLetters = ["2": "ABC", "3": "DEF", "4": "GHI", "5": "JKL",
+                             "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ"]
+
+    /// Apple's digit pad for number, phone and decimal fields: three wide
+    /// keys a row, the corner and delete drawn bare. The number pad's corner
+    /// is empty, the decimal pad's is the locale's separator, and the phone
+    /// pad's opens a second page (pause, wait, *, #, +) over greyed digits.
+    /// iOS itself puts its own keyboard on phone fields (and passwords), so
+    /// the phone pad here is only a fallback, drawn like Apple's anyway.
+    private static func padRows(context: KeyboardContext, mode: KeyboardMode) -> [[KeySpec]] {
+        func digit(_ d: String, disabled: Bool = false) -> KeySpec {
+            KeySpec(kind: .char(d), pad: true, subtitle: padLetters[d], disabled: disabled)
+        }
+        func symbol(_ c: String, title: String? = nil) -> KeySpec {
+            KeySpec(kind: .char(c), pad: true, title: title)
+        }
+        let delete = KeySpec(kind: .delete, pad: true, bare: true)
+        if context == .phonePad, mode != .letters {
+            return [
+                [digit("1", disabled: true), digit("2", disabled: true), digit("3", disabled: true)],
+                [symbol(",", title: "pause"), digit("5", disabled: true), symbol(";", title: "wait")],
+                [symbol("*"), digit("8", disabled: true), symbol("#")],
+                [KeySpec(kind: .mode("123"), pad: true, bare: true), symbol("+"), delete],
+            ]
+        }
         let corner: KeySpec
         switch context {
-        case .decimalPad: corner = pad(".")
-        case .phonePad: corner = pad("+")
-        default: corner = KeySpec(kind: .space, units: 1)
+        case .decimalPad:
+            corner = KeySpec(kind: .char(Locale.current.decimalSeparator ?? "."), pad: true, bare: true)
+        case .phonePad:
+            corner = KeySpec(kind: .mode("+*#"), pad: true, bare: true)
+        default:
+            corner = KeySpec(kind: .char(""), pad: true, bare: true, disabled: true)
         }
         return [
-            [pad("1"), pad("2"), pad("3")],
-            [pad("4"), pad("5"), pad("6")],
-            [pad("7"), pad("8"), pad("9")],
-            [corner, pad("0"), KeySpec(kind: .delete, units: 1)],
+            [digit("1"), digit("2"), digit("3")],
+            [digit("4"), digit("5"), digit("6")],
+            [digit("7"), digit("8"), digit("9")],
+            [corner, digit("0"), delete],
         ]
+    }
+
+    /// Where every key goes, for KeyboardView and the touch tests alike.
+    ///
+    /// QWERTY: a 10-column grid with Apple's constant margins and gaps
+    /// (KeyMetrics). Keys with `units < 0` share what the fixed keys leave.
+    /// Pads: Apple's, measured on the iOS 26.5 simulator at 402pt: three
+    /// keys across the full width (5.5pt margins, 6.5pt gaps, 126pt keys),
+    /// 48pt tall on the row pitch the letters use.
+    static func frames(rows: [[KeySpec]], size: CGSize, context: KeyboardContext,
+                       leftInset: CGFloat = 0, rightInset: CGFloat = 0)
+        -> (frames: [CGRect], pitch: CGFloat, unitWidth: CGFloat, rowHeight: CGFloat) {
+        let pad = context.isPad
+        let hGap = pad ? 6.5 : KeyMetrics.hGap
+        let margin = pad ? 5.5 : KeyMetrics.sideMargin
+        let left = margin + leftInset
+        let availW = size.width - left - margin - rightInset
+        let columns: CGFloat = pad ? 3 : 10
+        let pitch = (availW + hGap) / columns
+        let unitWidth = pitch - hGap
+        let rowH = rows.isEmpty ? 0 : size.height / CGFloat(rows.count)
+        let keyH = pad ? min(rowH, KeyMetrics.rowPitch(width: size.width)) - 6 : rowH - KeyMetrics.vGap
+        let gapV = rowH - keyH
+
+        var out: [CGRect] = []
+        for (r, row) in rows.enumerated() {
+            let fixedUnits = row.map(\.units).filter { $0 > 0 }.reduce(0, +)
+            let flexCount = CGFloat(row.filter { $0.units < 0 }.count)
+            let flexUnits = flexCount > 0 ? max(1, columns - fixedUnits) / flexCount : 0
+            let rowUnits = flexCount > 0 ? columns : fixedUnits
+            let rowWidth = rowUnits * pitch - hGap
+            var x = left + (availW - rowWidth) / 2
+            let y = CGFloat(r) * rowH + gapV / 2
+            for spec in row {
+                let units = spec.units < 0 ? flexUnits : spec.units
+                let block = units * pitch - hGap
+                // shift / delete / mode sit at 1.35 letters, which leaves the
+                // wider gap iOS draws beside them.
+                let w = spec.sideKey ? KeyMetrics.sideKeyWidth(keyWidth: unitWidth) : block
+                out.append(CGRect(x: spec.gapLeading ? x + block - w : x, y: y, width: w, height: keyH))
+                x += units * pitch
+            }
+        }
+        return (out, pitch, unitWidth, rowH)
     }
 }
 
