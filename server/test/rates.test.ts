@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
-import { Rates, pickToken, type FetchLike } from "../src/lib/rates.js";
+import { Rates, pickStock, pickToken, type FetchLike } from "../src/lib/rates.js";
 import { ratesRoutes } from "../src/routes/rates.js";
 
 const jupiter = [
@@ -74,10 +74,70 @@ describe("rates", () => {
     expect(await rates.tokenQuote("lol")).toBeNull();
     await rates.tokenQuote("LOL");
     await rates.tokenQuote("sol");
-    expect(calls).toHaveLength(2);
+    // A miss asks twice (the ticker, then its tokenized share), then rests.
+    expect(calls).toHaveLength(3);
     clock = 61 * 1000;
     await rates.tokenQuote("SOL");
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
+  });
+
+  const apple = [
+    { id: "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp", symbol: "AAPLx", name: "Apple xStock",
+      isVerified: true, usdPrice: 340.3, tags: ["stocks", "xstocks", "verified"], liquidity: 6e5,
+      stats24h: { priceChange: 1.5 } },
+    { id: "123mYEnRLM2LLYsJW3K6oyYh8uP1fngj732iG638ondo", symbol: "AAPLon", name: "Apple (Ondo Tokenized)",
+      isVerified: true, usdPrice: 340.22, tags: ["equities", "verified"], liquidity: 9e5 },
+    { id: "9B2sGQFakeAaplx1111111111111111111111111111", symbol: "AAPLX", name: "AAPL Stock with Dividends",
+      isVerified: false, usdPrice: 0.01, tags: ["unknown"] },
+    { id: "BWMwxBAppleCoin111111111111111111111111111", symbol: "AAPL", name: "Applecoin",
+      isVerified: false, usdPrice: 0.02 },
+  ];
+
+  it("prices a stock by its verified tokenized share, xStock first", () => {
+    const q = pickStock("AAPL", apple);
+    expect(q).toMatchObject({ symbol: "AAPL", name: "Apple xStock", usd: 340.3, stock: true, change24h: 1.5 });
+    // Ondo's share when there is no xStock; never an unverified look-alike.
+    expect(pickStock("AAPL", apple.slice(1))?.name).toBe("Apple (Ondo Tokenized)");
+    expect(pickStock("AAPL", apple.slice(2))).toBeNull();
+    // A verified token that isn't a stock never prices one.
+    expect(pickStock("SOL", [{ ...jupiter[1], symbol: "SOLx" }])).toBeNull();
+  });
+
+  it("answers $aapl from Jupiter, asking for the share when the ticker search misses it", async () => {
+    const { f, calls } = fakeFetch(url => url.endsWith("query=AAPLx") ? apple.slice(0, 1) : url.endsWith("query=AAPL") ? apple : []);
+    const rates = new Rates(f, () => 0);
+    expect(await rates.tokenQuote("$aapl")).toMatchObject({ symbol: "AAPL", usd: 340.3, stock: true });
+    expect(calls).toHaveLength(1);
+    const second = fakeFetch(url => url.endsWith("query=TSLAx")
+      ? [{ ...apple[0], id: "XsDoVfTsla111111111111111111111111111111111", symbol: "TSLAx", name: "Tesla xStock", usdPrice: 371.43 }]
+      : []);
+    const r2 = new Rates(second.f, () => 0);
+    expect((await r2.tokenQuote("TSLA"))?.usd).toBe(371.43);
+    expect(second.calls.map(c => c.split("query=")[1])).toEqual(["TSLA", "TSLAx"]);
+  });
+
+  it("prices a company typed by name: $apple is Apple, $pfizer found by name", async () => {
+    const appleCoin = { id: "AppLeCoin11111111111111111111111111111111111", symbol: "APPLE", name: "Apple Coin",
+      isVerified: true, usdPrice: 0.003, tags: ["verified"] };
+    const pfizer = [{ ...apple[0], id: "PFExPfizer1111111111111111111111111111111111", symbol: "PFEx", name: "Pfizer xStock", usdPrice: 26.48 }];
+    const { f, calls } = fakeFetch(url => url.endsWith("query=AAPL") ? apple : url.endsWith("query=APPLE") ? [appleCoin]
+      : url.endsWith("query=PFIZER") ? pfizer : []);
+    const rates = new Rates(f, () => 0);
+    expect(await rates.tokenQuote("$apple")).toMatchObject({ symbol: "APPLE", usd: 340.3, stock: true });
+    expect(calls.map(c => c.split("query=")[1])).toEqual(["AAPL"]);
+    expect(await rates.tokenQuote("$pfizer")).toMatchObject({ symbol: "PFIZER", usd: 26.48, name: "Pfizer xStock" });
+    // A name that is no company and no coin gives nothing.
+    expect(await rates.tokenQuote("$banana")).toBeNull();
+  });
+
+  it("prices Nvidia, not a meme coin that took its ticker; SOL stays SOL", async () => {
+    const meme = { id: "9dwPiStDBwJJqC3QzMnjpJP7xohZbMVmHELFx3uy3KRq", symbol: "NVDA", name: "NVIDIA",
+      isVerified: true, usdPrice: 0.00017, tags: ["verified"] };
+    const nvdax = { ...apple[0], id: "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh", symbol: "NVDAx", name: "NVIDIA xStock", usdPrice: 224.52 };
+    const { f } = fakeFetch(url => url.endsWith("query=NVDA") ? [meme] : url.endsWith("query=NVDAx") ? [nvdax] : url.endsWith("query=SOL") ? jupiter : []);
+    const rates = new Rates(f, () => 0);
+    expect(await rates.tokenQuote("$nvda")).toMatchObject({ usd: 224.52, stock: true });
+    expect((await rates.tokenQuote("$sol"))?.usd).toBe(111.77);
   });
 
   it("answers the strip over the API, five tickers at most", async () => {

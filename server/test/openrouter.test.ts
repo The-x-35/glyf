@@ -95,12 +95,13 @@ describe("requestOptions", () => {
       .toEqual({ max_tokens: 1500 });
   });
 
-  it("turns thinking off for hybrid models on the quick tiers", () => {
+  it("turns thinking off for hybrid models on every tier", () => {
     const or = (m: string) => ep("https://openrouter.ai/api/v1/chat/completions", m, true);
     expect(requestOptions(or("qwen/qwen3.7-flash"), "fast")).toMatchObject({ reasoning: { enabled: false } });
     expect(requestOptions(or("google/gemini-2.5-flash-lite:nitro"), "fast")).toMatchObject({ reasoning: { enabled: false } });
-    // Building may think; it just never shows.
-    expect(requestOptions(or("qwen/qwen3.7-flash"), "smart")).toMatchObject({ reasoning: { exclude: true } });
+    // The Builder too: fast and cheap beats thinking there.
+    expect(requestOptions(or("inclusionai/ling-3.0-flash"), "smart")).toMatchObject({ reasoning: { enabled: false } });
+    expect(requestOptions(or("openrouter/free"), "smart")).toMatchObject({ reasoning: { exclude: true } });
   });
 
   it("asks OpenRouter to keep thinking out of the answer", () => {

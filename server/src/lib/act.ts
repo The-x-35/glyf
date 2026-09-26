@@ -329,8 +329,27 @@ async function planWithModel(text: string): Promise<ActPlan> {
 }
 
 export function plan(text: string): Promise<ActPlan> {
-  const byRules = planByRules(text);
+  const byRules = planByRules(text) ?? (needsTidy(text) ? { intent: "rewrite" as const, query: text.trim() } : null);
   return byRules ? Promise.resolve(byRules) : planWithModel(text);
+}
+
+/** Texting shorthand and missing apostrophes: the words a tidy-up fixes. */
+const SHORTHAND = /\b(u|ur|pls|plz|thx|tnx|b4|tmrw|tmr|tomo|2day|2nite|gonna|wanna|gotta|cuz|coz|abt|idk|rn|ppl|msg|kk|ya|yea|nah|dont|cant|wont|didnt|doesnt|isnt|wasnt|arent|im|ive|youre|theyre|thats|whats|lets|shouldnt|couldnt|wouldnt|havent)\b/i;
+/** Anything a model should read first: a question, a place, a live fact,
+ *  a video. Those can want the map, an answer or a search, not a tidy-up. */
+const LOOKUP = /\?|\b(where|who|when|which|what time|how much|how many|price|cost|score|near|nearby|meet at|at the|video|song|movie|weather|open now)\b/i;
+
+/** A chat message that plainly wants tidying, known without a model: a
+ *  sentence of four words or more with texting shorthand, a lowercase "i",
+ *  stretched letters ("sooo") or a long run with no capital and no stop.
+ *  Math, places and questions never land here: the rules and the model
+ *  handle those. Instant, where asking a model costs most of a second. */
+export function needsTidy(text: string): boolean {
+  const t = text.trim().replace(/\s+/g, " ");
+  const words = t.split(" ");
+  if (words.length < 4 || LOOKUP.test(t) || /\d\s*[-+*/×÷^%]\s*\d/.test(t)) return false;
+  return SHORTHAND.test(t) || /(^|\s)i(\s|'|$)/.test(t) || /([a-z])\1{2,}/i.test(t)
+    || (/^[a-z]/.test(t) && words.length >= 6 && !/[.!?]$/.test(t));
 }
 
 /** Nothing live came back. Say so, keep the Google card to open, and put

@@ -307,9 +307,10 @@ enum Smart {
     private static let amountPattern = try? NSRegularExpression(
         pattern: #"(?:([$€£₹¥])\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?([$€£₹¥]|[A-Za-z]{2,7}))\s*$"#,
         options: [.caseInsensitive])
-    /// "$sol", "$usdc": a ticker, never a number.
+    /// "$sol", "$aapl", or the name for people who don't know the ticker
+    /// ("$apple", "$bitcoin"; the server finds it): never a number.
     private static let cashtagPattern = try? NSRegularExpression(
-        pattern: #"(?:^|\s)\$([A-Za-z]{2,6})\s*$"#)
+        pattern: #"(?:^|\s)\$([A-Za-z]{2,14})\s*$"#)
 
     /// The ticker at the end of the text, for whoever fetches prices.
     static func cashtag(in text: String) -> String? {

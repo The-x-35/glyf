@@ -291,7 +291,7 @@ The default map was 10 keys in M5 (`t r s c j p e x w q`). On 2026-09-12 it was 
 
 `POST /tools/run` still has client helpers (`BackendClient.runTool` on iOS, `BackendClient.tool` on Android) but nothing calls them since the search suite moved to `/search` on 2026-09-14.
 
-**Server environment variables that change what the apps can do** (names only; values live in `server/.env`, documented in `server/.env.example`): `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `INCEPTION_API_KEY`, `CEREBRAS_API_KEY`, `FAST_MODELS`, `SMART_MODELS`, `MOCK_AI`, `FREE_RUNS_PER_DAY`, `BRAVE_SEARCH_KEY`, `SERPER_API_KEY`, `YOUTUBE_API_KEY`, `GEOAPIFY_KEY`, `GOOGLE_PLACES_KEY`, `GOOGLE_WEATHER_KEY`, `OVERPASS_API_BASE`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_REDIRECT_BASE`, `NOTION_CLIENT_ID` / `_SECRET` (and the same pair for `SLACK`, `GITHUB`, `LINEAR`, `TODOIST`, `CALENDLY`, `ZOOM`, `SPOTIFY`), `GIPHY_API_KEY`, `PUBLIC_BASE_URL`, `PRIVY_APP_ID`, `PRIVY_APP_SECRET` (M8 only, never used by the apps), `NODE_ENV`, `PORT`.
+**Server environment variables that change what the apps can do** (names only; values live in `server/.env`, documented in `server/.env.example`): `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `INCEPTION_API_KEY`, `CEREBRAS_API_KEY`, `MOCK_AI`, `BRAVE_SEARCH_KEY`, `SERPER_API_KEY`, `YOUTUBE_API_KEY`, `GEOAPIFY_KEY`, `GOOGLE_PLACES_KEY`, `GOOGLE_WEATHER_KEY`, `OVERPASS_API_BASE`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_REDIRECT_BASE`, `NOTION_CLIENT_ID` / `_SECRET` (and the same pair for `SLACK`, `GITHUB`, `LINEAR`, `TODOIST`, `CALENDLY`, `ZOOM`, `SPOTIFY`), `GIPHY_API_KEY`, `PUBLIC_BASE_URL`, `PRIVY_APP_ID`, `PRIVY_APP_SECRET` (M8 only, never used by the apps), `NODE_ENV`, `PORT`.
 
 ### 3.7 What runs on the device and what runs on the server
 
@@ -879,7 +879,7 @@ On finish the app writes key sounds, haptics and the chosen keys into settings a
 
 | Plan | Price | Runs | Also |
 |---|---|---|---|
-| Free | $0 | 20 a day (`FREE_RUNS_PER_DAY`) | 100 suggestions and 100 translations a day |
+| Free | $0 | 20 a day | 100 suggestions and 100 translations a day |
 | Plus | $1.99 / month or $19.99 / year | 150 a day | 300 suggestions (the card says "3x the suggestions") and 400 translations ("4x the translations") a day |
 | Max | $4.99 / month or $49.99 / year | 400 a day | 600 suggestions ("6x"), 1,000 translations ("10x"), early features |
 

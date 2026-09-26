@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { planByRules, type ActIntent } from "../lib/act.js";
+import { needsTidy, planByRules, type ActIntent } from "../lib/act.js";
 import type { Guard } from "../lib/guard.js";
 import { TTLCache } from "../lib/cache.js";
 import { DETAIL_KINDS, detailByRules, type DetailKind } from "../lib/details.js";
@@ -15,8 +15,9 @@ import { readTyping } from "../lib/reading.js";
  * map, a rough message offers a tidy-up, and a sentence heading into one of
  * their own saved details offers it.
  *
- * Rules answer what they can for nothing; otherwise one call to the
- * suggestion chain (SUGGEST_MODELS, small and cheap) reads the sentence.
+ * Rules answer what they can for nothing, "Tidy this up" included (a
+ * message full of shorthand needs no model to say so); otherwise one call
+ * to the suggestion chain (small and cheap) reads the sentence.
  * Nobody asked for this read, so it never spends one of their runs: it has
  * its own allowance (Guard.suggest), and only a read by the model counts
  * against it. Tapping the chip is a run.
@@ -80,6 +81,8 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
       const byRules = field ? null : planByRules(text);
       if (field || byRules) {
         suggestion = suggestionFor(text, byRules?.intent ?? null, field, byRules?.query);
+      } else if (needsTidy(text)) {
+        suggestion = suggestionFor(text, "rewrite", null);
       } else {
         const gate = await guard.suggest(req, parsed.data.deviceId);
         if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });

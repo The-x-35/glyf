@@ -22,25 +22,30 @@ export const env = {
   inceptionKey: process.env.INCEPTION_API_KEY ?? "",
   cerebrasKey: process.env.CEREBRAS_API_KEY ?? "",
   mockAI: process.env.MOCK_AI === "true",
-  /** A free plan's day. Plus and Max are fixed in lib/limits.ts. */
-  freeRunsPerDay: num("FREE_RUNS_PER_DAY", 20),
+  /** The models and each plan's day are set here in code, never by the
+   *  environment: a stale Railway variable once kept production on a slow
+   *  chain with the old caps. Tests may still change them in-process. */
+  /** A free plan's day. Plus and Max are in lib/limits.ts (PAID_PER_DAY). */
+  freeRunsPerDay: 20,
   /** The strip's suggestions have their own allowance and never spend a run. */
-  freeSuggestionsPerDay: num("FREE_SUGGESTIONS_PER_DAY", 100),
+  freeSuggestionsPerDay: 100,
   /** So do the translate bar's translations. */
-  freeTranslationsPerDay: num("FREE_TRANSLATIONS_PER_DAY", 100),
-  /** §8.3 fallback chain, most-preferred first. Never hard-code one :free id.
-   *  Qwen 3.7 Flash writes all six rewrite versions for about $0.03 a
-   *  thousand, a third of Gemini 2.5 Flash-Lite, which stands behind it. */
-  fastModels: (process.env.FAST_MODELS
-    ?? "qwen/qwen3.7-flash,google/gemini-2.5-flash-lite:nitro,gemini:gemini-flash-lite-latest,openrouter/free")
-    .split(",").map(s => s.trim()),
-  smartModels: (process.env.SMART_MODELS ?? "openrouter/free").split(",").map(s => s.trim()),
+  freeTranslationsPerDay: 100,
+  /** §8.3 fallback chains, most-preferred first, measured 2026-09-26 for
+   *  speed and price (docs/BACKEND.md 5.10). Never hard-code one :free id.
+   *  Hold space and chip taps: Qwen 3.7 Flash writes all six rewrite
+   *  versions for about $0.03 a thousand; Gemini 2.5 Flash-Lite stands
+   *  behind it, then Gemini's own free tier. */
+  fastModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro",
+    "gemini:gemini-flash-lite-latest", "openrouter/free"],
+  /** The Builder: Ling 3.0 Flash made a valid glyf six times out of six in
+   *  about 2 s for $0.03 a thousand; Gemini 2.5 Flash-Lite (1.4 s) next. */
+  smartModels: ["inclusionai/ling-3.0-flash", "google/gemini-2.5-flash-lite:nitro",
+    "gemini:gemini-flash-lite-latest", "openrouter/free"],
   /** What reads a pause in typing for the strip's chip: small, paid, cheap
    *  (about $8 a million reads on Qwen 3.7 Flash) and never a free tier
    *  that keeps what it is sent. */
-  suggestModels: (process.env.SUGGEST_MODELS
-    ?? "qwen/qwen3.7-flash,google/gemini-2.5-flash-lite,inclusionai/ling-3.0-flash")
-    .split(",").map(s => s.trim()),
+  suggestModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite", "inclusionai/ling-3.0-flash"],
   cacheTtlMs: num("CACHE_TTL_MS", 24 * 3600 * 1000),
   // Privy creds are parked here for M8's backend integration — NEVER sent to
   // clients, NEVER used before the crypto connector milestone (SPEC §6.14).

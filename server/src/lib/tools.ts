@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { registryDir } from "./paths.js";
+import { Rates } from "./rates.js";
 
 /** §6.11 — the tool registry. Keyless tools ship now (no user auth, no API
  *  keys); OAuth tools activate in M6 when provider credentials exist. Every
@@ -62,6 +63,9 @@ async function fetchJSON(
   if (!res.ok) throw new Error(`upstream ${res.status}`);
   return res.json();
 }
+
+/** Stock prices for stocks.quote, cached like the strip's cashtags. */
+const stockRates = new Rates();
 
 /** Executes a registry tool. Returns a STRING for the step context —
  *  human-readable where the result is terminal, JSON where chains continue.
@@ -250,18 +254,14 @@ export async function runTool(
       return data.map(w => w.word).join(", ");
     }
     case "stocks.quote": {
-      const raw = (args.symbol || "AAPL").trim().toLowerCase();
-      const symbol = raw.includes(".") ? raw : `${raw}.us`;
-      const res = await fetch(
-        `https://stooq.com/q/l/?s=${encodeURIComponent(symbol)}&f=sd2t2ohlcv&h&e=csv`,
-        { signal: AbortSignal.timeout(meta.timeoutMs) });
-      const csv = await res.text();
-      const row = csv.trim().split("\n")[1]?.split(",");
-      if (!row || row[3] === "N/D") throw new Error(`no quote for '${args.symbol}'`);
-      const [sym, date, , open, , , close] = row;
-      const chg = ((Number(close) - Number(open)) / Number(open)) * 100;
-      return `${sym.replace(".US", "")} $${Number(close).toFixed(2)} ` +
-        `(${chg >= 0 ? "+" : ""}${chg.toFixed(1)}% today, ${date})`;
+      // Jupiter's verified tokenized shares on Solana (xStocks) track the
+      // stock; stooq's free CSV, used before, is gone (404 since 2026-09).
+      const raw = (args.symbol || "AAPL").trim().replace(/\.us$/i, "");
+      const quote = await stockRates.tokenQuote(raw);
+      if (!quote) throw new Error(`no quote for '${args.symbol}'`);
+      const change = quote.change24h;
+      return `${quote.symbol} $${quote.usd.toFixed(2)}` +
+        (typeof change === "number" ? ` (${change >= 0 ? "+" : ""}${change.toFixed(1)}% in 24h)` : "");
     }
     case "air.quality": {
       const place = args.place || "Bengaluru";

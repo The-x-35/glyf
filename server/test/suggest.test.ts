@@ -54,9 +54,9 @@ describe("POST /suggest", () => {
     env.freeSuggestionsPerDay = 2;
     try {
       const app = signedInApp();
-      expect((await ask(app, "ok will send the deck before six")).statusCode).toBe(200);
-      expect((await ask(app, "fine the deck goes out at seven then")).statusCode).toBe(200);
-      const third = await ask(app, "alright the deck goes out at eight");
+      expect((await ask(app, "The deck goes out before six.")).statusCode).toBe(200);
+      expect((await ask(app, "Fine, the deck goes out at seven then.")).statusCode).toBe(200);
+      const third = await ask(app, "Alright, the deck goes out at eight.");
       expect(third.statusCode).toBe(429);
       expect(third.json().error).toContain("suggestions");
       // The day's one run is still there for the person who holds space.
@@ -76,9 +76,11 @@ describe("POST /suggest", () => {
       for (let i = 0; i < 3; i++) {
         expect((await ask(app, "any good italian places in koramangala")).statusCode).toBe(200);
       }
-      expect((await ask(app, "ok will send the deck before six")).statusCode).toBe(200);
-      expect((await ask(app, "ok will send the deck before six")).statusCode).toBe(200);
-      expect((await ask(app, "fine the deck goes out at seven then")).statusCode).toBe(429);
+      // A message full of shorthand is a tidy-up by rule: no read spent.
+      expect((await ask(app, "ok will send the deck b4 six dont worry")).statusCode).toBe(200);
+      expect((await ask(app, "The deck goes out before six.")).statusCode).toBe(200);
+      expect((await ask(app, "The deck goes out before six.")).statusCode).toBe(200);
+      expect((await ask(app, "Fine, the deck goes out at seven then.")).statusCode).toBe(429);
     } finally {
       env.freeSuggestionsPerDay = suggestions;
     }
@@ -91,7 +93,10 @@ describe("POST /suggest", () => {
     env.cerebrasKey = "";
     try {
       const app = signedInApp();
-      expect((await ask(app, "ya ok will send the deck before 6 tmrw")).json().suggestion).toBeNull();
+      // Shorthand is a tidy-up without any model; a clean sentence needs one.
+      expect((await ask(app, "ya ok will send the deck before 6 tmrw")).json().suggestion)
+        .toMatchObject({ intent: "rewrite", label: "Tidy this up" });
+      expect((await ask(app, "The report is ready for review tomorrow morning.")).json().suggestion).toBeNull();
       expect((await ask(app, "any good italian places in koramangala")).json().suggestion?.label).toBe("Show me places");
       expect((await ask(app, "sure, ship it to", { kinds: ["address"] })).json().suggestion)
         .toMatchObject({ intent: "detail", field: "address" });
@@ -99,6 +104,21 @@ describe("POST /suggest", () => {
       env.mockAI = saved.mockAI;
       env.suggestModels = saved.models;
       env.cerebrasKey = saved.key;
+    }
+  });
+});
+
+describe("tidy by rule", () => {
+  it("knows a message that needs tidying without a model", async () => {
+    const { needsTidy } = await import("../src/lib/act.js");
+    for (const t of ["ya ok will send the deck b4 6 dont worry about it", "hey sorry i cant make it today will call u later",
+      "thx for the gift loved it sooo much", "bro the meeting got moved to 4 tell everyone"]) {
+      expect(needsTidy(t), t).toBe(true);
+    }
+    // Questions, places, sums, clean sentences and half-typed ones go on to the rules and the model.
+    for (const t of ["who won the f1 race today", "lets meet at the Blue Tokai in Indiranagar", "any good cafes near me",
+      "3480/4 is what each of us pays", "Thanks so much, see you tomorrow.", "ok see u"]) {
+      expect(needsTidy(t), t).toBe(false);
     }
   });
 });

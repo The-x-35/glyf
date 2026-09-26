@@ -656,6 +656,10 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertFalse(Smart.looksLikeMoney("flight AI 2021"))
         XCTAssertEqual(Smart.cashtag(in: "send $sol"), "SOL")
         XCTAssertNil(Smart.cashtag(in: "$13"))
+        // A name works too, for whoever doesn't know the ticker.
+        XCTAssertEqual(Smart.cashtag(in: "whats $apple at"), nil)
+        XCTAssertEqual(Smart.cashtag(in: "how is $bitcoin"), "BITCOIN")
+        XCTAssertEqual(Smart.cashtag(in: "$microsoft"), "MICROSOFT")
         XCTAssertNil(Smart.chip(for: "$usdc", fields: [], rates: rates), "a ticker with no price yet")
         // A sum still wins over a conversion; a dollar amount at home stays quiet.
         XCTAssertEqual(Smart.chip(for: "$10*3", fields: [], rates: rates), .calc(value: "$30", hasEquals: false))

@@ -36,6 +36,10 @@ class SmartTest {
         assertEquals(false, Smart.looksLikeMoney("flight AI 2021"))
         assertEquals("SOL", Smart.cashtag("send \$sol"))
         assertNull(Smart.cashtag("\$13"))
+        // A name works too, for whoever doesn't know the ticker.
+        assertNull(Smart.cashtag("whats \$apple at"))
+        assertEquals("BITCOIN", Smart.cashtag("how is \$bitcoin"))
+        assertEquals("MICROSOFT", Smart.cashtag("\$microsoft"))
         assertNull(Smart.chip("\$usdc", vault, rates = rates))
         assertEquals(Smart.Chip.Calc("$30", false), Smart.chip("\$10*3", vault, rates = rates))
         val home = Smart.RatesSnapshot(fiat = mapOf("USD" to 1.0, "INR" to 95.88), local = "USD")

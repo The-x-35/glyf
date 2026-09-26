@@ -138,7 +138,8 @@ object Smart {
         """(?:([$€£₹¥])\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?([$€£₹¥]|[A-Za-z]{2,7}))\s*$""",
         RegexOption.IGNORE_CASE)
     /** "$sol", "$usdc": a ticker, never a number. */
-    private val cashtagPattern = Regex("""(?:^|\s)\$([A-Za-z]{2,6})\s*$""")
+    /** "\$sol", "\$aapl", or a name ("\$apple", "\$bitcoin"; the server finds it). */
+    private val cashtagPattern = Regex("""(?:^|\s)\$([A-Za-z]{2,14})\s*$""")
 
     /** The ticker at the end of the text, for whoever fetches prices. */
     fun cashtag(text: String): String? = cashtagPattern.find(text)?.groupValues?.get(1)?.uppercase()
