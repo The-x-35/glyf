@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseTarget, languageName, parseTranslation, scriptLanguage } from "../src/lib/translate.js";
+import { chooseTarget, languageName, latinLanguage, parseTranslation, scriptLanguage } from "../src/lib/translate.js";
 
 const req = { text: "", primary: "English", secondary: "Hindi" };
 
@@ -44,5 +44,21 @@ describe("languageName", () => {
     expect(languageName("Romanized Hindi")).toBe("Hindi");
     expect(languageName("Chinese (Simplified)")).toBe("Chinese");
     expect(languageName("spanish")).toBe("Spanish");
+  });
+});
+
+describe("English or Hinglish, from the words", () => {
+  it("tells romanised Hindi from English without a model", () => {
+    expect(latinLanguage("kal milte hain office ke baad")).toBe("Hindi");
+    expect(latinLanguage("bhai aaj shaam ko party hai aa jana")).toBe("Hindi");
+    expect(latinLanguage("meeting kal 4 baje hai")).toBe("Hindi");
+    expect(latinLanguage("see you after office tomorrow")).toBe("English");
+    expect(latinLanguage("the meeting moved to 4 pm")).toBe("English");
+  });
+
+  it("leaves other languages, and too few words, to the model", () => {
+    expect(latinLanguage("hola que tal")).toBeNull();
+    expect(latinLanguage("bonjour mon ami")).toBeNull();
+    expect(latinLanguage("ok")).toBeNull();
   });
 });
