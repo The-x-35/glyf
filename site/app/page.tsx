@@ -1,6 +1,7 @@
 import Experience from "@/components/chat/Experience";
 import Cursor from "@/components/Cursor";
 import BackdropKeys from "@/components/BackdropKeys";
+import Features from "@/components/Features";
 import ThemeToggle from "@/components/ThemeToggle";
 import Waitlist from "@/components/Waitlist";
 import Wordmark from "../components/Wordmark";
@@ -76,6 +77,8 @@ export default function Page() {
             </div>
           </div>
         </section>
+
+        <Features />
 
         <div id="try">
           <Experience />

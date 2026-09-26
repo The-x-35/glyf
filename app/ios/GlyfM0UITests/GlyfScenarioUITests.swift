@@ -1067,7 +1067,7 @@ final class GlyfScenarioUITests: XCTestCase {
         let light = keycapColors(key)
         keepScreenshot("strip-light")
         note(String(format: "light sheet: face %.2f, dot rgb %.0f %.0f %.0f", light.face, light.dot.r, light.dot.g, light.dot.b))
-        XCTAssertGreaterThan(light.face, 0.85, "the key is the icon's white on a light sheet too")
+        XCTAssertGreaterThan(light.face, 0.85, "on a light sheet the key is the icon's white")
         XCTAssertTrue(light.violet, "the dot is Glyf violet")
         key.tap()
         XCTAssertNotNil(wait("shell:tile:search", 3), "the key opens the Glyf menu")
@@ -1086,7 +1086,7 @@ final class GlyfScenarioUITests: XCTestCase {
         let dark = keycapColors(darkKey)
         keepScreenshot("strip-dark")
         note(String(format: "dark sheet: face %.2f, dot rgb %.0f %.0f %.0f", dark.face, dark.dot.r, dark.dot.g, dark.dot.b))
-        XCTAssertGreaterThan(dark.face, 0.85, "on a dark sheet the key is the icon's white")
+        XCTAssertLessThan(dark.face, 0.15, "on a dark sheet the key is the icon's dark twin")
         XCTAssertTrue(dark.violet, "the dot is Glyf violet on a dark sheet")
     }
 

@@ -367,10 +367,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         toolbar.removeAllViews()
         val ink = if (dark) Color.WHITE else Color.rgb(18, 18, 20)
 
-        // Glyf's own key, the same as iOS's: the app icon as a 41 by 30 pill,
-        // white with its black g and the violet dot (GlyfMark), on either
-        // sheet. The view is the tap target; the key is drawn inside it.
+        // Glyf's own key, the same as iOS's: the app icon as a 41 by 30 pill
+        // with its violet dot (GlyfMark), white with a black g on a light
+        // sheet and its dark twin on a dark one. The view is the tap target;
+        // the key is drawn inside it.
         val g = GlyfKeyView(this, dp(30).toFloat())
+        g.dark = dark
         g.ink = ink
         g.apply {
             setTag(com.demo.glyf.R.id.qa_id, "toolbar:glyf")

@@ -777,10 +777,10 @@ const scenarios = [
     } finally {
       shell("cmd uimode night no");
     }
-    // The app icon itself on both sheets: white, with its black g.
-    const ok = x => x && x.face > 0.85 && x.violet;
+    // The logo follows the theme: the white icon on a light sheet, its dark twin on a dark one.
+    const ok = (x, isDark) => x && (isDark ? x.face < 0.15 : x.face > 0.85) && x.violet;
     const fmt = x => x ? `face ${x.face.toFixed(2)}, dot ${x.dot.join(" ")}` : "no key";
-    return { pass: ok(light) && ok(dark) && menu,
+    return { pass: ok(light, false) && ok(dark, true) && menu,
       note: `light: ${fmt(light)}; dark: ${fmt(dark)}; tap opens the menu: ${menu}` };
   } },
   { id: "S133", title: "Snake from the g menu turns with a swipe", run: async () => {

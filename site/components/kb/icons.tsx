@@ -257,3 +257,45 @@ export const ShieldIcon = (p: P) => (
     <path d="m7.4 10.1 1.8 1.8 3.5-3.6" />
   </S>
 );
+
+export const CalendarIcon = (p: P) => (
+  <S {...p}>
+    <rect x="3" y="4.2" width="14" height="12.8" rx="2.6" />
+    <path d="M3 8.2h14M7 2.6v3.2M13 2.6v3.2" />
+  </S>
+);
+
+export const CalendarCheckIcon = (p: P) => (
+  <S {...p}>
+    <rect x="3" y="4.2" width="14" height="12.8" rx="2.6" />
+    <path d="M3 8.2h14M7 2.6v3.2M13 2.6v3.2m-5.6 7.1 1.7 1.7 3.2-3.3" />
+  </S>
+);
+
+export const VideoIcon = (p: P) => (
+  <S {...p}>
+    <rect x="2.4" y="5.4" width="10.8" height="9.2" rx="2.4" />
+    <path d="m13.2 8.8 4.4-2.6v7.6l-4.4-2.6" />
+  </S>
+);
+
+export const PersonIcon = (p: P) => (
+  <S {...p}>
+    <circle cx="10" cy="7" r="3.2" />
+    <path d="M3.8 17c.8-3.2 3.3-5 6.2-5s5.4 1.8 6.2 5" />
+  </S>
+);
+
+export const LinkIcon = (p: P) => (
+  <S {...p}>
+    <path d="M8.6 11.4a3.2 3.2 0 0 0 4.5 0l2.6-2.6a3.2 3.2 0 0 0-4.5-4.5l-1 1" />
+    <path d="M11.4 8.6a3.2 3.2 0 0 0-4.5 0l-2.6 2.6a3.2 3.2 0 0 0 4.5 4.5l1-1" />
+  </S>
+);
+
+export const GifIcon = (p: P) => (
+  <S {...p}>
+    <rect x="2.4" y="4.6" width="15.2" height="10.8" rx="2.6" />
+    <path d="M8.4 8.4H6.9a1.6 1.6 0 0 0-1.6 1.6v0a1.6 1.6 0 0 0 1.6 1.6h1.5V10.3H7.6M10.6 8.4v3.2M13.1 11.6V8.4h2M13.1 10h1.6" strokeWidth="1.4" />
+  </S>
+);

@@ -106,12 +106,19 @@ object GlyfMark {
 class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
     var closing = false
         set(value) { field = value; invalidate() }
+    var dark = false
+        set(value) { field = value; invalidate() }
     var ink = GlyfMark.INK
         set(value) { field = value; invalidate() }
 
     private val face = Paint(Paint.ANTI_ALIAS_FLAG)
     private val letter = Paint(Paint.ANTI_ALIAS_FLAG)
     private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GlyfMark.VIOLET }
+    /** A faint edge so the dark key stands off a dark strip. */
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; color = Color.argb(41, 255, 255, 255)
+        strokeWidth = 0.75f * ctx.resources.displayMetrics.density
+    }
     private val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND
         strokeWidth = 1.8f * ctx.resources.displayMetrics.density
@@ -131,10 +138,11 @@ class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
             return
         }
         val key = RectF(left, top, left + w, top + h)
-        // The app icon itself on either sheet: white, with its black g.
-        face.color = Color.WHITE
-        letter.color = GlyfMark.INK
+        // The app icon on a light sheet, its dark twin on a dark one.
+        face.color = if (dark) GlyfMark.INK else Color.WHITE
+        letter.color = if (dark) Color.WHITE else GlyfMark.INK
         c.drawRoundRect(key, h / 3f, h / 3f, face)
+        if (dark) c.drawRoundRect(key, h / 3f, h / 3f, ring)
         GlyfMark.drawMark(c, key, h * 0.083f, letter, dot)
     }
 }
