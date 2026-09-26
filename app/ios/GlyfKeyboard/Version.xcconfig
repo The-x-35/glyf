@@ -1,0 +1,4 @@
+// The keyboard ships inside the app, and App Store Connect wants its version
+// and build number to match the app's: both come from pubspec.yaml's
+// `version:` through Flutter's generated settings.
+#include? "../Flutter/Generated.xcconfig"

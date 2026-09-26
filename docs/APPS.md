@@ -1386,7 +1386,7 @@ There is no hosted CI pipeline; the scripts are run by hand.
 
 ### 10.9 Signing, App Store Connect, TestFlight
 
-**Team and IDs.** Since 2026-09-25 Glyf ships under **Arpit's own individual developer account**: App ID `com.arpit.glyf`, extension `com.arpit.glyf.keyboard` (an extension's ID must start with the app's ID), App Group `group.com.arpit.glyf`. Automatic signing on Runner and GlyfKeyboard, all configurations; `DEVELOPMENT_TEAM` is empty in the project until his team is picked in Xcode (Signing & Capabilities, both targets), and the first archive from the Xcode GUI registers both App IDs, the App Group and Sign in with Apple. Until then the TestFlight builds lived under a friend's team, **Console Labs India Private Limited (`XFSL58LKTQ`)**, as `com.demo.glyf`; that App Store Connect record may still hold the name "Glyf".
+**Team and IDs.** Since 2026-09-25 Glyf ships under **Arpit's own individual developer account**: App ID `com.arpit.glyf`, extension `com.arpit.glyf.keyboard` (an extension's ID must start with the app's ID), App Group `group.com.arpit.glyf`. Automatic signing on Runner and GlyfKeyboard, all configurations, with `DEVELOPMENT_TEAM = YNABR226PF` ("Arpit Singh Bhatia", Individual) since 2026-09-26 (`tools/set_signing_and_privacy.rb`). Arpit registered both App IDs and the App Group in the portal by hand the same day, and created the App Store Connect record as "Glyf: AI Keyboard" (plain "Glyf" is reserved by someone who never shipped it). Until then the TestFlight builds lived under a friend's team, **Console Labs India Private Limited (`XFSL58LKTQ`)**, as `com.demo.glyf`; that App Store Connect record may still hold the name "Glyf".
 
 **Capabilities** (Arpit asked "what are the capabilities i need to add to apple app store" on 2026-09-12 20:29; answer updated to the current IDs):
 
@@ -1403,13 +1403,16 @@ There is no hosted CI pipeline; the scripts are run by hand.
 | `Signing for "GlyfKeyboard" requires a development team` | The extension target had no team at all | Team set on all three GlyfKeyboard configurations |
 | `No Account for Team "246K6T9TPL"`, plus three provisioning errors: the profile `iOS Team Provisioning Profile: *` doesn't include the App Groups capability, doesn't support the `group.so.glyf.shared` App Group, and doesn't include the `com.apple.security.application-groups` entitlement | `246K6T9TPL` in the project belonged to no account Xcode knew; Xcode fell back to a wildcard profile, which can never carry App Groups | Switched all six Runner and GlyfKeyboard configurations to `XFSL58LKTQ`. The **first archive must be done in the Xcode GUI** so automatic signing registers both App IDs and the App Group and creates the Apple Distribution certificate (an interactive prompt the CLI cannot handle). After that `flutter build ipa` works. |
 | Bundle ID did not match the registered App ID | The project used `so.glyf.app` | Renamed to `com.demo.glyf` (section 3.3) |
+| `Your team has no devices from which to generate a provisioning profile` and `No profiles for 'com.arpit.glyf' were found` (2026-09-26, first command-line archive under the new team) | Automatic signing archives with a development profile, and a development profile needs at least one registered device; the new team had none | Register an iPhone on the team (portal Devices, or plug it in and let Xcode register it), then archive again |
 
-**Releasing a TestFlight build:**
+**Releasing a TestFlight build** (since 2026-09-26):
 
-1. Bump the build number **everywhere**: `app/pubspec.yaml` `version: 1.0.0+N` and every `CURRENT_PROJECT_VERSION = N` in `app/ios/Runner.xcodeproj/project.pbxproj` (12 occurrences today, including the keyboard's). Keep `MARKETING_VERSION = 1.0.0` identical everywhere. The runner app reads `FLUTTER_BUILD_NUMBER`, but the extension reads its own project settings and does not inherit Flutter's number; App Store validation rejects mismatched app and extension versions.
-2. `cd app && flutter build ipa --release`, or archive in Xcode with Any iOS Device.
-3. Check the built bundles report the same version and build for app and appex (the assistant used `plutil` on the built Info.plists).
-4. Upload `build/ios/ipa/*.ipa` with Xcode Organizer or Transporter.
+1. Bump `version: 1.0.0+N` in `app/pubspec.yaml`. That is the only place: the keyboard reads the same number through `app/ios/GlyfKeyboard/Version.xcconfig` (Flutter's generated settings), so the app and the extension can no longer disagree.
+2. `cd app && flutter build ios --release --no-codesign`
+3. `xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -destination 'generic/platform=iOS' -archivePath build/ios/archive/Runner.xcarchive -allowProvisioningUpdates archive`
+4. `xcodebuild -exportArchive -archivePath build/ios/archive/Runner.xcarchive -exportOptionsPlist ios/ExportOptions.plist -exportPath build/ios/ipa -allowProvisioningUpdates` signs for the App Store and uploads (the options file says `destination: upload`), using the account signed in to Xcode.
+
+Both targets carry a privacy manifest (`PrivacyInfo.xcprivacy`), which App Store Connect requires for the APIs they use: the app lists the active keyboards (3EC4.1) and reads settings file dates (C617.1); the keyboard uses its own UserDefaults (CA92.1) and the same file dates.
 
 **Build history:**
 
