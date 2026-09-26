@@ -299,3 +299,9 @@ export const GifIcon = (p: P) => (
     <path d="M8.4 8.4H6.9a1.6 1.6 0 0 0-1.6 1.6v0a1.6 1.6 0 0 0 1.6 1.6h1.5V10.3H7.6M10.6 8.4v3.2M13.1 11.6V8.4h2M13.1 10h1.6" strokeWidth="1.4" />
   </S>
 );
+
+export const ArrowDownIcon = (p: P) => (
+  <S {...p}>
+    <path d="M10 4.4v10.8M5.4 10.8 10 15.4l4.6-4.6" strokeWidth="2" />
+  </S>
+);
