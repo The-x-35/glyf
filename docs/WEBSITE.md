@@ -49,7 +49,7 @@ Opens on http://localhost:3000. The waitlist needs `DATABASE_URL` in `site/.env.
 
 One more page: **`/privacy`** (`app/privacy/page.tsx`, since 25 Sep 2026), the privacy policy the App Store asks for, written from what the apps and server actually do: what stays on the phone, what the keyboard sends and when (AI features, strip suggestions, saved details, search, location), secret masking, the account data kept, every outside service (OpenRouter and its providers, the Gemini API with its unpaid-tier training note, search providers, KLIPY, Cal.com, Google Calendar and Meet from the phone, Privy or the wallet app, Railway, Neon, Vercel), the waitlist, Delete account, children under 13, and a contact address (arpit@tryglyf.com). The same nav and footer, one 680px column, styles under `.legal` in `globals.css`. Change it whenever a feature starts sending something new, and drop the Gemini line once production no longer uses Gemini's free tier.
 
-There are no explainer lines anywhere, no pricing, no FAQ and no feature grid. Those existed in earlier versions and were removed on purpose (section 13).
+There are no explainer lines anywhere, no pricing and no FAQ; those were removed on purpose (section 13). A feature list came back on 26 Sep at Arpit's request, as titles and small pictures only (item 5).
 
 ---
 
