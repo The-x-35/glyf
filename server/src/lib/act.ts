@@ -57,7 +57,7 @@ export function rewriteStyles(ctx: SearchContext): { id: string; label: string; 
     { id: "basic", label: "Basic", how: "the same message written properly: capital letters, punctuation, spelling and grammar fixed, and texting shorthand spelled out (u → you, pls → please, cant → can't, sooo → so); keep their words, tone and any emoji" },
     { id: "work", label: "Professional", how: "professional and clear, for work" },
     { id: "polite", label: "Polite", how: "warm and courteous" },
-    { id: "shorter", label: "Shorter", how: "at most half as long, one or two short sentences, keeping every fact" },
+    { id: "shorter", label: "Shorter", how: "at most half as long and under 30 words, one or two short sentences, keeping every fact" },
     { id: "emoji", label: "Emoji", how: "friendly, with a few emoji that fit" },
   ];
   const indian = ctx.country === "IN" || ctx.tz === "Asia/Kolkata" || ctx.tz === "Asia/Calcutta";
@@ -507,7 +507,8 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
           "writer's meaning. Keep every fact exactly: times, dates, numbers, amounts, names and places " +
           "(\"b4 6\" is \"before 6\", a time; \"u\" is \"you\"; \"tmrw\" is \"tomorrow\"). " + reminder +
           "Never add facts that are not in the message. If the message asks for a detail about the " +
-          "writer that is listed below, fill it in.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
+          "writer that is listed below, fill it in, and when the message stops where one of their details belongs " +
+          "(\"my address is\", \"my number is\"), every version ends with that detail.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
           "\nReply with JSON only, one key per style: {" +
           styles.map(st => `"${st.id}":"..."`).join(",") + "}" +
           profileBlock(opts.profile) + "\n\nMessage:\n" + typed, 12_000,

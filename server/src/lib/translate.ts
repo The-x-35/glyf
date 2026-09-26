@@ -59,13 +59,13 @@ export function chooseTarget(detected: string, req: TranslateRequest): string {
 }
 
 const PROMPT = (req: TranslateRequest) => req.target ? `[[translate:to]]
-Translate the message into ${req.target}, whatever language it is in. Romanised Hindi or Hinglish counts as Hindi. Keep the tone and register.
+Translate the message into ${req.target}, whatever language it is in. Romanised Hindi or Hinglish counts as Hindi. Keep the tone and register. Write the translation in the target language's own script (Hindi in Devanagari).
 Reply with JSON only: {"detected":"<language of the message, in English>","target":"${req.target}","translation":"<the ${req.target} translation>"}
 
 Message:
 ${req.text}` : `[[translate:auto]]
 Detect the language of the message. If it is ${req.primary}, translate it into ${req.secondary}. Otherwise translate it into ${req.primary}.
-Romanised Hindi or Hinglish counts as Hindi. Keep the tone and register.
+Romanised Hindi or Hinglish counts as Hindi. Keep the tone and register. Write the translation in the target language's own script (Hindi in Devanagari).
 Reply with JSON only: {"detected":"<language name in English>","target":"<language name in English>","translation":"<the translation>"}
 
 Message:
