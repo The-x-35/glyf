@@ -1,0 +1,125 @@
+{
+  "identifier": "4F6A2C10",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_applicationInternalID": "6744000001",
+    "_developerTeamID": "YNABR226PF",
+    "_failTransactionsEnabled": false,
+    "_lastSynchronizedDate": 780000000,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [
+    {
+      "id": "7C2E9A41",
+      "localizations": [],
+      "name": "Glyf Pro",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "4.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "5B1D3E01",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "400 AI runs a day and the most translations",
+              "displayName": "Glyf Max",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.arpit.glyf.max.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Max Monthly",
+          "subscriptionGroupID": "7C2E9A41",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "49.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "5B1D3E02",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "400 AI runs a day and the most translations",
+              "displayName": "Glyf Max",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.arpit.glyf.max.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Max Yearly",
+          "subscriptionGroupID": "7C2E9A41",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "1.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "5B1D3E03",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "150 AI runs a day and more translations",
+              "displayName": "Glyf Plus",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.arpit.glyf.plus.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Plus Monthly",
+          "subscriptionGroupID": "7C2E9A41",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "19.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "5B1D3E04",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "150 AI runs a day and more translations",
+              "displayName": "Glyf Plus",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.arpit.glyf.plus.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Plus Yearly",
+          "subscriptionGroupID": "7C2E9A41",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  },
+  "appPolicies": {
+    "eula": "",
+    "policies": [
+      {
+        "locale": "en_US",
+        "policyText": "",
+        "policyURL": ""
+      }
+    ]
+  }
+}

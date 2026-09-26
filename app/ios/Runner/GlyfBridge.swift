@@ -22,6 +22,12 @@ final class GlyfBridge {
             self?.handle(call, result: result)
         }
         self.channel = channel
+        // A renewal or a purchase finished elsewhere goes to the server too.
+        Task { @MainActor in
+            Billing.shared.start { [weak self] jws in
+                self?.channel?.invokeMethod("onBillingUpdate", arguments: jws)
+            }
+        }
     }
 
     func handleDeepLink(_ url: URL) {
@@ -32,6 +38,27 @@ final class GlyfBridge {
 
     private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
+        // Plus and Max (Billing.swift): the store's prices, Apple's purchase
+        // sheet, and the signed transactions the server checks.
+        case "billingProducts":
+            let ids = (call.arguments as? [String: Any])?["ids"] as? [String] ?? []
+            Task { @MainActor in
+                do {
+                    result(try await Billing.shared.products(ids: ids))
+                } catch {
+                    result(FlutterError(code: "store", message: error.localizedDescription, details: nil))
+                }
+            }
+        case "billingPurchase":
+            let args = call.arguments as? [String: Any]
+            let token = (args?["accountToken"] as? String).flatMap(UUID.init(uuidString:))
+            Task { @MainActor in
+                result(await Billing.shared.purchase(id: args?["id"] as? String ?? "", accountToken: token))
+            }
+        case "billingEntitlements":
+            Task { @MainActor in result(await Billing.shared.entitlements()) }
+        case "billingRestore":
+            Task { @MainActor in result(await Billing.shared.restore()) }
         case "groupPath":
             result(AppGroupStore.containerURL?.path)
         case "readKeyboardPing":

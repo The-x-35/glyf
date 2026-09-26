@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/auth.dart';
+import 'core/billing.dart';
 import 'core/bridge.dart';
 import 'core/catalog.dart';
 import 'core/telemetry.dart';
@@ -67,7 +68,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     if (signedIn) {
       Auth.syncProfile();
       Auth.syncPrefs();
+      Billing.sync();
     }
+    Billing.listen();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(
@@ -93,7 +96,10 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _checkPendingDictation();
+    if (state == AppLifecycleState.resumed) {
+      _checkPendingDictation();
+      if (_onboarded) Billing.sync();
+    }
   }
 
   void _handleLink(String link) {

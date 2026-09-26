@@ -56,7 +56,31 @@ const DDL = [
   // The plan is the server's word: a phone can claim what it likes, the cap
   // it gets is the one on this row. Nothing but a verified purchase moves it.
   `alter table glyf_users add column if not exists plan text not null default 'free'`,
+  // A bought plan runs out unless Apple says it renewed.
+  `alter table glyf_users add column if not exists plan_expires_at timestamptz`,
+  // Each App Store subscription (its original transaction) belongs to the
+  // one account that first sent it: a receipt can't be shared around.
+  `create table if not exists glyf_purchases (
+     original_transaction_id text primary key,
+     user_id text not null,
+     product_id text not null,
+     plan text not null,
+     expires_at timestamptz,
+     environment text not null default '',
+     updated_at timestamptz not null default now()
+   )`,
+  `create index if not exists glyf_purchases_user on glyf_purchases (user_id)`,
 ];
+
+/** One App Store subscription as the server keeps it. */
+export interface Purchase {
+  originalTransactionId: string;
+  productId: string;
+  plan: "plus" | "max";
+  /** Null when Apple refunded or revoked it. */
+  expiresAt: Date | null;
+  environment: string;
+}
 
 export interface Profile {
   email?: string;
@@ -208,18 +232,66 @@ export class Users {
     const sql = await this.sql();
     await sql(
       `insert into glyf_users (user_id, plan) values ($1, $2)
-       on conflict (user_id) do update set plan = excluded.plan, last_seen_at = now()`,
+       on conflict (user_id) do update set plan = excluded.plan, plan_expires_at = null,
+         last_seen_at = now()`,
       [id, plan],
     );
   }
 
-  /** The plan on their row; free for anyone not on one. */
+  /** The plan on their row; free for anyone not on one, or whose bought
+   *  plan has run out. */
   async plan(id: string): Promise<"free" | "plus" | "max"> {
     await this.ensureSchema();
     const sql = await this.sql();
-    const rows = await sql(`select plan from glyf_users where user_id = $1`, [id]);
+    const rows = await sql(`select plan, plan_expires_at from glyf_users where user_id = $1`, [id]);
     const plan = rows[0]?.plan;
+    const expires = rows[0]?.plan_expires_at;
+    if (expires && new Date(expires as string).getTime() <= Date.now()) return "free";
     return plan === "plus" || plan === "max" ? plan : "free";
+  }
+
+  /** Keeps a subscription on this account. False when it already belongs
+   *  to another account: then nothing changes. */
+  async recordPurchase(id: string, p: Purchase): Promise<boolean> {
+    await this.ensureSchema();
+    const sql = await this.sql();
+    const rows = await sql(
+      `insert into glyf_purchases (original_transaction_id, user_id, product_id, plan, expires_at, environment)
+       values ($1, $2, $3, $4, $5, $6)
+       on conflict (original_transaction_id) do update set product_id = excluded.product_id,
+         plan = excluded.plan, expires_at = excluded.expires_at, environment = excluded.environment,
+         updated_at = now()
+       where glyf_purchases.user_id = excluded.user_id
+       returning user_id`,
+      [p.originalTransactionId, id, p.productId, p.plan, p.expiresAt?.toISOString() ?? null, p.environment]);
+    return rows.length > 0;
+  }
+
+  /** Who a subscription belongs to, for Apple's notifications. */
+  async purchaseOwner(originalTransactionId: string): Promise<string | null> {
+    await this.ensureSchema();
+    const sql = await this.sql();
+    const rows = await sql(`select user_id from glyf_purchases where original_transaction_id = $1`,
+      [originalTransactionId]);
+    return typeof rows[0]?.user_id === "string" ? rows[0].user_id as string : null;
+  }
+
+  /** Puts the best subscription still running on their row (Max over Plus,
+   *  then the one that runs longest), or free when none is. */
+  async refreshPlan(id: string): Promise<{ plan: "free" | "plus" | "max"; expiresAt: Date | null }> {
+    await this.ensureSchema();
+    const sql = await this.sql();
+    const rows = await sql(
+      `select plan, expires_at from glyf_purchases
+       where user_id = $1 and expires_at > now()
+       order by (plan = 'max') desc, expires_at desc limit 1`, [id]);
+    const plan = rows[0]?.plan === "max" || rows[0]?.plan === "plus" ? rows[0].plan as "plus" | "max" : "free";
+    const expiresAt = rows[0]?.expires_at ? new Date(rows[0].expires_at as string) : null;
+    await sql(
+      `insert into glyf_users (user_id, plan, plan_expires_at) values ($1, $2, $3)
+       on conflict (user_id) do update set plan = excluded.plan, plan_expires_at = excluded.plan_expires_at`,
+      [id, plan, expiresAt?.toISOString() ?? null]);
+    return { plan, expiresAt };
   }
 
   async remove(id: string): Promise<void> {

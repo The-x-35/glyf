@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/billing.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
@@ -8,17 +9,20 @@ import '../core/theme.dart';
 /// §6.16 — two plans over free. Free: 20 runs a day · Plus $1.99 a month or
 /// $19.99 a year: 150 a day · Max $4.99 a month or $49.99 a year: 400 a day.
 /// Suggestions and translations have their own daily counts; the server
-/// enforces all of them (server/src/lib/limits.ts). App Store products and
-/// server receipt validation replace the same toggle at ship.
+/// enforces all of them (server/src/lib/limits.ts).
+///
+/// On the iPhone the plans are bought through the App Store
+/// (core/billing.dart) and the server checks Apple's signature before a
+/// plan changes. Android shows them as Coming soon until Google Play billing.
+final bool plansOnSale = Billing.available;
 
-/// Plus and Max can't be bought yet: App Store and Play subscriptions are
-/// the next update. Until then the plans show greyed out as Coming soon,
-/// and nothing here can change a plan.
-const plansOnSale = false;
+/// Apple's standard licence, which Glyf's subscriptions are sold under.
+const _termsURL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
+/// True when a plan was bought: the account has it now.
 Future<bool> showPaywall(BuildContext context, {String? reason}) async {
   Telemetry.log('paywall_shown', {'reason': reason ?? 'profile', 'onSale': plansOnSale});
-  final plan = await showModalBottomSheet<String>(
+  final bought = await showModalBottomSheet<bool>(
     context: context,
     backgroundColor: Colors.white,
     isScrollControlled: true,
@@ -27,34 +31,7 @@ Future<bool> showPaywall(BuildContext context, {String? reason}) async {
             BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
     builder: (ctx) => _PaywallSheet(reason: reason),
   );
-  if (plan != null && plansOnSale) {
-    // The server's word first: caps are enforced there, so a plan the phone
-    // merely believes in would show 150 runs while the keyboard counts 20.
-    String? refusal;
-    try {
-      final res = await GlyfApi.setPlan(plan);
-      if (res['ok'] != true) refusal = (res['error'] as String?) ?? 'Could not change the plan';
-    } on GlyfApiException catch (e) {
-      refusal = e.message;
-    } catch (_) {
-      refusal = "Couldn't reach Glyf. Try again.";
-    }
-    if (refusal != null) {
-      if (context.mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(refusal)));
-      }
-      Telemetry.log('plan_refused', {'plan': plan, 'reason': reason ?? 'profile'});
-      return false;
-    }
-    await GlyfBridge.updateSharedSettings((s) {
-      s['plan'] = plan;
-      s['proUnlocked'] = plan != 'free';
-      return s;
-    });
-    Telemetry.log('plan_selected', {'plan': plan, 'reason': reason ?? 'profile'});
-    return true;
-  }
-  return false;
+  return bought == true;
 }
 
 class _PaywallSheet extends StatefulWidget {
@@ -67,12 +44,75 @@ class _PaywallSheet extends StatefulWidget {
 
 class _PaywallSheetState extends State<_PaywallSheet> {
   String _selected = 'plus';
+  bool _yearly = false;
+  Map<String, StoreProduct> _store = const {};
+  bool _busy = false;
+  String? _note;
+
+  @override
+  void initState() {
+    super.initState();
+    if (plansOnSale) {
+      Billing.products().then((found) {
+        if (mounted) setState(() => _store = found);
+      });
+    }
+  }
+
+  /// The App Store's own price, in the person's currency; the US price
+  /// until the store has answered.
+  String _price(String plan, {required bool yearly}) =>
+      _store[Billing.productFor(plan, yearly: yearly)]?.price ??
+      switch ((plan, yearly)) {
+        ('plus', false) => '\$1.99',
+        ('plus', true) => '\$19.99',
+        ('max', false) => '\$4.99',
+        _ => '\$49.99',
+      };
+
+  Future<void> _buy() async {
+    final id = Billing.productFor(_selected, yearly: _yearly);
+    setState(() {
+      _busy = true;
+      _note = null;
+    });
+    Telemetry.log('purchase_started', {'product': id, 'reason': widget.reason ?? 'profile'});
+    final outcome = await Billing.buy(id);
+    if (!mounted) return;
+    if (outcome.plan != null && outcome.plan != 'free') {
+      Telemetry.log('purchase_done', {'product': id, 'plan': outcome.plan});
+      Navigator.of(context).pop(true);
+      return;
+    }
+    setState(() {
+      _busy = false;
+      _note = (outcome.message ?? '').isEmpty ? null : outcome.message;
+    });
+  }
+
+  Future<void> _restore() async {
+    setState(() {
+      _busy = true;
+      _note = null;
+    });
+    final outcome = await Billing.restore();
+    if (!mounted) return;
+    if (outcome.plan != null && outcome.plan != 'free') {
+      Telemetry.log('purchase_restored', {'plan': outcome.plan});
+      Navigator.of(context).pop(true);
+      return;
+    }
+    setState(() {
+      _busy = false;
+      _note = outcome.message ?? 'No Glyf plan on this Apple ID.';
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 22, 22, 16),
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 12),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Text(
             widget.reason == 'cap'
@@ -86,7 +126,11 @@ class _PaywallSheetState extends State<_PaywallSheet> {
             const Text('They come back tomorrow.',
                 style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
           ],
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
+          if (plansOnSale) ...[
+            _periodSwitch(),
+            const SizedBox(height: 12),
+          ],
           // One height for both cards, so the plans read as a pair.
           IntrinsicHeight(
             child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -94,8 +138,6 @@ class _PaywallSheetState extends State<_PaywallSheet> {
               child: _planCard(
                 id: 'plus',
                 name: 'Plus',
-                price: '\$1.99',
-                yearly: 'or \$19.99 a year\n2 months free',
                 features: const [
                   '150 runs a day',
                   '3x the suggestions',
@@ -108,8 +150,6 @@ class _PaywallSheetState extends State<_PaywallSheet> {
               child: _planCard(
                 id: 'max',
                 name: 'Max',
-                price: '\$4.99',
-                yearly: 'or \$49.99 a year\n2 months free',
                 badge: plansOnSale ? 'Best' : null,
                 features: const [
                   '400 runs a day',
@@ -120,37 +160,138 @@ class _PaywallSheetState extends State<_PaywallSheet> {
               ),
             ),
           ])),
-          const SizedBox(height: 16),
+          if (_note != null) ...[
+            const SizedBox(height: 10),
+            Text(_note!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Glass.inkSoft, fontSize: 13)),
+          ],
+          const SizedBox(height: 14),
           Semantics(
             identifier: 'paywall:unlock',
             button: true,
-            child: PillButton(
-                label: plansOnSale
-                    ? (_selected == 'max' ? 'Get Max' : 'Get Plus')
-                    : 'Coming soon',
-                onPressed: plansOnSale ? () => Navigator.of(context).pop(_selected) : null),
+            child: _busy
+                ? const SizedBox(
+                    height: 48,
+                    child: Center(
+                        child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.4, color: Glass.ink))))
+                : PillButton(
+                    label: plansOnSale
+                        ? (_selected == 'max' ? 'Get Max' : 'Get Plus')
+                        : 'Coming soon',
+                    onPressed: plansOnSale ? _buy : null),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(null),
-            child: Text(plansOnSale ? 'Not now' : 'Close',
-                style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
-          ),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            if (plansOnSale)
+              Semantics(
+                identifier: 'paywall:restore',
+                button: true,
+                child: TextButton(
+                  onPressed: _busy ? null : _restore,
+                  child: const Text('Restore purchases',
+                      style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
+                ),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(plansOnSale ? 'Not now' : 'Close',
+                  style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
+            ),
+          ]),
+          if (plansOnSale) _terms(),
         ]),
       ),
+    );
+  }
+
+  /// Monthly or yearly; yearly is two months free.
+  Widget _periodSwitch() {
+    Widget option(String label, bool yearly) {
+      final on = _yearly == yearly;
+      return Expanded(
+        child: Semantics(
+          identifier: yearly ? 'paywall:yearly' : 'paywall:monthly',
+          button: true,
+          selected: on,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _busy ? null : () => setState(() => _yearly = yearly),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: on ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: on
+                    ? const [BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 1))]
+                    : null,
+              ),
+              alignment: Alignment.center,
+              child: Text(label,
+                  style: TextStyle(
+                      color: on ? Glass.ink : Glass.inkSoft,
+                      fontSize: 13.5,
+                      fontWeight: on ? FontWeight.w700 : FontWeight.w600)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F2F5),
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Row(children: [
+        option('Monthly', false),
+        option('Yearly · 2 months free', true),
+      ]),
+    );
+  }
+
+  /// What App Review asks every subscription screen to say.
+  Widget _terms() {
+    Widget link(String label, String url) => GestureDetector(
+          onTap: () => GlyfBridge.openURL(url),
+          child: Text(label,
+              style: const TextStyle(
+                  color: Glass.inkSoft,
+                  fontSize: 11.5,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Glass.inkSoft)),
+        );
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Column(children: [
+        const Text(
+            'Renews automatically until you cancel, at least a day before it ends, '
+            'in Settings › your name › Subscriptions.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Glass.inkSoft, fontSize: 11.5, height: 1.35)),
+        const SizedBox(height: 6),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          link('Terms of Use', _termsURL),
+          const Text('  ·  ', style: TextStyle(color: Glass.inkSoft, fontSize: 11.5)),
+          link('Privacy Policy', privacyPolicyURL),
+        ]),
+      ]),
     );
   }
 
   Widget _planCard({
     required String id,
     required String name,
-    required String price,
-    String? yearly,
     String? badge,
     required List<String> features,
   }) {
     final selected = plansOnSale && _selected == id;
     final card = GestureDetector(
-      onTap: plansOnSale ? () => setState(() => _selected = id) : null,
+      onTap: plansOnSale && !_busy ? () => setState(() => _selected = id) : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(14),
@@ -186,18 +327,22 @@ class _PaywallSheetState extends State<_PaywallSheet> {
           ]),
           const SizedBox(height: 2),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(price,
-                style: const TextStyle(
-                    color: Glass.ink,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800)),
-            const Text(' /mo',
-                style: TextStyle(color: Glass.inkSoft, fontSize: 12)),
+            Flexible(
+              child: Text(_price(id, yearly: _yearly),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Glass.ink,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800)),
+            ),
+            Text(_yearly ? ' /yr' : ' /mo',
+                style: const TextStyle(color: Glass.inkSoft, fontSize: 12)),
           ]),
-          if (yearly != null)
-            Text(yearly,
-                style: const TextStyle(
-                    color: Glass.accent, fontSize: 11.5, fontWeight: FontWeight.w600)),
+          Text(
+              _yearly ? '2 months free' : 'or ${_price(id, yearly: true)} a year',
+              style: const TextStyle(
+                  color: Glass.accent, fontSize: 11.5, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           for (final f in features)
             Padding(

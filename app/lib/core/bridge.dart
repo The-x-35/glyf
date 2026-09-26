@@ -8,6 +8,7 @@ abstract final class GlyfBridge {
 
   static void Function(String)? _deepLinkHandler;
   static void Function(String)? _dictationHandler;
+  static void Function(String)? _billingHandler;
   static bool _dispatcherSet = false;
 
   static void _ensureDispatcher() {
@@ -19,6 +20,8 @@ abstract final class GlyfBridge {
           _deepLinkHandler?.call(call.arguments as String);
         case 'onDictation':
           _dictationHandler?.call(call.arguments as String);
+        case 'onBillingUpdate':
+          _billingHandler?.call(call.arguments as String);
       }
       return null;
     });
@@ -33,6 +36,35 @@ abstract final class GlyfBridge {
     _ensureDispatcher();
     _dictationHandler = handler;
   }
+
+  // ---- Plus and Max through the App Store (Billing.swift) --------------
+
+  /// A renewal or a purchase finished outside the app: Apple's signed
+  /// transaction, for the server.
+  static void onBillingUpdate(void Function(String) handler) {
+    _ensureDispatcher();
+    _billingHandler = handler;
+  }
+
+  /// The store's own names and prices: {id, price, name, period}.
+  static Future<List<Map<String, dynamic>>> billingProducts(List<String> ids) async {
+    final list = await _call<List<dynamic>>('billingProducts', {'ids': ids});
+    return [for (final p in list ?? const []) Map<String, dynamic>.from(p as Map)];
+  }
+
+  /// Apple's purchase sheet: {jws}, {cancelled}, {pending} or {error}.
+  static Future<Map<String, dynamic>> billingPurchase(String id) async =>
+      Map<String, dynamic>.from(
+          await _call<Map<dynamic, dynamic>>('billingPurchase', {'id': id}) ??
+              const {'error': "The App Store didn't answer."});
+
+  /// Every Glyf subscription this Apple ID holds, signed.
+  static Future<List<String>> billingEntitlements() async =>
+      [for (final t in await _call<List<dynamic>>('billingEntitlements') ?? const []) t as String];
+
+  /// Restore Purchases: {transactions} and maybe {error}.
+  static Future<Map<String, dynamic>> billingRestore() async =>
+      Map<String, dynamic>.from(await _call<Map<dynamic, dynamic>>('billingRestore') ?? const {});
 
   static Future<T?> _call<T>(String method, [dynamic args]) async {
     try {

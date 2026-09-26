@@ -33,6 +33,8 @@ export const OPEN_PATHS: readonly (string | RegExp)[] = [
   // asks before anyone can have a session.
   /^\/connectors\/status/,
   "/favicon.ico",
+  // Apple's server announces renewals and refunds; its signature is the check.
+  "/billing/apple/notifications",
 ];
 
 export function isOpen(path: string): boolean {

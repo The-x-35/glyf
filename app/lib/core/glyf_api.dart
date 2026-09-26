@@ -268,6 +268,13 @@ abstract final class GlyfApi {
       _postJson('/connectors/disconnect',
           {'deviceId': await _deviceId(), 'provider': provider});
 
+  // ---- Plus and Max ------------------------------------------------------
+
+  /// Apple's signed transactions: the server checks Apple's signature and
+  /// answers with the plan now on the account.
+  static Future<Map<String, dynamic>> appleBilling(List<String> transactions) =>
+      _postJson('/billing/apple', {'transactions': transactions});
+
   // ---- §6.16 meter -------------------------------------------------------
 
   static Future<int?> meterRemaining() async => (await meterStatus())?.remaining;
@@ -288,11 +295,6 @@ abstract final class GlyfApi {
       return null;
     }
   }
-
-  /// POST /me/plan — the paywall's pick. The server decides whether it may
-  /// (self-serve is a dev/TestFlight switch); the answer is what we keep.
-  static Future<Map<String, dynamic>> setPlan(String plan) =>
-      _postJson('/me/plan', {'plan': plan}, timeout: const Duration(seconds: 10));
 
   // ---- §12 telemetry sink ------------------------------------------------
 
