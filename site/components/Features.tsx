@@ -28,17 +28,19 @@ import {
 type Vars = CSSProperties & Record<`--${string}`, string | number>;
 
 /* ── The field around the headline ───────────────────────────────────────
-   Positions are % of the stage (x from the left or right from the right,
-   y from the top); mx, mright and my place it on phones, where only the
-   ones with m show. d is depth (how far it follows the pointer and drifts
-   with the scroll); t and delay pace its bob. */
+   Two rings round the headline, evenly spaced by angle (a, degrees; 0 is
+   right, 90 is down) with a little jitter (jr, a share of the radius) so it
+   reads composed, not random. Ring radii live in globals.css per width. d is
+   depth (how far it follows the pointer and drifts with the scroll); t and
+   delay pace its bob. Small laptops drop the outer ring's wide pieces;
+   phones get their own ring (pa, the angle there): ten narrow pieces in
+   the arcs above and below the headline, none beside it. */
 type Float = {
-  x?: string;
-  right?: string;
-  y: string;
-  m?: { x?: string; right?: string; y: string };
-  /** Only where there is room for it (wider than a small laptop). */
+  ring: 1 | 2;
+  a: number;
+  jr?: number;
   wide?: boolean;
+  pa?: number;
   r: number;
   d: number;
   t: number;
@@ -52,61 +54,88 @@ const Tile = ({ bg, children, label }: { bg: string; children: ReactNode; label:
   </span>
 );
 
+const Key = ({ k }: { k: string }) => (
+  <span className="fx-key">
+    {k}
+    <span className="fx-keydot" />
+  </span>
+);
+
+const Chip = ({ icon, text, meta }: { icon: ReactNode; text: string; meta: string }) => (
+  <span className="fx-chip">
+    {icon} <b>{text}</b> <span>{meta}</span>
+  </span>
+);
+
 const FLOATS: Float[] = [
-  { x: "3%", y: "8%", m: { x: "2%", y: "4%" }, r: -10, d: 0.9, t: 6.2, delay: 0,
-    el: <Tile bg="linear-gradient(160deg, #4b8df8, #1a62d6)" label="Google Calendar"><CalendarIcon /></Tile> },
-  { x: "20%", y: "3%", wide: true, r: 4, d: 0.45, t: 7.4, delay: -2.1,
-    el: <span className="fx-bubble">let&apos;s get coffee ☕</span> },
-  { x: "46%", y: "0%", m: { x: "42%", y: "1%" }, r: 0, d: 1, t: 5.6, delay: -1.2,
+  // Inner ring, nine.
+  { pa: -90, ring: 1, a: -90, r: 4, d: 1, t: 5.6, delay: -1.2,
     // eslint-disable-next-line @next/next/no-img-element
     el: <img className="fx-coin" src="/brands/sol.png" alt="" width={58} height={58} /> },
-  { right: "22%", y: "6%", r: 8, d: 0.6, t: 6.8, delay: -3.4,
+  { pa: -30, ring: 1, a: -52, jr: 0.03, r: 8, d: 0.6, t: 6.8, delay: -3.4,
     el: <Tile bg="linear-gradient(160deg, #3fcf6d, #1e9e4a)" label="Google Maps"><PinIcon /></Tile> },
-  { right: "3%", y: "12%", r: -6, d: 0.8, t: 7.9, delay: -0.6,
-    el: <Tile bg="linear-gradient(160deg, #26262b, #0b0b0e)" label="MagicBlock"><MagicBlockMark /></Tile> },
-  { x: "8%", y: "44%", r: -7, d: 1.1, t: 5.2, delay: -2.6,
-    el: <span className="fx-key">C<span className="fx-keydot" /></span> },
-  { right: "4%", y: "30%", m: { x: "22%", y: "22%" }, r: 6, d: 1.05, t: 6.4, delay: -1.8,
+  { pa: 60, ring: 1, a: -12, jr: -0.02, r: 6, d: 1.05, t: 6.4, delay: -1.8,
     el: <span className="fx-gkey">g<span className="fx-gdot" /></span> },
-  { x: "1%", y: "74%", m: { x: "2%", y: "72%" }, r: 7, d: 0.7, t: 7.1, delay: -4.2,
-    el: <Tile bg="linear-gradient(160deg, #1fb57a, #0b8a58)" label="Google Meet"><VideoIcon /></Tile> },
-  { x: "10%", y: "86%", wide: true, r: -3, d: 0.5, t: 8.2, delay: -1.5,
-    el: (
-      <span className="fx-chip">
-        <CalendarIcon /> <b>Demo call</b> <span>6:00 PM</span>
-      </span>
-    ) },
-  { x: "43%", y: "80%", m: { x: "44%", y: "86%" }, r: 5, d: 0.95, t: 5.9, delay: -3.1,
-    el: <span className="fx-key">T<span className="fx-keydot" /></span> },
-  { right: "30%", y: "80%", wide: true, r: -4, d: 0.55, t: 7.6, delay: -0.3,
-    el: (
-      <span className="fx-chip">
-        <span className="fx-cash">$</span> <b>1 AAPL</b> <span>$341.07</span>
-      </span>
-    ) },
-  { right: "12%", y: "78%", m: { right: "4%", y: "70%" }, r: -9, d: 0.85, t: 6.6, delay: -2.4,
+  { ring: 1, a: 28, jr: 0.02, r: -4, d: 0.55, t: 7.6, delay: -0.3,
+    el: <Chip icon={<span className="fx-cash">$</span>} text="1 AAPL" meta="$341.07" /> },
+  { pa: 30, ring: 1, a: 68, jr: -0.03, r: -9, d: 0.85, t: 6.6, delay: -2.4,
     el: <Tile bg="linear-gradient(160deg, #ff4d5e, #e0102a)" label="YouTube"><PlayRectIcon /></Tile> },
-  { right: "1%", y: "62%", wide: true, r: 10, d: 0.65, t: 7.2, delay: -5,
+  { pa: 90, ring: 1, a: 108, jr: 0.03, r: -6, d: 0.4, t: 9, delay: -2.8,
+    el: <span className="fx-note fx-note-yellow">coffee at 6? ☕</span> },
+  { pa: 120, ring: 1, a: 150, r: 7, d: 0.95, t: 5.9, delay: -3.1, el: <Key k="T" /> },
+  { pa: -150, ring: 1, a: 192, jr: 0.02, r: -8, d: 0.9, t: 6.2, delay: 0,
+    el: <Tile bg="linear-gradient(160deg, #4b8df8, #1a62d6)" label="Google Calendar"><CalendarIcon /></Tile> },
+  { pa: -120, ring: 1, a: 232, jr: -0.03, r: 4, d: 0.45, t: 7.4, delay: -2.1,
+    el: <span className="fx-bubble">let&apos;s get coffee ☕</span> },
+  // Outer ring, sixteen, 22.5° apart and half a step off the top.
+  { ring: 2, a: -101.25, jr: 0.02, r: -6, d: 0.8, t: 7.9, delay: -0.6,
+    el: <Tile bg="linear-gradient(160deg, #26262b, #0b0b0e)" label="MagicBlock"><MagicBlockMark /></Tile> },
+  { pa: -60, ring: 2, a: -78.75, r: 5, d: 0.5, t: 8.4, delay: -4.4,
+    el: <span className="fx-note fx-note-pink">send me the Meet link!</span> },
+  { ring: 2, a: -56.25, jr: -0.02, r: 9, d: 0.7, t: 7.1, delay: -4.2,
+    el: <Tile bg="linear-gradient(160deg, #1fb57a, #0b8a58)" label="Google Meet"><VideoIcon /></Tile> },
+  { ring: 2, a: -33.75, wide: true, r: -3, d: 0.35, t: 8, delay: -1,
+    el: <Chip icon={<TranslateIcon />} text="hasta mañana" meta="Translate" /> },
+  { ring: 2, a: -11.25, jr: 0.02, r: 10, d: 0.65, t: 7.2, delay: -5,
     // eslint-disable-next-line @next/next/no-img-element
     el: <img className="fx-coin fx-coin-sm" src="/brands/usdc.png" alt="" width={46} height={46} /> },
-  { x: "27%", y: "16%", r: -5, d: 0.3, t: 8.6, delay: -3.8,
-    el: <Tile bg="linear-gradient(160deg, #ff5fb3, #d81b7c)" label="GIFs by KLIPY"><GifIcon /></Tile> },
-  { right: "28%", y: "18%", wide: true, r: 6, d: 0.35, t: 8, delay: -1,
+  { ring: 2, a: 11.25, r: -7, d: 0.9, t: 5.4, delay: -2.2, el: <Key k="M" /> },
+  { ring: 2, a: 33.75, jr: -0.02, r: 6, d: 0.35, t: 8, delay: -1.4,
     el: <Tile bg="linear-gradient(160deg, #19c2e6, #9be15d)" label="Jupiter"><SwapIcon /></Tile> },
-  { x: "28%", y: "70%", r: -6, d: 0.4, t: 9, delay: -2.8,
-    el: <span className="fx-note fx-note-yellow">coffee at 6? ☕</span> },
-  { right: "33%", y: "0%", m: { right: "2%", y: "2%" }, r: 5, d: 0.5, t: 8.4, delay: -4.4,
-    el: <span className="fx-note fx-note-pink">send me the Meet link!</span> },
+  { ring: 2, a: 56.25, wide: true, r: -4, d: 0.5, t: 8.2, delay: -1.5,
+    el: <Chip icon={<CalendarIcon />} text="Demo call" meta="6:00 PM" /> },
+  { ring: 2, a: 78.75, r: 5, d: 0.6, t: 6.9, delay: -3.6,
+    el: <Tile bg="linear-gradient(160deg, #2b2b30, #111114)" label="Cal.com"><CalendarCheckIcon /></Tile> },
+  { ring: 2, a: 101.25, wide: true, r: 3, d: 0.45, t: 7.7, delay: -0.9,
+    el: <Chip icon={<PinIcon />} text="Bean & Byte Café" meta="350 m" /> },
+  { pa: 150, ring: 2, a: 123.75, jr: 0.02, r: -8, d: 0.3, t: 8.6, delay: -3.8,
+    el: <Tile bg="linear-gradient(160deg, #ff5fb3, #d81b7c)" label="GIFs by KLIPY"><GifIcon /></Tile> },
+  { ring: 2, a: 146.25, r: 8, d: 1.1, t: 5.2, delay: -2.6, el: <Key k="C" /> },
+  { ring: 2, a: 168.75, jr: -0.02, r: -5, d: 0.6, t: 7.3, delay: -4.8,
+    el: <Tile bg="linear-gradient(160deg, #3a8bff, #0060ff)" label="Calendly"><LinkIcon /></Tile> },
+  { ring: 2, a: 213.75, wide: true, r: -2, d: 0.4, t: 8.8, delay: -2.9,
+    el: <span className="fx-bubble fx-bubble-them">where should we meet?</span> },
+  { ring: 2, a: 191.25, jr: 0.02, r: 7, d: 0.75, t: 6.1, delay: -0.2,
+    el: <Tile bg="linear-gradient(160deg, #a2a8b3, #6e7480)" label="Contacts"><PersonIcon /></Tile> },
+  { ring: 2, a: 236.25, r: -5, d: 1, t: 5.8, delay: -3.3, el: <Key k="V" /> },
 ];
 
-/** Where a sticker starts: its place as CSS variables, so a phone can move
- *  it (globals.css) and a drag, writing left and top, can override both. */
-const place = (f: Float): Vars => ({
-  "--x": f.x ?? "auto",
-  "--rt": f.right ?? "auto",
-  "--y": f.y,
-  ...(f.m ? { "--mx": f.m.x ?? "auto", "--mrt": f.m.right ?? "auto", "--my": f.m.y } : {}),
-});
+/** Where a sticker starts, as CSS variables: its direction from the middle
+ *  and its ring (globals.css turns them into left and top). A drag writes
+ *  left and top itself, which wins. */
+const place = (f: Float): Vars => {
+  const rad = (f.a * Math.PI) / 180;
+  const k = 1 + (f.jr ?? 0);
+  const at: Vars = { "--cos": (Math.cos(rad) * k).toFixed(4), "--sin": (Math.sin(rad) * k).toFixed(4) };
+  if (f.pa !== undefined) {
+    const p = (f.pa * Math.PI) / 180;
+    at["--pcos"] = Math.cos(p).toFixed(4);
+    at["--psin"] = Math.sin(p).toFixed(4);
+  }
+  return at;
+};
+
+const onPhones = (f: Float) => f.pa !== undefined;
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */
 
@@ -235,7 +264,7 @@ export default function Features() {
             {FLOATS.map((f, i) => (
               <span
                 key={i}
-                className={`fx${f.m ? "" : " fx-desk"}${f.wide ? " fx-wide" : ""}`}
+                className={`fx fx-r${f.ring}${onPhones(f) ? "" : " fx-desk"}${f.wide ? " fx-wide" : ""}`}
                 style={place(f)}
                 onPointerDown={grab}
                 onPointerMove={carry}

@@ -3408,7 +3408,10 @@ a {
   --feat-spot: rgba(255, 255, 255, 0.95);
   --fx-lift: 0 18px 34px -16px rgba(0, 0, 0, 0.35);
   --fx-ring: 0 0 0 1px rgba(0, 0, 0, 0.05);
-  padding: clamp(24px, 4vw, 60px) 0 clamp(40px, 6vw, 88px);
+  /* Clear of the hero (its keyboard fills its foot), with as much air under
+     the stickers as over them: from the waitlist form to the first sticker
+     equals the last sticker to the cards (.feat-grid's margin). */
+  padding: clamp(28px, 3.4vw, 52px) 0 clamp(40px, 6vw, 88px);
   overflow-x: clip;
 }
 
@@ -3430,10 +3433,18 @@ a {
   --fx-ring: 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
-/* The stage: the headline with the apps floating around it. */
+/* The stage: the headline with the apps floating round it on two rings,
+   the width of the window. A sticker sits centred on its point of the ring
+   (Features.tsx gives each its direction as --cos and --sin). */
 .fx-stage {
+  --r1x: 33%;
+  --r1y: 32%;
+  --r2x: 45%;
+  --r2y: 46%;
   position: relative;
-  height: clamp(480px, 48vw, 660px);
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  height: clamp(560px, 50vw, 720px);
   display: grid;
   place-items: center;
 }
@@ -3463,9 +3474,9 @@ a {
    bobs. So a carried sticker stays under the pointer. */
 .fx {
   position: absolute;
-  left: var(--x, auto);
-  right: var(--rt, auto);
-  top: var(--y);
+  left: calc(50% + var(--cos) * var(--rx));
+  top: calc(50% + var(--sin) * var(--ry));
+  translate: -50% -50%;
   z-index: 1;
   pointer-events: auto;
   touch-action: none;
@@ -3476,6 +3487,16 @@ a {
 
 .fx.is-dragging {
   cursor: grabbing;
+}
+
+.fx-r1 {
+  --rx: var(--r1x);
+  --ry: var(--r1y);
+}
+
+.fx-r2 {
+  --rx: var(--r2x);
+  --ry: var(--r2y);
 }
 
 .fx-par {
@@ -3677,6 +3698,13 @@ a {
   box-shadow: 0 18px 34px -16px rgba(10, 132, 255, 0.6);
 }
 
+.fx-bubble-them {
+  border-radius: 20px 20px 20px 6px;
+  background: var(--im-grey);
+  color: var(--im-grey-ink);
+  box-shadow: var(--fx-lift);
+}
+
 .fx-chip {
   display: inline-flex;
   align-items: center;
@@ -3714,7 +3742,7 @@ a {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: clamp(14px, 2vw, 22px);
-  margin-top: clamp(0px, 1vw, 16px);
+  margin-top: clamp(96px, 17.5vw, 256px);
 }
 
 .feat {
@@ -4290,18 +4318,20 @@ a {
 
 @media (max-width: 700px) {
   .fx-stage {
-    height: clamp(380px, 110vw, 470px);
+    --prx: 40%;
+    --pry: 41%;
+    height: clamp(420px, 118vw, 520px);
+  }
+
+  .fx {
+    left: calc(50% + var(--pcos, 0) * var(--prx));
+    top: calc(50% + var(--psin, 0) * var(--pry));
   }
 
   .fx-desk {
     display: none;
   }
 
-  .fx {
-    left: var(--mx, var(--x, auto));
-    right: var(--mrt, var(--rt, auto));
-    top: var(--my, var(--y));
-  }
 
   .fx-float {
     scale: 0.72;
