@@ -5,11 +5,11 @@ import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 
-/// §6.16 — two plans over free (priced against Wispr Flow $12–15/mo and
-/// Grammarly ~$12/mo: we undercut with Plus and out-feature with Max).
-/// Free: 40 runs/day · Plus $1.99: 400 runs/day + priority · Max $4.99:
-/// unlimited + the smartest models. This build unlocks locally; App Store
-/// products + server receipt validation replace the same toggle at ship.
+/// §6.16 — two plans over free. Free: 20 runs a day · Plus $1.99 a month or
+/// $19.99 a year: 150 a day · Max $4.99 a month or $49.99 a year: 400 a day.
+/// Suggestions and translations have their own daily counts; the server
+/// enforces all of them (server/src/lib/limits.ts). App Store products and
+/// server receipt validation replace the same toggle at ship.
 
 /// Plus and Max can't be bought yet: App Store and Play subscriptions are
 /// the next update. Until then the plans show greyed out as Coming soon,
@@ -29,7 +29,7 @@ Future<bool> showPaywall(BuildContext context, {String? reason}) async {
   );
   if (plan != null && plansOnSale) {
     // The server's word first: caps are enforced there, so a plan the phone
-    // merely believes in would show 400 runs while the keyboard counts 40.
+    // merely believes in would show 150 runs while the keyboard counts 20.
     String? refusal;
     try {
       final res = await GlyfApi.setPlan(plan);
@@ -87,17 +87,19 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                 style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
           ],
           const SizedBox(height: 18),
-          Row(children: [
+          // One height for both cards, so the plans read as a pair.
+          IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Expanded(
               child: _planCard(
                 id: 'plus',
                 name: 'Plus',
                 price: '\$1.99',
-                yearly: 'or \$15.99 a year, save 33%',
+                yearly: 'or \$19.99 a year\n2 months free',
                 features: const [
-                  '400 runs a day',
-                  'Priority speed',
-                  'Every tool & connector',
+                  '150 runs a day',
+                  '3x the suggestions',
+                  '4x the translations',
                 ],
               ),
             ),
@@ -107,17 +109,17 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                 id: 'max',
                 name: 'Max',
                 price: '\$4.99',
-                yearly: 'or \$39.99 a year, save 33%',
+                yearly: 'or \$49.99 a year\n2 months free',
                 badge: plansOnSale ? 'Best' : null,
                 features: const [
-                  'Unlimited Glyf runs',
-                  'The smartest models',
-                  'Unlimited custom Glyfs',
+                  '400 runs a day',
+                  '6x the suggestions',
+                  '10x the translations',
                   'Early features',
                 ],
               ),
             ),
-          ]),
+          ])),
           const SizedBox(height: 16),
           Semantics(
             identifier: 'paywall:unlock',

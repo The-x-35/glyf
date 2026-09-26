@@ -213,6 +213,10 @@ class _ProfileTabState extends State<ProfileTab> {
       (_settings['plan'] as String?) ??
       (_settings['proUnlocked'] == true ? 'plus' : 'free');
 
+  /// A day's runs on each plan, for when the server hasn't said (it sends
+  /// the real number with what is left).
+  int get _planRuns => switch (_plan) { 'max' => 400, 'plus' => 150, _ => 20 };
+
   /// Who is signed in, and Sign out beside it: under the name, where it is
   /// seen without scrolling.
   Widget _account() {
@@ -407,13 +411,9 @@ class _ProfileTabState extends State<ProfileTab> {
                                 fontSize: 15.5,
                                 fontWeight: FontWeight.w700)),
                         Text(
-                            _plan == 'max'
-                                ? 'Unlimited runs'
-                                : _remaining != null
-                                    ? '$_remaining of ${_perDay ?? (_plan == 'plus' ? 400 : 40)} runs left today'
-                                    : _plan == 'plus'
-                                        ? '400 runs a day'
-                                        : '40 runs a day',
+                            _remaining != null
+                                ? '$_remaining of ${_perDay ?? _planRuns} runs left today'
+                                : '$_planRuns runs a day',
                             style: const TextStyle(
                                 color: Glass.inkSoft, fontSize: 12.5)),
                       ]),

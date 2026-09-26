@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { signedInApp } from "./helpers.js";
 import { env } from "../src/env.js";
 import {
-  MemoryLimiter, PostgresLimiter, allow, capsFor, suggestCapsFor, windowStart, type SqlLike,
+  MemoryLimiter, PAID_PER_DAY, PostgresLimiter, allow, capsFor, suggestCapsFor, translateCapsFor, windowStart, type SqlLike,
 } from "../src/lib/limits.js";
 
 /** A stand-in Postgres that behaves like the real statements do: the insert
@@ -39,13 +39,32 @@ describe("hard limits", () => {
   });
 
   it("gives each plan its own ceiling, and none of them infinity", () => {
-    expect(capsFor("free", 40).runsPerDay).toBe(40);
-    expect(capsFor("plus", 40).runsPerDay).toBe(400);
-    expect(capsFor("max", 40).runsPerDay).toBe(1000);
-    expect(Number.isFinite(capsFor("max", 40).runsPerDay)).toBe(true);
-    // Suggestions are counted apart, with a ceiling of their own on every plan.
-    expect(suggestCapsFor("free", 300)).toEqual({ runsPerDay: 300, burstPerMinute: 20 });
-    expect(suggestCapsFor("max", 300).runsPerDay).toBe(7500);
+    expect(capsFor("free", 20).runsPerDay).toBe(20);
+    expect(capsFor("plus", 20).runsPerDay).toBe(150);
+    expect(capsFor("max", 20).runsPerDay).toBe(400);
+    expect(Number.isFinite(capsFor("max", 20).runsPerDay)).toBe(true);
+    // Suggestions and translations are counted apart, with ceilings of their own.
+    expect(suggestCapsFor("free", 100)).toEqual({ runsPerDay: 100, burstPerMinute: 20 });
+    expect(suggestCapsFor("max", 100).runsPerDay).toBe(600);
+    expect(translateCapsFor("plus", 100).runsPerDay).toBe(400);
+    expect(translateCapsFor("max", 100).runsPerDay).toBe(1000);
+  });
+
+  it("never gives a paid plan less than free", () => {
+    expect(capsFor("plus", 500).runsPerDay).toBe(500);
+    expect(suggestCapsFor("max", 900).runsPerDay).toBe(900);
+  });
+
+  it("keeps a month of every cap under half of what the plan brings in", () => {
+    // Measured on the default chains (docs/BACKEND.md, "What a plan costs"),
+    // rounded up: a run $0.00006, a suggestion or a translation $0.00001.
+    const month = (plan: "plus" | "max") => 30 * (PAID_PER_DAY.runs[plan] * 0.00006
+      + PAID_PER_DAY.suggestions[plan] * 0.00001 + PAID_PER_DAY.translations[plan] * 0.00001);
+    // The least a plan brings in a month: the yearly price in a 20% VAT
+    // country, after the store's 15%.
+    const least = (yearly: number) => yearly / 1.2 * 0.85 / 12;
+    expect(month("plus")).toBeLessThan(least(19.99) / 2);
+    expect(month("max")).toBeLessThan(least(49.99) / 2);
   });
 
   it("spends a day's runs and then refuses", async () => {
@@ -117,21 +136,36 @@ describe("hard limits", () => {
     env.freeRunsPerDay = before;
   });
 
-  it("holds the same line on translate and vocab", async () => {
-    const before = env.freeRunsPerDay;
+  it("holds the same line on vocab, and counts translations apart", async () => {
+    const before = { runs: env.freeRunsPerDay, translations: env.freeTranslationsPerDay, mockAI: env.mockAI };
     env.freeRunsPerDay = 1;
-    const app = signedInApp();
-    const device = "cap-dev-00000003";
-    await app.inject({
-      method: "POST", url: "/translate",
-      payload: { text: "hola", primary: "English", secondary: "Spanish", deviceId: device },
-    });
-    const vocab = await app.inject({
-      method: "POST", url: "/vocab/generate",
-      payload: { description: "cricket words", deviceId: device },
-    });
-    expect(vocab.statusCode).toBe(429);
-    env.freeRunsPerDay = before;
+    env.freeTranslationsPerDay = 1;
+    env.mockAI = true;
+    try {
+      const app = signedInApp();
+      const device = "cap-dev-00000003";
+      const translate = (text: string) => app.inject({
+        method: "POST", url: "/translate",
+        payload: { text, primary: "English", secondary: "Spanish", deviceId: device },
+      });
+      const vocab = () => app.inject({
+        method: "POST", url: "/vocab/generate",
+        payload: { description: "cricket words", deviceId: device },
+      });
+      expect((await translate("hola")).statusCode).toBe(200);
+      // The day's one run is still there: translating never spends one.
+      expect((await vocab()).statusCode).not.toBe(429);
+      expect((await vocab()).statusCode).toBe(429);
+      const second = await translate("adios amigo");
+      expect(second.statusCode).toBe(429);
+      expect(second.json().error).toContain("translations");
+      // A phrase already translated costs nothing upstream, so it is free.
+      expect((await translate("hola")).statusCode).toBe(200);
+    } finally {
+      env.freeRunsPerDay = before.runs;
+      env.freeTranslationsPerDay = before.translations;
+      env.mockAI = before.mockAI;
+    }
   });
 
   it("the meter chip reports what is left", async () => {

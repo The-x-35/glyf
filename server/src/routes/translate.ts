@@ -5,8 +5,9 @@ import type { Guard } from "../lib/guard.js";
 import { translate } from "../lib/translate.js";
 
 /** POST /translate — the translate strip: detects the language, picks the
- *  direction, translates (see lib/translate.ts). It runs on every finished
- *  word, so answers are cached and it is not metered like a run. */
+ *  direction, translates (see lib/translate.ts). It runs on every pause
+ *  while the bar is open, so answers are cached and it has its own daily
+ *  count (Guard.translate) instead of spending runs. */
 
 const TranslateSchema = z.object({
   text: z.string().min(1).max(600),
@@ -27,7 +28,7 @@ export function translateRoutes(app: FastifyInstance, guard: Guard): void {
     const cached = cache.get(key);
     // A cached phrase costs nothing upstream, so it costs nothing here.
     if (cached) return { ok: true, ...JSON.parse(cached) };
-    const gate = await guard.spend(req, deviceId);
+    const gate = await guard.translate(req, deviceId);
     if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
     try {
       const result = await translate({ text, primary, secondary, target });

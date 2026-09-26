@@ -68,6 +68,22 @@ describe("POST /suggest", () => {
     }
   });
 
+  it("counts only reads by the model: the rules and the cache are free", async () => {
+    const suggestions = env.freeSuggestionsPerDay;
+    env.freeSuggestionsPerDay = 1;
+    try {
+      const app = signedInApp();
+      for (let i = 0; i < 3; i++) {
+        expect((await ask(app, "any good italian places in koramangala")).statusCode).toBe(200);
+      }
+      expect((await ask(app, "ok will send the deck before six")).statusCode).toBe(200);
+      expect((await ask(app, "ok will send the deck before six")).statusCode).toBe(200);
+      expect((await ask(app, "fine the deck goes out at seven then")).statusCode).toBe(429);
+    } finally {
+      env.freeSuggestionsPerDay = suggestions;
+    }
+  });
+
   it("shows no chip when no model answers, but still what the rules know", async () => {
     const saved = { mockAI: env.mockAI, models: env.suggestModels, key: env.cerebrasKey };
     env.mockAI = false;

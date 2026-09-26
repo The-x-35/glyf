@@ -808,24 +808,22 @@ final class GlyfGateUITests: XCTestCase {
 
         // §6.16: plan card → paywall sheet. Dismiss without unlocking so the
         // meter path stays exercised by the rest of the suite.
-        XCTAssertTrue(staticTextContaining("Your info").waitForExistence(timeout: 8),
-                      "profile did not load")
-        // The plan card is one merged semantic button (Semantics(button:true)
-        // folds descendants), so its texts are NOT separate staticTexts —
-        // match the merged button label instead.
-        let planCard = firstExisting([
-            app.buttons.matching(
-                NSPredicate(format: "label CONTAINS %@", "Go Pro")).firstMatch,
-            app.otherElements.matching(
-                NSPredicate(format: "label CONTAINS %@", "Go Pro")).firstMatch,
-        ])
-        XCTAssertNotNil(planCard, "plan card missing")
-        planCard?.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
-        XCTAssertTrue(staticTextContaining("Unlimited Glyf runs").waitForExistence(timeout: 6),
-                      "paywall sheet did not render")
-        let notNow = app.buttons["Not now"].firstMatch
-        XCTAssertTrue(notNow.waitForExistence(timeout: 4))
-        notNow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let planCard = app.descendants(matching: .any)["profile:plan"].firstMatch
+        XCTAssertTrue(planCard.waitForExistence(timeout: 8), "profile did not load")
+        planCard.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
+        let unlock = app.descendants(matching: .any)["paywall:unlock"].firstMatch
+        XCTAssertTrue(unlock.waitForExistence(timeout: 6), "paywall sheet did not render")
+        // Nothing on the cards may promise what the server doesn't give.
+        // Greyed cards merge their texts into one label, so match any element.
+        let labelled = { (needle: String) in
+            self.app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", needle)).firstMatch
+        }
+        XCTAssertTrue(labelled("400 runs a day").waitForExistence(timeout: 4), "Max card lost its runs line")
+        XCTAssertFalse(labelled("Unlimited").exists, "a card promises unlimited")
+        let close = firstExisting([app.buttons["Close"].firstMatch, app.buttons["Not now"].firstMatch])
+        XCTAssertNotNil(close, "no way out of the paywall")
+        close?.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     // MARK: - §6.18 onboarding funnel

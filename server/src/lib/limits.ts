@@ -23,26 +23,40 @@ export interface Caps {
   burstPerMinute: number;
 }
 
+/** A paid plan's day, per kind. Sized so that a month of every cap spent,
+ *  every day, still costs under half of what the cheapest way to buy the
+ *  plan brings in after the store's cut and tax (docs/BACKEND.md, "What a
+ *  plan costs"). Free comes from the environment; a paid plan never gets
+ *  less than free. */
+export const PAID_PER_DAY = {
+  runs: { plus: 150, max: 400 },
+  suggestions: { plus: 300, max: 600 },
+  translations: { plus: 400, max: 1000 },
+} as const;
+
+function perDay(kind: keyof typeof PAID_PER_DAY, plan: Plan, freePerDay: number): number {
+  return plan === "free" ? freePerDay : Math.max(freePerDay, PAID_PER_DAY[kind][plan]);
+}
+
 export function capsFor(plan: Plan, freePerDay: number): Caps {
   // A person types; they don't fire. Even the top plan gets a minute's worth
   // that a human could plausibly use, so a stolen session can't drain a day.
-  switch (plan) {
-    case "max": return { runsPerDay: freePerDay * 25, burstPerMinute: 15 };
-    case "plus": return { runsPerDay: freePerDay * 10, burstPerMinute: 12 };
-    default: return { runsPerDay: freePerDay, burstPerMinute: 8 };
-  }
+  const burstPerMinute = plan === "max" ? 15 : plan === "plus" ? 12 : 8;
+  return { runsPerDay: perDay("runs", plan, freePerDay), burstPerMinute };
 }
 
 /** The strip's suggestions are asked for by a pause in typing, not by the
- *  person, so they never spend a run. Their own allowance is sized for a
- *  day of chatting on a model that costs tens of dollars a million reads,
- *  and still has a ceiling, so a stolen session can't run up a bill. */
+ *  person, so they never spend a run. Only a read by the model counts (the
+ *  rules and the cache cost nothing), and it still has a ceiling, so a
+ *  stolen session can't run up a bill. */
 export function suggestCapsFor(plan: Plan, freePerDay: number): Caps {
-  switch (plan) {
-    case "max": return { runsPerDay: freePerDay * 25, burstPerMinute: 30 };
-    case "plus": return { runsPerDay: freePerDay * 10, burstPerMinute: 30 };
-    default: return { runsPerDay: freePerDay, burstPerMinute: 20 };
-  }
+  return { runsPerDay: perDay("suggestions", plan, freePerDay), burstPerMinute: plan === "free" ? 20 : 30 };
+}
+
+/** The translate bar asks on every pause while it is open, so a message
+ *  can take a dozen translations: they are counted apart from runs. */
+export function translateCapsFor(plan: Plan, freePerDay: number): Caps {
+  return { runsPerDay: perDay("translations", plan, freePerDay), burstPerMinute: 40 };
 }
 
 export type Window = "day" | "minute";

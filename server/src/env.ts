@@ -22,17 +22,24 @@ export const env = {
   inceptionKey: process.env.INCEPTION_API_KEY ?? "",
   cerebrasKey: process.env.CEREBRAS_API_KEY ?? "",
   mockAI: process.env.MOCK_AI === "true",
-  freeRunsPerDay: num("FREE_RUNS_PER_DAY", 40),
+  /** A free plan's day. Plus and Max are fixed in lib/limits.ts. */
+  freeRunsPerDay: num("FREE_RUNS_PER_DAY", 20),
   /** The strip's suggestions have their own allowance and never spend a run. */
-  freeSuggestionsPerDay: num("FREE_SUGGESTIONS_PER_DAY", 300),
-  /** §8.3 fallback chain, most-preferred first. Never hard-code one :free id. */
-  fastModels: (process.env.FAST_MODELS ?? "openrouter/free").split(",").map(s => s.trim()),
+  freeSuggestionsPerDay: num("FREE_SUGGESTIONS_PER_DAY", 100),
+  /** So do the translate bar's translations. */
+  freeTranslationsPerDay: num("FREE_TRANSLATIONS_PER_DAY", 100),
+  /** §8.3 fallback chain, most-preferred first. Never hard-code one :free id.
+   *  Qwen 3.7 Flash writes all six rewrite versions for about $0.03 a
+   *  thousand, a third of Gemini 2.5 Flash-Lite, which stands behind it. */
+  fastModels: (process.env.FAST_MODELS
+    ?? "qwen/qwen3.7-flash,google/gemini-2.5-flash-lite:nitro,gemini:gemini-flash-lite-latest,openrouter/free")
+    .split(",").map(s => s.trim()),
   smartModels: (process.env.SMART_MODELS ?? "openrouter/free").split(",").map(s => s.trim()),
   /** What reads a pause in typing for the strip's chip: small, paid, cheap
-   *  (tens of dollars a million reads) and never a free tier that keeps
-   *  what it is sent. */
+   *  (about $8 a million reads on Qwen 3.7 Flash) and never a free tier
+   *  that keeps what it is sent. */
   suggestModels: (process.env.SUGGEST_MODELS
-    ?? "google/gemini-2.5-flash-lite,mistralai/mistral-small-24b-instruct-2501,qwen/qwen3-30b-a3b-instruct-2507")
+    ?? "qwen/qwen3.7-flash,google/gemini-2.5-flash-lite,inclusionai/ling-3.0-flash")
     .split(",").map(s => s.trim()),
   cacheTtlMs: num("CACHE_TTL_MS", 24 * 3600 * 1000),
   // Privy creds are parked here for M8's backend integration — NEVER sent to

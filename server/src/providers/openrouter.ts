@@ -60,9 +60,14 @@ export function requestOptions(ep: Endpoint, tier: Tier): Record<string, unknown
     if (ep.openrouter) opts.provider = { data_collection: "deny" };
   }
   if (ep.openrouter) {
+    // Hybrid models (Qwen 3.7 Flash, DeepSeek V4 Flash, Ling) think first
+    // unless told not to: measured, a rewrite took 16 s and ten times the
+    // tokens. The quick tiers turn thinking off; OpenRouter's own routers
+    // (openrouter/free) can land on a model that must think, so there it is
+    // only kept out of the answer.
     opts.reasoning = id.includes("gpt-oss")
       ? { effort: quick ? "low" : "medium", exclude: true }
-      : tier === "suggest" ? { enabled: false } : { exclude: true };
+      : quick && !id.startsWith("openrouter/") ? { enabled: false } : { exclude: true };
     return opts;
   }
   if (id.includes("gpt-oss")) {

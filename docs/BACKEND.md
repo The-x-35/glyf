@@ -567,7 +567,7 @@ The file keeps its original name, but since 2026-09-15 it routes to any OpenAI-c
 
 SPEC §8.3 also names a `strict` tier (JSON validated against a schema, one retry, fail closed). In code `strict` maps to the `smart` chain; the strict behaviour lives in the Builder route, which validates and retries.
 
-**Chains.** `FAST_MODELS` and `SMART_MODELS` are comma-separated lists, most preferred first. Both default to `openrouter/free` (OpenRouter's Free Models Router). SPEC §8.2 forbids relying on one hard-coded `:free` id because free models rotate out without notice. `SUGGEST_MODELS` defaults to three small paid OpenRouter models, `google/gemini-2.5-flash-lite,mistralai/mistral-small-24b-instruct-2501,qwen/qwen3-30b-a3b-instruct-2507` ([5.10](#510-model-choices-over-time-research-and-costs)); a model gets 2.5 s to start answering (4 s on `fast`, 20 s on `smart`). An OpenRouter id may end in `:nitro`, OpenRouter's own "fastest provider first".
+**Chains.** `FAST_MODELS`, `SMART_MODELS` and `SUGGEST_MODELS` are comma-separated lists, most preferred first. Since 2026-09-26 `FAST_MODELS` defaults to `qwen/qwen3.7-flash,google/gemini-2.5-flash-lite:nitro,gemini:gemini-flash-lite-latest,openrouter/free` and `SUGGEST_MODELS` to `qwen/qwen3.7-flash,google/gemini-2.5-flash-lite,inclusionai/ling-3.0-flash` ([5.10](#510-model-choices-over-time-research-and-costs)); `SMART_MODELS` defaults to `openrouter/free` (OpenRouter's Free Models Router). SPEC §8.2 forbids relying on one hard-coded `:free` id because free models rotate out without notice. A model gets 2.5 s to start answering on `suggest` (4 s on `fast`, 20 s on `smart`). An OpenRouter id may end in `:nitro`, OpenRouter's own "fastest provider first".
 
 **Provider prefixes** (`endpointFor()`):
 
@@ -587,12 +587,13 @@ A model whose provider has no key is skipped (recorded as `no-key`) and the chai
 | Case | Option sent |
 |---|---|
 | OpenRouter, model id contains `gpt-oss` | `reasoning: { effort: low (fast) or medium (smart), exclude: true }` |
-| OpenRouter, any other model | `reasoning: { exclude: true }` |
+| OpenRouter, any other model, `fast` or `suggest` tier | `reasoning: { enabled: false }` (since 2026-09-26: Qwen 3.7 Flash, DeepSeek V4 Flash and Ling think first otherwise, 3 to 16 s and ten times the tokens for a rewrite) |
+| OpenRouter, `openrouter/*` routers on any tier, and every model on `smart` | `reasoning: { exclude: true }` (a router can land on a model that must think) |
 | Direct provider, `gpt-oss` model | `reasoning_effort: low (fast) or medium (smart)` |
 | Groq, Qwen model | `reasoning_effort: "none"` (otherwise Groq returns raw `<think>` text) |
 | Gemini, `gemini-2.5-flash` (not Flash-Lite) | `reasoning_effort: none (fast) or low (smart)` |
 | Everything else (for example Gemini 2.5 Flash-Lite, Mistral) | only `max_tokens` |
-| `suggest` tier, any model | also `temperature: 0`; on OpenRouter `provider: { data_collection: "deny" }` (only providers that neither keep nor train on what they are sent: it is someone's typing) and `reasoning: { enabled: false }` unless the model is `gpt-oss` |
+| `suggest` tier, any model | also `temperature: 0`; on OpenRouter `provider: { data_collection: "deny" }` (only providers that neither keep nor train on what they are sent: it is someone's typing) |
 
 **Walking the chain** (`completeStreaming()`):
 
@@ -777,20 +778,43 @@ Examples that were verified live on 2026-09-14/15: "Times Square Starbucks" retu
 
 ### 5.9 Metering and plans
 
-`server/src/lib/meter.ts`, SPEC §6.16.
+`server/src/lib/limits.ts` (the caps) and `lib/guard.ts` (who is asking), SPEC §6.16. Counted in Postgres (`glyf_usage`), per account when signed in and per device when not, per UTC day (resets at 05:30 IST), plus a per-minute burst so nothing drains a day in seconds. The plan comes from the account's row in the database, never from the client.
 
-| Plan | Price (decided 2026-09-12) | Daily cap (`planCap()`) | Intended extras |
-|---|---|---|---|
-| free | $0 | `FREE_RUNS_PER_DAY` (40) | fast tier, slower |
-| plus | $4.99/month | 10 times the free cap (400) | priority |
-| max | $19.99/month | unlimited (`Number.MAX_SAFE_INTEGER`) | smartest models, early features |
+| Plan | Price (2026-09-26) | Runs a day | Suggestions a day | Translations a day | Runs a minute |
+|---|---|---|---|---|---|
+| Free | $0 | `FREE_RUNS_PER_DAY` (20) | `FREE_SUGGESTIONS_PER_DAY` (100) | `FREE_TRANSLATIONS_PER_DAY` (100) | 8 |
+| Plus | $1.99 a month or $19.99 a year | 150 | 300 | 400 | 12 |
+| Max | $4.99 a month or $49.99 a year | 400 | 600 | 1,000 | 15 |
 
-- Arpit asked on 2026-09-12: "we can give some slow free replies with ai in free and ask to update accordingly one 5 $ plan and one 20$". The assistant researched Wispr Flow ($12 to 15/month with a hard free cap) and Grammarly's keyboard (about $12/month) and proposed undercutting with Plus and out-featuring with Max.
-- Metered routes: `/glyf/run`, `/act`, `/vocab/generate`. One request is one run.
-- `/suggest` never spends a run (since 2026-09-25): the strip asks on a pause in typing, not the person. `Guard.suggest` counts it under its own key (`suggest:user:<id>` or `suggest:device:<id>` in `glyf_usage`): `FREE_SUGGESTIONS_PER_DAY` (300) a day and 20 a minute on free, 10 times that and 30 a minute on plus, 25 times on max (`suggestCapsFor()` in `lib/limits.ts`).
-- Counts are per device per UTC day (reset at 05:30 IST), in memory. Responses cap `remaining` at 9999.
-- The plan is asserted by the client until StoreKit receipt validation exists (the "M7-ship TODO"). The in-app paywall currently unlocks locally. The legacy `pro: true` flag maps to `plus`.
-- The "priority" and "smart models for Max" promises are not implemented: every plan uses the same chains.
+- A run is one request to `/act`, `/glyf/run`, `/vocab/generate`, the Builder, or a search answer a model writes.
+- Suggestions: `/suggest` counts only when a model reads the sentence (`suggest:<key>`); what the rules or the cache answer is free (since 2026-09-26). 20 a minute on free, 30 on paid plans.
+- Translations: `/translate` counts each uncached translation under its own key (`translate:<key>`), 40 a minute, never a run. Until 2026-09-26 it spent a run on every pause while the bar was open, so one translated message could take a dozen runs.
+- A paid plan never gets less than free, whatever the `FREE_*` variables say.
+- Nothing is unlimited and every plan uses the same models. The Max card promised "Unlimited Glyf runs" and "The smartest models" and Plus "Priority speed"; none of that existed, and all three were removed on 2026-09-26.
+- Plans are not on sale yet (`plansOnSale = false` in the app). `POST /me/plan` works only with `PLAN_SELF_SERVE=true`, which is never set on Railway.
+
+**What a plan costs** (measured 2026-09-26 on the default chains, OpenRouter prices per 1M tokens in / out)
+
+| Unit | Tokens in / out | Cost on Qwen 3.7 Flash ($0.03 / $0.13) |
+|---|---|---|
+| Hold space: six rewrite versions | about 350 / 135 | $0.000028 |
+| Routing a message the rules can't place | about 200 / 20 | $0.000009 |
+| A write (up to 1,500 tokens out) | about 65 / 100 to 1,500 | $0.00002 to $0.0002 |
+| A strip suggestion read by the model | about 235 / 10 | $0.0000083 |
+| A translation | about 95 / 30 | $0.0000067 |
+
+The same six versions on Gemini 2.5 Flash-Lite, the backup, cost $0.000095. Planning numbers, rounded up to cover writes and the backup: a run $0.00006, a suggestion or a translation $0.00001.
+
+A month with every cap spent every day: Free $0.10, Plus $0.48, Max $1.20. What a plan brings in a month after Apple's 15% (Small Business Program) and, where the price includes it, VAT or GST:
+
+| | US monthly | US yearly, per month | EU yearly with 20% VAT, per month | India monthly (18% GST inside) |
+|---|---|---|---|---|
+| Plus | $1.69 | $1.42 | $1.18 | ₹143 at ₹199 |
+| Max | $4.24 | $3.54 | $2.95 | ₹359 at ₹499 |
+
+So even someone who spends every cap every day leaves 59% (EU yearly) to 72% (US monthly) of the plan. A typical day (10 runs, 60 suggestions, 20 translations) costs about $0.03 a month. `test/limits.test.ts` ("keeps a month of every cap under half of what the plan brings in") fails if a cap is raised past that line. The caps and models before 2026-09-26 (Plus 400 runs and 3,000 suggestions a day, Max 1,000 and 7,500, translations spending runs, Gemini first) could cost about $3.80 a month for Plus and $9.50 for Max, more than either plan brought in.
+
+Not in these numbers: map and YouTube searches run on free quotas shared by every user (Geoapify 3,000 a day, YouTube about 100 searches a day), and Railway and Neon are a fixed monthly cost.
 
 ### 5.10 Model choices over time, research and costs
 
@@ -803,6 +827,7 @@ Examples that were verified live on 2026-09-14/15: "Times Square Starbucks" retu
 | About 2026-09-14/15 | Pinned OpenRouter free models: fast `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `openrouter/free`; smart `nvidia/nemotron-3-super-120b-a12b:free`, `google/gemma-4-31b-it:free`, `openrouter/free` | `openrouter/free` landed on content-safety classifiers; free models returned 429, overload and 12 to 20 s latency; the daily free quota was exhausted during testing, causing 502s |
 | 2026-09-15 | No-card chain in `.env.example`: fast `gemini:gemini-2.5-flash-lite`, `groq:qwen/qwen3.8-27b`, `groq:openai/gpt-oss-20b`, `openrouter/free`; smart `groq:openai/gpt-oss-120b`, `groq:qwen/qwen3.8-27b`, `gemini:gemini-2.5-flash` | Arpit: "find me good and v cheap ai model to use here, i heard groq is good but ig they stopped sharing dev apis" |
 | 2026-09-25 | Suggest (new): `google/gemini-2.5-flash-lite`, `mistralai/mistral-small-24b-instruct-2501`, `qwen/qwen3-30b-a3b-instruct-2507`. Fast: `google/gemini-2.5-flash-lite:nitro`, `meta-llama/llama-3.3-70b-instruct:nitro`, `gemini:gemini-flash-lite-latest`, `openrouter/free` | Arpit wanted the chip back on "some v cheap small model", then "5.4 s is too much, cant we find some faster ai". The fast chain had been `gemini:gemini-3.1-flash-lite` first, which was over its free quota (429) and slow; `flash-lite-latest` took about 4 s for six versions |
+| 2026-09-26 | Fast: `qwen/qwen3.7-flash`, `google/gemini-2.5-flash-lite:nitro`, `gemini:gemini-flash-lite-latest`, `openrouter/free`. Suggest: `qwen/qwen3.7-flash`, `google/gemini-2.5-flash-lite`, `inclusionai/ling-3.0-flash`. Both are now the code's defaults; thinking is switched off on the quick tiers | Arpit: "i feel thats too less margin to play along, and for yearly even worse we in loss / figure out profitable pricing reduce runs etc / or find cheaper models / or use v cheap models for suggestiosn etc". Llama 3.3 70B left the fast chain: it cost the most ($0.31 per 1,000 rewrites) and added facts |
 
 Per the 2026-09-15 context snapshot, `server/.env` was set to the Gemini/Groq chain with the pinned OpenRouter free models kept as the tail, and the `GEMINI_API_KEY` and `GROQ_API_KEY` lines were left empty for Arpit to fill. This was not re-checked while writing (the file was not opened). Until those keys exist, live AI depends on the OpenRouter free tier, which was out of quota at the time.
 
@@ -826,6 +851,14 @@ Per the 2026-09-15 context snapshot, `server/.env` was set to the Gemini/Groq ch
 - Gemini's own API: `gemini-2.5-flash-lite` is "no longer available to new users" (404), `gemini-3.1-flash-lite` answered 429 (free quota exceeded), `flash-lite-latest` 16 of 16 but 0.9 s, and its free tier keeps what it is sent, which a keyboard's passive read should not do.
 - Six versions of a message (about 480 tokens in, 250 out): Gemini 2.5 Flash-Lite through OpenRouter, first version 0.7 to 1 s and all six 1.2 to 1.5 s (about $0.15 per 1,000 taps); Llama 3.3 70B on Groq through OpenRouter (`:nitro`), first 0.3 s and all 0.7 s (about $0.50 per 1,000; Groq's $0.59 / $0.79), but it added facts ("as planned", "subah"); Qwen3 30B 0.5 s first, 1.7 to 2.9 s all; Mercury 2.5 0.9 s all at once; `gemini:gemini-flash-lite-latest` 1.6 s first, 4 s all. Through the dev server with streaming: first version 1 to 2 s, all six 1.3 to 2.4 s (was 5.4 s to anything).
 - OpenRouter answered paid models on a key with $0 credit that day (usage went negative by half a cent of tests); that won't last. Without credit the suggestion chain has nothing to fall back on (no chip beyond the phone's rules) and the fast chain falls back to Gemini's free tier.
+
+**Measured 2026-09-26** (the server's real prompts, parsers and request options; OpenRouter's `usage.cost` per call):
+
+- Tokens per call (Gemini's usage metadata): strip read 233 in / 12 out; routing 199 / 22; rewrite in five styles 332 / 131, six (India) 351 / 137; translation 94 / 30; a short write 64 / 109.
+- The strip's read, 24 sentences (English and Hinglish; four lead into a saved detail, two ask someone else for theirs): DeepSeek V4 Flash 23 of 24 but 1.1 s median ($17.7 a million reads); Gemini 2.5 Flash-Lite 22, 0.73 s ($26.4); Gemma 4 26B 22, 0.78 s ($21.8); Qwen 3.7 Flash 21, 0.56 s ($8.3); Ling 3.0 Flash 21, 0.89 s ($4.0); Mistral Small 24B 21, 0.8 s ($20.2); Solar Mini 4 20; Mistral Nemo 20; Gemma 3 12B 17, with 429s; Nemotron 3.5 Lightning 14; GLM 5.3 Flash refuses to run without thinking. Most misses are Hinglish ("kal milte hain office ke paas wale cafe mein" read as a place).
+- Six rewrite versions, five messages. With the old option (`reasoning: { exclude: true }`) Qwen 3.7 Flash, DeepSeek V4 Flash and Ling 3.0 Flash think first: 750 to 1,500 tokens out, 3 to 16 s, and Qwen ran out of tokens on all five. With thinking off: Qwen 3.7 Flash all five complete, first token 0.46 s, all six 1.9 s, $0.028 per 1,000; Ling 3.0 Flash 1.1 s, $0.013 per 1,000, but flatter ("Polite" the same as "Basic"); DeepSeek V4 Flash 5.9 s; Gemini 2.5 Flash-Lite 1.1 s, $0.095 per 1,000; Mistral Small 24B $0.037 per 1,000 but its "Basic" left the message unfixed; Llama 3.3 70B (`:nitro`) fastest at 0.76 s and dearest at $0.31 per 1,000. Qwen kept Hinglish as Hinglish in "Basic"; Gemini turned "Bhai, kal milte hain" into English.
+- Through `act()` with streaming (routing, then the rewrite; four messages): the first version shows at 1.49 s on Qwen and 1.56 s on Gemini (median); all six at 2.9 s and 1.8 s.
+- Qwen 3.7 Flash has one provider on OpenRouter (Alibaba, 99.9% uptime), and it answers with `data_collection: "deny"`.
 
 **Caveats that still apply**
 
@@ -1241,7 +1274,7 @@ Rules owned by the clients and not the server: no AI in secure text fields (SPEC
 
 | Limit | Scope | Where |
 |---|---|---|
-| Daily run cap per plan | per device, per UTC day, in memory | `lib/meter.ts`; `/glyf/run`, `/act`, `/vocab/generate` |
+| Daily runs, suggestions and translations per plan, and a per-minute burst ([5.9](#59-metering-and-plans)) | per account (per device signed out), per UTC day, in Postgres | `lib/limits.ts`, `lib/guard.ts` |
 | Tool requests per minute | per tool id, **global** across devices, in memory | `lib/tools.ts` |
 | Model cooldown after HTTP 429 | per model spec, 60 s default, max 600 s | `providers/openrouter.ts` |
 | Nominatim spacing about 1.1 s | whole server | `lib/search.ts` (search path only) |
@@ -1449,6 +1482,7 @@ Status values: **Active** (in force), **Superseded** (replaced by a later row), 
 | 2026-09-25 evening | Calendar and Google Meet are back in the app's Connected tools (onboarding still asks first): Calendar reads Turn on, then On; Google Meet is a switch, on runs the same Google page, off revokes. The keyboard's "no Meet" toast points there | Arpit: "i cant see option to connect google meet etc in connections" | Active |
 | 2026-09-24 | The strip's model-read chip ("Tidy this up") and `POST /suggest` removed | It asked a model on every paused sentence and spent a daily run each time (the test account reached 353 runs in a day); Arpit: "does this use ai ? we can actually remove this suggestion" | Reversed 2026-09-25 (next row) |
 | 2026-09-25 | The chip is back: `POST /suggest` on its own small paid chain (`SUGGEST_MODELS`), one model call a pause for both the action and the saved detail, its own allowance so it never spends a run, no chip when no model answers | Arpit: "i need ai suggestions they were pretty cool / we can use some v cheap small model for it ... thats are fucking pitch we are giving that cool thing, users will pay for that" | Active |
+| 2026-09-26 | Plans priced to stay profitable when every cap is spent: Free 20 runs a day, Plus 150 ($1.99 a month or $19.99 a year), Max 400 ($4.99 or $49.99); suggestions (only model reads count) and translations on their own daily counts; Qwen 3.7 Flash first for hold space and suggestions, thinking off; nothing "unlimited" or "smartest models" on the cards | Arpit: "i feel thats too less margin to play along, and for yearly even worse we in loss / figure out profitable pricing reduce runs etc / or find cheaper models / or use v cheap models for suggestiosn etc" | Active |
 | 2026-09-25 | Hold space and chip taps on a faster chain (Gemini 2.5 Flash-Lite, then Llama 3.3 70B on Groq, both through OpenRouter) and streamed: each version shows as it is written. `/act` takes `intent: "write"` (the "Write it for me" chip used to get a 400) and the planner accepts a model's `write` (it used to become a tidy-up) | Arpit: "5.4 s is too much, cant we find some faster ai , and maybe add streams so it looks better" | Active |
 | 2026-09-24 | GIFs and stickers from KLIPY, called from the phone with a key the server hands out; Noto animated emoji as keyless stickers; GIPHY proxy removed | Tenor's API closed 2026-06-30; GIPHY is paid past 100 calls an hour and forbids proxies; KLIPY is free but wants device-side calls | Active |
 | 2026-09-12 | Mock calendar routes (events, then a month grid) power the in-keyboard calendar until OAuth exists | Keep the ConnectorSurface testable; Arpit asked for "a button to view months calendar along with my todays tasks" | Active |

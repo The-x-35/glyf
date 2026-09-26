@@ -7,7 +7,7 @@
  */
 import type { FastifyRequest } from "fastify";
 import { verifySession } from "./identity.js";
-import { allow, capsFor, refusal, suggestCapsFor, type Allowance, type Limiter, type Plan } from "./limits.js";
+import { allow, capsFor, refusal, suggestCapsFor, translateCapsFor, type Allowance, type Caps, type Limiter, type Plan } from "./limits.js";
 import { Users } from "./users.js";
 
 export interface GuardDeps {
@@ -17,6 +17,8 @@ export interface GuardDeps {
   freePerDay: number;
   /** The strip's suggestions a free plan gets a day (their own count). */
   freeSuggestionsPerDay?: number;
+  /** The translate bar's translations a free plan gets a day (their own count). */
+  freeTranslationsPerDay?: number;
 }
 
 export interface Verdict extends Allowance {
@@ -63,12 +65,24 @@ export class Guard {
   /** Spends one of the strip's suggestions, never a run: they are counted
    *  under their own key, so a day of chatting can't use up the runs someone
    *  holds space for. */
-  async suggest(req: FastifyRequest, deviceId: string, now = new Date()): Promise<Verdict> {
+  suggest(req: FastifyRequest, deviceId: string, now = new Date()): Promise<Verdict> {
+    return this.spendApart(req, deviceId, "suggest", plan =>
+      suggestCapsFor(plan, this.deps.freeSuggestionsPerDay ?? 100),
+      "No more suggestions today. They come back tomorrow", now);
+  }
+
+  /** Spends one of the translate bar's translations, never a run. */
+  translate(req: FastifyRequest, deviceId: string, now = new Date()): Promise<Verdict> {
+    return this.spendApart(req, deviceId, "translate", plan =>
+      translateCapsFor(plan, this.deps.freeTranslationsPerDay ?? 100),
+      "No more translations today. They come back tomorrow", now);
+  }
+
+  private async spendApart(req: FastifyRequest, deviceId: string, kind: string,
+    capsOf: (plan: Plan) => Caps, usedUp: string, now: Date): Promise<Verdict> {
     const { key, plan } = await this.who(req, deviceId);
-    const caps = suggestCapsFor(plan, this.deps.freeSuggestionsPerDay ?? 300);
-    const verdict = await allow(this.deps.limits, `suggest:${key}`, caps, now);
-    const message = verdict.reason === "burst" ? refusal("burst", plan)
-      : "No more suggestions today. They come back tomorrow";
+    const verdict = await allow(this.deps.limits, `${kind}:${key}`, capsOf(plan), now);
+    const message = verdict.reason === "burst" ? refusal("burst", plan) : usedUp;
     return { ...verdict, plan, key, message };
   }
 

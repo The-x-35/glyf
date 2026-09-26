@@ -18,7 +18,8 @@ import { readTyping } from "../lib/reading.js";
  * Rules answer what they can for nothing; otherwise one call to the
  * suggestion chain (SUGGEST_MODELS, small and cheap) reads the sentence.
  * Nobody asked for this read, so it never spends one of their runs: it has
- * its own allowance (Guard.suggest). Tapping the chip is a run.
+ * its own allowance (Guard.suggest), and only a read by the model counts
+ * against it. Tapping the chip is a run.
  */
 
 const SuggestSchema = z.object({
@@ -65,8 +66,6 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
   app.post("/suggest", async (req, reply) => {
     const parsed = SuggestSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ ok: false, error: "Bad request" });
-    const gate = await guard.suggest(req, parsed.data.deviceId);
-    if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
     const text = parsed.data.text.trim();
     const kinds = [...new Set(parsed.data.kinds ?? [])].filter((k): k is DetailKind =>
       (DETAIL_KINDS as readonly string[]).includes(k)).sort();
@@ -82,6 +81,8 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
       if (field || byRules) {
         suggestion = suggestionFor(text, byRules?.intent ?? null, field, byRules?.query);
       } else {
+        const gate = await guard.suggest(req, parsed.data.deviceId);
+        if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
         const read = await readTyping(text, kinds);
         suggestion = suggestionFor(text, read?.intent ?? null, read?.field ?? null);
       }

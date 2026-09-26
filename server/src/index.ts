@@ -46,7 +46,8 @@ export function buildApp(kv: KV = defaultKV()) {
   });
   const limits = buildLimiter();
   const guard = new Guard({ limits, freePerDay: env.freeRunsPerDay,
-    freeSuggestionsPerDay: env.freeSuggestionsPerDay });
+    freeSuggestionsPerDay: env.freeSuggestionsPerDay,
+    freeTranslationsPerDay: env.freeTranslationsPerDay });
   // The lock goes on before any route is registered, so nothing added later
   // is open by accident.
   protectRoutes(app, { limits });

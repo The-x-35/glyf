@@ -1,22 +1,5 @@
-/** §6.16 metering, server-side, keyed to the device (account keys come with
- *  auth in M7). Interface first; the in-memory impl is swapped for Postgres
- *  when the hub needs durable state (M5/M6).
- *
- *  Plans (researched against Wispr Flow $12–15/mo, Grammarly ~$12/mo):
- *  free = the shipped daily cap on the fast tier; plus ($1.99) = 10× the cap
- *  and priority; max ($4.99) = 25× the cap. Caps are enforced
- *  HERE; the plan itself is client-asserted until StoreKit receipts land
- *  (M7-ship TODO, same seam). */
-export type Plan = "free" | "plus" | "max";
-
-export function planCap(plan: Plan, freePerDay: number): number {
-  switch (plan) {
-    case "max": return Number.MAX_SAFE_INTEGER;
-    case "plus": return freePerDay * 10;
-    default: return freePerDay;
-  }
-}
-
+/** §6.16 metering, the in-memory counter the engine tests use. Plans and
+ *  their daily caps live in lib/limits.ts, counted in Postgres (Guard). */
 export interface MeterStore {
   /** Consumes one run if available. Returns remaining after consumption, or -1 if exhausted. */
   consume(deviceId: string, now?: Date, cap?: number): number;
