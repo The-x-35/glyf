@@ -26,9 +26,8 @@ const MONEY_SHOT: Record<string, (k: KbSnapshot) => boolean> = {
   neha: (k) => k.act === "rewrite",
   sakshi: (k) => k.panel === "search" && k.tab === "maps" && k.results > 0,
   kabir: (k) => k.panel === "search" && k.tab === "google" && k.results > 0,
-  mumma: (k) => k.panel === "vault",
+  mom: (k) => k.panel === "vault",
   zoya: (k) => money(k.text) !== null,
-  rohan: (k) => /definately$/i.test(k.text),
   sofia: (k) => k.panel === "translate" && k.translation === "hasta mañana",
   semi: (k) => k.wallet?.tab === "send" && k.wallet.stage === "form",
 };

@@ -32,14 +32,15 @@ const N = SCENARIOS.length;
  *  (`floor(progress × chats)`), which is why it would leave for the next
  *  conversation in the middle of the one you were doing.
  *
- *  Run straight through, the eight chats take about fifty steps — measured,
- *  by scrolling the whole stage a notch at a time. The rest is slack for a
+ *  Run straight through, the seven chats take about forty-five steps (the
+ *  eight took fifty, measured
+ *  by scrolling the whole stage a notch at a time). The rest is slack for a
  *  visitor who goes their own way: opening a panel they then close costs two,
  *  and an answer the friend nudges back costs a couple more. Each tick is
  *  nine hundredths of the viewport, near enough one notch of a wheel that a
  *  notch does one thing.
  */
-const TICKS = 76;
+const TICKS = 71;
 
 const ease = [0.22, 1, 0.36, 1] as const;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

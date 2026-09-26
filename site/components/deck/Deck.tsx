@@ -173,7 +173,7 @@ const SLIDES: Slide[] = [
         id="neha"
         eyebrow="AI rewrite"
         capture={c}
-        points={["Hold space on a messy draft", "Pick a tone: Polite, Shorter, Professional, Hinglish, Emoji", "The rewrite streams straight into the field"]}
+        points={["Hold space on a messy draft", "Pick a tone: Polite, Shorter, Professional, Emoji", "The rewrite streams straight into the field"]}
       />
     ),
   },
@@ -206,10 +206,10 @@ const SLIDES: Slide[] = [
     label: "Vault",
     render: (c) => (
       <Demo
-        id="mumma"
+        id="mom"
         eyebrow="Knows you"
         capture={c}
-        points={["Address, UPI, wallet, socials: saved once", "Encrypted on the device, shared with the model only when you allow it", "Hold V, or tap the strip when a chat asks for it"]}
+        points={["Address, wallet address, socials: saved once", "Encrypted on the device, shared with the model only when you allow it", "Hold V, or tap the strip when a chat asks for it"]}
       />
     ),
   },
@@ -222,18 +222,6 @@ const SLIDES: Slide[] = [
         eyebrow="Smart strip"
         capture={c}
         points={["Type a sum, tap the answer", "Type a ticker, tap the price", "Two asks, two taps, zero app switches"]}
-      />
-    ),
-  },
-  {
-    id: "autocorrect",
-    label: "Autocorrect",
-    render: (c) => (
-      <Demo
-        id="rohan"
-        eyebrow="Typing engine"
-        capture={c}
-        points={["On-device autocorrect and prediction", "Understands Hinglish, learns your words", "20 vocabulary packs, no AI call needed"]}
       />
     ),
   },

@@ -62,7 +62,7 @@ function vaultCoach(k: KbSnapshot, id: string, label: string): Coach {
 
 export const SEMI_WALLET = "8QvS3nE5d1YwZk7pLr2mXh9TbF4cJaGuVy6oKe1RtNqP";
 
-const polished = (t: string) => /absolutely|sure thing|will send by 6|on it|haan/i.test(t);
+const polished = (t: string) => /absolutely|sure thing|will send by 6|on it/i.test(t);
 const placeName = (sent: string) => sent.replace(/^📍\s*/, "").split(" · ")[0];
 
 export const SCENARIOS: Scenario[] = [
@@ -85,20 +85,20 @@ export const SCENARIOS: Scenario[] = [
     ],
   },
   {
-    id: "mumma",
-    name: "Mumma",
+    id: "mom",
+    name: "Mom",
     avatar: "🎁",
     tint: "#ff6fae",
     tag: "Vault",
     headline: ["Never type your", "address again."],
     beats: [
       {
-        them: ["hi beta 🎉", "sending you something for your birthday", "what's your address?"],
+        them: ["hi sweetie 🎉", "sending you something for your birthday", "what's your address?"],
         goal: (t) => has(t, value("home")),
         coach: (k) => vaultCoach(k, "home", "Home"),
-        reply: ["got it beta ❤️", "it'll be there by friday"],
+        reply: ["got it ❤️", "it'll be there by friday"],
         tapback: "❤️",
-        nudge: "beta, what's your address? 🙈",
+        nudge: "honey, what's your address? 🙈",
       },
     ],
   },
@@ -156,32 +156,6 @@ export const SCENARIOS: Scenario[] = [
         reply: ["Perfect, thank you! 🙌"],
         tapback: "👍",
         nudge: "Haha, maybe a little more formal? 😅",
-      },
-    ],
-  },
-  {
-    id: "rohan",
-    name: "Rohan",
-    avatar: "🏏",
-    tint: "#ff9500",
-    tag: "Hinglish autocorrect",
-    headline: ["Fixes the typos.", "Keeps the yaar."],
-    beats: [
-      {
-        them: ["bhai kal match dekhne chal raha? 🏏"],
-        autotype: (k) =>
-          k.text === "" ? "haan yaar pakak" : /pakka $/.test(k.text) ? "definately" : /definitely $/.test(k.text) ? "aa raha hoon 🙌" : null,
-        goal: (t) => /pakka/i.test(t) && /definitely/i.test(t),
-        coach: (k) => {
-          if (/pakka/i.test(k.text) && /hoon/i.test(k.text)) return SEND;
-          if (/pakak$/i.test(k.text)) return { target: "strip:0", label: "Tap pakka" };
-          if (/definately$/i.test(k.text)) return { target: "strip:0", label: "Tap definitely" };
-          if (k.panel) return CLOSE;
-          return null;
-        },
-        reply: ["haha pakka 😂", "7 baje gate pe milte hain"],
-        tapback: "😂",
-        nudge: "aa raha hai ya nahi? 😅",
       },
     ],
   },

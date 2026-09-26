@@ -113,7 +113,7 @@ const place = (f: Float): Vars => ({
 /** Hold a key, it runs its action: the app's default bindings. */
 const BOUND = [
   { key: "C", label: "Calendar", icon: <CalendarIcon />, result: "Demo call · 6:00 PM" },
-  { key: "V", label: "Vault", icon: <LockIcon />, result: "123, A-block, Delhi" },
+  { key: "V", label: "Vault", icon: <LockIcon />, result: "123 Market St, San Francisco" },
   { key: "T", label: "Translate", icon: <TranslateIcon />, result: "hasta mañana" },
   { key: "M", label: "Meet link", icon: <VideoIcon />, result: "meet.google.com/abc-defg" },
 ];

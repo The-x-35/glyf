@@ -117,7 +117,6 @@ const CANNED_SRC: [string, Record<string, string>][] = [
       polite: "Hey! Running about five minutes late, please go ahead and order for me.",
       shorter: "5 min late, order for me.",
       work: "Apologies, I'm running five minutes late. Please go ahead and order without me.",
-      hinglish: "Yaar 5 min late hoon, mere liye order kar dena.",
       emoji: "Running 5 late 🏃💨 order for me 🙏",
     },
   ],
@@ -127,7 +126,6 @@ const CANNED_SRC: [string, Record<string, string>][] = [
       polite: "Sure thing! I'll send it over by 6. Thanks for the reminder.",
       shorter: "Will send by 6.",
       work: "Absolutely, I'll share the Q3 deck with the client by 6 PM today.",
-      hinglish: "Haan, 6 baje tak bhej dunga, tension mat lo.",
       emoji: "On it! Sending by 6 📊✅",
     },
   ],
@@ -137,39 +135,38 @@ export const TONES = [
   { id: "polite", label: "Polite" },
   { id: "shorter", label: "Shorter" },
   { id: "work", label: "Professional" },
-  { id: "hinglish", label: "Hinglish" },
   { id: "emoji", label: "Emoji" },
 ];
 
 export const VAULT = [
   { id: "name", label: "Name", value: "Arpit Singh" },
-  { id: "home", label: "Home", value: "123, A-block, Delhi 110001" },
-  { id: "upi", label: "UPI", value: "arpit@okbank" },
-  { id: "wallet", label: "Solana", value: "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA" },
+  { id: "home", label: "Home", value: "123 Market St, San Francisco, CA 94103" },
+  { id: "wallet", label: "Wallet address", value: "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA" },
   { id: "insta", label: "Instagram", value: "instagram.com/Arpitx35" },
   { id: "x", label: "X", value: "x.com/Arpitx35" },
   { id: "linkedin", label: "LinkedIn", value: "linkedin.com/in/Arpitx35" },
   { id: "email", label: "Email", value: "arpit@tryglyf.com" },
-  { id: "phone", label: "Phone", value: "+91 98765 43210" },
+  { id: "phone", label: "Phone", value: "+1 (415) 555-0132" },
 ];
 
 export type VaultItem = (typeof VAULT)[number];
 
 export const short = (v: VaultItem) => (v.id === "wallet" ? `${v.value.slice(0, 4)}…${v.value.slice(-4)}` : v.value);
 
+const saved = (id: string) => VAULT.find((v) => v.id === id)?.value ?? "";
+
+/** ";home" and friends: typed shorthand for what the Vault keeps. */
 export const SHORTHAND: Record<string, string> = {
-  home: VAULT[1].value,
-  upi: VAULT[2].value,
-  mail: VAULT[7].value,
+  home: saved("home"),
+  wallet: saved("wallet"),
+  mail: saved("email"),
   sig: "Cheers, Arpit",
 };
 
-/** "my upi is " → your UPI ID, ready on the strip. */
+/** "my wallet address is " → your wallet address, ready on the strip. */
 const CONTEXT: [RegExp, string][] = [
   [/\b(my name is|name:|this is)\s*$/i, "name"],
   [/\b(address|deliver(?: it)? to|send (?:it |the \w+ )?to|ship (?:it )?to|come to|pick me up (?:from|at))\s*(?:is\s*)?:?\s*$/i, "home"],
-  [/\b(upi|gpay|google pay|phonepe|paytm)(?:\s*id)?\s*(?:is\s*)?:?\s*$/i, "upi"],
-  [/\bpay me (?:at|on)\s*$/i, "upi"],
   [/\b(wallet|sol|solana|phantom|usdc|crypto)(?:\s*(?:address|addy|wallet))?\s*(?:is\s*)?:?\s*$/i, "wallet"],
   [/\b(insta|instagram|ig)(?:\s*(?:handle|id))?\s*(?:is\s*)?:?\s*$/i, "insta"],
   [/\b(twitter|on x|x handle)\s*(?:is\s*)?:?\s*$/i, "x"],
@@ -278,10 +275,10 @@ export function money(text: string): Money | null {
   return { key: `tok-${sym}`, label: `$${sym}`, value: line, insert: line, at, len: text.length - at };
 }
 
-export const WEATHER = "It's 24° and cloudy in Bengaluru, rain after 6 PM ☔";
+export const WEATHER = "It's 24° and cloudy, rain after 6 PM ☔";
 
 /** Clipboard history. Links open in a new tab instead of pasting. */
-export const CLIPS = ["https://youtu.be/dQw4w9WgXcQ?si=ms6HzsvNvsPeLhH_", "meet.google.com/xk2-pqr-7ty", "Flight PNR · QR7GH2", "the figma link from standup"];
+export const CLIPS = ["https://youtu.be/dQw4w9WgXcQ?si=ms6HzsvNvsPeLhH_", "meet.google.com/xk2-pqr-7ty", "Booking ref · QR7GH2", "the figma link from standup"];
 export const CLIP_AGE = ["Just now", "2 min", "1 hr", "Yesterday"];
 export const isLink = (text: string) => /^https?:\/\//.test(text);
 
@@ -294,8 +291,6 @@ const FIXES: Record<string, string> = {
   cant: "can't", wont: "won't", didnt: "didn't", doesnt: "doesn't", isnt: "isn't", ive: "I've",
   thnaks: "thanks", becuase: "because", definately: "definitely", waht: "what", taht: "that",
   tommorow: "tomorrow", tomorow: "tomorrow", seperate: "separate", untill: "until", wierd: "weird",
-  // Hinglish typos: the pack knows the words, so it fixes them and leaves yaar alone.
-  pakak: "pakka", yaaar: "yaar", thik: "theek", kese: "kaise", bhot: "bahut", hna: "haan",
 };
 
 export function autocorrect(word: string, learned: Set<string>): string | null {
@@ -312,10 +307,9 @@ const WORDS = [
   "order", "on", "our", "okay", "running", "right", "reply", "really", "see", "send", "soon", "sure", "sorry",
   "minutes", "meeting", "message", "maybe", "coffee", "coming", "call", "can", "without", "with", "what",
   "where", "when", "why", "will", "hey", "hello", "have", "help", "home", "how", "near", "now", "need",
-  "yaar", "you", "your", "yes", "good", "great", "going", "get", "address", "about", "again", "already",
+  "you", "your", "yes", "good", "great", "going", "get", "address", "about", "again", "already",
   "birthday", "bring", "before", "done", "dinner", "lunch", "leaving", "love", "let's", "please", "plan",
   "place", "just", "know", "free", "from", "for", "friday", "weekend", "work", "wait", "want", "definitely",
-  "pakka", "haan", "bhai", "kal", "aaj", "chal", "raha", "hoon", "accha", "theek", "nahi", "kaise", "kya", "bahut", "abhi",
 ];
 
 export function suggest(word: string, learned: Set<string>): string[] {
@@ -384,11 +378,9 @@ export function rewrite(text: string, tone: string): string {
       return (shorter || bare) + ".";
     }
     case "work": {
-      const clean = bare.replace(/\b(yaar|lol|bro|dude)\b,?\s*/gi, "").replace(/\s+/g, " ").trim();
+      const clean = bare.replace(/\b(lol|bro|dude)\b,?\s*/gi, "").replace(/\s+/g, " ").trim();
       return /^(hi|hello|dear)\b/i.test(clean) ? `${clean}.` : `Hi, ${clean[0].toLowerCase() + clean.slice(1)}.`;
     }
-    case "hinglish":
-      return `${bare}, yaar.`;
     case "emoji": {
       const t = text.toLowerCase();
       const e = /late|run/.test(t) ? "🏃" : /food|order|dinner|lunch|pizza/.test(t) ? "🍕" : /coffee/.test(t) ? "☕" : /thank/.test(t) ? "🙏" : /love|miss/.test(t) ? "❤️" : /party|birthday/.test(t) ? "🎉" : "✨";
@@ -443,10 +435,9 @@ function placesFor(q: string): Card[] {
   const t = q.toLowerCase();
   const pick = (name: string, meta: string): Card => ({ kind: "place", title: name, meta, insert: `📍 ${name} · ${meta.split(" · ")[1]}`, hue: hash(name) % 360 });
   if (/pizza/.test(t)) return [pick("Little Oven Pizzeria", "4.5 ★ · 900 m · Open"), pick("Slice Theory", "4.3 ★ · 1.4 km · Open")];
-  if (/biryani/.test(t)) return [pick("Monsoon Biryani House", "4.4 ★ · 1.2 km · Open"), pick("Dum & Co.", "4.2 ★ · 2 km · Open")];
-  if (/dinner|lunch|restaurant|brunch|breakfast/.test(t)) return [pick("The Green Terrace", "4.5 ★ · 700 m · Open"), pick("Banana Leaf Kitchen", "4.4 ★ · 1.1 km · Open")];
+  if (/dinner|lunch|restaurant|brunch|breakfast/.test(t)) return [pick("The Green Terrace", "4.5 ★ · 700 m · Open"), pick("Olive & Thyme", "4.4 ★ · 1.1 km · Open")];
   if (/bar|pub|beer|drinks/.test(t)) return [pick("Hops & Barley", "4.3 ★ · 1.1 km · Open"), pick("The Rooftop Room", "4.1 ★ · 1.8 km · Open")];
-  if (/coffee|caf/.test(t)) return [pick("Bean & Byte Café", "4.6 ★ · 350 m · Open"), pick("Filter Kaapi Co.", "4.5 ★ · 600 m · Open")];
+  if (/coffee|caf/.test(t)) return [pick("Bean & Byte Café", "4.6 ★ · 350 m · Open"), pick("Blue Door Coffee", "4.5 ★ · 600 m · Open")];
   const what = cap(q.replace(/\b(near me|nearby|around here|where|find|a|the)\b/gi, "").trim() || "Places");
   return [pick(`${what} spot`, "4.4 ★ · 800 m · Open"), pick(`${what} & Co.`, "4.2 ★ · 1.3 km · Open")];
 }
@@ -481,28 +472,28 @@ function answersFor(q: string): Card[] {
   if (/sunset/.test(t))
     return [
       {
-        kind: "answer", visual: "sunset", title: "6:24 PM", meta: "Sunset · Bengaluru", sub: "Golden hour starts 5:52 PM",
+        kind: "answer", visual: "sunset", title: "6:24 PM", meta: "Sunset · near you", sub: "Golden hour starts 5:52 PM",
         facts: [["Sunrise", "6:08 AM"], ["Daylight", "12h 16m"], ["Last light", "6:47 PM"]], insert: "Sunset's at 6:24 PM 🌇",
       },
     ];
   if (/sunrise/.test(t))
     return [
       {
-        kind: "answer", visual: "sunrise", title: "6:08 AM", meta: "Sunrise · Bengaluru", sub: "First light 5:45 AM",
+        kind: "answer", visual: "sunrise", title: "6:08 AM", meta: "Sunrise · near you", sub: "First light 5:45 AM",
         facts: [["Sunset", "6:24 PM"], ["Daylight", "12h 16m"]], insert: "Sunrise is at 6:08 AM 🌅",
       },
     ];
   if (/weather|rain|temperature/.test(t))
     return [
       {
-        kind: "answer", visual: "weather", title: "24°", meta: "Weather · Bengaluru", sub: "Cloudy · rain likely after 6 PM",
+        kind: "answer", visual: "weather", title: "24°", meta: "Weather · near you", sub: "Cloudy · rain likely after 6 PM",
         facts: [["High", "27°"], ["Low", "19°"], ["Rain", "70%"]], insert: WEATHER,
       },
     ];
   const zone = Object.keys(ZONES).find((z) => t.includes(z));
   if (zone && /time/.test(t)) {
     const date = new Date();
-    const now = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: ZONES[zone] }).format(date);
+    const now = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: ZONES[zone] }).format(date);
     const parts = new Intl.DateTimeFormat("en-GB", { hour: "numeric", minute: "numeric", hour12: false, timeZone: ZONES[zone] }).formatToParts(date);
     const hm: [number, number] = [Number(parts.find((p) => p.type === "hour")?.value ?? 0), Number(parts.find((p) => p.type === "minute")?.value ?? 0)];
     return [{ kind: "answer", visual: "clock", title: now, meta: `Time · ${cap(zone)}`, sub: "Right now", hm, insert: `It's ${now} in ${cap(zone)} right now` }];
@@ -547,7 +538,7 @@ export function classify(raw: string): ActResult {
   const text = raw.trim();
   const t = text.toLowerCase();
   if (hasSecret(text)) return { kind: "refuse" };
-  if (/(near me|nearby|coffee|caf[eé]|dinner|lunch|breakfast|brunch|restaurant|pizza|biryani|\bpub\b|\bbar\b|drinks)/.test(t))
+  if (/(near me|nearby|coffee|caf[eé]|dinner|lunch|breakfast|brunch|restaurant|pizza|\bpub\b|\bbar\b|drinks)/.test(t))
     return { kind: "cards", label: "Places", cards: placesFor(text) };
   if (/(video|watch|song|music|lofi|playlist|trailer|youtube|tutorial)/.test(t)) return { kind: "cards", label: "Videos", cards: videosFor(text) };
   const items = listItems(text);
