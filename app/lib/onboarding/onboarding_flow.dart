@@ -60,14 +60,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   String? _persona;
   /// The details that make everything else one tap: a form asking for an
-  /// email gets the email, "my address is" gets the address. They are saved
-  /// in the on-device vault, never uploaded.
-  static const _detailFields = <(String, String, String)>[
-    ('name', 'Name', 'Your name'),
-    ('email', 'Email', 'you@example.com'),
-    ('phone', 'Phone', '+91 98765 43210'),
-    ('address', 'Home', 'Flat, street, city, pin'),
-    ('upi', 'UPI', 'you@okbank'),
+  /// email gets the email, "my address is" gets the address, "my wallet
+  /// address is" the Solana address. They are saved in the on-device vault,
+  /// never uploaded. (id, kind, label, hint): X and Telegram are both socials.
+  static const _detailFields = <(String, String, String, String)>[
+    ('name', 'name', 'Name', 'Your name'),
+    ('email', 'email', 'Email', 'you@example.com'),
+    ('phone', 'phone', 'Phone', '+1 415 555 0132'),
+    ('address', 'address', 'Home', 'Street, city, postcode'),
+    ('wallet', 'wallet', 'Wallet address', 'Your Solana address'),
+    ('x', 'social', 'X', 'x.com/you'),
+    ('telegram', 'social', 'Telegram', 't.me/you'),
   ];
   final Map<String, TextEditingController> _details = {
     for (final f in _detailFields) f.$1: TextEditingController(),
@@ -244,8 +247,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     } catch (_) {}
     String? firstError;
     var saved = 0;
-    for (final (kind, label, _) in _detailFields) {
-      final value = _details[kind]!.text.trim();
+    for (final (id, kind, label, _) in _detailFields) {
+      final value = _details[id]!.text.trim();
       if (value.isEmpty) continue;
       final prior = saved0['$kind|$label'];
       if (prior != null && prior['value'] == value) {
@@ -678,7 +681,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               instant: _heard.contains('meet'),
               lines: const [
                 'Let me remember you.',
-                'When someone asks for your address or UPI, it’s one tap.',
+                'When someone asks for your address or wallet, it’s one tap.',
               ],
               onDone: () { if (mounted) setState(() => _meetDone = true); },
             ),
@@ -715,27 +718,29 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             const SizedBox(height: 16),
             Expanded(
               child: ListView(padding: EdgeInsets.zero, children: [
-                for (final (i, (kind, label, hint)) in _detailFields.indexed)
+                for (final (i, (id, kind, label, hint)) in _detailFields.indexed)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: GlassCard(
-                      onTap: () => _detailFocus[kind]!.requestFocus(),
+                      onTap: () => _detailFocus[id]!.requestFocus(),
                       child: Row(children: [
                         SizedBox(
-                          width: 74,
+                          width: 108,
                           child: Text(label,
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
                         ),
                         Expanded(
                           child: Semantics(
-                            identifier: 'onb:detail:$kind',
+                            identifier: 'onb:detail:$id',
                             child: TextField(
-                              controller: _details[kind],
-                              focusNode: _detailFocus[kind],
+                              controller: _details[id],
+                              focusNode: _detailFocus[id],
+                              autocorrect: kind == 'name' || kind == 'address',
                               keyboardType: switch (kind) {
                                 'email' => TextInputType.emailAddress,
                                 'phone' => TextInputType.phone,
                                 'address' => TextInputType.streetAddress,
+                                'social' => TextInputType.url,
                                 _ => TextInputType.text,
                               },
                               textInputAction: i < _detailFields.length - 1

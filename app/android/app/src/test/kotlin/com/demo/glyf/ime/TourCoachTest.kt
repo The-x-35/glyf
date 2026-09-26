@@ -26,27 +26,19 @@ class TourCoachTest {
         s = s.copy(panel = TourCoach.Panel.Menu)
         assertEquals(TourCoach.Coach("shell:tile:search", "Search"), TourCoach.coach(s))
         assertEquals(false, TourCoach.allowsChip("paste", "sakshi:0"))
-        assertEquals(true, TourCoach.allowsChip("vault:upi", "zoya:1"))
+        assertEquals(true, TourCoach.allowsChip("vault:wallet", "zoya:1"))
         assertEquals(false, TourCoach.allowsChip("paste", "semi:0"))
         assertEquals(true, TourCoach.allowsChip("paste", "semi:0", copied = true))
     }
 
     @Test fun vaultOpensOnWhicheverKeyHoldsIt() {
-        var s = TourCoach.State(step = "mumma:0", text = "",
+        var s = TourCoach.State(step = "mom:0", text = "",
             fields = listOf(Smart.Field("name", "Name", "Arpit"), home), vaultKey = "v")
         assertEquals(TourCoach.Coach("key:v", "Hold V"), TourCoach.coach(s))
         assertEquals(TourCoach.Coach("key:q", "Hold Q"), TourCoach.coach(s.copy(vaultKey = "q")))
         s = s.copy(panel = TourCoach.Panel.Vault)
         assertEquals(TourCoach.Coach("vault:card:1", "Tap Home"), TourCoach.coach(s))
         assertNull(TourCoach.coach(s.copy(panel = TourCoach.Panel.None, text = "12 Hill Road, Bandra")))
-    }
-
-    @Test fun hinglishSuggestions() {
-        val s = TourCoach.State(step = "rohan:0", text = "haan yaar pakak",
-            suggestions = listOf("pakak", "pakka", "pakad"))
-        assertEquals(TourCoach.Coach("suggest:1", "Tap pakka"), TourCoach.coach(s))
-        assertEquals(TourCoach.Coach("suggest:1", "Tap definitely"), TourCoach.coach(
-            s.copy(text = "haan yaar pakka definately", suggestions = listOf("definately", "definitely"))))
     }
 
     @Test fun rewriteMathAndTranslate() {
@@ -57,7 +49,7 @@ class TourCoachTest {
             TourCoach.coach(neha.copy(panel = TourCoach.Panel.Act(working = false, options = true))))
 
         assertEquals(TourCoach.Coach("strip:smart", "Tap"),
-            TourCoach.coach(TourCoach.State(step = "zoya:0", text = "3480/4", chip = "calc")))
+            TourCoach.coach(TourCoach.State(step = "zoya:0", text = "236/4", chip = "calc")))
 
         val sofia = TourCoach.State(step = "sofia:0", text = "", translateKey = "t")
         assertEquals(TourCoach.Coach("key:t", "Hold T"), TourCoach.coach(sofia))

@@ -504,14 +504,14 @@ final class GlyfEngineTests: XCTestCase {
         s.panel = .menu
         XCTAssertEqual(TourCoach.coach(s), .init(target: "shell:tile:search", label: "Search"))
         XCTAssertFalse(TourCoach.allowsChip("paste", step: "sakshi:0"), "a chip would cover the tools")
-        XCTAssertTrue(TourCoach.allowsChip("vault:upi", step: "zoya:1"))
+        XCTAssertTrue(TourCoach.allowsChip("vault:wallet", step: "zoya:1"))
         XCTAssertFalse(TourCoach.allowsChip("paste", step: "semi:0"), "an old copy is not the address")
         XCTAssertTrue(TourCoach.allowsChip("paste", step: "semi:0", copied: true))
     }
 
     func testCoachOpensTheVaultOnWhicheverKeyHoldsIt() {
         let home = field("address", "Home", "12 Hill Road, Bandra")
-        var s = TourCoach.State(step: "mumma:0", text: "")
+        var s = TourCoach.State(step: "mom:0", text: "")
         s.fields = [field("name", "Name", "Arpit"), home]
         s.vaultKey = "v"
         XCTAssertEqual(TourCoach.coach(s), .init(target: "key:v", label: "Hold V"))
@@ -524,15 +524,6 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(TourCoach.coach(s))
     }
 
-    func testCoachPointsAtTheRightSuggestionForHinglish() {
-        var s = TourCoach.State(step: "rohan:0", text: "haan yaar pakak")
-        s.suggestions = ["pakak", "pakka", "pakad"]
-        XCTAssertEqual(TourCoach.coach(s), .init(target: "suggest:1", label: "Tap pakka"))
-        s.text = "haan yaar pakka definately"
-        s.suggestions = ["definately", "definitely"]
-        XCTAssertEqual(TourCoach.coach(s), .init(target: "suggest:1", label: "Tap definitely"))
-    }
-
     func testCoachRewriteMathAndTranslate() {
         var neha = TourCoach.State(step: "neha:0", text: "ya ill send it by 6 dont worry")
         XCTAssertEqual(TourCoach.coach(neha), .init(target: "key:space", label: "Hold glyf"))
@@ -541,8 +532,8 @@ final class GlyfEngineTests: XCTestCase {
         neha.panel = .act(working: false, options: true)
         XCTAssertEqual(TourCoach.coach(neha), .init(target: "act:option:work", label: "Professional"))
 
-        var zoya = TourCoach.State(step: "zoya:0", text: "3480/4")
-        zoya.chip = .calc(value: "870", hasEquals: false)
+        var zoya = TourCoach.State(step: "zoya:0", text: "236/4")
+        zoya.chip = .calc(value: "59", hasEquals: false)
         XCTAssertEqual(TourCoach.coach(zoya), .init(target: "strip:smart", label: "Tap"))
 
         var sofia = TourCoach.State(step: "sofia:0", text: "")

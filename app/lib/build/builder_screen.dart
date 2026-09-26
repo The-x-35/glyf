@@ -47,7 +47,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
     ('😊', 'Make it sound warmer'),
     ('📝', 'Sum it up in 3 bullets'),
     ('📧', 'Turn my notes into an email'),
-    ('🌶️', 'Reply in Hinglish'),
+    ('🌮', 'Reply in Spanish'),
     ('🙏', 'Say no, politely'),
   ];
 

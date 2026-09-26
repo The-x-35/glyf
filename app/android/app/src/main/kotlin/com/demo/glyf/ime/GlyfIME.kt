@@ -136,12 +136,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 "close" -> { dismissOverlay(); dismissFeaturePanel(); if (translateStrip != null) exitTranslate() }
                 "dump" -> writeQaState()
                 "seedvault" -> {
-                    // The scenarios ask for an address and a UPI id: add
-                    // whichever the vault doesn't have, and touch nothing else.
+                    // The scenarios ask for an address and a wallet address:
+                    // add whichever the vault doesn't have, and touch nothing else.
                     val kinds = Smart.fields(VaultStore.load(this@GlyfIME)).map { it.kind }.toSet()
                     if ("address" !in kinds) VaultStore.upsertField(this@GlyfIME, null, "address", "Home",
-                        "42 Glass Lane, Indiranagar, Bengaluru 560038")
-                    if ("upi" !in kinds) VaultStore.upsertField(this@GlyfIME, null, "upi", "UPI", "arpit@okbank")
+                        "123 Market St, San Francisco, CA 94103")
+                    if ("wallet" !in kinds) VaultStore.upsertField(this@GlyfIME, null, "wallet", "Wallet address",
+                        "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA")
                 }
                 // What Connected tools → Calendar sets, for the scenarios.
                 "calendaron" -> this@GlyfIME.getSharedPreferences("glyf", android.content.Context.MODE_PRIVATE).edit()
@@ -1881,6 +1882,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         })
         toolbar.addView(chip, 1, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
             leftMargin = dp(8)
+            // The chip ends as far in as Glyf's key starts (the key is drawn
+            // centred in its 52dp view), so the strip sits centred over the keys.
+            rightMargin = ((dp(52) - GlyfMark.keyWidth(dp(30).toFloat())) / 2).toInt()
         })
         stripChip = chip
         stripChipKind = kind

@@ -28,11 +28,9 @@ class _VaultScreenState extends State<VaultScreen> {
     ('email', 'Email', Icons.alternate_email),
     ('phone', 'Phone', Icons.phone_outlined),
     ('address', 'Address', Icons.home_outlined),
-    ('upi', 'UPI', Icons.currency_rupee),
-    ('wallet', 'Solana wallet', Icons.account_balance_wallet_outlined),
+    ('wallet', 'Wallet address', Icons.account_balance_wallet_outlined),
     ('link', 'Link', Icons.link),
     ('social', 'Social', Icons.alternate_email),
-    ('gst', 'GST number', Icons.receipt_long_outlined),
     ('bio', 'Bio', Icons.short_text),
     ('custom', 'Other', Icons.label_outline),
   ];

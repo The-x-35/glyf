@@ -146,7 +146,7 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
           .toList();
       String? of(String kind) => all(kind).firstOrNull;
       setState(() => _vault = TourVault(
-          address: of('address'), upi: of('upi'), addresses: all('address')));
+          address: of('address'), wallet: of('wallet'), addresses: all('address')));
     } catch (_) {}
   }
 
@@ -484,8 +484,8 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
     if (th.waiting || th.done) return null;
     final step = '${_sc.id}:${th.beat}';
     if (step == 'sakshi:0' && !_nearbyOn) return ('nearby', 'nearby');
-    if (step == 'mumma:0' && _vault.address == null) return ('address', 'address');
-    if (step == 'zoya:1' && _vault.upi == null) return ('upi', 'UPI ID');
+    if (step == 'mom:0' && _vault.address == null) return ('address', 'address');
+    if (step == 'zoya:1' && _vault.wallet == null) return ('wallet', 'wallet address');
     return null;
   }
 
@@ -539,9 +539,10 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
             autofocus: true,
             minLines: 1,
             maxLines: kind == 'address' ? 3 : 1,
-            keyboardType: kind == 'upi' ? TextInputType.emailAddress : TextInputType.streetAddress,
+            keyboardType: kind == 'wallet' ? TextInputType.text : TextInputType.streetAddress,
+            autocorrect: kind != 'wallet',
             decoration: InputDecoration(
-              hintText: kind == 'upi' ? 'name@bank' : 'Flat, street, city, PIN',
+              hintText: kind == 'wallet' ? 'Your Solana address' : 'Street, city, postcode',
               filled: true,
               fillColor: const Color(0xFFF2F3F7),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
@@ -556,7 +557,7 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
                 final value = ctl.text.trim();
                 if (value.isEmpty) return;
                 final res = await GlyfBridge.vaultUpsertField(
-                    kind: kind, label: kind == 'upi' ? 'UPI' : 'Home', value: value);
+                    kind: kind, label: kind == 'wallet' ? 'Wallet address' : 'Home', value: value);
                 if (ctx.mounted) Navigator.of(ctx).pop(res.ok);
               },
             ),

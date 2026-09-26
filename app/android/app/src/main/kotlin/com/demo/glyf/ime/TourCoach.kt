@@ -53,10 +53,10 @@ object TourCoach {
     /** While a step is being coached the strip only offers what that step is
      *  about: any other chip would cover the tool the coach points at. */
     fun allowsChip(kind: String, step: String, copied: Boolean = false): Boolean = when (step) {
-        "mumma:0" -> kind == "vault:address"
+        "mom:0" -> kind == "vault:address"
         "semi:0" -> kind == "pay" || (kind == "paste" && copied)
         "zoya:0" -> kind == "calc"
-        "zoya:1" -> kind == "vault:upi"
+        "zoya:1" -> kind == "vault:wallet"
         else -> false
     }
 
@@ -103,7 +103,7 @@ object TourCoach {
         return when (s.step) {
             "sakshi:0" -> search(s, "maps", "Maps") { it.contains("📍") }
 
-            "mumma:0" -> vault(s, "address")
+            "mom:0" -> vault(s, "address")
 
             "semi:0" -> when {
                 text.startsWith("💸") -> null
@@ -123,20 +123,8 @@ object TourCoach {
                 else -> closer(p)
             }
 
-            "rohan:0" -> when {
-                has(text, "pakka") && has(text, "hoon") -> null
-                s.panel != Panel.None -> closer(s.panel)
-                matches(text, "pakak$") ->
-                    s.suggestions.indexOfFirst { it.equals("pakka", true) }
-                        .takeIf { it >= 0 }?.let { Coach("suggest:$it", "Tap pakka") }
-                matches(text, "definately$") ->
-                    s.suggestions.indexOfFirst { it.equals("definitely", true) }
-                        .takeIf { it >= 0 }?.let { Coach("suggest:$it", "Tap definitely") }
-                else -> null
-            }
-
             "zoya:0" -> when {
-                text.contains("870") -> null
+                text.contains("59") -> null
                 s.panel != Panel.None -> closer(s.panel)
                 s.chip == "calc" -> Coach("strip:smart", "Tap")
                 text.isEmpty() -> null
@@ -144,14 +132,14 @@ object TourCoach {
             }
 
             "zoya:1" -> {
-                val upi = s.fields.firstOrNull { it.kind == "upi" }
+                val wallet = s.fields.firstOrNull { it.kind == "wallet" }
                 when {
-                    upi != null && has(text, upi.value) -> null
-                    s.panel == Panel.Vault && upi != null ->
-                        Coach("vault:card:${s.fields.indexOf(upi)}", "Tap ${upi.label}")
+                    wallet != null && has(text, wallet.value) -> null
+                    s.panel == Panel.Vault && wallet != null ->
+                        Coach("vault:card:${s.fields.indexOf(wallet)}", "Tap ${wallet.label}")
                     s.panel != Panel.None -> closer(s.panel)
-                    s.chip == "vault:upi" -> Coach("strip:smart", "Tap")
-                    text.isEmpty() || matches(text, "upi id is\\s*$") -> null
+                    s.chip == "vault:wallet" -> Coach("strip:smart", "Tap")
+                    text.isEmpty() || matches(text, "wallet address is\\s*$") -> null
                     else -> Coach("key:delete", "Delete")
                 }
             }

@@ -285,7 +285,7 @@ class GlyfText extends StatelessWidget {
 /// A few seconds of the thing the orb is talking about: a friend asks for an
 /// address, the keyboard offers it, one tap sends it. On a loop.
 class RememberDemo extends StatefulWidget {
-  const RememberDemo({super.key, this.address = 'Flat 4B, Palm Grove, Bandra West'});
+  const RememberDemo({super.key, this.address = '123 Market St, San Francisco'});
   final String address;
 
   @override
@@ -413,8 +413,8 @@ class NearbyDemo extends StatefulWidget {
   const NearbyDemo({
     super.key,
     this.settled = false,
-    this.place = 'Blue Tokai Coffee',
-    this.detail = '300 m · Indiranagar',
+    this.place = 'Bean & Byte Café',
+    this.detail = '300 m · Market St',
   });
 
   /// Nearby search is already on: hold the finished chat, don't replay it.

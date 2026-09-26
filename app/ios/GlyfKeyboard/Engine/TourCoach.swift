@@ -58,10 +58,10 @@ enum TourCoach {
     /// Kinds: "calc", "vault:<kind>", "paste", "pay", "action", "event", "booking".
     static func allowsChip(_ kind: String, step: String, copied: Bool = false) -> Bool {
         switch step {
-        case "mumma:0": return kind == "vault:address"
+        case "mom:0": return kind == "vault:address"
         case "semi:0": return kind == "pay" || (kind == "paste" && copied)
         case "zoya:0": return kind == "calc"
-        case "zoya:1": return kind == "vault:upi"
+        case "zoya:1": return kind == "vault:wallet"
         default: return false
         }
     }
@@ -115,7 +115,7 @@ enum TourCoach {
         case "sakshi:0":
             return search(s, tab: "maps", label: "Maps") { $0.contains("📍") }
 
-        case "mumma:0":
+        case "mom:0":
             return vault(s, kind: "address")
 
         case "semi:0":
@@ -144,33 +144,21 @@ enum TourCoach {
                 return closer(s.panel)
             }
 
-        case "rohan:0":
-            if has(text, "pakka") && has(text, "hoon") { return nil }
-            if s.panel != .none { return closer(s.panel) }
-            if matches(text, #"pakak$"#), let i = s.suggestions.firstIndex(where: { $0.lowercased() == "pakka" }) {
-                return Coach(target: "suggest:\(i)", label: "Tap pakka")
-            }
-            if matches(text, #"definately$"#),
-               let i = s.suggestions.firstIndex(where: { $0.lowercased() == "definitely" }) {
-                return Coach(target: "suggest:\(i)", label: "Tap definitely")
-            }
-            return nil
-
         case "zoya:0":
-            if text.contains("870") { return nil }
+            if text.contains("59") { return nil }
             if s.panel != .none { return closer(s.panel) }
             if case .calc = s.chip { return Coach(target: "strip:smart", label: "Tap") }
             return text.isEmpty ? nil : Coach(target: "key:delete", label: "Delete")
 
         case "zoya:1":
-            let upi = s.fields.first { $0.kind == "upi" }
-            if let upi, has(text, upi.value) { return nil }
-            if case .vault = s.panel, let upi, let i = s.fields.firstIndex(of: upi) {
-                return Coach(target: "vault:card:\(i)", label: "Tap \(upi.label)")
+            let wallet = s.fields.first { $0.kind == "wallet" }
+            if let wallet, has(text, wallet.value) { return nil }
+            if case .vault = s.panel, let wallet, let i = s.fields.firstIndex(of: wallet) {
+                return Coach(target: "vault:card:\(i)", label: "Tap \(wallet.label)")
             }
             if s.panel != .none { return closer(s.panel) }
-            if case .vault(let f) = s.chip, f.kind == "upi" { return Coach(target: "strip:smart", label: "Tap") }
-            if text.isEmpty || matches(text, #"upi id is\s*$"#) { return nil }
+            if case .vault(let f) = s.chip, f.kind == "wallet" { return Coach(target: "strip:smart", label: "Tap") }
+            if text.isEmpty || matches(text, #"wallet address is\s*$"#) { return nil }
             return Coach(target: "key:delete", label: "Delete")
 
         case "kabir:0":

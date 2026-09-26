@@ -29,8 +29,9 @@ import UIKit
       let store = VaultStore.shared
       if store.load().fields.isEmpty {
         _ = store.upsertField(id: nil, kind: "address", label: "Home",
-                              value: "42 Glass Lane, Indiranagar, Bengaluru 560038")
-        _ = store.upsertField(id: nil, kind: "upi", label: "UPI", value: "arpit@okbank")
+                              value: "123 Market St, San Francisco, CA 94103")
+        _ = store.upsertField(id: nil, kind: "wallet", label: "Wallet address",
+                              value: "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA")
       }
       // Refreshed every launch: a seed must be deterministic even when an
       // older vault is already on disk (upsert keys off the trigger).

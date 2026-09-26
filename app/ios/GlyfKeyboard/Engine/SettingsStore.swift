@@ -119,7 +119,7 @@ struct GlyfSettings: Codable, Equatable {
     /// When the tour set the hint (ms since 1970). A tour that was closed by
     /// force leaves its hint behind; an old one is ignored.
     var tourHintAt: Double? = nil
-    /// The tour's chat and step ("mumma:0"); the keyboard's coach reads what
+    /// The tour's chat and step ("mom:0"); the keyboard's coach reads what
     /// is open and points at the next thing to tap (TourCoach).
     var tourStep: String? = nil
     /// When the tour copied something from the chat (ms since 1970).

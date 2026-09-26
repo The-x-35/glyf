@@ -323,14 +323,15 @@ final class GlyfScenarioUITests: XCTestCase {
                       "got '\(value)' for chip '\(offered)'")
     }
 
-    func testS62_AskedForUPIItIsOneTapAway() throws {
+    func testS62_AskedForYourWalletAddressItIsOneTapAway() throws {
         open()
         clear()
-        type("my upi is ")
-        guard let chip = wait("strip:smart", 4) else { return XCTFail("no UPI chip") }
-        // The vault's UPI id, whichever it is (see S61).
+        type("my wallet address is ")
+        guard let chip = wait("strip:smart", 4) else { return XCTFail("no wallet chip") }
+        // The vault's Solana address, whichever it is (see S61); the chip may
+        // shorten it, so the check is on its first characters.
         let offered = chip.label
-        guard let id = offered.split(separator: " ").last(where: { $0.contains("@") }) else {
+        guard let id = offered.split(separator: " ").last(where: { $0.count >= 4 })?.prefix(4) else {
             return XCTFail("chip says '\(offered)'")
         }
         chip.tap()

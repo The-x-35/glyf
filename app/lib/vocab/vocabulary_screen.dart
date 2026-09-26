@@ -494,7 +494,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
             maxLines: 4,
             maxLength: 500,
             style: const TextStyle(color: Glass.ink, fontSize: 15),
-            decoration: _fieldDecoration('Cardiologist in Pune, texts in Hinglish, plays BGMI'),
+            decoration: _fieldDecoration('Cardiologist in Boston, climbs on weekends, plays Valorant'),
           ),
         ),
         const SizedBox(height: 4),

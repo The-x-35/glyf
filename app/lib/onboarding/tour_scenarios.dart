@@ -9,9 +9,10 @@ import 'dart:ui' show Color;
 /// a fixed rewrite), the check here accepts what the real keyboard produces.
 
 class TourVault {
-  const TourVault({this.address, this.upi, this.addresses = const []});
+  const TourVault({this.address, this.wallet, this.addresses = const []});
   final String? address;
-  final String? upi;
+  /// The Solana wallet address, for "what's your wallet address?".
+  final String? wallet;
   /// Every saved address: whichever one is sent answers "what's your address?".
   final List<String> addresses;
 }
@@ -107,21 +108,21 @@ final tourScenarios = <TourScenario>[
     ],
   ),
   TourScenario(
-    id: 'mumma',
-    name: 'Mumma',
+    id: 'mom',
+    name: 'Mom',
     avatar: '🎁',
     tint: const Color(0xFFFF6FAE),
     tag: 'Vault',
     headline: ('Never type your', 'address again.'),
     beats: [
       TourBeat(
-        them: ['hi beta 🎉', 'sending you something for your birthday', "what's your address?"],
+        them: ['hi sweetie 🎉', 'sending you something for your birthday', "what's your address?"],
         goal: (t, v) => v.addresses.isNotEmpty
             ? v.addresses.any((a) => _has(t, a))
             : RegExp(r'\d').hasMatch(t) && t.trim().length > 12,
-        reply: (_) => ['got it beta ❤️', "it'll be there by friday"],
+        reply: (_) => ['got it ❤️', "it'll be there by friday"],
         tapback: '❤️',
-        nudge: "beta, what's your address? 🙈",
+        nudge: "honey, what's your address? 🙈",
       ),
     ],
   ),
@@ -165,51 +166,27 @@ final tourScenarios = <TourScenario>[
     ],
   ),
   TourScenario(
-    id: 'rohan',
-    name: 'Rohan',
-    avatar: '🏏',
-    tint: const Color(0xFFFF9500),
-    tag: 'Hinglish autocorrect',
-    headline: ('Fixes the typos.', 'Keeps the yaar.'),
-    beats: [
-      TourBeat(
-        them: ['bhai kal match dekhne chal raha? 🏏'],
-        autotype: (t) => t.isEmpty
-            ? 'haan yaar pakak'
-            : RegExp(r'pakka $').hasMatch(t)
-                ? 'definately'
-                : RegExp(r'definitely $').hasMatch(t)
-                    ? 'aa raha hoon 🙌'
-                    : null,
-        goal: (t, _) => _has(t, 'pakka') && _has(t, 'definitely'),
-        reply: (_) => ['haha pakka 😂', '7 baje gate pe milte hain'],
-        tapback: '😂',
-        nudge: 'aa raha hai ya nahi? 😅',
-      ),
-    ],
-  ),
-  TourScenario(
     id: 'zoya',
     name: 'Zoya',
     avatar: '🍝',
     tint: const Color(0xFFFF375F),
-    tag: 'Math + UPI',
+    tag: 'Math + wallet',
     headline: ('Do the math.', 'Get paid.'),
     beats: [
       TourBeat(
-        them: ['dinner was so good 😭', 'bill was ₹3480 for 4 of us. how much do I send you?'],
-        autotype: (t) => t.isEmpty ? '3480/4' : null,
-        goal: (t, _) => t.contains('870'),
+        them: ['dinner was so good 😭', 'bill was \$236 for 4 of us. how much do I send you?'],
+        autotype: (t) => t.isEmpty ? '236/4' : null,
+        goal: (t, _) => t.contains('59'),
         reply: (_) => ['sending now 💸'],
         nudge: 'wait, how much though? 😅',
       ),
       TourBeat(
-        them: ["what's your UPI?"],
-        autotype: (t) => t.isEmpty ? 'my upi id is ' : null,
-        goal: (t, v) => v.upi != null ? _has(t, v.upi!) : t.contains('@'),
-        reply: (_) => ['done ✅ ₹870 sent'],
+        them: ["what's your wallet address?"],
+        autotype: (t) => t.isEmpty ? 'my wallet address is ' : null,
+        goal: (t, v) => v.wallet != null ? _has(t, v.wallet!) : RegExp(r'[1-9A-HJ-NP-Za-km-z]{32,44}').hasMatch(t),
+        reply: (_) => ['done ✅ 59 USDC sent'],
         tapback: '👍',
-        nudge: 'your UPI? 🙏',
+        nudge: 'your wallet address? 🙏',
       ),
     ],
   ),

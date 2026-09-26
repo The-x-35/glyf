@@ -270,7 +270,7 @@ const scenarios = [
   } },
   { id: "S88", title: "Asked for your address, it is one tap away", run: async () => {
     // The vault keeps whatever it already holds; seedvault only adds an
-    // address and a UPI id where there are none, so the check is that the
+    // address and a wallet address where there are none, so the check is that the
     // chip puts a saved value after the words, not which value.
     tool("seedvault");
     await fresh();
@@ -280,14 +280,14 @@ const scenarios = [
     const r = await tapFor(chip, x => x.length > "sure my address is ".length + 4);
     return { pass: /^sure my address is \S/i.test(r.t) && /\d/.test(r.t), note: `'${r.t}'${second(r)}` };
   } },
-  { id: "S89", title: "Asked for your UPI, it is one tap away", run: async () => {
+  { id: "S89", title: "Asked for your wallet address, it is one tap away", run: async () => {
     tool("seedvault");
     await fresh();
-    await type("my upi is ");
+    await type("my wallet address is ");
     const chip = await waitFor(byId("strip:smart"), 3000);
-    if (!chip) return { pass: false, note: "no UPI chip" };
-    const r = await tapFor(chip, x => x.includes("@"));
-    return { pass: /^my upi is \S+@\S+/i.test(r.t), note: `'${r.t}'${second(r)}` };
+    if (!chip) return { pass: false, note: "no wallet chip" };
+    const r = await tapFor(chip, x => /[1-9A-HJ-NP-Za-km-z]{32,44}/.test(x));
+    return { pass: /^my wallet address is [1-9A-HJ-NP-Za-km-z]{32,44}/i.test(r.t), note: `'${r.t}'${second(r)}` };
   } },
   { id: "S90", title: "A rough message offers Tidy this up", run: async () => {
     await fresh();

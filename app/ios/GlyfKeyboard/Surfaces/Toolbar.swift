@@ -643,10 +643,13 @@ final class GlyfToolbar: UIView {
         keycapDot.path = CGPath(ellipseIn: cap.dot, transform: nil)
         CATransaction.commit()
         let markRight = inkX + keyW
+        // Whatever ends the row on the right ends as far in as the key starts
+        // on the left, so the strip sits centred over the keys.
+        let rightInk = bounds.width - inkX
         divider.isHidden = Glass.solidLook
         let chipW: CGFloat = runsChip.isHidden ? 0 : 64
         if !runsChip.isHidden {
-            runsChip.frame = CGRect(x: bounds.width - chipW - 6, y: 11,
+            runsChip.frame = CGRect(x: rightInk - chipW, y: 11,
                                     width: chipW, height: h - 22)
         }
         let left = markRight + (Glass.solidLook ? 11 : 17)
@@ -654,7 +657,7 @@ final class GlyfToolbar: UIView {
             let card = Glass.stripBox(height: (h * 0.78).rounded(), mid: mid)
             let cardH = card.height
             smartCard.frame = CGRect(x: left, y: card.y,
-                                     width: max(0, bounds.width - left - 6), height: cardH)
+                                     width: max(0, rightInk - left), height: cardH)
             let paste = !smartLead.isHidden
             // Gboard's clipboard suggestion is a pill; the rest stay cards.
             smartCard.layer.cornerRadius = paste ? cardH / 2 : 12
@@ -703,7 +706,8 @@ final class GlyfToolbar: UIView {
         //
         // The pad cancels: each target is padded the same on both sides, so
         // the frames grow inward and the icons stay on the gap's rhythm.
-        let end = bounds.width - chipW - Self.margin + Self.itemPad
+        // With the runs pill showing, the last tool keeps 13 points from it.
+        let end = bounds.width - (runsChip.isHidden ? 0 : chipW + 13) - Self.margin + Self.itemPad
         let x0 = glyfButton.frame.minX
         let n = CGFloat(max(itemsStack.arrangedSubviews.count, 1))
         let tools = itemsStack.arrangedSubviews.reduce(CGFloat(0)) {

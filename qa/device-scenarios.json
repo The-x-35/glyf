@@ -103,9 +103,9 @@
   "id": "S62",
   "surface": "iPhone",
   "area": "Strip",
-  "title": "Asked for your UPI, it is one tap away",
-  "input": "my upi is ␣",
-  "outcome": "chip → arpit@okbank",
+  "title": "Asked for your wallet address, it is one tap away",
+  "input": "my wallet address is ␣",
+  "outcome": "chip → the Solana address",
   "verdict": "pass"
  },
  {
