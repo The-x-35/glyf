@@ -30,7 +30,8 @@ export interface BillingDeps {
   verifySessionToken?: (token: string) => Promise<string | null>;
   /** Swapped in tests; Apple's signature check everywhere else. */
   verifySigned?: (jws: string) => unknown;
-  bundleId?: string;
+  /** The app ids that sell the plans (APPLE_BUNDLE_ID, a comma list). */
+  bundleIds?: string[];
 }
 
 export function billingRoutes(app: FastifyInstance, deps: BillingDeps = {}): void {
@@ -40,7 +41,11 @@ export function billingRoutes(app: FastifyInstance, deps: BillingDeps = {}): voi
   const opts: VerifyOptions = { allowXcode: process.env.NODE_ENV !== "production" };
   const verifySigned = deps.verifySigned ?? ((jws: string) => verifyAppleJws(jws, opts));
   const check = (jws: string) => verifySigned(jws) as AppleTransaction;
-  const bundleId = deps.bundleId ?? (process.env.APPLE_BUNDLE_ID || "com.arpit.glyf").split(",")[0];
+  // Every id in the list sells, not only the first: the order is whatever
+  // Railway was given, and the old app id may come first.
+  const bundleIds = deps.bundleIds
+    ?? (process.env.APPLE_BUNDLE_ID || "com.arpit.glyf").split(",").map(s => s.trim()).filter(Boolean);
+  const ours = (tx: AppleTransaction) => bundleIds.includes(tx.bundleId) && Boolean(APPLE_PRODUCTS[tx.productId]);
 
   async function who(req: FastifyRequest): Promise<string | null> {
     const header = req.headers.authorization ?? "";
@@ -66,9 +71,9 @@ export function billingRoutes(app: FastifyInstance, deps: BillingDeps = {}): voi
           req.log.warn({ err: err instanceof AppleSignatureError ? err.message : String(err) }, "billing_unverified");
           continue;
         }
-        if (tx.bundleId !== bundleId || !APPLE_PRODUCTS[tx.productId]) continue;
+        if (!ours(tx)) continue;
         checked++;
-        const granted = planOf(tx, bundleId);
+        const granted = planOf(tx, tx.bundleId);
         const kept = await users.recordPurchase(id, {
           originalTransactionId: tx.originalTransactionId, productId: tx.productId,
           plan: APPLE_PRODUCTS[tx.productId],
@@ -111,11 +116,11 @@ export function billingRoutes(app: FastifyInstance, deps: BillingDeps = {}): voi
     if (!signedTransaction || !users.enabled) return { ok: true };
     try {
       const tx = check(signedTransaction);
-      if (tx.bundleId !== bundleId || !APPLE_PRODUCTS[tx.productId]) return { ok: true };
+      if (!ours(tx)) return { ok: true };
       const owner = await users.purchaseOwner(tx.originalTransactionId);
       // A subscription nobody has sent from the app yet waits for the app.
       if (!owner) return { ok: true };
-      const granted = planOf(tx, bundleId);
+      const granted = planOf(tx, tx.bundleId);
       await users.recordPurchase(owner, {
         originalTransactionId: tx.originalTransactionId, productId: tx.productId,
         plan: APPLE_PRODUCTS[tx.productId],

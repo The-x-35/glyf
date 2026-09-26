@@ -821,9 +821,9 @@ final class GlyfGateUITests: XCTestCase {
         }
         XCTAssertTrue(labelled("400 runs a day").waitForExistence(timeout: 4), "Max card lost its runs line")
         XCTAssertFalse(labelled("Unlimited").exists, "a card promises unlimited")
-        let close = firstExisting([app.buttons["Close"].firstMatch, app.buttons["Not now"].firstMatch])
-        XCTAssertNotNil(close, "no way out of the paywall")
-        close?.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // No Not now on the sheet: a tap above it closes it.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        XCTAssertTrue(unlock.waitForNonExistence(timeout: 4), "no way out of the paywall")
     }
 
     // MARK: - §6.18 onboarding funnel

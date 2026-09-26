@@ -108,6 +108,24 @@ class _PaywallSheetState extends State<_PaywallSheet> {
     });
   }
 
+  Future<void> _redeem() async {
+    setState(() {
+      _busy = true;
+      _note = null;
+    });
+    final outcome = await Billing.redeem();
+    if (!mounted) return;
+    if (outcome.plan != null && outcome.plan != 'free') {
+      Telemetry.log('offer_code_redeemed', {'plan': outcome.plan});
+      Navigator.of(context).pop(true);
+      return;
+    }
+    setState(() {
+      _busy = false;
+      _note = (outcome.message ?? '').isEmpty ? null : outcome.message;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -184,8 +202,12 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                         : 'Coming soon',
                     onPressed: plansOnSale ? _buy : null),
           ),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            if (plansOnSale)
+          // The sheet closes with a swipe down or a tap above it, so it needs
+          // no Not now. Restore stays: App Review asks every subscription
+          // screen for one. Redeem code takes App Store Connect's offer
+          // codes (gift months and years, discounts).
+          if (plansOnSale)
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               Semantics(
                 identifier: 'paywall:restore',
                 button: true,
@@ -195,12 +217,22 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                       style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
                 ),
               ),
+              Semantics(
+                identifier: 'paywall:redeem',
+                button: true,
+                child: TextButton(
+                  onPressed: _busy ? null : _redeem,
+                  child: const Text('Redeem code',
+                      style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
+                ),
+              ),
+            ])
+          else
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: Text(plansOnSale ? 'Not now' : 'Close',
-                  style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
+              child: const Text('Close',
+                  style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
             ),
-          ]),
           if (plansOnSale) _terms(),
         ]),
       ),

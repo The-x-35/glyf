@@ -119,11 +119,12 @@ function memoryDb() {
 }
 
 describe("POST /billing/apple", () => {
-  function setup() {
+  function setup(bundleIds?: string[]) {
     const { users } = memoryDb();
     const app = Fastify();
     billingRoutes(app, {
       users,
+      bundleIds,
       verifySessionToken: async t => (t.startsWith("user:") ? t.slice(5) : null),
       // The signature check has its own tests: here a "JWS" is the payload.
       verifySigned: jws => JSON.parse(Buffer.from(jws, "base64url").toString("utf8")),
@@ -166,6 +167,13 @@ describe("POST /billing/apple", () => {
     const res = await app.inject({ method: "POST", url: "/billing/apple", payload: { transactions: ["x".repeat(30)] } });
     expect(res.statusCode).toBe(401);
     expect((await send("google:6", tx({ bundleId: "com.other.app" }))).statusCode).toBe(400);
+  });
+
+  it("sells under every app id in APPLE_BUNDLE_ID, whatever the order", async () => {
+    const { users, send } = setup(["com.demo.glyf", "com.arpit.glyf"]);
+    expect((await send("google:8", tx({ originalTransactionId: "listed" }))).statusCode).toBe(200);
+    expect(await users.plan("google:8")).toBe("plus");
+    expect((await send("google:9", tx({ originalTransactionId: "unlisted", bundleId: "com.other.app" }))).statusCode).toBe(400);
   });
 
   it("follows Apple's renewal notices for a subscription the app has sent", async () => {
