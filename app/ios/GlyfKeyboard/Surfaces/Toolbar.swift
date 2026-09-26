@@ -237,11 +237,10 @@ final class GlyfToolbar: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// The app icon's colours: its black with the letter white on a light
-    /// sheet, and on a dark one the icon itself, white with its black g.
+    /// The app icon itself on either sheet: white, with its black g.
     private func applyKeycapRing() {
-        keycap.fillColor = GlyfMark.face(dark: Glass.chromeDark).cgColor
-        keycapG.fillColor = GlyfMark.letterColor(dark: Glass.chromeDark).cgColor
+        keycap.fillColor = GlyfMark.face.cgColor
+        keycapG.fillColor = GlyfMark.letterColor.cgColor
     }
 
     /// Re-skins after an appearance flip (items re-tint via reloadItems;

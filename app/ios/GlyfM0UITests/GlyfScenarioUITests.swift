@@ -1067,7 +1067,7 @@ final class GlyfScenarioUITests: XCTestCase {
         let light = keycapColors(key)
         keepScreenshot("strip-light")
         note(String(format: "light sheet: face %.2f, dot rgb %.0f %.0f %.0f", light.face, light.dot.r, light.dot.g, light.dot.b))
-        XCTAssertLessThan(light.face, 0.15, "the key's face is black")
+        XCTAssertGreaterThan(light.face, 0.85, "the key is the icon's white on a light sheet too")
         XCTAssertTrue(light.violet, "the dot is Glyf violet")
         key.tap()
         XCTAssertNotNil(wait("shell:tile:search", 3), "the key opens the Glyf menu")

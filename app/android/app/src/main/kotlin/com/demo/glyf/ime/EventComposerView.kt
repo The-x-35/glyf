@@ -143,8 +143,13 @@ class EventComposerView(
         card.addView(row().apply {
             tag(this, "event:title")
             setOnClickListener { begin(Field.TITLE) }
-            titleValue.apply { textSize = 16f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
-            addView(titleValue, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            // Every row reads the same way: its name, then its value on the right.
+            addView(label("Title"), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            titleValue.apply {
+                textSize = 15f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                gravity = Gravity.END
+            }
+            addView(titleValue, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.6f))
         }, rowParams())
         if (canAdd && google) {
             card.addView(line())
@@ -435,7 +440,8 @@ class EventComposerView(
         ampmWheel.visibility = if (draft.allDay) GONE else VISIBLE
 
         val title = draft.title.trim()
-        titleValue.text = title.ifEmpty { "Title" }
+        // Left empty it is added as "New Event", so it says so.
+        titleValue.text = title.ifEmpty { "New Event" }
         titleValue.setTextColor(if (title.isEmpty()) soft(120) else palette.ink)
         val invitees = draft.invitees
         inviteValue.text = when (invitees.size) {

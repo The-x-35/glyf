@@ -59,6 +59,7 @@ final class EventComposer: UIView {
     private let rows = UIScrollView()
     private let card = UIView()
     private let titleRow = UIControl()
+    private let titleLabel = UILabel()
     private let titleValue = UILabel()
     private let inviteRow = UIControl()
     private let inviteLabel = UILabel()
@@ -134,18 +135,27 @@ final class EventComposer: UIView {
             row.addAction(UIAction { [weak self] _ in self?.begin(field) }, for: .touchUpInside)
             card.addSubview(row)
         }
-        titleValue.font = .systemFont(ofSize: 16)
+        // Every row reads the same way: its name, then its value on the right.
+        titleValue.font = .systemFont(ofSize: 15)
+        titleValue.textAlignment = .right
+        titleValue.lineBreakMode = .byTruncatingTail
         titleValue.isUserInteractionEnabled = false
         titleRow.addSubview(titleValue)
 
         for (label, text) in [(startsLabel, "Starts"), (endsLabel, "Ends"), (allDayLabel, "All-day"),
                               (videoLabel, "Video call"), (shareLabel, "Share in chat"),
-                              (inviteLabel, "Invitees")] {
+                              (inviteLabel, "Invitees"), (titleLabel, "Title")] {
             label.text = text
             label.font = .systemFont(ofSize: 16)
             label.textColor = Glass.textPrimary
             label.isUserInteractionEnabled = false
-            if label === inviteLabel { inviteRow.addSubview(label) } else { card.addSubview(label) }
+            if label === inviteLabel {
+                inviteRow.addSubview(label)
+            } else if label === titleLabel {
+                titleRow.addSubview(label)
+            } else {
+                card.addSubview(label)
+            }
         }
         inviteValue.font = .systemFont(ofSize: 15)
         inviteValue.textAlignment = .right
@@ -350,7 +360,8 @@ final class EventComposer: UIView {
         addButton.alpha = addButton.isEnabled ? 1 : 0.4
 
         let title = draft.title.trimmingCharacters(in: .whitespaces)
-        titleValue.text = title.isEmpty ? "Title" : title
+        // Left empty it is added as "New Event" (addTapped), so it says so.
+        titleValue.text = title.isEmpty ? "New Event" : title
         titleValue.textColor = title.isEmpty ? Glass.textSecondary : Glass.textPrimary
         titleRow.accessibilityLabel = title.isEmpty ? "Title" : "Title, \(title)"
         inviteValue.text = Self.people(draft.invitees)
@@ -442,7 +453,8 @@ final class EventComposer: UIView {
         let rowY = { (v: UIView) -> CGFloat in rowH * CGFloat(order.firstIndex(where: { $0 === v }) ?? 0) }
 
         titleRow.frame = CGRect(x: 0, y: rowY(titleRow), width: cw, height: rowH)
-        titleValue.frame = CGRect(x: 14, y: 0, width: cw - 28, height: rowH)
+        titleLabel.frame = CGRect(x: 14, y: 0, width: 90, height: rowH)
+        titleValue.frame = CGRect(x: 104, y: 0, width: cw - 118, height: rowH)
         inviteRow.isHidden = showNote || !google
         inviteRow.frame = CGRect(x: 0, y: rowY(inviteRow), width: cw, height: rowH)
         inviteLabel.frame = CGRect(x: 14, y: 0, width: 90, height: rowH)

@@ -33,7 +33,7 @@ object GoogleClient {
     }
 
     /** The event on Google Calendar's web page, and its Meet call. */
-    data class Added(val link: String?, val meet: String?)
+    data class Added(val link: String?, val meet: String?, val id: String? = null)
 
     private val pool = Executors.newCachedThreadPool()
     private val main = Handler(Looper.getMainLooper())
@@ -84,7 +84,8 @@ object GoogleClient {
         post(ctx, eventsUrl(g), GoogleEvent.body(title, start, end, allDay, guests, video)) { json, f ->
             if (json == null) done(null, f ?: Failure.REFUSED)
             else done(Added(json.optString("htmlLink").takeIf { it.isNotEmpty() },
-                json.optString("hangoutLink").takeIf { it.startsWith("https://") }), null)
+                json.optString("hangoutLink").takeIf { it.startsWith("https://") },
+                json.optString("id").takeIf { it.isNotEmpty() }), null)
         }
     }
 
@@ -144,5 +145,44 @@ object CallLink {
         GoogleClient.newMeet(ctx) { url, failure ->
             if (url != null) done(url, null) else done(null, GoogleClient.say(failure ?: GoogleClient.Failure.REFUSED))
         }
+    }
+}
+
+/** Events the keyboard added to Google Calendar, kept so its calendar can show
+ *  them before the phone's own calendar has them (CalendarText.withAdded).
+ *  The twin of GoogleAdded in GoogleClient.swift. */
+object GoogleAdded {
+    private const val FILE = "google-added.json"
+
+    fun remember(ctx: Context, event: CalendarText.Event) = save(ctx, (load(ctx) + event).takeLast(30))
+
+    /** `events` with every added event the phone doesn't show yet. */
+    fun merged(ctx: Context, events: List<CalendarText.Event>,
+               now: Long = System.currentTimeMillis()): List<CalendarText.Event> {
+        val added = load(ctx)
+        if (added.isEmpty()) return events
+        val (shown, pending) = CalendarText.withAdded(added, events, now)
+        if (pending.size != added.size) save(ctx, pending)
+        return shown
+    }
+
+    private fun load(ctx: Context): List<CalendarText.Event> = runCatching {
+        val rows = org.json.JSONArray(java.io.File(ctx.filesDir, FILE).readText())
+        (0 until rows.length()).map { i ->
+            val o = rows.getJSONObject(i)
+            CalendarText.Event(o.getString("title"), o.getLong("start"), o.getLong("end"), o.optBoolean("allDay"),
+                location = o.optString("location").takeIf { it.isNotEmpty() },
+                googleId = o.optString("id").takeIf { it.isNotEmpty() })
+        }
+    }.getOrDefault(emptyList())
+
+    private fun save(ctx: Context, events: List<CalendarText.Event>) {
+        val rows = org.json.JSONArray()
+        for (e in events) rows.put(org.json.JSONObject().apply {
+            put("title", e.title); put("start", e.start); put("end", e.end); put("allDay", e.allDay)
+            e.location?.let { put("location", it) }
+            e.googleId?.let { put("id", it) }
+        })
+        runCatching { java.io.File(ctx.filesDir, FILE).writeText(rows.toString()) }
     }
 }

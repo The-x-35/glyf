@@ -26,8 +26,25 @@ enum CalendarText {
             return Event(title: title.isEmpty ? "Busy" : title, start: s, end: max(e, s),
                          allDay: row["allDay"] as? Bool ?? false,
                          location: (row["location"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-                         color: row["color"] as? String)
+                         color: row["color"] as? String, id: row["id"] as? String)
         }
+    }
+
+    /// Events added to Google Calendar from the keyboard reach the phone's
+    /// calendar only when Google next syncs it (and never on a phone without
+    /// the Google account in Calendar), so until the phone has one the list
+    /// shows the keyboard's own copy. The phone has it once an event with the
+    /// same title starts within a minute of it; one that ended over a day ago
+    /// is let go. Returns the list to show and the copies still waiting.
+    static func withAdded(_ added: [Event], in events: [Event],
+                          now: Date = Date()) -> (events: [Event], pending: [Event]) {
+        func key(_ title: String) -> String { title.trimmingCharacters(in: .whitespaces).lowercased() }
+        let pending = added.filter { a in
+            a.end > now.addingTimeInterval(-86_400) && !events.contains { e in
+                abs(e.start.timeIntervalSince(a.start)) < 60 && key(e.title) == key(a.title)
+            }
+        }
+        return (events + pending, pending)
     }
 
     /// Everything that touches the day, all-day events first.

@@ -75,12 +75,19 @@ final class CalendarSurface: UIView {
             connected = true
             let from = cal.date(byAdding: .day, value: -7, to: month) ?? month
             let to = cal.date(byAdding: .day, value: 45, to: month) ?? month
-            events = CalendarWriter.events(from: from, to: to)
+            events = GoogleAdded.merged(into: CalendarWriter.events(from: from, to: to))
             return
         }
         let json = AppGroupStore.readJSON(name: "calendar.json")
         connected = json != nil
-        events = CalendarText.events(fromJSON: json)
+        events = GoogleAdded.merged(into: CalendarText.events(fromJSON: json))
+    }
+
+    /// The list on `day`: where a plan is for, and where an event lands once added.
+    private func show(day: Date) {
+        selected = cal.startOfDay(for: day)
+        month = cal.date(from: cal.dateComponents([.year, .month], from: selected)) ?? month
+        showingMonth = false
     }
 
     /// While a title or a who is typed the panel is a strip over the keys.
@@ -98,8 +105,11 @@ final class CalendarSurface: UIView {
     func compose(plan: EventParse.Plan? = nil) {
         let draft: EventComposer.Draft
         if let plan {
-            // The plan is in the message already: nothing more goes in.
+            // The plan is in the message already: nothing more goes in. Its
+            // day is the calendar's, so Cancel shows what else is on then.
             draft = .init(title: plan.title, start: plan.start, end: plan.end, allDay: plan.allDay)
+            show(day: plan.start)
+            load()
         } else {
             let now = Date()
             var start: Date
@@ -210,7 +220,7 @@ final class CalendarSurface: UIView {
             switch result {
             case .success(let added):
                 self.adding = false
-                self.addedToGoogle(d, meet: added.meet)
+                self.addedToGoogle(d, added: added)
             case .failure(let failure):
                 // Not lost: the phone's calendar takes it, and the toast says
                 // why Google didn't (and so nobody was emailed).
@@ -231,25 +241,31 @@ final class CalendarSurface: UIView {
         }
     }
 
-    private func addedToGoogle(_ d: EventComposer.Draft, meet: String?) {
+    private func addedToGoogle(_ d: EventComposer.Draft, added: GoogleClient.Added) {
         let said = d.invitees.isEmpty ? "Added to Google Calendar"
             : "Added. Google emailed the invite to \(Self.people(d.invitees))"
+        let event = CalendarText.Event(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
+                                       location: added.meet, color: nil,
+                                       id: added.id.map { "google:\($0)" })
+        // The phone's calendar gets it on Google's next sync; until then the
+        // keyboard's list shows it anyway.
+        GoogleAdded.remember(event)
         if d.share {
             closeComposer()
-            let event = CalendarText.Event(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
-                                           location: meet, color: nil)
             delegate?.connectorInsert(CalendarText.insert(event, calendar: cal))
             delegate?.connectorToast(said)
             return
         }
-        // Google's calendar reaches the phone's on its next sync: show the day.
-        selected = cal.startOfDay(for: d.start)
-        month = cal.date(from: cal.dateComponents([.year, .month], from: selected)) ?? month
-        showingMonth = false
+        show(day: d.start)
+        justAdded = event
         closeComposer()
         load()
         render()
         KeyboardToast.show(in: self, text: said)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            self?.justAdded = nil
+            self?.litRow?.layer.borderWidth = 0
+        }
     }
 
     private func save(_ d: EventComposer.Draft, callLink: String?, note: String?) {
@@ -264,9 +280,7 @@ final class CalendarSurface: UIView {
                 delegate?.connectorToast(said)
                 return
             }
-            selected = cal.startOfDay(for: d.start)
-            month = cal.date(from: cal.dateComponents([.year, .month], from: selected)) ?? month
-            showingMonth = false
+            show(day: d.start)
             justAdded = added.event
             closeComposer()
             load()
@@ -508,8 +522,10 @@ final class CalendarSurface: UIView {
             }
             for (i, e) in dayEvents.enumerated() {
                 let r = row(e, index: i)
+                // By id, or, once the phone's own copy has replaced the
+                // keyboard's, by what it is and when.
                 if let added = justAdded,
-                   added.id.map({ $0 == e.id }) ?? (added.title == e.title && added.start == e.start) {
+                   (added.id != nil && added.id == e.id) || (added.title == e.title && added.start == e.start) {
                     // What was just added, lit for a moment so the eye finds it.
                     r.layer.borderWidth = 1.5
                     r.layer.borderColor = Glass.accentPrimary.cgColor

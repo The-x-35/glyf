@@ -615,6 +615,38 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertTrue(CalendarText.events(fromJSON: nil).isEmpty)
     }
 
+    func testAnEventAddedToGoogleShowsUntilThePhoneHasIt() {
+        let cal = calendarAt()
+        let day = cal.date(from: DateComponents(year: 2026, month: 9, day: 27))!
+        func at(_ h: Int, _ m: Int = 0) -> Date { cal.date(bySettingHour: h, minute: m, second: 0, of: day)! }
+        let added = CalendarText.Event(title: "Demo call", start: at(18), end: at(19), allDay: false,
+                                       location: "https://meet.google.com/abc-defg-hij", id: "google:e1")
+        let lunch = CalendarText.Event(title: "Lunch", start: at(13), end: at(14), allDay: false)
+
+        // Not on the phone yet: the list shows the keyboard's copy, still waiting.
+        var shown = CalendarText.withAdded([added], in: [lunch], now: at(12))
+        XCTAssertEqual(CalendarText.events(on: day, in: shown.events, calendar: cal).map(\.title),
+                       ["Lunch", "Demo call"])
+        XCTAssertEqual(shown.pending, [added])
+
+        // Google synced it: the phone's copy (same title, same start) is the one shown.
+        let synced = CalendarText.Event(title: "demo call ", start: at(18), end: at(19), allDay: false, id: "EK-9")
+        shown = CalendarText.withAdded([added], in: [lunch, synced], now: at(12))
+        XCTAssertEqual(shown.events, [lunch, synced])
+        XCTAssertTrue(shown.pending.isEmpty)
+
+        // Another event at the same time is not it; an event long over is let go.
+        let other = CalendarText.Event(title: "Gym", start: at(18), end: at(19), allDay: false)
+        XCTAssertEqual(CalendarText.withAdded([added], in: [other], now: at(12)).pending, [added])
+        let nextWeek = cal.date(byAdding: .day, value: 7, to: at(12))!
+        XCTAssertTrue(CalendarText.withAdded([added], in: [], now: nextWeek).pending.isEmpty)
+
+        // The app's file keeps the id, so the copy is found again after a reload.
+        let json: [String: Any] = ["events": [["title": "Demo call", "start": "2026-09-27T12:30:00Z",
+                                               "end": "2026-09-27T13:30:00Z", "id": "google:e1"]]]
+        XCTAssertEqual(CalendarText.events(fromJSON: json).first?.id, "google:e1")
+    }
+
     // MARK: Saved details in everyday words
 
     func testVaultChipHearsEverydayWordsButNotQuestions() {

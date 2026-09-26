@@ -112,8 +112,8 @@ enum GlyfMark {
     /// The key's width for a height (41 by 30 on the strip).
     static func keycapWidth(height: CGFloat) -> CGFloat { (height * 1.367).rounded() }
 
-    /// The app icon's colours: its black on a light sheet with the letter
-    /// white, and on a dark sheet the icon itself, white with its black g.
-    static func face(dark: Bool) -> UIColor { dark ? .white : ink }
-    static func letterColor(dark: Bool) -> UIColor { dark ? ink : .white }
+    /// The app icon itself on every sheet: white, with its black g. (Black
+    /// with a white g read as the dark-mode logo in light mode.)
+    static let face = UIColor.white
+    static let letterColor = ink
 }

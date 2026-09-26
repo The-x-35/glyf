@@ -30,6 +30,8 @@ final class GoogleClient {
         var link: String?
         /// Its Meet call, when one was asked for.
         var meet: String?
+        /// Google's id for it.
+        var id: String? = nil
     }
 
     private var cached: (token: String, expires: Date)?
@@ -112,7 +114,8 @@ final class GoogleClient {
                                     guests: guests, video: video)
         post(endpoints(grant).events, body: body) { result in
             done(result.map { json in
-                Added(link: json["htmlLink"] as? String, meet: json["hangoutLink"] as? String)
+                Added(link: json["htmlLink"] as? String, meet: json["hangoutLink"] as? String,
+                      id: json["id"] as? String)
             })
         }
     }
@@ -165,5 +168,40 @@ enum CallLink {
             case .failure(let failure): done(nil, GoogleClient.say(failure))
             }
         }
+    }
+}
+
+/// Events the keyboard added to Google Calendar, kept so its calendar can show
+/// them before the phone's own calendar has them (CalendarText.withAdded).
+enum GoogleAdded {
+    private static let file = "google-added.json"
+
+    static func remember(_ event: CalendarText.Event) {
+        save(Array((load() + [event]).suffix(30)))
+    }
+
+    /// `events` with every added event the phone doesn't show yet.
+    static func merged(into events: [CalendarText.Event], now: Date = Date()) -> [CalendarText.Event] {
+        let added = load()
+        guard !added.isEmpty else { return events }
+        let shown = CalendarText.withAdded(added, in: events, now: now)
+        if shown.pending.count != added.count { save(shown.pending) }
+        return shown.events
+    }
+
+    private static func load() -> [CalendarText.Event] {
+        CalendarText.events(fromJSON: AppGroupStore.readJSON(name: file))
+    }
+
+    private static func save(_ events: [CalendarText.Event]) {
+        let iso = ISO8601DateFormatter()
+        let rows: [[String: Any]] = events.map { e in
+            var row: [String: Any] = ["title": e.title, "start": iso.string(from: e.start),
+                                      "end": iso.string(from: e.end), "allDay": e.allDay]
+            if let location = e.location { row["location"] = location }
+            if let id = e.id { row["id"] = id }
+            return row
+        }
+        AppGroupStore.writeJSON(["events": rows], name: file)
     }
 }

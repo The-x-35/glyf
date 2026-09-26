@@ -25,7 +25,26 @@ object CalendarText {
         val color: Int? = null,
         /** The provider's event id, when known: the one just added is lit by it. */
         val id: Long? = null,
+        /** Google's id, for an event the keyboard added to Google Calendar. */
+        val googleId: String? = null,
     )
+
+    /** Events added to Google Calendar from the keyboard reach the phone's
+     *  calendar only when Google next syncs it (and never on a phone without
+     *  the Google account), so until the phone has one the list shows the
+     *  keyboard's own copy. The phone has it once an event with the same title
+     *  starts within a minute of it; one that ended over a day ago is let go.
+     *  Returns the list to show and the copies still waiting. */
+    fun withAdded(added: List<Event>, events: List<Event>,
+                  now: Long = System.currentTimeMillis()): Pair<List<Event>, List<Event>> {
+        fun key(title: String) = title.trim().lowercase()
+        val pending = added.filter { a ->
+            a.end > now - 86_400_000L && events.none { e ->
+                kotlin.math.abs(e.start - a.start) < 60_000L && key(e.title) == key(a.title)
+            }
+        }
+        return (events + pending) to pending
+    }
 
     fun granted(ctx: Context): Boolean =
         ctx.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) ==

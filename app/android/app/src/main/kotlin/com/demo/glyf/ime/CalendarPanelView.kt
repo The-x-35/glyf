@@ -54,7 +54,7 @@ class CalendarPanelView(
         get() = composer?.takeIf { it.editingTitle } ?: booking?.takeIf { it.editingWho }
     private val panelBody = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     /** The event just added, lit for a moment in the day's list. */
-    private var justAdded: Long? = null
+    private var justAdded: CalendarText.Event? = null
     /** Its row, so the light can go out without rebuilding the list. */
     private var litRow: View? = null
     /** Add was tapped and the call link is on its way: once is enough. */
@@ -179,7 +179,10 @@ class CalendarPanelView(
      *  else the chosen day at the next hour (9 AM on another day). */
     fun compose(plan: EventParse.Plan?) {
         val draft = if (plan != null) {
-            // The plan is in the message already: nothing more goes in.
+            // The plan is in the message already: nothing more goes in. Its
+            // day is the calendar's, so Cancel shows what else is on then.
+            show(plan.start)
+            loadEvents()
             EventComposerView.Draft(plan.title, plan.start, plan.end, plan.allDay)
         } else {
             val now = System.currentTimeMillis()
@@ -282,7 +285,7 @@ class CalendarPanelView(
         GoogleClient.addEvent(context, d.title, d.start, d.end, d.allDay, d.invitees, d.videoCall) { added, failure ->
             if (added != null) {
                 adding = false
-                addedToGoogle(d, added.meet)
+                addedToGoogle(d, added)
             } else {
                 // Not lost: the phone's calendar takes it, and the toast says
                 // why Google didn't (and so nobody was emailed).
@@ -303,27 +306,51 @@ class CalendarPanelView(
         }
     }
 
-    private fun addedToGoogle(d: EventComposerView.Draft, meet: String?) {
+    private fun addedToGoogle(d: EventComposerView.Draft, added: GoogleClient.Added) {
         val said = if (d.invitees.isEmpty()) "Added to Google Calendar"
             else "Added. Google emailed the invite to ${people(d.invitees)}"
+        val event = CalendarText.Event(d.title, d.start, d.end, d.allDay, location = added.meet, googleId = added.id)
+        // The phone's calendar gets it on Google's next sync; until then the
+        // keyboard's list shows it anyway.
+        GoogleAdded.remember(context, event)
         if (d.share) {
             closeComposer()
-            onInsert(CalendarText.insert(CalendarText.Event(d.title, d.start, d.end, d.allDay, location = meet)))
+            onInsert(CalendarText.insert(event))
             toast(said)
             return
         }
-        // Google's calendar reaches the phone's on its next sync: show the day.
-        selected = CalendarText.startOfDay(d.start)
+        show(d.start)
+        justAdded = event
+        closeComposer()
+        loadEvents()
+        render()
+        toast(said)
+        unlightLater()
+    }
+
+    /** The list on [day]: where a plan is for, and where an event lands once added. */
+    private fun show(day: Long) {
+        selected = CalendarText.startOfDay(day)
         month = Calendar.getInstance().apply {
             timeInMillis = selected; set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
         showingMonth = false
-        closeComposer()
-        loadEvents()
-        render()
-        toast(said)
     }
+
+    /** By its id, or, once the phone's own copy has replaced the keyboard's,
+     *  by what it is and when. */
+    private fun isJustAdded(e: CalendarText.Event): Boolean {
+        val a = justAdded ?: return false
+        return (a.id != null && a.id == e.id) || (a.googleId != null && a.googleId == e.googleId) ||
+            (a.title == e.title && a.start == e.start)
+    }
+
+    private fun unlightLater() = postDelayed({
+        justAdded = null
+        (litRow?.background as? GradientDrawable)?.setStroke(0, Color.TRANSPARENT)
+        litRow = null
+    }, 2500)
 
     private fun save(d: EventComposerView.Draft, callLink: String?, note: String?) {
         val added = CalendarText.add(context, d.title, d.start, d.end, d.allDay,
@@ -339,22 +366,13 @@ class CalendarPanelView(
             toast(said)
             return
         }
-        selected = CalendarText.startOfDay(d.start)
-        month = Calendar.getInstance().apply {
-            timeInMillis = selected; set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }
-        showingMonth = false
-        justAdded = added.first.id
+        show(d.start)
+        justAdded = added.first
         closeComposer()
         loadEvents()
         render()
         toast(said)
-        postDelayed({
-            justAdded = null
-            (litRow?.background as? GradientDrawable)?.setStroke(0, Color.TRANSPARENT)
-            litRow = null
-        }, 2500)
+        unlightLater()
     }
 
     private fun arrow(label: String, id: String, onTap: () -> Unit) = TextView(context).apply {
@@ -367,7 +385,7 @@ class CalendarPanelView(
     private fun loadEvents() {
         val from = (month.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -7) }.timeInMillis
         val to = (month.clone() as Calendar).apply { add(Calendar.MONTH, 1); add(Calendar.DAY_OF_MONTH, 7) }.timeInMillis
-        events = CalendarText.load(context, from, to)
+        events = GoogleAdded.merged(context, CalendarText.load(context, from, to))
     }
 
     /** The arrows walk days on the list, months on the grid. */
@@ -441,7 +459,7 @@ class CalendarPanelView(
             agenda.addView(row, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { bottomMargin = dpi(8) })
-            if (e.id != null && e.id == justAdded) {
+            if (isJustAdded(e)) {
                 litRow = row
                 // Said as well as shown, until the list is next drawn.
                 if (android.os.Build.VERSION.SDK_INT >= 30) row.stateDescription = "Just added"
@@ -459,7 +477,7 @@ class CalendarPanelView(
             background = GradientDrawable().apply {
                 cornerRadius = dp(12f); setColor(palette.card)
                 // What was just added, lit for a moment so the eye finds it.
-                if (e.id != null && e.id == justAdded) setStroke(dpi(2), accent)
+                if (isJustAdded(e)) setStroke(dpi(2), accent)
             }
             setTag(com.demo.glyf.R.id.qa_id, "calendar:event:$index")
             contentDescription = CalendarText.insert(e)

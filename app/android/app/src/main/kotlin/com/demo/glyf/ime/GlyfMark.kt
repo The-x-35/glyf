@@ -106,8 +106,6 @@ object GlyfMark {
 class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
     var closing = false
         set(value) { field = value; invalidate() }
-    var dark = false
-        set(value) { field = value; invalidate() }
     var ink = GlyfMark.INK
         set(value) { field = value; invalidate() }
 
@@ -133,8 +131,9 @@ class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
             return
         }
         val key = RectF(left, top, left + w, top + h)
-        face.color = if (dark) Color.WHITE else GlyfMark.INK
-        letter.color = if (dark) GlyfMark.INK else Color.WHITE
+        // The app icon itself on either sheet: white, with its black g.
+        face.color = Color.WHITE
+        letter.color = GlyfMark.INK
         c.drawRoundRect(key, h / 3f, h / 3f, face)
         GlyfMark.drawMark(c, key, h * 0.083f, letter, dot)
     }

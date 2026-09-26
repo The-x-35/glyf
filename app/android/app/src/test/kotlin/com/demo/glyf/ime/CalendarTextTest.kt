@@ -17,6 +17,29 @@ class CalendarTextTest {
 
     private fun plain(s: String) = s.replace('\u202F', ' ')
 
+    @Test fun anEventAddedToGoogleShowsUntilThePhoneHasIt() {
+        val added = CalendarText.Event("Demo call", at(18), at(19), false,
+            "https://meet.google.com/abc-defg-hij", googleId = "e1")
+        val lunch = CalendarText.Event("Lunch", at(13), at(14), false)
+
+        // Not on the phone yet: the list shows the keyboard's copy, still waiting.
+        val (shown, pending) = CalendarText.withAdded(listOf(added), listOf(lunch), now = at(12))
+        assertEquals(listOf("Lunch", "Demo call"), shown.map { it.title })
+        assertEquals(listOf(added), pending)
+
+        // Google synced it: the phone's copy (same title, same start) is the one shown.
+        val synced = CalendarText.Event("demo call ", at(18), at(19), false, id = 9L)
+        val later = CalendarText.withAdded(listOf(added), listOf(lunch, synced), now = at(12))
+        assertEquals(listOf(lunch, synced), later.first)
+        assertEquals(emptyList<CalendarText.Event>(), later.second)
+
+        // Another event at the same time is not it; an event long over is let go.
+        val gym = CalendarText.Event("Gym", at(18), at(19), false)
+        assertEquals(listOf(added), CalendarText.withAdded(listOf(added), listOf(gym), now = at(12)).second)
+        assertEquals(emptyList<CalendarText.Event>(),
+            CalendarText.withAdded(listOf(added), emptyList(), now = at(12) + 7 * 86_400_000L).second)
+    }
+
     @Test fun sharesAnEventAndFreeTime() {
         val day = at(0)
         val events = listOf(
