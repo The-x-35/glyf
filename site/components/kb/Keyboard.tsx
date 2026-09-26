@@ -610,7 +610,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
     if (k === "Backspace") return engage(), pressVisual("backspace"), backspace(), true;
     if (k === "Enter") return engage(), pressVisual("return"), enter(), true;
     if (k === "Escape") return perform("close"), true;
-    if (k.length === 1 && /[0-9.,?!'";:@&()\-+*/=%₹×]/.test(k)) {
+    if (k.length === 1 && /[0-9.,?!'";:@&()\-+*/=%$×]/.test(k)) {
       engage();
       pressVisual(k === "*" ? "×" : k);
       typeChar(k === "*" ? "×" : k);

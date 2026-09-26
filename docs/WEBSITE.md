@@ -156,9 +156,9 @@ Order decided by Arpit on 15 Sep, 23:40 ("move mumma on top, replace script of m
 - Tapback 😂. Reply: "haha pakka 😂", "7 baje gate pe milte hain"
 - Nudge: "aa raha hai ya nahi? 😅"
 
-**6. Zoya 🍝 · tag "Math + UPI" · headline "Do the math. / Get paid."**
-- Beat 1. Zoya: "dinner was so good 😭", "bill was ₹3480 for 4 of us. how much do I send you?" Keyboard types "3480/4" itself (switching to the 123 layout on screen). Visitor taps the calc chip, draft becomes "3480/4 = 870" (Arpit: "after tapping it should say 3480/4 = 870 and not just 870"). Send. Reply: "sending now 💸". Nudge: "wait, how much though? 😅"
-- Beat 2. Zoya: "what's your UPI?" Keyboard types "my upi id is ". Visitor taps the UPI chip. Send. Tapback 👍. Reply: "done ✅ ₹870 sent". Nudge: "your UPI? 🙏"
+**6. Zoya 🍝 · tag "Math + stocks" · headline "Do the math. / Check the price."**
+- Beat 1. Zoya: "dinner was so good 😭", "bill was $236 for 4 of us. how much do I send you?" Keyboard types "$236/4" itself (switching to the 123 layout on screen). Visitor taps the calc chip ("= $59"), draft becomes "$236/4 = $59" (Arpit: "after tapping it should say 3480/4 = 870 and not just 870"). Send. Reply: "sending now 💸". Nudge: "wait, how much though? 😅"
+- Beat 2. Zoya: "btw what's apple at right now? 👀" Keyboard types "$aapl". Visitor taps the price chip ("$AAPL · 1 AAPL = $341.07"), draft becomes "1 AAPL = $341.07". Send. Tapback 🔥. Reply: "up again 📈 ok buying one". Nudge: "any idea? 👀"
 
 **7. Kabir 🚗 · tag "YouTube + Google" · headline "Send the song, / not the search."**
 - Beat 1. Kabir: "road trip tomorrow 🚗", "send me something good for the drive". Visitor: Search, YouTube, "Road trip songs", tap a video to share (arrives as a video card "Road trip hits: non-stop highway mix"). Tapback 🔥. Reply: "ok this slaps 🔥". Nudge: "send a song 😄"
@@ -178,6 +178,7 @@ Order decided by Arpit on 15 Sep, 23:40 ("move mumma on top, replace script of m
 - 15 Sep, 23:02, Arpit: Semi now asks for $200 for server costs, sends his wallet, visitor copies and pastes it and pays privately with MagicBlock on Solana; show a swap UI powered by Jupiter but do not demo it; remove the Instagram ask. 23:11: show the balance in the keyboard wallet.
 - 15 Sep, 23:34: remove the 🙏 after "thank you" in Semi's reply.
 - 15 Sep, 23:40 to 23:42: coffee chat moves to the top and belongs to Sakshi; the address chat belongs to Mumma with "beta" lines. An interim version where Mumma said "beta, sending you ghar ka khana 🍱" was rejected.
+- 26 Sep, Arpit: "remove rupee symbol from site, it should be in $", then "in math example and no need for upi, do price check for stocks after math". Zoya's bill is $236 ("$236/4 = $59") and her second ask is Apple's price, not a UPI id. No ₹ is left on the site: the 123 layout's ₹ key is $, the calculator formats US style, and the strip's money chip only prices cashtags in dollars (tokens and stocks; it no longer converts $ to ₹). The deck's math slide plays this same chat ("Math + stocks") and its pay slide lost the "$200 in your currency" beat. Still to do: `/glyf-pitch-deck.pdf` is the 18 Sep export and still shows the old math chat (₹3480 and the UPI ask) and the old $4.99 / $19.99 plans; rebuild it from `/deck?capture#N`.
 
 ---
 
@@ -198,9 +199,9 @@ Files:
 - **Keys:** QWERTY with a 123 layout, shift, backspace, return. The space bar says **"glyf"** (Arpit: "space key should say glyf and not space").
 - **Micro-interactions ported from the iOS keyboard code:** enlarged letter balloon on press (1.55× wide, 1.35× tall), a 2pt charge ring on hold that scales 1.18 to 1, the key flashing the accent colour when a skill fires, and a purple ripple across the board (delay about distance × 26ms).
 - **Hold gestures:** hold space to open Glyf actions on the typed text (rewrite in tones, act); hold S for the vault; hold T for live translate.
-- **Suggestion strip priority:** Pay chip (a Solana address in the draft) > Paste chip (fresh clipboard) > calculator result > contextual vault chip (for example your UPI after "my upi id is") > word suggestions (hidden when the draft is a payment card) > toast > autocorrect fix > toolbar.
+- **Suggestion strip priority:** Pay chip (a Solana address in the draft) > Paste chip (fresh clipboard) > calculator result > price chip (a cashtag like `$aapl` or `$sol` at the end, priced in dollars from the illustrative `PRICES` in `data.ts`) > contextual vault chip (for example your UPI after "my upi id is") > word suggestions (hidden when the draft is a payment card) > toast > autocorrect fix > toolbar.
 - **Autocorrect:** fixes common typos and Hinglish spellings (pakak→pakka, yaaar, thik, kese, bhot, hna) while leaving real Hinglish words alone.
-- **Calculator:** detects expressions like `3480/4` and offers "= 870".
+- **Calculator:** detects expressions like `$236/4` and offers "= $59" (US number format).
 - **Toolbar:** Search, Clipboard, Vault, Wallet, Emoji, Translate. The g menu also lists Wallet (the Skills item was removed).
 - **Search panel:** Google, YouTube and Maps tabs, suggestion rows, result cards. Sharing a card inserts a rich message (📍 place, ▶ video, answer text).
 - **Answer card:** the Google sunset answer is a widget (dusk gradient, Google G badge, big "6:24 PM", sun path arc with 6:08 AM / 6:24 PM, sunrise, daylight and last light facts). Arpit asked for this with "this should look better".

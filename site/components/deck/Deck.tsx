@@ -6,7 +6,6 @@ import { SCENARIOS, type Scenario } from "../chat/scenarios";
 import ThemeToggle from "../ThemeToggle";
 import BackdropKeys from "../BackdropKeys";
 import LiveChat from "./LiveChat";
-import { MATH_SCENARIO } from "./mathScenario";
 import { PAY_SCENARIO } from "./paymentScenario";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -216,13 +215,13 @@ const SLIDES: Slide[] = [
   },
   {
     id: "math",
-    label: "Math + crypto",
+    label: "Math + stocks",
     render: (c) => (
       <Demo
-        use={MATH_SCENARIO}
+        id="zoya"
         eyebrow="Smart strip"
         capture={c}
-        points={["Type a sum, tap the answer", "Asked for your wallet, it is one hold away", "Two asks, two taps, zero app switches"]}
+        points={["Type a sum, tap the answer", "Type a ticker, tap the price", "Two asks, two taps, zero app switches"]}
       />
     ),
   },
@@ -262,7 +261,7 @@ const SLIDES: Slide[] = [
           "Paste an address and the strip offers Pay",
           "Signed in the app with a Privy wallet. The keyboard never holds a key",
           "Private transfers through MagicBlock, settled on Solana",
-          "Token prices and what an amount is worth in your currency, in the strip",
+          "Token prices in the strip, in dollars",
         ]}
       />
     ),

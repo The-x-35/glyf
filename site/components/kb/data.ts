@@ -64,7 +64,7 @@ export const ROWS_ABC = [
 
 export const ROWS_123 = [
   ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-  ["-", "/", "+", "×", "(", ")", "₹", "@", ";", "="],
+  ["-", "/", "+", "×", "(", ")", "$", "@", ";", "="],
   [".", ",", "?", "!", "'", "%", "&"],
 ];
 
@@ -186,7 +186,7 @@ export function contextual(text: string): VaultItem | null {
 
 /* ── Math, mid-sentence ─────────────────────────────────── */
 
-const NUM = String.raw`(?:[₹$€£]\s?)?\d[\d,]*(?:\.\d+)?%?`;
+const NUM = String.raw`(?:[$€£]\s?)?\d[\d,]*(?:\.\d+)?%?`;
 const CALC_RE = new RegExp(String.raw`(\(?\s*${NUM}\s*\)?(?:\s*(?:[-+*/×÷^]|\bx\b|\bof\b)\s*\(?\s*${NUM}\s*\)?)+)(\s*=)?\s*$`, "i");
 
 function evaluate(expr: string): number | null {
@@ -196,7 +196,7 @@ function evaluate(expr: string): number | null {
     .replace(/\bx\b/g, "*")
     .replace(/×/g, "*")
     .replace(/÷/g, "/")
-    .replace(/[₹$€£,\s]/g, "");
+    .replace(/[$€£,\s]/g, "");
   const t = src.match(/\d+(?:\.\d+)?%?|[-+*/^()]/g) ?? [];
   if (t.join("") !== src) return null;
   let i = 0;
@@ -244,44 +244,38 @@ export function calc(text: string): Calc | null {
   if (!eq && !/[+*/×÷^%]|\bx\b|\bof\b/i.test(m[1])) return null;
   const v = evaluate(m[1]);
   if (v === null) return null;
-  const cur = m[1].match(/[₹$€£]/)?.[0] ?? "";
-  const value = cur + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(v);
+  const cur = m[1].match(/[$€£]/)?.[0] ?? "";
+  const value = cur + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(v);
   return { value, start: m.index + (m[0].length - m[0].trimStart().length), eq };
 }
 
-/* ── Money, mid-sentence ────────────────────────────────── */
+/* ── Prices, mid-sentence ───────────────────────────────── */
 
-/** Illustrative rates: the apps read live ones from the server's /rates.
- *  A cashtag prices a token, an amount converts to the local currency. */
-export const RATES = { inrPerUsd: 88.8, tokens: { sol: 112.4, btc: 64820, eth: 2480, usdc: 1 } as Record<string, number> };
+/** Illustrative prices in dollars, from the 25 Sep 2026 close. A cashtag at
+ *  the end prices a token or a stock; the apps price tokens live, and stock
+ *  cashtags are on the site only so far. */
+export const PRICES: Record<string, number> = {
+  sol: 120.62, btc: 83924.38, eth: 2687.41, usdc: 1,
+  aapl: 341.07, nvda: 225.07, tsla: 372.11,
+};
 
 export type Money = { key: string; label: string; value: string; insert: string; at: number; len: number };
 
 const usd = (n: number) => `$${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
-const inr = (n: number) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n)}`;
 
-/** A cashtag at the end prices the token; an amount at the end converts it. */
+/** "$sol" or "$aapl" at the end: the price, in dollars. */
 export function money(text: string): Money | null {
   // Never price our own answer: an inserted line already ends in a figure.
-  if (/=\s*[₹$€£]\s?\d/.test(text)) return null;
+  if (/=\s*[$€£]\s?\d/.test(text)) return null;
   const tok = text.match(/(^|\s)\$([a-z]{2,5})\s*$/i);
-  if (tok) {
-    const name = tok[2].toLowerCase();
-    const price = RATES.tokens[name];
-    if (price === undefined) return null;
-    const sym = name.toUpperCase();
-    const line = `1 ${sym} = ${usd(price)}`;
-    const at = text.length - tok[0].trimStart().length;
-    return { key: `tok-${sym}`, label: `$${sym}`, value: line, insert: line, at, len: text.length - at };
-  }
-  const amt = text.match(/(^|\s)\$\s?(\d[\d,]*(?:\.\d+)?)\s*$/);
-  if (!amt) return null;
-  const n = parseFloat(amt[2].replace(/,/g, ""));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  const shown = `$${amt[2]}`;
-  const line = `${shown} = ${inr(n * RATES.inrPerUsd)}`;
-  const at = text.length - amt[0].trimStart().length;
-  return { key: `amt-${amt[2]}`, label: shown, value: inr(n * RATES.inrPerUsd), insert: line, at, len: text.length - at };
+  if (!tok) return null;
+  const name = tok[2].toLowerCase();
+  const price = PRICES[name];
+  if (price === undefined) return null;
+  const sym = name.toUpperCase();
+  const line = `1 ${sym} = ${usd(price)}`;
+  const at = text.length - tok[0].trimStart().length;
+  return { key: `tok-${sym}`, label: `$${sym}`, value: line, insert: line, at, len: text.length - at };
 }
 
 export const WEATHER = "It's 24° and cloudy in Bengaluru, rain after 6 PM ☔";

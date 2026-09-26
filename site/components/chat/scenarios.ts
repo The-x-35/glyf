@@ -1,4 +1,4 @@
-import { VAULT, type Lang, type PayHint, type SearchTab } from "../kb/data";
+import { VAULT, money, type Lang, type PayHint, type SearchTab } from "../kb/data";
 import type { Coach, KbSnapshot } from "../kb/Keyboard";
 
 /** Each chat is a small level: a friend asks for something, the visitor
@@ -190,15 +190,15 @@ export const SCENARIOS: Scenario[] = [
     name: "Zoya",
     avatar: "🍝",
     tint: "#ff375f",
-    tag: "Math + UPI",
-    headline: ["Do the math.", "Get paid."],
+    tag: "Math + stocks",
+    headline: ["Do the math.", "Check the price."],
     beats: [
       {
-        them: ["dinner was so good 😭", "bill was ₹3480 for 4 of us. how much do I send you?"],
-        autotype: (k) => (k.text === "" ? "3480/4" : null),
-        goal: (t) => t.includes("870"),
+        them: ["dinner was so good 😭", "bill was $236 for 4 of us. how much do I send you?"],
+        autotype: (k) => (k.text === "" ? "$236/4" : null),
+        goal: (t) => t.includes("59"),
         coach: (k) => {
-          if (k.text.includes("870")) return SEND;
+          if (k.text.includes("59")) return SEND;
           if (k.calc) return { target: "strip:calc", label: "Tap" };
           if (k.panel) return CLOSE;
           return k.text ? DELETE : null;
@@ -207,19 +207,18 @@ export const SCENARIOS: Scenario[] = [
         nudge: "wait, how much though? 😅",
       },
       {
-        them: ["what's your UPI?"],
-        autotype: (k) => (k.text === "" ? "my upi id is " : null),
-        goal: (t) => has(t, value("upi")),
+        them: ["btw what's apple at right now? 👀"],
+        autotype: (k) => (k.text === "" ? "$aapl" : null),
+        goal: (t) => /1 AAPL = \$/.test(t),
         coach: (k) => {
-          if (has(k.text, value("upi"))) return SEND;
-          if (k.mine === "upi") return { target: "strip:vault", label: "Tap" };
-          if (k.panel === "vault") return { target: "vault:upi", label: "Tap UPI" };
+          if (/1 AAPL = \$/.test(k.text)) return SEND;
           if (k.panel) return CLOSE;
+          if (money(k.text)) return { target: "strip:money", label: "Tap" };
           return k.text ? DELETE : null;
         },
-        reply: ["done ✅ ₹870 sent"],
-        tapback: "👍",
-        nudge: "your UPI? 🙏",
+        reply: ["up again 📈 ok buying one"],
+        tapback: "🔥",
+        nudge: "any idea? 👀",
       },
     ],
   },

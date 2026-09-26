@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { solAddress } from "../kb/data";
+import { money, solAddress } from "../kb/data";
 import Keyboard, { type KbSnapshot, type KeyboardApi } from "../kb/Keyboard";
 import { Arrow, Avatar, Bubble, type Msg } from "../chat/Experience";
 import type { Scenario } from "../chat/scenarios";
@@ -27,7 +27,7 @@ const MONEY_SHOT: Record<string, (k: KbSnapshot) => boolean> = {
   sakshi: (k) => k.panel === "search" && k.tab === "maps" && k.results > 0,
   kabir: (k) => k.panel === "search" && k.tab === "google" && k.results > 0,
   mumma: (k) => k.panel === "vault",
-  zoya: (k) => k.panel === "vault" || k.mine === "wallet",
+  zoya: (k) => money(k.text) !== null,
   rohan: (k) => /definately$/i.test(k.text),
   sofia: (k) => k.panel === "translate" && k.translation === "hasta mañana",
   semi: (k) => k.wallet?.tab === "send" && k.wallet.stage === "form",
