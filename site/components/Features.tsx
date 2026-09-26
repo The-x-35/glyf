@@ -132,6 +132,8 @@ export default function Features() {
             ))}
           </ul>
         </div>
+
+        <p className="try-cue">Try it here.</p>
       </div>
     </section>
   );

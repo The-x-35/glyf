@@ -3634,6 +3634,16 @@ a {
   height: 1em;
 }
 
+/* Leads into the chats below. */
+.try-cue {
+  margin-top: clamp(80px, 10vw, 140px);
+  text-align: center;
+  font-size: clamp(30px, 4vw, 52px);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+
 @media (max-width: 900px) {
   .feat-grid {
     grid-template-columns: 1fr;
@@ -3661,7 +3671,8 @@ a {
 @supports (animation-timeline: view()) {
   .features-title,
   .feat,
-  .works {
+  .works,
+  .try-cue {
     animation: rise linear both;
     animation-timeline: view();
     animation-range: entry 0% entry 40%;
@@ -3671,7 +3682,8 @@ a {
 @media (prefers-reduced-motion: reduce) {
   .features-title,
   .feat,
-  .works {
+  .works,
+  .try-cue {
     animation: none;
   }
 }
