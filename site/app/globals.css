@@ -199,20 +199,20 @@ a {
   color: var(--ink);
 }
 
-/* The wordmark as the logo image (components/Wordmark.tsx), sized to the
-   text it replaced: the image is the glyphs' own box at 400px, so its
-   height is 453/400 of the font size. */
+/* The wordmark as the logo image (components/Wordmark.tsx): Inter Bold's
+   own outlines as SVG (tools/make_wordmark_svg.swift), 1.1309em tall with
+   0.2109em below the baseline, so it lines up with the text it replaced at
+   any size. */
 .wordmark-logo {
   align-items: center;
 }
 
 .wordmark-logo img {
   display: block;
-  height: 1.153em;
+  height: 1.1309em;
   width: auto;
-  /* Measured against the text at 2x: this lands the glyphs where the text
-     drew them. */
-  margin-left: 0.035em;
+  /* The "g"'s own left bearing, and the text's centre in its line box. */
+  margin-left: 0.0283em;
   transform: translateY(-0.03em);
 }
 
@@ -494,18 +494,18 @@ a {
 }
 
 /* The same wordmark as an image (the logo Google's sign-in shows), sat on
-   the headline's baseline: 0.2163em of it is descender below the line. */
+   the headline's baseline: 0.2109em of it is descender below the line. */
 .hero-title .hero-logo {
   display: inline-block;
 }
 
 .hero-title .hero-logo img {
   display: inline-block;
-  height: 1.153em;
+  height: 1.1309em;
   width: auto;
   /* Taller than the line (line-height 1): the negative margins keep its box
      to the line's own height, so the headline doesn't grow. */
-  margin: -0.0563em 0 -0.0963em 0.012em;
+  margin: -0.0546em 0 -0.0759em 0.0283em;
   vertical-align: -0.135em;
 }
 

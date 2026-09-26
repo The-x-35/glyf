@@ -63,8 +63,8 @@ export default function Page() {
               <span>Type less.</span>{" "}
               <span>
                 <span className="hero-mark hero-logo">
-                  <img className="wordmark-light" src="/brand/glyf-wordmark-light.png" alt="glyf" width={770} height={453} />
-                  <img className="wordmark-dark" src="/brand/glyf-wordmark-dark.png" alt="" aria-hidden="true" width={770} height={453} />
+                  <img className="wordmark-light" src="/brand/glyf-wordmark-light.svg" alt="glyf" width={1924} height={1131} />
+                  <img className="wordmark-dark" src="/brand/glyf-wordmark-dark.svg" alt="" aria-hidden="true" width={1924} height={1131} />
                 </span>{" "}
                 more.
               </span>

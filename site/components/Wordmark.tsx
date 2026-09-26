@@ -5,8 +5,8 @@
 export default function Wordmark({ href, label, className = "" }: { href: string; label: string; className?: string }) {
   return (
     <a className={`wordmark wordmark-logo ${className}`.trim()} href={href} aria-label={label}>
-      <img className="wordmark-light" src="/brand/glyf-wordmark-light.png" alt="Glyf" width={770} height={453} />
-      <img className="wordmark-dark" src="/brand/glyf-wordmark-dark.png" alt="" aria-hidden="true" width={770} height={453} />
+      <img className="wordmark-light" src="/brand/glyf-wordmark-light.svg" alt="Glyf" width={1924} height={1131} />
+      <img className="wordmark-dark" src="/brand/glyf-wordmark-dark.svg" alt="" aria-hidden="true" width={1924} height={1131} />
     </a>
   );
 }
