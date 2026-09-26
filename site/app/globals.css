@@ -199,6 +199,44 @@ a {
   color: var(--ink);
 }
 
+/* The wordmark as the logo image (components/Wordmark.tsx), sized to the
+   text it replaced: the image is the glyphs' own box at 400px, so its
+   height is 453/400 of the font size. */
+.wordmark-logo {
+  align-items: center;
+}
+
+.wordmark-logo img {
+  display: block;
+  height: 1.153em;
+  width: auto;
+  /* Measured against the text at 2x: this lands the glyphs where the text
+     drew them. */
+  margin-left: 0.035em;
+  transform: translateY(-0.03em);
+}
+
+.wordmark-logo .wordmark-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .wordmark-logo .wordmark-light {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .wordmark-logo .wordmark-dark {
+    display: block;
+  }
+}
+
+:root[data-theme="dark"] .wordmark-logo .wordmark-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .wordmark-logo .wordmark-dark {
+  display: block;
+}
+
 .wordmark .dot,
 .hero-title .hero-mark .dot {
   display: inline-block;

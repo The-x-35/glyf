@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import ThemeToggle from "@/components/ThemeToggle";
+import Wordmark from "../../components/Wordmark";
 
 export const metadata: Metadata = {
   title: "Privacy Policy · Glyf",
@@ -15,9 +16,7 @@ export default function Privacy() {
     <>
       <header className="nav">
         <div className="wrap nav-inner">
-          <a className="wordmark" href="/" aria-label="Glyf home">
-            glyf<span className="dot" />
-          </a>
+          <Wordmark href="/" label="Glyf home" />
           <div className="nav-end">
             <ThemeToggle />
           </div>
@@ -202,9 +201,7 @@ export default function Privacy() {
 
       <footer className="footer">
         <div className="wrap footer-inner">
-          <a className="wordmark" href="/" aria-label="Glyf home">
-            glyf<span className="dot" />
-          </a>
+          <Wordmark href="/" label="Glyf home" />
           <p className="footer-legal">© 2026 Glyf · iPhone and Android</p>
         </div>
       </footer>

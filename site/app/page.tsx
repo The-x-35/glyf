@@ -3,6 +3,7 @@ import Cursor from "@/components/Cursor";
 import BackdropKeys from "@/components/BackdropKeys";
 import ThemeToggle from "@/components/ThemeToggle";
 import Waitlist from "@/components/Waitlist";
+import Wordmark from "../components/Wordmark";
 
 const AppleMark = () => (
   <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden>
@@ -47,9 +48,7 @@ export default function Page() {
 
       <header className="nav">
         <div className="wrap nav-inner">
-          <a className="wordmark" href="#top" aria-label="Glyf home">
-            glyf<span className="dot" />
-          </a>
+          <Wordmark href="#top" label="Glyf home" />
           <div className="nav-end">
             <ThemeToggle />
             <a className="nav-cta" href="#join">Join waitlist</a>
@@ -93,9 +92,7 @@ export default function Page() {
 
       <footer className="footer">
         <div className="wrap footer-inner">
-          <a className="wordmark" href="#top" aria-label="Glyf home">
-            glyf<span className="dot" />
-          </a>
+          <Wordmark href="#top" label="Glyf home" />
           <p className="footer-legal">© 2026 Glyf · iPhone and Android · <a href="/privacy">Privacy</a></p>
         </div>
       </footer>

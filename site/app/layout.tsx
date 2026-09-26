@@ -35,6 +35,16 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+/** Who the site is, for Google: the name and the logo image (the same one
+ *  the sign-in screen shows), so its brand check finds them on the page. */
+const ORGANIZATION = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Glyf",
+  url: SITE,
+  logo: `${SITE}/brand/glyf-logo.png`,
+});
+
 /** Runs before first paint: a saved theme choice wins over the system one. */
 const THEME = `try{var t=localStorage.getItem("glyf-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
 
@@ -43,6 +53,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: ORGANIZATION }} />
       </head>
       <body>{children}</body>
     </html>
