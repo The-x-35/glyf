@@ -62,8 +62,9 @@ export default function Page() {
             <h1 className="hero-title">
               <span>Type less.</span>{" "}
               <span>
-                <span className="hero-mark">
-                  glyf<span className="dot" />
+                <span className="hero-mark hero-logo">
+                  <img className="wordmark-light" src="/brand/glyf-wordmark-light.png" alt="glyf" width={770} height={453} />
+                  <img className="wordmark-dark" src="/brand/glyf-wordmark-dark.png" alt="" aria-hidden="true" width={770} height={453} />
                 </span>{" "}
                 more.
               </span>

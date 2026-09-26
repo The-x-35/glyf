@@ -493,6 +493,43 @@ a {
   letter-spacing: -0.045em;
 }
 
+/* The same wordmark as an image (the logo Google's sign-in shows), sat on
+   the headline's baseline: 0.2163em of it is descender below the line. */
+.hero-title .hero-logo {
+  display: inline-block;
+}
+
+.hero-title .hero-logo img {
+  display: inline-block;
+  height: 1.153em;
+  width: auto;
+  /* Taller than the line (line-height 1): the negative margins keep its box
+     to the line's own height, so the headline doesn't grow. */
+  margin: -0.0563em 0 -0.0963em 0.012em;
+  vertical-align: -0.135em;
+}
+
+.hero-title .hero-logo .wordmark-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hero-title .hero-logo .wordmark-light {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .hero-title .hero-logo .wordmark-dark {
+    display: inline-block;
+  }
+}
+
+:root[data-theme="dark"] .hero-title .hero-logo .wordmark-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .hero-title .hero-logo .wordmark-dark {
+  display: inline-block;
+}
+
 .hero-sub {
   margin-top: clamp(14px, 1.8vw, 22px);
   font-size: clamp(21px, 2.4vw, 30px);
