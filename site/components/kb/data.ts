@@ -249,6 +249,41 @@ export function calc(text: string): Calc | null {
   return { value, start: m.index + (m[0].length - m[0].trimStart().length), eq };
 }
 
+/* ── Money, mid-sentence ────────────────────────────────── */
+
+/** Illustrative rates: the apps read live ones from the server's /rates.
+ *  A cashtag prices a token, an amount converts to the local currency. */
+export const RATES = { inrPerUsd: 88.8, tokens: { sol: 112.4, btc: 64820, eth: 2480, usdc: 1 } as Record<string, number> };
+
+export type Money = { key: string; label: string; value: string; insert: string; at: number; len: number };
+
+const usd = (n: number) => `$${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+const inr = (n: number) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n)}`;
+
+/** A cashtag at the end prices the token; an amount at the end converts it. */
+export function money(text: string): Money | null {
+  // Never price our own answer: an inserted line already ends in a figure.
+  if (/=\s*[₹$€£]\s?\d/.test(text)) return null;
+  const tok = text.match(/(^|\s)\$([a-z]{2,5})\s*$/i);
+  if (tok) {
+    const name = tok[2].toLowerCase();
+    const price = RATES.tokens[name];
+    if (price === undefined) return null;
+    const sym = name.toUpperCase();
+    const line = `1 ${sym} = ${usd(price)}`;
+    const at = text.length - tok[0].trimStart().length;
+    return { key: `tok-${sym}`, label: `$${sym}`, value: line, insert: line, at, len: text.length - at };
+  }
+  const amt = text.match(/(^|\s)\$\s?(\d[\d,]*(?:\.\d+)?)\s*$/);
+  if (!amt) return null;
+  const n = parseFloat(amt[2].replace(/,/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const shown = `$${amt[2]}`;
+  const line = `${shown} = ${inr(n * RATES.inrPerUsd)}`;
+  const at = text.length - amt[0].trimStart().length;
+  return { key: `amt-${amt[2]}`, label: shown, value: inr(n * RATES.inrPerUsd), insert: line, at, len: text.length - at };
+}
+
 export const WEATHER = "It's 24° and cloudy in Bengaluru, rain after 6 PM ☔";
 
 /** Clipboard history. Links open in a new tab instead of pasting. */

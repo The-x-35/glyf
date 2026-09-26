@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useId, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import {
   CLIP_AGE, CLIPS, EMOJI, HOLD_MS, LANGS, POS, ROWS_123, ROWS_ABC, SEARCH_SUGGEST, SKILLS, SPACE_HOLD_MS, SHORTHAND, TONES, VAULT, WEATHER,
-  autocorrect, calc, classify, contextual, isLink, proofread, rewrite, rowOf, searchCards, short, shortAddr, solAddress, suggest, translate,
+  autocorrect, calc, classify, contextual, isLink, money as moneyChip, proofread, rewrite, rowOf, searchCards, short, shortAddr, solAddress, suggest, translate,
   SWAP_RATE, type ActResult, type Card, type Lang, type Panel, type PayHint, type SearchTab,
 } from "./data";
 import { hub } from "./hub";
@@ -470,6 +470,12 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
           const v = contextual(x.text);
           return v ? drop(v.value) : undefined;
         }
+        if (arg === "money") {
+          const m = moneyChip(x.text);
+          if (!m) return;
+          const head = x.text.slice(0, m.at);
+          return set({ text: `${head}${m.insert}`, flash: { at: m.at, len: m.insert.length, id: Date.now() }, fix: null });
+        }
         if (arg === "calc") {
           const c = calc(x.text);
           if (!c) return;
@@ -925,6 +931,16 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
           <span className="kb-smart-k">=</span>
           <span className="kb-smart-v kb-num">{math.value}</span>
           {tip("strip:calc")}
+        </motion.button>
+      );
+    }
+    const cash = moneyChip(s.text);
+    if (cash) {
+      return (
+        <motion.button key={`money-${cash.key}`} type="button" className={cx("kb-smart", co("strip:money"))} onClick={() => perform("strip:money")} initial={{ opacity: 0, y: 10, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 28 }}>
+          <span className="kb-smart-k">{cash.label}</span>
+          <span className="kb-smart-v kb-num">{cash.value}</span>
+          {tip("strip:money")}
         </motion.button>
       );
     }

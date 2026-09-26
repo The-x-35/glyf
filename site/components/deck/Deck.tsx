@@ -2,9 +2,12 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { SCENARIOS } from "../chat/scenarios";
+import { SCENARIOS, type Scenario } from "../chat/scenarios";
 import ThemeToggle from "../ThemeToggle";
+import BackdropKeys from "../BackdropKeys";
 import LiveChat from "./LiveChat";
+import { MATH_SCENARIO } from "./mathScenario";
+import { PAY_SCENARIO } from "./paymentScenario";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
@@ -16,12 +19,18 @@ const Mark = ({ className }: { className?: string }) => (
   </span>
 );
 
+const XMark = () => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden>
+    <path d="M18.24 2.25h3.31l-7.23 8.26 8.5 11.24h-6.65l-5.21-6.82-5.97 6.82H1.68l7.73-8.84L1.25 2.25h6.82l4.71 6.23zm-1.16 17.52h1.83L7.01 4.13H5.04z" />
+  </svg>
+);
+
 type Slide = { id: string; label: string; tone?: "grey" | "ink"; render: (capture: boolean) => ReactNode };
 
 /* ── building blocks ─────────────────────────────────────── */
 
-function Demo({ id, eyebrow, points, capture }: { id: string; eyebrow: string; points: string[]; capture: boolean }) {
-  const sc = scenario(id);
+function Demo({ id, use, eyebrow, points, capture }: { id?: string; use?: Scenario; eyebrow: string; points: string[]; capture: boolean }) {
+  const sc = use ?? scenario(id!);
   return (
     <div className="d-demo">
       <div className="d-demo-copy">
@@ -70,19 +79,21 @@ const SLIDES: Slide[] = [
     id: "cover",
     label: "Glyf",
     render: () => (
-      <div className="d-cover">
-        <Mark className="d-cover-mark" />
-        <h1 className="d-display">
-          <span>Type less.</span>{" "}
-          <span>
-            <span className="hero-mark">
-              glyf<span className="dot" />
-            </span>{" "}
-            more.
-          </span>
-        </h1>
-        <p className="d-lede">The AI keyboard that does the rest.</p>
-        <p className="d-foot">iPhone and Android · tryglyf.com</p>
+      <div className="d-hero">
+        <BackdropKeys />
+        <div className="d-hero-copy">
+          <h1 className="d-display">
+            <span>Type less.</span>{" "}
+            <span>
+              <span className="hero-mark">
+                glyf<span className="dot" />
+              </span>{" "}
+              more.
+            </span>
+          </h1>
+          <p className="d-lede">The AI keyboard that does the rest.</p>
+          <p className="d-foot">iPhone and Android · tryglyf.com</p>
+        </div>
       </div>
     ),
   },
@@ -139,10 +150,9 @@ const SLIDES: Slide[] = [
             <div className="d-card-visual">
               <Key k="V" dot />
               <Key k="C" dot />
-              <Key k="W" dot />
             </div>
             <b>Hold a letter</b>
-            <p>Fires the skill bound to it. Your address, a translation, the weather.</p>
+            <p>V shares your details and C opens the calendar. Every other letter is yours to bind.</p>
           </div>
           <div className="d-card">
             <div className="d-card-visual">
@@ -200,19 +210,19 @@ const SLIDES: Slide[] = [
         id="mumma"
         eyebrow="Knows you"
         capture={c}
-        points={["Address, UPI, wallet, socials: saved once", "Encrypted on the device, never on our servers", "Hold V, or tap the strip when a chat asks for it"]}
+        points={["Address, UPI, wallet, socials: saved once", "Encrypted on the device, shared with the model only when you allow it", "Hold V, or tap the strip when a chat asks for it"]}
       />
     ),
   },
   {
     id: "math",
-    label: "Math + UPI",
+    label: "Math + crypto",
     render: (c) => (
       <Demo
-        id="zoya"
+        use={MATH_SCENARIO}
         eyebrow="Smart strip"
         capture={c}
-        points={["Type a sum, tap the answer", "Talk about paying and your UPI is one tap away", "Two asks, two taps, zero app switches"]}
+        points={["Type a sum, tap the answer", "Asked for your wallet, it is one hold away", "Two asks, two taps, zero app switches"]}
       />
     ),
   },
@@ -236,7 +246,7 @@ const SLIDES: Slide[] = [
         id="sofia"
         eyebrow="Translate"
         capture={c}
-        points={["Hold T and type in your own language", "The translation follows as you type", "Replace with one tap"]}
+        points={["Bind translate to a key, hold it, and type in your own language", "The translation follows as you type", "Replace with one tap"]}
       />
     ),
   },
@@ -245,13 +255,14 @@ const SLIDES: Slide[] = [
     label: "Private payments",
     render: (c) => (
       <Demo
-        id="semi"
+        use={PAY_SCENARIO}
         eyebrow="Payments"
         capture={c}
         points={[
           "Paste an address and the strip offers Pay",
           "Signed in the app with a Privy wallet. The keyboard never holds a key",
           "Private transfers through MagicBlock, settled on Solana",
+          "Token prices and what an amount is worth in your currency, in the strip",
         ]}
       />
     ),
@@ -270,24 +281,24 @@ const SLIDES: Slide[] = [
           <ul className="d-points">
             <li>Describe a skill in plain English, get a runnable action</li>
             <li>Multiple steps, conditions and real tools</li>
-            <li>Share on the Skills hub or install packs: Writer, Operator, Social, Desi</li>
+            <li>It lands on a key, yours to keep. Sharing and a creator hub come later</li>
           </ul>
         </div>
         <div className="d-builder">
           <div className="d-builder-ask">
             <small>Describe it</small>
-            <p>When I hold M, find my next meeting and drop the Meet link. If there is none, say I am free.</p>
+            <p>When I hold M, tell them what is next on my calendar. If nothing is left today, say I am free.</p>
           </div>
           <ol className="d-builder-steps">
             <li>
               <span className="d-n">1</span>
               <code>calendar.today</code>
-              <span>Find the next meeting</span>
+              <span>Read today&apos;s events</span>
             </li>
             <li>
               <span className="d-n">2</span>
-              <code>if meet_link</code>
-              <span>Insert the Meet link</span>
+              <code>if events</code>
+              <span>Insert the next one</span>
             </li>
             <li className="d-else">
               <span className="d-n">↳</span>
@@ -359,53 +370,14 @@ const SLIDES: Slide[] = [
             <span>AES-GCM, in the Keychain and the Android Keystore. Sent to the model only when you allow it</span>
           </li>
           <li>
-            <b>It refuses secrets</b>
-            <span>Card numbers, seed phrases, API keys, OTPs and IDs are rejected, never stored</span>
-          </li>
-          <li>
             <b>Silent in password fields</b>
             <span>No AI, no suggestions, no clipboard capture</span>
           </li>
           <li>
-            <b>Typing needs no network</b>
-            <span>Autocorrect, prediction and 20 vocabulary packs run on the device</span>
-          </li>
-          <li>
-            <b>No API keys in the app</b>
-            <span>Model keys and OAuth tokens stay on the server</span>
+            <b>It learns how you type</b>
+            <span>Your names, slang and shorthand stop getting corrected, and 20 vocabulary packs cover the rest</span>
           </li>
         </ul>
-      </div>
-    ),
-  },
-  {
-    id: "built",
-    label: "Where it stands",
-    render: () => (
-      <div className="d-stack">
-        <p className="d-eyebrow">Where it stands</p>
-        <h2 className="d-title d-title--center">
-          <span>It already runs</span> <span>on both phones.</span>
-        </h2>
-        <div className="d-stats">
-          <div>
-            <b>iOS</b>
-            <span>App and keyboard on iPhone, on TestFlight</span>
-          </div>
-          <div>
-            <b>Android</b>
-            <span>Keyboard and app on device</span>
-          </div>
-          <div>
-            <b>336</b>
-            <span>Tests across the backend, iOS and Android</span>
-          </div>
-          <div>
-            <b>30</b>
-            <span>Tools and 9 connectors wired to the keys</span>
-          </div>
-        </div>
-        <p className="d-note">Next: the backend on api.tryglyf.com, then the stores.</p>
       </div>
     ),
   },
@@ -428,8 +400,8 @@ const SLIDES: Slide[] = [
             <span>Small models answer in well under a second, cheap enough to run on a keystroke</span>
           </li>
           <li>
-            <b>The category is funded</b>
-            <span>Acti raised a $5.3M seed led by BITKRAFT in June 2026 for an AI keyboard</span>
+            <b>The habit already exists</b>
+            <span>People copy a message into a chatbot, fix it, and paste it back. The behaviour is set, the place is wrong</span>
           </li>
           <li>
             <b>Money moves like messages</b>
@@ -452,21 +424,21 @@ const SLIDES: Slide[] = [
           <div>
             <small>Free</small>
             <b>$0</b>
-            <span>40 AI actions a day</span>
+            <span>10 AI actions a day</span>
           </div>
           <div>
             <small>Plus</small>
             <b>
-              $4.99<em>/mo</em>
+              $2<em>/mo</em>
             </b>
-            <span>400 AI actions a day</span>
+            <span>100 AI actions a day</span>
           </div>
           <div className="is-max">
             <small>Max</small>
             <b>
-              $19.99<em>/mo</em>
+              $5<em>/mo</em>
             </b>
-            <span>Unlimited</span>
+            <span>500 AI actions a day</span>
           </div>
         </div>
         <p className="d-note">Later: fees on swaps and payments, and a creator marketplace for skills.</p>
@@ -486,44 +458,23 @@ const SLIDES: Slide[] = [
           <div>
             <small>Now</small>
             <ul>
-              <li>Backend live at api.tryglyf.com</li>
-              <li>Public TestFlight beta</li>
-              <li>Waitlist to first users</li>
+              <li>Waitlist live at tryglyf.com</li>
+              <li>Private beta on TestFlight</li>
             </ul>
           </div>
           <div>
             <small>Next</small>
             <ul>
+              <li>Public TestFlight</li>
               <li>App Store and Google Play launch</li>
               <li>Plus and Max subscriptions</li>
-              <li>Skills hub with creators</li>
             </ul>
           </div>
           <div>
             <small>Later</small>
             <ul>
-              <li>Wallet release: private payments and swaps</li>
-              <li>Per-contact memory and tone</li>
-              <li>More languages</li>
+              <li>Skills hub with creators</li>
             </ul>
-          </div>
-        </div>
-      </div>
-    ),
-  },
-  {
-    id: "team",
-    label: "Team",
-    tone: "grey",
-    render: () => (
-      <div className="d-stack">
-        <p className="d-eyebrow">Team</p>
-        <div className="d-person">
-          <span className="d-avatar">A</span>
-          <div>
-            <b>Arpit Singh</b>
-            <span>Founder</span>
-            <span className="d-contact">arpit@tryglyf.com</span>
           </div>
         </div>
       </div>
@@ -532,14 +483,18 @@ const SLIDES: Slide[] = [
   {
     id: "end",
     label: "Thank you",
-    tone: "ink",
     render: () => (
-      <div className="d-cover">
-        <Mark className="d-cover-mark" />
-        <h2 className="d-display">
-          <span>Made for</span> <span>your thumbs.</span>
-        </h2>
-        <p className="d-lede">tryglyf.com · arpit@tryglyf.com</p>
+      <div className="d-cover d-end">
+        <Mark className="d-end-mark" />
+        <h2 className="d-end-line">Made for your thumbs.</h2>
+        <p className="d-lede d-end-contact">
+          tryglyf.com
+          <span className="d-dot">·</span>
+          <span className="d-x">
+            <XMark />
+            @Arpitx35
+          </span>
+        </p>
       </div>
     ),
   },
