@@ -12,17 +12,24 @@ const adb = (...args) => execFileSync(ADB, args, { encoding: "utf8" });
 const shell = cmd => adb("shell", cmd);
 const tool = (id, extra = "") => shell(`am broadcast -a ${PKG}.DEBUG_TOOL --es id ${id} ${extra}`);
 
+const readState = () => {
+  try { return JSON.parse(adb("shell", `run-as ${PKG} cat files/qa/state.json`)); } catch { return {}; }
+};
+
 async function state() {
-  const asked = Date.now();
+  // A dump newer than the last one, not one "recent" by the Mac's clock: the
+  // emulator's clock drifts (9 s behind on 2026-09-26), which made every
+  // fresh dump look stale.
+  const before = readState().at || 0;
   tool("dump");
   // Up to 6 s: after a light/dark switch the keyboard rebuilds its view on
   // the emulator's software renderer before it gets to the dump.
   for (let i = 0; i < 24; i++) {
     await sleep(250);
-    const s = JSON.parse(adb("shell", `run-as ${PKG} cat files/qa/state.json`));
-    // An older file means the Glyf keyboard didn't answer: another keyboard
+    const s = readState();
+    // No newer file means the Glyf keyboard didn't answer: another keyboard
     // is active, or it crashed. Its keys would be taps into nothing.
-    if (!s.at || s.at >= asked - 2000) return s;
+    if (s.at && s.at > before) return s;
   }
   throw new Error("the Glyf keyboard didn't answer (not the active keyboard, or it crashed)");
 }
