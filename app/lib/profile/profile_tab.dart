@@ -217,9 +217,9 @@ class _ProfileTabState extends State<ProfileTab> {
   /// the real number with what is left).
   int get _planRuns => switch (_plan) { 'max' => 400, 'plus' => 150, _ => 20 };
 
-  /// Who is signed in, and Sign out beside it: under the name, where it is
-  /// seen without scrolling.
-  Widget _account() {
+  /// Who you are, how you signed in and your plan, in one card: the name
+  /// with Edit, the account under it, the plan, then Sign out.
+  Widget _identityCard() {
     final id = Auth.identity();
     final email = id.email ?? '';
     final provider = switch (id.provider) {
@@ -227,54 +227,129 @@ class _ProfileTabState extends State<ProfileTab> {
       'apple' => 'Apple',
       _ => null,
     };
+    Widget hairline() => Container(
+        height: 1, margin: const EdgeInsets.only(left: 16), color: Glass.hairline);
     return GlassCard(
-      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-      child: Row(children: [
-        Container(
-          width: 38,
-          height: 38,
-          alignment: Alignment.center,
-          decoration: const BoxDecoration(color: Glass.bg, shape: BoxShape.circle),
-          child: switch (id.provider) {
-            'google' => const GoogleG(size: 18),
-            'apple' => const Icon(Icons.apple, size: 21, color: Glass.ink),
-            _ => const Icon(Icons.person_outline_rounded, size: 20, color: Glass.ink),
-          },
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(provider == null ? 'Signed in' : 'Signed in with $provider',
-                style: const TextStyle(
-                    color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
-            if (email.isNotEmpty)
-              Semantics(
-                identifier: 'profile:email',
-                child: Text(email,
+      padding: EdgeInsets.zero,
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 14, 14),
+          child: Row(children: [
+            const KeycapGMark(size: 52),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(_displayName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
+                    style: const TextStyle(
+                        color: Glass.ink, fontSize: 20, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 3),
+                Row(children: [
+                  switch (id.provider) {
+                    'google' => const GoogleG(size: 12),
+                    'apple' => const Icon(Icons.apple, size: 14, color: Glass.ink),
+                    _ => const Icon(Icons.person_outline_rounded, size: 14, color: Glass.inkSoft),
+                  },
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Semantics(
+                      identifier: 'profile:email',
+                      child: Text(
+                          email.isNotEmpty
+                              ? email
+                              : provider == null ? 'Signed in' : 'Signed in with $provider',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
+                    ),
+                  ),
+                ]),
+              ]),
+            ),
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: _editName,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Glass.ink,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text('Edit',
+                    style: TextStyle(
+                        color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
               ),
+            ),
           ]),
         ),
-        const SizedBox(width: 10),
+        hairline(),
+        Semantics(
+          identifier: 'profile:plan',
+          button: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _plan == 'max'
+                ? null
+                : () async {
+                    await showPaywall(context);
+                    _refresh();
+                  },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 13, 14, 13),
+              child: Row(children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(
+                        _plan == 'max'
+                            ? 'Glyf Max'
+                            : _plan == 'plus'
+                                ? 'Glyf Plus'
+                                : 'Free plan',
+                        style: const TextStyle(
+                            color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
+                    Text(
+                        _remaining != null
+                            ? '$_remaining of ${_perDay ?? _planRuns} runs left today'
+                            : '$_planRuns runs a day',
+                        style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
+                  ]),
+                ),
+                if (_plan != 'max')
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      // Greyed until Plus and Max can be bought in the store.
+                      color: plansOnSale ? Glass.ink : const Color(0xFFF1F2F5),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Text(
+                        !plansOnSale
+                            ? 'Pro coming soon'
+                            : _plan == 'plus' ? 'Upgrade' : 'Go Pro',
+                        style: TextStyle(
+                            color: plansOnSale ? Colors.white : Glass.inkSoft,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700)),
+                  ),
+              ]),
+            ),
+          ),
+        ),
+        hairline(),
         Semantics(
           identifier: 'profile:sign-out',
           button: true,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _signOut,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Glass.danger.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: const Text('Sign out',
-                  style: TextStyle(
-                      color: Glass.danger,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700)),
+            child: const Padding(
+              padding: EdgeInsets.fromLTRB(16, 13, 16, 14),
+              child: Row(children: [
+                Text('Sign out',
+                    style: TextStyle(
+                        color: Glass.danger, fontSize: 14.5, fontWeight: FontWeight.w600)),
+              ]),
             ),
           ),
         ),
@@ -347,98 +422,8 @@ class _ProfileTabState extends State<ProfileTab> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
         children: [
-          // Identity
-          Row(children: [
-            const KeycapGMark(size: 62),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(_displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: Glass.ink,
-                      fontSize: 23,
-                      fontWeight: FontWeight.w800)),
-            ),
-            GestureDetector(
-              onTap: _editName,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                decoration: BoxDecoration(
-                  color: Glass.ink,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Text('Edit',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700)),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 20),
-
-          // Account
-          _account(),
-          const SizedBox(height: 12),
-
-          // Plan
-          Semantics(
-            identifier: 'profile:plan',
-            button: true,
-            child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              onTap: _plan == 'max'
-                  ? null
-                  : () async {
-                      await showPaywall(context);
-                      _refresh();
-                    },
-              child: Row(children: [
-                Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                            _plan == 'max'
-                                ? 'Glyf Max'
-                                : _plan == 'plus'
-                                    ? 'Glyf Plus'
-                                    : 'Free plan',
-                            style: const TextStyle(
-                                color: Glass.ink,
-                                fontSize: 15.5,
-                                fontWeight: FontWeight.w700)),
-                        Text(
-                            _remaining != null
-                                ? '$_remaining of ${_perDay ?? _planRuns} runs left today'
-                                : '$_planRuns runs a day',
-                            style: const TextStyle(
-                                color: Glass.inkSoft, fontSize: 12.5)),
-                      ]),
-                ),
-                if (_plan != 'max')
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      // Greyed until Plus and Max can be bought in the store.
-                      color: plansOnSale ? Glass.ink : const Color(0xFFF1F2F5),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: Text(
-                        !plansOnSale
-                            ? 'Pro coming soon'
-                            : _plan == 'plus' ? 'Upgrade' : 'Go Pro',
-                        style: TextStyle(
-                            color: plansOnSale ? Colors.white : Glass.inkSoft,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700)),
-                  ),
-              ]),
-            ),
-          ),
+          // Identity, account and plan
+          _identityCard(),
           const SizedBox(height: 22),
 
           _groupLabel('Keyboard'),
