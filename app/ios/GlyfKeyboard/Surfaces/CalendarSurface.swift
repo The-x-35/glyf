@@ -6,7 +6,8 @@ import UIKit
 /// Events come straight from the phone's calendar when the keyboard may read
 /// it (Full Access, and the app allowed), else from the app's copy
 /// (calendar.json); without either it is still a calendar, and offers to
-/// connect. + opens New Event (EventComposer).
+/// connect. + opens New Event (EventComposer). Holding an event opens the
+/// clipboard's kind of menu: Edit (the composer, as Edit Event) and Delete.
 final class CalendarSurface: UIView {
 
     weak var delegate: ConnectorSurfaceDelegate?
@@ -24,8 +25,10 @@ final class CalendarSurface: UIView {
         let link = SettingsStore.current.bookingLink?.trimmingCharacters(in: .whitespaces) ?? ""
         return link.isEmpty ? nil : link
     }
-    /// The event just added, drawn out for a moment in the day's list.
+    /// The event just added (or changed), drawn out for a moment in the day's list.
     private var justAdded: CalendarText.Event?
+    /// What its row says while it is lit.
+    private var justSaid = "Just added"
     /// Its row, scrolled into view once laid out, the way Calendar shows a new event.
     private weak var justAddedRow: UIView?
     /// The lit row, so the light can go out without rebuilding the list.
@@ -105,7 +108,7 @@ final class CalendarSurface: UIView {
             connected = true
             base = CalendarText.withGoogle(google, over: base, primary: GoogleAccess.load()?.email, calendar: cal)
         }
-        events = GoogleAdded.merged(into: base)
+        events = GoogleAdded.merged(into: base).filter { !isGone($0) }
     }
 
     /// Asks Google for the window on screen. The phone's calendar only has
@@ -181,10 +184,18 @@ final class CalendarSurface: UIView {
             draft = .init(title: "", start: start, end: start.addingTimeInterval(3600), allDay: false,
                           share: true)
         }
+        present(EventComposer(draft: draft, access: CalendarWriter.access(hasFullAccess: hasFullAccess))) {
+            [weak self] d in self?.add(d)
+        }
+    }
+
+    /// New Event or Edit Event over the calendar; `onSave` gets the event
+    /// Add (or Save) was tapped on.
+    private func present(_ c: EventComposer, onSave: @escaping (EventComposer.Draft) -> Void) {
+        dismissMenu()
         composer?.removeFromSuperview()
-        let c = EventComposer(draft: draft, access: CalendarWriter.access(hasFullAccess: hasFullAccess))
         c.onCancel = { [weak self] in self?.closeComposer() }
-        c.onAdd = { [weak self] d in self?.add(d) }
+        c.onAdd = onSave
         c.onEditTitle = { [weak self] editor in self?.delegate?.connectorSearchActivated(editor) }
         c.onLayoutChange = { [weak self] in
             guard let self else { return }
@@ -314,6 +325,7 @@ final class CalendarSurface: UIView {
         }
         show(day: d.start)
         justAdded = event
+        justSaid = "Just added"
         closeComposer()
         load()
         render()
@@ -338,6 +350,7 @@ final class CalendarSurface: UIView {
             }
             show(day: d.start)
             justAdded = added.event
+            justSaid = "Just added"
             closeComposer()
             load()
             render()
@@ -454,6 +467,11 @@ final class CalendarSurface: UIView {
         }, for: .touchUpInside)
         addSubview(dateButton)
 
+        scrim.backgroundColor = Glass.scrim
+        scrim.isHidden = true
+        scrim.accessibilityIdentifier = "calendar:scrim"
+        scrim.addAction(UIAction { [weak self] _ in self?.dismissMenu() }, for: .touchUpInside)
+        addSubview(scrim)
     }
 
     private func styleAction(_ b: UIButton, title: String) {
@@ -588,7 +606,7 @@ final class CalendarSurface: UIView {
                     r.layer.borderWidth = 1.5
                     r.layer.borderColor = Glass.accentPrimary.cgColor
                     // Said as well as shown, until the list is next drawn.
-                    r.accessibilityValue = "Just added"
+                    r.accessibilityValue = justSaid
                     justAddedRow = r
                     litRow = r
                 }
@@ -608,18 +626,22 @@ final class CalendarSurface: UIView {
             // for someone who said "Not now"). Settings only lists Calendars
             // for Glyf once the app has asked, so a refusal is Settings' to
             // undo and a question never asked is the app's.
-            agendaStack.addArrangedSubview(note(
-                CalendarWriter.access(hasFullAccess: hasFullAccess) == .needsFullAccess
-                    ? "Turn on Allow Full Access for Glyf in Settings"
-                    : CalendarWriter.neverAsked
-                        ? "Turn on Calendar in Glyf › Connected tools"
-                        : "Allow Calendars in Settings › Apps › Glyf"))
+            agendaStack.addArrangedSubview(note(accessNote))
         }
         agenda.isHidden = showingMonth
         freeButton.isHidden = !connected || showingMonth
         dateButton.isHidden = showingMonth
         dateButton.accessibilityLabel = "Insert \(Self.dateText(selected))"
         setNeedsLayout()
+    }
+
+    /// Where the calendar is turned on, when the keyboard can't reach it.
+    private var accessNote: String {
+        CalendarWriter.access(hasFullAccess: hasFullAccess) == .needsFullAccess
+            ? "Turn on Allow Full Access for Glyf in Settings"
+            : CalendarWriter.neverAsked
+                ? "Turn on Calendar in Glyf › Connected tools"
+                : "Allow Calendars in Settings › Apps › Glyf"
     }
 
     private func note(_ text: String) -> UIView {
@@ -632,7 +654,7 @@ final class CalendarSurface: UIView {
     }
 
     private func row(_ e: CalendarText.Event, index: Int) -> UIView {
-        let b = UIControl()
+        let b = EventRow(event: e)
         b.backgroundColor = Glass.surfaceCard
         b.layer.cornerRadius = 12
         b.layer.cornerCurve = .continuous
@@ -643,6 +665,16 @@ final class CalendarSurface: UIView {
         b.addAction(UIAction { [weak self] _ in
             self?.delegate?.connectorInsert(CalendarText.insert(e))
         }, for: .touchUpInside)
+        let hold = UILongPressGestureRecognizer(target: self, action: #selector(rowHeld(_:)))
+        hold.minimumPressDuration = 0.35
+        b.addGestureRecognizer(hold)
+        b.accessibilityCustomActions = [
+            UIAccessibilityCustomAction(name: "Edit") { [weak self] _ in self?.edit(e); return true },
+            UIAccessibilityCustomAction(name: "Delete") { [weak self, weak b] _ in
+                if let b { self?.showMenu(for: b, confirming: true) }
+                return true
+            },
+        ]
 
         let bar = UIView()
         bar.backgroundColor = e.color.flatMap(UIColor.init(hexString:)) ?? Glass.accentPrimary
@@ -693,12 +725,270 @@ final class CalendarSurface: UIView {
         return b
     }
 
+    // MARK: Hold menu (Edit · Delete), the clipboard's own
+
+    private final class EventRow: UIControl {
+        let event: CalendarText.Event
+        init(event: CalendarText.Event) {
+            self.event = event
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+    }
+
+    private struct MenuRow {
+        let symbol: String
+        let title: String
+        let id: String
+        var destructive = false
+        let action: () -> Void
+    }
+
+    private let scrim = UIControl()
+    private var menu: UIView?
+    private var liftedRow: UIView?
+    /// Deleted here: kept off the list while the phone's own copy catches up.
+    private var gone = Set<String>()
+
+    private func goneKeys(_ e: CalendarText.Event) -> [String] {
+        // A repeating event's occurrences share their UID; the start tells them apart.
+        [e.id, e.external.map { "\($0)@\(e.start.timeIntervalSince1970)" }].compactMap { $0 }
+    }
+
+    private func isGone(_ e: CalendarText.Event) -> Bool {
+        !gone.isEmpty && goneKeys(e).contains(where: gone.contains)
+    }
+
+    /// Why the event can't be changed from the keyboard, when it can't.
+    private func refusal(_ e: CalendarText.Event) -> String? {
+        guard hasFullAccess else { return "Turn on Allow Full Access for Glyf in Settings" }
+        // Google's own are changed at Google; the rest in the phone's calendar.
+        if e.googleID != nil { return nil }
+        guard live else { return accessNote }
+        return CalendarWriter.readOnly(e).map { "\($0) is read-only" }
+    }
+
+    @objc private func rowHeld(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began, let row = g.view as? EventRow else { return }
+        showMenu(for: row)
+    }
+
+    private func showMenu(for row: EventRow, confirming: Bool = false) {
+        let e = row.event
+        if let refusal = refusal(e) {
+            KeyboardToast.show(in: self, text: refusal)
+            return
+        }
+        dismissMenu()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        scrim.frame = bounds
+        scrim.isHidden = false
+        bringSubviewToFront(scrim)
+        // The held event stays bright above the scrim, where it was.
+        let lifted = row.snapshotView(afterScreenUpdates: false) ?? UIView()
+        lifted.frame = row.convert(row.bounds, to: self)
+        lifted.isUserInteractionEnabled = false
+        addSubview(lifted)
+        liftedRow = lifted
+        if confirming { return confirmDelete(e) }
+        showMenuBox([
+            MenuRow(symbol: "pencil", title: "Edit", id: "calendar:menu:edit") { [weak self] in
+                self?.dismissMenu()
+                self?.edit(e)
+            },
+            MenuRow(symbol: "trash", title: "Delete", id: "calendar:menu:delete", destructive: true) {
+                [weak self] in self?.confirmDelete(e)
+            },
+        ])
+    }
+
+    /// Delete asks once more, the way Calendar does: an event can have guests.
+    private func confirmDelete(_ e: CalendarText.Event) {
+        showMenuBox([
+            MenuRow(symbol: "trash", title: e.repeats ? "Delete This Event Only" : "Delete Event",
+                    id: "calendar:menu:confirm", destructive: true) { [weak self] in
+                self?.dismissMenu()
+                self?.delete(e)
+            },
+            MenuRow(symbol: "xmark", title: "Cancel", id: "calendar:menu:cancel") { [weak self] in
+                self?.dismissMenu()
+            },
+        ])
+    }
+
+    /// The menu under the held event when there is room, else over it.
+    private func showMenuBox(_ rows: [MenuRow]) {
+        menu?.removeFromSuperview()
+        let anchor = liftedRow?.frame ?? CGRect(x: 0, y: bounds.midY, width: bounds.width, height: 0)
+        // The button's own title font (the clipboard's rows), measured so
+        // "Delete This Event Only" stays on one line.
+        let font = UIFont.preferredFont(forTextStyle: .body)
+        let widest = rows.map { ceil(($0.title as NSString).size(withAttributes: [.font: font]).width) }.max() ?? 0
+        let menuW = min(bounds.width - 16, max(176, widest + 18 + 12 + 26 + 16)), rowH: CGFloat = 50
+        let box = UIView()
+        box.backgroundColor = Glass.surfaceCard
+        box.layer.cornerRadius = 14
+        box.layer.cornerCurve = .continuous
+        box.layer.shadowColor = UIColor.black.cgColor
+        box.layer.shadowOpacity = 0.14
+        box.layer.shadowRadius = 14
+        box.layer.shadowOffset = CGSize(width: 0, height: 4)
+        for (i, row) in rows.enumerated() {
+            let b = UIButton(type: .system)
+            var cfg = UIButton.Configuration.plain()
+            cfg.image = UIImage(systemName: row.symbol)
+            cfg.title = row.title
+            cfg.imagePadding = 16
+            cfg.baseForegroundColor = row.destructive ? Glass.accentDanger : Glass.textPrimary
+            cfg.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 12)
+            cfg.titleLineBreakMode = .byTruncatingTail
+            b.configuration = cfg
+            b.contentHorizontalAlignment = .leading
+            b.frame = CGRect(x: 0, y: CGFloat(i) * rowH, width: menuW, height: rowH)
+            b.accessibilityIdentifier = row.id
+            let action = row.action
+            b.addAction(UIAction { _ in action() }, for: .touchUpInside)
+            box.addSubview(b)
+            if i > 0 {
+                let line = UIView(frame: CGRect(x: 0, y: CGFloat(i) * rowH, width: menuW, height: 0.5))
+                line.backgroundColor = Glass.strokeHairline
+                box.addSubview(line)
+            }
+        }
+        let h = CGFloat(rows.count) * rowH
+        let x = min(max(8, anchor.maxX - menuW), bounds.width - menuW - 8)
+        var y = anchor.maxY + 6
+        if y + h > bounds.height - 6 { y = anchor.minY - 6 - h }
+        y = min(max(6, y), bounds.height - h - 6)
+        box.frame = CGRect(x: x, y: y, width: menuW, height: h)
+        addSubview(box)
+        menu = box
+    }
+
+    private func dismissMenu() {
+        menu?.removeFromSuperview()
+        menu = nil
+        liftedRow?.removeFromSuperview()
+        liftedRow = nil
+        scrim.isHidden = true
+    }
+
+    /// Edit Event: the composer on the event's own title and times.
+    private func edit(_ e: CalendarText.Event) {
+        let draft = EventComposer.Draft(title: e.title, start: e.start, end: e.end, allDay: e.allDay)
+        // Google's own need only the network; the rest, the phone's calendar.
+        let access: CalendarWriter.Access = e.googleID != nil
+            ? (hasFullAccess ? .ready : .needsFullAccess)
+            : CalendarWriter.access(hasFullAccess: hasFullAccess)
+        present(EventComposer(draft: draft, access: access, edit: true)) { [weak self] d in
+            self?.saveEdit(e, d)
+        }
+    }
+
+    private func saveEdit(_ old: CalendarText.Event, _ d: EventComposer.Draft) {
+        guard !adding else { return }
+        guard let googleID = old.googleID else {
+            switch CalendarWriter.update(old, title: d.title, start: d.start, end: d.end, allDay: d.allDay) {
+            case .success(let changed): edited(changed)
+            case .failure(let failure): KeyboardToast.show(in: self, text: Self.say(failure, doing: "save"))
+            }
+            return
+        }
+        adding = true
+        GoogleClient.shared.updateEvent(id: googleID, title: d.title, start: d.start, end: d.end,
+                                        allDay: d.allDay) { [weak self] result in
+            guard let self else { return }
+            self.adding = false
+            switch result {
+            case .success(let listed):
+                var changed = listed ?? old
+                if listed == nil {
+                    changed.title = d.title
+                    changed.start = d.start
+                    changed.end = d.end
+                    changed.allDay = d.allDay
+                }
+                if let fetched = self.googleFetched {
+                    self.googleFetched = fetched.map { $0.id == old.id ? changed : $0 }
+                    GoogleCache.save(self.googleFetched ?? [], for: GoogleAccess.load()?.email)
+                }
+                if let id = old.id { GoogleAdded.forget(id: id, with: changed) }
+                self.edited(changed)
+            case .failure(let failure):
+                KeyboardToast.show(in: self, text: "Couldn't save it: \(GoogleClient.say(failure))")
+            }
+        }
+    }
+
+    private func edited(_ e: CalendarText.Event) {
+        show(day: e.start)
+        justAdded = e
+        justSaid = "Just changed"
+        closeComposer()
+        load()
+        render()
+        KeyboardToast.show(in: self, text: "Saved")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            self?.justAdded = nil
+            self?.litRow?.layer.borderWidth = 0
+        }
+    }
+
+    private func delete(_ e: CalendarText.Event) {
+        guard let googleID = e.googleID else {
+            switch CalendarWriter.remove(e) {
+            case .success:
+                load()
+                render()
+                KeyboardToast.show(in: self, text: "Event deleted")
+            case .failure(let failure):
+                if failure == .notFound {
+                    load()
+                    render()
+                }
+                KeyboardToast.show(in: self, text: Self.say(failure, doing: "delete"))
+            }
+            return
+        }
+        // Off the list at once; back, with Google's reason, if it says no.
+        let keys = goneKeys(e)
+        gone.formUnion(keys)
+        load()
+        render()
+        GoogleClient.shared.deleteEvent(id: googleID) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                if let fetched = self.googleFetched {
+                    self.googleFetched = fetched.filter { $0.id != e.id }
+                    GoogleCache.save(self.googleFetched ?? [], for: GoogleAccess.load()?.email)
+                }
+                if let id = e.id { GoogleAdded.forget(id: id) }
+                KeyboardToast.show(in: self, text: "Event deleted")
+            case .failure(let failure):
+                self.gone.subtract(keys)
+                KeyboardToast.show(in: self, text: "Couldn't delete it: \(GoogleClient.say(failure))")
+            }
+            self.load()
+            self.render()
+        }
+    }
+
+    private static func say(_ failure: CalendarWriter.Change, doing: String) -> String {
+        switch failure {
+        case .readOnly(let name): return "\(name) is read-only"
+        case .notFound: return "It's no longer in the calendar"
+        case .failed: return "Couldn't \(doing) it. Try again"
+        }
+    }
+
     // MARK: layout
 
     override func layoutSubviews() {
         super.layoutSubviews()
         let pad: CGFloat = 12
         let headerH: CGFloat = 32
+        scrim.frame = bounds
 
         if let composer {
             composer.frame = bounds

@@ -100,4 +100,38 @@ class CalendarTextTest {
         assertEquals(listOf(holiday),
             CalendarText.withGoogle(emptyList(), listOf(stale, holiday), zone, primary = "Arpit@gmail.com"))
     }
+
+    @Test fun googleEditsAndWhatTheMenuNeeds() {
+        val zone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+        val start = java.util.Calendar.getInstance(zone).apply {
+            clear(); set(2026, java.util.Calendar.SEPTEMBER, 25, 15, 0)
+        }.timeInMillis
+        // Timed: the new times, and the all-day kind cleared (a patch keeps
+        // what it isn't told to drop).
+        val timed = GoogleEvent.patch("Review", start, start + 1_800_000L, false, zone)
+        assertEquals("Review", timed.getString("summary"))
+        assertEquals("2026-09-25T15:00:00+05:30", timed.getJSONObject("start").getString("dateTime"))
+        assertEquals(true, timed.getJSONObject("start").isNull("date"))
+        assertEquals(true, timed.getJSONObject("start").has("date"))
+        assertEquals(false, timed.has("attendees"))
+        assertEquals(false, timed.has("conferenceData"))
+        // All day: the day, the clock cleared.
+        val day = java.util.Calendar.getInstance(zone).apply { clear(); set(2026, java.util.Calendar.SEPTEMBER, 25) }.timeInMillis
+        val allDay = GoogleEvent.patch("Offsite", day, day + 86_400_000L, true, zone)
+        assertEquals("2026-09-25", allDay.getJSONObject("start").getString("date"))
+        assertEquals("2026-09-26", allDay.getJSONObject("end").getString("date"))
+        assertEquals(true, allDay.getJSONObject("start").has("dateTime"))
+        assertEquals(true, allDay.getJSONObject("start").isNull("dateTime"))
+        assertEquals(true, allDay.toString().contains("\"dateTime\":null"))
+
+        // What the menu needs from Google's list: its id, and whether it repeats.
+        val listed = GoogleEvent.eventsFromList(org.json.JSONObject("""{"items":[
+            {"summary":"Weekly 1:1","id":"w1_20260928T133000Z","recurringEventId":"w1",
+             "start":{"dateTime":"2026-09-28T19:00:00+05:30"},"end":{"dateTime":"2026-09-28T19:30:00+05:30"}},
+            {"summary":"Lunch","id":"l1",
+             "start":{"dateTime":"2026-09-28T13:00:00+05:30"},"end":{"dateTime":"2026-09-28T14:00:00+05:30"}}
+        ]}"""), zone)
+        assertEquals(listOf("w1_20260928T133000Z", "l1"), listed.map { it.googleId })
+        assertEquals(listOf(true, false), listed.map { it.repeats })
+    }
 }

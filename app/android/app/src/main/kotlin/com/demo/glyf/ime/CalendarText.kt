@@ -32,7 +32,20 @@ object CalendarText {
         /** Who owns its calendar: the Google account's email for its own
          *  (primary) calendar. */
         val owner: String? = null,
+        /** One occurrence of a repeating event: changing or deleting it
+         *  touches this one only. */
+        val repeats: Boolean = false,
+        /** Its calendar's name, and whether this keyboard may change it
+         *  (holidays, birthdays and subscriptions can't be). */
+        val calendar: String? = null,
+        val writable: Boolean = true,
+        /** The occurrence's start as the provider keeps it (all-day ones on
+         *  UTC days): what a change to one occurrence of a series names. */
+        val begin: Long? = null,
     )
+
+    /** Why a change to the phone's calendar didn't happen. */
+    enum class Change { NOT_FOUND, READ_ONLY, FAILED }
 
     /** Events added to Google Calendar from the keyboard reach the phone's
      *  calendar only when Google next syncs it (and never on a phone without
@@ -99,14 +112,17 @@ object CalendarText {
             CalendarContract.Instances.END, CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.EVENT_LOCATION, CalendarContract.Instances.DISPLAY_COLOR,
             CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.UID_2445,
-            CalendarContract.Instances.OWNER_ACCOUNT,
+            CalendarContract.Instances.OWNER_ACCOUNT, CalendarContract.Instances.RRULE,
+            CalendarContract.Instances.RDATE, CalendarContract.Instances.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Instances.CALENDAR_ACCESS_LEVEL,
         )
         val out = mutableListOf<Event>()
         runCatching {
             ctx.contentResolver.query(uri, cols, null, null, "${CalendarContract.Instances.BEGIN} ASC")?.use { c ->
                 while (c.moveToNext() && out.size < 1500) {
                     val allDay = c.getInt(3) == 1
-                    var start = c.getLong(1)
+                    val begin = c.getLong(1)
+                    var start = begin
                     var end = c.getLong(2)
                     if (allDay) {
                         // All-day instances are stored in UTC days.
@@ -121,6 +137,11 @@ object CalendarText {
                         id = c.getLong(6),
                         external = c.getString(7)?.takeIf { it.isNotBlank() },
                         owner = c.getString(8)?.takeIf { it.isNotBlank() },
+                        repeats = !c.getString(9).isNullOrBlank() || !c.getString(10).isNullOrBlank(),
+                        calendar = c.getString(11)?.takeIf { it.isNotBlank() },
+                        writable = c.isNull(12) ||
+                            c.getInt(12) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR,
+                        begin = begin,
                     )
                 }
             }
@@ -207,6 +228,121 @@ object CalendarText {
             Event(title, start, maxOf(end, start), allDay, location = location?.takeIf { it.isNotEmpty() },
                 id = android.content.ContentUris.parseId(uri)) to name
         }.getOrNull()
+    }
+
+    /** A repeating event's own row: its calendar, whether a sync adapter
+     *  knows it, and what it already leaves out. */
+    private class Series(val calendarId: Long, val syncId: String?, val exdate: String?, val dtstart: Long,
+                         val duration: String?, val rrule: String?, val location: String?, val notes: String?)
+
+    private fun series(ctx: Context, id: Long): Series? = runCatching {
+        val cols = arrayOf(CalendarContract.Events.CALENDAR_ID, CalendarContract.Events._SYNC_ID,
+            CalendarContract.Events.EXDATE, CalendarContract.Events.DTSTART, CalendarContract.Events.DURATION,
+            CalendarContract.Events.RRULE, CalendarContract.Events.EVENT_LOCATION, CalendarContract.Events.DESCRIPTION)
+        ctx.contentResolver.query(android.content.ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id),
+            cols, null, null, null)?.use { c ->
+            if (!c.moveToFirst()) null
+            else Series(c.getLong(0), c.getString(1), c.getString(2), c.getLong(3), c.getString(4),
+                c.getString(5), c.getString(6), c.getString(7))
+        }
+    }.getOrNull()
+
+    /** Leaves one occurrence out of a series the phone keeps itself. Android
+     *  only honours exceptions to synced series (an unsynced one loses every
+     *  occurrence), so the date goes in EXDATE, and the rule is put again so
+     *  the occurrences are drawn anew. */
+    private fun skip(ctx: Context, id: Long, s: Series, begin: Long): Boolean {
+        val stamp = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(begin)
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Events.EXDATE, listOfNotNull(s.exdate?.takeIf { it.isNotBlank() }, stamp).joinToString(","))
+            put(CalendarContract.Events.DTSTART, s.dtstart)
+            s.duration?.let { put(CalendarContract.Events.DURATION, it) }
+            s.rrule?.let { put(CalendarContract.Events.RRULE, it) }
+        }
+        return ctx.contentResolver.update(android.content.ContentUris.withAppendedId(
+            CalendarContract.Events.CONTENT_URI, id), values, null, null) > 0
+    }
+
+    /** Deletes the event, this occurrence only for a repeating one. Null
+     *  when done. */
+    fun remove(ctx: Context, e: Event): Change? {
+        val id = e.id ?: return Change.NOT_FOUND
+        if (!e.writable) return Change.READ_ONLY
+        if (!canAdd(ctx)) return Change.FAILED
+        return runCatching {
+            if (e.repeats) {
+                val begin = e.begin ?: return Change.NOT_FOUND
+                val s = series(ctx, id) ?: return Change.NOT_FOUND
+                if (s.syncId == null) return if (skip(ctx, id, s, begin)) null else Change.FAILED
+                // A synced series keeps a cancelled exception for it.
+                val values = android.content.ContentValues().apply {
+                    put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, begin)
+                    put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CANCELED)
+                }
+                ctx.contentResolver.insert(android.content.ContentUris.withAppendedId(
+                    CalendarContract.Events.CONTENT_EXCEPTION_URI, id), values) ?: return Change.FAILED
+                null
+            } else {
+                val gone = ctx.contentResolver.delete(android.content.ContentUris.withAppendedId(
+                    CalendarContract.Events.CONTENT_URI, id), null, null)
+                if (gone > 0) null else Change.NOT_FOUND
+            }
+        }.getOrElse { Change.FAILED }
+    }
+
+    /** The event's title and times changed in place (this occurrence only,
+     *  for a repeating one). The event as the list shows it now, or why not. */
+    fun update(ctx: Context, e: Event, title: String, start: Long, end: Long,
+               allDay: Boolean): Pair<Event?, Change?> {
+        val id = e.id ?: return null to Change.NOT_FOUND
+        if (!e.writable) return null to Change.READ_ONLY
+        if (!canAdd(ctx)) return null to Change.FAILED
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Events.TITLE, title)
+            if (allDay) {
+                // All-day events live on UTC midnights, the end day not included.
+                put(CalendarContract.Events.DTSTART, localDayToUtc(start))
+                put(CalendarContract.Events.DTEND, localDayToUtc(if (end > start) end else start + 86_400_000L))
+                put(CalendarContract.Events.ALL_DAY, 1)
+                put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+            } else {
+                put(CalendarContract.Events.DTSTART, start)
+                put(CalendarContract.Events.DTEND, maxOf(end, start))
+                put(CalendarContract.Events.ALL_DAY, 0)
+                put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+            }
+        }
+        val done = runCatching {
+            if (e.repeats) {
+                val begin = e.begin ?: return null to Change.NOT_FOUND
+                val s = series(ctx, id) ?: return null to Change.NOT_FOUND
+                if (s.syncId == null) {
+                    // The phone's own series: the date is left out of it and
+                    // the changed occurrence stands on its own.
+                    if (!skip(ctx, id, s, begin)) return null to Change.FAILED
+                    values.put(CalendarContract.Events.CALENDAR_ID, s.calendarId)
+                    s.location?.let { values.put(CalendarContract.Events.EVENT_LOCATION, it) }
+                    s.notes?.let { values.put(CalendarContract.Events.DESCRIPTION, it) }
+                    return@runCatching ctx.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) != null
+                }
+                // One occurrence is an exception to the series, which takes a
+                // length, not an end ("Exceptions can't overwrite dtend").
+                val from = values.getAsLong(CalendarContract.Events.DTSTART)
+                val to = values.getAsLong(CalendarContract.Events.DTEND)
+                values.remove(CalendarContract.Events.DTEND)
+                values.put(CalendarContract.Events.DURATION, if (allDay) "P${maxOf(1L, (to - from) / 86_400_000L)}D"
+                    else "PT${maxOf(0L, (to - from) / 1000)}S")
+                values.put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, begin)
+                ctx.contentResolver.insert(android.content.ContentUris.withAppendedId(
+                    CalendarContract.Events.CONTENT_EXCEPTION_URI, id), values) != null
+            } else {
+                ctx.contentResolver.update(android.content.ContentUris.withAppendedId(
+                    CalendarContract.Events.CONTENT_URI, id), values, null, null) > 0
+            }
+        }.getOrDefault(false)
+        if (!done) return null to Change.FAILED
+        return e.copy(title = title, start = start, end = maxOf(end, start), allDay = allDay) to null
     }
 
     private fun localDayToUtc(ms: Long): Long {

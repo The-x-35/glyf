@@ -1,19 +1,34 @@
 // A stand-in for the Google APIs the keyboards call themselves: the token
 // endpoint (a refresh on the iPhone), Meet's spaces.create and Calendar's
-// events.insert. The keyboards reach it only in debug builds, after a
+// events.insert, list, patch (also as POST + X-HTTP-Method-Override, the way
+// Android sends it) and delete. The keyboards reach it only in debug builds, after a
 // scenario connects "Google" with --glyf-test-google <base> (iPhone) or the
 // `googlefake` debug tool (Android). No real account is touched and nobody is
 // emailed.
 //
 //   PORT=8797 node qa/fake-google.mjs
 //
-// GET /_log lists the Meet links made and the events added (with the query,
-// so a test can see sendUpdates=all); GET /_reset clears it.
+// GET /_log lists the Meet links made, the events added (with the query,
+// so a test can see sendUpdates=all), and the patches and deletes; GET
+// /_reset clears it. An event seeded with "notMine": true answers a patch
+// the way Google does for someone else's event (forbiddenForNonOrganizer).
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 
 const PORT = Number(process.env.PORT ?? 8797);
-const log = { spaces: [], events: [] };
+const log = { spaces: [], events: [], patches: [], deleted: [] };
+const EVENT = /^\/calendar\/v3\/calendars\/primary\/events\/([^/]+)$/;
+
+/** events.patch: fields given replace, null clears, objects merge. */
+function merge(into, patch) {
+  const out = { ...into };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) delete out[k];
+    else if (typeof v === "object" && !Array.isArray(v) && typeof out[k] === "object") out[k] = merge(out[k], v);
+    else out[k] = v;
+  }
+  return out;
+}
 
 function send(res, status, body) {
   res.writeHead(status, { "content-type": "application/json" });
@@ -36,6 +51,8 @@ createServer((req, res) => {
     if (url.pathname === "/_reset") {
       log.spaces.length = 0;
       log.events.length = 0;
+      log.patches.length = 0;
+      log.deleted.length = 0;
       return send(res, 200, log);
     }
     if (url.pathname === "/token" && req.method === "POST") {
@@ -46,6 +63,32 @@ createServer((req, res) => {
       return send(res, 200, { access_token: `fake-access-${Date.now()}`, expires_in: 3600, token_type: "Bearer" });
     }
     const signed = /^Bearer \S+/.test(req.headers.authorization ?? "");
+    const override = req.headers["x-http-method-override"];
+    const method = req.method === "POST" && override ? String(override).toUpperCase() : req.method;
+    const one = url.pathname.match(EVENT);
+    if (one && (method === "PATCH" || method === "DELETE")) {
+      if (!signed) return send(res, 401, { error: { code: 401, message: "Request is missing credentials" } });
+      const id = decodeURIComponent(one[1]);
+      const at = log.events.findIndex(e => e.id === id);
+      const query = Object.fromEntries(url.searchParams);
+      if (at < 0) return send(res, 410, { error: { code: 410, message: "Resource has been deleted" } });
+      if (method === "DELETE") {
+        log.events.splice(at, 1);
+        log.deleted.push({ id, query });
+        res.writeHead(204);
+        return res.end();
+      }
+      const event = log.events[at];
+      if (event.body.notMine) {
+        return send(res, 403, { error: { code: 403,
+          message: "Shared properties can only be changed by the organizer of the event.",
+          errors: [{ domain: "calendar", reason: "forbiddenForNonOrganizer" }] } });
+      }
+      const patch = JSON.parse(body || "{}");
+      event.body = merge(event.body, patch);
+      log.patches.push({ id, query, body: patch });
+      return send(res, 200, { ...event.body, id, status: "confirmed" });
+    }
     if (url.pathname === "/v2/spaces" && req.method === "POST") {
       if (!signed) return send(res, 401, { error: { code: 401, message: "Request is missing credentials" } });
       const code = meetCode();

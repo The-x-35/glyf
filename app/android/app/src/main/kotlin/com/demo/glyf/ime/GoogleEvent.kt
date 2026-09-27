@@ -45,7 +45,27 @@ object GoogleEvent {
                 title = title.ifEmpty { "Busy" },
                 start = start, end = maxOf(end, start), allDay = allDay,
                 location = item.optString("location").takeIf { it.isNotEmpty() },
-                external = item.optString("iCalUID").takeIf { it.isNotEmpty() }))
+                googleId = item.optString("id").takeIf { it.isNotEmpty() },
+                external = item.optString("iCalUID").takeIf { it.isNotEmpty() },
+                repeats = item.optString("recurringEventId").isNotEmpty()))
+        }
+        return out
+    }
+
+    /** events.patch's body for an edit: the title and the times. A switch
+     *  between all-day and timed clears the other kind of time, which a
+     *  patch would otherwise keep beside the new one. */
+    fun patch(title: String, start: Long, end: Long, allDay: Boolean,
+              tz: TimeZone = TimeZone.getDefault()): JSONObject {
+        val out = body(title, start, end, allDay, emptyList(), false, tz)
+        for (key in listOf("start", "end")) {
+            val node = out.optJSONObject(key) ?: continue
+            if (allDay) {
+                node.put("dateTime", JSONObject.NULL)
+                node.put("timeZone", JSONObject.NULL)
+            } else {
+                node.put("date", JSONObject.NULL)
+            }
         }
         return out
     }

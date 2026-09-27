@@ -123,6 +123,47 @@ final class EventParseTests: XCTestCase {
         XCTAssertEqual(GoogleEvent.query, "sendUpdates=all&conferenceDataVersion=1")
     }
 
+    func testGoogleEventEdits() {
+        let tz = TimeZone(identifier: "Asia/Kolkata")!
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        let start = cal.date(from: DateComponents(year: 2026, month: 9, day: 25, hour: 15))!
+        // Timed: the new times, and the all-day kind cleared (a patch keeps
+        // what it isn't told to drop).
+        let timed = GoogleEvent.patch(title: "Review", start: start, end: start.addingTimeInterval(1800),
+                                      allDay: false, timeZone: tz)
+        let timedStart = timed["start"] as? [String: Any]
+        XCTAssertEqual(timed["summary"] as? String, "Review")
+        XCTAssertEqual(timedStart?["dateTime"] as? String, "2026-09-25T15:00:00+05:30")
+        XCTAssertEqual(timedStart?["timeZone"] as? String, "Asia/Kolkata")
+        XCTAssertTrue(timedStart?["date"] is NSNull)
+        XCTAssertTrue((timed["end"] as? [String: Any])?["date"] is NSNull)
+        XCTAssertNil(timed["attendees"], "an edit leaves the guests as they are")
+        XCTAssertNil(timed["conferenceData"])
+        // All day: the day, the clock cleared.
+        let day = cal.date(from: DateComponents(year: 2026, month: 9, day: 25))!
+        let allDay = GoogleEvent.patch(title: "Offsite", start: day, end: day.addingTimeInterval(86_400),
+                                       allDay: true, timeZone: tz)
+        let dayStart = allDay["start"] as? [String: Any]
+        XCTAssertEqual(dayStart?["date"] as? String, "2026-09-25")
+        XCTAssertEqual((allDay["end"] as? [String: Any])?["date"] as? String, "2026-09-26")
+        XCTAssertTrue(dayStart?["dateTime"] is NSNull)
+        XCTAssertTrue(dayStart?["timeZone"] is NSNull)
+        XCTAssertNotNil(try? JSONSerialization.data(withJSONObject: allDay), "nulls go out as JSON null")
+
+        // What the menu needs from Google's list: its id, and whether it repeats.
+        let listed = GoogleEvent.events(fromList: ["items": [
+            ["summary": "Weekly 1:1", "id": "w1_20260928T133000Z", "recurringEventId": "w1",
+             "start": ["dateTime": "2026-09-28T19:00:00+05:30"], "end": ["dateTime": "2026-09-28T19:30:00+05:30"]],
+            ["summary": "Lunch", "id": "l1",
+             "start": ["dateTime": "2026-09-28T13:00:00+05:30"], "end": ["dateTime": "2026-09-28T14:00:00+05:30"]],
+        ]], timeZone: tz)
+        XCTAssertEqual(listed.map(\.googleID), ["w1_20260928T133000Z", "l1"])
+        XCTAssertEqual(listed.map(\.repeats), [true, false])
+        XCTAssertNil(CalendarText.Event(title: "Dentist", start: day, end: day, allDay: false,
+                                        id: "ABC:123").googleID, "the phone's own ids aren't Google's")
+    }
+
     func testBookingPages() {
         XCTAssertEqual(Smart.bookingLink(in: "grab a slot: cal.com/sam/intro", own: nil), "cal.com/sam/intro")
         XCTAssertEqual(Smart.bookingLink(in: "book me here https://calendly.com/ria", own: nil), "https://calendly.com/ria")

@@ -18,6 +18,8 @@ final class GoogleClient {
         case apiOff
         /// The grant doesn't cover it (Calendar was unticked).
         case noScope
+        /// Someone else's event: only its organizer can change it.
+        case notOrganizer
     }
 
     /// What to tell the person when Google didn't do it.
@@ -31,6 +33,7 @@ final class GoogleClient {
             let project = GoogleAccess.load()?.clientId.split(separator: "-").first.map(String.init)
             return "the Calendar API is off in Google Cloud" + (project.map { " project \($0)" } ?? "")
         case .noScope: return "turn Calendar on again in Glyf › Connected tools"
+        case .notOrganizer: return "only the organizer can change it"
         case .refused, .notConnected: return "Google said no"
         }
     }
@@ -46,7 +49,20 @@ final class GoogleClient {
 
     private var cached: (token: String, expires: Date)?
 
-    private struct Endpoints { let token: URL; let meet: URL; let events: URL }
+    private struct Endpoints {
+        let token: URL
+        let meet: URL
+        let events: URL
+        /// The calendar's events, for one of them by id.
+        let eventsBase: String
+
+        /// One event (or one occurrence of a repeating one); Google emails
+        /// its guests about the change.
+        func event(_ id: String) -> URL? {
+            let path = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? id
+            return URL(string: "\(eventsBase)/\(path)?sendUpdates=all")
+        }
+    }
 
     private func endpoints(_ grant: GoogleGrant) -> Endpoints {
         var token = "https://oauth2.googleapis.com/token"
@@ -60,7 +76,7 @@ final class GoogleClient {
         }
         #endif
         return Endpoints(token: URL(string: token)!, meet: URL(string: meet)!,
-                         events: URL(string: "\(events)?\(GoogleEvent.query)")!)
+                         events: URL(string: "\(events)?\(GoogleEvent.query)")!, eventsBase: events)
     }
 
     private static func main(_ work: @escaping () -> Void) { DispatchQueue.main.async(execute: work) }
@@ -152,36 +168,60 @@ final class GoogleClient {
             || message.contains("insufficient authentication scopes") {
             return .noScope
         }
+        if reasons.contains("forbiddenForNonOrganizer") || message.contains("only be changed by the organizer") {
+            return .notOrganizer
+        }
         return .refused
     }
 
-    /// GETs with a token, and once more with a fresh one if Google says the
-    /// token went stale on the way.
-    private func get(_ url: URL, retry: Bool = true,
-                     done: @escaping (Result<[String: Any], Failure>) -> Void) {
+    /// Sends with a token, and once more with a fresh one if Google says the
+    /// token went stale on the way. Any answer from Google comes back as its
+    /// status and body; no answer, or a grant Google refused, as a failure.
+    private func send(_ method: String, _ url: URL, body: [String: Any]? = nil, retry: Bool = true,
+                      done: @escaping (Result<(status: Int, json: [String: Any]?), Failure>) -> Void) {
         accessToken { [weak self] token in
             guard let self else { return }
             switch token {
             case .failure(let f): done(.failure(f))
             case .success(let token):
                 var req = URLRequest(url: url)
+                req.httpMethod = method
                 req.timeoutInterval = 12
                 req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                if let body {
+                    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+                }
                 URLSession.shared.dataTask(with: req) { data, response, _ in
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
                     Self.main {
-                        if (200..<300).contains(status), let json { return done(.success(json)) }
                         if status == 401, retry {
                             self.cached = nil
-                            return self.get(url, retry: false, done: done)
+                            return self.send(method, url, body: body, retry: false, done: done)
                         }
-                        done(.failure(status == 0 ? .unreachable : status == 401 ? .reconnect
-                                        : Self.failure(fromError: json)))
+                        if status == 0 { return done(.failure(.unreachable)) }
+                        if status == 401 { return done(.failure(.reconnect)) }
+                        done(.success((status, json)))
                     }
                 }.resume()
             }
         }
+    }
+
+    /// A call whose answer is an object: Google's body, or why it said no.
+    private func call(_ method: String, _ url: URL, body: [String: Any]? = nil,
+                      done: @escaping (Result<[String: Any], Failure>) -> Void) {
+        send(method, url, body: body) { result in
+            done(result.flatMap { answer in
+                if (200..<300).contains(answer.status), let json = answer.json { return .success(json) }
+                return .failure(Self.failure(fromError: answer.json))
+            })
+        }
+    }
+
+    private func get(_ url: URL, done: @escaping (Result<[String: Any], Failure>) -> Void) {
+        call("GET", url, done: done)
     }
 
     /// The event in the person's own Google Calendar. Google emails each
@@ -201,34 +241,40 @@ final class GoogleClient {
         }
     }
 
-    /// POSTs with a token, and once more with a fresh one if Google says the
-    /// token went stale on the way.
-    private func post(_ url: URL, body: [String: Any], retry: Bool = true,
+    private func post(_ url: URL, body: [String: Any],
                       done: @escaping (Result<[String: Any], Failure>) -> Void) {
-        accessToken { [weak self] token in
-            guard let self else { return }
-            switch token {
-            case .failure(let f): done(.failure(f))
-            case .success(let token):
-                var req = URLRequest(url: url)
-                req.httpMethod = "POST"
-                req.timeoutInterval = 12
-                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-                URLSession.shared.dataTask(with: req) { data, response, _ in
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-                    Self.main {
-                        if (200..<300).contains(status), let json { return done(.success(json)) }
-                        if status == 401, retry {
-                            self.cached = nil
-                            return self.post(url, body: body, retry: false, done: done)
-                        }
-                        done(.failure(status == 0 ? .unreachable : status == 401 ? .reconnect : .refused))
-                    }
-                }.resume()
-            }
+        call("POST", url, body: body, done: done)
+    }
+
+    /// One event changed in place: its title and times (one occurrence of a
+    /// repeating event). Google emails its guests the change. Comes back as
+    /// Google now lists it.
+    func updateEvent(id: String, title: String, start: Date, end: Date, allDay: Bool,
+                     done: @escaping (Result<CalendarText.Event?, Failure>) -> Void) {
+        guard GoogleAccess.hasCalendar, let grant = GoogleAccess.load(),
+              let url = endpoints(grant).event(id) else {
+            return Self.main { done(.failure(.notConnected)) }
+        }
+        let body = GoogleEvent.patch(title: title, start: start, end: end, allDay: allDay)
+        call("PATCH", url, body: body) { result in
+            done(result.map { GoogleEvent.events(fromList: ["items": [$0]]).first })
+        }
+    }
+
+    /// One event gone from the calendar (one occurrence of a repeating
+    /// event). Google tells its guests. Already gone counts as done.
+    func deleteEvent(id: String, done: @escaping (Result<Void, Failure>) -> Void) {
+        guard GoogleAccess.hasCalendar, let grant = GoogleAccess.load(),
+              let url = endpoints(grant).event(id) else {
+            return Self.main { done(.failure(.notConnected)) }
+        }
+        send("DELETE", url) { result in
+            done(result.flatMap { answer in
+                if (200..<300).contains(answer.status) || answer.status == 404 || answer.status == 410 {
+                    return .success(())
+                }
+                return .failure(Self.failure(fromError: answer.json))
+            })
         }
     }
 }
@@ -261,6 +307,13 @@ enum GoogleAdded {
         save(Array((load() + [event]).suffix(30)))
     }
 
+    /// Deleted, or changed (then `with` is how it reads now).
+    static func forget(id: String, with changed: CalendarText.Event? = nil) {
+        let added = load()
+        guard added.contains(where: { $0.id == id }) else { return }
+        save(added.compactMap { $0.id == id ? changed : $0 })
+    }
+
     /// `events` with every added event the phone doesn't show yet.
     static func merged(into events: [CalendarText.Event], now: Date = Date()) -> [CalendarText.Event] {
         let added = load()
@@ -281,6 +334,8 @@ enum GoogleAdded {
                                       "end": iso.string(from: e.end), "allDay": e.allDay]
             if let location = e.location { row["location"] = location }
             if let id = e.id { row["id"] = id }
+            if let external = e.external { row["external"] = external }
+            if e.repeats { row["repeats"] = true }
             return row
         }
         AppGroupStore.writeJSON(["events": rows], name: file)
@@ -307,6 +362,8 @@ enum GoogleCache {
                                       "end": iso.string(from: e.end), "allDay": e.allDay]
             if let location = e.location { row["location"] = location }
             if let id = e.id { row["id"] = id }
+            if let external = e.external { row["external"] = external }
+            if e.repeats { row["repeats"] = true }
             return row
         }
         AppGroupStore.writeJSON(["email": email ?? "", "at": Date().timeIntervalSince1970, "events": rows],

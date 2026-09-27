@@ -20,6 +20,16 @@ enum CalendarText {
         /// Which calendar it sits in, by name (Google's primary calendar is
         /// named after the account's email on the phone).
         var calendar: String? = nil
+        /// One occurrence of a repeating event: changing or deleting it
+        /// touches this one only.
+        var repeats: Bool = false
+
+        /// Google's own id for it ("google:<id>" in the list), when it came
+        /// from Google Calendar.
+        var googleID: String? {
+            guard let id, id.hasPrefix("google:") else { return nil }
+            return String(id.dropFirst("google:".count))
+        }
     }
 
     static func events(fromJSON json: [String: Any]?) -> [Event] {
@@ -32,7 +42,8 @@ enum CalendarText {
             return Event(title: title.isEmpty ? "Busy" : title, start: s, end: max(e, s),
                          allDay: row["allDay"] as? Bool ?? false,
                          location: (row["location"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-                         color: row["color"] as? String, id: row["id"] as? String)
+                         color: row["color"] as? String, id: row["id"] as? String,
+                         external: row["external"] as? String, repeats: row["repeats"] as? Bool ?? false)
         }
     }
 

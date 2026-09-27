@@ -35,7 +35,28 @@ enum GoogleEvent {
                 start: start, end: max(end, start), allDay: allDay,
                 location: item["location"] as? String,
                 id: (item["id"] as? String).map { "google:\($0)" },
-                external: item["iCalUID"] as? String))
+                external: item["iCalUID"] as? String,
+                repeats: item["recurringEventId"] is String))
+        }
+        return out
+    }
+
+    /// events.patch's body for an edit: the title and the times. A switch
+    /// between all-day and timed clears the other kind of time, which a
+    /// patch would otherwise keep beside the new one.
+    static func patch(title: String, start: Date, end: Date, allDay: Bool,
+                      timeZone: TimeZone = .current) -> [String: Any] {
+        var out = body(title: title, start: start, end: end, allDay: allDay, guests: [], video: false,
+                       timeZone: timeZone)
+        for key in ["start", "end"] {
+            guard var node = out[key] as? [String: Any] else { continue }
+            if allDay {
+                node["dateTime"] = NSNull()
+                node["timeZone"] = NSNull()
+            } else {
+                node["date"] = NSNull()
+            }
+            out[key] = node
         }
         return out
     }

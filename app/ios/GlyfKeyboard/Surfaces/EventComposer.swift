@@ -7,7 +7,8 @@ import UIKit
 /// only with Google Calendar connected: the event then goes to Google, which
 /// emails each one the invite. Share in chat puts the event in the message,
 /// for the person the chat is with. The date and time pills open Apple's
-/// wheels in place of the rows.
+/// wheels in place of the rows. Holding an event in the calendar opens it as
+/// Edit Event: its title and times, and Save.
 final class EventComposer: UIView {
 
     struct Draft: Equatable {
@@ -52,6 +53,10 @@ final class EventComposer: UIView {
     private let google: Bool
     /// A Google Meet call can be made: Video call is offered.
     private let meet: Bool
+    /// Edit Event: an event that exists, so only its title and times.
+    private let edit: Bool
+    private var showsInvitees: Bool { google && !edit }
+    private var showsVideo: Bool { meet && !edit }
 
     private let cancelButton = UIButton(type: .system)
     private let addButton = UIButton(type: .system)
@@ -82,11 +87,12 @@ final class EventComposer: UIView {
     private let note = UILabel()
 
     init(draft: Draft, access: CalendarWriter.Access, google: Bool = GoogleAccess.hasCalendar,
-         meet: Bool = GoogleAccess.hasCalendar || GoogleAccess.hasMeet) {
+         meet: Bool = GoogleAccess.hasCalendar || GoogleAccess.hasMeet, edit: Bool = false) {
         self.draft = draft
         self.access = access
         self.google = google
         self.meet = meet
+        self.edit = edit
         super.init(frame: .zero)
         typed = draft.title
         inviteLine = draft.invitees.joined(separator: " ")
@@ -246,7 +252,7 @@ final class EventComposer: UIView {
         var d = draft
         d.title = d.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if d.title.isEmpty { d.title = "New Event" }
-        d.invitees = google ? EventParse.people(inviteLine).emails : []
+        d.invitees = showsInvitees ? EventParse.people(inviteLine).emails : []
         onAdd?(d)
     }
 
@@ -281,10 +287,11 @@ final class EventComposer: UIView {
             render()
             return
         }
-        // A plan typed into the title sets the times too ("tomorrow 1pm").
+        // A plan typed into the title sets the times too ("tomorrow 1pm");
+        // an event being edited keeps its own times until the pills move them.
         typed = text
         let plan = EventParse.parse(text, calendar: cal, dayFirst: EventParse.regionDayFirst)
-        if plan.hasDay || plan.hasTime || plan.allDay {
+        if !edit, plan.hasDay || plan.hasTime || plan.allDay {
             draft.title = plan.title
             draft.start = plan.start
             draft.end = plan.end
@@ -352,10 +359,10 @@ final class EventComposer: UIView {
         hint.isHidden = !strip
         titleEditor.isHidden = !strip
 
-        heading.text = picking == .start ? "Starts" : picking == .end ? "Ends" : "New Event"
+        heading.text = picking == .start ? "Starts" : picking == .end ? "Ends" : edit ? "Edit Event" : "New Event"
         cancelButton.isHidden = picking != nil
-        addButton.setTitle(picking != nil ? "Done" : "Add", for: .normal)
-        addButton.accessibilityIdentifier = picking != nil ? "event:done" : "event:add"
+        addButton.setTitle(picking != nil ? "Done" : edit ? "Save" : "Add", for: .normal)
+        addButton.accessibilityIdentifier = picking != nil ? "event:done" : edit ? "event:save" : "event:add"
         addButton.isEnabled = picking != nil || access == .ready
         addButton.alpha = addButton.isEnabled ? 1 : 0.4
 
@@ -397,10 +404,10 @@ final class EventComposer: UIView {
         case .ready:
             note.isHidden = true
         case .needsFullAccess:
-            note.text = "Turn on Allow Full Access for Glyf in Settings to add events."
+            note.text = "Turn on Allow Full Access for Glyf in Settings to \(edit ? "change" : "add") events."
             note.isHidden = rowsHidden
         case .needsPermission:
-            note.text = "Allow Calendars in Settings › Apps › Glyf to add events."
+            note.text = "Allow Calendars in Settings › Apps › Glyf to \(edit ? "change" : "add") events."
             note.isHidden = rowsHidden
         }
         setNeedsLayout()
@@ -442,8 +449,9 @@ final class EventComposer: UIView {
         let rowH: CGFloat = max(34, min(40, floor((bounds.height - headerH - 6 - (showNote ? 44 : 0)) / 5)))
         // Without the calendar, only what can be seen is shown; the note says why.
         let order: [UIView] = showNote ? [titleRow, startsLabel, endsLabel]
-            : (google ? [titleRow, inviteRow] : [titleRow])
-                + [startsLabel, endsLabel] + (meet ? [videoLabel] : []) + [shareLabel, allDayLabel]
+            : (showsInvitees ? [titleRow, inviteRow] : [titleRow])
+                + [startsLabel, endsLabel] + (showsVideo ? [videoLabel] : [])
+                + (edit ? [] : [shareLabel]) + [allDayLabel]
         let noteH: CGFloat = showNote ? 44 : 0
         rows.frame = CGRect(x: pad, y: headerH + 2, width: w - pad * 2,
                             height: max(0, bounds.height - headerH - 6 - noteH))
@@ -455,7 +463,7 @@ final class EventComposer: UIView {
         titleRow.frame = CGRect(x: 0, y: rowY(titleRow), width: cw, height: rowH)
         titleLabel.frame = CGRect(x: 14, y: 0, width: 90, height: rowH)
         titleValue.frame = CGRect(x: 104, y: 0, width: cw - 118, height: rowH)
-        inviteRow.isHidden = showNote || !google
+        inviteRow.isHidden = showNote || !showsInvitees
         inviteRow.frame = CGRect(x: 0, y: rowY(inviteRow), width: cw, height: rowH)
         inviteLabel.frame = CGRect(x: 14, y: 0, width: 90, height: rowH)
         inviteValue.frame = CGRect(x: 104, y: 0, width: cw - 118, height: rowH)
@@ -476,12 +484,13 @@ final class EventComposer: UIView {
         place([startDate, startTime], y: rowY(startsLabel))
         place([endDate, endTime], y: rowY(endsLabel))
 
-        for v in [allDayLabel, allDaySwitch, shareLabel, shareSwitch] as [UIView] {
-            v.isHidden = showNote
-        }
+        allDayLabel.isHidden = showNote
+        allDaySwitch.isHidden = showNote
+        shareLabel.isHidden = showNote || edit
+        shareSwitch.isHidden = showNote || edit
         // A video call is a Google Meet call: only with Google.
-        videoLabel.isHidden = showNote || !meet
-        videoSwitch.isHidden = showNote || !meet
+        videoLabel.isHidden = showNote || !showsVideo
+        videoSwitch.isHidden = showNote || !showsVideo
         if !showNote {
             for (l, toggle) in [(videoLabel, videoSwitch), (shareLabel, shareSwitch), (allDayLabel, allDaySwitch)]
             where !l.isHidden {

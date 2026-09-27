@@ -23,7 +23,7 @@ import java.util.concurrent.Executors
  */
 object GoogleClient {
 
-    enum class Failure { NOT_CONNECTED, RECONNECT, UNREACHABLE, REFUSED, API_OFF, NO_SCOPE }
+    enum class Failure { NOT_CONNECTED, RECONNECT, UNREACHABLE, REFUSED, API_OFF, NO_SCOPE, NOT_ORGANIZER }
 
     /** What to tell the person when Google didn't do it. */
     fun say(f: Failure): String = when (f) {
@@ -33,6 +33,7 @@ object GoogleClient {
         // services grant doesn't carry it, so the message stays general.
         Failure.API_OFF -> "the Calendar API is off in Google Cloud (the project with Glyf's sign-in)"
         Failure.NO_SCOPE -> "turn Calendar on again in Glyf › Connected tools"
+        Failure.NOT_ORGANIZER -> "only the organizer can change it"
         else -> "Google said no"
     }
 
@@ -48,6 +49,9 @@ object GoogleClient {
             "has not been used" in message || "is disabled" in message) return Failure.API_OFF
         if ("insufficientPermissions" in reasons || "ACCESS_TOKEN_SCOPE_INSUFFICIENT" in reasons ||
             "insufficient authentication scopes" in message) return Failure.NO_SCOPE
+        if ("forbiddenForNonOrganizer" in reasons || "only be changed by the organizer" in message) {
+            return Failure.NOT_ORGANIZER
+        }
         return Failure.REFUSED
     }
 
@@ -66,6 +70,13 @@ object GoogleClient {
     private fun eventsUrl(g: GoogleAccess.Grant) =
         (base(g)?.let { "$it/calendar/v3/calendars/primary/events" }
             ?: "https://www.googleapis.com/calendar/v3/calendars/primary/events") + "?" + GoogleEvent.QUERY
+
+    /** One event (or one occurrence of a repeating one); Google emails its
+     *  guests about the change. */
+    private fun eventUrl(g: GoogleAccess.Grant, id: String) =
+        (base(g)?.let { "$it/calendar/v3/calendars/primary/events" }
+            ?: "https://www.googleapis.com/calendar/v3/calendars/primary/events") +
+            "/" + java.net.URLEncoder.encode(id, "UTF-8") + "?sendUpdates=all"
 
     private fun listUrl(g: GoogleAccess.Grant, from: Long, to: Long): String {
         val iso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
@@ -132,56 +143,82 @@ object GoogleClient {
         }
     }
 
-    /** GETs with a token, once more with a fresh one on a stale 401. */
-    private fun get(ctx: Context, url: String, retry: Boolean = true,
-                    done: (JSONObject?, Failure?) -> Unit) {
-        accessToken(ctx) { token, failure ->
-            if (token == null) return@accessToken done(null, failure)
-            pool.execute {
-                var code = 0
-                var json: JSONObject? = null
-                runCatching {
-                    val c = (URL(url).openConnection() as HttpURLConnection).apply {
-                        requestMethod = "GET"
-                        connectTimeout = 6000
-                        readTimeout = 12000
-                        setRequestProperty("Authorization", "Bearer $token")
-                    }
-                    code = c.responseCode
-                    val stream = if (code in 200..299) c.inputStream else c.errorStream
-                    json = stream?.bufferedReader()?.readText()?.let { runCatching { JSONObject(it) }.getOrNull() }
-                }
-                main.post {
-                    when {
-                        code in 200..299 && json != null -> done(json, null)
-                        code == 401 && retry && token != "fake-access" -> get(ctx, url, false, done)
-                        else -> done(null, if (code == 0) Failure.UNREACHABLE
-                                          else if (code == 401) Failure.RECONNECT else failureFromError(json))
-                    }
-                }
+    /** One event changed in place: its title and times (one occurrence of
+     *  a repeating event). Google emails its guests the change. Comes back as
+     *  Google now lists it (null with no failure when it didn't say). */
+    fun updateEvent(ctx: Context, id: String, title: String, start: Long, end: Long, allDay: Boolean,
+                    done: (CalendarText.Event?, Failure?) -> Unit) {
+        val g = GoogleAccess.load(ctx)
+        if (g == null || GoogleAccess.CALENDAR !in g.scopes) return run { main.post { done(null, Failure.NOT_CONNECTED) } }
+        send(ctx, "PATCH", eventUrl(g, id), GoogleEvent.patch(title, start, end, allDay)) { code, json, f ->
+            when {
+                f != null -> done(null, f)
+                code in 200..299 -> done(json?.let {
+                    GoogleEvent.eventsFromList(JSONObject().put("items", org.json.JSONArray().put(it))).firstOrNull()
+                }, null)
+                else -> done(null, failureFromError(json))
             }
         }
     }
 
-    /** POSTs with a token, and once more with a fresh one if Google says
-     *  the token went stale on the way. */
-    private fun post(ctx: Context, url: String, body: JSONObject, retry: Boolean = true,
+    /** One event gone from the calendar (one occurrence of a repeating
+     *  event). Google tells its guests. Already gone counts as done. */
+    fun deleteEvent(ctx: Context, id: String, done: (Failure?) -> Unit) {
+        val g = GoogleAccess.load(ctx)
+        if (g == null || GoogleAccess.CALENDAR !in g.scopes) return run { main.post { done(Failure.NOT_CONNECTED) } }
+        send(ctx, "DELETE", eventUrl(g, id), null) { code, json, f ->
+            done(when {
+                f != null -> f
+                code in 200..299 || code == 404 || code == 410 -> null
+                else -> failureFromError(json)
+            })
+        }
+    }
+
+    /** GETs with a token, once more with a fresh one on a stale 401. */
+    private fun get(ctx: Context, url: String, done: (JSONObject?, Failure?) -> Unit) =
+        call(ctx, "GET", url, null, done)
+
+    private fun post(ctx: Context, url: String, body: JSONObject, done: (JSONObject?, Failure?) -> Unit) =
+        call(ctx, "POST", url, body, done)
+
+    /** A call whose answer is an object: Google's body, or why it said no. */
+    private fun call(ctx: Context, method: String, url: String, body: JSONObject?,
                      done: (JSONObject?, Failure?) -> Unit) {
+        send(ctx, method, url, body) { code, json, f ->
+            when {
+                f != null -> done(null, f)
+                code in 200..299 && json != null -> done(json, null)
+                else -> done(null, failureFromError(json))
+            }
+        }
+    }
+
+    /** Sends with a token, and once more with a fresh one if Google says the
+     *  token went stale on the way. Any answer comes back as its status and
+     *  body; no answer, or a grant Google refused, as a failure. PATCH goes
+     *  as POST with X-HTTP-Method-Override, which HttpURLConnection needs
+     *  and Google honours. */
+    private fun send(ctx: Context, method: String, url: String, body: JSONObject?, retry: Boolean = true,
+                     done: (Int, JSONObject?, Failure?) -> Unit) {
         accessToken(ctx) { token, failure ->
-            if (token == null) return@accessToken done(null, failure)
+            if (token == null) return@accessToken done(0, null, failure)
             pool.execute {
                 var code = 0
                 var json: JSONObject? = null
                 runCatching {
                     val c = (URL(url).openConnection() as HttpURLConnection).apply {
-                        requestMethod = "POST"
-                        doOutput = true
+                        requestMethod = if (method == "PATCH") "POST" else method
+                        if (method == "PATCH") setRequestProperty("X-HTTP-Method-Override", "PATCH")
                         connectTimeout = 6000
                         readTimeout = 12000
                         setRequestProperty("Authorization", "Bearer $token")
-                        setRequestProperty("Content-Type", "application/json")
+                        if (body != null) {
+                            doOutput = true
+                            setRequestProperty("Content-Type", "application/json")
+                        }
                     }
-                    c.outputStream.use { it.write(body.toString().toByteArray()) }
+                    if (body != null) c.outputStream.use { it.write(body.toString().toByteArray()) }
                     code = c.responseCode
                     val stream = if (code in 200..299) c.inputStream else c.errorStream
                     json = stream?.bufferedReader()?.readText()?.let { runCatching { JSONObject(it) }.getOrNull() }
@@ -189,15 +226,14 @@ object GoogleClient {
                 if (code == 401 && retry && token != "fake-access") {
                     // Play services hands the same token out until told it's stale.
                     runCatching { GoogleAuthUtil.clearToken(ctx, token) }
-                    main.post { post(ctx, url, body, false, done) }
+                    main.post { send(ctx, method, url, body, false, done) }
                     return@execute
                 }
                 main.post {
-                    when {
-                        code in 200..299 && json != null -> done(json, null)
-                        code == 0 -> done(null, Failure.UNREACHABLE)
-                        code == 401 -> done(null, Failure.RECONNECT)
-                        else -> done(null, Failure.REFUSED)
+                    when (code) {
+                        0 -> done(0, null, Failure.UNREACHABLE)
+                        401 -> done(code, json, Failure.RECONNECT)
+                        else -> done(code, json, null)
                     }
                 }
             }
@@ -230,6 +266,13 @@ object GoogleAdded {
 
     fun remember(ctx: Context, event: CalendarText.Event) = save(ctx, (load(ctx) + event).takeLast(30))
 
+    /** Deleted, or changed (then [changed] is how it reads now). */
+    fun forget(ctx: Context, googleId: String, changed: CalendarText.Event? = null) {
+        val added = load(ctx)
+        if (added.none { it.googleId == googleId }) return
+        save(ctx, added.mapNotNull { if (it.googleId == googleId) changed else it })
+    }
+
     /** `events` with every added event the phone doesn't show yet. */
     fun merged(ctx: Context, events: List<CalendarText.Event>,
                now: Long = System.currentTimeMillis()): List<CalendarText.Event> {
@@ -246,7 +289,9 @@ object GoogleAdded {
             val o = rows.getJSONObject(i)
             CalendarText.Event(o.getString("title"), o.getLong("start"), o.getLong("end"), o.optBoolean("allDay"),
                 location = o.optString("location").takeIf { it.isNotEmpty() },
-                googleId = o.optString("id").takeIf { it.isNotEmpty() })
+                googleId = o.optString("id").takeIf { it.isNotEmpty() },
+                external = o.optString("external").takeIf { it.isNotEmpty() },
+                repeats = o.optBoolean("repeats"))
         }
     }.getOrDefault(emptyList())
 
@@ -256,6 +301,8 @@ object GoogleAdded {
             put("title", e.title); put("start", e.start); put("end", e.end); put("allDay", e.allDay)
             e.location?.let { put("location", it) }
             e.googleId?.let { put("id", it) }
+            e.external?.let { put("external", it) }
+            if (e.repeats) put("repeats", true)
         })
         runCatching { java.io.File(ctx.filesDir, FILE).writeText(rows.toString()) }
     }
@@ -274,7 +321,10 @@ object GoogleCache {
         (0 until rows.length()).map { i ->
             val r = rows.getJSONObject(i)
             CalendarText.Event(r.getString("title"), r.getLong("start"), r.getLong("end"), r.optBoolean("allDay"),
-                location = r.optString("location").takeIf { it.isNotEmpty() })
+                location = r.optString("location").takeIf { it.isNotEmpty() },
+                googleId = r.optString("id").takeIf { it.isNotEmpty() },
+                external = r.optString("external").takeIf { it.isNotEmpty() },
+                repeats = r.optBoolean("repeats"))
         }
     }.getOrNull()
 
@@ -283,6 +333,9 @@ object GoogleCache {
         for (e in events) rows.put(org.json.JSONObject().apply {
             put("title", e.title); put("start", e.start); put("end", e.end); put("allDay", e.allDay)
             e.location?.let { put("location", it) }
+            e.googleId?.let { put("id", it) }
+            e.external?.let { put("external", it) }
+            if (e.repeats) put("repeats", true)
         })
         runCatching {
             java.io.File(ctx.filesDir, FILE).writeText(org.json.JSONObject()

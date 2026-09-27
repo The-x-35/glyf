@@ -25,6 +25,8 @@ import java.util.Locale
  * which emails the invitees, when Google is connected; with a call link if
  * asked; into the message if shared), the camera puts a call link in the
  * message, and Book a time shows the open times on the person's Cal.com page.
+ * Holding an event opens the clipboard's kind of menu: Edit (the composer,
+ * as Edit Event) and Delete.
  */
 class CalendarPanelView(
     ctx: Context,
@@ -89,6 +91,18 @@ class CalendarPanelView(
     /** How the last ask went, said under the day's events. */
     private var googleNote: String? = null
     private fun primary() = com.demo.glyf.store.GoogleAccess.load(context)?.email
+
+    /** The hold menu, over a scrim like the clipboard's. */
+    private val scrim = View(ctx).apply {
+        setBackgroundColor(Color.argb(184, Color.red(palette.board),
+            Color.green(palette.board), Color.blue(palette.board)))
+        visibility = GONE
+        setTag(com.demo.glyf.R.id.qa_id, "calendar:scrim")
+        setOnClickListener { dismissMenu() }
+    }
+    private var menu: View? = null
+    /** Deleted here: kept off the list while the phone's own copy catches up. */
+    private val gone = mutableSetOf<String>()
 
     init {
         // Google connected: its last answer for THIS account at once, then
@@ -187,6 +201,7 @@ class CalendarPanelView(
         })
 
         addView(root, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(scrim, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         render()
     }
 
@@ -211,15 +226,24 @@ class CalendarPanelView(
             // the chat is with: it goes into the message once added.
             EventComposerView.Draft("", start, start + 3_600_000L, false, share = true)
         }
+        present(draft, CalendarText.canAdd(context), edit = false) { add(it) }
+    }
+
+    /** New Event or Edit Event over the calendar; [onSave] gets the event
+     *  Add (or Save) was tapped on. */
+    private fun present(draft: EventComposerView.Draft, canAdd: Boolean, edit: Boolean,
+                        onSave: (EventComposerView.Draft) -> Unit) {
+        dismissMenu()
         composer?.let { removeView(it) }
-        val c = EventComposerView(context, palette, draft, CalendarText.canAdd(context),
+        val c = EventComposerView(context, palette, draft, canAdd,
             google = com.demo.glyf.store.GoogleAccess.hasCalendar(context),
             meet = com.demo.glyf.store.GoogleAccess.hasCalendar(context) ||
                 com.demo.glyf.store.GoogleAccess.hasMeet(context),
             onCancel = { closeComposer() },
-            onAdd = { add(it) },
+            onAdd = onSave,
             onEditTitle = { editing -> onTitleEditing(editing) },
             onConnect = onConnect,
+            edit = edit,
         )
         addView(c, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         composer = c
@@ -408,7 +432,7 @@ class CalendarPanelView(
         val google = googleFetched
         val base = if (google != null && com.demo.glyf.store.GoogleAccess.hasCalendar(context))
             CalendarText.withGoogle(google, phone, primary = primary()) else phone
-        events = GoogleAdded.merged(context, base)
+        events = GoogleAdded.merged(context, base).filterNot(::isGone)
         refreshGoogle(from, to)
     }
 
@@ -433,7 +457,7 @@ class CalendarPanelView(
             val phone = CalendarText.load(context, from, to)
             val google = googleFetched
             val base = if (google != null) CalendarText.withGoogle(google, phone, primary = primary()) else phone
-            events = GoogleAdded.merged(context, base)
+            events = GoogleAdded.merged(context, base).filterNot(::isGone)
             render()
         }
     }
@@ -540,6 +564,7 @@ class CalendarPanelView(
             setTag(com.demo.glyf.R.id.qa_id, "calendar:event:$index")
             contentDescription = CalendarText.insert(e)
             setOnClickListener { onInsert(CalendarText.insert(e)) }
+            setOnLongClickListener { v -> holdMenu(e, v); true }
         }
         row.addView(View(context).apply {
             background = GradientDrawable().apply { cornerRadius = dp(2f); setColor(e.color ?: accent) }
@@ -575,6 +600,169 @@ class CalendarPanelView(
         }
         row.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         return row
+    }
+
+    // ---- hold menu (Edit · Delete), the clipboard's own ----------------------
+
+    private fun goneKeys(e: CalendarText.Event): List<String> =
+        // A repeating event's occurrences share their UID; the start tells them apart.
+        listOfNotNull(e.googleId, e.external?.let { "$it@${e.start}" })
+
+    private fun isGone(e: CalendarText.Event) = gone.isNotEmpty() && goneKeys(e).any { it in gone }
+
+    /** Why the event can't be changed from the keyboard, when it can't. */
+    private fun refusal(e: CalendarText.Event): String? = when {
+        // Google's own are changed at Google; the rest in the phone's calendar.
+        e.googleId != null -> null
+        !CalendarText.canAdd(context) -> "Allow Calendar for Glyf in Settings"
+        !e.writable -> "${e.calendar ?: "This calendar"} is read-only"
+        else -> null
+    }
+
+    private fun holdMenu(e: CalendarText.Event, anchor: View) {
+        refusal(e)?.let { return toast(it) }
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        popMenu(anchor, listOf(
+            MenuRow("✎", "Edit", "calendar:menu:edit") { dismissMenu(); edit(e) },
+            MenuRow("🗑", "Delete", "calendar:menu:delete", destructive = true) { confirmDelete(e, anchor) },
+        ))
+    }
+
+    /** Delete asks once more, the way Calendar does: an event can have guests. */
+    private fun confirmDelete(e: CalendarText.Event, anchor: View) {
+        popMenu(anchor, listOf(
+            MenuRow("🗑", if (e.repeats) "Delete This Event Only" else "Delete Event", "calendar:menu:confirm",
+                destructive = true) { dismissMenu(); delete(e) },
+            MenuRow("✕", "Cancel", "calendar:menu:cancel") { dismissMenu() },
+        ))
+    }
+
+    private class MenuRow(val icon: String, val label: String, val id: String,
+                          val destructive: Boolean = false, val action: () -> Unit)
+
+    /** The menu under the held event when there is room, else over it. */
+    private fun popMenu(anchor: View, rows: List<MenuRow>) {
+        menu?.let { removeView(it) }
+        scrim.visibility = VISIBLE
+        scrim.bringToFront()
+        val danger = Color.rgb(0xF0, 0x44, 0x38)
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            elevation = dp(8f)
+            minimumWidth = dpi(176)
+            background = GradientDrawable().apply { cornerRadius = dp(14f); setColor(palette.card) }
+        }
+        for (row in rows) {
+            box.addView(TextView(context).apply {
+                text = "${row.icon}    ${row.label}"
+                textSize = 16f
+                maxLines = 1
+                setTextColor(if (row.destructive) danger else palette.ink)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dpi(18), 0, dpi(18), 0)
+                setTag(com.demo.glyf.R.id.qa_id, row.id)
+                setOnClickListener { row.action() }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(50)))
+        }
+        box.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST), MeasureSpec.UNSPECIFIED)
+        val w = box.measuredWidth
+        val h = box.measuredHeight
+        val loc = IntArray(2).also { anchor.getLocationInWindow(it) }
+        val mine = IntArray(2).also { getLocationInWindow(it) }
+        val top = loc[1] - mine[1]
+        val right = loc[0] - mine[0] + anchor.width
+        val x = (right - w).coerceIn(dpi(8), maxOf(dpi(8), width - w - dpi(8)))
+        var y = top + anchor.height + dpi(6)
+        if (y + h > height - dpi(6)) y = top - dpi(6) - h
+        y = y.coerceIn(dpi(6), maxOf(dpi(6), height - h - dpi(6)))
+        addView(box, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            leftMargin = x; topMargin = y
+        })
+        menu = box
+    }
+
+    private fun dismissMenu() {
+        menu?.let { removeView(it) }
+        menu = null
+        scrim.visibility = GONE
+    }
+
+    /** Edit Event: the composer on the event's own title and times. */
+    private fun edit(e: CalendarText.Event) {
+        val draft = EventComposerView.Draft(e.title, e.start, e.end, e.allDay)
+        // Google's own need only the network; the rest, the phone's calendar.
+        present(draft, e.googleId != null || CalendarText.canAdd(context), edit = true) { saveEdit(e, it) }
+    }
+
+    private fun saveEdit(old: CalendarText.Event, d: EventComposerView.Draft) {
+        if (adding) return
+        val googleId = old.googleId
+        if (googleId == null) {
+            val (changed, failure) = CalendarText.update(context, old, d.title, d.start, d.end, d.allDay)
+            if (changed != null) edited(changed) else toast(say(failure, "save"))
+            return
+        }
+        adding = true
+        GoogleClient.updateEvent(context, googleId, d.title, d.start, d.end, d.allDay) { listed, failure ->
+            adding = false
+            if (failure != null) return@updateEvent toast("Couldn't save it: ${GoogleClient.say(failure)}")
+            val changed = listed ?: old.copy(title = d.title, start = d.start, end = d.end, allDay = d.allDay)
+            googleFetched?.let { list ->
+                googleFetched = list.map { if (it.googleId == googleId) changed else it }
+                GoogleCache.save(context, googleFetched ?: emptyList(), primary())
+            }
+            GoogleAdded.forget(context, googleId, changed)
+            edited(changed)
+        }
+    }
+
+    private fun edited(e: CalendarText.Event) {
+        show(e.start)
+        justAdded = e
+        closeComposer()
+        loadEvents()
+        render()
+        toast("Saved")
+        unlightLater()
+    }
+
+    private fun delete(e: CalendarText.Event) {
+        val googleId = e.googleId
+        if (googleId == null) {
+            val failure = CalendarText.remove(context, e)
+            if (failure == null || failure == CalendarText.Change.NOT_FOUND) {
+                loadEvents()
+                render()
+            }
+            toast(if (failure == null) "Event deleted" else say(failure, "delete"))
+            return
+        }
+        // Off the list at once; back, with Google's reason, if it says no.
+        val keys = goneKeys(e)
+        gone += keys
+        loadEvents()
+        render()
+        GoogleClient.deleteEvent(context, googleId) { failure ->
+            if (failure == null) {
+                googleFetched?.let { list ->
+                    googleFetched = list.filter { it.googleId != googleId }
+                    GoogleCache.save(context, googleFetched ?: emptyList(), primary())
+                }
+                GoogleAdded.forget(context, googleId)
+                toast("Event deleted")
+            } else {
+                gone -= keys.toSet()
+                toast("Couldn't delete it: ${GoogleClient.say(failure)}")
+            }
+            loadEvents()
+            render()
+        }
+    }
+
+    private fun say(failure: CalendarText.Change?, doing: String) = when (failure) {
+        CalendarText.Change.READ_ONLY -> "This calendar is read-only"
+        CalendarText.Change.NOT_FOUND -> "It's no longer in the calendar"
+        else -> "Couldn't $doing it. Try again"
     }
 
     /** The month, drawn: weekday initials, day numbers, today filled, the

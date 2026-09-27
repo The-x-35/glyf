@@ -31,7 +31,9 @@ interface StripField {
  * the times. Invitees show only with Google Calendar connected: the event then
  * goes to Google, which emails each one the invite. Share in chat puts the
  * event in the message, for the person the chat is with. The date and time
- * pills open wheels (day, hour, minute, AM/PM) in place of the rows.
+ * pills open wheels (day, hour, minute, AM/PM) in place of the rows. Holding
+ * an event in the calendar opens it as Edit Event: its title and times, and
+ * Save.
  */
 class EventComposerView(
     ctx: Context,
@@ -48,6 +50,8 @@ class EventComposerView(
      *  strip; false: back to the rows. */
     private val onEditTitle: (Boolean) -> Unit,
     private val onConnect: () -> Unit,
+    /** Edit Event: an event that exists, so only its title and times. */
+    private val edit: Boolean = false,
 ) : FrameLayout(ctx), StripField {
 
     data class Draft(
@@ -123,7 +127,7 @@ class EventComposerView(
             setOnClickListener { cancelTapped() }
         }
         heading.apply {
-            text = "New Event"; textSize = 16f; typeface = Typeface.DEFAULT_BOLD
+            text = if (edit) "Edit Event" else "New Event"; textSize = 16f; typeface = Typeface.DEFAULT_BOLD
             setTextColor(palette.ink); gravity = Gravity.CENTER
         }
         add.apply {
@@ -151,7 +155,7 @@ class EventComposerView(
             }
             addView(titleValue, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.6f))
         }, rowParams())
-        if (canAdd && google) {
+        if (canAdd && google && !edit) {
             card.addView(line())
             card.addView(row().apply {
                 tag(this, "event:invitees")
@@ -176,8 +180,8 @@ class EventComposerView(
         }, rowParams())
         if (canAdd) {
             // A video call is a Google Meet call: only with Google.
-            val toggles = listOfNotNull(if (meet) Triple(video, "Video call", "event:video") else null,
-                                        Triple(share, "Share in chat", "event:share"),
+            val toggles = listOfNotNull(if (meet && !edit) Triple(video, "Video call", "event:video") else null,
+                                        if (!edit) Triple(share, "Share in chat", "event:share") else null,
                                         Triple(allDay, "All-day", "event:allday"))
             for ((toggle, name, id) in toggles) {
                 card.addView(line())
@@ -201,7 +205,7 @@ class EventComposerView(
             note.orientation = LinearLayout.HORIZONTAL
             note.gravity = Gravity.CENTER_VERTICAL
             note.addView(TextView(ctx).apply {
-                text = "Allow Calendar for Glyf to add events."
+                text = "Allow Calendar for Glyf to ${if (edit) "change" else "add"} events."
                 textSize = 13f; setTextColor(soft(150))
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             note.addView(TextView(ctx).apply {
@@ -258,7 +262,7 @@ class EventComposerView(
             LinearLayout.LayoutParams(dpi(2), dpi(20)).apply { leftMargin = dpi(1) })
         stripRow.addView(stripField, LinearLayout.LayoutParams(0, dpi(38), 1f))
         stripRow.addView(TextView(ctx).apply {
-            text = "Add"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(accent)
+            text = if (edit) "Save" else "Add"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(accent)
             setPadding(dpi(10), dpi(6), dpi(12), dpi(6))
             tag(this, "event:strip:add")
             setOnClickListener { addTapped() }
@@ -314,7 +318,8 @@ class EventComposerView(
         if (editing != null) endStrip()
         if (!canAdd) return
         val title = draft.title.trim().ifEmpty { "New Event" }
-        onAdd(draft.copy(title = title, invitees = if (google) EventParse.people(inviteLine).second else emptyList()))
+        onAdd(draft.copy(title = title,
+            invitees = if (google && !edit) EventParse.people(inviteLine).second else emptyList()))
     }
 
     private fun begin(field: Field) {
@@ -335,7 +340,8 @@ class EventComposerView(
 
     override val stripText: String get() = if (editing == Field.INVITEES) inviteLine else typed
 
-    /** The keys typed into the field: a plan in the title sets the times too. */
+    /** The keys typed into the field: a plan in the title sets the times too
+     *  (an event being edited keeps its own until the pills move them). */
     override fun setStripText(text: String) {
         if (editing == Field.INVITEES) {
             inviteLine = text
@@ -345,7 +351,7 @@ class EventComposerView(
         }
         typed = text
         val plan = EventParse.parse(text, dayFirst = EventParse.regionDayFirst)
-        draft = if (plan.hasDay || plan.hasTime || plan.allDay) {
+        draft = if (!edit && (plan.hasDay || plan.hasTime || plan.allDay)) {
             draft.copy(title = plan.title, start = plan.start, end = plan.end, allDay = plan.allDay)
         } else {
             draft.copy(title = text.trim())
@@ -430,10 +436,10 @@ class EventComposerView(
         strip.visibility = if (stripOn) VISIBLE else GONE
         tag(stripField, if (editing == Field.INVITEES) "event:invitees:field" else "event:title:field")
 
-        heading.text = when (picking) { 1 -> "Starts"; 2 -> "Ends"; else -> "New Event" }
+        heading.text = when (picking) { 1 -> "Starts"; 2 -> "Ends"; else -> if (edit) "Edit Event" else "New Event" }
         cancel.visibility = if (picking != 0) INVISIBLE else VISIBLE
-        add.text = if (picking != 0) "Done" else "Add"
-        tag(add, if (picking != 0) "event:done" else "event:add")
+        add.text = if (picking != 0) "Done" else if (edit) "Save" else "Add"
+        tag(add, if (picking != 0) "event:done" else if (edit) "event:save" else "event:add")
         add.alpha = if (picking != 0 || canAdd) 1f else 0.4f
         hourWheel.visibility = if (draft.allDay) GONE else VISIBLE
         minuteWheel.visibility = if (draft.allDay) GONE else VISIBLE
