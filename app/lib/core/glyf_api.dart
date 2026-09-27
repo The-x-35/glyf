@@ -275,6 +275,19 @@ abstract final class GlyfApi {
   static Future<Map<String, dynamic>> appleBilling(List<String> transactions) =>
       _postJson('/billing/apple', {'transactions': transactions});
 
+  /// A gift code (six letters and numbers from Arpit): the server checks it,
+  /// uses it up, and answers with the plan now on the account.
+  static Future<CodeRedeemed> redeemCode(String code) async {
+    final res = await _postJson('/codes/redeem', {'code': code},
+        timeout: const Duration(seconds: 15));
+    return (
+      plan: res['plan'] as String? ?? 'free',
+      codePlan: res['codePlan'] as String? ?? 'max',
+      days: (res['days'] as num?)?.toInt() ?? 0,
+      expiresAt: DateTime.tryParse(res['expiresAt'] as String? ?? ''),
+    );
+  }
+
   // ---- §6.16 meter -------------------------------------------------------
 
   static Future<int?> meterRemaining() async => (await meterStatus())?.remaining;
@@ -366,6 +379,10 @@ abstract final class GlyfApi {
     }
   }
 }
+
+/// A code that worked: the plan now on the account (the best one running),
+/// the code's own plan and days, and when the account's plan runs out.
+typedef CodeRedeemed = ({String plan, String codePlan, int days, DateTime? expiresAt});
 
 class GlyfApiException implements Exception {
   GlyfApiException(this.message);

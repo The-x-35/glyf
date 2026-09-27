@@ -16,6 +16,7 @@ import '../wallet/wallet_screen.dart';
 import '../vault/vault_screen.dart';
 import '../vocab/vocabulary_screen.dart';
 import 'brand_marks.dart' show GoogleG;
+import 'code_screen.dart';
 import 'keyboard_screen.dart';
 import 'paywall_sheet.dart';
 
@@ -424,7 +425,21 @@ class _ProfileTabState extends State<ProfileTab> {
         children: [
           // Identity, account and plan
           _identityCard(),
-          const SizedBox(height: 22),
+          const SizedBox(height: 10),
+          Semantics(
+            identifier: 'profile:code',
+            button: true,
+            child: _navCard(
+              icon: Icons.redeem_outlined,
+              title: 'Got a code?',
+              onTap: () async {
+                await Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const CodeScreen()));
+                _refresh();
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
 
           _groupLabel('Keyboard'),
           _navCard(

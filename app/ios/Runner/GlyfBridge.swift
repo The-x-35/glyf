@@ -59,8 +59,6 @@ final class GlyfBridge {
             Task { @MainActor in result(await Billing.shared.entitlements()) }
         case "billingRestore":
             Task { @MainActor in result(await Billing.shared.restore()) }
-        case "billingRedeem":
-            Task { @MainActor in result(await Billing.shared.redeem()) }
         case "groupPath":
             result(AppGroupStore.containerURL?.path)
         case "readKeyboardPing":

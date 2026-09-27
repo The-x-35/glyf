@@ -26,6 +26,7 @@ import { vocabRoutes } from "./routes/vocab.js";
 import { authRoutes } from "./routes/auth.js";
 import { meRoutes } from "./routes/me.js";
 import { billingRoutes } from "./routes/billing.js";
+import { codeRoutes } from "./routes/codes.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -98,6 +99,7 @@ export function buildApp(kv: KV = defaultKV()) {
   authRoutes(app);
   meRoutes(app);
   billingRoutes(app);
+  codeRoutes(app);
   return app;
 }
 

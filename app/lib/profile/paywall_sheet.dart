@@ -108,24 +108,6 @@ class _PaywallSheetState extends State<_PaywallSheet> {
     });
   }
 
-  Future<void> _redeem() async {
-    setState(() {
-      _busy = true;
-      _note = null;
-    });
-    final outcome = await Billing.redeem();
-    if (!mounted) return;
-    if (outcome.plan != null && outcome.plan != 'free') {
-      Telemetry.log('offer_code_redeemed', {'plan': outcome.plan});
-      Navigator.of(context).pop(true);
-      return;
-    }
-    setState(() {
-      _busy = false;
-      _note = (outcome.message ?? '').isEmpty ? null : outcome.message;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -203,30 +185,19 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                     onPressed: plansOnSale ? _buy : null),
           ),
           // The sheet closes with a swipe down or a tap above it, so it needs
-          // no Not now. Restore stays: App Review asks every subscription
-          // screen for one. Redeem code takes App Store Connect's offer
-          // codes (gift months and years, discounts).
+          // no Not now. Restore stays: it brings back a plan this Apple ID
+          // already paid for, and App Review asks every subscription screen
+          // for one. Gift codes live in Profile (Got a code?).
           if (plansOnSale)
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Semantics(
-                identifier: 'paywall:restore',
-                button: true,
-                child: TextButton(
-                  onPressed: _busy ? null : _restore,
-                  child: const Text('Restore purchases',
-                      style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
-                ),
+            Semantics(
+              identifier: 'paywall:restore',
+              button: true,
+              child: TextButton(
+                onPressed: _busy ? null : _restore,
+                child: const Text('Restore purchases',
+                    style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
               ),
-              Semantics(
-                identifier: 'paywall:redeem',
-                button: true,
-                child: TextButton(
-                  onPressed: _busy ? null : _redeem,
-                  child: const Text('Redeem code',
-                      style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
-                ),
-              ),
-            ])
+            )
           else
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -286,31 +257,24 @@ class _PaywallSheetState extends State<_PaywallSheet> {
     );
   }
 
-  /// What App Review asks every subscription screen to say.
+  /// One line: that it can be cancelled, and the two links App Review asks
+  /// every subscription screen for. Apple's own sheet spells out renewal.
   Widget _terms() {
+    const style = TextStyle(color: Glass.inkSoft, fontSize: 12);
     Widget link(String label, String url) => GestureDetector(
           onTap: () => GlyfBridge.openURL(url),
           child: Text(label,
-              style: const TextStyle(
-                  color: Glass.inkSoft,
-                  fontSize: 11.5,
-                  decoration: TextDecoration.underline,
-                  decorationColor: Glass.inkSoft)),
+              style: style.copyWith(
+                  decoration: TextDecoration.underline, decorationColor: Glass.inkSoft)),
         );
     return Padding(
       padding: const EdgeInsets.only(top: 2),
-      child: Column(children: [
-        const Text(
-            'Renews automatically until you cancel, at least a day before it ends, '
-            'in Settings › your name › Subscriptions.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Glass.inkSoft, fontSize: 11.5, height: 1.35)),
-        const SizedBox(height: 6),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          link('Terms of Use', _termsURL),
-          const Text('  ·  ', style: TextStyle(color: Glass.inkSoft, fontSize: 11.5)),
-          link('Privacy Policy', privacyPolicyURL),
-        ]),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        const Text('Cancel anytime', style: style),
+        const Text('  ·  ', style: style),
+        link('Terms', _termsURL),
+        const Text('  ·  ', style: style),
+        link('Privacy', privacyPolicyURL),
       ]),
     );
   }

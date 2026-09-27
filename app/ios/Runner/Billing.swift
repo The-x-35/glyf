@@ -1,5 +1,5 @@
+import Foundation
 import StoreKit
-import UIKit
 
 /// Plus and Max through the App Store, with StoreKit 2.
 ///
@@ -86,29 +86,6 @@ final class Billing {
             if case .verified = result { held.append(result.jwsRepresentation) }
         }
         return held
-    }
-
-    /// An offer code made in App Store Connect (a gift month, a year, or a
-    /// discount), typed into Apple's own redeem sheet. The sheet closes
-    /// before the new transaction lands, so look for it for a moment; a late
-    /// one still arrives through `start`'s listener.
-    func redeem() async -> [String: Any] {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
-            return ["error": "The App Store's code sheet couldn't open."]
-        }
-        let before = Set(await entitlements())
-        do {
-            try await AppStore.presentOfferCodeRedeemSheet(in: scene)
-        } catch {
-            return ["error": error.localizedDescription]
-        }
-        for _ in 0..<4 {
-            let held = await entitlements()
-            if !Set(held).subtracting(before).isEmpty { return ["transactions": held] }
-            try? await Task.sleep(nanoseconds: 600_000_000)
-        }
-        return ["transactions": []]
     }
 
     /// Restore Purchases: asks the App Store to bring this Apple ID's

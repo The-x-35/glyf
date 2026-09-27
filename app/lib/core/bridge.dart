@@ -66,10 +66,6 @@ abstract final class GlyfBridge {
   static Future<Map<String, dynamic>> billingRestore() async =>
       Map<String, dynamic>.from(await _call<Map<dynamic, dynamic>>('billingRestore') ?? const {});
 
-  /// Apple's offer code sheet: {transactions} (new ones only) or {error}.
-  static Future<Map<String, dynamic>> billingRedeem() async =>
-      Map<String, dynamic>.from(await _call<Map<dynamic, dynamic>>('billingRedeem') ?? const {});
-
   static Future<T?> _call<T>(String method, [dynamic args]) async {
     try {
       return await _ch.invokeMethod<T>(method, args);

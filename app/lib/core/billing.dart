@@ -73,15 +73,6 @@ abstract final class Billing {
     return _send(held);
   }
 
-  /// An offer code from App Store Connect: a gift month or year, or a
-  /// discount. Closing Apple's sheet without a code says nothing.
-  static Future<BillingOutcome> redeem() async {
-    final res = await GlyfBridge.billingRedeem();
-    final held = [for (final t in res['transactions'] as List? ?? const []) t as String];
-    if (held.isEmpty) return (plan: null, message: res['error'] as String? ?? '');
-    return _send(held);
-  }
-
   /// At launch and on coming back: whatever the phone holds goes to the
   /// server, so a renewal the server hasn't heard of still counts.
   static Future<void> sync() async {
