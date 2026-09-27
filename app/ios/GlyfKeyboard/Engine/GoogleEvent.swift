@@ -34,7 +34,8 @@ enum GoogleEvent {
                 title: title.isEmpty ? "Busy" : title,
                 start: start, end: max(end, start), allDay: allDay,
                 location: item["location"] as? String,
-                id: (item["id"] as? String).map { "google:\($0)" }))
+                id: (item["id"] as? String).map { "google:\($0)" },
+                external: item["iCalUID"] as? String))
         }
         return out
     }

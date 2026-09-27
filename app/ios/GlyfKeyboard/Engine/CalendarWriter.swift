@@ -57,7 +57,8 @@ enum CalendarWriter {
                     title: (e.title ?? "").isEmpty ? "Busy" : (e.title ?? ""),
                     start: e.startDate, end: max(e.endDate, e.startDate), allDay: e.isAllDay,
                     location: (e.location ?? "").isEmpty ? nil : e.location,
-                    color: e.calendar?.cgColor.flatMap(hex), id: e.eventIdentifier)
+                    color: e.calendar?.cgColor.flatMap(hex), id: e.eventIdentifier,
+                    external: e.calendarItemExternalIdentifier, calendar: e.calendar?.title)
             }
     }
 

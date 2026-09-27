@@ -85,5 +85,19 @@ class CalendarTextTest {
         assertEquals(google[0].start, merged.first { it.title == "Standup" }.start)
         assertEquals(true, dentist in merged)
         assertEquals(listOf(dentist), CalendarText.withGoogle(emptyList(), listOf(dentist), zone))
+
+        // Renamed on the web: same iCalendar UID, new title. One row, Google's.
+        val web = google[0].copy(title = "Standup (moved)", external = "abc123@google.com")
+        val stale = CalendarText.Event("Standup", web.start, web.end, false,
+            external = "abc123@google.com", owner = "arpit@gmail.com")
+        assertEquals(listOf("Dentist", "Standup (moved)"),
+            CalendarText.withGoogle(listOf(web), listOf(stale, dentist), zone).map { it.title }.sorted())
+
+        // Deleted on the web: the phone's copy in the account's own calendar
+        // goes too; other calendars stay.
+        val holiday = CalendarText.Event("Holiday", web.start, web.end, true,
+            owner = "en.indian#holiday@group.v.calendar.google.com")
+        assertEquals(listOf(holiday),
+            CalendarText.withGoogle(emptyList(), listOf(stale, holiday), zone, primary = "Arpit@gmail.com"))
     }
 }

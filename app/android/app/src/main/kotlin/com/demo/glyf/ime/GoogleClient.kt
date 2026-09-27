@@ -23,13 +23,30 @@ import java.util.concurrent.Executors
  */
 object GoogleClient {
 
-    enum class Failure { NOT_CONNECTED, RECONNECT, UNREACHABLE, REFUSED }
+    enum class Failure { NOT_CONNECTED, RECONNECT, UNREACHABLE, REFUSED, API_OFF, NO_SCOPE }
 
     /** What to tell the person when Google didn't do it. */
     fun say(f: Failure): String = when (f) {
         Failure.RECONNECT -> "Sign in with Google again in Glyf"
         Failure.UNREACHABLE -> "Couldn't reach Google"
+        Failure.API_OFF -> "the Calendar API is off in Google Cloud"
+        Failure.NO_SCOPE -> "turn Calendar on again in Glyf › Connected tools"
         else -> "Google said no"
+    }
+
+    /** What Google's error body says went wrong: the API switched off in the
+     *  Cloud project, or a scope the grant doesn't have. */
+    fun failureFromError(json: JSONObject?): Failure {
+        val error = json?.optJSONObject("error") ?: return Failure.REFUSED
+        val reasons = mutableListOf<String>()
+        error.optJSONArray("errors")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optString("reason")?.let(reasons::add) }
+        error.optJSONArray("details")?.let { a -> for (i in 0 until a.length()) a.optJSONObject(i)?.optString("reason")?.let(reasons::add) }
+        val message = error.optString("message").lowercase()
+        if ("accessNotConfigured" in reasons || "SERVICE_DISABLED" in reasons ||
+            "has not been used" in message || "is disabled" in message) return Failure.API_OFF
+        if ("insufficientPermissions" in reasons || "ACCESS_TOKEN_SCOPE_INSUFFICIENT" in reasons ||
+            "insufficient authentication scopes" in message) return Failure.NO_SCOPE
+        return Failure.REFUSED
     }
 
     /** The event on Google Calendar's web page, and its Meet call. */
@@ -137,7 +154,7 @@ object GoogleClient {
                         code in 200..299 && json != null -> done(json, null)
                         code == 401 && retry && token != "fake-access" -> get(ctx, url, false, done)
                         else -> done(null, if (code == 0) Failure.UNREACHABLE
-                                          else if (code == 401) Failure.RECONNECT else Failure.REFUSED)
+                                          else if (code == 401) Failure.RECONNECT else failureFromError(json))
                     }
                 }
             }

@@ -14,6 +14,10 @@ final class GoogleClient {
         case unreachable
         /// Google answered no.
         case refused
+        /// The Calendar API is switched off in Glyf's Google Cloud project.
+        case apiOff
+        /// The grant doesn't cover it (Calendar was unticked).
+        case noScope
     }
 
     /// What to tell the person when Google didn't do it.
@@ -21,6 +25,8 @@ final class GoogleClient {
         switch failure {
         case .reconnect: return "Sign in with Google again in Glyf"
         case .unreachable: return "Couldn't reach Google"
+        case .apiOff: return "the Calendar API is off in Google Cloud"
+        case .noScope: return "turn Calendar on again in Glyf › Connected tools"
         case .refused, .notConnected: return "Google said no"
         }
     }
@@ -127,6 +133,24 @@ final class GoogleClient {
         }
     }
 
+    /// What Google's error body says went wrong: the API switched off in the
+    /// Cloud project, or a scope the grant doesn't have.
+    static func failure(fromError json: [String: Any]?) -> Failure {
+        let error = json?["error"] as? [String: Any]
+        let reasons = (error?["errors"] as? [[String: Any]] ?? []).compactMap { $0["reason"] as? String }
+        let details = (error?["details"] as? [[String: Any]] ?? []).compactMap { $0["reason"] as? String }
+        let message = (error?["message"] as? String ?? "").lowercased()
+        if reasons.contains("accessNotConfigured") || details.contains("SERVICE_DISABLED")
+            || message.contains("has not been used") || message.contains("is disabled") {
+            return .apiOff
+        }
+        if reasons.contains("insufficientPermissions") || details.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT")
+            || message.contains("insufficient authentication scopes") {
+            return .noScope
+        }
+        return .refused
+    }
+
     /// GETs with a token, and once more with a fresh one if Google says the
     /// token went stale on the way.
     private func get(_ url: URL, retry: Bool = true,
@@ -148,7 +172,8 @@ final class GoogleClient {
                             self.cached = nil
                             return self.get(url, retry: false, done: done)
                         }
-                        done(.failure(status == 0 ? .unreachable : status == 401 ? .reconnect : .refused))
+                        done(.failure(status == 0 ? .unreachable : status == 401 ? .reconnect
+                                        : Self.failure(fromError: json)))
                     }
                 }.resume()
             }

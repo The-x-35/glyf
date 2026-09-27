@@ -74,6 +74,9 @@ final class CalendarSurface: UIView {
     /// window it covers, so month steps only refetch when they leave it.
     private var googleFetched: [CalendarText.Event]?
     private var googleWindow: (from: Date, to: Date)?
+    /// How the last ask went, said under the day's events: when it synced,
+    /// or what Google refused (it used to fail in silence).
+    private var googleNote: String?
 
     private func load() {
         var base: [CalendarText.Event]
@@ -88,9 +91,11 @@ final class CalendarSurface: UIView {
             connected = connected || json != nil
             base = CalendarText.events(fromJSON: json)
         }
-        // Google's own list wins where it overlaps: what was added or
-        // changed on the web is what shows here.
-        base = CalendarText.withGoogle(googleFetched ?? [], over: base, calendar: cal)
+        // Google's own list wins where it overlaps: what was added, moved,
+        // renamed or deleted on the web is what shows here.
+        if let google = googleFetched {
+            base = CalendarText.withGoogle(google, over: base, primary: GoogleAccess.load()?.email, calendar: cal)
+        }
         events = GoogleAdded.merged(into: base)
     }
 
@@ -103,11 +108,19 @@ final class CalendarSurface: UIView {
         let to = cal.date(byAdding: .day, value: 45, to: month) ?? month
         if let window = googleWindow, window.from <= from, window.to >= to { return }
         GoogleClient.shared.listEvents(from: from, to: to) { [weak self] result in
-            guard let self, case .success(let list) = result else { return }
-            self.googleWindow = (from, to)
-            self.googleFetched = list
-            self.connected = true
-            self.load()
+            guard let self else { return }
+            switch result {
+            case .success(let list):
+                self.googleWindow = (from, to)
+                self.googleFetched = list
+                self.connected = true
+                let time = DateFormatter()
+                time.timeStyle = .short
+                self.googleNote = "Google Calendar · updated \(time.string(from: Date()))"
+                self.load()
+            case .failure(let failure):
+                self.googleNote = "Google Calendar didn't sync: \(GoogleClient.say(failure))"
+            }
             self.render()
         }
     }
@@ -566,6 +579,15 @@ final class CalendarSurface: UIView {
                     litRow = r
                 }
                 agendaStack.addArrangedSubview(r)
+            }
+            if let googleNote {
+                let l = UILabel()
+                l.text = googleNote
+                l.font = .systemFont(ofSize: 12)
+                l.textColor = Glass.textSecondary
+                l.numberOfLines = 2
+                l.accessibilityIdentifier = "calendar:google"
+                agendaStack.addArrangedSubview(l)
             }
         } else if !showingMonth {
             // The app asks for the calendar (onboarding, or Connected tools

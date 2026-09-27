@@ -726,6 +726,23 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(merged.first { $0.title == "Standup" }?.start, google[0].start, "the web's edit shows")
         XCTAssertTrue(merged.contains(dentist))
         XCTAssertEqual(CalendarText.withGoogle([], over: [dentist], calendar: cal), [dentist])
+
+        // Renamed on the web: same iCalendar UID, new title. One row, Google's.
+        var web = google[0]
+        web.title = "Standup (moved)"
+        web.external = "abc123@google.com"
+        let stale = CalendarText.Event(title: "Standup", start: web.start, end: web.end, allDay: false,
+                                       external: "abc123@google.com", calendar: "arpit@gmail.com")
+        let renamed = CalendarText.withGoogle([web], over: [stale, dentist], calendar: cal)
+        XCTAssertEqual(renamed.map(\.title).sorted(), ["Dentist", "Standup (moved)"])
+
+        // Deleted on the web: gone from Google's list, so the phone's copy in
+        // the account's own calendar goes too; other calendars stay.
+        let holiday = CalendarText.Event(title: "Holiday", start: web.start, end: web.end, allDay: true,
+                                         calendar: "Holidays in India")
+        let afterDelete = CalendarText.withGoogle([], over: [stale, holiday], primary: "Arpit@gmail.com",
+                                                  calendar: cal)
+        XCTAssertEqual(afterDelete, [holiday])
     }
 
     // MARK: Wallet chips

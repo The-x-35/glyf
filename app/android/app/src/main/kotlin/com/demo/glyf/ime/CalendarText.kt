@@ -27,6 +27,11 @@ object CalendarText {
         val id: Long? = null,
         /** Google's id, for an event the keyboard added to Google Calendar. */
         val googleId: String? = null,
+        /** The iCalendar UID (the provider's uid2445, Google's iCalUID). */
+        val external: String? = null,
+        /** Who owns its calendar: the Google account's email for its own
+         *  (primary) calendar. */
+        val owner: String? = null,
     )
 
     /** Events added to Google Calendar from the keyboard reach the phone's
@@ -35,12 +40,18 @@ object CalendarText {
      *  keyboard's own copy. The phone has it once an event with the same title
      *  starts within a minute of it; one that ended over a day ago is let go.
      *  Returns the list to show and the copies still waiting. */
-    /** The phone's events with Google's own list layered in: for a day and
-     *  title Google knows, Google's copy wins — an event moved or renamed
-     *  on the web moves here too — and whatever only the phone knows stays. */
+    /** The phone's events with Google's own list (what Google has NOW)
+     *  layered in. The phone's copy of anything Google listed goes, matched
+     *  by iCalendar UID, and so does everything the phone shows from the
+     *  account's own calendar (`primary`, its email): Google's list is the
+     *  truth there, so an event deleted or renamed on the web goes too. A
+     *  same-title, same-day match catches what has no UID. Smart.swift's
+     *  twin is CalendarText.withGoogle. */
     fun withGoogle(google: List<Event>, phone: List<Event>,
-                   zone: java.util.TimeZone = java.util.TimeZone.getDefault()): List<Event> {
-        if (google.isEmpty()) return phone
+                   zone: java.util.TimeZone = java.util.TimeZone.getDefault(),
+                   primary: String? = null): List<Event> {
+        val externals = google.mapNotNull { it.external }.toSet()
+        val own = primary?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         fun key(e: Event): String {
             val cal = java.util.Calendar.getInstance(zone).apply {
                 timeInMillis = e.start
@@ -50,7 +61,11 @@ object CalendarText {
             return e.title.trim().lowercase() + "|" + cal.timeInMillis
         }
         val googleKeys = google.map(::key).toSet()
-        return phone.filter { key(it) !in googleKeys } + google
+        return phone.filter { e ->
+            !(e.external != null && e.external in externals) &&
+                !(own != null && e.owner?.lowercase() == own) &&
+                key(e) !in googleKeys
+        } + google
     }
 
     fun withAdded(added: List<Event>, events: List<Event>,
@@ -83,7 +98,8 @@ object CalendarText {
             CalendarContract.Instances.TITLE, CalendarContract.Instances.BEGIN,
             CalendarContract.Instances.END, CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.EVENT_LOCATION, CalendarContract.Instances.DISPLAY_COLOR,
-            CalendarContract.Instances.EVENT_ID,
+            CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.UID_2445,
+            CalendarContract.Instances.OWNER_ACCOUNT,
         )
         val out = mutableListOf<Event>()
         runCatching {
@@ -103,6 +119,8 @@ object CalendarText {
                         location = c.getString(4)?.takeIf { it.isNotBlank() },
                         color = if (c.isNull(5)) null else c.getInt(5),
                         id = c.getLong(6),
+                        external = c.getString(7)?.takeIf { it.isNotBlank() },
+                        owner = c.getString(8)?.takeIf { it.isNotBlank() },
                     )
                 }
             }

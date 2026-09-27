@@ -44,7 +44,8 @@ object GoogleEvent {
             out.add(CalendarText.Event(
                 title = title.ifEmpty { "Busy" },
                 start = start, end = maxOf(end, start), allDay = allDay,
-                location = item.optString("location").takeIf { it.isNotEmpty() }))
+                location = item.optString("location").takeIf { it.isNotEmpty() },
+                external = item.optString("iCalUID").takeIf { it.isNotEmpty() }))
         }
         return out
     }

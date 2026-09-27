@@ -14,6 +14,12 @@ enum CalendarText {
         var color: String?
         /// The calendar's own id, when read from EventKit.
         var id: String? = nil
+        /// The event's iCalendar UID (EventKit's external id, Google's
+        /// iCalUID): the same event, however the phone and Google name it.
+        var external: String? = nil
+        /// Which calendar it sits in, by name (Google's primary calendar is
+        /// named after the account's email on the phone).
+        var calendar: String? = nil
     }
 
     static func events(fromJSON json: [String: Any]?) -> [Event] {
@@ -36,18 +42,28 @@ enum CalendarText {
     /// shows the keyboard's own copy. The phone has it once an event with the
     /// same title starts within a minute of it; one that ended over a day ago
     /// is let go. Returns the list to show and the copies still waiting.
-    /// The phone's events with Google's own list layered in: for a day and
-    /// title Google knows, Google's copy wins — an event moved or renamed
-    /// on the web moves here too — and whatever only the phone knows stays.
-    static func withGoogle(_ google: [Event], over phone: [Event],
+    /// The phone's events with Google's own list (what Google has NOW)
+    /// layered in. The phone's copy of anything Google listed goes, matched
+    /// by iCalendar UID (an event moved or renamed on the web), and so does
+    /// everything the phone shows from the account's own calendar
+    /// (`primary`, named after its email): Google's list is the truth there,
+    /// so an event deleted on the web goes too. A same-title, same-day
+    /// match catches what has no UID. Every other calendar stays as it is.
+    static func withGoogle(_ google: [Event], over phone: [Event], primary: String? = nil,
                            calendar cal: Calendar = .current) -> [Event] {
-        guard !google.isEmpty else { return phone }
         func key(_ e: Event) -> String {
             let title = e.title.trimmingCharacters(in: .whitespaces).lowercased()
             return "\(title)|\(cal.startOfDay(for: e.start).timeIntervalSince1970)"
         }
+        let externals = Set(google.compactMap(\.external))
         let googleKeys = Set(google.map(key))
-        return phone.filter { !googleKeys.contains(key($0)) } + google
+        let own = primary?.trimmingCharacters(in: .whitespaces).lowercased()
+        let kept = phone.filter { e in
+            if let x = e.external, externals.contains(x) { return false }
+            if let own, !own.isEmpty, e.calendar?.lowercased() == own { return false }
+            return !googleKeys.contains(key(e))
+        }
+        return kept + google
     }
 
     static func withAdded(_ added: [Event], in events: [Event],
