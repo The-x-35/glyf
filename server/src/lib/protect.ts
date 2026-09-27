@@ -25,6 +25,8 @@ export const OPEN_PATHS: readonly (string | RegExp)[] = [
   "/health",
   "/auth/config",
   "/auth/session",
+  // App Review's door: its own password IS the credential (routes/auth.ts).
+  "/auth/review",
   /^\/p\//,            // a page someone shared; the link is the permission
   /^\/oauth\//,        // providers redirect here; they carry their own state
   /^\/connector\/[^/]+\/callback/,

@@ -8,6 +8,7 @@ describe("who may call this server", () => {
   it("keeps open only what cannot carry a session", () => {
     expect(isOpen("/health")).toBe(true);
     expect(isOpen("/auth/session")).toBe(true);
+    expect(isOpen("/auth/review")).toBe(true);
     expect(isOpen("/auth/config")).toBe(true);
     expect(isOpen("/p/abc123")).toBe(true);
     expect(isOpen("/waitlist")).toBe(true);

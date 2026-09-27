@@ -119,6 +119,40 @@ abstract final class Auth {
 
   static const _offline = 'No connection. Try again when you are online.';
 
+  /// The door App Review comes through: the password from App Store
+  /// Connect, no Apple or Google account. The sign-in screen shows it only
+  /// behind a triple-tap on the orb, as the review notes say. Null once
+  /// signed in; otherwise what to say.
+  static Future<String?> signInForReview(String password) async {
+    final trimmed = password.trim();
+    if (trimmed.isEmpty) return 'Enter the reviewer password.';
+    final reply = await _send('POST', '/auth/review', body: {'password': trimmed});
+    if (reply == null) return _offline;
+    final body = reply.body;
+    if (reply.status >= 400 || body?['ok'] != true || body?['token'] is! String) {
+      return body?['error'] as String? ?? 'Sign-in did not finish. Try again.';
+    }
+    final user = body!['user'] is Map ? body['user'] as Map : const {};
+    final account = _Account(
+      token: body['token'] as String,
+      id: '${user['id'] ?? ''}',
+      provider: 'review',
+      email: user['email'] as String?,
+      name: user['name'] as String?,
+    );
+    await GlyfBridge.sessionSave(account.toJson());
+    _account = account;
+    // The month of Max the server put on the review account, kept the way
+    // a purchase would leave it, so the paid features are on to review.
+    final plan = body['plan'] as String? ?? 'free';
+    await GlyfBridge.updateSharedSettings((s) => s
+      ..['signedInWith'] = 'review'
+      ..['plan'] = plan
+      ..['proUnlocked'] = plan != 'free');
+    unawaited(syncPrefs());
+    return null;
+  }
+
   /// The provider's token in, a Glyf session out.
   static Future<String?> _finish(String provider, Map<String, dynamic> res, String nonce) async {
     final idToken = res['idToken'];

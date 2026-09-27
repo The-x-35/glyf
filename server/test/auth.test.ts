@@ -190,3 +190,61 @@ describe("POST /auth/session", () => {
     expect(malformed.statusCode).toBe(400);
   });
 });
+
+describe("POST /auth/review", () => {
+  function app(queries: { text: string; params?: unknown[] }[], password = "glyf-review-pass", clock = () => NOW) {
+    const sql: SqlQuery = async (text, params) => {
+      queries.push({ text, params });
+      return [];
+    };
+    const f = Fastify();
+    authRoutes(f, {
+      users: new Users(sql),
+      issue: (id) => `session-for-${id}`,
+      reviewPassword: () => password,
+      now: clock,
+    });
+    return f;
+  }
+
+  it("signs App Review into the shared account and puts a month of Max on it", async () => {
+    const queries: { text: string; params?: unknown[] }[] = [];
+    const res = await app(queries).inject({
+      method: "POST", url: "/auth/review", payload: { password: "glyf-review-pass" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      ok: true, token: "session-for-review:appstore",
+      user: { id: "review:appstore", provider: "review", email: "review@tryglyf.com", name: "App Review" },
+    });
+    expect(typeof res.json().plan).toBe("string");
+    const upsert = queries.find(q => q.text.includes("insert into glyf_users"));
+    expect(upsert?.params?.slice(0, 4)).toEqual(["review:appstore", "review@tryglyf.com", "App Review", "review"]);
+    const grant = queries.find(q => JSON.stringify(q.params ?? []).includes("review.max"));
+    expect(grant).toBeTruthy();
+  });
+
+  it("refuses a wrong password, and stops trying after ten in an hour", async () => {
+    const queries: { text: string; params?: unknown[] }[] = [];
+    let clock = NOW;
+    const f = app(queries, "glyf-review-pass", () => clock);
+    for (let i = 0; i < 10; i++) {
+      const res = await f.inject({ method: "POST", url: "/auth/review", payload: { password: "wrong" } });
+      expect(res.statusCode).toBe(401);
+    }
+    const eleventh = await f.inject({ method: "POST", url: "/auth/review", payload: { password: "glyf-review-pass" } });
+    expect(eleventh.statusCode).toBe(429);
+    // An hour on, the right password works again.
+    clock += 61 * 60 * 1000;
+    const later = await f.inject({ method: "POST", url: "/auth/review", payload: { password: "glyf-review-pass" } });
+    expect(later.statusCode).toBe(200);
+    expect(queries.some(q => JSON.stringify(q.params ?? []).includes("wrong"))).toBe(false);
+  });
+
+  it("is shut while no password is set", async () => {
+    const res = await app([], "").inject({
+      method: "POST", url: "/auth/review", payload: { password: "anything" },
+    });
+    expect(res.statusCode).toBe(503);
+  });
+});

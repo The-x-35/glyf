@@ -549,5 +549,15 @@
   "outcome": "The panel replaces the keys and types its own digits; Send hands to the app, which answers “Connect Phantom first” when no wallet is linked",
   "verdict": "pass",
   "fixed": false
+ },
+ {
+  "id": "S143",
+  "surface": "App",
+  "area": "Accounts",
+  "title": "App Review signs in with the password from App Store Connect",
+  "input": "sign-in screen → three quick taps on the orb → Reviewer password (POST /auth/review) → Sign in",
+  "outcome": "One shared review account (review@tryglyf.com) with a month of Max, straight to home; a wrong password says so, ten misses an hour; the door is shut until REVIEW_PASSWORD is set",
+  "verdict": "pass",
+  "fixed": true
  }
 ]

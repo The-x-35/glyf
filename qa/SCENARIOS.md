@@ -2,7 +2,7 @@
 
 Run on 24, 25 and 27 September 2026 (the two app flows, S99 and S100, by hand on 17 September): the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
 
-136 pass, 2 need a key, 2 fail, of 140.
+137 pass, 2 need a key, 2 fail, of 141.
 
 | ID | Where | Scenario | Result |
 | --- | --- | --- | --- |
@@ -146,6 +146,7 @@ Run on 24, 25 and 27 September 2026 (the two app flows, S99 and S100, by hand on
 | S140 | App | Phantom connects, and a send comes back signed and goes to Solana | pass |
 | S141 | iPhone | Paying never leaves the chat: the panel over the keys, Phantom only for the signature | pass |
 | S142 | Android | The same pay panel on Android, with its own digit pad | pass |
+| S143 | App | App Review signs in with the password from App Store Connect | pass |
 
 ## Fixed during the run
 

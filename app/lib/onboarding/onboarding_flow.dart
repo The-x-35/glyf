@@ -471,6 +471,107 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _signedIn(await Auth.signInWithApple());
   }
 
+  /// Three quick taps on the orb open App Review's sign-in (the review
+  /// notes in App Store Connect say so): Glyf has no email-and-password
+  /// accounts of its own to hand Apple, so the reviewer gets this door.
+  int _reviewTaps = 0;
+  DateTime _reviewTapAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _reviewTap() {
+    final now = DateTime.now();
+    _reviewTaps = now.difference(_reviewTapAt) < const Duration(seconds: 2) ? _reviewTaps + 1 : 1;
+    _reviewTapAt = now;
+    if (_reviewTaps >= 3) {
+      _reviewTaps = 0;
+      _showReviewSignIn();
+    }
+  }
+
+  Future<void> _showReviewSignIn() async {
+    final controller = TextEditingController();
+    String? error;
+    var busy = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Glass.bg,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 22, 24, MediaQuery.viewInsetsOf(sheetCtx).bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('App Review sign-in',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Glass.ink)),
+              const SizedBox(height: 6),
+              const Text('The password from App Store Connect.',
+                  style: TextStyle(fontSize: 13.5, color: Glass.inkSoft)),
+              const SizedBox(height: 14),
+              TextField(
+                key: const Key('onb:review-password'),
+                controller: controller,
+                autofocus: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                style: const TextStyle(fontSize: 15, color: Glass.ink),
+                decoration: InputDecoration(
+                  hintText: 'Reviewer password',
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Glass.hairline),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Glass.hairline),
+                  ),
+                ),
+              ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13.5, color: Glass.danger)),
+                ),
+              const SizedBox(height: 14),
+              busy
+                  ? const SizedBox(
+                      height: 52,
+                      child: Center(
+                        child: SizedBox(
+                          width: 22, height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.4, color: Glass.ink),
+                        ),
+                      ),
+                    )
+                  : PillButton(
+                      label: 'Sign in',
+                      onPressed: () async {
+                        setSheet(() { busy = true; error = null; });
+                        final e = await Auth.signInForReview(controller.text);
+                        if (!sheetCtx.mounted) return;
+                        if (e != null) {
+                          setSheet(() { busy = false; error = e; });
+                          return;
+                        }
+                        Navigator.of(sheetCtx).pop();
+                      },
+                    ),
+            ],
+          ),
+        ),
+      ),
+    );
+    // The sheet's route lets go of the field a beat after popping; disposing
+    // under it red-screens ('_dependents.isEmpty').
+    Future<void>.delayed(const Duration(seconds: 1), controller.dispose);
+    if (Auth.signedIn && mounted) await _signedIn(null);
+  }
+
   /// Recent screenshots need the photo library, and only the app can ask for
   /// it, so the ask belongs to this switch — never to moving on.
   Future<void> _wantScreenshots(bool on) async {
@@ -625,11 +726,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         return _frame(children: [
           const Spacer(flex: 4),
           Center(
-            child: TalkingOrb(
-              size: 170,
-              titleSize: 34,
-              lines: const ['Hi, I’m {glyf}', 'Sign in to set up your AI keyboard.'],
-              launchTarget: _launchStep == _step,
+            // Three quick taps here open App Review's sign-in.
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _reviewTap,
+              child: TalkingOrb(
+                size: 170,
+                titleSize: 34,
+                lines: const ['Hi, I’m {glyf}', 'Sign in to set up your AI keyboard.'],
+                launchTarget: _launchStep == _step,
+              ),
             ),
           ),
           const Spacer(flex: 3),
