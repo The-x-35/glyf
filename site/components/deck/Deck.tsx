@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { SCENARIOS, type Scenario } from "../chat/scenarios";
 import ThemeToggle from "../ThemeToggle";
@@ -260,7 +260,6 @@ const SLIDES: Slide[] = [
   {
     id: "skills",
     label: "Skills",
-    tone: "ink",
     render: () => (
       <div className="d-split">
         <div>
@@ -567,21 +566,20 @@ export default function Deck() {
         </div>
       )}
 
+      {/* The slide swaps instantly and only the entrance animates: an exit
+          animation under mode="wait" wedged on fast clicks, leaving the old
+          slide (or nothing) on stage until a refresh. */}
       {ready && (
-        <AnimatePresence mode="wait" initial={false} custom={dir}>
-          <motion.section
-            key={slide.id}
-            className={cx("slide", slide.tone && `slide--${slide.tone}`)}
-            aria-label={`${i + 1} of ${SLIDES.length}: ${slide.label}`}
-            custom={dir}
-            initial={capture ? false : { opacity: 0, x: dir * 60 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: dir * -60 }}
-            transition={{ duration: 0.45, ease }}
-          >
-            <div className="slide-in">{slide.render(capture)}</div>
-          </motion.section>
-        </AnimatePresence>
+        <motion.section
+          key={slide.id}
+          className={cx("slide", slide.tone && `slide--${slide.tone}`)}
+          aria-label={`${i + 1} of ${SLIDES.length}: ${slide.label}`}
+          initial={capture ? false : { opacity: 0, x: dir * 60 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.4, ease }}
+        >
+          <div className="slide-in">{slide.render(capture)}</div>
+        </motion.section>
       )}
 
       {!capture && (
