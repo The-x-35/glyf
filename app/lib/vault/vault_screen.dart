@@ -38,6 +38,14 @@ class _VaultScreenState extends State<VaultScreen> {
   static IconData _iconFor(String? kind) =>
       kinds.firstWhere((k) => k.$1 == kind, orElse: () => kinds.last).$3;
 
+  /// Its label, or its kind's name when it has none: a detail saved without
+  /// a label showed a blank line above its value.
+  static String _titleFor(Map f) {
+    final own = ((f['label'] as String?) ?? '').trim();
+    if (own.isNotEmpty) return own;
+    return kinds.firstWhere((k) => k.$1 == f['kind'], orElse: () => kinds.last).$2;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -125,7 +133,7 @@ class _VaultScreenState extends State<VaultScreen> {
               _sectionHeader('Details', onAdd: () => _editField(null)),
               for (final f in _fields)
                 _row(
-                  title: f['label'] as String? ?? '',
+                  title: _titleFor(f as Map),
                   subtitle: f['value'] as String? ?? '',
                   icon: _iconFor(f['kind'] as String?),
                   onTap: () => _editField(f as Map<String, dynamic>),
@@ -306,7 +314,10 @@ class _VaultScreenState extends State<VaultScreen> {
         final res = await GlyfBridge.vaultUpsertField(
           id: existing?['id'] as String?,
           kind: kind,
-          label: labelCtl.text.trim(),
+          // No label typed: the kind's own name ("Address") stands in.
+          label: labelCtl.text.trim().isNotEmpty
+              ? labelCtl.text.trim()
+              : kinds.firstWhere((k) => k.$1 == kind, orElse: () => kinds.last).$2,
           value: valueCtl.text.trim(),
         );
         if (res.ok) Telemetry.log('vault_field_saved', {'kind': kind});

@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
@@ -19,22 +21,6 @@ class KeyboardScreen extends StatefulWidget {
 
 class _KeyboardScreenState extends State<KeyboardScreen> {
   Map<String, dynamic> _settings = {};
-
-  /// Board colours, each one a whole keyboard (see KeyPalette).
-  static const _colors = <String, Color>{
-    'Stone': Color(0xFFD5D8DE),
-    'Lilac': Color(0xFFE3E1F6),
-    'Sky': Color(0xFFD9E7F7),
-    'Mint': Color(0xFFD7EBE1),
-    'Sand': Color(0xFFF6E3DA),
-    'Blush': Color(0xFFF2E2EC),
-    'Ink': Color(0xFF1F1F22),
-    'Indigo': Color(0xFF232437),
-    'Midnight': Color(0xFF14202E),
-    'Pine': Color(0xFF15241D),
-    'Plum': Color(0xFF2A1D22),
-    'Cocoa': Color(0xFF3A2E24),
-  };
 
   /// What the strip converts a typed amount into. "auto" follows the phone;
   /// the rest are the ECB's own list, which is what the rates come from —
@@ -67,13 +53,6 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
     'TRY': '₺  Turkish lira',
   };
 
-  static const _gradients = <String, List<Color>>{
-    'dusk': [Color(0xFF7C5CFF), Color(0xFFEC6ADE)],
-    'ocean': [Color(0xFF3D8BFF), Color(0xFF41E0C8)],
-    'ember': [Color(0xFFFF7847), Color(0xFFFFC53D)],
-    'forest': [Color(0xFF1FA968), Color(0xFF9BE15D)],
-  };
-
   @override
   void initState() {
     super.initState();
@@ -83,6 +62,10 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
   Future<void> _load() async {
     final s = await GlyfBridge.sharedSettings();
     if (mounted) setState(() => _settings = s);
+    // The colour and gradient themes are retired for now: iOS draws a band
+    // above every keyboard that a painted board can't reach, so it looked
+    // cut off. A board picked before goes back to the default look.
+    if (((s['themeBg'] as String?) ?? '').isNotEmpty) await _set('themeBg', '');
   }
 
   Future<void> _set(String key, Object value) async {
@@ -120,20 +103,14 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
                   await _set('keyTheme', 'glass');
                   await _set('themeBg', '');
                 }),
-            for (final e in _colors.entries)
-              _tile(e.key,
-                  board: e.value,
-                  selected: _themeBg == _hex(e.value),
-                  onTap: () => _set('themeBg', _hex(e.value))),
-            for (final e in _gradients.entries)
-              _tile(e.key[0].toUpperCase() + e.key.substring(1),
-                  gradient: e.value,
-                  selected: _themeBg == 'grad:${e.key}',
-                  onTap: () => _set('themeBg', 'grad:${e.key}')),
           ]),
           const SizedBox(height: 18),
           _card([
-            _segmented('Appearance', 'appearance', const ['auto', 'light', 'dark']),
+            // The iPhone keyboard follows the app it types into, like
+            // Apple's: iOS draws the band above it and the bar below it in
+            // that app's colour, so a forced light or dark looked cut off.
+            if (!Platform.isIOS)
+              _segmented('Appearance', 'appearance', const ['auto', 'light', 'dark']),
             _switch('Borders around keys', 'keyBorders'),
           ]),
           const SizedBox(height: 18),
@@ -176,9 +153,6 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
       ),
     );
   }
-
-  static String _hex(Color c) =>
-      'color:#${c.toARGB32().toRadixString(16).substring(2)}';
 
   /// A line of explanation under the switch it belongs to.
   Widget _note(String text) => Padding(

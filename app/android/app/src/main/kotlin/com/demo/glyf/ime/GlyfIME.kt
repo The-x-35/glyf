@@ -306,7 +306,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         keyboard.isDark = dark
         keyboard.keyTheme = settings.optString("keyTheme", "site")
-        keyboard.themeBg = settings.optString("themeBg", "")
+        // The colour and gradient themes are retired for now (user,
+        // 2026-09-27); one picked before is ignored, like on the iPhone.
+        keyboard.themeBg = ""
         keyboard.keyBorders = settings.optBoolean("keyBorders", false)
         keyboard.themeDim = settings.optDouble("themeBrightness", 0.0).toFloat()
         keyboard.numberRow = settings.optBoolean("numberRow", false)

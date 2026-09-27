@@ -11,7 +11,16 @@ import kotlin.math.pow
  */
 object Smart {
 
-    data class Field(val kind: String, val label: String, val value: String)
+    data class Field(val kind: String, val label: String, val value: String) {
+        /** Its label, or its kind's name when saved without one. */
+        val title: String get() = label.trim().ifEmpty {
+            when (kind) {
+                "name" -> "Name"; "email" -> "Email"; "phone" -> "Phone"
+                "address" -> "Address"; "wallet" -> "Wallet address"; "link" -> "Link"
+                "social" -> "Social"; "bio" -> "Bio"; else -> "Detail"
+            }
+        }
+    }
 
     sealed class Chip {
         /** "3480/4" -> " = 870"; `hasEquals` when the "=" is already typed. */
@@ -44,7 +53,7 @@ object Smart {
     ) { companion object { val EMPTY = RatesSnapshot() } }
 
     /** The small label on the chip's left, when there is one. */
-    fun key(chip: Chip): String? = (chip as? Chip.Vault)?.field?.label
+    fun key(chip: Chip): String? = (chip as? Chip.Vault)?.field?.title
 
     /** What a tap does, on the chip's right edge; null for the model's own words. */
     fun verb(chip: Chip): String? = when (chip) {

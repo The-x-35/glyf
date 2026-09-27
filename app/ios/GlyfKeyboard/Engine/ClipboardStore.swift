@@ -127,8 +127,12 @@ enum ClipboardStore {
         guard SettingsStore.current.clipboardCaptureAll == true else {
             return done(false)
         }
-        captureEverything { took in
-            if took { done(true) } else { captureDetected(done) }
+        captureEverything { took, asked in
+            if took { done(true) }
+            // Asked and refused (or nothing there): "Don't Allow Paste"
+            // means that copy stays out, however else it could be read.
+            else if asked { done(false) }
+            else { captureDetected(done) }
         }
     }
 
@@ -139,12 +143,14 @@ enum ClipboardStore {
     /// Paste from Other Apps) it never asks again and every copy lands here
     /// by itself. That choice belongs to the person, not to us, which is why
     /// this is opt-in and `captureDetected` is what runs by default.
-    static func captureEverything(_ done: @escaping (Bool) -> Void) {
+    /// `done(took, asked)`: whether the copy was taken, and whether iOS was
+    /// asked for it at all.
+    static func captureEverything(_ done: @escaping (_ took: Bool, _ asked: Bool) -> Void) {
         guard !reading, fullAccessHint, pasteboardHasNewContent(),
               SettingsStore.current.clipboardHistory != false,
               SettingsStore.current.clipboardCaptureAll == true,
               UIPasteboard.general.hasStrings
-        else { return done(false) }
+        else { return done(false, false) }
         // Reading `.string` can raise "Allow Paste?", and the read waits for
         // the answer. On the main thread that froze the whole keyboard (no
         // keys, no strip) until the person answered; off it, the keyboard
@@ -156,14 +162,17 @@ enum ClipboardStore {
             DispatchQueue.main.async {
                 reading = false
                 // Seen either way: a refused read is not asked again for the
-                // same copy.
-                AppGroupStore.writeJSON(["cc": changeCount], name: "clip-cc.json")
+                // same copy. The count is read again afterwards too: while
+                // iOS asks, the simulator re-syncs the Mac's clipboard and
+                // bumps it, which made the refused copy look new.
+                let seen = max(changeCount, UIPasteboard.general.changeCount)
+                AppGroupStore.writeJSON(["cc": seen], name: "clip-cc.json")
                 guard let text, !text.isEmpty,
                       let next = inserting(text, into: load(), now: Date()) else {
-                    return done(false)
+                    return done(false, true)
                 }
                 save(next)
-                done(true)
+                done(true, true)
             }
         }
     }

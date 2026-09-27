@@ -37,6 +37,9 @@ class _BuilderScreenState extends State<BuilderScreen> {
   bool _testing = false;
   bool _saving = false;
   bool _showSteps = false;
+  /// "How it works", so opening it can bring the steps into view: they
+  /// open below the fold, under the Save button.
+  final _stepsKey = GlobalKey();
   bool _editingSample = false;
   String? _error;
   String _result = '';
@@ -461,7 +464,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
   Widget _howItWorks(Map<String, dynamic> def) {
     final steps = (def['steps'] as List).cast<Map<String, dynamic>>();
     final sees = ((def['discloses'] as List?) ?? []).join(' · ');
-    return _card([
+    return KeyedSubtree(key: _stepsKey, child: _card([
       _row(
         leading: const Icon(Icons.tune_rounded, size: 20, color: Glass.ink),
         title: 'How it works',
@@ -470,7 +473,18 @@ class _BuilderScreenState extends State<BuilderScreen> {
           duration: const Duration(milliseconds: 160),
           child: const Icon(Icons.chevron_right, color: Color(0xFFB9BEC7)),
         ),
-        onTap: () => setState(() => _showSteps = !_showSteps),
+        onTap: () {
+          setState(() => _showSteps = !_showSteps);
+          if (!_showSteps) return;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final ctx = _stepsKey.currentContext;
+            if (ctx == null) return;
+            Scrollable.ensureVisible(ctx,
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
+                alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+          });
+        },
       ),
       if (_showSteps) ...[
         for (final (i, step) in steps.indexed)
@@ -496,7 +510,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
             maxLines: 3,
           ),
       ],
-    ]);
+    ]));
   }
 
   Widget _label(String text) => Padding(

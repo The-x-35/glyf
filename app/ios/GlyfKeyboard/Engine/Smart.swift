@@ -36,7 +36,7 @@ enum Smart {
             switch self {
             case .event, .booking: return "Calendar"
             case .calc, .money: return "="
-            case .vault(let f): return f.label
+            case .vault(let f): return f.title
             case .paste: return "Paste"
             case .pay: return "Pay"
             case .action: return "Glyf"

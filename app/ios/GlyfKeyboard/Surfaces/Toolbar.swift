@@ -454,7 +454,7 @@ final class GlyfToolbar: UIView {
                 smartKey.attributedText = NSAttributedString(attachment: spark)
             }
             if case .vault(let field) = chip {
-                let line = NSMutableAttributedString(string: field.label + "  ", attributes: [
+                let line = NSMutableAttributedString(string: field.title + "  ", attributes: [
                     .foregroundColor: Glass.textSecondary,
                     .font: UIFont.systemFont(ofSize: 13, weight: .medium)])
                 line.append(NSAttributedString(string: chip.value, attributes: [

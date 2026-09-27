@@ -264,6 +264,18 @@ enum Glass {
         return boardIsLight ? seed.blend(.black, 0.14) : seed.blend(.white, 0.12)
     }
     static var fillKeyFnPressed: UIColor { fillKeyPressed }
+    /// The on state of the keyboard's own switches and segments: ink in
+    /// light, as in the app; in dark, a light track the white thumb still
+    /// stands out on.
+    static var controlOn: UIColor {
+        isDark ? UIColor(white: 0.86, alpha: 1)
+               : UIColor(red: 0x17 / 255, green: 0x18 / 255, blue: 0x1C / 255, alpha: 1)
+    }
+    /// Text on `controlOn` (a selected segment's title).
+    static var controlOnText: UIColor {
+        isDark ? UIColor(red: 0x17 / 255, green: 0x18 / 255, blue: 0x1C / 255, alpha: 1) : .white
+    }
+
     /// Apple's blue return key for go, search, send and done: #007AFF,
     /// measured on the iOS 26.5 simulator; the dark twin is iOS's dark blue.
     static var returnBlue: UIColor {

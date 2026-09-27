@@ -93,6 +93,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         case note(GlyfNote)
         /// The one card that adds something: a note written right here.
         case newNote
+        /// Nothing saved yet: the address, email and wallet come from the
+        /// app's Vault, one tap away.
+        case addDetails
     }
 
     private var vaultCards: [VaultCard] = []
@@ -344,7 +347,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         vaultGrid.subviews.forEach { $0.removeFromSuperview() }
         let vault = VaultStore.shared.load()
         vaultCards = vault.fields.map {
-            .text(label: $0.label.uppercased(), value: $0.value, insert: $0.value)
+            .text(label: $0.title.uppercased(), value: $0.value, insert: $0.value)
         }
         for note in NotesStore.shared.load() {
             vaultCards.append(.note(note))
@@ -352,6 +355,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         for image in vault.images {
             vaultCards.append(.image(image))
         }
+        if vault.fields.isEmpty { vaultCards.append(.addDetails) }
         vaultCards.append(.newNote)
         for (i, item) in vaultCards.enumerated() {
             let labelText: String
@@ -360,6 +364,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             case .text(let l, let v, _): labelText = l; valueText = v
             case .note(let n): labelText = "NOTE"; valueText = n.text
             case .newNote: labelText = ""; valueText = "＋ New note"
+            case .addDetails: labelText = ""; valueText = "＋ Your details"
             case .image(let img): labelText = "IMAGE"; valueText = ShellCell.age(img.addedAt)
             }
             let cell = UIControl()
@@ -404,7 +409,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                              .foregroundColor: Glass.textSecondary])
             label.isUserInteractionEnabled = false
             label.isHidden = {
-                switch item { case .image, .newNote: return true; default: return false }
+                switch item { case .image, .newNote, .addDetails: return true; default: return false }
             }()
             cell.addSubview(label)
 
@@ -412,13 +417,17 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             value.tag = 3
             value.text = valueText
             value.font = .systemFont(ofSize: 13, weight: .medium)
-            value.textColor = { if case .newNote = item { return Glass.accentPrimary }; return Glass.textPrimary }()
+            value.textColor = {
+                switch item { case .newNote, .addDetails: return Glass.accentPrimary; default: return Glass.textPrimary }
+            }()
             value.lineBreakMode = .byTruncatingTail
             value.isUserInteractionEnabled = false
             value.isHidden = { if case .image = item { return true }; return false }()
-            if case .newNote = item {
+            switch item {
+            case .newNote, .addDetails:
                 value.textAlignment = .center
                 value.numberOfLines = 1
+            default: break
             }
             cell.addSubview(value)
 
@@ -430,6 +439,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                     self?.delegate?.shellInsertText(n.text)
                 case .newNote:
                     self?.delegate?.shellEditNote(id: nil, text: "")
+                case .addDetails:
+                    self?.delegate?.shellOpenApp(path: "vault")
                 case .image(let img):
                     self?.delegate?.shellCopyImage(id: img.id)
                 }
@@ -543,11 +554,10 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         case "settings":
             // The same sections and words as the app's Keyboard screen, so
             // a setting reads the same wherever it is found.
+            // No Appearance row: on the iPhone the keyboard follows the app
+            // it types into, like Apple's. A forced light or dark board sat
+            // between the band and bar iOS draws in the app's own colour.
             return Screen(id: id, title: "Settings", rows: [
-                .segmented(title: "Appearance",
-                           options: ["auto", "light", "dark"],
-                           value: { SettingsStore.current.appearance ?? "auto" },
-                           set: { v in SettingsStore.update { $0.appearance = v } }),
                 .header(title: "Typing"),
                 .toggle(title: "Autocorrect",
                         value: { SettingsStore.current.autocorrect },
@@ -685,6 +695,12 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             }
             for image in vault.images {
                 rows.append(.vaultImage(image))
+            }
+            // Nothing saved yet: say where an address, an email or a wallet
+            // comes from, one tap away, instead of a lone "New note".
+            if vault.fields.isEmpty {
+                rows.append(.nav(icon: "person.text.rectangle", title: "Add your details",
+                                 detail: nil, target: "!app:vault"))
             }
             rows.append(.action(title: "＋ New note", style: .accent, handler: {}))
             return Screen(id: id, title: "Vault", rows: rows, appPath: "vault")
@@ -1105,7 +1121,7 @@ private final class ShellCell: UITableViewCell {
             title.text = t
             let sw = UISwitch()
             sw.isOn = valueFn()
-            sw.onTintColor = Glass.accentPrimary
+            sw.onTintColor = Glass.controlOn
             sw.sizeToFit()
             sw.addAction(UIAction { [weak self] a in
                 guard let s = a.sender as? UISwitch else { return }
@@ -1137,11 +1153,11 @@ private final class ShellCell: UITableViewCell {
             title.text = t
             let seg = UISegmentedControl(items: options.map(\.capitalized))
             seg.selectedSegmentIndex = options.firstIndex(of: valueFn()) ?? 0
-            seg.selectedSegmentTintColor = Glass.accentPrimary
+            seg.selectedSegmentTintColor = Glass.controlOn
             seg.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 13, weight: .medium),
                                         .foregroundColor: Glass.textPrimary], for: .normal)
             seg.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 13, weight: .semibold),
-                                        .foregroundColor: UIColor.white], for: .selected)
+                                        .foregroundColor: Glass.controlOnText], for: .selected)
             seg.addAction(UIAction { [weak self] a in
                 guard let s = a.sender as? UISegmentedControl,
                       s.selectedSegmentIndex >= 0 else { return }
@@ -1193,7 +1209,7 @@ private final class ShellCell: UITableViewCell {
             accessibilityIdentifier = "key:\(key)"
         case .vaultField(let field):
             setIcon("person.text.rectangle")
-            title.text = field.label
+            title.text = field.title
             value.isHidden = false
             value.text = preview(field.value)
             accessibilityIdentifier = "vault:\(field.label)"

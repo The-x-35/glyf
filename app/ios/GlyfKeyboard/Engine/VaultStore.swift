@@ -12,6 +12,24 @@ struct VaultField: Codable, Equatable, Identifiable {
     var kind: String      // name email phone address upi gst wallet link social bio reply custom
     var label: String
     var value: String
+
+    /// What to call it: its label, or the name of its kind when it was
+    /// saved without one (a blank line above the value looked broken).
+    var title: String {
+        let own = label.trimmingCharacters(in: .whitespaces)
+        if !own.isEmpty { return own }
+        switch kind {
+        case "name": return "Name"
+        case "email": return "Email"
+        case "phone": return "Phone"
+        case "address": return "Address"
+        case "wallet": return "Wallet address"
+        case "link": return "Link"
+        case "social": return "Social"
+        case "bio": return "Bio"
+        default: return "Detail"
+        }
+    }
 }
 
 struct VaultCombo: Codable, Equatable, Identifiable {

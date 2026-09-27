@@ -284,9 +284,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
     }
 
     /// Apple behavior: the keyboard follows the HOST (field appearance /
-    /// system style), unless the user forces light or dark in settings.
+    /// system style). A forced light or dark is not offered on the iPhone
+    /// any more: iOS draws the band above the keyboard and the globe bar
+    /// below it in the host's colour, so a board forced the other way looked
+    /// cut off between them (user, 2026-09-27). A choice saved before is
+    /// ignored.
     private func resolveAppearance() {
-        let pref = SettingsStore.current.appearance ?? "auto"
+        let pref = "auto"
         // The host's keyboardAppearance is resolved once, when the field
         // takes focus: Messages opened in dark mode keeps reporting .dark
         // after the phone switches to light. The trait (which the system
@@ -306,7 +310,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
             : textDocumentProxy.keyboardAppearance == .dark || traitDark
         let dark = pref == "dark" || (pref == "auto" && hostDark)
         let theme = SettingsStore.current.keyTheme ?? "glass"
-        let bg = SettingsStore.current.themeBg ?? ""
+        // Painted boards (the colour and gradient themes) are retired for
+        // now: iOS draws its own band above every keyboard that nothing can
+        // paint, so a coloured board looked cut off under it. One picked
+        // before stays in settings and is ignored (user, 2026-09-27).
+        let bg = ""
         let borders = SettingsStore.current.keyBorders ?? false
         let dim = SettingsStore.current.themeBrightness ?? 0
         overrideUserInterfaceStyle =

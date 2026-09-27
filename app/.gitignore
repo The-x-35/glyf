@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# RPC and other keys, passed to builds with --dart-define-from-file
+secrets.json
