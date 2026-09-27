@@ -11,7 +11,11 @@ final class RatesStore {
     private(set) var fiat: [String: Double] = [:]
     private var fiatAt: Date?
     private(set) var crypto: [String: Double] = [:]
+    /// The token behind each cashtag, so Buy knows what to buy.
+    private(set) var mints: [String: String] = [:]
     private var cryptoAt: [String: Date] = [:]
+    /// Copied or typed addresses: a wallet, or the token at that address.
+    private(set) var addresses: [String: Smart.AddressKind] = [:]
     private var inFlight = Set<String>()
 
     private static let file = "rates.json"
@@ -45,7 +49,7 @@ final class RatesStore {
     ]
 
     func snapshot() -> Smart.RatesSnapshot {
-        Smart.RatesSnapshot(fiat: fiat, crypto: crypto, local: local)
+        Smart.RatesSnapshot(fiat: fiat, crypto: crypto, local: local, mints: mints, addresses: addresses)
     }
 
     /// Fetches the dollar table when it is missing or stale; `then` runs on
@@ -73,14 +77,37 @@ final class RatesStore {
                let quote = quotes[symbol] as? [String: Any],
                let usd = quote["usd"] as? Double {
                 self.crypto[symbol] = usd
+                self.mints[symbol] = quote["mint"] as? String
             } else {
                 self.crypto.removeValue(forKey: symbol)
+                self.mints.removeValue(forKey: symbol)
+            }
+            then()
+        }
+    }
+
+    /// Whether an address is a token's (and which) or someone's wallet.
+    /// Asked once per address; when the answer can't be had it counts as a
+    /// wallet, and the app checks again before any money moves.
+    func ensureAddress(_ address: String, then: @escaping () -> Void) {
+        guard addresses[address] == nil else { return }
+        fetch(path: "/rates/token?mint=\(address)", key: "address:\(address)", always: true) { [weak self] obj in
+            guard let self else { return }
+            if let token = obj?["token"] as? [String: Any], let symbol = token["symbol"] as? String {
+                self.addresses[address] = .token(symbol: symbol, usd: token["usd"] as? Double)
+            } else {
+                self.addresses[address] = .wallet
             }
             then()
         }
     }
 
     private func fetch(path: String, key: String, done: @escaping ([String: Any]) -> Void) {
+        fetch(path: path, key: key, always: false) { obj in if let obj { done(obj) } }
+    }
+
+    /// `always` hands a failure on as nil rather than dropping it.
+    private func fetch(path: String, key: String, always: Bool, done: @escaping ([String: Any]?) -> Void) {
         guard !inFlight.contains(key),
               let url = URL(string: "\(SettingsStore.current.backendURL)\(path)") else { return }
         inFlight.insert(key)
@@ -90,9 +117,11 @@ final class RatesStore {
         URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
             DispatchQueue.main.async {
                 self?.inFlight.remove(key)
-                guard let data,
-                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      obj["ok"] as? Bool == true else { return }
+                let obj = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                guard let obj, obj["ok"] as? Bool == true else {
+                    if always { done(nil) }
+                    return
+                }
                 done(obj)
             }
         }.resume()

@@ -19,7 +19,7 @@ The complete reference for the Glyf backend: what exists, how it works, every de
 6. [Search suite](#6-search-suite)
 7. [Keyless tool registry](#7-keyless-tool-registry)
 8. [Connectors and the OAuth broker](#8-connectors-and-the-oauth-broker)
-9. [Wallet and crypto (M8)](#9-wallet-and-crypto-m8)
+9. [Wallet and crypto](#9-wallet-and-crypto)
 10. [Security rules and safeguards](#10-security-rules-and-safeguards)
 11. [Environment variables](#11-environment-variables)
 12. [Tests](#12-tests)
@@ -132,7 +132,8 @@ server/
 │   │   ├── builder.ts      POST /builder/generate, /builder/test; POST/GET/DELETE /glyfs
 │   │   ├── hub.ts          /skills, /skills/creators, /skills/get, /hub/*, /account/*
 │   │   ├── search.ts       POST /search; GET /search/suggest, /search/photo, /search/staticmap, /search/status
-│   │   ├── rates.ts        GET /rates/fiat (ECB per dollar), GET /rates/crypto?symbols= (Jupiter verified tokens)
+│   │   ├── rates.ts        GET /rates/fiat (ECB per dollar), GET /rates/crypto?symbols= (Jupiter verified tokens), GET /rates/token?mint= (what an address is)
+│   │   ├── wallet.ts       POST /wallet/rpc: the phone's Solana calls, with the server's RPC key
 │   │   ├── tools.ts        POST /tools/run
 │   │   ├── connector.ts    OAuth broker, /connectors/*, mock calendar
 │   │   ├── media.ts        GET /media/config, /media/emoji-stickers (GIFs and stickers)
@@ -281,7 +282,9 @@ None of this works across multiple server instances. A deployment must run one i
 | 24 | GET | `/search/staticmap?lat=&lon=` | Geoapify static map proxy | No | `routes/search.ts` | Android IME act map card |
 | 25 | GET | `/search/status` | Which search providers are live | No | `routes/search.ts` | None found (diagnostic) |
 | 25a | GET | `/rates/fiat` | ECB rates per dollar (Frankfurter, cached 1h) for the strip's money chip | Session | `routes/rates.ts` | iOS keyboard, Android IME (`RatesStore`) |
-| 25b | GET | `/rates/crypto?symbols=SOL,USDC` | Dollar price of the verified Solana token behind a ticker (Jupiter, cached 60s) | Session | `routes/rates.ts` | iOS keyboard, Android IME (cashtags) |
+| 25b | GET | `/rates/crypto?symbols=SOL,USDC` | Dollar price of the verified Solana token behind a ticker (Jupiter, cached 60s), with its token address for Buy | Session | `routes/rates.ts` | iOS keyboard, Android IME (cashtags) |
+| 25c | GET | `/rates/token?mint=<address>` | The token at a copied or typed Solana address (`{symbol, name, decimals, usd?, verified}`), or `token: null` for a wallet; 503 when Jupiter can't be asked, never a guess | Session | `routes/rates.ts` | iOS keyboard, Android IME (Send and Buy chips) |
+| 25d | POST | `/wallet/rpc` `{method, params}` | Relays one Solana JSON-RPC call to `SOLANA_RPC_URL`: getLatestBlockhash, getBalance, getTokenAccountsByOwner, getAccountInfo, sendTransaction, getSignatureStatuses only. 503 unset, 400 other methods, the node's own error passed through, 502 when it doesn't answer | Session | `routes/wallet.ts` | Flutter wallet |
 | 26 | POST | `/tools/run` | Run one keyless tool | No | `routes/tools.ts` | Client methods exist in both keyboards, no current call sites found |
 | 27 | GET | `/connectors/status?deviceId=` | Provider configured/connected state | No | `routes/connector.ts` | Flutter app |
 | 28 | GET | `/oauth/google/start?deviceId=&scopes=` | Google consent URL | No | `routes/connector.ts` | Flutter app |
@@ -1213,36 +1216,26 @@ As of the last notes (2026-09-16) no OAuth credentials of any kind had been prov
 
 ---
 
-## 9. Wallet and crypto (M8)
+## 9. Wallet and crypto
 
-Crypto is an optional connector shipped in a separate release after v1.0 (SPEC §6.14, §9). Nothing crypto-related is built in the server.
+Built on 2026-09-27 as a Phantom wallet (the apps' side is APPS.md section 5.27). Glyf builds every transaction on the phone and Phantom signs it; the server never sees a key or a signature request. Arpit: "we wont hold any keys", and "no need server for this, this we can do on device".
 
-### 9.1 Privy
+### 9.1 What the server does
 
-- On 2026-09-11 Arpit sent the Privy app id and app secret: "for privy , keep them safe in env". Both went into `server/.env` (gitignored, file mode 600, which was confirmed from the directory listing while writing). The assistant advised rotating them because they were pasted in chat.
-- On 2026-09-12, after Arpit asked why his keys were not being tested, the app secret was authenticated against Privy's API: app "glyf", wallet auth enabled. Then it was parked.
-- Code: `server/src/env.ts` reads `PRIVY_APP_ID` into `env.privyAppId`, which nothing uses. `PRIVY_APP_SECRET` is never read. The comment says: never sent to clients, never used before the crypto connector milestone.
-- Rules: the Privy secret stays server-side. The Privy SDK must not be linked into any client binary before M8, because linking changes app size and App Store review scope permanently (SPEC §6.14, §13). The keyboard never holds keys and never signs (SPEC §1.5). The CI secrets guard includes a pattern for the Privy app secret shape.
+- `POST /wallet/rpc` (`routes/wallet.ts`): the only reason the server is involved. The phone needs a Solana node for blockhashes, balances, the recipient check and sending; the node's URL carries the Helius key, which SPEC §1.6 keeps out of client bundles. The relay forwards six methods to `SOLANA_RPC_URL`, adds nothing, keeps nothing, and logs only the method (`wallet_rpc`). Tests: `test/wallet.test.ts`.
+- `GET /rates/token?mint=` (`routes/rates.ts`, `Rates.tokenAt`): the keyboards ask what a Solana address is. Jupiter's token search, matched on the exact address, cached a minute per address like tickers. Tests: `test/rates.test.ts`.
+- `GET /rates/crypto` now hands the keyboards each ticker's `mint` too (it always had it), so the price chip can offer Buy.
+- Not on the server: Jupiter orders and executes, MagicBlock private transfers and Phantom's deeplinks are all called from the phone, keyless.
 
-### 9.2 What M0 Spike B decided for the backend (2026-09-11)
+### 9.2 Retired
 
-- `privy_flutter` 0.10.1 can sign and broadcast Solana transactions; SPEC §2.1 was stale.
-- Plan for swaps: Jupiter `/order` returns a base64 transaction, the app signs with `signTransaction` (not `signAndSendTransaction`), and the backend broadcasts through a `POST /execute` route. This also avoids the iOS plugin silently dropping a custom `rpcUrl`.
-- Caveats: omitting `cluster` on iOS silently means mainnet; the plugin needs iOS 17; versioned (v0) transaction signing, which Jupiter returns, is untested and should be tested first at M8.
+- Privy (2026-09-27): `PRIVY_APP_ID` and `PRIVY_APP_SECRET` left `.env.example` and `env.ts`; `privy_flutter` left the app. The old `/wallet` config and MagicBlock transfer routes (`lib/magicblock.ts`) were replaced by the relay. The secret should still be rotated at Privy, since it was pasted in chat.
+- The SPEC §6.14 plan (Privy embedded wallet, server `/execute`, risk scan, platform fee) is not what was built. `GLYF_FEE_BPS` is still unread; no integrator fee is taken on Jupiter swaps.
 
-### 9.3 Fee and contracts
+### 9.3 To run it in production
 
-- `GLYF_FEE_BPS=10` is in `.env.example`. SPEC §6.14.2: Jupiter integrator fees are 5 to 10 basis points, Glyf keeps 80%, the default is 10, and the fee must always be displayed in the preview. The variable is not read by any code yet.
-- `shared/contracts/intent.schema.json` and `result.schema.json` define the keyboard-to-app handoff (kinds `swap`, `send`, `sign_message`, `dictation`; single use; 120 s TTL; nonce; risk flags). `tools/gen_contracts.mjs` generates Swift, Dart and the server's zod `contracts.generated.ts`. The server does not import the zod schemas yet; the handoff currently runs only between keyboard and app (used by dictation since M3).
-
-### 9.4 Not built
-
-- Server providers and routes listed in SPEC §3: `swap`, `risk`, `jupiter`, `solana`, `storekit`, and `POST /execute`.
-- Risk scan (mint and freeze authority, LP lock, holder concentration, token age, honeypot heuristics) behind a `RiskProvider` interface.
-- Token resolution, SNS (`.sol`) name resolution, the 3.1.5 legal memo.
-- The website's demo chats show a MagicBlock private send and a "Routes by Jupiter" swap panel (2026-09-15). That is static front-end demo UI on the site with no server involvement.
-
-What Arpit still needs to provide for M8: Privy dashboard configuration (Solana enabled), a decision on regions and licensing, and a Jupiter API key when swaps are built.
+- `SOLANA_RPC_URL` on Railway (the Helius URL in `server/.env`). Without it `/wallet/rpc` answers 503 and Send, balances and the recipient check fail; Buy and the keyboards' chips still work.
+- Optional: a Jupiter API key if the keyless rate (about 0.5 requests a second per phone) turns out too low; the phone would then need it, so it would move behind the server like the RPC key.
 
 ---
 
@@ -1254,7 +1247,7 @@ What Arpit still needs to provide for M8: Privy dashboard configuration (Solana 
 |---|---|---|
 | No API keys or OAuth tokens in any client | SPEC §1.6, §11.2 | All provider calls happen server-side. Places photos and static maps are proxied. `/health` and `/search/status` expose presence only |
 | OAuth tokens server-side only | SPEC §6.11 | Stored in the `connections` collection; never returned |
-| Privy secret server-side, untouched until M8 | Arpit, 2026-09-11; SPEC §6.14 | Not read by code |
+| The Solana RPC key stays on the server | SPEC §1.6 | `POST /wallet/rpc` relays six methods; the phone never sees `SOLANA_RPC_URL` |
 | User glyfs cannot make arbitrary HTTP calls | SPEC §6.8, §11.5 | `tool` steps resolve only against the registry, checked at save, publish and run |
 | Every glyf and tool declares what it can see | SPEC §6.8, §11.6 | Schema requires `discloses`; tests enforce it |
 | User glyfs cannot touch the wallet | SPEC §6.9 | `validateUserDef` |
@@ -1352,13 +1345,18 @@ Names only. Values live in `server/.env` (never committed). "Example" says wheth
 | `GOOGLE_WEATHER_KEY` | Weather answer card | No | falls back to `GOOGLE_PLACES_KEY` | Yes (commented) | `lib/answers.ts` |
 | `OVERPASS_API_BASE` | Self-hosted Overpass endpoint for keyless "near me" on the dev path | No | unset (off) | Yes (commented) | `lib/search.ts` |
 
+### 11.3b Wallet
+
+| Variable | Purpose | Required | Default | Example | Read in |
+|---|---|---|---|---|---|
+| `SOLANA_RPC_URL` | The Solana node the wallet's relay calls (Helius, key in the URL). Never sent to a client | For the wallet | unset (`/wallet/rpc` answers 503) | Yes (placeholder) | `routes/wallet.ts` |
+
 ### 11.4 Present in files but not read by the server
 
 | Variable | Where it appears | Status |
 |---|---|---|
-| `PRIVY_APP_ID` | `.env.example`; `server/.env` per the 2026-09-12 snapshot | Read into `env.privyAppId`, never used. Parked for M8 |
-| `PRIVY_APP_SECRET` | `.env.example`; `server/.env` per the 2026-09-12 snapshot | Never read. Parked for M8 |
-| `GLYF_FEE_BPS` | `.env.example` (value 10); `server/.env` per the 2026-09-12 snapshot | Never read. Swap fee for M8 |
+| `PRIVY_APP_ID`, `PRIVY_APP_SECRET` | `server/.env` only (left `.env.example` and `env.ts` on 2026-09-27) | Retired with Privy; safe to delete from `server/.env` |
+| `GLYF_FEE_BPS` | `.env.example` (value 10); `server/.env` per the 2026-09-12 snapshot | Never read. No fee is taken on the wallet's Jupiter swaps |
 | `DATABASE_URL` | `server/.env` per the 2026-09-15 snapshot (not re-checked) | Never read. Intended for future app sign-ups in Neon |
 | `GLYF_API` | Formerly the website's variable pointing at this server | Removed from the site on 2026-09-15 |
 
@@ -1563,7 +1561,7 @@ Found by reading the code while writing this doc (2026-09-16). None were fixed, 
 | 12 | High (once deployed) | No authentication. The device id is a bearer credential for listing, deleting and publishing glyfs, renaming accounts and disconnecting connectors | all routes | Accounts (the planned sign-up), then authenticated sessions |
 | 13 | Low | `/telemetry/funnel` is public, and `/telemetry` accepts any event name, so the telemetry collection can be grown without limit | `routes/telemetry.ts` | Protect the funnel; allow-list event names |
 | 14 | Low | `.env.example` sets `OAUTH_REDIRECT_BASE` to the production URL while its own comment says to leave it unset for local development. Copying the file sends local OAuth callbacks to production | `server/.env.example` | Comment the line out |
-| 15 | Low | Dead configuration: `PRIVY_APP_SECRET` and `GLYF_FEE_BPS` are never read, `env.privyAppId` is unused, and `schemas/contracts.generated.ts` is never imported | `env.ts`, `schemas/` | Keep until M8, but know they do nothing |
+| 15 | Low | Dead configuration: `GLYF_FEE_BPS` is never read (the Privy variables were removed on 2026-09-27), and `schemas/contracts.generated.ts` is never imported | `env.ts`, `schemas/` | Keep until M8, but know they do nothing |
 | 16 | Medium | Hub installs record a version but runs resolve the latest published definition. When a publisher republishes with a changed `discloses`, installers run the new definition without re-consent unless the client checks | `resolve()` in `lib/userglyfs.ts` | Store and run the pinned definition; require re-consent server-side when `discloses` changes |
 | 17 | Low | Mini-app pages never expire and cannot be deleted | `lib/pages.ts` | Add an expiry |
 | 18 | Low | The meter day is UTC (resets at 05:30 IST), and `GET /meter/:deviceId` always computes against the free cap, even for Plus and Max devices | `lib/meter.ts`, `routes/meter.ts` | Accept the plan, or store it per device |
@@ -1621,7 +1619,7 @@ Status is as of the last notes (2026-09-16) and was not re-checked in `server/.e
 - GIF and sticker tabs in the Android keyboard (iOS built 2026-09-24).
 - Server-side version pinning and re-consent for hub installs.
 - Interactive `ask` steps and the visual chain editor (M9).
-- M8: `swap`, `risk`, `jupiter`, `solana` and `storekit` providers, `POST /execute`, fee display with `GLYF_FEE_BPS`.
+- Wallet follow-ups: a token risk check before Buy (mint and freeze authority, holders, age), `.sol` names in Send, and an integrator fee on swaps if wanted (`GLYF_FEE_BPS` is still unread).
 - Plan differences (priority and smarter models for paid plans).
 - Run about 50 real Hinglish messages through the chosen models once keys exist.
 - Clean up legacy routes (`/waitlist`, `/hub/list`, `/hub/install`).
@@ -1768,7 +1766,8 @@ Names only, no values here. Same names the local `server/.env` uses, so they can
 | `OVERPASS_API_BASE` | Self-hosted Overpass for keyless nearby search |
 | `GLYF_STORE` | Forces a storage driver. Not needed in production, where `DATABASE_URL` already selects Postgres |
 | `GLYF_REGISTRY_DIR` | Absolute path to a directory holding `glyfs/` and `tools/`. Only needed if a future build moves the registry JSON somewhere the function cannot find it (the symptom is a 500 on boot or an empty `/glyf/catalog`) |
-| `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `GLYF_FEE_BPS` | Parked for M8, not read by any route yet |
+| `SOLANA_RPC_URL` | Needed for the wallet (Send, balances, the recipient check). The Helius URL from `server/.env` |
+| `GLYF_FEE_BPS` | Not read by any route |
 
 `PORT` is not used on Vercel: the function never listens on a socket.
 

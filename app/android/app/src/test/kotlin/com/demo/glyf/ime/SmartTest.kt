@@ -98,9 +98,40 @@ class SmartTest {
 
     @Test fun paymentAddresses() {
         val addr = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
-        val chip = Smart.chip("send 25 usdc to $addr", vault) as Smart.Chip.Pay
-        assertEquals(addr, chip.address)
-        assertEquals("25", chip.amount)
+        val bonk = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+        // Not known yet: no chip, and the keyboard is told what to look up.
+        assertNull(Smart.chip("send 25 usdc to $addr", vault))
+        assertEquals(addr, Smart.addressToCheck("send 25 usdc to $addr", Smart.RatesSnapshot.EMPTY))
+        val rates = Smart.RatesSnapshot(addresses = mapOf(addr to Smart.AddressKind.Wallet,
+            bonk to Smart.AddressKind.Token("Bonk", 0.0000036)))
+        assertNull(Smart.addressToCheck("send 25 usdc to $addr", rates))
+
+        val chip = Smart.chip("send 25 usdc to $addr", vault, rates = rates) as Smart.Chip.Pay
+        assertEquals(Smart.Chip.Pay(addr, "25", "USDC"), chip)
+        assertEquals("Wallet", Smart.key(chip))
+        assertEquals("25 USDC to 7xKX…gAsU", Smart.display(chip))
+        assertEquals("Send", Smart.verb(chip))
+        assertEquals(Smart.Chip.Pay(addr, "0.5", "SOL"), Smart.chip("0.5 sol to $addr pls", vault, rates = rates))
+        assertEquals(Smart.Chip.Pay(addr), Smart.chip("₹500 to $addr", vault, rates = rates))
+        // Your own wallet is one you are sharing, not paying.
+        assertNull(Smart.chip("here $addr", vault, rates = rates, ownWallet = addr))
+
+        val buy = Smart.chip("ape this $bonk", vault, rates = rates)
+        assertEquals(Smart.Chip.Buy(bonk, "Bonk", "$0.0000036"), buy)
+        assertEquals("Bonk", Smart.key(buy!!))
+        assertEquals("$0.0000036", Smart.display(buy))
+        assertEquals("Buy", Smart.verb(buy))
         assertNull(Smart.payment("thisisaverylongsentencewithoutanydigitsatall"))
+    }
+
+    @Test fun aTickersPriceOffersBuyWhenItCanBeBought() {
+        val sol = "So11111111111111111111111111111111111111112"
+        val rates = Smart.RatesSnapshot(crypto = mapOf("SOL" to 111.77, "BONK" to 0.0000036), mints = mapOf("SOL" to sol))
+        assertEquals(Smart.Chip.Money("1 SOL = $111.77", " = $111.77", sol), Smart.chip("buying \$sol", vault, rates = rates))
+        assertEquals(Smart.Chip.Money("1 BONK = $0.0000036", " = $0.0000036"), Smart.chip("\$bonk", vault, rates = rates))
+        assertEquals("$0.50", Smart.price(0.5))
+        assertEquals("$0.0823", Smart.price(0.08234))
+        assertEquals("$1,234.50", Smart.price(1234.5))
+        assertEquals("$0.00000364", Smart.price(0.00000364))
     }
 }

@@ -164,6 +164,28 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
                     result.success(true)
                 } else result.success(false)
             }
+            // Phantom's links go to the Phantom app itself (phantom.app's own
+            // app-link file isn't served there, so the package is named):
+            // false when it isn't installed.
+            "openPhantom" -> {
+                val url = call.argument<String>("url")
+                if (url == null || Uri.parse(url).host != "phantom.app") return result.success(false)
+                try {
+                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .setPackage("app.phantom")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    result.success(true)
+                } catch (_: android.content.ActivityNotFoundException) {
+                    result.success(false)
+                }
+            }
+            "walletSecretLoad" -> result.success(WalletSecrets.load(ctx, call.argument<String>("name") ?: ""))
+            "walletSecretSave" -> result.success(WalletSecrets.save(ctx,
+                call.argument<String>("name") ?: "", call.argument<String>("value") ?: ""))
+            "walletSecretClear" -> {
+                WalletSecrets.clear(ctx, call.argument<String>("name") ?: "")
+                result.success(true)
+            }
             "documentsPath" -> result.success(ctx.filesDir.absolutePath)
             // Debug builds: test flags for this launch only, passed the way the
             // scenario runner starts the app (am start --esa glyfArgs ...), so a

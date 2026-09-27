@@ -26,7 +26,7 @@ Plus:
 - a **Skills hub** and **packs**;
 - **autocorrect that learns your words**, including Hinglish and 20 vocabulary packs;
 - **themes**;
-- a planned **Solana wallet** with Privy and Jupiter swaps (M8, a separate release).
+- a **Solana wallet** that connects Phantom: Glyf builds each send or Jupiter buy on the phone and Phantom signs it; Glyf never holds a key (built 27 Sep 2026).
 
 **Competitor:** Acti (openacti.com), which launched in June 2026. Much of the spec is parity with Acti. Glyf's stated edges:
 - conditional, multi-step skills;
@@ -144,7 +144,7 @@ The `so.glyf.*` names are older than the domain. They stay because changing the 
 | Google Play Console | Android release | Not set up |
 | OpenRouter | AI (free models are slow and rate-limited) | Key in `server/.env`. About $10 of credit was suggested for speed |
 | Google AI Studio (Gemini), Groq | Recommended fast, cheap AI | `GEMINI_API_KEY` and `GROQ_API_KEY` not added yet |
-| Privy | Wallet (M8) | App id and secret in `server/.env`; dashboard setup pending |
+| Phantom, Jupiter, MagicBlock, Helius | Wallet | Phantom signs over deeplinks; Jupiter and MagicBlock are keyless from the phone; the Helius RPC URL (`SOLANA_RPC_URL`) stays on the server. Privy retired 27 Sep |
 | Google Cloud | YouTube Data API (key provided), optional Places and Weather, OAuth client | Add key restrictions; file a quota extension before launch; regenerate the key after deploy; create the OAuth client |
 | Geoapify | Maps and nearby places with no card | `GEOAPIFY_KEY` not created yet |
 | Brave Search | Real web result links | Optional `BRAVE_SEARCH_KEY` |

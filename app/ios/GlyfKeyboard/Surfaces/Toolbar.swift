@@ -18,6 +18,9 @@ protocol ToolbarDelegate: AnyObject {
     func toolbarSmartTapped(_ chip: Smart.Chip)
     /// The ✕ on a clipboard chip: this copy is not wanted.
     func toolbarSmartDismissed()
+    /// The second action on a chip: Buy beside a price, Send or Buy beside
+    /// a copied address.
+    func toolbarSmartExtraTapped(_ chip: Smart.Chip)
 }
 
 /// §6.2 — the 44pt strip above the keys. When autocorrect candidates show,
@@ -62,6 +65,8 @@ final class GlyfToolbar: UIView {
     /// something that appears because you copied must be dismissable.
     private let smartLead = UIImageView()
     private let smartClose = UIButton(type: .system)
+    /// A chip's second action (Smart.Chip.extra), as a small button.
+    private let smartExtra = UIButton(type: .system)
     private(set) var smartChip: Smart.Chip?
     /// The strip item currently lifted by a hold, if any.
     private var draggingId: String?
@@ -230,6 +235,17 @@ final class GlyfToolbar: UIView {
             self?.delegate?.toolbarSmartDismissed()
         }, for: .touchUpInside)
         smartCard.addSubview(smartClose)
+        smartExtra.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        smartExtra.setTitleColor(Glass.accentPrimary, for: .normal)
+        smartExtra.backgroundColor = Glass.accentPrimary.withAlphaComponent(0.14)
+        smartExtra.layer.cornerCurve = .continuous
+        smartExtra.isHidden = true
+        smartExtra.accessibilityIdentifier = "strip:smart:extra"
+        smartExtra.addAction(UIAction { [weak self] _ in
+            guard let self, let chip = self.smartChip else { return }
+            self.delegate?.toolbarSmartExtraTapped(chip)
+        }, for: .touchUpInside)
+        smartCard.addSubview(smartExtra)
         addSubview(smartCard)
 
         reloadItems()
@@ -430,7 +446,9 @@ final class GlyfToolbar: UIView {
         smartChip = chip
         smartCard.isHidden = chip == nil || panelTitle != nil
         if let chip {
-            let isPaste: Bool = { if case .paste = chip { return true }; return false }()
+            // A copy (plain, or an address with Send or Buy beside it) is the
+            // clipboard pill: the tap pastes it.
+            let isPaste = chip.copiedText != nil
             let isEvent: Bool = {
                 switch chip { case .event, .booking: return true; default: return false }
             }()
@@ -453,8 +471,10 @@ final class GlyfToolbar: UIView {
                     .withTintColor(Glass.accentPrimary, renderingMode: .alwaysOriginal) ?? UIImage())
                 smartKey.attributedText = NSAttributedString(attachment: spark)
             }
-            if case .vault(let field) = chip {
-                let line = NSMutableAttributedString(string: field.title + "  ", attributes: [
+            smartExtra.isHidden = chip.extra == nil
+            smartExtra.setTitle(chip.extra, for: .normal)
+            if let label = chip.label {
+                let line = NSMutableAttributedString(string: label + "  ", attributes: [
                     .foregroundColor: Glass.textSecondary,
                     .font: UIFont.systemFont(ofSize: 13, weight: .medium)])
                 line.append(NSAttributedString(string: chip.value, attributes: [
@@ -662,19 +682,31 @@ final class GlyfToolbar: UIView {
             // Gboard's clipboard suggestion is a pill; the rest stay cards.
             smartCard.layer.cornerRadius = paste ? cardH / 2 : 12
             let keyW = smartKey.isHidden ? 0 : min(smartKey.intrinsicContentSize.width, 120)
-            smartKey.frame = CGRect(x: smartCard.bounds.width - 14 - keyW, y: 0,
-                                    width: keyW, height: cardH)
+            // The second action takes the right edge (inside the paste's
+            // close, when there is one); the verb moves in beside it.
+            let c: CGFloat = 30
+            let closeLeft = smartClose.isHidden ? smartCard.bounds.width : smartCard.bounds.width - c - 3
+            var keyRight = smartCard.bounds.width - 14
+            if !smartExtra.isHidden {
+                let extraH: CGFloat = min(28, cardH - 8)
+                let extraW = smartExtra.intrinsicContentSize.width + 22
+                let right = smartClose.isHidden ? smartCard.bounds.width - 5 : closeLeft
+                smartExtra.frame = CGRect(x: right - extraW, y: (cardH - extraH) / 2,
+                                          width: extraW, height: extraH)
+                smartExtra.layer.cornerRadius = extraH / 2
+                keyRight = smartExtra.frame.minX - 12
+            }
+            smartKey.frame = CGRect(x: keyRight - keyW, y: 0, width: keyW, height: cardH)
             if paste {
                 smartLead.frame = CGRect(x: 13, y: (cardH - 16) / 2, width: 16, height: 16)
-                let c: CGFloat = 30
-                smartClose.frame = CGRect(x: smartCard.bounds.width - c - 3,
-                                          y: (cardH - c) / 2, width: c, height: c)
+                smartClose.frame = CGRect(x: closeLeft, y: (cardH - c) / 2, width: c, height: c)
+                let valueRight = smartExtra.isHidden ? closeLeft : smartExtra.frame.minX
                 smartValue.frame = CGRect(x: 37, y: 0,
-                                          width: max(0, smartClose.frame.minX - 43),
+                                          width: max(0, valueRight - 43),
                                           height: cardH)
             } else {
                 smartValue.frame = CGRect(x: 14, y: 0,
-                                          width: max(0, smartCard.bounds.width - keyW - 38),
+                                          width: max(0, smartKey.frame.minX - 24),
                                           height: cardH)
             }
         }

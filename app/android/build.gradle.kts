@@ -15,8 +15,8 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-// Plugins that pin an old compileSdk build against a current one: privy_flutter
-// compiles against 34 while the androidx libraries it pulls in need 35+.
+// Plugins that pin an old compileSdk build against a current one (privy_flutter
+// did: 34, while the androidx libraries it pulled in needed 35+).
 subprojects {
     afterEvaluate {
         val android = extensions.findByName("android")

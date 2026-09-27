@@ -475,9 +475,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         notice("No voice typing on this phone")
     }
 
-    private fun openAppPath(path: String) {
+    /** glyf://open?path=… with the path and its query as ONE encoded value,
+     *  so "wallet?to=…&amount=5" arrives whole (a bare & cut the amount off). */
+    private fun openAppPath(path: String, query: Map<String, String> = emptyMap()) {
+        val inner = if (query.isEmpty()) path else path + "?" + query.entries.sortedBy { it.key }
+            .joinToString("&") { "${it.key}=${android.net.Uri.encode(it.value)}" }
         startActivity(Intent(Intent.ACTION_VIEW,
-            android.net.Uri.parse("glyf://open?path=$path"))
+            android.net.Uri.parse("glyf://open?path=${android.net.Uri.encode(inner)}"))
             .setPackage(packageName)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
@@ -1097,7 +1101,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             step = step,
             text = text,
             panel = coachPanel(),
-            chip = if (stripChipKind == "smart") stripSmartDetail else stripChipKind,
+            // A copied address is the paste pill with Send beside it: "pay".
+            chip = if (stripChipKind == "smart" || (stripChipKind == "paste" && stripSmartDetail != null))
+                stripSmartDetail else stripChipKind,
             suggestions = if (suggestionRow.visibility == View.VISIBLE) suggestionsShown.map { it.text } else emptyList(),
             fields = vaultFields(),
             vaultKey = keyFor("surface:vault"),
@@ -1649,7 +1655,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  the model says Glyf could do with the sentence. One chip, which owns
      *  the strip. True when shown. */
     private fun updateSmartChip(before: String): Boolean {
-        val smartKinds = setOf("smart", "pay", "action", "event", "booking")
+        val smartKinds = setOf("smart", "pay", "buy", "action", "event", "booking")
         if (searchActive || barActive || noteEditActive || overlay != null || featurePanel != null ||
             isSecureField() || translateStrip != null) {
             if (stripChipKind in smartKinds) hideStripChip()
@@ -1657,9 +1663,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         val tail = before.takeLast(120)
         val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
-        var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN",
-                              rates = RatesStore.snapshot(region, settings.optString("moneyCurrency")),
-                              ownBooking = settings.optString("bookingLink"))
+        val rates = RatesStore.snapshot(region, settings.optString("moneyCurrency"))
+        val ownWallet = settings.optString("walletAddress").ifEmpty { null }
+        var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN", rates = rates,
+                              ownBooking = settings.optString("bookingLink"), ownWallet = ownWallet)
+        // An address on screen: a wallet (Send) or a token (Buy)? Only a
+        // lookup can tell; the strip is arranged again when it lands.
+        if (chip == null) Smart.addressToCheck(tail, rates, ownWallet)?.let {
+            RatesStore.ensureAddress(settings.optString("backendURL"), it) { updateSuggestions() }
+        }
         // An amount or a ticker with no rate yet: ask for one; the strip is
         // arranged again when it lands.
         // A character test first: neither pattern can match without one, and
@@ -1685,6 +1697,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 is Smart.Chip.Money -> "money"
                 is Smart.Chip.Vault -> "vault:${chip.field.kind}"
                 is Smart.Chip.Pay -> "pay"
+                is Smart.Chip.Buy -> "buy"
                 is Smart.Chip.Action -> "action"
                 is Smart.Chip.Event -> "event"
                 is Smart.Chip.Booking -> "booking"
@@ -1704,7 +1717,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     is Smart.Chip.Money -> "money"
                     else -> "calc"
                 }
-                showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "") {
+                // A token's price can be bought, too: Buy beside Insert.
+                val mint = (chip as? Smart.Chip.Money)?.buy
+                showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "",
+                    extra = if (mint != null) "Buy" else null,
+                    onExtra = { hideStripChip(); if (mint != null) openAppPath("buy", mapOf("mint" to mint)) }) {
                     currentInputConnection?.commitText(Smart.insert(chip), 1)
                     hideStripChip()
                     updateSuggestions()
@@ -1727,10 +1744,19 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 }
                 return true
             }
+            // The keyboard never signs: Send and Buy open in the app, which
+            // has Phantom sign.
             is Smart.Chip.Pay -> {
-                showStripChip("pay", null, Smart.display(chip), "Pay") {
+                showStripChip("pay", Smart.key(chip), Smart.display(chip), "Send") {
                     hideStripChip()
-                    openAppPath("wallet?to=${chip.address}" + (chip.amount?.let { "&amount=$it" } ?: ""))
+                    openAppPath("wallet", sendQuery(chip.address, chip.amount, chip.token))
+                }
+                return true
+            }
+            is Smart.Chip.Buy -> {
+                showStripChip("buy", Smart.key(chip), Smart.display(chip), "Buy") {
+                    hideStripChip()
+                    openAppPath("buy", mapOf("mint" to chip.mint, "symbol" to chip.symbol))
                 }
                 return true
             }
@@ -1815,6 +1841,43 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (stripChipKind == "paste") hideStripChip()
             return
         }
+        // A copied address is still pasted by a tap; Send (a wallet) or Buy
+        // (a token) sits beside it. Nothing until the lookup says which.
+        val address = Smart.payment(text)?.first?.takeIf { it != settings.optString("walletAddress") }
+        if (address != null) {
+            val used = { imePrefs.edit().putLong("clipDone", stamp).apply() }
+            val paste = {
+                used()
+                currentInputConnection?.commitText(text, 1)
+                hideStripChip()
+            }
+            when (val kind = RatesStore.addressKind(address)) {
+                null -> {
+                    RatesStore.ensureAddress(settings.optString("backendURL"), address) { refreshClipCard() }
+                    if (stripChipKind == "paste") hideStripChip()
+                }
+                is Smart.AddressKind.Token -> {
+                    stripSmartDetail = "buy"
+                    showStripChip("paste", kind.symbol, kind.usd?.let { Smart.price(it) } ?: Smart.shortAddress(address),
+                        "Paste", extra = "Buy", onExtra = {
+                            used()
+                            hideStripChip()
+                            openAppPath("buy", mapOf("mint" to address, "symbol" to kind.symbol))
+                        }) { paste() }
+                }
+                Smart.AddressKind.Wallet -> {
+                    val asked = Smart.amountAsked(text)
+                    stripSmartDetail = "pay"
+                    showStripChip("paste", "Wallet", Smart.shortAddress(address), "Paste", extra = "Send", onExtra = {
+                        used()
+                        hideStripChip()
+                        openAppPath("wallet", sendQuery(address, asked?.first, asked?.second))
+                    }) { paste() }
+                }
+            }
+            return
+        }
+        stripSmartDetail = null
         // Someone's booking page, just copied: book it instead of pasting it.
         val booking = Smart.bookingLink(text, settings.optString("bookingLink"))
         if (booking != null) {
@@ -1832,6 +1895,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
+    /** Send's link: who to, and the amount the message asked for. */
+    private fun sendQuery(to: String, amount: String?, token: String?): Map<String, String> = buildMap {
+        put("to", to)
+        amount?.let { put("amount", it) }
+        token?.let { put("token", it) }
+    }
+
     private fun removeClipCard() {
         if (stripChipKind == "paste") hideStripChip()
     }
@@ -1843,12 +1913,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** One chip across the strip: content on the left, the action on the right. */
     private fun showStripChip(kind: String, label: String?, value: String, verb: String,
-                              lead: String? = null, onTap: () -> Unit) {
+                              lead: String? = null, extra: String? = null, onExtra: (() -> Unit)? = null,
+                              onTap: () -> Unit) {
         hideStripChip()
         val chip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), 0, dp(14), 0)
+            setPadding(dp(14), 0, if (extra != null) dp(4) else dp(14), 0)
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
                 setColor(card())
@@ -1882,6 +1953,22 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTextColor(Color.rgb(0x7C, 0x5C, 0xFF))
             setPadding(dp(10), 0, 0, 0)
         })
+        // A second action, as a small button: Buy beside a price, Send or
+        // Buy beside a copied address.
+        if (extra != null && onExtra != null) chip.addView(TextView(this).apply {
+            text = extra
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(0x7C, 0x5C, 0xFF))
+            setPadding(dp(12), 0, dp(12), 0)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(13).toFloat()
+                setColor(Color.argb(36, 0x7C, 0x5C, 0xFF))
+            }
+            setTag(com.demo.glyf.R.id.qa_id, "strip:smart:extra")
+            setOnClickListener { onExtra() }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(26)).apply { leftMargin = dp(10) })
         toolbar.addView(chip, 1, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
             leftMargin = dp(8)
             // The chip ends as far in as Glyf's key starts (the key is drawn

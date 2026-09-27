@@ -31,6 +31,19 @@ export interface TokenQuote {
   major?: boolean;
 }
 
+/** A token found by its address (a contract address someone copied). */
+export interface MintQuote {
+  mint: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  /** Missing for a token too new to have a price. */
+  usd?: number;
+  /** On Jupiter's verified list. An unverified token can still be bought;
+   *  the app says so first. */
+  verified: boolean;
+}
+
 /** What is needed of fetch, so tests can hand in a stand-in. */
 export type FetchLike = (url: string, init?: { signal?: AbortSignal }) =>
   Promise<{ ok: boolean; status?: number; json(): Promise<unknown> }>;
@@ -44,6 +57,7 @@ export class Rates {
   private fiat?: { table: FiatTable; at: number };
   private fiatInFlight?: Promise<FiatTable | null>;
   private tokens = new Map<string, { quote: TokenQuote | null; at: number }>();
+  private mints = new Map<string, { token: MintQuote | null; at: number }>();
 
   constructor(
     private fetchImpl: FetchLike = fetch as unknown as FetchLike,
@@ -121,6 +135,28 @@ export class Rates {
     return quote;
   }
 
+  /** The token at a Solana address, or null when Jupiter has none there
+   *  (a wallet, in a chat). Throws when Jupiter can't be asked: "not a
+   *  token" is never said on a guess. */
+  async tokenAt(address: string): Promise<MintQuote | null> {
+    if (!Rates.isAddress(address)) return null;
+    const hit = this.mints.get(address);
+    if (hit && this.now() - hit.at < TOKEN_TTL) return hit.token;
+    const t = (await this.search(address) as JupToken[]).find(x => x.id === address);
+    const token: MintQuote | null = t && typeof t.symbol === "string" && typeof t.decimals === "number"
+      ? { mint: address, symbol: t.symbol, name: t.name ?? t.symbol, decimals: t.decimals,
+          ...(typeof t.usdPrice === "number" && t.usdPrice > 0 ? { usd: t.usdPrice } : {}),
+          verified: t.isVerified === true }
+      : null;
+    this.mints.set(address, { token, at: this.now() });
+    return token;
+  }
+
+  /** Base58, 32 to 44 characters: the shape of every Solana address. */
+  static isAddress(s: string): boolean {
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s);
+  }
+
   private async search(query: string): Promise<unknown[]> {
     const res = await this.fetchImpl(JUP_SEARCH + encodeURIComponent(query),
       { signal: AbortSignal.timeout(5000) });
@@ -131,7 +167,7 @@ export class Rates {
 }
 
 interface JupToken {
-  id?: string; symbol?: string; name?: string; isVerified?: boolean;
+  id?: string; symbol?: string; name?: string; isVerified?: boolean; decimals?: number;
   usdPrice?: number; tags?: string[]; liquidity?: number;
   stats24h?: { priceChange?: number };
 }

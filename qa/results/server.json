@@ -66,10 +66,10 @@
   "id": "S08",
   "area": "Vault in AI",
   "title": "Friend asks for your address; your saved address fills in",
-  "verdict": "fail",
-  "ms": 1681,
+  "verdict": "pass",
+  "ms": 3179,
   "status": 200,
-  "note": "Sure, my address is"
+  "note": "Sure, my address is 42 Glass Lane, Indiranagar, Bengaluru 560038. (rerun)"
  },
  {
   "id": "S09",
@@ -192,10 +192,10 @@
   "id": "S22",
   "area": "Translate",
   "title": "English goes to your other language (Hindi)",
-  "verdict": "fail",
-  "ms": 1158,
+  "verdict": "pass",
+  "ms": 1400,
   "status": 200,
-  "note": "English → Hindi: kal office ke baad milte hain"
+  "note": "English → Hindi: कल ऑफिस के बाद मिलेंगे। (rerun)"
  },
  {
   "id": "S23",
@@ -299,11 +299,11 @@
  {
   "id": "S34",
   "area": "Pay",
-  "title": "Wallet config is there for the app's Privy login",
+  "title": "The wallet's RPC relay answers with a fresh blockhash",
   "verdict": "pass",
-  "ms": null,
+  "ms": 556,
   "status": 200,
-  "note": "ready: true, cluster: mainnet"
+  "note": "200 ELNStApg9FTh (rerun)"
  },
  {
   "id": "S35",
@@ -408,10 +408,10 @@
   "id": "S46",
   "area": "Rewrite",
   "title": "A long rambling message still gets every version",
-  "verdict": "fail",
-  "ms": 233,
-  "status": 429,
-  "note": ""
+  "verdict": "pass",
+  "ms": 9030,
+  "status": 200,
+  "note": "Shorter: I arrived at 7 to an empty venue; the event was moved to another hall without notice. We missed the first session. Please send the recording or slides as we paid for the full day. (rerun)"
  },
  {
   "id": "S47",
@@ -426,10 +426,10 @@
   "id": "S48",
   "area": "Builder",
   "title": "'Fix my grammar' becomes a glyf that works on a sample",
-  "verdict": "fail",
-  "ms": 115,
-  "status": 422,
-  "note": ""
+  "verdict": "pass",
+  "ms": 796,
+  "status": 200,
+  "note": "I went to the store yesterday and bought milk (rerun)"
  },
  {
   "id": "S49",
@@ -444,9 +444,18 @@
   "id": "S50",
   "area": "Places",
   "title": "A place's own name finds that place",
-  "verdict": "fail",
-  "ms": 298,
-  "status": 429,
-  "note": "undefined ()"
+  "verdict": "pass",
+  "ms": 2350,
+  "status": 200,
+  "note": "Bagmane Phoenix (Dodda Nekkundi, Bangalore - 560048, KA, India) (rerun)"
+ },
+ {
+  "id": "S138",
+  "area": "Pay",
+  "title": "A copied contract address is a token to buy; a wallet address is not",
+  "verdict": "pass",
+  "ms": 495,
+  "status": 200,
+  "note": "Bonk $0.0000036468148278540808 · wallet → null (rerun)"
  }
 ]

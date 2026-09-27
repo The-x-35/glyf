@@ -509,5 +509,25 @@
   "outcome": "notice over the keys: “Connect Google Meet in Glyf › Connected tools”, nothing typed (a system toast used to sit hidden under the keyboard)",
   "verdict": "pass",
   "fixed": true
+ },
+ {
+  "id": "S139",
+  "surface": "iPhone",
+  "area": "Pay",
+  "title": "A copied wallet offers Send, a contract address Buy, and $sol a price with Buy",
+  "input": "copy 26kw…dQjC, then the Bonk contract address, then type $sol in Safari's address bar",
+  "outcome": "“Wallet 26kw…dQjC” with Send; “Bonk $0.00000364” with Buy; “1 SOL = $121.39” with Insert and Buy. Each opens Send or Buy in the app, filled in",
+  "verdict": "pass",
+  "fixed": false
+ },
+ {
+  "id": "S140",
+  "surface": "App",
+  "area": "Pay",
+  "title": "Phantom connects, and a send comes back signed and goes to Solana",
+  "input": "Connect Phantom, then Send 1 USDC, answered by a stand-in Phantom (same encryption, an empty throwaway wallet)",
+  "outcome": "“Phantom connected”; balances load; a token's address is refused; the signed send reaches Solana, which turns it down for no SOL, said in plain words",
+  "verdict": "pass",
+  "fixed": true
  }
 ]

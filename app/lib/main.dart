@@ -9,7 +9,11 @@ import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
 import 'launch/launch_overlay.dart';
 import 'onboarding/demo_chat.dart';
+import 'wallet/buy_screen.dart';
+import 'wallet/pay_status_screen.dart';
+import 'wallet/send_screen.dart';
 import 'wallet/wallet_screen.dart';
+import 'wallet/wallet_flow.dart';
 import 'onboarding/onboarding_flow.dart';
 import 'profile/connected_tools_screen.dart';
 import 'profile/keyboard_screen.dart';
@@ -71,6 +75,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       Billing.sync();
     }
     Billing.listen();
+    WalletFlow.load();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(
@@ -109,17 +114,39 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       final id = uri.queryParameters['id'];
       if (id != null) _openDictation(id);
     }
+    if (uri.host == 'phantom') {
+      // Phantom's answer to Connect or to a payment: finished on its own
+      // screen, which sends the signed payment on.
+      _push((_) => PayStatusScreen(reply: uri));
+      return;
+    }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('wallet') == true) {
       // The keyboard saw an address and an amount; the wallet takes it from
-      // here, because signing belongs in the app.
+      // here, because signing belongs in Phantom, opened by the app.
       final path = Uri.parse(uri.queryParameters['path']!);
+      final to = path.queryParameters['to'];
+      // The strip's Pay tool, with nobody to pay yet: the wallet itself.
+      if (to == null) {
+        _push((_) => const WalletScreen());
+        return;
+      }
       // Inside the tour, Semi's payment is practised, never sent.
       final practice = DemoChat.onPracticePay;
       if (practice != null) {
-        practice(path.queryParameters['to'], path.queryParameters['amount']);
+        practice(to, path.queryParameters['amount']);
         return;
       }
-      _openWallet(path.queryParameters['to'], path.queryParameters['amount']);
+      _push((_) => SendScreen(
+            to: to,
+            amount: path.queryParameters['amount'],
+            token: path.queryParameters['token'],
+          ));
+      return;
+    }
+    if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('buy') == true) {
+      // A contract address or a ticker the keyboard saw: buy it here.
+      final path = Uri.parse(uri.queryParameters['path']!);
+      _push((_) => BuyScreen(query: path.queryParameters['mint'] ?? path.queryParameters['symbol']));
       return;
     }
     if (uri.host == 'open') {
@@ -171,13 +198,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     Navigator.of(ctx).push(MaterialPageRoute(builder: builder));
   }
 
-  void _openWallet(String? to, String? amount) {
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null) return;
-    Navigator.of(ctx).push(MaterialPageRoute(
-      builder: (c) => WalletScreen(prefillTo: to, prefillAmount: amount),
-    ));
-  }
+
 
   /// glyf://demo — replay the guided tour any time, from Settings or a link.
   void _openDemo() {

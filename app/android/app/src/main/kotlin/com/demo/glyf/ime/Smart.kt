@@ -29,12 +29,18 @@ object Smart {
         data class Vault(val field: Field) : Chip()
         /** The model read the sentence and named what Glyf could do with it. */
         data class Action(val label: String, val query: String, val intent: String) : Chip()
-        /** A Solana address on screen: one tap opens the wallet with it. */
-        data class Pay(val address: String, val amount: String?) : Chip()
+        /** Someone's Solana wallet on screen: Send opens in the app with it
+         *  filled in (and the amount the message asks for). The keyboard
+         *  never holds a key: Phantom signs. */
+        data class Pay(val address: String, val amount: String? = null, val token: String? = null) : Chip()
+        /** A token's address (a contract address someone shared): Buy opens
+         *  for it in the app. */
+        data class Buy(val mint: String, val symbol: String, val price: String?) : Chip()
         /** "$13" → "$13 = ₹1,246" where the phone is; "$sol" → "1 SOL = $112".
          *  `shown` is the whole line, `insert` what a tap adds after the
-         *  amount. Never offered without a live rate. */
-        data class Money(val shown: String, val insert: String) : Chip()
+         *  amount. Never offered without a live rate. `buy` is the token's
+         *  address when a cashtag can be bought: Buy then sits beside Insert. */
+        data class Money(val shown: String, val insert: String, val buy: String? = null) : Chip()
         /** A plan in the message ("dinner friday 8pm"): one tap opens New
          *  Event with it filled in, nothing typed. */
         data class Event(val plan: EventParse.Plan) : Chip()
@@ -50,17 +56,42 @@ object Smart {
         val fiat: Map<String, Double> = emptyMap(),
         val crypto: Map<String, Double> = emptyMap(),
         val local: String = "USD",
+        /** A cashtag's token address, when it can be bought ("SOL" → "So1…"). */
+        val mints: Map<String, String> = emptyMap(),
+        /** What an address on screen turned out to be, once asked. */
+        val addresses: Map<String, AddressKind> = emptyMap(),
     ) { companion object { val EMPTY = RatesSnapshot() } }
 
+    /** A Solana address is someone's wallet or a token's; only a lookup can
+     *  tell (both are base58 of the same length). */
+    sealed class AddressKind {
+        object Wallet : AddressKind()
+        data class Token(val symbol: String, val usd: Double?) : AddressKind()
+    }
+
+    /** "7dHb…7ARj". */
+    fun shortAddress(a: String): String = if (a.length > 12) "${a.take(4)}…${a.takeLast(4)}" else a
+
+    /** The address a chip is waiting on: on screen, not yours, and not yet
+     *  known to be a wallet or a token. */
+    fun addressToCheck(text: String, rates: RatesSnapshot, ownWallet: String? = null): String? =
+        payment(text)?.first?.takeIf { it != ownWallet && rates.addresses[it] == null }
+
     /** The small label on the chip's left, when there is one. */
-    fun key(chip: Chip): String? = (chip as? Chip.Vault)?.field?.title
+    fun key(chip: Chip): String? = when (chip) {
+        is Chip.Vault -> chip.field.title
+        is Chip.Pay -> "Wallet"
+        is Chip.Buy -> chip.symbol
+        else -> null
+    }
 
     /** What a tap does, on the chip's right edge; null for the model's own words. */
     fun verb(chip: Chip): String? = when (chip) {
         is Chip.Calc, is Chip.Vault, is Chip.Money -> "Insert"
         is Chip.Event -> "Add"
         is Chip.Booking -> "Book"
-        is Chip.Pay -> "Pay"
+        is Chip.Pay -> "Send"
+        is Chip.Buy -> "Buy"
         is Chip.Action -> null
     }
 
@@ -73,10 +104,10 @@ object Smart {
         is Chip.Event -> EventParse.summary(chip.plan)
         is Chip.Booking -> "A time on ${shortLink(chip.link)}"
         is Chip.Pay -> {
-            val a = chip.address
-            val short = if (a.length > 12) "${a.take(4)}…${a.takeLast(4)}" else a
-            if (chip.amount != null) "${chip.amount} USDC to $short" else "privately to $short"
+            val short = shortAddress(chip.address)
+            if (chip.amount != null) "${chip.amount} ${chip.token ?: "USDC"} to $short" else short
         }
+        is Chip.Buy -> chip.price ?: shortAddress(chip.mint)
     }
 
     /** What tapping puts in the field. */
@@ -84,7 +115,7 @@ object Smart {
         is Chip.Calc -> if (chip.hasEquals) " ${chip.result}" else " = ${chip.result}"
         is Chip.Vault -> chip.field.value
         is Chip.Money -> chip.insert
-        is Chip.Action, is Chip.Pay, is Chip.Event, is Chip.Booking -> ""
+        is Chip.Action, is Chip.Pay, is Chip.Buy, is Chip.Event, is Chip.Booking -> ""
     }
 
     private val bookingPattern = Regex(
@@ -117,8 +148,21 @@ object Smart {
     /** One chip at most, in the website's order: a payment, a sum, an amount
      *  in another currency, a detail. */
     fun chip(text: String, fields: List<Field>, indianGrouping: Boolean = true,
-             rates: RatesSnapshot = RatesSnapshot.EMPTY, ownBooking: String? = null): Chip? {
-        payment(text)?.let { return Chip.Pay(it.first, it.second ?: amountAsked(text)) }
+             rates: RatesSnapshot = RatesSnapshot.EMPTY, ownBooking: String? = null,
+             ownWallet: String? = null): Chip? {
+        // An address: Send to a wallet, Buy a token. Your own wallet is one
+        // you are sharing, not paying. Until the lookup says which, nothing
+        // (the keyboard asks, and the strip is arranged again).
+        payment(text)?.takeIf { it.first != ownWallet }?.let { (address, amount) ->
+            return when (val kind = rates.addresses[address]) {
+                is AddressKind.Token -> Chip.Buy(address, kind.symbol, kind.usd?.let { price(it) })
+                AddressKind.Wallet -> {
+                    val asked = amount ?: amountAsked(text)
+                    Chip.Pay(address, asked?.first, asked?.second)
+                }
+                null -> null
+            }
+        }
         calc(text, indianGrouping)?.let { return Chip.Calc(it.first, it.second) }
         money(text, rates)?.let { return it }
         vaultMatch(text, fields)?.let { return Chip.Vault(it) }
@@ -171,8 +215,8 @@ object Smart {
     fun money(text: String, rates: RatesSnapshot): Chip.Money? {
         cashtag(text)?.let { ticker ->
             val usd = rates.crypto[ticker] ?: return null
-            val price = format(usd, "USD")
-            return Chip.Money("1 $ticker = $price", " = $price")
+            val quoted = price(usd)
+            return Chip.Money("1 $ticker = $quoted", " = $quoted", rates.mints[ticker])
         }
         val m = amountPattern.find(text) ?: return null
         val amount = (m.groups[2]?.value ?: m.groups[3]?.value ?: "")
@@ -185,6 +229,20 @@ object Smart {
         val toRate = rates.fiat[to] ?: return null
         val result = format(amount / fromRate * toRate, to)
         return Chip.Money("${format(amount, from)} = $result", " = $result")
+    }
+
+    /** A token's dollar price: cents from a dollar up ("$112.40"), and
+     *  enough figures below one to see it move ("$0.50", "$0.0823",
+     *  "$0.00000364"), as the app's Buy shows it. Smart.swift's `price`. */
+    fun price(usd: Double): String {
+        if (usd >= 0.01 || usd <= 0) {
+            val nf = java.text.NumberFormat.getNumberInstance(java.util.Locale.US).apply {
+                minimumFractionDigits = 2
+                maximumFractionDigits = if (usd >= 1) 2 else 4
+            }
+            return "$" + nf.format(usd)
+        }
+        return "$" + java.math.BigDecimal(usd).round(java.math.MathContext(3)).stripTrailingZeros().toPlainString()
     }
 
     /** "₹1,246", "$5.21", "AED 47.7": the symbol where one is common, the
@@ -322,7 +380,7 @@ object Smart {
     private val addressPattern =
         Regex("""(?<![A-HJ-NP-Za-km-z1-9])([1-9A-HJ-NP-Za-km-z]{32,44})(?![A-HJ-NP-Za-km-z1-9])""")
 
-    fun payment(text: String): Pair<String, String?>? {
+    fun payment(text: String): Pair<String, Pair<String, String>?>? {
         if (text.isEmpty()) return null
         val address = addressPattern.find(text)?.groups?.get(1)?.value ?: return null
         // A real key mixes cases and digits; a run of letters is a sentence.
@@ -331,13 +389,18 @@ object Smart {
         return address to amountAsked(text)
     }
 
-    /** "send $200" / "200 usdc" -> "200". */
-    fun amountAsked(text: String): String? {
-        for (p in listOf("""[$₹]\s*([\d,]+(?:\.\d{1,6})?)""",
-                         """([\d,]+(?:\.\d{1,6})?)\s*(?:usdc|usdt|dollars?)""")) {
+    /** "send $200" / "200 usdc" → ("200", "USDC"); "0.5 sol" → ("0.5", "SOL").
+     *  Only what Send can pay in: dollars go as USDC, and nothing else is
+     *  guessed at (500 rupees is not 500 USDC). */
+    fun amountAsked(text: String): Pair<String, String>? {
+        for ((p, token) in listOf(
+            """\$\s*\d[\d,]*(?:\.\d{1,6})?(?![\d.])""" to "USDC",
+            """\b\d[\d,]*(?:\.\d{1,6})?\s*(?:usdc|dollars?|bucks)\b""" to "USDC",
+            """\b\d[\d,]*(?:\.\d{1,9})?\s*sol\b""" to "SOL",
+        )) {
             val m = Regex(p, RegexOption.IGNORE_CASE).find(text) ?: continue
             val digits = m.value.filter { it.isDigit() || it == '.' }
-            if (digits.isNotEmpty()) return digits
+            if (digits.isNotEmpty() && (digits.toDoubleOrNull() ?: 0.0) > 0) return digits to token
         }
         return null
     }

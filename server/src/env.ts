@@ -47,9 +47,6 @@ export const env = {
    *  that keeps what it is sent. */
   suggestModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite", "inclusionai/ling-3.0-flash"],
   cacheTtlMs: num("CACHE_TTL_MS", 24 * 3600 * 1000),
-  // Privy creds are parked here for M8's backend integration — NEVER sent to
-  // clients, NEVER used before the crypto connector milestone (SPEC §6.14).
-  privyAppId: process.env.PRIVY_APP_ID ?? "",
 };
 
 export function assertServerSecrets(): void {

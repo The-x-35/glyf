@@ -1,108 +1,68 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { balance, buildTransfer, MagicBlockError, MINTS, quote } from "../lib/magicblock.js";
 
 /**
- * POST /wallet/transfer — build a private payment for the app to sign.
- * GET  /wallet/balance  — what the address holds.
- * POST /wallet/quote    — swap quote for the wallet's Swap tab.
+ * POST /wallet/rpc — Solana JSON-RPC for the app's wallet, with the RPC
+ * provider's key added here so it never ships inside the app (SPEC §1.6).
  *
- * The server builds and never signs: no key of the user's is ever here (§1.5).
- * The app signs with its Privy embedded wallet and submits.
+ * The wallet itself lives on the phone: it builds each transaction, Phantom
+ * signs it, and swaps and private sends go straight to Jupiter and
+ * MagicBlock. This route only carries the few calls that need a node: a
+ * blockhash to build with, balances, whether an address is a token, sending
+ * a signed transaction and asking how it went. The server never holds or
+ * sees a key that can move money.
  */
 
-const TransferSchema = z.object({
-  from: z.string().min(32).max(64),
-  to: z.string().min(32).max(64),
-  mint: z.string().min(3).max(64).default("USDC"),
-  amount: z.string().min(1).max(24),
-  private: z.boolean().default(true),
-  cluster: z.enum(["mainnet", "devnet"]).optional(),
-  memo: z.string().max(120).optional(),
+const ALLOWED = new Set([
+  "getLatestBlockhash",
+  "getBalance",
+  "getTokenAccountsByOwner",
+  "getAccountInfo",
+  "sendTransaction",
+  "getSignatureStatuses",
+]);
+
+const RpcSchema = z.object({
+  method: z.string().min(1).max(40),
+  params: z.array(z.unknown()).max(4).default([]),
 });
 
-const QuoteSchema = z.object({
-  from: z.string().min(3).max(64),
-  to: z.string().min(3).max(64),
-  amount: z.string().min(1).max(24),
-  cluster: z.enum(["mainnet", "devnet"]).optional(),
-});
-
-function fail(reply: FastifyReply, err: unknown): unknown {
-  if (err instanceof MagicBlockError) {
-    return reply.code(err.status).send({ ok: false, error: err.message, code: err.code });
-  }
-  return reply.code(502).send({ ok: false, error: "Payments are unavailable right now" });
+export interface WalletDeps {
+  /** SOLANA_RPC_URL (with the provider's key) unless a test passes one. */
+  rpcUrl?: string;
+  fetchImpl?: typeof fetch;
 }
 
-export function walletRoutes(app: FastifyInstance): void {
+export function walletRoutes(app: FastifyInstance, deps: WalletDeps = {}): void {
+  const fetchImpl = deps.fetchImpl ?? fetch;
 
-  app.get("/wallet/mints", async () => ({ ok: true, mints: MINTS }));
-
-  /** What the app needs to start Privy. Both ids are public by design — the
-   *  app secret stays here and is never sent anywhere. */
-  app.get("/wallet/config", async () => ({
-    ok: true,
-    privyAppId: process.env.PRIVY_APP_ID ?? "",
-    privyAppClientId: process.env.PRIVY_APP_CLIENT_ID ?? "",
-    ready: Boolean(process.env.PRIVY_APP_ID && process.env.PRIVY_APP_CLIENT_ID),
-    cluster: process.env.SOLANA_CLUSTER ?? "mainnet",
-  }));
-
-  app.post("/wallet/transfer", async (req, reply) => {
-    const parsed = TransferSchema.safeParse(req.body);
-    if (!parsed.success) {
-      req.log.warn({ issues: parsed.error.issues }, "wallet transfer bad request");
+  app.post("/wallet/rpc", async (req, reply) => {
+    const url = deps.rpcUrl ?? process.env.SOLANA_RPC_URL;
+    if (!url) return reply.code(503).send({ ok: false, error: "The wallet isn't set up on this server" });
+    const parsed = RpcSchema.safeParse(req.body);
+    if (!parsed.success || !ALLOWED.has(parsed.data.method)) {
       return reply.code(400).send({ ok: false, error: "Bad request" });
     }
-    const { from, to, mint, amount, cluster, memo } = parsed.data;
-    if (from === to) {
-      return reply.code(400).send({ ok: false, error: "That is your own address" });
-    }
+    const { method, params } = parsed.data;
     try {
-      const built = await buildTransfer({
-        from, to, mint, amount, private: parsed.data.private, cluster, memo,
+      const res = await fetchImpl(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        signal: AbortSignal.timeout(15_000),
       });
-      // Amounts and addresses stay out of the log: only that it happened.
-      req.log.info({ private: parsed.data.private, mint }, "wallet_transfer_built");
-      return {
-        ok: true,
-        transactionBase64: built.transactionBase64,
-        version: built.version,
-        requiredSigners: built.requiredSigners,
-        recentBlockhash: built.recentBlockhash,
-        lastValidBlockHeight: built.lastValidBlockHeight,
-        fees: built.fees ?? {},
-        private: parsed.data.private,
-      };
-    } catch (err) {
-      return fail(reply, err);
-    }
-  });
-
-  app.get<{ Querystring: { owner?: string; mint?: string; cluster?: string } }>(
-    "/wallet/balance", async (req, reply) => {
-      const owner = (req.query.owner ?? "").trim();
-      if (owner.length < 32) {
-        return reply.code(400).send({ ok: false, error: "Bad request" });
+      const json = await res.json() as { result?: unknown; error?: { code?: number; message?: string } };
+      if (json.error) {
+        // The node's own words ("insufficient funds for rent"…), which the app
+        // turns into something a person can act on.
+        return reply.code(400).send({ ok: false, error: json.error.message ?? "RPC error", code: json.error.code });
       }
-      try {
-        const res = await balance(owner, req.query.mint ?? "USDC", req.query.cluster);
-        return { ok: true, ...res };
-      } catch (err) {
-        return fail(reply, err);
-      }
-    });
-
-  app.post("/wallet/quote", async (req, reply) => {
-    const parsed = QuoteSchema.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ ok: false, error: "Bad request" });
-    try {
-      const res = await quote(parsed.data.from, parsed.data.to,
-                              parsed.data.amount, parsed.data.cluster);
-      return { ok: true, quote: res };
+      // Addresses, amounts and transactions stay out of the log.
+      req.log.info({ method }, "wallet_rpc");
+      return { ok: true, result: json.result ?? null };
     } catch (err) {
-      return fail(reply, err);
+      req.log.warn({ method, err: err instanceof Error ? err.message : String(err) }, "wallet_rpc_failed");
+      return reply.code(502).send({ ok: false, error: "Solana didn't answer. Try again in a moment" });
     }
   });
 }

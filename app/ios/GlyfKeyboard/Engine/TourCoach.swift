@@ -123,7 +123,8 @@ enum TourCoach {
             if case .other(let close) = s.panel { return Coach(target: close, label: "Close") }
             if s.panel != .none { return nil }
             switch s.chip {
-            case .pay: return Coach(target: "strip:smart", label: "Pay")
+            // A copied address is the paste, with Send beside it.
+            case .pay: return Coach(target: "strip:smart:extra|strip:smart", label: "Send")
             case .paste: return s.copied ? Coach(target: "strip:smart", label: "Paste") : nil
             default: return nil   // the chat points at the address to copy
             }

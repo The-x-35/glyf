@@ -95,6 +95,26 @@ final class GlyfBridge {
             } else {
                 result(false)
             }
+        case "openPhantom":
+            // Phantom's universal links, opened only by the Phantom app: false
+            // when it isn't installed, never a detour through Safari.
+            guard let s = (call.arguments as? [String: Any])?["url"] as? String,
+                  let url = URL(string: s), url.host == "phantom.app" else { return result(false) }
+            UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { opened in
+                result(opened)
+            }
+        case "walletSecretLoad":
+            let name = (call.arguments as? [String: Any])?["name"] as? String ?? ""
+            result(name.isEmpty ? nil : WalletSecrets.load(name))
+        case "walletSecretSave":
+            let args = call.arguments as? [String: Any]
+            let name = args?["name"] as? String ?? ""
+            let value = args?["value"] as? String ?? ""
+            result(!name.isEmpty && WalletSecrets.save(name, value))
+        case "walletSecretClear":
+            let name = (call.arguments as? [String: Any])?["name"] as? String ?? ""
+            if !name.isEmpty { WalletSecrets.clear(name) }
+            result(true)
         case "documentsPath":
             result(FileManager.default.urls(for: .documentDirectory,
                                             in: .userDomainMask).first?.path)

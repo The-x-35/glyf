@@ -323,45 +323,13 @@ abstract final class GlyfApi {
     }
   }
 
-  /// GET /wallet/config — the public Privy ids, so no id ships in the app.
-  static Future<Map<String, dynamic>?> walletConfig() async {
-    try {
-      final base = await _baseUrl();
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
-      final req = await client.getUrl(Uri.parse('$base/wallet/config'));
-      _signIn(req);
-      final res = await req.close().timeout(const Duration(seconds: 6));
-      final body = await res.transform(utf8.decoder).join();
-      client.close();
-      return jsonDecode(body) as Map<String, dynamic>;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// POST /wallet/transfer — an unsigned private payment for Privy to sign.
-  static Future<Map<String, dynamic>?> buildTransfer({
-    required String from,
-    required String to,
-    required String amount,
-    String mint = 'USDC',
-  }) async {
-    try {
-      final base = await _baseUrl();
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
-      final req = await client.postUrl(Uri.parse('$base/wallet/transfer'));
-      req.headers.contentType = ContentType.json;
-      _signIn(req);
-      req.write(jsonEncode({
-        'from': from, 'to': to, 'amount': amount, 'mint': mint, 'private': true,
-      }));
-      final res = await req.close().timeout(const Duration(seconds: 20));
-      final body = await res.transform(utf8.decoder).join();
-      client.close();
-      return jsonDecode(body) as Map<String, dynamic>;
-    } catch (e) {
-      return {'ok': false, 'error': 'Could not reach the Glyf server.'};
-    }
+  /// POST /wallet/rpc — one Solana RPC call through Glyf's server, which
+  /// adds the node's key (it never ships in the app). The `result`, or a
+  /// GlyfApiException with the node's own words.
+  static Future<Object?> walletRpc(String method, List<Object?> params) async {
+    final res = await _postJson('/wallet/rpc', {'method': method, 'params': params},
+        timeout: const Duration(seconds: 20));
+    return res['result'];
   }
 
   /// GET /health — powers the backend status dot.

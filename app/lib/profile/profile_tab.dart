@@ -12,6 +12,9 @@ import '../core/telemetry.dart';
 import '../core/text_sheet.dart';
 import '../core/theme.dart';
 import '../onboarding/demo_chat.dart';
+import '../wallet/phantom.dart' show PhantomLink;
+import '../wallet/solana.dart' show Sol;
+import '../wallet/wallet_flow.dart' show WalletFlow;
 import '../wallet/wallet_screen.dart';
 import '../vault/vault_screen.dart';
 import '../vocab/vocabulary_screen.dart';
@@ -500,13 +503,16 @@ class _ProfileTabState extends State<ProfileTab> {
           ),
           const SizedBox(height: 18),
           _groupLabel('More'),
-          _navCard(
-            icon: Icons.account_balance_wallet_outlined,
-            title: 'Wallet',
-            trailingText: 'Private sends',
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (ctx) => const WalletScreen(),
-            )),
+          ValueListenableBuilder<PhantomLink?>(
+            valueListenable: WalletFlow.link,
+            builder: (context, link, _) => _navCard(
+              icon: Icons.account_balance_wallet_outlined,
+              title: 'Wallet',
+              trailingText: link == null ? 'Connect Phantom' : Sol.short(link.address),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (ctx) => const WalletScreen(),
+              )),
+            ),
           ),
           _navCard(
             icon: Icons.chat_bubble_outline,

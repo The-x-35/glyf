@@ -26,4 +26,18 @@ export function ratesRoutes(app: FastifyInstance, rates: Rates = new Rates()): v
     reply.header("cache-control", "private, max-age=60");
     return { ok: true, quotes };
   });
+
+  /** ?mint=<address> — a copied address: the token there, or null when
+   *  there is none (then it is someone's wallet). */
+  app.get("/rates/token", async (req, reply) => {
+    const mint = ((req.query as { mint?: string }).mint ?? "").trim();
+    if (!Rates.isAddress(mint)) return reply.code(400).send({ ok: false, error: "mint?" });
+    try {
+      const token = await rates.tokenAt(mint);
+      reply.header("cache-control", "private, max-age=60");
+      return { ok: true, token };
+    } catch {
+      return reply.code(503).send({ ok: false, error: "Token lookup unavailable right now" });
+    }
+  });
 }

@@ -88,5 +88,7 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- The wallet opens Phantom to connect and to sign. -->
+        <package android:name="app.phantom"/>
     </queries>
 </manifest>

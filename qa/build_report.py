@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-RUN_DATE = "24 and 25 September 2026"
+RUN_DATE = "24, 25 and 27 September 2026"
 
 # What a person typed or did, for the server scenarios (their titles carry
 # the situation; this is the literal input).
@@ -35,7 +35,7 @@ SERVER_INPUT = {
     "S27": "ipl points table", "S28": "arijit singh live", "S29": "third wave coffee",
     "S30": "idea: Say no, politely", "S31": "idea: Turn it into a LinkedIn post",
     "S32": "Reply in Hinglish, on “hey can u send the report tmrw morning thx”",
-    "S33": "a", "S34": "open Pay", "S35": "my card is 4111 1111 1111 1111 exp 12/29 cvv 123 pls pay the bill",
+    "S33": "a", "S34": "open Wallet", "S138": "copied: a Bonk contract address, then someone's wallet", "S35": "my card is 4111 1111 1111 1111 exp 12/29 cvv 123 pls pay the bill",
     "S36": "(empty message)", "S37": "otp is 482913 dont share it with anyone ok",
     "S38": "mera account number 4111111111111111 hai, paise bhej do", "S39": "100 usd to inr",
     "S40": "what is a black hole", "S41": "sunset", "S42": "lofi beats playlist",

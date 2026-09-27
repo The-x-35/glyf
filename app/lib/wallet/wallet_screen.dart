@@ -1,318 +1,280 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:privy_flutter/privy_flutter.dart';
+import 'package:flutter/services.dart';
 
-import '../core/dismiss_keyboard.dart';
-import '../core/bridge.dart';
-import '../core/glyf_api.dart';
-import '../core/telemetry.dart';
 import '../core/theme.dart';
+import '../profile/brand_marks.dart' show PhantomMark;
+import 'buy_screen.dart';
+import 'phantom.dart';
+import 'send_screen.dart';
+import 'solana.dart';
+import 'wallet_api.dart';
+import 'wallet_flow.dart';
 
-/// The wallet, where a wallet belongs: in the app, never in the keyboard.
-///
-/// Keys live in Privy's embedded Solana wallet, which the person unlocks with
-/// their own email — Glyf never sees a private key and the server never holds
-/// one either. A payment is built by the server through MagicBlock's private
-/// payments API (sender, amount and recipient are not linked on chain), comes
-/// back as an unsigned transaction, and is signed and sent here.
+/// Profile → Wallet: connect Phantom, see what's in it, send or buy. Glyf
+/// never holds a key; Phantom signs every payment.
 class WalletScreen extends StatefulWidget {
-  const WalletScreen({super.key, this.prefillTo, this.prefillAmount});
-
-  /// Handed over by the keyboard when a chat asked for a payment.
-  final String? prefillTo;
-  final String? prefillAmount;
+  const WalletScreen({super.key});
 
   @override
   State<WalletScreen> createState() => _WalletScreenState();
 }
 
 class _WalletScreenState extends State<WalletScreen> {
-  Privy? _privy;
-  PrivyUser? _user;
-  EmbeddedSolanaWallet? _wallet;
-
-  bool _loading = true;
-  String? _setupNeeded;
+  BigInt? _sol;
+  BigInt? _usdc;
+  double? _solPrice;
+  bool _connecting = false;
   String? _error;
-  String? _status;
-  bool _codeSent = false;
-  bool _busy = false;
-
-  final _email = TextEditingController();
-  final _code = TextEditingController();
-  late final TextEditingController _to =
-      TextEditingController(text: widget.prefillTo ?? '');
-  late final TextEditingController _amount =
-      TextEditingController(text: widget.prefillAmount ?? '');
 
   @override
   void initState() {
     super.initState();
-    _start();
+    WalletFlow.link.addListener(_refresh);
+    WalletFlow.load().then((_) => _refresh());
   }
 
   @override
   void dispose() {
-    _email.dispose();
-    _code.dispose();
-    _to.dispose();
-    _amount.dispose();
+    WalletFlow.link.removeListener(_refresh);
     super.dispose();
   }
 
-  Future<void> _start() async {
-    final cfg = await GlyfApi.walletConfig();
-    if (!mounted) return;
-    if (cfg == null) {
-      setState(() {
-        _loading = false;
-        _error = 'Cannot reach the Glyf server.';
-      });
+  Future<void> _refresh() async {
+    final link = WalletFlow.link.value;
+    if (link == null) {
+      if (mounted) setState(() => _sol = _usdc = null);
       return;
     }
-    if (cfg['ok'] == false) {
-      // The server answered but turned us away (a session that lapsed, a
-      // rate limit): that is not "payments are off", so say what it is.
+    try {
+      final results = await Future.wait([
+        SolanaRpc.solBalance(link.address),
+        SolanaRpc.tokenBalance(link.address, Sol.usdc),
+      ]);
+      final price = (await Jupiter.token(Sol.wsol))?.usdPrice;
+      if (!mounted) return;
       setState(() {
-        _loading = false;
-        _error = (cfg['error'] as String?) ?? 'Cannot reach the Glyf server.';
+        _sol = results[0];
+        _usdc = results[1];
+        _solPrice = price;
+        _error = null;
       });
-      return;
+    } on WalletError catch (e) {
+      if (mounted) setState(() => _error = e.message);
     }
-    if (cfg['ready'] != true) {
-      setState(() {
-        _loading = false;
-        _setupNeeded = 'Private payments are not switched on for this Glyf server yet.';
-      });
-      return;
-    }
-    final privy = Privy.init(
-      config: PrivyConfig(
-        appId: cfg['privyAppId'] as String,
-        appClientId: cfg['privyAppClientId'] as String,
-        logLevel: PrivyLogLevel.error,
-      ),
-    );
-    final state = await privy.getAuthState();
+  }
+
+  Future<void> _connect() async {
+    setState(() {
+      _connecting = true;
+      _error = null;
+    });
+    final error = await WalletFlow.connect();
     if (!mounted) return;
     setState(() {
-      _privy = privy;
-      _loading = false;
+      _connecting = false;
+      _error = error;
     });
-    if (state is Authenticated) {
-      await _adopt(state.user);
-    }
   }
 
-  /// Takes the signed-in user and makes sure there is a Solana wallet.
-  Future<void> _adopt(PrivyUser user) async {
-    var wallet = user.embeddedSolanaWallets.firstOrNull;
-    if (wallet == null) {
-      final made = await user.createSolanaWallet();
-      made.fold(
-        onSuccess: (w) => wallet = w,
-        onFailure: (e) => setState(() => _error = e.message),
-      );
-    }
-    if (!mounted) return;
-    setState(() {
-      _user = user;
-      _wallet = wallet;
-      _status = null;
-    });
-    Telemetry.log('wallet_ready', {'hasWallet': wallet != null});
-  }
-
-  Future<void> _sendCode() async {
-    final privy = _privy;
-    if (privy == null) return;
-    setState(() { _busy = true; _error = null; });
-    final res = await privy.email.sendCode(_email.text.trim());
-    if (!mounted) return;
-    res.fold(
-      onSuccess: (_) => setState(() { _codeSent = true; _busy = false; }),
-      onFailure: (e) => setState(() { _error = e.message; _busy = false; }),
-    );
-  }
-
-  Future<void> _verify() async {
-    final privy = _privy;
-    if (privy == null) return;
-    setState(() { _busy = true; _error = null; });
-    final res = await privy.email.loginWithCode(
-      code: _code.text.trim(), email: _email.text.trim());
-    if (!mounted) return;
-    res.fold(
-      onSuccess: (user) {
-        _adopt(user).then((_) {
-          if (mounted) setState(() => _busy = false);
-        });
-      },
-      onFailure: (e) => setState(() { _error = e.message; _busy = false; }),
-    );
-  }
-
-  /// Build with MagicBlock, sign with Privy, send to Solana.
-  Future<void> _send() async {
-    final wallet = _wallet;
-    if (wallet == null) return;
-    final to = _to.text.trim();
-    final amount = _amount.text.trim();
-    if (to.length < 32 || amount.isEmpty) {
-      setState(() => _error = 'Need an address and an amount.');
-      return;
-    }
-    setState(() { _busy = true; _error = null; _status = 'Building a private transfer…'; });
-    final built = await GlyfApi.buildTransfer(
-      from: wallet.address, to: to, amount: amount);
-    if (!mounted) return;
-    if (built == null || built['ok'] != true) {
-      setState(() {
-        _busy = false;
-        _status = null;
-        _error = (built?['error'] as String?) ?? 'Could not build that payment.';
-      });
-      return;
-    }
-    setState(() => _status = 'Waiting for you to approve it…');
-    final bytes = base64Decode(built['transactionBase64'] as String);
-    final res = await wallet.provider.signAndSendTransaction(
-      transaction: Uint8List.fromList(bytes));
-    if (!mounted) return;
-    res.fold(
-      onSuccess: (signature) {
-        Telemetry.log('wallet_sent', {'private': true});
-        setState(() {
-          _busy = false;
-          _status = 'Sent privately · $signature';
-        });
-        // The keyboard is waiting for a line to type back into the chat.
-        GlyfBridge.writeAppPong('sent $amount USDC privately');
-      },
-      onFailure: (e) => setState(() {
-        _busy = false;
-        _status = null;
-        _error = e.message;
-      }),
-    );
+  Future<void> _disconnect() async {
+    await WalletFlow.disconnect();
   }
 
   @override
   Widget build(BuildContext context) {
-    return DismissKeyboard(child: Scaffold(
+    return Scaffold(
       backgroundColor: Glass.bg,
       appBar: AppBar(
         backgroundColor: Glass.bg,
         surfaceTintColor: Colors.transparent,
-        title: const Text('Wallet',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        title: const Text('Wallet', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 6, 20, 30),
+      body: ValueListenableBuilder<PhantomLink?>(
+        valueListenable: WalletFlow.link,
+        builder: (context, link, _) => ListView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
           children: [
-            if (_loading) const Center(child: Padding(
-              padding: EdgeInsets.all(40), child: CircularProgressIndicator())),
-            if (_setupNeeded != null) _card(children: [
-              const Text('Not set up yet',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 6),
-              Text(_setupNeeded!,
-                  style: const TextStyle(fontSize: 14, color: Glass.inkSoft)),
-            ]),
-            if (!_loading && _setupNeeded == null && _user == null) _login(),
-            if (_wallet != null) ..._walletBody(),
-            if (_error != null) Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(_error!,
-                  style: const TextStyle(fontSize: 13, color: Glass.danger)),
-            ),
-            if (_status != null) Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(_status!,
-                  style: const TextStyle(fontSize: 13, color: Glass.inkSoft)),
-            ),
+            if (link == null) _connectCard() else _walletCard(link),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Glass.danger, fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ],
           ],
         ),
       ),
-    ));
+    );
   }
 
-  Widget _card({required List<Widget> children}) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Glass.hairline),
+  Widget _connectCard() => GlassCard(
+    padding: const EdgeInsets.all(20),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Row(
+          children: [
+            PhantomMark(size: 46),
+            SizedBox(width: 14),
+            Text(
+              'Phantom',
+              style: TextStyle(color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ],
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-      );
-
-  Widget _field(TextEditingController c, String hint,
-          {TextInputType? type}) =>
-      TextField(
-        controller: c,
-        keyboardType: type,
-        style: const TextStyle(fontSize: 15),
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: hint,
-          hintStyle: const TextStyle(color: Glass.inkSoft),
-          border: InputBorder.none,
-        ),
-      );
-
-  Widget _login() => _card(children: [
-        const Text('Sign in to your wallet',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12),
-        _field(_email, 'you@example.com', type: TextInputType.emailAddress),
-        if (_codeSent) ...[
-          const Divider(height: 22),
-          _field(_code, '6-digit code', type: TextInputType.number),
-        ],
         const SizedBox(height: 14),
-        _pill(_codeSent ? 'Verify' : 'Send code',
-            onTap: _busy ? null : (_codeSent ? _verify : _sendCode)),
-      ]);
-
-  List<Widget> _walletBody() => [
-        _card(children: [
-          const Text('Your Solana wallet',
-              style: TextStyle(fontSize: 13, color: Glass.inkSoft)),
-          const SizedBox(height: 4),
-          SelectableText(_wallet!.address,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-        ]),
-        _card(children: [
-          const Text('Send USDC privately',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 12),
-          _field(_to, 'Recipient address'),
-          const Divider(height: 22),
-          _field(_amount, 'Amount in USDC',
-              type: const TextInputType.numberWithOptions(decimal: true)),
-          const SizedBox(height: 14),
-          _pill(_busy ? 'Working…' : 'Send privately',
-              onTap: _busy ? null : _send),
-        ]),
-      ];
-
-  Widget _pill(String label, {VoidCallback? onTap}) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          height: 46,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: onTap == null ? Glass.inkSoft : Glass.pill,
-            borderRadius: BorderRadius.circular(23),
-          ),
-          child: Text(label,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+        const Text(
+          'Send and buy from your keyboard. Phantom signs every payment; Glyf never holds your keys.',
+          style: TextStyle(color: Glass.inkSoft, fontSize: 14.5, height: 1.4),
         ),
-      );
+        const SizedBox(height: 18),
+        Semantics(
+          identifier: 'wallet:connect',
+          button: true,
+          child: _connecting
+              ? const SizedBox(height: 52, child: Center(child: _Spinner()))
+              : PillButton(label: 'Connect Phantom', onPressed: _connect),
+        ),
+      ],
+    ),
+  );
+
+  Widget _walletCard(PhantomLink link) {
+    String usd(BigInt? units, int decimals, double? price) {
+      if (units == null || price == null) return '';
+      final value = units.toDouble() / BigInt.from(10).pow(decimals).toDouble() * price;
+      return '\$${value.toStringAsFixed(2)}';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GlassCard(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const PhantomMark(size: 44),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Phantom',
+                          style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          Sol.short(link.address),
+                          style: const TextStyle(
+                            color: Glass.inkSoft,
+                            fontSize: 13.5,
+                            fontFeatures: [FontFeature.disable('calt')],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Copy address',
+                    icon: const Icon(Icons.copy_rounded, size: 19, color: Glass.inkSoft),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: link.address));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Address copied')));
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: _balance('SOL', _sol == null ? '…' : Sol.format(_sol!, 9), usd(_sol, 9, _solPrice))),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _balance(
+                      'USDC',
+                      _usdc == null ? '…' : Sol.format(_usdc!, 6, maxDecimals: 2),
+                      usd(_usdc, 6, 1),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: PillButton(
+                      label: 'Send',
+                      onPressed: () => Navigator.of(
+                        context,
+                      ).push(MaterialPageRoute(builder: (_) => const SendScreen())).then((_) => _refresh()),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: PillButton(
+                      label: 'Buy',
+                      primary: false,
+                      onPressed: () => Navigator.of(
+                        context,
+                      ).push(MaterialPageRoute(builder: (_) => const BuyScreen())).then((_) => _refresh()),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Center(
+          child: TextButton(
+            onPressed: _disconnect,
+            child: const Text(
+              'Disconnect',
+              style: TextStyle(color: Glass.danger, fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _balance(String symbol, String amount, String usd) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(color: Glass.bg, borderRadius: BorderRadius.circular(14)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          symbol,
+          style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          amount,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Glass.ink,
+            fontSize: 19,
+            fontWeight: FontWeight.w700,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+        if (usd.isNotEmpty) Text(usd, style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
+      ],
+    ),
+  );
+}
+
+class _Spinner extends StatelessWidget {
+  const _Spinner();
+  @override
+  Widget build(BuildContext context) =>
+      const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Glass.ink));
 }

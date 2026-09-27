@@ -109,7 +109,8 @@ object TourCoach {
                 text.startsWith("💸") -> null
                 s.panel is Panel.Other -> Coach(s.panel.close, "Close")
                 s.panel != Panel.None -> null
-                s.chip == "pay" -> Coach("strip:smart", "Pay")
+                // A copied address is the paste, with Send beside it.
+                s.chip == "pay" -> Coach("strip:smart:extra|strip:smart", "Send")
                 s.chip == "paste" && s.copied -> Coach("strip:smart", "Paste")
                 else -> null // the chat points at the address to copy
             }

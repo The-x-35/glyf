@@ -17,14 +17,20 @@ enum Smart {
         /// The model read what is being typed and named what Glyf could do
         /// about it — the website's coach, in the strip.
         case action(label: String, query: String, intent: String)
-        /// A Solana address is on screen or freshly copied: one tap opens the
-        /// wallet with it filled in. The keyboard never holds a key — the app
-        /// signs (website 6.10, "Private sends by MagicBlock").
-        case pay(address: String, amount: String?)
+        /// Someone's Solana wallet, on screen or freshly copied: Send opens in
+        /// the app with it filled in (and the amount, when the message asks
+        /// for one). The keyboard never holds a key: Phantom signs. `copied`
+        /// is the whole copy when it came from one: the chip is then the
+        /// paste, with Send beside it.
+        case pay(address: String, amount: String? = nil, token: String? = nil, copied: String? = nil)
+        /// A token's address (a contract address someone shared), on screen
+        /// or freshly copied: Buy opens for it in the app. `copied` as above.
+        case buy(mint: String, symbol: String, price: String?, copied: String? = nil)
         /// "$13" → "$13 = ₹1,246" where the phone is; "$sol" → "1 SOL = $112".
         /// `shown` is the whole line, `insert` what a tap adds after the
-        /// amount. Never shown without a live rate.
-        case money(shown: String, insert: String)
+        /// amount. Never shown without a live rate. `buy` is the token's
+        /// address when a cashtag can be bought: Buy then sits beside Insert.
+        case money(shown: String, insert: String, buy: String? = nil)
         /// A plan in the message ("dinner friday 8pm"): one tap opens New
         /// Event with it filled in, nothing typed.
         case event(plan: EventParse.Plan)
@@ -38,7 +44,8 @@ enum Smart {
             case .calc, .money: return "="
             case .vault(let f): return f.title
             case .paste: return "Paste"
-            case .pay: return "Pay"
+            case .pay: return "Send"
+            case .buy: return "Buy"
             case .action: return "Glyf"
             }
         }
@@ -50,8 +57,37 @@ enum Smart {
             case .event: return "Add"
             case .booking: return "Book"
             case .paste: return "Paste"
-            case .pay: return "Pay"
+            case .pay(_, _, _, let copied): return copied == nil ? "Send" : "Paste"
+            case .buy(_, _, _, let copied): return copied == nil ? "Buy" : "Paste"
             case .action: return nil
+            }
+        }
+        /// A second action, as a button beside the first: Buy on a token's
+        /// price, Send or Buy on a copied address (whose own tap pastes it).
+        var extra: String? {
+            switch self {
+            case .money(_, _, let mint): return mint == nil ? nil : "Buy"
+            case .pay(_, _, _, let copied): return copied == nil ? nil : "Send"
+            case .buy(_, _, _, let copied): return copied == nil ? nil : "Buy"
+            default: return nil
+            }
+        }
+        /// What was copied, for a chip that pastes it.
+        var copiedText: String? {
+            switch self {
+            case .paste(let t): return t
+            case .pay(_, _, _, let copied), .buy(_, _, _, let copied): return copied
+            default: return nil
+            }
+        }
+        /// A quieter word before the value, saying what it is ("Home" before
+        /// an address, "Wallet" before someone's wallet).
+        var label: String? {
+            switch self {
+            case .vault(let f): return f.title
+            case .pay: return "Wallet"
+            case .buy(_, let symbol, _, _): return symbol
+            default: return nil
             }
         }
         var value: String {
@@ -60,13 +96,14 @@ enum Smart {
             case .vault(let f): return f.value
             case .paste(let t): return t.replacingOccurrences(of: "\n", with: " ")
             case .action(let label, _, _): return label
-            case .money(let shown, _): return shown
+            case .money(let shown, _, _): return shown
             case .event(let plan): return EventParse.summary(plan)
             case .booking(let link): return "A time on \(Smart.shortLink(link))"
-            case .pay(let address, let amount):
-                let short = address.count > 12
-                    ? "\(address.prefix(4))…\(address.suffix(4))" : address
-                return amount.map { "\($0) USDC to \(short)" } ?? "privately to \(short)"
+            case .pay(let address, let amount, let token, _):
+                let short = Smart.shortAddress(address)
+                return amount.map { "\($0) \(token ?? "USDC") to \(short)" } ?? short
+            case .buy(let mint, _, let price, _):
+                return price ?? Smart.shortAddress(mint)
             }
         }
         /// What tapping the chip puts in the field.
@@ -75,8 +112,9 @@ enum Smart {
             case .calc(let v, let hasEquals): return hasEquals ? " \(v)" : " = \(v)"
             case .vault(let f): return f.value
             case .paste(let t): return t
-            case .money(_, let insert): return insert
-            case .pay: return ""       // handled by the app, never typed
+            case .money(_, let insert, _): return insert
+            case .pay(_, _, _, let copied), .buy(_, _, _, let copied):
+                return copied ?? ""    // a copy pastes; the rest happens in the app
             case .event: return ""     // opens New Event instead of typing
             case .booking: return ""   // opens Book a time instead of typing
             case .action: return ""    // runs a glyf instead of typing
@@ -108,8 +146,34 @@ enum Smart {
         var fiat: [String: Double] = [:]
         var crypto: [String: Double] = [:]
         var local: String = "USD"
+        /// A cashtag's token address, when it can be bought ("SOL": "So1…").
+        var mints: [String: String] = [:]
+        /// What an address on screen turned out to be, once asked.
+        var addresses: [String: AddressKind] = [:]
 
         static let empty = RatesSnapshot()
+    }
+
+    /// A Solana address is someone's wallet or a token's; only a lookup can
+    /// tell (both are base58 of the same length).
+    enum AddressKind: Equatable {
+        case wallet
+        case token(symbol: String, usd: Double?)
+    }
+
+    /// "7dHb…7ARj".
+    static func shortAddress(_ address: String) -> String {
+        address.count > 12 ? "\(address.prefix(4))…\(address.suffix(4))" : address
+    }
+
+    /// The address a chip is waiting on: on screen or copied, not yours,
+    /// and not yet known to be a wallet or a token.
+    static func addressToCheck(in text: String, paste: String?, rates: RatesSnapshot,
+                               ownWallet: String? = nil) -> String? {
+        let copy = text.isEmpty ? paste : nil
+        guard let p = payment(in: text) ?? copy.flatMap({ payment(in: $0) }),
+              p.address != ownWallet, rates.addresses[p.address] == nil else { return nil }
+        return p.address
     }
 
     /// What the field itself says it wants, as far as a keyboard can tell.
@@ -148,9 +212,23 @@ enum Smart {
     /// for, a sum you typed, a saved detail the sentence (or the field) asks
     /// for, then something freshly copied.
     static func chip(for text: String, fields: [VaultField], paste: String? = nil,
-                     field: FieldHint = .none, rates: RatesSnapshot = .empty) -> Chip? {
-        if let p = payment(in: text) ?? paste.flatMap({ payment(in: $0) }) {
-            return .pay(address: p.address, amount: p.amount ?? amountAsked(in: text))
+                     field: FieldHint = .none, rates: RatesSnapshot = .empty,
+                     ownWallet: String? = nil) -> Chip? {
+        // An address: Send to a wallet, Buy a token. Your own wallet is one
+        // you are sharing, not paying. Until the lookup says which, nothing
+        // (the keyboard asks, and the strip is arranged again).
+        let typed = payment(in: text)
+        let copy = typed == nil && text.isEmpty ? paste : nil
+        if let p = typed ?? copy.flatMap({ payment(in: $0) }), p.address != ownWallet {
+            switch rates.addresses[p.address] {
+            case .token(let symbol, let usd)?:
+                return .buy(mint: p.address, symbol: symbol, price: usd.map(price), copied: copy)
+            case .wallet?:
+                let asked = p.amount ?? amountAsked(in: text)
+                return .pay(address: p.address, amount: asked?.value, token: asked?.token, copied: copy)
+            case nil:
+                return nil
+            }
         }
         if let c = calc(text) { return .calc(value: c.value, hasEquals: c.hasEquals) }
         if let m = money(in: text, rates: rates) { return m }
@@ -344,8 +422,8 @@ enum Smart {
             guard let usd = rates.crypto[ticker] else { return nil }
             // "1 SOL = $112" is already the answer; do not price the price.
             if text.replacingOccurrences(of: "$\(ticker.lowercased())", with: "").trimmingCharacters(in: .whitespaces).hasSuffix("=") { return nil }
-            let price = format(usd, in: "USD")
-            return .money(shown: "1 \(ticker) = \(price)", insert: " = \(price)")
+            let quoted = price(usd)
+            return .money(shown: "1 \(ticker) = \(quoted)", insert: " = \(quoted)", buy: rates.mints[ticker])
         }
         guard let re = amountPattern, !text.isEmpty else { return nil }
         let ns = text as NSString
@@ -380,6 +458,23 @@ enum Smart {
         return .money(shown: "\(typed) = \(result)", insert: " = \(result)")
     }
 
+    /// A token's dollar price: cents from a dollar up ("$112.40"), and
+    /// enough figures below one to see it move ("$0.50", "$0.0823",
+    /// "$0.00000364"), as the app's Buy shows it.
+    static func price(_ usd: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: "en_US")
+        if usd >= 0.01 || usd <= 0 {
+            f.minimumFractionDigits = 2
+            f.maximumFractionDigits = usd >= 1 ? 2 : 4
+        } else {
+            f.usesSignificantDigits = true
+            f.maximumSignificantDigits = 3
+        }
+        return "$" + (f.string(from: NSNumber(value: usd)) ?? String(usd))
+    }
+
     /// "₹1,246", "$5.21", "AED 47.70": the symbol where one is common, the
     /// code elsewhere; Indian grouping for rupees.
     static func format(_ value: Double, in code: String) -> String {
@@ -402,7 +497,7 @@ enum Smart {
     private static let addressPattern = try? NSRegularExpression(
         pattern: #"(?<![A-HJ-NP-Za-km-z1-9])([1-9A-HJ-NP-Za-km-z]{32,44})(?![A-HJ-NP-Za-km-z1-9])"#)
 
-    static func payment(in text: String) -> (address: String, amount: String?)? {
+    static func payment(in text: String) -> (address: String, amount: (value: String, token: String)?)? {
         guard let re = addressPattern, !text.isEmpty else { return nil }
         let ns = text as NSString
         guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
@@ -417,14 +512,19 @@ enum Smart {
         return (address, amountAsked(in: text))
     }
 
-    /// "send $200" / "200 usdc" → "200".
-    static func amountAsked(in text: String) -> String? {
-        let patterns = [#"[$₹]\s*([\d,]+(?:\.\d{1,6})?)"#,
-                        #"([\d,]+(?:\.\d{1,6})?)\s*(?:usdc|usdt|dollars?)"#]
-        for p in patterns {
+    /// "send $200" / "200 usdc" → ("200", "USDC"); "0.5 sol" → ("0.5", "SOL").
+    /// Only what Send can pay in: dollars go as USDC, and nothing else is
+    /// guessed at (500 rupees is not 500 USDC).
+    static func amountAsked(in text: String) -> (value: String, token: String)? {
+        let patterns: [(String, String)] = [
+            (#"\$\s*\d[\d,]*(?:\.\d{1,6})?(?![\d.])"#, "USDC"),
+            (#"\b\d[\d,]*(?:\.\d{1,6})?\s*(?:usdc|dollars?|bucks)\b"#, "USDC"),
+            (#"\b\d[\d,]*(?:\.\d{1,9})?\s*sol\b"#, "SOL"),
+        ]
+        for (p, token) in patterns {
             if let r = text.range(of: p, options: [.regularExpression, .caseInsensitive]) {
                 let digits = text[r].filter { $0.isNumber || $0 == "." }
-                if !digits.isEmpty { return String(digits) }
+                if !digits.isEmpty, Double(digits) ?? 0 > 0 { return (String(digits), token) }
             }
         }
         return nil

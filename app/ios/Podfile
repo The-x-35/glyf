@@ -1,4 +1,5 @@
-# Privy's embedded wallet SDK needs iOS 17; the app follows it.
+# iOS 17 floor (first set for Privy's SDK, which is gone; kept, as the app is
+# built and tested there).
 platform :ios, '17.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.

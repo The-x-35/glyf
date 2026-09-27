@@ -22,7 +22,7 @@ android {
     defaultConfig {
         applicationId = "com.demo.glyf"
         // 26+ for java.time in the stores; Android 8.0 covers ~97% of devices.
-        // 28: Privy (the wallet) needs Android 9.
+        // 28: first set for Privy's wallet SDK (gone); kept as the tested floor.
         minSdk = maxOf(28, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

@@ -130,6 +130,10 @@ struct GlyfSettings: Codable, Equatable {
     /// The person's Cal.com or Calendly booking page, set in the app
     /// (Connected tools → Booking link). The calendar's Book a time uses it.
     var bookingLink: String? = nil
+    /// The Phantom wallet connected in the app (its public address, never a
+    /// key). An address that is your own is one you are sharing, so the
+    /// strip offers no Send for it.
+    var walletAddress: String? = nil
 
     /// The deployed API. Changing the domain? This is the only place.
     static let productionBackend = "https://api.tryglyf.com"

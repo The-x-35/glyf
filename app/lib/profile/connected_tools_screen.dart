@@ -311,7 +311,7 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
         ]),
         const SizedBox(height: 14),
         const Text(
-          'Someone drops a Solana address in a chat: tap Pay on the keyboard and send USDC. Nobody onchain can see who paid.',
+          'Someone drops a Solana address in a chat: tap Send on the keyboard and Phantom signs. Send privately, and nobody onchain can see who paid.',
           style: TextStyle(color: Color(0xE6FFFFFF), fontSize: 14, height: 1.35),
         ),
         const SizedBox(height: 14),

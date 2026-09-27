@@ -108,6 +108,23 @@ abstract final class GlyfBridge {
 
   static Future<String?> lastDeepLink() => _call<String>('lastDeepLink');
 
+  /// Opens a phantom.app link in the Phantom app itself (never a browser).
+  /// False when Phantom isn't installed.
+  static Future<bool> openPhantom(String url) async =>
+      await _call<bool>('openPhantom', {'url': url}) ?? false;
+
+  /// The wallet link's secrets (Phantom's session, our encryption key): the
+  /// Keychain on the iPhone, a Keystore-sealed file on Android. None of them
+  /// can move money.
+  static Future<String?> walletSecretLoad(String name) =>
+      _call<String>('walletSecretLoad', {'name': name});
+
+  static Future<void> walletSecretSave(String name, String value) =>
+      _call<bool>('walletSecretSave', {'name': name, 'value': value});
+
+  static Future<void> walletSecretClear(String name) =>
+      _call<bool>('walletSecretClear', {'name': name});
+
   // Signing in (SignIn.swift / SignIn.kt): `idToken` on success (with `name`
   // and `email` when the provider shares them), `error` otherwise.
 

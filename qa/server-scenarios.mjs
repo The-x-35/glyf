@@ -21,6 +21,13 @@ async function post(path, body) {
   return { status: res.status, ms: Date.now() - started, json };
 }
 
+async function get(path) {
+  const started = Date.now();
+  const res = await fetch(BASE + path, { headers: AUTH });
+  const json = await res.json().catch(() => ({}));
+  return { status: res.status, ms: Date.now() - started, json };
+}
+
 const act = (text, extra = {}) => post("/act", { text, plan: "max", ...IN, ...extra });
 const hasAny = (s, words) => words.some(w => s.toLowerCase().includes(w));
 
@@ -180,11 +187,20 @@ const scenarios = [
     check: r => r.status >= 400 && r.status < 500,
     show: r => `${r.status} ${JSON.stringify(r.json).slice(0, 80)}` },
 
-  // --- Private payments ---
-  { id: "S34", area: "Pay", title: "Wallet config is there for the app's Privy login",
-    run: async () => { const res = await fetch(BASE + "/wallet/config", { headers: AUTH }); return { status: res.status, json: await res.json() }; },
-    check: r => r.status === 200 && r.json.ready === true && r.json.privyAppId.length > 5,
-    show: r => `ready: ${r.json.ready}, cluster: ${r.json.cluster}` },
+  // --- Payments (Phantom signs; the server only relays RPC with its key) ---
+  { id: "S34", area: "Pay", title: "The wallet's RPC relay answers with a fresh blockhash",
+    run: () => post("/wallet/rpc", { method: "getLatestBlockhash", params: [{ commitment: "confirmed" }] }),
+    check: r => r.status === 200 && typeof r.json.result?.value?.blockhash === "string",
+    show: r => `${r.status} ${String(r.json.result?.value?.blockhash ?? r.json.error ?? "").slice(0, 12)}` },
+  { id: "S138", area: "Pay", title: "A copied contract address is a token to buy; a wallet address is not",
+    run: async () => {
+      const token = await get("/rates/token?mint=DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263");
+      const wallet = await get("/rates/token?mint=2YkEPmGj6cocyG7zRFmEj6WYzXyVAYcqwoFjSfBeow21");
+      return { status: token.status, ms: token.ms + wallet.ms, json: { token: token.json.token, wallet: wallet.json } };
+    },
+    check: r => r.status === 200 && r.json.token?.symbol === "Bonk" && r.json.token.usd > 0
+      && r.json.wallet.ok === true && r.json.wallet.token === null,
+    show: r => `${r.json.token?.symbol ?? "?"} $${r.json.token?.usd ?? "?"} · wallet → ${JSON.stringify(r.json.wallet.token)}` },
 
   // --- Safety ---
   { id: "S35", area: "Safety", title: "A card number is hidden from the model and comes back exactly in every version",

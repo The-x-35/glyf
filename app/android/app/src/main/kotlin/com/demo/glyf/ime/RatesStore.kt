@@ -21,7 +21,11 @@ object RatesStore {
     @Volatile private var fiat: Map<String, Double> = emptyMap()
     @Volatile private var fiatAt = 0L
     private val crypto = ConcurrentHashMap<String, Double>()
+    /** The token behind each cashtag, so Buy knows what to buy. */
+    private val mints = ConcurrentHashMap<String, String>()
     private val cryptoAt = ConcurrentHashMap<String, Long>()
+    /** Copied or typed addresses: a wallet, or the token at that address. */
+    private val addresses = ConcurrentHashMap<String, Smart.AddressKind>()
     private val inFlight: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
     private val pool = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -68,7 +72,10 @@ object RatesStore {
     }
 
     fun snapshot(region: String?, chosen: String? = null) =
-        Smart.RatesSnapshot(fiat, crypto.toMap(), local(region, chosen))
+        Smart.RatesSnapshot(fiat, crypto.toMap(), local(region, chosen), mints.toMap(), addresses.toMap())
+
+    /** What an address turned out to be, or null when not yet asked. */
+    fun addressKind(address: String): Smart.AddressKind? = addresses[address]
 
     /** Fetches the dollar table when missing or stale; `then` runs on the
      *  main thread once something new is in hand. */
@@ -92,13 +99,39 @@ object RatesStore {
         if (at != null && System.currentTimeMillis() - at < TOKEN_TTL) return
         fetch(backendURL, "/rates/crypto?symbols=$symbol", "token:$symbol") { obj ->
             cryptoAt[symbol] = System.currentTimeMillis()
-            val usd = obj.optJSONObject("quotes")?.optJSONObject(symbol)?.optDouble("usd") ?: Double.NaN
-            if (!usd.isNaN() && usd > 0) crypto[symbol] = usd else crypto.remove(symbol)
+            val quote = obj.optJSONObject("quotes")?.optJSONObject(symbol)
+            val usd = quote?.optDouble("usd") ?: Double.NaN
+            if (!usd.isNaN() && usd > 0) {
+                crypto[symbol] = usd
+                val mint = quote?.optString("mint").orEmpty()
+                if (mint.isNotEmpty()) mints[symbol] = mint else mints.remove(symbol)
+            } else {
+                crypto.remove(symbol)
+                mints.remove(symbol)
+            }
             main.post(then)
         }
     }
 
-    private fun fetch(backendURL: String, path: String, key: String, done: (JSONObject) -> Unit) {
+    /** Whether an address is a token's (and which) or someone's wallet.
+     *  Asked once per address; when the answer can't be had it counts as a
+     *  wallet, and the app checks again before any money moves. */
+    fun ensureAddress(backendURL: String, address: String, then: () -> Unit) {
+        if (addresses.containsKey(address)) return
+        fetch(backendURL, "/rates/token?mint=$address", "address:$address", failed = {
+            addresses[address] = Smart.AddressKind.Wallet
+            main.post(then)
+        }) { obj ->
+            val token = obj.optJSONObject("token")
+            val symbol = token?.optString("symbol").orEmpty()
+            addresses[address] = if (symbol.isEmpty()) Smart.AddressKind.Wallet else
+                Smart.AddressKind.Token(symbol, token?.optDouble("usd")?.takeIf { !it.isNaN() && it > 0 })
+            main.post(then)
+        }
+    }
+
+    private fun fetch(backendURL: String, path: String, key: String, failed: (() -> Unit)? = null,
+                      done: (JSONObject) -> Unit) {
         if (!inFlight.add(key)) return
         pool.execute {
             var conn: HttpURLConnection? = null
@@ -110,9 +143,10 @@ object RatesStore {
                     BackendClient.bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
                 }
                 val obj = JSONObject(conn.inputStream.bufferedReader().readText())
-                if (obj.optBoolean("ok")) done(obj)
+                if (obj.optBoolean("ok")) done(obj) else failed?.invoke()
             } catch (e: Exception) {
                 android.util.Log.w("GlyfKB", "rates $path: $e")
+                failed?.invoke()
             } finally {
                 conn?.disconnect()
                 inFlight.remove(key)

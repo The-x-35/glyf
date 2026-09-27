@@ -287,11 +287,14 @@ The default map was 10 keys in M5 (`t r s c j p e x w q`). On 2026-09-12 it was 
 | `POST /connectors/disconnect` | Flutter Profile | Disconnect Google |
 | `POST /vocab/generate` | Flutter Vocabulary | Word pack from a description |
 | `POST /telemetry` | Flutter app | Event batches (never content) |
+| `GET /rates/crypto?symbols=`, `GET /rates/fiat` | both keyboards | The money chip: a cashtag's dollar price and its token address (for Buy), the dollar table |
+| `GET /rates/token?mint=` | both keyboards | A copied or typed Solana address: the token there (symbol, price), or null for someone's wallet |
+| `POST /wallet/rpc` | Flutter wallet | Solana reads and sends through the server's RPC key (a short allowlist of methods) |
 | `GET /health` | Flutter Profile | "Engine connected" dot |
 
 `POST /tools/run` still has client helpers (`BackendClient.runTool` on iOS, `BackendClient.tool` on Android) but nothing calls them since the search suite moved to `/search` on 2026-09-14.
 
-**Server environment variables that change what the apps can do** (names only; values live in `server/.env`, documented in `server/.env.example`): `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `INCEPTION_API_KEY`, `CEREBRAS_API_KEY`, `MOCK_AI`, `BRAVE_SEARCH_KEY`, `SERPER_API_KEY`, `YOUTUBE_API_KEY`, `GEOAPIFY_KEY`, `GOOGLE_PLACES_KEY`, `GOOGLE_WEATHER_KEY`, `OVERPASS_API_BASE`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_REDIRECT_BASE`, `NOTION_CLIENT_ID` / `_SECRET` (and the same pair for `SLACK`, `GITHUB`, `LINEAR`, `TODOIST`, `CALENDLY`, `ZOOM`, `SPOTIFY`), `GIPHY_API_KEY`, `PUBLIC_BASE_URL`, `PRIVY_APP_ID`, `PRIVY_APP_SECRET` (M8 only, never used by the apps), `NODE_ENV`, `PORT`.
+**Server environment variables that change what the apps can do** (names only; values live in `server/.env`, documented in `server/.env.example`): `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `INCEPTION_API_KEY`, `CEREBRAS_API_KEY`, `MOCK_AI`, `BRAVE_SEARCH_KEY`, `SERPER_API_KEY`, `YOUTUBE_API_KEY`, `GEOAPIFY_KEY`, `GOOGLE_PLACES_KEY`, `GOOGLE_WEATHER_KEY`, `OVERPASS_API_BASE`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_REDIRECT_BASE`, `NOTION_CLIENT_ID` / `_SECRET` (and the same pair for `SLACK`, `GITHUB`, `LINEAR`, `TODOIST`, `CALENDLY`, `ZOOM`, `SPOTIFY`), `GIPHY_API_KEY`, `PUBLIC_BASE_URL`, `SOLANA_RPC_URL` (the wallet's Solana node, Helius; the key stays on the server), `NODE_ENV`, `PORT`. (`PRIVY_APP_ID` and `PRIVY_APP_SECRET` were retired on 2026-09-27.)
 
 ### 3.7 What runs on the device and what runs on the server
 
@@ -340,7 +343,7 @@ SPEC 4.1 says a keyboard cannot call `UIApplication.shared.open()`. Features tha
 6. **No secrets in any client bundle.** Provider keys and all OAuth tokens live on the server; clients hold opaque IDs. `ci/check_no_secrets.sh` greps for key shapes.
 7. **Security rules** (SPEC 11): the vault refuses passwords, card numbers, seed phrases and government IDs; the clipboard never stores secret-shaped text; user-made Glyfs cannot make arbitrary HTTP calls (server tool registry only); anything touching vault, wallet or a connector declares it (`discloses`) and the declaration is shown before install; **no AI in secure text fields**; telemetry is events and timings, never content; tone and memory profiles stay on the device; clipboard text is treated as hostile.
 8. **What not to do** (SPEC 13): no swipe typing in v1; never auto-insert AI output (always Replace / Insert / Copy); never store OAuth tokens on the device; default Glyfs are Builder-format data on the server, never hard-coded Swift; the in-keyboard shell is data rendered by one table, never a stack of view controllers; microphone, signing, purchases, OAuth consent and secret entry open the app, never the keyboard; the toolbar collapses when suggestions show instead of stacking a second strip; don't link the Privy SDK before M8; no crypto UI (not even hidden) in the v1.0 binary.
-9. **Milestone order with hard gates** (SPEC 9). In practice Arpit overrode the pace ("we dont have 16 -22 days, we building everything today only") and the order (Android started before iOS shipped). Crypto (M8) stayed out of every binary.
+9. **Milestone order with hard gates** (SPEC 9). In practice Arpit overrode the pace ("we dont have 16 -22 days, we building everything today only") and the order (Android started before iOS shipped). Crypto (M8) stayed out of every binary until 2026-09-27, when Arpit asked for a Phantom wallet (section 5.27): Glyf builds, Phantom signs, no Privy and no keys.
 
 ### 4.2 Rules Arpit set during the build
 
@@ -960,9 +963,33 @@ Arpit on 2026-09-12: "we can aslo add gif and stickers support like gboard has i
 - `ITSAppUsesNonExemptEncryption = NO` in both the app and extension Info.plists (only HTTPS and Apple's CryptoKit and Keychain are used).
 - Open item: server-side AI calls go to model providers whose free tiers may train on inputs (Gemini's free tier terms also exclude personal information and apps likely used by under-18s). Arpit decided on 2026-09-15 to cover this with a privacy policy rather than code for now.
 
-### 5.27 Crypto (M8): deliberately absent
+### 5.27 The wallet: Phantom signs, Glyf builds (27 Sep 2026)
 
-The spec's crypto connector (Privy Solana wallet, Jupiter swaps, paste guard) is a separate, later release. **No wallet code, no Privy SDK, and no crypto UI exist in either app**, by design (SPEC 9 and 13). Findings kept for later: Spike B showed `privy_flutter` 0.10.1 can sign and broadcast Solana transactions, so no native bridge is needed; on iOS its bridge ignores `rpcUrl` and defaults to mainnet if `cluster` is omitted; the plugin needs iOS 17 (the app targets 15); versioned (v0) transaction signing is the one untested unknown. Privy credentials were authenticated server-side on 2026-09-12 and sit only in `server/.env`. The website's chat demo shows a private MagicBlock payment and a Jupiter swap screen, but that is website-only mock UI. The keyboard's `SecretScanner` already refuses long base58 strings (Solana secret keys).
+Arpit, 2026-09-27: "implement a feature of connecting external solana wallet like phantom ... just connect wallet and it goes to that wallet for signing tranaction, else everything happens here", "simple solana send and swap txns, swap with jup / and private send too with magic blocks", "if we copy wallet address we send money to it and if its a ca a buy option, also need buy with tickers like $ sol shows price and buy option", "we wont hold any keys", "just have it as a option in settings area", and on building: "no need server for this, this we can do on device". Privy is gone from the app (`privy_flutter` removed; D93 had already dropped it for sign-in).
+
+**Where it lives.** Profile → Wallet (and the Pay tool on the strip, and Connected tools → Private payments → Open wallet). Not in onboarding. `app/lib/wallet/`: `phantom.dart` (the deeplink protocol), `solana.dart` (transactions), `wallet_api.dart` (Jupiter, MagicBlock, the RPC relay), `wallet_flow.dart` (the flow end to end), and the Wallet, Send, Buy and status screens.
+
+**Phantom, over its deeplinks** (`https://phantom.app/ul/v1/{connect,signTransaction,disconnect}`): Connect sends a fresh x25519 public key; Phantom answers on `glyf://phantom/connect` with its own key, a nonce and the NaCl-box-sealed `{public_key, session}`. Every sign request is sealed the same way and answers on `glyf://phantom/sign/<id>`. `signAndSendTransaction` is deprecated, so Glyf asks for `signTransaction` and sends the signed bytes itself (Phantom may add its own fee or Lighthouse instructions; the returned bytes are what goes out). The session never expires; Disconnect forgets it on this phone (Phantom lists Glyf under connected apps until it is removed there). Error 4001 is "cancelled". Keys: our half of the encryption and the session sit in the Keychain (`WalletSecrets.swift`, service `so.glyf.wallet`, this device only) or a Keystore-sealed file on Android (`WalletSecrets.kt`); **no key that can move money is ever in Glyf.** The pending payment (id, kind, summary, Jupiter's request id) is kept there too, because iOS may close Glyf while Phantom is open. iOS opens Phantom with `.universalLinksOnly`; not installed means the App Store page and "Install Phantom, then try again".
+
+**Three payments.**
+- *Send* (SOL or USDC): built on the phone (`Sol.transferSol`, or an idempotent ATA create plus `TransferChecked`), legacy message, blockhash from the relay; checked byte for byte against @solana/web3.js in `test/wallet/solana_test.dart`. Before Phantom opens: the recipient must be a wallet (owned by the System Program, or new): a token's or an app's address is refused ("That’s a token’s address, not a wallet"), because money sent there is gone; and the balance must cover it ("You only have 3.2 USDC", "Add a little SOL for the network fee").
+- *Send privately* (USDC, a switch on Send): MagicBlock's `POST /v1/spl/transfer` (visibility private, base to base, `mainnet-private`, `legacy: true`) builds one transaction the sender signs; `POST /v1/transaction/send` lands it. About 0.002 SOL + 0.1%. No key.
+- *Buy*: Jupiter Swap API V2, keyless from the phone: `GET /swap/v2/order` with the taker builds the transaction (v0), `POST /swap/v2/execute` lands it. Presets $5/$10/$25/$50 or Other, pay with SOL or USDC, a live "You get ≈" quote, a warning past 3% price impact, and "Jupiter hasn’t verified this token" for unverified ones.
+
+**The status screen** (`PayStatusScreen`) is where Phantom's answer lands: Sending… → Sent / Sent privately / Bought, with View on Solscan; Cancelled in Phantom; or Didn’t go through with the reason in plain words (node errors are translated: "no record of a prior credit" is "Your wallet needs a little SOL for the network fee").
+
+**The keyboards** (both; `Smart.swift`, `Smart.kt`): an address on screen or freshly copied is looked up once (`GET /rates/token`, via `RatesStore`); until the answer lands there is no chip.
+- Someone's wallet, copied: the paste pill with **Send** beside it ("📋 Wallet 7dHb…7ARj [Send] ×"); the pill still pastes. Typed into the message: "Wallet 20 USDC to 7dHb…7ARj … Send". The amount the message asks for comes along ($20 or 20 usdc as USDC, 0.5 sol as SOL; rupees are never taken for dollars).
+- A token's contract address: "📋 Bonk $0.00000364 [Buy] ×", or "Bonk $0.00000364 … Buy" when typed.
+- A cashtag: "1 SOL = $121.39 … Insert [Buy]" (stocks too: $aapl buys the xStock).
+- Your own connected address (the app shares it as `walletAddress` in shared settings, public only) gets no Send.
+- Links are `glyf://open?path=` with the whole path and query encoded as one value (`wallet?amount=5&to=…&token=USDC`, `buy?mint=…&symbol=…`); a bare `&` used to cut the amount off.
+
+**Server.** `POST /wallet/rpc` relays an allowlist (getLatestBlockhash, getBalance, getTokenAccountsByOwner, getAccountInfo, sendTransaction, getSignatureStatuses) to `SOLANA_RPC_URL` (Helius), so the RPC key stays off the phone (SPEC 1.6). `GET /rates/token` answers the keyboards. Both need a Glyf session.
+
+**How it was tested** (S138 to S140): unit tests on both keyboards and in Flutter (a tweetnacl interop vector for the encryption); on the simulator, a stand-in Phantom (`fakephantom.mjs`, same NaCl box and base58, an empty throwaway wallet) answered Connect and a real signing request: the signed send reached Solana, which turned it down for no SOL. Not yet tried: a real Phantom on a phone with real money, and Phantom signing Jupiter's versioned (v0) transactions over deeplinks, which its docs do not promise.
+
+**Debug builds** log each Phantom link in 700-character pieces (`GLYF_PHANTOM i/n …`, the system log cuts lines at 1024 bytes) so the stand-in can answer it.
 
 ### 5.28 The keyboard's calendar: new events, Book a time, Meet links, invites
 
@@ -1454,6 +1481,11 @@ Both targets carry a privacy manifest (`PrivacyInfo.xcprivacy`), which App Store
 
 **iOS keyboard and simulator**
 
+- A Flutter text field never tells a keyboard extension about text the app pasted in: `documentContextBeforeInput` stays empty until the keyboard types. Test typed-text chips in a native field (Safari's address bar), not the Home try field.
+- The simulator tool's "type text" pastes through CoreSimulatorBridge (an "Allow Paste?" prompt) and leaves the simulator in hardware-keyboard mode: no on-screen keyboard until a reboot. Tap keys instead, or put text on the clipboard with `xcrun simctl pbcopy`.
+- `xcodebuild test` with parallel testing clones the simulator and can leave the original shut down; pass `-parallel-testing-enabled NO`.
+- Messages' New Message offers no third-party keyboards while the To field has focus.
+
 - The software keyboard never appears in a headless simulator or with the hardware keyboard connected: set `ConnectHardwareKeyboard` to false and keep Simulator.app open.
 - Stale binaries: the extension **process survives an app reinstall** (`pkill -f GlyfKeyboard.appex`), and `xcodebuild test` may skip reinstalling an app whose main binary did not change even when the appex did (install from DerivedData yourself).
 - New Swift file not in the target: the build silently uses a stale app. Run `tools/sync_keyboard_files.rb`. Engine files the tests need must be in `TEST_SHARED` too.
@@ -1698,6 +1730,9 @@ Times are IST. In the "Why" column, text in quotation marks is Arpit's own words
 | 2026-09-16 00:10 | Whole monorepo in the private GitHub repo `The-x-35/glyf`; gate videos and the stray `glyf/` project excluded | "push everything together on github" | Active |
 | 2026-09-16 02:13 | No em dashes | "they look fucking disgusting ai made" (website) | Active on the site; apps pending |
 | 2026-09-16 02:20 | No AI attribution in the git history or repo docs | Arpit asked to remove it from commit history | Active |
+| 2026-09-27 | The wallet is Phantom, connected in Profile → Wallet (not onboarding). Glyf builds every transaction on the phone; Phantom signs; Glyf never holds a key. Send, Send privately (MagicBlock), Buy (Jupiter); the keyboard offers Send for a wallet, Buy for a contract address or a cashtag | "connecting external solana wallet like phantom ... we wont hold any keys", "no need server for this, this we can do on device" | Active (5.27) |
+| 2026-09-27 | Only the Solana RPC key stays behind the server (`POST /wallet/rpc`); Jupiter and MagicBlock are called from the phone, keyless | SPEC 1.6: no secrets in a client bundle | Active |
+| 2026-09-27 | Colour themes and forced light or dark retired; the keyboard follows the host app | "the top bar cuts with themes and looks shit, i think we should not have weird colourful themes for now" | Active |
 
 ---
 

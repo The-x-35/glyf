@@ -2,7 +2,7 @@
 
 Everything pending, blocked or owed, in one place. **Owner** is who has to act: Arpit (accounts, keys, money, logins, design calls) or Build (code work). Area docs have more detail: [WEBSITE.md](WEBSITE.md), [APPS.md](APPS.md), [BACKEND.md](BACKEND.md).
 
-Last updated: Fri 25 Sep 2026 (IST).
+Last updated: Sun 27 Sep 2026 (IST).
 
 ---
 
@@ -40,6 +40,7 @@ Last updated: Fri 25 Sep 2026 (IST).
 | B11 | Gemini free tier terms: it trains on what's sent and excludes apps likely used by under-18s. Paying removes most of this | Arpit (decision) |
 | B12 | Google Cloud, in the project that holds the sign-in clients (console.cloud.google.com, Google Auth Platform): **(1)** APIs & Services → Library: enable the **Google Calendar API** and the **Google Meet REST API**. **(2)** Data Access → Add or remove scopes: add `https://www.googleapis.com/auth/calendar.events.owned` and `https://www.googleapis.com/auth/meetings.space.created`. **(3)** Audience → Test users: add yourself and every tester while the app is in Testing (only they can sign in; up to 100; their grants expire after 7 days). **(4)** Clients → the iOS client: Bundle ID `com.arpit.glyf` (it was made for `com.demo.glyf`). **(5)** Branding: app name Glyf, support email, home page `https://www.tryglyf.com`, privacy policy `https://www.tryglyf.com/privacy` (live once pushed), authorized domain `tryglyf.com`. **(6)** Before the App Store build goes to real people: Audience → Publish app (In production), or anyone outside Test users is refused at Google sign-in; then Verification Center → verify the two sensitive scopes (tryglyf.com proven in Search Console, an unlisted YouTube video of Google sign-in, Connect Google Meet and a Meet link from the keyboard, a line on why each scope; Google says 3 to 5 business days). Until Google verifies them, Google sign-in shows its "unverified app" warning, because sign-in asks for Calendar and Meet, and stops after 100 new people. No server key or secret is needed: the phone talks to Google | Arpit |
 | B14 | Calendly: open times and booking inside the keyboard need Calendly's OAuth app (the `CALENDLY_*` pair in B7) and the host's own sign-in; today a Calendly link is offered as its page on the chosen day | Arpit (if wanted) + Build |
+| B16 | The wallet on Railway: add `SOLANA_RPC_URL` (the Helius URL in the local `server/.env`), then push so `/wallet/rpc` and `/rates/token` go live. Until then the phone's Send, balances and the recipient check fail, and every copied address shows Send (the token lookup isn't there) | Arpit |
 
 ## 3. Apps
 
@@ -54,7 +55,7 @@ Last updated: Fri 25 Sep 2026 (IST).
 | A7 | Light and dark mode in the apps (the site has it; the keyboard already follows the host) | Build |
 | A8 | Android round 2: in-keyboard AI prompt bar and clipboard history parity, automated tests | Build |
 | A9 | Emoji suggestions from AOSP's emoji list (downloaded, not wired) | Build |
-| A10 | M8 crypto (Privy wallet, Jupiter swaps, platform fee) as a separate release; Privy dashboard setup | Arpit + Build, later |
+| A10 | ~~M8 crypto (Privy wallet, Jupiter swaps, platform fee)~~ **27 Sep:** built as a Phantom wallet instead (Profile → Wallet; Send, Send privately, Buy; Send and Buy chips on both keyboards). Left: try it on a real iPhone with Phantom and a few dollars (after B16), and confirm Phantom signs Jupiter's versioned (v0) swaps over its deeplinks, which its docs don't promise. Rotate the old Privy secret at Privy | Arpit (device) + Build |
 | A11 | Paper design port: the keyboard page and website page were unfinished when the Paper free plan's weekly MCP limit hit. Resume after the reset or on Paper Pro | Arpit (plan) + Build |
 | A12 | Mobbin connector: authorize it if design references from Mobbin are wanted | Arpit |
 | A13 | Check on a real iPhone that the keyboard can add an event (EventKit from the keyboard with Full Access on). It works on the iOS 26.5 simulator; if a device refuses, New Event falls back to asking the app | Arpit (device) + Build |

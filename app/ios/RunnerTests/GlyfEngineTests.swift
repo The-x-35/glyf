@@ -690,6 +690,67 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.chip(for: "$13", fields: [], rates: home))
     }
 
+    // MARK: Wallet chips
+
+    func testAnAddressIsSentToWhenItIsAWalletAndBoughtWhenItIsAToken() {
+        let wallet = "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj"
+        let bonk = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+        var rates = Smart.RatesSnapshot()
+        // Not known yet: no chip, and the keyboard is told what to look up.
+        XCTAssertNil(Smart.chip(for: "", fields: [], paste: wallet, rates: rates))
+        XCTAssertEqual(Smart.addressToCheck(in: "", paste: wallet, rates: rates), wallet)
+        rates.addresses = [wallet: .wallet, bonk: .token(symbol: "Bonk", usd: 0.0000036)]
+        XCTAssertNil(Smart.addressToCheck(in: "", paste: wallet, rates: rates))
+
+        // Copied: the chip is the paste, with Send beside it.
+        let copied = Smart.chip(for: "", fields: [], paste: wallet, rates: rates)
+        XCTAssertEqual(copied, .pay(address: wallet, copied: wallet))
+        XCTAssertEqual(copied?.label, "Wallet")
+        XCTAssertEqual(copied?.value, "7dHb…7ARj")
+        XCTAssertEqual(copied?.verb, "Paste")
+        XCTAssertEqual(copied?.extra, "Send")
+        XCTAssertEqual(copied?.insert, wallet)
+        // Typed (or pasted) into the message: the chip is Send itself.
+        let send = Smart.chip(for: "here \(wallet)", fields: [], rates: rates)
+        XCTAssertEqual(send, .pay(address: wallet))
+        XCTAssertEqual(send?.verb, "Send")
+        XCTAssertNil(send?.extra)
+        // The amount the message asks for comes along, in what Send pays in.
+        XCTAssertEqual(Smart.chip(for: "can you send $20 to \(wallet)", fields: [], rates: rates)?.value,
+                       "20 USDC to 7dHb…7ARj")
+        XCTAssertEqual(Smart.chip(for: "0.5 sol to \(wallet) pls", fields: [], rates: rates),
+                       .pay(address: wallet, amount: "0.5", token: "SOL"))
+        XCTAssertEqual(Smart.chip(for: "₹500 to \(wallet)", fields: [], rates: rates),
+                       .pay(address: wallet), "rupees are not dollars")
+        // Your own wallet is one you are sharing: the copy is just a paste.
+        XCTAssertEqual(Smart.chip(for: "", fields: [], paste: wallet, rates: rates, ownWallet: wallet),
+                       .paste(text: wallet))
+
+        let buy = Smart.chip(for: "ape this \(bonk)", fields: [], rates: rates)
+        XCTAssertEqual(buy, .buy(mint: bonk, symbol: "Bonk", price: "$0.0000036"))
+        XCTAssertEqual(buy?.label, "Bonk")
+        XCTAssertEqual(buy?.value, "$0.0000036")
+        XCTAssertEqual(buy?.verb, "Buy")
+        XCTAssertEqual(buy?.insert, "", "a tap opens Buy, it types nothing")
+        let copiedToken = Smart.chip(for: "", fields: [], paste: bonk, rates: rates)
+        XCTAssertEqual(copiedToken?.verb, "Paste")
+        XCTAssertEqual(copiedToken?.extra, "Buy")
+    }
+
+    func testATickersPriceOffersBuyWhenItCanBeBought() {
+        let sol = "So11111111111111111111111111111111111111112"
+        let rates = Smart.RatesSnapshot(crypto: ["SOL": 111.77, "BONK": 0.0000036, "JUP": 0.5],
+                                        mints: ["SOL": sol])
+        XCTAssertEqual(Smart.chip(for: "buying $sol", fields: [], rates: rates),
+                       .money(shown: "1 SOL = $111.77", insert: " = $111.77", buy: sol))
+        XCTAssertEqual(Smart.chip(for: "$bonk", fields: [], rates: rates),
+                       .money(shown: "1 BONK = $0.0000036", insert: " = $0.0000036"), "no address, no Buy")
+        XCTAssertEqual(Smart.price(0.5), "$0.50")
+        XCTAssertEqual(Smart.price(0.08234), "$0.0823")
+        XCTAssertEqual(Smart.price(1234.5), "$1,234.50")
+        XCTAssertEqual(Smart.price(0.00000364), "$0.00000364")
+    }
+
     // MARK: Games
 
     func testSnakeTurnsWrapsAndNeverDoublesBack() {

@@ -158,4 +158,37 @@ describe("rates", () => {
     expect((await app.inject({ method: "GET", url: "/rates/crypto" })).statusCode).toBe(400);
     await app.close();
   });
+
+  it("tells a token's address from a wallet's, and says so only when Jupiter answered", async () => {
+    const bonk = { id: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", symbol: "Bonk", name: "Bonk",
+      decimals: 5, usdPrice: 0.0000036, isVerified: true };
+    const fresh = { id: "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr", symbol: "POPCAT", name: "Popcat",
+      decimals: 9, isVerified: false };
+    let down = false;
+    const { f, calls } = fakeFetch(url => down ? undefined
+      : url.includes(bonk.id) ? [bonk] : url.includes(fresh.id) ? [fresh] : []);
+    const rates = new Rates(f);
+    expect(await rates.tokenAt(bonk.id)).toEqual({ mint: bonk.id, symbol: "Bonk", name: "Bonk", decimals: 5,
+      usd: 0.0000036, verified: true });
+    // Too new for a price, and not verified: still a token, said plainly.
+    expect(await rates.tokenAt(fresh.id)).toEqual({ mint: fresh.id, symbol: "POPCAT", name: "Popcat",
+      decimals: 9, verified: false });
+    const wallet = "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj";
+    expect(await rates.tokenAt(wallet)).toBeNull();
+    await rates.tokenAt(bonk.id);
+    expect(calls).toHaveLength(3);
+    expect(await rates.tokenAt("not an address")).toBeNull();
+
+    const app = Fastify();
+    ratesRoutes(app, rates);
+    const hit = await app.inject({ method: "GET", url: `/rates/token?mint=${bonk.id}` });
+    expect(hit.json()).toMatchObject({ ok: true, token: { symbol: "Bonk", usd: 0.0000036 } });
+    expect((await app.inject({ method: "GET", url: `/rates/token?mint=${wallet}` })).json())
+      .toEqual({ ok: true, token: null });
+    expect((await app.inject({ method: "GET", url: "/rates/token?mint=0OIl" })).statusCode).toBe(400);
+    down = true;
+    const other = "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E";
+    expect((await app.inject({ method: "GET", url: `/rates/token?mint=${other}` })).statusCode).toBe(503);
+    await app.close();
+  });
 });

@@ -1433,9 +1433,17 @@ final class GlyfKeyboardViewController: UIInputViewController {
            !p.allSatisfy({ $0.isNumber || "+-() .".contains($0) }) {
             paste = nil
         }
+        let rates = RatesStore.shared.snapshot()
+        let ownWallet = SettingsStore.current.walletAddress
         var chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
-                              rates: RatesStore.shared.snapshot())
+                              rates: rates, ownWallet: ownWallet)
+        // An address on screen or copied: a wallet (Send) or a token (Buy)?
+        // Only a lookup can tell; the strip is arranged again when it lands.
+        if chip == nil, hasFullAccess,
+           let address = Smart.addressToCheck(in: tail, paste: paste, rates: rates, ownWallet: ownWallet) {
+            RatesStore.shared.ensureAddress(address) { [weak self] in self?.updateCandidates() }
+        }
         // An amount or a ticker with no rate yet: ask for one; the strip is
         // arranged again when it lands.
         // A character test first: neither pattern can match without one, and
@@ -1478,6 +1486,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .vault(let f): return "vault:\(f.kind)"
         case .paste: return "paste"
         case .pay: return "pay"
+        case .buy: return "buy"
         case .action: return "action"
         case .event: return "event"
         case .booking: return "booking"
@@ -2549,17 +2558,20 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             calendarView?.compose(plan: plan)
             return
         }
-        if case .pay(let address, let amount) = chip {
-            // The keyboard never signs: the app's Privy wallet does. The copy
-            // has now been used: the chip must not come back for it on every
-            // empty field until something else is copied.
+        switch chip {
+        case .pay(_, _, _, let copied?), .buy(_, _, _, let copied?):
+            // A copied address pastes, like any copy; Send or Buy is the
+            // button beside it.
             ClipContext.markDone()
-            cachedPaste = nil
-            var path = "wallet?to=\(address)"
-            if let amount { path += "&amount=\(amount)" }
-            openApp(path: path)
+            hostInsert(Self.spaced(copied, after: beforeContext))
             toolbar.showSmart(nil)
+            updateCandidates()
             return
+        case .pay, .buy:
+            toolbarSmartExtraTapped(chip)
+            return
+        default:
+            break
         }
         if case .paste(let text) = chip {
             // History's copy types straight out; the placeholder means we do
@@ -2607,9 +2619,47 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         updateCandidates()
     }
 
-    private func openApp(path: String) {
-        guard let url = URL(string: "glyf://open?path=\(path)") else { return }
+    /// Send and Buy happen in the app: the keyboard never signs, Phantom
+    /// does, opened from there. A copy that was used this way must not bring
+    /// its chip back on every empty field until something else is copied.
+    func toolbarSmartExtraTapped(_ chip: Smart.Chip) {
+        switch chip {
+        case .pay(let address, let amount, let token, _):
+            ClipContext.markDone()
+            cachedPaste = nil
+            var query = ["to": address]
+            if let amount { query["amount"] = amount }
+            if let token { query["token"] = token }
+            openApp(path: "wallet", query: query)
+        case .buy(let mint, let symbol, _, _):
+            ClipContext.markDone()
+            cachedPaste = nil
+            openApp(path: "buy", query: ["mint": mint, "symbol": symbol])
+        case .money(_, _, let mint?):
+            openApp(path: "buy", query: ["mint": mint])
+        default:
+            return
+        }
+        toolbar.showSmart(nil)
+    }
+
+    /// glyf://open?path=… with the path and its query as ONE encoded value,
+    /// so "wallet?to=…&amount=5" arrives whole (a bare & cut the amount off).
+    private func openApp(path: String, query: [String: String] = [:]) {
+        var inner = path
+        if !query.isEmpty {
+            inner += "?" + query.keys.sorted().map { "\($0)=\(Self.urlEncoded(query[$0] ?? ""))" }
+                .joined(separator: "&")
+        }
+        guard let url = URL(string: "glyf://open?path=\(Self.urlEncoded(inner))") else { return }
         HostAppOpener.open(url, from: self) { _ in }
+    }
+
+    private static let urlSafe = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+
+    static func urlEncoded(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: urlSafe) ?? s
     }
 
     // MARK: Dictation (§6.6 path 1: in-app capture + handoff via §7 intents)

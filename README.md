@@ -27,7 +27,7 @@ Full specification: [SPEC.md](SPEC.md). Work happens milestone by milestone
 | **M5** — Builder + Hub + Packs + step engine + §6.13 map | ✅ built & gate-tested on simulator — [docs/M5-GATE.md](docs/M5-GATE.md) |
 | **M6** — connectors | ✅ buildable core (keyless tools · ConnectorSurface on demo calendar · OAuth broker skeleton) — real providers blocked on OAuth client credentials, see same doc |
 | **M7** — polish/perf/monetization | ✅ buildable core (paywall + pro flag · tone learning · telemetry sink · funnels) — StoreKit product + receipt validation at ship, see same doc |
-| M8 — crypto (SEPARATE release; Privy stays server-side, unlinked until here) | not started, by design (§9) |
+| M8, crypto | a Phantom wallet (Glyf builds, Phantom signs, no keys held): Send, private sends, Jupiter buys, and Send/Buy chips in both keyboards (27 Sep 2026) |
 | M9 — Android | built early by Arpit's call (13 Sep): Flutter app + Kotlin keyboard covering the main features, verified on the emulator, not published. The keyboard still trails iOS in places (see the parity table in [docs/APPS.md](docs/APPS.md)). Chaining UI and more languages still pending |
 | Website | `site/`, the tryglyf.com waitlist site, built and verified locally, not deployed yet. See [docs/WEBSITE.md](docs/WEBSITE.md) |
 

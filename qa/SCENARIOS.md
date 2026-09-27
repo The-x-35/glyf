@@ -1,8 +1,8 @@
 # Glyf scenario run
 
-Run on 24 and 25 September 2026 (the two app flows, S99 and S100, by hand on 17 September): the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
+Run on 24, 25 and 27 September 2026 (the two app flows, S99 and S100, by hand on 17 September): the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
 
-130 pass, 2 need a key, 2 fail, of 134.
+134 pass, 2 need a key, 2 fail, of 138.
 
 | ID | Where | Scenario | Result |
 | --- | --- | --- | --- |
@@ -39,7 +39,7 @@ Run on 24 and 25 September 2026 (the two app flows, S99 and S100, by hand on 17 
 | S31 | Server | Tap 'Turn it into a LinkedIn post' and it is made | pass |
 | S32 | Server | The preview runs the new glyf on a sample message | pass |
 | S33 | Server | A description too short to build is refused cleanly | pass |
-| S34 | Server | Wallet config is there for the app's Privy login | pass |
+| S34 | Server | The wallet's RPC relay answers with a fresh blockhash | pass |
 | S35 | Server | A card number is hidden from the model and comes back exactly in every version | pass |
 | S36 | Server | Bad requests get a 400, not a crash | pass |
 | S37 | Server | An OTP in a message survives every rewrite untouched | pass |
@@ -67,7 +67,7 @@ Run on 24 and 25 September 2026 (the two app flows, S99 and S100, by hand on 17 
 | S59 | iPhone | Shorthand expands | pass |
 | S60 | iPhone | A sum in a message offers the answer | pass |
 | S61 | iPhone | Asked for your address, it is one tap away | pass |
-| S62 | iPhone | Asked for your UPI, it is one tap away | pass |
+| S62 | iPhone | Asked for your wallet address, it is one tap away | pass |
 | S63 | iPhone | A rough message offers Tidy this up | pass |
 | S64 | iPhone | Hold space: pick the Professional version | pass |
 | S65 | iPhone | Holding a version copies it instead | pass |
@@ -140,6 +140,10 @@ Run on 24 and 25 September 2026 (the two app flows, S99 and S100, by hand on 17 
 | S134 | Android | Chomp eats its way along the maze | pass |
 | S135 | iPhone | A calendar never asked for points to Connected tools | pass |
 | S136 | iPhone | Connected tools turns on Calendar and Google Meet later | pass |
+| S137 | Android | Without Google, the Meet key says where to connect it | pass |
+| S138 | Server | A copied contract address is a token to buy; a wallet address is not | pass |
+| S139 | iPhone | A copied wallet offers Send, a contract address Buy, and $sol a price with Buy | pass |
+| S140 | App | Phantom connects, and a send comes back signed and goes to Solana | pass |
 
 ## Fixed during the run
 

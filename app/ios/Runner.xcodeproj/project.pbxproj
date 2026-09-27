@@ -54,6 +54,7 @@
 		6AC48EB71DCDEE4579DB32CC /* Games.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DCC7C657F3DAF1BA19C8227 /* Games.swift */; };
 		6B502FA1491B78CA9CCF7F63 /* InlineEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E97DFE2A588F7A69880F23A /* InlineEditor.swift */; };
 		6D705D6C53780C162B803930 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F69B8F550E5B5270B4D18FCA /* Pods_Runner.framework */; };
+		719B86642624213ECDBF06EE /* WalletSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD7C3A22F17A9CEEDF8122E /* WalletSecrets.swift */; };
 		735137DEAC3D31AC61DBBBFB /* CalendarText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7C9B275603B0968648339E /* CalendarText.swift */; };
 		737B2D28D4945E95B7BCC5E5 /* GlyfSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */; };
 		741A70377640E915138D3838 /* SearchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E6DFEACD2A44AAB2AA5FA2 /* SearchCard.swift */; };
@@ -274,6 +275,7 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9F09C0ACA1F1B45C6AC46AA4 /* TourCoach.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TourCoach.swift; sourceTree = "<group>"; };
+		9FD7C3A22F17A9CEEDF8122E /* WalletSecrets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WalletSecrets.swift; sourceTree = "<group>"; };
 		9FDE3921B98C38CD61A63DE1 /* GlyfM0UITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfM0UITests.swift; sourceTree = "<group>"; };
 		A2B91BDDF5ACD1D415C5AC2E /* MediaGrid.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MediaGrid.swift; sourceTree = "<group>"; };
 		A6A1C1B829364960405CA876 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
@@ -550,6 +552,7 @@
 				E0EE95049BBCC290AFF096F5 /* Settings.bundle */,
 				AFD743CD3003B7F5C22D9290 /* PrivacyInfo.xcprivacy */,
 				D6F6E535557BADA4D9455FF9 /* Billing.swift */,
+				9FD7C3A22F17A9CEEDF8122E /* WalletSecrets.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -662,7 +665,6 @@
 				075AAC133DB2A144421605EA /* Embed Foundation Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				23F91F2338CC204BAB3EEEBA /* Glyf CI Guard */,
-				AFAD7AF5B8DDE40BC42227E0 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -865,23 +867,6 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		AFAD7AF5B8DDE40BC42227E0 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-input-files.xcfilelist",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
 		C8CC703A9B26E74C93D1C4E8 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -1058,6 +1043,7 @@
 				22D65AB7F68DF03931D9BEA4 /* GlyfSession.swift in Sources */,
 				D033B5F0AA58522508224FF1 /* GoogleAccess.swift in Sources */,
 				7ABC17A43FEC8FEF681568CC /* Billing.swift in Sources */,
+				719B86642624213ECDBF06EE /* WalletSecrets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
