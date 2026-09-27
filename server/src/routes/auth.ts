@@ -57,6 +57,7 @@ export interface AuthDeps {
   verify?: (provider: Provider, idToken: string, nonce: string) => Promise<Identity | null>;
   issue?: (userId: string) => string | null;
   reviewPassword?: () => string;
+  reviewMode?: () => boolean;
   now?: () => number;
 }
 
@@ -65,10 +66,17 @@ export function authRoutes(app: FastifyInstance, deps: AuthDeps = {}): void {
   const verifyToken = deps.verify ?? ((provider, idToken, nonce) => verifyIdToken(provider, idToken, { nonce }));
   const issue = deps.issue ?? ((userId: string) => issueSession(userId));
   const reviewPassword = deps.reviewPassword ?? (() => (process.env.REVIEW_PASSWORD ?? "").trim());
+  // The on-off switch, so the password never has to be set twice: Railway's
+  // REVIEW_MODE=true while a submission is in review, false the rest of the
+  // time — the link and the door go together.
+  const reviewMode = deps.reviewMode ?? (() => (process.env.REVIEW_MODE ?? "").trim().toLowerCase() === "true");
   const now = deps.now ?? Date.now;
   const reviewMisses = new Map<string, number[]>();
 
-  app.get("/auth/config", async () => ({ ok: true, ...signInConfig() }));
+  // `review` switches the sign-in screen's App Review link on and off from
+  // the server (REVIEW_MODE on Railway).
+  app.get("/auth/config", async () =>
+    ({ ok: true, ...signInConfig(), review: reviewMode() && Boolean(reviewPassword()) }));
 
   app.post("/auth/session", async (req, reply) => {
     const parsed = SessionSchema.safeParse(req.body);
@@ -106,7 +114,9 @@ export function authRoutes(app: FastifyInstance, deps: AuthDeps = {}): void {
 
   app.post("/auth/review", async (req, reply) => {
     const expected = reviewPassword();
-    if (!expected) return reply.code(503).send({ ok: false, error: "Reviewer sign-in is not set up." });
+    if (!reviewMode() || !expected) {
+      return reply.code(503).send({ ok: false, error: "Reviewer sign-in is not set up." });
+    }
     const address = req.ip || "?";
     const recent = (reviewMisses.get(address) ?? []).filter(t => now() - t < HOUR);
     if (recent.length >= REVIEW_MISSES_PER_HOUR) {

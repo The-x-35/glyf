@@ -119,6 +119,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   @override
   void initState() {
+    Auth.reviewSignInAvailable().then((on) {
+      if (mounted && on) setState(() => _reviewDoor = true);
+    });
     super.initState();
     // Already signed in (onboarding was left half way): start after sign-in.
     if (Auth.signedIn) _step = 1;
@@ -476,8 +479,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// accounts of its own to hand Apple, so the reviewer gets this door.
   int _reviewTaps = 0;
   DateTime _reviewTapAt = DateTime.fromMillisecondsSinceEpoch(0);
+  /// The server says while a submission is in review (REVIEW_PASSWORD set);
+  /// otherwise the link and the taps do nothing at all.
+  bool _reviewDoor = false;
 
   void _reviewTap() {
+    if (!_reviewDoor) return;
     final now = DateTime.now();
     _reviewTaps = now.difference(_reviewTapAt) < const Duration(seconds: 2) ? _reviewTaps + 1 : 1;
     _reviewTapAt = now;
@@ -506,9 +513,26 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               const Text('App Review sign-in',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Glass.ink)),
               const SizedBox(height: 6),
-              const Text('The password from App Store Connect.',
+              const Text('The sign-in information from App Store Connect.',
                   style: TextStyle(fontSize: 13.5, color: Glass.inkSoft)),
               const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Glass.hairline),
+                ),
+                child: const Row(
+                  children: [
+                    Text('User name', style: TextStyle(fontSize: 13.5, color: Glass.inkSoft)),
+                    Spacer(),
+                    Text('review@tryglyf.com',
+                        style: TextStyle(fontSize: 14, color: Glass.ink, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
               TextField(
                 key: const Key('onb:review-password'),
                 controller: controller,
@@ -757,6 +781,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             icon: const GoogleG(size: 20),
             onTap: _busy ? null : _google,
           ),
+          // Plainly there for Apple's reviewer while a submission is in
+          // review (the server's REVIEW_PASSWORD switches it); gone the rest
+          // of the time. The ASC notes point at it.
+          if (_reviewDoor) ...[
+            const SizedBox(height: 2),
+            Center(
+              child: TextButton(
+                key: const Key('onb:review'),
+                onPressed: _busy ? null : _showReviewSignIn,
+                child: const Text('App Review sign-in',
+                    style: TextStyle(fontSize: 12.5, color: Glass.inkSoft, fontWeight: FontWeight.w500)),
+              ),
+            ),
+          ],
           if (_signInError != null)
             Padding(
               padding: const EdgeInsets.only(top: 10),

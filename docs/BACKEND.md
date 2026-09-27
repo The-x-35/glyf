@@ -285,7 +285,7 @@ None of this works across multiple server instances. A deployment must run one i
 | 25b | GET | `/rates/crypto?symbols=SOL,USDC` | Dollar price of the verified Solana token behind a ticker (Jupiter, cached 60s), with its token address for Buy | Session | `routes/rates.ts` | iOS keyboard, Android IME (cashtags) |
 | 25c | GET | `/rates/token?mint=<address>` | The token at a copied or typed Solana address (`{symbol, name, decimals, usd?, verified}`), or `token: null` for a wallet; 503 when Jupiter can't be asked, never a guess | Session | `routes/rates.ts` | iOS keyboard, Android IME (Send and Buy chips) |
 | 25d | POST | `/wallet/rpc` `{method, params}` | Relays one Solana JSON-RPC call to `SOLANA_RPC_URL`: getLatestBlockhash, getBalance, getTokenAccountsByOwner, getAccountInfo, sendTransaction, getSignatureStatuses only. 503 unset, 400 other methods, the node's own error passed through, 502 when it doesn't answer | Session | `routes/wallet.ts` | Flutter wallet |
-| 25e | POST | `/auth/review` `{password}` | App Review's door: `REVIEW_PASSWORD` in, a session for the shared `review:appstore` account out, with a month of Max put on it (a `review.max` purchase row). Ten wrong tries an hour per address; 503 while the variable is unset. Open path (no session yet) | No | `routes/auth.ts` | Flutter app (the sign-in screen's hidden triple-tap) |
+| 25e | POST | `/auth/review` `{password}` | App Review's door: `REVIEW_PASSWORD` in, a session for the shared `review:appstore` account out, with a month of Max put on it (a `review.max` purchase row) and the `plan` in the reply. Ten wrong tries an hour per address; 503 while `REVIEW_MODE` isn't `true` (or the password is unset). `/auth/config` carries `review: true/false` so the app shows or hides the sign-in screen's link to match. Open path (no session yet) | No | `routes/auth.ts` | Flutter app (the sign-in screen's App Review link, or a triple-tap on the orb) |
 | 26 | POST | `/tools/run` | Run one keyless tool | No | `routes/tools.ts` | Client methods exist in both keyboards, no current call sites found |
 | 27 | GET | `/connectors/status?deviceId=` | Provider configured/connected state | No | `routes/connector.ts` | Flutter app |
 | 28 | GET | `/oauth/google/start?deviceId=&scopes=` | Google consent URL | No | `routes/connector.ts` | Flutter app |
@@ -1356,7 +1356,8 @@ Names only. Values live in `server/.env` (never committed). "Example" says wheth
 
 | Variable | Purpose | Required | Default | Example | Read in |
 |---|---|---|---|---|---|
-| `REVIEW_PASSWORD` | The password App Store Connect's Sign-In Information hands App Review (user name review@tryglyf.com); signs into the shared review account with a month of Max | For app submissions | unset (`/auth/review` answers 503) | Yes (placeholder) | `routes/auth.ts` |
+| `REVIEW_PASSWORD` | The password App Store Connect's Sign-In Information hands App Review (user name review@tryglyf.com); signs into the shared review account with a month of Max. Set once and left alone | For app submissions | unset (`/auth/review` answers 503) | Yes (placeholder) | `routes/auth.ts` |
+| `REVIEW_MODE` | `true` while a submission is in review: the app's sign-in screen shows its App Review link and the door works; anything else hides both | For app submissions | unset (off) | Yes (`true`) | `routes/auth.ts` |
 
 ### 11.4 Present in files but not read by the server
 

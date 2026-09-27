@@ -119,6 +119,14 @@ abstract final class Auth {
 
   static const _offline = 'No connection. Try again when you are online.';
 
+  /// Whether the sign-in screen should show App Review's door: the server
+  /// says so only while REVIEW_PASSWORD is set (a submission is in review);
+  /// removing it on Railway hides the link and shuts the route together.
+  static Future<bool> reviewSignInAvailable() async {
+    final config = await _config();
+    return config?['review'] == true;
+  }
+
   /// The door App Review comes through: the password from App Store
   /// Connect, no Apple or Google account. The sign-in screen shows it only
   /// behind a triple-tap on the orb, as the review notes say. Null once

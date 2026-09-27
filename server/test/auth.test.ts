@@ -192,7 +192,8 @@ describe("POST /auth/session", () => {
 });
 
 describe("POST /auth/review", () => {
-  function app(queries: { text: string; params?: unknown[] }[], password = "glyf-review-pass", clock = () => NOW) {
+  function app(queries: { text: string; params?: unknown[] }[], password = "glyf-review-pass",
+               clock = () => NOW, mode = true) {
     const sql: SqlQuery = async (text, params) => {
       queries.push({ text, params });
       return [];
@@ -202,6 +203,7 @@ describe("POST /auth/review", () => {
       users: new Users(sql),
       issue: (id) => `session-for-${id}`,
       reviewPassword: () => password,
+      reviewMode: () => mode,
       now: clock,
     });
     return f;
@@ -241,10 +243,19 @@ describe("POST /auth/review", () => {
     expect(queries.some(q => JSON.stringify(q.params ?? []).includes("wrong"))).toBe(false);
   });
 
-  it("is shut while no password is set", async () => {
-    const res = await app([], "").inject({
-      method: "POST", url: "/auth/review", payload: { password: "anything" },
+  it("is shut while REVIEW_MODE is off (the password stays set), and the config says so", async () => {
+    // The flag off: door shut, link gone — with the password still in place.
+    const off = app([], "glyf-review-pass", () => NOW, false);
+    const res = await off.inject({
+      method: "POST", url: "/auth/review", payload: { password: "glyf-review-pass" },
     });
     expect(res.statusCode).toBe(503);
+    expect((await off.inject({ method: "GET", url: "/auth/config" })).json().review).toBe(false);
+    // The flag on but no password: still shut.
+    expect((await app([], "").inject({
+      method: "POST", url: "/auth/review", payload: { password: "anything" },
+    })).statusCode).toBe(503);
+    // Both in place: the link shows.
+    expect((await app([]).inject({ method: "GET", url: "/auth/config" })).json().review).toBe(true);
   });
 });
