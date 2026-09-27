@@ -206,6 +206,8 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
             // Sign in with Apple is an iPhone button; Android offers Google.
             "signInApple" -> result.success(mapOf("error" to "apple_unavailable"))
             "signOutProviders" -> {
+                // The keyboard's copy of that account's calendar goes too.
+                com.demo.glyf.ime.GoogleCache.clear(ctx)
                 SignIn.signOut(ctx)
                 // Signing out takes the Calendar and Meet grant with it.
                 SignIn.disconnectGoogle(ctx) { result.success(true) }

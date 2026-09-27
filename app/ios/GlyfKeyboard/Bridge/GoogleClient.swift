@@ -286,3 +286,30 @@ enum GoogleAdded {
         AppGroupStore.writeJSON(["events": rows], name: file)
     }
 }
+
+/// Google's last answer, per account: the calendar opens on it at once
+/// (then asks Google again), and a different account never shows another
+/// one's events.
+enum GoogleCache {
+    private static let file = "google-calendar.json"
+
+    static func load(for email: String?) -> (events: [CalendarText.Event], at: Date)? {
+        guard let json = AppGroupStore.readJSON(name: file),
+              let owner = json["email"] as? String, owner == (email ?? ""),
+              let at = json["at"] as? Double else { return nil }
+        return (CalendarText.events(fromJSON: json), Date(timeIntervalSince1970: at))
+    }
+
+    static func save(_ events: [CalendarText.Event], for email: String?) {
+        let iso = ISO8601DateFormatter()
+        let rows: [[String: Any]] = events.map { e in
+            var row: [String: Any] = ["title": e.title, "start": iso.string(from: e.start),
+                                      "end": iso.string(from: e.end), "allDay": e.allDay]
+            if let location = e.location { row["location"] = location }
+            if let id = e.id { row["id"] = id }
+            return row
+        }
+        AppGroupStore.writeJSON(["email": email ?? "", "at": Date().timeIntervalSince1970, "events": rows],
+                                name: file)
+    }
+}

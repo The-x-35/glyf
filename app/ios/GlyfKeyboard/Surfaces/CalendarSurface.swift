@@ -62,6 +62,13 @@ final class CalendarSurface: UIView {
         self.hasFullAccess = hasFullAccess
         super.init(frame: .zero)
         backgroundColor = Glass.touchableGrid
+        // Google connected: its last answer for THIS account at once, then
+        // ask again; the iPhone's own calendars show from the start.
+        if GoogleAccess.hasCalendar {
+            let email = GoogleAccess.load()?.email
+            googleFetched = GoogleCache.load(for: email)?.events
+            googleNote = "Google Calendar\(email.map { " · \($0)" } ?? "") · syncing…"
+        }
         load()
         build()
         render()
@@ -77,7 +84,6 @@ final class CalendarSurface: UIView {
     /// How the last ask went, said under the day's events: when it synced,
     /// or what Google refused (it used to fail in silence).
     private var googleNote: String?
-
     private func load() {
         var base: [CalendarText.Event]
         if CalendarWriter.access(hasFullAccess: hasFullAccess) == .ready, CalendarWriter.canRead {
@@ -91,9 +97,12 @@ final class CalendarSurface: UIView {
             connected = connected || json != nil
             base = CalendarText.events(fromJSON: json)
         }
-        // Google's own list wins where it overlaps: what was added, moved,
-        // renamed or deleted on the web is what shows here.
-        if let google = googleFetched {
+        // Google connected: that account's calendar, live from Google, over
+        // the iPhone's own calendars. iCloud and the rest stay; the iPhone's
+        // (possibly stale) copy of that same Google account gives way, so an
+        // event changed or deleted on the web never shows twice or late.
+        if GoogleAccess.hasCalendar, let google = googleFetched {
+            connected = true
             base = CalendarText.withGoogle(google, over: base, primary: GoogleAccess.load()?.email, calendar: cal)
         }
         events = GoogleAdded.merged(into: base)
@@ -109,18 +118,23 @@ final class CalendarSurface: UIView {
         if let window = googleWindow, window.from <= from, window.to >= to { return }
         GoogleClient.shared.listEvents(from: from, to: to) { [weak self] result in
             guard let self else { return }
+            let email = GoogleAccess.load()?.email
             switch result {
             case .success(let list):
                 self.googleWindow = (from, to)
                 self.googleFetched = list
+                GoogleCache.save(list, for: email)
                 self.connected = true
                 let time = DateFormatter()
                 time.timeStyle = .short
-                self.googleNote = "Google Calendar · updated \(time.string(from: Date()))"
-                self.load()
+                self.googleNote = "Google Calendar\(email.map { " · \($0)" } ?? "") · updated \(time.string(from: Date()))"
             case .failure(let failure):
+                // Nothing new from Google: its last answer stays when there is
+                // one, beside the iPhone's own calendars.
                 self.googleNote = "Google Calendar didn't sync: \(GoogleClient.say(failure))"
+                    + (self.googleFetched != nil ? ". Showing the last sync" : "")
             }
+            self.load()
             self.render()
         }
     }

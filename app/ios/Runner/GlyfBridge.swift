@@ -140,7 +140,11 @@ final class GlyfBridge {
         case "googleDisconnect":
             SignIn.shared.disconnectGoogle { result(true) }
         case "signOutProviders":
-            // Signing out takes the Calendar and Meet grant with it.
+            // Signing out takes the Calendar and Meet grant with it, and the
+            // keyboard's copy of that account's calendar.
+            if let dir = AppGroupStore.bridgeDir {
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent("google-calendar.json"))
+            }
             SignIn.shared.disconnectGoogle { result(true) }
         case "sessionLoad":
             result(SessionKeychain.load())

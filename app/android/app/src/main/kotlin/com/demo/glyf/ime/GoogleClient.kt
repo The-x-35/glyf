@@ -260,3 +260,35 @@ object GoogleAdded {
         runCatching { java.io.File(ctx.filesDir, FILE).writeText(rows.toString()) }
     }
 }
+
+/** Google's last answer, per account (GoogleCache in GoogleClient.swift):
+ *  the calendar opens on it at once, then asks again, and a different
+ *  account never shows another one's events. */
+object GoogleCache {
+    private const val FILE = "google-calendar.json"
+
+    fun load(ctx: Context, email: String?): List<CalendarText.Event>? = runCatching {
+        val o = org.json.JSONObject(java.io.File(ctx.filesDir, FILE).readText())
+        if (o.optString("email") != (email ?: "")) return null
+        val rows = o.getJSONArray("events")
+        (0 until rows.length()).map { i ->
+            val r = rows.getJSONObject(i)
+            CalendarText.Event(r.getString("title"), r.getLong("start"), r.getLong("end"), r.optBoolean("allDay"),
+                location = r.optString("location").takeIf { it.isNotEmpty() })
+        }
+    }.getOrNull()
+
+    fun save(ctx: Context, events: List<CalendarText.Event>, email: String?) {
+        val rows = org.json.JSONArray()
+        for (e in events) rows.put(org.json.JSONObject().apply {
+            put("title", e.title); put("start", e.start); put("end", e.end); put("allDay", e.allDay)
+            e.location?.let { put("location", it) }
+        })
+        runCatching {
+            java.io.File(ctx.filesDir, FILE).writeText(org.json.JSONObject()
+                .put("email", email ?: "").put("at", System.currentTimeMillis()).put("events", rows).toString())
+        }
+    }
+
+    fun clear(ctx: Context) { runCatching { java.io.File(ctx.filesDir, FILE).delete() } }
+}

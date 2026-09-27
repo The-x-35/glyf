@@ -82,7 +82,22 @@ class CalendarPanelView(
     private fun soft(alpha: Int) =
         Color.argb(alpha, Color.red(palette.ink), Color.green(palette.ink), Color.blue(palette.ink))
 
+    /** Google's list for the window on screen, once it has answered; the
+     *  window it covers, so month steps only refetch when they leave it. */
+    private var googleFetched: List<CalendarText.Event>? = null
+    private var googleWindow: Pair<Long, Long>? = null
+    /** How the last ask went, said under the day's events. */
+    private var googleNote: String? = null
+    private fun primary() = com.demo.glyf.store.GoogleAccess.load(context)?.email
+
     init {
+        // Google connected: its last answer for THIS account at once, then
+        // ask again; the phone's own calendars show from the start.
+        if (com.demo.glyf.store.GoogleAccess.hasCalendar(ctx)) {
+            val email = primary()
+            googleFetched = GoogleCache.load(ctx, email)
+            googleNote = "Google Calendar" + (email?.let { " · $it" } ?: "") + " · syncing…"
+        }
         loadEvents()
         val root = panelBody
         // Header: close, then the tool's name, like the other panels.
@@ -382,21 +397,17 @@ class CalendarPanelView(
         setOnClickListener { onTap() }
     }
 
-    /** Google's list for the window on screen, once it has answered; the
-     *  window it covers, so month steps only refetch when they leave it. */
-    private var googleFetched: List<CalendarText.Event>? = null
-    private var googleWindow: Pair<Long, Long>? = null
-    /** How the last ask went, said under the day's events. */
-    private var googleNote: String? = null
-    private fun primary() = com.demo.glyf.store.GoogleAccess.load(context)?.email
 
     private fun loadEvents() {
         val from = (month.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -7) }.timeInMillis
         val to = (month.clone() as Calendar).apply { add(Calendar.MONTH, 1); add(Calendar.DAY_OF_MONTH, 7) }.timeInMillis
-        // Google's own list wins where it overlaps: what was added, moved,
-        // renamed or deleted on the web is what shows here.
+        // Google connected: that account's calendar, live from Google, over
+        // the phone's own calendars; the phone's (possibly stale) copy of
+        // that same account gives way, so nothing shows twice or late.
         val phone = CalendarText.load(context, from, to)
-        val base = googleFetched?.let { CalendarText.withGoogle(it, phone, primary = primary()) } ?: phone
+        val google = googleFetched
+        val base = if (google != null && com.demo.glyf.store.GoogleAccess.hasCalendar(context))
+            CalendarText.withGoogle(google, phone, primary = primary()) else phone
         events = GoogleAdded.merged(context, base)
         refreshGoogle(from, to)
     }
@@ -406,16 +417,22 @@ class CalendarPanelView(
         if (!com.demo.glyf.store.GoogleAccess.hasCalendar(context)) return
         googleWindow?.let { if (it.first <= from && it.second >= to) return }
         GoogleClient.listEvents(context, from, to) { list, failure ->
+            val email = primary()
             if (list == null) {
-                googleNote = "Google Calendar didn't sync: " + GoogleClient.say(failure ?: GoogleClient.Failure.REFUSED)
-                render()
-                return@listEvents
+                // Nothing new: its last answer when there is one, else the
+                // phone's own calendar, and the note says which.
+                googleNote = "Google Calendar didn't sync: " + GoogleClient.say(failure ?: GoogleClient.Failure.REFUSED) +
+                    if (googleFetched != null) ". Showing the last sync" else ""
+            } else {
+                googleWindow = from to to
+                googleFetched = list
+                GoogleCache.save(context, list, email)
+                googleNote = "Google Calendar" + (email?.let { " · $it" } ?: "") + " · updated " +
+                    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
             }
-            googleWindow = from to to
-            googleFetched = list
-            googleNote = "Google Calendar · updated " +
-                java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
-            val base = CalendarText.withGoogle(list, CalendarText.load(context, from, to), primary = primary())
+            val phone = CalendarText.load(context, from, to)
+            val google = googleFetched
+            val base = if (google != null) CalendarText.withGoogle(google, phone, primary = primary()) else phone
             events = GoogleAdded.merged(context, base)
             render()
         }
