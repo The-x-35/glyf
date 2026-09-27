@@ -29,7 +29,9 @@ object GoogleClient {
     fun say(f: Failure): String = when (f) {
         Failure.RECONNECT -> "Sign in with Google again in Glyf"
         Failure.UNREACHABLE -> "Couldn't reach Google"
-        Failure.API_OFF -> "the Calendar API is off in Google Cloud"
+        // The Android client's project number leads its id; the Play
+        // services grant doesn't carry it, so the message stays general.
+        Failure.API_OFF -> "the Calendar API is off in Google Cloud (the project with Glyf's sign-in)"
         Failure.NO_SCOPE -> "turn Calendar on again in Glyf › Connected tools"
         else -> "Google said no"
     }

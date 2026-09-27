@@ -25,7 +25,11 @@ final class GoogleClient {
         switch failure {
         case .reconnect: return "Sign in with Google again in Glyf"
         case .unreachable: return "Couldn't reach Google"
-        case .apiOff: return "the Calendar API is off in Google Cloud"
+        // The project is the one Glyf's iOS client belongs to: its number
+        // leads the client id, so the console can be pointed at the right one.
+        case .apiOff:
+            let project = GoogleAccess.load()?.clientId.split(separator: "-").first.map(String.init)
+            return "the Calendar API is off in Google Cloud" + (project.map { " project \($0)" } ?? ""
         case .noScope: return "turn Calendar on again in Glyf › Connected tools"
         case .refused, .notConnected: return "Google said no"
         }
