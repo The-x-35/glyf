@@ -100,6 +100,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var clipboardPanel: ClipboardPanel?
     /// g menu → Games: Snake and Chomp over the key area.
     private var games: GamesSurface?
+    private var pay: PaySurface?
+    /// What the pay strip opens with (set right before setSurface(.pay)).
+    private var pendingPay: PaySurface.Intent?
     private var connector: ConnectorSurface?
     /// The Calendar tool: a month and the chosen day's events.
     private var calendarView: CalendarSurface?
@@ -115,7 +118,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var cursorMirror: CursorMirror?
     private var lastCursorAdjust: CFTimeInterval = 0
 
-    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard, games }
+    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard, games, pay }
     private var surface: Surface = .none
 
     /// When set, key input routes into an inline editor (bar prompt / emoji search).
@@ -196,11 +199,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return search?.expandedForResults == true
                 ? base : base + Glass.barExtra + (search?.landingExtra ?? 0)
         case .noteEdit: return base + NoteEditSurface.stripHeight
+        // Paying is a panel over the keys; typing the amount collapses it
+        // to a strip with the digits below, like a New Event title.
+        case .pay where pay?.editingAmount == true: return base + PaySurface.editStripHeight
         // A New Event title being typed: its strip rides over the keys, like
         // emoji search.
         case .connector where calendarView?.editingTitle == true:
             return base + EventComposer.editStripHeight
-        case .shell, .connector, .act, .clipboard, .games: return base
+        case .shell, .connector, .act, .clipboard, .games, .pay: return base
         }
     }
 
@@ -509,6 +515,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             }
         }
         toolbar.setRunsRemaining(GlyfCatalog.cachedRunsRemaining())
+        showPayOutcomeIfFresh()
         startTourWatch()
         // Host input sessions (Flutter especially) finish attaching a beat
         // AFTER viewDidAppear — inserting immediately loses the text.
@@ -577,6 +584,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .emoji where emoji?.searchActive != true: return ("face.smiling", "Emoji")
         case .act: return ("sparkles", "Glyf")
         case .games: return ("gamecontroller", "Games")
+        case .pay where pay?.editingAmount != true:
+            return ("dollarsign.circle", pay?.headerTitle ?? "Pay")
         case .connector where connector?.searchActive != true: return ("calendar", "Calendar")
         default: return (nil, nil)
         }
@@ -734,6 +743,19 @@ final class GlyfKeyboardViewController: UIInputViewController {
                                          height: EventComposer.editStripHeight)
             let keysY = Glass.toolbarHeight + EventComposer.editStripHeight
             keyboardView.frame = CGRect(x: 0, y: keysY, width: w, height: max(0, h - keysY))
+        case .pay where pay?.editingAmount == true:
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            keyboardView.isHidden = false
+            pay?.frame = CGRect(x: 0, y: Glass.toolbarHeight, width: w,
+                                height: PaySurface.editStripHeight)
+            let payKeysY = Glass.toolbarHeight + PaySurface.editStripHeight
+            keyboardView.frame = CGRect(x: 0, y: payKeysY, width: w, height: max(0, h - payKeysY))
+        case .pay:
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            keyboardView.isHidden = true
+            pay?.frame = panelRect(w, h)
         case .connector:
             toolbar.isHidden = connector?.searchActive == true
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
@@ -815,7 +837,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             for overlay in [self.shell, self.bar, self.emoji, self.connector,
                             self.search, self.noteEdit, self.hud, self.calendarView,
                             self.tonesPopup, self.act, self.clipStrip,
-                            self.clipboardPanel, self.games] as [UIView?] {
+                            self.clipboardPanel, self.games, self.pay] as [UIView?] {
                 overlay?.alpha = 1
             }
             self.view.layoutIfNeeded()
@@ -857,6 +879,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
             act?.removeFromSuperview(); act = nil
         case .clipboard: clipboardPanel?.removeFromSuperview(); clipboardPanel = nil
         case .games: games?.stop(); games?.removeFromSuperview(); games = nil
+        case .pay:
+            pay?.removeFromSuperview(); pay = nil
+            keyboardView.setMode(.letters)
         case .none: break
         }
         inlineTarget = nil
@@ -935,6 +960,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
             prepareEntrance(g, animated: animated)
             games = g
             MemoryLogger.logSurface("games")
+        case .pay:
+            let p = PaySurface(intent: pendingPay ?? .send(to: nil, amount: nil, token: nil))
+            pendingPay = nil
+            p.delegate = self
+            content.addSubview(p)
+            prepareEntrance(p, animated: animated)
+            pay = p
+            MemoryLogger.logSurface("pay")
         case .none:
             break
         }
@@ -960,6 +993,21 @@ final class GlyfKeyboardViewController: UIInputViewController {
     }
 
     // MARK: Tones popup (§6.13 R)
+
+    /// A payment finished while the keyboard was away (the app wrote how
+    /// it went into shared settings): said once, back in the chat.
+    private func showPayOutcomeIfFresh() {
+        _ = SettingsStore.reloadIfChanged()
+        guard let raw = SettingsStore.current.walletOutcome, !raw.isEmpty else { return }
+        SettingsStore.update { $0.walletOutcome = nil }
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let title = obj["title"] as? String else { return }
+        let at = obj["at"] as? Double ?? 0
+        guard Date().timeIntervalSince1970 - at < 5 * 60 else { return }
+        let detail = obj["detail"] as? String
+        KeyboardToast.show(in: content, text: detail.map { "\(title) · \($0)" } ?? title)
+    }
 
     private func showTonesPopup() {
         guard surface == .none, !isSecureField else { return }
@@ -1203,6 +1251,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return .other(close: "toolbar:close")
         case .noteEdit:
             return .other(close: "noteedit:close")
+        case .pay:
+            return .other(close: "pay:close")
         case .bar:
             return .other(close: "bar:close|toolbar:close")
         }
@@ -1845,6 +1895,11 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
     }
 
     func kbReturnTapped() {
+        if inlineTarget != nil, surface == .pay {
+            // Return = done typing the amount; Send stays a deliberate tap.
+            pay?.endAmount()
+            return
+        }
         if inlineTarget != nil, surface == .search {
             // Return = run the search (Gboard parity); the query stays live.
             search?.submit()
@@ -2404,7 +2459,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         case "ask": setSurface(.none); openBar(autoRun: nil)
         case "dictation": setSurface(.none); startDictationHandoff()
         // Paying is signed in the app's wallet, never in the keyboard.
-        case "pay": setSurface(.none); openApp(path: "wallet")
+        // Paying stays in the keyboard; only the signature is Phantom's.
+        case "pay":
+            pendingPay = .send(to: nil, amount: nil, token: nil)
+            setSurface(.pay)
         case "calendar": setSurface(.connector("calendar"))
         case "games": setSurface(.games)
         case "vault", "glyfs", "shorthand", "keys", "settings":
@@ -2619,28 +2677,39 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         updateCandidates()
     }
 
-    /// Send and Buy happen in the app: the keyboard never signs, Phantom
-    /// does, opened from there. A copy that was used this way must not bring
+    /// Send and Buy stay in the keyboard: the chip opens the pay strip over
+    /// the keys, and only the signature leaves for Phantom (through the app,
+    /// the one hop iOS allows). A copy that was used this way must not bring
     /// its chip back on every empty field until something else is copied.
+    /// The tour still practises on the app's sheet, never for real.
     func toolbarSmartExtraTapped(_ chip: Smart.Chip) {
         switch chip {
         case .pay(let address, let amount, let token, _):
             ClipContext.markDone()
             cachedPaste = nil
-            var query = ["to": address]
-            if let amount { query["amount"] = amount }
-            if let token { query["token"] = token }
-            openApp(path: "wallet", query: query)
-        case .buy(let mint, let symbol, _, _):
+            if tourStep != nil {
+                var query = ["to": address]
+                if let amount { query["amount"] = amount }
+                if let token { query["token"] = token }
+                openApp(path: "wallet", query: query)
+                toolbar.showSmart(nil)
+                return
+            }
+            pendingPay = .send(to: address, amount: amount, token: token)
+        case .buy(let mint, let symbol, let price, _):
             ClipContext.markDone()
             cachedPaste = nil
-            openApp(path: "buy", query: ["mint": mint, "symbol": symbol])
-        case .money(_, _, let mint?):
-            openApp(path: "buy", query: ["mint": mint])
+            pendingPay = .buy(mint: mint, symbol: symbol, price: price)
+        case .money(let shown, _, let mint?):
+            // "1 SOL = $121.39": the ticker and its price, off the chip.
+            let parts = shown.split(separator: " ")
+            pendingPay = .buy(mint: mint,
+                              symbol: parts.count > 1 ? String(parts[1]) : "",
+                              price: parts.count > 3 ? String(parts[3]) : nil)
         default:
             return
         }
-        toolbar.showSmart(nil)
+        setSurface(.pay)
     }
 
     /// glyf://open?path=… with the path and its query as ONE encoded value,
@@ -3024,5 +3093,37 @@ extension GlyfKeyboardViewController: ConnectorSurfaceDelegate {
 
     func connectorOpenApp(path: String) {
         openApp(path: path)
+    }
+}
+
+// MARK: - PaySurfaceDelegate
+
+extension GlyfKeyboardViewController: PaySurfaceDelegate {
+
+    /// The panel and its amount strip trade places: the keys come up on
+    /// the digits while the amount is typed, and leave again after.
+    func payLayoutChanged() {
+        guard surface == .pay else { return }
+        let editor = pay?.activeEditor
+        inlineTarget = editor
+        pay?.amountEditor.isActive = editor != nil
+        keyboardView.setMode(editor != nil ? .symbols1 : .letters)
+        applySurfaceLayout(animated: true)
+    }
+
+    /// The one hop iOS forces: the app opens, builds the payment and opens
+    /// Phantom at once; the keyboard is back on the keys for the return.
+    func payHandOff(query: [String: String]) {
+        setSurface(.none)
+        openApp(path: "pay", query: query)
+    }
+
+    func payConnect() {
+        setSurface(.none)
+        openApp(path: "wallet")
+    }
+
+    func payToast(_ text: String) {
+        KeyboardToast.show(in: content, text: text)
     }
 }

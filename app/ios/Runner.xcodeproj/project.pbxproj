@@ -93,6 +93,7 @@
 		9B83FF7AC3AF28555C3CBADB /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		9CCA8D9E6CBC94270F9C9BA9 /* VaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00522630AB9AC3B92A56A844 /* VaultStore.swift */; };
 		9F62851B8A37CBEE6573357F /* EmoticonData.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6DDF87D668D2D26A406049 /* EmoticonData.swift */; };
+		A061C74AD4C1975B4FEF8A9A /* PaySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = A84F81FFA1263B12519806DD /* PaySurface.swift */; };
 		A0A41F9CEBB4A5F3D00777DC /* PersonalLexicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5950219DD87CBFD3056204A6 /* PersonalLexicon.swift */; };
 		A0E22D0B77BCECE12142A56D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ED172FBD98BD64B321D6F03F /* Foundation.framework */; };
 		A402B2AE8E9B78B4BE8B8D51 /* packs.json in Resources */ = {isa = PBXBuildFile; fileRef = FAA53A6A1AB978CDAB577A80 /* packs.json */; };
@@ -279,6 +280,7 @@
 		9FDE3921B98C38CD61A63DE1 /* GlyfM0UITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfM0UITests.swift; sourceTree = "<group>"; };
 		A2B91BDDF5ACD1D415C5AC2E /* MediaGrid.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MediaGrid.swift; sourceTree = "<group>"; };
 		A6A1C1B829364960405CA876 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
+		A84F81FFA1263B12519806DD /* PaySurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaySurface.swift; sourceTree = "<group>"; };
 		AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfKeyboardViewController.swift; sourceTree = "<group>"; };
 		AB882BCA6F90D372D5921104 /* EventParse.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EventParse.swift; sourceTree = "<group>"; };
 		ADB9E43E6C30DA5026053D1C /* LocationOnce.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationOnce.swift; sourceTree = "<group>"; };
@@ -448,6 +450,7 @@
 				0B22A11BA0072E4967928DF4 /* EventComposer.swift */,
 				F9C9E98EC46A38521768AD6A /* BookingSheet.swift */,
 				F81D5A3AF9671D3656603DE7 /* GamesSurface.swift */,
+				A84F81FFA1263B12519806DD /* PaySurface.swift */,
 			);
 			name = Surfaces;
 			path = Surfaces;
@@ -962,6 +965,7 @@
 				33594247452A6609B5959E9A /* GlyfMark.swift in Sources */,
 				FAE58462515C8CE592372895 /* Games.swift in Sources */,
 				7A843811B0EA2FAF40E83F0F /* GamesSurface.swift in Sources */,
+				A061C74AD4C1975B4FEF8A9A /* PaySurface.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

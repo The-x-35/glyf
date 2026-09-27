@@ -113,24 +113,30 @@ abstract final class WalletFlow {
     final units = Sol.units(amount, token.decimals);
     if (units == null) return 'Enter an amount';
     try {
+      // Everything Solana is asked at once — the checks used to run one
+      // after the other, and the trip to Phantom felt like a wait.
+      final ownerF = SolanaRpc.owner(recipient);
+      final solF = SolanaRpc.solBalance(wallet.address);
+      final haveF = token.mint == Sol.wsol ? solF : SolanaRpc.tokenBalance(wallet.address, token.mint);
+      final hashF = private ? null : SolanaRpc.blockhash();
+      // An early refusal below leaves the others running; their failures
+      // are nobody's news then.
+      solF.ignore();
+      haveF.ignore();
+      hashF?.ignore();
       // Money sent to a token's or an app's address is gone for good: only
       // a wallet (the System Program's, or one never paid yet) is paid.
-      final owner = await SolanaRpc.owner(recipient);
+      final owner = await ownerF;
       if (owner == Sol.tokenProgram || owner == Sol.token2022Program) return 'That’s a token’s address, not a wallet';
       if (owner != null && owner != Sol.systemProgram) return 'That isn’t a wallet address';
       // What Phantom would refuse anyway, said before the trip there.
-      final short = await _shortfall(wallet.address, units, token, private: private);
+      final short = _shortfall(await solF, await haveF, units, token, private: private);
       if (short != null) return short;
       final Uint8List tx;
       if (private) {
         tx = await MagicBlock.privateTransfer(from: wallet.address, to: recipient, amount: units, mint: token.mint);
       } else if (token.mint == Sol.wsol) {
-        tx = Sol.transferSol(
-          from: wallet.address,
-          to: recipient,
-          lamports: units,
-          blockhash: await SolanaRpc.blockhash(),
-        );
+        tx = Sol.transferSol(from: wallet.address, to: recipient, lamports: units, blockhash: await hashF!);
       } else {
         tx = Sol.transferToken(
           from: wallet.address,
@@ -138,7 +144,7 @@ abstract final class WalletFlow {
           mint: token.mint,
           amount: units,
           decimals: token.decimals,
-          blockhash: await SolanaRpc.blockhash(),
+          blockhash: await hashF!,
         );
       }
       final pending = PendingPay(
@@ -198,13 +204,14 @@ abstract final class WalletFlow {
         link.value = wallet;
         await _shareAddress(wallet.address);
         Telemetry.log('wallet_connected', {});
-        yield PayOutcome(state: PayState.done, title: 'Phantom connected', detail: Sol.short(wallet.address));
+        yield await _told(PayOutcome(
+            state: PayState.done, title: 'Phantom connected', detail: Sol.short(wallet.address)));
       } on PhantomError catch (e) {
-        yield PayOutcome(
+        yield await _told(PayOutcome(
           state: e.cancelled ? PayState.cancelled : PayState.failed,
           title: e.cancelled ? 'Not connected' : 'Couldn’t connect',
           detail: e.cancelled ? null : e.message,
-        );
+        ));
       }
       return;
     }
@@ -229,7 +236,7 @@ abstract final class WalletFlow {
         throw const WalletError('Solana turned it down. Nothing was sent');
       }
       Telemetry.log('wallet_${pending.kind.name}_done', {});
-      yield PayOutcome(
+      yield await _told(PayOutcome(
         state: PayState.done,
         title: switch (pending.kind) {
           PayKind.buy => 'Bought',
@@ -239,31 +246,30 @@ abstract final class WalletFlow {
         detail: pending.summary,
         signature: signature,
         kind: pending.kind,
-      );
+      ));
     } on PhantomError catch (e) {
-      yield PayOutcome(
+      yield await _told(PayOutcome(
         state: e.cancelled ? PayState.cancelled : PayState.failed,
         title: e.cancelled ? 'Cancelled in Phantom' : 'Phantom couldn’t sign it',
         detail: e.cancelled ? 'Nothing was sent' : e.message,
         kind: pending.kind,
-      );
+      ));
     } on WalletError catch (e) {
-      yield PayOutcome(state: PayState.failed, title: 'Didn’t go through', detail: e.message, kind: pending.kind);
+      yield await _told(
+          PayOutcome(state: PayState.failed, title: 'Didn’t go through', detail: e.message, kind: pending.kind));
     } finally {
       await BridgeSecrets().clear(_pendingName);
     }
   }
 
-  /// Why [wallet] can't send [units] of [token], or null when it can. A
+  /// Why the wallet can't send [units] of [token], or null when it can. A
   /// send costs about 0.000005 SOL; a private one about 0.002 SOL more.
-  static Future<String?> _shortfall(String wallet, BigInt units, TokenInfo token, {bool private = false}) async {
-    final sol = await SolanaRpc.solBalance(wallet);
+  static String? _shortfall(BigInt sol, BigInt have, BigInt units, TokenInfo token, {bool private = false}) {
     final fee = BigInt.from(private ? 2100000 : 10000);
     if (token.mint == Sol.wsol) {
       if (units + fee <= sol) return null;
       return sol == BigInt.zero ? 'You have no SOL' : 'You only have ${Sol.format(sol, Sol.solDecimals)} SOL';
     }
-    final have = await SolanaRpc.tokenBalance(wallet, token.mint);
     if (units > have) {
       return have == BigInt.zero
           ? 'You have no ${token.symbol}'
@@ -273,6 +279,24 @@ abstract final class WalletFlow {
       return private ? 'A private send needs about 0.002 SOL for fees' : 'Add a little SOL for the network fee';
     }
     return null;
+  }
+
+  /// How it went, written where the keyboard reads (shared settings): back
+  /// in the chat, the keyboard says it once and clears it.
+  static Future<PayOutcome> _told(PayOutcome o) async {
+    try {
+      await GlyfBridge.updateSharedSettings((s) {
+        s['walletOutcome'] = jsonEncode({
+          'title': o.title,
+          if (o.detail != null) 'detail': o.detail,
+          'at': DateTime.now().millisecondsSinceEpoch / 1000.0,
+        });
+        return s;
+      });
+    } catch (_) {
+      // A toast the keyboard misses is no reason to fail the payment.
+    }
+    return o;
   }
 
   /// Phantom, or its App Store page when it isn't installed.

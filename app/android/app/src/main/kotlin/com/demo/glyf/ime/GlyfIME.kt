@@ -297,6 +297,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         android.util.Log.d("GlyfKB", "onStartInputView restarting=$restarting overlay=${overlay != null}")
         settings = SettingsStore.load(this)
         settingsStamp = com.demo.glyf.store.Bridge.file(this, SettingsStore.FILE).lastModified()
+        showPayOutcomeIfFresh()
         val dark = when (settings.optString("appearance", "auto")) {
             "dark" -> true
             "light" -> false
@@ -454,7 +455,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "shorthand" -> showShorthandPanel()
             "keys" -> showKeysPanel()
             // Paying is signed in the app's wallet, never in the keyboard.
-            "pay" -> { dismissFeaturePanel(); openAppPath("wallet") }
+            "pay" -> showPayPanel(PayPanelView.Intent.Send(null, null, null))
             "settings" -> { dismissFeaturePanel(); openApp() }
         }
     }
@@ -1719,9 +1720,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 }
                 // A token's price can be bought, too: Buy beside Insert.
                 val mint = (chip as? Smart.Chip.Money)?.buy
+                // "1 SOL = $121.39": the ticker and its price, off the chip.
+                val shown = (chip as? Smart.Chip.Money)?.shown?.split(" ")
                 showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "",
                     extra = if (mint != null) "Buy" else null,
-                    onExtra = { hideStripChip(); if (mint != null) openAppPath("buy", mapOf("mint" to mint)) }) {
+                    onExtra = {
+                        hideStripChip()
+                        if (mint != null) showPayPanel(PayPanelView.Intent.Buy(
+                            mint, shown?.getOrNull(1) ?: "", shown?.getOrNull(3)))
+                    }) {
                     currentInputConnection?.commitText(Smart.insert(chip), 1)
                     hideStripChip()
                     updateSuggestions()
@@ -1749,14 +1756,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             is Smart.Chip.Pay -> {
                 showStripChip("pay", Smart.key(chip), Smart.display(chip), "Send") {
                     hideStripChip()
-                    openAppPath("wallet", sendQuery(chip.address, chip.amount, chip.token))
+                    if (tourStep() != null) {
+                        openAppPath("wallet", sendQuery(chip.address, chip.amount, chip.token))
+                    } else {
+                        showPayPanel(PayPanelView.Intent.Send(chip.address, chip.amount, chip.token))
+                    }
                 }
                 return true
             }
             is Smart.Chip.Buy -> {
                 showStripChip("buy", Smart.key(chip), Smart.display(chip), "Buy") {
                     hideStripChip()
-                    openAppPath("buy", mapOf("mint" to chip.mint, "symbol" to chip.symbol))
+                    showPayPanel(PayPanelView.Intent.Buy(chip.mint, chip.symbol, chip.price))
                 }
                 return true
             }
@@ -1862,7 +1873,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         "Paste", extra = "Buy", onExtra = {
                             used()
                             hideStripChip()
-                            openAppPath("buy", mapOf("mint" to address, "symbol" to kind.symbol))
+                            showPayPanel(PayPanelView.Intent.Buy(address, kind.symbol, kind.usd?.let { Smart.price(it) }))
                         }) { paste() }
                 }
                 Smart.AddressKind.Wallet -> {
@@ -1871,7 +1882,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     showStripChip("paste", "Wallet", Smart.shortAddress(address), "Paste", extra = "Send", onExtra = {
                         used()
                         hideStripChip()
-                        openAppPath("wallet", sendQuery(address, asked?.first, asked?.second))
+                        if (tourStep() != null) {
+                            openAppPath("wallet", sendQuery(address, asked?.first, asked?.second))
+                        } else {
+                            showPayPanel(PayPanelView.Intent.Send(address, asked?.first, asked?.second))
+                        }
                     }) { paste() }
                 }
             }
@@ -3191,6 +3206,46 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** The Calendar tool: a month and the chosen day's events, in place of
      *  the keys (iOS CalendarSurface). */
     /** g menu → Games: Snake and Chomp over the keys, the strip staying put. */
+    /** Paying stays in the keyboard; only the signature is Phantom's,
+     *  reached through a flash of the app (PayPanelView). */
+    private fun showPayPanel(intent: PayPanelView.Intent) {
+        dismissFeaturePanel()
+        val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
+        keyboard.visibility = View.GONE
+        val panel = PayPanelView(
+            this, keyboard.palette(),
+            backendURL = settings.optString("backendURL"),
+            walletAddress = settings.optString("walletAddress").takeIf { it.isNotEmpty() },
+            intent = intent,
+            onHandOff = { query -> dismissFeaturePanel(); openAppPath("pay", query) },
+            onConnect = { dismissFeaturePanel(); openAppPath("wallet") },
+            onToast = { notice(it) },
+            onClose = { dismissFeaturePanel() },
+            clipText = { com.demo.glyf.store.ClipboardStore.clipText(this) },
+        )
+        root.addView(panel, root.indexOfChild(keyboard),
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, keysH))
+        featurePanel = panel
+        gPill?.closing = true
+    }
+
+    /** A payment finished while the keyboard was away (the app wrote how it
+     *  went into shared settings): said once, back in the chat. */
+    private fun showPayOutcomeIfFresh() {
+        val raw = settings.optString("walletOutcome")
+        if (raw.isEmpty()) return
+        val obj = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val at = obj.optDouble("at", 0.0)
+        if (imePrefs.getLong("payOutcomeAt", 0L) == at.toLong()) return
+        imePrefs.edit().putLong("payOutcomeAt", at.toLong()).apply()
+        if (System.currentTimeMillis() / 1000.0 - at > 5 * 60) return
+        val title = obj.optString("title")
+        if (title.isEmpty()) return
+        val detail = obj.optString("detail")
+        notice(if (detail.isEmpty()) title else "$title · $detail")
+    }
+
     private fun showGamesPanel() {
         dismissFeaturePanel()
         val keysH = if (keyboard.height > 0) keyboard.height else dp(216)

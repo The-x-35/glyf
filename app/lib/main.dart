@@ -10,6 +10,7 @@ import 'dictation/recording_sheet.dart';
 import 'launch/launch_overlay.dart';
 import 'onboarding/demo_chat.dart';
 import 'wallet/buy_screen.dart';
+import 'wallet/pay_launch_screen.dart';
 import 'wallet/pay_status_screen.dart';
 import 'wallet/send_screen.dart';
 import 'wallet/wallet_screen.dart';
@@ -118,6 +119,19 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       // Phantom's answer to Connect or to a payment: finished on its own
       // screen, which sends the signed payment on.
       _push((_) => PayStatusScreen(reply: uri));
+      return;
+    }
+    if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('pay') == true) {
+      // The keyboard's pay strip took the amount already: this is the flash
+      // on the way into Phantom. Inside the tour it stays practice.
+      final path = Uri.parse(uri.queryParameters['path']!);
+      final q = path.queryParameters;
+      final practice = DemoChat.onPracticePay;
+      if (practice != null) {
+        practice(q['to'], q['amount'] ?? q['usd']);
+        return;
+      }
+      _push((_) => PayLaunchScreen(query: q));
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('wallet') == true) {

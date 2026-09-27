@@ -516,7 +516,7 @@
   "area": "Pay",
   "title": "A copied wallet offers Send, a contract address Buy, and $sol a price with Buy",
   "input": "copy 26kw…dQjC, then the Bonk contract address, then type $sol in Safari's address bar",
-  "outcome": "“Wallet 26kw…dQjC” with Send; “Bonk $0.00000364” with Buy; “1 SOL = $121.39” with Insert and Buy. Each opens Send or Buy in the app, filled in",
+  "outcome": "“Wallet 26kw…dQjC” with Send; “Bonk $0.00000359” with Buy; “1 SOL = $121.39” with Insert and Buy. Each opens the keyboard's own pay panel, filled in",
   "verdict": "pass",
   "fixed": false
  },
@@ -529,5 +529,25 @@
   "outcome": "“Phantom connected”; balances load; a token's address is refused; the signed send reaches Solana, which turns it down for no SOL, said in plain words",
   "verdict": "pass",
   "fixed": true
+ },
+ {
+  "id": "S141",
+  "surface": "iPhone",
+  "area": "Pay",
+  "title": "Paying never leaves the chat: the panel over the keys, Phantom only for the signature",
+  "input": "Buy chip → panel (balance from the relay, held assets as chips, typed amount with 25%/50%/Max, live Jupiter “≈ 88.2B Bonk”) → Buy",
+  "outcome": "Glyf flashes only to open Phantom (“Opening Phantom…”); an empty wallet is refused in plain words with Try again; back in the chat the keyboard says how it went",
+  "verdict": "pass",
+  "fixed": true
+ },
+ {
+  "id": "S142",
+  "surface": "Android",
+  "area": "Pay",
+  "title": "The same pay panel on Android, with its own digit pad",
+  "input": "typed “send 20 usdc to 2YkE…” → Send chip → panel ($20 USDC → Wallet, SOL/USDC chips, Private by MagicBlock, own 1-0/25%/50%/Max pad) → Send",
+  "outcome": "The panel replaces the keys and types its own digits; Send hands to the app, which answers “Connect Phantom first” when no wallet is linked",
+  "verdict": "pass",
+  "fixed": false
  }
 ]

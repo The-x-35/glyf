@@ -134,6 +134,9 @@ struct GlyfSettings: Codable, Equatable {
     /// key). An address that is your own is one you are sharing, so the
     /// strip offers no Send for it.
     var walletAddress: String? = nil
+    /// How the last payment went, written by the app when Phantom answers
+    /// ({"title","detail","at"}); the keyboard says it once and clears it.
+    var walletOutcome: String? = nil
 
     /// The deployed API. Changing the domain? This is the only place.
     static let productionBackend = "https://api.tryglyf.com"

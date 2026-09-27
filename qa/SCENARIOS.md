@@ -2,7 +2,7 @@
 
 Run on 24, 25 and 27 September 2026 (the two app flows, S99 and S100, by hand on 17 September): the real keyboards (iPhone 17 Pro simulator, Android API 36 emulator) and the dev server with live models. Scripts: `qa/server-scenarios.mjs`, `app/ios/GlyfM0UITests/GlyfScenarioUITests.swift`, `qa/android-scenarios.mjs`.
 
-134 pass, 2 need a key, 2 fail, of 138.
+136 pass, 2 need a key, 2 fail, of 140.
 
 | ID | Where | Scenario | Result |
 | --- | --- | --- | --- |
@@ -144,6 +144,8 @@ Run on 24, 25 and 27 September 2026 (the two app flows, S99 and S100, by hand on
 | S138 | Server | A copied contract address is a token to buy; a wallet address is not | pass |
 | S139 | iPhone | A copied wallet offers Send, a contract address Buy, and $sol a price with Buy | pass |
 | S140 | App | Phantom connects, and a send comes back signed and goes to Solana | pass |
+| S141 | iPhone | Paying never leaves the chat: the panel over the keys, Phantom only for the signature | pass |
+| S142 | Android | The same pay panel on Android, with its own digit pad | pass |
 
 ## Fixed during the run
 
