@@ -148,8 +148,8 @@ export default function Privacy() {
               , including the Limited Use requirements.
             </li>
             <li>
-              <strong>Wallet.</strong> If you use Glyf&rsquo;s wallet, sign-in and signing are handled by Privy or
-              the wallet app you choose. Blockchain transactions are public by nature.
+              <strong>Wallet.</strong> If you use Glyf&rsquo;s wallet, signing is handled by the wallet app you choose, such as
+              Phantom; Glyf never holds your keys. Blockchain transactions are public by nature.
             </li>
             <li>
               <strong>Hosting.</strong> Our server runs on Railway, our database on Neon, and this website on

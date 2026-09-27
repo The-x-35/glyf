@@ -247,7 +247,7 @@ const SLIDES: Slide[] = [
         capture={c}
         points={[
           "Paste an address and the strip offers Pay",
-          "Signed in the app with a Privy wallet. The keyboard never holds a key",
+          "Signed by your own wallet: Phantom. Glyf never holds a key",
           "Private transfers through MagicBlock, settled on Solana",
           "Token prices in the strip, in dollars",
         ]}
@@ -338,7 +338,6 @@ const SLIDES: Slide[] = [
   {
     id: "trust",
     label: "Trust",
-    tone: "ink",
     render: () => (
       <div className="d-split">
         <div>
@@ -350,7 +349,7 @@ const SLIDES: Slide[] = [
         <ul className="d-grid2">
           <li>
             <b>The keyboard never signs</b>
-            <span>Payments hand off to the app, where Privy holds the wallet. No key touches the keyboard</span>
+            <span>Payments hand off to your own wallet. Phantom signs, and no key ever touches Glyf</span>
           </li>
           <li>
             <b>Your details stay encrypted</b>
@@ -586,7 +585,20 @@ export default function Deck() {
           </a>
           <span className="deck-label">{slide.label}</span>
           <div className="deck-ctl">
-            <a className="deck-pdf" href="/glyf-pitch-deck.pdf" target="_blank" rel="noopener">
+            <a
+              className="deck-pdf"
+              href="/glyf-pitch-deck.pdf"
+              target="_blank"
+              rel="noopener"
+              onClick={(e) => {
+                const root = document.documentElement;
+                const dark = root.dataset.theme === "dark" || (!root.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+                if (dark) {
+                  e.preventDefault();
+                  window.open("/glyf-pitch-deck-dark.pdf", "_blank", "noopener");
+                }
+              }}
+            >
               PDF
             </a>
             <ThemeToggle />
