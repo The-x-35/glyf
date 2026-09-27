@@ -56,6 +56,32 @@ final class VaultTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), before, "bytes untouched")
     }
 
+    /// A vault sealed with a key that is gone for good (the Keychain group
+    /// moved with a new signing team, or a phone was restored without it)
+    /// can never be opened. It is moved aside and a new vault starts, instead
+    /// of every save being refused forever. The real Keychain path, under a
+    /// service of its own.
+    func testVaultWhoseKeyIsGoneIsSetAside() throws {
+        let service = "glyf.test.vault.\(UUID().uuidString)"
+        defer {
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                           kSecAttrService as String: service] as CFDictionary)
+        }
+        let old = #"{"fields":[{"id":"1","kind":"name","label":"Name","value":"Gone"}],"combos":[],"snippets":[]}"#
+        let sealed = try AES.GCM.seal(Data(old.utf8), using: SymmetricKey(size: .bits256))
+        try sealed.combined!.write(to: tmp.appendingPathComponent(VaultStore.fileName))
+
+        let s = VaultStore(baseDir: tmp, keychainService: service)
+        XCTAssertTrue(s.load().fields.isEmpty)
+        XCTAssertFalse(s.loadFailed, "a vault nothing can open doesn't block a new one")
+        XCTAssertNil(s.upsertField(id: nil, kind: "name", label: "Name", value: "Sam"))
+        XCTAssertEqual(VaultStore(baseDir: tmp, keychainService: service).load().fields.first?.value, "Sam",
+                       "the new vault opens with the new key")
+        let aside = try FileManager.default.contentsOfDirectory(atPath: tmp.path)
+            .filter { $0.hasPrefix("\(VaultStore.fileName).unreadable-") }
+        XCTAssertEqual(aside.count, 1, "the old file is kept, only moved")
+    }
+
     // MARK: Blocked types are BLOCKED (§6.7, §11.3)
 
     func testBlockedFieldTypes() {

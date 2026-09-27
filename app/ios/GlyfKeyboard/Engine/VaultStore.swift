@@ -139,25 +139,31 @@ final class VaultStore {
 
     private let baseDir: URL?
     private let fixedKey: SymmetricKey?  // tests inject a key; prod uses Keychain
+    /// Where the key lives in the Keychain; tests use their own.
+    private let keychainService: String
     private var cached: Vault?
 
-    init(baseDir: URL? = nil, key: SymmetricKey? = nil) {
+    init(baseDir: URL? = nil, key: SymmetricKey? = nil, keychainService: String = "so.glyf.vault") {
         self.baseDir = baseDir
         self.fixedKey = key
+        self.keychainService = keychainService
     }
 
     private var root: URL? { baseDir ?? AppGroupStore.bridgeDir }
 
     // MARK: - Key management (shared Keychain group)
 
-    private static let keychainService = "so.glyf.vault"
     private static let keychainAccount = "vault-key-v1"
+
+    /// Set when the Keychain had no key and a new one was made: a vault file
+    /// sealed with the old key can then never be opened again.
+    private var keyIsNew = false
 
     private func loadOrCreateKey() -> SymmetricKey? {
         if let fixedKey { return fixedKey }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.keychainService,
+            kSecAttrService as String: keychainService,
             kSecAttrAccount as String: Self.keychainAccount,
             kSecReturnData as String: true,
         ]
@@ -172,7 +178,10 @@ final class VaultStore {
         query[kSecValueData as String] = keyData
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         let status = SecItemAdd(query as CFDictionary, nil)
-        if status == errSecSuccess { return key }
+        if status == errSecSuccess {
+            keyIsNew = true
+            return key
+        }
         if status == errSecDuplicateItem { return loadOrCreateKey() }
         return nil
     }
@@ -200,6 +209,19 @@ final class VaultStore {
               let plain = try? AES.GCM.open(box, using: key),
               let vault = try? JSONDecoder().decode(Vault.self, from: plain)
         else {
+            // The key is new, so the file was sealed with one that is gone
+            // (the Keychain group moved with a new signing team, or the phone
+            // was restored without it). Nothing can ever open it: set it
+            // aside and start again, or every save is refused forever.
+            if keyIsNew {
+                let aside = root.appendingPathComponent("\(Self.fileName).unreadable-\(Int(Date().timeIntervalSince1970))")
+                try? FileManager.default.moveItem(at: url, to: aside)
+                keyIsNew = false
+                loadFailed = false
+                let empty = Vault()
+                cached = empty
+                return empty
+            }
             // Something IS stored and we could not read it. Do not cache the
             // emptiness — a later load, after a fix or an unlock, must get
             // another chance at the real thing.
