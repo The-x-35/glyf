@@ -29,7 +29,7 @@ final class GoogleClient {
         // leads the client id, so the console can be pointed at the right one.
         case .apiOff:
             let project = GoogleAccess.load()?.clientId.split(separator: "-").first.map(String.init)
-            return "the Calendar API is off in Google Cloud" + (project.map { " project \($0)" } ?? ""
+            return "the Calendar API is off in Google Cloud" + (project.map { " project \($0)" } ?? "")
         case .noScope: return "turn Calendar on again in Glyf › Connected tools"
         case .refused, .notConnected: return "Google said no"
         }
