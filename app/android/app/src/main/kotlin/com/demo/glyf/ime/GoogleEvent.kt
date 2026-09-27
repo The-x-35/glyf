@@ -16,6 +16,39 @@ object GoogleEvent {
 
     /** The title, the times (a day for an all-day event, the end day not
      *  included, as Google counts them), the guests, and a Meet call. */
+    /** events.list's answer as the keyboard's own events: each recurrence
+     *  its own row (`singleEvents`), all-day ends exclusive the way Google
+     *  counts them, cancelled instances left out. */
+    fun eventsFromList(json: org.json.JSONObject,
+                       zone: java.util.TimeZone = java.util.TimeZone.getDefault()): List<CalendarText.Event> {
+        val items = json.optJSONArray("items") ?: return emptyList()
+        val iso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US)
+        val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply { timeZone = zone }
+        fun moment(node: org.json.JSONObject?): Pair<Long, Boolean>? {
+            if (node == null) return null
+            node.optString("dateTime").takeIf { it.isNotEmpty() }?.let { s ->
+                runCatching { iso.parse(s)?.time }.getOrNull()?.let { return it to false }
+            }
+            node.optString("date").takeIf { it.isNotEmpty() }?.let { s ->
+                runCatching { day.parse(s)?.time }.getOrNull()?.let { return it to true }
+            }
+            return null
+        }
+        val out = mutableListOf<CalendarText.Event>()
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            if (item.optString("status") == "cancelled") continue
+            val (start, allDay) = moment(item.optJSONObject("start")) ?: continue
+            val end = moment(item.optJSONObject("end"))?.first ?: start
+            val title = item.optString("summary").trim()
+            out.add(CalendarText.Event(
+                title = title.ifEmpty { "Busy" },
+                start = start, end = maxOf(end, start), allDay = allDay,
+                location = item.optString("location").takeIf { it.isNotEmpty() }))
+        }
+        return out
+    }
+
     fun body(title: String, start: Long, end: Long, allDay: Boolean, guests: List<String>, video: Boolean,
              tz: TimeZone = TimeZone.getDefault(), requestId: String = UUID.randomUUID().toString()): JSONObject {
         val body = JSONObject().put("summary", title)

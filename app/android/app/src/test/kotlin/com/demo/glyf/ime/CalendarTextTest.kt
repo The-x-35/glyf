@@ -56,4 +56,34 @@ class CalendarTextTest {
         val allDay = listOf(CalendarText.Event("Offsite", at(0), at(0) + 86_400_000L, true))
         assertEquals("I'm busy all day Fri 18 Sep", CalendarText.freeTime(day, allDay, tz, en, now = day))
     }
+
+    @Test fun googleListBecomesEventsAndItsCopyWins() {
+        val zone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+        val json = org.json.JSONObject("""{"items":[
+            {"summary":"Standup","id":"e1","status":"confirmed",
+             "start":{"dateTime":"2026-09-28T11:00:00+05:30"},
+             "end":{"dateTime":"2026-09-28T11:30:00+05:30"}},
+            {"summary":"Off","id":"e2",
+             "start":{"date":"2026-09-29"},"end":{"date":"2026-09-30"}},
+            {"summary":"Gone","id":"e3","status":"cancelled",
+             "start":{"dateTime":"2026-09-28T15:00:00+05:30"},
+             "end":{"dateTime":"2026-09-28T16:00:00+05:30"}}
+        ]}""")
+        val google = GoogleEvent.eventsFromList(json, zone)
+        assertEquals(2, google.size)
+        assertEquals("Standup", google[0].title)
+        assertEquals(false, google[0].allDay)
+        assertEquals(true, google[1].allDay)
+        assertEquals(86_400_000L, google[1].end - google[1].start)
+
+        // The phone still holds Standup at its old time (edited on the web):
+        // Google's copy wins for that day; what only the phone knows stays.
+        val old = CalendarText.Event("Standup", google[0].start - 3_600_000, google[0].end - 3_600_000, false)
+        val dentist = CalendarText.Event("Dentist", google[0].start + 7_200_000, google[0].end + 7_200_000, false)
+        val merged = CalendarText.withGoogle(google, listOf(old, dentist), zone)
+        assertEquals(1, merged.count { it.title == "Standup" })
+        assertEquals(google[0].start, merged.first { it.title == "Standup" }.start)
+        assertEquals(true, dentist in merged)
+        assertEquals(listOf(dentist), CalendarText.withGoogle(emptyList(), listOf(dentist), zone))
+    }
 }

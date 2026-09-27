@@ -48,6 +48,16 @@ object GoogleClient {
         (base(g)?.let { "$it/calendar/v3/calendars/primary/events" }
             ?: "https://www.googleapis.com/calendar/v3/calendars/primary/events") + "?" + GoogleEvent.QUERY
 
+    private fun listUrl(g: GoogleAccess.Grant, from: Long, to: Long): String {
+        val iso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+        iso.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val head = base(g)?.let { "$it/calendar/v3/calendars/primary/events" }
+            ?: "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        return head + "?timeMin=" + iso.format(java.util.Date(from)) +
+            "&timeMax=" + iso.format(java.util.Date(to)) +
+            "&singleEvents=true&orderBy=startTime&maxResults=250"
+    }
+
     /** A token from Google Play services: no screen when the person already
      *  agreed; RECONNECT when Google wants to ask them again. */
     fun accessToken(ctx: Context, done: (String?, Failure?) -> Unit) {
@@ -86,6 +96,51 @@ object GoogleClient {
             else done(Added(json.optString("htmlLink").takeIf { it.isNotEmpty() },
                 json.optString("hangoutLink").takeIf { it.startsWith("https://") },
                 json.optString("id").takeIf { it.isNotEmpty() }), null)
+        }
+    }
+
+    /** The person's Google Calendar between two moments, each recurrence
+     *  its own event: what Google has NOW, changes made anywhere included. */
+    fun listEvents(ctx: Context, from: Long, to: Long,
+                   done: (List<CalendarText.Event>?, Failure?) -> Unit) {
+        val g = GoogleAccess.load(ctx)
+        if (g == null || GoogleAccess.CALENDAR !in g.scopes) {
+            return run { main.post { done(null, Failure.NOT_CONNECTED) } }
+        }
+        get(ctx, listUrl(g, from, to)) { json, f ->
+            if (json == null) done(null, f ?: Failure.REFUSED)
+            else done(GoogleEvent.eventsFromList(json), null)
+        }
+    }
+
+    /** GETs with a token, once more with a fresh one on a stale 401. */
+    private fun get(ctx: Context, url: String, retry: Boolean = true,
+                    done: (JSONObject?, Failure?) -> Unit) {
+        accessToken(ctx) { token, failure ->
+            if (token == null) return@accessToken done(null, failure)
+            pool.execute {
+                var code = 0
+                var json: JSONObject? = null
+                runCatching {
+                    val c = (URL(url).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 6000
+                        readTimeout = 12000
+                        setRequestProperty("Authorization", "Bearer $token")
+                    }
+                    code = c.responseCode
+                    val stream = if (code in 200..299) c.inputStream else c.errorStream
+                    json = stream?.bufferedReader()?.readText()?.let { runCatching { JSONObject(it) }.getOrNull() }
+                }
+                main.post {
+                    when {
+                        code in 200..299 && json != null -> done(json, null)
+                        code == 401 && retry && token != "fake-access" -> get(ctx, url, false, done)
+                        else -> done(null, if (code == 0) Failure.UNREACHABLE
+                                          else if (code == 401) Failure.RECONNECT else Failure.REFUSED)
+                    }
+                }
+            }
         }
     }
 

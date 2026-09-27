@@ -36,6 +36,20 @@ enum CalendarText {
     /// shows the keyboard's own copy. The phone has it once an event with the
     /// same title starts within a minute of it; one that ended over a day ago
     /// is let go. Returns the list to show and the copies still waiting.
+    /// The phone's events with Google's own list layered in: for a day and
+    /// title Google knows, Google's copy wins — an event moved or renamed
+    /// on the web moves here too — and whatever only the phone knows stays.
+    static func withGoogle(_ google: [Event], over phone: [Event],
+                           calendar cal: Calendar = .current) -> [Event] {
+        guard !google.isEmpty else { return phone }
+        func key(_ e: Event) -> String {
+            let title = e.title.trimmingCharacters(in: .whitespaces).lowercased()
+            return "\(title)|\(cal.startOfDay(for: e.start).timeIntervalSince1970)"
+        }
+        let googleKeys = Set(google.map(key))
+        return phone.filter { !googleKeys.contains(key($0)) } + google
+    }
+
     static func withAdded(_ added: [Event], in events: [Event],
                           now: Date = Date()) -> (events: [Event], pending: [Event]) {
         func key(_ title: String) -> String { title.trimmingCharacters(in: .whitespaces).lowercased() }

@@ -65,22 +65,51 @@ final class CalendarSurface: UIView {
         load()
         build()
         render()
+        refreshGoogle()
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Google's list for the window on screen, once it has answered; the
+    /// window it covers, so month steps only refetch when they leave it.
+    private var googleFetched: [CalendarText.Event]?
+    private var googleWindow: (from: Date, to: Date)?
+
     private func load() {
+        var base: [CalendarText.Event]
         if CalendarWriter.access(hasFullAccess: hasFullAccess) == .ready, CalendarWriter.canRead {
             live = true
             connected = true
             let from = cal.date(byAdding: .day, value: -7, to: month) ?? month
             let to = cal.date(byAdding: .day, value: 45, to: month) ?? month
-            events = GoogleAdded.merged(into: CalendarWriter.events(from: from, to: to))
-            return
+            base = CalendarWriter.events(from: from, to: to)
+        } else {
+            let json = AppGroupStore.readJSON(name: "calendar.json")
+            connected = connected || json != nil
+            base = CalendarText.events(fromJSON: json)
         }
-        let json = AppGroupStore.readJSON(name: "calendar.json")
-        connected = json != nil
-        events = GoogleAdded.merged(into: CalendarText.events(fromJSON: json))
+        // Google's own list wins where it overlaps: what was added or
+        // changed on the web is what shows here.
+        base = CalendarText.withGoogle(googleFetched ?? [], over: base, calendar: cal)
+        events = GoogleAdded.merged(into: base)
+    }
+
+    /// Asks Google for the window on screen. The phone's calendar only has
+    /// what iOS has synced (or nothing, when the Google account isn't on
+    /// the phone); the list is what Google has NOW.
+    private func refreshGoogle() {
+        guard GoogleAccess.hasCalendar else { return }
+        let from = cal.date(byAdding: .day, value: -7, to: month) ?? month
+        let to = cal.date(byAdding: .day, value: 45, to: month) ?? month
+        if let window = googleWindow, window.from <= from, window.to >= to { return }
+        GoogleClient.shared.listEvents(from: from, to: to) { [weak self] result in
+            guard let self, case .success(let list) = result else { return }
+            self.googleWindow = (from, to)
+            self.googleFetched = list
+            self.connected = true
+            self.load()
+            self.render()
+        }
     }
 
     /// The list on `day`: where a plan is for, and where an event lands once added.
@@ -416,6 +445,7 @@ final class CalendarSurface: UIView {
             guard let m = cal.date(byAdding: .month, value: direction, to: month) else { return }
             month = m
             if live { load() }
+            refreshGoogle()
         } else {
             guard let d = cal.date(byAdding: .day, value: direction, to: selected) else { return }
             selected = d
@@ -423,6 +453,7 @@ final class CalendarSurface: UIView {
             if m != month {
                 month = m
                 if live { load() }
+                refreshGoogle()
             }
         }
         render()

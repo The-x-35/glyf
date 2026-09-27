@@ -103,6 +103,58 @@ final class GoogleClient {
         }
     }
 
+    /// The person's Google Calendar between two dates, each recurrence its
+    /// own event, so the keyboard's calendar shows what Google has NOW —
+    /// including everything added or changed on other devices.
+    func listEvents(from: Date, to: Date, done: @escaping (Result<[CalendarText.Event], Failure>) -> Void) {
+        guard GoogleAccess.hasCalendar, let grant = GoogleAccess.load() else {
+            return Self.main { done(.failure(.notConnected)) }
+        }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        var comps = URLComponents(url: endpoints(grant).events, resolvingAgainstBaseURL: false)!
+        comps.queryItems = [
+            .init(name: "timeMin", value: iso.string(from: from)),
+            .init(name: "timeMax", value: iso.string(from: to)),
+            .init(name: "singleEvents", value: "true"),
+            .init(name: "orderBy", value: "startTime"),
+            .init(name: "maxResults", value: "250"),
+        ]
+        get(comps.url!) { result in
+            done(result.map { json in
+                GoogleEvent.events(fromList: json)
+            })
+        }
+    }
+
+    /// GETs with a token, and once more with a fresh one if Google says the
+    /// token went stale on the way.
+    private func get(_ url: URL, retry: Bool = true,
+                     done: @escaping (Result<[String: Any], Failure>) -> Void) {
+        accessToken { [weak self] token in
+            guard let self else { return }
+            switch token {
+            case .failure(let f): done(.failure(f))
+            case .success(let token):
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 12
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                URLSession.shared.dataTask(with: req) { data, response, _ in
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                    Self.main {
+                        if (200..<300).contains(status), let json { return done(.success(json)) }
+                        if status == 401, retry {
+                            self.cached = nil
+                            return self.get(url, retry: false, done: done)
+                        }
+                        done(.failure(status == 0 ? .unreachable : status == 401 ? .reconnect : .refused))
+                    }
+                }.resume()
+            }
+        }
+    }
+
     /// The event in the person's own Google Calendar. Google emails each
     /// guest the invite and makes the Meet call when `video` is on.
     func addEvent(title: String, start: Date, end: Date, allDay: Bool, guests: [String], video: Bool,

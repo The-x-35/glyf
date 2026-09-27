@@ -35,6 +35,24 @@ object CalendarText {
      *  keyboard's own copy. The phone has it once an event with the same title
      *  starts within a minute of it; one that ended over a day ago is let go.
      *  Returns the list to show and the copies still waiting. */
+    /** The phone's events with Google's own list layered in: for a day and
+     *  title Google knows, Google's copy wins — an event moved or renamed
+     *  on the web moves here too — and whatever only the phone knows stays. */
+    fun withGoogle(google: List<Event>, phone: List<Event>,
+                   zone: java.util.TimeZone = java.util.TimeZone.getDefault()): List<Event> {
+        if (google.isEmpty()) return phone
+        fun key(e: Event): String {
+            val cal = java.util.Calendar.getInstance(zone).apply {
+                timeInMillis = e.start
+                set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+            }
+            return e.title.trim().lowercase() + "|" + cal.timeInMillis
+        }
+        val googleKeys = google.map(::key).toSet()
+        return phone.filter { key(it) !in googleKeys } + google
+    }
+
     fun withAdded(added: List<Event>, events: List<Event>,
                   now: Long = System.currentTimeMillis()): Pair<List<Event>, List<Event>> {
         fun key(title: String) = title.trim().lowercase()

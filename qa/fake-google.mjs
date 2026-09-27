@@ -53,6 +53,20 @@ createServer((req, res) => {
       log.spaces.push(space);
       return send(res, 200, space);
     }
+    if (url.pathname === "/calendar/v3/calendars/primary/events" && req.method === "GET") {
+      // events.list, the way the keyboards ask it: everything inserted here,
+      // plus whatever /_seed put in (an "edited on the web" stand-in).
+      if (!signed) return send(res, 401, { error: { code: 401, message: "Request is missing credentials" } });
+      const items = log.events.map(e => ({ ...e.body, id: e.id, status: "confirmed" }));
+      return send(res, 200, { kind: "calendar#events", items });
+    }
+    if (url.pathname === "/_seed" && req.method === "POST") {
+      // A test drops an event in as if it were made on the web.
+      const event = JSON.parse(body || "{}");
+      const id = randomBytes(8).toString("hex");
+      log.events.push({ query: {}, body: event, id });
+      return send(res, 200, { id });
+    }
     if (url.pathname === "/calendar/v3/calendars/primary/events" && req.method === "POST") {
       if (!signed) return send(res, 401, { error: { code: 401, message: "Request is missing credentials" } });
       const event = JSON.parse(body || "{}");

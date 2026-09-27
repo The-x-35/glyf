@@ -382,10 +382,33 @@ class CalendarPanelView(
         setOnClickListener { onTap() }
     }
 
+    /** Google's list for the window on screen, once it has answered; the
+     *  window it covers, so month steps only refetch when they leave it. */
+    private var googleFetched: List<CalendarText.Event>? = null
+    private var googleWindow: Pair<Long, Long>? = null
+
     private fun loadEvents() {
         val from = (month.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -7) }.timeInMillis
         val to = (month.clone() as Calendar).apply { add(Calendar.MONTH, 1); add(Calendar.DAY_OF_MONTH, 7) }.timeInMillis
-        events = GoogleAdded.merged(context, CalendarText.load(context, from, to))
+        // Google's own list wins where it overlaps: what was added or
+        // changed on the web is what shows here.
+        val base = CalendarText.withGoogle(googleFetched ?: emptyList(), CalendarText.load(context, from, to))
+        events = GoogleAdded.merged(context, base)
+        refreshGoogle(from, to)
+    }
+
+    /** Asks Google for the window: the phone only has what it synced. */
+    private fun refreshGoogle(from: Long, to: Long) {
+        if (!com.demo.glyf.store.GoogleAccess.hasCalendar(context)) return
+        googleWindow?.let { if (it.first <= from && it.second >= to) return }
+        GoogleClient.listEvents(context, from, to) { list, _ ->
+            if (list == null) return@listEvents
+            googleWindow = from to to
+            googleFetched = list
+            val base = CalendarText.withGoogle(list, CalendarText.load(context, from, to))
+            events = GoogleAdded.merged(context, base)
+            render()
+        }
     }
 
     /** The arrows walk days on the list, months on the grid. */

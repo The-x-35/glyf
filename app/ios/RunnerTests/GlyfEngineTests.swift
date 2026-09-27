@@ -690,6 +690,44 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.chip(for: "$13", fields: [], rates: home))
     }
 
+    // MARK: Google Calendar, live
+
+    func testGoogleListBecomesEventsAndItsCopyWins() {
+        let list: [String: Any] = ["items": [
+            ["summary": "Standup", "id": "e1", "status": "confirmed",
+             "start": ["dateTime": "2026-09-28T11:00:00+05:30"],
+             "end": ["dateTime": "2026-09-28T11:30:00+05:30"]],
+            ["summary": "Off", "id": "e2",
+             "start": ["date": "2026-09-29"], "end": ["date": "2026-09-30"]],
+            ["summary": "Gone", "id": "e3", "status": "cancelled",
+             "start": ["dateTime": "2026-09-28T15:00:00+05:30"],
+             "end": ["dateTime": "2026-09-28T16:00:00+05:30"]],
+        ]]
+        let zone = TimeZone(identifier: "Asia/Kolkata")!
+        let google = GoogleEvent.events(fromList: list, timeZone: zone)
+        XCTAssertEqual(google.count, 2, "a cancelled instance is left out")
+        XCTAssertEqual(google[0].title, "Standup")
+        XCTAssertFalse(google[0].allDay)
+        XCTAssertTrue(google[1].allDay)
+        XCTAssertEqual(google[1].end.timeIntervalSince(google[1].start), 86_400, "Google's all-day end is exclusive")
+
+        // The phone still has Standup at its OLD time (edited on the web):
+        // Google's copy wins for that day; what only the phone knows stays.
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = zone
+        let old = CalendarText.Event(title: "Standup",
+                                     start: google[0].start.addingTimeInterval(-3600),
+                                     end: google[0].end.addingTimeInterval(-3600), allDay: false)
+        let dentist = CalendarText.Event(title: "Dentist",
+                                         start: google[0].start.addingTimeInterval(7200),
+                                         end: google[0].end.addingTimeInterval(7200), allDay: false)
+        let merged = CalendarText.withGoogle(google, over: [old, dentist], calendar: cal)
+        XCTAssertEqual(merged.filter { $0.title == "Standup" }.count, 1)
+        XCTAssertEqual(merged.first { $0.title == "Standup" }?.start, google[0].start, "the web's edit shows")
+        XCTAssertTrue(merged.contains(dentist))
+        XCTAssertEqual(CalendarText.withGoogle([], over: [dentist], calendar: cal), [dentist])
+    }
+
     // MARK: Wallet chips
 
     func testAnAddressIsSentToWhenItIsAWalletAndBoughtWhenItIsAToken() {
