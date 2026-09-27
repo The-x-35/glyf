@@ -345,7 +345,7 @@ class PayPanelView(
         render()
     }
 
-    private fun formReady() = connected && (isBuy || to != null)
+    private fun formReady() = connected
 
     private fun pasteAddress() {
         val copied = clipText() ?: ""
@@ -365,6 +365,11 @@ class PayPanelView(
 
     private fun goIfReady() {
         if (editing) { endAmount(); if (amountValue == null) return }
+        if (!isBuy && to == null) {
+            // Send with nowhere to send: try the clipboard right here.
+            pasteAddress()
+            if (to == null) return
+        }
         if (amountValue == null) { beginAmount(); return }
         val query = mutableMapOf<String, String>()
         when (intent) {
@@ -499,7 +504,6 @@ class PayPanelView(
     private fun render() {
         val form = formReady() && !editing
         val needsConnect = !connected
-        val needsAddress = connected && !isBuy && to == null
 
         header.visibility = View.VISIBLE
         balance.visibility = if (form || editing) View.VISIBLE else View.GONE
@@ -511,7 +515,7 @@ class PayPanelView(
             if (form && privateRow.visibility != View.VISIBLE) View.VISIBLE else View.GONE
         go.visibility = if (form) View.VISIBLE else View.GONE
         pad.visibility = if (editing) View.VISIBLE else View.GONE
-        lead.visibility = if (needsConnect || needsAddress) View.VISIBLE else View.GONE
+        lead.visibility = if (needsConnect) View.VISIBLE else View.GONE
         cta.visibility = lead.visibility
 
         if (needsConnect) {
@@ -519,11 +523,6 @@ class PayPanelView(
             cta.text = "Connect Phantom"
             cta.setTag(com.demo.glyf.R.id.qa_id, "pay:connect")
             cta.setOnClickListener { onConnect() }
-        } else if (needsAddress) {
-            lead.text = "Copy the wallet address from the chat, then paste it here."
-            cta.text = "Paste address"
-            cta.setTag(com.demo.glyf.R.id.qa_id, "pay:paste")
-            cta.setOnClickListener { pasteAddress() }
         }
 
         val shownAmount = if (amount.isEmpty()) "0" else amount
@@ -531,8 +530,16 @@ class PayPanelView(
         unitText.text = if (isBuy) "of ${paying.symbol}" else paying.symbol
         when (intent) {
             is Intent.Send -> {
-                toName.text = "Wallet"
-                toDetail.text = Smart.shortAddress(to ?: "")
+                if (to != null) {
+                    toName.text = "Wallet"
+                    toName.setTextColor(palette.ink)
+                    toDetail.text = Smart.shortAddress(to ?: "")
+                } else {
+                    // The slot itself asks, the way the website's panel does.
+                    toName.text = "Paste address"
+                    toName.setTextColor(blue)
+                    toDetail.text = "from the chat"
+                }
                 meta.text = "Phantom signs · nothing moves without you"
                 go.text = if (isPrivate && paying.mint == USDC) "Send privately" else "Send"
             }
@@ -550,7 +557,7 @@ class PayPanelView(
         privateSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
         privateSwitch.trackTintList = android.content.res.ColorStateList.valueOf(
             if (isPrivate) green else soft(60, palette.inkSoft))
-        go.alpha = if (amountValue != null) 1f else 0.45f
+        go.alpha = if (amountValue != null && (isBuy || to != null)) 1f else 0.45f
 
         // Balance in the header: "$12.40 USDC · ◎ 0.2".
         val usdcHeld = assets.firstOrNull { it.mint == USDC }?.amount ?: 0.0
@@ -581,15 +588,18 @@ class PayPanelView(
         }
 
         // While typing, the amount row doubles as the display and the pad
-        // fills the key area; Done is the row itself.
+        // fills the key area; Done is the row itself. Otherwise the
+        // recipient slot is its own tap: paste (or re-paste) the address.
         if (editing) {
             amountRow.setOnClickListener { endAmount() }
+            toCol.setOnClickListener { endAmount() }
             toName.text = "Done"
             toName.setTextColor(blue)
             toDetail.text = ""
         } else {
             amountRow.setOnClickListener { beginAmount() }
-            toName.setTextColor(palette.ink)
+            toCol.setTag(com.demo.glyf.R.id.qa_id, "pay:to")
+            toCol.setOnClickListener { if (isBuy) beginAmount() else pasteAddress() }
         }
     }
 }

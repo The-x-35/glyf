@@ -71,6 +71,7 @@ final class PaySurface: UIView {
     private let amountLabel = UILabel()
     private let unitLabel = UILabel()
     private let arrowLabel = UILabel()
+    private let toZone = UIControl()
     private let toName = UILabel()
     private let toAddress = UILabel()
     private let assetsRow = ControlScrollView()
@@ -156,14 +157,24 @@ final class PaySurface: UIView {
         arrowLabel.font = .systemFont(ofSize: 15)
         arrowLabel.textColor = Glass.textSecondary
         amountRow.addSubview(arrowLabel)
+        // The recipient is its own tap: paste (or re-paste) the address
+        // there without leaving the form. On a buy it opens the amount.
+        toZone.accessibilityIdentifier = "pay:to"
+        toZone.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            if self.isBuy { self.beginAmount() } else { self.pasteAddress() }
+        }, for: .touchUpInside)
+        amountRow.addSubview(toZone)
         toName.font = .systemFont(ofSize: 13.5, weight: .semibold)
         toName.textColor = Glass.textPrimary
         toName.textAlignment = .right
-        amountRow.addSubview(toName)
+        toName.isUserInteractionEnabled = false
+        toZone.addSubview(toName)
         toAddress.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
         toAddress.textColor = Glass.textSecondary
         toAddress.textAlignment = .right
-        amountRow.addSubview(toAddress)
+        toAddress.isUserInteractionEnabled = false
+        toZone.addSubview(toAddress)
 
         assetsRow.showsHorizontalScrollIndicator = false
         addSubview(assetsRow)
@@ -282,8 +293,7 @@ final class PaySurface: UIView {
     }
 
     private var needsConnect: Bool { !connected }
-    private var needsAddress: Bool { connected && !isBuy && to == nil }
-    private var formReady: Bool { connected && (isBuy || to != nil) }
+    private var formReady: Bool { connected }
 
     var activeEditor: InlineEditor? { editingAmount ? amountEditor : nil }
 
@@ -358,6 +368,11 @@ final class PaySurface: UIView {
 
     func goIfReady() {
         if editingAmount { endAmount() }
+        if !isBuy, to == nil {
+            // Send with nowhere to send: try the clipboard right here.
+            pasteAddress()
+            guard to != nil else { return }
+        }
         guard amountValue != nil else { beginAmount(); return }
         var query: [String: String]
         switch intent {
@@ -598,7 +613,7 @@ final class PaySurface: UIView {
         // fee note rides on it and the meta line stays out.
         metaLabel.isHidden = !form || !privateRow.isHidden
         goButton.isHidden = !form
-        leadLabel.isHidden = !(needsConnect || needsAddress) || editing
+        leadLabel.isHidden = !needsConnect || editing
         ctaButton.isHidden = leadLabel.isHidden
         for v in [editKey, amountEditor, doneButton] { v.isHidden = !editing }
         for b in percentButtons { b.isHidden = !editing }
@@ -608,24 +623,28 @@ final class PaySurface: UIView {
             ctaButton.setTitle("Connect Phantom", for: .normal)
             ctaButton.removeTarget(nil, action: nil, for: .allEvents)
             ctaButton.addAction(UIAction { [weak self] _ in self?.delegate?.payConnect() }, for: .touchUpInside)
-        } else if needsAddress {
-            leadLabel.text = "Copy the wallet address from the chat, then paste it here."
-            ctaButton.setTitle("Paste address", for: .normal)
-            ctaButton.removeTarget(nil, action: nil, for: .allEvents)
-            ctaButton.addAction(UIAction { [weak self] _ in self?.pasteAddress() }, for: .touchUpInside)
         }
 
         amountLabel.text = amountText
         unitLabel.text = isBuy ? "of \(paying.symbol)" : paying.symbol
         switch intent {
         case .send:
-            toName.text = "Wallet"
-            toAddress.text = Smart.shortAddress(to ?? "")
+            if let to {
+                toName.text = "Wallet"
+                toName.textColor = Glass.textPrimary
+                toAddress.text = Smart.shortAddress(to)
+            } else {
+                // The slot itself asks, the way the website's panel does.
+                toName.text = "Paste address"
+                toName.textColor = Glass.imBlue
+                toAddress.text = "from the chat"
+            }
             metaLabel.text = isPrivate
                 ? "Nobody onchain sees who paid · about 0.002 SOL + 0.1%"
                 : "Phantom signs · nothing moves without you"
             goButton.setTitle(isPrivate && paying.mint == Self.usdcMint ? "Send privately" : "Send", for: .normal)
         case .buy:
+            toName.textColor = Glass.textPrimary
             renderQuote()
             metaLabel.text = "Best route via Jupiter · Phantom signs"
             goButton.setTitle("Buy", for: .normal)
@@ -638,7 +657,7 @@ final class PaySurface: UIView {
     }
 
     private func renderGo() {
-        let ready = amountValue != nil && formReady
+        let ready = amountValue != nil && formReady && (isBuy || to != nil)
         goButton.alpha = ready ? 1 : 0.45
     }
 
@@ -676,10 +695,11 @@ final class PaySurface: UIView {
         amountLabel.frame = CGRect(x: 12, y: 0, width: al, height: 46)
         unitLabel.frame = CGRect(x: amountLabel.frame.maxX + 6, y: 0,
                                  width: unitLabel.intrinsicContentSize.width, height: 46)
-        toAddress.frame = CGRect(x: cw - 168, y: 24, width: 156, height: 14)
-        toName.frame = CGRect(x: cw - 168, y: 8, width: 156, height: 16)
+        toZone.frame = CGRect(x: cw - 168, y: 0, width: 156, height: 46)
+        toName.frame = CGRect(x: 0, y: 8, width: 156, height: 16)
+        toAddress.frame = CGRect(x: 0, y: 24, width: 156, height: 14)
         arrowLabel.isHidden = isBuy
-        arrowLabel.frame = CGRect(x: toName.frame.minX - 16, y: 0, width: 14, height: 46)
+        arrowLabel.frame = CGRect(x: toZone.frame.minX - 16, y: 0, width: 14, height: 46)
 
         assetsRow.frame = CGRect(x: x, y: 88, width: cw, height: 28)
         var ax: CGFloat = 0

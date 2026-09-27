@@ -1042,3 +1042,21 @@ body:has(.is-capture) nextjs-portal {
 .d-x svg {
   font-size: 0.82em;
 }
+
+/* ── the site's sticker stage as a slide ───────────────── */
+
+.slide .features {
+  width: 100%;
+  padding: 0;
+  overflow: visible;
+}
+
+.d-apps .fx-stage {
+  height: min(clamp(560px, 50vw, 720px), calc(100svh - 190px));
+}
+
+/* the bound keys, borrowed from the site's first card */
+.d-bound {
+  max-width: 440px;
+  margin-top: clamp(24px, 4vh, 40px);
+}

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { SCENARIOS, type Scenario } from "../chat/scenarios";
 import ThemeToggle from "../ThemeToggle";
 import BackdropKeys from "../BackdropKeys";
+import { BoundKeysVisual, StickerField } from "../Features";
 import LiveChat from "./LiveChat";
 import { PAY_SCENARIO } from "./paymentScenario";
 
@@ -63,6 +64,7 @@ const TRIPS = [
   { task: "Send your address", steps: ["Open Notes", "Find it", "Copy", "Back to chat", "Paste"], apps: 2 },
   { task: "Sound professional", steps: ["Copy draft", "Open ChatGPT", "Prompt", "Copy", "Back", "Paste"], apps: 2 },
   { task: "Pay a friend in USDC", steps: ["Copy address", "Open wallet", "Paste", "Amount", "Confirm", "Back to chat"], apps: 2 },
+  { task: "Book a meeting", steps: ["Open Calendar", "Find a slot", "Create event", "Copy invite", "Back to chat", "Paste"], apps: 2 },
 ];
 
 const CONNECTORS = ["Google", "Notion", "Slack", "GitHub", "Linear", "Todoist", "Calendly", "Zoom", "Spotify"];
@@ -166,6 +168,19 @@ const SLIDES: Slide[] = [
     ),
   },
   {
+    id: "apps",
+    label: "All your apps",
+    render: () => (
+      <section className="features is-live d-apps" aria-label="One keyboard, all your apps">
+        <StickerField>
+          <h2 className="features-title">
+            <span>One keyboard.</span> <span>All your apps.</span>
+          </h2>
+        </StickerField>
+      </section>
+    ),
+  },
+  {
     id: "rewrite",
     label: "AI rewrite",
     render: (c) => (
@@ -226,18 +241,6 @@ const SLIDES: Slide[] = [
     ),
   },
   {
-    id: "translate",
-    label: "Translate",
-    render: (c) => (
-      <Demo
-        id="sofia"
-        eyebrow="Translate"
-        capture={c}
-        points={["Bind translate to a key, hold it, and type in your own language", "The translation follows as you type", "Replace with one tap"]}
-      />
-    ),
-  },
-  {
     id: "pay",
     label: "Private payments",
     render: (c) => (
@@ -257,7 +260,7 @@ const SLIDES: Slide[] = [
   {
     id: "skills",
     label: "Skills",
-    tone: "grey",
+    tone: "ink",
     render: () => (
       <div className="d-split">
         <div>
@@ -270,6 +273,9 @@ const SLIDES: Slide[] = [
             <li>Multiple steps, conditions and real tools</li>
             <li>It lands on a key, yours to keep. Sharing and a creator hub come later</li>
           </ul>
+          <div className="features is-live d-bound">
+            <BoundKeysVisual />
+          </div>
         </div>
         <div className="d-builder">
           <div className="d-builder-ask">
@@ -544,7 +550,7 @@ export default function Deck() {
       className={cx("deck", capture && "is-capture")}
       onTouchStart={(e) => {
         const t = e.touches[0];
-        touch.current = { x: t.clientX, y: t.clientY, demo: !!(e.target as HTMLElement).closest(".lc") };
+        touch.current = { x: t.clientX, y: t.clientY, demo: !!(e.target as HTMLElement).closest(".lc, .fx-stage") };
       }}
       onTouchEnd={(e) => {
         const s = touch.current;

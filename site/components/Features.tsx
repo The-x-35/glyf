@@ -181,22 +181,12 @@ const WORKS_WITH = [
 
 type Drag = { el: HTMLElement; id: number; sx: number; sy: number; ox: number; oy: number };
 
-export default function Features() {
-  const section = useRef<HTMLElement>(null);
+/** The sticker stage: the apps floating round whatever headline is given.
+ *  The deck borrows it for a slide, so it owns its pointer handling. */
+export function StickerField({ children }: { children: ReactNode }) {
   const stage = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const top = useRef(10);
-
-  // The loops only run while the section is on screen.
-  useEffect(() => {
-    const el = section.current;
-    if (!el) return;
-    const io = new IntersectionObserver(([e]) => el.classList.toggle("is-live", e.isIntersecting), {
-      rootMargin: "80px 0px",
-    });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
 
   // The field leans toward the pointer, the nearer things more (held still
   // while something is being carried, so it stays under the pointer).
@@ -249,6 +239,78 @@ export default function Features() {
     drag.current = null;
   };
 
+  return (
+    <div className="fx-stage" ref={stage} onPointerMove={lean} onPointerLeave={settle}>
+      <div className="fx-field" aria-hidden>
+        {FLOATS.map((f, i) => (
+          <span
+            key={i}
+            className={`fx fx-r${f.ring}${onPhones(f) ? "" : " fx-desk"}${f.wide ? " fx-wide" : ""}`}
+            style={place(f)}
+            onPointerDown={grab}
+            onPointerMove={carry}
+            onPointerUp={drop}
+            onPointerCancel={drop}
+          >
+            <span className="fx-par" style={{ "--d": f.d } as Vars}>
+              <span
+                className="fx-float"
+                style={{ "--r": `${f.r}deg`, "--t": `${f.t}s`, "--delay": `${f.delay}s` } as Vars}
+              >
+                {f.el}
+              </span>
+            </span>
+          </span>
+        ))}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Card 1's visual: a key is held, the ring runs, its result pops up.
+ *  Shared with the deck's skills slide. */
+export function BoundKeysVisual() {
+  return (
+    <div className="feat-visual" aria-hidden>
+      <div className="feat-results">
+        {BOUND.map((b, i) => (
+          <span className="feat-result" key={b.key} style={{ "--i": i } as Vars}>
+            {b.icon}
+            {b.result}
+          </span>
+        ))}
+      </div>
+      <div className="feat-keys">
+        {BOUND.map((b, i) => (
+          <span className="feat-bound" key={b.key} style={{ "--i": i } as Vars}>
+            <span className="feat-key">
+              {b.key}
+              <span className="feat-keydot" />
+              <span className="feat-ring" />
+            </span>
+            <small>{b.label}</small>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function Features() {
+  const section = useRef<HTMLElement>(null);
+
+  // The loops only run while the section is on screen.
+  useEffect(() => {
+    const el = section.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => el.classList.toggle("is-live", e.isIntersecting), {
+      rootMargin: "80px 0px",
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
   // A soft light follows the pointer across a card.
   const spot = (e: React.PointerEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -259,58 +321,15 @@ export default function Features() {
   return (
     <section className="features" id="features" aria-labelledby="features-title" ref={section}>
       <div className="wrap">
-        <div className="fx-stage" ref={stage} onPointerMove={lean} onPointerLeave={settle}>
-          <div className="fx-field" aria-hidden>
-            {FLOATS.map((f, i) => (
-              <span
-                key={i}
-                className={`fx fx-r${f.ring}${onPhones(f) ? "" : " fx-desk"}${f.wide ? " fx-wide" : ""}`}
-                style={place(f)}
-                onPointerDown={grab}
-                onPointerMove={carry}
-                onPointerUp={drop}
-                onPointerCancel={drop}
-              >
-                <span className="fx-par" style={{ "--d": f.d } as Vars}>
-                  <span
-                    className="fx-float"
-                    style={{ "--r": `${f.r}deg`, "--t": `${f.t}s`, "--delay": `${f.delay}s` } as Vars}
-                  >
-                    {f.el}
-                  </span>
-                </span>
-              </span>
-            ))}
-          </div>
+        <StickerField>
           <h2 className="features-title" id="features-title">
             <span>One keyboard.</span> <span>All your apps.</span>
           </h2>
-        </div>
+        </StickerField>
 
         <div className="feat-grid">
           <article className="feat" onPointerMove={spot}>
-            <div className="feat-visual" aria-hidden>
-              <div className="feat-results">
-                {BOUND.map((b, i) => (
-                  <span className="feat-result" key={b.key} style={{ "--i": i } as Vars}>
-                    {b.icon}
-                    {b.result}
-                  </span>
-                ))}
-              </div>
-              <div className="feat-keys">
-                {BOUND.map((b, i) => (
-                  <span className="feat-bound" key={b.key} style={{ "--i": i } as Vars}>
-                    <span className="feat-key">
-                      {b.key}
-                      <span className="feat-keydot" />
-                      <span className="feat-ring" />
-                    </span>
-                    <small>{b.label}</small>
-                  </span>
-                ))}
-              </div>
-            </div>
+            <BoundKeysVisual />
             <h3>Bind any action to any key.</h3>
           </article>
 
