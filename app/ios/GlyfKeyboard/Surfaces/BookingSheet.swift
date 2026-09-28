@@ -209,12 +209,14 @@ final class BookingSheet: UIView {
             self.spinner.stopAnimating()
             guard let result else {
                 self.status.text = error ?? "Couldn't reach the booking page"
+                self.render()
                 return
             }
             self.pageURL = result.bookingUrl
             self.calcom = result.provider == "calcom"
             if !self.calcom {
                 self.status.text = "Calendly shows times only on its own page. Send the link for this day."
+                self.render()
                 return
             }
             let slots = result.days.first(where: { $0.date == Self.iso(self.day) })?.slots ?? []

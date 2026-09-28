@@ -143,6 +143,13 @@ class PersonalLexicon {
     }
 
     /** Learned, kept and added words — the ones a dictionary may not have. */
+    /** The word this person uses most that starts with what is being typed
+     *  (and is longer): "cut" → their "cutee". PersonalLexicon.swift's twin. */
+    fun completion(prefix: String, today: Int): String? = words.entries
+        .filter { (k, _) -> k.length > prefix.length && k.startsWith(prefix) && isKnown(k) && k !in blocked }
+        .maxByOrNull { (_, w) -> decayed(w.commits, w.day, today) + w.kept + (if (w.added) 2.0 else 0.0) }
+        ?.value?.form
+
     fun knownForms(): List<kotlin.Pair<String, String>> =
         words.entries.filter { isKnown(it.key) && it.key !in blocked }.map { it.key to it.value.form }
 
@@ -216,10 +223,20 @@ class PersonalLexicon {
         if (key.isEmpty()) return
         words.remove(key)
         pairs.keys.removeAll { it.startsWith(key + SEP) || it.endsWith(SEP + key) }
+        // Its corrections come back too: a word forgotten in "My words" is
+        // corrected again ("helloo" stayed uncorrected forever).
+        val typed = form.lowercase()
+        rejected.keys.removeAll { it.startsWith(typed + SEP) }
         blocked.add(key)
     }
 
     fun unblock(form: String) { blocked.remove(TypingText.key(form)) }
+
+    /** A correction turned down, on its own (a revert also keeps the word). */
+    fun reject(typed: String, correction: String) {
+        val k = typed.lowercase() + SEP + correction.lowercase()
+        rejected[k] = (rejected[k] ?: 0) + 1
+    }
 
     fun reset() {
         words.clear(); pairs.clear(); rejected.clear(); blocked.clear(); commitsTotal = 0.0

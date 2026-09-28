@@ -184,7 +184,11 @@ final class CalendarSurface: UIView {
             draft = .init(title: "", start: start, end: start.addingTimeInterval(3600), allDay: false,
                           share: true)
         }
-        present(EventComposer(draft: draft, access: CalendarWriter.access(hasFullAccess: hasFullAccess))) {
+        // With Google Calendar connected the event goes to Google, so the
+        // iPhone's own calendar permission is not needed to add it.
+        let access: CalendarWriter.Access = GoogleAccess.hasCalendar && hasFullAccess
+            ? .ready : CalendarWriter.access(hasFullAccess: hasFullAccess)
+        present(EventComposer(draft: draft, access: access)) {
             [weak self] d in self?.add(d)
         }
     }
@@ -341,7 +345,9 @@ final class CalendarSurface: UIView {
         switch CalendarWriter.add(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
                                   location: callLink, url: callLink.flatMap(URL.init(string:)), notes: notes) {
         case .success(let added):
-            let said = "Added to \(added.calendarName)" + (note.map { ". \($0)" } ?? "")
+            // The note is a sentence of its own: it starts with a capital.
+            let said = "Added to \(added.calendarName)"
+                + (note.map { ". \($0.prefix(1).uppercased())\($0.dropFirst())" } ?? "")
             if d.share {
                 closeComposer()
                 delegate?.connectorInsert(CalendarText.insert(added.event, calendar: cal))
@@ -506,8 +512,13 @@ final class CalendarSurface: UIView {
 
     private func toggleMonth() {
         showingMonth.toggle()
-        if showingMonth {
-            month = cal.date(from: cal.dateComponents([.year, .month], from: selected)) ?? month
+        // Either way the month on show is the chosen day's: Done after
+        // browsing other months must not leave the day outside what's loaded.
+        let dayMonth = cal.date(from: cal.dateComponents([.year, .month], from: selected)) ?? month
+        if dayMonth != month {
+            month = dayMonth
+            load()
+            refreshGoogle()
         }
         render()
     }

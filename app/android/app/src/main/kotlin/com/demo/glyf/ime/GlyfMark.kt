@@ -105,7 +105,12 @@ object GlyfMark {
  *  is a plain ✕ in the strip's ink. */
 class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
     var closing = false
-        set(value) { field = value; invalidate() }
+        set(value) {
+            field = value
+            // What TalkBack says follows what the key does.
+            contentDescription = if (value) "Close" else "Glyf menu"
+            invalidate()
+        }
     var dark = false
         set(value) { field = value; invalidate() }
     var ink = GlyfMark.INK

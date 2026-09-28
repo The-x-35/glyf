@@ -40,17 +40,29 @@ object SearchCards {
     private val cache = object : LruCache<String, Bitmap>(3 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
     }
-    private val pool = Executors.newFixedThreadPool(2)
+    /** Six at a time, as a browser fetches from one server: every card on
+     *  screen gets its picture at once (a map takes Geoapify seconds to draw),
+     *  where two at a time filled a list of nine over fifteen seconds. */
+    private val pool = Executors.newFixedThreadPool(6)
 
     /** `maxWidth` caps decoded pixels: 320 for row thumbnails, wider for a
-     *  full-width map. */
-    fun loadThumb(url: String, into: ImageView, maxWidth: Int = 320, onMiss: (() -> Unit)? = null) {
+     *  full-width map. `signed`: the picture is our own server's (a place's
+     *  photo, its map), behind the sign-in like every other call; nobody
+     *  else ever gets the session. */
+    fun loadThumb(url: String, into: ImageView, maxWidth: Int = 320, signed: Boolean = false,
+                  crop: android.graphics.RectF? = null, keep: Boolean = false,
+                  onLoaded: (() -> Unit)? = null, onMiss: (() -> Unit)? = null) {
         into.tag = url
-        cache.get(url)?.let { into.setImageBitmap(it); return }
-        into.setImageBitmap(null)
+        cache.get(url)?.let { into.setImageBitmap(it); onLoaded?.invoke(); return }
+        // `keep`: whatever is showing (a pin) stays until the picture comes.
+        if (!keep) into.setImageBitmap(null)
         pool.execute {
             val bmp = try {
-                URL(url).openStream().use { stream ->
+                (URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 6000
+                    readTimeout = 8000
+                    if (signed) BackendClient.bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+                }.inputStream.use { stream ->
                     // Decode bounds first so a 1280x720 thumbnail never
                     // becomes 3.6MB of live pixels for a 94dp row.
                     val bytes = stream.readBytes()
@@ -58,8 +70,17 @@ object SearchCards {
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                     var sample = 1
                     while (bounds.outWidth / sample > maxWidth) sample *= 2
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+                    val full = BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
                         BitmapFactory.Options().apply { inSampleSize = sample })
+                    // Part of the picture: a map's middle, above the credit
+                    // printed along its bottom.
+                    if (full != null && crop != null) {
+                        val x = (crop.left * full.width).toInt()
+                        val y = (crop.top * full.height).toInt()
+                        val w = (crop.width() * full.width).toInt().coerceAtMost(full.width - x)
+                        val h = (crop.height() * full.height).toInt().coerceAtMost(full.height - y)
+                        if (w > 0 && h > 0) android.graphics.Bitmap.createBitmap(full, x, y, w, h) else full
+                    } else full
                 }
             } catch (_: Exception) { null }
             into.post {
@@ -67,6 +88,7 @@ object SearchCards {
                 if (bmp != null) {
                     cache.put(url, bmp)
                     into.setImageBitmap(bmp)
+                    onLoaded?.invoke()
                 } else onMiss?.invoke()
             }
         }
@@ -179,6 +201,8 @@ object SearchCards {
         val card: Int,
         val soft: Int,
         val dp: (Int) -> Int,
+        /** A dark board: a place's map is drawn dark to match. */
+        val dark: Boolean = false,
     )
 
     private fun rounded(colour: Int, radiusPx: Int) = GradientDrawable().apply {
@@ -416,9 +440,17 @@ object SearchCards {
         }
         val thumb = c.thumb
         if (!thumb.isNullOrEmpty()) {
-            val url = if (thumb.startsWith("http")) thumb else backendURL + thumb
-            loadThumb(url, art)
-            art.setPadding(0, 0, 0, 0)
+            val own = !thumb.startsWith("http")
+            val map = own && thumb.startsWith("/search/staticmap")
+            // A place with no photo shows its map, drawn dark on a dark board,
+            // cropped to the middle above the credit along its bottom (the
+            // list credits the maps once). The pin stays until it comes.
+            val url = if (own) backendURL + thumb + (if (map && t.dark) "&dark=1" else "") else thumb
+            // Half of Geoapify's 600px is still more than the 74dp art
+            // needs, and a quarter of the memory in the 3 MB cache.
+            loadThumb(url, art, maxWidth = 320, signed = own,
+                crop = if (map) android.graphics.RectF(0f, 0.14f, 1f, 0.84f) else null, keep = true,
+                onLoaded = { art.setPadding(0, 0, 0, 0) })
         }
         row.addView(art, LinearLayout.LayoutParams(t.dp(74), t.dp(52)).apply {
             rightMargin = t.dp(12)

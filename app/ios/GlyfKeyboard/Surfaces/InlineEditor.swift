@@ -90,7 +90,9 @@ final class InlineEditor: UIView {
             label.text = placeholder
             label.textColor = Glass.textSecondary
         } else {
-            label.text = text
+            // One line on screen: a new line shows as a return mark rather
+            // than hiding everything typed after it.
+            label.text = text.replacingOccurrences(of: "\n", with: " ⏎ ")
             label.textColor = Glass.textPrimary
         }
         setNeedsLayout()

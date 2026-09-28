@@ -189,10 +189,12 @@ final class GlyfToolbar: UIView {
         panelBack.setPreferredSymbolConfiguration(
             UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold), forImageIn: .normal)
         panelBack.tintColor = Glass.textPrimary
+        panelBack.backgroundColor = Glass.touchableGrid
         panelBack.isHidden = true
         panelBack.accessibilityIdentifier = "toolbar:back"
         panelBack.accessibilityLabel = "Back"
         panelAction.tintColor = Glass.textPrimary
+        panelAction.backgroundColor = Glass.touchableGrid
         panelAction.isHidden = true
         panelAction.addAction(UIAction { [weak self] _ in self?.panelActionHandler?() }, for: .touchUpInside)
         addSubview(panelAction)
@@ -331,6 +333,9 @@ final class GlyfToolbar: UIView {
                                                bottom: 0, right: Self.itemPad)
             b.layer.cornerRadius = 10
             b.layer.cornerCurve = .continuous
+            // Touchable everywhere in its box, not just on the icon's lines: a
+            // keyboard drops touches on fully clear pixels (Glass.touchableGrid).
+            b.backgroundColor = Glass.touchableGrid
             b.accessibilityIdentifier = "toolbar:\(id)"
             b.accessibilityLabel = id
             b.addAction(UIAction { [weak self] _ in
@@ -609,7 +614,9 @@ final class GlyfToolbar: UIView {
         runsRemaining = n
         if let n, n <= 8 {
             runsChip.setTitle("\(n) left", for: .normal)
-            runsChip.isHidden = showingCandidates && !userPinnedTools
+            // The same rule as applyCandidatesVisibility: never in the
+            // website's look, where the strip is the tools and the g pill.
+            runsChip.isHidden = (showingCandidates && !userPinnedTools) || Glass.solidLook
         } else {
             runsChip.isHidden = true
         }

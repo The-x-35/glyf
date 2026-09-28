@@ -175,6 +175,19 @@ class TypingEngine(
             alternatives.add(shown)
             if (alternatives.size == 3) break
         }
+        // Their own word first: "cut" offers the "cutee" they keep typing, not
+        // "but" and "out" on the strength of English at large. Offered, never
+        // put in on its own (2026-09-29: "its not learning from my vocab").
+        if (policy and LEARNING != 0 && typedScalars.size >= 3) {
+            personal.completion(key, today)?.let { form ->
+                val shown = TypingText.matchCase(typed, form)
+                if (!shown.equals(autocorrect, ignoreCase = true)) {
+                    alternatives.removeAll { it.equals(shown, ignoreCase = true) }
+                    alternatives.add(0, shown)
+                    while (alternatives.size > 3) alternatives.removeAt(alternatives.size - 1)
+                }
+            }
+        }
         return Suggestions(typed, known, autocorrect, alternatives)
     }
 
@@ -225,6 +238,8 @@ class TypingEngine(
     private fun decide(typed: String, key: String, known: Boolean, sentenceStart: Boolean,
                        exactForms: List<Candidate>, realForms: List<Candidate>, ranked: List<Candidate>): String? {
         if (TypingText.hasDigit(typed) || TypingText.capitalCount(typed) >= 2) return null
+        // Stretched for emphasis ("sooo", "yesss"): meant, never "solo".
+        if (TypingText.isStretched(typed)) return null
 
         // Dictionary fixes: apostrophes unless the typed spelling is a real word
         // nearly as common; a different word only when the typed spelling is no

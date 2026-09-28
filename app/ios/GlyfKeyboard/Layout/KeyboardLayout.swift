@@ -284,7 +284,10 @@ enum KeyboardLayout {
         let pitch = (availW + hGap) / columns
         let unitWidth = pitch - hGap
         let rowH = rows.isEmpty ? 0 : size.height / CGFloat(rows.count)
-        let keyH = pad ? min(rowH, KeyMetrics.rowPitch(width: size.width)) - 6 : rowH - KeyMetrics.vGap
+        // Short rows (an iPhone on its side) close the gap up, so the keys
+        // stay a size a thumb can hit.
+        let vGap = rowH < 45 ? 8 : KeyMetrics.vGap
+        let keyH = pad ? min(rowH, KeyMetrics.rowPitch(width: size.width)) - 6 : rowH - vGap
         let gapV = rowH - keyH
 
         var out: [CGRect] = []

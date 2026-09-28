@@ -43,6 +43,32 @@ object KeyboardLayout {
      *  shift, delete, the mode key and enter take one and a half of them. */
     const val SIDE_UNITS = 1.5f
 
+    /** What a held key offers after itself: iOS's table, key for key
+     *  (KeyboardLayout.swift), so both keyboards reach the same accents. */
+    val accents: Map<String, List<String>> = mapOf(
+        "a" to listOf("à", "á", "â", "ä", "æ", "ã", "å", "ā"),
+        "e" to listOf("è", "é", "ê", "ë", "ē", "ė", "ę"),
+        "i" to listOf("î", "ï", "í", "ī", "į", "ì"),
+        "o" to listOf("ô", "ö", "ò", "ó", "œ", "ø", "ō", "õ"),
+        "u" to listOf("û", "ü", "ù", "ú", "ū"),
+        "c" to listOf("ç", "ć", "č"),
+        "n" to listOf("ñ", "ń"),
+        "s" to listOf("ß", "ś", "š"),
+        "y" to listOf("ÿ"),
+        "z" to listOf("ž", "ź", "ż"),
+        "l" to listOf("ł"),
+        "0" to listOf("°"),
+        "-" to listOf("–", "—", "•"),
+        "/" to listOf("\\"),
+        "$" to listOf("₹", "€", "£", "¥", "₩"),
+        "&" to listOf("§"),
+        "\"" to listOf("„", "“", "”", "«", "»"),
+        "'" to listOf("‘", "’", "‚", "`"),
+        "!" to listOf("¡"),
+        "?" to listOf("¿"),
+        "." to listOf("…"),
+    )
+
     private fun ch(c: String) = Key(id = c, char = c)
     /** (10 - two 1.5 side keys) / 5 punctuation keys. */
     private fun wide(c: String) = Key(id = c, char = c, units = 1.4f)

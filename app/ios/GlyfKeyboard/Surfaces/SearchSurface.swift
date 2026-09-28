@@ -10,8 +10,10 @@ protocol SearchSurfaceDelegate: AnyObject {
 
 /// Gboard-style search suite (§6.12): chip tabs (Search / YouTube / Maps /
 /// Contacts / Translate), an inline query the keyboard types into, and rich
-/// result cards that paste into the field. Collapsed = strip above the keys;
-/// once results land the surface expands over them (ABC returns).
+/// result cards that paste into the field. Typing: the search row and one
+/// row of suggestion chips above the keys; once results land they take the
+/// chips' and the keys' place (ABC returns). The keyboard is the same height
+/// in every state, so nothing jumps while you search.
 ///
 /// The card designs are the ones on tryglyf.com — an answer card with the sun
 /// arc, video cards with thumbnail + duration badge, place cards with rating
@@ -56,14 +58,20 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     /// to start typing over a suggestion, which is why this is a separate
     /// mode from `expandedForResults` (results do replace the keys).
     private(set) var landingActive = false
-    /// Extra height the strip needs for the suggestion rows.
-    var landingExtra: CGFloat {
-        guard landingActive, !expandedForResults else { return 0 }
-        return CGFloat(min(cards.count, 3)) * Self.landingRowHeight
-    }
-    static let landingRowHeight: CGFloat = 58
+    /// The search row: close, tabs, query, go.
+    static let rowHeight: CGFloat = 44
+    /// One row of suggestions under it (recent and trending searches, or the
+    /// contacts a name matches), side by side, so the keyboard never grows
+    /// to fit them.
+    static let chipsHeight: CGFloat = 40
+    /// The strip over the keys while a query is typed.
+    static var stripHeight: CGFloat { rowHeight + chipsHeight }
+    /// What searching adds to the keyboard: the same in every state.
+    static var extraHeight: CGFloat { max(0, stripHeight - Glass.toolbarHeight) }
     private var cards: [Card] = []
     private var status = ""
+    /// Read and decoded once per search, not on every letter of a name.
+    private lazy var contacts = AppGroupStore.readContacts()
 
     /// What the tour's coach needs to know about this surface.
     var coachView: TourCoach.SearchView {
@@ -83,6 +91,8 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     private let goButton = UIButton(type: .system)
     private let abcButton = UIButton(type: .system)
     private let statusLabel = UILabel()
+    private let chipsRowView = ControlScrollView()
+    private var suggestionChips: [UIButton] = []
     private let table = UITableView(frame: .zero, style: .plain)
     private var task: URLSessionDataTask?
     private let hasFullAccess: Bool
@@ -132,6 +142,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         }
 
         queryEditor.accessibilityIdentifier = "search:query"
+        queryEditor.showsEnd = true
         queryEditor.onChange = { [weak self] t in self?.queryChanged(t) }
         addSubview(queryEditor)
         let tap = UITapGestureRecognizer(target: self, action: #selector(activateQuery))
@@ -154,6 +165,10 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         statusLabel.font = .systemFont(ofSize: 12.5)
         statusLabel.textColor = Glass.textSecondary
         addSubview(statusLabel)
+
+        chipsRowView.showsHorizontalScrollIndicator = false
+        chipsRowView.alwaysBounceHorizontal = true
+        addSubview(chipsRowView)
 
         table.backgroundColor = Glass.touchableGrid
         table.separatorStyle = .none
@@ -193,13 +208,9 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
     // MARK: layout
 
-    /// Strip height while the keyboard is still visible underneath: the
-    /// website's one row of tabs plus query, and a line for status.
-    static let collapsedHeight: CGFloat = 62
-
     override func layoutSubviews() {
         super.layoutSubviews()
-        let rowH: CGFloat = 44
+        let rowH = Self.rowHeight
         closeButton.frame = CGRect(x: 2, y: (rowH - 30) / 2, width: 32, height: 30)
         // Tab track: 3pt padding, 2pt gaps, 35pt icon-only tabs.
         let pillW: CGFloat = 35, pad: CGFloat = 3, gap: CGFloat = 2, pillH: CGFloat = 30
@@ -226,12 +237,69 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
                                 width: 34, height: 34)
         queryEditor.frame = CGRect(x: queryX, y: (rowH - 34) / 2,
                                    width: max(60, goButton.frame.minX - queryX - 6), height: 34)
-        statusLabel.frame = CGRect(x: 14, y: rowH + 2, width: bounds.width - 28, height: 15)
-        statusLabel.isHidden = status.isEmpty
-        table.isHidden = !(expandedForResults || landingActive)
+        // Typing: suggestions sit in one row under the query, and a status
+        // ("Searching…") takes that row's place. Results: the status heads
+        // the list.
+        let chipsOn = !expandedForResults
+        chipsRowView.isHidden = !chipsOn
+        chipsRowView.frame = CGRect(x: 0, y: rowH, width: bounds.width, height: Self.chipsHeight)
+        var x: CGFloat = 12
+        let chipH: CGFloat = 30
+        for chip in suggestionChips {
+            let w = min(230, ceil(chip.intrinsicContentSize.width))
+            chip.frame = CGRect(x: x, y: (Self.chipsHeight - chipH) / 2, width: w, height: chipH)
+            chip.layer.cornerRadius = chipH / 2
+            x += w + 8
+        }
+        chipsRowView.contentSize = CGSize(width: x + 4, height: Self.chipsHeight)
+        if chipsOn {
+            statusLabel.frame = CGRect(x: 16, y: rowH + (Self.chipsHeight - 15) / 2,
+                                       width: bounds.width - 32, height: 15)
+            statusLabel.isHidden = status.isEmpty || !suggestionChips.isEmpty
+        } else {
+            statusLabel.frame = CGRect(x: 14, y: rowH + 2, width: bounds.width - 28, height: 15)
+            statusLabel.isHidden = status.isEmpty
+        }
+        table.isHidden = !expandedForResults
         let tableY = rowH + (status.isEmpty ? 4 : 18)
         table.frame = CGRect(x: 0, y: tableY, width: bounds.width,
                              height: max(0, bounds.height - tableY - 4))
+    }
+
+    /// The suggestion row: a recent or trending search runs when tapped, a
+    /// contact goes into the message.
+    private func rebuildChips() {
+        suggestionChips.forEach { $0.removeFromSuperview() }
+        suggestionChips = []
+        guard !expandedForResults else { return }
+        for card in cards.prefix(12) {
+            let b = UIButton(type: .system)
+            var cfg = UIButton.Configuration.plain()
+            let symbol: String
+            switch card.kind {
+            case "contact": symbol = card.domain ?? "person"
+            default: symbol = card.source == "recent" ? "clock" : "arrow.up.right"
+            }
+            cfg.image = UIImage(systemName: symbol)?
+                .applyingSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+            cfg.imagePadding = 5
+            var title = AttributedString(card.kind == "contact" ? "\(card.title) · \(card.url)" : card.title)
+            title.font = .systemFont(ofSize: 13.5, weight: .medium)
+            cfg.attributedTitle = title
+            cfg.titleLineBreakMode = .byTruncatingTail
+            cfg.baseForegroundColor = Glass.textPrimary
+            cfg.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 11, bottom: 0, trailing: 12)
+            b.configuration = cfg
+            b.tintColor = Glass.textSecondary
+            b.backgroundColor = Glass.surfaceCard
+            b.layer.cornerCurve = .continuous
+            b.accessibilityIdentifier = "search:card:\(card.kind)"
+            b.accessibilityLabel = card.kind == "contact" ? "\(card.title), \(card.url)" : card.title
+            b.addAction(UIAction { [weak self] _ in self?.choose(card) }, for: .touchUpInside)
+            chipsRowView.addSubview(b)
+            suggestionChips.append(b)
+        }
+        chipsRowView.setContentOffset(.zero, animated: false)
     }
 
     /// The active tab's pill: the thumb slides, the way the website does it.
@@ -296,7 +364,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         status = ""
         landingActive = true
         if tab == .contacts {
-            status = AppGroupStore.readContacts().isEmpty
+            status = contacts.isEmpty
                 ? "Turn on Contacts search in the Glyf app"
                 : "Type a name"
             showRows(); return
@@ -336,16 +404,22 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         guard let vertical = tab.vertical else { return }
         SearchRecents.record(q, vertical: vertical)
         landingActive = false
+        // The suggestions give way to "Searching…" until the results come.
+        cards = []
+        rebuildChips()
         status = "Searching…"
         setNeedsLayout()
-        task = BackendClient.shared.runSearch(vertical: vertical, query: q,
+        task = BackendClient.shared.runSearch(vertical: vertical, query: q, dark: Glass.chromeDark,
             onResult: { [weak self] out in
                 guard let self else { return }
                 // A late response from a tab the user already left must not
                 // overwrite what they are looking at now.
                 guard out.vertical == self.tab.vertical else { return }
                 self.cards = out.cards
-                self.status = self.cards.isEmpty ? "Nothing found" : ""
+                // Places near you need to know where you are: the app asks.
+                let nowhere = self.tab == .maps && SettingsStore.current.lastLat == nil
+                self.status = self.cards.isEmpty
+                    ? (nowhere ? "Turn on Nearby search in the Glyf app" : "Nothing found") : ""
                 self.expand()
             },
             onError: { [weak self] message in
@@ -358,7 +432,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     /// leaves the device — no vertical, no request.
     private func showContactMatches(_ q: String, live: Bool = false) {
         let lower = q.lowercased()
-        let contacts = AppGroupStore.readContacts()
+        let contacts = self.contacts
         guard !contacts.isEmpty else {
             status = "Turn on Contacts search in the Glyf app"
             setNeedsLayout(); return
@@ -398,8 +472,9 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         if q.isEmpty { showLanding() } else { showContactMatches(q, live: true) }
     }
 
-    /// Re-lays out the suggestion list while the keyboard stays put.
+    /// Re-lays out the suggestion row while the keyboard stays put.
     private func showRows() {
+        rebuildChips()
         table.reloadData()
         table.setContentOffset(.zero, animated: false)
         setNeedsLayout()
@@ -409,6 +484,18 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     private func expand() {
         landingActive = false
         expandedForResults = true
+        rebuildChips()
+        // Maps drawn from OpenStreetMap carry its credit, once, under the list.
+        if cards.contains(where: { $0.thumb?.hasPrefix("/search/staticmap") == true }) {
+            let credit = UILabel(frame: CGRect(x: 0, y: 0, width: bounds.width, height: 26))
+            credit.text = "Maps © OpenStreetMap contributors · Geoapify"
+            credit.font = .systemFont(ofSize: 11)
+            credit.textColor = Glass.textSecondary
+            credit.textAlignment = .center
+            table.tableFooterView = credit
+        } else {
+            table.tableFooterView = nil
+        }
         table.reloadData()
         table.setContentOffset(.zero, animated: false)
         setNeedsLayout()
@@ -485,7 +572,10 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let card = cards[indexPath.row]
+        choose(cards[indexPath.row])
+    }
+
+    private func choose(_ card: Card) {
         // A suggestion is not something to paste — it RUNS the search.
         if card.kind == "query" {
             queryEditor.setText(card.title)
@@ -935,11 +1025,16 @@ final class PlaceCell: SearchCardCell {
 
         thumbURL = resolved(c.thumb)
         photo.image = nil
-        photo.isHidden = thumbURL.isEmpty
-        pin.isHidden = !thumbURL.isEmpty
+        photo.isHidden = true
+        // The pin holds the corner until the picture comes (or if it never does).
+        pin.isHidden = false
+        // A map (no photo of the place): its middle, where the pin is, above
+        // the credit Geoapify prints along the bottom (credited under the list).
+        photo.layer.contentsRect = c.thumb?.hasPrefix("/search/staticmap") == true
+            ? CGRect(x: 0, y: 0.14, width: 1, height: 0.70) : CGRect(x: 0, y: 0, width: 1, height: 1)
         if !thumbURL.isEmpty {
             let wanted = thumbURL
-            ThumbLoader.load(wanted, maxPixel: 140) { [weak self] image in
+            ThumbLoader.load(wanted, maxPixel: 300) { [weak self] image in
                 guard let self, self.thumbURL == wanted else { return }
                 self.photo.image = image
                 self.photo.isHidden = image == nil
@@ -955,7 +1050,9 @@ final class PlaceCell: SearchCardCell {
     private func resolved(_ thumb: String?) -> String {
         guard let thumb, !thumb.isEmpty else { return "" }
         if thumb.hasPrefix("http") { return thumb }
-        return SettingsStore.current.backendURL + thumb
+        // A place with no photo shows its map, drawn dark on a dark board.
+        let dark = Glass.chromeDark && thumb.hasPrefix("/search/staticmap") ? "&dark=1" : ""
+        return SettingsStore.current.backendURL + thumb + dark
     }
 
     override func layoutSubviews() {

@@ -223,10 +223,13 @@ enum EventParse {
                                              options: [.regularExpression, .caseInsensitive]) != nil {
             return nil
         }
+        // "Call me in 5 minutes" is a countdown, not something for the calendar.
+        if text.range(of: #"\bin\s+(?:\d+|an?|a few|few|couple of)\s*(?:minutes?|mins?)\b"#,
+                      options: [.regularExpression, .caseInsensitive]) != nil { return nil }
         let p = parse(text, now: now, calendar: cal, dayFirst: dayFirst)
         guard p.hasTime else { return nil }
         if p.hasDay { return p }
-        let intent = #"\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|milte|milenge)\b"#
+        let intent = #"\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|milte|milenge)\b"#
         return text.range(of: intent, options: [.regularExpression, .caseInsensitive]) != nil ? p : nil
     }
 

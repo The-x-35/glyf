@@ -690,6 +690,168 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.chip(for: "$13", fields: [], rates: home))
     }
 
+    /// Audit 2026-09-28: sums people type, and details a sentence asks for.
+    func testCalcReadsSumsNotDatesAndGroupsByRegion() {
+        XCTAssertNil(Smart.calc("open 24/7"), "24/7 is not a sum")
+        XCTAssertNil(Smart.calc("see you 9/28"), "a date is not a sum")
+        XCTAssertEqual(Smart.calc("10/2 =")?.value, "5")
+        XCTAssertEqual(Smart.calc("200 + 10%")?.value, "220", "a percentage added is a share of the left side")
+        XCTAssertEqual(Smart.calc("200 - 10%")?.value, "180")
+        XCTAssertEqual(Smart.calc("250*400", indianGrouping: true)?.value, "1,00,000")
+        XCTAssertEqual(Smart.calc("250*400", indianGrouping: false)?.value, "100,000")
+    }
+
+    func testTheRightSavedDetailForWhatTheSentenceAsks() {
+        let fields = [VaultField(id: "a", kind: "address", label: "Home", value: "123 Market St"),
+                      VaultField(id: "e", kind: "email", label: "Email", value: "me@example.com"),
+                      VaultField(id: "p", kind: "phone", label: "Mobile", value: "+1 415 555 0100")]
+        XCTAssertEqual(Smart.vaultMatch("my email address is", fields: fields)?.kind, "email")
+        XCTAssertEqual(Smart.vaultMatch("my gmail address is", fields: fields)?.kind, "email")
+        XCTAssertEqual(Smart.vaultMatch("my phone number is", fields: fields)?.kind, "phone")
+        XCTAssertEqual(Smart.vaultMatch("my number is", fields: fields)?.kind, "phone")
+        XCTAssertEqual(Smart.vaultMatch("deliver it to", fields: fields)?.kind, "address")
+        XCTAssertNil(Smart.vaultMatch("my account number is", fields: fields))
+        XCTAssertNil(Smart.vaultMatch("the order number is", fields: fields))
+        XCTAssertNil(Smart.vaultMatch("the ip address is", fields: fields))
+    }
+
+    /// "$sol" is SOL's price, never your wallet (user, 2026-09-28: "when i
+    /// type $sol i should see sol price but i see my wallet address").
+    func testACashtagIsAPriceNeverYourWallet() {
+        let wallet = [VaultField(id: "w", kind: "wallet", label: "Solana", value: "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj")]
+        // Before the price has come: nothing, not the wallet.
+        XCTAssertNil(Smart.chip(for: "$sol", fields: wallet))
+        XCTAssertNil(Smart.chip(for: "whats $solana at", fields: wallet))
+        // Once it has: the price.
+        let rates = Smart.RatesSnapshot(crypto: ["SOL": 117.66, "APPL": 339.43],
+                                        tickers: ["SOL": "SOL", "APPL": "AAPL"])
+        XCTAssertEqual(Smart.chip(for: "$sol", fields: wallet, rates: rates),
+                       .money(shown: "1 SOL = $117.66", insert: " = $117.66"))
+        // A slip for AAPL reads as the market's ticker.
+        XCTAssertEqual(Smart.chip(for: "$appl", fields: wallet, rates: rates)?.value, "1 AAPL = $339.43")
+        // The wallet is for when the sentence asks for it.
+        XCTAssertEqual(Smart.chip(for: "my sol address is", fields: wallet), .vault(field: wallet[0]))
+        XCTAssertEqual(Smart.chip(for: "solana wallet:", fields: wallet), .vault(field: wallet[0]))
+        XCTAssertEqual(Smart.chip(for: "send it to my wallet", fields: wallet), .vault(field: wallet[0]))
+        XCTAssertNil(Smart.chip(for: "i bought some sol", fields: wallet))
+        XCTAssertNil(Smart.chip(for: "is usdc", fields: wallet))
+    }
+
+    /// A saved detail only where the sentence leads into it (2026-09-28 audit:
+    /// "wrong address", "can you email" and "i lost my phone" offered yours).
+    /// SmartTest.aDetailOnlyWhereTheSentenceLeadsIntoIt, the twin.
+    func testADetailOnlyWhereTheSentenceLeadsIntoIt() {
+        let all = [VaultField(id: "a", kind: "address", label: "Home", value: "123 Market St"),
+                   VaultField(id: "e", kind: "email", label: "Email", value: "me@example.com"),
+                   VaultField(id: "p", kind: "phone", label: "Mobile", value: "+1 415 555 0100"),
+                   VaultField(id: "w", kind: "wallet", label: "Wallet address", value: "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA"),
+                   VaultField(id: "i", kind: "social", label: "Instagram", value: "@me"),
+                   VaultField(id: "u", kind: "upi", label: "UPI", value: "me@okbank")]
+        let asks: [(String, String)] = [
+            ("my email is", "email"), ("Email ID:", "email"), ("you can email me at", "email"),
+            ("address:", "address"), ("our office address:", "address"), ("ship it to", "address"),
+            ("my number is", "phone"), ("phone:", "phone"), ("reach me at", "phone"),
+            ("my wallet", "wallet"), ("sol address:", "wallet"), ("follow me on insta", "social"),
+            ("upi id:", "upi")]
+        for (text, kind) in asks {
+            XCTAssertEqual(Smart.vaultMatch(text, fields: all)?.kind, kind, text)
+        }
+        for text in ["can you email", "i'll email", "email", "what's the address", "wrong address",
+                     "the address is", "ip address:", "i lost my phone", "my phone is dead",
+                     "phantom wallet is down", "saw it on insta", "i use paytm", "this is great",
+                     "my linkedin is"] {
+            XCTAssertNil(Smart.vaultMatch(text, fields: all), text)
+        }
+    }
+
+    /// "I lost 5 pounds" is weight; a conversion the chip put in is not
+    /// converted back. SmartTest.poundsOfWeightAndInsertedAnswersAreNotMoney.
+    func testPoundsOfWeightAndInsertedAnswersAreNotMoney() {
+        let usd = Smart.RatesSnapshot(fiat: ["USD": 1, "GBP": 0.75], local: "USD")
+        XCTAssertEqual(Smart.chip(for: "it costs 5 pounds", fields: [], rates: usd)?.value, "£5 = $6.67")
+        XCTAssertNil(Smart.chip(for: "I lost 5 pounds", fields: [], rates: usd))
+        XCTAssertNil(Smart.chip(for: "bench press 100 pounds", fields: [], rates: usd))
+        let india = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88], crypto: ["SOL": 111.77], local: "INR")
+        XCTAssertNil(Smart.chip(for: "it costs $13 = ₹1,246.44", fields: [], rates: india))
+        XCTAssertNil(Smart.chip(for: "buying $sol = $111.77", fields: [], rates: india))
+        XCTAssertEqual(Smart.chip(for: "the total is ₹1,200", fields: [], rates: india)?.value, "₹1,200 = $12.52")
+    }
+
+    /// The server's unit cases (server/test/units.test.ts; SmartTest.kt too):
+    /// all three convert alike.
+    func testUnitsConvertOnThePhone() {
+        let cases: [(String, String)] = [
+            ("5 km in miles", "5 km is 3.107 miles"),
+            ("convert 100 miles to km", "100 miles is 160.9 km"),
+            ("100 miles to m", "100 miles is 160,934 m"),
+            ("what is 6 ft in cm", "6 feet is 182.9 cm"),
+            ("5 in in cm", "5 inches is 12.7 cm"),
+            ("how many cm in an inch", "1 inch is 2.54 cm"),
+            ("how many feet in a mile?", "1 mile is 5,280 feet"),
+            ("100f to c", "100°F is 37.78°C"),
+            ("37 c in f", "37°C is 98.6°F"),
+            ("-40 celsius to fahrenheit", "-40°C is -40°F"),
+            ("70 kg in lbs", "70 kg is 154.3 lb"),
+            ("5 pounds in kg", "5 lb is 2.268 kg"),
+            ("2 cups in ml", "2 cups is 473.2 ml"),
+            ("how many ml are in 2 cups", "2 cups is 473.2 ml"),
+            ("1 gallon to liters", "1 gallon is 3.785 litres"),
+            ("60 mph in km/h", "60 mph is 96.56 km/h"),
+            ("3 hours in minutes", "3 hours is 180 minutes"),
+            ("1 acre in sq ft", "1 acre is 43,560 sq ft"),
+            ("5 feet 10 inches in cm", "5 ft 10 in is 177.8 cm"),
+            ("5'10 in cm", "5 ft 10 in is 177.8 cm"),
+            ("178 cm in feet", "178 cm is 5 ft 10 in"),
+            ("2 m in ft", "2 m is 6 ft 7 in"),
+            ("100 m in feet", "100 m is 328.1 feet"),
+        ]
+        for (asked, said) in cases {
+            XCTAssertEqual(Smart.convertUnits(asked)?.say, said, asked)
+        }
+        for text in ["5 pounds in dollars", "5 k in miles", "meet in 5 min", "i have 2 hours in the office",
+                     "5 km", "km to miles", "5 kg in km"] {
+            XCTAssertNil(Smart.convertUnits(text), text)
+        }
+    }
+
+    /// Hold space on "2+5" answers on the phone, at once: no server, no run
+    /// (user, 2026-09-29: "i wanna do math 2+5 its taking long, we dont need
+    /// ai for this"). SmartTest.holdSpaceAnswersSumsMoneyAndTheClockOnThePhone.
+    func testHoldSpaceAnswersSumsMoneyAndTheClockOnThePhone() {
+        XCTAssertEqual(Smart.instantAnswer("2+5")?.say, "2+5 = 7")
+        XCTAssertEqual(Smart.instantAnswer("what is 12*12?")?.value, "144")
+        XCTAssertEqual(Smart.instantAnswer("18% of 2450")?.say, "18% of 2450 is 441")
+        XCTAssertEqual(Smart.instantAnswer("3480/4 =")?.value, "870")
+        XCTAssertEqual(Smart.instantAnswer("9/3")?.value, "3")
+        XCTAssertEqual(Smart.instantAnswer("5 km in miles")?.say, "5 km is 3.107 miles")
+        let rates = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88], local: "INR")
+        XCTAssertEqual(Smart.instantAnswer("100 usd to inr", rates: rates)?.say, "$100 = ₹9,588")
+        XCTAssertEqual(Smart.instantAnswer("₹500 in dollars", rates: rates)?.say, "₹500 = $5.21")
+        // No rates in hand yet: the server answers it.
+        XCTAssertNil(Smart.instantAnswer("100 usd to inr"))
+        let at = Date(timeIntervalSince1970: 1790614680)   // 28 Sep 2026, 10:28 PM in India
+        let india = TimeZone(identifier: "Asia/Kolkata")!
+        let us = Locale(identifier: "en_US")
+        XCTAssertEqual(Smart.instantAnswer("what time is it", now: at, timeZone: india, locale: us)?.say, "It's 10:28 PM")
+        XCTAssertEqual(Smart.instantAnswer("whats the date?", now: at, timeZone: india, locale: us)?.say,
+                       "It's Monday, September 28")
+        // A tip, and the days until a day everyone counts to (answers.ts).
+        XCTAssertEqual(Smart.instantAnswer("15% tip on 64")?.say, "15% tip on 64 is 9.60 (73.60 in all)")
+        let ny = TimeZone(identifier: "America/New_York")!
+        func days(_ q: String) -> Smart.InstantAnswer? { Smart.instantAnswer(q, now: at, timeZone: ny, locale: us) }
+        XCTAssertEqual(days("how many days until christmas")?.say, "88 days until Christmas")
+        XCTAssertEqual(days("how many days until christmas")?.sub, "Friday, December 25")
+        XCTAssertEqual(days("days till new years")?.say, "95 days until New Year's Day")
+        XCTAssertEqual(days("how long until halloween?")?.say, "33 days until Halloween")
+        XCTAssertEqual(days("how many days until dec 25")?.say, "88 days until Dec 25")
+        XCTAssertEqual(days("how many weeks until thanksgiving")?.say, "8 weeks and 3 days until Thanksgiving")
+        // Messages and questions for the web stay with the server.
+        for text in ["hey 2+5 people coming", "split is 3480/4", "call me at 5", "who won the match", "5",
+                     "time in tokyo", "how long until the bus comes"] {
+            XCTAssertNil(Smart.instantAnswer(text), text)
+        }
+    }
+
     // MARK: Google Calendar, live
 
     func testGoogleListBecomesEventsAndItsCopyWins() {

@@ -40,7 +40,10 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
     }()
 
     private struct Stream {
-        var buffer = ""
+        /// Bytes as they come: a chunk can end halfway through a character
+        /// (’, an emoji, Hindi), so events are split on bytes and decoded
+        /// whole, never chunk by chunk.
+        var buffer = Data()
         var onToken: (String) -> Void
         var onDone: (String, Int?) -> Void
         var onError: (String) -> Void
@@ -156,8 +159,11 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
     /// POST /search — the Search / YouTube / Maps tabs. Location is sent only
     /// when the app has cached it (onboarding permission); the server keeps
     /// none of it.
+    ///
+    /// `dark` is the keyboard's theme: a maps search starts drawing its
+    /// places' maps in it before the cards ask for them.
     @discardableResult
-    func runSearch(vertical: String, query: String,
+    func runSearch(vertical: String, query: String, dark: Bool? = nil,
                    onResult: @escaping (SearchResult) -> Void,
                    onError: @escaping (String) -> Void) -> URLSessionDataTask? {
         let s = SettingsStore.current
@@ -170,6 +176,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         if let lat = s.lastLat, let lon = s.lastLon { body["lat"] = lat; body["lon"] = lon }
         if let region = s.region, region.count == 2 { body["country"] = region }
         body["tz"] = TimeZone.current.identifier
+        if let dark { body["dark"] = dark }
 
         var req = URLRequest(url: url)
         req.glyfSession()
@@ -502,12 +509,13 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
     // MARK: SSE parsing
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard var stream = streams[dataTask.taskIdentifier],
-              let chunk = String(data: data, encoding: .utf8) else { return }
-        stream.buffer += chunk
-        while let range = stream.buffer.range(of: "\n\n") {
-            let event = String(stream.buffer[..<range.lowerBound])
-            stream.buffer.removeSubrange(..<range.upperBound)
+        guard var stream = streams[dataTask.taskIdentifier] else { return }
+        stream.buffer.append(data)
+        let separator = Data("\n\n".utf8)
+        while let range = stream.buffer.range(of: separator) {
+            let event = String(decoding: stream.buffer.subdata(in: stream.buffer.startIndex..<range.lowerBound),
+                               as: UTF8.self)
+            stream.buffer = stream.buffer.subdata(in: range.upperBound..<stream.buffer.endIndex)
             handle(event: event, stream: &stream)
         }
         streams[dataTask.taskIdentifier] = stream
@@ -560,11 +568,10 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
             if !stream.finished { stream.onError("Couldn't reach Glyf. Tap to retry.") }
         } else if !stream.finished {
             // A refusal before the stream opened (the day's runs, a lost
-            // session) is one JSON body: say what the server said.
-            if stream.onAct != nil,
-               let data = stream.buffer.data(using: .utf8),
-               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let message = obj["error"] as? String {
+            // session, too many at once) is one JSON body: say what the
+            // server said, for every kind of run.
+            if let obj = try? JSONSerialization.jsonObject(with: stream.buffer) as? [String: Any],
+               let message = (obj["error"] as? String) ?? (obj["message"] as? String) {
                 stream.onError(message)
             } else if let http = task.response as? HTTPURLResponse, http.statusCode == 429 {
                 stream.onError("Daily free runs used up")

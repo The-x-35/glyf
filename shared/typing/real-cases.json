@@ -983,6 +983,127 @@
    "expect": {
     "autocorrect": null
    }
+  },
+  {
+   "name": "keeps stretched sooo",
+   "typed": "sooo",
+   "previous": "so",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps stretched goood",
+   "typed": "goood",
+   "previous": "so",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps stretched yesss",
+   "typed": "yesss",
+   "previous": "so",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps stretched cuteee",
+   "typed": "cuteee",
+   "previous": "so",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "keeps stretched sooooo",
+   "typed": "sooooo",
+   "previous": "so",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "still fixes helloo",
+   "typed": "helloo",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "hello"
+   }
+  },
+  {
+   "name": "their own word comes first as they type it",
+   "typed": "cut",
+   "previous": "so",
+   "state": {
+    "learned": [
+     [
+      "cutee",
+      3
+     ]
+    ]
+   },
+   "expect": {
+    "alternativesFirst": "cutee",
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "their own word, with no word before it",
+   "typed": "cut",
+   "state": {
+    "learned": [
+     [
+      "cutee",
+      3
+     ]
+    ]
+   },
+   "expect": {
+    "alternativesFirst": "cutee",
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "a word typed once is not theirs yet",
+   "typed": "cut",
+   "previous": "so",
+   "state": {
+    "learned": [
+     [
+      "cutee",
+      1
+     ]
+    ]
+   },
+   "expect": {
+    "alternativesExclude": [
+     "cutee"
+    ]
+   }
+  },
+  {
+   "name": "a word forgotten in My words is corrected again",
+   "typed": "helloo",
+   "previous": "the",
+   "state": {
+    "kept": [
+     "helloo"
+    ],
+    "rejected": [
+     [
+      "helloo",
+      "hello"
+     ]
+    ],
+    "forgotten": [
+     "helloo"
+    ]
+   },
+   "expect": {
+    "autocorrect": "hello"
+   }
   }
  ]
 }

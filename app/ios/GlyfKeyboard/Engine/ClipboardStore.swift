@@ -145,6 +145,16 @@ enum ClipboardStore {
     /// this is opt-in and `captureDetected` is what runs by default.
     /// `done(took, asked)`: whether the copy was taken, and whether iOS was
     /// asked for it at all.
+    /// The copy, read off the main thread for a tap that asks for it: iOS may
+    /// raise "Allow Paste?" and the read waits for the answer, which on the
+    /// main thread froze the whole keyboard. `done` runs on the main queue.
+    static func readCopy(_ done: @escaping (String?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let text = UIPasteboard.general.string
+            DispatchQueue.main.async { done(text) }
+        }
+    }
+
     static func captureEverything(_ done: @escaping (_ took: Bool, _ asked: Bool) -> Void) {
         guard !reading, fullAccessHint, pasteboardHasNewContent(),
               SettingsStore.current.clipboardHistory != false,

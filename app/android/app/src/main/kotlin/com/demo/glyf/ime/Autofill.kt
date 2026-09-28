@@ -1,7 +1,6 @@
 package com.demo.glyf.ime
 
 import android.view.inputmethod.EditorInfo
-import org.json.JSONObject
 
 /**
  * What the focused field is asking for, and what the vault has for it.
@@ -62,17 +61,10 @@ object Autofill {
         }
     }
 
-    /** The saved value for this field, or null. */
-    fun match(info: EditorInfo?, vault: JSONObject): String? {
+    /** The saved value for this field, or null. [fields] are the vault's
+     *  (Smart.fields, blank values already left out). */
+    fun match(info: EditorInfo?, fields: List<Smart.Field>): String? {
         val kind = kind(info) ?: return null
-        val fields = vault.optJSONArray("fields") ?: return null
-        for (i in 0 until fields.length()) {
-            val f = fields.optJSONObject(i) ?: continue
-            if (f.optString("kind") == kind) {
-                val value = f.optString("value")
-                if (value.isNotBlank()) return value
-            }
-        }
-        return null
+        return fields.firstOrNull { it.kind == kind }?.value
     }
 }

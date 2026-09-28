@@ -193,4 +193,16 @@ final class EventParseTests: XCTestCase {
         XCTAssertFalse(plan("📅 Lunch with Sam · Fri, Sep 25, 1:00–2:00 PM"))
         XCTAssertFalse(plan("I'm free Fri 25 Sep, 9:00 AM–1:00 PM and 3:00–9:00 PM"))
     }
+
+    /// "Call me in 5 minutes" is a countdown; "gym at 6am" is a plan.
+    /// EventParseTest.countdownsAreNotPlansButOutingsAre, the twin.
+    func testCountdownsAreNotPlansButOutingsAre() {
+        let plan = { (t: String) in EventParse.looksLikePlan(t, now: self.now, calendar: self.cal) != nil }
+        XCTAssertFalse(plan("call me in 5 minutes"))
+        XCTAssertFalse(plan("see you in 10 mins"))
+        XCTAssertTrue(plan("gym at 6am"))
+        XCTAssertTrue(plan("movie at 9"))
+        XCTAssertTrue(plan("flight at 6:30"))
+        XCTAssertFalse(plan("the shop closes at 9"))
+    }
 }

@@ -27,6 +27,8 @@ final class NoteEditSurface: UIView {
         backgroundColor = Glass.touchableGrid
 
         editor.accessibilityIdentifier = "noteedit:field"
+        // The end stays in view, where the typing is.
+        editor.showsEnd = true
         if !text.isEmpty { editor.append(text) }
         let tap = UITapGestureRecognizer(target: self, action: #selector(fieldTapped))
         editor.addGestureRecognizer(tap)

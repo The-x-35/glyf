@@ -53,6 +53,10 @@ class GlyfKeyboardView(
         fun onDeleteWordsPreview(count: Int)
         /** The finger lifted after a gesture delete: remove what is selected. */
         fun onDeleteWordsCommit(count: Int)
+        /** Whether a held key may run what it is bound to right now. While
+         *  the keys type into Glyf's own fields, or into a password, a hold
+         *  is the letter's own (its accents). iOS: kbBindingsLive. */
+        fun bindingsLive(): Boolean = true
     }
 
     /** The key the app's tour is waiting for; drawn with a pulsing ring. */
@@ -223,6 +227,9 @@ class GlyfKeyboardView(
 
         /** Row height in dp, measured off Gboard. */
         const val ROW_PITCH = 59f
+        /** A phone on its side keeps Gboard's shorter rows, so the app still
+         *  has room above the keys: 59dp rows took 330 of its 427dp. */
+        const val LANDSCAPE_ROW_PITCH = 44f
 
         /** The website's two board colours (--kb). */
         val SITE_BOARD_LIGHT = Color.rgb(0xD5, 0xD8, 0xDE)
@@ -264,14 +271,25 @@ class GlyfKeyboardView(
 
     private var rows: List<List<Key>> = emptyList()
     private val keyRects = mutableListOf<Pair<Key, RectF>>()
+    /** The row each of [keyRects] sits in. */
+    private val keyRowOf = mutableListOf<Int>()
+    /** The rows or the size changed since the keys were last placed. */
+    private var keysDirty = true
+
+    /** Every key where it is now: placed again first if the rows changed
+     *  since, so a touch right after ?123 lands on the new keys. */
+    private fun placed(): List<Pair<Key, RectF>> {
+        if (keysDirty || keyRects.isEmpty()) layoutKeys()
+        return keyRects
+    }
 
     /** A key's rectangle in this view, for the tour's coach. */
-    fun keyRect(id: String): RectF? = keyRects.firstOrNull { it.first.id == id }?.second?.let { RectF(it) }
+    fun keyRect(id: String): RectF? = placed().firstOrNull { it.first.id == id }?.second?.let { RectF(it) }
 
     /** Each key's id and its centre on screen, for the debug state dump. */
     fun keyCenters(): List<Pair<String, IntArray>> {
         val loc = IntArray(2).also { getLocationOnScreen(it) }
-        return keyRects.map { (k, r) ->
+        return placed().map { (k, r) ->
             k.id to intArrayOf(loc[0] + r.centerX().toInt(), loc[1] + r.centerY().toInt())
         }
     }
@@ -325,8 +343,14 @@ class GlyfKeyboardView(
 
     fun rebuild() {
         rows = KeyboardLayout.rows(mode, numberRow && mode == Mode.LETTERS, kContext)
+        keysDirty = true
         requestLayout()
         invalidate()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        keysDirty = true
     }
 
     // MARK: palette (mirrors GlassTokens)
@@ -366,16 +390,32 @@ class GlyfKeyboardView(
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         val w = MeasureSpec.getSize(widthSpec)
         // Gboard's rows are 59dp, not the iPhone's 54 — measured on a 427dp
-        // emulator: four rows of keys are 236dp there.
-        val rowsH = dp(if (numberRow && mode == Mode.LETTERS) ROW_PITCH * 5 else ROW_PITCH * 4)
+        // emulator: four rows of keys are 236dp there. With the number row
+        // on, every page is that tall, so ?123 and ABC never change the
+        // keyboard's height (the symbols' four rows share it); a digit pad
+        // keeps its four rows whatever the setting (iOS keysHeight).
+        val pitch = if (sideways) LANDSCAPE_ROW_PITCH else ROW_PITCH
+        val rowsH = dp(if (numberRow && !kContext.isPad) pitch * 5 else pitch * 4)
         setMeasuredDimension(w, rowsH.toInt())
     }
 
-    override fun onDraw(canvas: Canvas) {
+    /** Where every key goes for the current rows and size. Drawing and
+     *  touch both read what this leaves in [keyRects]. */
+    /** A phone (not a tablet) held sideways. */
+    private val sideways: Boolean
+        get() = resources.configuration.let {
+            it.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
+                it.smallestScreenWidthDp < 600
+        }
+
+    private fun layoutKeys() {
         keyRects.clear()
-        if (rows.isEmpty()) rebuild()
+        keyRowOf.clear()
+        if (rows.isEmpty()) rows = KeyboardLayout.rows(mode, numberRow && mode == Mode.LETTERS, kContext)
+        if (rows.isEmpty() || width == 0 || height == 0) return
+        keysDirty = false
         val hGap = dp(6f)
-        val vGap = dp(12f)
+        val vGap = dp(if (sideways) 8f else 12f)
         val side = dp(5f)   // Gboard's margin
         val availW = width - side * 2
         val isPad = kContext.isPad
@@ -385,11 +425,8 @@ class GlyfKeyboardView(
         val columns = if (isPad) 3f else 10f
         val padInset = if (isPad) dp(80f) else 0f
         val pitch = (availW - padInset + hGap) / columns
-        val unitW = pitch - hGap
         val rowH = height / rows.size.toFloat()
         val keyH = min(rowH - vGap, if (isPad) dp(52f) else Float.MAX_VALUE)
-        // Gboard's keys: 6dp corners, and ?123 and enter as pills.
-        val radius = dp(6f)
         keyPitchPx = pitch
         rowPitchPx = rowH
 
@@ -401,79 +438,113 @@ class GlyfKeyboardView(
             val rowW = rowUnits * pitch - hGap
             var x = side + (availW - rowW) / 2f
             val y = r * rowH + vGap / 2f
-
             for (key in row) {
                 val units = if (key.units < 0) flexUnits else key.units
                 val w = units * pitch - hGap
-                val rect = RectF(x, y, x + w, y + keyH)
-                keyRects.add(key to rect)
-                val lastRow = r == rows.lastIndex && !isPad
-                val pill = lastRow && (key.id == "return" || key.id.startsWith("mode:"))
-                val radius = if (pill) keyH / 2f else radius
-
-                val isPressed = pressed?.id == key.id && pressedRect == rect
-                val bound = key.char != null && bindings.containsKey(key.char)
-                val glowKey = keyTheme == "glow" && bound && !isPressed && themeBg.isEmpty()
-                // GPU-painted shadow: offset round-rect (the crisp 1dp iOS
-                // drop). Glow keys get a soft accent halo from two stacked
-                // translucent rects — no blur layers, no CPU rendering.
-                if (glowKey) {
-                    shadowPaint.color = Color.argb(34, 124, 92, 255)
-                    val halo2 = RectF(rect.left - dp(2f), rect.top,
-                        rect.right + dp(2f), rect.bottom + dp(4.5f))
-                    canvas.drawRoundRect(halo2, radius + dp(2f), radius + dp(2f), shadowPaint)
-                    shadowPaint.color = Color.argb(70, 124, 92, 255)
-                    val halo1 = RectF(rect.left, rect.top + dp(1f),
-                        rect.right, rect.bottom + dp(2.5f))
-                    canvas.drawRoundRect(halo1, radius, radius, shadowPaint)
-                    keyPaint.color = if (isDark) Color.rgb(92, 87, 122)
-                                     else Color.rgb(246, 244, 255)
-                } else {
-                    // The website draws a hard 2dp edge under each key, not a
-                    // blur: an offset round-rect in the palette's edge colour.
-                    // Gboard's roles: the emoji key wears the letter colour,
-                    // the bottom row's punctuation wears the function colour.
-                    val fn = solidLook && when {
-                        key.id == "emojikey" || key.id == "space" -> false
-                        key.char != null -> lastRow
-                        else -> true
-                    }
-                    val lift = if (solidLook) dp(2f) else dp(1f)
-                    shadowPaint.color =
-                        if (solidLook) palette().edge
-                        else Color.argb(if (keyTheme == "glass") 26 else 56, 0, 0, 0)
-                    val drop = RectF(rect.left, rect.top + lift,
-                        rect.right, rect.bottom + lift)
-                    canvas.drawRoundRect(drop, radius, radius, shadowPaint)
-                    keyPaint.color = keyFill(isPressed, fn)
-                }
-                canvas.drawRoundRect(rect, radius, radius, keyPaint)
-                if (tourKey != null && key.id == tourKey) {
-                    // One second per pulse, redrawn a frame at a time while
-                    // the tour waits on this key.
-                    val phase = (android.os.SystemClock.uptimeMillis() % 1400) / 700f
-                    val a = if (phase < 1f) 1f - phase * 0.75f else 0.25f + (phase - 1f) * 0.75f
-                    strokePaint.color = Color.argb((255 * a).toInt(), 0x7C, 0x5C, 0xFF)
-                    strokePaint.strokeWidth = dp(2.5f)
-                    val ring = RectF(rect).apply { inset(-dp(3f), -dp(3f)) }
-                    canvas.drawRoundRect(ring, radius + dp(3f), radius + dp(3f), strokePaint)
-                    postInvalidateDelayed(32)
-                }
-                if (keyBorders || !solidLook) {
-                    strokePaint.color = hairline()
-                    strokePaint.strokeWidth = if (keyBorders) dp(1.1f) else 1f
-                    canvas.drawRoundRect(rect, radius, radius, strokePaint)
-                }
-
-                if (!trackpadLook) {
-                    drawFace(canvas, key, rect)
-                    key.char?.let { c ->
-                        if (bindings.containsKey(c)) {
-                            canvas.drawCircle(rect.right - dp(8f), rect.top + dp(8f), dp(2.5f), dotPaint)
-                        }
-                    }
-                }
+                keyRects.add(key to RectF(x, y, x + w, y + keyH))
+                keyRowOf.add(r)
                 x += units * pitch
+            }
+        }
+    }
+
+    /** The key a touch belongs to. Gboard's and Apple's keyboards have no
+     *  dead space: a finger in the gap between keys or rows, or in the
+     *  margin beside the outermost key, types the nearest key of the row
+     *  it landed in (each row owns its share of the height, gaps included).
+     *  Dropping those touches was the "missing keys" at speed (iOS KeyHit). */
+    private fun keyAt(x: Float, y: Float): Pair<Key, RectF>? {
+        val keys = placed()
+        if (keys.isEmpty()) return null
+        keys.firstOrNull { it.second.contains(x, y) }?.let { return it }
+        val band = if (rowPitchPx > 1f) (y / rowPitchPx).toInt().coerceIn(0, keyRowOf.last()) else 0
+        var best: Pair<Key, RectF>? = null
+        var bestDistance = Float.MAX_VALUE
+        for ((i, placedKey) in keys.withIndex()) {
+            if (keyRowOf[i] != band) continue
+            val r = placedKey.second
+            val dx = maxOf(r.left - x, 0f, x - r.right)
+            val dy = maxOf(r.top - y, 0f, y - r.bottom)
+            val d = dx * dx + dy * dy
+            if (d < bestDistance) { bestDistance = d; best = placedKey }
+        }
+        return best
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val keys = placed()
+        val isPad = kContext.isPad
+        // Gboard's keys: 6dp corners, and ?123 and enter as pills.
+        val radius = dp(6f)
+        val lastRowIndex = keyRowOf.lastOrNull() ?: 0
+
+        for ((i, placedKey) in keys.withIndex()) {
+            val (key, rect) = placedKey
+            val lastRow = keyRowOf[i] == lastRowIndex && !isPad
+            val pill = lastRow && (key.id == "return" || key.id.startsWith("mode:"))
+            val radius = if (pill) rect.height() / 2f else radius
+
+            val isPressed = pressed?.id == key.id && pressedRect == rect
+            val bound = key.char != null && bindings.containsKey(key.char)
+            val glowKey = keyTheme == "glow" && bound && !isPressed && themeBg.isEmpty()
+            // GPU-painted shadow: offset round-rect (the crisp 1dp iOS
+            // drop). Glow keys get a soft accent halo from two stacked
+            // translucent rects — no blur layers, no CPU rendering.
+            if (glowKey) {
+                shadowPaint.color = Color.argb(34, 124, 92, 255)
+                val halo2 = RectF(rect.left - dp(2f), rect.top,
+                    rect.right + dp(2f), rect.bottom + dp(4.5f))
+                canvas.drawRoundRect(halo2, radius + dp(2f), radius + dp(2f), shadowPaint)
+                shadowPaint.color = Color.argb(70, 124, 92, 255)
+                val halo1 = RectF(rect.left, rect.top + dp(1f),
+                    rect.right, rect.bottom + dp(2.5f))
+                canvas.drawRoundRect(halo1, radius, radius, shadowPaint)
+                keyPaint.color = if (isDark) Color.rgb(92, 87, 122)
+                                 else Color.rgb(246, 244, 255)
+            } else {
+                // The website draws a hard 2dp edge under each key, not a
+                // blur: an offset round-rect in the palette's edge colour.
+                // Gboard's roles: the emoji key wears the letter colour,
+                // the bottom row's punctuation wears the function colour.
+                val fn = solidLook && when {
+                    key.id == "emojikey" || key.id == "space" -> false
+                    key.char != null -> lastRow
+                    else -> true
+                }
+                val lift = if (solidLook) dp(2f) else dp(1f)
+                shadowPaint.color =
+                    if (solidLook) palette().edge
+                    else Color.argb(if (keyTheme == "glass") 26 else 56, 0, 0, 0)
+                val drop = RectF(rect.left, rect.top + lift,
+                    rect.right, rect.bottom + lift)
+                canvas.drawRoundRect(drop, radius, radius, shadowPaint)
+                keyPaint.color = keyFill(isPressed, fn)
+            }
+            canvas.drawRoundRect(rect, radius, radius, keyPaint)
+            if (tourKey != null && key.id == tourKey) {
+                // One second per pulse, redrawn a frame at a time while
+                // the tour waits on this key.
+                val phase = (android.os.SystemClock.uptimeMillis() % 1400) / 700f
+                val a = if (phase < 1f) 1f - phase * 0.75f else 0.25f + (phase - 1f) * 0.75f
+                strokePaint.color = Color.argb((255 * a).toInt(), 0x7C, 0x5C, 0xFF)
+                strokePaint.strokeWidth = dp(2.5f)
+                val ring = RectF(rect).apply { inset(-dp(3f), -dp(3f)) }
+                canvas.drawRoundRect(ring, radius + dp(3f), radius + dp(3f), strokePaint)
+                postInvalidateDelayed(32)
+            }
+            if (keyBorders || !solidLook) {
+                strokePaint.color = hairline()
+                strokePaint.strokeWidth = if (keyBorders) dp(1.1f) else 1f
+                canvas.drawRoundRect(rect, radius, radius, strokePaint)
+            }
+
+            if (!trackpadLook) {
+                drawFace(canvas, key, rect)
+                key.char?.let { c ->
+                    if (bindings.containsKey(c)) {
+                        canvas.drawCircle(rect.right - dp(8f), rect.top + dp(8f), dp(2.5f), dotPaint)
+                    }
+                }
             }
         }
 
@@ -513,6 +584,33 @@ class GlyfKeyboardView(
             textPaint.textSize = dp(30f)
             canvas.drawText(display(p), balloon.centerX(),
                 balloon.centerY() + dp(10f), textPaint)
+        }
+
+        // The accent popup (iOS AccentPopup): a card over the held key with
+        // the option under the finger lit.
+        val box = accentBox
+        val options = accentOptions
+        if (box != null && options != null) {
+            shadowPaint.color = Color.argb(28, 0, 0, 0)
+            canvas.drawRoundRect(RectF(box.left - dp(2f), box.top, box.right + dp(2f), box.bottom + dp(5f)),
+                dp(10f), dp(10f), shadowPaint)
+            shadowPaint.color = Color.argb(46, 0, 0, 0)
+            canvas.drawRoundRect(RectF(box.left, box.top + dp(2f), box.right, box.bottom + dp(3f)),
+                dp(9f), dp(9f), shadowPaint)
+            keyPaint.color = if (solidLook) palette().card
+                             else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
+            canvas.drawRoundRect(box, dp(8f), dp(8f), keyPaint)
+            textPaint.textSize = dp(22f)
+            for ((i, option) in options.withIndex()) {
+                val left = box.left + dp(4f) + accentSlot(i) * accentCell
+                val cell = RectF(left, box.top + dp(6f), left + accentCell, box.bottom - dp(6f))
+                if (i == accentIndex) {
+                    keyPaint.color = accent
+                    canvas.drawRoundRect(cell, dp(7f), dp(7f), keyPaint)
+                }
+                textPaint.color = if (i == accentIndex) Color.WHITE else ink()
+                canvas.drawText(option, cell.centerX(), cell.centerY() + textPaint.textSize * 0.36f, textPaint)
+            }
         }
     }
 
@@ -637,148 +735,302 @@ class GlyfKeyboardView(
 
     // MARK: touch
 
+    /** The finger being followed, or -1. Fast two-thumb typing puts the next
+     *  finger down before the last one lifts: the held key types right then,
+     *  as if lifted, and the new finger takes over (LatinIME's way), so no
+     *  letter is lost. */
+    private var activePointer = -1
+    /** Where the followed finger is now. */
+    private var lastX = 0f
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                val hit = keyRects.firstOrNull { it.second.contains(event.x, event.y) }
-                    ?: return true
-                pressed = hit.first
-                pressedRect = hit.second
-                downX = event.x
-                downY = event.y
-                longPressFired = false
-                spaceSlidAway = false
-                pressFeedback() // click + haptic on DOWN, like Apple/Gboard
-                if (hit.first.id == "space") {
-                    val gesture = SpaceGesture(event.x / density, event.y / density, event.eventTime)
-                    spaceGesture = gesture
-                    // Held back 100ms so an ordinary tap never flashes the ring;
-                    // it closes exactly when the AI launches.
-                    startCharge(hit.second, SpaceGesture.HOLD_MS - 100, delayMs = 100)
-                    handler2.postDelayed({ perform(gesture.holdElapsed()) }, SpaceGesture.HOLD_MS)
-                    invalidate()
-                    return true
-                }
-                if (hit.first.id == "delete") {
-                    // Gboard's delete: one character on the tap, then held it
-                    // repeats and speeds up; slid left it selects whole words.
-                    deleteRepeats = 0
-                    deleteWords = 0
-                    handler2.postDelayed(object : Runnable {
-                        override fun run() {
-                            if (deleteWords > 0) return
-                            longPressFired = true
-                            deleteRepeats++
-                            listener.onKey("delete", null)
-                            handler2.postDelayed(this, if (deleteRepeats > 12) 40L else 80L)
-                        }
-                    }, DELETE_REPEAT_DELAY_MS)
-                    invalidate()
-                    return true
-                }
-                val char = hit.first.char
-                val glyfId = char?.let { bindings[it] }
-                val digit = holdDigit(hit.first)
-                if (digit != null) {
-                    handler2.postDelayed({
-                        longPressFired = true
-                        pressFeedback()
-                        listener.onKey(digit, digit)
-                        invalidate()
-                    }, DIGIT_HOLD_MS)
-                }
-                if (glyfId != null) {
-                    startCharge(hit.second, BOUND_HOLD_MS)
-                    handler2.postDelayed({
-                        longPressFired = true
-                        stopCharge()
-                        invalidate()
-                        listener.onBoundKeyHeld(char, glyfId)
-                    }, BOUND_HOLD_MS)
-                }
-                invalidate()
+                // A press whose lift never came (the keys were covered
+                // mid-press) is over once a new one starts.
+                if (pressed != null || spaceGesture != null || accentOptions != null) touchCancel()
+                activePointer = event.getPointerId(0)
+                touchDown(event.x, event.y, event.eventTime)
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (activePointer >= 0 && !handOver(event)) return true
+                // The key just typed may have put a panel over the keys.
+                if (!isShown) return true
+                val i = event.actionIndex
+                activePointer = event.getPointerId(i)
+                touchDown(event.getX(i), event.getY(i), event.eventTime)
             }
             MotionEvent.ACTION_MOVE -> {
-                if (pressed?.id == "delete") {
-                    val step = keyPitchPx * 0.8f
-                    val words = if (keyPitchPx > 1f) ((downX - event.x - step * 0.5f) / step)
-                        .toInt().coerceAtLeast(0) else 0
-                    if (words > 0 || deleteWords > 0) {
-                        if (words != deleteWords) {
-                            if (deleteWords == 0) handler2.removeCallbacksAndMessages(null)
-                            deleteWords = words
-                            longPressFired = true
-                            listener.onDeleteWordsPreview(words)
-                        }
-                    }
-                    return true
-                }
-                val gesture = spaceGesture ?: return true
-                val rect = pressedRect
-                val xDp = event.x / density
-                // Leaving the bar vertically before any swipe or hold is a
-                // cancel, like every other key. Once armed or gliding, the
-                // whole keyboard is the trackpad.
-                if (gesture.isUndecided(event.eventTime) && rect != null &&
-                    abs(xDp - gesture.startX) <= SpaceGesture.SWIPE_SLOP &&
-                    !RectF(rect).apply { inset(-dp(14f), -dp(16f)) }.contains(event.x, event.y)) {
-                    handler2.removeCallbacksAndMessages(null)
-                    gesture.cancelled()
-                    spaceGesture = null
-                    spaceSlidAway = true
-                    pressed = null; pressedRect = null
-                    stopCharge()
-                    invalidate()
-                    return true
-                }
-                perform(gesture.moved(xDp, event.y / density, event.eventTime))
+                val i = event.findPointerIndex(activePointer)
+                if (i >= 0) touchMove(event.getX(i), event.getY(i), event.eventTime)
             }
-            MotionEvent.ACTION_UP -> {
-                handler2.removeCallbacksAndMessages(null)
-                stopCharge()
-                val gesture = spaceGesture
-                val key = pressed
-                pressed = null
-                pressedRect = null
-                spaceGesture = null
-                invalidate()
-                if (key?.id == "delete" && (deleteWords > 0 || longPressFired)) {
-                    // A slide that came back to nothing deletes nothing.
-                    if (deleteWords > 0 || deleteRepeats == 0) listener.onDeleteWordsCommit(deleteWords)
-                    deleteWords = 0
-                    longPressFired = false
-                    return true
+            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP -> {
+                // A finger that was never followed (it landed mid-glide)
+                // types nothing when it lifts.
+                val i = event.actionIndex
+                if (event.getPointerId(i) == activePointer) {
+                    activePointer = -1
+                    touchUp(event.getX(i), event.getY(i), event.eventTime)
                 }
-                when {
-                    gesture != null -> {
-                        // The lift carries travel no MOVE reported (fast
-                        // flicks, batched input): apply it before deciding.
-                        perform(gesture.moved(event.x / density, event.y / density, event.eventTime))
-                        perform(gesture.ended(event.eventTime))
-                    }
-                    spaceSlidAway -> Unit
-                    key != null && !longPressFired -> {
-                        val rect = keyRects.firstOrNull { it.first.id == key.id }?.second
-                        lastTapOffset = if (key.char != null && rect != null && keyPitchPx > 1f)
-                            floatArrayOf((downX - rect.centerX()) / keyPitchPx, (downY - rect.centerY()) / keyPitchPx)
-                        else null
-                        listener.onKey(key.id, key.char?.let { if (shifted) it.uppercase() else it })
-                        lastTapOffset = null
-                    }
-                }
-                longPressFired = false
-                spaceSlidAway = false
             }
             MotionEvent.ACTION_CANCEL -> {
-                handler2.removeCallbacksAndMessages(null)
-                spaceGesture?.let { perform(it.cancelled()) }
-                spaceGesture = null
-                pressed = null; pressedRect = null; longPressFired = false; spaceSlidAway = false
-                stopCharge()
-                invalidate()
+                activePointer = -1
+                touchCancel()
             }
         }
         return true
+    }
+
+    /** A new finger landed while [activePointer] holds a key. That key is
+     *  typed now and the new finger is followed instead; true when it is.
+     *  A key in the middle of its own gesture keeps the touch: a space
+     *  glide, a delete slide or repeat, the accent popup. */
+    private fun handOver(event: MotionEvent): Boolean {
+        val gliding = spaceGesture?.phase == SpaceGesture.Phase.GLIDING
+        val deleting = pressed?.id == "delete" && (deleteWords > 0 || longPressFired)
+        if (accentOptions != null || gliding || deleting) return false
+        val i = event.findPointerIndex(activePointer)
+        activePointer = -1
+        if (i >= 0) touchUp(event.getX(i), event.getY(i), event.eventTime)
+        else touchUp(lastX, downY, event.eventTime)
+        return true
+    }
+
+    private fun touchDown(x: Float, y: Float, time: Long) {
+        val (key, rect) = keyAt(x, y) ?: return
+        pressed = key
+        pressedRect = rect
+        downX = x
+        downY = y
+        lastX = x
+        longPressFired = false
+        spaceSlidAway = false
+        pressFeedback() // click + haptic on DOWN, like Apple/Gboard
+        if (key.id == "space") {
+            val gesture = SpaceGesture(x / density, y / density, time)
+            spaceGesture = gesture
+            // Held back 100ms so an ordinary tap never flashes the ring;
+            // it closes exactly when the AI launches.
+            startCharge(rect, SpaceGesture.HOLD_MS - 100, delayMs = 100)
+            handler2.postDelayed({ perform(gesture.holdElapsed()) }, SpaceGesture.HOLD_MS)
+            invalidate()
+            return
+        }
+        if (key.id == "delete") {
+            // Gboard's delete: one character on the tap, then held it
+            // repeats and speeds up; slid left it selects whole words.
+            deleteRepeats = 0
+            deleteWords = 0
+            handler2.postDelayed(object : Runnable {
+                override fun run() {
+                    if (deleteWords > 0) return
+                    longPressFired = true
+                    deleteRepeats++
+                    listener.onKey("delete", null)
+                    handler2.postDelayed(this, if (deleteRepeats > 12) 40L else 80L)
+                }
+            }, DELETE_REPEAT_DELAY_MS)
+            invalidate()
+            return
+        }
+        val char = key.char
+        // A binding rests while the keys type into Glyf's own fields or a
+        // password: the hold is then the letter's own.
+        val glyfId = char?.let { bindings[it] }?.takeIf { listener.bindingsLive() }
+        val digit = holdDigit(key)
+        val accents = if (char == null || kContext.isPad) emptyList()
+                      else KeyboardLayout.accents[char].orEmpty()
+        when {
+            char != null && glyfId != null -> {
+                startCharge(rect, BOUND_HOLD_MS)
+                handler2.postDelayed({
+                    longPressFired = true
+                    stopCharge()
+                    invalidate()
+                    listener.onBoundKeyHeld(char, glyfId)
+                }, BOUND_HOLD_MS)
+            }
+            char != null && accents.isNotEmpty() -> handler2.postDelayed({
+                openAccents(char, rect, digit, accents)
+            }, DIGIT_HOLD_MS)
+            digit != null -> handler2.postDelayed({
+                longPressFired = true
+                pressFeedback()
+                listener.onKey(digit, digit)
+                invalidate()
+            }, DIGIT_HOLD_MS)
+        }
+        invalidate()
+    }
+
+    private fun touchMove(x: Float, y: Float, time: Long) {
+        lastX = x
+        if (accentOptions != null) {
+            trackAccent(x)
+            return
+        }
+        if (pressed?.id == "delete") {
+            val step = keyPitchPx * 0.8f
+            val words = if (keyPitchPx > 1f) ((downX - x - step * 0.5f) / step)
+                .toInt().coerceAtLeast(0) else 0
+            if (words > 0 || deleteWords > 0) {
+                if (words != deleteWords) {
+                    if (deleteWords == 0) handler2.removeCallbacksAndMessages(null)
+                    deleteWords = words
+                    longPressFired = true
+                    listener.onDeleteWordsPreview(words)
+                }
+            }
+            return
+        }
+        val gesture = spaceGesture ?: return
+        val rect = pressedRect
+        val xDp = x / density
+        // Leaving the bar vertically before any swipe or hold is a
+        // cancel, like every other key. Once armed or gliding, the
+        // whole keyboard is the trackpad.
+        if (gesture.isUndecided(time) && rect != null &&
+            abs(xDp - gesture.startX) <= SpaceGesture.SWIPE_SLOP &&
+            !RectF(rect).apply { inset(-dp(14f), -dp(16f)) }.contains(x, y)) {
+            handler2.removeCallbacksAndMessages(null)
+            gesture.cancelled()
+            spaceGesture = null
+            spaceSlidAway = true
+            pressed = null; pressedRect = null
+            stopCharge()
+            invalidate()
+            return
+        }
+        perform(gesture.moved(xDp, y / density, time))
+    }
+
+    private fun touchUp(x: Float, y: Float, time: Long) {
+        handler2.removeCallbacksAndMessages(null)
+        stopCharge()
+        val gesture = spaceGesture
+        val key = pressed
+        val rect = pressedRect
+        val picked = accentOptions?.getOrNull(accentIndex)
+        pressed = null
+        pressedRect = null
+        spaceGesture = null
+        closeAccents()
+        invalidate()
+        if (picked != null) {
+            // The popup's pick, typed as it shows (already in capitals when
+            // shifted); where it was touched means nothing to the engine.
+            longPressFired = false
+            listener.onKey(picked, picked)
+            return
+        }
+        if (key?.id == "delete" && (deleteWords > 0 || longPressFired)) {
+            // A slide that came back to nothing deletes nothing.
+            if (deleteWords > 0 || deleteRepeats == 0) listener.onDeleteWordsCommit(deleteWords)
+            deleteWords = 0
+            longPressFired = false
+            return
+        }
+        when {
+            gesture != null -> {
+                // The lift carries travel no MOVE reported (fast
+                // flicks, batched input): apply it before deciding.
+                perform(gesture.moved(x / density, y / density, time))
+                perform(gesture.ended(time))
+            }
+            spaceSlidAway -> Unit
+            key != null && !longPressFired -> {
+                lastTapOffset = if (key.char != null && rect != null && keyPitchPx > 1f)
+                    floatArrayOf((downX - rect.centerX()) / keyPitchPx, (downY - rect.centerY()) / keyPitchPx)
+                else null
+                listener.onKey(key.id, key.char?.let { if (shifted) it.uppercase() else it })
+                lastTapOffset = null
+            }
+        }
+        longPressFired = false
+        spaceSlidAway = false
+    }
+
+    private fun touchCancel() {
+        handler2.removeCallbacksAndMessages(null)
+        spaceGesture?.let { perform(it.cancelled()) }
+        spaceGesture = null
+        pressed = null; pressedRect = null; longPressFired = false; spaceSlidAway = false
+        closeAccents()
+        stopCharge()
+        invalidate()
+    }
+
+    // MARK: accents (iOS AccentPopup: hold, slide to pick, lift to type)
+
+    private var accentOptions: List<String>? = null
+    private var accentIndex = 0
+    private var accentBox: RectF? = null
+    private var accentCell = 0f
+    /** Laid out right to left, so the first option still sits over a key
+     *  near the right edge. */
+    private var accentReversed = false
+    /** Where the finger was when the popup opened: it picks nothing until
+     *  it has really moved, so a still hold keeps the first option. */
+    private var accentOriginX = 0f
+    private var accentMoved = false
+
+    /** Which cell, left to right, option [i] is drawn in. */
+    private fun accentSlot(i: Int): Int {
+        val n = accentOptions?.size ?: 0
+        return if (accentReversed) n - 1 - i else i
+    }
+
+    /** The held key's options over it: the letter, then iOS's accents for
+     *  it. A top-row letter showing its number offers that number first,
+     *  picked unless the finger moves, so a still hold still types it. */
+    private fun openAccents(base: String, rect: RectF, digit: String?, accents: List<String>) {
+        // Shift makes capitals of the letters, as on iOS.
+        fun caps(t: String) = if (shifted && t.length == 1) t.uppercase() else t
+        val options = listOfNotNull(digit) + (listOf(base) + accents).map(::caps)
+        longPressFired = true
+        val n = options.size
+        val cell = min(dp(40f), (width - dp(16f)) / n)
+        val w = cell * n + dp(8f)
+        val h = dp(52f)
+        val edge = dp(4f)
+        // The first option straight over the key, the rest running away
+        // from the nearer edge; squeezed in where neither way fits.
+        val rightward = rect.centerX() - cell / 2f - edge
+        val leftward = rect.centerX() + cell / 2f + edge - w
+        accentReversed = rightward + w > width - edge &&
+            (leftward >= edge || rect.centerX() > width / 2f)
+        val x = (if (accentReversed) leftward else rightward)
+            .coerceIn(edge, maxOf(edge, width - w - edge))
+        // Above the key, reaching up over the strip for the top row (the
+        // keyboard's own layout lets this view draw there).
+        val y = maxOf(-top.toFloat() + dp(2f), rect.top - h - dp(6f))
+        accentOptions = options
+        accentIndex = 0
+        accentCell = cell
+        accentBox = RectF(x, y, x + w, y + h)
+        accentOriginX = lastX
+        accentMoved = false
+        pressFeedback()
+        invalidate()
+    }
+
+    private fun trackAccent(x: Float) {
+        val box = accentBox ?: return
+        val n = accentOptions?.size ?: return
+        if (!accentMoved && abs(x - accentOriginX) < accentCell / 2f) return
+        accentMoved = true
+        val slot = ((x - box.left - dp(4f)) / accentCell).toInt().coerceIn(0, n - 1)
+        val i = if (accentReversed) n - 1 - slot else slot
+        if (i != accentIndex) {
+            accentIndex = i
+            invalidate()
+        }
+    }
+
+    private fun closeAccents() {
+        accentOptions = null
+        accentBox = null
+        accentIndex = 0
     }
 
     // MARK: space bar outcomes (SpaceGesture decides, the view performs)

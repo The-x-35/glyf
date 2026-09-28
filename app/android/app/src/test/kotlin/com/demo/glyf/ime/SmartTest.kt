@@ -46,6 +46,23 @@ class SmartTest {
         assertNull(Smart.chip("\$13", vault, rates = home))
     }
 
+    /** "$sol" is SOL's price, never your wallet (SmartTest twin of
+     *  testACashtagIsAPriceNeverYourWallet). */
+    @Test fun aCashtagIsAPriceNeverYourWallet() {
+        val wallet = listOf(Smart.Field("wallet", "Solana", "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj"))
+        assertNull(Smart.chip("\$sol", wallet))
+        assertNull(Smart.chip("whats \$solana at", wallet))
+        val rates = Smart.RatesSnapshot(crypto = mapOf("SOL" to 117.66, "APPL" to 339.43),
+            tickers = mapOf("SOL" to "SOL", "APPL" to "AAPL"))
+        assertEquals(Smart.Chip.Money("1 SOL = \$117.66", " = \$117.66"), Smart.chip("\$sol", wallet, rates = rates))
+        assertEquals("1 AAPL = \$339.43", Smart.display(Smart.chip("\$appl", wallet, rates = rates)!!))
+        assertEquals(Smart.Chip.Vault(wallet[0]), Smart.chip("my sol address is", wallet))
+        assertEquals(Smart.Chip.Vault(wallet[0]), Smart.chip("solana wallet:", wallet))
+        assertEquals(Smart.Chip.Vault(wallet[0]), Smart.chip("send it to my wallet", wallet))
+        assertNull(Smart.chip("i bought some sol", wallet))
+        assertNull(Smart.chip("is usdc", wallet))
+    }
+
     @Test fun bookingPages() {
         assertEquals("cal.com/sam/intro", Smart.bookingLink("grab a slot: cal.com/sam/intro"))
         assertEquals("https://calendly.com/ria", Smart.bookingLink("book me here https://calendly.com/ria"))
@@ -71,6 +88,162 @@ class SmartTest {
         assertNull(Smart.chip("flight AI 2021", vault))
         assertNull(Smart.chip("4/0", vault))
         assertNull(Smart.evaluate("2+abc"))
+    }
+
+    /** "24/7" and dates are numbers over numbers, not sums; a percentage
+     *  added or taken off is a share of the left side (Smart.swift twin). */
+    @Test fun datesAreNotSumsAndPercentagesAreShares() {
+        assertNull(Smart.calc("we're open 24/7"))
+        assertNull(Smart.calc("see you 9/28"))
+        assertNull(Smart.calc("due 28/9"))
+        assertNull(Smart.chip("open 24/7", vault) as? Smart.Chip.Calc)
+        // Asked for with "=", or with bigger numbers, it is still a sum.
+        assertEquals("3" to true, Smart.calc("12/4 ="))
+        assertEquals("870" to false, Smart.calc("3480/4"))
+        assertEquals(Smart.Chip.Calc("220", false), Smart.chip("200 + 10%", vault))
+        assertEquals(Smart.Chip.Calc("180", false), Smart.chip("200 - 10%", vault))
+        assertEquals(Smart.Chip.Calc("441", false), Smart.chip("18% of 2450", vault))
+        // Only a bare percentage is a share: 10% / 4 is a number like any other.
+        assertEquals(20.025, Smart.evaluate("20+10%/4")!!, 1e-9)
+    }
+
+    /** The detail the sentence names: an email address is an email, an IP
+     *  or web address is nobody's home, and an account or card number is
+     *  not a phone (Smart.swift twin). */
+    /** A saved detail only where the sentence leads into it (2026-09-28
+     *  audit: "wrong address", "can you email" and "i lost my phone" offered
+     *  yours). GlyfEngineTests.testADetailOnlyWhereTheSentenceLeadsIntoIt. */
+    @Test fun aDetailOnlyWhereTheSentenceLeadsIntoIt() {
+        val all = listOf(
+            Smart.Field("address", "Home", "123 Market St"),
+            Smart.Field("email", "Email", "me@example.com"),
+            Smart.Field("phone", "Mobile", "+1 415 555 0100"),
+            Smart.Field("wallet", "Wallet address", "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA"),
+            Smart.Field("social", "Instagram", "@me"),
+            Smart.Field("upi", "UPI", "me@okbank"))
+        val asks = listOf(
+            "my email is" to "email", "Email ID:" to "email", "you can email me at" to "email",
+            "address:" to "address", "our office address:" to "address", "ship it to" to "address",
+            "my number is" to "phone", "phone:" to "phone", "reach me at" to "phone",
+            "my wallet" to "wallet", "sol address:" to "wallet", "follow me on insta" to "social",
+            "upi id:" to "upi")
+        for ((text, kind) in asks) assertEquals(text, kind, Smart.vaultMatch(text, all)?.kind)
+        for (text in listOf("can you email", "i'll email", "email", "what's the address", "wrong address",
+                "the address is", "ip address:", "i lost my phone", "my phone is dead",
+                "phantom wallet is down", "saw it on insta", "i use paytm", "this is great",
+                "my linkedin is")) {
+            assertNull(text, Smart.vaultMatch(text, all))
+        }
+    }
+
+    /** "I lost 5 pounds" is weight; a conversion the chip put in is not
+     *  converted back. GlyfEngineTests.testPoundsOfWeightAndInsertedAnswersAreNotMoney. */
+    @Test fun poundsOfWeightAndInsertedAnswersAreNotMoney() {
+        val usd = Smart.RatesSnapshot(fiat = mapOf("USD" to 1.0, "GBP" to 0.75), local = "USD")
+        assertEquals("£5 = \$6.67", Smart.display(Smart.chip("it costs 5 pounds", emptyList(), rates = usd)!!))
+        assertNull(Smart.chip("I lost 5 pounds", emptyList(), rates = usd))
+        assertNull(Smart.chip("bench press 100 pounds", emptyList(), rates = usd))
+        val india = Smart.RatesSnapshot(fiat = mapOf("USD" to 1.0, "INR" to 95.88),
+            crypto = mapOf("SOL" to 111.77), local = "INR")
+        assertNull(Smart.chip("it costs \$13 = ₹1,246.44", emptyList(), rates = india))
+        assertNull(Smart.chip("buying \$sol = \$111.77", emptyList(), rates = india))
+        assertEquals("₹1,200 = \$12.52", Smart.display(Smart.chip("the total is ₹1,200", emptyList(), rates = india)!!))
+    }
+
+    /** The server's unit cases (server/test/units.test.ts; GlyfEngineTests
+     *  too): all three convert alike. */
+    @Test fun unitsConvertOnThePhone() {
+        val cases = listOf(
+            "5 km in miles" to "5 km is 3.107 miles",
+            "convert 100 miles to km" to "100 miles is 160.9 km",
+            "100 miles to m" to "100 miles is 160,934 m",
+            "what is 6 ft in cm" to "6 feet is 182.9 cm",
+            "5 in in cm" to "5 inches is 12.7 cm",
+            "how many cm in an inch" to "1 inch is 2.54 cm",
+            "how many feet in a mile?" to "1 mile is 5,280 feet",
+            "100f to c" to "100°F is 37.78°C",
+            "37 c in f" to "37°C is 98.6°F",
+            "-40 celsius to fahrenheit" to "-40°C is -40°F",
+            "70 kg in lbs" to "70 kg is 154.3 lb",
+            "5 pounds in kg" to "5 lb is 2.268 kg",
+            "2 cups in ml" to "2 cups is 473.2 ml",
+            "how many ml are in 2 cups" to "2 cups is 473.2 ml",
+            "1 gallon to liters" to "1 gallon is 3.785 litres",
+            "60 mph in km/h" to "60 mph is 96.56 km/h",
+            "3 hours in minutes" to "3 hours is 180 minutes",
+            "1 acre in sq ft" to "1 acre is 43,560 sq ft",
+            "5 feet 10 inches in cm" to "5 ft 10 in is 177.8 cm",
+            "5'10 in cm" to "5 ft 10 in is 177.8 cm",
+            "178 cm in feet" to "178 cm is 5 ft 10 in",
+            "2 m in ft" to "2 m is 6 ft 7 in",
+            "100 m in feet" to "100 m is 328.1 feet",
+        )
+        for ((asked, said) in cases) assertEquals(asked, said, Smart.convertUnits(asked)?.say)
+        for (text in listOf("5 pounds in dollars", "5 k in miles", "meet in 5 min", "i have 2 hours in the office",
+                "5 km", "km to miles", "5 kg in km")) {
+            assertNull(text, Smart.convertUnits(text))
+        }
+    }
+
+    /** Hold space on "2+5" answers on the phone, at once: no server, no run
+     *  (user, 2026-09-29: "i wanna do math 2+5 its taking long, we dont need
+     *  ai for this"). GlyfEngineTests.testHoldSpaceAnswersSumsMoneyAndTheClockOnThePhone. */
+    @Test fun holdSpaceAnswersSumsMoneyAndTheClockOnThePhone() {
+        assertEquals("2+5 = 7", Smart.instantAnswer("2+5")?.say)
+        assertEquals("144", Smart.instantAnswer("what is 12*12?")?.value)
+        assertEquals("18% of 2450 is 441", Smart.instantAnswer("18% of 2450")?.say)
+        assertEquals("870", Smart.instantAnswer("3480/4 =")?.value)
+        assertEquals("3", Smart.instantAnswer("9/3")?.value)
+        assertEquals("5 km is 3.107 miles", Smart.instantAnswer("5 km in miles")?.say)
+        val rates = Smart.RatesSnapshot(fiat = mapOf("USD" to 1.0, "INR" to 95.88), local = "INR")
+        assertEquals("\$100 = ₹9,588", Smart.instantAnswer("100 usd to inr", rates)?.say)
+        assertEquals("₹500 = \$5.21", Smart.instantAnswer("₹500 in dollars", rates)?.say)
+        // No rates in hand yet: the server answers it.
+        assertNull(Smart.instantAnswer("100 usd to inr"))
+        val at = 1790614680_000L   // 28 Sep 2026, 10:28 PM in India
+        val india = java.time.ZoneId.of("Asia/Kolkata")
+        assertEquals("It's 10:28 PM",
+            Smart.instantAnswer("what time is it", now = at, zone = india, locale = java.util.Locale.US)?.say)
+        assertEquals("It's Monday, September 28",
+            Smart.instantAnswer("whats the date?", now = at, zone = india, locale = java.util.Locale.US)?.say)
+        // A tip, and the days until a day everyone counts to (answers.ts).
+        assertEquals("15% tip on 64 is 9.60 (73.60 in all)", Smart.instantAnswer("15% tip on 64")?.say)
+        val sept28 = 1790614680_000L
+        val ny = java.time.ZoneId.of("America/New_York")
+        fun days(q: String) = Smart.instantAnswer(q, now = sept28, zone = ny, locale = java.util.Locale.US)
+        assertEquals("88 days until Christmas", days("how many days until christmas")?.say)
+        assertEquals("Friday, December 25", days("how many days until christmas")?.sub)
+        assertEquals("95 days until New Year's Day", days("days till new years")?.say)
+        assertEquals("33 days until Halloween", days("how long until halloween?")?.say)
+        assertEquals("88 days until Dec 25", days("how many days until dec 25")?.say)
+        assertEquals("8 weeks and 3 days until Thanksgiving", days("how many weeks until thanksgiving")?.say)
+        // Messages and questions for the web stay with the server.
+        for (text in listOf("hey 2+5 people coming", "split is 3480/4", "call me at 5", "who won the match", "5",
+                "time in tokyo", "how long until the bus comes")) {
+            assertNull(text, Smart.instantAnswer(text))
+        }
+    }
+
+    @Test fun theSentenceNamesTheDetail() {
+        val home = vault[0]
+        val email = Smart.Field("email", "Email", "a@b.co")
+        val phone = Smart.Field("phone", "Mobile", "+1 415 555 0100")
+        val all = listOf(home, email, phone)
+        assertEquals(Smart.Chip.Vault(email), Smart.chip("my email address is", all))
+        assertEquals(Smart.Chip.Vault(email), Smart.chip("e-mail address:", all))
+        assertEquals(Smart.Chip.Vault(email), Smart.chip("my gmail address is", all))
+        // No email saved: nothing, never the home address.
+        assertNull(Smart.chip("my email address is", listOf(home, phone)))
+        assertNull(Smart.chip("the ip address is", all))
+        assertNull(Smart.chip("our website address is", all))
+        assertEquals(Smart.Chip.Vault(home), Smart.chip("my address is", all))
+        assertEquals(Smart.Chip.Vault(phone), Smart.chip("my phone number is", all))
+        assertEquals(Smart.Chip.Vault(phone), Smart.chip("whatsapp number:", all))
+        for (other in listOf("account", "card", "order", "gst", "tracking", "flight",
+                             "booking", "policy", "pan", "aadhaar")) {
+            assertNull(other, Smart.chip("the $other number is", all))
+            assertNull(other, Smart.chip("my $other number is", all))
+        }
     }
 
     @Test fun detailsInEverydayWords() {

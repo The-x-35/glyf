@@ -23,6 +23,8 @@ object RatesStore {
     private val crypto = ConcurrentHashMap<String, Double>()
     /** The token behind each cashtag, so Buy knows what to buy. */
     private val mints = ConcurrentHashMap<String, String>()
+    /** The market's ticker for what was typed ("APPL" → "AAPL"). */
+    private val tickers = ConcurrentHashMap<String, String>()
     private val cryptoAt = ConcurrentHashMap<String, Long>()
     /** Copied or typed addresses: a wallet, or the token at that address. */
     private val addresses = ConcurrentHashMap<String, Smart.AddressKind>()
@@ -72,7 +74,8 @@ object RatesStore {
     }
 
     fun snapshot(region: String?, chosen: String? = null) =
-        Smart.RatesSnapshot(fiat, crypto.toMap(), local(region, chosen), mints.toMap(), addresses.toMap())
+        Smart.RatesSnapshot(fiat, crypto.toMap(), local(region, chosen), mints.toMap(), addresses.toMap(),
+            tickers.toMap())
 
     /** What an address turned out to be, or null when not yet asked. */
     fun addressKind(address: String): Smart.AddressKind? = addresses[address]
@@ -105,9 +108,12 @@ object RatesStore {
                 crypto[symbol] = usd
                 val mint = quote?.optString("mint").orEmpty()
                 if (mint.isNotEmpty()) mints[symbol] = mint else mints.remove(symbol)
+                val ticker = quote?.optString("ticker").orEmpty()
+                if (ticker.isNotEmpty()) tickers[symbol] = ticker else tickers.remove(symbol)
             } else {
                 crypto.remove(symbol)
                 mints.remove(symbol)
+                tickers.remove(symbol)
             }
             main.post(then)
         }

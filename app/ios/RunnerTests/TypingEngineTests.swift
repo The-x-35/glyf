@@ -72,10 +72,12 @@ final class TypingEngineTests: XCTestCase {
             }
             for form in state["kept"] as? [String] ?? [] { lexicon.keep(form, today: today) }
             for item in state["rejected"] as? [[String]] ?? [] {
-                lexicon.revert(typed: item[0], correction: item[1], today: today)
-                // A revert keeps the typed word too; this case tests the block alone.
-                if state["kept"] == nil { lexicon.forget(item[0]); lexicon.unblock(item[0]) }
+                // A revert keeps the typed word too; without "kept" the case tests the block alone.
+                if state["kept"] != nil { lexicon.revert(typed: item[0], correction: item[1], today: today) }
+                else { lexicon.reject(typed: item[0], correction: item[1]) }
             }
+            // Removed in the app's "My words".
+            for form in state["forgotten"] as? [String] ?? [] { lexicon.forget(form) }
             for form in state["addedWords"] as? [String] ?? [] { lexicon.add(form, today: today) }
             engine.replacePersonal(lexicon)
             engine.setPackWords(state["packWords"] as? [String] ?? [])
@@ -130,6 +132,9 @@ final class TypingEngineTests: XCTestCase {
             }
             if let max = expect["alternativesMax"] as? Int, s.alternatives.count > max {
                 failures.append("\(name): \(s.alternatives.count) alternatives > \(max)")
+            }
+            if let first = expect["alternativesFirst"] as? String, s.alternatives.first != first {
+                failures.append("\(name): first alternative \(s.alternatives.first ?? "none") ≠ \(first)")
             }
         }
         return failures

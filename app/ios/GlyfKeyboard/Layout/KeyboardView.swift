@@ -22,6 +22,8 @@ protocol KeyboardViewDelegate: AnyObject {
     func kbSpaceGestures() -> (glide: Bool, bar: Bool)
     /// A bound key held ≥320ms (M2 — Glyf Keys, §6.5).
     func kbBoundKeyIgnited(keyId: String, glyfId: String, origin: KeyView)
+    /// Whether a held key may run what it is bound to right now.
+    func kbBindingsLive() -> Bool
     func kbTextInteraction()
 }
 
@@ -315,7 +317,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 delegate?.kbDeleteBackward()
                 startDeleteRepeat(st)
             case .char(let c):
-                let bound = kv.spec.pad ? nil : SettingsStore.current.bindings[c]
+                // Bindings rest while the keys type into Glyf's own fields
+                // (a note, a search, an event title) or a password: a hold
+                // there is a letter's accents, never a swap of the keyboard.
+                let bound = kv.spec.pad || delegate?.kbBindingsLive() == false
+                    ? nil : SettingsStore.current.bindings[c]
                 if bound != nil {
                     kv.startChargeRing()
                 }

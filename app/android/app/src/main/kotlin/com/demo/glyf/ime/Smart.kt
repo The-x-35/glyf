@@ -60,6 +60,8 @@ object Smart {
         val mints: Map<String, String> = emptyMap(),
         /** What an address on screen turned out to be, once asked. */
         val addresses: Map<String, AddressKind> = emptyMap(),
+        /** The market's ticker for what was typed ("APPLE", "APPL" → "AAPL"). */
+        val tickers: Map<String, String> = emptyMap(),
     ) { companion object { val EMPTY = RatesSnapshot() } }
 
     /** A Solana address is someone's wallet or a token's; only a lookup can
@@ -165,6 +167,9 @@ object Smart {
         }
         calc(text, indianGrouping)?.let { return Chip.Calc(it.first, it.second) }
         money(text, rates)?.let { return it }
+        // A cashtag waits for its price: "$sol" is SOL's price, never your
+        // Solana wallet, even before the price has come.
+        if (cashtag(text) != null) return null
         vaultMatch(text, fields)?.let { return Chip.Vault(it) }
         EventParse.looksLikePlan(text)?.let { return Chip.Event(it) }
         bookingLink(text, ownBooking)?.let { return Chip.Booking(it) }
@@ -189,6 +194,9 @@ object Smart {
     /** An amount at the end of the text: "$13", "13 usd", "₹500", "20 euros". */
     private val amountPattern = Regex(
         """(?:([$€£₹¥])\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?([$€£₹¥]|[A-Za-z]{2,7}))\s*$""",
+        RegexOption.IGNORE_CASE)
+    private val weightTalk = Regex(
+        """\b(lose|lost|losing|gain|gained|gaining|weigh|weighs|weighed|weighing|weight|heavy|heavier|lighter|lbs?|kgs?|kilos?|bench|squat|deadlift|lift|lifted|lifting|dumbbells?|curls?|born)\b""",
         RegexOption.IGNORE_CASE)
     /** "$sol", "$usdc": a ticker, never a number. */
     /** "\$sol", "\$aapl", or a name ("\$apple", "\$bitcoin"; the server finds it). */
@@ -215,13 +223,21 @@ object Smart {
     fun money(text: String, rates: RatesSnapshot): Chip.Money? {
         cashtag(text)?.let { ticker ->
             val usd = rates.crypto[ticker] ?: return null
+            // "1 SOL = $112" is already the answer; do not price the price.
+            if (text.replace("\$${ticker.lowercase()}", "", ignoreCase = true).trim().endsWith("=")) return null
             val quoted = price(usd)
-            return Chip.Money("1 $ticker = $quoted", " = $quoted", rates.mints[ticker])
+            val name = rates.tickers[ticker] ?: ticker
+            return Chip.Money("1 $name = $quoted", " = $quoted", rates.mints[ticker])
         }
         val m = amountPattern.find(text) ?: return null
+        // The right-hand side of a conversion the chip itself put in ("$13 =
+        // ₹1,246"): converting that back would be a loop, not help.
+        if (text.substring(0, m.range.first).trimEnd().endsWith("=")) return null
         val amount = (m.groups[2]?.value ?: m.groups[3]?.value ?: "")
             .replace(",", "").toDoubleOrNull()?.takeIf { it > 0 } ?: return null
         val from = currencyOf(unitOf(m)) ?: return null
+        // Pounds of weight are not money: "I lost 5 pounds", "bench 100 pounds".
+        if (unitOf(m).lowercase().startsWith("pound") && weightTalk.containsMatchIn(text)) return null
         // Where the phone is, or dollars when the amount already is local.
         val to = if (from == rates.local) "USD" else rates.local
         if (to == from) return null
@@ -260,6 +276,7 @@ object Smart {
         """(\(?\s*$NUM\s*\)?(?:\s*$OP\s*\(?\s*$NUM\s*\)?)+)(\s*=)?\s*$""",
         RegexOption.IGNORE_CASE)
     private val hasOperator = Regex("""[+*/×÷^%]|\bx\b|\bof\b""", RegexOption.IGNORE_CASE)
+    private val smallOverSmall = Regex("""\s*\d{1,2}\s*/\s*\d{1,2}\s*""")
 
     fun calc(text: String, indianGrouping: Boolean = true): Pair<String, Boolean>? {
         if (text.isEmpty()) return null
@@ -268,6 +285,9 @@ object Smart {
         val hasEquals = m.groups[2] != null
         // A bare number is not a sum; only offer when an operator is present.
         if (!hasEquals && !hasOperator.containsMatchIn(expr)) return null
+        // "24/7" and dates ("9/28", "28/9") read as numbers over numbers:
+        // two small whole numbers and a slash, with no "=", are not a sum.
+        if (!hasEquals && smallOverSmall.matches(expr)) return null
         val v = evaluate(expr) ?: return null
         val currency = expr.firstOrNull { it in "₹$€£" }?.toString() ?: ""
         return (currency + format(v, indianGrouping)) to hasEquals
@@ -366,8 +386,12 @@ object Smart {
             while (v != null && (peek() == "+" || peek() == "-")) {
                 val op = peek()
                 i++
+                // "200 + 10%" is 220, as on a phone's calculator: a bare
+                // percentage added or taken off is a share of the left side.
+                val start = i
                 val rhs = product()
-                v = if (rhs == null) null else if (op == "+") v + rhs else v - rhs
+                val share = if (rhs != null && i == start + 2 && tokens[i - 1] == "%") v * rhs else rhs
+                v = if (share == null) null else if (op == "+") v + share else v - share
             }
             v
         }
@@ -407,19 +431,29 @@ object Smart {
 
     // MARK: Contextual vault
 
-    /** Sentence endings that mean "the next thing I type is X". */
+    /** Sentence endings that mean "the next thing I type is X": the
+     *  sentence leads into one of your own details ("my email is", "call me
+     *  at", "ship it to") or labels it ("Email:"). A bare word at the end is
+     *  not enough: "wrong address", "can you email", "i lost my phone" and
+     *  "saw it on insta" are about something else. Smart.swift's twin. */
     private val triggers: List<Triple<Regex, List<String>, String?>> = listOf(
-        Triple("""\b(my name is|name:|this is)\s*$""", listOf("name"), null),
+        // "This is" introduces you only at the start: "Hi, this is", not "this is great".
+        Triple("""(?:\bmy name is|\bname:|(?:^|[.!?,\n]\s*|\b(?:hi|hey|hello|hii|hiya)\W*)this is)\s*$""", listOf("name"), null),
         // Before address: "my wallet address" asks for the wallet.
-        Triple("""\b(wallet|sol|solana|phantom|usdc|crypto)(?:\s*(?:address|addy|wallet))?\s*(?:is\s*)?:?\s*$""", listOf("wallet"), null),
-        Triple("""\b(address|deliver(?: it)? to|send (?:it |the \w+ )?to|ship (?:it )?to|come to|pick me up (?:from|at))\s*(?:is\s*)?:?\s*$""", listOf("address"), null),
-        Triple("""\b(upi|gpay|google pay|phonepe|paytm)(?:\s*id)?\s*(?:is\s*)?:?\s*$""", listOf("upi"), null),
-        Triple("""\bpay me (?:at|on)\s*$""", listOf("upi"), null),
-        Triple("""\b(insta|instagram|ig)(?:\s*(?:handle|id))?\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "insta"),
-        Triple("""\b(twitter|on x|x handle)\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "x"),
-        Triple("""\blinkedin\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "linkedin"),
-        Triple("""\b(e-?mail|mail)(?:\s*id)?\s*(?:is\s*)?:?\s*$""", listOf("email"), null),
-        Triple("""\b(number|phone|mobile|whatsapp|call me (?:at|on))\s*(?:is\s*)?:?\s*$""", listOf("phone"), null),
+        // A coin's name alone is not a wallet ("$sol" is its price, "I bought
+        // sol" a purchase), nor is someone else's ("phantom wallet is down").
+        Triple("""(?<!\$)\b(?:(?:my|our)\s+(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet(?:\s+(?:address|addy))?|(?:my|our)\s+(?:sol|solana|phantom|usdc|crypto)\s+(?:address|addy)|(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet(?:\s+(?:address|addy))?\s*:|(?:sol|solana|phantom|usdc|crypto)\s+(?:address|addy)\s*:)\s*(?:is\s*)?:?\s*$""", listOf("wallet"), null),
+        // Before address: "my email address is" is an email.
+        Triple("""\b(?:(?:my|our)\s+(?:e-?mail|g-?mail|mail)(?:\s*(?:id|address|addy))?|(?:e-?mail|g-?mail|mail)\s+(?:me|us)\s+(?:at|on)|(?:e-?mail|g-?mail)(?:\s*(?:id|address|addy))?\s*:|mail\s*id\s*:)\s*(?:is\s*)?:?\s*$""", listOf("email"), null),
+        // An IP, web or website address is no place to deliver to.
+        Triple("""(?:\b(?:my|our)\s+(?:(?:home|delivery|shipping|office|current|new)\s+)?(?:address|addy)|(?<!e-?mail\s)(?<!gmail\s)(?<!ip\s)(?<!web\s)(?<!website\s)(?<!mac\s)\b(?:(?:home|delivery|shipping|office)\s+)?address\s*:|\bdeliver(?:\s+it)?\s+to|\bsend\s+it\s+to|\bship\s+(?:it\s+)?to|\bcome\s+(?:over\s+)?to|\bpick\s+me\s+up\s+(?:from|at))\s*(?:is\s*)?:?\s*$""", listOf("address"), null),
+        Triple("""\b(?:(?:my|our)\s+(?:upi|vpa|gpay|google\s+pay|phonepe|paytm)(?:\s+(?:id|number|handle))?|(?:upi|vpa|gpay|phonepe|paytm)(?:\s*id)?\s*:|(?:pay|gpay|phonepe|paytm)\s+me\s+(?:at|on))\s*(?:is\s*)?:?\s*$""", listOf("upi"), null),
+        Triple("""\b(?:(?:my|our)\s+(?:insta|instagram|ig)(?:\s+(?:handle|id|username))?|(?:follow|find|add|dm)\s+(?:me|us)\s+on\s+(?:insta|instagram|ig)|(?:insta|instagram|ig)(?:\s+(?:handle|id|username))?\s*:)\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "insta"),
+        Triple("""\b(?:(?:my|our)\s+(?:twitter|x)(?:\s+(?:handle|id|username))?|(?:follow|find|dm)\s+(?:me|us)\s+on\s+(?:twitter|x)|(?:twitter|x\s+handle)\s*:)\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "x"),
+        Triple("""\b(?:(?:my|our)\s+linkedin(?:\s+(?:profile|url|handle|id))?|(?:find|add|connect\s+with)\s+(?:me|us)\s+on\s+linkedin|linkedin\s*:)\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "linkedin"),
+        // A phone number, not an account, card, order or ticket number, and
+        // not the phone itself ("i lost my phone").
+        Triple("""\b(?:(?:my|our)\s+(?:(?:phone|mobile|cell|contact|whatsapp)\s+)?(?:number|no\.?|num)|(?:my|our)\s+whatsapp|(?:phone|mobile|cell|contact|whatsapp)(?:\s+(?:number|no\.?|num))?\s*:|(?:call|text|whatsapp|ping|reach|ring)\s+(?:me|us)\s+(?:at|on))\s*(?:is\s*)?:?\s*$""", listOf("phone"), null),
     ).map { (p, kinds, label) -> Triple(Regex(p, RegexOption.IGNORE_CASE), kinds, label) }
 
     /** Words that lead into one of your own details near the end of the
@@ -448,13 +482,36 @@ object Smart {
             if (!re.containsMatchIn(text)) continue
             val candidates = fields.filter { it.kind in kinds }
             if (label != null) {
-                candidates.firstOrNull { it.label.lowercase().contains(label) }?.let { return it }
+                candidates.firstOrNull { isPlatform(it.label, label) }?.let { return it }
                 continue
             }
             // The sentence named the kind; with none saved there is nothing to offer.
             return candidates.firstOrNull()
         }
         return firstPersonMatch(text, fields)
+    }
+
+    /** The platform the words named for a handle ("insta", "x",
+     *  "linkedin"), or null for a plain "handle". */
+    private fun platformNamed(words: String): String? {
+        val w = words.lowercase()
+        return when {
+            Regex("""\b(insta(gram)?|ig)\b""").containsMatchIn(w) -> "insta"
+            Regex("""\b(twitter|x)\b""").containsMatchIn(w) -> "x"
+            w.contains("linkedin") -> "linkedin"
+            else -> null
+        }
+    }
+
+    /** Whether a saved handle is that platform's, by its label ("Instagram",
+     *  "IG", "Twitter", "X"). */
+    private fun isPlatform(label: String, platform: String): Boolean {
+        val l = label.lowercase().trim()
+        return when (platform) {
+            "insta" -> l.contains("insta") || Regex("""\big\b""").containsMatchIn(l)
+            "x" -> l.contains("twitter") || Regex("""(^|\W)x($|\W)""").containsMatchIn(l)
+            else -> l.contains(platform)
+        }
     }
 
     /** "send me ur upi", "what's your address": a question for someone else. */
@@ -470,11 +527,333 @@ object Smart {
         if (clause.isEmpty() || asksSomeoneElse(text)) return null
         for ((re, kind) in firstPerson) {
             val m = re.find(clause) ?: continue
-            val field = fields.firstOrNull { it.kind == kind || (kind == "social" && it.kind == "handle") } ?: continue
+            // "My linkedin" is the LinkedIn one, never the Instagram handle;
+            // "my handle" takes whichever there is.
+            val platform = if (kind == "social") platformNamed(m.value) else null
+            val field = fields.firstOrNull {
+                (it.kind == kind || (kind == "social" && it.kind == "handle")) &&
+                    (platform == null || isPlatform(it.label, platform))
+            } ?: continue
             // The detail itself has not been typed yet.
             val after = clause.substring(m.range.last + 1).replace(Regex("""^[\s:,-]*(is|are|=)?[\s:,-]*"""), "")
             if (after.length <= 3) return field
         }
         return null
+    }
+
+    // MARK: Answers worked out on the phone (hold space)
+
+    /** What a held space answers right here: a sum, a conversion, money at
+     *  the rates the keyboard already holds, the time or the date. No
+     *  network, no model, no run spent ("2+5" went to the server and back).
+     *  Everything else still goes to the server. Smart.swift's twin, and the
+     *  unit table is the server's lib/units.ts. */
+    data class InstantAnswer(
+        val title: String,
+        /** The big line on the card: "7", "3.107 miles", "10:28 PM". */
+        val value: String,
+        val sub: String,
+        /** What Insert puts in the message: "2+5 = 7", "5 km is 3.107 miles". */
+        val say: String,
+    )
+
+    fun instantAnswer(
+        text: String, rates: RatesSnapshot = RatesSnapshot.EMPTY, indianGrouping: Boolean = true,
+        now: Long = System.currentTimeMillis(), zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+        locale: java.util.Locale = java.util.Locale.getDefault(),
+    ): InstantAnswer? {
+        val t = text.trim().replace(Regex("""\s+"""), " ").replace('’', '\'')
+        if (t.isEmpty() || t.length > 80) return null
+        sumAnswer(t, indianGrouping)?.let { return it }
+        convertUnits(t)?.let { return InstantAnswer(t, it.to, it.from, it.say) }
+        moneyAnswer(t, rates)?.let { return it }
+        daysAnswer(t, now, zone, locale)?.let { return it }
+        return clockAnswer(t, now, zone, locale)
+    }
+
+    // A sum asked as a sum: "2+5", "3480/4 =", "what is 12*12?", "18% of 2450".
+    private val sumLead = Regex("""^(?:what\s+is|what's|whats|how\s+much\s+is|calculate|calc|solve)\s+""")
+    private val sumTail = Regex("""[\s?=]+$""")
+    private val percentOf = Regex("""^\d+(?:\.\d+)?\s*%\s*of\s*[\d,]+(?:\.\d+)?$""")
+    private val plainSum = Regex("""^[\d\s.,+\-*/×÷^()%x]+$""")
+    private val anOperation = Regex("""\d\s*(?:[-+*/×÷^%]|x)\s*[\d(]|\d\s*%""")
+
+    // "15% tip on 64": the tip, and what that comes to (answers.ts mathAnswer).
+    private val tipAsk = Regex(
+        """^(?:what\s+is\s+|what's\s+|whats\s+|calculate\s+)?([\d.]+)\s*%\s*tip\s*(?:on|for|of)\s*([$€£₹]?)\s*([\d,.]+)\s*\??$""",
+        RegexOption.IGNORE_CASE)
+
+    private fun tipAnswer(t: String): InstantAnswer? {
+        val m = tipAsk.find(t) ?: return null
+        val percentText = m.groupValues[1]
+        val symbol = m.groupValues[2]
+        val billText = m.groupValues[3]
+        val percent = percentText.toDoubleOrNull() ?: return null
+        val bill = billText.replace(",", "").toDoubleOrNull() ?: return null
+        val f = java.text.DecimalFormat("#,##0.00", java.text.DecimalFormatSymbols(java.util.Locale.US))
+            .apply { roundingMode = java.math.RoundingMode.HALF_UP }
+        fun money(n: Double) = symbol + f.format(n)
+        val tip = percent / 100 * bill
+        return InstantAnswer(t, money(tip), "${money(bill + tip)} in all",
+            "$percentText% tip on $symbol$billText is ${money(tip)} (${money(bill + tip)} in all)")
+    }
+
+    private fun sumAnswer(t: String, indianGrouping: Boolean): InstantAnswer? {
+        tipAnswer(t)?.let { return it }
+        val expr = t.lowercase().replace(sumLead, "").replace(sumTail, "").trim()
+        val percent = percentOf.matches(expr)
+        val plain = plainSum.matches(expr) && expr.any { it.isDigit() } && anOperation.containsMatchIn(expr)
+        if (!percent && !plain) return null
+        val value = calc("$expr =", indianGrouping)?.first ?: return null
+        return InstantAnswer(expr, value, expr, if (percent) "$expr is $value" else "$expr = $value")
+    }
+
+    // "100 usd to inr", "$13 in rupees", "50 euros in dollars": today's rates,
+    // when the keyboard has them (otherwise the server answers).
+    private val moneyAsk = Regex(
+        """^(?:convert\s+|what\s+is\s+|what's\s+|whats\s+|how\s+much\s+is\s+)?(?:([$€£₹¥])\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?([a-z]{2,8}|[$€£₹¥]))\s+(?:to|in|into|=)\s+([a-z]{2,8}|[$€£₹¥])\s*\??$""",
+        RegexOption.IGNORE_CASE)
+
+    private fun moneyAnswer(t: String, rates: RatesSnapshot): InstantAnswer? {
+        val m = moneyAsk.find(t) ?: return null
+        fun code(unit: String?): String? = unit?.let { currencyOf(it) }
+        val amount = (m.groups[2]?.value ?: m.groups[3]?.value ?: "").replace(",", "")
+            .toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val from = code(m.groups[1]?.value ?: m.groups[4]?.value) ?: return null
+        val to = code(m.groups[5]?.value) ?: return null
+        if (from == to) return null
+        val fromRate = rates.fiat[from]?.takeIf { it > 0 } ?: return null
+        val toRate = rates.fiat[to] ?: return null
+        val typed = format(amount, from)
+        val result = format(amount / fromRate * toRate, to)
+        return InstantAnswer("$from to $to", result, "$typed · today's rate", "$typed = $result")
+    }
+
+    // "how many days until christmas": counted on the phone's own calendar
+    // (answers.ts daysAnswer).
+    private val daysAsk = Regex(
+        """^(?:how\s+many\s+(days?|weeks?)\s+(?:are\s+)?(?:left\s+)?(?:until|till|til|to|before)|(days?|weeks?)\s+(?:left\s+)?(?:until|till|til|to)|how\s+long\s+(?:is\s+it\s+)?(?:until|till|til|to))\s+(.+?)\s*\??$""",
+        RegexOption.IGNORE_CASE)
+
+    /** Days everyone counts to: the name it is said with, and its month and
+     *  day in a given year (Thanksgiving moves). */
+    private val countedDays: List<Triple<Regex, String, (Int) -> Pair<Int, Int>>> = listOf(
+        Triple(Regex("""^christmas eve$"""), "Christmas Eve") { _ -> 12 to 24 },
+        Triple(Regex("""^(?:christmas|xmas|christmas day)$"""), "Christmas") { _ -> 12 to 25 },
+        Triple(Regex("""^new year'?s eve$"""), "New Year's Eve") { _ -> 12 to 31 },
+        Triple(Regex("""^(?:new year'?s?|new year'?s day|the new year)$"""), "New Year's Day") { _ -> 1 to 1 },
+        Triple(Regex("""^halloween$"""), "Halloween") { _ -> 10 to 31 },
+        Triple(Regex("""^valentine'?s(?: day)?$"""), "Valentine's Day") { _ -> 2 to 14 },
+        Triple(Regex("""^(?:the )?(?:4th|fourth) of july$|^independence day$"""), "the Fourth of July") { _ -> 7 to 4 },
+        Triple(Regex("""^thanksgiving$"""), "Thanksgiving") { year ->
+            val first = java.time.LocalDate.of(year, 11, 1).dayOfWeek.value   // Monday 1 … Sunday 7
+            11 to (1 + (4 - first + 7) % 7 + 21)                              // the fourth Thursday
+        },
+    )
+    private val monthNames = listOf("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+
+    private fun daysAnswer(t: String, now: Long, zone: java.time.ZoneId, locale: java.util.Locale): InstantAnswer? {
+        val m = daysAsk.find(t.lowercase()) ?: return null
+        val weeks = (m.groups[1]?.value ?: m.groups[2]?.value ?: "").startsWith("week")
+        val what = m.groupValues[3].replace(Regex("""^the\s+"""), "").trim('?', '!', '.', ' ')
+        val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val label: String
+        val dateFor: (Int) -> Pair<Int, Int>
+        val holiday = countedDays.firstOrNull { (re, _, _) -> re.matches(what) || re.matches("the $what") }
+        if (holiday != null) {
+            label = holiday.second
+            dateFor = holiday.third
+        } else {
+            // "dec 25", "december 25", "25 dec", "25th of december"
+            val parts = what.split(" ").filter { it.isNotEmpty() && it != "of" }
+            if (parts.size != 2) return null
+            val dayFirst = parts[0].first().isDigit()
+            val dayText = if (dayFirst) parts[0] else parts[1]
+            val monthText = if (dayFirst) parts[1] else parts[0]
+            val day = dayText.trimEnd { it.isLetter() }.toIntOrNull()?.takeIf { it in 1..31 } ?: return null
+            val index = monthNames.indexOf(monthText.take(3)).takeIf { it >= 0 } ?: return null
+            label = "${monthText.take(1).uppercase()}${monthText.drop(1).take(2)} $day"
+            dateFor = { _ -> (index + 1) to day }
+        }
+        fun target(year: Int): java.time.LocalDate? = runCatching {
+            val (month, day) = dateFor(year); java.time.LocalDate.of(year, month, day)
+        }.getOrNull()
+        var whenDate = target(today.year) ?: return null
+        if (whenDate.isBefore(today)) whenDate = target(today.year + 1) ?: return null
+        val days = java.time.temporal.ChronoUnit.DAYS.between(today, whenDate).toInt()
+        fun plural(n: Int, word: String) = "$n $word${if (n == 1) "" else "s"}"
+        val count = if (weeks && days >= 7)
+            plural(days / 7, "week") + (if (days % 7 > 0) " and ${plural(days % 7, "day")}" else "")
+        else plural(days, "day")
+        val shown = if (locale.language == "en")
+            java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d", locale).format(whenDate)
+        else java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.FULL).withLocale(locale).format(whenDate)
+        return InstantAnswer(t, if (days == 0) "Today" else count, shown,
+            if (days == 0) "$label is today" else "$count until $label")
+    }
+
+    // "what time is it", "what's the date": the phone's own clock.
+    private val timeAsk = Regex("""^(?:what(?:'s|s| is)?\s+(?:the\s+)?time(?:\s+(?:is\s+it|now|rn))?|what\s+time\s+is\s+it(?:\s+now)?|time(?:\s+now)?|current\s+time)\s*\??$""")
+    private val dateAsk = Regex("""^(?:what(?:'s|s| is)?\s+(?:the\s+|today'?s\s+)?date(?:\s+today)?|today'?s\s+date|what\s+day\s+is\s+(?:it|today)(?:\s+today)?|date(?:\s+today)?|what(?:'s|s| is)\s+today)\s*\??$""")
+
+    private fun clockAnswer(t: String, now: Long, zone: java.time.ZoneId, locale: java.util.Locale): InstantAnswer? {
+        val lower = t.lowercase()
+        val time = timeAsk.matches(lower)
+        if (!time && !dateAsk.matches(lower)) return null
+        val at = java.time.Instant.ofEpochMilli(now).atZone(zone)
+        if (time) {
+            // Newer Java puts a narrow no-break space before PM; a message wants a plain one.
+            val clock = java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT)
+                .withLocale(locale).format(at).replace(' ', ' ')
+            val day = java.time.format.DateTimeFormatter.ofPattern("EEEE", locale).format(at)
+            return InstantAnswer("Time", clock, day, "It's $clock")
+        }
+        val day = if (locale.language == "en")
+            java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d", locale).format(at)
+        else java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.FULL)
+            .withLocale(locale).format(at)
+        return InstantAnswer("Date", day, at.year.toString(), "It's $day")
+    }
+
+    // MARK: Units (lib/units.ts, the same table and the same cases)
+
+    data class UnitConversion(val from: String, val to: String, val say: String)
+
+    private class UnitDef(val dim: String, val size: Double, val one: String, val many: String, val names: List<String>)
+
+    private val unitDefs = listOf(
+        UnitDef("length", 0.001, "mm", "mm", listOf("mm", "millimeter", "millimeters", "millimetre", "millimetres")),
+        UnitDef("length", 0.01, "cm", "cm", listOf("cm", "cms", "centimeter", "centimeters", "centimetre", "centimetres")),
+        UnitDef("length", 1.0, "m", "m", listOf("m", "meter", "meters", "metre", "metres", "mtr", "mtrs")),
+        UnitDef("length", 1000.0, "km", "km", listOf("km", "kms", "kilometer", "kilometers", "kilometre", "kilometres")),
+        UnitDef("length", 0.0254, "inch", "inches", listOf("in", "inch", "inches")),
+        UnitDef("length", 0.3048, "foot", "feet", listOf("ft", "foot", "feet")),
+        UnitDef("length", 0.9144, "yard", "yards", listOf("yd", "yds", "yard", "yards")),
+        UnitDef("length", 1609.344, "mile", "miles", listOf("mi", "mile", "miles")),
+        UnitDef("mass", 0.001, "mg", "mg", listOf("mg", "milligram", "milligrams")),
+        UnitDef("mass", 1.0, "g", "g", listOf("g", "gm", "gms", "gram", "grams")),
+        UnitDef("mass", 1000.0, "kg", "kg", listOf("kg", "kgs", "kilo", "kilos", "kilogram", "kilograms")),
+        UnitDef("mass", 1e6, "tonne", "tonnes", listOf("tonne", "tonnes")),
+        UnitDef("mass", 28.349523125, "oz", "oz", listOf("oz", "ounce", "ounces")),
+        UnitDef("mass", 453.59237, "lb", "lb", listOf("lb", "lbs", "pound", "pounds")),
+        UnitDef("mass", 6350.29318, "stone", "stone", listOf("st", "stone", "stones")),
+        UnitDef("temperature", 1.0, "°C", "°C", listOf("c", "°c", "celsius", "centigrade", "degrees c", "degree c", "deg c", "degrees celsius")),
+        UnitDef("temperature", 1.0, "°F", "°F", listOf("f", "°f", "fahrenheit", "degrees f", "degree f", "deg f", "degrees fahrenheit")),
+        UnitDef("temperature", 1.0, "K", "K", listOf("k", "kelvin")),
+        UnitDef("volume", 0.001, "ml", "ml", listOf("ml", "milliliter", "milliliters", "millilitre", "millilitres")),
+        UnitDef("volume", 1.0, "litre", "litres", listOf("l", "liter", "liters", "litre", "litres", "ltr", "ltrs")),
+        UnitDef("volume", 0.00492892159375, "tsp", "tsp", listOf("tsp", "teaspoon", "teaspoons")),
+        UnitDef("volume", 0.01478676478125, "tbsp", "tbsp", listOf("tbsp", "tablespoon", "tablespoons")),
+        UnitDef("volume", 0.0295735295625, "fl oz", "fl oz", listOf("fl oz", "fluid ounce", "fluid ounces")),
+        UnitDef("volume", 0.2365882365, "cup", "cups", listOf("cup", "cups")),
+        UnitDef("volume", 0.473176473, "pint", "pints", listOf("pint", "pints")),
+        UnitDef("volume", 0.946352946, "quart", "quarts", listOf("quart", "quarts")),
+        UnitDef("volume", 3.785411784, "gallon", "gallons", listOf("gal", "gallon", "gallons")),
+        UnitDef("speed", 1 / 3.6, "km/h", "km/h", listOf("km/h", "kmh", "kmph", "kph", "kilometers per hour", "kilometres per hour", "km per hour")),
+        UnitDef("speed", 0.44704, "mph", "mph", listOf("mph", "miles per hour", "mi/h")),
+        UnitDef("speed", 1.0, "m/s", "m/s", listOf("m/s", "meters per second", "metres per second")),
+        UnitDef("speed", 1852.0 / 3600, "knot", "knots", listOf("knot", "knots")),
+        UnitDef("time", 1.0, "second", "seconds", listOf("s", "sec", "secs", "second", "seconds")),
+        UnitDef("time", 60.0, "minute", "minutes", listOf("min", "mins", "minute", "minutes")),
+        UnitDef("time", 3600.0, "hour", "hours", listOf("h", "hr", "hrs", "hour", "hours")),
+        UnitDef("time", 86400.0, "day", "days", listOf("day", "days")),
+        UnitDef("time", 604800.0, "week", "weeks", listOf("wk", "wks", "week", "weeks")),
+        UnitDef("time", 31557600.0, "year", "years", listOf("yr", "yrs", "year", "years")),
+        UnitDef("area", 0.09290304, "sq ft", "sq ft", listOf("sq ft", "sqft", "square feet", "square foot", "ft2")),
+        UnitDef("area", 1.0, "sq m", "sq m", listOf("sq m", "sqm", "square meters", "square metres", "square meter", "square metre", "m2")),
+        UnitDef("area", 4046.8564224, "acre", "acres", listOf("acre", "acres")),
+        UnitDef("area", 10000.0, "hectare", "hectares", listOf("ha", "hectare", "hectares")),
+    )
+    private val unitByName: Map<String, UnitDef> = unitDefs.flatMap { u -> u.names.map { it to u } }.toMap()
+    /** Longest names first, so "fl oz" wins over "oz" and "km/h" over "km". */
+    private val unitNames = unitByName.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
+    private const val UNIT_NUMBER = """(-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|-?\.\d+)"""
+    private val unitDirect = Regex(
+        """^(?:(?:convert|what\s+is|what's|whats|how\s+much\s+is|how\s+many\s+is)\s+)?$UNIT_NUMBER\s*(?:degrees?\s+)?($unitNames)\s+(?:to|in|into|as|in\s+to|=|->|=>)\s+(?:degrees?\s+)?($unitNames)\s*\??$""")
+    private val unitHowMany = Regex(
+        """^how\s+many\s+($unitNames)\s+(?:are\s+)?(?:in|is\s+in|make|makes)\s+(?:(?:a|an|one)\s+|$UNIT_NUMBER\s*)($unitNames)\s*\??$""")
+
+    /** A height in feet and inches: "5 ft 10 in", "5'10", "5 feet 10 inches". */
+    private val unitFeetInches = Regex(
+        """^(?:(?:convert|what\s+is|what's|whats|how\s+much\s+is)\s+)?(\d+)\s*(?:ft|feet|foot|')\s*(\d+(?:\.\d+)?)\s*(?:in|inch|inches|"|'')?\s+(?:to|in|into|as|=)\s+($unitNames)\s*\??$""")
+
+    /** Under ten feet, feet come as a height: "5 ft 10 in", not "5.84 feet". */
+    private fun asHeight(metres: Double): String? {
+        val feet = metres / 0.3048
+        if (feet < 1 || feet >= 10) return null
+        var whole = kotlin.math.floor(feet).toInt()
+        var inches = Math.round((feet - whole) * 12).toInt()
+        if (inches == 12) { whole += 1; inches = 0 }
+        return if (inches > 0) "$whole ft $inches in" else "$whole ft"
+    }
+
+    /** "5 km in miles" → "5 km is 3.107 miles"; null when it is not a conversion. */
+    fun convertUnits(text: String): UnitConversion? {
+        val t = text.trim().replace(Regex("""\s+"""), " ").replace('’', '\'').lowercase()
+        unitFeetInches.find(t)?.let { h ->
+            val to = unitByName[h.groupValues[3]]?.takeIf { it.dim == "length" } ?: return null
+            val feet = h.groupValues[1].toDoubleOrNull() ?: return null
+            val inches = h.groupValues[2].toDoubleOrNull() ?: return null
+            val metres = feet * 0.3048 + inches * 0.0254
+            val a = if (inches > 0) "${feet.toInt()} ft ${unitNumber(inches)} in" else "${feet.toInt()} ft"
+            val b = unitNamed(unitFromBase(metres, to), to)
+            return UnitConversion(a, b, "$a is $b")
+        }
+        val amount: Double
+        val from: UnitDef?
+        val to: UnitDef?
+        val direct = unitDirect.find(t)
+        if (direct != null) {
+            amount = direct.groupValues[1].replace(",", "").toDoubleOrNull() ?: return null
+            from = unitByName[direct.groupValues[2]]
+            to = unitByName[direct.groupValues[3]]
+        } else {
+            val how = unitHowMany.find(t) ?: return null
+            to = unitByName[how.groupValues[1]]
+            amount = how.groups[2]?.value?.replace(",", "")?.toDoubleOrNull() ?: 1.0
+            from = unitByName[how.groupValues[3]]
+        }
+        if (from == null || to == null || from.one == to.one || from.dim != to.dim || !amount.isFinite()) return null
+        val result = unitFromBase(unitToBase(amount, from), to)
+        if (!result.isFinite()) return null
+        val a = unitNamed(amount, from)
+        val b = (if (to.one == "foot") asHeight(unitToBase(amount, from)) else null) ?: unitNamed(result, to)
+        return UnitConversion(a, b, "$a is $b")
+    }
+
+    private fun unitToBase(n: Double, u: UnitDef): Double = when {
+        u.dim != "temperature" -> n * u.size
+        u.one == "°F" -> (n - 32) * 5 / 9
+        u.one == "K" -> n - 273.15
+        else -> n
+    }
+
+    private fun unitFromBase(n: Double, u: UnitDef): Double = when {
+        u.dim != "temperature" -> n / u.size
+        u.one == "°F" -> n * 9 / 5 + 32
+        u.one == "K" -> n + 273.15
+        else -> n
+    }
+
+    /** As precise as the size needs: 160,934, 220.5, 32.19, 3.107, 0.0254. */
+    fun unitNumber(n: Double): String {
+        val size = kotlin.math.abs(n)
+        if (size >= 1 || size == 0.0) {
+            val decimals = when { size >= 1000 -> 0; size >= 100 -> 1; size >= 10 -> 2; else -> 3 }
+            val pattern = "#,##0" + if (decimals > 0) "." + "#".repeat(decimals) else ""
+            return java.text.DecimalFormat(pattern, java.text.DecimalFormatSymbols(java.util.Locale.US))
+                .apply { roundingMode = java.math.RoundingMode.HALF_UP }.format(n)
+        }
+        return java.math.BigDecimal(n).round(java.math.MathContext(3, java.math.RoundingMode.HALF_UP))
+            .stripTrailingZeros().toPlainString()
+    }
+
+    private fun unitNamed(n: Double, u: UnitDef): String {
+        val text = unitNumber(n)
+        return when {
+            u.one == "K" -> "$text K"
+            u.one.startsWith("°") -> "$text${u.one}"
+            else -> "$text ${if (kotlin.math.abs(n) == 1.0) u.one else u.many}"
+        }
     }
 }

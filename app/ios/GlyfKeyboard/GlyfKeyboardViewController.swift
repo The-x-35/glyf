@@ -138,6 +138,19 @@ final class GlyfKeyboardViewController: UIInputViewController {
     }
     private var lastCorrection: Correction?
 
+    /// Engine corrections of the last few minutes. Going back into one and
+    /// typing the original again is a "no": the word stays as typed and is
+    /// learned (user, 2026-09-29: "cutee" became "cute", was deleted and
+    /// typed again, and became "cute" every time). A typo typed twice
+    /// ("teh") is still fixed: its correction was never gone back into.
+    private struct RecentFix {
+        let original: String
+        let replacement: String
+        let at: Date
+        var touched = false
+    }
+    private var recentFixes: [RecentFix] = []
+
     /// The last correction, while the caret is still right after it and its
     /// space. Otherwise a backspace that later reaches the same word in other
     /// text ("free" in a pasted line) would swap it back.
@@ -160,6 +173,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
     // MARK: Heights
 
     private var keysHeight: CGFloat {
+        // An iPhone on its side gets the shorter rows Apple's keyboard has
+        // there: portrait's rows left the app about 100 of its 402pt.
+        if traitCollection.verticalSizeClass == .compact {
+            let numberRow = SettingsStore.current.numberRow && !keyboardView.context.isPad
+            return Glass.sidewaysKeysHeight + (numberRow ? Glass.sidewaysNumberRowExtra : 0)
+        }
         // The key region is the system keyboard's own, which is taller on
         // Plus/Max-class phones — never a number baked in for one device.
         let w = view.bounds.width > 0 ? view.bounds.width
@@ -194,11 +213,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .bar:
             return base + (bar?.extraHeight ?? 0)
         // While typing a query the keys stay live under a strip; results
-        // become a panel over the keys.
+        // become a panel over the keys. The same height either way, so the
+        // keyboard never jumps while you search.
         case .search:
-            return search?.expandedForResults == true
-                ? base : base + Glass.barExtra + (search?.landingExtra ?? 0)
-        case .noteEdit: return base + NoteEditSurface.stripHeight
+            return base + SearchSurface.extraHeight
+        // The note's strip takes the toolbar's place (it is hidden), so
+        // the keys keep their own height instead of stretching.
+        case .noteEdit: return base + NoteEditSurface.stripHeight - Glass.toolbarHeight
         // Paying is a panel over the keys; typing the amount collapses it
         // to a strip with the digits below, like a New Event title.
         case .pay where pay?.editingAmount == true: return base + PaySurface.editStripHeight
@@ -399,6 +420,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
         super.traitCollectionDidChange(previous)
+        // Turned on its side, or back: the rows change height with it.
+        if didBuild, previous?.verticalSizeClass != traitCollection.verticalSizeClass {
+            applySurfaceLayout(animated: false)
+        }
         guard let before = previous?.userInterfaceStyle,
               before != traitCollection.userInterfaceStyle else { return }
         if before != .unspecified { appearanceFlipped = true }
@@ -408,6 +433,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         SettingsStore.invalidate()
+        recentFixes = []   // another field: its corrections are not these
         // The translate strip belongs to the session it was opened in. Left
         // persisted it greets the next app as an unexplained empty band.
         if SettingsStore.current.translationHUD == true {
@@ -539,8 +565,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         content.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(content)
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            // Within the safe area: on its side an iPhone's corners and
+            // Dynamic Island would cover the outermost keys (Apple's keys
+            // stop short of them too). Portrait has no side insets.
+            content.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             // Bottom-anchored; the top edge floats — dead space stays clear.
             content.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
@@ -792,7 +821,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
                     // strip takes; the keys stay visible in both, so you can
                     // start typing straight over a suggestion.
                     keyboardView.isHidden = false
-                    let stripH = SearchSurface.collapsedHeight + sv.landingExtra
+                    let stripH = SearchSurface.stripHeight
                     sv.frame = CGRect(x: 0, y: 0, width: w, height: stripH)
                     keyboardView.frame = CGRect(x: 0, y: stripH, width: w,
                                                 height: max(0, h - stripH))
@@ -937,6 +966,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
             search = sv
             inlineTarget = sv.queryEditor
             sv.queryEditor.isActive = true
+            // A search starts in lowercase, as Apple's and Gboard's do,
+            // whatever capital the message field was about to get.
+            keyboardView.syncAutoShift(wantsCapital: false)
             // Open on recents + trending rather than an empty box (Gboard).
             sv.presentLanding()
         case .noteEdit:
@@ -989,7 +1021,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private func notifyHUD() {
         guard surface == .none, hudActive else { return }
         let before = beforeContext ?? ""
-        ensureHUD().draftChanged(before, consumedBefore: before.count)
+        ensureHUD().draftChanged(before)
     }
 
     // MARK: Tones popup (§6.13 R)
@@ -1487,7 +1519,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let ownWallet = SettingsStore.current.walletAddress
         var chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
-                              rates: rates, ownWallet: ownWallet)
+                              rates: rates, ownWallet: ownWallet,
+                              indianGrouping: (SettingsStore.current.region ?? "IN") == "IN")
         // An address on screen or copied: a wallet (Send) or a token (Buy)?
         // Only a lookup can tell; the strip is arranged again when it lands.
         if chip == nil, hasFullAccess,
@@ -1554,7 +1587,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         switch proxy.keyboardType {
         case .emailAddress: kind = "email"
         case .phonePad, .namePhonePad: kind = "phone"
-        case .URL, .webSearch: kind = "link"
+        // A web address field may want your site; a search box (Safari's
+        // address bar) is asking what to look for, not for your link.
+        case .URL: kind = "link"
         default: break
         }
         if kind == nil, proxy.autocapitalizationType == .words,
@@ -1708,7 +1743,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         guard let engine = typing else { return }
         var kept = word
-        if policy.contains(.autocorrect),
+        recentFixes.removeAll { Date().timeIntervalSince($0.at) > 300 }
+        if let i = recentFixes.firstIndex(where: { $0.touched && $0.original.lowercased() == word.lowercased() }) {
+            // Corrected, gone back into, and typed the same again: keep it.
+            let refused = recentFixes.remove(at: i)
+            engine.revert(typed: word, correction: refused.replacement)
+        } else if policy.contains(.autocorrect),
            let fix = suggestions(for: word, before: before, policy: policy)?.autocorrect, fix != word {
             // "Correct automatically" off: the word stands exactly as typed.
             // The strip is already offering the fix, so a tap still takes it
@@ -1716,6 +1756,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             if SettingsStore.current.autocorrectApply != false {
                 replaceCurrentWord(with: fix)
                 lastCorrection = Correction(original: word, replacement: fix, fromEngine: true)
+                recentFixes.append(RecentFix(original: word, replacement: fix, at: Date()))
+                if recentFixes.count > 8 { recentFixes.removeFirst(recentFixes.count - 8) }
                 kept = fix
             }
         }
@@ -1838,6 +1880,14 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         // happened, so this IS what the field holds now.
         let before = beforeContext
         let current = WordTracker.currentWord(beforeContext: before)
+        // Backing into a word the engine corrected ("cute" → "cut"): if the
+        // original comes back, that correction was a mistake.
+        if current.count >= 2 {
+            let lower = current.lowercased()
+            for i in recentFixes.indices where recentFixes[i].replacement.lowercased().hasPrefix(lower) {
+                recentFixes[i].touched = true
+            }
+        }
         if wordTouches.count > current.unicodeScalars.count {
             wordTouches.removeLast(wordTouches.count - current.unicodeScalars.count)
         }
@@ -1969,6 +2019,10 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
 
     func kbSpaceGestures() -> (glide: Bool, bar: Bool) {
         (glide: inlineTarget == nil, bar: inlineTarget == nil && !isSecureField)
+    }
+
+    func kbBindingsLive() -> Bool {
+        inlineTarget == nil && !isSecureField
     }
 
     func kbCursorGlideEnded() {
@@ -2108,6 +2162,18 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                     if self.retryAct(after: message) { return }
                     self.act?.showFailure(message)
                 })
+            return
+        }
+        // A sum, a conversion, money at the rates in hand, the time or the
+        // date: answered here at once, no server and no run ("2+5" held for
+        // a moment went to the server and back).
+        if actIntent == nil || actIntent == "answer",
+           let local = Smart.instantAnswer(actRunInput, rates: RatesStore.shared.snapshot(),
+                                           indianGrouping: (SettingsStore.current.region ?? "IN") == "IN") {
+            actHasResult = true
+            let card = BackendClient.SearchCard(kind: "answer", id: "local", title: local.title, url: "",
+                                                say: local.say, value: local.value, sub: local.sub, art: "calc")
+            act.showResult(title: local.title, cards: [card], text: nil, insert: local.say)
             return
         }
         act.showWorking(intent: actRunInput)
@@ -2383,14 +2449,16 @@ extension GlyfKeyboardViewController: ClipContextStripDelegate {
         // The user's tap is the intent that may surface Apple's paste prompt.
         // (The Paste button beside this label goes through UIPasteControl and
         // never prompts; this path is the fallback for the rest of the strip.)
-        guard let text = UIPasteboard.general.string,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            ClipContext.markDone()
-            removeClipStrip()
-            return
+        ClipboardStore.readCopy { [weak self] text in
+            guard let self else { return }
+            guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                ClipContext.markDone()
+                self.removeClipStrip()
+                return
+            }
+            self.remember(copied: text)
+            self.clipStrip?.show(text: text)
         }
-        remember(copied: text)
-        clipStrip?.show(text: text)
     }
 
     /// Everything that arrives from the pasteboard lands in history first, so
@@ -2401,12 +2469,18 @@ extension GlyfKeyboardViewController: ClipContextStripDelegate {
     }
 
     func clipStripPaste() {
-        guard let text = UIPasteboard.general.string,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            ClipContext.markDone()
-            removeClipStrip()
-            return
+        ClipboardStore.readCopy { [weak self] text in
+            guard let self else { return }
+            guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                ClipContext.markDone()
+                self.removeClipStrip()
+                return
+            }
+            self.pasteFromStrip(text)
         }
+    }
+
+    private func pasteFromStrip(_ text: String) {
         remember(copied: text)
         ClipContext.markDone()
         removeClipStrip()
@@ -2582,6 +2656,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// panel if it turns out it was wanted after all.
     func toolbarSmartDismissed() {
         ClipContext.markDone()
+        // The paste probe keeps its copy for a second: forget it too, or the
+        // chip comes straight back until the next key.
+        cachedPaste = nil
+        lastClipProbe = 0
         suggestedChip = nil
         suggestedFor = ""
         toolbar.showSmart(nil)
@@ -2636,12 +2714,18 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             // not have the text yet, so the tap is the intent that reads it.
             ClipContext.markDone()
             if text == "Tap to paste what you copied" {
-                guard let read = UIPasteboard.general.string, !read.isEmpty else {
-                    toolbar.showSmart(nil)
-                    return
+                ClipboardStore.readCopy { [weak self] read in
+                    guard let self else { return }
+                    guard let read, !read.isEmpty else {
+                        self.toolbar.showSmart(nil)
+                        return
+                    }
+                    self.remember(copied: read)
+                    self.hostInsert(Self.spaced(read, after: self.beforeContext))
+                    self.toolbar.showSmart(nil)
+                    self.updateCandidates()
                 }
-                remember(copied: read)
-                hostInsert(Self.spaced(read, after: beforeContext))
+                return
             } else {
                 hostInsert(Self.spaced(text, after: beforeContext))
             }
@@ -2898,6 +2982,7 @@ extension GlyfKeyboardViewController: SearchSurfaceDelegate {
 
     func searchActivated(_ editor: InlineEditor) {
         inlineTarget = editor
+        keyboardView.syncAutoShift(wantsCapital: false)
     }
 
     func searchInsert(_ text: String) {
@@ -3033,8 +3118,14 @@ extension GlyfKeyboardViewController: TranslationHUDDelegate {
         BackendClient.shared.translate(text: text, target: target, completion: completion)
     }
 
-    func hudReplaceDraft(with text: String, consumedBefore: Int) {
-        for _ in 0..<consumedBefore { hostDelete() }
+    func hudReplaceDraft(with text: String, replacing span: String) {
+        // Only what was translated goes, and only if it is still what ends
+        // the text: typing since then, or a longer draft, stays untouched.
+        guard !span.isEmpty, (beforeContext ?? "").hasSuffix(span) else {
+            KeyboardToast.show(in: content, text: "The text changed since the translation")
+            return
+        }
+        for _ in 0..<span.count { hostDelete() }
         hostInsert(text)
         syncAutoShift()
         updateCandidates()

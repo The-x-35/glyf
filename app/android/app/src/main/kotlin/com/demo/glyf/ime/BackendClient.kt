@@ -126,6 +126,9 @@ object BackendClient {
         lon: Double? = null,
         country: String? = null,
         tz: String? = null,
+        /** The keyboard's theme: a maps search draws its places' maps in it
+         *  before the cards ask for them. */
+        dark: Boolean? = null,
         onCards: (String, List<SearchCard>) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -147,6 +150,7 @@ object BackendClient {
                     if (lat != null && lon != null) { put("lat", lat); put("lon", lon) }
                     if (country != null && country.length == 2) put("country", country)
                     if (tz != null) put("tz", tz)
+                    if (dark != null) put("dark", dark)
                 }
                 conn.outputStream.use { it.write(body.toString().toByteArray()) }
                 val json = JSONObject(conn.inputStream.bufferedReader().readText())
@@ -448,6 +452,9 @@ object BackendClient {
     private fun JSONObject.optStringOrNull(key: String): String? =
         if (has(key) && !isNull(key)) optString(key).takeIf { it.isNotEmpty() } else null
 
+    /** POST /glyf/run, streamed. Like iOS it carries the shareable details
+     *  (for prompts that fill something in) and the phone's coarse fix (so
+     *  Weather can answer for here when no place is named). */
     fun run(
         backendURL: String,
         glyfId: String,
@@ -455,6 +462,9 @@ object BackendClient {
         vars: Map<String, String>,
         deviceId: String,
         plan: String,
+        profile: Map<String, String>? = null,
+        lat: Double? = null,
+        lon: Double? = null,
         onToken: (String) -> Unit,
         onDone: (String, Int?) -> Unit,
         onError: (String) -> Unit,
@@ -476,6 +486,8 @@ object BackendClient {
                     "glyfId" to glyfId, "input" to input,
                     "vars" to JSONObject(vars as Map<*, *>),
                     "deviceId" to deviceId, "plan" to plan))
+                if (!profile.isNullOrEmpty()) body.put("profile", JSONObject(profile as Map<*, *>))
+                if (lat != null && lon != null) { body.put("lat", lat); body.put("lon", lon) }
                 conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
                 val reader = BufferedReader(conn.inputStream.reader())

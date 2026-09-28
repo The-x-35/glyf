@@ -72,7 +72,9 @@ Never when: autocorrect is off or the field disallows it; the token has a
 digit, two or more capitals, or any of `@ # . / : _`; the typed word is known
 (one of its own spellings is in the dictionary incl. offensive, learned, kept,
 in a pack, added, or a contact); the word is one letter; it is capitalized
-mid-sentence; the user reverted this exact correction before.
+mid-sentence; the user reverted this exact correction before; the word is
+stretched for emphasis, a letter three or more times in a row (`sooo`,
+`yesss`, `cuteee`: 2026-09-29, `sooo` had become `solo`).
 
 Dictionary fixes (AOSP whitelist shortcuts):
 - same letters, different apostrophes (`cant` → `can't`): applies unless the
@@ -129,3 +131,17 @@ auto-capitalized first word is learned lowercase when the lowercase form is a
 word. Counts halve every 90 days; entries unused for 300 days are dropped.
 Caps: 10,000 words, 30,000 word pairs. Reverting a correction blocks that
 pair forever and un-learns one commit of the wrong word.
+
+A revert is not only the backspace straight after a correction: going back
+into a word the engine corrected in the last five minutes (backspacing
+through it, or sliding it away with delete) and typing the original again
+is one too, and is learned the same way. A typo simply typed twice (`teh`)
+is still fixed, because its correction was never gone back into.
+(2026-09-29: `cutee`, deleted and typed again, kept coming back corrected.) Forgetting a word ("My words" in the app) also forgets the corrections it
+turned down, so the word is corrected again.
+
+The strip offers the person's own words first: once at least three letters
+are typed, their most used learned, kept or added word that starts with
+them takes the first alternative slot (`cut` → their `cutee`, ahead of
+`but` and `out`). It is offered, never applied by autocorrect, and only
+with learning on.

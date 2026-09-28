@@ -81,8 +81,11 @@ object ClipboardStore {
         return if (uri.scheme == "http" || uri.scheme == "https") uri.toString() else null
     }
 
-    /** Reads the system clipboard and files it. True when something new landed. */
-    fun captureNow(ctx: Context): Boolean {
+    /** Reads the system clipboard and files it. True when something new landed.
+     *  Nothing is kept while "Keep what you copy" is off in the app (iOS
+     *  checks the same setting before every capture). */
+    fun captureNow(ctx: Context, settings: JSONObject = SettingsStore.load(ctx)): Boolean {
+        if (!settings.optBoolean("clipboardHistory", true)) return false
         val text = clipText(ctx) ?: return false
         val next = inserting(text, load(ctx), System.currentTimeMillis()) ?: return false
         save(ctx, next)

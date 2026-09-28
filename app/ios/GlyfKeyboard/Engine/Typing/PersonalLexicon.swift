@@ -131,6 +131,16 @@ struct PersonalLexicon: Equatable {
         return out.sorted { $0.1 > $1.1 }
     }
 
+    /// The word this person uses most that starts with what is being typed
+    /// (and is longer): "cut" → their "cutee". PersonalLexicon.kt's twin.
+    func completion(prefix: String, today: Int) -> String? {
+        words.filter { k, _ in k.count > prefix.count && k.hasPrefix(prefix) && isKnown(k) && !blocked.contains(k) }
+            .max { a, b in
+                func weight(_ w: Word) -> Double { decayed(w.commits, from: w.day, to: today) + Double(w.kept) + (w.added ? 2 : 0) }
+                return weight(a.value) < weight(b.value)
+            }?.value.form
+    }
+
     /// Learned, kept and added words — the ones a dictionary may not have.
     func knownForms() -> [(key: String, form: String)] {
         words.compactMap { key, w in isKnown(key) && !blocked.contains(key) ? (key, w.form) : nil }
@@ -204,10 +214,19 @@ struct PersonalLexicon: Equatable {
         guard !key.isEmpty else { return }
         words[key] = nil
         pairs = pairs.filter { k, _ in !k.hasPrefix(key + Self.separator) && !k.hasSuffix(Self.separator + key) }
+        // Its corrections come back too: a word forgotten in "My words" is
+        // corrected again ("helloo" stayed uncorrected forever).
+        let typed = form.lowercased()
+        rejected = rejected.filter { k, _ in !k.hasPrefix(typed + Self.separator) }
         blocked.insert(key)
     }
 
     mutating func unblock(_ form: String) { blocked.remove(TypingText.key(form)) }
+
+    /// A correction turned down, on its own (a revert also keeps the word).
+    mutating func reject(typed: String, correction: String) {
+        rejected[typed.lowercased() + Self.separator + correction.lowercased(), default: 0] += 1
+    }
 
     mutating func reset() { self = PersonalLexicon() }
 

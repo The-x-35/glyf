@@ -163,6 +163,18 @@ final class TypingEngine {
             result.alternatives.append(shown)
             if result.alternatives.count == 3 { break }
         }
+        // Their own word first: "cut" offers the "cutee" they keep typing, not
+        // "but" and "out" on the strength of English at large. Offered, never
+        // put in on its own (2026-09-29: "its not learning from my vocab").
+        if policy.contains(.learning), typed.unicodeScalars.count >= 3,
+           let form = personal.completion(prefix: key, today: today) {
+            let shown = TypingText.matchCase(typed: typed, form: form)
+            if shown.lowercased() != result.autocorrect?.lowercased() {
+                result.alternatives.removeAll { $0.lowercased() == shown.lowercased() }
+                result.alternatives.insert(shown, at: 0)
+                if result.alternatives.count > 3 { result.alternatives.removeLast(result.alternatives.count - 3) }
+            }
+        }
         return result
     }
 
@@ -236,6 +248,8 @@ final class TypingEngine {
     private func decide(typed: String, key: String, known: Bool, sentenceStart: Bool,
                         exactForms: [Candidate], realForms: [Candidate], ranked: [Candidate]) -> String? {
         guard !TypingText.hasDigit(typed), TypingText.capitalCount(typed) < 2 else { return nil }
+        // Stretched for emphasis ("sooo", "yesss"): meant, never "solo".
+        guard !TypingText.isStretched(typed) else { return nil }
 
         // Dictionary fixes. Apostrophes ("cant" → "can't") unless the typed
         // spelling is a real word nearly as common ("id" stays "id"); a

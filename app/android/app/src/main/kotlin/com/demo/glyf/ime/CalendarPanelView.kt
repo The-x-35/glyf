@@ -299,8 +299,14 @@ class CalendarPanelView(
         button.isEnabled = false
         CallLink.make(context) { url, note ->
             button.isEnabled = true
-            if (url != null) onInsert("Join me on a call: $url") else note?.let { toast(it) }
+            if (url != null) deliver("Join me on a call: $url") else note?.let { toast(it) }
         }
+    }
+
+    /** An answer that came back from Google or Cal.com goes in only while
+     *  this panel is still up: closed, or the field changed, it is dropped. */
+    private fun deliver(text: String) {
+        if (isAttachedToWindow) onInsert(text)
     }
 
     /** "sam@x.com", "sam@x.com and ria@y.com", "sam@x.com and 2 others". */
@@ -354,7 +360,7 @@ class CalendarPanelView(
         GoogleAdded.remember(context, event)
         if (d.share) {
             closeComposer()
-            onInsert(CalendarText.insert(event))
+            deliver(CalendarText.insert(event))
             toast(said)
             return
         }
@@ -401,7 +407,7 @@ class CalendarPanelView(
         val said = "Added to ${added.second}" + (note?.let { ". $it" } ?: "")
         if (d.share) {
             closeComposer()
-            onInsert(CalendarText.insert(added.first))
+            deliver(CalendarText.insert(added.first))
             toast(said)
             return
         }

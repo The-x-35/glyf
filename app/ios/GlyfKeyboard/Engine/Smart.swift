@@ -150,6 +150,8 @@ enum Smart {
         var mints: [String: String] = [:]
         /// What an address on screen turned out to be, once asked.
         var addresses: [String: AddressKind] = [:]
+        /// The market's ticker for what was typed ("APPLE", "APPL": "AAPL").
+        var tickers: [String: String] = [:]
 
         static let empty = RatesSnapshot()
     }
@@ -213,7 +215,7 @@ enum Smart {
     /// for, then something freshly copied.
     static func chip(for text: String, fields: [VaultField], paste: String? = nil,
                      field: FieldHint = .none, rates: RatesSnapshot = .empty,
-                     ownWallet: String? = nil) -> Chip? {
+                     ownWallet: String? = nil, indianGrouping: Bool = true) -> Chip? {
         // An address: Send to a wallet, Buy a token. Your own wallet is one
         // you are sharing, not paying. Until the lookup says which, nothing
         // (the keyboard asks, and the strip is arranged again).
@@ -230,8 +232,11 @@ enum Smart {
                 return nil
             }
         }
-        if let c = calc(text) { return .calc(value: c.value, hasEquals: c.hasEquals) }
+        if let c = calc(text, indianGrouping: indianGrouping) { return .calc(value: c.value, hasEquals: c.hasEquals) }
         if let m = money(in: text, rates: rates) { return m }
+        // A cashtag waits for its price: "$sol" is SOL's price, never your
+        // Solana wallet, even before the price has come.
+        if cashtag(in: text) != nil { return nil }
         if let f = vaultMatch(text, fields: fields) { return .vault(field: f) }
         if let plan = EventParse.looksLikePlan(text, dayFirst: EventParse.regionDayFirst) {
             return .event(plan: plan)
@@ -258,7 +263,7 @@ enum Smart {
             options: [.caseInsensitive])
     }()
 
-    static func calc(_ text: String) -> (value: String, hasEquals: Bool)? {
+    static func calc(_ text: String, indianGrouping: Bool = true) -> (value: String, hasEquals: Bool)? {
         guard let re = calcPattern, !text.isEmpty else { return nil }
         let ns = text as NSString
         guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
@@ -270,11 +275,18 @@ enum Smart {
            expr.range(of: #"[+*/×÷^%]|\bx\b|\bof\b"#, options: [.regularExpression, .caseInsensitive]) == nil {
             return nil
         }
+        // "24/7" and dates ("9/28", "28/9") read as numbers over numbers:
+        // two small whole numbers and a slash, with no "=", are not a sum.
+        if !hasEquals,
+           expr.range(of: #"^\s*\d{1,2}\s*/\s*\d{1,2}\s*$"#, options: .regularExpression) != nil {
+            return nil
+        }
         guard let v = evaluate(expr) else { return nil }
         let currency = expr.first(where: { "₹$€£".contains($0) }).map(String.init) ?? ""
         let f = NumberFormatter()
         f.numberStyle = .decimal
-        f.locale = Locale(identifier: "en_IN")
+        // Lakh and crore grouping in India; thousands everywhere else.
+        f.locale = Locale(identifier: indianGrouping ? "en_IN" : "en_US")
         f.maximumFractionDigits = 2
         guard let text = f.string(from: NSNumber(value: v)) else { return nil }
         return (currency + text, hasEquals)
@@ -353,8 +365,12 @@ enum Smart {
             guard var v = product() else { return nil }
             while let op = peek(), op == "+" || op == "-" {
                 i += 1
+                // "200 + 10%" is 220, as on a phone's calculator: a bare
+                // percentage added or taken off is a share of the left side.
+                let start = i
                 guard let rhs = product() else { return nil }
-                v = op == "+" ? v + rhs : v - rhs
+                let share = i == start + 2 && tokens[i - 1] == "%" ? v * rhs : rhs
+                v = op == "+" ? v + share : v - share
             }
             return v
         }
@@ -417,13 +433,17 @@ enum Smart {
     /// "$sol" → "1 SOL = $111.77". A converted amount reads in the local
     /// currency (that is the point of converting); a token price is a price,
     /// which the market quotes in dollars, so it stays in dollars.
+    private static let weightTalk = #"\b(lose|lost|losing|gain|gained|gaining|weigh|weighs|weighed|weighing|weight|heavy|heavier|lighter|lbs?|kgs?|kilos?|bench|squat|deadlift|lift|lifted|lifting|dumbbells?|curls?|born)\b"#
+
     static func money(in text: String, rates: RatesSnapshot) -> Chip? {
         if let ticker = cashtag(in: text) {
             guard let usd = rates.crypto[ticker] else { return nil }
             // "1 SOL = $112" is already the answer; do not price the price.
-            if text.replacingOccurrences(of: "$\(ticker.lowercased())", with: "").trimmingCharacters(in: .whitespaces).hasSuffix("=") { return nil }
+            if text.replacingOccurrences(of: "$\(ticker.lowercased())", with: "", options: .caseInsensitive)
+                .trimmingCharacters(in: .whitespaces).hasSuffix("=") { return nil }
             let quoted = price(usd)
-            return .money(shown: "1 \(ticker) = \(quoted)", insert: " = \(quoted)", buy: rates.mints[ticker])
+            let name = rates.tickers[ticker] ?? ticker
+            return .money(shown: "1 \(name) = \(quoted)", insert: " = \(quoted)", buy: rates.mints[ticker])
         }
         guard let re = amountPattern, !text.isEmpty else { return nil }
         let ns = text as NSString
@@ -440,6 +460,9 @@ enum Smart {
         guard let amount = Double(numberText.replacingOccurrences(of: ",", with: "")),
               amount > 0 else { return nil }
         let unit = group(1) ?? group(4) ?? ""
+        // Pounds of weight are not money: "I lost 5 pounds", "bench 100 pounds".
+        if unit.lowercased().hasPrefix("pound"),
+           text.range(of: weightTalk, options: [.regularExpression, .caseInsensitive]) != nil { return nil }
         let from: String
         if unit.count == 1, let c = unit.first, let code = symbolCurrency[c] {
             from = code
@@ -532,20 +555,30 @@ enum Smart {
 
     // MARK: Contextual vault
 
-    /// Sentence endings that mean "the next thing I type is X".
-    /// Each pattern maps to a vault field kind, and for socials to a label.
+    /// Sentence endings that mean "the next thing I type is X": the
+    /// sentence leads into one of your own details ("my email is", "call me
+    /// at", "ship it to") or labels it ("Email:"). A bare word at the end is
+    /// not enough: "wrong address", "can you email", "i lost my phone" and
+    /// "saw it on insta" are about something else. Each pattern maps to a
+    /// vault field kind, and for socials to a platform. Smart.kt's twin.
     private static let triggers: [(pattern: String, kind: String, label: String?)] = [
-        (#"\b(my name is|name:|this is)\s*$"#, "name", nil),
+        // "This is" introduces you only at the start: "Hi, this is", not "this is great".
+        (#"(?:\bmy name is|\bname:|(?:^|[.!?,\n]\s*|\b(?:hi|hey|hello|hii|hiya)\W*)this is)\s*$"#, "name", nil),
         // Before address: "my wallet address" asks for the wallet.
-        (#"\b(wallet|sol|solana|phantom|usdc|crypto)(?:\s*(?:address|addy|wallet))?\s*(?:is\s*)?:?\s*$"#, "wallet", nil),
-        (#"\b(address|deliver(?: it)? to|send (?:it |the \w+ )?to|ship (?:it )?to|come to|pick me up (?:from|at))\s*(?:is\s*)?:?\s*$"#, "address", nil),
-        (#"\b(upi|gpay|google pay|phonepe|paytm)(?:\s*id)?\s*(?:is\s*)?:?\s*$"#, "upi", nil),
-        (#"\bpay me (?:at|on)\s*$"#, "upi", nil),
-        (#"\b(insta|instagram|ig)(?:\s*(?:handle|id))?\s*(?:is\s*)?:?\s*$"#, "social", "insta"),
-        (#"\b(twitter|on x|x handle)\s*(?:is\s*)?:?\s*$"#, "social", "x"),
-        (#"\blinkedin\s*(?:is\s*)?:?\s*$"#, "social", "linkedin"),
-        (#"\b(e-?mail|mail)(?:\s*id)?\s*(?:is\s*)?:?\s*$"#, "email", nil),
-        (#"\b(number|phone|mobile|whatsapp|call me (?:at|on))\s*(?:is\s*)?:?\s*$"#, "phone", nil),
+        // A coin's name alone is not a wallet ("$sol" is its price, "I bought
+        // sol" a purchase), nor is someone else's ("phantom wallet is down").
+        (#"(?<!\$)\b(?:(?:my|our)\s+(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet(?:\s+(?:address|addy))?|(?:my|our)\s+(?:sol|solana|phantom|usdc|crypto)\s+(?:address|addy)|(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet(?:\s+(?:address|addy))?\s*:|(?:sol|solana|phantom|usdc|crypto)\s+(?:address|addy)\s*:)\s*(?:is\s*)?:?\s*$"#, "wallet", nil),
+        // Before address: "my email address is" is an email.
+        (#"\b(?:(?:my|our)\s+(?:e-?mail|g-?mail|mail)(?:\s*(?:id|address|addy))?|(?:e-?mail|g-?mail|mail)\s+(?:me|us)\s+(?:at|on)|(?:e-?mail|g-?mail)(?:\s*(?:id|address|addy))?\s*:|mail\s*id\s*:)\s*(?:is\s*)?:?\s*$"#, "email", nil),
+        // An IP, web or website address is no place to deliver to.
+        (#"(?:\b(?:my|our)\s+(?:(?:home|delivery|shipping|office|current|new)\s+)?(?:address|addy)|(?<!e-?mail\s)(?<!gmail\s)(?<!ip\s)(?<!web\s)(?<!website\s)(?<!mac\s)\b(?:(?:home|delivery|shipping|office)\s+)?address\s*:|\bdeliver(?:\s+it)?\s+to|\bsend\s+it\s+to|\bship\s+(?:it\s+)?to|\bcome\s+(?:over\s+)?to|\bpick\s+me\s+up\s+(?:from|at))\s*(?:is\s*)?:?\s*$"#, "address", nil),
+        (#"\b(?:(?:my|our)\s+(?:upi|vpa|gpay|google\s+pay|phonepe|paytm)(?:\s+(?:id|number|handle))?|(?:upi|vpa|gpay|phonepe|paytm)(?:\s*id)?\s*:|(?:pay|gpay|phonepe|paytm)\s+me\s+(?:at|on))\s*(?:is\s*)?:?\s*$"#, "upi", nil),
+        (#"\b(?:(?:my|our)\s+(?:insta|instagram|ig)(?:\s+(?:handle|id|username))?|(?:follow|find|add|dm)\s+(?:me|us)\s+on\s+(?:insta|instagram|ig)|(?:insta|instagram|ig)(?:\s+(?:handle|id|username))?\s*:)\s*(?:is\s*)?:?\s*$"#, "social", "insta"),
+        (#"\b(?:(?:my|our)\s+(?:twitter|x)(?:\s+(?:handle|id|username))?|(?:follow|find|dm)\s+(?:me|us)\s+on\s+(?:twitter|x)|(?:twitter|x\s+handle)\s*:)\s*(?:is\s*)?:?\s*$"#, "social", "x"),
+        (#"\b(?:(?:my|our)\s+linkedin(?:\s+(?:profile|url|handle|id))?|(?:find|add|connect\s+with)\s+(?:me|us)\s+on\s+linkedin|linkedin\s*:)\s*(?:is\s*)?:?\s*$"#, "social", "linkedin"),
+        // A phone number, not an account, card, order or ticket number, and
+        // not the phone itself ("i lost my phone").
+        (#"\b(?:(?:my|our)\s+(?:(?:phone|mobile|cell|contact|whatsapp)\s+)?(?:number|no\.?|num)|(?:my|our)\s+whatsapp|(?:phone|mobile|cell|contact|whatsapp)(?:\s+(?:number|no\.?|num))?\s*:|(?:call|text|whatsapp|ping|reach|ring)\s+(?:me|us)\s+(?:at|on))\s*(?:is\s*)?:?\s*$"#, "phone", nil),
     ]
 
     static func vaultMatch(_ text: String, fields: [VaultField]) -> VaultField? {
@@ -557,9 +590,10 @@ enum Smart {
         for (pattern, kind, label) in triggers {
             guard text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
             else { continue }
-            let candidates = fields.filter { $0.kind == kind }
+            // A social detail may be saved as a handle.
+            let candidates = fields.filter { $0.kind == kind || (kind == "social" && $0.kind == "handle") }
             if let label {
-                if let hit = candidates.first(where: { $0.label.lowercased().contains(label) }) {
+                if let hit = candidates.first(where: { isPlatform($0.label, label) }) {
                     return hit
                 }
                 continue
@@ -594,6 +628,27 @@ enum Smart {
         return (parts.last ?? "").trimmingCharacters(in: .whitespaces)
     }
 
+    /// The platform the words named for a handle ("insta", "x",
+    /// "linkedin"), or nil for a plain "handle".
+    private static func platformNamed(_ words: String) -> String? {
+        let w = words.lowercased()
+        if w.range(of: #"\b(insta(gram)?|ig)\b"#, options: .regularExpression) != nil { return "insta" }
+        if w.range(of: #"\b(twitter|x)\b"#, options: .regularExpression) != nil { return "x" }
+        if w.contains("linkedin") { return "linkedin" }
+        return nil
+    }
+
+    /// Whether a saved handle is that platform's, by its label ("Instagram",
+    /// "IG", "Twitter", "X").
+    private static func isPlatform(_ label: String, _ platform: String) -> Bool {
+        let l = label.lowercased().trimmingCharacters(in: .whitespaces)
+        switch platform {
+        case "insta": return l.contains("insta") || l.range(of: #"\big\b"#, options: .regularExpression) != nil
+        case "x": return l.contains("twitter") || l.range(of: #"(^|\W)x($|\W)"#, options: .regularExpression) != nil
+        default: return l.contains(platform)
+        }
+    }
+
     /// "send me ur upi", "what's your address": a question for someone else.
     private static func asksSomeoneElse(_ text: String) -> Bool {
         let tail = lastClause(text).split(separator: " ").suffix(6).joined(separator: " ")
@@ -605,13 +660,401 @@ enum Smart {
         let clause = lastClause(text)
         guard !clause.isEmpty, !asksSomeoneElse(text) else { return nil }
         for (pattern, kind) in firstPerson {
-            guard let r = clause.range(of: pattern, options: [.regularExpression, .caseInsensitive]),
-                  let field = fields.first(where: { $0.kind == kind || (kind == "social" && $0.kind == "handle") })
+            guard let r = clause.range(of: pattern, options: [.regularExpression, .caseInsensitive])
             else { continue }
+            // "My linkedin" is the LinkedIn one, never the Instagram handle;
+            // "my handle" takes whichever there is.
+            let platform = kind == "social" ? platformNamed(String(clause[r])) : nil
+            guard let field = fields.first(where: {
+                ($0.kind == kind || (kind == "social" && $0.kind == "handle"))
+                    && (platform == nil || isPlatform($0.label, platform!))
+            }) else { continue }
             let after = String(clause[r.upperBound...])
                 .replacingOccurrences(of: #"^[\s:,-]*(is|are|=)?[\s:,-]*"#, with: "", options: .regularExpression)
             if after.count <= 3 { return field }
         }
         return nil
+    }
+}
+
+// MARK: - Answers worked out on the phone (hold space)
+
+extension Smart {
+
+    /// What a held space answers right here: a sum, a conversion, money at
+    /// the rates the keyboard already holds, the time or the date. No
+    /// network, no model, no run spent ("2+5" went to the server and back).
+    /// Everything else still goes to the server. Smart.kt's twin, and the
+    /// unit table is the server's lib/units.ts.
+    struct InstantAnswer: Equatable {
+        var title: String
+        /// The big line on the card: "7", "3.107 miles", "10:28 PM".
+        var value: String
+        var sub: String
+        /// What Insert puts in the message: "2+5 = 7", "5 km is 3.107 miles".
+        var say: String
+    }
+
+    static func instantAnswer(_ text: String, rates: RatesSnapshot = .empty,
+                              indianGrouping: Bool = true, now: Date = Date(),
+                              timeZone: TimeZone = .current, locale: Locale = .current) -> InstantAnswer? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "’", with: "'")
+        guard !t.isEmpty, t.count <= 80 else { return nil }
+        if let sum = sumAnswer(t, indianGrouping: indianGrouping) { return sum }
+        if let units = convertUnits(t) {
+            return InstantAnswer(title: t, value: units.to, sub: units.from, say: units.say)
+        }
+        if let money = moneyAnswer(t, rates: rates) { return money }
+        if let days = daysAnswer(t, now: now, timeZone: timeZone, locale: locale) { return days }
+        return clockAnswer(t, now: now, timeZone: timeZone, locale: locale)
+    }
+
+    // A sum asked as a sum: "2+5", "3480/4 =", "what is 12*12?", "18% of 2450".
+    private static func sumAnswer(_ t: String, indianGrouping: Bool) -> InstantAnswer? {
+        if let tip = tipAnswer(t) { return tip }
+        var expr = t.lowercased()
+            .replacingOccurrences(of: #"^(?:what\s+is|what's|whats|how\s+much\s+is|calculate|calc|solve)\s+"#,
+                                  with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"[\s?=]+$"#, with: "", options: .regularExpression)
+        expr = expr.trimmingCharacters(in: .whitespaces)
+        let percent = expr.range(of: #"^\d+(?:\.\d+)?\s*%\s*of\s*[\d,]+(?:\.\d+)?$"#, options: .regularExpression) != nil
+        let plain = expr.range(of: #"^[\d\s.,+\-*/×÷^()%x]+$"#, options: .regularExpression) != nil
+            && expr.range(of: #"\d"#, options: .regularExpression) != nil
+            && expr.range(of: #"\d\s*(?:[-+*/×÷^%]|x)\s*[\d(]|\d\s*%"#, options: .regularExpression) != nil
+        guard percent || plain, let result = calc(expr + " =", indianGrouping: indianGrouping) else { return nil }
+        let say = percent ? "\(expr) is \(result.value)" : "\(expr) = \(result.value)"
+        return InstantAnswer(title: expr, value: result.value, sub: expr, say: say)
+    }
+
+    // "15% tip on 64": the tip, and what that comes to (answers.ts mathAnswer).
+    private static let tipAsk = try? NSRegularExpression(pattern:
+        #"^(?:what\s+is\s+|what's\s+|whats\s+|calculate\s+)?([\d.]+)\s*%\s*tip\s*(?:on|for|of)\s*([$€£₹]?)\s*([\d,.]+)\s*\??$"#,
+        options: [.caseInsensitive])
+
+    private static func tipAnswer(_ t: String) -> InstantAnswer? {
+        guard let re = tipAsk else { return nil }
+        let ns = t as NSString
+        guard let m = re.firstMatch(in: t, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let percentText = ns.substring(with: m.range(at: 1))
+        let symbol = m.range(at: 2).location == NSNotFound ? "" : ns.substring(with: m.range(at: 2))
+        let billText = ns.substring(with: m.range(at: 3))
+        guard let percent = Double(percentText), let bill = Double(billText.replacingOccurrences(of: ",", with: ""))
+        else { return nil }
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: "en_US")
+        f.minimumFractionDigits = 2
+        f.maximumFractionDigits = 2
+        f.roundingMode = .halfUp
+        func money(_ n: Double) -> String { symbol + (f.string(from: NSNumber(value: n)) ?? String(n)) }
+        let tip = percent / 100 * bill
+        return InstantAnswer(title: t, value: money(tip), sub: "\(money(bill + tip)) in all",
+                             say: "\(percentText)% tip on \(symbol)\(billText) is \(money(tip)) (\(money(bill + tip)) in all)")
+    }
+
+    // "100 usd to inr", "$13 in rupees", "50 euros in dollars": today's rates,
+    // when the keyboard has them (otherwise the server answers).
+    private static let moneyAsk = try? NSRegularExpression(pattern:
+        #"^(?:convert\s+|what\s+is\s+|what's\s+|whats\s+|how\s+much\s+is\s+)?(?:([$€£₹¥])\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?([a-z]{2,8}|[$€£₹¥]))\s+(?:to|in|into|=)\s+([a-z]{2,8}|[$€£₹¥])\s*\??$"#,
+        options: [.caseInsensitive])
+
+    private static func moneyAnswer(_ t: String, rates: RatesSnapshot) -> InstantAnswer? {
+        guard let re = moneyAsk else { return nil }
+        let ns = t as NSString
+        guard let m = re.firstMatch(in: t, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        func group(_ i: Int) -> String? {
+            m.range(at: i).location == NSNotFound ? nil : ns.substring(with: m.range(at: i))
+        }
+        func code(_ unit: String?) -> String? {
+            guard let unit else { return nil }
+            if unit.count == 1, let c = unit.first, let code = symbolCurrency[c] { return code }
+            return wordCurrency[unit.lowercased()]
+        }
+        guard let amount = Double((group(2) ?? group(3) ?? "").replacingOccurrences(of: ",", with: "")),
+              amount > 0,
+              let from = code(group(1) ?? group(4)), let to = code(group(5)), from != to,
+              let fromRate = rates.fiat[from], fromRate > 0, let toRate = rates.fiat[to]
+        else { return nil }
+        let typed = format(amount, in: from)
+        let result = format(amount / fromRate * toRate, in: to)
+        return InstantAnswer(title: "\(from) to \(to)", value: result, sub: "\(typed) · today's rate",
+                             say: "\(typed) = \(result)")
+    }
+
+    // "how many days until christmas": counted on the phone's own calendar
+    // (answers.ts daysAnswer).
+    private static let daysAsk = try? NSRegularExpression(pattern:
+        #"^(?:how\s+many\s+(days?|weeks?)\s+(?:are\s+)?(?:left\s+)?(?:until|till|til|to|before)|(days?|weeks?)\s+(?:left\s+)?(?:until|till|til|to)|how\s+long\s+(?:is\s+it\s+)?(?:until|till|til|to))\s+(.+?)\s*\??$"#,
+        options: [.caseInsensitive])
+
+    /// Days everyone counts to: the name it is said with, and its month and
+    /// day in a given year (Thanksgiving moves).
+    private static let countedDays: [(pattern: String, label: String, date: (Int) -> (Int, Int))] = [
+        (#"^christmas eve$"#, "Christmas Eve", { _ in (12, 24) }),
+        (#"^(?:christmas|xmas|christmas day)$"#, "Christmas", { _ in (12, 25) }),
+        (#"^new year'?s eve$"#, "New Year's Eve", { _ in (12, 31) }),
+        (#"^(?:new year'?s?|new year'?s day|the new year)$"#, "New Year's Day", { _ in (1, 1) }),
+        (#"^halloween$"#, "Halloween", { _ in (10, 31) }),
+        (#"^valentine'?s(?: day)?$"#, "Valentine's Day", { _ in (2, 14) }),
+        (#"^(?:the )?(?:4th|fourth) of july$|^independence day$"#, "the Fourth of July", { _ in (7, 4) }),
+        (#"^thanksgiving$"#, "Thanksgiving", { year in
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = TimeZone(identifier: "UTC")!
+            let first = cal.date(from: DateComponents(year: year, month: 11, day: 1)).map { cal.component(.weekday, from: $0) } ?? 1
+            // weekday: Sunday 1 … Thursday 5; the fourth Thursday.
+            return (11, 1 + (5 - first + 7) % 7 + 21)
+        }),
+    ]
+    private static let monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+
+    private static func daysAnswer(_ t: String, now: Date, timeZone: TimeZone, locale: Locale) -> InstantAnswer? {
+        guard let re = daysAsk else { return nil }
+        let lower = t.lowercased()
+        let ns = lower as NSString
+        guard let m = re.firstMatch(in: lower, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        func group(_ i: Int) -> String? { m.range(at: i).location == NSNotFound ? nil : ns.substring(with: m.range(at: i)) }
+        let weeks = (group(1) ?? group(2) ?? "").hasPrefix("week")
+        let what = (group(3) ?? "").replacingOccurrences(of: #"^the\s+"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "?!. "))
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let today = cal.startOfDay(for: now)
+        let year = cal.component(.year, from: now)
+        var label: String
+        var dateFor: (Int) -> (Int, Int)
+        if let holiday = countedDays.first(where: { what.range(of: $0.pattern, options: .regularExpression) != nil
+                                                    || "the \(what)".range(of: $0.pattern, options: .regularExpression) != nil }) {
+            label = holiday.label
+            dateFor = holiday.date
+        } else {
+            // "dec 25", "december 25", "25 dec", "25th of december"
+            let parts = what.split(separator: " ").map(String.init).filter { $0 != "of" }
+            guard parts.count == 2 else { return nil }
+            let first = parts[0], second = parts[1]
+            let digits = CharacterSet.decimalDigits
+            let dayText = first.unicodeScalars.first.map { digits.contains($0) } == true ? first : second
+            let monthText = dayText == first ? second : first
+            guard let day = Int(dayText.trimmingCharacters(in: CharacterSet.letters)),
+                  let index = monthNames.firstIndex(of: String(monthText.prefix(3))), (1...31).contains(day)
+            else { return nil }
+            label = "\(monthText.prefix(1).uppercased())\(monthText.dropFirst().prefix(2)) \(day)"
+            dateFor = { _ in (index + 1, day) }
+        }
+        func target(_ y: Int) -> Date? {
+            let (month, day) = dateFor(y)
+            return cal.date(from: DateComponents(year: y, month: month, day: day))
+        }
+        guard var when = target(year) else { return nil }
+        if when < today, let next = target(year + 1) { when = next }
+        let days = cal.dateComponents([.day], from: today, to: when).day ?? 0
+        let f = DateFormatter()
+        f.locale = locale
+        f.timeZone = timeZone
+        f.setLocalizedDateFormatFromTemplate("EEEEMMMMd")
+        func plural(_ n: Int, _ word: String) -> String { "\(n) \(word)\(n == 1 ? "" : "s")" }
+        let count = weeks && days >= 7
+            ? plural(days / 7, "week") + (days % 7 > 0 ? " and \(plural(days % 7, "day"))" : "")
+            : plural(days, "day")
+        let say = days == 0 ? "\(label) is today" : "\(count) until \(label)"
+        return InstantAnswer(title: t, value: days == 0 ? "Today" : count, sub: f.string(from: when), say: say)
+    }
+
+    // "what time is it", "what's the date": the phone's own clock.
+    private static func clockAnswer(_ t: String, now: Date, timeZone: TimeZone, locale: Locale) -> InstantAnswer? {
+        let lower = t.lowercased()
+        let time = lower.range(of: #"^(?:what(?:'s|s| is)?\s+(?:the\s+)?time(?:\s+(?:is\s+it|now|rn))?|what\s+time\s+is\s+it(?:\s+now)?|time(?:\s+now)?|current\s+time)\s*\??$"#,
+                               options: .regularExpression) != nil
+        let date = lower.range(of: #"^(?:what(?:'s|s| is)?\s+(?:the\s+|today'?s\s+)?date(?:\s+today)?|today'?s\s+date|what\s+day\s+is\s+(?:it|today)(?:\s+today)?|date(?:\s+today)?|what(?:'s|s| is)\s+today)\s*\??$"#,
+                               options: .regularExpression) != nil
+        guard time || date else { return nil }
+        let f = DateFormatter()
+        f.locale = locale
+        f.timeZone = timeZone
+        if time {
+            f.timeStyle = .short
+            f.dateStyle = .none
+            // iOS puts a narrow no-break space before PM; a message wants a plain one.
+            let clock = f.string(from: now).replacingOccurrences(of: "\u{202F}", with: " ")
+            f.setLocalizedDateFormatFromTemplate("EEEE")
+            return InstantAnswer(title: "Time", value: clock, sub: f.string(from: now), say: "It's \(clock)")
+        }
+        f.setLocalizedDateFormatFromTemplate("EEEEMMMMd")
+        let day = f.string(from: now)
+        f.setLocalizedDateFormatFromTemplate("y")
+        return InstantAnswer(title: "Date", value: day, sub: f.string(from: now), say: "It's \(day)")
+    }
+
+    // MARK: Units (lib/units.ts, the same table and the same cases)
+
+    struct UnitConversion: Equatable {
+        var from: String
+        var to: String
+        var say: String
+    }
+
+    private struct UnitDef {
+        let dim: String
+        let size: Double
+        let one: String
+        let many: String
+        let names: [String]
+    }
+
+    private static let unitDefs: [UnitDef] = [
+        UnitDef(dim: "length", size: 0.001, one: "mm", many: "mm", names: ["mm", "millimeter", "millimeters", "millimetre", "millimetres"]),
+        UnitDef(dim: "length", size: 0.01, one: "cm", many: "cm", names: ["cm", "cms", "centimeter", "centimeters", "centimetre", "centimetres"]),
+        UnitDef(dim: "length", size: 1, one: "m", many: "m", names: ["m", "meter", "meters", "metre", "metres", "mtr", "mtrs"]),
+        UnitDef(dim: "length", size: 1000, one: "km", many: "km", names: ["km", "kms", "kilometer", "kilometers", "kilometre", "kilometres"]),
+        UnitDef(dim: "length", size: 0.0254, one: "inch", many: "inches", names: ["in", "inch", "inches"]),
+        UnitDef(dim: "length", size: 0.3048, one: "foot", many: "feet", names: ["ft", "foot", "feet"]),
+        UnitDef(dim: "length", size: 0.9144, one: "yard", many: "yards", names: ["yd", "yds", "yard", "yards"]),
+        UnitDef(dim: "length", size: 1609.344, one: "mile", many: "miles", names: ["mi", "mile", "miles"]),
+        UnitDef(dim: "mass", size: 0.001, one: "mg", many: "mg", names: ["mg", "milligram", "milligrams"]),
+        UnitDef(dim: "mass", size: 1, one: "g", many: "g", names: ["g", "gm", "gms", "gram", "grams"]),
+        UnitDef(dim: "mass", size: 1000, one: "kg", many: "kg", names: ["kg", "kgs", "kilo", "kilos", "kilogram", "kilograms"]),
+        UnitDef(dim: "mass", size: 1e6, one: "tonne", many: "tonnes", names: ["tonne", "tonnes"]),
+        UnitDef(dim: "mass", size: 28.349523125, one: "oz", many: "oz", names: ["oz", "ounce", "ounces"]),
+        UnitDef(dim: "mass", size: 453.59237, one: "lb", many: "lb", names: ["lb", "lbs", "pound", "pounds"]),
+        UnitDef(dim: "mass", size: 6350.29318, one: "stone", many: "stone", names: ["st", "stone", "stones"]),
+        UnitDef(dim: "temperature", size: 1, one: "°C", many: "°C", names: ["c", "°c", "celsius", "centigrade", "degrees c", "degree c", "deg c", "degrees celsius"]),
+        UnitDef(dim: "temperature", size: 1, one: "°F", many: "°F", names: ["f", "°f", "fahrenheit", "degrees f", "degree f", "deg f", "degrees fahrenheit"]),
+        UnitDef(dim: "temperature", size: 1, one: "K", many: "K", names: ["k", "kelvin"]),
+        UnitDef(dim: "volume", size: 0.001, one: "ml", many: "ml", names: ["ml", "milliliter", "milliliters", "millilitre", "millilitres"]),
+        UnitDef(dim: "volume", size: 1, one: "litre", many: "litres", names: ["l", "liter", "liters", "litre", "litres", "ltr", "ltrs"]),
+        UnitDef(dim: "volume", size: 0.00492892159375, one: "tsp", many: "tsp", names: ["tsp", "teaspoon", "teaspoons"]),
+        UnitDef(dim: "volume", size: 0.01478676478125, one: "tbsp", many: "tbsp", names: ["tbsp", "tablespoon", "tablespoons"]),
+        UnitDef(dim: "volume", size: 0.0295735295625, one: "fl oz", many: "fl oz", names: ["fl oz", "fluid ounce", "fluid ounces"]),
+        UnitDef(dim: "volume", size: 0.2365882365, one: "cup", many: "cups", names: ["cup", "cups"]),
+        UnitDef(dim: "volume", size: 0.473176473, one: "pint", many: "pints", names: ["pint", "pints"]),
+        UnitDef(dim: "volume", size: 0.946352946, one: "quart", many: "quarts", names: ["quart", "quarts"]),
+        UnitDef(dim: "volume", size: 3.785411784, one: "gallon", many: "gallons", names: ["gal", "gallon", "gallons"]),
+        UnitDef(dim: "speed", size: 1 / 3.6, one: "km/h", many: "km/h", names: ["km/h", "kmh", "kmph", "kph", "kilometers per hour", "kilometres per hour", "km per hour"]),
+        UnitDef(dim: "speed", size: 0.44704, one: "mph", many: "mph", names: ["mph", "miles per hour", "mi/h"]),
+        UnitDef(dim: "speed", size: 1, one: "m/s", many: "m/s", names: ["m/s", "meters per second", "metres per second"]),
+        UnitDef(dim: "speed", size: 1852.0 / 3600, one: "knot", many: "knots", names: ["knot", "knots"]),
+        UnitDef(dim: "time", size: 1, one: "second", many: "seconds", names: ["s", "sec", "secs", "second", "seconds"]),
+        UnitDef(dim: "time", size: 60, one: "minute", many: "minutes", names: ["min", "mins", "minute", "minutes"]),
+        UnitDef(dim: "time", size: 3600, one: "hour", many: "hours", names: ["h", "hr", "hrs", "hour", "hours"]),
+        UnitDef(dim: "time", size: 86400, one: "day", many: "days", names: ["day", "days"]),
+        UnitDef(dim: "time", size: 604800, one: "week", many: "weeks", names: ["wk", "wks", "week", "weeks"]),
+        UnitDef(dim: "time", size: 31557600, one: "year", many: "years", names: ["yr", "yrs", "year", "years"]),
+        UnitDef(dim: "area", size: 0.09290304, one: "sq ft", many: "sq ft", names: ["sq ft", "sqft", "square feet", "square foot", "ft2"]),
+        UnitDef(dim: "area", size: 1, one: "sq m", many: "sq m", names: ["sq m", "sqm", "square meters", "square metres", "square meter", "square metre", "m2"]),
+        UnitDef(dim: "area", size: 4046.8564224, one: "acre", many: "acres", names: ["acre", "acres"]),
+        UnitDef(dim: "area", size: 10000, one: "hectare", many: "hectares", names: ["ha", "hectare", "hectares"]),
+    ]
+
+    private static let unitByName: [String: UnitDef] = {
+        var out: [String: UnitDef] = [:]
+        for u in unitDefs { for n in u.names { out[n] = u } }
+        return out
+    }()
+
+    /// Longest names first, so "fl oz" wins over "oz" and "km/h" over "km".
+    private static let unitNamePattern: String = unitByName.keys.sorted { $0.count > $1.count }
+        .map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+    private static let unitNumber = #"(-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|-?\.\d+)"#
+    private static let unitDirect = try? NSRegularExpression(pattern:
+        #"^(?:(?:convert|what\s+is|what's|whats|how\s+much\s+is|how\s+many\s+is)\s+)?"# + unitNumber +
+        #"\s*(?:degrees?\s+)?("# + unitNamePattern + #")\s+(?:to|in|into|as|in\s+to|=|->|=>)\s+(?:degrees?\s+)?("# +
+        unitNamePattern + #")\s*\??$"#, options: [.caseInsensitive])
+    private static let unitHowMany = try? NSRegularExpression(pattern:
+        #"^how\s+many\s+("# + unitNamePattern + #")\s+(?:are\s+)?(?:in|is\s+in|make|makes)\s+(?:(?:a|an|one)\s+|"# +
+        unitNumber + #"\s*)("# + unitNamePattern + #")\s*\??$"#, options: [.caseInsensitive])
+
+    /// A height in feet and inches: "5 ft 10 in", "5'10", "5 feet 10 inches".
+    private static let unitFeetInches = try? NSRegularExpression(pattern:
+        #"^(?:(?:convert|what\s+is|what's|whats|how\s+much\s+is)\s+)?(\d+)\s*(?:ft|feet|foot|')\s*(\d+(?:\.\d+)?)\s*(?:in|inch|inches|"|'')?\s+(?:to|in|into|as|=)\s+("# +
+        unitNamePattern + #")\s*\??$"#, options: [.caseInsensitive])
+
+    /// Under ten feet, feet come as a height: "5 ft 10 in", not "5.84 feet".
+    private static func asHeight(metres: Double) -> String? {
+        let feet = metres / 0.3048
+        guard feet >= 1, feet < 10 else { return nil }
+        var whole = Int(feet.rounded(.down))
+        var inches = Int(((feet - Double(whole)) * 12).rounded(.toNearestOrAwayFromZero))
+        if inches == 12 { whole += 1; inches = 0 }
+        return inches > 0 ? "\(whole) ft \(inches) in" : "\(whole) ft"
+    }
+
+    /// "5 km in miles" → "5 km is 3.107 miles"; nil when it is not a conversion.
+    static func convertUnits(_ text: String) -> UnitConversion? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "’", with: "'").lowercased()
+        let ns = t as NSString
+        let all = NSRange(location: 0, length: ns.length)
+        func group(_ m: NSTextCheckingResult, _ i: Int) -> String? {
+            m.range(at: i).location == NSNotFound ? nil : ns.substring(with: m.range(at: i))
+        }
+        if let m = unitFeetInches?.firstMatch(in: t, range: all) {
+            guard let to = group(m, 3).flatMap({ unitByName[$0] }), to.dim == "length",
+                  let feet = group(m, 1).flatMap({ Double($0) }), let inches = group(m, 2).flatMap({ Double($0) })
+            else { return nil }
+            let metres = feet * 0.3048 + inches * 0.0254
+            let a = inches > 0 ? "\(Int(feet)) ft \(unitNumber(inches)) in" : "\(Int(feet)) ft"
+            let b = unitNamed(unitFromBase(metres, to), to)
+            return UnitConversion(from: a, to: b, say: "\(a) is \(b)")
+        }
+        var amount: Double
+        var from: UnitDef?
+        var to: UnitDef?
+        if let m = unitDirect?.firstMatch(in: t, range: all) {
+            amount = Double((group(m, 1) ?? "").replacingOccurrences(of: ",", with: "")) ?? .nan
+            from = group(m, 2).flatMap { unitByName[$0] }
+            to = group(m, 3).flatMap { unitByName[$0] }
+        } else if let m = unitHowMany?.firstMatch(in: t, range: all) {
+            to = group(m, 1).flatMap { unitByName[$0] }
+            amount = group(m, 2).flatMap { Double($0.replacingOccurrences(of: ",", with: "")) } ?? 1
+            from = group(m, 3).flatMap { unitByName[$0] }
+        } else {
+            return nil
+        }
+        guard let from, let to, from.one != to.one, from.dim == to.dim, amount.isFinite else { return nil }
+        let result = unitFromBase(unitToBase(amount, from), to)
+        guard result.isFinite else { return nil }
+        let a = unitNamed(amount, from)
+        let b = (to.one == "foot" ? asHeight(metres: unitToBase(amount, from)) : nil) ?? unitNamed(result, to)
+        return UnitConversion(from: a, to: b, say: "\(a) is \(b)")
+    }
+
+    private static func unitToBase(_ n: Double, _ u: UnitDef) -> Double {
+        guard u.dim == "temperature" else { return n * u.size }
+        if u.one == "°F" { return (n - 32) * 5 / 9 }
+        if u.one == "K" { return n - 273.15 }
+        return n
+    }
+
+    private static func unitFromBase(_ n: Double, _ u: UnitDef) -> Double {
+        guard u.dim == "temperature" else { return n / u.size }
+        if u.one == "°F" { return n * 9 / 5 + 32 }
+        if u.one == "K" { return n + 273.15 }
+        return n
+    }
+
+    /// As precise as the size needs: 160,934, 220.5, 32.19, 3.107, 0.0254.
+    static func unitNumber(_ n: Double) -> String {
+        let size = abs(n)
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: "en_US")
+        f.minimumFractionDigits = 0
+        f.roundingMode = .halfUp   // as the server's toLocaleString rounds
+        if size >= 1 || size == 0 {
+            f.maximumFractionDigits = size >= 1000 ? 0 : size >= 100 ? 1 : size >= 10 ? 2 : 3
+            return f.string(from: NSNumber(value: n)) ?? String(n)
+        }
+        f.usesSignificantDigits = true
+        f.maximumSignificantDigits = 3
+        return f.string(from: NSNumber(value: n)) ?? String(n)
+    }
+
+    private static func unitNamed(_ n: Double, _ u: UnitDef) -> String {
+        let text = unitNumber(n)
+        if u.one == "K" { return "\(text) K" }
+        if u.one.hasPrefix("°") { return "\(text)\(u.one)" }
+        return "\(text) \(abs(n) == 1 ? u.one : u.many)"
     }
 }

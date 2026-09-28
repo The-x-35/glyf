@@ -59,6 +59,19 @@ enum TypingText {
         s.unicodeScalars.reduce(0) { $0 + ($1.properties.isUppercase ? 1 : 0) }
     }
 
+    /// A letter three or more times in a row: stretched for emphasis
+    /// ("sooo", "yesss"), which the writer means. TypingText.kt's twin.
+    static func isStretched(_ s: String) -> Bool {
+        var last: Character? = nil
+        var run = 0
+        for c in s.lowercased() {
+            run = c == last && c.isLetter ? run + 1 : 1
+            if run >= 3 { return true }
+            last = c
+        }
+        return false
+    }
+
     static func hasDigit(_ s: String) -> Bool {
         s.unicodeScalars.contains { $0.properties.numericType != nil }
     }

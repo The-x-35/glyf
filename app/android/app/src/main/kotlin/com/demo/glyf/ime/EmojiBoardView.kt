@@ -82,7 +82,6 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
     )
 
     private val main = Handler(Looper.getMainLooper())
-    private val decodePool = Executors.newFixedThreadPool(2)
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
     private fun dp(v: Int) = dp(v.toFloat()).toInt()
     private val inter = interFace(ctx)
@@ -952,6 +951,11 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
     }
 
     companion object {
+        /** Two decoders for every board the keyboard ever opens: a pool per
+         *  board was never shut down, so each emoji tap-in left two threads. */
+        private val decodePool = Executors.newFixedThreadPool(2) { r ->
+            Thread(r, "glyf-emoji-decode").apply { isDaemon = true }
+        }
         const val ROWS = 5
         const val RECENT_EMOJI = "emoji-recents.json"
         const val RECENT_EMOTICONS = "emoticon-recents.json"

@@ -47,6 +47,11 @@ enum ThumbLoader {
 
         var req = URLRequest(url: url)
         req.timeoutInterval = 8
+        // Our own server's pictures (a place's photo, its map) sit behind the
+        // sign-in like every other call; no one else ever gets the session.
+        if let own = URL(string: SettingsStore.current.backendURL)?.host, url.host == own {
+            req.glyfSession()
+        }
         URLSession.shared.dataTask(with: req) { data, _, _ in
             let image = data.flatMap { downscale($0, maxPixel: maxPixel) }
             DispatchQueue.main.async {

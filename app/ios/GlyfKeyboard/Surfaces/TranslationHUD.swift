@@ -4,7 +4,8 @@ protocol TranslationHUDDelegate: AnyObject {
     func hudClosed()
     func hudRequestTranslation(of text: String, target: String?,
                                completion: @escaping (BackendClient.Translation?) -> Void)
-    func hudReplaceDraft(with text: String, consumedBefore: Int)
+    /// `span` is exactly what was translated, as it stands before the cursor.
+    func hudReplaceDraft(with text: String, replacing span: String)
 }
 
 /// §6.13 T / website 6.6 — translate never covers the keys. It takes the
@@ -25,7 +26,9 @@ final class TranslationHUD: UIView {
     private var pendingWork: DispatchWorkItem?
     private var lastSource = ""
     private var lastTranslation = ""
-    private var lastConsumed = 0
+    /// The end of the draft that was translated, as it stands in the field:
+    /// Replace swaps exactly this, never anything before it.
+    private var lastWindow = ""
     /// What Replace just put in: the draft is now a translation, and asking
     /// to translate it back would leave the strip on "…" for nothing.
     private var justReplaced = ""
@@ -36,7 +39,9 @@ final class TranslationHUD: UIView {
 
     init() {
         super.init(frame: .zero)
-        backgroundColor = Glass.solidLook ? .clear : Glass.fillBar
+        // Never fully clear: a keyboard drops touches on clear pixels, and
+        // the ✕ and the gaps around it must answer.
+        backgroundColor = Glass.solidLook ? Glass.touchableGrid : Glass.fillBar
         accessibilityIdentifier = "hud:translate"
 
         directionButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -116,15 +121,29 @@ final class TranslationHUD: UIView {
         forcedTarget = next
         target = next
         updateDirection()
-        let source = lastSource
+        let window = lastWindow
         lastSource = ""
-        if !source.isEmpty { draftChanged(source, consumedBefore: lastConsumed) }
+        if !window.isEmpty { draftChanged(window) }
+    }
+
+    /// What of a draft gets translated: all of it up to 280 characters, else
+    /// its end from the start of a sentence (or at least of a word), so no
+    /// word is cut in half and Replace swaps only what it translated.
+    static func window(of draft: String) -> String {
+        guard draft.count > 280 else { return draft }
+        let tail = String(draft.suffix(280))
+        if let r = tail.range(of: #"[.!?\n]\s+"#, options: .regularExpression), r.upperBound < tail.endIndex {
+            return String(tail[r.upperBound...])
+        }
+        if let space = tail.firstIndex(of: " ") { return String(tail[tail.index(after: space)...]) }
+        return tail
     }
 
     /// Called by the VC on word commits (space/return) with the draft.
-    func draftChanged(_ draft: String, consumedBefore: Int) {
-        let text = String(draft.suffix(280)).trimmingCharacters(in: .whitespacesAndNewlines)
-        lastConsumed = consumedBefore
+    func draftChanged(_ draft: String) {
+        let window = Self.window(of: draft)
+        let text = window.trimmingCharacters(in: .whitespacesAndNewlines)
+        lastWindow = window
         guard !text.isEmpty, text != lastSource, text != justReplaced else { return }
         justReplaced = ""
         lastSource = text
@@ -160,7 +179,9 @@ final class TranslationHUD: UIView {
     private func applyTapped() {
         guard !lastTranslation.isEmpty else { return }
         let replaced = lastTranslation
-        delegate?.hudReplaceDraft(with: replaced, consumedBefore: lastConsumed)
+        // The space the draft ended on stays after the translation.
+        let trailing = String(lastWindow.reversed().prefix(while: { $0.isWhitespace }).reversed())
+        delegate?.hudReplaceDraft(with: replaced + trailing, replacing: lastWindow)
         justReplaced = replaced.trimmingCharacters(in: .whitespacesAndNewlines)
         lastSource = ""
         lastTranslation = ""

@@ -305,10 +305,12 @@ object EventParse {
         // What the calendar itself put in the message is already in the
         // calendar: an event ("📅 Lunch · Fri…") or free time ("I'm free…").
         if (text.contains("📅") || re("\\bI[’']?m (free|busy|booked|done)\\b").containsMatchIn(text)) return null
+        // "Call me in 5 minutes" is a countdown, not something for the calendar.
+        if (re("\\bin\\s+(?:\\d+|an?|a few|few|couple of)\\s*(?:minutes?|mins?)\\b").containsMatchIn(text)) return null
         val p = parse(text, now, tz, dayFirst, firstDayOfWeek)
         if (!p.hasTime) return null
         if (p.hasDay) return p
-        val intent = "\\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|milte|milenge)\\b"
+        val intent = "\\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|milte|milenge)\\b"
         return if (re(intent).containsMatchIn(text)) p else null
     }
 

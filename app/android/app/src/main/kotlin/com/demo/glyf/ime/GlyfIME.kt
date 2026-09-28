@@ -63,6 +63,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                                   var anchor: String? = null)
     private var lastCorrection: Correction? = null
 
+    /** Engine corrections of the last few minutes. Going back into one and
+     *  typing the original again is a "no": the word stays as typed and is
+     *  learned ("cutee" became "cute", was deleted and typed again, and
+     *  became "cute" every time). A typo typed twice ("teh") is still fixed:
+     *  its correction was never gone back into. iOS: recentFixes. */
+    private class RecentFix(val original: String, val replacement: String, val at: Long, var touched: Boolean = false)
+    private val recentFixes = mutableListOf<RecentFix>()
+
     /** The last correction, while the cursor is still right after it and its
      *  space. Otherwise a backspace that later reaches the same word in other
      *  text ("free" in a pasted line) would swap it back. */
@@ -92,6 +100,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /// start typing over a suggestion, so this is a separate slot from
     /// `searchResults`, which does replace the keys.
     private var searchLanding: LinearLayout? = null
+    /** The row under the search strip that holds the suggestion chips. It
+     *  keeps its height with or without chips, and results take its place and
+     *  the keys', so the keyboard never changes size while you search. */
+    private var searchChipsRow: android.widget.HorizontalScrollView? = null
 
     // MARK: lifecycle
 
@@ -133,7 +145,17 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 // next scenario's result.
                 // Translate as you type too: left on, it keeps every strip
                 // chip away from the scenarios after it.
-                "close" -> { dismissOverlay(); dismissFeaturePanel(); if (translateStrip != null) exitTranslate() }
+                // Everything back to the letters, as a new field gets it: a
+                // search left open under the keys took the next scenario's
+                // typing into its old query ("coffee near mecoffee").
+                "close" -> {
+                    dismissOverlay()
+                    dismissFeaturePanel()
+                    if (searchActive) exitSearch()
+                    if (barActive) exitBar()
+                    if (noteEditActive) exitNoteEdit()
+                    if (translateStrip != null) exitTranslate()
+                }
                 "dump" -> writeQaState()
                 "seedvault" -> {
                     // The scenarios ask for an address and a wallet address:
@@ -189,6 +211,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     val after = ic.getTextAfterCursor(10000, 0)?.length ?: 0
                     ic.deleteSurroundingText(before, after)
                     updateSuggestions()
+                }
+                // A word the typing engine learned, forgotten and not blocked,
+                // so a scenario about learning it starts clean every run.
+                "forgetword" -> KeyboardTyping.engine?.let { e ->
+                    val word = intent.getStringExtra("text").orEmpty()
+                    if (word.isNotEmpty()) {
+                        e.forget(word)
+                        e.personal.unblock(word)
+                        KeyboardTyping.scheduleSave(this@GlyfIME)
+                    }
                 }
                 "delwords" -> {
                     val n = intent.getIntExtra("count", 1)
@@ -260,7 +292,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     @SuppressLint("InflateParams")
     override fun onCreateInputView(): View {
-        root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        forgetSurfaces()
+        root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            // A held top-row key's accents rise over the strip above it.
+            clipChildren = false
+        }
         toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -288,6 +325,46 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             insets
         }
         return root
+    }
+
+    /** A view built again (a new configuration) starts clean: every strip,
+     *  panel and editor belonged to the old one, and a flag left set would
+     *  send the keys into an editor nobody can see. */
+    private fun forgetSurfaces() {
+        (featurePanel as? GamesPanelView)?.stop()
+        featurePanel = null
+        emojiBoard = null
+        overlay = null
+        searchActive = false
+        searchQuery = ""
+        searchStrip = null; searchResults = null; searchLanding = null; searchChipsRow = null
+        searchQueryView = null; searchStatusView = null
+        barActive = false
+        barPrompt = ""
+        barStrip = null; barPromptView = null; barRunView = null; barInput = null
+        noteEditActive = false
+        noteEditId = null
+        noteEditText = ""
+        noteEditStrip = null; noteEditView = null
+        translateStrip = null; translateDir = null; translateText = null; translateReplace = null
+        translateSource = ""; translateResult = ""; translateSpan = ""
+        stripChip = null; stripChipKind = null; stripSmartDetail = null
+        actGeneration++ // a late act result must not land in the new view
+        actStreamView = null; actOptionList = null
+        coachOverlay = null; coachedStep = null
+        main.removeCallbacks(hideNotice)
+        noticeView = null
+        dropMarker = null
+        gPill = null
+    }
+
+    /** Bumped for every field, shown or not: an answer that arrives late
+     *  (a calendar's Google or Cal.com reply) must not land in the next app. */
+    private var inputSession = 0
+
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        inputSession++
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -330,11 +407,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         main.postDelayed(tourTick, 400)
         // Android hands a keyboard the clipboard without asking, so history
         // fills itself: whatever was copied since last time is kept here.
-        if (!isSecureField()) com.demo.glyf.store.ClipboardStore.captureNow(this)
+        if (!isSecureField()) com.demo.glyf.store.ClipboardStore.captureNow(this, settings)
         actGeneration++ // a late act result must not land in a new field
+        recentFixes.clear()  // another field: its corrections are not these
         dismissOverlay()
         if (searchActive) exitSearch()
         if (barActive) exitBar()
+        // A note left open would take the next app's typing into itself.
+        if (noteEditActive) exitNoteEdit()
         if (translateStrip != null) exitTranslate()
         // A new field starts on the letters, like Gboard: an emoji page or a
         // menu left open in the last one would otherwise sit under the keys.
@@ -383,7 +463,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             contentDescription = "Glyf menu"
             setOnClickListener {
                 // While suggestions fill the strip, g brings the tools back (iOS §6.2).
-                if (featurePanel is ToolMenuView) {
+                // As ✕ (over the menu, Pay or Games) it closes what is open.
+                if (closing || featurePanel is ToolMenuView) {
                     dismissFeaturePanel()
                 } else if (suggestionRow.visibility == View.VISIBLE) {
                     toolsPinned = true
@@ -525,6 +606,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         searchActive = true
         searchTab = "web"
         searchQuery = ""
+        // A search starts in lowercase, whatever capital the message field
+        // was about to get (Gboard's, and the emoji board's search here).
+        if (keyboard.shifted && autoShifted) {
+            keyboard.shifted = false
+            autoShifted = false
+            keyboard.invalidate()
+        }
         toolbar.visibility = View.GONE
         val strip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -606,6 +694,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         searchStrip = strip
         searchQueryView = query
         searchStatusView = status
+        ensureSearchChipsRow()
         showLanding()
     }
 
@@ -676,6 +765,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             } else showSearchResults(rows)
             return
         }
+        dismissLanding()
         searchStatusView?.text = "Searching…"
         val vertical = searchTab
         com.demo.glyf.store.SearchRecents.record(this, q, vertical)
@@ -690,11 +780,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             lon = lon?.takeIf { !it.isNaN() },
             country = settings.optString("region").takeIf { it.length == 2 },
             tz = java.util.TimeZone.getDefault().id,
+            dark = chromeDark,
             onCards = { answered, cards -> main.post {
                 // A late reply from a tab the user already left must not
                 // replace what they are looking at now.
                 if (answered != searchTab) return@post
-                searchStatusView?.text = if (cards.isEmpty()) "Nothing found" else ""
+                // Places near you need to know where you are: the app asks.
+                val nowhere = vertical == "maps" && lat?.takeIf { !it.isNaN() } == null
+                searchStatusView?.text = if (cards.isEmpty()) {
+                    if (nowhere) "Turn on Nearby search in the Glyf app" else "Nothing found"
+                } else ""
                 if (cards.isNotEmpty()) showSearchResults(cards)
             } },
             onError = { message -> main.post { searchStatusView?.text = message } },
@@ -730,34 +825,64 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         return out
     }
 
-    /** Suggestion rows above the keys. Capped at three so the keyboard keeps
-     *  most of the screen and typing stays possible. */
+    private val searchChipsHeight get() = dp(40)
+
+    /** Directly under the search strip, above the key grid (index 1). */
+    private fun ensureSearchChipsRow(): android.widget.HorizontalScrollView {
+        searchChipsRow?.let { return it }
+        val row = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            setPadding(dp(8), 0, dp(8), 0)
+            clipToPadding = false
+        }
+        root.addView(row, 1, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, searchChipsHeight))
+        searchChipsRow = row
+        return row
+    }
+
+    /** Suggestions as one row of chips side by side, so the keys stay where
+     *  they are: a recent or trending search runs when tapped. */
     private fun showLandingRows(cards: List<BackendClient.SearchCard>) {
-        dismissLanding()
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(2), dp(10), dp(2))
+        val row = ensureSearchChipsRow()
+        row.removeAllViews()
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        val theme = SearchCards.Theme(
-            ink = ink(), card = card(),
-            soft = Color.argb(170, 128, 128, 136), dp = ::dp)
-        val backendURL = settings.optString("backendURL")
-        for ((i, c) in cards.take(3).withIndex()) {
-            val v = SearchCards.view(this, c, theme, backendURL) { tapped -> insertResult(tapped) }
-            v.setTag(com.demo.glyf.R.id.qa_id, "search:row:$i")
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 0, dp(6))
-            panel.addView(v, lp)
+        for ((i, c) in cards.take(12).withIndex()) {
+            val icon = when {
+                c.kind == "contact" -> "👤"
+                c.source == "recent" -> "🕘"
+                else -> "↗"
+            }
+            list.addView(TextView(this).apply {
+                text = "$icon  ${c.title}"
+                textSize = 13.5f
+                setTextColor(ink())
+                maxLines = 1
+                maxWidth = dp(230)
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(11), 0, dp(12), 0)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(15).toFloat(); setColor(card())
+                }
+                setTag(com.demo.glyf.R.id.qa_id, "search:row:$i")
+                contentDescription = c.title
+                setOnClickListener { insertResult(c) }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30))
+                .apply { rightMargin = dp(8) })
         }
-        // Index 1 = directly under the search strip, above the key grid.
-        root.addView(panel, 1)
-        searchLanding = panel
+        row.addView(list, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
+        row.scrollTo(0, 0)
+        searchLanding = list
     }
 
     private fun dismissLanding() {
-        searchLanding?.let { root.removeView(it) }
+        searchChipsRow?.removeAllViews()
         searchLanding = null
     }
 
@@ -765,7 +890,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun showSearchResults(cards: List<BackendClient.SearchCard>) {
         dismissSearchResults()
         dismissLanding()
-        val keysHeight = keyboard.height
+        // The results take the chip row's place and the keys': the same
+        // height, so the keyboard stays put.
+        val keysHeight = keyboard.height + searchChipsHeight
+        searchChipsRow?.visibility = View.GONE
         keyboard.visibility = View.GONE
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -782,7 +910,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val theme = SearchCards.Theme(
             ink = ink(), card = card(),
-            soft = Color.argb(170, 128, 128, 136), dp = ::dp)
+            soft = Color.argb(170, 128, 128, 136), dp = ::dp, dark = chromeDark)
         val backendURL = settings.optString("backendURL")
         searchResultCount = cards.size
         for ((i, c) in cards.withIndex()) {
@@ -794,10 +922,20 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             lp.setMargins(0, 0, 0, dp(8))
             list.addView(v, lp)
         }
+        // Maps drawn from OpenStreetMap carry its credit, once, under the list.
+        if (cards.any { it.thumb?.startsWith("/search/staticmap") == true }) {
+            list.addView(TextView(this).apply {
+                text = "Maps © OpenStreetMap contributors · Geoapify"
+                textSize = 11f; setTextColor(Color.argb(170, 128, 128, 136))
+                gravity = Gravity.CENTER
+                setPadding(0, dp(2), 0, dp(6))
+            })
+        }
         scroll.addView(list)
         panel.addView(scroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, keysHeight - dp(30)))
-        root.addView(panel)
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(panel, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, keysHeight))
         searchResults = panel
     }
 
@@ -825,6 +963,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun dismissSearchResults() {
         searchResults?.let { root.removeView(it) }
         searchResults = null
+        searchChipsRow?.visibility = View.VISIBLE
         keyboard.visibility = View.VISIBLE
     }
 
@@ -838,6 +977,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         searchActive = false
         dismissLanding()
         dismissSearchResults()
+        searchChipsRow?.let { root.removeView(it) }
+        searchChipsRow = null
         searchStrip?.let { root.removeView(it) }
         searchStrip = null
         toolbar.visibility = View.VISIBLE
@@ -936,6 +1077,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     ic.deleteSurroundingText(if (prev == java.text.BreakIterator.DONE) 1 else last - prev, 0)
                 }
                 val current = WordContext.currentWord(ic.getTextBeforeCursor(64, 0)?.toString())
+                // Backing into a word the engine corrected ("cute" → "cut"):
+                // if the original comes back, that correction was a mistake.
+                if (current.length >= 2) {
+                    recentFixes.filter { it.replacement.startsWith(current, ignoreCase = true) }
+                        .forEach { it.touched = true }
+                }
                 val n = current.codePointCount(0, current.length)
                 while (wordTouches.size > n) wordTouches.removeAt(wordTouches.size - 1)
                 wordTouchesFor = current
@@ -981,12 +1128,22 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun typeIntoStrip(id: String, char: String?, text: String,
                               update: (String) -> Unit, onReturn: () -> Unit) {
         when {
-            char != null -> update(text + char)
+            char != null -> {
+                update(text + char)
+                // Shift is one letter's, as over the host field (and iOS's
+                // KeyboardView): left on, a query came out "COFFEE NEAR ME".
+                if (keyboard.shifted) {
+                    keyboard.shifted = false
+                    autoShifted = false
+                    keyboard.invalidate()
+                }
+            }
             id == "space" -> update("$text ")
             id == "delete" -> update(text.dropLast(1))
             id == "return" -> onReturn()
             id == "shift" -> {
                 keyboard.shifted = !keyboard.shifted
+                autoShifted = false
                 keyboard.invalidate()
             }
             id.startsWith("mode:") -> {
@@ -1246,8 +1403,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         selStart = newSelStart
         selEnd = newSelEnd
         // The cursor moved without a key (a tap in the field): suggest for
-        // wherever it landed.
-        if (glideCursor < 0 && !searchActive && !barActive && !noteEditActive) main.post { updateSuggestions() }
+        // wherever it landed. Every commit lands here too, so it goes
+        // through the same settle as the keys, never a pass per keystroke.
+        if (glideCursor < 0 && !searchActive && !barActive && !noteEditActive) scheduleSuggestions()
     }
 
     /** How many UTF-16 units the last [count] words before the cursor take,
@@ -1281,6 +1439,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     override fun onDeleteWordsCommit(count: Int) {
         val ic = currentInputConnection ?: return
+        // Whole words slid away: any correction among them was gone back into.
+        if (count > 0) recentFixes.forEach { it.touched = true }
         if (deleteAnchor >= 0) {
             val span = wordsSpan(deleteBefore, count)
             ic.setSelection(deleteAnchor, deleteAnchor)
@@ -1405,6 +1565,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private fun showGlyfBar() {
+        // Already up: a second strip would stack over the first, orphaned.
+        if (barActive) return
         removeClipCard()
         dismissOverlay()
         barInput = collectBarInput()
@@ -1622,6 +1784,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         for (f in vaultFields()) {
             if (f.kind !in kinds) continue
             val key = if (f.kind == "social" || f.kind == "handle") "social:${f.label.lowercase()}" else f.kind
+            // The server turns the whole request away past these lengths.
+            if (key.length > 40 || f.value.length > 400) continue
             out.putIfAbsent(key, f.value)
         }
         return out.ifEmpty { null }
@@ -1852,11 +2016,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (stripChipKind == "paste") hideStripChip()
             return
         }
+        // Used or waved off (the ✕), a copy is done: only a new one comes back.
+        val used = { imePrefs.edit().putLong("clipDone", stamp).apply() }
+        val dismiss = { used(); hideStripChip() }
         // A copied address is still pasted by a tap; Send (a wallet) or Buy
         // (a token) sits beside it. Nothing until the lookup says which.
         val address = Smart.payment(text)?.first?.takeIf { it != settings.optString("walletAddress") }
         if (address != null) {
-            val used = { imePrefs.edit().putLong("clipDone", stamp).apply() }
             val paste = {
                 used()
                 currentInputConnection?.commitText(text, 1)
@@ -1874,7 +2040,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                             used()
                             hideStripChip()
                             showPayPanel(PayPanelView.Intent.Buy(address, kind.symbol, kind.usd?.let { Smart.price(it) }))
-                        }) { paste() }
+                        }, onClose = dismiss) { paste() }
                 }
                 Smart.AddressKind.Wallet -> {
                     val asked = Smart.amountAsked(text)
@@ -1887,7 +2053,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         } else {
                             showPayPanel(PayPanelView.Intent.Send(address, asked?.first, asked?.second))
                         }
-                    }) { paste() }
+                    }, onClose = dismiss) { paste() }
                 }
             }
             return
@@ -1896,15 +2062,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Someone's booking page, just copied: book it instead of pasting it.
         val booking = Smart.bookingLink(text, settings.optString("bookingLink"))
         if (booking != null) {
-            showStripChip("paste", null, Smart.display(Smart.Chip.Booking(booking)), "Book", lead = "calendar") {
-                imePrefs.edit().putLong("clipDone", stamp).apply()
+            showStripChip("paste", null, Smart.display(Smart.Chip.Booking(booking)), "Book", lead = "calendar",
+                onClose = dismiss) {
+                used()
                 hideStripChip()
                 showCalendarPanel().openBooking(booking)
             }
             return
         }
-        showStripChip("paste", null, text.replace('\n', ' '), "Paste") {
-            imePrefs.edit().putLong("clipDone", stamp).apply()
+        showStripChip("paste", null, text.replace('\n', ' '), "Paste", onClose = dismiss) {
+            used()
             currentInputConnection?.commitText(text, 1)
             hideStripChip()
         }
@@ -1926,15 +2093,17 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** What a "smart" chip holds, for the tour's coach: "calc" or "vault:<kind>". */
     private var stripSmartDetail: String? = null
 
-    /** One chip across the strip: content on the left, the action on the right. */
+    /** One chip across the strip: content on the left, the action on the
+     *  right, and with [onClose] a ✕ at the very end to wave it off. */
     private fun showStripChip(kind: String, label: String?, value: String, verb: String,
                               lead: String? = null, extra: String? = null, onExtra: (() -> Unit)? = null,
+                              onClose: (() -> Unit)? = null,
                               onTap: () -> Unit) {
         hideStripChip()
         val chip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), 0, if (extra != null) dp(4) else dp(14), 0)
+            setPadding(dp(14), 0, if (extra != null || onClose != null) dp(4) else dp(14), 0)
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
                 setColor(card())
@@ -1984,6 +2153,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTag(com.demo.glyf.R.id.qa_id, "strip:smart:extra")
             setOnClickListener { onExtra() }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(26)).apply { leftMargin = dp(10) })
+        if (onClose != null) chip.addView(TextView(this).apply {
+            text = "✕"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+            setTag(com.demo.glyf.R.id.qa_id, "strip:smart:close")
+            contentDescription = "Dismiss"
+            setOnClickListener { onClose() }
+        }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { leftMargin = dp(4) })
         toolbar.addView(chip, 1, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
             leftMargin = dp(8)
             // The chip ends as far in as Glyf's key starts (the key is drawn
@@ -2038,13 +2216,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** A bound letter held → its skill runs as a HUD: the skill's name over
      *  the letter's keycap, the answer streaming in, then ↻ Copy Insert. */
-    private fun startSkill(letter: String, glyfId: String) {
+    private fun startSkill(letter: String, glyfId: String, vars: Map<String, String> = emptyMap(),
+                           title: String? = null) {
         val ic = currentInputConnection
         val before = ic?.getTextBeforeCursor(2000, 0)?.toString() ?: ""
         val after = ic?.getTextAfterCursor(2000, 0)?.toString() ?: ""
         actSkill = glyfId to letter
-        actSkillTitle = null
-        actVars = emptyMap()
+        actSkillTitle = title
+        actVars = vars
         if ((before + after).isNotBlank()) {
             actBefore = before
             actAfter = after
@@ -2083,12 +2262,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         actSkill?.let { (glyfId, letter) ->
             val title = actSkillTitle ?: skillTitle(glyfId)
             buildActWorking(panel, actRunInput, title, letter.ifEmpty { null })
-            val vars = actVars + (if (glyfId == "glyf.translate")
-                mapOf("target" to settings.optString("translateTarget", "English")) else emptyMap())
             val streamed = StringBuilder()
+            val lat = if (settings.has("lastLat")) settings.optDouble("lastLat") else null
+            val lon = if (settings.has("lastLon")) settings.optDouble("lastLon") else null
             BackendClient.run(
-                settings.optString("backendURL"), glyfId, actRunInput, vars,
+                settings.optString("backendURL"), glyfId, actRunInput, runVars(glyfId, actVars),
                 settings.optString("deviceId"), settings.optString("plan", "free"),
+                profile = shareableProfile(),
+                lat = lat?.takeIf { !it.isNaN() },
+                lon = lon?.takeIf { !it.isNaN() },
                 onToken = { t -> main.post {
                     if (generation != actGeneration || overlay !== panel) return@post
                     streamed.append(t)
@@ -2105,6 +2287,20 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 } },
             )
             return
+        }
+        // A sum, a conversion, money at the rates in hand, the time or the
+        // date: answered here at once, no server and no run ("2+5" held for
+        // a moment went to the server and back). Smart.instantAnswer.
+        if (actIntent == null || actIntent == "answer") {
+            val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
+            Smart.instantAnswer(actRunInput, RatesStore.snapshot(region, settings.optString("moneyCurrency")),
+                indianGrouping = region == "IN")?.let { local ->
+                val card = BackendClient.SearchCard(kind = "answer", id = "local", title = local.title, url = "",
+                    say = local.say, value = local.value, sub = local.sub, art = "calc")
+                showActResult(panel, BackendClient.ActResult(intent = "answer", title = local.title,
+                    cards = listOf(card), text = null, insert = local.say, remaining = null))
+                return
+            }
         }
         val intent = actRunInput
         buildActWorking(panel, intent)
@@ -2153,6 +2349,25 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         )
     }
 
+    /** What every run carries besides its own vars (iOS BackendClient.run):
+     *  the tone the person keeps choosing, for prompts that ask for it, and
+     *  for Translate the person's own two languages, the same pair the
+     *  translate strip uses, so it never falls back to English and Hindi. */
+    private fun runVars(glyfId: String, vars: Map<String, String>): Map<String, String> {
+        val out = LinkedHashMap(vars)
+        if ("toneHint" !in out) {
+            val hint = com.demo.glyf.store.ToneProfile.hint(com.demo.glyf.store.ToneProfile.load(this))
+            // The prompts put it straight after a sentence's full stop.
+            out["toneHint"] = if (hint.isEmpty()) "" else " $hint"
+        }
+        if (glyfId == "glyf.translate") {
+            val (primary, secondary) = translatePair()
+            out.putIfAbsent("primary", primary)
+            out.putIfAbsent("secondary", secondary)
+        }
+        return out
+    }
+
     /** One panel for the whole act, in place of the toolbar and keys. */
     private fun actPanel(): FrameLayout {
         removeClipCard()
@@ -2161,8 +2376,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             return it
         }
         dismissOverlay()
-        // Results need room for a map and a card or two under it.
-        actPanelHeight = keyboard.height + dp(44) + dp(140)
+        // Exactly the strip and the keys it stands in for, as on iOS: the
+        // keyboard never grows when space is held. Results scroll.
+        val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
+        actPanelHeight = dp(47) + keysH
         val panel = FrameLayout(this).apply { tag = "act" }
         root.addView(panel, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, actPanelHeight))
@@ -2294,7 +2511,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }, gap())
         }
         val theme = SearchCards.Theme(ink = ink(), card = card(),
-            soft = Color.argb(170, 128, 128, 136), dp = ::dp)
+            soft = Color.argb(170, 128, 128, 136), dp = ::dp, dark = chromeDark)
         val backendURL = settings.optString("backendURL")
         val style = settings.optString("pasteStyle", "titleAndLink")
         // One place → a real map above its card. The server draws it with
@@ -2321,7 +2538,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             SearchCards.loadThumb(
                 "$backendURL/search/staticmap?lat=${place.lat}&lon=${place.lon}&w=$w&h=${dp(112) / 2}" +
                     (if (chromeDark) "&dark=1" else ""),
-                map, onMiss = { map.visibility = View.GONE }, maxWidth = 1200)
+                map, onMiss = { map.visibility = View.GONE }, maxWidth = 1200, signed = true)
         }
         for (c in r.cards) {
             // Tapping one card drops just that one — a single place from a list.
@@ -2705,7 +2922,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // fills it. Android tells a keyboard what the field wants (hint,
         // autofill hints, input type), so this is exact here.
         if (before.isEmpty() && !isSecureField()) {
-            val fill = Autofill.match(currentInputEditorInfo, VaultStore.load(this))
+            // The cached fields: decrypting the vault here ran on every pass.
+            val fill = Autofill.match(currentInputEditorInfo, vaultFields())
             if (fill != null) {
                 // Same chip as iOS: the saved detail, Insert on the right.
                 showStripChip("fill", null, fill, "Insert") {
@@ -2732,9 +2950,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         lastCorrection = null
         val s = engineSuggestions(word, before, policy) ?: run { showSuggestions(emptyList()); return }
         val others = s.alternatives.map { Suggestion(it, Suggestion.Kind.WORD) }
+        // With "Correct automatically" off the space keeps the word, so the
+        // fix is offered as a plain word rather than promised in bold (iOS).
+        val fixKind = if (settings.optBoolean("autocorrectApply", true)) Suggestion.Kind.CORRECTION
+                      else Suggestion.Kind.WORD
         showSuggestions(when {
             s.autocorrect != null -> listOf(Suggestion(word, Suggestion.Kind.LITERAL),
-                Suggestion(s.autocorrect, Suggestion.Kind.CORRECTION)) + others.take(1)
+                Suggestion(s.autocorrect, fixKind)) + others.take(1)
             others.isEmpty() -> emptyList()
             else -> listOf(Suggestion(word, if (s.known) Suggestion.Kind.WORD else Suggestion.Kind.LITERAL)) + others.take(2)
         })
@@ -2853,7 +3075,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             val previous = WordContext.previousWord(before)
             val head = before.substring(0, before.length - word.length)
             var kept = word
-            if (policy and TypingEngine.AUTOCORRECT != 0) {
+            val nowMs = System.currentTimeMillis()
+            recentFixes.removeAll { nowMs - it.at > 300_000 }
+            val refused = recentFixes.firstOrNull { it.touched && it.original.equals(word, ignoreCase = true) }
+            if (refused != null) {
+                // Corrected, gone back into, and typed the same again: keep it.
+                recentFixes.remove(refused)
+                engine.revert(word, refused.replacement)
+            } else if (policy and TypingEngine.AUTOCORRECT != 0) {
                 val fix = engineSuggestions(word, before, policy)?.autocorrect
                 // "Correct automatically" off: the word stands exactly as
                 // typed and the fix waits in the strip for a tap (iOS twin).
@@ -2866,6 +3095,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     }
                     ic.endBatchEdit()
                     lastCorrection = Correction(word, fix, fromEngine = true)
+                    recentFixes.add(RecentFix(word, fix, nowMs))
+                    while (recentFixes.size > 8) recentFixes.removeAt(0)
                     kept = fix
                 }
             }
@@ -2898,13 +3129,27 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     // MARK: bound keys → run → preview (the §6.4 loop, Android slice)
 
+    /** Holds run their bindings only over the host field: never while the
+     *  keys type into one of Glyf's own strips (a second strip would stack
+     *  on the first), and never in a password (iOS kbBindingsLive). */
+    override fun bindingsLive(): Boolean =
+        !searchActive && !barActive && !noteEditActive && emojiBoard?.searchActive != true &&
+            (featurePanel as? CalendarPanelView)?.typing == null && !isSecureField()
+
     override fun onBoundKeyHeld(char: String, glyfId: String) {
+        // Something opened a strip while the key was held: it is a letter.
+        if (!bindingsLive()) {
+            onKey(char, if (keyboard.shifted) char.uppercase() else char)
+            return
+        }
         when (glyfId) {
             "surface:vault" -> { showVaultPanel(); return }
+            // The vault panel is where the notes are.
+            "surface:notes" -> { showVaultPanel(); return }
             "surface:translate-hud" -> { runTranslateOnField(); return }
-            "surface:tones" -> { dismissFeaturePanel(); showGlyfBar(); return }
+            "surface:tones" -> { showTonesPanel(char); return }
             // C by default: the calendar lives in the keyboard, not the app.
-            "connector:calendar" -> { dismissFeaturePanel(); showCalendarPanel(); return }
+            "connector:calendar", "connector:mockcal" -> { dismissFeaturePanel(); showCalendarPanel(); return }
             "connector:meet" -> { insertMeetLink(); return }
         }
         if (glyfId.startsWith("surface:") || glyfId.startsWith("connector:")) {
@@ -3125,6 +3370,38 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         cardRow(body, "＋ Build your own", "") { dismissFeaturePanel(); openAppPath("build") }
     }
 
+    /** The Rewrite hold (iOS TonesPopup): four tones over the keys; one tap
+     *  rewrites the draft in that tone, the answer in the act panel. */
+    private fun showTonesPanel(letter: String) {
+        val (_, body) = panelShell("Rewrite your draft as…")
+        val tones = listOf(
+            "Natural" to "natural, human", "Professional" to "professional",
+            "Casual" to "casual", "Gen-Z" to "gen-z playful")
+        for (pair in tones.chunked(2)) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for ((i, tone) in pair.withIndex()) {
+                val (label, value) = tone
+                row.addView(TextView(this).apply {
+                    text = label; textSize = 15f
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    setTextColor(ink())
+                    setTag(com.demo.glyf.R.id.qa_id, "tones:${label.lowercase()}")
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(12).toFloat(); setColor(card())
+                    }
+                    setOnClickListener {
+                        dismissFeaturePanel()
+                        startSkill(letter, "rewrite.tone", mapOf("tone" to value), label)
+                    }
+                }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { if (i > 0) leftMargin = dp(10) })
+            }
+            body.addView(row, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { setMargins(dp(4), dp(6), dp(4), dp(4)) })
+        }
+    }
+
     /** What each key holds. */
     private fun showKeysPanel() {
         val (_, body) = panelShell("Keys")
@@ -3136,7 +3413,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 "surface:translate-hud" -> "Translate"
                 "surface:tones" -> "Rewrite"
                 "surface:notes" -> "Notes"
-                "connector:calendar" -> "Calendar"
+                "connector:calendar", "connector:mockcal" -> "Calendar"
                 "connector:meet" -> "Meet link"
                 else -> skillTitle(target)
             }
@@ -3176,7 +3453,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** Gboard's clipboard, identical to the iOS panel: it takes the whole
      *  keyboard, toolbar included, the way Gboard's does. */
     private fun showClipboardPanel() {
-        com.demo.glyf.store.ClipboardStore.captureNow(this)
+        com.demo.glyf.store.ClipboardStore.captureNow(this, settings)
         dismissFeaturePanel()
         keyboard.visibility = View.GONE
         toolbar.visibility = View.GONE
@@ -3263,11 +3540,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
         keyboard.visibility = View.GONE
         lateinit var panel: CalendarPanelView
+        val session = inputSession
         panel = CalendarPanelView(
             this, keyboard.palette(),
             backendURL = settings.optString("backendURL"),
             bookingLink = settings.optString("bookingLink").trim().takeIf { it.isNotEmpty() },
-            onInsert = { text ->
+            onInsert = insert@{ text ->
+                // Only into the field the calendar was opened over.
+                if (session != inputSession) return@insert
                 // A sentence of its own, never glued to the last word (iOS spaced()).
                 val ic = currentInputConnection
                 val last = ic?.getTextBeforeCursor(1, 0)?.lastOrNull()
@@ -3357,6 +3637,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun enterNoteEdit(id: String?, initial: String) {
         dismissFeaturePanel()
         if (searchActive) exitSearch()
+        // One note at a time: the open one's strip goes before the next.
+        if (noteEditActive) exitNoteEdit()
         noteEditActive = true
         noteEditId = id
         noteEditText = initial
@@ -3414,6 +3696,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         noteEditActive = false
         noteEditStrip?.let { root.removeView(it) }
         noteEditStrip = null
+        noteEditView = null
+        noteEditId = null
+        noteEditText = ""
         toolbar.visibility = View.VISIBLE
     }
 
@@ -3427,10 +3712,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         override val backendURL: String get() = settings.optString("backendURL")
         override val palette: GlyfKeyboardView.KeyPalette get() = keyboard.palette()
         override val dark: Boolean get() = chromeDark
-        override val online: Boolean get() {
+        override val online: Boolean get() = runCatching {
             val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-            return cm.activeNetwork != null
-        }
+            cm.activeNetwork != null
+        // Can't tell: try the network, and let the request say.
+        }.getOrDefault(true)
         override fun commitText(text: String, spaced: Boolean) {
             val ic = currentInputConnection ?: return
             val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
@@ -3530,7 +3816,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var translateDetected: String? = null
     private var translateTarget: String? = null
     private var translateForced: String? = null
-    private var translateConsumed = 0
+    /** The end of the draft that was translated, as it stands in the field:
+     *  Replace swaps exactly this, never anything before it (iOS lastWindow). */
+    private var translateSpan = ""
 
     /** The person's two languages: the phone's first, and the other one they
      *  type in (last detected), else the phone's next, else the region's. */
@@ -3620,13 +3908,28 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         toolbar.visibility = View.VISIBLE
     }
 
+    /** What of a draft gets translated: all of it up to 280 characters,
+     *  else its end from the start of a sentence (or at least of a word), so
+     *  no word is cut in half (iOS TranslationHUD.window). */
+    private fun translateWindow(draft: String): String {
+        if (draft.length <= 280) return draft
+        var tail = draft.takeLast(280)
+        // Never half an emoji at the cut.
+        if (Character.isLowSurrogate(tail[0])) tail = tail.drop(1)
+        val sentence = Regex("""[.!?\n]\s+""").find(tail)?.range?.last?.plus(1)
+        if (sentence != null && sentence < tail.length) return tail.substring(sentence)
+        val space = tail.indexOf(' ')
+        return if (space >= 0) tail.substring(space + 1) else tail
+    }
+
     /** Called on word commits: translate what is typed so far. */
     private fun translateDraftChanged() {
         if (translateStrip == null) return
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
-        val text = before.takeLast(280).trim()
-        translateConsumed = before.length
+        val window = translateWindow(before)
+        val text = window.trim()
+        translateSpan = window
         if (text.isEmpty() || text == translateSource || text == translateReplaced) return
         translateReplaced = ""
         translateSource = text
@@ -3670,8 +3973,20 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun applyTranslation() {
         if (translateResult.isEmpty()) return
         val ic = currentInputConnection ?: return
-        ic.deleteSurroundingText(translateConsumed, 0)
-        ic.commitText(translateResult, 1)
+        // Only what was translated goes, and only while it still ends the
+        // text: anything typed since, or before it, stays untouched.
+        val span = translateSpan
+        val before = ic.getTextBeforeCursor(span.length + 1, 0)?.toString() ?: ""
+        if (span.isEmpty() || !before.endsWith(span)) {
+            notice("The text changed since the translation")
+            return
+        }
+        // The space the draft ended on stays after the translation.
+        val trailing = span.takeLastWhile { it.isWhitespace() }
+        ic.beginBatchEdit()
+        ic.deleteSurroundingText(span.length, 0)
+        ic.commitText(translateResult + trailing, 1)
+        ic.endBatchEdit()
         // The draft is now the translation: don't translate it back, and
         // rest rather than show "…" as if waiting (iOS twin).
         translateReplaced = translateResult.trim()

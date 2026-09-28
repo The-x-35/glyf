@@ -39,25 +39,56 @@ object VaultStore {
     private fun empty() = JSONObject(mapOf(
         "fields" to JSONArray(), "combos" to JSONArray(), "snippets" to JSONArray()))
 
-    fun load(ctx: Context): JSONObject {
+    fun load(ctx: Context): JSONObject = read(ctx, forEdit = false) ?: empty()
+
+    /** The vault; empty when there is none yet. Null when there is one that
+     *  could not be read just now (the Keystore or the disk failing for a
+     *  moment): an edit then stops, since saving over it would replace
+     *  everything saved with nothing. A blob this phone's key can never open
+     *  (restored from another phone, or damaged) is set aside for an edit,
+     *  so details can be saved again. */
+    private fun read(ctx: Context, forEdit: Boolean = true): JSONObject? {
         val f = Bridge.file(ctx, BLOB)
-        if (!f.exists()) return empty()
-        return try {
+        if (!f.exists() || f.length() == 0L) return empty()
+        var unopenable = false
+        val vault = try {
             val raw = f.readBytes()
-            val iv = raw.copyOfRange(0, 12)
-            val cipherText = raw.copyOfRange(12, raw.size)
-            val c = Cipher.getInstance("AES/GCM/NoPadding")
-            c.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv))
-            JSONObject(String(c.doFinal(cipherText)))
-        } catch (_: Exception) { empty() }
+            if (raw.size < 12 + 16) {
+                unopenable = true // shorter than its IV and tag
+                null
+            } else {
+                val c = Cipher.getInstance("AES/GCM/NoPadding")
+                c.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, raw.copyOfRange(0, 12)))
+                JSONObject(String(c.doFinal(raw.copyOfRange(12, raw.size))))
+            }
+        } catch (_: javax.crypto.BadPaddingException) {
+            unopenable = true // the tag fails: another key's blob, or damaged
+            null
+        } catch (_: Exception) { null }
+        if (vault != null) {
+            // An older blob may miss a list; the edits below need all three.
+            for (list in listOf("fields", "combos", "snippets")) {
+                if (vault.optJSONArray(list) == null) vault.put(list, JSONArray())
+            }
+            return vault
+        }
+        if (unopenable && forEdit) {
+            f.renameTo(java.io.File(f.parentFile, "$BLOB.unreadable"))
+            return empty()
+        }
+        return null
     }
 
+    /** Written whole beside the old blob, then swapped in, so a crash or a
+     *  full disk mid-write never leaves half a vault. */
     private fun save(ctx: Context, vault: JSONObject): Boolean = try {
         val c = Cipher.getInstance("AES/GCM/NoPadding")
         c.init(Cipher.ENCRYPT_MODE, key())
         val out = c.iv + c.doFinal(vault.toString().toByteArray())
-        Bridge.file(ctx, BLOB).writeBytes(out)
-        true
+        val f = Bridge.file(ctx, BLOB)
+        val tmp = java.io.File(f.parentFile, "$BLOB.tmp")
+        tmp.writeBytes(out)
+        tmp.renameTo(f)
     } catch (_: Exception) { false }
 
     /** The kinds iOS's VaultRules allows (plus "handle", which older builds
@@ -72,7 +103,7 @@ object VaultStore {
         if (value.isBlank()) return "Add the value"
         if (kind !in allowedKinds) return "That kind of info can't be stored"
         SecretScanner.scan(value)?.let { return it }
-        val vault = load(ctx)
+        val vault = read(ctx) ?: return "Couldn't save"
         val fields = vault.getJSONArray("fields")
         var found = false
         for (i in 0 until fields.length()) {
@@ -89,7 +120,7 @@ object VaultStore {
     }
 
     fun deleteField(ctx: Context, id: String) {
-        val vault = load(ctx)
+        val vault = read(ctx) ?: return
         vault.put("fields", filterOut(vault.getJSONArray("fields"), id))
         save(ctx, vault)
     }
@@ -98,7 +129,7 @@ object VaultStore {
                     fieldIds: List<String>): String? {
         if (label.isBlank()) return "Give it a label"
         if (fieldIds.isEmpty()) return "Pick at least one field"
-        val vault = load(ctx)
+        val vault = read(ctx) ?: return "Couldn't save"
         val combos = vault.getJSONArray("combos")
         var found = false
         for (i in 0 until combos.length()) {
@@ -115,7 +146,7 @@ object VaultStore {
     }
 
     fun deleteCombo(ctx: Context, id: String) {
-        val vault = load(ctx)
+        val vault = read(ctx) ?: return
         vault.put("combos", filterOut(vault.getJSONArray("combos"), id))
         save(ctx, vault)
     }
@@ -126,7 +157,7 @@ object VaultStore {
         }
         if (text.isBlank()) return "Add the expansion"
         SecretScanner.scan(text)?.let { return it }
-        val vault = load(ctx)
+        val vault = read(ctx) ?: return "Couldn't save"
         val snippets = vault.getJSONArray("snippets")
         var found = false
         for (i in 0 until snippets.length()) {
@@ -138,7 +169,7 @@ object VaultStore {
     }
 
     fun deleteSnippet(ctx: Context, trigger: String) {
-        val vault = load(ctx)
+        val vault = read(ctx) ?: return
         val kept = JSONArray()
         val snippets = vault.getJSONArray("snippets")
         for (i in 0 until snippets.length()) {

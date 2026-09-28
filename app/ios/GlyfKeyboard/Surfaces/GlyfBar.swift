@@ -35,7 +35,12 @@ final class GlyfBar: UIView {
 
     static let chipsRowHeight: CGFloat = 44
     /// What the bar adds under the strip: the chips row when it has chips.
-    var extraHeight: CGFloat { chipsStack.arrangedSubviews.isEmpty ? 0 : GlyfBar.chipsRowHeight }
+    var extraHeight: CGFloat {
+        chipsStack.arrangedSubviews.isEmpty && !rowShown ? 0 : GlyfBar.chipsRowHeight
+    }
+    /// The chips row, once shown, keeps its room while the bar is open:
+    /// leaving the text out must not shrink the keyboard under the finger.
+    private var rowShown = false
 
     private let closeButton = UIButton(type: .system)
     private let promptEditor = InlineEditor(placeholder: "Ask Glyf", symbol: "sparkles")
@@ -145,6 +150,7 @@ final class GlyfBar: UIView {
 
     private func rebuildChips() {
         let before = extraHeight
+        rowShown = rowShown || !chipsStack.arrangedSubviews.isEmpty
         chipsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         guard hasFullAccess else {
             if extraHeight != before { delegate?.barHeightChanged() }
@@ -222,7 +228,8 @@ final class GlyfBar: UIView {
         accessButton.frame = field
         accessButton.layer.cornerRadius = pillH / 2
 
-        chipsScroll.frame = CGRect(x: 0, y: h, width: w, height: GlyfBar.chipsRowHeight)
+        // Under the whole strip, band included (iOS 17 and 18 add one above).
+        chipsScroll.frame = CGRect(x: 0, y: Glass.toolbarHeight, width: w, height: GlyfBar.chipsRowHeight)
         let fit = chipsStack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
         chipsStack.frame = CGRect(x: 6, y: (GlyfBar.chipsRowHeight - 32) / 2 - 2,
                                   width: fit.width, height: 32)

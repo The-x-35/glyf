@@ -54,6 +54,19 @@ object TypingText {
 
     fun capitalCount(s: String): Int = s.codePoints().filter { Character.isUpperCase(it) }.count().toInt()
 
+    /** A letter three or more times in a row: stretched for emphasis
+     *  ("sooo", "yesss"), which the writer means. TypingText.swift's twin. */
+    fun isStretched(s: String): Boolean {
+        var last = -1
+        var run = 0
+        for (c in s.lowercase().codePoints()) {
+            run = if (c == last && Character.isLetter(c)) run + 1 else 1
+            if (run >= 3) return true
+            last = c
+        }
+        return false
+    }
+
     fun hasDigit(s: String): Boolean = s.codePoints().anyMatch {
         when (Character.getType(it)) {
             Character.DECIMAL_DIGIT_NUMBER.toInt(), Character.LETTER_NUMBER.toInt(),

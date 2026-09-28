@@ -13,6 +13,8 @@ final class RatesStore {
     private(set) var crypto: [String: Double] = [:]
     /// The token behind each cashtag, so Buy knows what to buy.
     private(set) var mints: [String: String] = [:]
+    /// The market's ticker for what was typed ("APPL": "AAPL").
+    private(set) var tickers: [String: String] = [:]
     private var cryptoAt: [String: Date] = [:]
     /// Copied or typed addresses: a wallet, or the token at that address.
     private(set) var addresses: [String: Smart.AddressKind] = [:]
@@ -49,7 +51,8 @@ final class RatesStore {
     ]
 
     func snapshot() -> Smart.RatesSnapshot {
-        Smart.RatesSnapshot(fiat: fiat, crypto: crypto, local: local, mints: mints, addresses: addresses)
+        Smart.RatesSnapshot(fiat: fiat, crypto: crypto, local: local, mints: mints, addresses: addresses,
+                            tickers: tickers)
     }
 
     /// Fetches the dollar table when it is missing or stale; `then` runs on
@@ -78,9 +81,11 @@ final class RatesStore {
                let usd = quote["usd"] as? Double {
                 self.crypto[symbol] = usd
                 self.mints[symbol] = quote["mint"] as? String
+                self.tickers[symbol] = quote["ticker"] as? String
             } else {
                 self.crypto.removeValue(forKey: symbol)
                 self.mints.removeValue(forKey: symbol)
+                self.tickers.removeValue(forKey: symbol)
             }
             then()
         }

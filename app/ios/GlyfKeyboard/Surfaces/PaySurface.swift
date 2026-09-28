@@ -54,6 +54,10 @@ final class PaySurface: UIView {
     private var paying: Asset
     /// Everything the wallet holds, SOL first, once the relay answers.
     private var assets: [Asset] = [PaySurface.usdc, PaySurface.sol]
+    /// What the wallet holds is known (the relay answered), not yet asked,
+    /// or couldn't be had: zeros are shown only when they are true.
+    private enum Balance { case loading, known, unavailable }
+    private var balance = Balance.loading
     private var isPrivate = false
     private(set) var editingAmount = false
     private let connected = !(SettingsStore.current.walletAddress ?? "").isEmpty
@@ -316,6 +320,10 @@ final class PaySurface: UIView {
     private func takePercent(_ share: Double) {
         var held = paying.amount
         if paying.mint == Self.wsol { held = max(0, held - 0.005) }
+        guard balance == .known else {
+            delegate?.payToast(balance == .loading ? "Checking the wallet…" : "Balance unavailable")
+            return
+        }
         guard held > 0 else {
             delegate?.payToast("Nothing to take a share of yet")
             return
@@ -343,8 +351,12 @@ final class PaySurface: UIView {
     }
 
     private func pasteAddress() {
-        // The tap is the permission moment for reading the copy.
-        let copied = UIPasteboard.general.string ?? ""
+        // The tap is the permission moment for reading the copy (off the
+        // main thread, so the keyboard keeps working while iOS asks).
+        ClipboardStore.readCopy { [weak self] text in self?.useCopied(text ?? "") }
+    }
+
+    private func useCopied(_ copied: String) {
         guard let p = Smart.payment(in: copied) else {
             delegate?.payToast("Copy a Solana wallet address first")
             return
@@ -395,7 +407,12 @@ final class PaySurface: UIView {
     private func loadAssets() {
         guard connected, let address = SettingsStore.current.walletAddress else { return }
         rpc(method: "getBalance", params: [address, ["commitment": "confirmed"]]) { [weak self] result in
-            guard let self, let lamports = (result as? [String: Any])?["value"] as? NSNumber else { return }
+            guard let self else { return }
+            guard let lamports = (result as? [String: Any])?["value"] as? NSNumber else {
+                if self.balance == .loading { self.balance = .unavailable; self.renderBalance() }
+                return
+            }
+            self.balance = .known
             self.upsert(Asset(mint: Self.wsol, symbol: "SOL", decimals: 9,
                               amount: lamports.doubleValue / 1e9))
         }
@@ -486,9 +503,15 @@ final class PaySurface: UIView {
 
     // MARK: the buy quote (Jupiter, keyless, no taker: a price, not an order)
 
+    /// Which quote the panel is waiting for: an answer to an older amount or
+    /// asset arriving late must not replace the one for what is on screen.
+    private var quoteAsked = 0
+
     private func requote() {
         guard case .buy(let mint, let symbol, _) = intent else { return }
         quoteWork?.cancel()
+        quoteAsked += 1
+        let asked = quoteAsked
         guard let amount = amountValue, amount > 0 else {
             quote = nil
             renderQuote()
@@ -507,7 +530,7 @@ final class PaySurface: UIView {
             req.timeoutInterval = 8
             URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
                 DispatchQueue.main.async {
-                    guard let self else { return }
+                    guard let self, asked == self.quoteAsked else { return }
                     guard let data,
                           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let out = obj["outAmount"] as? String, let raw = Double(out),
@@ -547,6 +570,17 @@ final class PaySurface: UIView {
     // MARK: render
 
     private func renderBalance() {
+        guard connected else {
+            balanceTokens.text = ""
+            balanceValue.text = ""
+            return
+        }
+        // Not a $0.00 wallet before (or without) an answer: a zero is a fact.
+        guard balance == .known else {
+            balanceTokens.text = balance == .loading ? "…" : "Balance unavailable"
+            balanceValue.text = balance == .loading ? "…" : ""
+            return
+        }
         var parts: [String] = []
         let usdcHeld = assets.first { $0.mint == Self.usdcMint }?.amount ?? 0
         let solHeld = assets.first { $0.mint == Self.wsol }?.amount ?? 0

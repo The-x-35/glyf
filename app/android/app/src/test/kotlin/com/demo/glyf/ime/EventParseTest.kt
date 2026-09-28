@@ -126,4 +126,14 @@ class EventParseTest {
         assertFalse(plan("📅 Lunch with Sam · Fri, Sep 25, 1:00–2:00 PM"))
         assertFalse(plan("I'm free Fri 25 Sep, 9:00 AM–1:00 PM and 3:00–9:00 PM"))
     }
+
+    /** EventParseTests.testCountdownsAreNotPlansButOutingsAre, the twin. */
+    @Test fun countdownsAreNotPlansButOutingsAre() {
+        assertFalse(plan("call me in 5 minutes"))
+        assertFalse(plan("see you in 10 mins"))
+        assertTrue(plan("gym at 6am"))
+        assertTrue(plan("movie at 9"))
+        assertTrue(plan("flight at 6:30"))
+        assertFalse(plan("the shop closes at 9"))
+    }
 }

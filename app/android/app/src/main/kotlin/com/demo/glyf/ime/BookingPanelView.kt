@@ -306,6 +306,9 @@ class BookingPanelView(
         bookButton.isEnabled = false
         bookButton.text = "Booking…"
         SchedulingClient.book(backendURL, link, p.start, name, email, emails.drop(1)) { booked, error ->
+            // Closed while Cal.com answered (or the field changed): the line
+            // must not land in whatever is focused now.
+            if (!isAttachedToWindow) return@book
             bookButton.isEnabled = true
             bookButton.text = "Book it"
             if (booked == null) { note.text = error ?: "Couldn't book it. Try again"; return@book }

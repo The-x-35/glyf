@@ -90,10 +90,13 @@ class TypingEngineTest {
             state.optJSONArray("rejected")?.let { arr ->
                 for (i in 0 until arr.length()) {
                     val item = arr.getJSONArray(i)
-                    lexicon.revert(item.getString(0), item.getString(1), today)
-                    if (!state.has("kept")) { lexicon.forget(item.getString(0)); lexicon.unblock(item.getString(0)) }
+                    // A revert keeps the typed word too; without "kept" the case tests the block alone.
+                    if (state.has("kept")) lexicon.revert(item.getString(0), item.getString(1), today)
+                    else lexicon.reject(item.getString(0), item.getString(1))
                 }
             }
+            // Removed in the app's "My words".
+            state.optJSONArray("forgotten")?.strings()?.forEach { lexicon.forget(it) }
             state.optJSONArray("addedWords")?.strings()?.forEach { lexicon.add(it, today) }
             engine.replacePersonal(lexicon)
             engine.setPackWords(state.optJSONArray("packWords")?.strings() ?: emptyList())
@@ -144,6 +147,9 @@ class TypingEngineTest {
             }
             if (expect.has("alternativesMax") && s.alternatives.size > expect.getInt("alternativesMax")) {
                 failures.add("$name: ${s.alternatives.size} alternatives")
+            }
+            if (expect.has("alternativesFirst") && s.alternatives.firstOrNull() != expect.getString("alternativesFirst")) {
+                failures.add("$name: first alternative ${s.alternatives.firstOrNull()} ≠ ${expect.getString("alternativesFirst")}")
             }
         }
         return failures
