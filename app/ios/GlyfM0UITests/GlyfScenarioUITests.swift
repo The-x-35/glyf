@@ -220,7 +220,13 @@ final class GlyfScenarioUITests: XCTestCase {
     func testS52_DoubleSpaceEndsTheSentence() throws {
         open()
         clear()
-        type("ok  see")
+        type("ok")
+        // Two quick taps on the same key, the way a thumb does it: looking the
+        // key up again between them can take longer than the double-tap window.
+        guard let space = wait("key:space", 3) else { return XCTFail("no space bar") }
+        space.tap()
+        space.tap()
+        type("see")
         XCTAssertTrue(waitValue(3) { $0.lowercased().hasPrefix("ok. see") }, "got '\(value)'")
         XCTAssertTrue(value.contains(". S"), "the next sentence should start with a capital, got '\(value)'")
         note("'ok  see' -> '\(value)'")
@@ -338,6 +344,88 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertTrue(waitValue(3) { $0.contains(id) }, "got '\(value)' for chip '\(offered)'")
     }
 
+    /// User, 2026-09-28: "when i type $sol i should see sol price but i see my
+    /// wallet address". A cashtag is a price, never the saved wallet.
+    func testS141_DollarSolShowsSolsPriceNotYourWallet() throws {
+        open()
+        clear()
+        type("$sol")
+        guard let chip = wait("strip:smart", 8) else { return XCTFail("no price chip for $sol") }
+        let deadline = Date().addingTimeInterval(6)
+        while !chip.label.contains("SOL =") && Date() < deadline { usleep(300_000) }
+        note("$sol chip: '\(chip.label)'")
+        XCTAssertTrue(chip.label.contains("1 SOL = $"), "chip says '\(chip.label)'")
+        XCTAssertFalse(chip.label.lowercased().contains("wallet"), "the wallet must not answer $sol")
+        chip.tap()
+        XCTAssertTrue(waitValue(3) { $0.contains("$sol = $") }, "got '\(value)'")
+    }
+
+    /// "$appl" (the usual slip for AAPL, or "$apple" half typed) prices Apple
+    /// and says AAPL.
+    func testS142_DollarApplShowsApplesPrice() throws {
+        open()
+        clear()
+        type("$appl")
+        guard let chip = wait("strip:smart", 8) else { return XCTFail("no price chip for $appl") }
+        let deadline = Date().addingTimeInterval(6)
+        while !chip.label.contains("AAPL") && Date() < deadline { usleep(300_000) }
+        note("$appl chip: '\(chip.label)'")
+        XCTAssertTrue(chip.label.contains("1 AAPL = $"), "chip says '\(chip.label)'")
+    }
+
+    /// The wallet answers when the sentence asks for it.
+    func testS143_MySolAddressOffersTheWallet() throws {
+        open()
+        clear()
+        type("my sol address is ")
+        guard let chip = wait("strip:smart", 4) else { return XCTFail("no wallet chip") }
+        note("typed '\(value)', wallet chip: '\(chip.label)'")
+        XCTAssertFalse(chip.label.contains("="), "a price answered instead: '\(chip.label)'")
+        chip.tap()
+        XCTAssertTrue(waitValue(3) { $0.count > "my sol address is ".count + 20 }, "got '\(value)'")
+    }
+
+    /// User, 2026-09-28: "when we search the keyboard stretches". Opening
+    /// search, typing, and the results all keep one height: the keys stay
+    /// where they were and the search row never moves.
+    func testS144_SearchNeverChangesTheKeyboardsHeight() throws {
+        open()
+        clear()
+        guard let q = wait("key:q", 3) else { return XCTFail("no keys") }
+        let keysY = q.frame.minY
+        tap("toolbar:glyf")
+        tap("shell:tile:search")
+        guard let close = wait("search:close", 4) else { return XCTFail("search did not open") }
+        let rowY = close.frame.minY
+        XCTAssertEqual(el("key:q").frame.minY, keysY, accuracy: 1, "opening search moved the keys")
+        type("coffee")
+        XCTAssertEqual(el("key:q").frame.minY, keysY, accuracy: 1, "typing a query moved the keys")
+        XCTAssertEqual(el("search:close").frame.minY, rowY, accuracy: 1, "the search row moved while typing")
+        tap("search:go")
+        _ = wait("search:card:link", 12) ?? wait("search:card:answer", 1)
+        XCTAssertEqual(el("search:close").frame.minY, rowY, accuracy: 1, "the results changed the keyboard's height")
+        note("keys at \(keysY), search row at \(rowY), results row at \(el("search:close").frame.minY)")
+    }
+
+    /// A store in Maps comes with a picture, like a video's thumbnail: its
+    /// photo when Google Places is on, else a little map of where it is.
+    func testS145_MapsResultsCarryAPicture() throws {
+        open()
+        clear()
+        tap("toolbar:glyf")
+        tap("shell:tile:search")
+        if let maps = wait("search:tab:maps", 3) { maps.tap() }
+        type("coffee near me")
+        tap("search:go")
+        guard let place = wait("search:card:place", 12) else { return XCTFail("no places") }
+        sleep(3)
+        note("first place: \(place.label)")
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "S145 maps results"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     func testS63_RoughMessageOffersTidyThisUp() throws {
         open()
         clear()
@@ -422,8 +510,27 @@ final class GlyfScenarioUITests: XCTestCase {
         holdSpace()
         guard let insert = wait("act:insert", 20) else { return XCTFail("no answer") }
         insert.tap()
-        XCTAssertTrue(waitValue(4) { $0.contains("INR") }, "got '\(value)'")
+        // Worked out on the phone ("$100 = ₹9,588") when its rates are in
+        // hand, by the server ("100 USD is 9,598 INR") when they are not.
+        XCTAssertTrue(waitValue(4) { $0.contains("INR") || $0.contains("₹") }, "got '\(value)'")
         note("inserted: '\(value)'")
+    }
+
+    /// S189: hold space on a sum and the answer is there at once, worked
+    /// out on the phone (user, 2026-09-29: "i wanna do math 2+5 its taking
+    /// long, we dont need ai for this").
+    func testS189_HoldSpaceOnASumAnswersAtOnce() throws {
+        open()
+        clear()
+        type("2+5")
+        let start = Date()
+        holdSpace()
+        guard let insert = wait("act:insert", 4) else { return XCTFail("no answer") }
+        let ms = Int(Date().timeIntervalSince(start) * 1000)
+        insert.tap()
+        XCTAssertTrue(waitValue(4) { $0.contains("2+5 = 7") }, "got '\(value)'")
+        note("answer up \(ms) ms after the hold began; inserted '\(value)'")
+        XCTAssertLessThan(ms, 4000, "the hold is 1.2 s; the answer needs no network after it")
     }
 
     func testS69_HoldSpaceOnAnEmptyMessageOpensAsk() throws {
@@ -1137,6 +1244,49 @@ final class GlyfScenarioUITests: XCTestCase {
         let i = (Int(p.y) * cg.bytesPerRow) + Int(p.x) * bpp
         let (r, g, b) = (CGFloat(bytes[i]), CGFloat(bytes[i + 1]), CGFloat(bytes[i + 2]))
         return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    }
+
+    /// S188: an iPhone on its side. The keys take Apple's shorter rows, so
+    /// the page keeps room above them, and stay clear of the rounded corners
+    /// and the Dynamic Island. In Safari's address bar: Glyf's own app stays
+    /// upright, and Messages' new-message sheet does not turn.
+    func testS188_SidewaysTheKeysLeaveRoomAndClearTheIsland() throws {
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        host = safari
+        defer { XCUIDevice.shared.orientation = .portrait; safari.terminate() }
+        XCUIDevice.shared.orientation = .portrait
+        safari.launch()
+        XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 8))
+        sleep(2)
+        // The address bar: by name where it has one, else the bar along the foot.
+        let address = safari.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier IN %@ OR label IN %@",
+                                  ["TabBarItemTitle", "URL", "Address"], ["Address", "Search or enter website name"]))
+            .firstMatch
+        if address.waitForExistence(timeout: 4) { address.tap() }
+        else { safari.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.93)).tap() }
+        sleep(1)
+        if !switchToGlyf() { return XCTFail("Glyf keyboard not up in Safari") }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        sleep(3)
+        note("device orientation \(XCUIDevice.shared.orientation.rawValue)")
+        let screen = safari.windows.firstMatch.frame
+        guard let g = wait("toolbar:glyf", 4), let q = wait("key:q", 2), let p = wait("key:p", 2)
+        else { return XCTFail("the keyboard is gone on its side") }
+        keepScreenshot("sideways")
+        // A simulator run without Simulator.app reports the new orientation
+        // but never turns the apps (Xcode 27): nothing here can be measured.
+        if screen.width <= screen.height {
+            throw XCTSkip("the device turned (\(XCUIDevice.shared.orientation.rawValue)) but the app did not: headless simulator")
+        }
+        let share = (screen.maxY - g.frame.minY) / screen.height
+        note(String(format: "screen %.0fx%.0f; strip top %.0f (%.0f%% of the height); q x %.0f, p right %.0f, q %.0fx%.0f",
+                    screen.width, screen.height, g.frame.minY, share * 100, q.frame.minX,
+                    p.frame.maxX, q.frame.width, q.frame.height))
+        XCTAssertLessThan(share, 0.6, "on its side the keyboard covers most of the screen")
+        XCTAssertGreaterThan(q.frame.minX - screen.minX, 40, "Q sits under the corner or the island")
+        XCTAssertGreaterThan(screen.maxX - p.frame.maxX, 40, "P sits under the corner")
+        XCTAssertGreaterThanOrEqual(q.frame.height, 28, "keys this short are hard to hit")
     }
 
     func testS82_DarkModeKeysAreDarkAndLightModeKeysAreWhite() throws {

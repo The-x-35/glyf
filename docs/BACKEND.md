@@ -732,6 +732,8 @@ Notes:
 
 SPEC §6.9 describes a server-side moderation queue that auto-rejects glyfs reading vault or wallet data and sending it to non-registry destinations. What exists is this synchronous rule check; there is no queue or human review.
 
+**2026-09-29:** a generated glyf whose `discloses` came back empty (the model did that twice in a row for "Say no, politely", failing the build) gets the plain truth for its input instead ("the text in your current field", "the text you copied", "the text you run it on"; `routes/builder.ts`).
+
 ### 5.6 Act engine (hold space)
 
 Built 2026-09-14 night to 2026-09-15 for parity with Acti's launch video: hold space on typed text and get a place, a list, an answer, a video or a cleaner message. `server/src/lib/act.ts`.
@@ -758,6 +760,16 @@ Built 2026-09-14 night to 2026-09-15 for parity with Acti's launch video: hold s
 | `rewrite` | one fast-tier call (`[[act.rewrite.options]]`) | Versions in each style (`rewriteStyles()`: Basic, Professional, Polite, Shorter, Hinglish where people write it, Emoji), keeping the writer's meaning and every fact. `keepsNumbers()` drops a version that lost a number the writer typed ("b4 6" read as "before you"). A number counts as kept in digits or in words ("six", "sixth"); shorthand such as "b4", "4 u" or "1 min" is not a fact. If no version survives, one retry names the numbers. Streamed, `OptionStream` lets each version through the moment its closing quote arrives, with the same checks; a reply cut off before its closing brace still yields the versions it finished |
 | `write` | one fast-tier call | The thing asked for, ready to use; streamed as it is written |
 
+**The 2026-09-28/29 audit** (45 everyday messages held for, 43 routed as a person would expect before the fixes, all after):
+
+- **Only asks are routed by rules**, and a message that mentions dinner or a video goes to the model: a sum, a conversion (`convertUnits`, lib/units.ts), money in other money (`moneyAsked`), a price (`priceAsked`), a write request (`writeAsked`, `documentAsk`: "apology text to my friend" now counts), the days until a day (`daysAsked`), then the time, sun or weather (`liveAsk`). Place and video rules fire only on text typed as a search (`searchLike`: no you/I/we, no story, no small talk, at most 10 words).
+- **A second look at the router** (`checkPlan`): a written ask needs a writing word; places and videos need search-like text; an answer said to someone is a message. "Said to someone" covers Hindi and Hinglish too (`SECOND_PERSON`: tu, tum, aap, tera, tumhara; `ADDRESSED`: bhai, bro, yaar at either end): "bhai kidhar hai tu" had been answered "I am an AI without a physical location". `REFUSAL` also catches a model talking about itself ("I am an AI", "I don't have a physical…"), which is never inserted.
+- **A rewrite is of the message**, not of an instruction in front of it (`rewriteTarget`: "make this sound professional: need the files asap" rewrites "need the files asap"). No tidy-up for questions or for text in another language (`needsTidy`, `otherLatinLanguage`).
+- **Computed answers** (`instantAnswer` in lib/answers.ts, in this order): a sum or a tip ("15% tip on 64 is 9.60 (73.60 in all)"), a unit conversion, the days until a holiday or a date ("88 days until Christmas", counted in the caller's zone), the time, sun or weather (Open-Meteo, keyless, named places geocoded with an alias table: Open-Meteo returned Pakistan's "Bangalore Town" for "bangalore"), then currency (ECB via Frankfurter; Jupiter for coins) and Wikipedia. The model never answers the time, sun, weather or money.
+- **Written output hygiene:** openers ("Sure! Here's…"), trailing notes and markdown bold are stripped; "[Your Name]" placeholders are filled from the profile, retried once, then removed; the request's language and details are kept; a refusal is retried once for a calm version, else nothing is inserted; asking someone for their details never sends the writer's profile; rewrites that lose a link or email are dropped (`keepsExact`).
+- **Songs and how-tos** (second audit, 30 more messages, 26 then 30 right): the router's video line names an artist and a song ("ed sheeran shape of you") and a how-to typed alone ("how to make pancakes", also a rule), and a video verdict stands for text that reads like a title even with a "you" in it (`titleLike`: "this song is stuck in my head" stays a message). "happy anniversary message for my wife" and "translate thank you so much to hindi" are write requests. Written messages never add an amount, date, deadline, place or name the request doesn't give ("pay me back" had become "$500 by Friday, October 2, 2026").
+- **Billing:** a run is spent on the first model call of the request, never up front (`payForModel`, an AsyncLocalStorage context set by `routes/act.ts`). Before, "2+5" and "what time is it" each spent one of the day's runs. A request that needs the model with no run left gets the "used up" refusal (429, or an `error` event when streaming). The keyboards now answer the computed cases themselves before calling (`Smart.instantAnswer`).
+
 **Page base** (`pageBase()` in `routes/act.ts`): `PUBLIC_BASE_URL` if set; otherwise `http://127.0.0.1:<PORT>` outside production and no pages in production.
 
 **Pages** (`server/src/lib/pages.ts`): 9 random bytes as a 12-char base64url id (not enumerable), title max 120 chars, max 8 places. Rendering escapes every string, and only `http(s)` URLs may become links (a `javascript:` card URL renders as `#`). The page holds only what the user chose to share, nothing about the sender.
@@ -779,6 +791,7 @@ Examples that were verified live on 2026-09-14/15: "Times Square Starbucks" retu
 
 - `/glyf/run`: key is glyf id, version, input and `JSON.stringify(vars)`. TTL `CACHE_TTL_MS` (default 24 hours), 500 entries. SPEC §8.4 asked for this to save the free-tier rate limit during development. The key has no device id, and tool-backed outputs are cached too ([known issue 3](#16-known-issues)).
 - The search and suggest caches are separate ([6.7](#67-caching-rules)).
+- **Since 2026-09-28** (`routes/glyf.ts`): a run with a tool step, or one that reads `{{profile}}`, `{{lat}}` or `{{lon}}`, is never cached (a stock price or someone's details must not be replayed); otherwise the key also carries the user, the device and a hash of the glyf's steps, and the TTL is capped at 10 minutes (`env.ts`). The search cache keys on the caller's time zone and never keeps a time answer. `/search`, `/search/suggest` and `/tools/run` return a plain sentence when something breaks (a tool's own worded refusal passes through); details go to the log only.
 
 ### 5.9 Metering and plans
 
@@ -948,6 +961,15 @@ Order inside `searchMaps()`:
 5. A "See ... on Maps" tail row is always appended.
 
 Provider label defaults to `openstreetmap` even when nothing answered.
+
+**Fixed 2026-09-29** (production mode, with Nominatim off, which had been hiding these in development):
+
+- **A kind of place with no area named is around the caller**, "near me" or not: "coffee" and "pharmacy" typed in the Maps tab found nothing from Geoapify (development showed "Coffee County" from Nominatim).
+- **Plurals and "open now"**: the category rules take plurals ("restaurants", "pharmacies"), and "open now", "open late" and "that are open" are stripped as how people ask (`OPEN_NOW`); "restaurants open now near me" had matched "Galaxy Open Market".
+- **The area a query names is the notable one** (`pickArea`: importance plus a head start for the nearest of five): from New York "paris" was Paris, NY; now it is Paris, France, while "brooklyn" and "indiranagar" stay the nearby ones.
+- **Dishes** (`CUISINES`, 24 Geoapify catering categories checked against the live API): a name search around the area first ("Biryani House"), and the restaurants serving it when names find fewer than three ("pizza in brooklyn" had found nothing).
+- **A chain is a name**: words beyond the kind of place ("third wave coffee", "blue tokai coffee") search by name, so the category rule does not turn a chain into any cafe.
+- **Pictures**: `lib/staticmap.ts` keeps drawn maps for 30 minutes (300 at most), shares a draw in flight, and a maps search whose body says `dark` starts drawing its first six before the phone asks.
 
 Place URLs use Google Maps' own share format (`/maps/search/?api=1&query=<name>&query_place_id=<id>`), or the Places `googleMapsUri` when available.
 

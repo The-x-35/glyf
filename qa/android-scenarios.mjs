@@ -53,7 +53,8 @@ async function key(id) {
   if (!s.keys[id]) {
     // Letters live on one page, digits and symbols on another.
     const toSymbols = !/^[a-z]$/.test(id) && !["space", "delete", "return", "shift", "emojikey"].includes(id);
-    const mode = toSymbols ? "mode:?123" : "mode:ABC";
+    // The second symbols page ("+", "=") goes back to the digits by "123".
+    const mode = toSymbols ? (s.keys["mode:?123"] ? "mode:?123" : "mode:123") : "mode:ABC";
     if (s.keys[mode]) { await tapXY(...s.keys[mode]); s = await state(); }
     if (!s.keys[id] && s.keys["mode:#+="]) { await tapXY(...s.keys["mode:#+="]); s = await state(); }
   }
@@ -827,6 +828,141 @@ const scenarios = [
 ];
 
 // g menu → Games (scrolling the grid to the tile, as a thumb would) → a game.
+// --- 2026-09-28 audit: the user's own reports, on Android ---
+scenarios.push(
+  { id: "S164", title: "$sol shows SOL's price, never your wallet", run: async () => {
+    await fresh();
+    await type("$sol");
+    const deadline = Date.now() + 8000;
+    let label = "";
+    while (Date.now() < deadline) {
+      const s = await state();
+      label = s.views.filter(v => v.text).map(v => v.text).find(t => /SOL =|wallet|[1-9A-HJ-NP-Za-km-z]{32,}/i.test(t)) ?? "";
+      if (/SOL =/.test(label)) break;
+      await sleep(400);
+    }
+    return { pass: /1 SOL = \$\d/.test(label), note: `strip: '${label}'` };
+  } },
+  { id: "S165", title: "$appl shows Apple's price as AAPL", run: async () => {
+    await fresh();
+    await type("$appl");
+    const deadline = Date.now() + 8000;
+    let label = "";
+    while (Date.now() < deadline) {
+      const s = await state();
+      label = s.views.filter(v => v.text).map(v => v.text).find(t => /= \$/.test(t)) ?? "";
+      if (label) break;
+      await sleep(400);
+    }
+    return { pass: /1 AAPL = \$\d/.test(label), note: `strip: '${label}'` };
+  } },
+  { id: "S166", title: "Search never changes the keyboard's height", run: async () => {
+    await fresh();
+    let s = await state();
+    const q0 = s.keys.q?.[1];
+    const g = find(s, v => v.id === "toolbar:glyf");
+    if (!g || q0 === undefined) return { pass: false, note: "no g button or keys" };
+    await tapXY(g.x, g.y);
+    const tile = await waitFor(byId("shell:tile:search"), 3000);
+    if (!tile) return { pass: false, note: "no Search tile" };
+    await tapXY(tile.x, tile.y);
+    const close = await waitFor(byId("search:close"), 3000);
+    if (!close) return { pass: false, note: "search did not open" };
+    await sleep(1500);   // the suggestions arrive
+    s = await state();
+    const q1 = s.keys.q?.[1];
+    const row1 = find(s, v => v.id === "search:close")?.y;
+    await type("coffee");
+    s = await state();
+    const q2 = s.keys.q?.[1];
+    const go = find(s, v => v.id === "search:go");
+    if (go) await tapXY(go.x, go.y);
+    await waitFor(idStarts("search:card:"), 12000);
+    const row3 = find(await state(), v => v.id === "search:close")?.y;
+    await screenshot("S166-results");
+    tool("close");
+    const same = (a, b) => a !== undefined && b !== undefined && Math.abs(a - b) <= 2;
+    return { pass: same(q0, q1) && same(q1, q2) && same(row1, row3),
+      note: `q key y ${q0} → ${q1} → ${q2}; search row y ${row1} → ${row3} (results)` };
+  } },
+  { id: "S167", title: "Maps results come with a picture of each place", run: async () => {
+    // "near me" needs where the phone is: the app keeps one rough fix
+    // (Profile › Nearby search); the emulator has none, so it gets one here
+    // and the old settings come back afterwards.
+    const file = "files/bridge/settings.json";
+    const before = adb("shell", `run-as ${PKG} cat ${file}`);
+    const write = text => execFileSync(ADB, ["shell", `run-as ${PKG} sh -c 'cat > ${file}'`], { input: text });
+    const had = JSON.parse(before);
+    if (had.lastLat === undefined) {
+      write(JSON.stringify({ ...had, lastLat: 12.9719, lastLon: 77.6412 }));
+      atEnd.push(() => write(before));
+    }
+    await fresh();
+    let s = await state();
+    const g = find(s, v => v.id === "toolbar:glyf");
+    if (!g) return { pass: false, note: "no g button" };
+    await tapXY(g.x, g.y);
+    const tile = await waitFor(byId("shell:tile:search"), 3000);
+    if (!tile) return { pass: false, note: "no Search tile" };
+    await tapXY(tile.x, tile.y);
+    const maps = await waitFor(byId("search:tab:maps"), 3000);
+    if (!maps) return { pass: false, note: "no Maps tab" };
+    await tapXY(maps.x, maps.y);
+    await type("coffee near me");
+    const go = find(await state(), v => v.id === "search:go");
+    if (go) await tapXY(go.x, go.y);
+    const card = await waitFor(idStarts("search:card:"), 12000);
+    await sleep(3000);   // the pictures load
+    await screenshot("S167-maps");
+    tool("close");
+    return { pass: !!card, note: card ? "place cards shown; pictures in the screenshot" : "no place cards" };
+  } },
+  { id: "S189", title: "Hold space on 2+5: the answer is there at once, worked out on the phone", run: async () => {
+    // "i wanna do math 2+5 its taking long, we dont need ai for this" (2026-09-29).
+    await fresh();
+    await type("2+5");
+    const s = await state();
+    const t0 = Date.now();
+    await hold(s.keys.space[0], s.keys.space[1], 1100);
+    const insert = await waitFor(byId("act:insert"), 4000);
+    const ms = Date.now() - t0;
+    if (!insert) return { pass: false, note: "no answer" };
+    await screenshot("S189-sum");
+    const r = await tapFor(insert, x => x.includes("= 7"), 3000);
+    // The hold itself is 1.1 s; the answer needs none of the network after it.
+    return { pass: r.t.includes("2+5 = 7") && ms < 3500, note: `'${r.t}', answer up ${ms} ms after the hold began${second(r)}` };
+  } },
+  { id: "S190", title: "A correction slid away and typed again stays as typed, and is learned", run: async () => {
+    // "i type cutee ... its not learning" (2026-09-29): going back into a
+    // correction and typing the original again is a no, and the word is kept.
+    tool("forgetword", "--es text helloo");
+    await fresh();
+    await type("so helloo ");
+    const corrected = await text();
+    if (!/so hello $/i.test(corrected)) return { pass: false, note: `expected 'helloo' corrected to 'hello', got '${corrected}'` };
+    // Slide left from delete by one word (as in S97).
+    const s = await state();
+    const [x, y] = s.keys.delete;
+    shell(`input motionevent DOWN ${x} ${y}`);
+    for (let i = 1; i <= 4; i++) {
+      await sleep(70);
+      shell(`input motionevent MOVE ${x - i * 45} ${y}`);
+    }
+    await sleep(150);
+    shell(`input motionevent UP ${x - 180} ${y}`);
+    await sleep(800);
+    const slid = await text();
+    await type("helloo ");
+    const kept = await text();
+    await fresh();
+    await type("helloo ");
+    const learned = await text();
+    tool("forgetword", "--es text helloo");   // the next run starts clean
+    return { pass: /helloo $/i.test(kept) && /^helloo $/i.test(learned),
+      note: `'${corrected}' → slid to '${slid}' → typed again '${kept}' → next time '${learned}'` };
+  } },
+);
+
 async function openGame(game) {
   await fresh();
   let s = await state();
