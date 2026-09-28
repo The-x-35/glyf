@@ -49,13 +49,21 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     GlyfBridge.onDeepLink(_handleLink);
+    Auth.dropped.addListener(_signInAgain);
     _load();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    Auth.dropped.removeListener(_signInAgain);
     super.dispose();
+  }
+
+  /// The server turned the session away and Auth dropped it: back to
+  /// sign-in, the way signing out goes, so nothing reads signed in.
+  void _signInAgain() {
+    if (mounted && _onboarded && !Auth.signedIn) setState(() => _onboarded = false);
   }
 
   Future<void> _load() async {
@@ -118,7 +126,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     if (uri.host == 'phantom') {
       // Phantom's answer to Connect or to a payment: finished on its own
       // screen, which sends the signed payment on.
-      _push((_) => PayStatusScreen(reply: uri));
+      _push('phantom', (_) => PayStatusScreen(reply: uri), link: link);
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('pay') == true) {
@@ -131,7 +139,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
         practice(q['to'], q['amount'] ?? q['usd']);
         return;
       }
-      _push((_) => PayLaunchScreen(query: q));
+      _push('pay', (_) => PayLaunchScreen(query: q), link: link);
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('wallet') == true) {
@@ -141,7 +149,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       final to = path.queryParameters['to'];
       // The strip's Pay tool, with nobody to pay yet: the wallet itself.
       if (to == null) {
-        _push((_) => const WalletScreen());
+        _push('wallet', (_) => const WalletScreen(), replace: false);
         return;
       }
       // Inside the tour, Semi's payment is practised, never sent.
@@ -150,17 +158,21 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
         practice(to, path.queryParameters['amount']);
         return;
       }
-      _push((_) => SendScreen(
-            to: to,
-            amount: path.queryParameters['amount'],
-            token: path.queryParameters['token'],
-          ));
+      _push(
+          'send',
+          (_) => SendScreen(
+                to: to,
+                amount: path.queryParameters['amount'],
+                token: path.queryParameters['token'],
+              ),
+          link: link);
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('buy') == true) {
       // A contract address or a ticker the keyboard saw: buy it here.
       final path = Uri.parse(uri.queryParameters['path']!);
-      _push((_) => BuyScreen(query: path.queryParameters['mint'] ?? path.queryParameters['symbol']));
+      _push('buy', (_) => BuyScreen(query: path.queryParameters['mint'] ?? path.queryParameters['symbol']),
+          link: link);
       return;
     }
     if (uri.host == 'open') {
@@ -174,14 +186,14 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
           AppShell.requestedTab.value = 0;
           return;
         case 'vault':
-          _push((_) => const VaultScreen());
+          _push('vault', (_) => const VaultScreen(), replace: false);
           return;
         case 'connectors':
         case 'connected':
-          _push((_) => const ConnectedToolsScreen());
+          _push('connected', (_) => const ConnectedToolsScreen(), replace: false);
           return;
         case 'settings':
-          _push((_) => const KeyboardScreen());
+          _push('settings', (_) => const KeyboardScreen(), replace: false);
           return;
       }
     }
@@ -206,23 +218,34 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     }
   }
 
-  void _push(WidgetBuilder builder) {
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null) return;
-    Navigator.of(ctx).push(MaterialPageRoute(builder: builder));
+  /// Opens a deep link's screen. Every link used to push one more, so taps
+  /// from the keyboard stacked copies: the same screen already on top stays
+  /// (same link, or [replace] off) or is swapped for the new link's.
+  void _push(String name, WidgetBuilder builder,
+      {String? link, bool replace = true, bool fullscreenDialog = false}) {
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+    Route<dynamic>? top;
+    // Pops nothing: the first route asked is the top one.
+    nav.popUntil((r) {
+      top = r;
+      return true;
+    });
+    final route = MaterialPageRoute<void>(
+      builder: builder,
+      fullscreenDialog: fullscreenDialog,
+      settings: RouteSettings(name: name, arguments: link),
+    );
+    if (top?.settings.name != name) {
+      nav.push(route);
+    } else if (replace && top?.settings.arguments != link) {
+      nav.pushReplacement(route);
+    }
   }
-
-
 
   /// glyf://demo — replay the guided tour any time, from Settings or a link.
-  void _openDemo() {
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null) return;
-    Navigator.of(ctx).push(MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (c) => DemoChat(onDone: () => Navigator.of(c).pop()),
-    ));
-  }
+  void _openDemo() => _push('demo', (c) => DemoChat(onDone: () => Navigator.of(c).pop()),
+      replace: false, fullscreenDialog: true);
 
   Future<void> _checkPendingDictation() async {
     final id = await GlyfBridge.dictationPendingIntent();

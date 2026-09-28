@@ -123,7 +123,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
           return _test();
         }
       }
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() => _error = _plain(e.message));
     } catch (_) {
       if (mounted) setState(() => _error = 'Couldn’t try it just now.');
     } finally {
@@ -154,13 +154,19 @@ class _BuilderScreenState extends State<BuilderScreen> {
               : 'Hold ${key.toUpperCase()} to run ${def['name']}')));
       Navigator.of(context).pop(true);
     } on GlyfApiException catch (e) {
-      setState(() => _error = e.message);
+      setState(() => _error = _plain(e.message));
     } catch (_) {
       setState(() => _error = 'Couldn’t save. Try again.');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  /// The server's words, except its schema check ("Invalid glyf: …"),
+  /// which reads like a stack trace.
+  static String _plain(String message) => message.startsWith('Invalid glyf')
+      ? 'Something in its steps isn’t right. Check them and try again.'
+      : message;
 
   /// Edit an llm prompt / format template in place — the def stays honest to
   /// what will actually run (§6.8: users may inspect and tweak steps).

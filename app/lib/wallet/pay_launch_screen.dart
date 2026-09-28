@@ -38,19 +38,25 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
       _opened = false;
     });
     final q = widget.query;
-    await WalletFlow.load();
-    final String? error;
-    if (q['kind'] == 'buy') {
-      error = await _buy(q);
-    } else {
-      final token = _asset(q, fallback: (q['token'] ?? 'USDC').toUpperCase() == 'SOL' ? TokenInfo.sol : TokenInfo.usdc);
-      error = await WalletFlow.send(
-        to: q['to'] ?? '',
-        amount: q['amount'] ?? '',
-        token: token,
-        // Private sends are USDC only (MagicBlock's lane for money owed).
-        private: q['private'] == '1' && token.mint == Sol.usdc,
-      );
+    String? error;
+    try {
+      await WalletFlow.load();
+      if (q['kind'] == 'buy') {
+        error = await _buy(q);
+      } else {
+        final token =
+            _asset(q, fallback: (q['token'] ?? 'USDC').toUpperCase() == 'SOL' ? TokenInfo.sol : TokenInfo.usdc);
+        error = await WalletFlow.send(
+          to: q['to'] ?? '',
+          amount: q['amount'] ?? '',
+          token: token,
+          // Private sends are USDC only (MagicBlock's lane for money owed).
+          private: q['private'] == '1' && token.mint == Sol.usdc,
+        );
+      }
+    } catch (_) {
+      // Never a spinner for good: whatever broke, it says so.
+      error = 'Something went wrong. Try again';
     }
     if (!mounted) return;
     setState(() {
@@ -63,7 +69,7 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
   /// from there.
   Future<String?> _buy(Map<String, String> q) async {
     final amount = q['amount'] ?? '';
-    if ((double.tryParse(amount) ?? 0) <= 0) return 'Pick an amount';
+    if ((double.tryParse(Sol.plainAmount(amount) ?? '') ?? 0) <= 0) return 'Pick an amount';
     try {
       final token = await Jupiter.token(q['mint'] ?? '');
       if (token == null) return 'Jupiter doesn’t list that token';
@@ -140,16 +146,15 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
                 )
               else if (_error != null)
                 PillButton(label: 'Try again', onPressed: _run),
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  child: const Text(
-                    'Close',
-                    style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
-                  ),
+              // Always a way out, Phantom opened or not.
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                child: const Text(
+                  'Close',
+                  style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
                 ),
-              ],
+              ),
             ],
           ),
         ),

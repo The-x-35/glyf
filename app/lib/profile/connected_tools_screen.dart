@@ -177,6 +177,9 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
         ),
       ),
     );
+    // The sheet's route lets go of the field a beat after popping;
+    // disposing under it red-screens.
+    Future<void>.delayed(const Duration(seconds: 1), field.dispose);
     if (saved == null || !mounted) return;
     final link = saved.isEmpty ? null : saved;
     await GlyfBridge.updateSharedSettings((s) {

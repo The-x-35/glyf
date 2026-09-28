@@ -30,6 +30,9 @@ import UIKit
       if store.load().fields.isEmpty {
         _ = store.upsertField(id: nil, kind: "address", label: "Home",
                               value: "123 Market St, San Francisco, CA 94103")
+      }
+      // The wallet scenarios ask for one: added whenever the vault has none.
+      if !store.load().fields.contains(where: { $0.kind == "wallet" }) {
         _ = store.upsertField(id: nil, kind: "wallet", label: "Wallet address",
                               value: "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA")
       }

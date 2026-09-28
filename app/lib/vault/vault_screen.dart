@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
+import 'package:flutter/cupertino.dart' show CupertinoAlertDialog, CupertinoDialogAction, showCupertinoDialog;
 import 'package:flutter/material.dart';
 
 import '../core/dismiss_keyboard.dart';
@@ -90,6 +92,7 @@ class _VaultScreenState extends State<VaultScreen> {
     final id = img['id'] as String? ?? '';
     return GestureDetector(
       onLongPress: () async {
+        if (!await _confirmDelete('this image')) return;
         await GlyfBridge.vaultDeleteImage(id);
         _refresh();
       },
@@ -138,6 +141,7 @@ class _VaultScreenState extends State<VaultScreen> {
                   icon: _iconFor(f['kind'] as String?),
                   onTap: () => _editField(f as Map<String, dynamic>),
                   onDelete: () async {
+                    if (!await _confirmDelete(_titleFor(f))) return;
                     await GlyfBridge.vaultDeleteField(f['id'] as String);
                     _refresh();
                   },
@@ -155,6 +159,7 @@ class _VaultScreenState extends State<VaultScreen> {
                   icon: Icons.sticky_note_2_outlined,
                   onTap: () => _editNote(n),
                   onDelete: () async {
+                    if (!await _confirmDelete('this note')) return;
                     await GlyfBridge.notesDelete(n['id'] as String? ?? '');
                     _refresh();
                   },
@@ -170,33 +175,69 @@ class _VaultScreenState extends State<VaultScreen> {
                   icon: Icons.bolt_outlined,
                   onTap: () => _editSnippet(s as Map<String, dynamic>),
                   onDelete: () async {
+                    if (!await _confirmDelete(s['trigger'] as String? ?? 'this shorthand')) return;
                     await GlyfBridge.vaultDeleteSnippet(s['trigger'] as String);
                     _refresh();
                   },
                 ),
               if (_snippets.isEmpty) _addRow('Add shorthand', () => _editSnippet(null)),
 
-              const SizedBox(height: 18),
-              _sectionHeader('Images', onAdd: _addImage),
-              if (_images.isNotEmpty)
-                GridView.count(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [
-                    for (final img in _images)
-                      _imageTile(img as Map<String, dynamic>),
-                  ],
-                ),
-              if (_images.isEmpty) _addRow('Keep an image', _addImage),
+              // Android's vault keeps no pictures yet: no section that can
+              // only fail.
+              if (!Platform.isAndroid) ...[
+                const SizedBox(height: 18),
+                _sectionHeader('Images', onAdd: _addImage),
+                if (_images.isNotEmpty)
+                  GridView.count(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      for (final img in _images)
+                        _imageTile(img as Map<String, dynamic>),
+                    ],
+                  ),
+                if (_images.isEmpty) _addRow('Keep an image', _addImage),
+              ],
             ],
           ),
         ),
       ),
     ));
   }
+
+  /// One tap on a small bin icon shouldn't lose anything: it asks first,
+  /// the way the Build tab does before a glyf goes.
+  Future<bool> _confirmDelete(String what) async {
+    final go = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text('Delete $what?'),
+        content: const Text('\nThis cannot be undone.'),
+        actions: [
+          CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    return go == true;
+  }
+
+  /// A sheet's controllers, once it has finished closing: its route lets go
+  /// of the fields a beat after popping, and disposing under it red-screens.
+  static void _disposeLater(List<TextEditingController> controllers) =>
+      Future<void>.delayed(const Duration(seconds: 1), () {
+        for (final c in controllers) {
+          c.dispose();
+        }
+      });
 
   Widget _sectionHeader(String title, {VoidCallback? onAdd}) {
     return Row(children: [
@@ -324,6 +365,7 @@ class _VaultScreenState extends State<VaultScreen> {
         return res;
       },
     );
+    _disposeLater([labelCtl, valueCtl]);
   }
 
   Future<void> _editNote(Map<String, dynamic>? note) async {
@@ -347,6 +389,7 @@ class _VaultScreenState extends State<VaultScreen> {
         return res;
       },
     );
+    _disposeLater([textCtl]);
   }
 
   Future<void> _editSnippet(Map<String, dynamic>? existing) async {
@@ -373,9 +416,17 @@ class _VaultScreenState extends State<VaultScreen> {
             style: const TextStyle(color: Glass.ink),
             decoration: _dec('Types out')),
       ],
-      onSave: () => GlyfBridge.vaultUpsertSnippet(
-          trigger: trigCtl.text.trim(), text: textCtl.text.trim()),
+      onSave: () async {
+        final trigger = trigCtl.text.trim();
+        final res = await GlyfBridge.vaultUpsertSnippet(trigger: trigger, text: textCtl.text.trim());
+        // Saving is keyed by the trigger: a renamed one would otherwise
+        // stay behind as a second shorthand.
+        final old = existing?['trigger'] as String?;
+        if (res.ok && old != null && old != trigger) await GlyfBridge.vaultDeleteSnippet(old);
+        return res;
+      },
     );
+    _disposeLater([trigCtl, textCtl]);
   }
 
   InputDecoration _dec(String hint) {

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart' show debugPrint, kReleaseMode;
+import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint, kReleaseMode;
 
 import 'bridge.dart';
 
@@ -24,6 +24,11 @@ abstract final class Auth {
   static ({String provider, String email})? _testAccount;
 
   static bool get signedIn => _account != null || _testSignedIn;
+
+  /// Goes up each time the server turns the session away and it is
+  /// dropped: the app goes back to sign-in rather than reading signed in
+  /// with no session behind it.
+  static final dropped = ValueNotifier<int>(0);
 
   /// Whether someone is signed in on this phone. Works offline: the session
   /// is on the phone and carries its own expiry.
@@ -263,11 +268,12 @@ abstract final class Auth {
     };
   }
 
-  /// Who is signed in, on which phone. Called at launch.
+  /// Who is signed in, on which phone. Called at launch; the one call whose
+  /// 401 ends the session.
   static Future<void> syncProfile() async {
     final token = _account?.token;
     if (token == null) return;
-    await _authed('/me', token, _device());
+    await _authed('/me', token, _device(), dropOn401: true);
   }
 
   /// Keyboard settings, and which kinds of detail the vault holds (never the
@@ -316,14 +322,19 @@ abstract final class Auth {
     });
   }
 
-  /// A call as the signed-in person. A session the server no longer accepts
-  /// is dropped, so the next launch asks to sign in again.
-  static Future<bool> _authed(String path, String token, Map<String, Object?> body) async {
+  /// A call as the signed-in person. A background call's 401 only fails
+  /// that call; POST /me's (with [dropOn401]) drops the session and says so
+  /// through [dropped], so the app asks to sign in again at once instead of
+  /// Profile reading signed in with nothing behind it.
+  static Future<bool> _authed(String path, String token, Map<String, Object?> body,
+      {bool dropOn401 = false}) async {
     final reply = await _send('POST', path, body: body, token: token);
     if (reply == null) return false;
-    if (reply.status == 401) {
+    // Signed out or back in meanwhile: this answer is about an old session.
+    if (dropOn401 && reply.status == 401 && _account?.token == token) {
       await GlyfBridge.sessionClear();
       _account = null;
+      dropped.value++;
     }
     return reply.status < 400;
   }

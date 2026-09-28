@@ -214,7 +214,16 @@ class _BuildTabState extends State<BuildTab> {
                 ),
               );
               if (go != true) return;
-              await GlyfApi.deleteGlyf(id);
+              try {
+                await GlyfApi.deleteGlyf(id);
+              } catch (_) {
+                // Still on the server: it stays in the list and on its key.
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Couldn’t delete ${g['name']}. Try again.')));
+                }
+                return;
+              }
               await unbindGlyf(id);
               _refresh();
             },

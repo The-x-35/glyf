@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/bridge.dart';
@@ -15,30 +16,73 @@ import 'keyboard_visual.dart';
 /// free key for recommendations, a bound one to change it. The try field
 /// sits right underneath — nothing to scroll for.
 class HomeTab extends StatefulWidget {
-  const HomeTab({super.key});
+  const HomeTab({super.key, this.activeTab});
+
+  /// The shell's selected tab: the poll rests while another one shows.
+  final ValueListenable<int>? activeTab;
 
   @override
   State<HomeTab> createState() => _HomeTabState();
 }
 
-class _HomeTabState extends State<HomeTab> {
+class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   bool _keyboardEnabled = false;
   bool _keyboardSelected = false;
+  /// The first look at the keyboard has come back. Until then the setup
+  /// card and pill stay away: every launch (and every turn of the phone)
+  /// flashed "Keyboard enabled" unticked on a phone that has it.
+  bool _checked = false;
   Map<String, dynamic>? _ping;
   Map<String, dynamic> _settings = {};
   Timer? _poll;
+  /// The try field's own, so what's typed and the focus outlive the setup
+  /// card leaving the list above it.
+  final _try = TextEditingController();
+  final _tryFocus = FocusNode();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    widget.activeTab?.addListener(_onTab);
     _refresh();
-    _poll = Timer.periodic(const Duration(seconds: 2), (_) => _refresh());
+    _startPoll();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.activeTab?.removeListener(_onTab);
     _poll?.cancel();
+    _try.dispose();
+    _tryFocus.dispose();
     super.dispose();
+  }
+
+  bool get _visible => (widget.activeTab?.value ?? 0) == 0;
+
+  /// Every 2 s while Home shows; nothing while another tab does or the app
+  /// is away, and a fresh look the moment either comes back.
+  void _startPoll() {
+    _poll?.cancel();
+    _poll = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_visible) _refresh();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_visible) _refresh();
+      _startPoll();
+    } else {
+      _poll?.cancel();
+      _poll = null;
+    }
+  }
+
+  void _onTab() {
+    if (_visible) _refresh();
   }
 
   Future<void> _refresh() async {
@@ -49,6 +93,7 @@ class _HomeTabState extends State<HomeTab> {
     final settings = await GlyfBridge.sharedSettings();
     if (!mounted) return;
     setState(() {
+      _checked = true;
       _keyboardEnabled = enabled;
       _keyboardSelected = selected;
       _ping = ping;
@@ -62,6 +107,7 @@ class _HomeTabState extends State<HomeTab> {
   /// needs Glyf picked as the current keyboard.
   bool get _step2 => Platform.isAndroid ? _keyboardSelected : _fullAccess;
   bool get _ready => _keyboardEnabled && _step2;
+  bool get _needsSetup => _checked && !_ready;
 
   Map<String, String> get _bindings =>
       ((_settings['bindings'] as Map<String, dynamic>?) ?? const {})
@@ -98,7 +144,7 @@ class _HomeTabState extends State<HomeTab> {
             const Spacer(),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 250),
-              child: _ready
+              child: !_needsSetup
                   ? const SizedBox.shrink(key: ValueKey('ready'))
                   : Container(
                       key: const ValueKey('setup'),
@@ -120,22 +166,26 @@ class _HomeTabState extends State<HomeTab> {
           const SizedBox(height: 18),
 
           // Setup card ONLY while something is missing — it disappears the
-          // moment the keyboard is fully live.
-          if (!_ready) ...[
-            GlassCard(
-              child: Column(children: [
-                _statusRow('Keyboard enabled', _keyboardEnabled,
-                    fix: GlyfBridge.openSettings),
-                if (Platform.isAndroid)
-                  _statusRow('Switched to Glyf', _keyboardSelected,
-                      fix: GlyfBridge.showImePicker)
-                else
-                  _statusRow('Full Access', _fullAccess,
+          // moment the keyboard is fully live. One slot either way, so the
+          // try field below keeps its place in the list.
+          if (!_needsSetup)
+            const SizedBox.shrink()
+          else
+            Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: GlassCard(
+                child: Column(children: [
+                  _statusRow('Keyboard enabled', _keyboardEnabled,
                       fix: GlyfBridge.openSettings),
-              ]),
+                  if (Platform.isAndroid)
+                    _statusRow('Switched to Glyf', _keyboardSelected,
+                        fix: GlyfBridge.showImePicker)
+                  else
+                    _statusRow('Full Access', _fullAccess,
+                        fix: GlyfBridge.openSettings),
+                ]),
+              ),
             ),
-            const SizedBox(height: 18),
-          ],
 
           // The keyboard itself, live.
           KeyboardVisual(
@@ -145,7 +195,7 @@ class _HomeTabState extends State<HomeTab> {
           const SizedBox(height: 6),
           Center(
             child: Text(
-              '${bound.length} keys bound',
+              '${bound.length} ${bound.length == 1 ? 'key' : 'keys'} bound',
               style: const TextStyle(color: Glass.inkSoft, fontSize: 12),
             ),
           ),
@@ -153,8 +203,11 @@ class _HomeTabState extends State<HomeTab> {
 
           // Try field — right here, no scrolling.
           GlassCard(
+            key: const ValueKey('home:try'),
             padding: const EdgeInsets.all(6),
             child: TextField(
+              controller: _try,
+              focusNode: _tryFocus,
               maxLines: 3,
               minLines: 1,
               textCapitalization: TextCapitalization.sentences,

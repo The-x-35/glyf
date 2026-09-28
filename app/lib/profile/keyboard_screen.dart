@@ -138,13 +138,22 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           _label('Clipboard & AI'),
           _card([
             _switch('Keep what you copy', 'clipboardHistory', fallback: true),
-            _switch('Capture everything you copy', 'clipboardCaptureAll',
-                fallback: true),
-            _note('Every copy lands in the clipboard by itself. iOS asks '
-                'once per copy until you set Settings → Glyf → Paste from '
-                'Other Apps → Allow; after that it never asks again.'),
+            // The iPhone's paste prompt only; Android has nothing like it.
+            if (Platform.isIOS) ...[
+              _switch('Capture everything you copy', 'clipboardCaptureAll',
+                  fallback: true),
+              _note('Every copy lands in the clipboard by itself. iOS asks '
+                  'once per copy until you set Settings → Glyf → Paste from '
+                  'Other Apps → Allow; after that it never asks again.'),
+            ],
             _switch('Recent screenshots', 'clipboardScreenshots',
-                fallback: true, onBeforeOn: GlyfBridge.screenshotAccess),
+                fallback: true,
+                onBeforeOn: GlyfBridge.screenshotAccess,
+                // Asked before and refused: the system won't ask again, so
+                // say where it's allowed rather than let the switch flick back.
+                denied: Platform.isIOS
+                    ? 'Photos are off for Glyf. Allow them in Settings › Glyf › Photos'
+                    : 'Photos are off for Glyf. Allow them in Settings › Apps › Glyf › Permissions'),
             _note('Shots from the last hour, beside what you copied. Turning '
                 'this on is when Glyf asks for your photos.'),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),
@@ -184,7 +193,7 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
       );
 
   Widget _switch(String title, String key,
-      {bool fallback = false, Future<bool> Function()? onBeforeOn}) {
+      {bool fallback = false, Future<bool> Function()? onBeforeOn, String? denied}) {
     final on = (_settings[key] as bool?) ?? fallback;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
@@ -195,7 +204,12 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           activeTrackColor: Glass.ink,
           onChanged: (v) async {
             // Turning on something that needs a permission waits for it.
-            if (v && onBeforeOn != null && !await onBeforeOn()) return;
+            if (v && onBeforeOn != null && !await onBeforeOn()) {
+              if (denied != null && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(denied)));
+              }
+              return;
+            }
             _set(key, v);
           },
         ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -18,15 +20,33 @@ class PayStatusScreen extends StatefulWidget {
 
 class _PayStatusScreenState extends State<PayStatusScreen> {
   PayOutcome _outcome = const PayOutcome(state: PayState.working, title: 'One moment…');
+  StreamSubscription<PayOutcome>? _sub;
 
   @override
   void initState() {
     super.initState();
-    WalletFlow.handleReply(widget.reply).listen((outcome) {
-      if (!mounted) return;
-      if (outcome.state == PayState.done) HapticFeedback.mediumImpact();
-      setState(() => _outcome = outcome);
-    });
+    _sub = WalletFlow.handleReply(widget.reply).listen(
+      _show,
+      onError: (Object _) => _show(WalletFlow.unknownOutcome),
+      // Every path ends in an outcome; one that doesn't still takes the
+      // spinner down.
+      onDone: () {
+        if (_outcome.state == PayState.working) _show(WalletFlow.unknownOutcome);
+      },
+    );
+  }
+
+  void _show(PayOutcome outcome) {
+    if (!mounted) return;
+    if (outcome.state == PayState.done) HapticFeedback.mediumImpact();
+    setState(() => _outcome = outcome);
+  }
+
+  @override
+  void dispose() {
+    // The payment carries on without the screen and tells the keyboard.
+    _sub?.cancel();
+    super.dispose();
   }
 
   @override
@@ -76,7 +96,7 @@ class _PayStatusScreenState extends State<PayStatusScreen> {
                 if (o.signature != null) ...[
                   const SizedBox(height: 10),
                   TextButton(
-                    onPressed: () => GlyfBridge.openURL('https://solscan.io/tx/${o.signature}'),
+                    onPressed: () => GlyfBridge.openURL(WalletFlow.solscanUrl(o.signature!)),
                     child: const Text(
                       'View on Solscan',
                       style: TextStyle(
@@ -89,7 +109,17 @@ class _PayStatusScreenState extends State<PayStatusScreen> {
                   ),
                 ],
                 const Spacer(flex: 3),
-                if (!working) PillButton(label: 'Done', onPressed: () => Navigator.of(context).maybePop()),
+                if (working)
+                  // Always a way out; leaving doesn't stop the payment.
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text(
+                      'Close',
+                      style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                  )
+                else
+                  PillButton(label: 'Done', onPressed: () => Navigator.of(context).maybePop()),
               ],
             ),
           ),
@@ -111,6 +141,8 @@ class _PayStatusScreenState extends State<PayStatusScreen> {
         );
       case PayState.done:
         return _circle(Glass.ink, Icons.check_rounded, Colors.white);
+      case PayState.submitted:
+        return _circle(Colors.white, Icons.schedule_rounded, Glass.ink);
       case PayState.failed:
         return _circle(const Color(0xFFFCE8E6), Icons.priority_high_rounded, Glass.danger);
       case PayState.cancelled:

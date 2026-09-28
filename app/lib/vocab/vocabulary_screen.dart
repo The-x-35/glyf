@@ -181,7 +181,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
               textCapitalization: TextCapitalization.none,
               autocorrect: false,
               style: const TextStyle(color: Glass.ink, fontSize: 17),
-              decoration: _fieldDecoration('Anvika, Zomato, acha…'),
+              decoration: _fieldDecoration('Mateo, Figma, gonna…'),
               onSubmitted: (v) => Navigator.pop(ctx, v),
             ),
           ),
@@ -190,8 +190,19 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
         ]),
       ),
     );
+    _disposeLater(ctrl);
     final w = word?.trim() ?? '';
-    if (w.isEmpty || w.length > 32 || w.contains(RegExp(r'[\d@/:]'))) return;
+    if (w.isEmpty) return;
+    // Said, not dropped in silence.
+    final refused = w.length > 32
+        ? 'That’s too long for one word'
+        : w.contains(RegExp(r'[\d@/:]'))
+            ? 'Words can’t have numbers, @, / or :'
+            : null;
+    if (refused != null) {
+      _snack(refused);
+      return;
+    }
     await GlyfBridge.typingEdit('add', w);
     setState(() {
       _learned.removeWhere((l) => l.form.toLowerCase() == w.toLowerCase());
@@ -267,10 +278,10 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
   }
 
   /// Review a made pack: tap a word to drop it, then save.
-  Future<VocabPack?> _review(VocabPack pack) {
+  Future<VocabPack?> _review(VocabPack pack) async {
     final words = List<String>.from(pack.words);
     final name = TextEditingController(text: pack.name);
-    return showModalBottomSheet<VocabPack>(
+    final saved = await showModalBottomSheet<VocabPack>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -322,6 +333,8 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
         ),
       ),
     );
+    _disposeLater(name);
+    return saved;
   }
 
   void _openPack(VocabPack p) {
@@ -375,6 +388,12 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
       ),
     );
   }
+
+  /// A sheet's controller, once the sheet has finished closing: its route
+  /// lets go of the field a beat after popping, and disposing under it
+  /// red-screens.
+  static void _disposeLater(TextEditingController c) =>
+      Future<void>.delayed(const Duration(seconds: 1), c.dispose);
 
   void _snack(String text) {
     if (!mounted) return;

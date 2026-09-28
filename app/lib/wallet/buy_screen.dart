@@ -87,18 +87,23 @@ class _BuyScreenState extends State<BuyScreen> {
         if (token?.mint == Sol.usdc) _payWith = TokenInfo.sol;
       });
       _requote();
-    } on WalletError catch (e) {
+    } catch (e) {
+      // Anything, a gateway's error page included: say so, never spin.
       if (mounted) {
         setState(() {
           _looking = false;
-          _lookError = e.message;
+          _lookError = e is WalletError ? e.message : 'Couldn’t reach Jupiter. Try again';
         });
       }
     }
   }
 
-  /// The amount in dollars.
-  double? get _usd => _preset?.toDouble() ?? double.tryParse(_custom.text.trim().replaceAll('\$', ''));
+  /// The amount in dollars. A comma keypad's "12,50" is twelve and a half.
+  double? get _usd {
+    if (_preset != null) return _preset!.toDouble();
+    final text = Sol.plainAmount(_custom.text.replaceAll('\$', ''));
+    return text == null ? null : double.tryParse(text);
+  }
 
   /// The dollars as the token paid with, in whole tokens.
   String? get _payAmount {
@@ -128,7 +133,7 @@ class _BuyScreenState extends State<BuyScreen> {
             _quoting = false;
           });
         }
-      } on WalletError {
+      } catch (_) {
         if (mounted) {
           setState(() {
             _quote = null;
@@ -374,9 +379,13 @@ class _BuyScreenState extends State<BuyScreen> {
             children: [
               Row(
                 children: [
-                  Text(
-                    token.symbol,
-                    style: const TextStyle(color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800),
+                  Flexible(
+                    child: Text(
+                      token.symbol,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800),
+                    ),
                   ),
                   if (token.verified) ...[
                     const SizedBox(width: 4),

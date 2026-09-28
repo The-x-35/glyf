@@ -52,12 +52,28 @@ void main() {
   test('amounts are exact', () {
     expect(Sol.units('12.5', 6), BigInt.from(12500000));
     expect(Sol.units('0.000000001', 9), BigInt.one);
-    expect(Sol.units('1,000', 6), BigInt.from(1000000000));
+    expect(Sol.units('1,000.25', 6), BigInt.from(1000250000), reason: 'with a point, commas group');
     expect(Sol.units('0', 6), isNull);
     expect(Sol.units('1.2345678', 6), isNull, reason: 'more places than USDC has');
     expect(Sol.units('abc', 6), isNull);
     expect(Sol.format(BigInt.from(12500000), 6), '12.5');
     expect(Sol.format(BigInt.from(1234567891), 9), '1.2345');
     expect(Sol.short('7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj'), '7dHb…7ARj');
+  });
+
+  test('a comma keypad\'s decimal comma is a decimal point, never a tenfold amount', () {
+    expect(Sol.units('5,5', 6), BigInt.from(5500000));
+    expect(Sol.units('12,50', 6), BigInt.from(12500000));
+    expect(Sol.units(' 0,25 ', 9), BigInt.from(250000000));
+    expect(Sol.units('1,000', 6), BigInt.from(1000000), reason: 'no point: the one comma is the point');
+    expect(Sol.units('1,000,000', 6), isNull, reason: 'two commas and no point read two ways');
+    expect(Sol.units('1.000,5', 6), isNull, reason: 'a comma after the point is refused');
+    expect(Sol.units('1,2345678', 6), isNull, reason: 'more places than USDC has');
+
+    expect(Sol.plainAmount('5,5'), '5.5');
+    expect(Sol.plainAmount('1,234.5'), '1234.5');
+    expect(Sol.plainAmount('7'), '7');
+    expect(Sol.plainAmount('1,2,3'), isNull);
+    expect(double.tryParse(Sol.plainAmount('12,50')!), 12.5);
   });
 }

@@ -89,10 +89,28 @@ abstract final class Sol {
 
   // MARK: Amounts
 
-  /// "12.5" in whole tokens, as base units, exactly. Null when it isn't an
-  /// amount, is zero, or has more decimals than the token.
+  /// A typed amount with "." as its decimal point, or null when it can't be
+  /// read only one way. With a "." any commas are grouping ("1,000.5");
+  /// without one, a single comma is the decimal point ("5,5" from a comma
+  /// keypad) and more than one is refused.
+  static String? plainAmount(String amount) {
+    final text = amount.trim();
+    final dot = text.indexOf('.');
+    if (dot >= 0) {
+      // Grouping never comes after the point: "1.000,5" is refused, not
+      // read as 1.0005.
+      if (text.contains(',', dot)) return null;
+      return text.replaceAll(',', '');
+    }
+    if (','.allMatches(text).length > 1) return null;
+    return text.replaceFirst(',', '.');
+  }
+
+  /// "12.5" (or "12,5") in whole tokens, as base units, exactly. Null when
+  /// it isn't an amount, is zero, or has more decimals than the token.
   static BigInt? units(String amount, int decimals) {
-    final text = amount.trim().replaceAll(',', '');
+    final text = plainAmount(amount);
+    if (text == null) return null;
     final match = RegExp(r'^(\d*)(?:\.(\d*))?$').firstMatch(text);
     if (match == null || text.isEmpty || text == '.') return null;
     final whole = match.group(1) ?? '';

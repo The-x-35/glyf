@@ -47,9 +47,9 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final tabs = [
-      const HomeTab(),
+      HomeTab(activeTab: _activeTab),
       BuildTab(activeTab: _activeTab),
-      ProfileTab(onRerunOnboarding: widget.onRerunOnboarding),
+      ProfileTab(onRerunOnboarding: widget.onRerunOnboarding, activeTab: _activeTab),
     ];
     return Scaffold(
       // Tapping anywhere outside a text field dismisses the keyboard.

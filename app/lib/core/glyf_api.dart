@@ -154,6 +154,7 @@ abstract final class GlyfApi {
     }
   }
 
+  /// Throws when the server refused; a 404 is taken as gone already.
   static Future<String> _delete(String path) async {
     final base = await _baseUrl();
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
@@ -161,7 +162,11 @@ abstract final class GlyfApi {
       final req = await client.deleteUrl(Uri.parse('$base$path'));
       _signIn(req);
       final res = await req.close().timeout(const Duration(seconds: 8));
-      return await res.transform(utf8.decoder).join();
+      final text = await res.transform(utf8.decoder).join();
+      if (res.statusCode >= 400 && res.statusCode != 404) {
+        throw GlyfApiException('HTTP ${res.statusCode}');
+      }
+      return text;
     } finally {
       client.close();
     }

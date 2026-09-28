@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart'
     show CupertinoAlertDialog, CupertinoDialogAction, showCupertinoDialog;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/auth.dart';
+import '../core/billing.dart';
 import 'connected_tools_screen.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
@@ -12,6 +14,7 @@ import '../core/telemetry.dart';
 import '../core/text_sheet.dart';
 import '../core/theme.dart';
 import '../onboarding/demo_chat.dart';
+import '../onboarding/onboarding_flow.dart';
 import '../wallet/phantom.dart' show PhantomLink;
 import '../wallet/solana.dart' show Sol;
 import '../wallet/wallet_flow.dart' show WalletFlow;
@@ -26,14 +29,17 @@ import 'paywall_sheet.dart';
 /// Settings — one scrollable screen. Everything you can change about the
 /// keyboard is here; there is no creator shelf and nothing to publish.
 class ProfileTab extends StatefulWidget {
-  const ProfileTab({super.key, required this.onRerunOnboarding});
+  const ProfileTab({super.key, required this.onRerunOnboarding, this.activeTab});
   final VoidCallback onRerunOnboarding;
+
+  /// The shell's selected tab: the refresh rests while another one shows.
+  final ValueListenable<int>? activeTab;
 
   @override
   State<ProfileTab> createState() => _ProfileTabState();
 }
 
-class _ProfileTabState extends State<ProfileTab> {
+class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
   Map<String, dynamic> _settings = {};
   Map<String, dynamic> _tone = {};
   String _displayName = 'You';
@@ -47,21 +53,55 @@ class _ProfileTabState extends State<ProfileTab> {
   int _connectedTools = 0;
   bool _contactsOn = false;
   bool _nearbyOn = false;
+  /// The App Store has Plus and Max to sell (it answered with them).
+  bool _onSale = false;
   Timer? _poll;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    widget.activeTab?.addListener(_onTab);
     _refresh();
-    // Local state is cheap to re-read; the two server calls in here are
-    // not, and every 5 s was 24 requests a minute from one idle screen.
-    _poll = Timer.periodic(const Duration(seconds: 15), (_) => _refresh());
+    _startPoll();
+    Billing.products().then((found) {
+      if (mounted) setState(() => _onSale = found.isNotEmpty);
+    }, onError: (Object _) {});
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.activeTab?.removeListener(_onTab);
     _poll?.cancel();
     super.dispose();
+  }
+
+  bool get _visible => (widget.activeTab?.value ?? 2) == 2;
+
+  /// Local state is cheap to re-read; the two server calls in here are
+  /// not, and every 5 s was 24 requests a minute from one idle screen. It
+  /// rests while another tab shows or the app is away.
+  void _startPoll() {
+    _poll?.cancel();
+    _poll = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_visible) _refresh();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_visible) _refresh();
+      _startPoll();
+    } else {
+      _poll?.cancel();
+      _poll = null;
+    }
+  }
+
+  void _onTab() {
+    if (_visible) _refresh();
   }
 
   Future<void> _refresh() async {
@@ -324,15 +364,12 @@ class _ProfileTabState extends State<ProfileTab> {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       // Greyed until Plus and Max can be bought in the store.
-                      color: plansOnSale ? Glass.ink : const Color(0xFFF1F2F5),
+                      color: _onSale ? Glass.ink : const Color(0xFFF1F2F5),
                       borderRadius: BorderRadius.circular(15),
                     ),
-                    child: Text(
-                        !plansOnSale
-                            ? 'Pro coming soon'
-                            : _plan == 'plus' ? 'Upgrade' : 'Go Pro',
+                    child: Text(_onSale ? 'Upgrade' : 'Plans open soon',
                         style: TextStyle(
-                            color: plansOnSale ? Colors.white : Glass.inkSoft,
+                            color: _onSale ? Colors.white : Glass.inkSoft,
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700)),
                   ),
@@ -525,7 +562,7 @@ class _ProfileTabState extends State<ProfileTab> {
           _navCard(
             icon: Icons.replay_outlined,
             title: 'Replay onboarding',
-            onTap: widget.onRerunOnboarding,
+            onTap: _replayOnboarding,
           ),
           if (Auth.signedIn)
             Center(
@@ -607,6 +644,16 @@ class _ProfileTabState extends State<ProfileTab> {
         ]),
       ),
     );
+  }
+
+  /// The steps again over Profile, with this person's own settings: nothing
+  /// saved is lost and Close leaves from any step.
+  Future<void> _replayOnboarding() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (ctx) => OnboardingFlow(replay: true, onDone: () => Navigator.of(ctx).pop()),
+    ));
+    _refresh();
   }
 
   Future<void> _editName() async {

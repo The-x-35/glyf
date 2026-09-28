@@ -25,13 +25,18 @@ import 'tour_scenarios.dart';
 /// One screen, steps slide through an AnimatedSwitcher (no PageView, so
 /// both humans and UI tests can address everything directly).
 class OnboardingFlow extends StatefulWidget {
-  const OnboardingFlow({super.key, required this.onDone, this.resume = const {}});
+  const OnboardingFlow({super.key, required this.onDone, this.resume = const {}, this.replay = false});
 
   /// What a previous run had saved when the app ended (its step and the
   /// persona picked): iOS kills the app the moment Full Access is granted
   /// in Settings, so coming back must land there, not on the hello.
   final Map<String, dynamic> resume;
   final VoidCallback onDone;
+
+  /// Replayed from Profile by someone already set up: it starts at the top
+  /// with their own settings, keeps `done` and the name, and closes at any
+  /// step.
+  final bool replay;
 
   @override
   State<OnboardingFlow> createState() => _OnboardingFlowState();
@@ -87,6 +92,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// The box the keyboard is asked to turn up in.
   final _try = TextEditingController();
   final _tryFocus = FocusNode();
+  /// The saved switches being read: saving waits for it, so the defaults
+  /// below never go over someone's own settings.
+  Future<void>? _feelLoad;
   bool _keySounds = true;
   bool _haptics = true;
   /// On by default, like Gboard: what you copy is there to paste later.
@@ -125,17 +133,22 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     super.initState();
     // Already signed in (onboarding was left half way): start after sign-in.
     if (Auth.signedIn) _step = 1;
+    // A replay starts at the top, with the switches as they are now.
+    if (widget.replay) {
+      _feelLoad = _loadFeel();
+      unawaited(_loadLocation());
+    }
     // …and where it was left, when that is known: granting Full Access ends
     // the app (tccd: "access to kTCCServiceKeyboardNetwork changed"), so
     // the setup step in particular must survive a relaunch.
-    final resume = widget.resume['step'] as String?;
+    final resume = widget.replay ? null : widget.resume['step'] as String?;
     final at = resume == null ? -1 : _steps.indexOf(resume);
     if (Auth.signedIn && at > 1 && resume != 'tour') {
       _step = at;
       _heard.addAll(_steps.take(at));
       _persona ??= widget.resume['persona'] as String?;
       // Choices made on the way here were saved as they were made.
-      if (at > _steps.indexOf('feel')) unawaited(_loadFeel());
+      if (at > _steps.indexOf('feel')) _feelLoad = _loadFeel();
       if (resume == 'nearby') unawaited(_loadLocation());
       if (resume == 'calendar') unawaited(_loadCalendarStep());
       if (resume == 'details') _prefillFromAccount();
@@ -184,18 +197,28 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   void _remember() {
     final name = _steps[_step];
     if (name == 'signin' || name == 'tour') return;
-    unawaited(GlyfBridge.saveOnboardingState({'step': name, if (_persona != null) 'persona': _persona}));
+    unawaited(_saveState({'step': name, if (_persona != null) 'persona': _persona}));
+  }
+
+  /// Onboarding's own keys written over what onboarding.json holds, never
+  /// in place of it: `done` and the name set in Profile stay.
+  Future<void> _saveState(Map<String, dynamic> changes) async {
+    final state = await GlyfBridge.onboardingState();
+    await GlyfBridge.saveOnboardingState({...state, ...changes});
   }
 
   /// The "Make it yours" switches, kept in shared settings the moment that
   /// step is left — so a relaunch keeps them, and the keyboard sees them.
-  Future<void> _saveFeel() => GlyfBridge.updateSharedSettings((s) {
-        s['keyClicks'] = _keySounds;
-        s['haptics'] = _haptics;
-        s['clipboardHistory'] = _clipboard;
-        s['clipboardScreenshots'] = _screenshots;
-        return s;
-      });
+  Future<void> _saveFeel() async {
+    await _feelLoad;
+    await GlyfBridge.updateSharedSettings((s) {
+      s['keyClicks'] = _keySounds;
+      s['haptics'] = _haptics;
+      s['clipboardHistory'] = _clipboard;
+      s['clipboardScreenshots'] = _screenshots;
+      return s;
+    });
+  }
 
   Future<void> _loadFeel() async {
     final s = await GlyfBridge.sharedSettings();
@@ -620,12 +643,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// written, so a phone closed on the offer opens to home next time.
   Future<void> _complete() async {
     await _saveFeel();
-    await GlyfBridge.saveOnboardingState({
+    await _saveState({
       'done': true,
-      'persona': _persona,
+      if (_persona != null) 'persona': _persona,
       'completedAt': DateTime.now().toUtc().toIso8601String(),
     });
-    Telemetry.log('onboarding_complete', {'persona': _persona ?? 'none'});
+    // A replay from Profile is no second sign-up.
+    if (!widget.replay) Telemetry.log('onboarding_complete', {'persona': _persona ?? 'none'});
     unawaited(Auth.syncPrefs());
   }
 
@@ -652,6 +676,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     widget.onDone();
   }
 
+  /// A replay's Close: out at once, from any step.
+  void _close() {
+    if (_leaving) return;
+    _leaving = true;
+    widget.onDone();
+  }
+
   @override
   Widget build(BuildContext context) {
     // Android's back gesture walks the steps too.
@@ -664,7 +695,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         body: GlyfBackground(
           child: SafeArea(
             child: Column(children: [
-              if (_steps[_step] != 'signin') _topBar(),
+              if (_steps[_step] != 'signin' || widget.replay) _topBar(),
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 340),
@@ -718,7 +749,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           ),
         ),
         Expanded(child: _progress()),
-        const SizedBox(width: 52),
+        SizedBox(
+          width: 52,
+          child: widget.replay
+              ? Semantics(
+                  identifier: 'onb:close',
+                  button: true,
+                  label: 'Close',
+                  child: IconButton(
+                    onPressed: _close,
+                    icon: const Icon(Icons.close_rounded, size: 22, color: Glass.ink),
+                  ),
+                )
+              : null,
+        ),
       ]),
     );
   }

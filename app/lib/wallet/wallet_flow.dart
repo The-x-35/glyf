@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -5,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
+import 'base58.dart';
 import 'phantom.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
@@ -62,7 +64,8 @@ class PayOutcome {
   final PayKind? kind;
 }
 
-enum PayState { working, done, failed, cancelled }
+/// `submitted`: it left for Solana, but Glyf couldn't confirm it landed.
+enum PayState { working, done, submitted, failed, cancelled }
 
 /// The wallet, end to end: Phantom holds the keys and signs; Glyf builds
 /// each transaction on the phone and sends the signed one on (Solana for a
@@ -160,8 +163,19 @@ abstract final class WalletFlow {
       return e.message;
     } on PhantomError catch (e) {
       return e.message;
+    } catch (_) {
+      // A reply that wasn't JSON, TLS, a dropped connection: Phantom was
+      // never opened, so nothing moved.
+      return _unexpected;
     }
   }
+
+  static const _unexpected = 'Something went wrong. Try again';
+
+  /// For a break nobody planned for once Phantom has signed: whether money
+  /// moved isn't known, so nobody should simply try again.
+  static const unknownOutcome =
+      PayOutcome(state: PayState.failed, title: 'Something went wrong', detail: 'Check Phantom before trying again');
 
   /// Buys [token] with [amount] of [payWith] through Jupiter, signed in
   /// Phantom. An error to show, or null.
@@ -192,10 +206,14 @@ abstract final class WalletFlow {
       return e.message;
     } on PhantomError catch (e) {
       return e.message;
+    } catch (_) {
+      return _unexpected;
     }
   }
 
-  /// Phantom's reply (glyf://phantom/…), taken through to the end.
+  /// Phantom's reply (glyf://phantom/…), taken through to the end. Every
+  /// path ends in an outcome, whatever breaks on the way (a proxy's HTML
+  /// 502, TLS, a reply of the wrong shape): never a screen left on Sending….
   static Stream<PayOutcome> handleReply(Uri reply) async* {
     final step = reply.pathSegments.isEmpty ? '' : reply.pathSegments.first;
     if (step == 'connect') {
@@ -212,41 +230,66 @@ abstract final class WalletFlow {
           title: e.cancelled ? 'Not connected' : 'Couldn’t connect',
           detail: e.cancelled ? null : e.message,
         ));
+      } catch (_) {
+        yield await _told(
+            const PayOutcome(state: PayState.failed, title: 'Couldn’t connect', detail: 'Try again from Glyf'));
       }
       return;
     }
-    if (step != 'sign' || reply.pathSegments.length < 2) return;
+    if (step != 'sign' || reply.pathSegments.length < 2) {
+      // Nothing Glyf is waiting on (a disconnect, a link it never made),
+      // but the screen still needs an end.
+      yield const PayOutcome(state: PayState.cancelled, title: 'Nothing to finish', detail: 'Start again from Glyf');
+      return;
+    }
 
-    final raw = await BridgeSecrets().load(_pendingName);
-    final pending = raw == null ? null : PendingPay.fromJson(jsonDecode(raw));
+    PendingPay? pending;
+    try {
+      final raw = await BridgeSecrets().load(_pendingName);
+      pending = raw == null ? null : PendingPay.fromJson(jsonDecode(raw));
+    } catch (_) {
+      // Unreadable is as good as gone: nothing was sent.
+    }
     if (pending == null || pending.id != reply.pathSegments[1]) {
       yield const PayOutcome(state: PayState.failed, title: 'That payment expired', detail: 'Start it again from Glyf');
       return;
     }
     final verb = pending.kind == PayKind.buy ? 'Buying' : 'Sending';
     yield PayOutcome(state: PayState.working, title: '$verb…', detail: pending.summary, kind: pending.kind);
+    // Set once the payment has left: from then on nothing may say it didn't.
+    String? signature;
+    // The transaction's own signature, known before it is sent.
+    String? expected;
     try {
       final signed = await phantom.finishSign(reply);
-      final signature = switch (pending.kind) {
+      expected = txSignature(signed);
+      signature = switch (pending.kind) {
         PayKind.send => await SolanaRpc.send(signed),
         PayKind.private => await MagicBlock.send(signed),
         PayKind.buy => await Jupiter.execute(signed, pending.requestId ?? ''),
       };
       if (pending.kind == PayKind.send && await SolanaRpc.confirm(signature) == false) {
-        throw const WalletError('Solana turned it down. Nothing was sent');
+        yield await _told(PayOutcome(
+          state: PayState.failed,
+          title: 'Didn’t go through',
+          detail: 'Solana turned it down. Nothing was sent',
+          signature: signature,
+          kind: pending.kind,
+        ));
+      } else {
+        Telemetry.log('wallet_${pending.kind.name}_done', {});
+        yield await _told(PayOutcome(
+          state: PayState.done,
+          title: switch (pending.kind) {
+            PayKind.buy => 'Bought',
+            PayKind.private => 'Sent privately',
+            PayKind.send => 'Sent',
+          },
+          detail: pending.summary,
+          signature: signature,
+          kind: pending.kind,
+        ));
       }
-      Telemetry.log('wallet_${pending.kind.name}_done', {});
-      yield await _told(PayOutcome(
-        state: PayState.done,
-        title: switch (pending.kind) {
-          PayKind.buy => 'Bought',
-          PayKind.private => 'Sent privately',
-          PayKind.send => 'Sent',
-        },
-        detail: pending.summary,
-        signature: signature,
-        kind: pending.kind,
-      ));
     } on PhantomError catch (e) {
       yield await _told(PayOutcome(
         state: e.cancelled ? PayState.cancelled : PayState.failed,
@@ -254,13 +297,50 @@ abstract final class WalletFlow {
         detail: e.cancelled ? 'Nothing was sent' : e.message,
         kind: pending.kind,
       ));
-    } on WalletError catch (e) {
-      yield await _told(
-          PayOutcome(state: PayState.failed, title: 'Didn’t go through', detail: e.message, kind: pending.kind));
+    } catch (e) {
+      // No answer to the send itself (a timeout, a gateway's error page): it
+      // may still have reached Solana, so its own signature is what to look
+      // up. "Try again" there could pay twice. Private sends go through
+      // MagicBlock's own chain, where that signature means nothing to Solscan.
+      if (signature == null && expected != null && pending.kind != PayKind.private && _mayHaveLeft(e)) {
+        signature = expected;
+      }
+      if (signature != null) {
+        // It left for Solana; only the check on it failed. "Didn't go
+        // through" here would have people pay twice.
+        yield await _told(PayOutcome(
+          state: PayState.submitted,
+          title: 'Submitted',
+          detail: '${pending.summary} · not confirmed yet',
+          signature: signature,
+          kind: pending.kind,
+        ));
+      } else if (e is WalletError) {
+        yield await _told(
+            PayOutcome(state: PayState.failed, title: 'Didn’t go through', detail: e.message, kind: pending.kind));
+      } else {
+        yield await _told(unknownOutcome);
+      }
     } finally {
       await BridgeSecrets().clear(_pendingName);
     }
   }
+
+  /// Where anyone can look a transaction up.
+  static String solscanUrl(String signature) => 'https://solscan.io/tx/$signature';
+
+  /// A signed transaction's id: its first signature, the 64 bytes after the
+  /// signature count (Solana's wire format), in base58.
+  @visibleForTesting
+  static String? txSignature(Uint8List signed) =>
+      signed.length > 65 && signed[0] >= 1 ? Base58.encode(signed.sublist(1, 65)) : null;
+
+  /// A failure that says nothing about whether Solana took the payment: no
+  /// answer in time, or a page that isn't the node's answer. A refusal in
+  /// the node's own words (no funds, simulation failed) means it didn't.
+  static bool _mayHaveLeft(Object e) =>
+      e is TimeoutException || e is FormatException ||
+      (e is WalletError && e.message == 'Solana didn’t answer. Try again');
 
   /// Why the wallet can't send [units] of [token], or null when it can. A
   /// send costs about 0.000005 SOL; a private one about 0.002 SOL more.
@@ -284,11 +364,17 @@ abstract final class WalletFlow {
   /// How it went, written where the keyboard reads (shared settings): back
   /// in the chat, the keyboard says it once and clears it.
   static Future<PayOutcome> _told(PayOutcome o) async {
+    // Not confirmed: the keyboard's line carries the link to check it by.
+    final detail = [
+      ?o.detail,
+      if (o.state == PayState.submitted && o.signature != null) solscanUrl(o.signature!),
+    ].join(' · ');
     try {
       await GlyfBridge.updateSharedSettings((s) {
         s['walletOutcome'] = jsonEncode({
           'title': o.title,
-          if (o.detail != null) 'detail': o.detail,
+          if (detail.isNotEmpty) 'detail': detail,
+          'signature': ?o.signature,
           'at': DateTime.now().millisecondsSinceEpoch / 1000.0,
         });
         return s;

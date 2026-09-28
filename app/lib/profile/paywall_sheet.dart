@@ -6,6 +6,9 @@ import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 
+/// Apple's standard licence, which Glyf's subscriptions are sold under.
+const _termsURL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+
 /// §6.16 — two plans over free. Free: 20 runs a day · Plus $1.99 a month or
 /// $19.99 a year: 150 a day · Max $4.99 a month or $49.99 a year: 400 a day.
 /// Suggestions and translations have their own daily counts; the server
@@ -13,15 +16,13 @@ import '../core/theme.dart';
 ///
 /// On the iPhone the plans are bought through the App Store
 /// (core/billing.dart) and the server checks Apple's signature before a
-/// plan changes. Android shows them as Coming soon until Google Play billing.
-final bool plansOnSale = Billing.available;
-
-/// Apple's standard licence, which Glyf's subscriptions are sold under.
-const _termsURL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
-
+/// plan changes. They are sold only once the store has answered with them;
+/// until then, and on Android until Google Play billing, they show
+/// read-only.
+///
 /// True when a plan was bought: the account has it now.
 Future<bool> showPaywall(BuildContext context, {String? reason}) async {
-  Telemetry.log('paywall_shown', {'reason': reason ?? 'profile', 'onSale': plansOnSale});
+  Telemetry.log('paywall_shown', {'reason': reason ?? 'profile', 'onSale': Billing.available});
   final bought = await showModalBottomSheet<bool>(
     context: context,
     backgroundColor: Colors.white,
@@ -46,15 +47,28 @@ class _PaywallSheetState extends State<_PaywallSheet> {
   String _selected = 'plus';
   bool _yearly = false;
   Map<String, StoreProduct> _store = const {};
+  /// The App Store has answered (there is nothing to ask on Android).
+  bool _asked = !Billing.available;
   bool _busy = false;
   String? _note;
+
+  /// Only what the store returned is sold: before the plans exist in App
+  /// Store Connect, every tap on a buy button failed.
+  bool get _onSale => _store.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-    if (plansOnSale) {
+    if (!_asked) {
       Billing.products().then((found) {
-        if (mounted) setState(() => _store = found);
+        if (mounted) {
+          setState(() {
+            _store = found;
+            _asked = true;
+          });
+        }
+      }, onError: (Object _) {
+        if (mounted) setState(() => _asked = true);
       });
     }
   }
@@ -115,9 +129,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
         padding: const EdgeInsets.fromLTRB(22, 22, 22, 12),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Text(
-            widget.reason == 'cap'
-                ? 'You’re out of runs today'
-                : plansOnSale ? 'Upgrade Glyf' : 'Glyf Pro',
+            widget.reason == 'cap' ? 'You’re out of runs today' : 'Upgrade Glyf',
             style: const TextStyle(
                 color: Glass.ink, fontSize: 21, fontWeight: FontWeight.w800),
           ),
@@ -127,7 +139,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                 style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
           ],
           const SizedBox(height: 16),
-          if (plansOnSale) ...[
+          if (_onSale) ...[
             _periodSwitch(),
             const SizedBox(height: 12),
           ],
@@ -150,7 +162,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
               child: _planCard(
                 id: 'max',
                 name: 'Max',
-                badge: plansOnSale ? 'Best' : null,
+                badge: _onSale ? 'Best' : null,
                 features: const [
                   '400 runs a day',
                   '6x the suggestions',
@@ -169,8 +181,8 @@ class _PaywallSheetState extends State<_PaywallSheet> {
           const SizedBox(height: 14),
           Semantics(
             identifier: 'paywall:unlock',
-            button: true,
-            child: _busy
+            button: _onSale,
+            child: _busy || !_asked
                 ? const SizedBox(
                     height: 48,
                     child: Center(
@@ -178,17 +190,24 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                             width: 22,
                             height: 22,
                             child: CircularProgressIndicator(strokeWidth: 2.4, color: Glass.ink))))
-                : PillButton(
-                    label: plansOnSale
-                        ? (_selected == 'max' ? 'Get Max' : 'Get Plus')
-                        : 'Coming soon',
-                    onPressed: plansOnSale ? _buy : null),
+                : _onSale
+                    ? PillButton(
+                        label: _selected == 'max' ? 'Get Max' : 'Get Plus',
+                        onPressed: _store.containsKey(Billing.productFor(_selected, yearly: _yearly)) ? _buy : null)
+                    : const SizedBox(
+                        height: 48,
+                        child: Center(
+                          child: Text('Plans open soon',
+                              style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w700)),
+                        ),
+                      ),
           ),
           // The sheet closes with a swipe down or a tap above it, so it needs
-          // no Not now. Restore stays: it brings back a plan this Apple ID
-          // already paid for, and App Review asks every subscription screen
-          // for one. Gift codes live in Profile (Got a code?).
-          if (plansOnSale)
+          // no Not now. Restore stays on the iPhone, plans on sale or not: it
+          // brings back a plan this Apple ID already paid for, and App Review
+          // asks every subscription screen for one. Gift codes live in
+          // Profile (Got a code?).
+          if (Billing.available)
             Semantics(
               identifier: 'paywall:restore',
               button: true,
@@ -204,7 +223,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
               child: const Text('Close',
                   style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
             ),
-          if (plansOnSale) _terms(),
+          if (_onSale) _terms(),
         ]),
       ),
     );
@@ -285,9 +304,10 @@ class _PaywallSheetState extends State<_PaywallSheet> {
     String? badge,
     required List<String> features,
   }) {
-    final selected = plansOnSale && _selected == id;
+    final selected = _onSale && _selected == id;
     final card = GestureDetector(
-      onTap: plansOnSale && !_busy ? () => setState(() => _selected = id) : null,
+      behavior: HitTestBehavior.opaque,
+      onTap: _onSale && !_busy ? () => setState(() => _selected = id) : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(14),
@@ -357,27 +377,16 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                     ),
                   ]),
             ),
-          if (!plansOnSale) ...[
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F2F5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text('Coming soon',
-                  style: TextStyle(color: Glass.inkSoft, fontSize: 11, fontWeight: FontWeight.w700)),
-            ),
-          ],
         ]),
       ),
     );
-    if (plansOnSale) return card;
+    // Plus and Max both pick by tap, and by name for VoiceOver.
+    if (_onSale) return Semantics(identifier: 'paywall:$id', button: true, selected: selected, child: card);
     // Not for sale yet: shown so people see what is coming, greyed so
     // nobody mistakes it for something to buy.
     return Semantics(
       identifier: 'paywall:$id',
-      label: '$name, coming soon',
+      label: '$name, opens soon',
       child: Opacity(opacity: 0.5, child: card),
     );
   }

@@ -310,14 +310,6 @@ class _RecordingSheetState extends State<RecordingSheet> {
                 ),
         ),
       ),
-      if (_readyMs != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text('clean ready in ${_readyMs}ms',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: const Color(0xFFA6ABB4), fontSize: 11)),
-        ),
       const SizedBox(height: 12),
       PillButton(label: 'Insert to keyboard', onPressed: _insert),
       TextButton(

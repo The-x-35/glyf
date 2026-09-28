@@ -346,7 +346,13 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
     });
   }
 
+  /// Close, Done and the last banner can all land here, a tap apart; a
+  /// second onDone would pop the screen under the tour too.
+  bool _finished = false;
+
   Future<void> _finish() async {
+    if (_finished) return;
+    _finished = true;
     Telemetry.log('demo_complete', {});
     await _setStep(null);
     _restoreOtherLanguage();
@@ -565,6 +571,9 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
         ]),
       ),
     );
+    // The sheet's route lets go of the field a beat after popping;
+    // disposing under it red-screens.
+    Future<void>.delayed(const Duration(seconds: 1), ctl.dispose);
     if (saved == true) {
       Telemetry.log('vault_field_saved', {'kind': kind, 'from': 'tour'});
       await _loadVault();
