@@ -24,6 +24,9 @@ export const StepSchema = z.discriminatedUnion("type", [
     tool: z.string(),
     args: z.record(z.string(), z.unknown()).default({}),
     out: z.string(),
+    /** A step to run instead when the tool can't answer (its service is
+     *  down, say): Define asks the model when the dictionary is gone. */
+    fallback: z.string().optional(),
   }),
   z.object({
     id: z.string(),

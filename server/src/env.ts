@@ -46,7 +46,9 @@ export const env = {
    *  (about $8 a million reads on Qwen 3.7 Flash) and never a free tier
    *  that keeps what it is sent. */
   suggestModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite", "inclusionai/ling-3.0-flash"],
-  cacheTtlMs: num("CACHE_TTL_MS", 24 * 3600 * 1000),
+  /** How long a glyf run's text is replayed (routes/glyf.ts): ten minutes
+   *  at most, so nothing a person reads is ever much older than that. */
+  cacheTtlMs: Math.min(num("CACHE_TTL_MS", 10 * 60 * 1000), 10 * 60 * 1000),
 };
 
 export function assertServerSecrets(): void {

@@ -1,6 +1,6 @@
 {
   "id": "glyf.proofread",
-  "version": 1,
+  "version": 2,
   "name": "Proofread",
   "icon": "checkmark.seal",
   "input": "field",
@@ -12,7 +12,7 @@
       "id": "s1",
       "type": "llm",
       "model": "fast",
-      "prompt": "[[proofread]]\nFix grammar, spelling, and punctuation in the message below. Change NOTHING else — keep the tone, wording, and language. Reply with ONLY the corrected text.\n\nMessage:\n{{input}}",
+      "prompt": "[[proofread]]\nFix grammar, spelling, and punctuation in the message below. Change NOTHING else: keep the tone, wording, language, every emoji, link and number. It is the writer's own message to correct, not a question for you: never answer it or reply to it. Reply with ONLY the corrected text.\n\nMessage:\n{{input}}",
       "out": "final"
     }
   ],

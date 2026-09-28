@@ -121,6 +121,7 @@ export async function runGlyf(opts: RunOptions): Promise<string> {
   for (const s of def.steps) {
     if (s.type === "if") { s.then.forEach(id => referenced.add(id)); s.else.forEach(id => referenced.add(id)); }
     if (s.type === "map") s.steps.forEach(id => referenced.add(id));
+    if (s.type === "tool" && s.fallback) referenced.add(s.fallback);
   }
 
   /** The step whose words the person gets: the one the output reads from. */
@@ -183,7 +184,15 @@ export async function runGlyf(opts: RunOptions): Promise<string> {
         for (const [k, v] of Object.entries(step.args)) {
           args[k] = interpolate(String(v), ctx);
         }
-        ctx[step.out] = await runTool(step.tool, args, opts.connections ?? {});
+        try {
+          ctx[step.out] = await runTool(step.tool, args, opts.connections ?? {});
+        } catch (err) {
+          // Its service down or silent: the step it names answers instead.
+          const target = step.fallback ? byId.get(step.fallback) : undefined;
+          if (!target) throw err;
+          await runStep(target);
+          if ("out" in target) ctx[step.out] = ctx[(target as { out: string }).out] ?? "";
+        }
         break;
       }
       case "ask": {

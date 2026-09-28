@@ -29,6 +29,9 @@ export interface TokenQuote {
   /** A coin the ecosystem tags major (SOL): it keeps its ticker even
    *  where a stock shares it. */
   major?: boolean;
+  /** The market's own ticker, whatever was typed: "$apple" and "$appl"
+   *  are both AAPL. */
+  ticker?: string;
 }
 
 /** A token found by its address (a contract address someone copied). */
@@ -113,7 +116,8 @@ export class Rates {
     const known = NAMES[symbol];
     if (known && known !== symbol) {
       const quote = await this.tokenQuote(known);
-      return quote ? { ...quote, symbol } : null;
+      // Bitcoin trades here as WBTC, but people read BTC.
+      return quote ? { ...quote, symbol, ticker: known === "WBTC" ? "BTC" : quote.ticker ?? known } : null;
     }
     const hit = this.tokens.get(symbol);
     if (hit && this.now() - hit.at < TOKEN_TTL) return hit.quote;
@@ -128,6 +132,9 @@ export class Rates {
       quote = token?.major ? token : stock ?? token;
       // Any other company typed by name ("$pfizer"): its tokenized share.
       if (!quote && symbol.length >= 3) quote = pickStockByName(symbol, list);
+      // Half a name, or the usual slip ("$appl" on the way to "$apple", or
+      // for AAPL): Jupiter's own best match, when the company starts so.
+      if (!quote && symbol.length >= 4) quote = pickStockByPrefix(symbol, list);
     } catch {
       quote = hit?.quote ?? null;
     }
@@ -186,7 +193,31 @@ export function pickToken(symbol: string, list: unknown[]): TokenQuote | null {
   exact.sort((a, b) => rank(b) - rank(a) || (b.liquidity ?? 0) - (a.liquidity ?? 0));
   const t = exact[0];
   return { symbol, name: t.name ?? symbol, mint: t.id as string, usd: t.usdPrice as number,
-    ...(t.tags?.includes("major") ? { major: true } : {}) };
+    ticker: symbol, ...(t.tags?.includes("major") ? { major: true } : {}) };
+}
+
+/** A share's own ticker: AAPLx and AAPLon are both AAPL. */
+function shareTicker(symbol: string | undefined, fallback: string): string {
+  const s = (symbol ?? "").replace(/(x|on)$/, "");
+  return /^[A-Za-z0-9.]{1,10}$/.test(s) ? s.toUpperCase() : fallback;
+}
+
+const isShare = (t: JupToken) =>
+  t.isVerified === true && typeof t.usdPrice === "number" && t.usdPrice > 0 && typeof t.id === "string"
+  && (t.tags ?? []).some(tag => tag === "stocks" || tag === "equities" || tag === "xstocks");
+
+/** A company half typed or misspelt ("APPL" on the way to "$apple", or the
+ *  usual slip for AAPL): Jupiter ranks its search, so the first verified
+ *  share whose company name starts with what was typed. Four letters at
+ *  least, so "$tes" never guesses. */
+export function pickStockByPrefix(prefix: string, list: unknown[]): TokenQuote | null {
+  const want = prefix.toLowerCase();
+  const t = (list as JupToken[]).find(t => isShare(t) && (t.name ?? "").toLowerCase().startsWith(want));
+  if (!t) return null;
+  const change = t.stats24h?.priceChange;
+  return { symbol: prefix, name: t.name ?? prefix, mint: t.id as string, usd: t.usdPrice as number, stock: true,
+    ticker: shareTicker(t.symbol, prefix),
+    ...(typeof change === "number" && Number.isFinite(change) ? { change24h: change } : {}) };
 }
 
 /** Names people type instead of tickers. The common ones map straight to
@@ -218,6 +249,7 @@ export function pickStock(symbol: string, list: unknown[]): TokenQuote | null {
   const t = shares[0];
   const change = t.stats24h?.priceChange;
   return { symbol, name: t.name ?? symbol, mint: t.id as string, usd: t.usdPrice as number, stock: true,
+    ticker: symbol,
     ...(typeof change === "number" && Number.isFinite(change) ? { change24h: change } : {}) };
 }
 
@@ -238,5 +270,6 @@ export function pickStockByName(name: string, list: unknown[]): TokenQuote | nul
   const t = shares[0];
   const change = t.stats24h?.priceChange;
   return { symbol: name, name: t.name ?? name, mint: t.id as string, usd: t.usdPrice as number, stock: true,
+    ticker: shareTicker(t.symbol, name),
     ...(typeof change === "number" && Number.isFinite(change) ? { change24h: change } : {}) };
 }

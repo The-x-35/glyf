@@ -1,6 +1,9 @@
 import { signedInApp } from "./helpers.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
+import { loadRegistry } from "../src/lib/glyfengine.js";
+import { replayable } from "../src/routes/glyf.js";
+import { coinAsked, wikiTopic } from "../src/lib/tools.js";
 
 beforeAll(() => {
   env.mockAI = true; // §8.4 — route tests burn zero quota
@@ -157,5 +160,66 @@ describe("waitlist", () => {
       method: "POST", url: "/waitlist", payload: { email: "nope" },
     });
     expect(bad.statusCode).toBe(400);
+  });
+});
+
+describe("replaying a glyf run (routing audit, 2026-09-28)", () => {
+  it("never replays a tool's live answer, where the phone is, or someone's own details", () => {
+    const reg = loadRegistry();
+    expect(replayable(reg.get("keyless.weather")!)).toBe(false);
+    expect(replayable(reg.get("keyless.stock")!)).toBe(false);
+    expect(replayable(reg.get("rewrite.polite")!)).toBe(true);
+    const own = { ...reg.get("custom.prompt")!, steps: [
+      { id: "s1", type: "llm" as const, model: "fast" as const, prompt: "Sign it {{profile.name}}: {{input}}", out: "final" }] };
+    expect(replayable(own)).toBe(false);
+    expect(env.cacheTtlMs).toBeLessThanOrEqual(10 * 60 * 1000);
+  });
+
+  it("replays a run to the phone that ran it, and to no one else", async () => {
+    const app = signedInApp();
+    const run = (deviceId: string) => app.inject({ method: "POST", url: "/glyf/run",
+      payload: { glyfId: "rewrite.polite", input: "cache me if you can", vars: {}, deviceId } });
+    const done = (payload: string) => JSON.parse(payload.match(/event: done\ndata: (.*)\n/)![1]);
+    expect(done((await run("replay-dev-000001")).payload).model).toBeUndefined();
+    expect(done((await run("replay-dev-000001")).payload).model).toBe("cache");
+    expect(done((await run("replay-dev-000002")).payload).model).toBeUndefined();
+  });
+});
+
+describe("tool errors on the phone", () => {
+  it("say something plain when a service breaks, and pass a tool's own refusal through", async () => {
+    const app = signedInApp();
+    const saved = process.env.MOCK_AI;
+    process.env.MOCK_AI = "false";
+    try {
+      const broke = await app.inject({ method: "POST", url: "/tools/run",
+        payload: { id: "url.unfurl", args: { url: "http://127.0.0.1:9/" }, deviceId: "t-err-1" } });
+      expect(broke.statusCode).toBe(502);
+      expect(broke.json().error).toBe("Couldn't get that right now. Try again.");
+      const refused = await app.inject({ method: "POST", url: "/tools/run",
+        payload: { id: "url.unfurl", args: { url: "not a url" }, deviceId: "t-err-1" } });
+      expect(refused.json().error).toBe("Needs a full URL");
+    } finally {
+      process.env.MOCK_AI = saved;
+    }
+  });
+});
+
+describe("keyless glyfs read what was typed", () => {
+  it("looks up the topic, not the question", () => {
+    expect(wikiTopic("who is taylor swift")).toBe("taylor swift");
+    expect(wikiTopic("What is a black hole?")).toBe("black hole");
+    expect(wikiTopic("whats the capital of australia")).toBe("capital of australia");
+    expect(wikiTopic("tell me about the Eiffel Tower please")).toBe("Eiffel Tower");
+    expect(wikiTopic("Taylor Swift")).toBe("Taylor Swift");
+  });
+
+  it("finds the coin however it is typed", () => {
+    expect(coinAsked("$sol")).toBe("sol");
+    expect(coinAsked("sol")).toBe("sol");
+    expect(coinAsked("SOLANA")).toBe("SOLANA");
+    expect(coinAsked("price of bonk")).toBe("bonk");
+    expect(coinAsked("what's btc at")).toBe("btc");
+    expect(coinAsked("hey how are you")).toBeNull();
   });
 });

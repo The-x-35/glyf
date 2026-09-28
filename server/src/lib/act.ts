@@ -1,8 +1,26 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { completeStreaming } from "../providers/openrouter.js";
 import { env } from "../env.js";
-import { isLive } from "./answers.js";
+import { daysAsked, isLive, liveAsk, moneyAsked } from "./answers.js";
+import { asksForTheirs } from "./details.js";
 import { search, type SearchContext } from "./search.js";
-import { composeInsert, type PlaceCard, type SearchCard } from "./searchcards.js";
+import { composeInsert, type AnswerCard, type PlaceCard, type SearchCard } from "./searchcards.js";
+import { NAMES, Rates } from "./rates.js";
+import { latinLanguage, otherLatinLanguage, scriptLanguage } from "./translate.js";
+import { convertUnits } from "./units.js";
+
+/** A run is paid for the first time a request asks the model, and only
+ *  then: a sum, a conversion, a price, the time, the weather or a place list
+ *  asks no model and costs nothing ("2+5" spent one of the day's runs).
+ *  routes/act.ts hands each request its payment; tests run without one. */
+const billing = new AsyncLocalStorage<() => Promise<void>>();
+
+/** Thrown when the model is needed and no run is left today. */
+export class RunRefused extends Error {}
+
+async function payForModel(): Promise<void> {
+  await billing.getStore()?.();
+}
 
 /**
  * Hold space → act on what the user typed (the Acti Bar move, Glyf's way).
@@ -89,8 +107,13 @@ export function parseRewriteOptions(reply: string, styles: { id: string; label: 
     }
   }
   return styles
-    .map(st => ({ id: st.id, label: st.label, text: typeof obj[st.id] === "string" ? (obj[st.id] as string).trim() : "" }))
+    .map(st => ({ id: st.id, label: st.label, text: typeof obj[st.id] === "string" ? unmarked(obj[st.id] as string) : "" }))
     .filter(o => o.text.length > 0);
+}
+
+/** A version as it is sent: no markdown emphasis around words. */
+function unmarked(text: string): string {
+  return text.replace(/\*\*([^*\n]+)\*\*/g, "$1").replace(/__([^_\n]+)__/g, "$1").trim();
 }
 
 /** Picks each version out of the model's JSON the moment its closing quote
@@ -120,11 +143,13 @@ export class OptionStream {
       this.sent.add(style.id);
       let value = "";
       try {
-        value = (JSON.parse(`"${m[2]}"`) as string).trim();
+        value = unmarked(JSON.parse(`"${m[2]}"`) as string);
       } catch {
         continue;
       }
-      if (value && keepsNumbers(this.typed, value)) this.emit({ id: style.id, label: style.label, text: value });
+      if (value && keepsNumbers(this.typed, value) && keepsExact(this.typed, value)) {
+        this.emit({ id: style.id, label: style.label, text: value });
+      }
     }
   }
 
@@ -188,6 +213,21 @@ export function keepsNumbers(typed: string, version: string): boolean {
   });
 }
 
+const LINK = /\bhttps?:\/\/[^\s<>"]+|\bwww\.[^\s<>"]+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+/gi;
+
+/** Links and email addresses in what was typed, as typed. */
+function typedExact(typed: string): string[] {
+  const out = new Set<string>();
+  for (const m of typed.matchAll(LINK)) out.add(m[0].replace(/[.,;:!?)\]]+$/, ""));
+  return [...out];
+}
+
+/** Whether a version copies every link and email address letter for
+ *  letter: one retyped by a model ("docs.google.com/d/1AbC…") goes nowhere. */
+export function keepsExact(typed: string, version: string): boolean {
+  return typedExact(typed).every(x => version.includes(x));
+}
+
 export interface ActOptions {
   /** Publishes a list as a live mini-app page and returns its public URL. */
   publish?: (title: string, places: PlaceCard[]) => string | undefined;
@@ -201,6 +241,9 @@ export interface ActOptions {
   profile?: Record<string, string>;
   /** What a tapped suggestion chip promised; skips routing when set. */
   intent?: ActIntent;
+  /** Pays for the run, called before the model is first asked; throws
+   *  RunRefused when none is left. Without it the model is free (tests). */
+  pay?: () => Promise<void>;
   /** For a streamed /act: each version the moment it is written, the
    *  written text as it comes, and a reset when a model is dropped midway. */
   stream?: ActStream;
@@ -221,10 +264,14 @@ export function profileBlock(profile?: Record<string, string>): string {
     `for them (never volunteer them):\n${lines}`;
 }
 
-const PLACE_WORDS =
-  "restaurants?|cafes?|coffee|bars?|pubs?|pizza|sushi|burgers?|food|brunch|breakfast|lunch|dinner|" +
-  "hotels?|gyms?|pharmac(?:y|ies)|hospitals?|clinics?|atms?|banks?|parks?|museums?|malls?|" +
-  "bakery|bakeries|dessert|ice cream|biryani|dosa|ramen|tacos?|salons?|spas?";
+/** Where people go: with "best" or "any" in front, a search for places. */
+const VENUES = "restaurants?|cafes?|cafés|coffee shops?|bars?|pubs?|hotels?|hostels?|resorts?|gyms?|" +
+  "pharmac(?:y|ies)|hospitals?|clinics?|atms?|banks?|parks?|museums?|malls?|bakery|bakeries|salons?|spas?|" +
+  "places|spots|joints|clubs|breweries|brewery|cinemas?|theat(?:er|re)s?|beaches|stores|shops|dhabas?|eateries|diners?";
+/** What people eat: a search only with somewhere to look ("best biryani
+ *  near indiranagar"); "best dinner ever" is a message. */
+const DISHES = "coffee|pizza|sushi|burgers?|food|brunch|breakfast|lunch|dinner|dessert|ice cream|biryani|dosa|" +
+  "ramen|tacos?|momos?|street food|cocktails?|drinks|chai|noodles|thali";
 const CUISINES = "italian|chinese|indian|thai|mexican|japanese|korean|vietnamese|french|spanish|greek|" +
   "lebanese|turkish|south indian|north indian|vegan|vegetarian";
 
@@ -238,16 +285,158 @@ export function mathQuestion(text: string): string | null {
     .replace(/[\s?=!.]+$/, "")
     .trim();
   if (/^[\d.,]+\s*%\s*of\s*[\d.,]+$/i.test(q)) return q;
+  // "15% tip on 64": the tip, worked out, with the total.
+  if (/^[\d.]+\s*%\s*tip\s*(?:on|for|of)\s*[$€£₹]?\s*[\d.,]+$/i.test(q)) return q;
   const expr = q.replace(/(\d)\s*[x×]\s*(?=\d)/gi, "$1 * ");
   if (/\d\s*[+\-*/÷^%]\s*[\d(]/.test(expr) && /^[\d\s.,+\-*/÷^()%]+$/.test(expr)) return expr;
   return null;
 }
 
-/** Cheap first pass. Returns null when the text needs the model to decide. */
+/** "price of sol", "sol price", "how much is bitcoin", "aapl stock price",
+ *  "$tsla": the coin or stock asked about, else null. */
+export function priceAsked(text: string): string | null {
+  const t = text.trim().toLowerCase().replace(/\s+/g, " ").replace(/[?!.]+$/, "").trim();
+  const asset = String.raw`\$?([a-z][a-z0-9]{1,13})`;
+  const tail = String.raw`(?:\s+(?:stock|share|coin|token|crypto))?(?:\s+(?:price|rate))?(?:\s+(?:today|now|right now|rn))?`;
+  const forms = [
+    new RegExp(`^(?:what(?:'s|s| is)\\s+)?(?:the\\s+)?(?:current\\s+|live\\s+|latest\\s+)?price\\s+of\\s+(?:one\\s+|1\\s+)?${asset}${tail}$`),
+    new RegExp(`^(?:what(?:'s|s| is)\\s+)?(?:the\\s+)?${asset}(?:\\s+(?:stock|share|coin|token))?\\s+(?:price|rate)(?:\\s+(?:today|now|right now|rn))?$`),
+    new RegExp(`^how\\s+much\\s+is\\s+(?:one\\s+|1\\s+|a\\s+)?${asset}${tail}$`),
+    new RegExp(`^(?:what(?:'s|s| is)\\s+)?${asset}\\s+(?:trading at|at|worth)(?:\\s+(?:today|now|right now))?$`),
+    new RegExp(`^\\$([a-z][a-z0-9]{1,13})$`),
+  ];
+  for (const re of forms) {
+    const m = re.exec(t);
+    if (!m) continue;
+    // A word is an asset only when it plainly is one: "$" or "stock"/"coin"
+    // said, or a coin or company everyone knows. "how much is rent" is no
+    // coin called RENT.
+    const said = /\$|\b(stock|share|coin|token|crypto)\b/.test(t);
+    if (said || KNOWN_ASSETS.has(m[1].toUpperCase())) return m[1];
+  }
+  return null;
+}
+
+const KNOWN_ASSETS = new Set([
+  ...Object.keys(NAMES), ...Object.values(NAMES),
+  "SOL", "BTC", "ETH", "USDC", "USDT", "JUP", "BONK", "WIF", "JTO", "PYTH", "RAY", "DOGE", "XRP", "BNB",
+  "AAPL", "TSLA", "NVDA", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NFLX", "COIN", "MSTR", "PLTR", "HOOD",
+  "GME", "AMD", "INTC", "SPY", "QQQ",
+]);
+
+const priceRates = new Rates();
+
+/** A dollar price as the market quotes it: $117.98, $0.0001234. */
+function usd(n: number): string {
+  if (n >= 1) return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${n.toPrecision(4).replace(/0+$/, "")}`;
+}
+
+/** The live price of what was asked about (Jupiter, the same quote the
+ *  strip's $sol chip shows), or null when it is no coin or stock it knows. */
+async function priceAnswer(typed: string): Promise<ActResult | null> {
+  const asked = priceAsked(typed);
+  if (!asked) return null;
+  const q = await priceRates.tokenQuote(asked).catch(() => null);
+  if (!q) return null;
+  const ticker = q.ticker ?? q.symbol;
+  const line = q.stock ? `${ticker} is ${usd(q.usd)}` : `1 ${ticker} = ${usd(q.usd)}`;
+  const change = typeof q.change24h === "number" && q.change24h !== 0
+    ? ` · ${q.change24h > 0 ? "+" : ""}${q.change24h.toFixed(1)}% today` : "";
+  const card: AnswerCard = { kind: "answer", id: `price-${ticker}`, title: `${ticker} price`,
+    value: usd(q.usd), sub: `${q.name}${change}`, art: "none", source: "Jupiter",
+    url: `https://jup.ag/tokens/${q.mint}`, say: line };
+  return { intent: "answer", title: card.title, cards: [card], insert: line, provider: "jupiter" };
+}
+
+/** Asked for by the thing itself, no "write" in front: "leave application
+ *  for 2 days", "resignation letter", "birthday wish for my sister". */
+const DOCUMENT_ASK = /^(?:a |an |my |happy )?(?:(?:sick |casual |medical )?leave (?:application|letter|mail|email|request)|resignation(?: letter| mail| email)?|cover letter|(?:birthday|anniversary|wedding|farewell|retirement|thank[- ]you|condolence|congratulations?|get well soon|new year|diwali|christmas|eid) (?:wish(?:es)?|message|msg|text|note|card|speech|post|caption|quote)s?|(?:apology|complaint|appreciation|reference|recommendation|invitation|sick) (?:message|msg|text|dm|email|mail|note|letter|reply)|(?:email|mail|letter|application|essay|speech|poem|story|bio|caption)s? (?:to|for|on|about)\b)/;
+
+/** A letter named as the whole ask. "my leave application got approved lets
+ *  party" names one too, but tells what happened to it: a message. */
+function documentAsk(lower: string): boolean {
+  if (!DOCUMENT_ASK.test(lower) || lower.split(" ").length > 16) return false;
+  if (/\b(got|get|gets|getting|was|were|is|are|am|has been|have been|had|approved|sent|submitted|rejected|accepted|granted|came|went|received|did|done|finished|ready)\b/.test(lower)) {
+    return false;
+  }
+  return !/\b(u|ur|you|your|yours|you're|youre)\b/.test(lower.replace(/thank[- ]you/g, ""));
+}
+
+/** Things people ask to have written. */
+const ARTIFACTS = "captions?|bio|poems?|story|stories|essays?|names?|ideas?|slogans?|taglines?|messages?|msg|notes?|" +
+  "e-?mails?|mails?|letters?|posts?|tweets?|threads?|toast|speech|jokes?|quotes?|wish|wishes|greetings?|repl(?:y|ies)|" +
+  "response|summary|outline|itinerary|agenda|recipe|script|lyrics|hashtags?|titles?|headlines?|descriptions?|" +
+  "cover letter|resume|cv|apology|invite|invitation|checklist|to-?do list|list|questions|tips|excuses?|" +
+  "pickup lines?|compliments?|rhymes?|song|limerick|haiku|riddles?|paragraphs?|sentences?|shayari|status|" +
+  "comebacks?|roast|puns?";
+const MAKE_ASK = new RegExp("^(?:please |pls |plz )?(?:make|create|generate|give me|suggest|brainstorm|come up with|think of)\\s+" +
+  "(?:me\\s+|us\\s+)?(?:(?:a|an|the|some|few|\\d+|one|two|three|four|five|six|seven|eight|nine|ten|more|another|good|" +
+  "nice|cool|funny|cute|short|quick|catchy|creative|clever|witty|romantic|sweet|heartfelt|formal|professional|polite)\\s+){0,3}" +
+  `(?:[\\p{L}'-]+\\s+){0,2}(?:${ARTIFACTS})\\b`, "u");
+
+/** Asked to write something: "write an essay on dogs", "give me 5 captions",
+ *  "plan a 3 day trip to goa". "give me a call when you're free", "make sure
+ *  you come" and "plan for tomorrow is set" are messages. */
+function writeAsked(lower: string): boolean {
+  if (/^(?:please |pls |plz )?(?:write|draft|compose)\b(?!\s+(?:back|soon|later|to me|me back|it down|that down|this down)\b)/.test(lower)) {
+    return true;
+  }
+  if (MAKE_ASK.test(lower)) return true;
+  if (/^list\s+(?:\d+|some|the|all|top|a few|few|three|five|ten)\b/.test(lower)) return true;
+  if (/^plan\s+(?:a|an|my|our|the|\d+|me|us|some)\b/.test(lower)) return true;
+  if (/^(?:explain|summari[sz]e|translate|rephrase|paraphrase|expand|shorten|outline)\b/.test(lower)
+      && !/\b(u|ur|you|your|yourself)\b/.test(lower)) {
+    return true;
+  }
+  // "translate thank you so much to hindi": what is to be translated may
+  // well say "you".
+  if (/^translate\b.+\b(?:to|into|in)\s+\p{L}+$/u.test(lower)) return true;
+  return documentAsk(lower);
+}
+
+/** People talking to or about each other. A message mentions food, videos
+ *  and the weather all the time; a search is typed as bare words. "near
+ *  me" and "send me the trailer" are how searches are typed, so those
+ *  "me"s are taken out before looking. */
+const PEOPLE = /\b(i|i'm|im|i've|ive|i'll|i'd|me|my|mine|myself|we|we're|we've|we'll|we'd|us|our|ours|u|ur|you|you're|youre|you've|you'll|you'd|your|yours|ya|yall|y'all|let's|lets|he|she|him|her|his|hers|they|them|their|theirs)\b/;
+const SEARCH_ME = /\b(?:near|around|for|to|from|with)\s+me\b|^(?:send|show|give|find|get|play|tell)\s+me\b/g;
+/** What happened and what ought to: "was great", "got approved", "should go". */
+const NARRATIVE = /\b(was|were|wasn't|weren't|had|hadn't|got|gotten|did|didn't|went|came|sent|saw|seen|been|ate|watched|heard|told|said|loved|enjoyed|liked|approved|reached|finished|missed|should|shall|gotta|gonna|wanna|would|could|might|must)\b/;
+/** The small words around a chat. */
+const SMALL_TALK = /\b(thanks|thank you|thx|tnx|ty|lol|lmao|lmfao|rofl|haha\w*|hehe\w*|omg|congrats|sorry|sry|pls|plz|please|hey|hi|hello|yo|bro|dude|yaar|bhai|okay|ok|kk|yeah|yep|yup|nope|sure)\b|!|\p{Extended_Pictographic}/u;
+/** How a question starts, to a person or to Glyf. */
+const QUESTION_START = /^(what|what's|whats|who|who's|whos|where|where's|wheres|when|when's|whens|why|how|how's|hows|which|is|isn't|are|aren't|am|was|were|can|can't|could|do|does|don't|doesn't|did|didn't|will|won't|would|should|shall|have|has|may|might|any)\b/;
+
+/** A song or a film's name, which may well hold a "you" or a "me" ("ed
+ *  sheeran shape of you", "all of me"): short, no story, no small talk, no
+ *  "is", and at most one such word, never the first. */
+export function titleLike(lower: string): boolean {
+  const words = lower.split(" ");
+  if (words.length > 8 || NARRATIVE.test(lower) || SMALL_TALK.test(lower)) return false;
+  if (/\b(is|are|am|isn't|aren't|was|were)\b/.test(lower)) return false;
+  const people = words.filter(w => PEOPLE.test(w));
+  return people.length <= 1 && !PEOPLE.test(words[0] ?? "");
+}
+
+/** Typed the way a search is: short, and nobody talking to anybody. */
+export function searchLike(text: string): boolean {
+  const lower = text.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
+  if (!lower || lower.split(" ").length > 10) return false;
+  const bare = lower.replace(SEARCH_ME, " ");
+  if (PEOPLE.test(bare) || NARRATIVE.test(lower) || SMALL_TALK.test(lower)) return false;
+  // "the pizza here is good" says something; "which is the best pizza" asks.
+  return !(/\b(is|are|am|isn't|aren't|looks|seems|tastes|smells|sounds)\b/.test(lower) && !QUESTION_START.test(lower));
+}
+
+/** Cheap first pass. Returns null when the text needs the model to decide.
+ *  Only asks are routed here: a sum, a price, money to convert, something
+ *  to write, the time or the weather asked for, and searches typed as
+ *  searches. A message that mentions dinner or a video goes to the model. */
 export function planByRules(text: string): ActPlan | null {
   const t = text.trim().replace(/\s+/g, " ");
   if (!t) return null;
-  const lower = t.toLowerCase();
+  const lower = t.toLowerCase().replace(/[’‘]/g, "'");
 
   // Arithmetic and conversions have computed answers on the web vertical.
   if (/\d/.test(t) && /^[\d\s.,+\-*/×÷^()%=]+$/.test(t)) return { intent: "answer", query: t };
@@ -256,32 +445,39 @@ export function planByRules(text: string): ActPlan | null {
   // message and come back tidied instead of answered.
   const sum = mathQuestion(t);
   if (sum) return { intent: "answer", query: sum };
-  if (/^\s*\d+(\.\d+)?\s*[a-z]{3}\s+(to|in)\s+[a-z]{3}\s*$/i.test(t)) return { intent: "answer", query: t };
-  if (/\b(sunset|sunrise|golden hour|weather|temperature|what time is it|time in)\b/.test(lower)) {
-    return { intent: "answer", query: t };
-  }
+  // "5 km in miles": a conversion, worked out, never written by a model.
+  if (convertUnits(t)) return { intent: "answer", query: t };
+  // "how many days until christmas": counted on the calendar.
+  if (daysAsked(t)) return { intent: "answer", query: t };
+  // Money in other money ("50 euros in dollars", "1 sol in euros"): today's
+  // rate, never a model's memory of one.
+  if (moneyAsked(t)) return { intent: "answer", query: t };
+  // A price asked for: the live quote, not a message to tidy.
+  if (priceAsked(t)) return { intent: "answer", query: t };
+  // Asked to write something, before anything it mentions: a caption for a
+  // sunset photo is a caption, not the time of sunset.
+  if (writeAsked(lower)) return { intent: "write", query: t };
+  // The time, the sun or the weather, asked for as such.
+  if (liveAsk(t)) return { intent: "answer", query: t };
 
-  const listy = /\b(best|top|good|great|cheap|popular|recommended|must[- ]try|places|spots|options)\b/.test(lower);
-  const placey = new RegExp(`\\b(${PLACE_WORDS}|${CUISINES})\\b`).test(lower);
+  // Below, a few words anywhere decide, so only text typed as a search.
+  if (!searchLike(lower)) return null;
   if (/\b(near me|nearby|around me|close by|closest|nearest)\b/.test(lower)) {
     // "cafes near me" wants options; "nearest ATM" wants the one.
     return { intent: /\b(nearest|closest)\b/.test(lower) ? "place" : "places", query: t };
   }
-  if (listy && placey) return { intent: "places", query: t };
-
-  if (/\b(video|trailer|music video|song|lyrics|playlist|tutorial|livestream|live stream|full match|highlights)\b/.test(lower)) {
+  const listy = /\b(best|top|good|great|nice|cheap|cheapest|popular|famous|recommended|must[- ]try|affordable|decent|any)\b/.test(lower);
+  const venue = new RegExp(`\\b(${VENUES})\\b`).test(lower);
+  const dish = new RegExp(`\\b(${DISHES}|${CUISINES})\\b`).test(lower);
+  const located = /\b(?:in|near|around|at|close to)\s+\p{L}/u.test(lower);
+  if ((listy && (venue || (dish && located))) || (venue && located && /s\b/.test(lower))) {
+    return { intent: "places", query: t };
+  }
+  if (/\b(videos?|trailers?|music videos?|songs?|lyrics|playlists?|tutorials?|livestream|live stream|full match|highlights|teaser)\b/.test(lower)) {
     return { intent: "video", query: t };
   }
-
-  // "write an essay on dogs", "draft a leave email", "give me 5 captions":
-  // asking for something to be written is not a question to look up.
-  if (/^(write|draft|compose|make|create|generate|give me|suggest|brainstorm|come up with|think of|list)\b/.test(lower)
-      && !placey) {
-    return { intent: "write", query: t };
-  }
-  if (/^(explain|summari[sz]e|translate|rephrase|expand|shorten|outline|plan)\b/.test(lower)) {
-    return { intent: "write", query: t };
-  }
+  // "how to make pancakes", typed on its own: the video that shows it.
+  if (/^how to\s+\S/.test(lower)) return { intent: "video", query: t };
   return null;
 }
 
@@ -300,13 +496,13 @@ export function parsePlan(reply: string, fallbackQuery: string): ActPlan | null 
 }
 
 const ROUTER_PROMPT = (text: string) => `You route what someone typed on their phone keyboard to ONE action.
-Reply with JSON only, no prose: {"intent":"place|places|answer|video|rewrite|write","query":"search query"}
-place   — one specific place to share, e.g. "Times Square Starbucks", "Phoenix Marketcity".
-places  — recommendations, several places, e.g. "SF best italian restaurant".
-answer  — needs a live fact: scores, fixtures, schedules, prices, news, definitions, "who is".
-video   — they want a video or a song.
-write   — they are asking for something to BE written or worked out: "write an essay on dogs", "draft a leave email", "5 captions for this photo", "explain quantum computing".
-rewrite — a message they are writing to someone; nothing to look up.
+Reply with JSON only, no prose: {"intent":"place|places|answer|video|rewrite|write","query":"..."}
+place   — one specific place they name, or ask the way to: "Times Square Starbucks", "lets meet at Blue Tokai Indiranagar at 6", "how do i get to Indiranagar metro station". query: just the place, e.g. "Blue Tokai Indiranagar".
+places  — recommendations, several places: "SF best italian restaurant". query: what and where.
+answer  — a question for a fact to look up or work out: "whats the capital of australia", "who won the match", "how many ml in a cup". query: the question.
+video   — they want a video or a song found: "dune part 2 trailer", "lofi beats playlist", an artist and a song ("ed sheeran shape of you", "arijit singh tum hi ho"), a how-to typed on its own ("how to make pancakes", "how to tie a tie"). query: what to search on YouTube.
+write   — they ask for something to BE written or worked out for them: "write an essay on dogs", "draft a leave email", "5 captions for this photo", "explain quantum computing".
+rewrite — a message to someone, even one that mentions food, a video, a song, a place, the weather or a time: "had a great dinner with u last night, thanks", "did u see the video i sent u", "this song is stuck in my head", "the pizza here is good", "are you free for lunch tomorrow?", "sorry cant make it, my son has a fever". A request or a question to the person they are writing to ("can u send me the invoice", "are you free", "can you come") is a message.
 Typed: """${text.replace(/"""/g, "'")}"""`;
 
 /** Deterministic offline routing for tests: questions look things up,
@@ -317,12 +513,60 @@ export function mockPlan(text: string): ActPlan {
   return { intent: t.endsWith("?") ? "answer" : "rewrite", query: t };
 }
 
+/** What a request for writing names; a message that names none of these
+ *  ("can u send me the invoice asap") is a request to a person. */
+const WRITE_WORDS = new RegExp(`\\b(write|draft|compose|explain|summar\\w*|translate|rephrase|${ARTIFACTS})\\b`);
+/** Asking Glyf to find something, rather than talking about it. */
+const FIND_WORDS = /\b(find|search|look up|show me|send me|play|watch|recommend|suggest|where can|where to|where is|any good|tell me|do you know)\b/;
+/** Told as having happened: "had a great dinner at Toit, thanks". */
+const PAST = /\b(was|were|had|went|came|saw|ate|loved|enjoyed|got|did)\b/;
+/** Nothing but a greeting or a reply: "ok", "whats up", "thanks!". */
+const CHITCHAT = /^(?:ok(?:ay)?|k+|kk|hi+|hey+|hello|yo|sup|wass?up|what'?s up|whats up|wyd|hru|how (?:are|r) (?:you|u)|how'?s it going|good (?:morning|night|evening|afternoon)|gm|gn|thanks?|thank you|thx|ty|lol|haha\w*|yes|yeah|yep|no|nope|sure|cool|nice|great|done|np|no worries|see (?:you|u|ya)(?: soon| later)?|bye|cya|ttyl|lmk|brb|omw)(?:\s+(?:bro|dude|man|yaar|bhai|mate|buddy))?[\s!?.]*$/;
+
+/** A second look at what the router said, for the misreads a small model
+ *  makes: a request to a person read as something to write ("can u send me
+ *  the invoice"), a remark read as a search ("this song is stuck in my
+ *  head", "had dinner at Toit last night"), a question to a friend read as
+ *  one to look up ("r u free tmrw"), a greeting read as a question ("whats
+ *  up"). Each of those is a message. */
+/** Talking to someone: "you" in English, "tu", "tum", "aap" in Hindi. */
+const SECOND_PERSON = /\b(u|ur|you|your|yours|you're|youre|ya|tu|tum|tumhe|tumko|tumne|tumhara|tumhari|tumhare|tera|teri|tere|aap|aapko|aapne|aapka|aapki|aapke)\b/;
+/** A message that opens or ends by naming who it is for. */
+const ADDRESSED = /^(?:bhai|bro|bruh|yaar|dude|mom|mum|maa|papa|dad|didi|bhaiya|babe|baby|hey|hi|hello|yo|oye|arre)\b|\b(?:bhai|bro|yaar|dude|babe|bhaiya|didi)[?!.]*$/;
+
+export function checkPlan(p: ActPlan, text: string): ActPlan {
+  const lower = text.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
+  const message: ActPlan = { intent: "rewrite", query: text.trim() };
+  // "whats up" is a greeting, not a question about the news.
+  if (p.intent !== "write" && CHITCHAT.test(lower)) return message;
+  const finding = FIND_WORDS.test(lower);
+  switch (p.intent) {
+    case "write":
+      return WRITE_WORDS.test(lower) ? p : message;
+    case "video":
+      return searchLike(lower) || finding || titleLike(lower) ? p : message;
+    case "places":
+      return searchLike(lower) || finding ? p : message;
+    case "place":
+      return PAST.test(lower) && !finding ? message : p;
+    case "answer":
+      // Said to someone, in English or Hindi: "where r u", "bhai kidhar hai
+      // tu" is asked of a friend, never of Glyf (it once answered "I am an AI
+      // without a physical location").
+      return (SECOND_PERSON.test(lower) || ADDRESSED.test(lower)) && !finding ? message : p;
+    default:
+      return p;
+  }
+}
+
 async function planWithModel(text: string): Promise<ActPlan> {
+  await payForModel();
   if (env.mockAI) return mockPlan(text);
   try {
     const res = await completeStreaming("fast",
       [{ role: "user", content: ROUTER_PROMPT(text) }], { onToken: () => {}, stallMs: 4000 });
-    return parsePlan(res.text, text.trim()) ?? { intent: "rewrite", query: text.trim() };
+    const routed = parsePlan(res.text, text.trim());
+    return routed ? checkPlan(routed, text) : { intent: "rewrite", query: text.trim() };
   } catch {
     return { intent: "rewrite", query: text.trim() };
   }
@@ -333,21 +577,40 @@ export function plan(text: string): Promise<ActPlan> {
   return byRules ? Promise.resolve(byRules) : planWithModel(text);
 }
 
+/** The message a rewrite is for: after a leading instruction ("make this
+ *  sound professional:", "fix grammar:", "rewrite:"), or all of it. A note
+ *  with a colon ("note: meeting at 5") is all message. */
+export function rewriteTarget(text: string): string {
+  const m = text.match(/^\s*(?:please\s+|pls\s+|plz\s+)?(make|rewrite|rephrase|reword|fix|tidy|clean up|polish|improve|correct|proofread|shorten)\b([^:\n]{0,50}):\s*(\S[\s\S]*)$/i);
+  if (!m || `${m[1]}${m[2]}`.trim().split(/\s+/).length > 8) return text;
+  return m[3].trim();
+}
+
 /** Texting shorthand and missing apostrophes: the words a tidy-up fixes. */
 const SHORTHAND = /\b(u|ur|pls|plz|thx|tnx|b4|tmrw|tmr|tomo|2day|2nite|gonna|wanna|gotta|cuz|coz|abt|idk|rn|ppl|msg|kk|ya|yea|nah|dont|cant|wont|didnt|doesnt|isnt|wasnt|arent|im|ive|youre|theyre|thats|whats|lets|shouldnt|couldnt|wouldnt|havent)\b/i;
 /** Anything a model should read first: a question, a place, a live fact,
  *  a video. Those can want the map, an answer or a search, not a tidy-up. */
 const LOOKUP = /\?|\b(where|who|when|which|what time|how much|how many|price|cost|score|near|nearby|meet at|at the|video|song|movie|weather|open now)\b/i;
 
+/** Written in English, as far as the words say: the shorthand and "i"
+ *  rules below are English's own. Hinglish, Spanish or Tamil go to the
+ *  model, which can tell a message from a question in any of them. */
+function readsAsEnglish(text: string): boolean {
+  return !scriptLanguage(text) && latinLanguage(text) !== "Hindi" && !otherLatinLanguage(text);
+}
+
 /** A chat message that plainly wants tidying, known without a model: a
  *  sentence of four words or more with texting shorthand, a lowercase "i",
  *  stretched letters ("sooo") or a long run with no capital and no stop.
  *  Math, places and questions never land here: the rules and the model
- *  handle those. Instant, where asking a model costs most of a second. */
+ *  handle those ("whats the capital of australia" wants an answer, not a
+ *  capital W). Instant, where asking a model costs most of a second. */
 export function needsTidy(text: string): boolean {
-  const t = text.trim().replace(/\s+/g, " ");
+  // A link's "?" is not a question.
+  const t = text.trim().replace(LINK, " link ").replace(/\s+/g, " ");
   const words = t.split(" ");
   if (words.length < 4 || LOOKUP.test(t) || /\d\s*[-+*/×÷^%]\s*\d/.test(t)) return false;
+  if (QUESTION_START.test(t.toLowerCase().replace(/[’‘]/g, "'")) || !readsAsEnglish(t)) return false;
   return SHORTHAND.test(t) || /(^|\s)i(\s|'|$)/.test(t) || /([a-z])\1{2,}/i.test(t)
     || (/^[a-z]/.test(t) && words.length >= 6 && !/[.!?]$/.test(t));
 }
@@ -381,19 +644,193 @@ export function listInsert(title: string, places: PlaceCard[]): string {
 /** Live facts a model must not invent — the same line the web tab holds. */
 export { isLive };
 
-/** The model writes the thing and it goes straight in the message. */
-async function written(
-  typed: string, prompt: string, ctx: SearchContext, opts: ActOptions, provider: string,
-): Promise<ActResult> {
-  let text = "";
+/** The day and the hour where the writer is, so "tomorrow" in a leave email
+ *  is the right date and nothing is dated a year the model remembers. */
+export function todayLine(tz?: string, now = new Date()): string {
+  let zone = "UTC";
   try {
-    text = await modelText(prompt + profileBlock(opts.profile), 5000,
-      opts.stream?.text ? { onToken: opts.stream.text, onRestart: opts.stream.reset } : undefined);
-  } catch {
-    text = "";
+    if (tz) {
+      new Intl.DateTimeFormat("en-US", { timeZone: tz });
+      zone = tz;
+    }
+  } catch { /* an unknown zone reads as UTC */ }
+  const day = (d: Date) => new Intl.DateTimeFormat("en-US", {
+    timeZone: zone, weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(d);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: zone, hour: "numeric", minute: "2-digit" }).format(now);
+  return `Today is ${day(now)}, ${time} where the writer is; tomorrow is ${day(new Date(now.getTime() + 86_400_000))}.`;
+}
+
+/** A model declining in words meant for the person asking, which must never
+ *  be pasted into their chat as if they had written it. */
+const REFUSAL = /^(?:(?:i'?m sorry|i am sorry|sorry|unfortunately)[,.!]?\s+(?:but\s+)?i\s+(?:can(?:'|no)t|cannot|won'?t|am unable|'m unable|am not able|'m not able)|i\s+(?:can(?:'|no)t|cannot|won'?t|am unable to|'m unable to|am not able to|'m not able to)\s+(?:help|assist|write|create|draft|do|comply|provide|fulfil|produce|generate|make)|i must decline|as an ai\b|as an? (?:ai|language model)\b|i(?:'m| am) (?:just )?an? (?:ai|language model|virtual assistant)\b|i (?:don'?t|do not) have (?:a physical|a body|personal|real-time|feelings)\b)/i;
+
+/** The model's own lines around what it wrote: "Sure! Here's a caption:". */
+const OPENER_LINE = /^(?:(?:sure|certainly|of course|absolutely|okay|ok)[,!.]?\s*)?(?:here(?:'s| is| are)|below is|i(?:'ve| have) (?:written|drafted))\b[^\n]*:$|^(?:sure|certainly|of course|absolutely)[,!.]?$/i;
+
+/** A slot left for a detail the model didn't know: "[Your Name]", "[Date]". */
+const PLACEHOLDER = /\[[^\]\n]{1,40}\](?!\()|<(?:your|recipient|manager|name|date|company)[^>\n]{0,30}>|\((?:your|insert|recipient'?s?|manager'?s?|company'?s?) [^)\n]{0,30}\)/i;
+
+export function hasPlaceholder(text: string): boolean {
+  return PLACEHOLDER.test(text);
+}
+
+/** What a model wrote, as the person would send it: no opener or sign-off
+ *  to them, no markdown, the writer's own name where a slot was left for it. */
+export function tidyWritten(raw: string, profile?: Record<string, string>): string {
+  let t = raw.replace(/\r/g, "").trim().replace(/^```\w*\n?([\s\S]*?)\n?```$/, "$1").trim();
+  const lines = t.split("\n");
+  while (lines.length > 1 && OPENER_LINE.test(lines[0].trim())) {
+    lines.shift();
+    while (lines.length > 0 && !lines[0].trim()) lines.shift();
   }
-  if (!text) return nothingFound("write", typed, typed, provider);
-  return { intent: "write", title: typed, cards: [], text, insert: text, provider };
+  t = lines.join("\n")
+    .replace(/^(?:sure|certainly|of course|absolutely)[,!.]?\s+(?=here\b|below\b)/i, "")
+    .replace(/^here(?:'s| is| are)\b[^:\n]{0,80}:\s*/i, "")
+    // Notes to the writer after the thing itself.
+    .replace(/\n+\s*(?:\(?note:|feel free to|let me know if|i hope this helps|hope this helps|you can (?:adjust|customi[sz]e|personali[sz]e|tweak|edit))[\s\S]*$/i, "")
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1").replace(/__([^_\n]+)__/g, "$1").replace(/^#{1,6}\s+/gm, "")
+    .trim();
+  if (/^["“][^"“”]+["”]$/.test(t)) t = t.slice(1, -1).trim();
+  const name = profile?.name?.trim();
+  if (name) t = t.replace(/\[(?:your|my|sender'?s?)\s+(?:full\s+)?name\]/gi, name);
+  return t;
+}
+
+/** Last resort for a slot a second try still left: a greeting keeps its
+ *  word ("Dear [Name]," → "Hello,"), a line that was only slots goes, and a
+ *  slot inside a sentence is taken out. */
+export function dropPlaceholders(text: string): string {
+  return text
+    .replace(/^(dear|hi|hello|hey)\s+\[[^\]\n]{1,40}\]\s*,?/gim, (_m, g: string) => (/^dear$/i.test(g) ? "Hello," : `${g},`))
+    .split("\n").filter(line => !/^\s*(?:\[[^\]\n]{1,40}\][\s,.;:-]*)+$/.test(line)).join("\n")
+    // "on leave on [Date] for" → "on leave for": the slot goes with its word.
+    .replace(/\s+(?:on|at|in|by|to|for|from|with|of)\s+\[[^\]\n]{1,40}\](?!\()/gi, "")
+    .replace(/\s*\[[^\]\n]{1,40}\](?!\()/g, "")
+    .replace(/ +([,.;:!?])/g, "$1").replace(/[ \t]{2,}/g, " ")
+    // "Subject: Leave Application - [Your Name]" leaves a dash behind.
+    .replace(/[ \t]+[-–—]+[ \t]*$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Holds a written reply's first line until it is clear it is the thing
+ *  itself: an opener ("Here's a caption:") is dropped and a refusal never
+ *  shows; the rest streams as it comes. */
+class OpenerGate {
+  private held = "";
+  private open = false;
+  private blocked = false;
+
+  constructor(private readonly forward: (t: string) => void) {}
+
+  push(token: string): void {
+    if (this.blocked) return;
+    if (this.open) {
+      this.forward(token.replace(/\*\*/g, ""));
+      return;
+    }
+    this.held += token;
+    const nl = this.held.indexOf("\n");
+    if (nl < 0 && this.held.length < 120) return;
+    const first = (nl < 0 ? this.held : this.held.slice(0, nl)).trim();
+    if (REFUSAL.test(first)) {
+      this.blocked = true;
+      return;
+    }
+    const rest = OPENER_LINE.test(first)
+      ? (nl < 0 ? "" : this.held.slice(nl + 1).replace(/^\s+/, ""))
+      : this.held.replace(/^\s+/, "")
+        .replace(/^(?:sure|certainly|of course|absolutely)[,!.]?\s+(?=here\b|below\b)/i, "")
+        .replace(/^here(?:'s| is| are)\b[^:\n]{0,80}:\s*/i, "");
+    this.open = true;
+    this.held = "";
+    if (rest) this.forward(rest.replace(/\*\*/g, ""));
+  }
+
+  /** The reply ended while still held (a short caption): let it through. */
+  flush(): void {
+    if (this.open || this.blocked || !this.held.trim()) return;
+    if (REFUSAL.test(this.held.trim().split("\n")[0])) {
+      this.blocked = true;
+      return;
+    }
+    this.open = true;
+    const text = tidyWritten(this.held);
+    this.held = "";
+    if (text) this.forward(text);
+  }
+
+  reset(): void {
+    this.held = "";
+    this.open = false;
+    this.blocked = false;
+  }
+}
+
+const WRITE_PROMPT =
+  "Write exactly what is asked for, ready to send as it is, in the language the request is written in. " +
+  "Keep every detail it gives, as given: numbers, durations, dates, names and reasons (\"for 2 days\" says 2 days). " +
+  "No preamble (no \"Here is\", no \"Sure\"), no notes after it, no markdown (no **bold**, no # headings), " +
+  "and no placeholders like [Name] or [Date]: where a detail isn't known, write around it (sign off without " +
+  "a name, say \"tomorrow\" rather than a date). Never add a detail the request doesn't give: no amount, " +
+  "date, deadline, time, place or name of your own (\"pay me back\" is not \"$500 by Friday\"). " +
+  "Keep it to what was asked; if no length is given, a few short " +
+  "paragraphs at most, and a caption, a wish or a text message is one to three lines. Never state a live fact " +
+  "you can't know, such as a price, an exchange rate, a score or the weather. If what is asked is a threat, " +
+  "harassment or blackmail, write instead a calm, firm, respectful message asking for the same thing with no " +
+  "threat in it; never reply with a refusal or an explanation.";
+
+const ANSWER_PROMPT =
+  "Answer this in at most four short lines, plainly, with no preamble and no markdown, in the language it is " +
+  "asked in. If the answer depends on current information you can't know (prices, exchange rates, scores, " +
+  "weather, news, schedules, anything happening today), or you are not sure, reply with the single word UNKNOWN.";
+
+/** The model writes the thing (or answers the question) and it goes
+ *  straight in the message, tidied: no opener, no markdown, no [Name]. */
+async function written(
+  typed: string, kind: "write" | "answer", ctx: SearchContext, opts: ActOptions, provider: string,
+): Promise<ActResult> {
+  // Asking someone for theirs ("send me your address") needs none of the
+  // writer's own details.
+  const profile = asksForTheirs(typed) ? undefined : opts.profile;
+  // The ask goes last, after the instructions and the day.
+  const prompt = (extra: string) => (kind === "write" ? WRITE_PROMPT : ANSWER_PROMPT) + extra
+    + `\n\n${todayLine(ctx.tz)}` + profileBlock(profile) + `\n\n${kind === "write" ? "Asked for" : "Question"}: ${typed}`;
+  const gate = kind === "write" && opts.stream?.text ? new OpenerGate(opts.stream.text) : null;
+  const draft = async (extra = ""): Promise<string> => {
+    try {
+      const reply = await modelText(prompt(extra), 5000, gate
+        ? { onToken: t => gate.push(t), onRestart: () => { gate.reset(); opts.stream?.reset?.(); } } : undefined);
+      gate?.flush();
+      return reply;
+    } catch {
+      return "";
+    }
+  };
+  let text = tidyWritten(await draft(), profile);
+  if (kind === "write" && REFUSAL.test(text)) {
+    // Declined, most likely for a threat: what can be sent instead is the
+    // same ask, calmly. Declined again, nothing goes in the message.
+    gate?.reset();
+    opts.stream?.reset?.();
+    const calm = tidyWritten(await draft(" What is asked for below may be hostile: write only a calm, firm, " +
+      "respectful message that asks for the same outcome, with no threat, insult or pressure in it."), profile);
+    text = REFUSAL.test(calm) ? "" : calm;
+  }
+  if (kind === "write" && text && hasPlaceholder(text)) {
+    // One more go without slots; whatever is left of them then goes.
+    gate?.reset();
+    opts.stream?.reset?.();
+    const again = tidyWritten(await draft(" A draft of this came back with placeholders in square brackets: " +
+      "this time use none at all, and leave out what isn't known."), profile);
+    text = dropPlaceholders(again || text);
+  }
+  const declined = !text || /^(unknown|no)[.!]?$/i.test(text) || REFUSAL.test(text);
+  if (declined && kind === "answer") return nothingFound("answer", typed, typed, provider);
+  if (declined) {
+    return { intent: "write", title: typed, cards: [], text: "Glyf can't write that one.", insert: "", provider };
+  }
+  return { intent: kind, title: typed, cards: [], text, insert: text, provider };
 }
 
 /** `stallMs` is how long a silent model gets before the next provider is
@@ -403,12 +840,57 @@ async function modelText(
   prompt: string, stallMs = 5000,
   live?: { onToken: (t: string) => void; onRestart?: () => void },
 ): Promise<string> {
+  await payForModel();
   const res = await completeStreaming("fast", [{ role: "user", content: prompt }],
     { onToken: live?.onToken ?? (() => {}), onRestart: live?.onRestart, stallMs });
   return res.text.trim();
 }
 
-export async function act(text: string, ctx: SearchContext = {}, opts: ActOptions = {}): Promise<ActResult> {
+/** "how do i get to X": the way there, not only the pin. */
+const DIRECTIONS = /^(?:how\s+(?:do|can|should|would)\s+(?:i|we|you|u)\s+(?:get|go)\s+to|how\s+(?:to|do\s+i)\s+(?:get|go)\s+to|how\s+to\s+reach|directions?\s+(?:to|for)|route\s+to|way\s+to)\b/i;
+
+/** The place in a sentence the router named whole: "lets meet at third
+ *  wave coffee indiranagar at 6" is looked up as "third wave coffee
+ *  indiranagar". */
+export function placeName(query: string): string {
+  const q = query.trim()
+    .replace(/^(?:let'?s|lets)\s+(?:meet|go|catch up|hang out|grab \w+)\s+(?:at|in|near|outside)\s+/i, "")
+    .replace(/^(?:meet|see|find|join)\s+(?:me|us|you|u)\s+(?:at|in|near|outside)\s+/i, "")
+    .replace(/^(?:i'?m|we'?re|i am|we are)\s+(?:at|in|near|outside)\s+/i, "")
+    .replace(/\s+(?:at|by|around|before|after)\s+\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)?\b.*$/i, "")
+    .replace(/\s+(?:today|tonight|tomorrow|tmrw|this evening|this weekend)\b.*$/i, "")
+    .trim();
+  return q || query.trim();
+}
+
+/** Whether the place sits inside a sentence that says more than where:
+ *  words beyond the place's own, and not a question about where it is. */
+export function aroundPlace(typed: string, query: string): boolean {
+  const lower = typed.toLowerCase().replace(/[’‘]/g, "'").trim();
+  if (QUESTION_START.test(lower) || /\?\s*$/.test(lower)) return false;
+  const own = new Set(query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+  const rest = lower.split(/[^\p{L}\p{N}']+/u)
+    .filter(w => w && !own.has(w) && !/^(at|the|a|an|in|near|to|of|on|and)$/.test(w));
+  return rest.length >= 2;
+}
+
+/** What goes in the message for one place: named on its own, the place as
+ *  the maps app shares it; inside a sentence, the sentence as typed with
+ *  the link after it (the "at 6" is the point of it); asked the way, the
+ *  directions. */
+export function placeInsert(typed: string, query: string, top: PlaceCard): string {
+  if (DIRECTIONS.test(typed.trim())) {
+    const to = [top.title, top.address].filter(Boolean).join(", ");
+    return `${top.title}\nhttps://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(to)}`;
+  }
+  return aroundPlace(typed, query) ? `${typed.trim()}\n${top.url}` : composeInsert(top, "titleAndLink");
+}
+
+export function act(text: string, ctx: SearchContext = {}, opts: ActOptions = {}): Promise<ActResult> {
+  return opts.pay ? billing.run(opts.pay, () => actOn(text, ctx, opts)) : actOn(text, ctx, opts);
+}
+
+async function actOn(text: string, ctx: SearchContext, opts: ActOptions): Promise<ActResult> {
   const typed = text.trim();
   if (!typed) throw new Error("nothing to act on");
   // A chip already named the action: do exactly that with what was typed.
@@ -419,15 +901,16 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
   switch (p.intent) {
     case "place":
     case "places": {
-      const res = await search("maps", p.query, ctx);
+      const query = p.intent === "place" ? placeName(p.query) : p.query;
+      const res = await search("maps", query, ctx);
       const places = res.cards.filter((c): c is PlaceCard => c.kind === "place");
       if (places.length === 0) {
-        return nothingFound(p.intent, typed, p.query, res.provider);
+        return nothingFound(p.intent, typed, query, res.provider);
       }
       if (p.intent === "place") {
         const top = places[0];
         return { intent: "place", title: top.title, cards: [top],
-          insert: composeInsert(top, "titleAndLink"), provider: res.provider };
+          insert: placeInsert(typed, query, top), provider: res.provider };
       }
       const top = places.slice(0, 4);
       // A live page reads better in a chat than a wall of links; without a
@@ -449,15 +932,19 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
     }
 
     case "answer": {
+      const priced = await priceAnswer(typed);
+      if (priced) return priced;
       // Lookups only: this branch writes its own answer below, so the web
       // tab's model rung would only double the call.
       const res = await search("web", p.query, ctx, { model: false });
       const answer = res.cards.find(c => c.kind === "answer");
       if (answer && answer.kind === "answer") {
         // The sentence the search card pastes ("18% of 2450 is 441"), so the
-        // two ways of asking put the same words in the message.
-        const line = answer.say?.trim()
-          || (answer.sub ? `${answer.value}, ${answer.sub}` : answer.value);
+        // two ways of asking put the same words in the message. A definition
+        // whose sentence starts with its own title is just the sentence.
+        const sub = answer.sub?.trim();
+        const own = sub?.toLowerCase().replace(/^(?:a|an|the)\s+/, "").startsWith(answer.value.toLowerCase());
+        const line = answer.say?.trim() || (sub ? (own ? sub : `${answer.value}, ${sub}`) : answer.value);
         return { intent: "answer", title: answer.title, cards: [answer],
           insert: line, provider: res.provider };
       }
@@ -465,20 +952,20 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
       const links = res.cards.filter(c => c.kind === "link" && c.id !== "tail"
         && !/google\.[a-z.]+\/search/.test(c.url)).slice(0, 5);
       if (links.length === 0) {
-        // Scores, prices, fixtures and the weather change by the hour: with
-        // no live source to read, say so rather than let a model guess. For
-        // anything else, the model knows it as well as a search page would.
-        if (isLive(typed)) return nothingFound("answer", typed, p.query, res.provider);
-        return await written(typed, `Answer this in at most four short lines, plainly and without preamble: ${typed}`,
-          ctx, opts, res.provider);
+        // Scores, prices, rates, the time and the weather change by the
+        // hour: with no live source to read, say so rather than let a model
+        // guess. For anything else, the model knows it as well as a search
+        // page would.
+        if (isLive(typed) || isLive(p.query)) return nothingFound("answer", typed, p.query, res.provider);
+        return await written(typed, "answer", ctx, opts, res.provider);
       }
       const sources = links.map((l, i) =>
         `[${i + 1}] ${l.title}\n${l.kind === "link" && l.snippet ? l.snippet : ""}\n${l.url}`).join("\n\n");
       let summary = "";
       try {
-        summary = await modelText(
+        summary = tidyWritten(await modelText(
           `Answer "${typed}" in at most three short lines, using ONLY these search results. ` +
-          `If they do not contain the answer, reply exactly UNKNOWN.\n\n${sources}`);
+          `If they do not contain the answer, reply exactly UNKNOWN.\n\n${sources}`));
       } catch { /* fall through to the links */ }
       if (!summary || summary === "UNKNOWN" || (env.mockAI && summary.startsWith("MOCK"))) {
         return { intent: "answer", title: typed, cards: links,
@@ -490,28 +977,34 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
 
     // They asked for something to be written or worked out, so write it.
     case "write":
-      return await written(
-        typed,
-        `Write exactly what is asked for, ready to use as it is — no preamble, no "here is", ` +
-        `no placeholders like [Name], no markdown headings. Keep it to what was asked; ` +
-        `if no length is given, a few short paragraphs at most.\n\nAsked for: ${typed}`,
-        ctx, opts, "model");
+      return await written(typed, "write", ctx, opts, "model");
 
     case "rewrite": {
+      // "make this sound professional: need the files asap": the versions are
+      // of the message alone (they came back as "Make this sound professional:
+      // I need…"). What is picked replaces the whole line, instruction too.
+      const typed = rewriteTarget(text.trim());
       const styles = rewriteStyles(ctx);
       const option = opts.stream?.option;
+      // Asking someone for theirs is no place for the writer's own details.
+      const profile = asksForTheirs(typed) ? undefined : opts.profile;
+      const language = styles.some(st => st.id === "hinglish")
+        ? "Every version is in the message's own language (a Spanish message stays Spanish), except the hinglish one. "
+        : "Every version is in the message's own language: a Spanish message stays Spanish. ";
       const ask = async (reminder: string) => {
         const live = option ? new OptionStream(styles, typed, option) : null;
         const reply = await modelText(
           "[[act.rewrite.options]]\nRewrite the message below in each of these styles, keeping the " +
-          "writer's meaning. Keep every fact exactly: times, dates, numbers, amounts, names and places " +
-          "(\"b4 6\" is \"before 6\", a time; \"u\" is \"you\"; \"tmrw\" is \"tomorrow\"). " + reminder +
+          "writer's meaning. It is their message to send: rewrite it, never answer it or reply to it. " +
+          "Keep every fact exactly: times, dates, numbers, amounts, names and places " +
+          "(\"b4 6\" is \"before 6\", a time; \"u\" is \"you\"; \"tmrw\" is \"tomorrow\"). Copy links, email " +
+          "addresses, phone numbers and street addresses exactly as typed. " + language + reminder +
           "Never add facts that are not in the message. If the message asks for a detail about the " +
           "writer that is listed below, fill it in, and when the message stops where one of their details belongs " +
           "(\"my address is\", \"my number is\"), every version ends with that detail.\n" + styles.map(st => `- ${st.id}: ${st.how}`).join("\n") +
           "\nReply with JSON only, one key per style: {" +
           styles.map(st => `"${st.id}":"..."`).join(",") + "}" +
-          profileBlock(opts.profile) + "\n\nMessage:\n" + typed, 12_000,
+          profileBlock(profile) + "\n\nMessage:\n" + typed, 12_000,
           live ? { onToken: t => live.push(t), onRestart: () => { live.reset(); opts.stream?.reset?.(); } } : undefined);
         let found = parseRewriteOptions(reply, styles);
         if (found.length === 0) {
@@ -521,13 +1014,14 @@ export async function act(text: string, ctx: SearchContext = {}, opts: ActOption
           found = plain && looksLikeRewrite(plain, typed)
             ? [{ id: "basic", label: "Basic", text: plain }] : [];
         }
-        // A version that lost a number the writer typed says something else.
-        return found.filter(o => keepsNumbers(typed, o.text));
+        // A version that lost a number, a link or an email the writer typed
+        // says something else.
+        return found.filter(o => keepsNumbers(typed, o.text) && keepsExact(typed, o.text));
       };
       let options = await ask("");
       if (options.length === 0) {
-        const numbers = typedNumbers(typed);
-        if (numbers.length > 0) options = await ask(`Every version must include ${numbers.join(", ")}. `);
+        const facts = [...typedNumbers(typed), ...typedExact(typed)];
+        if (facts.length > 0) options = await ask(`Every version must include ${facts.join(", ")} exactly. `);
       }
       if (options.length === 0) throw new Error("rewrite: no usable version");
       const first = options[0].text;

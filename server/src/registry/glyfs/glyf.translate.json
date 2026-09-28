@@ -1,6 +1,6 @@
 {
   "id": "glyf.translate",
-  "version": 2,
+  "version": 3,
   "name": "Translate",
   "icon": "translate",
   "input": "field",
@@ -12,7 +12,7 @@
       "id": "s1",
       "type": "llm",
       "model": "fast",
-      "prompt": "[[translate]]\nThe writer's two languages are {{primary}} and {{secondary}}. Detect the language of the message below. If it is {{primary}}, translate it into {{secondary}}; otherwise translate it into {{primary}}. Keep the tone and register. Reply with ONLY the translation.\n\nMessage:\n{{input}}",
+      "prompt": "[[translate]]\nThe writer's two languages are {{primary}} and {{secondary}}. Work out which language the message below is in. Romanised Hindi or Hinglish typed in Latin letters, like \"kal milte hain\", is Hindi, not English. If the message is in {{primary}}, translate it into {{secondary}}; otherwise translate it into {{primary}}. Keep the tone and register, and leave nothing out, time words included (\"kal\" with a future verb is \"tomorrow\"). Always translate: never send the message back unchanged, and never answer it or reply to it. Reply with ONLY the translation.\n\nMessage:\n{{input}}",
       "out": "final"
     }
   ],

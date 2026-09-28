@@ -1,6 +1,6 @@
 {
   "id": "keyless.define",
-  "version": 1,
+  "version": 2,
   "name": "Define",
   "icon": "character.book.closed",
   "input": "field",
@@ -10,7 +10,7 @@
     "wallet": false
   },
   "discloses": [
-    "the word in your field (sent to a free dictionary API)"
+    "the word in your field (sent to a free dictionary, or to the AI when it is down)"
   ],
   "vars": {},
   "steps": [
@@ -21,6 +21,14 @@
       "args": {
         "word": "{{input}}"
       },
+      "out": "final",
+      "fallback": "s2"
+    },
+    {
+      "id": "s2",
+      "type": "llm",
+      "model": "fast",
+      "prompt": "Define the word below in one line, the way a dictionary does: the word, its part of speech in brackets, then what it means. Nothing else.\n\nWord: {{input}}",
       "out": "final"
     }
   ],

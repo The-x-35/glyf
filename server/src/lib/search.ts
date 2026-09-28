@@ -416,8 +416,8 @@ async function googlePlaces(q: string, ctx: SearchContext): Promise<PlaceCard[]>
       distance: lat !== undefined && lon !== undefined
         && ctx.lat !== undefined && ctx.lon !== undefined
         ? formatDistance(haversine(ctx.lat, ctx.lon, lat, lon)) : undefined,
-      // Proxied so the API key never reaches a client.
-      thumb: photo ? `/search/photo?ref=${encodeURIComponent(photo)}` : undefined,
+      // Proxied so the API key never reaches a client; no photo, its map.
+      thumb: photo ? `/search/photo?ref=${encodeURIComponent(photo)}` : mapThumb(lat, lon),
       url: p.googleMapsUri ?? mapsURL(name, p.id),
       emoji: "📍",
       extra: p.formattedAddress,
@@ -437,19 +437,51 @@ async function googlePlaces(q: string, ctx: SearchContext): Promise<PlaceCard[]>
  *  address, which the renderers already handle.
  */
 const GEOAPIFY_CATEGORIES: [RegExp, string][] = [
-  [/\b(coffee|cafe|café|espresso|barista)\b/i, "catering.cafe"],
-  [/\b(restaurant|food|dinner|lunch|eat)\b/i, "catering.restaurant"],
-  [/\b(bar|pub|brewery|beer)\b/i, "catering.bar"],
-  [/\b(atm|cash)\b/i, "service.financial.atm"],
-  [/\b(bank)\b/i, "service.financial.bank"],
-  [/\b(pharmacy|chemist|medical store)\b/i, "healthcare.pharmacy"],
-  [/\b(hospital|clinic|doctor)\b/i, "healthcare.hospital"],
-  [/\b(petrol|gas station|fuel|diesel)\b/i, "service.vehicle.fuel"],
-  [/\b(hotel|stay|lodge)\b/i, "accommodation.hotel"],
-  [/\b(gym|fitness)\b/i, "sport.fitness"],
-  [/\b(park|garden)\b/i, "leisure.park"],
-  [/\b(supermarket|grocery|groceries)\b/i, "commercial.supermarket"],
-  [/\b(bakery|bread)\b/i, "commercial.food_and_drink.bakery"],
+  // Plurals too: "restaurants open now near me" was looked up by name and
+  // found "Galaxy Open Market".
+  [/\b(coffees?|caf[eé]s?|espresso|barista)\b/i, "catering.cafe"],
+  [/\b(restaurants?|food|dinner|lunch|eat)\b/i, "catering.restaurant"],
+  [/\b(bars?|pubs?|brewery|breweries|beer)\b/i, "catering.bar"],
+  [/\b(atms?|cash)\b/i, "service.financial.atm"],
+  [/\b(banks?)\b/i, "service.financial.bank"],
+  [/\b(pharmacy|pharmacies|chemists?|medical stores?)\b/i, "healthcare.pharmacy"],
+  [/\b(hospitals?|clinics?|doctors?)\b/i, "healthcare.hospital"],
+  [/\b(petrol|gas stations?|fuel|diesel)\b/i, "service.vehicle.fuel"],
+  [/\b(hotels?|stay|lodges?)\b/i, "accommodation.hotel"],
+  [/\b(gyms?|fitness)\b/i, "sport.fitness"],
+  [/\b(parks?|gardens?)\b/i, "leisure.park"],
+  [/\b(supermarkets?|grocery|groceries)\b/i, "commercial.supermarket"],
+  [/\b(bakery|bakeries|bread)\b/i, "commercial.food_and_drink.bakery"],
+];
+
+/** A dish or a cuisine: looked up by name first (a "Biryani House" is what
+ *  "biryani near indiranagar" wants), and by the kind of restaurant when
+ *  names find too little ("pizza in brooklyn" found nothing named pizza). */
+const CUISINES: [RegExp, string][] = [
+  [/\bpizz(?:a|as|eria|erias)\b/i, "catering.restaurant.pizza"],
+  [/\bburgers?\b/i, "catering.restaurant.burger"],
+  [/\bsushi\b/i, "catering.restaurant.sushi"],
+  [/\b(indian|biryani|curry|curries|dosa|thali|tandoori)\b/i, "catering.restaurant.indian"],
+  [/\b(chinese|dim sum|dumplings?)\b/i, "catering.restaurant.chinese"],
+  [/\b(italian|pasta)\b/i, "catering.restaurant.italian"],
+  [/\btacos?\b/i, "catering.restaurant.tacos"],
+  [/\b(mexican|burritos?)\b/i, "catering.restaurant.mexican"],
+  [/\bthai\b/i, "catering.restaurant.thai"],
+  [/\bramen\b/i, "catering.restaurant.ramen"],
+  [/\bjapanese\b/i, "catering.restaurant.japanese"],
+  [/\b(noodles?)\b/i, "catering.restaurant.noodle"],
+  [/\bkorean\b/i, "catering.restaurant.korean"],
+  [/\b(vietnamese|pho)\b/i, "catering.restaurant.vietnamese"],
+  [/\bfrench\b/i, "catering.restaurant.french"],
+  [/\b(seafood|fish)\b/i, "catering.restaurant.seafood"],
+  [/\bsteak(?:house)?s?\b/i, "catering.restaurant.steak_house"],
+  [/\b(kebabs?|shawarma|falafel)\b/i, "catering.restaurant.kebab"],
+  [/\b(bbq|barbecue)\b/i, "catering.restaurant.barbecue"],
+  [/\b(chicken|wings)\b/i, "catering.restaurant.chicken"],
+  [/\bsandwich(?:es)?\b/i, "catering.restaurant.sandwich"],
+  [/\bgreek\b/i, "catering.restaurant.greek"],
+  [/\bfast food\b/i, "catering.fast_food"],
+  [/\b(ice cream|gelato)\b/i, "catering.ice_cream"],
 ];
 
 /** A cash machine is named after the bank that runs it: "Citibank", 330 m
@@ -488,10 +520,22 @@ function geoapifyCard(f: GeoapifyFeature, ctx: SearchContext): PlaceCard[] {
     address,
     lat: p.lat, lon: p.lon,
     distance: metres !== undefined ? formatDistance(metres) : undefined,
+    // OpenStreetMap has no photos: the card shows where it is instead.
+    thumb: mapThumb(p.lat, p.lon),
     url: mapsURL(`${name} ${address ?? ""}`.trim()),
     emoji: "📍",
     extra: address,
   }];
+}
+
+/** A little map of the spot (routes/search.ts proxies Geoapify, so the key
+ *  stays here), for a place with no photo of its own. */
+export function mapThumb(lat?: number, lon?: number): string | undefined {
+  if (lat === undefined || lon === undefined || !Number.isFinite(lat) || !Number.isFinite(lon)) return undefined;
+  if (!process.env.GEOAPIFY_KEY) return undefined;
+  // Square and roomy: Geoapify prints its credit along the bottom, which the
+  // cards crop away (and show once under the list); the pin stays centred.
+  return `/search/staticmap?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}&w=300&h=300`;
 }
 
 async function geoapifyPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[]> {
@@ -499,16 +543,28 @@ async function geoapifyPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[
   if (!key) return [];
   const here = ctx.lat !== undefined && ctx.lon !== undefined;
   const pq = placeQuery(q);
-  const term = pq.where || pq.nearby ? pq.what : q;
+  const term = pq.where || pq.nearby ? pq.what : q.replace(OPEN_NOW, " ").replace(/\s+/g, " ").trim() || q;
+  const categoryRule = GEOAPIFY_CATEGORIES.find(([re]) => re.test(term));
+  const cuisineRule = CUISINES.find(([re]) => re.test(term));
+  // Words beyond the kind of place make it a name: "third wave coffee" is
+  // the chain, "coffee shop" is any cafe.
+  const isName = !!term.replace(categoryRule?.[0] ?? /$^/, " ").replace(cuisineRule?.[0] ?? /$^/, " ")
+    .replace(/\b(shops?|stores?|houses?|joints?|places?|spots?|outlets?|restaurants?|near|nearby|open|now|me)\b/gi, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const category = isName ? undefined : categoryRule?.[1];
+  const cuisine = cuisineRule?.[1];
 
   // "biryani near indiranagar": find the area first, then search around it.
-  let around = here && pq.nearby ? { lat: ctx.lat!, lon: ctx.lon! } : undefined;
+  // A kind of place with no area named ("coffee", "pharmacy") is around the
+  // caller, "near me" or not: it found nothing without those words.
+  let around = here && (pq.nearby || (!pq.where && !isName && (category || cuisine)))
+    ? { lat: ctx.lat!, lon: ctx.lon! } : undefined;
   if (pq.where) {
-    const area = new URLSearchParams({ text: pq.where, limit: "1", apiKey: key });
+    const area = new URLSearchParams({ text: pq.where, limit: "5", apiKey: key });
     if (here) area.set("bias", `proximity:${ctx.lon},${ctx.lat}`);
     const found = await json<{ features?: GeoapifyFeature[] }>(
       `https://api.geoapify.com/v1/geocode/search?${area}`, 7000).catch(() => null);
-    const p = found?.features?.[0]?.properties;
+    const p = pickArea(found?.features ?? []);
     if (p?.lat !== undefined && p?.lon !== undefined) around = { lat: p.lat, lon: p.lon };
   }
   // Distances are always from the caller, not from the area searched.
@@ -517,7 +573,6 @@ async function geoapifyPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[
 
   // "coffee near me" is a CATEGORY query — Places answers it properly and
   // returns the distance for us. A named place goes to geocoding instead.
-  const category = GEOAPIFY_CATEGORIES.find(([re]) => re.test(term))?.[1];
   if (around && category) {
     const data = await json<{ features?: GeoapifyFeature[] }>(
       "https://api.geoapify.com/v2/places?" + new URLSearchParams({
@@ -529,6 +584,10 @@ async function geoapifyPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[
     const rows = cards(data.features ?? []);
     if (rows.length) return rows.map(r => ({ ...r, title: withCategory(r.title, category) }));
   }
+  // A kind of place ("coffee", "atm near me") with nowhere to look around:
+  // looking the word up as a name finds towns called Coffee. Nothing, so
+  // the keyboard can say to turn on Nearby search.
+  if (category && !around) return [];
 
   const params = new URLSearchParams({ text: term, limit: "8", apiKey: key });
   const bias = around ?? (here ? { lat: ctx.lat!, lon: ctx.lon! } : undefined);
@@ -536,7 +595,38 @@ async function geoapifyPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[
   if (around) params.set("filter", `circle:${around.lon},${around.lat},5000`);
   const data = await json<{ features?: GeoapifyFeature[] }>(
     `https://api.geoapify.com/v1/geocode/search?${params}`, 7000);
-  return cards(data.features ?? []).slice(0, 6);
+  const named = cards(data.features ?? []).slice(0, 6);
+  // Few places named after the dish: the restaurants that serve it.
+  if (named.length >= 3 || !cuisine || !around) return named;
+  const served = await json<{ features?: GeoapifyFeature[] }>(
+    "https://api.geoapify.com/v2/places?" + new URLSearchParams({
+      categories: cuisine,
+      filter: `circle:${around.lon},${around.lat},5000`,
+      bias: `proximity:${around.lon},${around.lat}`,
+      limit: "8", apiKey: key,
+    }), 7000).catch(() => ({ features: [] as GeoapifyFeature[] }));
+  const seen = new Set(named.map(c => c.title.toLowerCase()));
+  const more = cards(served.features ?? []).filter(c => !seen.has(c.title.toLowerCase()));
+  return [...named, ...more].slice(0, 6);
+}
+
+/** The area a query names: the most notable place of that name, with a head
+ *  start for the one nearest the caller. From New York, "paris" is Paris,
+ *  France (notability 0.90), not Paris, NY (0.45, but first by distance);
+ *  "brooklyn" is still Brooklyn, NY, and a neighbourhood like "indiranagar"
+ *  the one nearby. */
+export function pickArea<T extends { properties?: { lat?: number; lon?: number; rank?: { importance?: number } } }>(
+  features: T[],
+): T["properties"] | undefined {
+  let best: T["properties"] | undefined;
+  let bestScore = -Infinity;
+  features.forEach((f, i) => {
+    const p = f.properties;
+    if (p?.lat === undefined || p?.lon === undefined) return;
+    const score = (p.rank?.importance ?? 0) + (i === 0 ? 0.2 : 0);
+    if (score > bestScore) { bestScore = score; best = p; }
+  });
+  return best;
 }
 
 /** "coffee near me" is a category query, not a name query. OSM has no such
@@ -563,6 +653,9 @@ const OSM_TAGS: [RegExp, string][] = [
 ];
 
 const NEARBY = /\b(near|around|close to)\s+(me|here|by)\b|\bnearby\b|\bnear me\b/i;
+/** "open now", "open late": how people ask, never part of a name ("Galaxy
+ *  Open Market" was found for "restaurants open now near me"). */
+const OPEN_NOW = /\b(?:that (?:are|is) )?open(?: right)? (?:now|today|tonight|late|24 hours|24\/7)(?=\s|$)|\bthat (?:are|is) open\b/gi;
 
 export interface PlaceQuery {
   /** What to look for: "biryani", "atm", or the whole name for a named place. */
@@ -579,7 +672,10 @@ export interface PlaceQuery {
 export function placeQuery(q: string): PlaceQuery {
   const raw = q.trim().replace(/\s+/g, " ");
   const nearby = NEARBY.test(raw) || /\b(nearest|closest)\b/i.test(raw);
-  let t = raw.replace(NEARBY, " ").replace(/\b(nearest|closest)\b/gi, " ").replace(/\s+/g, " ").trim();
+  let t = raw.replace(NEARBY, " ").replace(/\b(nearest|closest)\b/gi, " ")
+    // "open now" is how people ask, never part of a name ("Galaxy Open Market").
+    .replace(OPEN_NOW, " ")
+    .replace(/\s+/g, " ").trim();
   let where: string | undefined;
   const m = t.match(/^(.+?)\s+(?:near|in|around|close to)\s+(.+)$/i);
   if (m && !/^(me|here|by)$/i.test(m[2].trim())) {
@@ -888,6 +984,8 @@ export async function search(
     ctx.lat !== undefined ? ctx.lat.toFixed(2) : "", // ~1km buckets
     ctx.lon !== undefined ? ctx.lon.toFixed(2) : "",
     ctx.country ?? "",
+    // "What time is it" and "sunset" read the caller's own clock.
+    ctx.tz ?? "",
     // A lookups-only answer must not be handed to a caller who may ask the model.
     opts.model === false ? "lookups" : "",
   ]);
@@ -901,8 +999,10 @@ export async function search(
   // no result cache. Every other provider we use permits a short one. A web
   // search nobody answered cost nothing and may have been a refused run, so
   // it is not kept either: the next try should get to ask again.
-  const empty = vertical === "web" && out.provider === "none";
-  if (out.provider !== "brave" && !empty) cache.set(key, JSON.stringify(out));
+  const empty = vertical === "web" && out.provider === "none" && !out.cards.some(c => c.kind === "answer");
+  // The clock is never replayed: ten minutes on, "It's 4:26 PM" is wrong.
+  const clock = out.cards.some(c => c.kind === "answer" && c.id === "time");
+  if (out.provider !== "brave" && !empty && !clock) cache.set(key, JSON.stringify(out));
   return out;
 }
 
@@ -981,7 +1081,7 @@ export async function searchNearby(
       lat: pLat, lon: pLon,
       distance: pLat !== undefined && pLon !== undefined
         ? formatDistance(haversine(lat, lon, pLat, pLon)) : undefined,
-      thumb: photo ? `/search/photo?ref=${encodeURIComponent(photo)}` : undefined,
+      thumb: photo ? `/search/photo?ref=${encodeURIComponent(photo)}` : mapThumb(pLat, pLon),
       url: p.googleMapsUri ?? mapsURL(name, p.id),
       emoji: "📍",
       extra: p.formattedAddress,

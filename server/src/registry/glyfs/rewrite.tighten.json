@@ -1,6 +1,6 @@
 {
   "id": "rewrite.tighten",
-  "version": 1,
+  "version": 2,
   "name": "Tighten",
   "icon": "scissors",
   "input": "field",
@@ -12,7 +12,7 @@
       "id": "s1",
       "type": "llm",
       "model": "fast",
-      "prompt": "[[tighten]]\nRewrite the message below in as few words as possible without losing meaning or tone. Same language. Reply with ONLY the rewritten text.\n\nMessage:\n{{input}}",
+      "prompt": "[[tighten]]\nRewrite the message below in as few words as possible without losing meaning or tone. Same language. A message of three words or fewer is already as short as it gets: send it back exactly as it is. Every word that carries meaning stays (\"k thx\" keeps its thanks). It is their message: never answer it or reply to it. Reply with ONLY the rewritten text.\n\nMessage:\n{{input}}",
       "out": "final"
     }
   ],

@@ -1,11 +1,11 @@
 {
   "id": "keyless.quote",
-  "version": 1,
+  "version": 2,
   "name": "Quote lookup",
   "icon": "chart.line.uptrend.xyaxis",
   "input": "field",
   "requires": { "fullAccess": true, "connectors": [], "wallet": false },
-  "discloses": ["the ticker in your field (sent to CoinGecko)"],
+  "discloses": ["the coin or ticker in your field (sent to Jupiter)"],
   "vars": {},
   "steps": [
     { "id": "s1", "type": "tool", "tool": "quote.crypto", "args": { "symbol": "{{input}}" }, "out": "final" }

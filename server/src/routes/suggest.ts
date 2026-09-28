@@ -1,9 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { needsTidy, planByRules, type ActIntent } from "../lib/act.js";
+import { checkPlan, needsTidy, planByRules, type ActIntent } from "../lib/act.js";
 import type { Guard } from "../lib/guard.js";
 import { TTLCache } from "../lib/cache.js";
-import { DETAIL_KINDS, detailByRules, type DetailKind } from "../lib/details.js";
+import { DETAIL_KINDS, detailNamed, type DetailKind } from "../lib/details.js";
 import { readTyping } from "../lib/reading.js";
 
 /**
@@ -77,17 +77,26 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
     if (hit !== undefined) {
       suggestion = JSON.parse(hit) as Suggestion;
     } else {
-      const field = detailByRules(text, kinds);
+      const named = detailNamed(text);
+      const field = named && kinds.includes(named) ? named : null;
       const byRules = field ? null : planByRules(text);
       if (field || byRules) {
         suggestion = suggestionFor(text, byRules?.intent ?? null, field, byRules?.query);
+      } else if (named) {
+        // The words ask for a detail this person never saved ("my sol
+        // address is", no wallet): nothing to offer, and no model guessing
+        // their home address instead.
+        suggestion = null;
       } else if (needsTidy(text)) {
         suggestion = suggestionFor(text, "rewrite", null);
       } else {
         const gate = await guard.suggest(req, parsed.data.deviceId);
         if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
         const read = await readTyping(text, kinds);
-        suggestion = suggestionFor(text, read?.intent ?? null, read?.field ?? null);
+        // The same second look hold space gives the router's word: "can u
+        // send me the invoice" is a message to tidy, not something to write.
+        const intent = read?.intent ? checkPlan({ intent: read.intent, query: text }, text).intent : null;
+        suggestion = suggestionFor(text, intent, read?.field ?? null);
       }
       cache.set(key, JSON.stringify(suggestion));
     }

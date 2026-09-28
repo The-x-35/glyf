@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { composeInsert } from "../src/lib/searchcards.js";
-import { evaluateMath, instantAnswer, isLive, locationFitsZone } from "../src/lib/answers.js";
+import { evaluateMath, instantAnswer, isLive, liveAsk, locationFitsZone, moneyAsked, pickPlace } from "../src/lib/answers.js";
 import { env } from "../src/env.js";
-import { aiAnswer, formatDistance, formatDuration, nameMatch, placeQuery, search } from "../src/lib/search.js";
+import { aiAnswer, formatDistance, formatDuration, nameMatch, pickArea, placeQuery, search } from "../src/lib/search.js";
 import { clockIn, sunTimes } from "../src/lib/sun.js";
 
 /** §6.12 search suite — the pure logic behind the Search / YouTube / Maps
@@ -243,5 +243,98 @@ describe("the web tab without a search key", () => {
       if (before.brave !== undefined) process.env.BRAVE_SEARCH_KEY = before.brave;
       if (before.serper !== undefined) process.env.SERPER_API_KEY = before.serper;
     }
+  });
+});
+
+describe("the time, the sun and the weather, asked for (routing audit, 2026-09-28)", () => {
+  it("reads what was asked and where", () => {
+    expect(liveAsk("what time is it")).toEqual({ kind: "time", day: 0 });
+    expect(liveAsk("what time is it in tokyo")).toEqual({ kind: "time", place: "tokyo", day: 0 });
+    expect(liveAsk("time in tokyo")).toEqual({ kind: "time", place: "tokyo", day: 0 });
+    expect(liveAsk("sunset in paris")).toEqual({ kind: "sunset", place: "paris", day: 0 });
+    expect(liveAsk("weather in bangalore tomorrow")).toEqual({ kind: "weather", place: "bangalore", day: 1 });
+    expect(liveAsk("will it rain tomorrow")).toEqual({ kind: "rain", day: 1 });
+    expect(liveAsk("is it going to rain today")).toEqual({ kind: "rain", day: 0 });
+    expect(liveAsk("bangalore weather")).toEqual({ kind: "weather", place: "bangalore", day: 0 });
+    expect(liveAsk("when does the sun set in goa")).toEqual({ kind: "sunset", place: "goa", day: 0 });
+  });
+
+  it("leaves a message that only mentions one alone", () => {
+    for (const t of ["write a caption for my beach sunset photo", "perfect weather for a picnic", "weather was great",
+      "stuck in the rain", "time in my life", "sorry cant join standup today my son has a temperature",
+      "what's the weather like where you are"]) {
+      expect(liveAsk(t), t).toBeNull();
+    }
+  });
+
+  it("answers the caller's own clock, and never replays it", async () => {
+    const card = await instantAnswer("what time is it", { tz: "Asia/Kolkata" });
+    expect(card?.id).toBe("time");
+    expect(card?.say).toMatch(/^It's \d{1,2}:\d{2}\s[AP]M$/);
+  });
+
+  it("picks the place people mean by a name", () => {
+    const paris = [
+      { name: "Paris", latitude: 33.66, longitude: -95.55, country_code: "US", population: 24782, feature_code: "PPLA2" },
+      { name: "Paris", latitude: 48.85, longitude: 2.35, country_code: "FR", population: 2138551, feature_code: "PPLC" },
+    ];
+    expect(pickPlace("Paris", paris, "US")?.country_code).toBe("FR");
+    const kochi = [
+      { name: "Kochi", latitude: 33.56, longitude: 133.53, country_code: "JP", population: 332059, feature_code: "PPLA" },
+      { name: "Kochi", latitude: 9.94, longitude: 76.26, country_code: "IN", population: 633553, feature_code: "PPL" },
+    ];
+    expect(pickPlace("Kochi", kochi, "IN")?.country_code).toBe("IN");
+    expect(pickPlace("Nowhere", [], "IN")).toBeNull();
+  });
+});
+
+describe("money in other money", () => {
+  it("reads names, symbols and codes", () => {
+    expect(moneyAsked("50 euros in dollars")).toEqual({ amount: 50, from: "EUR", to: "USD" });
+    expect(moneyAsked("$100 in inr")).toEqual({ amount: 100, from: "USD", to: "INR" });
+    expect(moneyAsked("how much is 1 sol in euros")).toEqual({ amount: 1, from: "SOL", to: "EUR" });
+    expect(moneyAsked("100 usd to inr")).toEqual({ amount: 100, from: "USD", to: "INR" });
+    expect(moneyAsked("usd to inr")).toEqual({ amount: 1, from: "USD", to: "INR" });
+    expect(moneyAsked("10 lakh rupees to dollars")).toEqual({ amount: 1_000_000, from: "INR", to: "USD" });
+    expect(moneyAsked("a bitcoin in rupees")).toEqual({ amount: 1, from: "BTC", to: "INR" });
+  });
+
+  it("leaves everything else alone", () => {
+    for (const t of ["meet at 5 in the lobby", "10 km in miles", "i owe you 50 dollars in cash", "5 in 10", "dollars"]) {
+      expect(moneyAsked(t), t).toBeNull();
+    }
+  });
+
+  it("is live, so no model ever states a rate", () => {
+    expect(isLive("50 euros in dollars")).toBe(true);
+    expect(isLive("sunset in paris")).toBe(true);
+    expect(isLive("capital of peru")).toBe(false);
+  });
+});
+
+describe("places people name", () => {
+  it("takes the famous one of a name, and the one nearby when it is close", () => {
+    // From New York, "paris" came back as Paris, NY: the first, by distance.
+    const paris = pickArea([
+      { properties: { lat: 42.9, lon: -75.3, rank: { importance: 0.45 } } },   // Paris, NY
+      { properties: { lat: 48.86, lon: 2.35, rank: { importance: 0.9 } } },    // Paris, France
+    ]);
+    expect(paris?.lat).toBe(48.86);
+    const brooklyn = pickArea([
+      { properties: { lat: 40.65, lon: -73.95, rank: { importance: 0.74 } } },
+      { properties: { lat: 41.8, lon: -71.9, rank: { importance: 0.42 } } },
+    ]);
+    expect(brooklyn?.lat).toBe(40.65);
+    const indiranagar = pickArea([
+      { properties: { lat: 12.97, lon: 77.64, rank: { importance: 0.15 } } },
+      { properties: { lat: 11.4, lon: 78.2, rank: { importance: 0.13 } } },
+    ]);
+    expect(indiranagar?.lat).toBe(12.97);
+  });
+
+  it("reads 'open now' as how people ask, never as a name", () => {
+    expect(placeQuery("restaurants open now near me")).toMatchObject({ what: "restaurants", nearby: true });
+    expect(placeQuery("pizza in brooklyn")).toMatchObject({ what: "pizza", where: "brooklyn" });
+    expect(placeQuery("open mic nights in brooklyn")).toMatchObject({ what: "open mic nights", where: "brooklyn" });
   });
 });

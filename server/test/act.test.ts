@@ -1,7 +1,10 @@
 import { signedInApp } from "./helpers.js";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { keepsNumbers, listInsert, looksLikeRewrite, mathQuestion, parsePlan, parseRewriteOptions, planByRules, rewriteStyles } from "../src/lib/act.js";
+import { aroundPlace, checkPlan, dropPlaceholders, hasPlaceholder, keepsExact, keepsNumbers, listInsert, looksLikeRewrite,
+  mathQuestion, needsTidy, parsePlan, parseRewriteOptions, placeInsert, placeName, planByRules, priceAsked, rewriteStyles, rewriteTarget,
+  searchLike, tidyWritten, todayLine } from "../src/lib/act.js";
+import { lastOutboundForTests } from "../src/providers/openrouter.js";
 import { withCategory } from "../src/lib/search.js";
 import type { PlaceCard } from "../src/lib/searchcards.js";
 import { renderPage } from "../src/lib/pages.js";
@@ -12,6 +15,174 @@ import { renderPage } from "../src/lib/pages.js";
 beforeAll(() => {
   env.mockAI = true;               // model calls burn zero quota
   process.env.MOCK_AI = "true";    // search providers answer from fixtures
+});
+
+describe("everyday asks the rules answer without a model (2026-09-28 audit)", () => {
+  it("hears a price asked for, and only for a coin or stock", () => {
+    for (const t of ["price of sol", "sol price", "how much is 1 sol", "aapl stock price", "whats tesla trading at",
+      "what is the price of bitcoin?", "$sol", "price of pepe coin"]) {
+      expect(priceAsked(t), t).not.toBeNull();
+      expect(planByRules(t)?.intent, t).toBe("answer");
+    }
+    for (const t of ["how much is rent", "ticket price", "what is the house price", "price of petrol", "how much is it"]) {
+      expect(priceAsked(t), t).toBeNull();
+    }
+  });
+
+  it("writes a letter or a wish asked for by name", () => {
+    for (const t of ["leave application for 2 days fever", "birthday wish for my sister", "resignation letter",
+      "email to my landlord about the leak", "sick leave mail for tomorrow"]) {
+      expect(planByRules(t)?.intent, t).toBe("write");
+    }
+    // Telling someone about one is a message, not an ask.
+    expect(planByRules("I sent my leave application yesterday")).toBeNull();
+  });
+});
+
+describe("a message stays a message (routing audit, 2026-09-28)", () => {
+  it("never turns a message that mentions food, a video or a time into a lookup", () => {
+    for (const t of ["had a great dinner with u last night, thanks", "did u see the video i sent u",
+      "my leave application got approved lets party", "sorry cant join standup today my son has a temperature",
+      "are you free for lunch tomorrow?", "this song is stuck in my head", "we should get the best pizza in town tonight",
+      "give me a call when you're free", "plan for tomorrow is set, see u", "list of things i need from the store: milk, eggs",
+      "make sure you bring the keys", "great lunch today", "best dinner ever", "the pizza here is good",
+      "perfect weather for a picnic", "birthday wishes to you too", "lets meet at third wave coffee indiranagar at 6"]) {
+      expect(planByRules(t), t).toBeNull();
+    }
+  });
+
+  it("still routes what is asked the way a search or a request is", () => {
+    const cases: [string, string][] = [
+      ["write a caption for my beach sunset photo", "write"], ["give me 5 captions for this photo", "write"],
+      ["suggest names for my cat", "write"], ["plan a 3 day trip to goa", "write"],
+      ["thank you note for my teacher", "write"], ["what time is it", "answer"], ["time in tokyo", "answer"],
+      ["sunset in paris", "answer"], ["will it rain tomorrow", "answer"], ["weather in bangalore tomorrow", "answer"],
+      ["50 euros in dollars", "answer"], ["$100 in inr", "answer"], ["how much is 1 sol in euros", "answer"],
+      ["cafes in indiranagar", "places"], ["best biryani near indiranagar", "places"], ["good hotels in goa", "places"],
+      ["send me the dune part 2 trailer", "video"], ["funny cat videos", "video"], ["nearest metro station", "place"],
+    ];
+    for (const [t, intent] of cases) expect(planByRules(t)?.intent, t).toBe(intent);
+  });
+
+  it("reads a search as a search and a chat as a chat", () => {
+    expect(searchLike("best biryani near indiranagar")).toBe(true);
+    expect(searchLike("cafes near me")).toBe(true);
+    expect(searchLike("which is the best cafe in indiranagar")).toBe(true);
+    expect(searchLike("the pizza here is good")).toBe(false);
+    expect(searchLike("had a great dinner with u")).toBe(false);
+    expect(searchLike("great lunch today!")).toBe(false);
+  });
+
+  it("gives a question no tidy-up, and leaves other languages to the model", () => {
+    for (const t of ["whats the capital of australia", "how do i get to indiranagar metro station",
+      "is it going to rain today", "can u send me the invoice asap", "did u see the video i sent u",
+      "hola no voy a poder ir a la cena hoy lo siento mucho", "bhai kal ka plan cancel kar de yaar mood nahi hai"]) {
+      expect(needsTidy(t), t).toBe(false);
+    }
+    // A link's "?" is no question.
+    expect(needsTidy("pls review the draft at https://docs.example.com/d/1?usp=sharing by fri")).toBe(true);
+  });
+
+  it("rewrites the message after an instruction, and writes a text asked for by name", () => {
+    expect(rewriteTarget("make this sound professional: need the files asap")).toBe("need the files asap");
+    expect(rewriteTarget("fix grammar: i has a apple")).toBe("i has a apple");
+    expect(rewriteTarget("note: meeting at 5")).toBe("note: meeting at 5");
+    expect(rewriteTarget("ya ok will send deck b4 6")).toBe("ya ok will send deck b4 6");
+    expect(planByRules("apology text to my friend for missing her party")?.intent).toBe("write");
+    expect(planByRules("birthday text for my dad")?.intent).toBe("write");
+    expect(planByRules("happy anniversary message for my wife")?.intent).toBe("write");
+    expect(planByRules("translate thank you so much to hindi")?.intent).toBe("write");
+    expect(planByRules("how to make pancakes")?.intent).toBe("video");
+  });
+
+  it("takes a second look at what the router says", () => {
+    expect(checkPlan({ intent: "write", query: "x" }, "can u send me the invoice asap").intent).toBe("rewrite");
+    expect(checkPlan({ intent: "video", query: "x" }, "this song is stuck in my head").intent).toBe("rewrite");
+    // Asked of a friend, in Hindi or English, never of Glyf (it once answered
+    // "bhai kidhar hai tu" with "I am an AI without a physical location").
+    for (const text of ["bhai kidhar hai tu", "tum kab aa rahe ho", "aap kaise ho", "where r u bro", "yaar kitna time lagega"]) {
+      expect(checkPlan({ intent: "answer", query: text }, text).intent, text).toBe("rewrite");
+    }
+    for (const text of ["who is the ceo of tesla", "how tall is the eiffel tower", "what does fomo mean"]) {
+      expect(checkPlan({ intent: "answer", query: text }, text).intent, text).toBe("answer");
+    }
+    // A song's title may hold a "you"; a message about a song is still a message.
+    expect(checkPlan({ intent: "video", query: "x" }, "ed sheeran shape of you").intent).toBe("video");
+    expect(checkPlan({ intent: "video", query: "x" }, "this song is stuck in my head").intent).toBe("rewrite");
+    expect(checkPlan({ intent: "video", query: "x" }, "did u see the video i sent u").intent).toBe("rewrite");
+    expect(checkPlan({ intent: "place", query: "x" }, "had a great dinner at toit last night").intent).toBe("rewrite");
+    expect(checkPlan({ intent: "answer", query: "x" }, "r u free tmrw").intent).toBe("rewrite");
+    expect(checkPlan({ intent: "place", query: "x" }, "how do i get to indiranagar metro station").intent).toBe("place");
+    expect(checkPlan({ intent: "write", query: "x" }, "a toast for my sister's wedding").intent).toBe("write");
+    expect(checkPlan({ intent: "answer", query: "x" }, "can you tell me the time in tokyo").intent).toBe("answer");
+    expect(checkPlan({ intent: "answer", query: "x" }, "whats up").intent).toBe("rewrite");
+    expect(checkPlan({ intent: "answer", query: "x" }, "ok").intent).toBe("rewrite");
+    expect(checkPlan({ intent: "answer", query: "x" }, "whats up with the stock market today").intent).toBe("answer");
+  });
+});
+
+describe("a place inside a sentence", () => {
+  const top: PlaceCard = { kind: "place", id: "p", title: "Third Wave Coffee Roasters",
+    address: "12th Main Road, Indiranagar", url: "https://www.google.com/maps/search/?api=1&query=Third+Wave" };
+
+  it("looks up the place, not the sentence", () => {
+    expect(placeName("lets meet at third wave coffee indiranagar at 6")).toBe("third wave coffee indiranagar");
+    expect(placeName("see you at Blue Tokai tomorrow at 5pm")).toBe("Blue Tokai");
+    expect(placeName("Third Wave Coffee, Indiranagar")).toBe("Third Wave Coffee, Indiranagar");
+  });
+
+  it("keeps the sentence and adds the link; a name alone is the place; a way asked is directions", () => {
+    expect(placeInsert("lets meet at third wave coffee indiranagar at 6", "third wave coffee indiranagar", top))
+      .toBe(`lets meet at third wave coffee indiranagar at 6\n${top.url}`);
+    expect(placeInsert("third wave coffee indiranagar", "third wave coffee indiranagar", top))
+      .toBe(`${top.url}\nThird Wave Coffee Roasters`);
+    expect(placeInsert("how do i get to third wave indiranagar", "third wave indiranagar", top))
+      .toMatch(/^Third Wave Coffee Roasters\nhttps:\/\/www\.google\.com\/maps\/dir\/\?api=1&destination=/);
+    expect(aroundPlace("where is third wave coffee indiranagar", "third wave coffee indiranagar")).toBe(false);
+  });
+});
+
+describe("what is written goes in the chat as it is", () => {
+  it("drops openers, notes and markdown, but not a wish that starts with Here's", () => {
+    expect(tidyWritten("Sure! Here's a caption for your beach sunset photo:\n\n**Chasing sunsets** 🌅\n\nFeel free to adjust!"))
+      .toBe("Chasing sunsets 🌅");
+    expect(tidyWritten("Here's to a wonderful year ahead!")).toBe("Here's to a wonderful year ahead!");
+    expect(tidyWritten("Regards,\n[Your Name]", { name: "Arpit" })).toBe("Regards,\nArpit");
+  });
+
+  it("finds and, as a last resort, removes placeholders", () => {
+    expect(hasPlaceholder("Dear [Manager's Name],")).toBe(true);
+    expect(hasPlaceholder("see [the doc](https://x.y)")).toBe(false);
+    expect(dropPlaceholders("Dear [Manager's Name],\n\nI will be on leave on [Date] for an appointment.\n\nRegards,\n[Your Name]"))
+      .toBe("Hello,\n\nI will be on leave for an appointment.\n\nRegards,");
+    expect(dropPlaceholders("Subject: Leave Application - [Your Name]\n\nHi,")).toBe("Subject: Leave Application\n\nHi,");
+  });
+
+  it("dates a write where the writer is", () => {
+    const at = new Date("2026-09-28T20:00:00Z");
+    expect(todayLine("Asia/Kolkata", at)).toBe(
+      "Today is Tuesday, September 29, 2026, 1:30 AM where the writer is; tomorrow is Wednesday, September 30, 2026.");
+    expect(todayLine("Not/AZone", at)).toContain("Monday, September 28, 2026");
+  });
+
+  it("keeps links and email addresses letter for letter", () => {
+    const typed = "pls review https://docs.example.com/d/1AbC?usp=sharing and mail priya.k@acme.io";
+    expect(keepsExact(typed, "Please review https://docs.example.com/d/1AbC?usp=sharing and email priya.k@acme.io.")).toBe(true);
+    expect(keepsExact(typed, "Please review the doc and email Priya.")).toBe(false);
+  });
+});
+
+describe("POST /act, what is written", () => {
+  it("never pastes a refusal, and asks for someone's details without filling in the writer's", async () => {
+    const app = signedInApp();
+    const res = await app.inject({ method: "POST", url: "/act", payload: {
+      text: "write a message asking my landlord for his email address", deviceId: "write-dev-00000002",
+      profile: { email: "me@example.com" } } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().intent).toBe("write");
+    // The mock echoes the prompt's last line: the ask, with no profile before it.
+    expect(lastOutboundForTests.at(-1)?.content).not.toContain("me@example.com");
+  });
 });
 
 describe("planByRules", () => {
@@ -132,15 +303,27 @@ describe("POST /act", () => {
     expect(body.insert).toBe(body.text);
   });
 
-  it("is metered like any other AI run", async () => {
+  it("spends a run only when the model is asked", async () => {
     env.freeRunsPerDay = 1;
     const app = signedInApp();
-    const send = () => app.inject({ method: "POST", url: "/act",
-      payload: { text: "sunset", deviceId: "metered-device-act" } });
-    expect((await send()).statusCode).toBe(200);
-    const blocked = await send();
+    const send = (text: string, stream = false) => app.inject({ method: "POST", url: "/act",
+      payload: { text, deviceId: "metered-device-act", stream } });
+    // Worked out without a model: free, however many times.
+    for (const text of ["2+5", "sunset", "2+5"]) expect((await send(text)).statusCode).toBe(200);
+    // A tidy-up asks the model: the day's one run, then the refusal.
+    const tidied = await send("hey im late dont order without me");
+    expect(tidied.statusCode).toBe(200);
+    expect(tidied.json().remaining).toBe(0);
+    const blocked = await send("ya ok will send the deck b4 6");
     expect(blocked.statusCode).toBe(429);
     expect(blocked.json().error).toContain("used up");
+    const streamed = await send("ya ok will send the deck b4 6", true);
+    expect(streamed.body).toContain("event: error");
+    expect(streamed.body).toContain("used up");
+    // Still free once the runs are gone.
+    const sum = await send("2+5");
+    expect(sum.statusCode).toBe(200);
+    expect(sum.json().intent).toBe("answer");
   });
 
   it("serves static maps only for real coordinates, and only with a key", async () => {

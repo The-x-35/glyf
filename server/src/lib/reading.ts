@@ -24,9 +24,9 @@ intent is one of:
 place: they name one specific place to share, "lets meet at Blue Tokai Indiranagar"
 places: they want options or recommendations, "any good italian places in koramangala"
 answer: it needs a live fact: scores, schedules, prices, news, "who is"
-video: they mention a video, song or trailer
+video: they want a video, song or trailer found, "dune part 2 trailer"
 write: they ask for something to be written or worked out, "write a birthday message for my mom"
-rewrite: an ordinary message to someone, nothing to look up${kinds.length ? `
+rewrite: an ordinary message to someone, even one that mentions food, a video, a place or the weather ("had a great dinner with u, thanks", "did u see the video i sent"), nothing to look up${kinds.length ? `
 field: one of ${kinds.join(", ")} when the message leads straight into sharing their OWN one ("drop it off at", "here's how to reach me", "pay me on"), else "none". Asking someone for theirs is "none"` : ""}
 Typed: """${text.replace(/"""/g, "'")}"""`;
 

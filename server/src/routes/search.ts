@@ -4,6 +4,7 @@ import type { Guard } from "../lib/guard.js";
 import type { KV } from "../lib/store.js";
 import { z } from "zod";
 import { search, searchProviders } from "../lib/search.js";
+import { drawAhead, drawMap, mapAsk } from "../lib/staticmap.js";
 import { suggest } from "../lib/suggest.js";
 
 /** The search suite's own endpoint. `/tools/run` stays as it is — glyf chains
@@ -24,6 +25,9 @@ const BodySchema = z.object({
   lon: z.number().min(-180).max(180).optional(),
   country: z.string().length(2).optional(),
   tz: z.string().max(64).optional(),
+  /** Whether the keyboard is dark, so a maps search can draw its places'
+   *  maps in the theme the keyboard will ask for before it asks. */
+  dark: z.boolean().optional(),
 });
 
 export function searchRoutes(app: FastifyInstance, kv: KV, guard: Guard): void {
@@ -43,7 +47,7 @@ export function searchRoutes(app: FastifyInstance, kv: KV, guard: Guard): void {
       req.log.warn({ issues: parsed.error.issues }, "search bad request");
       return reply.code(400).send({ error: "bad request" });
     }
-    const { vertical, query, deviceId, lat, lon, country, tz } = parsed.data;
+    const { vertical, query, deviceId, lat, lon, country, tz, dark } = parsed.data;
     try {
       const result = await search(vertical, query, {
         lat, lon, country: country?.toUpperCase(), tz,
@@ -52,12 +56,12 @@ export function searchRoutes(app: FastifyInstance, kv: KV, guard: Guard): void {
         // left gets the Google row instead of a guess.
         model: async () => (await guard.spend(req, deviceId)).ok,
       });
+      if (vertical === "maps" && dark !== undefined) drawAhead(result.cards, dark);
       return { ok: true, ...result };
     } catch (err) {
-      return reply.code(502).send({
-        ok: false,
-        error: err instanceof Error ? err.message : "search failed",
-      });
+      // What broke is ours to read in the log; the phone gets a plain line.
+      req.log.warn({ vertical, err: err instanceof Error ? err.message : String(err) }, "search failed");
+      return reply.code(502).send({ ok: false, error: "Search isn't working right now. Try again." });
     }
   });
 
@@ -80,33 +84,18 @@ export function searchRoutes(app: FastifyInstance, kv: KV, guard: Guard): void {
     return reply.send(Buffer.from(await upstream.arrayBuffer()));
   });
 
-  /** A static map for a place result (Android draws it; iOS snapshots
-   *  MapKit itself). Only two numbers cross the wire — never a caller URL —
-   *  and Geoapify's key stays here. No key → 404 and the card keeps its pin. */
+  /** A place card's map, for a place with no photo (both keyboards). Only
+   *  numbers cross the wire, never a caller's URL, and Geoapify's key stays
+   *  here. No key → 404 and the card keeps its pin. Drawn maps are kept a
+   *  while (lib/staticmap.ts). */
   app.get("/search/staticmap", async (req, reply) => {
-    const q = req.query as { lat?: string; lon?: string; w?: string; h?: string; dark?: string };
-    const lat = Number(q.lat), lon = Number(q.lon);
-    const key = process.env.GEOAPIFY_KEY;
-    if (!key || !Number.isFinite(lat) || !Number.isFinite(lon)
-        || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
-      return reply.code(404).send({ error: "no map" });
-    }
-    const clamp = (v: unknown, lo: number, hi: number, fallback: number) => {
-      const n = Math.round(Number(v));
-      return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : fallback;
-    };
-    const w = clamp(q.w, 120, 800, 600), h = clamp(q.h, 80, 500, 240);
-    const style = q.dark === "1" ? "dark-matter" : "positron";
-    const at = `lonlat:${lon.toFixed(6)},${lat.toFixed(6)}`;
-    const upstream = await fetch(
-      `https://maps.geoapify.com/v1/staticmap?style=${style}&width=${w}&height=${h}` +
-      `&center=${at}&zoom=15.5&scaleFactor=2&marker=${at};color:%23ea4335;size:medium&apiKey=${key}`,
-      { signal: AbortSignal.timeout(6000) },
-    ).catch(() => null);
-    if (!upstream?.ok) return reply.code(502).send({ error: "map failed" });
-    reply.header("content-type", upstream.headers.get("content-type") ?? "image/png");
+    const ask = mapAsk(req.query as Record<string, unknown>);
+    if (!process.env.GEOAPIFY_KEY || !ask) return reply.code(404).send({ error: "no map" });
+    const image = await drawMap(ask);
+    if (!image) return reply.code(502).send({ error: "map failed" });
+    reply.header("content-type", image.type);
     reply.header("cache-control", "public, max-age=86400");
-    return reply.send(Buffer.from(await upstream.arrayBuffer()));
+    return reply.send(image.body);
   });
 
   /** The landing state: what a tab shows before anything is typed —
@@ -130,10 +119,8 @@ export function searchRoutes(app: FastifyInstance, kv: KV, guard: Guard): void {
       });
       return { ok: true, ...out };
     } catch (err) {
-      return reply.code(502).send({
-        ok: false,
-        error: err instanceof Error ? err.message : "suggest failed",
-      });
+      req.log.warn({ vertical, err: err instanceof Error ? err.message : String(err) }, "search suggest failed");
+      return reply.code(502).send({ ok: false, error: "Suggestions aren't available right now." });
     }
   });
 

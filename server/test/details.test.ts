@@ -29,6 +29,19 @@ describe("saved details the sentence leads into", () => {
     expect(detailByRules("the address was wrong yesterday", all)).toBeNull();
   });
 
+  it("reads 'my sol address' as the wallet, and offers nothing else when none is saved", async () => {
+    expect(detailByRules("my sol address is", all)).toBe("wallet");
+    expect(detailByRules("here's my solana address:", all)).toBe("wallet");
+    expect(detailByRules("my sol address is", ["address", "name", "email"])).toBeNull();
+    // The route: the words name a wallet nobody saved, so no chip, and no
+    // model picking the home address instead.
+    const app = await signedInApp();
+    const res = await app.inject({ method: "POST", url: "/suggest",
+      payload: { text: "My Sol address is", deviceId: "t-details", kinds: ["address", "name", "email"] } });
+    expect(res.json()).toMatchObject({ ok: true, suggestion: null });
+    await app.close();
+  });
+
   it("knows a request for someone else's detail from sharing one's own", () => {
     expect(asksForTheirs("whats your address btw i need to send the invite")).toBe(true);
     expect(asksForTheirs("send me ur upi id")).toBe(true);

@@ -2,6 +2,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { registryDir } from "./paths.js";
+import { priceAsked } from "./act.js";
+import { geocodePlace } from "./answers.js";
 import { Rates } from "./rates.js";
 
 /** §6.11 — the tool registry. Keyless tools ship now (no user auth, no API
@@ -71,6 +73,12 @@ const stockRates = new Rates();
  *  human-readable where the result is terminal, JSON where chains continue.
  *  `connections` maps provider → access token (built per-device by the run
  *  route from the broker's store; tokens never leave the server). */
+/** A tool saying no in words meant for the person ("No quote for 'xyz'"),
+ *  shown as it is; a failure of the service behind it stays ours. */
+function refuse(message: string): Error {
+  return Object.assign(new Error(message.charAt(0).toUpperCase() + message.slice(1)), { userFacing: true });
+}
+
 export async function runTool(
   id: string,
   args: Record<string, string>,
@@ -83,10 +91,10 @@ export async function runTool(
     const provider = meta.auth.replace("oauth:", "");
     token = connections[provider] ?? "";
     if (!token) {
-      throw new Error(`Connect ${provider[0].toUpperCase()}${provider.slice(1)} in the Glyf app first`);
+      throw refuse(`Connect ${provider[0].toUpperCase()}${provider.slice(1)} in the Glyf app first`);
     }
   }
-  if (rateLimited(meta)) throw new Error(`tool '${id}' rate limit hit — try again in a minute`);
+  if (rateLimited(meta)) throw refuse("Too many at once. Try again in a minute");
   if (process.env.MOCK_AI === "true") return mockTool(id, args);
 
   switch (id) {
@@ -123,7 +131,7 @@ export async function runTool(
         },
         body: JSON.stringify({ query: args.query ?? "", page_size: 5 }),
       });
-      if (!res.ok) throw new Error(`Notion said ${res.status} — try reconnecting`);
+      if (!res.ok) throw refuse(`Notion said ${res.status} — try reconnecting`);
       const data = await res.json() as {
         results?: { url?: string; properties?: Record<string, {
           title?: { plain_text?: string }[] }>; title?: { plain_text?: string }[] }[];
@@ -140,13 +148,13 @@ export async function runTool(
       // What was in the field is rarely just a place: "hey are you coming
       // tonight" used to go to the geocoder whole and fail. Try the text as
       // a place, then any place named inside it, then where the phone is.
+      // The geocoder the hold-space answers use: "bangalore" is Bengaluru
+      // (not Bangalore Town in Sindh), the biggest Paris is the one meant.
       type Hit = { latitude: number; longitude: number; name: string };
       let hit: Hit | undefined;
       for (const name of placeCandidates(args.place ?? "")) {
-        const geo = await fetchJSON(
-          `https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(name)}`,
-          meta.timeoutMs) as { results?: Hit[] };
-        if (geo.results?.[0]) { hit = geo.results[0]; break; }
+        const place = await geocodePlace(name);
+        if (place) { hit = { latitude: place.lat, longitude: place.lon, name: place.name ?? name }; break; }
       }
       const lat = Number(args.lat), lon = Number(args.lon);
       if (!hit && args.lat && args.lon && Number.isFinite(lat) && Number.isFinite(lon)) {
@@ -169,21 +177,15 @@ export async function runTool(
         `today ${Math.round(wx.daily.temperature_2m_min[0])}–${Math.round(wx.daily.temperature_2m_max[0])}°C`;
     }
     case "quote.crypto": {
-      const symbol = (args.symbol || "bitcoin").toLowerCase();
-      const idMap: Record<string, string> = {
-        btc: "bitcoin", eth: "ethereum", sol: "solana", bonk: "bonk",
-        doge: "dogecoin", usdc: "usd-coin", usdt: "tether",
-      };
-      const coin = idMap[symbol] ?? symbol;
-      const data = await fetchJSON(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coin)}` +
-        `&vs_currencies=usd&include_24hr_change=true`, meta.timeoutMs) as
-        Record<string, { usd: number; usd_24h_change: number }>;
-      const q = data[coin];
-      if (!q) throw new Error(`unknown coin '${args.symbol}'`);
-      const chg = q.usd_24h_change;
-      return `${coin.toUpperCase()} $${q.usd.toLocaleString("en-US")} ` +
-        `(${chg >= 0 ? "+" : ""}${chg.toFixed(1)}% 24h)`;
+      // The strip's own prices (Jupiter, lib/rates.ts): "$sol", "sol",
+      // "solana", "price of bonk" all find the coin; a stock works too.
+      const asked = args.symbol?.trim() ? coinAsked(args.symbol) : "bitcoin";
+      if (!asked) throw refuse("Type a coin, like $sol or bitcoin");
+      const quote = await stockRates.tokenQuote(asked);
+      if (!quote) throw refuse(`No price for '${asked}'`);
+      const change = quote.change24h;
+      return `${quote.ticker ?? quote.symbol} ${dollars(quote.usd)}` +
+        (typeof change === "number" ? ` (${change >= 0 ? "+" : ""}${change.toFixed(1)}% in 24h)` : "");
     }
     case "fx.convert": {
       const amount = Number(args.amount || "1");
@@ -193,12 +195,12 @@ export async function runTool(
         `https://api.frankfurter.dev/v1/latest?base=${from}&symbols=${to}`,
         meta.timeoutMs) as { rates: Record<string, number> };
       const rate = data.rates[to];
-      if (!rate) throw new Error(`no rate ${from}→${to}`);
+      if (!rate) throw refuse(`no rate ${from}→${to}`);
       return `${amount} ${from} = ${(amount * rate).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${to}`;
     }
     case "url.unfurl": {
       const url = args.url;
-      if (!/^https?:\/\//.test(url ?? "")) throw new Error("needs a full URL");
+      if (!/^https?:\/\//.test(url ?? "")) throw refuse("needs a full URL");
       const res = await fetch(url, {
         signal: AbortSignal.timeout(meta.timeoutMs),
         headers: { "User-Agent": "glyf-dev/0.5 (unfurl)" },
@@ -221,17 +223,29 @@ export async function runTool(
 
     // ── Keyless expansion (all free, no API keys) ───────────────────────
     case "wiki.summary": {
-      const topic = (args.topic || "").trim();
-      if (!topic) throw new Error("needs a topic");
-      const data = await fetchJSON(
-        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic.replaceAll(" ", "_"))}`,
-        meta.timeoutMs) as { title?: string; extract?: string };
-      if (!data.extract) throw new Error(`no Wikipedia page for '${topic}'`);
-      return `${data.title}: ${data.extract}`;
+      // "who is taylor swift" is asking about Taylor Swift: the question
+      // goes, the topic stays. Not a page by that exact name, Wikipedia's
+      // own search finds the one meant.
+      const topic = wikiTopic(args.topic || "");
+      if (!topic) throw refuse("Type a topic, like Taylor Swift");
+      type Summary = { title?: string; extract?: string; type?: string };
+      const summary = (title: string) => fetchJSON(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replaceAll(" ", "_"))}`,
+        meta.timeoutMs).catch(() => null) as Promise<Summary | null>;
+      let data = await summary(topic);
+      if (!data?.extract || data.type === "disambiguation") {
+        const found = await fetchJSON("https://en.wikipedia.org/w/api.php?" + new URLSearchParams({
+          action: "opensearch", search: topic, limit: "1", namespace: "0", format: "json",
+        }).toString(), meta.timeoutMs).catch(() => null) as [string, string[]] | null;
+        const title = found?.[1]?.[0];
+        if (title) data = await summary(title);
+      }
+      if (!data?.extract || data.type === "disambiguation") throw refuse(`No Wikipedia page for '${topic}'`);
+      return `${data.title ?? topic}: ${sentences(data.extract, 600)}`;
     }
     case "dict.define": {
       const word = (args.word || "").trim().split(/\s+/)[0];
-      if (!word) throw new Error("needs a word");
+      if (!word) throw refuse("needs a word");
       const data = await fetchJSON(
         `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`,
         meta.timeoutMs) as {
@@ -239,18 +253,18 @@ export async function runTool(
           meanings: { partOfSpeech: string; definitions: { definition: string }[] }[];
         }[];
       const entry = data[0];
-      if (!entry) throw new Error(`no definition for '${word}'`);
+      if (!entry) throw refuse(`no definition for '${word}'`);
       const senses = entry.meanings.slice(0, 2).map(m =>
         `(${m.partOfSpeech}) ${m.definitions[0]?.definition ?? ""}`).join(" · ");
       return `${entry.word}${entry.phonetic ? ` ${entry.phonetic}` : ""} — ${senses}`;
     }
     case "word.synonyms": {
       const word = (args.word || "").trim().split(/\s+/)[0];
-      if (!word) throw new Error("needs a word");
+      if (!word) throw refuse("needs a word");
       const data = await fetchJSON(
         `https://api.datamuse.com/words?rel_syn=${encodeURIComponent(word)}&max=8`,
         meta.timeoutMs) as { word: string }[];
-      if (!data.length) throw new Error(`no synonyms for '${word}'`);
+      if (!data.length) throw refuse(`no synonyms for '${word}'`);
       return data.map(w => w.word).join(", ");
     }
     case "stocks.quote": {
@@ -258,9 +272,9 @@ export async function runTool(
       // stock; stooq's free CSV, used before, is gone (404 since 2026-09).
       const raw = (args.symbol || "AAPL").trim().replace(/\.us$/i, "");
       const quote = await stockRates.tokenQuote(raw);
-      if (!quote) throw new Error(`no quote for '${args.symbol}'`);
+      if (!quote) throw refuse(`no quote for '${args.symbol}'`);
       const change = quote.change24h;
-      return `${quote.symbol} $${quote.usd.toFixed(2)}` +
+      return `${quote.ticker ?? quote.symbol} $${quote.usd.toFixed(2)}` +
         (typeof change === "number" ? ` (${change >= 0 ? "+" : ""}${change.toFixed(1)}% in 24h)` : "");
     }
     case "air.quality": {
@@ -269,7 +283,7 @@ export async function runTool(
         `https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(place)}`,
         meta.timeoutMs) as { results?: { latitude: number; longitude: number; name: string }[] };
       const hit = geo.results?.[0];
-      if (!hit) throw new Error(`couldn't find '${place}'`);
+      if (!hit) throw refuse(`couldn't find '${place}'`);
       const aq = await fetchJSON(
         `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${hit.latitude}` +
         `&longitude=${hit.longitude}&current=us_aqi,pm2_5`, meta.timeoutMs) as {
@@ -284,7 +298,7 @@ export async function runTool(
     // ── Keyboard search suite (Gboard-style surface; JSON-array rows) ────
     case "web.search": {
       const q = (args.query || "").trim();
-      if (!q) throw new Error("needs a search");
+      if (!q) throw refuse("needs a search");
       const rows: { title: string; snippet?: string; url: string }[] = [];
       try {
         const data = await fetchJSON(
@@ -308,7 +322,7 @@ export async function runTool(
     }
     case "yt.search": {
       const q = (args.query || "").trim();
-      if (!q) throw new Error("needs a search");
+      if (!q) throw refuse("needs a search");
       const key = process.env.YOUTUBE_API_KEY;
       const link = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
       if (!key) {
@@ -332,7 +346,7 @@ export async function runTool(
     }
     case "maps.search": {
       const q = (args.query || "").trim();
-      if (!q) throw new Error("needs a search");
+      if (!q) throw refuse("needs a search");
       const data = await fetchJSON(
         `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=4&q=${encodeURIComponent(q)}`,
         meta.timeoutMs) as { display_name: string; lat: string; lon: string }[];
@@ -350,11 +364,11 @@ export async function runTool(
     }
     case "places.search": {
       const q = (args.query || "").trim();
-      if (!q) throw new Error("needs a search");
+      if (!q) throw refuse("needs a search");
       const data = await fetchJSON(
         `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=3&q=${encodeURIComponent(q)}`,
         meta.timeoutMs) as { display_name: string; lat: string; lon: string }[];
-      if (!data.length) throw new Error(`nothing found for '${q}'`);
+      if (!data.length) throw refuse(`nothing found for '${q}'`);
       return data.map(p =>
         `${p.display_name} (maps: https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon})`)
         .join("\n");
@@ -365,7 +379,7 @@ export async function runTool(
           `https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(q)}`,
           meta.timeoutMs) as { results?: { latitude: number; longitude: number; name: string }[] };
         const hit = g.results?.[0];
-        if (!hit) throw new Error(`couldn't find '${q}'`);
+        if (!hit) throw refuse(`couldn't find '${q}'`);
         return hit;
       };
       const a = await geocode(args.from || "");
@@ -374,7 +388,7 @@ export async function runTool(
         `https://router.project-osrm.org/route/v1/driving/${a.longitude},${a.latitude};${b.longitude},${b.latitude}?overview=false`,
         meta.timeoutMs) as { routes?: { duration: number; distance: number }[] };
       const route = r.routes?.[0];
-      if (!route) throw new Error("no route found");
+      if (!route) throw refuse("no route found");
       const mins = Math.round(route.duration / 60);
       const h = Math.floor(mins / 60);
       return `${a.name} → ${b.name}: ${(route.distance / 1000).toFixed(0)} km, ` +
@@ -385,18 +399,18 @@ export async function runTool(
       const data = await fetchJSON(
         `https://date.nager.at/api/v3/NextPublicHolidays/${country}`,
         meta.timeoutMs) as { date: string; localName: string }[];
-      if (!data.length) throw new Error(`no holiday data for '${country}'`);
+      if (!data.length) throw refuse(`no holiday data for '${country}'`);
       return data.slice(0, 3).map(h => `${h.date}: ${h.localName}`).join("\n");
     }
     case "books.search": {
       const q = (args.query || "").trim();
-      if (!q) throw new Error("needs a title or author");
+      if (!q) throw refuse("needs a title or author");
       const data = await fetchJSON(
         `https://openlibrary.org/search.json?limit=3&q=${encodeURIComponent(q)}`,
         meta.timeoutMs) as {
           docs: { title: string; author_name?: string[]; first_publish_year?: number }[];
         };
-      if (!data.docs.length) throw new Error(`no books found for '${q}'`);
+      if (!data.docs.length) throw refuse(`no books found for '${q}'`);
       return data.docs.map(b =>
         `${b.title} — ${b.author_name?.[0] ?? "unknown"}${b.first_publish_year ? ` (${b.first_publish_year})` : ""}`)
         .join("\n");
@@ -409,12 +423,12 @@ export async function runTool(
     }
     case "sports.next": {
       const team = (args.team || "").trim();
-      if (!team) throw new Error("needs a team name");
+      if (!team) throw refuse("needs a team name");
       const t = await fetchJSON(
         `https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=${encodeURIComponent(team)}`,
         meta.timeoutMs) as { teams?: { idTeam: string; strTeam: string }[] };
       const hit = t.teams?.[0];
-      if (!hit) throw new Error(`couldn't find team '${team}'`);
+      if (!hit) throw refuse(`couldn't find team '${team}'`);
       const ev = await fetchJSON(
         `https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=${hit.idTeam}`,
         meta.timeoutMs) as { events?: { strEvent: string; dateEvent: string; strTime?: string }[] };
@@ -428,42 +442,42 @@ export async function runTool(
         headers: { accept: "application/json", "User-Agent": "glyf-dev/0.5" },
       });
       const data = await res.json() as { joke?: string };
-      if (!data.joke) throw new Error("the joke well is dry");
+      if (!data.joke) throw refuse("the joke well is dry");
       return data.joke;
     }
     case "quote.inspire": {
       const data = await fetchJSON("https://zenquotes.io/api/random",
         meta.timeoutMs) as { q: string; a: string }[];
       const q = data[0];
-      if (!q) throw new Error("no quote today");
+      if (!q) throw refuse("no quote today");
       return `“${q.q}” — ${q.a}`;
     }
     case "advice.random": {
       const data = await fetchJSON("https://api.adviceslip.com/advice",
         meta.timeoutMs) as { slip?: { advice: string } };
-      if (!data.slip) throw new Error("no advice available");
+      if (!data.slip) throw refuse("no advice available");
       return data.slip.advice;
     }
     case "fact.random": {
       const data = await fetchJSON(
         "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en",
         meta.timeoutMs) as { text?: string };
-      if (!data.text) throw new Error("no fact available");
+      if (!data.text) throw refuse("no fact available");
       return data.text;
     }
     case "urban.define": {
       const term = (args.term || "").trim();
-      if (!term) throw new Error("needs a term");
+      if (!term) throw refuse("needs a term");
       const data = await fetchJSON(
         `https://api.urbandictionary.com/v0/define?term=${encodeURIComponent(term)}`,
         meta.timeoutMs) as { list: { definition: string; thumbs_up: number }[] };
       const top = data.list.sort((a, b) => b.thumbs_up - a.thumbs_up)[0];
-      if (!top) throw new Error(`no slang entry for '${term}'`);
+      if (!top) throw refuse(`no slang entry for '${term}'`);
       return `${term}: ${top.definition.replaceAll("[", "").replaceAll("]", "").slice(0, 280)}`;
     }
     case "country.info": {
       const name = (args.country || "").trim();
-      if (!name) throw new Error("needs a country");
+      if (!name) throw refuse("needs a country");
       const data = await fetchJSON(
         `https://restcountries.com/v3.1/name/${encodeURIComponent(name)}?fields=name,capital,population,currencies,region`,
         meta.timeoutMs) as {
@@ -471,7 +485,7 @@ export async function runTool(
           region: string; currencies?: Record<string, { name: string; symbol?: string }>;
         }[];
       const c = data[0];
-      if (!c) throw new Error(`couldn't find '${name}'`);
+      if (!c) throw refuse(`couldn't find '${name}'`);
       const currency = Object.values(c.currencies ?? {})[0];
       return `${c.name.common} — capital ${c.capital?.[0] ?? "?"}, ` +
         `${(c.population / 1e6).toFixed(1)}M people, ${c.region}` +
@@ -479,7 +493,7 @@ export async function runTool(
     }
     case "repo.info": {
       const repo = (args.repo || "").trim().replace(/^https?:\/\/github\.com\//, "");
-      if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("needs owner/repo");
+      if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw refuse("needs owner/repo");
       const data = await fetchJSON(`https://api.github.com/repos/${repo}`,
         meta.timeoutMs, { accept: "application/vnd.github+json" }) as {
           full_name: string; description?: string; stargazers_count: number;
@@ -491,7 +505,7 @@ export async function runTool(
     }
     case "food.info": {
       const q = (args.food || "").trim();
-      if (!q) throw new Error("needs a food");
+      if (!q) throw refuse("needs a food");
       const data = await fetchJSON(
         "https://world.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=1" +
         `&search_terms=${encodeURIComponent(q)}`, meta.timeoutMs) as {
@@ -499,26 +513,64 @@ export async function runTool(
             nutriments?: { [k: string]: number | undefined } }[];
         };
       const p = data.products?.[0];
-      if (!p?.product_name) throw new Error(`no food data for '${q}'`);
+      if (!p?.product_name) throw refuse(`no food data for '${q}'`);
       const kcal = p.nutriments?.["energy-kcal_100g"];
       return `${p.product_name}: ${kcal ? `${Math.round(kcal)} kcal/100g` : "energy n/a"}` +
         `${p.nutriscore_grade ? `, Nutri-Score ${p.nutriscore_grade.toUpperCase()}` : ""}`;
     }
     case "recipes.search": {
       const q = (args.dish || "").trim();
-      if (!q) throw new Error("needs a dish");
+      if (!q) throw refuse("needs a dish");
       const data = await fetchJSON(
         `https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(q)}`,
         meta.timeoutMs) as {
           meals?: { strMeal: string; strArea: string; strInstructions: string }[];
         };
       const meal = data.meals?.[0];
-      if (!meal) throw new Error(`no recipe for '${q}'`);
+      if (!meal) throw refuse(`no recipe for '${q}'`);
       return `${meal.strMeal} (${meal.strArea}): ${meal.strInstructions.slice(0, 400)}…`;
     }
     default:
-      throw new Error(`tool '${id}' has no executor`);
+      throw refuse(`tool '${id}' has no executor`);
   }
+}
+
+/** The coin or stock in what was typed: "$sol", "SOL", "solana", "price of
+ *  bonk", "what's btc at". */
+export function coinAsked(text: string): string | null {
+  const t = text.trim();
+  const cashtag = t.match(/\$([A-Za-z][A-Za-z0-9]{1,13})\b/);
+  if (cashtag) return cashtag[1];
+  const asked = priceAsked(t);
+  if (asked) return asked;
+  const words = t.replace(/[?!.]+$/, "").trim().split(/\s+/);
+  return words.length === 1 && Rates.tickerOf(words[0]) ? words[0] : null;
+}
+
+/** The subject of a question: "who is taylor swift?" → "taylor swift". */
+export function wikiTopic(text: string): string {
+  return text.trim().replace(/\s+/g, " ")
+    .replace(/^(?:tell me about|tell me more about|info on|information (?:on|about)|wiki(?:pedia)?:?|search wikipedia for|look up)\s+/i, "")
+    .replace(/^(?:who|what|where|when)(?:'s|’s|s|\s+(?:is|are|was|were))\s+/i, "")
+    .replace(/^(?:a|an|the)\s+/i, "")
+    .replace(/\s+(?:please|pls|plz)$/i, "")
+    .replace(/[?!.]+$/, "")
+    .trim()
+    .slice(0, 100);
+}
+
+/** Whole sentences up to about `max` characters. */
+function sentences(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const end = cut.lastIndexOf(". ");
+  return end > max / 3 ? cut.slice(0, end + 1) : `${cut.trimEnd()}…`;
+}
+
+/** $117.98, or $0.00001234 for a coin worth a fraction of a cent. */
+function dollars(n: number): string {
+  if (n >= 1) return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${n.toPrecision(4).replace(/0+$/, "")}`;
 }
 
 /** A tool's refusal that the person can act on, worded for them; the run

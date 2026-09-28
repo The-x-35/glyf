@@ -78,6 +78,27 @@ export function latinLanguage(text: string): "English" | "Hindi" | null {
   return null;
 }
 
+/** Everyday words of the other languages people type in Latin letters. */
+const OTHER_LATIN = new Set(("que de la el los las un una por para con del al es está estoy muy pero como mañana hoy " +
+  "gracias hola sí lo le les nos vamos tengo puedo quiero voy nada bien " +
+  "je tu il elle nous vous est et pour avec pas mais très merci bonjour ce cette une des du au aux suis sont demain " +
+  "und der das ist nicht ich du wir mit auf für ein eine zu ja nein danke heute morgen " +
+  "che di non per sono ma anche oggi domani grazie ciao " +
+  "não sim você obrigado obrigada olá amanhã hoje muito eu").split(" "));
+
+/** A Latin-script message in a language that is neither English nor
+ *  romanised Hindi: "hola, no voy a poder ir a la cena hoy". */
+export function otherLatinLanguage(text: string): boolean {
+  const words = text.toLowerCase().match(/[\p{L}']+/gu) ?? [];
+  let other = /[ñ¿¡ãõçœßàèìòùâêîôûäëïöüáéíóú]/i.test(text) ? 1 : 0;
+  let english = 0;
+  for (const w of words) {
+    if (OTHER_LATIN.has(w)) other++;
+    else if (ENGLISH.has(w)) english++;
+  }
+  return other >= 2 && other > english;
+}
+
 /** The direction, given what was detected. */
 export function chooseTarget(detected: string, req: TranslateRequest): string {
   if (req.target) return req.target;

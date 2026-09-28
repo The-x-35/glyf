@@ -18,10 +18,10 @@ export function ratesRoutes(app: FastifyInstance, rates: Rates = new Rates()): v
     const symbols = [...new Set(raw.split(",").map(s => Rates.tickerOf(s))
       .filter((s): s is string => s !== null))].slice(0, 5);
     if (symbols.length === 0) return reply.code(400).send({ ok: false, error: "symbols?" });
-    const quotes: Record<string, { usd: number; name: string; mint: string }> = {};
+    const quotes: Record<string, { usd: number; name: string; mint: string; ticker: string }> = {};
     await Promise.all(symbols.map(async symbol => {
       const q = await rates.tokenQuote(symbol);
-      if (q) quotes[symbol] = { usd: q.usd, name: q.name, mint: q.mint };
+      if (q) quotes[symbol] = { usd: q.usd, name: q.name, mint: q.mint, ticker: q.ticker ?? symbol };
     }));
     reply.header("cache-control", "private, max-age=60");
     return { ok: true, quotes };

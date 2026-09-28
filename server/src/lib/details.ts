@@ -27,6 +27,8 @@ const RULES: [RegExp, DetailKind][] = [
   [/\b(gpay|google\s+pay|phonepe|paytm|upi|pay|transfer|send\s+(the\s+)?(money|amount|it))\s+(me\s+)?(on|at|to)\s*:?\s*$/, "upi"],
   [/\b(my\s+name\s+is|i\s+am\s+called|this\s+is|name\s*:)\s*$/, "name"],
   [/\b(my|our)\s+(sol(ana)?|crypto|usdc|phantom)?\s*wallet(\s+address)?\b/, "wallet"],
+  // "my sol address" is the wallet, not where they live.
+  [/\b(my|our)\s+(sol(ana)?|crypto|usdc|phantom)\s+(address|addy)\b/, "wallet"],
   [/\b(my|our)\s+(website|portfolio|site|link|calendly)\b/, "link"],
   [/\b(my|our)\s+(insta(gram)?|ig|twitter|x\s+handle|linkedin|handle)\b/, "social"],
   [/\b(my|our)\s+gst(in)?(\s+(number|no\.?))?\b|\bgst(in)?\s*(number|no\.?)?\s*(is|:)\s*$/, "gst"],
@@ -39,11 +41,19 @@ function lastClause(text: string): string {
 }
 
 export function detailByRules(text: string, kinds: readonly string[]): DetailKind | null {
+  const named = detailNamed(text);
+  return named && kinds.includes(named) ? named : null;
+}
+
+/** The detail the words lead into, saved or not. When it is one the person
+ *  never saved ("my sol address is" with no wallet), there is nothing to
+ *  offer, and no model is asked to pick some other detail instead. */
+export function detailNamed(text: string): DetailKind | null {
   const clause = lastClause(text);
   if (!clause || /\b(your|ur|his|her|their)\b/.test(clause.split(/\s+/).slice(-6).join(" "))) return null;
   for (const [re, kind] of RULES) {
     const m = re.exec(clause);
-    if (!m || !kinds.includes(kind)) continue;
+    if (!m) continue;
     // The detail has not been typed yet: little after the phrase.
     const after = clause.slice(m.index + m[0].length).replace(/^[\s:,-]*(is|are|=)?[\s:,-]*/, "");
     if (after.length <= 3) return kind;

@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../env.js";
-import { act, type ActResult, type ActStream } from "../lib/act.js";
-import type { Guard } from "../lib/guard.js";
+import { act, RunRefused, type ActResult, type ActStream } from "../lib/act.js";
+import type { Guard, Verdict } from "../lib/guard.js";
 import { createPage, getPage, renderPage } from "../lib/pages.js";
 import type { KV } from "../lib/store.js";
 
@@ -53,9 +53,14 @@ export function actRoutes(app: FastifyInstance, guard: Guard, kv: KV): void {
     }
     const { text, deviceId, plan, lat, lon, country, tz, profile, intent, stream } = parsed.data;
 
-    const gate = await guard.spend(req, deviceId);
-    if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
-    const remaining = gate.remaining;
+    // A run is spent the first time the model is asked, never up front: a
+    // sum, a conversion, a price, the time or a place list costs nothing.
+    let paid: Promise<Verdict> | undefined;
+    const pay = async () => {
+      const verdict = await (paid ??= guard.spend(req, deviceId));
+      if (!verdict.ok) throw new RunRefused(verdict.message);
+    };
+    const remainingNow = async () => paid ? (await paid).remaining : guard.left(req, deviceId);
 
     const started = Date.now();
     const base = pageBase();
@@ -64,7 +69,15 @@ export function actRoutes(app: FastifyInstance, guard: Guard, kv: KV): void {
       intent,
       publish: base ? (title, places) => `${base}/p/${createPage(kv, title, places)}` : undefined,
       stream: live,
+      pay,
     });
+    // The model was needed and no run was left: the refusal, even when
+    // what was asked swallowed the error on its way out.
+    const refusal = async (): Promise<string | undefined> => {
+      if (!paid) return undefined;
+      const verdict = await paid;
+      return verdict.ok ? undefined : verdict.message;
+    };
     // §12: events and timings only — never the typed text.
     const logDone = (result: ActResult) => req.log.info({ deviceId, intent: result.intent,
       provider: result.provider, cards: result.cards.length, inputChars: text.length,
@@ -74,9 +87,13 @@ export function actRoutes(app: FastifyInstance, guard: Guard, kv: KV): void {
     if (!stream) {
       try {
         const result = await run();
+        const refused = await refusal();
+        if (refused) return reply.code(429).send({ ok: false, error: refused });
         logDone(result);
-        return { ok: true, remaining, ...result };
+        return { ok: true, remaining: await remainingNow(), ...result };
       } catch (err) {
+        const refused = await refusal();
+        if (refused) return reply.code(429).send({ ok: false, error: refused });
         req.log.warn({ deviceId, err: err instanceof Error ? err.message : String(err) }, "act failed");
         return reply.code(502).send({ ok: false, error: failed });
       }
@@ -100,11 +117,17 @@ export function actRoutes(app: FastifyInstance, guard: Guard, kv: KV): void {
         text: t => send("text", { t }),
         reset: () => send("reset", {}),
       });
-      logDone(result);
-      send("done", { ok: true, remaining, ...result });
+      const refused = await refusal();
+      if (refused) {
+        send("error", { ok: false, error: refused });
+      } else {
+        logDone(result);
+        send("done", { ok: true, remaining: await remainingNow(), ...result });
+      }
     } catch (err) {
-      req.log.warn({ deviceId, err: err instanceof Error ? err.message : String(err) }, "act failed");
-      send("error", { ok: false, error: failed });
+      const refused = await refusal();
+      if (!refused) req.log.warn({ deviceId, err: err instanceof Error ? err.message : String(err) }, "act failed");
+      send("error", { ok: false, error: refused ?? failed });
     }
     reply.raw.end();
   });

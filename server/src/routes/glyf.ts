@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { env } from "../env.js";
 import { profileBlock } from "../lib/act.js";
-import { RunRequestSchema } from "../schemas/glyfdef.js";
+import { RunRequestSchema, type GlyfDef } from "../schemas/glyfdef.js";
 import { loadRegistry, runGlyf, userFacingRunError } from "../lib/glyfengine.js";
 import { completeStreaming } from "../providers/openrouter.js";
 import { TTLCache } from "../lib/cache.js";
@@ -22,6 +22,15 @@ function withProfile(vars: Record<string, string>,
   for (const [k, v] of Object.entries(profile)) out[`profile.${k}`] = v;
   out.profile = profileBlock(profile).trim();
   return out;
+}
+
+/** Whether a run can be replayed to the same person: only when its words
+ *  depend on nothing but what they typed. A tool answers live (the weather,
+ *  a price), {{lat}}/{{lon}} is where the phone is now, and {{profile}} is
+ *  one person's own details. */
+export function replayable(def: GlyfDef): boolean {
+  if (def.steps.some(s => s.type === "tool")) return false;
+  return !/\{\{\s*(?:profile|lat|lon)\b/.test(JSON.stringify(def.steps));
 }
 
 export function glyfRoutes(
@@ -101,9 +110,12 @@ export function glyfRoutes(
       if (!reply.raw.writableEnded) abort.abort();
     });
 
-    // §8.4 cache: replay without burning quota upstream (still metered).
-    const cacheKey = TTLCache.key([def.id, String(def.version), input, JSON.stringify(vars)]);
-    const cached = cache.get(cacheKey);
+    // §8.4 cache: replay without burning quota upstream (still metered) —
+    // to the same person, for the same glyf as it is now, and never a run
+    // whose words depend on more than the input.
+    const cacheKey = replayable(def) ? TTLCache.key([def.id, String(def.version),
+      TTLCache.key([JSON.stringify(def.steps)]), req.glyfUser ?? "", deviceId, input, JSON.stringify(vars)]) : null;
+    const cached = cacheKey ? cache.get(cacheKey) : undefined;
     if (cached !== undefined) {
       send("token", { t: cached });
       send("done", { text: cached, remaining, model: "cache", ms: Date.now() - started });
@@ -126,7 +138,7 @@ export function glyfRoutes(
         onToken: t => send("token", { t }),
       });
 
-      cache.set(cacheKey, text);
+      if (cacheKey) cache.set(cacheKey, text);
       send("done", { text, remaining, ms: Date.now() - started });
       req.log.info({ glyfId, ms: Date.now() - started, ok: true }, "glyf_done");
     } catch (err) {

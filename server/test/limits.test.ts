@@ -122,18 +122,25 @@ describe("hard limits", () => {
   }, 20_000);
 
   it("stops /act at the cap too, and says when to come back", async () => {
-    const before = env.freeRunsPerDay;
+    const before = { runs: env.freeRunsPerDay, mockAI: env.mockAI };
     env.freeRunsPerDay = 1;
-    const app = signedInApp();
-    const send = () => app.inject({
-      method: "POST", url: "/act",
-      payload: { text: "sunset", deviceId: "cap-dev-00000002", plan: "max" },
-    });
-    expect((await send()).statusCode).toBe(200);
-    const blocked = await send();
-    expect(blocked.statusCode).toBe(429);
-    expect(blocked.json().error).toContain("tomorrow");
-    env.freeRunsPerDay = before;
+    env.mockAI = true;
+    try {
+      const app = signedInApp();
+      // A tidy-up asks the model, so it is what the cap counts (a sum or
+      // the sunset asks none and costs nothing).
+      const send = () => app.inject({
+        method: "POST", url: "/act",
+        payload: { text: "ya ok will send the deck b4 6", deviceId: "cap-dev-00000002", plan: "max" },
+      });
+      expect((await send()).statusCode).toBe(200);
+      const blocked = await send();
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.json().error).toContain("tomorrow");
+    } finally {
+      env.freeRunsPerDay = before.runs;
+      env.mockAI = before.mockAI;
+    }
   });
 
   it("holds the same line on vocab, and counts translations apart", async () => {
@@ -169,16 +176,25 @@ describe("hard limits", () => {
   });
 
   it("the meter chip reports what is left", async () => {
-    const before = env.freeRunsPerDay;
+    const before = { runs: env.freeRunsPerDay, mockAI: env.mockAI };
     env.freeRunsPerDay = 3;
-    const app = signedInApp();
-    const device = "cap-dev-00000004";
-    await app.inject({
-      method: "POST", url: "/act", payload: { text: "sunset", deviceId: device },
-    });
-    const res = await app.inject({ method: "GET", url: `/meter/${device}` });
-    expect(res.json().remaining).toBe(2);
-    env.freeRunsPerDay = before;
+    env.mockAI = true;
+    try {
+      const app = signedInApp();
+      const device = "cap-dev-00000004";
+      // The sunset is worked out, not written: it leaves the count alone.
+      await app.inject({
+        method: "POST", url: "/act", payload: { text: "sunset", deviceId: device },
+      });
+      await app.inject({
+        method: "POST", url: "/act", payload: { text: "ya ok will send the deck b4 6", deviceId: device },
+      });
+      const res = await app.inject({ method: "GET", url: `/meter/${device}` });
+      expect(res.json().remaining).toBe(2);
+    } finally {
+      env.freeRunsPerDay = before.runs;
+      env.mockAI = before.mockAI;
+    }
   });
 
   it("refuses a body far larger than anything anyone types", async () => {

@@ -100,6 +100,13 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard:
         const candidate = JSON.parse(cleaned);
         candidate.id = "user.draft";
         candidate.version = 1;
+        // The model sometimes leaves out what the glyf reads (twice in a row
+        // failed "Say no, politely"): it reads its input, which can be said
+        // plainly instead of failing the build.
+        if (!Array.isArray(candidate.discloses) || candidate.discloses.length === 0) {
+          candidate.discloses = [candidate.input === "clipboard" ? "the text you copied"
+            : candidate.input === "field" ? "the text in your current field" : "the text you run it on"];
+        }
         const def = ensureInputWired(GlyfDefSchema.parse(candidate));
         const refusal = validateUserDef(def);
         if (refusal) throw new Error(refusal);

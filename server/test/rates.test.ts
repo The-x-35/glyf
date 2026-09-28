@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
-import { Rates, pickStock, pickToken, type FetchLike } from "../src/lib/rates.js";
+import { Rates, pickStock, pickToken, type FetchLike, pickStockByPrefix } from "../src/lib/rates.js";
 import { ratesRoutes } from "../src/routes/rates.js";
 
 const jupiter = [
@@ -128,6 +128,22 @@ describe("rates", () => {
     expect(await rates.tokenQuote("$pfizer")).toMatchObject({ symbol: "PFIZER", usd: 26.48, name: "Pfizer xStock" });
     // A name that is no company and no coin gives nothing.
     expect(await rates.tokenQuote("$banana")).toBeNull();
+  });
+
+  it("finds the company for a slip or half a name: $appl is Apple, shown as AAPL", async () => {
+    // Jupiter ranks Apple's share first for "APPL", AppLovin's after it.
+    const applovin = { ...apple[0], id: "XsPdAVBi8Zc1xvv53k4JcMrQaEDTgkGqKYeh7AYgPHV", symbol: "APPx",
+      name: "AppLovin xStock", usdPrice: 649.83 };
+    const { f } = fakeFetch(url => url.endsWith("query=APPL") ? [apple[0], apple[1], applovin]
+      : url.endsWith("query=AAPL") ? apple : []);
+    const rates = new Rates(f, () => 0);
+    expect(await rates.tokenQuote("$appl")).toMatchObject({ symbol: "APPL", ticker: "AAPL", usd: 340.3, stock: true });
+    // A name keeps the market's ticker too; three letters never guess.
+    expect(await rates.tokenQuote("$apple")).toMatchObject({ symbol: "APPLE", ticker: "AAPL" });
+    expect(pickStockByPrefix("APP", [applovin])?.ticker).toBe("APP");
+    expect(await new Rates(fakeFetch(() => [applovin]).f, () => 0).tokenQuote("$tes")).toBeNull();
+    // Only verified shares: a coin named Apple-something never answers.
+    expect(pickStockByPrefix("APPL", [{ ...apple[3], name: "Applecoin" }])).toBeNull();
   });
 
   it("prices Nvidia, not a meme coin that took its ticker; SOL stays SOL", async () => {

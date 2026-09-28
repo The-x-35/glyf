@@ -10,7 +10,7 @@
     "wallet": false
   },
   "discloses": [
-    "the ticker in your field (sent to Stooq)"
+    "the ticker in your field (sent to Jupiter)"
   ],
   "vars": {},
   "steps": [
