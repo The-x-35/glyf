@@ -47,6 +47,15 @@ describe("POST /suggest", () => {
     expect((await ask(app, "write a toast for my sister's wedding")).json().suggestion?.label).toBe("Write it for me");
   });
 
+  it("offers the AI's answer on a question, with or without its \"?\", but not on today's news", async () => {
+    const app = signedInApp();
+    for (const text of ["who is the ceo of tesla", "why is the sky blue?"]) {
+      expect((await ask(app, text)).json().suggestion, text).toMatchObject({ intent: "answer", label: "AI answer", action: "act" });
+    }
+    expect((await ask(app, "who won the game last night")).json().suggestion).toBeNull();
+    expect((await ask(app, "are you coming tonight?")).json().suggestion?.label).not.toBe("AI answer");
+  });
+
   it("never spends a run: suggestions have their own allowance", async () => {
     const runs = env.freeRunsPerDay;
     const suggestions = env.freeSuggestionsPerDay;

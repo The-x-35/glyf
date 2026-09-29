@@ -23,7 +23,7 @@ Reply with one line of JSON and nothing else, like {"intent":"rewrite"${kinds.le
 intent is one of:
 place: they name one specific place to share, "lets meet at Blue Tokai Indiranagar"
 places: they want options or recommendations, "any good italian places in koramangala"
-answer: it needs a live fact: scores, schedules, prices, news, "who is"
+answer: a question for a fact or an explanation, with or without a question mark: "who is the ceo of tesla", "why is the sky blue", "how many ounces in a cup" (a question to the person they are writing to is rewrite)
 video: they want a video, song or trailer found, "dune part 2 trailer"
 write: they ask for something to be written or worked out, "write a birthday message for my mom"
 rewrite: an ordinary message to someone, even one that mentions food, a video, a place or the weather ("had a great dinner with u, thanks", "did u see the video i sent"), nothing to look up${kinds.length ? `

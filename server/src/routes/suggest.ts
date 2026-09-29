@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { checkPlan, needsTidy, planByRules, readsTidy, type ActIntent } from "../lib/act.js";
+import { rightNow } from "../lib/answers.js";
 import type { Guard } from "../lib/guard.js";
 import { TTLCache } from "../lib/cache.js";
 import { DETAIL_KINDS, detailNamed, type DetailKind } from "../lib/details.js";
@@ -34,7 +35,9 @@ const SuggestSchema = z.object({
 const LABELS: Record<ActIntent, { label: string; action: string }> = {
   place: { label: "Find it on the map", action: "act" },
   places: { label: "Show me places", action: "act" },
-  answer: { label: "Look it up", action: "act" },
+  // A question, with or without its "?": the AI answers it (Arpit,
+  // 2026-09-29: "have a strip like ai answer ? on all questions type").
+  answer: { label: "AI answer", action: "act" },
   video: { label: "Find the video", action: "act" },
   rewrite: { label: "Tidy this up", action: "act" },
   write: { label: "Write it for me", action: "act" },
@@ -48,8 +51,9 @@ function worthSuggesting(text: string, intent: ActIntent): boolean {
   if (intent === "rewrite" && t.split(/\s+/).length < 4) return false;
   // Already tidy: nothing to offer.
   if (intent === "rewrite" && readsTidy(t)) return false;
-  // "Look it up" only repeated what holding space already does.
-  if (intent === "answer") return false;
+  // Today's score or the news: the AI can't know, so no chip that would
+  // only say "Nothing found".
+  if (intent === "answer" && rightNow(t)) return false;
   return true;
 }
 

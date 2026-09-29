@@ -40,10 +40,11 @@ export function endpointFor(spec: string): Endpoint | null {
 /** "fast" answers someone holding space, "smart" builds and rewrites at
  *  length, and "suggest" reads a pause in typing for the strip's chip: a
  *  read nobody asked for, so it has its own small, cheap chain. */
-export type Tier = "fast" | "smart" | "suggest";
+export type Tier = "fast" | "smart" | "suggest" | "answer";
 
 function chainFor(tier: Tier): string[] {
-  return tier === "smart" ? env.smartModels : tier === "suggest" ? env.suggestModels : env.fastModels;
+  return tier === "smart" ? env.smartModels : tier === "suggest" ? env.suggestModels
+    : tier === "answer" ? env.answerModels : env.fastModels;
 }
 
 /** Per-model request settings. Reasoning models think before the first
@@ -106,7 +107,7 @@ export function resetCooldowns(): void {
 
 /** How long a model gets to start answering before the next one is tried.
  *  A suggestion that comes late comes after the message has gone. */
-export const FIRST_BYTE_MS: Record<Tier, number> = { fast: 4000, smart: 20000, suggest: 2500 };
+export const FIRST_BYTE_MS: Record<Tier, number> = { fast: 4000, smart: 20000, suggest: 2500, answer: 4000 };
 
 export interface StreamHandlers {
   onToken: (t: string) => void;
@@ -118,6 +119,9 @@ export interface StreamHandlers {
   /** A model that had started answering was dropped for the next one: what
    *  it streamed so far is void, and the next model starts over. */
   onRestart?: () => void;
+  /** A fact asked for is answered the same way every time: 0 kept "France
+   *  won the 2022 World Cup" from coming back one run in several. */
+  temperature?: number;
 }
 
 export class ModelExhaustedError extends Error {
@@ -200,7 +204,8 @@ async function completeMasked(
           "Content-Type": "application/json",
           ...(ep.openrouter ? { "HTTP-Referer": "https://tryglyf.com", "X-Title": "Glyf" } : {}),
         },
-        body: JSON.stringify({ model: ep.model, messages, stream: true, ...requestOptions(ep, tier) }),
+        body: JSON.stringify({ model: ep.model, messages, stream: true, ...requestOptions(ep, tier),
+          ...(handlers.temperature !== undefined ? { temperature: handlers.temperature } : {}) }),
         signal: attempt.signal,
       });
       clearTimeout(stuck);

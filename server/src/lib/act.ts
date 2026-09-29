@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { completeStreaming } from "../providers/openrouter.js";
 import { env } from "../env.js";
-import { daysAsked, isLive, liveAsk, moneyAsked } from "./answers.js";
+import { daysAsked, isLive, liveAsk, moneyAsked, rightNow } from "./answers.js";
 import { asksForTheirs } from "./details.js";
 import { search, type SearchContext } from "./search.js";
 import { composeInsert, type AnswerCard, type PlaceCard, type SearchCard } from "./searchcards.js";
@@ -531,7 +531,25 @@ export function planByRules(text: string): ActPlan | null {
   }
   // "how to make pancakes", typed on its own: the video that shows it.
   if (/^how to\s+\S/.test(lower)) return { intent: "video", query: t };
+  // "who is the ceo of tesla", "why is the sky blue": a question for a fact,
+  // with or without its "?", answered by the AI with no router call first.
+  if (infoQuestion(lower)) return { intent: "answer", query: t };
   return null;
+}
+
+/** A question for a fact or an explanation, asked of nobody in particular:
+ *  "who is the ceo of tesla", "why is the sky blue", "can dogs eat grapes?".
+ *  Not one asked of the person in the chat ("are you coming?", "where is the
+ *  party tonight", "what time is the meeting tmrw"), about the writer ("can
+ *  i come over"), or small talk ("whats up"). Those go on to the model. */
+export function infoQuestion(text: string): boolean {
+  const lower = text.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
+  if (lower.split(" ").length < 3) return false;
+  if (!(QUESTION_START.test(lower) || /\?$/.test(lower))) return false;
+  if (CHITCHAT.test(lower) || SECOND_PERSON.test(lower) || ADDRESSED.test(lower) || OWN_PLANS.test(lower)) return false;
+  // "does it hurt?", "is that true": short, and about something in the chat.
+  if (lower.split(" ").length <= 4 && /\b(it|this|that|these|those|there)\b/.test(lower)) return false;
+  return !PEOPLE.test(lower.replace(SEARCH_ME, " "));
 }
 
 /** Pulls the first JSON object out of a model reply and validates it. */
@@ -593,7 +611,8 @@ const ADDRESSED = /^(?:bhai|bro|bruh|yaar|dude|mom|mum|maa|papa|dad|didi|bhaiya|
 const OWN_PLANS = new RegExp(String.raw`\b(?:the|our|my|ur|your|this|tonight'?s|tomorrow'?s|tmrw'?s)\s+` +
   String.raw`(?:meeting|meet|party|call|dinner|lunch|brunch|breakfast|appointment|appt|flight|reservation|booking|` +
   String.raw`interview|class|practice|rehearsal|wedding|event|plan|plans|trip|standup|stand-up|shift|session|date|` +
-  String.raw`hangout|get together|get-together|pickup|pick up|drop off|shoot|exam|gig|reunion|sleepover|potluck)\b` +
+  String.raw`hangout|get together|get-together|pickup|pick up|drop off|shoot|exam|gig|reunion|sleepover|potluck|` +
+  String.raw`bus|train|metro|subway|uber|lyft|cab|taxi|ride|delivery|order|package|parcel)\b` +
   String.raw`|\bwho(?:'s| is| all is| all are| are)\s+(?:coming|joining|going|in|bringing)\b`);
 
 export function checkPlan(p: ActPlan, text: string): ActPlan {
@@ -856,11 +875,16 @@ const WRITE_PROMPT =
   "harassment or blackmail, write instead a calm, firm, respectful message asking for the same thing with no " +
   "threat in it; never reply with a refusal or an explanation.";
 
+// Measured 2026-09-29 (env.answerModels): given today's date as "now", a
+// model invents the latest winner ("the Chiefs won Super Bowl LX in 2026");
+// given the date only for ages, it names the last one it knows, dated.
 const ANSWER_PROMPT =
   "Answer this in one to three short sentences, plainly, with no preamble and no markdown, in the language it is " +
-  "asked in. Answer only what is asked: no dates, names or history it doesn't ask for. If the answer depends on current " +
-  "information you can't know (prices, exchange rates, scores, weather, news, schedules, anything happening " +
-  "today), or you are not sure, reply with the single word UNKNOWN.";
+  "asked in. Answer only what is asked: no names or history it doesn't ask for. Answer from what you know for " +
+  "certain. A fact that can change (who runs a company, who holds a title) is the latest you know. For the latest " +
+  "winner of something, name the last one you are certain of and when it happened; what you know may be a year or " +
+  "two old, so never guess a newer one. Reply with the single word UNKNOWN only if it is about what is happening " +
+  "right now (today's scores, today's news, a live price) or you have no idea.";
 
 /** A small model's remarks about its own answer, never part of one: "This
  *  information is well-established and not time-sensitive. No current
@@ -889,12 +913,15 @@ async function written(
     : typed;
   // The ask goes last, after the instructions and the day.
   const prompt = (extra: string) => (kind === "write" ? WRITE_PROMPT : ANSWER_PROMPT) + extra
-    + `\n\n${todayLine(ctx.tz)}` + profileBlock(profile) + `\n\n${kind === "write" ? "Asked for" : "Question"}: ${asked}`;
+    + `\n\n${kind === "answer"
+      ? `Only for working out an age or how long ago something was: ${todayLine(ctx.tz).replace(/^Today/, "today")}`
+      : todayLine(ctx.tz)}` + profileBlock(profile) + `\n\n${kind === "write" ? "Asked for" : "Question"}: ${asked}`;
   const gate = kind === "write" && opts.stream?.text ? new OpenerGate(opts.stream.text) : null;
   const draft = async (extra = ""): Promise<string> => {
     try {
       const reply = await modelText(prompt(extra), 5000, gate
-        ? { onToken: t => gate.push(t), onRestart: () => { gate.reset(); opts.stream?.reset?.(); } } : undefined);
+        ? { onToken: t => gate.push(t), onRestart: () => { gate.reset(); opts.stream?.reset?.(); } } : undefined,
+        kind === "answer" ? "answer" : "fast");
       gate?.flush();
       return reply;
     } catch {
@@ -934,10 +961,13 @@ async function written(
 async function modelText(
   prompt: string, stallMs = 5000,
   live?: { onToken: (t: string) => void; onRestart?: () => void },
+  tier: "fast" | "answer" = "fast",
 ): Promise<string> {
   await payForModel();
-  const res = await completeStreaming("fast", [{ role: "user", content: prompt }],
-    { onToken: live?.onToken ?? (() => {}), onRestart: live?.onRestart, stallMs });
+  // A fact asked for comes back the same every time (StreamHandlers.temperature).
+  const res = await completeStreaming(tier, [{ role: "user", content: prompt }],
+    { onToken: live?.onToken ?? (() => {}), onRestart: live?.onRestart, stallMs,
+      temperature: tier === "answer" ? 0 : undefined });
   return res.text.trim();
 }
 
@@ -1047,12 +1077,13 @@ async function actOn(text: string, ctx: SearchContext, opts: ActOptions): Promis
       const links = res.cards.filter(c => c.kind === "link" && c.id !== "tail"
         && !/google\.[a-z.]+\/search/.test(c.url)).slice(0, 5);
       if (links.length === 0) {
-        // Scores, prices, rates, the time and the weather change by the
-        // hour: with no live source to read, say so rather than let a model
-        // guess. For anything else, the model knows it as well as a search
-        // page would.
-        if (isLive(typed) || isLive(p.query)) return nothingFound("answer", typed, p.query, res.provider);
-        return await written(typed, "answer", ctx, opts, res.provider);
+        // Today's scores, the news, a live price: with no live source to
+        // read, say so rather than let a model guess. Everything else the AI
+        // answers from what it knows (2026-09-29, no search for now: "use ai
+        // only for all that too"; "who is the ceo of tesla" had been a
+        // Google link).
+        if (rightNow(typed) || rightNow(p.query)) return nothingFound("answer", typed, p.query, res.provider);
+        return await written(typed, "answer", ctx, opts, "ai");
       }
       const sources = links.map((l, i) =>
         `[${i + 1}] ${l.title}\n${l.kind === "link" && l.snippet ? l.snippet : ""}\n${l.url}`).join("\n\n");

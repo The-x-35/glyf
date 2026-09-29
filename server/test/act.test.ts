@@ -75,6 +75,15 @@ describe("a message stays a message (routing audit, 2026-09-28)", () => {
     for (const t of ["i'm fluent in spanish", "the movie is in french", "text me when you're home"]) {
       expect(planByRules(t)?.intent, t).not.toBe("write");
     }
+    // A question for a fact, with or without its "?", is answered (2026-09-29).
+    for (const t of ["who is the ceo of tesla", "why is the sky blue", "can dogs eat grapes?", "is pluto a planet",
+      "what is the capital of peru"]) {
+      expect(planByRules(t)?.intent, t).toBe("answer");
+    }
+    for (const t of ["are you coming tonight?", "can i come over later", "does it hurt?", "is that true",
+      "how long until the bus comes", "whats up with you"]) {
+      expect(planByRules(t)?.intent, t).not.toBe("answer");
+    }
     // Asked of a person, nothing to search.
     for (const t of ["where can i find the report", "please tell me when you're home", "where do u want to eat"]) {
       expect(planByRules(t), t).toBeNull();
@@ -326,6 +335,24 @@ describe("POST /act", () => {
     const { body } = await post("what is 18% of 2450?");
     expect(body.intent).toBe("answer");
     expect(planByRules("what is 18% of 2450?")).toEqual({ intent: "answer", query: "18% of 2450" });
+  });
+
+  it("answers a question with the AI, not a Google link, unless it is about right now", async () => {
+    // 2026-09-29: no search for now, "use ai only for all that too".
+    const { body } = await post("who is the ceo of tesla");
+    expect(body.intent).toBe("answer");
+    expect(["ai", "mock"]).toContain(body.provider);
+    expect(body.insert).not.toBe("");
+    // Not the "See it on Google" hand-off that answered before.
+    expect((body.cards ?? []).some((c: { id?: string }) => (c.id ?? "").startsWith("google:"))).toBe(false);
+    // What is happening right now stays a hand-off: the AI can't know it.
+    const { rightNow } = await import("../src/lib/answers.js");
+    for (const t of ["who won the game last night", "india vs australia score", "news today", "bitcoin price right now"]) {
+      expect(rightNow(t), t).toBe(true);
+    }
+    for (const t of ["who is the ceo of tesla", "who won the super bowl", "latest iphone", "who is the current president of france"]) {
+      expect(rightNow(t), t).toBe(false);
+    }
   });
 
   it("tidies an ordinary message instead of looking anything up", async () => {

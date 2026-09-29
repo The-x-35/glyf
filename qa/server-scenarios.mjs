@@ -599,6 +599,27 @@ scenarios.push(
     check: r => /missing out/i.test(answerText(r))
       && !/well[- ]established|time[- ]sensitive|current events|knowledge cut/i.test(answerText(r)),
     show: r => `${r.json.intent}: ${answerText(r).slice(0, 160)}` },
+  // 2026-09-29: no search for now, the AI answers, and a question offers it.
+  { id: "S211", area: "Answers", title: "'who is the ceo of tesla' is answered by the AI, not a Google link",
+    run: async () => {
+      const a = await act("who is the ceo of tesla", { country: "US", tz: "America/New_York" });
+      const b = await act("who won the world cup", { country: "US", tz: "America/New_York" });
+      return { status: Math.max(a.status, b.status), ms: a.ms + b.ms, json: { a: a.json, b: b.json } };
+    },
+    check: r => /musk/i.test(r.json.a.insert ?? "") && /argentina/i.test(r.json.b.insert ?? "")
+      && !(r.json.a.cards ?? []).some(c => String(c.id ?? "").startsWith("google:")),
+    show: r => `${r.json.a.provider}: ${r.json.a.insert} · ${r.json.b.insert}` },
+  { id: "S212", area: "Chips", title: "A question offers 'AI answer', with or without its '?', but not last night's game",
+    run: async () => {
+      const out = [];
+      for (const text of ["who is the ceo of tesla", "why is the sky blue?", "who won the game last night", "are you coming tonight?"]) {
+        out.push(await post("/suggest", { text }));
+      }
+      return { status: Math.max(...out.map(x => x.status)), ms: out.reduce((n, x) => n + x.ms, 0), json: { out: out.map(x => x.json) } };
+    },
+    check: r => { const [ceo, sky, game, you] = r.json.out.map(x => x.suggestion?.label ?? null);
+      return ceo === "AI answer" && sky === "AI answer" && game === null && you !== "AI answer"; },
+    show: r => r.json.out.map(x => x.suggestion?.label ?? "no chip").join(" · ") },
 );
 
 const only = process.env.ONLY ? new Set(process.env.ONLY.split(",")) : null;

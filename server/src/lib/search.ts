@@ -1,4 +1,4 @@
-import { instantAnswer, isLive, type AnswerContext } from "./answers.js";
+import { instantAnswer, rightNow, type AnswerContext } from "./answers.js";
 import { TTLCache } from "./cache.js";
 import { completeStreaming } from "../providers/openrouter.js";
 import type {
@@ -165,8 +165,10 @@ function stripTags(s: string): string {
 export type Ask = (prompt: string) => Promise<string>;
 
 const askModel: Ask = async prompt => {
-  const res = await completeStreaming("fast", [{ role: "user", content: prompt }],
-    { onToken: () => {}, stallMs: 5000 });
+  // The model that knows facts best (env.answerModels), and the same answer
+  // every time (StreamHandlers.temperature).
+  const res = await completeStreaming("answer", [{ role: "user", content: prompt }],
+    { onToken: () => {}, stallMs: 5000, temperature: 0 });
   return res.text;
 };
 
@@ -175,12 +177,15 @@ const askModel: Ask = async prompt => {
  *  what it cannot know, and a live search (a score, a price) never asks at
  *  all: a guess would be worse than the Google row. */
 export async function aiAnswer(q: string, ask: Ask = askModel): Promise<AnswerCard | null> {
-  if (isLive(q)) return null;
+  if (rightNow(q)) return null;
   const prompt = "Answer this search. Reply with exactly two lines of plain text, no markdown:\n"
     + "line 1: the answer itself, at most six words\n"
     + "line 2: one sentence of context, at most 25 words\n"
-    + "If answering needs current information (news, prices, scores, weather, "
-    + "schedules), or you are not sure, reply with the single word NO.\n"
+    + "Answer from what you know for certain; a fact that can change (who runs a company, who holds a "
+    + "title) is the latest you know. For the latest winner of something, name the last one you are "
+    + "certain of and when it happened; what you know may be a year or two old, so never guess a newer "
+    + "one. Reply with the single word NO only if it is about what is happening right now (today's "
+    + "scores, today's news, a live price) or you have no idea.\n"
     + `Search: ${q}`;
   let reply: string;
   try { reply = await ask(prompt); } catch { return null; }
@@ -236,7 +241,7 @@ async function searchWeb(q: string, ctx: SearchContext, opts: SearchOptions): Pr
   }
   // No key and nothing computed: the model answers. Never a fabricated
   // result list — one honest card, or the Google row for what it can't know.
-  if (!answer && !links.length && !isLive(q) && await mayAsk(opts.model)) {
+  if (!answer && !links.length && !rightNow(q) && await mayAsk(opts.model)) {
     answer = await aiAnswer(q);
     if (answer) provider = "ai";
   }

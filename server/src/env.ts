@@ -42,6 +42,15 @@ export const env = {
    *  about 2 s for $0.03 a thousand; Gemini 2.5 Flash-Lite (1.4 s) next. */
   smartModels: ["inclusionai/ling-3.0-flash", "google/gemini-2.5-flash-lite:nitro",
     "gemini:gemini-flash-lite-latest", "openrouter/free"],
+  /** A question answered from what a model knows (hold space, the strip's
+   *  "AI answer", the web tab), there being no search for now. Measured
+   *  2026-09-29 on 18 facts twice at temperature 0: Gemini 3.1 Flash-Lite
+   *  36/36 in about 1 s ($0.14 a thousand answers); Qwen 3.7 Flash 48/54,
+   *  "France won the 2022 FIFA World Cup" every time and a made-up Super
+   *  Bowl LX; Gemini 2.5 Flash-Lite thought the 2024 election was still to
+   *  come. */
+  answerModels: ["google/gemini-3.1-flash-lite", "qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro",
+    "gemini:gemini-flash-lite-latest"],
   /** What reads a pause in typing for the strip's chip: small, paid, cheap
    *  (about $8 a million reads on Qwen 3.7 Flash) and never a free tier
    *  that keeps what it is sent. */

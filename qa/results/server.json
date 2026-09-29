@@ -772,7 +772,7 @@
   "area": "Chips",
   "title": "A message already written with care gets no 'Tidy this up'; a rough one does",
   "verdict": "pass",
-  "ms": 1522,
+  "ms": 1371,
   "status": 200,
   "note": "clean: no chip · rough: Tidy this up (rerun)"
  },
@@ -781,7 +781,7 @@
   "area": "Chips",
   "title": "'please find me a good sushi place in brooklyn' offers places",
   "verdict": "pass",
-  "ms": 111,
+  "ms": 103,
   "status": 200,
   "note": "Show me places (rerun)"
  },
@@ -790,7 +790,7 @@
   "area": "Messages",
   "title": "'what time is the meeting tmrw' is tidied, never looked up",
   "verdict": "pass",
-  "ms": 2648,
+  "ms": 2556,
   "status": 200,
   "note": "rewrite: What time is the meeting tomorrow? (rerun)"
  },
@@ -799,7 +799,7 @@
   "area": "Write",
   "title": "'text to my boss saying im sick today' writes the text",
   "verdict": "pass",
-  "ms": 1190,
+  "ms": 937,
   "status": 200,
   "note": "write: Hi, I'm not feeling well today so I won't be able to come in. (rerun)"
  },
@@ -808,17 +808,35 @@
   "area": "Translate",
   "title": "Words asked for in another language come back in it",
   "verdict": "pass",
-  "ms": 1814,
+  "ms": 1540,
   "status": 200,
-  "note": "es: Buenos días · ja: ありがとう (rerun)"
+  "note": "es: buenos días · ja: ありがとうございます（arigatou gozaimasu） (rerun)"
  },
  {
   "id": "S208",
   "area": "Answers",
   "title": "An answer says only the answer, with no remarks on itself",
   "verdict": "pass",
-  "ms": 2473,
+  "ms": 1121,
   "status": 200,
-  "note": "answer: FOMO stands for fear of missing out. It refers to the anxiety that an exciting or interesting event may currently be happening elsewhere, often aroused by posts (rerun)"
+  "note": "answer: Fomo stands for fear of missing out. It describes the anxiety that an exciting or interesting event may currently be happening elsewhere, often aroused by posts (rerun)"
+ },
+ {
+  "id": "S211",
+  "area": "Answers",
+  "title": "'who is the ceo of tesla' is answered by the AI, not a Google link",
+  "verdict": "pass",
+  "ms": 2240,
+  "status": 200,
+  "note": "ai: Elon Musk is the CEO of Tesla. · Argentina won the FIFA World Cup in 2022. (rerun)"
+ },
+ {
+  "id": "S212",
+  "area": "Chips",
+  "title": "A question offers 'AI answer', with or without its '?', but not last night's game",
+  "verdict": "pass",
+  "ms": 1105,
+  "status": 200,
+  "note": "AI answer · AI answer · no chip · Tidy this up (rerun)"
  }
 ]

@@ -42,6 +42,16 @@ export function isLive(text: string): boolean {
     .test(text) || moneyAsked(text) !== null || liveAsk(text) !== null;
 }
 
+/** Happening now, so nothing a model knows can answer it: today's score, the
+ *  news, a live price, the weather. Everything else the AI answers from what
+ *  it knows (2026-09-29): "who is the ceo of tesla" is Elon Musk, not a
+ *  Google link. Narrower than `isLive`, which still guards the web tab's
+ *  cache and the model's written messages. */
+export function rightNow(text: string): boolean {
+  return /\b(scores?|live|right now|today'?s?|tonight'?s?|this (?:morning|afternoon|evening|week)|yesterday'?s?|last night'?s?|news|headlines?|breaking|stock price|share price|trading at|exchange rates?|forex|forecast|weather)\b/i
+    .test(text) || moneyAsked(text) !== null || liveAsk(text) !== null;
+}
+
 // ── what was asked: the time, the sun, the weather ────────────────────────
 
 export type LiveKind = "time" | "sunset" | "sunrise" | "golden" | "weather" | "rain";
@@ -838,9 +848,8 @@ export async function instantAnswer(
       : sunAnswer(q, ask, ctx);
     return card.catch(() => null);
   }
-  for (const d of [currencyAnswer, wikiAnswer]) {
-    const hit = await d(q).catch(() => null);
-    if (hit) return hit;
-  }
-  return null;
+  // Wikipedia no longer answers here: the AI does, from what it knows
+  // (Arpit, 2026-09-29: "we wont be having any search for now, use ai only
+  // for all that too"). Only exact, computed answers come before it.
+  return await currencyAnswer(q).catch(() => null);
 }
