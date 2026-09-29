@@ -640,6 +640,24 @@ final class GlyfScenarioUITests: XCTestCase {
         note("inserted: '\(value)'")
     }
 
+    /// S214: money typed shows in the local currency in the strip (Arpit,
+    /// 2026-09-30: "$20 not showing amount in local currency ... i want
+    /// rupee, or whatever i set in as local currency here in app").
+    func testS214_MoneyShowsInTheLocalCurrencyInTheStrip() throws {
+        open()
+        var seen: [String] = []
+        for typed in ["$20", "it costs $20"] {
+            clear()
+            type(typed)
+            let chip = wait("strip:smart", 6)
+            let label = chip?.label ?? "none"
+            seen.append("\(typed) → \(label)")
+            XCTAssertTrue(label.contains("₹"), "\(typed): the strip shows '\(label)'")
+        }
+        keepScreenshot("money-strip")
+        note(seen.joined(separator: "; "))
+    }
+
     /// S198: a sum shows its answer in the strip as it is typed, no hold
     /// (user, 2026-09-29: "why am i needing to hold space, suggest it in strip").
     func testS198_ASumShowsItsAnswerInTheStripAsYouType() throws {
