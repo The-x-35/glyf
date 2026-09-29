@@ -24,6 +24,7 @@ TEST_SHARED = %w[
   Engine/CalendarText.swift
   Engine/EventParse.swift
   Engine/GoogleEvent.swift
+  Engine/TempMail.swift
   Engine/Typing/TypingText.swift
   Engine/Typing/GlydTrie.swift
   Engine/Typing/Decoder.swift

@@ -581,6 +581,43 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         }
     }
 
+    // MARK: Temp mail (server/src/routes/tempmail.ts)
+
+    struct TempMailReply {
+        let status: Int
+        let json: [String: Any]?
+        /// The server's own words for a refusal ("Sign in to use Glyf").
+        var error: String? { json?["error"] as? String }
+        /// What to tell the person: those words, else what went wrong.
+        var notice: String {
+            error ?? (status == 0 ? "Couldn't reach Glyf. Check the connection"
+                                  : "Temp mail didn't answer. Try again in a moment")
+        }
+    }
+
+    /// POST /tempmail, /tempmail/messages or /tempmail/delete. The address
+    /// travels in the body, never the URL, so it stays out of every log.
+    /// Answers on the main queue.
+    func tempMail(_ path: String, body: [String: Any], done: @escaping (TempMailReply) -> Void) {
+        let s = SettingsStore.current
+        guard let url = URL(string: "\(s.backendURL)/tempmail\(path)") else {
+            return done(TempMailReply(status: 0, json: nil))
+        }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.httpMethod = "POST"
+        req.timeoutInterval = 12
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var payload = body
+        payload["deviceId"] = s.deviceId
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        session.dataTask(with: req) { data, response, _ in
+            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            DispatchQueue.main.async { done(TempMailReply(status: status, json: json)) }
+        }.resume()
+    }
+
     // MARK: Meter (§6.16)
 
     func fetchRemaining(completion: @escaping (Int?) -> Void) {

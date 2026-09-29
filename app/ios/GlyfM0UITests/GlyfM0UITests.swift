@@ -300,16 +300,26 @@ final class GlyfGateUITests: XCTestCase {
         kb("toolbar:glyf")?.tap()
         sleep(1)
 
-        // Root screen rows (§6.3).
-        XCTAssertTrue(staticTextContaining("Clipboard").exists
-                      || staticTextContaining("Clipboard", in: springboard).exists)
+        // The menu holds the tools the strip doesn't (2026-09-29): Rewrite is
+        // one; Clipboard sits on the strip, so it is not a tile. Tiles are one
+        // element each, found by id.
+        XCTAssertNotNil(kbWait("shell:tile:rewrite"), "the menu has no Rewrite tile")
 
-        // Push Settings, flip a toggle, come back.
-        (firstExisting([app.staticTexts["Settings"], springboard.staticTexts["Settings"]]))?.tap()
+        // Push Settings (a third row since Temp mail joined, 2026-09-30),
+        // flip a toggle, come back.
+        guard let settings = kbWait("shell:tile:settings") else { return XCTFail("no Settings tile") }
+        if !settings.isHittable {
+            kb("shell:tile:rewrite")?.swipeUp()
+            sleep(1)
+        }
+        settings.tap()
         sleep(1)
-        XCTAssertTrue(staticTextContaining("Haptic").exists
-                      || staticTextContaining("Haptic", in: springboard).exists,
-                      "settings screen did not render")
+        // Rows are one element each, and Typing leads (Haptics is further
+        // down, not yet drawn): match its first row by label.
+        let first = hosts.map {
+            $0.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Autocorrect")).firstMatch
+        }
+        XCTAssertTrue(first.contains { $0.waitForExistence(timeout: 3) }, "settings screen did not render")
         kb("shell:back")?.tap()
         sleep(1)
         kb("shell:close")?.tap()

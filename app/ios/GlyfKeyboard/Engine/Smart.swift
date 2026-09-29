@@ -38,6 +38,14 @@ enum Smart {
         /// Someone's Cal.com or Calendly page, in the message or just copied:
         /// one tap shows its open times to book, with the person's own details.
         case booking(link: String)
+        /// A mail that landed at the temp address while it was watched: its
+        /// code, which a tap types, or, with none, the mail, which a tap opens
+        /// (TempMailWatcher).
+        case tempMail(id: String, from: String, code: String?)
+        /// An email field with nothing typed in it: the temp address still
+        /// live, typed again (making one spends one of the day's few), or,
+        /// with none, a new one made, typed and watched, in one tap.
+        case tempAddress(live: String?)
 
         var key: String {
             switch self {
@@ -48,6 +56,8 @@ enum Smart {
             case .pay: return "Send"
             case .buy: return "Buy"
             case .action: return "Glyf"
+            case .tempMail: return "Mail"
+            case .tempAddress(let live): return live == nil ? "Email" : "Temp email"
             }
         }
         /// The verb on the chip's right edge: what a tap does. Nil for the
@@ -61,6 +71,8 @@ enum Smart {
             case .pay(_, _, _, let copied): return copied == nil ? "Send" : "Paste"
             case .buy(_, _, _, let copied): return copied == nil ? "Buy" : "Paste"
             case .action: return nil
+            case .tempMail(_, _, let code): return code == nil ? "Open" : "Insert"
+            case .tempAddress(let live): return live == nil ? "Create" : "Insert"
             }
         }
         /// A second action, as a button beside the first: Buy on a token's
@@ -108,6 +120,9 @@ enum Smart {
                 return amount.map { "\($0) \(token ?? "USDC") to \(short)" } ?? short
             case .buy(let mint, _, let price, _):
                 return price ?? Smart.shortAddress(mint)
+            case .tempMail(_, let from, let code):
+                return code.map { "\($0) · \(from)" } ?? "Mail from \(from)"
+            case .tempAddress(let live): return live ?? "Temp email"
             }
         }
         /// What tapping the chip puts in the field.
@@ -122,6 +137,8 @@ enum Smart {
             case .event: return ""     // opens New Event instead of typing
             case .booking: return ""   // opens Book a time instead of typing
             case .action: return ""    // runs a glyf instead of typing
+            case .tempMail(_, _, let code): return code ?? ""   // no code: opens the mail
+            case .tempAddress(let live): return live ?? ""   // none live: made first, then typed
             }
         }
     }

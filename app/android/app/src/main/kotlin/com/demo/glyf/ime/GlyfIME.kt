@@ -209,6 +209,21 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         VaultStore.upsertField(this@GlyfIME, f.optString("id"), kind, label, f.optString("value"))
                     }
                 }
+                // The temp address forgotten on this phone (the scenarios end
+                // with the address deleted; this is for a run cut short).
+                "tempmailclear" -> {
+                    TempMailStore.clear(this@GlyfIME)
+                    tempMails = emptyList()
+                    main.removeCallbacks(tempTick)
+                }
+                // Checks turned away until midnight, as a 429 leaves them
+                // ("--es text off" lifts it): the rest of that path, seen.
+                "tempmailblock" -> TempMailStore.load(this@GlyfIME)?.let { box ->
+                    val off = intent.getStringExtra("text") == "off"
+                    tempBlockedNotice = if (off) null else "No more checks today"
+                    TempMailStore.save(this@GlyfIME, box.copy(
+                        blockedUntil = if (off) 0L else TempMailClient.nextMidnight()))
+                }
                 // A detail a scenario added, gone again (by its value).
                 "dropdetail" -> {
                     val value = intent.getStringExtra("text").orEmpty()
@@ -495,6 +510,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         wordTouchesFor = ""
         toolsPinned = false
         KeyboardTyping.prepare(this) { updateSuggestions() }
+        // A temp address being watched: carry on here, with a look at once
+        // (a mail may have come while the keyboard was away).
+        main.removeCallbacks(tempTick)
+        if (TempMailStore.load(this)?.let { tempWatching(it) } == true) main.postDelayed(tempTick, 1500)
 
         // M0 ping — proof the keyboard ran (Android IMEs have network by
         // permission, so the FA flag is simply true here).
@@ -509,6 +528,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         main.removeCallbacks(tourTick)
+        // Temp mail is checked only while the keyboard is up.
+        main.removeCallbacks(tempTick)
+        main.removeCallbacks(tempClock)
         clearCoach()
         KeyboardTyping.saveNow(this)
     }
@@ -653,6 +675,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "calendar" -> showCalendarPanel()
             "games" -> showGamesPanel()
             "glyfs", "keys" -> showMyGlyfsPanel()
+            "tempmail" -> showTempMailPanel()
             // Paying is signed in the app's wallet, never in the keyboard.
             "pay" -> showPayPanel(PayPanelView.Intent.Send(null, null, null))
             "settings" -> { dismissFeaturePanel(); openApp() }
@@ -2232,7 +2255,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // The chip's purple, lighter so it reads on the card (Arpit,
         // 2026-09-30: "insert button text etc to be lighter colour purple so
         // it doesnt look unreadable"): over 3:1 in bold on either card.
-        val accent = if (chromeDark) Color.rgb(0xC3, 0xB4, 0xFF) else Color.rgb(0x8A, 0x6C, 0xFF)
+        val accent = stripAccent()
         val secondary = Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink()))
         // Every chip wears the turning, glowing border (MagicChip), laid out
         // as Safari's app banner is: the ✕ first, the action last and the
@@ -2935,18 +2958,21 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         setOnClickListener { onTap() }
     }
 
-    /** Black pill for the primary action, quiet hairline pills beside it. */
-    private fun pill(label: String, primary: Boolean, id: String, onTap: () -> Unit) = TextView(this).apply {
+    /** Black pill for the primary action, quiet hairline pills beside it;
+     *  [accent] fills it with the keyboard's purple and white words, in light
+     *  and dark alike (Temp mail's, as on iOS and the chips' Insert). */
+    private fun pill(label: String, primary: Boolean, id: String, accent: Boolean = false,
+                     onTap: () -> Unit) = TextView(this).apply {
         text = label; textSize = 15f
         typeface = Typeface.DEFAULT_BOLD
         gravity = Gravity.CENTER
-        setTextColor(if (primary) card() else ink())
+        setTextColor(if (accent) Color.WHITE else if (primary) card() else ink())
         setTag(com.demo.glyf.R.id.qa_id, id)
         contentDescription = spokenFor(id, label)
         background = GradientDrawable().apply {
             cornerRadius = dp(19).toFloat()
-            setColor(if (primary) ink() else card())
-            if (!primary) setStroke(1, Color.argb(if (chromeDark) 40 else 26, 128, 128, 136))
+            setColor(if (accent) GlyfMark.VIOLET else if (primary) ink() else card())
+            if (!primary && !accent) setStroke(1, Color.argb(if (chromeDark) 40 else 26, 128, 128, 136))
         }
         setOnClickListener { onTap() }
     }
@@ -3088,27 +3114,45 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (searchActive || barActive || vaultEditActive || overlay != null) { showSuggestions(emptyList()); return }
         val policy = typingPolicy()
         val ic = currentInputConnection
-        if (ic == null || policy and TypingEngine.SUGGESTIONS == 0 || !settings.optBoolean("candidates", true)) {
+        if (ic == null || !settings.optBoolean("candidates", true)) {
             showSuggestions(emptyList()); return
         }
         val before = ic.getTextBeforeCursor(96, 0)?.toString() ?: ""
-        val word = WordContext.currentWord(before)
-        val engine = KeyboardTyping.engine
         // A form asking for something already in the vault: offer it, one tap
         // fills it. Android tells a keyboard what the field wants (hint,
-        // autofill hints, input type), so this is exact here.
+        // autofill hints, input type), so this is exact here. It comes before
+        // the field's word policy: it is no word suggestion, and the fields
+        // that want none (an email field, a form's NO_SUGGESTIONS) are the
+        // ones it is for (an email field never showed the saved email).
         if (before.isEmpty() && !isSecureField()) {
             // The cached fields: decrypting the vault here ran on every pass.
             val fill = Autofill.match(currentInputEditorInfo, vaultFields())
+            // An email field can take a temp address instead: beside the
+            // saved email as "Temp", or on its own chip when none is saved.
+            val email = Autofill.kind(currentInputEditorInfo) == "email"
             if (fill != null) {
                 // Same chip as iOS: the saved detail, Insert on the right.
-                if (showStripChip("fill", null, fill, "Insert") {
+                if (showStripChip("fill", null, fill, "Insert",
+                        extra = if (email) "Temp" else null,
+                        onExtra = { hideStripChip(); insertTempAddress() }) {
                     currentInputConnection?.commitText(fill, 1)
                     hideStripChip()
                 }) return
+            } else if (email) {
+                // An address still live is shown and put in again, not a new
+                // one made (the chip cuts it short at the end).
+                val live = TempMailStore.load(this)?.takeIf { System.currentTimeMillis() < it.expiresAt }
+                if (showStripChip("tempfield", null, live?.address ?: "Temp email",
+                        if (live != null) "Insert" else "Create") {
+                    hideStripChip()
+                    insertTempAddress()
+                }) return
             }
         }
-        if (stripChipKind == "fill") hideStripChip()
+        if (stripChipKind == "fill" || stripChipKind == "tempfield") hideStripChip()
+        if (policy and TypingEngine.SUGGESTIONS == 0) { showSuggestions(emptyList()); return }
+        val word = WordContext.currentWord(before)
+        val engine = KeyboardTyping.engine
         if (updateSmartChip(before)) return
         refreshClipCard()
         if (word.isEmpty()) {
@@ -4199,6 +4243,429 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         syncAutoShift()
     }
+
+    // MARK: temp mail (TempMail.kt): an address Glyf watches, its mails here
+
+    /** The watched address's mails, newest first: in memory only, never on disk. */
+    private var tempMails: List<TempMail> = emptyList()
+    private var tempChecking = false
+    private var tempCreating = false
+    /** The watching line on the panel, kept to count down in place. */
+    private var tempLine: TextView? = null
+
+    private val tempTick = Runnable { checkTempMail() }
+    private val tempClock = object : Runnable {
+        override fun run() {
+            if (featurePanel?.tag != "tempmail") return
+            renderTempLine()
+            main.postDelayed(this, 1000)
+        }
+    }
+
+    private fun tempPanelShowing() = featurePanel?.tag == "tempmail" || featurePanel?.tag == "tempmail:mail"
+
+    /** Checked from Create, Insert or opening the panel for 15 minutes, and
+     *  for two minutes after a mail with a code (unless the panel is open). */
+    private fun tempWatching(box: TempBox, now: Long = System.currentTimeMillis()) =
+        now < box.expiresAt && now < box.watchUntil && now >= box.blockedUntil &&
+            (box.codeStop == 0L || now < box.codeStop || tempPanelShowing())
+
+    /** The server's words when it turned the day's checks away (said again
+     *  when a new watch is asked for before midnight). */
+    private var tempBlockedNotice: String? = null
+
+    /** A new watch window, from now. */
+    private fun restartTempWatch(box: TempBox): TempBox {
+        val now = System.currentTimeMillis()
+        val next = box.copy(watchStart = now, watchUntil = now + TempMailClient.WATCH_MS, codeStop = 0L)
+        TempMailStore.save(this, next)
+        // Checks turned away for today stay away, and it says why.
+        if (now < next.blockedUntil) notice(tempBlockedNotice ?: "Try again tomorrow")
+        return next
+    }
+
+    /** The next look: every 8 s for a window's first 3 minutes and while the
+     *  panel is open, every 20 s after (Temp-Mail.io requests are counted). */
+    private fun scheduleTempCheck() {
+        main.removeCallbacks(tempTick)
+        val box = TempMailStore.load(this) ?: return
+        if (!tempWatching(box)) return
+        val fast = tempPanelShowing() ||
+            System.currentTimeMillis() - box.watchStart < TempMailClient.FAST_FOR_MS
+        main.postDelayed(tempTick, if (fast) TempMailClient.FAST_MS else TempMailClient.SLOW_MS)
+    }
+
+    private fun checkTempMail() {
+        val box = TempMailStore.load(this) ?: return
+        val now = System.currentTimeMillis()
+        if (now >= box.expiresAt) { endTempBox("That address has expired"); return }
+        if (!tempWatching(box, now)) { renderTempLine(); return }
+        if (tempChecking) { scheduleTempCheck(); return }
+        tempChecking = true
+        TempMailClient.messages(settings.optString("backendURL"), settings.optString("deviceId"), box) { r ->
+            main.post {
+                tempChecking = false
+                // Replaced or deleted meanwhile: that answer is for no one.
+                val latest = TempMailStore.load(this)?.takeIf { it.address == box.address } ?: return@post
+                val json = r.json
+                when {
+                    json != null -> gotTempMails(latest, TempMailClient.mails(json))
+                    r.status == 403 || r.status == 410 -> { endTempBox(r.error); return@post }
+                    // The day's checks are spent: none until local midnight,
+                    // here or in another app, and it says so once.
+                    r.status == 429 -> {
+                        tempBlockedNotice = r.error
+                        TempMailStore.save(this, latest.copy(blockedUntil = TempMailClient.nextMidnight()))
+                        notice(r.error ?: "Try again tomorrow")
+                        renderTempLine()
+                        return@post
+                    }
+                }
+                scheduleTempCheck()
+            }
+        }
+    }
+
+    private fun gotTempMails(box: TempBox, mails: List<TempMail>) {
+        val changed = mails.map { it.id } != tempMails.map { it.id }
+        tempMails = mails
+        val fresh = mails.filter { it.id !in box.seen }
+        var next = box.copy(seen = box.seen + fresh.map { it.id })
+        // A code has come: two more minutes of watching, then its job is done.
+        if (next.codeStop == 0L && fresh.any { it.code != null }) {
+            next = next.copy(codeStop = System.currentTimeMillis() + TempMailClient.AFTER_CODE_MS)
+        }
+        if (next != box) TempMailStore.save(this, next)
+        when {
+            featurePanel?.tag == "tempmail" -> if (changed) showTempInbox()
+            // An open mail stays open; the inbox catches up when ‹ goes back to it.
+            featurePanel?.tag == "tempmail:mail" -> {}
+            else -> fresh.firstOrNull()?.let { showTempMailChip(it) }
+        }
+    }
+
+    /** A new mail on the strip: a code to put in, or the mail to open. */
+    private fun showTempMailChip(mail: TempMail) {
+        if (!::toolbar.isInitialized || searchActive || barActive || vaultEditActive || isSecureField()) return
+        val code = mail.code
+        if (code != null) {
+            showStripChip("tempmail", null, "$code · ${mail.from}", "Insert") {
+                currentInputConnection?.commitText(code, 1)
+                hideStripChip()
+            }
+        } else {
+            showStripChip("tempmail", null, "Mail from ${mail.from}", "Open") {
+                hideStripChip()
+                showTempMailPanel(mail.id)
+            }
+        }
+    }
+
+    /** The address gone (expired, deleted elsewhere): forgotten here too. */
+    private fun endTempBox(message: String?) {
+        TempMailStore.clear(this)
+        tempMails = emptyList()
+        main.removeCallbacks(tempTick)
+        message?.let { notice(it) }
+        if (stripChipKind == "tempmail") hideStripChip()
+        if (tempPanelShowing()) showTempInbox()
+    }
+
+    /** A new address, then [then] with it; the server's words when it can't.
+     *  The one it replaces (New) is let go once the new one is here, and a
+     *  day's turned-away checks stay turned away. */
+    private fun createTempBox(then: (TempBox) -> Unit) {
+        if (tempCreating) return
+        tempCreating = true
+        val old = TempMailStore.load(this)
+        TempMailClient.create(settings.optString("backendURL"), settings.optString("deviceId")) { r ->
+            main.post {
+                tempCreating = false
+                val json = r.json
+                val address = json?.optString("address").orEmpty()
+                val token = json?.optString("token").orEmpty()
+                if (address.isEmpty() || token.isEmpty()) {
+                    notice(r.error ?: "Temp mail didn't answer. Try again in a moment")
+                    return@post
+                }
+                val now = System.currentTimeMillis()
+                val box = TempBox(address, token, json!!.optLong("expiresAt", now + 3_600_000L),
+                    now, now + TempMailClient.WATCH_MS, 0L, emptySet(), old?.blockedUntil ?: 0L)
+                TempMailStore.save(this, box)
+                tempMails = emptyList()
+                if (old != null && old.address != address) {
+                    TempMailClient.delete(settings.optString("backendURL"), settings.optString("deviceId"), old)
+                }
+                scheduleTempCheck()
+                then(box)
+            }
+        }
+    }
+
+    /** An email field's Create (or Temp): the live address, else a new one,
+     *  typed in, and watched from now. */
+    private fun insertTempAddress() {
+        val live = TempMailStore.load(this)?.takeIf { System.currentTimeMillis() < it.expiresAt }
+        val put = { box: TempBox ->
+            currentInputConnection?.commitText(box.address, 1)
+            restartTempWatch(box)
+            scheduleTempCheck()
+            updateSuggestions()
+        }
+        if (live != null) put(live) else createTempBox(put)
+    }
+
+    /** Temp mail: the address and its inbox, or [openId]'s mail opened.
+     *  Opening it starts a new watch window, with a look at once. */
+    private fun showTempMailPanel(openId: String? = null) {
+        TempMailStore.load(this)?.let { box ->
+            if (System.currentTimeMillis() >= box.expiresAt) { endTempBox("That address has expired"); return@let }
+            restartTempWatch(box)
+        }
+        val mail = openId?.let { id -> tempMails.firstOrNull { it.id == id } }
+        if (mail != null) showTempMail(mail) else showTempInbox()
+        main.removeCallbacks(tempTick)
+        if (TempMailStore.load(this) != null) checkTempMail()
+    }
+
+    private fun showTempInbox() {
+        val (panel, body) = panelShell("Temp mail")
+        panel.tag = "tempmail"
+        tempLine = null
+        val box = TempMailStore.load(this)
+        if (box == null) {
+            body.addView(pill("Create address", primary = true, id = "tempmail:create", accent = true) {
+                createTempBox { if (featurePanel?.tag == "tempmail") showTempInbox() }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42))
+                .apply { topMargin = dp(6) })
+            return
+        }
+        // The address: one line, its middle given up where it doesn't fit.
+        val cardV = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(card()) }
+        }
+        cardV.addView(TextView(this).apply {
+            text = box.address
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+            setTextColor(ink())
+            setTag(com.demo.glyf.R.id.qa_id, "tempmail:address")
+        })
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        actions.addView(pill("Insert", primary = true, id = "tempmail:insert", accent = true) {
+            currentInputConnection?.commitText(box.address, 1)
+            restartTempWatch(box)
+            dismissFeaturePanel()
+            scheduleTempCheck()
+        }, LinearLayout.LayoutParams(dp(92), dp(36)))
+        actions.addView(pill("Copy", primary = false, id = "tempmail:copy") {
+            (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                .setPrimaryClip(android.content.ClipData.newPlainText("", box.address))
+            notice("Copied")
+        }, LinearLayout.LayoutParams(dp(80), dp(36)).apply { leftMargin = dp(8) })
+        actions.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        actions.addView(smallAction("New", "tempmail:new") {
+            createTempBox { if (featurePanel?.tag == "tempmail") showTempInbox() }
+        })
+        actions.addView(smallAction("Delete", "tempmail:delete") {
+            TempMailClient.delete(settings.optString("backendURL"), settings.optString("deviceId"), box) { r ->
+                main.post { if (r.json == null && r.status != 403 && r.status != 410) r.error?.let { notice(it) } }
+            }
+            TempMailStore.clear(this)
+            tempMails = emptyList()
+            main.removeCallbacks(tempTick)
+            if (stripChipKind == "tempmail") hideStripChip()
+            showTempInbox()
+        })
+        cardV.addView(actions, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
+        body.addView(cardV, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT))
+        // "Watching · 14:32 left", or "Stopped · Watch again".
+        val line = TextView(this).apply {
+            textSize = 13f
+            setPadding(dp(4), dp(10), dp(4), dp(8))
+            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+        }
+        body.addView(line)
+        tempLine = line
+        renderTempLine()
+        main.removeCallbacks(tempClock)
+        main.postDelayed(tempClock, 1000)
+        if (tempMails.isEmpty()) {
+            body.addView(TextView(this).apply {
+                text = "No mail yet"
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(0, dp(18), 0, dp(18))
+                setTextColor(Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+                setTag(com.demo.glyf.R.id.qa_id, "tempmail:empty")
+            })
+            return
+        }
+        for ((i, mail) in tempMails.withIndex()) body.addView(tempRow(i, mail),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(7) })
+    }
+
+    private fun renderTempLine() {
+        val line = tempLine ?: return
+        val box = TempMailStore.load(this) ?: return
+        val left = box.watchUntil - System.currentTimeMillis()
+        if (tempWatching(box) && left > 0) {
+            val s = left / 1000
+            line.text = "Watching · %d:%02d left".format(s / 60, s % 60)
+            line.setTag(com.demo.glyf.R.id.qa_id, "tempmail:watching")
+            line.setOnClickListener(null)
+            line.isClickable = false
+        } else {
+            val words = android.text.SpannableString("Stopped · Watch again")
+            words.setSpan(android.text.style.ForegroundColorSpan(stripAccent()), 10, words.length, 0)
+            line.text = words
+            line.setTag(com.demo.glyf.R.id.qa_id, "tempmail:watch")
+            line.setOnClickListener {
+                restartTempWatch(TempMailStore.load(this) ?: return@setOnClickListener)
+                renderTempLine()
+                checkTempMail()
+            }
+        }
+    }
+
+    /** A mail in the inbox: who, when, what; a code to put in straight away. */
+    private fun tempRow(i: Int, mail: TempMail): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(card()) }
+            setTag(com.demo.glyf.R.id.qa_id, "tempmail:row:$i")
+            setOnClickListener { showTempMail(mail) }
+        }
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        top.addView(TextView(this).apply {
+            text = mail.from.ifBlank { mail.fromAddress }
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(ink())
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        top.addView(TextView(this).apply {
+            text = TempMailClient.ago(mail.receivedAt)
+            textSize = 12f
+            setTextColor(Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+        })
+        row.addView(top)
+        if (mail.subject.isNotBlank()) row.addView(TextView(this).apply {
+            text = mail.subject
+            textSize = 13f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(Color.argb(190, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+        })
+        val code = mail.code
+        if (code != null) row.addView(TextView(this).apply {
+            val words = android.text.SpannableString("$code  Insert")
+            words.setSpan(android.text.style.ForegroundColorSpan(stripAccent()), code.length + 2, words.length, 0)
+            words.setSpan(android.text.style.StyleSpan(Typeface.BOLD), 0, words.length, 0)
+            text = words
+            textSize = 14f
+            setTextColor(ink())
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(13).toFloat()
+                setColor(Color.argb(36, 0x7C, 0x5C, 0xFF))
+            }
+            setTag(com.demo.glyf.R.id.qa_id, "tempmail:rowcode:$i")
+            setOnClickListener {
+                currentInputConnection?.commitText(code, 1)
+                dismissFeaturePanel()
+            }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
+        return row
+    }
+
+    /** One mail: what it says, and its code big, to put in or copy. */
+    private fun showTempMail(mail: TempMail) {
+        val (panel, body) = panelShell("Temp mail", onBack = { showTempInbox() })
+        panel.tag = "tempmail:mail"
+        main.removeCallbacks(tempClock)
+        body.addView(TextView(this).apply {
+            text = mail.subject.ifBlank { mail.from }
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(ink())
+            setTag(com.demo.glyf.R.id.qa_id, "tempmail:subject")
+        })
+        body.addView(TextView(this).apply {
+            text = "${mail.from.ifBlank { mail.fromAddress }} · ${TempMailClient.ago(mail.receivedAt)}"
+            textSize = 13f
+            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+            setPadding(0, dp(2), 0, dp(8))
+        })
+        val code = mail.code
+        if (code != null) {
+            val block = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(10), dp(10), dp(10))
+                background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(card()) }
+            }
+            block.addView(TextView(this).apply {
+                text = code
+                textSize = 26f
+                typeface = Typeface.DEFAULT_BOLD
+                letterSpacing = 0.08f
+                setTextColor(ink())
+                setTag(com.demo.glyf.R.id.qa_id, "tempmail:code")
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            block.addView(pill("Insert", primary = true, id = "tempmail:code:insert", accent = true) {
+                currentInputConnection?.commitText(code, 1)
+                dismissFeaturePanel()
+            }, LinearLayout.LayoutParams(dp(84), dp(36)))
+            block.addView(pill("Copy", primary = false, id = "tempmail:code:copy") {
+                (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("", code))
+                notice("Copied")
+            }, LinearLayout.LayoutParams(dp(72), dp(36)).apply { leftMargin = dp(8) })
+            body.addView(block, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        }
+        val link = mail.link
+        if (link != null) body.addView(pill("Insert link", primary = false, id = "tempmail:link") {
+            currentInputConnection?.commitText(link, 1)
+            dismissFeaturePanel()
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)).apply { bottomMargin = dp(8) })
+        body.addView(TextView(this).apply {
+            text = mail.text
+            textSize = 14f
+            setTextColor(ink())
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setTag(com.demo.glyf.R.id.qa_id, "tempmail:text")
+        })
+    }
+
+    /** A quiet text action beside the card's buttons (New, Delete). */
+    private fun smallAction(label: String, id: String, onTap: () -> Unit) = TextView(this).apply {
+        text = label
+        textSize = 13f
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
+        setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+        setPadding(dp(10), dp(8), dp(6), dp(8))
+        setTag(com.demo.glyf.R.id.qa_id, id)
+        setOnClickListener { onTap() }
+    }
+
+    /** The strip chip's lighter purple, for words that act. */
+    private fun stripAccent() = if (chromeDark) Color.rgb(0xC3, 0xB4, 0xFF) else Color.rgb(0x8A, 0x6C, 0xFF)
 
     // MARK: emoji board (EmojiBoard.swift twin: Emoji, Stickers, GIFs, Emoticons)
 

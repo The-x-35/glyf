@@ -255,6 +255,24 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let paste = UIPasteConfiguration(forAccepting: NSString.self)
         paste.addTypeIdentifiers(forAccepting: UIImage.self)
         pasteConfiguration = paste
+        // A mail at the temp address, while it is watched: the strip offers
+        // its code, or the mail. Notices are the server's own words.
+        TempMailWatcher.shared.onNewMail = { [weak self] mail in
+            guard let self else { return }
+            self.mailChip = (.tempMail(id: mail.id, from: mail.from, code: mail.code), Date())
+            self.updateCandidates()
+        }
+        TempMailWatcher.shared.onNotice = { [weak self] text in
+            guard let self else { return }
+            KeyboardToast.show(in: self.content, text: text)
+        }
+        NotificationCenter.default.addObserver(forName: TempMailWatcher.changed, object: nil,
+                                               queue: .main) { [weak self] _ in
+            // The address ended: its mail's chip goes with it.
+            guard let self, self.mailChip != nil, TempMailWatcher.shared.state == nil else { return }
+            self.mailChip = nil
+            self.updateCandidates()
+        }
     }
 
     /// Where every system paste button in the keyboard lands.
@@ -520,6 +538,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// the keys is the one offered; they stay in the vault as Other under a
     /// marked label, so a crash in between loses nothing. "unstash" puts them
     /// back; "dropdetail" removes the detail a scenario added, by its value;
+    /// "adddetail" saves one (a kind, a label, a value) without the keys;
     /// "snippet" keeps ";qa=See you" or lets ";qa=" go.
     private func runDebugVaultTool() {
         guard let d = AppGroupStore.readJSON(name: "debug-vault.json"),
@@ -536,6 +555,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
             } else {
                 _ = store.upsertSnippet(trigger: String(pair[0]), text: String(pair[1]))
             }
+            return
+        }
+        if op == "adddetail" {
+            _ = store.upsertField(id: nil, kind: d["kind"] as? String ?? "custom",
+                                  label: d["label"] as? String ?? "", value: d["value"] as? String ?? "")
             return
         }
         for f in store.load().fields {
@@ -567,12 +591,15 @@ final class GlyfKeyboardViewController: UIInputViewController {
         stopTourWatch()
         // A chip's colours stop turning with the keyboard away.
         toolbar.setMagicRunning(false)
+        TempMailWatcher.shared.setVisible(false)
         TypingStore.shared.saveNow()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         toolbar.setMagicRunning(true)
+        TempMailWatcher.shared.fullAccess = hasFullAccess
+        TempMailWatcher.shared.setVisible(true)
         Self.appearances += 1
         log.log("GLYF_KB height=\(self.view.bounds.height) target=\(self.totalHeight)")
         let mb = MemoryLogger.logAppearance(Self.appearances)
@@ -752,6 +779,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// until the text changes (Arpit, 2026-09-30: "add some button to
     /// dismiss it").
     private var dismissedTail: String?
+    /// A mail that landed at the temp address, and when: offered in the
+    /// strip until it is used, put away or five minutes old (a code goes
+    /// stale), and never again (each mail's chip shows once).
+    private var mailChip: (chip: Smart.Chip, at: Date)?
     private var suggestedChip: Smart.Chip?
     /// What Glyf itself just wrote into the field (a rewrite, an answer).
     /// Offering to tidy that up would be asking about its own work.
@@ -949,7 +980,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         dismissTonesPopup()
         // Tear down the old overlay — pop = discard data (§6.3).
         switch surface {
-        case .shell: shell?.removeFromSuperview(); shell = nil
+        case .shell:
+            shell?.removeFromSuperview(); shell = nil
+            TempMailWatcher.shared.panelOpen = false
         case .bar: bar?.removeFromSuperview(); bar = nil
         case .emoji: emoji?.removeFromSuperview(); emoji = nil
         case .connector:
@@ -1559,6 +1592,16 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.showSmart(nil)
             return false
         }
+        // A mail that just landed at the temp address comes first: its code
+        // is what the field is waiting for.
+        if let mail = mailChip {
+            if Date().timeIntervalSince(mail.at) < 300, tourStep == nil {
+                cancelSuggestion()
+                toolbar.showSmart(mail.chip)
+                return true
+            }
+            mailChip = nil
+        }
         let before = beforeContext ?? ""
         let tail = String(before.suffix(120))
         if let gone = dismissedTail {
@@ -1586,6 +1629,17 @@ final class GlyfKeyboardViewController: UIInputViewController {
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
                               rates: rates, ownWallet: ownWallet,
                               indianGrouping: (SettingsStore.current.region ?? "IN") == "IN")
+        // An email field with nothing in it: a temp address in one tap, or,
+        // beside your own email, "Temp" for one.
+        var extra: String?
+        if before.isEmpty, (textDocumentProxy.documentContextAfterInput ?? "").isEmpty,
+           hasFullAccess, GlyfSession.token() != nil, fieldHint(emptyField: true).kind == "email" {
+            if chip == nil {
+                chip = .tempAddress(live: TempMailWatcher.shared.address)
+            } else if case .vault(let f)? = chip, f.kind == "email" {
+                extra = "Temp"
+            }
+        }
         // An address on screen or copied: a wallet (Send) or a token (Buy)?
         // Only a lookup can tell; the strip is arranged again when it lands.
         if chip == nil, hasFullAccess,
@@ -1623,7 +1677,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         } else {
             cancelSuggestion()
         }
-        toolbar.showSmart(chip)
+        toolbar.showSmart(chip, extra: extra)
         return chip != nil
     }
 
@@ -1638,6 +1692,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .action: return "action"
         case .event: return "event"
         case .booking: return "booking"
+        case .tempMail: return "tempmail"
+        case .tempAddress: return "tempaddress"
         }
     }
 
@@ -2621,7 +2677,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             setSurface(.pay)
         case "calendar": setSurface(.connector("calendar"))
         case "games": setSurface(.games)
-        case "vault", "glyfs", "settings":
+        case "vault", "glyfs", "settings", "tempmail":
             if surface != .shell { setSurface(.shell) }
             shell?.push(id)
         default: break
@@ -2737,6 +2793,13 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// marked done and never offered again — it is still in the clipboard
     /// panel if it turns out it was wanted after all.
     func toolbarSmartDismissed() {
+        if case .tempMail? = toolbar.smartChip {
+            // Each mail's chip shows once: put away, it is gone.
+            mailChip = nil
+            toolbar.showSmart(nil)
+            updateCandidates()
+            return
+        }
         if toolbar.smartIsPaste {
             ClipContext.markDone()
             // The paste probe keeps its copy for a second: forget it too, or
@@ -2755,6 +2818,30 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarSmartTapped(_ chip: Smart.Chip) {
+        switch chip {
+        case .tempMail(let id, _, let code):
+            mailChip = nil
+            toolbar.showSmart(nil)
+            if let code {
+                // Only the code: that is what the field is waiting for.
+                hostInsert(code)
+                syncAutoShift()
+                updateCandidates()
+            } else {
+                // No code: the panel, on that mail.
+                TempMailWatcher.shared.openedId = id
+                setSurface(.shell)
+                shell?.push("tempmail")
+                shell?.push("tempmail:mail")
+            }
+            return
+        case .tempAddress:
+            toolbar.showSmart(nil)
+            useTempAddress()
+            return
+        default:
+            break
+        }
         if case .action(_, _, let intent) = chip {
             suggestedChip = nil
             suggestedFor = ""
@@ -2872,6 +2959,11 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             ClipContext.markDone()
             cachedPaste = nil
             pendingPay = .buy(mint: mint, symbol: symbol, price: price)
+        case .vault(let f) where f.kind == "email":
+            // "Temp", beside your own email in an email field.
+            toolbar.showSmart(nil)
+            useTempAddress()
+            return
         case .money(let shown, _, let mint?):
             // "1 SOL = $121.39": the ticker and its price, off the chip.
             let parts = shown.split(separator: " ")
@@ -2882,6 +2974,23 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             return
         }
         setSurface(.pay)
+    }
+
+    /// An email field's temp address: the live one, or a new one, typed in
+    /// and watched from now.
+    private func useTempAddress() {
+        let watcher = TempMailWatcher.shared
+        if let live = watcher.address {
+            hostInsert(live)
+            watcher.restartWatch()
+            updateCandidates()
+            return
+        }
+        watcher.create { [weak self] address in
+            guard let self, let address else { return }
+            self.hostInsert(address)
+            self.updateCandidates()
+        }
     }
 
     /// glyf://open?path=… with the path and its query as ONE encoded value,
@@ -3045,6 +3154,13 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         UIPasteboard.general.image = image
         setSurface(.none)
         KeyboardToast.show(in: content, text: "Copied. Hold the text box to paste")
+    }
+
+    func shellCopyText(_ text: String) {
+        UIPasteboard.general.string = text
+        // Our own copy: the strip must not offer it back as a paste.
+        ClipboardStore.ignoreNextChange()
+        KeyboardToast.show(in: content, text: "Copied")
     }
 }
 

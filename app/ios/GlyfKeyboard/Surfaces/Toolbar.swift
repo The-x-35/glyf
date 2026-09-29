@@ -142,6 +142,7 @@ final class GlyfToolbar: UIView {
         // A stack of moving pictures: the board's GIFs, with Stickers beside.
         "gifs": "play.square.stack",
         "ask": "sparkles",
+        "tempmail": "envelope",
         "dictation": "mic",
         "glyfs": "square.grid.2x2",
         "pay": "creditcard",
@@ -670,7 +671,9 @@ final class GlyfToolbar: UIView {
     }
 
     /// One chip across the strip, or nil to go back to tools and suggestions.
-    func showSmart(_ chip: Smart.Chip?) {
+    /// `extra` names a second action the chip itself does not carry ("Temp"
+    /// beside your email, in an email field).
+    func showSmart(_ chip: Smart.Chip?, extra: String? = nil) {
         smartChip = chip
         let wasShowing = !smartCard.isHidden
         smartCard.isHidden = chip == nil || panelTitle != nil
@@ -702,8 +705,9 @@ final class GlyfToolbar: UIView {
                     .withTintColor(Glass.chipAccent, renderingMode: .alwaysOriginal) ?? UIImage())
                 smartKey.attributedText = NSAttributedString(attachment: spark)
             }
-            smartExtra.isHidden = chip.extra == nil
-            smartExtra.setTitle(chip.extra, for: .normal)
+            let second = extra ?? chip.extra
+            smartExtra.isHidden = second == nil
+            smartExtra.setTitle(second, for: .normal)
             if let label = chip.label {
                 let line = NSMutableAttributedString(string: label + "  ", attributes: [
                     .foregroundColor: Glass.textSecondary,

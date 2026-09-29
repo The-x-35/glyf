@@ -84,8 +84,12 @@ class ToolMenuView(
             contentDescription = title
             setTag(com.demo.glyf.R.id.qa_id, "shell:tile:$id")
         }
-        cell.addView(ToolIcon(context, id, palette.ink).apply { scale = 1.15f },
-            LayoutParams(LayoutParams.MATCH_PARENT, dp(28f).toInt(), Gravity.TOP))
+        // The glyph answers to "menu:<tool>" (the temp mail spec's id for its
+        // tile), the tile itself to "shell:tile:<tool>" as ever.
+        cell.addView(ToolIcon(context, id, palette.ink).apply {
+            scale = 1.15f
+            setTag(com.demo.glyf.R.id.qa_id, "menu:$id")
+        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(28f).toInt(), Gravity.TOP))
         cell.addView(TextView(context).apply {
             text = title
             textSize = 12f

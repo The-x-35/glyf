@@ -121,6 +121,17 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 sparkle(c, cx + dp(4.6f), cy - dp(4.6f), dp(3.4f))
                 sparkle(c, cx - dp(3.6f), cy - dp(5.6f), dp(1.8f))
             }
+            // An envelope: Temp mail.
+            "tempmail" -> {
+                c.drawRoundRect(cx - dp(7.6f), cy - dp(5.6f), cx + dp(7.6f), cy + dp(5.6f),
+                    dp(2f), dp(2f), p)
+                val flap = Path().apply {
+                    moveTo(cx - dp(6.6f), cy - dp(4.4f))
+                    lineTo(cx, cy + dp(0.6f))
+                    lineTo(cx + dp(6.6f), cy - dp(4.4f))
+                }
+                c.drawPath(flap, p)
+            }
             // A cross about 11dp across (its round ends included): the way a
             // strip chip is waved off.
             "close" -> {
@@ -386,7 +397,8 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
         /** Every tool, in the website's order first; titles as the grid shows them. */
         val TOOLS = listOf(
             "search" to "Search", "rewrite" to "Rewrite", "translate" to "Translate",
-            "vault" to "Vault", "calendar" to "Calendar", "clipboard" to "Clipboard", "gifs" to "GIFs",
+            "vault" to "Vault", "calendar" to "Calendar", "tempmail" to "Temp mail",
+            "clipboard" to "Clipboard", "gifs" to "GIFs",
             "ask" to "Ask Glyf", "dictation" to "Voice", "glyfs" to "My glyfs",
             "pay" to "Pay", "games" to "Games", "settings" to "Settings",
         )

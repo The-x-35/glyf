@@ -24,6 +24,8 @@ protocol GlyfShellDelegate: AnyObject {
     func shellRunKey(_ letter: String)
     /// Puts a vault image back on the clipboard, ready to paste into a field.
     func shellCopyImage(id: String)
+    /// Puts text on the clipboard (a temp address, a code) and says so.
+    func shellCopyText(_ text: String)
 }
 
 /// §6.3 — the in-keyboard navigation shell. HARD memory rules:
@@ -150,7 +152,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// holding one and moving it (saved as `menuOrder`).
     static let tools: [(id: String, title: String)] = [
         ("search", "Search"), ("rewrite", "Rewrite"), ("translate", "Translate"),
-        ("vault", "Vault"), ("calendar", "Calendar"), ("clipboard", "Clipboard"), ("gifs", "GIFs"),
+        ("vault", "Vault"), ("calendar", "Calendar"), ("tempmail", "Temp mail"),
+        ("clipboard", "Clipboard"), ("gifs", "GIFs"),
         ("ask", "Ask Glyf"), ("dictation", "Voice"), ("glyfs", "My glyfs"),
         ("pay", "Pay"), ("games", "Games"), ("settings", "Settings"),
     ]
@@ -227,8 +230,25 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         addSubview(footerButton)
 
         buildAddButton()
+        buildTempMail()
         restoreOrRoot()
     }
+
+    /// Temp mail's two screens: the inbox, and one mail open.
+    private let tempMailView = TempMailView()
+
+    private func buildTempMail() {
+        tempMailView.isHidden = true
+        tempMailView.onInsert = { [weak self] text in self?.delegate?.shellInsertText(text) }
+        tempMailView.onCopy = { [weak self] text in self?.delegate?.shellCopyText(text) }
+        tempMailView.onOpenMail = { [weak self] id in
+            TempMailWatcher.shared.openedId = id
+            self?.push("tempmail:mail")
+        }
+        addSubview(tempMailView)
+    }
+
+    private var showsTempMail: Bool { screen?.id.hasPrefix("tempmail") == true }
 
     /// The +, its three options and the scrim behind them, over everything
     /// the panel scrolls.
@@ -357,16 +377,19 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         closeButton.frame = CGRect(x: bounds.width - 48, y: 0, width: 44, height: headerH)
         titleLabel.frame = CGRect(x: 52, y: 0, width: bounds.width - 104, height: headerH)
         let isVault = usesCardGrid
+        let isTempMail = showsTempMail
         // Grids fill the panel the way the website does; only list screens
         // keep the "open in the app" line.
         let footerH: CGFloat = screen.showOpenInApp && !isRoot && !isVault ? 30 : 0
-        table.isHidden = isRoot || isVault
+        table.isHidden = isRoot || isVault || isTempMail
+        tempMailView.isHidden = !isTempMail
         grid.isHidden = !isRoot
         vaultGrid.isHidden = !isVault
         table.frame = CGRect(x: 0, y: headerH, width: bounds.width,
                              height: bounds.height - headerH - footerH)
         grid.frame = table.frame
         vaultGrid.frame = table.frame
+        tempMailView.frame = table.frame
         if isRoot, draggingTile == nil { layoutGrid() }
         if isVault { layoutVaultGrid() }
         footerButton.frame = CGRect(x: 0, y: bounds.height - footerH,
@@ -442,6 +465,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             icon.contentMode = .center
             icon.preferredSymbolConfiguration = .init(pointSize: 22, weight: .regular)
             icon.isUserInteractionEnabled = false
+            // Android's name for the tool's glyph. The tile is the one element
+            // VoiceOver and the tests see here, as shell:tile:<id>.
+            icon.accessibilityIdentifier = "menu:\(id)"
             cell.addSubview(icon)
 
             let label = UILabel()
@@ -771,7 +797,18 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     func render() {
         // Going back, or on to New detail, closes the +'s options.
         setAddOpen(false, animated: false)
+        let wasTempMail = showsTempMail
         screen = Self.build(id: stack.last ?? "root")
+        // Temp mail open: it shows new mail itself, watches at its quickest,
+        // and opening it starts a fresh 15 minutes.
+        let watcher = TempMailWatcher.shared
+        watcher.panelOpen = showsTempMail
+        if showsTempMail {
+            if !wasTempMail { watcher.restartWatch() }
+            tempMailView.show(detail: screen.id == "tempmail:mail")
+        } else {
+            tempMailView.stop()
+        }
         titleLabel.text = screen.title
         backButton.isHidden = screen.id == "root"
         if screen.id == "root" { refreshGrid() }
@@ -964,6 +1001,10 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             }
             // Adding is the + floating over the list (layoutAddButton).
             return Screen(id: id, title: "Vault", rows: rows, appPath: "vault")
+
+        case "tempmail", "tempmail:mail":
+            // Drawn by TempMailView: the address and its inbox, or one mail.
+            return Screen(id: id, title: "Temp mail", rows: [], showOpenInApp: false)
 
         case "vault:detail":
             // The kinds, as the app's Vault names them; one tap and the

@@ -241,7 +241,7 @@ const idStarts = p => v => v.id.startsWith(p);
 const textHas = t => v => (v.text || "").toLowerCase().includes(t.toLowerCase());
 
 // Every tool, by the id the strip's icon and the menu's tile carry.
-const TOOL_IDS = ["search", "rewrite", "translate", "vault", "calendar", "clipboard", "gifs",
+const TOOL_IDS = ["search", "rewrite", "translate", "vault", "calendar", "tempmail", "clipboard", "gifs",
   "ask", "dictation", "glyfs", "pay", "games", "settings"];
 
 // A tool opens from the strip when it is there, else from the g menu, which
@@ -1295,6 +1295,113 @@ scenarios.push(
       : { t: await text(), retried: false };
     return { pass: gone && strip !== "nothing" && kept === "2+5" && label.includes("2+50 = 52") && r.t.includes("2+50 = 52"),
       note: `✕ ${target}px; after it: chip gone ${gone}, strip shows ${strip}, text '${kept}'; typed 0 → '${label}'; Insert → '${r.t}'${second(r)}` };
+  } },
+);
+
+// --- 2026-09-30: temp mail in the keyboard, against the stand-in ---
+// Start qa/fake-tempmail.mjs (8798) and run the local server with
+// TEMP_MAIL_BASE_URL=http://127.0.0.1:8798. Addresses cost one of the day's
+// five on the free plan, so S217 and S218 use the one S216 made when it is
+// there, and S218 deletes it.
+const FAKE_TEMPMAIL = "http://127.0.0.1:8798";
+
+// The Temp mail panel's address, made if there is none; the panel is left open.
+async function tempAddress() {
+  await fresh();
+  tool("tempmail");
+  let addr = await waitFor(byId("tempmail:address"), 3000);
+  if (!addr) {
+    const create = await waitFor(byId("tempmail:create"), 3000);
+    if (!create) return null;
+    await tapXY(create.x, create.y);
+    addr = await waitFor(byId("tempmail:address"), 12000);
+  }
+  return addr?.text ?? null;
+}
+
+// A mail into the stand-in's inbox for [email] (the server reads its code).
+async function injectMail(email, subject, text) {
+  const r = await fetch(`${FAKE_TEMPMAIL}/_inject`, { method: "POST", body: JSON.stringify({ email, subject, text }) });
+  return r.ok;
+}
+
+// The strip's chip once its words hold [part], or null.
+async function chipWith(part, ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const s = await state();
+    const chip = find(s, byId("strip:smart"));
+    if (chip && chipLabel(s, chip).includes(part)) return { chip, label: chipLabel(s, chip) };
+    await sleep(500);
+  }
+  return null;
+}
+
+scenarios.push(
+  { id: "S216", title: "Temp mail: the g menu makes an address, and Insert types it", run: async () => {
+    // "option to enter temporary mail ... so user can get temporary mails directly inside their keyboards" (2026-09-30).
+    tool("tempmailclear");   // this one makes the address
+    await fresh();
+    const g = find(await state(), byId("toolbar:glyf"));
+    if (!g) return { pass: false, note: "no g button" };
+    await tapXY(g.x, g.y);
+    const tile = await waitFor(byId("menu:tempmail"), 3000);
+    if (!tile) return { pass: false, note: "no Temp mail in the g menu" };
+    await tapXY(tile.x, tile.y);
+    const create = await waitFor(byId("tempmail:create"), 3000);
+    if (!create) return { pass: false, note: "the panel offers no Create address" };
+    await screenshot("S216-empty");
+    await tapXY(create.x, create.y);
+    const addr = await waitFor(byId("tempmail:address"), 12000);
+    if (!addr) return { pass: false, note: `no address came (notice '${(await state()).notice}')` };
+    const watching = find(await state(), byId("tempmail:watching"))?.text ?? "";
+    await screenshot("S216-address");
+    const insert = find(await state(), byId("tempmail:insert"));
+    const r = await tapFor(insert, x => x.includes("@glyf-temp.example"));
+    return { pass: /^[a-z]+\.[0-9a-f]+@glyf-temp\.example$/.test(addr.text) && r.t.trim() === addr.text && /^Watching · 1[45]:\d\d left$/.test(watching),
+      note: `address made, '${watching}'; Insert typed '${r.t}'${second(r)}` };
+  } },
+  { id: "S217", title: "Temp mail: a code that arrives shows on the strip, and Insert types just the code", run: async () => {
+    const address = await tempAddress();
+    if (!address) return { pass: false, note: `no address (notice '${(await state()).notice}')` };
+    await fresh();   // the panel closed: a new mail comes to the strip
+    if (!await injectMail(address, "Your Acme code", "Your verification code is 482913.")) {
+      return { pass: false, note: "the stand-in took no mail (is qa/fake-tempmail.mjs running?)" };
+    }
+    const t0 = Date.now();
+    const got = await chipWith("482913", 16000);
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    if (!got) return { pass: false, note: `no code on the strip after ${secs}s` };
+    await screenshot("S217-code-chip");
+    const r = await tapFor(got.chip, x => x.includes("482913"));
+    return { pass: got.label.includes("482913 · Acme") && r.t === "482913" && Number(secs) <= 12,
+      note: `strip '${got.label}' after ${secs}s; Insert typed '${r.t}'${second(r)}` };
+  } },
+  { id: "S218", title: "Temp mail: the inbox lists the mail, opening it shows its text and code, and Delete ends the address", run: async () => {
+    const address = await tempAddress();
+    if (!address) return { pass: false, note: `no address (notice '${(await state()).notice}')` };
+    const had = find(await state(), byId("tempmail:row:0"));
+    if (!had) await injectMail(address, "Your Acme code", "Your verification code is 482913.");
+    const row = await waitFor(byId("tempmail:row:0"), 14000);
+    if (!row) return { pass: false, note: "the inbox shows no mail" };
+    let s = await state();
+    const rowWords = s.views.filter(v => v.text && Math.abs(v.y - row.y) < row.h / 2).map(v => v.text).join(" | ");
+    const pill = find(s, byId("tempmail:rowcode:0"));
+    await screenshot("S218-inbox");
+    await tapXY(row.x, row.y - Math.round(row.h / 4));   // the row, above its code pill
+    const code = await waitFor(byId("tempmail:code"), 3000);
+    s = await state();
+    const body = find(s, byId("tempmail:text"))?.text ?? "";
+    await screenshot("S218-mail");
+    const back = find(s, byId("panel:back"));
+    if (back) await tapXY(back.x, back.y);
+    const del = await waitFor(byId("tempmail:delete"), 3000);
+    if (del) await tapXY(del.x, del.y);
+    const ended = await waitFor(byId("tempmail:create"), 4000);
+    tool("close");
+    return { pass: /Acme/.test(rowWords) && /482913/.test(pill?.text ?? "") && code?.text === "482913" &&
+        body.includes("verification code is 482913") && !!ended,
+      note: `row '${rowWords}', pill '${pill?.text ?? "none"}'; opened: code '${code?.text ?? "none"}', text '${body.slice(0, 60)}'; after Delete: ${ended ? "Create address" : "still an address"}` };
   } },
 );
 

@@ -13,6 +13,7 @@
 		04E24537E6F15DE5A79B88B7 /* GlyfKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9185252D8BB3209B13267E60 /* GlyfKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		0559E8BD3D88EBE1C39F0D6D /* SearchRecents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */; };
 		05E7F2BF7420976501F5ECE8 /* ClipboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 707C5A7E74F5BA1712F4091F /* ClipboardStore.swift */; };
+		05E9C774CC53F7080542FA54 /* TempMailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416376F36170FAEDC38BA98E /* TempMailTests.swift */; };
 		0800EC9C0F83865A7252B720 /* ToneProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F870C03E48C1149F7284D509 /* ToneProfile.swift */; };
 		0B545E6619BFA8152F0DD00A /* TypingText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2800A99C3DD59CFC155C03C /* TypingText.swift */; };
 		0E08430B71036E4ED4D917CB /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ED172FBD98BD64B321D6F03F /* Foundation.framework */; };
@@ -24,6 +25,7 @@
 		22D65AB7F68DF03931D9BEA4 /* GlyfSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */; };
 		264770223DD8226DB4B988F0 /* ActSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */; };
 		301F473B5F209817B6C95E96 /* AccentPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603D199225C0A5A5986ECBD5 /* AccentPopup.swift */; };
+		3030BB09C6837BD7E0B85F68 /* TempMailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5892699230017F64EAF27C9F /* TempMailView.swift */; };
 		31A5DBAC5940AE8D66750E8C /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		3306AEEFF24C2165E619C1CE /* Billing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F6E535557BADA4D9455FF9 /* Billing.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
@@ -31,6 +33,7 @@
 		338DFF9C537EFE2A4F8227D8 /* TypingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8780A09C43898372745A2010 /* TypingEngine.swift */; };
 		3489B9F0BB84217F14041102 /* VaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00522630AB9AC3B92A56A844 /* VaultStore.swift */; };
 		354BE17C3BF7DC577342EC3C /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
+		3627AE07B1300C53E00B26D0 /* TempMailWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E222BB8A869057CCA4BE3324 /* TempMailWatcher.swift */; };
 		398AA6DA2628909F7C59DB31 /* NotesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9781AA84DE222D4BBC690481 /* NotesStore.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		3ED69AF1EA154FA5219C2826 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AFD743CD3003B7F5C22D9290 /* PrivacyInfo.xcprivacy */; };
@@ -69,6 +72,7 @@
 		7B15D2A5E11C0989CAE367E6 /* IntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B2E745F387CCCC496C13F0 /* IntentStore.swift */; };
 		7C790C9704BCE2E111609C54 /* GoogleAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11231DCD6CA4C179B56BBB /* GoogleAccess.swift */; };
 		7F06F8B50C201C5ADE91869E /* KeyMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */; };
+		80CD13C50A97137175CC0529 /* TempMail.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10C49ED64EB5C3D1C4AF361 /* TempMail.swift */; };
 		81364F0B50AAA933D02723D5 /* CalendarText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7C9B275603B0968648339E /* CalendarText.swift */; };
 		86158A821A4C4CC4943CCB1B /* BillingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C345A5FC24CCAA9645B2407 /* BillingTests.swift */; };
 		86507FC08D2603FB1EEAF708 /* SearchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E6DFEACD2A44AAB2AA5FA2 /* SearchCard.swift */; };
@@ -100,6 +104,7 @@
 		A560F79106F9F14FF065A3A7 /* SearchRecents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */; };
 		A6FBB7E0213DB2EAFE7E9C62 /* ControlScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB08610153E93D016950991C /* ControlScrollView.swift */; };
 		A7E9D6421F758C2BC141CA25 /* SearchRecents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */; };
+		A93D1F9F01F94D57A3A33B19 /* TempMail.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10C49ED64EB5C3D1C4AF361 /* TempMail.swift */; };
 		AAC1E7223335C4588A9AC595 /* EventParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB882BCA6F90D372D5921104 /* EventParse.swift */; };
 		B0850AA732C33E25139D7C5A /* GlyfKeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */; };
 		B1206CCFBC7B411E70F86631 /* GoogleEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25E808ECB86F3613221456A /* GoogleEvent.swift */; };
@@ -232,6 +237,7 @@
 		3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActSurface.swift; sourceTree = "<group>"; };
 		3CECC849C144A1C00C88586B /* Toolbar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Toolbar.swift; sourceTree = "<group>"; };
 		3FAB6C89A5A109AF1D863E30 /* GlyfBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfBridge.swift; sourceTree = "<group>"; };
+		416376F36170FAEDC38BA98E /* TempMailTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TempMailTests.swift; sourceTree = "<group>"; };
 		420BCE51F821608027ACDA01 /* GlydTrie.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlydTrie.swift; sourceTree = "<group>"; };
 		4223D5E2A46414C673A83747 /* Contracts.generated.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Contracts.generated.swift; sourceTree = "<group>"; };
 		425B52CBFA3C0F3F3A7C0B44 /* BackendClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackendClient.swift; sourceTree = "<group>"; };
@@ -240,6 +246,7 @@
 		4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Decoder.swift; sourceTree = "<group>"; };
 		4E97DFE2A588F7A69880F23A /* InlineEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InlineEditor.swift; sourceTree = "<group>"; };
 		50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyMetricsTests.swift; sourceTree = "<group>"; };
+		5892699230017F64EAF27C9F /* TempMailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TempMailView.swift; sourceTree = "<group>"; };
 		58E1EBDDAEBB9FDE7F264EF4 /* GlyfM0UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GlyfM0UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5950219DD87CBFD3056204A6 /* PersonalLexicon.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PersonalLexicon.swift; sourceTree = "<group>"; };
 		5C547E8287421DF9172C2964 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
@@ -306,6 +313,8 @@
 		DF986CE579005D015F108B53 /* TypingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingStore.swift; sourceTree = "<group>"; };
 		E0EE95049BBCC290AFF096F5 /* Settings.bundle */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 		E0F6D71A3FD3BDF87B2412DD /* EventParseTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EventParseTests.swift; sourceTree = "<group>"; };
+		E10C49ED64EB5C3D1C4AF361 /* TempMail.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TempMail.swift; sourceTree = "<group>"; };
+		E222BB8A869057CCA4BE3324 /* TempMailWatcher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TempMailWatcher.swift; sourceTree = "<group>"; };
 		E2800A99C3DD59CFC155C03C /* TypingText.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TypingText.swift; sourceTree = "<group>"; };
 		E46B9884C62D41962509FCA0 /* KeyboardToast.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardToast.swift; sourceTree = "<group>"; };
 		E4FA32D8AB8A81BFE76AF575 /* GlyfBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfBar.swift; sourceTree = "<group>"; };
@@ -394,6 +403,7 @@
 				28614EBB79A828A460549683 /* KeyTouchTests.swift */,
 				E0F6D71A3FD3BDF87B2412DD /* EventParseTests.swift */,
 				6C345A5FC24CCAA9645B2407 /* BillingTests.swift */,
+				416376F36170FAEDC38BA98E /* TempMailTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -451,6 +461,7 @@
 				F9C9E98EC46A38521768AD6A /* BookingSheet.swift */,
 				F81D5A3AF9671D3656603DE7 /* GamesSurface.swift */,
 				A84F81FFA1263B12519806DD /* PaySurface.swift */,
+				5892699230017F64EAF27C9F /* TempMailView.swift */,
 			);
 			name = Surfaces;
 			path = Surfaces;
@@ -478,6 +489,8 @@
 				35B41E8E3E2121B722B9B38C /* CalendarWriter.swift */,
 				F25E808ECB86F3613221456A /* GoogleEvent.swift */,
 				2DCC7C657F3DAF1BA19C8227 /* Games.swift */,
+				E10C49ED64EB5C3D1C4AF361 /* TempMail.swift */,
+				E222BB8A869057CCA4BE3324 /* TempMailWatcher.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -966,6 +979,9 @@
 				FAE58462515C8CE592372895 /* Games.swift in Sources */,
 				7A843811B0EA2FAF40E83F0F /* GamesSurface.swift in Sources */,
 				A061C74AD4C1975B4FEF8A9A /* PaySurface.swift in Sources */,
+				A93D1F9F01F94D57A3A33B19 /* TempMail.swift in Sources */,
+				3627AE07B1300C53E00B26D0 /* TempMailWatcher.swift in Sources */,
+				3030BB09C6837BD7E0B85F68 /* TempMailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1010,6 +1026,8 @@
 				6AC48EB71DCDEE4579DB32CC /* Games.swift in Sources */,
 				3306AEEFF24C2165E619C1CE /* Billing.swift in Sources */,
 				86158A821A4C4CC4943CCB1B /* BillingTests.swift in Sources */,
+				80CD13C50A97137175CC0529 /* TempMail.swift in Sources */,
+				05E9C774CC53F7080542FA54 /* TempMailTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

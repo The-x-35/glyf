@@ -133,8 +133,8 @@ final class GlyfScenarioUITests: XCTestCase {
     // MARK: - The strip and the g menu
 
     /// Every tool, as the g menu and the strip name them.
-    private static let tools = ["search", "rewrite", "translate", "vault", "calendar", "clipboard", "gifs",
-                                "ask", "dictation", "glyfs", "pay", "games", "settings"]
+    private static let tools = ["search", "rewrite", "translate", "vault", "calendar", "tempmail", "clipboard",
+                                "gifs", "ask", "dictation", "glyfs", "pay", "games", "settings"]
 
     /// Any tile of the g menu, once it is open.
     private func menuTile(_ timeout: TimeInterval = 3) -> XCUIElement? {
@@ -158,7 +158,14 @@ final class GlyfScenarioUITests: XCTestCase {
     private func openTool(_ id: String, file: StaticString = #filePath, line: UInt = #line) {
         if let icon = wait("toolbar:\(id)", 1.5) { return tapStripIcon(icon) }
         tap("toolbar:glyf", file: file, line: line)
-        guard let first = menuTile() else { return XCTFail("the g menu did not open", file: file, line: line) }
+        var opened = menuTile()
+        // With word suggestions up (a message already typed in), g first
+        // brings the tools back; the second tap opens the menu.
+        if opened == nil, el("toolbar:glyf").exists {
+            tap("toolbar:glyf", file: file, line: line)
+            opened = menuTile()
+        }
+        guard let first = opened else { return XCTFail("the g menu did not open", file: file, line: line) }
         let tile = el("shell:tile:\(id)")
         if tile.exists {
             for _ in 0..<4 where !tile.isHittable {
@@ -1030,6 +1037,372 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertTrue(waitValue(3) { $0.lowercased().contains("see you at the station") && !$0.contains(";s202") },
                       "';s202 ' should expand, got '\(value)'")
         note("typed 'meet me ;s202 ' -> '\(value)'")
+    }
+
+    // MARK: - Temp mail (qa/fake-tempmail.mjs on 8798, behind the local server)
+
+    private static let fakeTempMail = "http://127.0.0.1:8798"
+
+    /// Drops a mail into a temp address at the stand-in, the way a sign-up
+    /// form's mail arrives.
+    @discardableResult
+    private func injectMail(_ address: String, subject: String, text: String,
+                            from: String = "\"Acme\" <no-reply@acme.example>") -> Bool {
+        guard let url = URL(string: "\(Self.fakeTempMail)/_inject"),
+              let body = try? JSONSerialization.data(withJSONObject: [
+                  "email": address, "subject": subject, "text": text, "from": from]) else { return false }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.httpBody = body
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let done = DispatchSemaphore(value: 0)
+        var status = 0
+        URLSession.shared.dataTask(with: req) { _, response, _ in
+            status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            done.signal()
+        }.resume()
+        _ = done.wait(timeout: .now() + 5)
+        return status == 200
+    }
+
+    /// Temp mail open with no address in it: a live one is deleted first.
+    private func openTempMailEmpty(file: StaticString = #filePath, line: UInt = #line) {
+        openTool("tempmail", file: file, line: line)
+        if let delete = wait("tempmail:delete", 2) { delete.tap() }
+        XCTAssertNotNil(wait("tempmail:create", 4), "no Create address in Temp mail", file: file, line: line)
+    }
+
+    /// No address live, and the panel closed again.
+    private func endTempAddress(file: StaticString = #filePath, line: UInt = #line) {
+        openTempMailEmpty(file: file, line: line)
+        tap("toolbar:close", file: file, line: line)
+    }
+
+    /// Create in the open panel; the address, as its card reads in full.
+    private func makeTempAddress() -> String? {
+        tap("tempmail:create")
+        guard let card = wait("tempmail:address", 10) else {
+            note("no address after Create")
+            return nil
+        }
+        return card.label
+    }
+
+    /// Teardown's fallback: the keyboard forgets the scenario's address the
+    /// next time it shows (the stand-in keeps the inbox, which is harmless).
+    private func forgetTempMail() {
+        guard let dir = bridgeDir else { return }
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent("tempmail.json"))
+    }
+
+    /// The strip's chip, once it reads what `ok` wants.
+    private func waitChip(_ timeout: TimeInterval, _ ok: (String) -> Bool) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let chip = el("strip:smart")
+            if chip.exists, ok(chip.label) { return chip }
+            usleep(300_000)
+        }
+        return nil
+    }
+
+    /// Messages on a dark sheet (it follows the system; Glyf's own screens
+    /// stay light), the Glyf keyboard up in a new message. Light and Glyf
+    /// again once the scenario ends.
+    private func darkMessages() -> XCUIApplication? {
+        let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
+        addTeardownBlock { [self] in
+            XCUIDevice.shared.appearance = .light
+            messages.terminate()
+            host = app
+        }
+        host = messages
+        XCUIDevice.shared.appearance = .dark
+        XCUIDevice.shared.system.open(URL(string: "sms:+15555648583&body=hi")!)
+        guard messages.wait(for: .runningForeground, timeout: 8) else {
+            XCTFail("Messages did not open")
+            return nil
+        }
+        sleep(2)
+        guard switchToGlyf() else {
+            XCTFail("Glyf keyboard not up in Messages")
+            return nil
+        }
+        return messages
+    }
+
+    /// Contacts' New Contact with its email box focused and the Glyf
+    /// keyboard up: an email field, in an app that follows the system's
+    /// look. The contact is never saved.
+    private func newContactEmail(_ contacts: XCUIApplication) -> Bool {
+        contacts.terminate()
+        contacts.launch()
+        host = contacts
+        guard contacts.wait(for: .runningForeground, timeout: 8) else {
+            XCTFail("Contacts did not open")
+            return false
+        }
+        sleep(1)
+        for word in ["Continue", "Not Now", "Get Started"] where contacts.buttons[word].exists {
+            contacts.buttons[word].tap()
+        }
+        let add = contacts.buttons.matching(NSPredicate(
+            format: "label ==[c] 'Add' OR identifier ==[c] 'Add' OR label ==[c] 'New Contact'")).firstMatch
+        guard add.waitForExistence(timeout: 6) else {
+            note("Contacts: \(contacts.debugDescription.prefix(4000))")
+            XCTFail("no + in Contacts")
+            return false
+        }
+        add.tap()
+        let addEmail = contacts.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS[c] 'add email'")).firstMatch
+        guard addEmail.waitForExistence(timeout: 6) else {
+            note("New Contact: \(contacts.debugDescription.prefix(4000))")
+            XCTFail("no add email in New Contact")
+            return false
+        }
+        for _ in 0..<3 where !addEmail.isHittable {
+            contacts.swipeUp()
+            usleep(400_000)
+        }
+        addEmail.tap()
+        let box = contacts.textFields.matching(NSPredicate(
+            format: "placeholderValue ==[c] 'Email' OR label ==[c] 'Email'")).firstMatch
+        guard box.waitForExistence(timeout: 4) else {
+            note("New Contact: \(contacts.debugDescription.prefix(4000))")
+            XCTFail("no email box in New Contact")
+            return false
+        }
+        field = box
+        sleep(1)
+        if !switchToGlyf() {
+            box.tap()
+            sleep(1)
+            guard switchToGlyf() else {
+                XCTFail("Glyf keyboard not up in Contacts")
+                return false
+            }
+        }
+        return true
+    }
+
+    /// S216: Temp mail in the g menu makes an address, types it, and shows
+    /// what lands at it with its code ready to type (Arpit, 2026-09-30:
+    /// "option to enter temporary mail and we will monitor its mails for
+    /// next some times and show the mails gotten on it"). The panel on a
+    /// light sheet (Glyf) and a dark one (Messages).
+    func testS216_TempMailMakesAnAddressAndShowsWhatComesIn() throws {
+        open()
+        clear()
+        addTeardownBlock { [self] in forgetTempMail() }
+        XCTAssertFalse(el("toolbar:tempmail").exists, "Temp mail sits in the menu, not on the strip")
+        openTempMailEmpty()
+        XCTAssertFalse(el("tempmail:address").exists, "no address before Create")
+        keepScreenshot("tempmail-empty-light")
+        guard let address = makeTempAddress() else { return XCTFail("no address after Create") }
+        XCTAssertTrue(address.contains("@"), "the card reads '\(address)'")
+        XCTAssertNotNil(wait("tempmail:empty", 3), "a new address has no mail yet")
+        let watching = el("tempmail:watching").label
+        XCTAssertTrue(watching.hasPrefix("Watching · 1") && watching.hasSuffix(" left"), "the line reads '\(watching)'")
+        keepScreenshot("tempmail-address-light")
+        tap("tempmail:insert")
+        XCTAssertTrue(waitValue(3) { $0 == address }, "Insert typed '\(value)'")
+        XCTAssertTrue(gone("tempmail:insert", 3), "Insert closes the panel")
+
+        // A mail with a code and a link: listed, newest first, its code
+        // ready to type from the row.
+        clear()
+        openTool("tempmail")
+        XCTAssertTrue(injectMail(address, subject: "Your Acme code",
+                                 text: "Your verification code is 482913. Or confirm here: https://acme.example/verify?t=s216"),
+                      "the stand-in took no mail (is qa/fake-tempmail.mjs running?)")
+        let landed = Date()
+        guard wait("tempmail:row:0", 25) != nil else { return XCTFail("the mail did not show in the panel") }
+        note(String(format: "listed %.1f s after it landed", Date().timeIntervalSince(landed)))
+        XCTAssertFalse(el("tempmail:empty").exists, "No mail yet stays up beside a mail")
+        let pill = el("tempmail:rowcode:0")
+        XCTAssertTrue(pill.exists && pill.label.contains("482913"), "the row's code reads '\(pill.label)'")
+        keepScreenshot("tempmail-inbox-light")
+        pill.tap()
+        XCTAssertTrue(waitValue(3) { $0 == "482913" }, "the row's Insert typed '\(value)'")
+
+        // Opened: the code big, the link, the words.
+        clear()
+        openTool("tempmail")
+        tap("tempmail:row:0", 10)
+        guard let code = wait("tempmail:code", 4) else { return XCTFail("the mail did not open") }
+        XCTAssertEqual(code.label, "482913")
+        XCTAssertEqual(el("tempmail:subject").label, "Your Acme code")
+        let from = el("tempmail:from").label
+        XCTAssertTrue(from.hasPrefix("Acme · "), "the sender reads '\(from)'")
+        XCTAssertTrue(el("tempmail:text").label.contains("verification code is 482913"), "the words are missing")
+        XCTAssertTrue(el("tempmail:code:insert").exists && el("tempmail:code:copy").exists, "the code has no Insert or Copy")
+        keepScreenshot("tempmail-mail-light")
+        tap("tempmail:link")
+        XCTAssertTrue(waitValue(3) { $0 == "https://acme.example/verify?t=s216" }, "Insert link typed '\(value)'")
+
+        // The same panel on a dark sheet.
+        guard darkMessages() != nil else { return }
+        openTool("tempmail")
+        guard wait("tempmail:row:0", 20) != nil else { return XCTFail("the dark panel lists no mail") }
+        keepScreenshot("tempmail-inbox-dark")
+        tap("tempmail:row:0")
+        XCTAssertNotNil(wait("tempmail:code", 4), "the mail did not open on the dark sheet")
+        keepScreenshot("tempmail-mail-dark")
+        tap("toolbar:back")
+        tap("tempmail:delete", 4)
+        XCTAssertNotNil(wait("tempmail:create", 4), "Delete should bring Create back")
+        keepScreenshot("tempmail-empty-dark")
+        tap("toolbar:close")
+    }
+
+    /// S217: a mail that lands while the panel is closed comes up in the
+    /// strip: its code ("482913 · Acme … Insert", a tap types only the
+    /// code), or with none the mail ("Mail from Nova … Open", a tap opens
+    /// it). Each mail's chip shows once, and its ✕ puts it away.
+    func testS217_AMailThatLandsWhileTypingComesUpInTheStrip() throws {
+        open()
+        clear()
+        addTeardownBlock { [self] in forgetTempMail() }
+        openTempMailEmpty()
+        guard let address = makeTempAddress() else { return XCTFail("no address after Create") }
+        tap("toolbar:close")
+
+        XCTAssertTrue(injectMail(address, subject: "Your Acme code", text: "Your verification code is 482913."),
+                      "the stand-in took no mail (is qa/fake-tempmail.mjs running?)")
+        var landed = Date()
+        guard let chip = waitChip(30, { $0.contains("482913") }) else {
+            return XCTFail("no chip for the code; the strip shows '\(el("strip:smart").label)'")
+        }
+        note(String(format: "code chip %.1f s after the mail landed", Date().timeIntervalSince(landed)))
+        XCTAssertTrue(chip.label.contains("482913 · Acme"), "the chip reads '\(chip.label)'")
+        keepScreenshot("tempmail-code-chip-light")
+        chip.tap()
+        XCTAssertTrue(waitValue(3) { $0 == "482913" }, "the chip typed '\(value)'")
+        // Once: the next looks find it again, and say nothing.
+        clear()
+        sleep(10)
+        XCTAssertFalse(el("strip:smart").exists && el("strip:smart").label.contains("482913"), "the code's chip came back")
+
+        // No code: the mail itself, opened in the panel.
+        XCTAssertTrue(injectMail(address, subject: "Welcome to Nova", text: "Thanks for joining Nova.",
+                                 from: "\"Nova\" <hello@nova.example>"))
+        guard let mail = waitChip(30, { $0.contains("Nova") }) else {
+            return XCTFail("no chip for the mail; the strip shows '\(el("strip:smart").label)'")
+        }
+        XCTAssertTrue(mail.label.contains("Mail from Nova"), "the chip reads '\(mail.label)'")
+        keepScreenshot("tempmail-mail-chip-light")
+        mail.tap()
+        guard let subject = wait("tempmail:subject", 5) else { return XCTFail("Open did not open the mail") }
+        XCTAssertEqual(subject.label, "Welcome to Nova")
+        XCTAssertFalse(el("tempmail:code").exists, "a mail with no code shows none")
+        XCTAssertTrue(el("tempmail:text").label.contains("Thanks for joining"), "the words are missing")
+        tap("toolbar:close")
+
+        // ✕ puts a chip away, and it stays away.
+        XCTAssertTrue(injectMail(address, subject: "Your Zeta code", text: "Use 771204 to sign in to Zeta.",
+                                 from: "\"Zeta\" <no-reply@zeta.example>"))
+        guard waitChip(30, { $0.contains("771204") }) != nil else {
+            return XCTFail("no chip for Zeta's code; the strip shows '\(el("strip:smart").label)'")
+        }
+        tap("strip:smart:close")
+        XCTAssertTrue(gone("strip:smart", 3), "the chip stayed after its ✕")
+        sleep(10)
+        XCTAssertFalse(el("strip:smart").exists && el("strip:smart").label.contains("771204"), "the put-away chip came back")
+        XCTAssertEqual(value, "", "✕ typed '\(value)'")
+
+        // A code on a dark sheet. Opening the panel starts a fresh watch.
+        guard darkMessages() != nil else { return }
+        openTool("tempmail")
+        tap("toolbar:close")
+        XCTAssertTrue(injectMail(address, subject: "Your Orbit code", text: "Your Orbit verification code is 305917.",
+                                 from: "\"Orbit\" <no-reply@orbit.example>"))
+        landed = Date()
+        guard let dark = waitChip(30, { $0.contains("305917") }) else {
+            return XCTFail("no chip on the dark sheet; the strip shows '\(el("strip:smart").label)'")
+        }
+        note(String(format: "dark code chip %.1f s after the mail landed: '%@'", Date().timeIntervalSince(landed), dark.label))
+        keepScreenshot("tempmail-code-chip-dark")
+        tap("strip:smart:close")
+        endTempAddress()
+    }
+
+    /// S218: an email field with nothing in it offers a temp address. None
+    /// live and no email saved: "Temp email … Create" makes one, types it and
+    /// watches it. One live: the chip names it ("<address> … Insert") and
+    /// types it again, rather than spending another of the day's few. An
+    /// email saved: its chip carries "Temp" beside it, which types the live
+    /// one. In Contacts' New Contact, whose email box is an email field, on
+    /// a light sheet and a dark one; the contact is never saved.
+    func testS218_AnEmptyEmailFieldOffersATempAddress() throws {
+        let saved = "s218@example.com"
+        open()
+        clear()
+        // Saved emails are set aside for the run (kept in the vault as
+        // Other, put back after), so only the one added here is offered.
+        XCTAssertTrue(vaultTool(["op": "unstash"]), "the keyboard's vault tools did not answer")
+        XCTAssertTrue(vaultTool(["op": "dropdetail", "value": saved]))
+        XCTAssertTrue(vaultTool(["op": "stash", "kind": "email"]))
+        let contacts = XCUIApplication(bundleIdentifier: "com.apple.MobileAddressBook")
+        addTeardownBlock { [self] in
+            XCUIDevice.shared.appearance = .light
+            contacts.terminate()
+            host = app
+            open()
+            vaultTool(["op": "dropdetail", "value": saved])
+            vaultTool(["op": "unstash"])
+            forgetTempMail()
+        }
+        endTempAddress()
+
+        guard newContactEmail(contacts) else { return }
+        // No email saved, none live: Create. One address for the whole run
+        // (a day allows a few).
+        guard let create = waitChip(6, { $0.contains("Temp email") }) else {
+            return XCTFail("no Temp email chip; the strip shows '\(el("strip:smart").label)'")
+        }
+        XCTAssertFalse(create.label.contains("@"), "the strip offers '\(create.label)', not Create")
+        keepScreenshot("tempmail-field-create-light")
+        create.tap()
+        XCTAssertTrue(waitValue(10) { $0.contains("@") }, "Create typed '\(value)'")
+        let address = value
+
+        for look in ["light", "dark"] {
+            if look == "dark" {
+                XCUIDevice.shared.appearance = .dark
+                sleep(1)
+            }
+            // Live: named on the chip, and typed again.
+            clear()
+            guard let again = waitChip(6, { $0.contains(address) }) else {
+                return XCTFail("\(look): the live address is not offered; the strip shows '\(el("strip:smart").label)'")
+            }
+            keepScreenshot("tempmail-field-live-\(look)")
+            again.tap()
+            XCTAssertTrue(waitValue(3) { $0 == address }, "\(look): the live chip typed '\(value)'")
+
+            // An email saved: its chip, with Temp beside it.
+            XCTAssertTrue(vaultTool(["op": "adddetail", "kind": "email", "label": "Email", "value": saved]))
+            clear()
+            guard waitChip(6, { $0.contains(saved) }) != nil else {
+                return XCTFail("\(look): the saved email is not offered; the strip shows '\(el("strip:smart").label)'")
+            }
+            let temp = el("strip:smart:extra")
+            XCTAssertTrue(temp.exists && temp.isHittable && temp.label == "Temp", "\(look): beside the email sits '\(temp.label)'")
+            keepScreenshot("tempmail-field-vault-\(look)")
+            temp.tap()
+            XCTAssertTrue(waitValue(3) { $0 == address }, "\(look): Temp typed '\(value)'")
+            XCTAssertTrue(vaultTool(["op": "dropdetail", "value": saved]))
+        }
+
+        // The address ended, on the dark sheet: Create again.
+        endTempAddress()
+        clear()
+        guard let createDark = waitChip(6, { $0.contains("Temp email") }) else {
+            return XCTFail("dark: no Temp email chip; the strip shows '\(el("strip:smart").label)'")
+        }
+        XCTAssertFalse(createDark.label.contains("@"), "dark: the strip offers '\(createDark.label)', not Create")
+        keepScreenshot("tempmail-field-create-dark")
     }
 
     // MARK: - Clipboard
