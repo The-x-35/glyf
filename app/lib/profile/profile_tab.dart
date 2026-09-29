@@ -157,7 +157,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
 
   /// Who you are, how you signed in and your plan, in one card: the name
   /// with Edit, the account under it, the plan, then Got a code? (a code is
-  /// a plan too). Sign out is at the foot with the account's other actions.
+  /// a plan too). Sign out is at the page's foot, Delete account under Edit.
   Widget _identityCard() {
     final id = Auth.identity();
     final email = id.email ?? '';
@@ -327,7 +327,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
 
   /// App Store rule 5.1.1(v): an account made in the app can be deleted in
   /// the app. What stays on this phone (vault, notes, keyboard settings)
-  /// stays until the app is deleted.
+  /// stays until the app is deleted. Offered at the foot of Edit's sheet,
+  /// out of sight of the page.
   Future<void> _deleteAccount() async {
     final email = Auth.identity().email;
     final go = await showCupertinoDialog<bool>(
@@ -409,7 +410,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
           _navCard(
             icon: Icons.cable_outlined,
             title: 'Connected tools',
-            trailingText: '$_connectedTools active',
+            // Nothing on is nothing said, like the Search row.
+            trailingText: _connectedTools > 0 ? '$_connectedTools active' : null,
             onTap: () async {
               await Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const ConnectedToolsScreen()));
@@ -438,9 +440,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 8),
 
-          // The account's own actions, plain text at the foot. Only Sign out
-          // is red: two red lines read as a warning. Delete account stays one
-          // tap from the page, as App Store rule 5.1.1(v) asks.
+          // Sign out and the privacy policy, plain text at the foot. Delete
+          // account is not on the page: it is at the foot of Edit's sheet.
           Center(
             child: Semantics(
               identifier: 'profile:sign-out',
@@ -453,15 +454,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
               ),
             ),
           ),
-          if (Auth.signedIn)
-            Center(
-              child: TextButton(
-                key: const Key('profile:delete-account'),
-                onPressed: _deleteAccount,
-                child: const Text('Delete account',
-                    style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w500)),
-              ),
-            ),
           Center(
             child: TextButton(
               key: const Key('profile:privacy'),
@@ -607,15 +599,37 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     _refresh();
   }
 
+  /// The account card's Edit: the name, and Delete account as the sheet's
+  /// last, quietest line.
   Future<void> _editName() async {
+    var deleting = false;
     final name = (await showTextSheet(
       context,
       title: 'Your name',
       action: 'Save',
       initial: _displayName == 'You' ? '' : _displayName,
       maxLength: 24,
+      footer: Auth.signedIn
+          ? (sheet) => Semantics(
+                identifier: 'profile:delete-account',
+                button: true,
+                child: TextButton(
+                  key: const Key('profile:delete-account'),
+                  onPressed: () {
+                    deleting = true;
+                    Navigator.of(sheet).pop();
+                  },
+                  child: const Text('Delete account',
+                      style: TextStyle(
+                          color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w500)),
+                ),
+              )
+          : null,
     ))
         ?.trim();
+    // The sheet is down before the dialog opens: a deleted account goes on
+    // to onboarding, and the sheet would have stayed standing over it.
+    if (deleting) return _deleteAccount();
     if (name == null || name.isEmpty) return;
     final state = await GlyfBridge.onboardingState();
     state['displayName'] = name;
