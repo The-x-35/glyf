@@ -7,7 +7,7 @@
  */
 import type { FastifyRequest } from "fastify";
 import { verifySession } from "./identity.js";
-import { allow, capsFor, refusal, suggestCapsFor, translateCapsFor, type Allowance, type Caps, type Limiter, type Plan } from "./limits.js";
+import { allow, capsFor, refusal, suggestCapsFor, tempCheckCapsFor, tempInboxCapsFor, translateCapsFor, type Allowance, type Caps, type Limiter, type Plan } from "./limits.js";
 import { Users } from "./users.js";
 
 export interface GuardDeps {
@@ -76,6 +76,18 @@ export class Guard {
     return this.spendApart(req, deviceId, "translate", plan =>
       translateCapsFor(plan, this.deps.freeTranslationsPerDay ?? 100),
       "No more translations today. They come back tomorrow", now);
+  }
+
+  /** A new temp mail address, never a run. */
+  tempInbox(req: FastifyRequest, deviceId: string, now = new Date()): Promise<Verdict> {
+    return this.spendApart(req, deviceId, "tempinbox", plan => tempInboxCapsFor(plan, 5),
+      "No more temp addresses today. They come back tomorrow", now);
+  }
+
+  /** One check of a temp inbox, never a run. */
+  tempCheck(req: FastifyRequest, deviceId: string, now = new Date()): Promise<Verdict> {
+    return this.spendApart(req, deviceId, "tempcheck", plan => tempCheckCapsFor(plan, 450),
+      "Temp mail has checked enough for today. It checks again tomorrow", now);
   }
 
   private async spendApart(req: FastifyRequest, deviceId: string, kind: string,

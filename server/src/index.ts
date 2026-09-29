@@ -21,6 +21,7 @@ import { waitlistRoutes } from "./routes/waitlist.js";
 import { actRoutes } from "./routes/act.js";
 import { walletRoutes } from "./routes/wallet.js";
 import { suggestRoutes } from "./routes/suggest.js";
+import { tempMailRoutes } from "./routes/tempmail.js";
 import { translateRoutes } from "./routes/translate.js";
 import { vocabRoutes } from "./routes/vocab.js";
 import { authRoutes } from "./routes/auth.js";
@@ -94,6 +95,7 @@ export function buildApp(kv: KV = defaultKV()) {
   actRoutes(app, guard, kv);
   walletRoutes(app);
   suggestRoutes(app, guard);
+  tempMailRoutes(app, guard);
   translateRoutes(app, guard);
   vocabRoutes(app, guard);
   authRoutes(app);
