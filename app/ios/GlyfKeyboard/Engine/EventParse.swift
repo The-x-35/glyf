@@ -86,6 +86,12 @@ enum EventParse {
            let m = w.take(#"\b(?:at|@|around)\s+(\d{1,2})(?:[:.](\d{2}))?\b(?!\s*(?:%|/|st\b|nd\b|rd\b|th\b|people|persons|pax|mins?|minutes|hours?|hrs?))"#) {
             bareHour = (Int(m[1]) ?? 0, Int(m[2]) ?? 0)
         }
+        // "brunch sunday 11", "dinner friday 8": an hour straight after the
+        // day is its time ("sunday 11th" stays a date).
+        if minutes == nil, bareHour == nil,
+           let m = w.take(#"(?<=\b(?:mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday|sun|sunday|today|tomorrow|tmrw|tonight)\s)(\d{1,2})(?:[:.](\d{2}))?\b(?!\s*(?:%|/|st\b|nd\b|rd\b|th\b|people|persons|pax|mins?|minutes|hours?|hrs?))"#) {
+            bareHour = (Int(m[1]) ?? 0, Int(m[2]) ?? 0)
+        }
         if minutes == nil, bareHour == nil, let m = w.take(#"\b(noon|midday|midnight)\b"#) {
             if m[1] == "midnight" { minutes = 0; dayOffset = (dayOffset ?? 0) + 1 } else { minutes = 12 * 60 }
         }
@@ -229,7 +235,7 @@ enum EventParse {
         let p = parse(text, now: now, calendar: cal, dayFirst: dayFirst)
         guard p.hasTime else { return nil }
         if p.hasDay { return p }
-        let intent = #"\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|milte|milenge)\b"#
+        let intent = #"\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|game|match|pick (?:me|you|us|him|her|them) up|pickup|milte|milenge)\b"#
         return text.range(of: intent, options: [.regularExpression, .caseInsensitive]) != nil ? p : nil
     }
 

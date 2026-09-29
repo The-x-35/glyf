@@ -21,6 +21,9 @@ class SmartTest {
         assertEquals("123,456", Smart.format(123456.0, indian = false))
         assertEquals("12.5", Smart.format(12.5, indian = true))
         assertEquals(Smart.Chip.Calc("7", false), Smart.chip("(2+5)", vault))
+        // The strip reads the whole sum: "2+5 = 7".
+        assertEquals("2+5 = 7", Smart.display(Smart.chip("2+5", vault)!!))
+        assertEquals("12 * 12 = 144", Smart.display(Smart.chip("what is 12 * 12", vault)!!))
     }
 
     @Test fun moneyWhereYouAreAndNeverAGuess() {
@@ -88,6 +91,20 @@ class SmartTest {
         assertNull(Smart.chip("flight AI 2021", vault))
         assertNull(Smart.chip("4/0", vault))
         assertNull(Smart.evaluate("2+abc"))
+    }
+
+    /** Audit 2026-09-29: the strip answers a sum as it is typed, so what only
+     *  looks like one must stay quiet (Smart.swift twin). */
+    @Test fun countsRangesScoresAndPhoneNumbersAreNotSums() {
+        for (t in listOf("page 2 of 10", "episode 4 of 8", "call me at 555-1234", "555-1234", "the score was 3-2",
+            "3-2", "9-5", "10-11", "born 29/09/2024", "2024/09/29", "exp 09/2026", "open 24/7")) {
+            assertNull(t, Smart.calc(t))
+        }
+        assertEquals("30" to false, Smart.calc("20% of 150"))
+        assertEquals("105" to false, Smart.calc("150-45"))
+        assertEquals("3" to false, Smart.calc("5 - 2"))
+        assertEquals("120" to false, Smart.calc("the room is 10 x 12"))
+        assertEquals("7" to true, Smart.calc("10-3="))
     }
 
     /** "24/7" and dates are numbers over numbers, not sums; a percentage

@@ -24,7 +24,10 @@ object Smart {
 
     sealed class Chip {
         /** "3480/4" -> " = 870"; `hasEquals` when the "=" is already typed. */
-        data class Calc(val result: String, val hasEquals: Boolean) : Chip()
+        data class Calc(val result: String, val hasEquals: Boolean) : Chip() {
+            /** The sum as typed, so the strip reads "2+5 = 7" (kept out of equality). */
+            var expression: String = ""
+        }
         /** "my upi id is " -> the saved UPI. */
         data class Vault(val field: Field) : Chip()
         /** The model read the sentence and named what Glyf could do with it. */
@@ -99,7 +102,10 @@ object Smart {
 
     /** What the chip says. */
     fun display(chip: Chip): String = when (chip) {
-        is Chip.Calc -> chip.result
+        // The whole sum where it fits: "2+5 = 7" reads as an answer, "7" alone
+        // was easy to miss (user, 2026-09-29: "show result in recommendation strip").
+        is Chip.Calc -> if (chip.expression.isEmpty() || chip.expression.length > 22) "= ${chip.result}"
+            else "${chip.expression} = ${chip.result}"
         is Chip.Vault -> chip.field.value
         is Chip.Action -> chip.label
         is Chip.Money -> chip.shown
@@ -165,7 +171,9 @@ object Smart {
                 null -> null
             }
         }
-        calc(text, indianGrouping)?.let { return Chip.Calc(it.first, it.second) }
+        calcMatch(text, indianGrouping)?.let { (value, hasEquals, expression) ->
+            return Chip.Calc(value, hasEquals).also { it.expression = expression }
+        }
         money(text, rates)?.let { return it }
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
@@ -275,22 +283,43 @@ object Smart {
     private val calcPattern = Regex(
         """(\(?\s*$NUM\s*\)?(?:\s*$OP\s*\(?\s*$NUM\s*\)?)+)(\s*=)?\s*$""",
         RegexOption.IGNORE_CASE)
-    private val hasOperator = Regex("""[+*/×÷^%]|\bx\b|\bof\b""", RegexOption.IGNORE_CASE)
-    private val smallOverSmall = Regex("""\s*\d{1,2}\s*/\s*\d{1,2}\s*""")
+    /** "of" alone is not an operator: "page 2 of 10" is no sum, "20% of 150" is. */
+    private val hasOperator = Regex("""[+*/×÷^%]|\bx\b""", RegexOption.IGNORE_CASE)
+    private val lonelyMinus = Regex("""\s*(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\s*(-)\s*(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\s*""")
 
-    fun calc(text: String, indianGrouping: Boolean = true): Pair<String, Boolean>? {
+    /** "150-45" or "5 - 2" typed on their own. Not "3-2" or "9-5" (a score,
+     *  a job), and nothing below zero ("10-11" is a range, "555-1234" a
+     *  number). */
+    private fun loneSubtraction(expr: String): Boolean {
+        val m = lonelyMinus.matchEntire(expr) ?: return false
+        val a = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: return false
+        val b = m.groupValues[3].replace(",", "").toDoubleOrNull() ?: return false
+        return a >= b && (a >= 100 || Regex("""\s-\s""").containsMatchIn(expr))
+    }
+    /** "24/7" and dates: "9/28", "28/9", "29/09/2024", "2024/09/29", "exp 09/2026". */
+    private val smallOverSmall = Regex(
+        """\s*(?:\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2})\s*""")
+
+    fun calc(text: String, indianGrouping: Boolean = true): Pair<String, Boolean>? =
+        calcMatch(text, indianGrouping)?.let { it.first to it.second }
+
+    /** The sum at the end of the text: its value, whether "=" is typed, and
+     *  the sum as typed. */
+    fun calcMatch(text: String, indianGrouping: Boolean = true): Triple<String, Boolean, String>? {
         if (text.isEmpty()) return null
         val m = calcPattern.find(text) ?: return null
         val expr = m.groups[1]?.value ?: return null
         val hasEquals = m.groups[2] != null
         // A bare number is not a sum; only offer when an operator is present.
-        if (!hasEquals && !hasOperator.containsMatchIn(expr)) return null
-        // "24/7" and dates ("9/28", "28/9") read as numbers over numbers:
-        // two small whole numbers and a slash, with no "=", are not a sum.
+        // A dash is one only in a sum typed on its own ("150-45"): in a
+        // sentence it is a range, a score or a phone number ("won 3-2").
+        if (!hasEquals && !hasOperator.containsMatchIn(expr) && !(expr.trim() == text.trim() && loneSubtraction(expr))) return null
+        // "24/7" and dates read as numbers over numbers: with no "=", they
+        // are not a sum.
         if (!hasEquals && smallOverSmall.matches(expr)) return null
         val v = evaluate(expr) ?: return null
         val currency = expr.firstOrNull { it in "₹$€£" }?.toString() ?: ""
-        return (currency + format(v, indianGrouping)) to hasEquals
+        return Triple(currency + format(v, indianGrouping), hasEquals, expr.trim().replace(Regex("""\s+"""), " "))
     }
 
     /** Up to two decimals, grouped the way the phone's region writes numbers:

@@ -719,7 +719,7 @@
   {
    "name": "fixes ill (I'll is far more common)",
    "typed": "ill",
-   "previous": "the",
+   "previous": "and",
    "expect": {
     "autocorrect": "I'll"
    }
@@ -1103,6 +1103,78 @@
    },
    "expect": {
     "autocorrect": "hello"
+   }
+  },
+  {
+   "name": "ill after feel stays ill",
+   "typed": "ill",
+   "previous": "feel",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "ill after got stays ill",
+   "typed": "ill",
+   "previous": "got",
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "ill starting a sentence is I'll",
+   "typed": "ill",
+   "sentenceStart": true,
+   "expect": {
+    "autocorrect": "I'll"
+   }
+  },
+  {
+   "name": "fixes ive",
+   "typed": "ive",
+   "previous": "and",
+   "expect": {
+    "autocorrect": "I've"
+   }
+  },
+  {
+   "name": "fixes tommorow",
+   "typed": "tommorow",
+   "previous": "see",
+   "expect": {
+    "autocorrect": "tomorrow"
+   }
+  },
+  {
+   "name": "fixes definatly (not defiantly)",
+   "typed": "definatly",
+   "previous": "i",
+   "expect": {
+    "autocorrect": "definitely"
+   }
+  },
+  {
+   "name": "fixes wich",
+   "typed": "wich",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "which"
+   }
+  },
+  {
+   "name": "fixes unfortunatly",
+   "typed": "unfortunatly",
+   "previous": "but",
+   "expect": {
+    "autocorrect": "unfortunately"
+   }
+  },
+  {
+   "name": "fixes congradulations",
+   "typed": "congradulations",
+   "previous": "the",
+   "expect": {
+    "autocorrect": "congratulations"
    }
   }
  ]

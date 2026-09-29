@@ -16,6 +16,17 @@ class TypingEngine(
         const val SUGGESTIONS = 1
         const val AUTOCORRECT = 2
         const val LEARNING = 4
+
+        /** Real words a contraction fix would take ("ill" → "I'll"), kept as
+         *  typed after the words that make them the word: "i feel ill" is
+         *  sick, never "i feel I'll" (2026-09-29 audit). TypingEngine.swift's twin. */
+        val KEPT_AFTER: Map<String, Set<String>> = mapOf(
+            "ill" to setOf("feel", "feels", "felt", "feeling", "fell", "fall", "falls", "falling", "get", "gets",
+                "got", "getting", "gotten", "is", "was", "are", "were", "be", "been", "being", "am", "seriously",
+                "very", "so", "too", "mentally", "terminally", "critically", "chronically", "gravely", "look",
+                "looks", "looked", "become", "became", "becoming", "quite", "rather", "really", "the", "these",
+                "those", "many", "most", "some"),
+        )
         const val ALL = SUGGESTIONS or AUTOCORRECT or LEARNING
 
         const val AUTOCORRECT_THRESHOLD = 0.185f
@@ -161,7 +172,7 @@ class TypingEngine(
         val ranked = best.values.sortedWith(compareByDescending<Candidate> { it.score }.thenBy { it.form })
 
         val autocorrect = if (policy and AUTOCORRECT != 0)
-            decide(typed, key, known, sentenceStart, exactForms, realForms, ranked) else null
+            decide(typed, key, known, sentenceStart, exactForms, realForms, ranked, prevKey) else null
         val seen = HashSet<String>()
         seen.add(typed.lowercase())
         autocorrect?.let { seen.add(it.lowercase()) }
@@ -236,7 +247,8 @@ class TypingEngine(
 
     /** FORMAT.md "When Glyf autocorrects". */
     private fun decide(typed: String, key: String, known: Boolean, sentenceStart: Boolean,
-                       exactForms: List<Candidate>, realForms: List<Candidate>, ranked: List<Candidate>): String? {
+                       exactForms: List<Candidate>, realForms: List<Candidate>, ranked: List<Candidate>,
+                       previous: String? = null): String? {
         if (TypingText.hasDigit(typed) || TypingText.capitalCount(typed) >= 2) return null
         // Stretched for emphasis ("sooo", "yesss"): meant, never "solo".
         if (TypingText.isStretched(typed)) return null
@@ -245,8 +257,10 @@ class TypingEngine(
         // nearly as common; a different word only when the typed spelling is no
         // word at all (see TypingEngine.swift).
         val typedReal = realForms.filter { TypingText.sameWord(typed, it.form) }.maxOfOrNull { it.probability }
+        // "feel ill" is sick: the word before makes the real word the one meant.
+        val keptHere = typedReal != null && previous != null && previous in KEPT_AFTER[key].orEmpty()
         exactForms.filter { c ->
-            if (!c.whitelist || personal.isRejected(typed, c.form)) false
+            if (!c.whitelist || personal.isRejected(typed, c.form) || keptHere) false
             else if (c.key != key) !known && realForms.isEmpty()
             else if (typedReal != null) c.probability >= typedReal + WHITELIST_GAP
             else !known

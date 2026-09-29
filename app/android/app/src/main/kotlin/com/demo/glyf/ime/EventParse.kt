@@ -141,6 +141,13 @@ object EventParse {
             }
         }
         if (minutes == null && bareHour == null) {
+            // "brunch sunday 11", "dinner friday 8": an hour straight after the
+            // day is its time ("sunday 11th" stays a date).
+            w.take("(?<=\\b(?:mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday|sun|sunday|today|tomorrow|tmrw|tonight)\\s)(\\d{1,2})(?:[:.](\\d{2}))?\\b(?!\\s*(?:%|/|st\\b|nd\\b|rd\\b|th\\b|people|persons|pax|mins?|minutes|hours?|hrs?))")?.let {
+                bareHour = (it[1].toIntOrNull() ?: 0) to (it[2].toIntOrNull() ?: 0)
+            }
+        }
+        if (minutes == null && bareHour == null) {
             w.take("\\b(noon|midday|midnight)\\b")?.let {
                 if (it[1] == "midnight") { minutes = 0; dayOffset = (dayOffset ?: 0) + 1 } else minutes = 12 * 60
             }
@@ -310,7 +317,7 @@ object EventParse {
         val p = parse(text, now, tz, dayFirst, firstDayOfWeek)
         if (!p.hasTime) return null
         if (p.hasDay) return p
-        val intent = "\\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|milte|milenge)\\b"
+        val intent = "\\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|game|match|pick (?:me|you|us|him|her|them) up|pickup|milte|milenge)\\b"
         return if (re(intent).containsMatchIn(text)) p else null
     }
 

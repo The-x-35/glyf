@@ -9,7 +9,8 @@ enum Smart {
     enum Chip: Equatable {
         /// "3480/4" -> " = 870". `hasEquals` is true when the person already
         /// typed the "=" themselves, so the insert does not repeat it.
-        case calc(value: String, hasEquals: Bool)
+        /// The sum as typed rides along, so the strip reads "2+5 = 7".
+        case calc(value: String, hasEquals: Bool, expression: String = "")
         /// "my upi id is " -> the saved UPI.
         case vault(field: VaultField)
         /// Something was just copied: one tap pastes it.
@@ -92,7 +93,10 @@ enum Smart {
         }
         var value: String {
             switch self {
-            case .calc(let v, _): return v
+            // The whole sum where it fits: "2+5 = 7" reads as an answer, "7" alone
+            // was easy to miss (user, 2026-09-29: "show result in recommendation strip").
+            case .calc(let v, _, let expression):
+                return expression.isEmpty || expression.count > 22 ? "= \(v)" : "\(expression) = \(v)"
             case .vault(let f): return f.value
             case .paste(let t): return t.replacingOccurrences(of: "\n", with: " ")
             case .action(let label, _, _): return label
@@ -109,7 +113,7 @@ enum Smart {
         /// What tapping the chip puts in the field.
         var insert: String {
             switch self {
-            case .calc(let v, let hasEquals): return hasEquals ? " \(v)" : " = \(v)"
+            case .calc(let v, let hasEquals, _): return hasEquals ? " \(v)" : " = \(v)"
             case .vault(let f): return f.value
             case .paste(let t): return t
             case .money(_, let insert, _): return insert
@@ -232,7 +236,9 @@ enum Smart {
                 return nil
             }
         }
-        if let c = calc(text, indianGrouping: indianGrouping) { return .calc(value: c.value, hasEquals: c.hasEquals) }
+        if let c = calc(text, indianGrouping: indianGrouping) {
+            return .calc(value: c.value, hasEquals: c.hasEquals, expression: c.expression)
+        }
         if let m = money(in: text, rates: rates) { return m }
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
@@ -263,7 +269,20 @@ enum Smart {
             options: [.caseInsensitive])
     }()
 
-    static func calc(_ text: String, indianGrouping: Bool = true) -> (value: String, hasEquals: Bool)? {
+    /// "150-45" or "5 - 2" typed on their own. Not "3-2" or "9-5" (a score,
+    /// a job), and nothing below zero ("10-11" is a range, "555-1234" a
+    /// number).
+    private static func loneSubtraction(_ expr: String) -> Bool {
+        guard let re = try? NSRegularExpression(
+            pattern: #"^\s*(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\s*-\s*(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\s*$"#),
+              let m = re.firstMatch(in: expr, range: NSRange(expr.startIndex..., in: expr)),
+              let ra = Range(m.range(at: 1), in: expr), let rb = Range(m.range(at: 2), in: expr),
+              let a = Double(expr[ra].replacingOccurrences(of: ",", with: "")),
+              let b = Double(expr[rb].replacingOccurrences(of: ",", with: "")) else { return false }
+        return a >= b && (a >= 100 || expr.range(of: #"\s-\s"#, options: .regularExpression) != nil)
+    }
+
+    static func calc(_ text: String, indianGrouping: Bool = true) -> (value: String, hasEquals: Bool, expression: String)? {
         guard let re = calcPattern, !text.isEmpty else { return nil }
         let ns = text as NSString
         guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
@@ -271,14 +290,20 @@ enum Smart {
         let expr = ns.substring(with: m.range(at: 1))
         let hasEquals = m.range(at: 2).location != NSNotFound
         // A bare number is not a sum; only offer when an operator is present.
+        // "of" alone is not one: "page 2 of 10" is no sum, "20% of 150" is.
+        // A dash is one only in a sum typed on its own ("150-45"): in a
+        // sentence it is a range, a score or a phone number ("won 3-2").
+        let alone = expr.trimmingCharacters(in: .whitespaces) == text.trimmingCharacters(in: .whitespaces)
         if !hasEquals,
-           expr.range(of: #"[+*/×÷^%]|\bx\b|\bof\b"#, options: [.regularExpression, .caseInsensitive]) == nil {
+           expr.range(of: #"[+*/×÷^%]|\bx\b"#, options: [.regularExpression, .caseInsensitive]) == nil,
+           !(alone && loneSubtraction(expr)) {
             return nil
         }
-        // "24/7" and dates ("9/28", "28/9") read as numbers over numbers:
-        // two small whole numbers and a slash, with no "=", are not a sum.
+        // "24/7" and dates ("9/28", "28/9", "29/09/2024", "exp 09/2026") read
+        // as numbers over numbers: with no "=", they are not a sum.
         if !hasEquals,
-           expr.range(of: #"^\s*\d{1,2}\s*/\s*\d{1,2}\s*$"#, options: .regularExpression) != nil {
+           expr.range(of: #"^\s*(?:\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2})\s*$"#,
+                      options: .regularExpression) != nil {
             return nil
         }
         guard let v = evaluate(expr) else { return nil }
@@ -289,7 +314,9 @@ enum Smart {
         f.locale = Locale(identifier: indianGrouping ? "en_IN" : "en_US")
         f.maximumFractionDigits = 2
         guard let text = f.string(from: NSNumber(value: v)) else { return nil }
-        return (currency + text, hasEquals)
+        let shown = expr.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        return (currency + text, hasEquals, shown)
     }
 
     /// Recursive descent over a token list. Returns nil on anything it does

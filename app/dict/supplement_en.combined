@@ -349,3 +349,67 @@ dictionary=supplement:en,locale=en,description=Glyf supplement to the AOSP Engli
  word=eta,f=100
  word=fomo,f=90
  word=goat,f=100
+
+# Common misspellings the AOSP list lacks, fixed as its own whitelist
+# fixes are ("im" → "I'm"): the word decides, no threshold in the way.
+# 2026-09-29 audit: "definatly" had become "defiantly".
+ word=ive,f=0,not_a_word=true
+  shortcut=I've,f=whitelist
+ word=tommorow,f=0,not_a_word=true
+  shortcut=tomorrow,f=whitelist
+ word=tommorrow,f=0,not_a_word=true
+  shortcut=tomorrow,f=whitelist
+ word=tomorow,f=0,not_a_word=true
+  shortcut=tomorrow,f=whitelist
+ word=yesterdy,f=0,not_a_word=true
+  shortcut=yesterday,f=whitelist
+ word=happend,f=0,not_a_word=true
+  shortcut=happened,f=whitelist
+ word=definatly,f=0,not_a_word=true
+  shortcut=definitely,f=whitelist
+ word=defintely,f=0,not_a_word=true
+  shortcut=definitely,f=whitelist
+ word=definetly,f=0,not_a_word=true
+  shortcut=definitely,f=whitelist
+ word=wich,f=0,not_a_word=true
+  shortcut=which,f=whitelist
+ word=tounge,f=0,not_a_word=true
+  shortcut=tongue,f=whitelist
+ word=truely,f=0,not_a_word=true
+  shortcut=truly,f=whitelist
+ word=sincerly,f=0,not_a_word=true
+  shortcut=sincerely,f=whitelist
+ word=unfortunatly,f=0,not_a_word=true
+  shortcut=unfortunately,f=whitelist
+ word=restaraunt,f=0,not_a_word=true
+  shortcut=restaurant,f=whitelist
+ word=wensday,f=0,not_a_word=true
+  shortcut=Wednesday,f=whitelist
+ word=wendsday,f=0,not_a_word=true
+  shortcut=Wednesday,f=whitelist
+ word=saturdy,f=0,not_a_word=true
+  shortcut=Saturday,f=whitelist
+ word=congradulations,f=0,not_a_word=true
+  shortcut=congratulations,f=whitelist
+ word=wierdo,f=0,not_a_word=true
+  shortcut=weirdo,f=whitelist
+ word=acheive,f=0,not_a_word=true
+  shortcut=achieve,f=whitelist
+ word=occassion,f=0,not_a_word=true
+  shortcut=occasion,f=whitelist
+ word=remeber,f=0,not_a_word=true
+  shortcut=remember,f=whitelist
+ word=rember,f=0,not_a_word=true
+  shortcut=remember,f=whitelist
+ word=suprise,f=0,not_a_word=true
+  shortcut=surprise,f=whitelist
+ word=persue,f=0,not_a_word=true
+  shortcut=pursue,f=whitelist
+ word=recieved,f=0,not_a_word=true
+  shortcut=received,f=whitelist
+ word=goverment,f=0,not_a_word=true
+  shortcut=government,f=whitelist
+ word=enviroment,f=0,not_a_word=true
+  shortcut=environment,f=whitelist
+ word=tomatoe,f=0,not_a_word=true
+  shortcut=tomato,f=whitelist

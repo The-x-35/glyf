@@ -135,5 +135,15 @@ class EventParseTest {
         assertTrue(plan("movie at 9"))
         assertTrue(plan("flight at 6:30"))
         assertFalse(plan("the shop closes at 9"))
+        assertTrue(plan("the game starts at 8:15pm"))
+        assertTrue(plan("pick me up at 7:45"))
+    }
+
+    /** EventParseTests.testAnHourRightAfterTheDayIsItsTime, the twin. */
+    @Test fun anHourRightAfterTheDayIsItsTime() {
+        assertEquals("Brunch | 2026-09-27 11:00 – 2026-09-27 12:00 | DT", read("brunch sunday 11"))
+        assertEquals("Dinner | 2026-09-25 20:00 – 2026-09-25 21:00 | DT", read("dinner friday 8"))
+        assertTrue(plan("brunch sunday 11"))
+        assertEquals("D", read("party sunday 11th").substringAfterLast("| "))
     }
 }

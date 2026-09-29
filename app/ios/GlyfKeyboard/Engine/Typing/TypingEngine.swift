@@ -35,6 +35,16 @@ final class TypingEngine {
     /// A dictionary fix of apostrophes ("cant" → "can't") beats a real word
     /// with the typed spelling only when it's this much more common.
     static let whitelistGap: Float = 40
+    /// Real words a contraction fix would take ("ill" → "I'll"), kept as
+    /// typed after the words that make them the word: "i feel ill" is sick,
+    /// never "i feel I'll" (2026-09-29 audit). TypingEngine.kt's twin.
+    static let keptAfter: [String: Set<String>] = [
+        "ill": ["feel", "feels", "felt", "feeling", "fell", "fall", "falls", "falling", "get", "gets",
+                "got", "getting", "gotten", "is", "was", "are", "were", "be", "been", "being", "am", "seriously",
+                "very", "so", "too", "mentally", "terminally", "critically", "chronically", "gravely", "look",
+                "looks", "looked", "become", "became", "becoming", "quite", "rather", "really", "the", "these",
+                "those", "many", "most", "some"],
+    ]
     static let packProbability: Float = 160
     static let contactProbability: Float = 40
     static let packPhraseProbability: Float = 180
@@ -151,7 +161,8 @@ final class TypingEngine {
         var result = Suggestions(typed: typed, known: known, autocorrect: nil, alternatives: [])
         if policy.contains(.autocorrect) {
             result.autocorrect = decide(typed: typed, key: key, known: known, sentenceStart: sentenceStart,
-                                        exactForms: exactForms, realForms: realForms, ranked: ranked)
+                                        exactForms: exactForms, realForms: realForms, ranked: ranked,
+                                        previous: prevKey)
         }
         var seen: Set<String> = [typed.lowercased()]
         if let ac = result.autocorrect { seen.insert(ac.lowercased()) }
@@ -246,7 +257,8 @@ final class TypingEngine {
 
     /// FORMAT.md "When Glyf autocorrects".
     private func decide(typed: String, key: String, known: Bool, sentenceStart: Bool,
-                        exactForms: [Candidate], realForms: [Candidate], ranked: [Candidate]) -> String? {
+                        exactForms: [Candidate], realForms: [Candidate], ranked: [Candidate],
+                        previous: String? = nil) -> String? {
         guard !TypingText.hasDigit(typed), TypingText.capitalCount(typed) < 2 else { return nil }
         // Stretched for emphasis ("sooo", "yesss"): meant, never "solo".
         guard !TypingText.isStretched(typed) else { return nil }
@@ -256,8 +268,10 @@ final class TypingEngine {
         // different word ("alot" → "a lot") only when the typed spelling is no
         // word at all — AOSP's "hum" → "him" and "bot" → "not" never happen.
         let typedReal = realForms.filter { TypingText.sameWord(typed: typed, form: $0.form) }.map(\.probability).max()
+        // "feel ill" is sick: the word before makes the real word the one meant.
+        let keptHere = typedReal != nil && previous.map { Self.keptAfter[key]?.contains($0) ?? false } == true
         let fixes = exactForms.filter { c in
-            guard c.whitelist, !personal.isRejected(typed: typed, correction: c.form) else { return false }
+            guard c.whitelist, !personal.isRejected(typed: typed, correction: c.form), !keptHere else { return false }
             if c.key != key { return !known && realForms.isEmpty }
             if let typedReal { return c.probability >= typedReal + Self.whitelistGap }
             return !known

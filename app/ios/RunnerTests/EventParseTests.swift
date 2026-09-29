@@ -204,5 +204,20 @@ final class EventParseTests: XCTestCase {
         XCTAssertTrue(plan("movie at 9"))
         XCTAssertTrue(plan("flight at 6:30"))
         XCTAssertFalse(plan("the shop closes at 9"))
+        XCTAssertTrue(plan("the game starts at 8:15pm"))
+        XCTAssertTrue(plan("pick me up at 7:45"))
+    }
+
+    /// "brunch sunday 11": the hour straight after the day is its time.
+    /// EventParseTest.anHourRightAfterTheDayIsItsTime, the twin.
+    func testAnHourRightAfterTheDayIsItsTime() {
+        let brunch = EventParse.parse("brunch sunday 11", now: now, calendar: cal, dayFirst: true)
+        XCTAssertEqual(brunch.title, "Brunch")
+        XCTAssertTrue(brunch.hasTime && brunch.hasDay)
+        XCTAssertEqual(cal.component(.hour, from: brunch.start), 11)
+        let dinner = EventParse.parse("dinner friday 8", now: now, calendar: cal, dayFirst: true)
+        XCTAssertEqual(cal.component(.hour, from: dinner.start), 20)
+        XCTAssertNotNil(EventParse.looksLikePlan("brunch sunday 11", now: now, calendar: cal))
+        XCTAssertFalse(EventParse.parse("party sunday 11th", now: now, calendar: cal, dayFirst: true).hasTime)
     }
 }

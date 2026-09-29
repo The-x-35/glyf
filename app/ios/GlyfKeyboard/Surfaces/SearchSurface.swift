@@ -428,7 +428,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             })
     }
 
-    /// Local contacts synced by the app (Profile → Contacts search). Never
+    /// Local contacts synced by the app (Profile → Search → Contacts). Never
     /// leaves the device — no vertical, no request.
     private func showContactMatches(_ q: String, live: Bool = false) {
         let lower = q.lowercased()
