@@ -278,49 +278,58 @@ object Smart {
 
     // MARK: Calculator
 
-    private const val NUM = """(?:[₹$€£]\s*)?\d[\d,]*(?:\.\d+)?%?"""
-    private const val OP = """(?:[-+*/×÷^]|\bx\b|\bof\b)"""
+    /** A number as typed: a currency sign, square roots, digits or π, and a
+     *  percentage. */
+    private const val NUM = """(?:[₹$€£]\s*)?(?:√\s*)*(?:\d[\d,]*(?:\.\d+)?|π)%?"""
+    /** Every operator people type between numbers (Arpit, 2026-09-29: "work
+     *  for all maths symbols"): + - − * ** × x / ÷ ^ mod, the comparisons,
+     *  and "of" after a percentage. */
+    private const val OP = """(?:\*\*|>=|<=|[-−+*/×÷^x≥≤><]|\bmod\b|\bof\b)"""
     private val calcPattern = Regex(
-        """(\(?\s*$NUM\s*\)?(?:\s*$OP\s*\(?\s*$NUM\s*\)?)+)(\s*=)?\s*$""",
+        """((?:(?:(?<![\p{L}\d)])[-−]\s*)?\(?\s*$NUM\s*\)?(?:\s*$OP\s*\(?\s*$NUM\s*\)?)+)|√\s*\(?\s*$NUM\s*\)?)(\s*=)?\s*$""",
         RegexOption.IGNORE_CASE)
-    /** "of" alone is not an operator: "page 2 of 10" is no sum, "20% of 150" is. */
-    private val hasOperator = Regex("""[+*/×÷^%]|\bx\b""", RegexOption.IGNORE_CASE)
-    private val lonelyMinus = Regex("""\s*(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\s*(-)\s*(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\s*""")
-
-    /** "150-45" or "5 - 2" typed on their own. Not "3-2" or "9-5" (a score,
-     *  a job), and nothing below zero ("10-11" is a range, "555-1234" a
-     *  number). */
-    private fun loneSubtraction(expr: String): Boolean {
-        val m = lonelyMinus.matchEntire(expr) ?: return false
-        val a = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: return false
-        val b = m.groupValues[3].replace(",", "").toDoubleOrNull() ?: return false
-        return a >= b && (a >= 100 || Regex("""\s-\s""").containsMatchIn(expr))
-    }
-    /** Whole dates: "29/09/2024", "2024/09/29", "exp 09/2026". Two small
-     *  numbers are a sum: Arpit wants "24/7" divided (2026-09-29). */
-    private val smallOverSmall = Regex(
-        """\s*(?:\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2})\s*""")
+    /** What makes it a sum: any operator but a bare "of" ("page 2 of 10" is
+     *  a count; "20% of 150" has its %). */
+    private val hasOperator = Regex("""\*\*|>=|<=|[-−+*/×÷^≥≤><%√x]|\bmod\b""", RegexOption.IGNORE_CASE)
+    /** Numbers that only look like a sum: whole dates ("29/09/2024",
+     *  "2024-09-29", "exp 09/2026") and phone numbers ("555-1234",
+     *  "555-123-4567", "+1-555-123-4567", "98765-43210"). Two small numbers
+     *  are a sum: "24/7" is divided, "2-3" is -1. */
+    private val notASum = Regex(
+        """\s*(?:\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2}|""" +
+            """\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{4}|(?:\d{1,3}-)?\d{3}-\d{3}-\d{4}|\d{3}-\d{4}|\d{5}-\d{5})\s*""")
+    private val comparison = Regex("""\s*(>=|<=|≥|≤|>|<)\s*""")
 
     fun calc(text: String, indianGrouping: Boolean = true): Pair<String, Boolean>? =
         calcMatch(text, indianGrouping)?.let { it.first to it.second }
 
     /** The sum at the end of the text: its value, whether "=" is typed, and
-     *  the sum as typed. */
+     *  the sum as typed. A comparison is "true" or "false". */
     fun calcMatch(text: String, indianGrouping: Boolean = true): Triple<String, Boolean, String>? {
         if (text.isEmpty()) return null
         val m = calcPattern.find(text) ?: return null
         val expr = m.groups[1]?.value ?: return null
         val hasEquals = m.groups[2] != null
-        // A bare number is not a sum; only offer when an operator is present.
-        // A dash is one only in a sum typed on its own ("150-45"): in a
-        // sentence it is a range, a score or a phone number ("won 3-2").
-        if (!hasEquals && !hasOperator.containsMatchIn(expr) && !(expr.trim() == text.trim() && loneSubtraction(expr))) return null
-        // A whole date reads as numbers over numbers: with no "=", it is not
-        // a sum.
-        if (!hasEquals && smallOverSmall.matches(expr)) return null
+        if (!hasEquals && !hasOperator.containsMatchIn(expr)) return null
+        if (!hasEquals && notASum.matches(expr)) return null
+        // "miss you 2 <3": a heart, not a comparison.
+        if (!hasEquals && Regex("""\s<3\s*$""").containsMatchIn(text)) return null
+        val shown = expr.trim().replace(Regex("""\s+"""), " ")
+        val cmp = comparison.find(expr)
+        if (cmp != null) {
+            val a = evaluate(expr.substring(0, cmp.range.first)) ?: return null
+            val b = evaluate(expr.substring(cmp.range.last + 1)) ?: return null
+            val truth = when (cmp.groupValues[1]) {
+                ">" -> a > b
+                "<" -> a < b
+                ">=", "≥" -> a >= b
+                else -> a <= b
+            }
+            return Triple(if (truth) "true" else "false", hasEquals, shown)
+        }
         val v = evaluate(expr) ?: return null
         val currency = expr.firstOrNull { it in "₹$€£" }?.toString() ?: ""
-        return Triple(currency + format(v, indianGrouping), hasEquals, expr.trim().replace(Regex("""\s+"""), " "))
+        return Triple(currency + format(v, indianGrouping), hasEquals, shown)
     }
 
     /** Up to two decimals, grouped the way the phone's region writes numbers:
@@ -350,8 +359,10 @@ object Smart {
     fun evaluate(expression: String): Double? {
         var src = expression.lowercase()
             .replace(Regex("""\bof\b"""), "*")
-            .replace(Regex("""\bx\b"""), "*")
-            .replace("×", "*").replace("÷", "/")
+            .replace(Regex("""\bmod\b"""), "#")
+            .replace("**", "^")
+            .replace("x", "*")
+            .replace("×", "*").replace("÷", "/").replace("−", "-")
         src = src.filterNot { it in "₹$€£, \t" }
         if (src.isEmpty()) return null
 
@@ -360,7 +371,11 @@ object Smart {
         for (ch in src) {
             when {
                 ch.isDigit() || ch == '.' -> number.append(ch)
-                ch in "+-*/^()%" -> {
+                ch == 'π' -> {
+                    if (number.isNotEmpty()) { tokens.add(number.toString()); number.clear() }
+                    tokens.add(Math.PI.toString())
+                }
+                ch in "+-*/^()%#√" -> {
                     if (number.isNotEmpty()) { tokens.add(number.toString()); number.clear() }
                     tokens.add(ch.toString())
                 }
@@ -378,6 +393,11 @@ object Smart {
         lateinit var sum: () -> Double?
         fun unary(): Double? {
             if (peek() == "-") { i++; return unary()?.let { -it } }
+            if (peek() == "√") {
+                i++
+                val v = unary() ?: return null
+                return if (v < 0) null else kotlin.math.sqrt(v)
+            }
             if (peek() == "(") {
                 i++
                 val v = sum() ?: return null
@@ -400,14 +420,15 @@ object Smart {
         }
         fun product(): Double? {
             var v = power() ?: return null
-            while (peek() == "*" || peek() == "/") {
+            while (peek() == "*" || peek() == "/" || peek() == "#") {
                 val op = peek()
                 i++
                 val rhs = power() ?: return null
-                if (op == "/") {
-                    if (rhs == 0.0) return null
-                    v /= rhs
-                } else v *= rhs
+                when (op) {
+                    "/" -> { if (rhs == 0.0) return null; v /= rhs }
+                    "#" -> { if (rhs == 0.0) return null; v %= rhs }
+                    else -> v *= rhs
+                }
             }
             return v
         }
@@ -605,8 +626,8 @@ object Smart {
     private val sumLead = Regex("""^(?:what\s+is|what's|whats|how\s+much\s+is|calculate|calc|solve)\s+""")
     private val sumTail = Regex("""[\s?=]+$""")
     private val percentOf = Regex("""^\d+(?:\.\d+)?\s*%\s*of\s*[\d,]+(?:\.\d+)?$""")
-    private val plainSum = Regex("""^[\d\s.,+\-*/×÷^()%x]+$""")
-    private val anOperation = Regex("""\d\s*(?:[-+*/×÷^%]|x)\s*[\d(]|\d\s*%""")
+    private val plainSum = Regex("""^(?:[\d\s.,+\-−*/×÷^()%x√π<>≥≤]|mod)+$""")
+    private val anOperation = Regex("""\d\s*(?:[-−+*/×÷^%<>≥≤]|x|mod)\s*[\d(√π]|\d\s*%|√\s*[\d(π]""")
 
     // "15% tip on 64": the tip, and what that comes to (answers.ts mathAnswer).
     private val tipAsk = Regex(

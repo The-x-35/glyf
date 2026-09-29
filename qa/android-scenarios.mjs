@@ -1219,8 +1219,9 @@ scenarios.push(
     // "why am i needing to hold space, suggest it in strip right" (2026-09-29).
     const seen = [];
     let ok = true;
+    // Every operator on the keys (Arpit, 2026-09-29: "not working on 2-3 ... all maths symbols").
     for (const [typed, shown] of [["2+5", "2+5 = 7"], ["12*12", "12*12 = 144"], ["100-15%", "100-15% = 85"],
-      ["150-45", "150-45 = 105"], ["24/7", "24/7 = 3.43"]]) {
+      ["150-45", "150-45 = 105"], ["24/7", "24/7 = 3.43"], ["2-3", "2-3 = -1"], ["2x3", "2x3 = 6"], ["5>3", "5>3 = true"]]) {
       await fresh();
       await type(typed);
       const chip = await waitFor(byId("strip:smart"), 3000);
@@ -1245,6 +1246,21 @@ scenarios.push(
       if (chip && (/=/.test(label) || !label)) ok = false;
     }
     return { pass: ok, note: seen.join("; ") };
+  } },
+  { id: "S213", title: "A question offers AI answer in the strip, and a tap answers it", run: async () => {
+    // "have a strip like ai answer ? on all questions type" (2026-09-29).
+    await fresh();
+    await type("what is polynomial");
+    const chip = await waitFor(byId("strip:smart"), 8000);
+    const label = chip ? chipLabel(await state(), chip) : "none";
+    if (!chip || !label.includes("AI answer")) return { pass: false, note: `strip shows '${label}'` };
+    await screenshot("S213-chip");
+    await tapXY(chip.x, chip.y);
+    const insert = await waitFor(byId("act:insert"), 15000);
+    if (!insert) return { pass: false, note: `chip '${label}', no answer after the tap` };
+    await screenshot("S213-answer");
+    const r = await tapFor(insert, x => /polynomial/i.test(x) && x.length > 30, 4000);
+    return { pass: /polynomial/i.test(r.t) && r.t.length > 30, note: `chip '${label}' → '${r.t.slice(0, 120)}'${second(r)}` };
   } },
 );
 

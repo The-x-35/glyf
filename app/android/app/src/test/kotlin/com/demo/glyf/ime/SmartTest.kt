@@ -93,22 +93,25 @@ class SmartTest {
         assertNull(Smart.evaluate("2+abc"))
     }
 
-    /** Audit 2026-09-29: the strip answers a sum as it is typed, so what only
-     *  looks like one must stay quiet (Smart.swift twin). */
-    @Test fun countsRangesScoresAndPhoneNumbersAreNotSums() {
-        for (t in listOf("page 2 of 10", "episode 4 of 8", "call me at 555-1234", "555-1234", "the score was 3-2",
-            "3-2", "9-5", "10-11", "born 29/09/2024", "2024/09/29", "exp 09/2026")) {
+    /** Every maths symbol answers in the strip (Arpit, 2026-09-29: "not
+     *  working on 2-3 ... work for all maths symbols"); only phone numbers,
+     *  whole dates, counts and a "<3" heart stay quiet (Smart.swift twin). */
+    @Test fun everyOperatorAnswersButPhoneNumbersAndDatesDoNot() {
+        val sums = listOf("2-3" to "-1", "3-2" to "1", "10-11" to "-1", "9-5" to "4", "150-45" to "105",
+            "5 - 2" to "3", "-5+3" to "-2", "7−2" to "5", "2x3" to "6", "2 x 3" to "6", "2**10" to "1,024",
+            "2^10" to "1,024", "√16" to "4", "√2*√2" to "2", "π*2" to "6.28", "10 mod 3" to "1",
+            "24/7" to "3.43", "20% of 150" to "30", "the room is 10 x 12" to "120")
+        for ((t, want) in sums) assertEquals(t, want, Smart.calc(t, indianGrouping = false)?.first)
+        assertEquals("true" to false, Smart.calc("5>3"))
+        assertEquals("false" to false, Smart.calc("2 < 1"))
+        assertEquals("true" to false, Smart.calc("10 >= 10"))
+        assertEquals("7" to true, Smart.calc("10-3="))
+        assertEquals("2-3 = -1", Smart.display(Smart.chip("2-3", vault)!!))
+        for (t in listOf("call me at 555-1234", "555-1234", "555-123-4567", "+1-555-123-4567", "98765-43210",
+            "born 29/09/2024", "2024/09/29", "2024-09-29", "29-09-2024", "exp 09/2026", "page 2 of 10",
+            "episode 4 of 8", "love u 2 <3", "its 50%", "we won 3")) {
             assertNull(t, Smart.calc(t))
         }
-        // Two small numbers over each other are a sum: Arpit wants "24/7"
-        // divided (2026-09-29).
-        assertEquals("3.43" to false, Smart.calc("open 24/7"))
-        assertEquals("24/7 = 3.43", Smart.display(Smart.chip("24/7", vault)!!))
-        assertEquals("30" to false, Smart.calc("20% of 150"))
-        assertEquals("105" to false, Smart.calc("150-45"))
-        assertEquals("3" to false, Smart.calc("5 - 2"))
-        assertEquals("120" to false, Smart.calc("the room is 10 x 12"))
-        assertEquals("7" to true, Smart.calc("10-3="))
     }
 
     /** Whole dates are numbers over numbers, not sums; a percentage added or

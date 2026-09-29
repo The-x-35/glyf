@@ -233,7 +233,10 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// The +, its three options and the scrim behind them, over everything
     /// the panel scrolls.
     private func buildAddButton() {
-        addScrim.backgroundColor = Glass.scrim
+        // No wash over the cards (Arpit: "why white layover when menu open,
+        // that looks bad"): the layer only catches the tap that closes the
+        // options. Not .clear: an extension drops touches on clear pixels.
+        addScrim.backgroundColor = Glass.touchableGrid
         addScrim.alpha = 0
         addScrim.isHidden = true
         addScrim.addAction(UIAction { [weak self] _ in self?.setAddOpen(false) }, for: .touchUpInside)

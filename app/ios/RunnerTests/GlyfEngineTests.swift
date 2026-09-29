@@ -725,23 +725,26 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.chip(for: "$13", fields: [], rates: home))
     }
 
-    /// Audit 2026-09-29: the strip answers a sum as it is typed, so what only
-    /// looks like one must stay quiet (SmartTest.kt twin).
-    func testCountsRangesScoresAndPhoneNumbersAreNotSums() {
-        for t in ["page 2 of 10", "episode 4 of 8", "call me at 555-1234", "555-1234", "the score was 3-2",
-                  "3-2", "9-5", "10-11", "born 29/09/2024", "2024/09/29", "exp 09/2026"] {
-            XCTAssertNil(Smart.calc(t), t)
-        }
-        // Two small numbers over each other are a sum: Arpit wants "24/7"
-        // divided (2026-09-29).
-        XCTAssertEqual(Smart.calc("open 24/7")?.value, "3.43")
-        XCTAssertEqual(Smart.chip(for: "24/7", fields: [])?.value, "24/7 = 3.43")
-        XCTAssertEqual(Smart.calc("20% of 150")?.value, "30")
-        XCTAssertEqual(Smart.calc("150-45")?.value, "105")
-        XCTAssertEqual(Smart.calc("5 - 2")?.value, "3")
-        XCTAssertEqual(Smart.calc("the room is 10 x 12")?.value, "120")
+    /// Every maths symbol answers in the strip (Arpit, 2026-09-29: "not
+    /// working on 2-3 ... work for all maths symbols"); only phone numbers,
+    /// whole dates, counts and a "<3" heart stay quiet (SmartTest.kt twin).
+    func testEveryOperatorAnswersButPhoneNumbersAndDatesDoNot() {
+        let sums: [(String, String)] = [("2-3", "-1"), ("3-2", "1"), ("10-11", "-1"), ("9-5", "4"), ("150-45", "105"),
+            ("5 - 2", "3"), ("-5+3", "-2"), ("7−2", "5"), ("2x3", "6"), ("2 x 3", "6"), ("2**10", "1,024"),
+            ("2^10", "1,024"), ("√16", "4"), ("√2*√2", "2"), ("π*2", "6.28"), ("10 mod 3", "1"),
+            ("24/7", "3.43"), ("20% of 150", "30"), ("the room is 10 x 12", "120")]
+        for (t, want) in sums { XCTAssertEqual(Smart.calc(t, indianGrouping: false)?.value, want, t) }
+        XCTAssertEqual(Smart.calc("5>3")?.value, "true")
+        XCTAssertEqual(Smart.calc("2 < 1")?.value, "false")
+        XCTAssertEqual(Smart.calc("10 >= 10")?.value, "true")
         XCTAssertEqual(Smart.calc("10-3=")?.hasEquals, true)
         XCTAssertEqual(Smart.calc("10-3=")?.value, "7")
+        XCTAssertEqual(Smart.chip(for: "2-3", fields: [])?.value, "2-3 = -1")
+        for t in ["call me at 555-1234", "555-1234", "555-123-4567", "+1-555-123-4567", "98765-43210",
+                  "born 29/09/2024", "2024/09/29", "2024-09-29", "29-09-2024", "exp 09/2026", "page 2 of 10",
+                  "episode 4 of 8", "love u 2 <3", "its 50%", "we won 3"] {
+            XCTAssertNil(Smart.calc(t), t)
+        }
     }
 
     /// Audit 2026-09-28: sums people type, and details a sentence asks for.

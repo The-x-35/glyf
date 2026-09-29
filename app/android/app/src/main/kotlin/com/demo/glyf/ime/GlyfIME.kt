@@ -3630,9 +3630,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val gap = 6
         // Scrolled to the end, the last card clears the "+".
         body.setPadding(0, 0, 0, dp(size + margin + 8))
+        // No wash over the cards (Arpit: "why white layover when menu open,
+        // that looks bad"): the layer only catches the tap that closes the
+        // options.
         val dim = View(this).apply {
-            val b = keyboard.palette().board
-            setBackgroundColor(Color.argb(217, Color.red(b), Color.green(b), Color.blue(b)))
+            setBackgroundColor(Color.TRANSPARENT)
             visibility = View.GONE
             setTag(com.demo.glyf.R.id.qa_id, "vault:add:dim")
             setOnClickListener { showVaultAdd?.invoke(false) }
@@ -3660,6 +3662,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat(); setColor(card())
             }
+            // Lifted off the cards behind it, as on iOS.
+            elevation = dp(3).toFloat()
             setTag(com.demo.glyf.R.id.qa_id, "vault:new:$id")
             setOnClickListener { start() }
         })

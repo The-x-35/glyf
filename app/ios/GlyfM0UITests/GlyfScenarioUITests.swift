@@ -646,8 +646,9 @@ final class GlyfScenarioUITests: XCTestCase {
         open()
         clear()
         var seen: [String] = []
+        // Every operator on the keys (Arpit, 2026-09-29: "not working on 2-3 ... all maths symbols").
         for (typed, answer) in [("2+5", "7"), ("12*12", "144"), ("100-15%", "85"), ("2^10", "1,024"), ("150-45", "105"),
-                                ("24/7", "3.43")] {
+                                ("24/7", "3.43"), ("2-3", "-1"), ("2x3", "6"), ("5>3", "true")] {
             clear()
             type(typed)
             let chip = wait("strip:smart", 3)
@@ -681,6 +682,32 @@ final class GlyfScenarioUITests: XCTestCase {
             XCTAssertFalse(chip.exists && label.contains("="), "\(typed): the strip shows '\(label)'")
         }
         note(seen.joined(separator: "; "))
+    }
+
+    /// S213: a question offers "AI answer" in the strip, with or without its
+    /// "?", and a tap answers it (Arpit, 2026-09-29: "have a strip like ai
+    /// answer ? on all questions type"; "what is polynomial" showed nothing
+    /// on the simulator, whose local server had not been restarted).
+    func testS213_AQuestionOffersAnAIAnswerAndATapAnswersIt() throws {
+        open()
+        clear()
+        type("what is polynomial")
+        guard let chip = wait("strip:smart", 8) else { return XCTFail("no chip for 'what is polynomial'") }
+        note("chip: '\(chip.label)'")
+        XCTAssertTrue(chip.label.contains("AI answer"), "the strip shows '\(chip.label)'")
+        keepScreenshot("ai-answer-chip")
+        chip.tap()
+        guard let insert = wait("act:insert", 15) else { return XCTFail("no answer after the tap") }
+        keepScreenshot("ai-answer-card")
+        insert.tap()
+        XCTAssertTrue(waitValue(4) { $0.lowercased().contains("polynomial") && $0.count > 30 }, "got '\(value)'")
+        note("inserted '\(value)'")
+        // A question to the person in the chat gets no AI answer.
+        clear()
+        type("are you coming tonight?")
+        Thread.sleep(forTimeInterval: 3)
+        let other = el("strip:smart")
+        XCTAssertFalse(other.exists && other.label.contains("AI answer"), "a question to a friend offered '\(other.label)'")
     }
 
     /// S189: hold space on a sum and the answer is there at once, worked

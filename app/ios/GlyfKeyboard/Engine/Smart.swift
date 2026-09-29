@@ -261,26 +261,23 @@ enum Smart {
 
     // MARK: Calculator
 
+    /// A number as typed: a currency sign, square roots, digits or π, and a
+    /// percentage. Every operator people type between numbers (Arpit,
+    /// 2026-09-29: "work for all maths symbols"): + - − * ** × x / ÷ ^ mod,
+    /// the comparisons, and "of" after a percentage (Smart.kt twin).
     private static let calcPattern: NSRegularExpression? = {
-        let num = #"(?:[₹$€£]\s*)?\d[\d,]*(?:\.\d+)?%?"#
-        let op = #"(?:[-+*/×÷^]|\bx\b|\bof\b)"#
+        let num = #"(?:[₹$€£]\s*)?(?:√\s*)*(?:\d[\d,]*(?:\.\d+)?|π)%?"#
+        let op = #"(?:\*\*|>=|<=|[-−+*/×÷^x≥≤><]|\bmod\b|\bof\b)"#
         return try? NSRegularExpression(
-            pattern: #"(\(?\s*\#(num)\s*\)?(?:\s*\#(op)\s*\(?\s*\#(num)\s*\)?)+)(\s*=)?\s*$"#,
+            pattern: #"((?:(?:(?<![\p{L}\d)])[-−]\s*)?\(?\s*\#(num)\s*\)?(?:\s*\#(op)\s*\(?\s*\#(num)\s*\)?)+)|√\s*\(?\s*\#(num)\s*\)?)(\s*=)?\s*$"#,
             options: [.caseInsensitive])
     }()
 
-    /// "150-45" or "5 - 2" typed on their own. Not "3-2" or "9-5" (a score,
-    /// a job), and nothing below zero ("10-11" is a range, "555-1234" a
-    /// number).
-    private static func loneSubtraction(_ expr: String) -> Bool {
-        guard let re = try? NSRegularExpression(
-            pattern: #"^\s*(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\s*-\s*(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\s*$"#),
-              let m = re.firstMatch(in: expr, range: NSRange(expr.startIndex..., in: expr)),
-              let ra = Range(m.range(at: 1), in: expr), let rb = Range(m.range(at: 2), in: expr),
-              let a = Double(expr[ra].replacingOccurrences(of: ",", with: "")),
-              let b = Double(expr[rb].replacingOccurrences(of: ",", with: "")) else { return false }
-        return a >= b && (a >= 100 || expr.range(of: #"\s-\s"#, options: .regularExpression) != nil)
-    }
+    /// Numbers that only look like a sum: whole dates ("29/09/2024",
+    /// "2024-09-29", "exp 09/2026") and phone numbers ("555-1234",
+    /// "555-123-4567", "+1-555-123-4567", "98765-43210"). Two small numbers
+    /// are a sum: "24/7" is divided, "2-3" is -1.
+    private static let notASum = #"^\s*(?:\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{4}|(?:\d{1,3}-)?\d{3}-\d{3}-\d{4}|\d{3}-\d{4}|\d{5}-\d{5})\s*$"#
 
     static func calc(_ text: String, indianGrouping: Bool = true) -> (value: String, hasEquals: Bool, expression: String)? {
         guard let re = calcPattern, !text.isEmpty else { return nil }
@@ -289,23 +286,29 @@ enum Smart {
               m.range(at: 1).location != NSNotFound else { return nil }
         let expr = ns.substring(with: m.range(at: 1))
         let hasEquals = m.range(at: 2).location != NSNotFound
-        // A bare number is not a sum; only offer when an operator is present.
-        // "of" alone is not one: "page 2 of 10" is no sum, "20% of 150" is.
-        // A dash is one only in a sum typed on its own ("150-45"): in a
-        // sentence it is a range, a score or a phone number ("won 3-2").
-        let alone = expr.trimmingCharacters(in: .whitespaces) == text.trimmingCharacters(in: .whitespaces)
-        if !hasEquals,
-           expr.range(of: #"[+*/×÷^%]|\bx\b"#, options: [.regularExpression, .caseInsensitive]) == nil,
-           !(alone && loneSubtraction(expr)) {
-            return nil
+        if !hasEquals {
+            // A bare number is not a sum, nor is a bare "of" ("page 2 of 10";
+            // "20% of 150" has its %).
+            if expr.range(of: #"\*\*|>=|<=|[-−+*/×÷^≥≤><%√x]|\bmod\b"#,
+                          options: [.regularExpression, .caseInsensitive]) == nil { return nil }
+            if expr.range(of: notASum, options: .regularExpression) != nil { return nil }
+            // "miss you 2 <3": a heart, not a comparison.
+            if text.range(of: #"\s<3\s*$"#, options: .regularExpression) != nil { return nil }
         }
-        // A whole date ("29/09/2024", "2024/09/29", "exp 09/2026") reads as
-        // numbers over numbers: with no "=", it is not a sum. Two small
-        // numbers are one: Arpit wants "24/7" divided (2026-09-29).
-        if !hasEquals,
-           expr.range(of: #"^\s*(?:\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2})\s*$"#,
-                      options: .regularExpression) != nil {
-            return nil
+        let shown = expr.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        if let cmp = expr.range(of: #"\s*(>=|<=|≥|≤|>|<)\s*"#, options: .regularExpression) {
+            let sign = expr[cmp].trimmingCharacters(in: .whitespaces)
+            guard let a = evaluate(String(expr[..<cmp.lowerBound])),
+                  let b = evaluate(String(expr[cmp.upperBound...])) else { return nil }
+            let truth: Bool
+            switch sign {
+            case ">": truth = a > b
+            case "<": truth = a < b
+            case ">=", "≥": truth = a >= b
+            default: truth = a <= b
+            }
+            return (truth ? "true" : "false", hasEquals, shown)
         }
         guard let v = evaluate(expr) else { return nil }
         let currency = expr.first(where: { "₹$€£".contains($0) }).map(String.init) ?? ""
@@ -315,8 +318,6 @@ enum Smart {
         f.locale = Locale(identifier: indianGrouping ? "en_IN" : "en_US")
         f.maximumFractionDigits = 2
         guard let text = f.string(from: NSNumber(value: v)) else { return nil }
-        let shown = expr.trimmingCharacters(in: .whitespaces)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         return (currency + text, hasEquals, shown)
     }
 
@@ -324,12 +325,15 @@ enum Smart {
     /// not fully understand, so junk never turns into a wrong answer.
     static func evaluate(_ expression: String) -> Double? {
         var src = expression.lowercased()
-        for (from, to) in [("of", "*"), ("x", "*")] {
+        for (from, to) in [("of", "*"), ("mod", "#")] {
             src = src.replacingOccurrences(of: #"\b\#(from)\b"#, with: to,
                                            options: .regularExpression)
         }
-        src = src.replacingOccurrences(of: "×", with: "*")
+        src = src.replacingOccurrences(of: "**", with: "^")
+            .replacingOccurrences(of: "x", with: "*")
+            .replacingOccurrences(of: "×", with: "*")
             .replacingOccurrences(of: "÷", with: "/")
+            .replacingOccurrences(of: "−", with: "-")
         src = src.filter { !"₹$€£, \t".contains($0) }
         guard !src.isEmpty else { return nil }
 
@@ -338,7 +342,10 @@ enum Smart {
         for ch in src {
             if ch.isNumber || ch == "." {
                 number.append(ch)
-            } else if "+-*/^()%".contains(ch) {
+            } else if ch == "π" {
+                if !number.isEmpty { tokens.append(number); number = "" }
+                tokens.append(String(Double.pi))
+            } else if "+-*/^()%#√".contains(ch) {
                 if !number.isEmpty { tokens.append(number); number = "" }
                 tokens.append(String(ch))
             } else {
@@ -352,6 +359,11 @@ enum Smart {
 
         func unary() -> Double? {
             if peek() == "-" { i += 1; return unary().map { -$0 } }
+            if peek() == "√" {
+                i += 1
+                guard let v = unary(), v >= 0 else { return nil }
+                return v.squareRoot()
+            }
             if peek() == "(" {
                 i += 1
                 guard let v = sum(), peek() == ")" else { return nil }
@@ -377,13 +389,17 @@ enum Smart {
         }
         func product() -> Double? {
             guard var v = power() else { return nil }
-            while let op = peek(), op == "*" || op == "/" {
+            while let op = peek(), op == "*" || op == "/" || op == "#" {
                 i += 1
                 guard let rhs = power() else { return nil }
-                if op == "/" {
+                switch op {
+                case "/":
                     guard rhs != 0 else { return nil }
                     v /= rhs
-                } else {
+                case "#":
+                    guard rhs != 0 else { return nil }
+                    v = v.truncatingRemainder(dividingBy: rhs)
+                default:
                     v *= rhs
                 }
             }
@@ -748,9 +764,9 @@ extension Smart {
             .replacingOccurrences(of: #"[\s?=]+$"#, with: "", options: .regularExpression)
         expr = expr.trimmingCharacters(in: .whitespaces)
         let percent = expr.range(of: #"^\d+(?:\.\d+)?\s*%\s*of\s*[\d,]+(?:\.\d+)?$"#, options: .regularExpression) != nil
-        let plain = expr.range(of: #"^[\d\s.,+\-*/×÷^()%x]+$"#, options: .regularExpression) != nil
+        let plain = expr.range(of: #"^(?:[\d\s.,+\-−*/×÷^()%x√π<>≥≤]|mod)+$"#, options: .regularExpression) != nil
             && expr.range(of: #"\d"#, options: .regularExpression) != nil
-            && expr.range(of: #"\d\s*(?:[-+*/×÷^%]|x)\s*[\d(]|\d\s*%"#, options: .regularExpression) != nil
+            && expr.range(of: #"\d\s*(?:[-−+*/×÷^%<>≥≤]|x|mod)\s*[\d(√π]|\d\s*%|√\s*[\d(π]"#, options: .regularExpression) != nil
         guard percent || plain, let result = calc(expr + " =", indianGrouping: indianGrouping) else { return nil }
         let say = percent ? "\(expr) is \(result.value)" : "\(expr) = \(result.value)"
         return InstantAnswer(title: expr, value: result.value, sub: expr, say: say)
