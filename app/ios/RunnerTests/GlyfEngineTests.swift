@@ -279,6 +279,35 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(SettingsStore.migrated(once), once)
     }
 
+    /// Emoji, Keys and Shorthand left the g menu (user, 2026-09-29) for GIFs,
+    /// My glyfs and the vault. A strip or order saved with them keeps its
+    /// places: a pinned Emoji is a pinned GIFs, Keys on the strip is My
+    /// glyfs there, and a hidden Shorthand never hides the Vault it became.
+    func testRetiredToolsMoveToTheToolsThatTookThemIn() {
+        var old = GlyfSettings()
+        old.toolbarOrder = ["search", "emoji", "vault", "shorthand", "keys", "clipboard"]
+        old.toolbarHidden = ["shorthand", "clipboard"]
+        old.menuOrder = ["emoji", "keys", "rewrite", "glyfs", "shorthand", "vault"]
+        let s = SettingsStore.migrated(old)
+        XCTAssertEqual(s.toolbarOrder.prefix(5), ["search", "gifs", "vault", "glyfs", "clipboard"])
+        XCTAssertEqual(s.stripTools.prefix(4), ["search", "gifs", "vault", "glyfs"])
+        XCTAssertFalse(s.stripTools.contains("clipboard"), "hidden stays hidden")
+        XCTAssertEqual(s.menuOrder, ["gifs", "glyfs", "rewrite", "vault"])
+        XCTAssertEqual(SettingsStore.migrated(s), s, "and it happens once")
+    }
+
+    /// Emoji hidden from the strip is GIFs hidden from it, so the g menu
+    /// offers GIFs.
+    func testAHiddenEmojiIsAHiddenGIFs() {
+        var old = GlyfSettings()
+        old.toolbarOrder = GlyfSettings.Toolbar.defaultOrder + ["emoji"]
+        old.toolbarHidden = ["emoji"]
+        let s = SettingsStore.migrated(old)
+        XCTAssertTrue(s.toolbarOrder.contains("gifs"))
+        XCTAssertEqual(s.toolbarHidden, ["gifs"])
+        XCTAssertEqual(s.stripTools, GlyfSettings.Toolbar.defaultOrder)
+    }
+
     // MARK: §6.12 search paste format
     //
     // A hand port of the server's composeInsert (searchcards.ts) — these
@@ -503,6 +532,9 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(TourCoach.coach(s), .init(target: "toolbar:glyf", label: "Tap g"))
         s.panel = .menu
         XCTAssertEqual(TourCoach.coach(s), .init(target: "shell:tile:search", label: "Search"))
+        // On the strip it has no tile, and the strip stays up over the menu.
+        s.stripTools = ["search"]
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "toolbar:search", label: "Search"))
         XCTAssertFalse(TourCoach.allowsChip("paste", step: "sakshi:0"), "a chip would cover the tools")
         XCTAssertTrue(TourCoach.allowsChip("vault:wallet", step: "zoya:1"))
         XCTAssertFalse(TourCoach.allowsChip("paste", step: "semi:0"), "an old copy is not the address")
@@ -685,9 +717,27 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(Smart.cashtag(in: "$microsoft"), "MICROSOFT")
         XCTAssertNil(Smart.chip(for: "$usdc", fields: [], rates: rates), "a ticker with no price yet")
         // A sum still wins over a conversion; a dollar amount at home stays quiet.
-        XCTAssertEqual(Smart.chip(for: "$10*3", fields: [], rates: rates), .calc(value: "$30", hasEquals: false))
+        XCTAssertEqual(Smart.chip(for: "$10*3", fields: [], rates: rates), .calc(value: "$30", hasEquals: false, expression: "$10*3"))
+        // The strip reads the whole sum: "2+5 = 7".
+        XCTAssertEqual(Smart.chip(for: "2+5", fields: [])?.value, "2+5 = 7")
+        XCTAssertEqual(Smart.chip(for: "what is 12 * 12", fields: [])?.value, "12 * 12 = 144")
         let home = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88], crypto: [:], local: "USD")
         XCTAssertNil(Smart.chip(for: "$13", fields: [], rates: home))
+    }
+
+    /// Audit 2026-09-29: the strip answers a sum as it is typed, so what only
+    /// looks like one must stay quiet (SmartTest.kt twin).
+    func testCountsRangesScoresAndPhoneNumbersAreNotSums() {
+        for t in ["page 2 of 10", "episode 4 of 8", "call me at 555-1234", "555-1234", "the score was 3-2",
+                  "3-2", "9-5", "10-11", "born 29/09/2024", "2024/09/29", "exp 09/2026", "open 24/7"] {
+            XCTAssertNil(Smart.calc(t), t)
+        }
+        XCTAssertEqual(Smart.calc("20% of 150")?.value, "30")
+        XCTAssertEqual(Smart.calc("150-45")?.value, "105")
+        XCTAssertEqual(Smart.calc("5 - 2")?.value, "3")
+        XCTAssertEqual(Smart.calc("the room is 10 x 12")?.value, "120")
+        XCTAssertEqual(Smart.calc("10-3=")?.hasEquals, true)
+        XCTAssertEqual(Smart.calc("10-3=")?.value, "7")
     }
 
     /// Audit 2026-09-28: sums people type, and details a sentence asks for.

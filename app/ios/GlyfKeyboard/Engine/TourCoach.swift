@@ -67,9 +67,11 @@ enum TourCoach {
     }
 
     /// Opens a tool: from the strip when it is there, else through the g menu.
+    /// A tool on the strip has no tile in the menu, and the strip stays up
+    /// over the open menu, so the strip comes first either way.
     private static func tool(_ s: State, _ id: String, _ label: String) -> Coach {
-        if s.panel == .menu { return Coach(target: "shell:tile:\(id)", label: label) }
         if s.stripTools.contains(id) { return Coach(target: "toolbar:\(id)", label: label) }
+        if s.panel == .menu { return Coach(target: "shell:tile:\(id)", label: label) }
         return Coach(target: "toolbar:glyf", label: "Tap g")
     }
 

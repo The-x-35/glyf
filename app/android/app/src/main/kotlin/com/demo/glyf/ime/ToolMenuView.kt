@@ -18,14 +18,18 @@ import kotlin.math.ceil
 import kotlin.math.max
 
 /**
- * The g menu, the twin of GlyfShell's grid on iOS: every tool in one grid that
- * scrolls, four to a row, two rows showing with the third peeking in. Tap a
- * tile to open it. Hold one to pick it up: move it around the grid to reorder
- * (saved as `menuOrder`), or up past the grid onto the strip to keep it there.
+ * The g menu, the twin of GlyfShell's grid on iOS: every tool that is not on
+ * the strip, in one grid that scrolls, four to a row, two rows showing with
+ * the third peeking in. A tool is in one place, the strip or the menu, never
+ * both. Tap a tile to open it. Hold one to pick it up: move it around the
+ * grid to reorder (saved as `menuOrder`), or up past the grid onto the strip
+ * to keep it there.
  */
 class ToolMenuView(
     context: Context,
     private val palette: GlyfKeyboardView.KeyPalette,
+    /** The tools the strip shows right now; the menu leaves them out. */
+    private val onStrip: Set<String>,
     private val onOpen: (String) -> Unit,
     /** Finger over the strip while dragging (raw x), or null when it left. */
     private val onDragOverStrip: (Float?) -> Unit,
@@ -55,7 +59,7 @@ class ToolMenuView(
         addView(grid)
     }
     private val tiles = LinkedHashMap<String, View>()
-    private var order: MutableList<String> = savedOrder(context)
+    private var order: MutableList<String> = savedOrder(context).filter { it !in onStrip }.toMutableList()
     private var dragging: String? = null
 
     private val cols = 4
@@ -66,7 +70,9 @@ class ToolMenuView(
 
     init {
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        for ((id, title) in ToolIcon.TOOLS) tiles[id] = tile(id, title).also { grid.addView(it) }
+        for ((id, title) in ToolIcon.TOOLS) {
+            if (id in order) tiles[id] = tile(id, title).also { grid.addView(it) }
+        }
     }
 
     private fun tile(id: String, title: String): View {
@@ -224,8 +230,12 @@ class ToolMenuView(
                 return
             }
             layoutTiles(animated = true)
+            // The strip's tools keep their places in the saved order, so one
+            // that leaves the strip comes back to the menu where it was.
+            val shown = order.iterator()
+            val merged = savedOrder(context).map { if (it in onStrip) it else shown.next() }
             val s = SettingsStore.load(context)
-            s.put("menuOrder", JSONArray(order))
+            s.put("menuOrder", JSONArray(merged))
             SettingsStore.save(context, s.toString())
         }
     }
@@ -237,7 +247,9 @@ class ToolMenuView(
             val saved = SettingsStore.load(ctx).optJSONArray("menuOrder")
             val out = mutableListOf<String>()
             for (i in 0 until (saved?.length() ?: 0)) {
-                val id = saved!!.optString(i)
+                // An order saved with Emoji, Keys or Shorthand in it places
+                // the tools that took them over.
+                val id = ToolIcon.canonical(saved!!.optString(i))
                 if (id in known && id !in out) out.add(id)
             }
             known.filter { it !in out }.forEach { out.add(it) }

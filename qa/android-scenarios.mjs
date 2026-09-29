@@ -240,6 +240,56 @@ const byId = id => v => v.id === id;
 const idStarts = p => v => v.id.startsWith(p);
 const textHas = t => v => (v.text || "").toLowerCase().includes(t.toLowerCase());
 
+// Every tool, by the id the strip's icon and the menu's tile carry.
+const TOOL_IDS = ["search", "rewrite", "translate", "vault", "calendar", "clipboard", "gifs",
+  "ask", "dictation", "glyfs", "pay", "games", "settings"];
+
+// A tool opens from the strip when it is there, else from the g menu, which
+// holds only what the strip doesn't (S199). A g tap over suggestions brings
+// the tools back instead, so either is taken once it shows.
+async function openTool(id) {
+  const s = await state();
+  const onStrip = find(s, byId(id));
+  if (onStrip) { await tapXY(onStrip.x, onStrip.y); return true; }
+  const g = find(s, byId("toolbar:glyf"));
+  if (!g) return false;
+  await tapXY(g.x, g.y);
+  const v = await waitFor(x => x.id === `shell:tile:${id}` || x.id === id, 3000);
+  if (!v) return false;
+  await tapXY(v.x, v.y);
+  return true;
+}
+
+// A row below the fold of a panel that scrolls still has a place in the
+// dump: drag the panel up (in its middle, away from the gesture bar) until
+// the row is clear of the foot, or as far as the panel goes.
+async function inView(id) {
+  const [w, h] = shell("wm size").match(/(\d+)x(\d+)/).slice(1).map(Number);
+  let last = null;
+  for (let i = 0; i < 8; i++) {
+    const v = find(await state(), byId(id));
+    if (!v) return null;
+    if (v.y < h - 240 || v.y === last) return v;
+    last = v.y;
+    shell(`input swipe ${Math.round(w / 2)} ${h - 420} ${Math.round(w / 2)} ${h - 820} 350`);
+    await sleep(700);
+  }
+  return null;
+}
+
+// The card a line of text sits in (a panel's rows carry their ids on the
+// card, their words on its children).
+const cardOf = (s, prefix, text) => {
+  const t = s.views.find(v => v.text === text);
+  return t && s.views.find(v => v.id.startsWith(prefix) && Math.abs(v.y - t.y) < v.h / 2);
+};
+
+// Settings the app would write, set for one scenario and put back after it.
+const SETTINGS = "files/bridge/settings.json";
+const readSettings = () => adb("shell", `run-as ${PKG} cat ${SETTINGS}`);
+const writeSettings = text =>
+  execFileSync(ADB, ["shell", `run-as ${PKG} sh -c 'cat > ${SETTINGS}'`], { input: text });
+
 const scenarios = [
   { id: "S84", title: "A typo in a sentence is fixed on space", run: async () => {
     await fresh();
@@ -337,11 +387,13 @@ const scenarios = [
     await tapXY(g.x, g.y);
     await sleep(600);
     const after = await state();
-    const titles = ["Search", "Rewrite", "Translate", "Vault", "Clipboard", "Emoji"]
-      .filter(t => after.views.some(v => v.text === t || v.id === t));
+    const tiles = after.views.filter(v => v.id.startsWith("shell:tile:")).map(v => v.id.slice(11));
     await screenshot("S93-menu");
     tool("close");
-    return { pass: titles.length >= 5, note: `tiles: ${titles.join(", ")}` };
+    // The strip keeps Search, Clipboard, Vault, Voice and Translate; the
+    // menu has the rest (S199 checks that nothing is in both).
+    const want = ["rewrite", "calendar", "gifs", "glyfs"];
+    return { pass: want.every(t => tiles.includes(t)), note: `tiles: ${tiles.join(", ")}` };
   } },
   { id: "S94", title: "Copied text pastes from the strip", run: async () => {
     await fresh();
@@ -772,7 +824,7 @@ const scenarios = [
     await screenshot("S130-light");
     await tapXY(light.g.x, light.g.y);
     await sleep(600);
-    const menu = (await state()).views.some(v => v.text === "Search" || v.id === "Search");
+    const menu = (await state()).views.some(v => v.id.startsWith("shell:tile:"));
     tool("close");
     let dark;
     try {
@@ -860,12 +912,8 @@ scenarios.push(
     await fresh();
     let s = await state();
     const q0 = s.keys.q?.[1];
-    const g = find(s, v => v.id === "toolbar:glyf");
-    if (!g || q0 === undefined) return { pass: false, note: "no g button or keys" };
-    await tapXY(g.x, g.y);
-    const tile = await waitFor(byId("shell:tile:search"), 3000);
-    if (!tile) return { pass: false, note: "no Search tile" };
-    await tapXY(tile.x, tile.y);
+    if (q0 === undefined) return { pass: false, note: "no keys" };
+    if (!await openTool("search")) return { pass: false, note: "no Search on the strip or in the menu" };
     const close = await waitFor(byId("search:close"), 3000);
     if (!close) return { pass: false, note: "search did not open" };
     await sleep(1500);   // the suggestions arrive
@@ -898,13 +946,7 @@ scenarios.push(
       atEnd.push(() => write(before));
     }
     await fresh();
-    let s = await state();
-    const g = find(s, v => v.id === "toolbar:glyf");
-    if (!g) return { pass: false, note: "no g button" };
-    await tapXY(g.x, g.y);
-    const tile = await waitFor(byId("shell:tile:search"), 3000);
-    if (!tile) return { pass: false, note: "no Search tile" };
-    await tapXY(tile.x, tile.y);
+    if (!await openTool("search")) return { pass: false, note: "no Search on the strip or in the menu" };
     const maps = await waitFor(byId("search:tab:maps"), 3000);
     if (!maps) return { pass: false, note: "no Maps tab" };
     await tapXY(maps.x, maps.y);
@@ -962,6 +1004,227 @@ scenarios.push(
       note: `'${corrected}' → slid to '${slid}' → typed again '${kept}' → next time '${learned}'` };
   } },
 );
+
+// --- 2026-09-29: the g menu, My glyfs and the vault (user: "remove items in
+// menu that are in top bar", "my glyfs and keys are showing same thing",
+// "shorthand needs to be part of vault", "why cant we add details") ---
+scenarios.push(
+  { id: "S199", title: "The g menu holds only what the strip doesn't, and GIFs opens the GIF tab", run: async () => {
+    await fresh();
+    let s = await state();
+    const strip = TOOL_IDS.filter(id => find(s, byId(id)));
+    const g = find(s, byId("toolbar:glyf"));
+    if (!g || !strip.length) return { pass: false, note: `no g button, or the strip shows no tools (${strip.join(", ")})` };
+    await tapXY(g.x, g.y);
+    await waitFor(idStarts("shell:tile:"), 3000);
+    s = await state();
+    const tiles = s.views.filter(v => v.id.startsWith("shell:tile:")).map(v => v.id.slice(11));
+    const both = tiles.filter(t => strip.includes(t));
+    const nowhere = TOOL_IDS.filter(t => !strip.includes(t) && !tiles.includes(t));
+    const retired = tiles.filter(t => ["emoji", "keys", "shorthand"].includes(t));
+    await screenshot("S199-menu");
+    const gifs = find(s, byId("shell:tile:gifs"));
+    if (!gifs) { tool("close"); return { pass: false, note: `no GIFs tile; menu: ${tiles.join(", ")}` }; }
+    await tapXY(gifs.x, gifs.y);
+    const tab = await waitFor(v => v.id === "emoji:mode:gifs" && v.selected, 4000);
+    const media = await waitFor(idStarts("emoji:media:"), 12000);
+    await screenshot("S199-gifs");
+    tool("close");
+    return { pass: !both.length && !nowhere.length && !retired.length && !!tab,
+      note: `strip: ${strip.join(", ")}; menu: ${tiles.join(", ")}` +
+        (both.length ? `; in both: ${both.join(", ")}` : "") +
+        (nowhere.length ? `; in neither: ${nowhere.join(", ")}` : "") +
+        (retired.length ? `; retired tiles: ${retired.join(", ")}` : "") +
+        `; GIFs opens ${tab ? "the GIF tab" : "something else"}${media ? " with GIFs" : " (none loaded)"}` };
+  } },
+  { id: "S200", title: "My glyfs shows what each key holds, and there is no Keys tile", run: async () => {
+    // A glyf built in the app and on no key, listed after the keys; the
+    // settings come back as they were afterwards.
+    const before = readSettings();
+    const had = JSON.parse(before);
+    writeSettings(JSON.stringify({ ...had, customTitles: { ...(had.customTitles || {}), "user.qa-unbound": "QA glyf" } }));
+    try {
+      await sleep(1000);   // the keyboard looks at its settings every 0.4 s
+      await fresh();
+      let s = await state();
+      const g = find(s, byId("toolbar:glyf"));
+      if (!g) return { pass: false, note: "no g button" };
+      await tapXY(g.x, g.y);
+      const tile = await waitFor(byId("shell:tile:glyfs"), 3000);
+      s = await state();
+      const keysTile = !!find(s, byId("shell:tile:keys"));
+      if (!tile) return { pass: false, note: "no My glyfs tile" };
+      await tapXY(tile.x, tile.y);
+      await waitFor(byId("glyfs:build"), 3000);
+      s = await state();
+      await screenshot("S200-my-glyfs");
+      const bindings = had.bindings || {};
+      const letters = "qwertyuiopasdfghjklzxcvbnm".split("").filter(l => bindings[l]);
+      // Each key's row says which letter to hold.
+      const holds = letters.filter(l => {
+        const card = find(s, byId(`glyfs:key:${l}`));
+        return card && s.views.some(v => v.text === `Hold ${l.toUpperCase()}` && Math.abs(v.y - card.y) < card.h / 2);
+      });
+      const y = id => find(s, byId(id))?.y ?? -1;
+      const keyYs = letters.map(l => y(`glyfs:key:${l}`));
+      const own = cardOf(s, "glyfs:own:", "QA glyf");
+      const ordered = own && Math.max(...keyYs) < own.y && own.y < y("glyfs:build");
+      // A tap does what holding the key does: the vault's letter opens the vault.
+      const vaultKey = letters.find(l => bindings[l] === "surface:vault");
+      let opened = "no key holds the vault";
+      if (vaultKey) {
+        const row = await inView(`glyfs:key:${vaultKey}`);
+        if (row) await tapXY(row.x, row.y);
+        opened = (await waitFor(byId("vault:new:note"), 3000)) ? "the vault" : "nothing";
+      }
+      tool("close");
+      return { pass: !keysTile && letters.length > 0 && holds.length === letters.length && !!ordered &&
+          (!vaultKey || opened === "the vault"),
+        note: `keys held: ${letters.map(l => `${l.toUpperCase()}=${bindings[l]}`).join(", ")}; rows with Hold X: ` +
+          `${holds.map(l => l.toUpperCase()).join(", ")}; unbound glyf after them: ${!!ordered}; ` +
+          `Keys tile: ${keysTile}; tapping Hold ${(vaultKey || "?").toUpperCase()} opened ${opened}` };
+    } finally {
+      writeSettings(before);
+      await sleep(600);
+    }
+  } },
+  { id: "S201", title: "The vault shows shorthand, and an email added from the keys is offered for 'my email is'", run: async () => {
+    const email = "qa.keys@example.com";
+    tool("snippet", "--es text ';qapanel=Shorthand from the vault'");
+    // The email added here has to be the only one: any saved already is set
+    // aside (kept in the vault, marked) and put back at the end.
+    tool("stash", "--es text email");
+    tool("dropdetail", `--es text ${email}`);
+    try {
+      await fresh();
+      if (!await openTool("vault")) return { pass: false, note: "no Vault on the strip or in the menu" };
+      await waitFor(byId("vault:new:note"), 3000);
+      let s = await state();
+      const short = cardOf(s, "vault:shorthand:", ";qapanel");
+      if (!short) return { pass: false, note: "no shorthand in the vault panel" };
+      const ys = p => s.views.filter(idStarts(p)).map(v => v.y);
+      const between = Math.max(-1, ...ys("vault:card:")) < short.y &&
+        short.y < Math.min(Infinity, ...ys("vault:note:"), ...ys("vault:new:"));
+      await screenshot("S201-vault");
+      const row = await inView(short.id);
+      const typed = row ? await tapFor(row, x => x.includes("Shorthand from the vault")) : { t: "" };
+      // New detail → Email, typed on the keys, saved.
+      await fresh();
+      await openTool("vault");
+      const add = await inView("vault:new:detail");
+      if (!add) return { pass: false, note: "no New detail in the vault panel" };
+      await tapXY(add.x, add.y);
+      const kind = await waitFor(byId("vault:kind:email"), 3000);
+      if (!kind) return { pass: false, note: "New detail offers no Email" };
+      const kinds = (await state()).views.filter(idStarts("vault:kind:")).map(v => v.text);
+      await tapXY(kind.x, kind.y);
+      if (!await waitFor(byId("vaultedit:field"), 3000)) return { pass: false, note: "no strip to type the email in" };
+      await type(email);
+      const field = find(await state(), byId("vaultedit:field"))?.text;
+      await screenshot("S201-detail-strip");
+      const save = find(await state(), byId("vaultedit:save"));
+      await tapXY(save.x, save.y);
+      await waitFor(byId("vault:new:note"), 3000);
+      await sleep(400);   // the panel scrolls to what was just saved
+      const saved = cardOf(await state(), "vault:card:", email);
+      const screenH = Number(shell("wm size").match(/(\d+)x(\d+)/)[2]);
+      const shown = !!saved && saved.y + saved.h / 2 < screenH - 180;
+      await screenshot("S201-saved");
+      // At once: the strip offers it for "my email is".
+      tool("close");
+      await fresh();
+      await type("sure my email is ");
+      const chip = await waitFor(byId("strip:smart"), 4000);
+      const offered = !!find(await state(), v => v.text === email);
+      await screenshot("S201-chip");
+      const r = chip ? await tapFor(chip, x => x.includes(email)) : { t: await text(), retried: false };
+      return { pass: !!short && between && typed.t.includes("Shorthand from the vault") && field === email &&
+          shown && offered && r.t.trim().toLowerCase() === `sure my email is ${email}`,
+        note: `shorthand card between details and notes: ${between}; tapped it: '${typed.t}'; ` +
+          `kinds: ${kinds.join(", ")}; strip read '${field}'; saved card: ${saved ? (shown ? "in view" : "below the fold") : "missing"}; ` +
+          `chip offered it: ${offered}; '${r.t}'${second(r)}` };
+    } finally {
+      tool("close");
+      tool("dropdetail", `--es text ${email}`);
+      tool("unstash");
+      tool("snippet", "--es text ';qapanel='");
+      await sleep(500);
+    }
+  } },
+  { id: "S202", title: "A shorthand added from the keys expands when typed", run: async () => {
+    tool("snippet", "--es text ';qazz='");   // starts clean
+    try {
+      await fresh();
+      if (!await openTool("vault")) return { pass: false, note: "no Vault on the strip or in the menu" };
+      const add = await inView("vault:new:shorthand");
+      if (!add) return { pass: false, note: "no New shorthand in the vault panel" };
+      await tapXY(add.x, add.y);
+      const field = await waitFor(byId("vaultedit:field"), 3000);
+      if (!field) return { pass: false, note: "no strip to type the shortcut in" };
+      const start = field.text;           // the ; is there already
+      await type("qazz");
+      const next = find(await state(), byId("vaultedit:save"));
+      await tapXY(next.x, next.y);
+      const shortcut = await waitFor(byId("vaultedit:shortcut"), 3000);
+      if (!shortcut) return { pass: false, note: `Next didn't move on (strip '${find(await state(), byId("vaultedit:field"))?.text}', notice '${(await state()).notice}')` };
+      await type("see you soon");
+      await screenshot("S202-expansion-strip");
+      const save = find(await state(), byId("vaultedit:save"));
+      await tapXY(save.x, save.y);
+      await waitFor(byId("vault:new:note"), 3000);
+      const card = cardOf(await state(), "vault:shorthand:", ";qazz");
+      tool("close");
+      await fresh();
+      await type("ok ;qazz ");
+      const t = await waitText(x => /see you soon/i.test(x), 3000);
+      return { pass: start === ";" && shortcut.text === ";qazz" && !!card && /^ok see you soon $/i.test(t),
+        note: `strip started '${start}', shortcut '${shortcut.text}', card in the vault: ${!!card}; typed 'ok ;qazz ' → '${t}'` };
+    } finally {
+      tool("close");
+      tool("snippet", "--es text ';qazz='");
+      await sleep(500);
+    }
+  } },
+  // What a chip says: its own text, or the text views drawn inside it (the
+  // smart chip is a row holding a label).
+  { id: "S209", title: "A sum shows its answer in the strip as it is typed, no hold", run: async () => {
+    // "why am i needing to hold space, suggest it in strip right" (2026-09-29).
+    const seen = [];
+    let ok = true;
+    for (const [typed, shown] of [["2+5", "2+5 = 7"], ["12*12", "12*12 = 144"], ["100-15%", "100-15% = 85"],
+      ["150-45", "150-45 = 105"]]) {
+      await fresh();
+      await type(typed);
+      const chip = await waitFor(byId("strip:smart"), 3000);
+      const label = chip ? chipLabel(await state(), chip) : "none";
+      seen.push(`${typed} → ${label}`);
+      if (!label.includes(shown)) ok = false;
+    }
+    await screenshot("S209-sum");
+    return { pass: ok, note: seen.join("; ") };
+  } },
+  { id: "S210", title: "A phone number, a date or a count shows no sum", run: async () => {
+    const seen = [];
+    let ok = true;
+    for (const typed of ["call me at 555-1234", "born 29/09/2024", "page 2 of 10", "open 24/7"]) {
+      await fresh();
+      await type(typed);
+      await sleep(900);
+      const s = await state();
+      const chip = find(s, byId("strip:smart"));
+      const label = chip ? chipLabel(s, chip) : "";
+      seen.push(`${typed} → ${chip ? label || "(a chip with no label)" : "no chip"}`);
+      if (chip && (/=/.test(label) || !label)) ok = false;
+    }
+    return { pass: ok, note: seen.join("; ") };
+  } },
+);
+
+function chipLabel(s, chip) {
+  if (chip.text) return chip.text;
+  const inside = v => v !== chip && v.text && Math.abs(v.x - chip.x) <= chip.w / 2 && Math.abs(v.y - chip.y) <= chip.h / 2;
+  return s.views.filter(inside).map(v => v.text).join(" ");
+}
 
 async function openGame(game) {
   await fresh();

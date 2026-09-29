@@ -81,17 +81,22 @@ final class GlyfToolbar: UIView {
         "translate": "translate",
         "vault": "person.text.rectangle",
         "clipboard": "doc.on.clipboard",
-        "emoji": "face.smiling",
+        // A stack of moving pictures: the board's GIFs, with Stickers beside.
+        "gifs": "play.square.stack",
         "ask": "sparkles",
         "dictation": "mic",
         "glyfs": "square.grid.2x2",
-        "shorthand": "text.badge.plus",
-        "keys": "keyboard",
         "pay": "creditcard",
         "calendar": "calendar",
         "games": "gamecontroller",
         "settings": "gearshape",
     ]
+
+    /// The tools the strip shows, in its order. The g menu offers the rest:
+    /// a tool lives in one place, never both.
+    static var shownTools: [String] {
+        SettingsStore.current.stripTools.filter { icons[$0] != nil }
+    }
 
     private(set) var showingCandidates = false
     /// User tapped Glyf to restore tools while candidates were up.
@@ -318,8 +323,7 @@ final class GlyfToolbar: UIView {
 
     func reloadItems() {
         itemsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        let s = SettingsStore.current
-        for id in s.toolbarOrder where !s.toolbarHidden.contains(id) {
+        for id in Self.shownTools {
             guard let symbol = Self.icons[id] else { continue }
             let b = UIButton(type: .system)
             b.setImage(UIImage(systemName: symbol), for: .normal)

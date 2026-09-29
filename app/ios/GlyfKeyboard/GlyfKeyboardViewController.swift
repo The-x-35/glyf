@@ -108,7 +108,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var calendarView: CalendarSurface?
     private var search: SearchSurface?
     private var noteEdit: NoteEditSurface?
-    private var pendingNote: (id: String?, text: String)?
+    /// What the editor strip opens on (set right before setSurface(.noteEdit)).
+    private var pendingEdit: NoteEditSurface.Edit?
     /// §6.13 T — persistent strip above the toolbar while enabled.
     private var hud: TranslationHUD?
     /// §6.13 R — transient overlay over the keys, not a Surface.
@@ -498,14 +499,60 @@ final class GlyfKeyboardViewController: UIInputViewController {
         debugTapTimer?.invalidate()
         debugTapTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) {
             [weak self] _ in
-            guard let self,
-                  let d = AppGroupStore.readJSON(name: "debug-tap.json"),
+            guard let self else { return }
+            self.runDebugVaultTool()
+            guard let d = AppGroupStore.readJSON(name: "debug-tap.json"),
                   let seq = d["seq"] as? Int, seq != self.lastDebugTapSeq,
                   let x = d["x"] as? Double, let y = d["y"] as? Double else { return }
             self.lastDebugTapSeq = seq
             // Consume it: a left-behind point replays on every appearance.
             AppGroupStore.writeJSON(["seq": seq, "done": true], name: "debug-tap.json")
             self.keyboardView.debugTap(at: CGPoint(x: x, y: y))
+        }
+    }
+
+    /// The label a detail set aside by "stash" carries (Android's twin).
+    private static let stashed = "qa-stash:"
+
+    /// Scenario tools on the vault, from debug-vault.json (DEBUG only, the
+    /// twin of Android's stash, unstash, dropdetail and snippet). "stash"
+    /// sets every detail of one kind aside, so the email a scenario adds from
+    /// the keys is the one offered; they stay in the vault as Other under a
+    /// marked label, so a crash in between loses nothing. "unstash" puts them
+    /// back; "dropdetail" removes the detail a scenario added, by its value;
+    /// "snippet" keeps ";qa=See you" or lets ";qa=" go.
+    private func runDebugVaultTool() {
+        guard let d = AppGroupStore.readJSON(name: "debug-vault.json"),
+              d["done"] as? Bool != true, let op = d["op"] as? String else { return }
+        AppGroupStore.writeJSON(["done": true], name: "debug-vault.json")
+        let store = VaultStore.shared
+        store.invalidate()
+        if op == "snippet" {
+            let pair = (d["text"] as? String ?? "").split(separator: "=", maxSplits: 1,
+                                                          omittingEmptySubsequences: false)
+            guard pair.count == 2 else { return }
+            if pair[1].isEmpty {
+                store.deleteSnippet(trigger: String(pair[0]))
+            } else {
+                _ = store.upsertSnippet(trigger: String(pair[0]), text: String(pair[1]))
+            }
+            return
+        }
+        for f in store.load().fields {
+            switch op {
+            case "stash" where f.kind == d["kind"] as? String:
+                _ = store.upsertField(id: f.id, kind: "custom",
+                                      label: "\(Self.stashed)\(f.kind):\(f.label)", value: f.value)
+            case "unstash" where f.label.hasPrefix(Self.stashed):
+                let parts = f.label.dropFirst(Self.stashed.count).split(separator: ":", maxSplits: 1,
+                                                                         omittingEmptySubsequences: false)
+                _ = store.upsertField(id: f.id, kind: String(parts.first ?? "custom"),
+                                      label: parts.count > 1 ? String(parts[1]) : "", value: f.value)
+            case "dropdetail" where f.value == d["value"] as? String:
+                store.deleteField(id: f.id)
+            default:
+                break
+            }
         }
     }
 #endif
@@ -902,7 +949,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
             connector?.removeFromSuperview(); connector = nil
             calendarView?.removeFromSuperview(); calendarView = nil
         case .search: search?.cancelWork(); search?.removeFromSuperview(); search = nil
-        case .noteEdit: noteEdit?.removeFromSuperview(); noteEdit = nil
+        case .noteEdit:
+            // A phone number was typed on the digits: the letters come back.
+            if noteEdit?.wantsDigits == true { keyboardView.setMode(.letters) }
+            noteEdit?.removeFromSuperview(); noteEdit = nil
         case .act:
             actTask?.cancel(); actTask = nil
             act?.removeFromSuperview(); act = nil
@@ -972,14 +1022,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
             // Open on recents + trending rather than an empty box (Gboard).
             sv.presentLanding()
         case .noteEdit:
-            let n = NoteEditSurface(noteId: pendingNote?.id ?? nil,
-                                    text: pendingNote?.text ?? "")
+            let n = NoteEditSurface(edit: pendingEdit ?? .note(id: nil, text: ""))
+            pendingEdit = nil
             n.delegate = self
             content.addSubview(n)
             prepareEntrance(n, animated: animated)
             noteEdit = n
-            inlineTarget = n.editor
-            n.editor.isActive = true
+            if n.wantsDigits { keyboardView.setMode(.symbols1) }
+            n.activate(n.activeEditor)
         case .act:
             let a = ActSurface()
             a.delegate = self
@@ -1966,8 +2016,9 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             calendarView?.returnPressed()
             return
         }
-        if let editor = inlineTarget, surface == .noteEdit {
-            editor.append("\n")
+        if inlineTarget != nil, surface == .noteEdit {
+            // A new line in a note, on from a shortcut, Save for a detail.
+            noteEdit?.returnPressed()
             return
         }
         if inlineTarget != nil, surface == .bar {
@@ -2213,43 +2264,52 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         let delay = Glass.reduceMotion ? Glass.Ripple.reducedMotionFlash
                                        : Glass.Ripple.surfaceRiseDelay
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
-            switch glyfId {
-            case "surface:translate-hud":
-                // §6.13 T toggles the persistent strip on/off.
-                let on = !(SettingsStore.current.translationHUD ?? false)
-                SettingsStore.update { $0.translationHUD = on }
-                self.applySurfaceLayout(animated: true)
-                if on {
-                    self.hud?.refreshTarget()
-                    self.notifyHUD()
-                } else {
-                    KeyboardToast.show(in: self.content, text: "Translate off")
-                }
-            case "surface:tones":
-                self.showTonesPopup()
-            case "connector:meet":
-                // A fresh Google Meet link, straight into the message.
-                CallLink.make { [weak self] url, note in
-                    guard let self else { return }
-                    if let url {
-                        self.hostInsert(Self.spaced("Join me on a call: \(url)", after: self.beforeContext))
-                        self.syncAutoShift()
-                        self.updateCandidates()
-                    } else if let note {
-                        KeyboardToast.show(in: self.content, text: note)
-                    }
-                }
-            case let id where id.hasPrefix("surface:"):
-                // Other "surface:" bindings open shell screens (M4: S → vault).
-                self.setSurface(.shell)
-                self.shell?.push(String(id.dropFirst("surface:".count)))
-            case let id where id.hasPrefix("connector:"):
-                // §6.12 C — the ConnectorSurface picker.
-                self.setSurface(.connector(String(id.dropFirst("connector:".count))))
-            default:
-                self.startSkill(glyfId: glyfId, letter: keyId)
+            self?.runBinding(glyfId, letter: keyId)
+        }
+    }
+
+    /// What a bound key does: held on the keys, or tapped in My glyfs.
+    private func runBinding(_ glyfId: String, letter: String) {
+        switch glyfId {
+        case "surface:translate-hud":
+            // §6.13 T toggles the persistent strip on/off. It lives over the
+            // keys, so a panel it was started from goes.
+            setSurface(.none)
+            let on = !(SettingsStore.current.translationHUD ?? false)
+            SettingsStore.update { $0.translationHUD = on }
+            applySurfaceLayout(animated: true)
+            if on {
+                hud?.refreshTarget()
+                notifyHUD()
+            } else {
+                KeyboardToast.show(in: content, text: "Translate off")
             }
+        case "surface:tones":
+            setSurface(.none)
+            showTonesPopup()
+        case "connector:meet":
+            setSurface(.none)
+            // A fresh Google Meet link, straight into the message.
+            CallLink.make { [weak self] url, note in
+                guard let self else { return }
+                if let url {
+                    self.hostInsert(Self.spaced("Join me on a call: \(url)", after: self.beforeContext))
+                    self.syncAutoShift()
+                    self.updateCandidates()
+                } else if let note {
+                    KeyboardToast.show(in: self.content, text: note)
+                }
+            }
+        case let id where id.hasPrefix("surface:"):
+            // Other "surface:" bindings open shell screens (M4: S → vault);
+            // from My glyfs the open menu goes there, with its way back.
+            if surface != .shell { setSurface(.shell) }
+            shell?.push(String(id.dropFirst("surface:".count)))
+        case let id where id.hasPrefix("connector:"):
+            // §6.12 C — the ConnectorSurface picker.
+            setSurface(.connector(String(id.dropFirst("connector:".count))))
+        default:
+            startSkill(glyfId: glyfId, letter: letter)
         }
     }
 
@@ -2513,12 +2573,19 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         openTool(id)
     }
 
-    /// Every tool opens the same way from the strip and from the g menu.
-    private func openTool(_ id: String) {
+    /// Every tool opens the same way from the strip and from the g menu. A
+    /// strip or route that still says Emoji, Keys or Shorthand opens what
+    /// took them in: GIFs, My glyfs and the vault.
+    private func openTool(_ requested: String) {
+        let id = GlyfSettings.Toolbar.canonical(requested)
         switch id {
         case "search": setSurface(.search)
         case "clipboard": setSurface(.clipboard)
-        case "emoji": setSurface(.emoji)
+        // The emoji board opens on Emoji from its own key; from the menu it
+        // opens on GIFs, with Stickers beside it.
+        case "gifs":
+            setSurface(.emoji)
+            emoji?.setMode(.gifs, animated: false)
         // Rewrite is the website's list of versions for what is typed; with
         // nothing typed there is nothing to rewrite, so it asks instead.
         case "rewrite":
@@ -2539,7 +2606,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             setSurface(.pay)
         case "calendar": setSurface(.connector("calendar"))
         case "games": setSurface(.games)
-        case "vault", "glyfs", "shorthand", "keys", "settings":
+        case "vault", "glyfs", "settings":
             if surface != .shell { setSurface(.shell) }
             shell?.push(id)
         default: break
@@ -2929,8 +2996,23 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
     }
 
     func shellEditNote(id: String?, text: String) {
-        pendingNote = (id, text)
+        pendingEdit = .note(id: id, text: text)
         setSurface(.noteEdit)
+    }
+
+    func shellAddDetail(_ kind: DetailKind) {
+        pendingEdit = .detail(kind)
+        setSurface(.noteEdit)
+    }
+
+    func shellAddShorthand() {
+        pendingEdit = .shorthand
+        setSurface(.noteEdit)
+    }
+
+    func shellRunKey(_ letter: String) {
+        guard let target = SettingsStore.current.bindings[letter] else { return }
+        runBinding(target, letter: letter)
     }
 
     func shellCopyImage(id: String) {
@@ -3021,8 +3103,13 @@ extension GlyfKeyboardViewController: NoteEditSurfaceDelegate {
 
     func noteEditActivated(_ editor: InlineEditor) {
         inlineTarget = editor
+        // A shortcut or an email starts in lowercase, whatever capital the
+        // message field was about to get; a note or a name starts with one.
+        keyboardView.syncAutoShift(wantsCapital: noteEdit?.startsWithCapital ?? false)
     }
 
+    /// Saved or not, back to the vault it was opened from, where what was
+    /// just added shows.
     func noteEditSaved() {
         inlineTarget = nil
         setSurface(.shell)
@@ -3032,6 +3119,7 @@ extension GlyfKeyboardViewController: NoteEditSurfaceDelegate {
     func noteEditClosed() {
         inlineTarget = nil
         setSurface(.shell)
+        shell?.push("vault")
     }
 }
 

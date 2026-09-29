@@ -130,6 +130,131 @@ final class GlyfScenarioUITests: XCTestCase {
         }
     }
 
+    // MARK: - The strip and the g menu
+
+    /// Every tool, as the g menu and the strip name them.
+    private static let tools = ["search", "rewrite", "translate", "vault", "calendar", "clipboard", "gifs",
+                                "ask", "dictation", "glyfs", "pay", "games", "settings"]
+
+    /// Any tile of the g menu, once it is open.
+    private func menuTile(_ timeout: TimeInterval = 3) -> XCUIElement? {
+        let tile = host.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'shell:tile:'")).firstMatch
+        return tile.waitForExistence(timeout: timeout) ? tile : nil
+    }
+
+    /// The strip scrolls, so XCUITest reports its buttons in the scroll
+    /// view's space; tap where the icon is drawn, level with the g key.
+    private func tapStripIcon(_ icon: XCUIElement) {
+        let g = el("toolbar:glyf").exists ? el("toolbar:glyf") : el("toolbar:close")
+        host.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: icon.frame.midX, dy: g.frame.midY)).tap()
+    }
+
+    /// Opens a tool wherever it lives, the way a person finds it: on the
+    /// strip when it is there, else in the g menu. A tool is in one place,
+    /// never both. A chip covering the strip goes when the menu opens, and
+    /// the strip shows its tools over the menu.
+    private func openTool(_ id: String, file: StaticString = #filePath, line: UInt = #line) {
+        if let icon = wait("toolbar:\(id)", 1.5) { return tapStripIcon(icon) }
+        tap("toolbar:glyf", file: file, line: line)
+        guard let first = menuTile() else { return XCTFail("the g menu did not open", file: file, line: line) }
+        let tile = el("shell:tile:\(id)")
+        if tile.exists {
+            for _ in 0..<4 where !tile.isHittable {
+                first.swipeUp()
+                usleep(400_000)
+            }
+            return tile.tap()
+        }
+        guard let icon = wait("toolbar:\(id)", 2) else {
+            return XCTFail("\(id) is on neither the strip nor the menu", file: file, line: line)
+        }
+        tapStripIcon(icon)
+    }
+
+    /// A little of a panel's list at a time, so no row is skipped: a slow
+    /// drag that stops before letting go, so the list does not fling on.
+    private func nudgeUp(_ list: XCUIElement) {
+        list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+            .press(forDuration: 0.05, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
+                   withVelocity: .slow, thenHoldForDuration: 0.3)
+        usleep(300_000)
+    }
+
+    /// Scrolls the open panel's list until a row is on screen.
+    @discardableResult
+    private func scrollTo(_ id: String) -> XCUIElement? {
+        let row = el(id)
+        for _ in 0..<10 where !(row.exists && row.isHittable) { nudgeUp(host.tables.firstMatch) }
+        return row.exists ? row : nil
+    }
+
+    /// A card in the vault panel whose words start with `text` (a shortcut)
+    /// or hold it (a detail's value).
+    private func vaultCard(_ text: String, prefix: Bool = false, _ timeout: TimeInterval = 4) -> XCUIElement? {
+        let card = host.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH 'vault:card:' AND label \(prefix ? "BEGINSWITH" : "CONTAINS") %@", text))
+            .firstMatch
+        return card.waitForExistence(timeout: timeout) ? card : nil
+    }
+
+    /// The vault's adding row, below what is saved: scrolled to if need be.
+    private func tapVaultAdd(_ what: String, file: StaticString = #filePath, line: UInt = #line) {
+        guard let add = wait("vault:new:\(what)", 4) else {
+            return XCTFail("no \(what) in the vault's adding row", file: file, line: line)
+        }
+        for _ in 0..<4 where !add.isHittable {
+            host.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'vault:'"))
+                .firstMatch.swipeUp()
+            usleep(400_000)
+        }
+        add.tap()
+    }
+
+    // MARK: - The keyboard's vault tools (DEBUG, debug-vault.json)
+
+    /// The App Group's bridge folder, found through the simulator's own
+    /// files (a simulator's runner can reach them): where the keyboard's
+    /// DEBUG vault tools look.
+    private lazy var bridgeDir: URL? = {
+        let env = ProcessInfo.processInfo.environment
+        let data = env["SIMULATOR_SHARED_RESOURCES_DIRECTORY"].map { URL(fileURLWithPath: $0) }
+            ?? URL(fileURLWithPath: NSHomeDirectory()).deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let groups = data.appendingPathComponent("Containers/Shared/AppGroup")
+        for dir in (try? FileManager.default.contentsOfDirectory(at: groups, includingPropertiesForKeys: nil)) ?? [] {
+            let meta = dir.appendingPathComponent(".com.apple.mobile_container_manager.metadata.plist")
+            if NSDictionary(contentsOf: meta)?["MCMMetadataIdentifier"] as? String == "group.com.arpit.glyf" {
+                return dir.appendingPathComponent("bridge")
+            }
+        }
+        return nil
+    }()
+
+    /// Hands the keyboard one vault tool ("stash" a kind, "unstash",
+    /// "dropdetail" a value, "snippet" ";qa=text", or ";qa=" to remove it)
+    /// and waits until it has run. The keyboard must be up: it looks while
+    /// it shows.
+    @discardableResult
+    private func vaultTool(_ op: [String: String]) -> Bool {
+        guard let dir = bridgeDir, let data = try? JSONSerialization.data(withJSONObject: op) else {
+            note("vault tool \(op): no App Group folder found")
+            return false
+        }
+        let url = dir.appendingPathComponent("debug-vault.json")
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return false }
+        let deadline = Date().addingTimeInterval(4)
+        while Date() < deadline {
+            if let done = try? Data(contentsOf: url),
+               let json = try? JSONSerialization.jsonObject(with: done) as? [String: Any],
+               json["done"] as? Bool == true { return true }
+            usleep(250_000)
+        }
+        note("vault tool \(op): the keyboard did not answer")
+        return false
+    }
+
     // MARK: - Getting to a message field
 
     private func dismissInterstitials() {
@@ -393,8 +518,7 @@ final class GlyfScenarioUITests: XCTestCase {
         clear()
         guard let q = wait("key:q", 3) else { return XCTFail("no keys") }
         let keysY = q.frame.minY
-        tap("toolbar:glyf")
-        tap("shell:tile:search")
+        openTool("search")
         guard let close = wait("search:close", 4) else { return XCTFail("search did not open") }
         let rowY = close.frame.minY
         XCTAssertEqual(el("key:q").frame.minY, keysY, accuracy: 1, "opening search moved the keys")
@@ -412,8 +536,7 @@ final class GlyfScenarioUITests: XCTestCase {
     func testS145_MapsResultsCarryAPicture() throws {
         open()
         clear()
-        tap("toolbar:glyf")
-        tap("shell:tile:search")
+        openTool("search")
         if let maps = wait("search:tab:maps", 3) { maps.tap() }
         type("coffee near me")
         tap("search:go")
@@ -516,6 +639,48 @@ final class GlyfScenarioUITests: XCTestCase {
         note("inserted: '\(value)'")
     }
 
+    /// S198: a sum shows its answer in the strip as it is typed, no hold
+    /// (user, 2026-09-29: "why am i needing to hold space, suggest it in strip").
+    func testS198_ASumShowsItsAnswerInTheStripAsYouType() throws {
+        open()
+        clear()
+        var seen: [String] = []
+        for (typed, answer) in [("2+5", "7"), ("12*12", "144"), ("100-15%", "85"), ("2^10", "1,024"), ("150-45", "105")] {
+            clear()
+            type(typed)
+            let chip = wait("strip:smart", 3)
+            let label = chip?.label ?? "none"
+            seen.append("\(typed) → \(label)")
+            XCTAssertTrue(label.contains(answer), "\(typed): the strip shows '\(label)'")
+        }
+        keepScreenshot("sum-strip")
+        note(seen.joined(separator: "; "))
+        // Tapping it puts the answer after the sum.
+        clear()
+        type("2+5")
+        guard let chip = wait("strip:smart", 3) else { return XCTFail("no chip for 2+5") }
+        chip.tap()
+        XCTAssertTrue(waitValue(3) { $0.hasPrefix("2+5") && $0.contains("7") }, "got '\(value)'")
+        note("inserted '\(value)'")
+    }
+
+    /// S210: what only looks like a sum stays quiet: a phone number, a date,
+    /// a count, "24/7" (audit 2026-09-29: "page 2 of 10" had offered "= 20").
+    func testS210_APhoneNumberADateOrACountShowsNoSum() throws {
+        open()
+        var seen: [String] = []
+        for typed in ["call me at 555-1234", "born 29/09/2024", "page 2 of 10", "open 24/7"] {
+            clear()
+            type(typed)
+            Thread.sleep(forTimeInterval: 1.0)
+            let chip = el("strip:smart")
+            let label = chip.exists ? chip.label : "no chip"
+            seen.append("\(typed) → \(label)")
+            XCTAssertFalse(chip.exists && label.contains("="), "\(typed): the strip shows '\(label)'")
+        }
+        note(seen.joined(separator: "; "))
+    }
+
     /// S189: hold space on a sum and the answer is there at once, worked
     /// out on the phone (user, 2026-09-29: "i wanna do math 2+5 its taking
     /// long, we dont need ai for this").
@@ -547,24 +712,236 @@ final class GlyfScenarioUITests: XCTestCase {
     func testS70_GButtonOpensTheToolMenuNotVault() throws {
         open()
         tap("toolbar:glyf")
-        XCTAssertNotNil(wait("shell:tile:search", 3), "g should open the menu of tools")
+        XCTAssertNotNil(menuTile(), "g should open the menu of tools")
         XCTAssertFalse(el("vault:card:0").exists, "g must not land on Vault")
-        let tiles = ["search", "rewrite", "translate", "vault", "clipboard", "emoji", "ask",
-                     "dictation", "glyfs", "shorthand", "keys", "pay", "settings"].filter { el("shell:tile:\($0)").exists }
+        let tiles = Self.tools.filter { el("shell:tile:\($0)").exists }
         note("tiles showing: \(tiles.joined(separator: ", "))")
         tap("toolbar:close")
         XCTAssertNotNil(wait("key:a", 3), "closing the menu brings the letters back")
     }
 
+    /// The vault is on the strip by default, so it opens from there (the g
+    /// menu carries only what the strip does not).
     func testS71_MenuThenVaultCardTypesTheDetail() throws {
         open()
         clear()
-        tap("toolbar:glyf")
-        tap("shell:tile:vault")
+        openTool("vault")
         guard let card = wait("vault:card:0", 4) else { return XCTFail("vault is empty") }
         note("first vault card: \(card.label)")
         card.tap()
         XCTAssertTrue(waitValue(3) { !$0.isEmpty }, "tapping a vault card should type it")
+    }
+
+    /// S199: the g menu carries only what the strip does not (user,
+    /// 2026-09-29: "remove items in menu that are in top bar, icon can be
+    /// either in top bar or in menu"). Emoji gave its tile to GIFs, which
+    /// opens the emoji board on its GIFs tab. A tool taken off the strip
+    /// comes back to the menu.
+    func testS199_TheMenuLeavesOutTheStripAndOpensGIFs() throws {
+        open()
+        let onStrip = Self.tools.filter { el("toolbar:\($0)").exists }
+        tap("toolbar:glyf")
+        guard menuTile() != nil else { return XCTFail("g should open the menu") }
+        let inMenu = Self.tools.filter { el("shell:tile:\($0)").exists }
+        note("strip: \(onStrip.joined(separator: ", ")); menu: \(inMenu.joined(separator: ", "))")
+        keepScreenshot("menu")
+        XCTAssertFalse(onStrip.isEmpty, "the strip carries tools")
+        for id in onStrip {
+            XCTAssertFalse(inMenu.contains(id), "\(id) is on the strip and in the menu")
+        }
+        XCTAssertEqual(Set(onStrip + inMenu).count, Self.tools.count, "every tool is in one place")
+        for id in ["emoji", "keys", "shorthand"] {
+            XCTAssertFalse(el("shell:tile:\(id)").exists, "the \(id) tile is gone")
+        }
+        tap("shell:tile:gifs")
+        guard let gifs = wait("emoji:mode:gifs", 4) else { return XCTFail("the emoji board did not open") }
+        XCTAssertTrue(gifs.isSelected, "the board should open on its GIFs tab")
+        XCTAssertTrue(el("emoji:mode:stickers").exists, "Stickers sits beside it")
+        let search = el("emoji:search").label
+        XCTAssertTrue(search.contains("GIFs") || search.contains("KLIPY"), "the search field says '\(search)'")
+        sleep(2)
+        keepScreenshot("gifs-tab")
+        note("GIFs opened the board on '\(search)'")
+        tap("emoji:letters")
+
+        // Voice off the strip (Settings › Toolbar items) is Voice in the menu.
+        guard onStrip.contains("dictation") else { return }
+        func flipVoice() {
+            openTool("settings")
+            guard let items = scrollTo("shell:toolbar") else { return XCTFail("no Toolbar items in Settings") }
+            items.tap()
+            let row = el("toggle:Voice").exists ? el("toggle:Voice") : host.staticTexts["Voice"].firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 3), "no Voice row in Toolbar items")
+            row.tap()
+            tap("toolbar:back")
+            tap("toolbar:back")
+        }
+        flipVoice()
+        let moved = wait("shell:tile:dictation", 3) != nil
+        keepScreenshot("menu-with-voice")
+        XCTAssertFalse(el("toolbar:dictation").exists, "Voice is still on the strip")
+        tap("toolbar:close")
+        flipVoice()
+        let back = gone("shell:tile:dictation", 3)
+        tap("toolbar:close")
+        XCTAssertTrue(moved, "Voice taken off the strip should show in the menu")
+        XCTAssertTrue(back, "Voice back on the strip should leave the menu")
+        XCTAssertNotNil(wait("toolbar:dictation", 3), "Voice is back on the strip")
+    }
+
+    /// S200: Keys and My glyfs said the same thing (user, 2026-09-29: "my
+    /// glyfs and keys are ... showing same thing, and we dont need both").
+    /// One tile, My glyfs: each held key's glyf with "Hold X", then the glyfs
+    /// on no key, then Build your own. A row does what holding its key does.
+    func testS200_MyGlyfsListsTheHeldKeysAndDoesWhatTheyDo() throws {
+        open()
+        tap("toolbar:glyf")
+        guard menuTile() != nil else { return XCTFail("g should open the menu") }
+        XCTAssertFalse(el("shell:tile:keys").exists, "no Keys tile")
+        tap("shell:tile:glyfs")
+        let listed = NSPredicate(format: "identifier BEGINSWITH 'shell:key:' OR identifier BEGINSWITH 'shell:run:' OR identifier == 'shell:app:build'")
+        guard host.descendants(matching: .any).matching(listed).firstMatch.waitForExistence(timeout: 4) else {
+            return XCTFail("My glyfs did not open")
+        }
+        keepScreenshot("my-glyfs")
+        // The list scrolls; read every row on the way down.
+        var rows: [String: String] = [:]
+        var order: [String] = []
+        let table = host.tables.firstMatch
+        for _ in 0..<16 {
+            let seen = host.descendants(matching: .any).matching(listed).allElementsBoundByIndex
+            for row in seen where row.exists && rows[row.identifier] == nil {
+                rows[row.identifier] = row.label
+                order.append(row.identifier)
+            }
+            if rows["shell:app:build"] != nil { break }
+            nudgeUp(table)
+        }
+        note("rows: " + order.map { "\($0)=\(rows[$0] ?? "")" }.joined(separator: "; "))
+        XCTAssertEqual(order.last, "shell:app:build", "Build your own ends the list")
+        // The keys first, in the keyboard's order; then glyfs on no key.
+        let keys = order.filter { $0.hasPrefix("shell:key:") }
+        XCTAssertEqual(Array(order.prefix(keys.count)), keys, "held keys lead the list")
+        let qwerty = "qwertyuiopasdfghjklzxcvbnm"
+        let positions = keys.compactMap { qwerty.firstIndex(of: Character(String($0.suffix(1)))) }
+        XCTAssertEqual(positions, positions.sorted(), "in the keys' own order")
+        // Every key the settings hold, none missing.
+        if let dir = bridgeDir,
+           let data = try? Data(contentsOf: dir.appendingPathComponent("settings.json")),
+           let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let bindings = settings["bindings"] as? [String: String] {
+            let bound = qwerty.map(String.init).filter { bindings[$0] != nil }.map { "shell:key:\($0)" }
+            XCTAssertEqual(keys, bound, "one row per held key")
+        }
+        guard let v = rows["shell:key:v"] else { return XCTFail("no row for the V hold (the vault)") }
+        XCTAssertTrue(v.contains("Vault") && v.contains("Hold V"), "V reads '\(v)'")
+        for (id, label) in rows where id.hasPrefix("shell:key:") {
+            let letter = id.dropFirst("shell:key:".count).uppercased()
+            XCTAssertTrue(label.hasSuffix("Hold \(letter)"), "\(id) reads '\(label)'")
+        }
+        keepScreenshot("my-glyfs-end")
+        // Tapping V's row does what holding V does: the vault opens.
+        let vRow = el("shell:key:v")
+        for _ in 0..<8 where !(vRow.exists && vRow.isHittable) {
+            table.swipeDown()
+            usleep(400_000)
+        }
+        vRow.tap()
+        XCTAssertNotNil(wait("vault:new:note", 4), "V's row should open the vault")
+        keepScreenshot("my-glyfs-v-row-opened-vault")
+    }
+
+    /// S201: shorthand is part of the vault now, and a detail is added from
+    /// the keyboard, not only a note (user, 2026-09-29: "why cant we add
+    /// details or shorthand"). The strip offers it as soon as the sentence
+    /// asks, and the app's Vault lists it.
+    func testS201_VaultShowsShorthandAndAddsADetailFromTheKeys() throws {
+        let email = "s201@example.com"
+        open()
+        clear()
+        // The email added here must be the one offered: saved emails are set
+        // aside for the run (kept in the vault as Other, put back after).
+        XCTAssertTrue(vaultTool(["op": "unstash"]), "the keyboard's vault tools did not answer")
+        addTeardownBlock { [self] in
+            if !(el("toolbar:glyf").exists || el("toolbar:close").exists) { open() }
+            vaultTool(["op": "dropdetail", "value": email])
+            vaultTool(["op": "unstash"])
+        }
+        XCTAssertTrue(vaultTool(["op": "dropdetail", "value": email]))
+        XCTAssertTrue(vaultTool(["op": "stash", "kind": "email"]))
+
+        openTool("vault")
+        guard let sig = vaultCard(";sig,", prefix: true) else { return XCTFail("no ;sig card in the vault") }
+        note("shorthand card: \(sig.label)")
+        keepScreenshot("vault-with-shorthand")
+        sig.tap()
+        XCTAssertTrue(waitValue(3) { $0.contains("Arpit") }, "tapping ;sig should type it, got '\(value)'")
+
+        clear()
+        openTool("vault")
+        tapVaultAdd("detail")
+        guard wait("vault:kind:email", 4) != nil else { return XCTFail("no kinds to pick from") }
+        keepScreenshot("new-detail-kinds")
+        note("kinds: " + ["name", "email", "phone", "address", "wallet", "upi", "link", "custom"]
+            .filter { el("vault:kind:\($0)").exists }.joined(separator: ", "))
+        tap("vault:kind:email")
+        guard wait("noteedit:field", 4) != nil else { return XCTFail("no editor strip for the email") }
+        type(email)
+        keepScreenshot("detail-strip")
+        tap("noteedit:save")
+        guard let card = vaultCard(email) else {
+            return XCTFail("the new email is not in the vault; the strip says '\(el("noteedit:status").label)'")
+        }
+        note("added: \(card.label)")
+        keepScreenshot("vault-with-new-email")
+        tap("toolbar:close")
+
+        clear()
+        type("my email is ")
+        guard let chip = wait("strip:smart", 4) else { return XCTFail("no chip for 'my email is '") }
+        note("chip: \(chip.label)")
+        XCTAssertTrue(chip.label.contains(email), "chip says '\(chip.label)'")
+        chip.tap()
+        XCTAssertTrue(waitValue(3) { $0.contains(email) }, "got '\(value)'")
+
+        // The app reads the same vault: its Vault screen lists the email.
+        XCUIDevice.shared.system.open(URL(string: "glyf://open?path=vault")!)
+        let openIt = springboard.buttons["Open"]
+        if openIt.waitForExistence(timeout: 2) { openIt.tap() }
+        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", email)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8), "the app's Vault doesn't list the new email")
+        keepScreenshot("app-vault")
+    }
+
+    /// S202: a shorthand made on the keyboard expands the moment it is typed.
+    func testS202_AShorthandAddedFromTheKeysExpandsWhenTyped() throws {
+        open()
+        clear()
+        addTeardownBlock { [self] in
+            if !(el("toolbar:glyf").exists || el("toolbar:close").exists) { open() }
+            vaultTool(["op": "snippet", "text": ";s202="])
+        }
+        openTool("vault")
+        tapVaultAdd("shorthand")
+        guard let shortcut = wait("noteedit:shortcut", 4) else { return XCTFail("no shortcut field") }
+        XCTAssertEqual(shortcut.value as? String, ";", "the shortcut starts with its semicolon")
+        type("s202")
+        tap("key:return") // on to what it types out
+        type("see you at the station")
+        keepScreenshot("shorthand-strip")
+        tap("noteedit:save")
+        guard let card = vaultCard(";s202,", prefix: true) else {
+            return XCTFail("the shorthand is not in the vault; the strip says '\(el("noteedit:status").label)'")
+        }
+        note("added: \(card.label)")
+        keepScreenshot("vault-with-new-shorthand")
+        tap("toolbar:close")
+
+        clear()
+        type("meet me ;s202 ")
+        XCTAssertTrue(waitValue(3) { $0.lowercased().contains("see you at the station") && !$0.contains(";s202") },
+                      "';s202 ' should expand, got '\(value)'")
+        note("typed 'meet me ;s202 ' -> '\(value)'")
     }
 
     // MARK: - Clipboard
@@ -573,8 +950,7 @@ final class GlyfScenarioUITests: XCTestCase {
         UIPasteboard.general.string = "Flight AI 2021 lands at 6:40, gate 12"
         open()
         clear()
-        tap("toolbar:glyf")
-        tap("shell:tile:clipboard")
+        openTool("clipboard")
         // iOS hands a keyboard the copy only after Allow Paste, so the newest
         // copy is offered as its own card on top.
         guard let fresh = wait("clip:fresh", 5) else { return XCTFail("the new copy is not offered") }
@@ -583,8 +959,7 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertTrue(waitValue(4) { $0.contains("AI 2021") }, "got '\(value)'")
         // From now on it lives in the clipboard history.
         clear()
-        tap("toolbar:glyf")
-        tap("shell:tile:clipboard")
+        openTool("clipboard")
         let saved = host.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'clip:card' AND label CONTAINS 'AI 2021'")).firstMatch
         XCTAssertTrue(saved.waitForExistence(timeout: 3), "the pasted copy should be kept in the clipboard")
@@ -593,8 +968,7 @@ final class GlyfScenarioUITests: XCTestCase {
 
     func testS73_ScreenshotsShowInClipboard() throws {
         open(["--glyf-screenshots-on"])
-        tap("toolbar:glyf")
-        tap("shell:tile:clipboard")
+        openTool("clipboard")
         for host in [springboard, app] where host.alerts.firstMatch.waitForExistence(timeout: 2) {
             let alert = host.alerts.firstMatch
             alert.buttons.element(boundBy: alert.buttons.count - 1).tap()
@@ -1049,8 +1423,7 @@ final class GlyfScenarioUITests: XCTestCase {
     func testS77_TranslateAsYouType() throws {
         open()
         clear()
-        tap("toolbar:glyf")
-        tap("shell:tile:translate")
+        openTool("translate")
         guard wait("hud:translate", 4) != nil else { return XCTFail("translate strip did not open") }
         type("kal milte hain office ke baad ")
         let text = el("hud:text")
@@ -1065,8 +1438,7 @@ final class GlyfScenarioUITests: XCTestCase {
     func testS78_TranslateDirectionCanBeChanged() throws {
         open()
         clear()
-        tap("toolbar:glyf")
-        tap("shell:tile:translate")
+        openTool("translate")
         guard let dir = wait("hud:direction", 4) else { return XCTFail("no direction") }
         type("see you tomorrow ")
         usleep(2_500_000)
@@ -1081,8 +1453,7 @@ final class GlyfScenarioUITests: XCTestCase {
     func testS79_SearchYouTubeAndSendTheVideo() throws {
         open()
         clear()
-        tap("toolbar:glyf")
-        tap("shell:tile:search")
+        openTool("search")
         if let yt = wait("search:tab:yt", 3) ?? wait("search:tab:youtube", 1) { yt.tap() }
         type("arijit singh live")
         tap("search:go")
@@ -1113,7 +1484,7 @@ final class GlyfScenarioUITests: XCTestCase {
     /// g menu → Games, scrolling the grid to the tile the way a thumb would.
     private func openGames() -> Bool {
         tap("toolbar:glyf")
-        guard let first = wait("shell:tile:search", 3) else { return false }
+        guard let first = menuTile() else { return false }
         let tile = el("shell:tile:games")
         for _ in 0..<4 where !(tile.exists && tile.isHittable) {
             first.swipeUp()
@@ -1178,7 +1549,7 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertGreaterThan(light.face, 0.85, "on a light sheet the key is the icon's white")
         XCTAssertTrue(light.violet, "the dot is Glyf violet")
         key.tap()
-        XCTAssertNotNil(wait("shell:tile:search", 3), "the key opens the Glyf menu")
+        XCTAssertNotNil(menuTile(), "the key opens the Glyf menu")
         tap("toolbar:close")
 
         // Messages follows the system, so it shows the key on a dark sheet.
@@ -1318,8 +1689,7 @@ final class GlyfScenarioUITests: XCTestCase {
             allowPasteIfAsked()
             clear()
         }
-        let tools = ["search", "rewrite", "translate", "vault", "clipboard", "emoji", "ask", "dictation"]
-            .filter { el("toolbar:\($0)").exists }
+        let tools = Self.tools.filter { el("toolbar:\($0)").exists }
         note("strip tools: \(tools.joined(separator: ", "))")
         XCTAssertFalse(tools.isEmpty, "the strip should carry tools when nothing is typed")
         if el("toolbar:clipboard").exists {

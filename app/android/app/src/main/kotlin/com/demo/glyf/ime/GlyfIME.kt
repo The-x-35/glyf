@@ -31,6 +31,9 @@ import kotlin.math.abs
 /** How much text before the cursor a correction's anchor holds. */
 private const val ANCHOR_CHARS = 64
 
+/** The label a detail set aside by the debug "stash" tool carries. */
+private const val STASHED = "qa-stash:"
+
 /**
  * Glyf for Android — the native IME (SPEC §1: keyboards are native per
  * platform; Flutter never runs in here). M-Android-1 slice: full typing
@@ -153,7 +156,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     dismissFeaturePanel()
                     if (searchActive) exitSearch()
                     if (barActive) exitBar()
-                    if (noteEditActive) exitNoteEdit()
+                    if (vaultEditActive) exitVaultEdit()
                     if (translateStrip != null) exitTranslate()
                 }
                 "dump" -> writeQaState()
@@ -165,6 +168,50 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         "123 Market St, San Francisco, CA 94103")
                     if ("wallet" !in kinds) VaultStore.upsertField(this@GlyfIME, null, "wallet", "Wallet address",
                         "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA")
+                }
+                // ";qa=See you soon" keeps a shorthand; ";qa=" lets it go.
+                "snippet" -> {
+                    val pair = intent.getStringExtra("text").orEmpty().split("=", limit = 2)
+                    if (pair.size == 2) {
+                        if (pair[1].isEmpty()) VaultStore.deleteSnippet(this@GlyfIME, pair[0])
+                        else VaultStore.upsertSnippet(this@GlyfIME, pair[0], pair[1])
+                    }
+                }
+                // Every detail of one kind set aside, for a scenario that
+                // needs the vault without one (the email added from the keys
+                // must be the one offered), then put back by "unstash". They
+                // stay in the vault, as Other under a marked label, so a
+                // crash in between loses nothing and nothing moves.
+                "stash" -> {
+                    val kind = intent.getStringExtra("text").orEmpty()
+                    val fields = VaultStore.load(this@GlyfIME).optJSONArray("fields") ?: org.json.JSONArray()
+                    for (i in 0 until fields.length()) {
+                        val f = fields.getJSONObject(i)
+                        if (kind.isEmpty() || f.optString("kind") != kind) continue
+                        VaultStore.upsertField(this@GlyfIME, f.optString("id"), "custom",
+                            "$STASHED$kind:${f.optString("label")}", f.optString("value"))
+                    }
+                }
+                "unstash" -> {
+                    val fields = VaultStore.load(this@GlyfIME).optJSONArray("fields") ?: org.json.JSONArray()
+                    for (i in 0 until fields.length()) {
+                        val f = fields.getJSONObject(i)
+                        val marked = f.optString("label").takeIf { it.startsWith(STASHED) } ?: continue
+                        val (kind, label) = marked.removePrefix(STASHED).split(":", limit = 2)
+                            .let { it[0] to it.getOrElse(1) { "" } }
+                        VaultStore.upsertField(this@GlyfIME, f.optString("id"), kind, label, f.optString("value"))
+                    }
+                }
+                // A detail a scenario added, gone again (by its value).
+                "dropdetail" -> {
+                    val value = intent.getStringExtra("text").orEmpty()
+                    val fields = VaultStore.load(this@GlyfIME).optJSONArray("fields") ?: org.json.JSONArray()
+                    for (i in 0 until fields.length()) {
+                        val f = fields.getJSONObject(i)
+                        if (value.isNotEmpty() && f.optString("value") == value) {
+                            VaultStore.deleteField(this@GlyfIME, f.optString("id"))
+                        }
+                    }
                 }
                 // What Connected tools → Calendar sets, for the scenarios.
                 "calendaron" -> this@GlyfIME.getSharedPreferences("glyf", android.content.Context.MODE_PRIVATE).edit()
@@ -260,7 +307,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     .put("text", (v as? TextView)?.text?.toString() ?: "")
                     .put("desc", v.contentDescription?.toString() ?: "")
                     .put("x", loc[0] + v.width / 2).put("y", loc[1] + v.height / 2)
-                    .put("w", v.width).put("h", v.height))
+                    .put("w", v.width).put("h", v.height)
+                    // Which of a row of tabs is the one showing.
+                    .put("selected", v.isSelected))
             }
             if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
         }
@@ -342,10 +391,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         barActive = false
         barPrompt = ""
         barStrip = null; barPromptView = null; barRunView = null; barInput = null
-        noteEditActive = false
-        noteEditId = null
-        noteEditText = ""
-        noteEditStrip = null; noteEditView = null
+        vaultEditActive = false
+        vaultDraft = null
+        vaultEditText = ""
+        vaultEditStrip = null; vaultEditView = null
         translateStrip = null; translateDir = null; translateText = null; translateReplace = null
         translateSource = ""; translateResult = ""; translateSpan = ""
         stripChip = null; stripChipKind = null; stripSmartDetail = null
@@ -414,7 +463,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (searchActive) exitSearch()
         if (barActive) exitBar()
         // A note left open would take the next app's typing into itself.
-        if (noteEditActive) exitNoteEdit()
+        if (vaultEditActive) exitVaultEdit()
         if (translateStrip != null) exitTranslate()
         // A new field starts on the letters, like Gboard: an emoji page or a
         // menu left open in the last one would otherwise sit under the keys.
@@ -489,17 +538,21 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
         // The strip is the person's own: the same ids, order and hidden set
         // the iOS strip reads, so a tool pinned on one phone reads the same.
-        for (id in stripTools()) {
+        val shown = stripTools()
+        for (id in shown) {
             val v = ToolIcon(this, id, ink)
             v.setTag(com.demo.glyf.R.id.qa_id, id)
             v.contentDescription = ToolIcon.TOOLS.firstOrNull { it.first == id }?.second ?: id
             v.setOnClickListener { openTool(id) }
             toolIcons.addView(v, LinearLayout.LayoutParams(0, dp(34), 1f))
         }
+        stripShown = shown.toSet()
         gPill = g
     }
 
     private var gPill: GlyfKeyView? = null
+    /** The tools on the strip as it was drawn: the g menu offers the rest. */
+    private var stripShown: Set<String> = emptySet()
 
     private fun stripTools(): List<String> {
         val known = ToolIcon.TOOLS.map { it.first }.toSet()
@@ -508,7 +561,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val hiddenSet = (0 until (hidden?.length() ?: 0)).map { hidden!!.optString(it) }.toSet()
         val ids = (0 until (order?.length() ?: 0)).map { order!!.optString(it) }
             .ifEmpty { listOf("search", "clipboard", "vault", "dictation", "translate") }
-        return ids.filter { it in known && it !in hiddenSet }.distinct()
+        // Hidden as saved, then renamed: a hidden Shorthand must not hide the
+        // Vault it became, while a pinned Emoji becomes a pinned GIFs.
+        return ids.filter { it !in hiddenSet }.map { ToolIcon.canonical(it) }
+            .filter { it in known }.distinct()
     }
 
     /** Every tool opens the same way from the strip and from the g menu. */
@@ -516,6 +572,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         when (id) {
             "search" -> { dismissFeaturePanel(); enterSearch() }
             "clipboard" -> showClipboardPanel()
+            // The menu's GIFs: the emoji board, on its GIFs tab.
+            "gifs" -> showEmojiPanel(EmojiBoardView.Mode.GIFS)
+            // Only the scenarios' debug tool still says "emoji": the board
+            // as the emoji key opens it.
             "emoji" -> showEmojiPanel()
             "rewrite" -> {
                 // The website's list of versions for what is typed; with
@@ -529,12 +589,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "translate" -> { dismissFeaturePanel(); runTranslateOnField() }
             "ask" -> { dismissFeaturePanel(); onSpaceHoldOpenBar() }
             "dictation" -> { dismissFeaturePanel(); startVoiceTyping() }
-            "vault" -> showVaultPanel()
+            // Shorthand is a section of the vault; Keys said what My glyfs says.
+            "vault", "shorthand" -> showVaultPanel()
             "calendar" -> showCalendarPanel()
             "games" -> showGamesPanel()
-            "glyfs" -> showMyGlyfsPanel()
-            "shorthand" -> showShorthandPanel()
-            "keys" -> showKeysPanel()
+            "glyfs", "keys" -> showMyGlyfsPanel()
             // Paying is signed in the app's wallet, never in the keyboard.
             "pay" -> showPayPanel(PayPanelView.Intent.Send(null, null, null))
             "settings" -> { dismissFeaturePanel(); openApp() }
@@ -1018,9 +1077,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             return
         }
-        if (noteEditActive) {
-            val update = { t: String -> noteEditText = t; noteEditView?.text = t }
-            typeIntoStrip(id, char, noteEditText, update) { update(noteEditText + "\n") }
+        if (vaultEditActive) {
+            val update = { t: String -> vaultEditText = t; vaultEditView?.text = t }
+            typeIntoStrip(id, char, vaultEditText, update) {
+                // A note or what a shorthand types out can run to lines; a
+                // detail or a shortcut is one, and return is done with it.
+                when (vaultDraft) {
+                    is VaultDraft.Note, is VaultDraft.Expansion -> update(vaultEditText + "\n")
+                    else -> saveVaultEdit()
+                }
+            }
             return
         }
         val ic = currentInputConnection ?: return
@@ -1289,7 +1355,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         translateStrip?.let { return TourCoach.Panel.Translate(translateResult.isNotEmpty(), translateTarget) }
         if (barActive) return TourCoach.Panel.Other("bar:close")
-        if (noteEditActive) return TourCoach.Panel.Other("noteedit:close")
+        if (vaultEditActive) return TourCoach.Panel.Other("vaultedit:close")
         val panel = featurePanel ?: return TourCoach.Panel.None
         return when {
             panel.tag == "vault" -> TourCoach.Panel.Vault
@@ -1405,7 +1471,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // The cursor moved without a key (a tap in the field): suggest for
         // wherever it landed. Every commit lands here too, so it goes
         // through the same settle as the keys, never a pass per keystroke.
-        if (glideCursor < 0 && !searchActive && !barActive && !noteEditActive) scheduleSuggestions()
+        if (glideCursor < 0 && !searchActive && !barActive && !vaultEditActive) scheduleSuggestions()
     }
 
     /** How many UTF-16 units the last [count] words before the cursor take,
@@ -1460,7 +1526,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     override fun onCursorMove(graphemes: Int) {
         // In the keyboard's own strips the keys append to our text; there is
         // no host cursor to move.
-        if (searchActive || barActive || noteEditActive) return
+        if (searchActive || barActive || vaultEditActive) return
         val ic = currentInputConnection ?: return
         val window = 12 * abs(graphemes) + 12
         val before = ic.getTextBeforeCursor(window, 0)
@@ -1527,7 +1593,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     override fun onSpaceHoldOpenBar() {
         // A hold inside a strip, or in a password field, is just a space.
-        if (searchActive || barActive || noteEditActive || isSecureField()) {
+        if (searchActive || barActive || vaultEditActive || isSecureField()) {
             onKey("space", null)
             return
         }
@@ -1821,7 +1887,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  the strip. True when shown. */
     private fun updateSmartChip(before: String): Boolean {
         val smartKinds = setOf("smart", "pay", "buy", "action", "event", "booking")
-        if (searchActive || barActive || noteEditActive || overlay != null || featurePanel != null ||
+        if (searchActive || barActive || vaultEditActive || overlay != null || featurePanel != null ||
             isSecureField() || translateStrip != null) {
             if (stripChipKind in smartKinds) hideStripChip()
             return false
@@ -2005,7 +2071,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         val stamp = cm.primaryClipDescription?.timestamp ?: 0L
         val text = com.demo.glyf.store.ClipboardStore.clipText(this)?.trim().orEmpty()
-        val busy = searchActive || barActive || noteEditActive || overlay != null ||
+        val busy = searchActive || barActive || vaultEditActive || overlay != null ||
             featurePanel != null || isSecureField()
         val fresh = stamp > 0 && System.currentTimeMillis() - stamp < 10 * 60 * 1000 &&
             stamp != imePrefs.getLong("clipDone", -1)
@@ -2909,7 +2975,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun updateSuggestions() {
         // A scheduled pass is now redundant, whoever asked for this one.
         main.removeCallbacks(suggestionsTick)
-        if (searchActive || barActive || noteEditActive || overlay != null) { showSuggestions(emptyList()); return }
+        if (searchActive || barActive || vaultEditActive || overlay != null) { showSuggestions(emptyList()); return }
         val policy = typingPolicy()
         val ic = currentInputConnection
         if (ic == null || policy and TypingEngine.SUGGESTIONS == 0 || !settings.optBoolean("candidates", true)) {
@@ -3112,7 +3178,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** Field-aware autocap, the Android way: getCursorCapsMode already
      *  honors the editor's cap flags — Apple-parity for free. */
     private fun syncAutoShift() {
-        if (searchActive || barActive || noteEditActive) return
+        if (searchActive || barActive || vaultEditActive) return
         if (!settings.optBoolean("autocapitalize", true)) return
         if (keyboard.mode != Mode.LETTERS) return
         val ei = currentInputEditorInfo ?: return
@@ -3133,7 +3199,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  keys type into one of Glyf's own strips (a second strip would stack
      *  on the first), and never in a password (iOS kbBindingsLive). */
     override fun bindingsLive(): Boolean =
-        !searchActive && !barActive && !noteEditActive && emojiBoard?.searchActive != true &&
+        !searchActive && !barActive && !vaultEditActive && emojiBoard?.searchActive != true &&
             (featurePanel as? CalendarPanelView)?.typing == null && !isSecureField()
 
     override fun onBoundKeyHeld(char: String, glyfId: String) {
@@ -3142,6 +3208,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             onKey(char, if (keyboard.shifted) char.uppercase() else char)
             return
         }
+        runBinding(char, glyfId)
+    }
+
+    /** What a bound key does: held on the keys, or tapped in My glyfs. */
+    private fun runBinding(char: String, glyfId: String) {
         when (glyfId) {
             "surface:vault" -> { showVaultPanel(); return }
             // The vault panel is where the notes are.
@@ -3202,8 +3273,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** Container that replaces the keys; header row = back + title. */
     /** @param bottomBar adds the ABC / backspace row the system emoji
-     *  keyboard has at its foot — muscle memory, on both platforms. */
-    private fun panelShell(title: String, bottomBar: Boolean = false):
+     *  keyboard has at its foot — muscle memory, on both platforms.
+     *  @param onBack where ‹ goes when it is a step back, not a close. */
+    private fun panelShell(title: String, bottomBar: Boolean = false, onBack: (() -> Unit)? = null):
             Pair<LinearLayout, LinearLayout> {
         dismissFeaturePanel()
         keyboard.visibility = View.GONE
@@ -3218,8 +3290,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         header.addView(TextView(this).apply {
             text = "‹"; textSize = 22f; setTextColor(ink())
             setPadding(dp(8), 0, dp(14), dp(2))
-            setTag(com.demo.glyf.R.id.qa_id, "panel:back"); contentDescription = "Close"
-            setOnClickListener { dismissFeaturePanel() }
+            setTag(com.demo.glyf.R.id.qa_id, "panel:back")
+            contentDescription = if (onBack != null) "Back" else "Close"
+            setOnClickListener { onBack?.invoke() ?: dismissFeaturePanel() }
         })
         header.addView(TextView(this).apply {
             text = title; textSize = 14f
@@ -3283,9 +3356,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         body.addView(cardV, lp)
     }
 
-    /** The g menu: every tool in one scrolling grid (ToolMenuView), the twin
-     *  of the iOS shell. The strip stays up so a tile can be dropped on it,
-     *  and the g pill turns into the way out. */
+    /** The g menu: every tool the strip doesn't show, in one scrolling grid
+     *  (ToolMenuView), the twin of the iOS shell. The strip stays up so a
+     *  tile can be dropped on it, and the g pill turns into the way out. */
     private fun showMenuGrid() {
         dismissFeaturePanel()
         if (toolbar.height == 0) return
@@ -3293,7 +3366,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         keyboard.visibility = View.GONE
         toolsPinned = true
         applySuggestionVisibility()
-        val menu = ToolMenuView(this, keyboard.palette(),
+        val menu = ToolMenuView(this, keyboard.palette(), onStrip = stripShown,
             onOpen = { id -> openTool(id) },
             onDragOverStrip = { rawX -> showStripDropMarker(rawX) },
             onPinToStrip = { id, rawX -> pinToStrip(id, rawX) },
@@ -3352,22 +3425,47 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         notice("Added to the strip")
     }
 
-    /** The glyfs this person built in the app; tap one to run it on what is
-     *  typed, the same as holding its key. */
+    /** My glyfs: what each key holds first ("Hold V"), then the glyfs this
+     *  person built that are on no key, then Build your own. A tap does
+     *  what holding the key does (the Keys panel said the same, so it went). */
     private fun showMyGlyfsPanel() {
         val (_, body) = panelShell("My glyfs")
-        val titles = settings.optJSONObject("customTitles")
         val bindings = settings.optJSONObject("bindings")
-        val ids = titles?.keys()?.asSequence()?.toList()?.sortedBy { titles.optString(it).lowercase() }
-            ?: emptyList()
-        for (id in ids) {
-            val key = bindings?.keys()?.asSequence()?.firstOrNull { bindings.optString(it) == id }
-            cardRow(body, titles!!.optString(id), key?.let { "Hold ${it.uppercase()}" } ?: "") {
+        val bound = mutableSetOf<String>()
+        for (letter in "qwertyuiopasdfghjklzxcvbnm".map { it.toString() }) {
+            val target = bindings?.optString(letter)?.takeIf { it.isNotBlank() } ?: continue
+            bound.add(target)
+            cardRow(body, bindingTitle(target), "Hold ${letter.uppercase()}") {
                 dismissFeaturePanel()
-                startSkill(key ?: "", id)
+                runBinding(letter, target)
             }
+            body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "glyfs:key:$letter")
+        }
+        val titles = settings.optJSONObject("customTitles")
+        val own = titles?.keys()?.asSequence()?.filter { it !in bound }
+            ?.sortedBy { skillTitle(it).lowercase() }?.toList() ?: emptyList()
+        for ((i, id) in own.withIndex()) {
+            cardRow(body, skillTitle(id), "") {
+                dismissFeaturePanel()
+                startSkill("", id)
+            }
+            body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "glyfs:own:$i")
         }
         cardRow(body, "＋ Build your own", "") { dismissFeaturePanel(); openAppPath("build") }
+        body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "glyfs:build")
+    }
+
+    /** What a key holds, by name: a panel by its own, a glyf by its title. */
+    private fun bindingTitle(target: String): String = when (target) {
+        "surface:vault" -> "Vault"
+        "surface:translate-hud" -> "Translate"
+        "surface:tones" -> "Rewrite"
+        "surface:notes" -> "Notes"
+        "connector:calendar", "connector:mockcal" -> "Calendar"
+        "connector:meet" -> "Meet link"
+        else -> if (target.startsWith("surface:") || target.startsWith("connector:"))
+            target.substringAfter(':').replace('-', ' ').replaceFirstChar { it.uppercase() }
+        else skillTitle(target)
     }
 
     /** The Rewrite hold (iOS TonesPopup): four tones over the keys; one tap
@@ -3402,36 +3500,30 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** What each key holds. */
-    private fun showKeysPanel() {
-        val (_, body) = panelShell("Keys")
-        val bindings = settings.optJSONObject("bindings") ?: return
-        for (letter in "qwertyuiopasdfghjklzxcvbnm".map { it.toString() }) {
-            val target = bindings.optString(letter).takeIf { it.isNotBlank() } ?: continue
-            val title = when (target) {
-                "surface:vault" -> "Vault"
-                "surface:translate-hud" -> "Translate"
-                "surface:tones" -> "Rewrite"
-                "surface:notes" -> "Notes"
-                "connector:calendar", "connector:mockcal" -> "Calendar"
-                "connector:meet" -> "Meet link"
-                else -> skillTitle(target)
-            }
-            cardRow(body, "Hold ${letter.uppercase()}", title) {}
-        }
-    }
-
-    /** Vault = your details and your notes. Tap one to put it in; hold a
-     *  note to edit it. */
-    private fun showVaultPanel() {
+    /** Vault = your details, your shorthand and your notes. Tap one to put
+     *  it in; hold a note to edit it. A note, a detail or a shorthand can be
+     *  added from here, typed on the keys.
+     *  @param reveal the card just saved, scrolled into view (below the
+     *  fold it looked as if nothing had been saved). */
+    private fun showVaultPanel(reveal: String? = null) {
         val (panel, body) = panelShell("Vault")
         panel.tag = "vault"
         for ((i, f) in vaultFields().withIndex()) {
-            cardRow(body, f.label, f.value) {
+            cardRow(body, f.title, f.value) {
                 currentInputConnection?.commitText(f.value, 1)
                 dismissFeaturePanel()
             }
             body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "vault:card:$i")
+        }
+        // Shorthand: the shortcut over what it types out; a tap types it.
+        val snippets = VaultStore.load(this).optJSONArray("snippets") ?: org.json.JSONArray()
+        for (i in 0 until snippets.length()) {
+            val s = snippets.getJSONObject(i)
+            cardRow(body, s.optString("trigger"), s.optString("text")) {
+                currentInputConnection?.commitText(s.optString("text"), 1)
+                dismissFeaturePanel()
+            }
+            body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "vault:shorthand:$i")
         }
         val notes = com.demo.glyf.store.NotesStore.list(this)
         for (i in 0 until notes.length()) {
@@ -3443,11 +3535,94 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 currentInputConnection?.commitText(text, 1)
                 dismissFeaturePanel()
             }
-            body.getChildAt(body.childCount - 1).setOnLongClickListener {
-                enterNoteEdit(id, text); true
+            body.getChildAt(body.childCount - 1).apply {
+                setTag(com.demo.glyf.R.id.qa_id, "vault:note:$i")
+                setOnLongClickListener { enterVaultEdit(VaultDraft.Note(id), text); true }
             }
         }
-        cardRow(body, "＋ New note", "") { enterNoteEdit(null, "") }
+        // The three things the vault keeps, each one tap to start.
+        val adds = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val starts = listOf<Triple<String, String, () -> Unit>>(
+            Triple("note", "＋ New note") { enterVaultEdit(VaultDraft.Note(null), "") },
+            Triple("detail", "＋ New detail") { showDetailKinds() },
+            // The ; is there already: only the word is left to type.
+            Triple("shorthand", "＋ New shorthand") { enterVaultEdit(VaultDraft.Shortcut, ";") },
+        )
+        for ((i, start) in starts.withIndex()) {
+            adds.addView(panelButton(start.second, "vault:new:${start.first}", onTap = start.third),
+                LinearLayout.LayoutParams(0, dp(40), 1f).apply { if (i > 0) leftMargin = dp(7) })
+        }
+        body.addView(adds, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        val scroll = body.parent as? ScrollView ?: return
+        val card = (0 until body.childCount).map { body.getChildAt(it) }
+            .firstOrNull { reveal != null && it.getTag(com.demo.glyf.R.id.qa_id) == reveal } ?: return
+        // Once it has a place: the scroll is set after the panel's layout.
+        card.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int,
+                                        ol: Int, ot: Int, orr: Int, ob: Int) {
+                v.removeOnLayoutChangeListener(this)
+                scroll.post { scroll.scrollTo(0, v.top - dp(4)) }
+            }
+        })
+    }
+
+    /** A rounded button on a panel, its words made smaller (never below
+     *  10sp) where a narrow phone can't fit them at [size]. */
+    private fun panelButton(label: String, qaId: String, size: Int = 13, onTap: () -> Unit): TextView =
+        TextView(this).apply {
+            text = label
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            maxLines = 1
+            setTextColor(ink())
+            setPadding(dp(6), 0, dp(6), 0)
+            setAutoSizeTextTypeUniformWithConfiguration(10, size, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat(); setColor(card())
+            }
+            setTag(com.demo.glyf.R.id.qa_id, qaId)
+            setOnClickListener { onTap() }
+        }
+
+    /** Where the phone is, as the app last said (else the phone's own). */
+    private val inIndia get() =
+        settings.optString("region").ifEmpty { java.util.Locale.getDefault().country } == "IN"
+
+    /** The kinds a detail can be, named as the app's Vault screen names them:
+     *  kind, name, and the label it is kept under. UPI only where people pay
+     *  with it. */
+    private fun detailKinds(): List<Triple<String, String, String>> = buildList {
+        add(Triple("name", "Name", "Name"))
+        add(Triple("email", "Email", "Email"))
+        add(Triple("phone", "Phone", "Phone"))
+        add(Triple("address", "Address", "Home"))
+        if (inIndia) add(Triple("upi", "UPI", "UPI"))
+        add(Triple("wallet", "Wallet address", "Wallet address"))
+        add(Triple("link", "Link", "Link"))
+        add(Triple("custom", "Other", "Other"))
+    }
+
+    /** New detail, first what kind it is; the value is then typed on the
+     *  keys, in the strip a note uses. */
+    private fun showDetailKinds() {
+        val (panel, body) = panelShell("New detail", onBack = { showVaultPanel() })
+        panel.tag = "vault:kinds"
+        for (row in detailKinds().chunked(3)) {
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for (i in 0 until 3) {
+                val kind = row.getOrNull(i)
+                val lp = LinearLayout.LayoutParams(0, dp(44), 1f).apply { if (i > 0) leftMargin = dp(7) }
+                if (kind == null) { line.addView(View(this), lp); continue }
+                val (id, name, label) = kind
+                line.addView(panelButton(name, "vault:kind:$id", size = 14) {
+                    enterVaultEdit(VaultDraft.Detail(id, name, label), "")
+                }, lp)
+            }
+            body.addView(line, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { bottomMargin = dp(7) })
+        }
     }
 
     /** Gboard's clipboard, identical to the iOS panel: it takes the whole
@@ -3610,39 +3785,53 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }.start()
     }
 
-    private fun showShorthandPanel() {
-        val (_, body) = panelShell("Shorthand")
-        val snippets = VaultStore.load(this).optJSONArray("snippets")
-        if (snippets == null || snippets.length() == 0) {
-            cardRow(body, "No shorthand yet", "") { openApp() }
-            return
-        }
-        for (i in 0 until snippets.length()) {
-            val s = snippets.getJSONObject(i)
-            cardRow(body, s.optString("trigger"), s.optString("text")) {
-                currentInputConnection?.commitText(s.optString("text"), 1)
-                dismissFeaturePanel()
-            }
-        }
+    // MARK: in-keyboard vault editing (strip above the keys, like search)
+
+    /** What the strip over the keys is writing into the vault. */
+    private sealed class VaultDraft {
+        /** A note; [id] when it is one being changed. */
+        data class Note(val id: String?) : VaultDraft()
+        /** A detail of one kind, kept under that kind's [label]. */
+        data class Detail(val kind: String, val name: String, val label: String) : VaultDraft()
+        /** A shorthand's shortcut (";sig"), then what it types out. */
+        object Shortcut : VaultDraft()
+        data class Expansion(val trigger: String) : VaultDraft()
     }
 
-    // MARK: in-keyboard note editing (strip above the keys, like search)
+    private var vaultEditActive = false
+    private var vaultDraft: VaultDraft? = null
+    private var vaultEditText = ""
+    private var vaultEditStrip: LinearLayout? = null
+    private var vaultEditView: TextView? = null
 
-    private var noteEditActive = false
-    private var noteEditId: String? = null
-    private var noteEditText = ""
-    private var noteEditStrip: LinearLayout? = null
-    private var noteEditView: TextView? = null
-
-    private fun enterNoteEdit(id: String?, initial: String) {
+    private fun enterVaultEdit(draft: VaultDraft, initial: String) {
         dismissFeaturePanel()
         if (searchActive) exitSearch()
-        // One note at a time: the open one's strip goes before the next.
-        if (noteEditActive) exitNoteEdit()
-        noteEditActive = true
-        noteEditId = id
-        noteEditText = initial
+        // One thing at a time: the open strip goes before the next.
+        if (vaultEditActive) exitVaultEdit()
+        vaultEditActive = true
+        vaultDraft = draft
+        vaultEditText = initial
         toolbar.visibility = View.GONE
+        // The keys for what is typed: @ at hand for an email, a dial pad for
+        // a phone number, letters for everything else (even over a number
+        // field, where a note had no letters to type with).
+        keyboard.kContext = when ((draft as? VaultDraft.Detail)?.kind) {
+            "email", "upi" -> KContext.EMAIL
+            "link" -> KContext.URL
+            "phone" -> KContext.PHONE_PAD
+            else -> KContext.TEXT
+        }
+        keyboard.mode = Mode.LETTERS
+        // Words start with a capital; addresses to type exactly (an email,
+        // a shortcut, a wallet) start lower.
+        keyboard.shifted = initial.isEmpty() && when (draft) {
+            is VaultDraft.Note, is VaultDraft.Expansion -> true
+            is VaultDraft.Detail -> draft.kind in setOf("name", "address", "custom")
+            VaultDraft.Shortcut -> false
+        }
+        autoShifted = false
+        keyboard.rebuild()
         val strip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -3651,11 +3840,25 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         strip.addView(TextView(this).apply {
             text = "✕"; textSize = 16f; setTextColor(ink())
             setPadding(dp(6), 0, dp(10), 0)
-            setOnClickListener { exitNoteEdit() }
+            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:close"); contentDescription = "Close"
+            setOnClickListener { exitVaultEdit() }
+        })
+        // What it types out, beside the shortcut it is for.
+        if (draft is VaultDraft.Expansion) strip.addView(TextView(this).apply {
+            text = draft.trigger; textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(ink())
+            setPadding(0, 0, dp(8), 0)
+            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:shortcut")
         })
         val field = TextView(this).apply {
-            hint = "Write a note…"
-            text = noteEditText
+            hint = when (draft) {
+                is VaultDraft.Note -> "Write a note…"
+                is VaultDraft.Detail -> if (draft.kind == "custom") "Detail" else draft.name
+                VaultDraft.Shortcut -> "Shortcut, like ;sig"
+                is VaultDraft.Expansion -> "Types out"
+            }
+            text = vaultEditText
             textSize = 15f
             maxLines = 2
             setTextColor(ink())
@@ -3664,42 +3867,89 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat(); setColor(card())
             }
+            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:field")
         }
         strip.addView(field, LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         strip.addView(TextView(this).apply {
-            text = "Save"; textSize = 14f
+            text = if (draft == VaultDraft.Shortcut) "Next" else "Save"
+            textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(card())
             setPadding(dp(16), dp(8), dp(16), dp(8))
             background = GradientDrawable().apply {
                 cornerRadius = dp(15).toFloat(); setColor(ink())
             }
-            setOnClickListener { saveNote() }
-        })
+            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:save")
+            setOnClickListener { saveVaultEdit() }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
         root.addView(strip, 0)
-        noteEditStrip = strip
-        noteEditView = field
+        vaultEditStrip = strip
+        vaultEditView = field
     }
 
-    private fun saveNote() {
-        val err = com.demo.glyf.store.NotesStore.upsert(this, noteEditId, noteEditText)
+    /** Saved where the app's Vault screen reads it, and in use at once: a
+     *  detail feeds the strip's chips, a shorthand expands on the space. */
+    private fun saveVaultEdit() {
+        val text = vaultEditText
+        val err = when (val d = vaultDraft ?: return) {
+            is VaultDraft.Note -> com.demo.glyf.store.NotesStore.upsert(this, d.id, text)
+            is VaultDraft.Detail -> VaultStore.addField(this, d.kind, d.label, text)
+            VaultDraft.Shortcut -> {
+                // "sig" is ";sig": the ; is the shortcut's, whoever typed it.
+                val trigger = text.trim().lowercase().let { if (it.startsWith(";")) it else ";$it" }
+                VaultStore.triggerRefusal(trigger)?.let { notice(it); return }
+                // A shortcut kept already shows what it types now, to change.
+                val snippets = VaultStore.load(this).optJSONArray("snippets") ?: org.json.JSONArray()
+                val kept = (0 until snippets.length()).map { snippets.getJSONObject(it) }
+                    .firstOrNull { it.optString("trigger") == trigger }?.optString("text").orEmpty()
+                enterVaultEdit(VaultDraft.Expansion(trigger), kept)
+                return
+            }
+            is VaultDraft.Expansion -> VaultStore.upsertSnippet(this, d.trigger, text.trim())
+        }
         if (err != null) {
             notice(err)
             return
         }
-        exitNoteEdit()
-        showVaultPanel()
+        vaultFieldsStamp = -1L
+        // Its card: a new detail is the last one, a new note the first.
+        val reveal = when (val d = vaultDraft) {
+            is VaultDraft.Detail -> "vault:card:${vaultFields().lastIndex}"
+            is VaultDraft.Expansion -> {
+                val snippets = VaultStore.load(this).optJSONArray("snippets") ?: org.json.JSONArray()
+                (0 until snippets.length()).firstOrNull { snippets.getJSONObject(it).optString("trigger") == d.trigger }
+                    ?.let { "vault:shorthand:$it" }
+            }
+            is VaultDraft.Note -> {
+                val notes = com.demo.glyf.store.NotesStore.list(this)
+                (if (d.id == null) 0 else (0 until notes.length()).firstOrNull {
+                    notes.getJSONObject(it).optString("id") == d.id
+                })?.let { "vault:note:$it" }
+            }
+            else -> null
+        }
+        exitVaultEdit()
+        showVaultPanel(reveal)
     }
 
-    private fun exitNoteEdit() {
-        noteEditActive = false
-        noteEditStrip?.let { root.removeView(it) }
-        noteEditStrip = null
-        noteEditView = null
-        noteEditId = null
-        noteEditText = ""
+    private fun exitVaultEdit() {
+        vaultEditActive = false
+        vaultDraft = null
+        vaultEditStrip?.let { root.removeView(it) }
+        vaultEditStrip = null
+        vaultEditView = null
+        vaultEditText = ""
         toolbar.visibility = View.VISIBLE
+        // The host field's own keys again.
+        val host = KContext.from(currentInputEditorInfo)
+        if (keyboard.kContext != host || keyboard.mode != Mode.LETTERS) {
+            keyboard.kContext = host
+            keyboard.mode = Mode.LETTERS
+            keyboard.rebuild()
+        }
+        syncAutoShift()
     }
 
     // MARK: emoji board (EmojiBoard.swift twin: Emoji, Stickers, GIFs, Emoticons)
@@ -3741,7 +3991,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             sendMediaItem(item, kind, done)
     }
 
-    private fun showEmojiPanel() {
+    /** The board on Emoji from the emoji key; on GIFs from the menu's tile. */
+    private fun showEmojiPanel(mode: EmojiBoardView.Mode = EmojiBoardView.Mode.EMOJI) {
         dismissFeaturePanel()
         val barH = if (toolbar.height > 0) toolbar.height else dp(47)
         val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
@@ -3752,6 +4003,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         root.addView(board, 0, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, emojiBoardFull))
         featurePanel = board
         emojiBoard = board
+        if (mode != board.mode) board.setMode(mode)
     }
 
     /**

@@ -170,6 +170,26 @@ struct GlyfSettings: Codable, Equatable {
         /// not among them — the keyboard has an emoji key in its bottom row,
         /// where iOS puts it. Users can add anything back (Toolbar screen).
         static let defaultOrder = ["search", "clipboard", "vault", "dictation", "translate"]
+
+        /// Tools folded into another (user, 2026-09-29): the keys have an
+        /// emoji key, so the menu offers GIFs; Keys said what My glyfs says;
+        /// Shorthand lives in the vault. Android's ToolIcon.canonical twin.
+        static let retired = ["emoji": "gifs", "keys": "glyfs", "shorthand": "vault"]
+
+        /// The tool a saved id stands for now.
+        static func canonical(_ id: String) -> String { retired[id] ?? id }
+    }
+
+    /// The tools on the strip, in its order. Hidden is read as saved before
+    /// the rename: a hidden Shorthand must not hide the Vault it became,
+    /// while a pinned Emoji becomes a pinned GIFs.
+    var stripTools: [String] {
+        var out: [String] = []
+        for id in toolbarOrder where !toolbarHidden.contains(id) {
+            let tool = Toolbar.canonical(id)
+            if !out.contains(tool) { out.append(tool) }
+        }
+        return out
     }
 }
 
@@ -279,6 +299,27 @@ enum SettingsStore {
             if s.clipboardCaptureAll == nil { s.clipboardCaptureAll = true }
             if s.clipboardScreenshots == nil { s.clipboardScreenshots = true }
             s.schemaVersion = 8
+        }
+        // Emoji, Keys and Shorthand left the g menu for the tools that took
+        // them in. A saved strip and order move with them, whatever version
+        // wrote the file, so nothing is lost and nothing shows twice.
+        let retired = GlyfSettings.Toolbar.retired
+        if s.toolbarOrder.contains(where: { retired[$0] != nil })
+            || s.toolbarHidden.contains(where: { retired[$0] != nil }) {
+            let shown = s.stripTools
+            var order: [String] = []
+            for id in s.toolbarOrder.map(GlyfSettings.Toolbar.canonical) where !order.contains(id) {
+                order.append(id)
+            }
+            s.toolbarOrder = order
+            s.toolbarHidden = order.filter { !shown.contains($0) }
+        }
+        if let saved = s.menuOrder, saved.contains(where: { retired[$0] != nil }) {
+            var order: [String] = []
+            for id in saved.map(GlyfSettings.Toolbar.canonical) where !order.contains(id) {
+                order.append(id)
+            }
+            s.menuOrder = order
         }
         if s.customTitles == nil { s.customTitles = [:] }
         // Legacy proUnlocked → the plus plan.

@@ -124,22 +124,6 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                     c.drawRoundRect(x - s / 2, y - s / 2, x + s / 2, y + s / 2, dp(1.6f), dp(1.6f), p)
                 }
             }
-            "shorthand" -> {
-                c.drawLine(cx - dp(7f), cy - dp(4f), cx + dp(1f), cy - dp(4f), p)
-                c.drawLine(cx - dp(7f), cy + dp(0.4f), cx - dp(1f), cy + dp(0.4f), p)
-                c.drawLine(cx - dp(7f), cy + dp(4.8f), cx - dp(2.4f), cy + dp(4.8f), p)
-                c.drawLine(cx + dp(4.4f), cy - dp(0.6f), cx + dp(4.4f), cy + dp(7f), p)
-                c.drawLine(cx + dp(0.6f), cy + dp(3.2f), cx + dp(8.2f), cy + dp(3.2f), p)
-            }
-            "keys" -> {
-                c.drawRoundRect(cx - dp(8.6f), cy - dp(5.6f), cx + dp(8.6f), cy + dp(5.6f),
-                    dp(2f), dp(2f), p)
-                for (row in 0 until 2) for (col in 0 until 4) {
-                    c.drawCircle(cx - dp(4.8f) + col * dp(3.2f), cy - dp(2.2f) + row * dp(2.8f),
-                        dp(0.7f), fill)
-                }
-                c.drawLine(cx - dp(3.4f), cy + dp(3f), cx + dp(3.4f), cy + dp(3f), p)
-            }
             "back" -> {
                 c.drawLine(cx - dp(6.4f), cy, cx + dp(6.4f), cy, p)
                 c.drawLine(cx - dp(6.4f), cy, cx - dp(1.6f), cy - dp(4.8f), p)
@@ -275,7 +259,8 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 c.drawCircle(x0 + s * 0.34f, y0 + s * 0.36f, dp(1f), fill)
                 c.drawCircle(x0 + s * 0.60f, y0 + s * 0.36f, dp(1f), fill)
             }
-            "gif" -> {
+            // The board's GIFs tab, and the menu's GIFs tile that opens it.
+            "gif", "gifs" -> {
                 p.strokeWidth = dp(1.4f)
                 c.drawRoundRect(cx - dp(9f), cy - dp(5.4f), cx + dp(9f), cy + dp(5.4f), dp(2.4f), dp(2.4f), p)
                 val t = Paint(fill).apply {
@@ -352,10 +337,18 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
         /** Every tool, in the website's order first; titles as the grid shows them. */
         val TOOLS = listOf(
             "search" to "Search", "rewrite" to "Rewrite", "translate" to "Translate",
-            "vault" to "Vault", "calendar" to "Calendar", "clipboard" to "Clipboard", "emoji" to "Emoji",
+            "vault" to "Vault", "calendar" to "Calendar", "clipboard" to "Clipboard", "gifs" to "GIFs",
             "ask" to "Ask Glyf", "dictation" to "Voice", "glyfs" to "My glyfs",
-            "shorthand" to "Shorthand", "keys" to "Keys", "pay" to "Pay",
-            "games" to "Games", "settings" to "Settings",
+            "pay" to "Pay", "games" to "Games", "settings" to "Settings",
         )
+
+        /** Tools that were folded into another (user, 2026-09-29): Emoji has
+         *  its own key, so the menu offers GIFs; Keys said what My glyfs
+         *  says; Shorthand lives in the vault. */
+        private val RETIRED = mapOf("emoji" to "gifs", "keys" to "glyfs", "shorthand" to "vault")
+
+        /** The tool a saved id stands for now: an order or a strip saved
+         *  before still finds its tools. */
+        fun canonical(id: String): String = RETIRED[id] ?: id
     }
 }

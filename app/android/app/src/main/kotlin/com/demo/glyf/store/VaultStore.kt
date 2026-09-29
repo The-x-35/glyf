@@ -119,6 +119,19 @@ object VaultStore {
         return if (save(ctx, vault)) null else "Couldn't save"
     }
 
+    /** A detail added from the keyboard. The same value saved twice is kept
+     *  once: a second tap on Save left two cards that said the same thing
+     *  (VaultStore.swift addField twin). */
+    fun addField(ctx: Context, kind: String, label: String, value: String): String? {
+        val v = value.trim()
+        val fields = read(ctx)?.optJSONArray("fields")
+        if (fields != null && (0 until fields.length()).any {
+                val f = fields.getJSONObject(it)
+                f.optString("kind") == kind && f.optString("value") == v
+            }) return null
+        return upsertField(ctx, null, kind, label, v)
+    }
+
     fun deleteField(ctx: Context, id: String) {
         val vault = read(ctx) ?: return
         vault.put("fields", filterOut(vault.getJSONArray("fields"), id))
@@ -151,10 +164,14 @@ object VaultStore {
         save(ctx, vault)
     }
 
+    /** Why a shortcut can't be one, or null when it can: the keyboard asks
+     *  before the expansion is typed, not after. */
+    fun triggerRefusal(trigger: String): String? =
+        if (Regex("^;[a-z0-9]{2,12}$").matches(trigger)) null
+        else "Triggers look like ;sig (a ; plus 2–12 letters)"
+
     fun upsertSnippet(ctx: Context, trigger: String, text: String): String? {
-        if (!Regex("^;[a-z0-9]{2,12}$").matches(trigger)) {
-            return "Triggers look like ;sig (a ; plus 2–12 letters)"
-        }
+        triggerRefusal(trigger)?.let { return it }
         if (text.isBlank()) return "Add the expansion"
         SecretScanner.scan(text)?.let { return it }
         val vault = read(ctx) ?: return "Couldn't save"

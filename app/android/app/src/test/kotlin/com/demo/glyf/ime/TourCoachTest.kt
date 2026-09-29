@@ -25,6 +25,9 @@ class TourCoachTest {
         assertEquals(TourCoach.Coach("toolbar:glyf", "Tap g"), TourCoach.coach(s))
         s = s.copy(panel = TourCoach.Panel.Menu)
         assertEquals(TourCoach.Coach("shell:tile:search", "Search"), TourCoach.coach(s))
+        // The menu leaves out what the strip shows: a tool there is tapped there.
+        assertEquals(TourCoach.Coach("search", "Search"),
+            TourCoach.coach(s.copy(stripTools = setOf("search"))))
         assertEquals(false, TourCoach.allowsChip("paste", "sakshi:0"))
         assertEquals(true, TourCoach.allowsChip("vault:wallet", "zoya:1"))
         assertEquals(false, TourCoach.allowsChip("paste", "semi:0"))

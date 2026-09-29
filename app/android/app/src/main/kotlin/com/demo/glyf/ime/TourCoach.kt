@@ -60,10 +60,12 @@ object TourCoach {
         else -> false
     }
 
-    /** Opens a tool: from the strip when it is there, else through the g menu. */
+    /** Opens a tool: from the strip when it is there, else through the g
+     *  menu, which holds only what the strip doesn't (so a tool on the strip
+     *  is pointed at there even while the menu is open). */
     private fun tool(s: State, id: String, label: String): Coach = when {
-        s.panel == Panel.Menu -> Coach("shell:tile:$id", label)
         id in s.stripTools -> Coach(id, label)
+        s.panel == Panel.Menu -> Coach("shell:tile:$id", label)
         else -> Coach("toolbar:glyf", "Tap g")
     }
 

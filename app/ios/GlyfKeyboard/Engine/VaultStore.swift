@@ -5,7 +5,8 @@ import Security
 /// §6.7 Vault: preset personal info + shorthand snippets + multi-field combos.
 /// Encrypted at rest (AES-GCM) in the App Group; the key lives in the shared
 /// Keychain group so both processes decrypt, and NEVER in the App Group.
-/// Add/edit happens in the APP only (§6.3); the keyboard reads + inserts.
+/// Editing and deleting happen in the APP; the keyboard reads and inserts,
+/// and adds a note, a detail or a shorthand without leaving the field.
 
 struct VaultField: Codable, Equatable, Identifiable {
     var id: String
@@ -29,6 +30,34 @@ struct VaultField: Codable, Equatable, Identifiable {
         case "bio": return "Bio"
         default: return "Detail"
         }
+    }
+}
+
+/// A kind of detail the keyboard can add, by the name the app's Vault gives
+/// it (vault_screen.dart), the label it is saved with (an address is Home,
+/// the way onboarding saves one) and the SF Symbol that stands for it.
+struct DetailKind: Equatable {
+    let kind: String
+    let title: String
+    let label: String
+    let symbol: String
+
+    /// UPI is India's, so only a phone set there is offered it.
+    static func addable(region: String?) -> [DetailKind] {
+        var kinds = [
+            DetailKind(kind: "name", title: "Name", label: "Name", symbol: "person"),
+            DetailKind(kind: "email", title: "Email", label: "Email", symbol: "at"),
+            DetailKind(kind: "phone", title: "Phone", label: "Phone", symbol: "phone"),
+            DetailKind(kind: "address", title: "Address", label: "Home", symbol: "house"),
+        ]
+        if region == "IN" {
+            kinds.append(DetailKind(kind: "upi", title: "UPI", label: "UPI", symbol: "indianrupeesign"))
+        }
+        kinds.append(DetailKind(kind: "wallet", title: "Wallet address", label: "Wallet address",
+                                symbol: "wallet.bifold"))
+        kinds.append(DetailKind(kind: "link", title: "Link", label: "Link", symbol: "link"))
+        kinds.append(DetailKind(kind: "custom", title: "Other", label: "Other", symbol: "tag"))
+        return kinds
     }
 }
 
@@ -169,6 +198,17 @@ final class VaultStore {
 
     private var root: URL? { baseDir ?? AppGroupStore.bridgeDir }
 
+    /// When the file was last read or written by this process. The app and
+    /// the keyboard both write the vault now, and a copy cached before the
+    /// other's write would put the old one back on the next save.
+    private var cachedStamp: Date?
+
+    private func fileStamp() -> Date? {
+        guard let root else { return nil }
+        let path = root.appendingPathComponent(Self.fileName).path
+        return (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }
+
     // MARK: - Key management (shared Keychain group)
 
     private static let keychainAccount = "vault-key-v1"
@@ -212,8 +252,13 @@ final class VaultStore {
     private(set) var loadFailed = false
 
     func load() -> Vault {
-        if let cached { return cached }
+        // A stat, not a decrypt: cheap enough for every suggestion pass.
+        if let cached {
+            if fileStamp() == cachedStamp { return cached }
+            self.cached = nil
+        }
         guard let root else { return Vault() }
+        cachedStamp = fileStamp()
         let url = root.appendingPathComponent(Self.fileName)
         guard FileManager.default.fileExists(atPath: url.path) else {
             loadFailed = false // genuinely nothing saved yet
@@ -263,6 +308,7 @@ final class VaultStore {
         do {
             try blob.write(to: root.appendingPathComponent(Self.fileName), options: .atomic)
             cached = vault
+            cachedStamp = fileStamp()
             return true
         } catch { return false }
     }
@@ -287,6 +333,14 @@ final class VaultStore {
                 id: UUID().uuidString.lowercased(), kind: kind, label: label, value: value))
         }
         return save(vault) ? nil : "Could not save the vault"
+    }
+
+    /// A detail added from the keyboard. The same value saved twice is kept
+    /// once: a second tap on Save left two cards that said the same thing.
+    func addField(kind: String, label: String, value: String) -> String? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if load().fields.contains(where: { $0.kind == kind && $0.value == value }) { return nil }
+        return upsertField(id: nil, kind: kind, label: label, value: value)
     }
 
     func deleteField(id: String) {

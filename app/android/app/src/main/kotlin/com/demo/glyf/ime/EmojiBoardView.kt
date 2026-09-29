@@ -370,6 +370,8 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
     private fun highlightMode() {
         modeViews.forEachIndexed { i, v ->
             val on = i == mode.ordinal
+            // Selected, so TalkBack (and the scenarios) can tell which tab is on.
+            v.isSelected = on
             v.background = if (on) circle(32f) else null
             when (v) {
                 is ToolIcon -> v.setTint(if (on) ink else soft)

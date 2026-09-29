@@ -145,6 +145,51 @@ final class VaultTests: XCTestCase {
         XCTAssertEqual(s3.load(), Vault())
     }
 
+    // MARK: Added from the keyboard
+
+    /// The app and the keyboard both write the vault now. A copy one of them
+    /// cached before the other's write must not come back: the next save
+    /// would put the old vault over the new detail.
+    func testEachProcessSeesTheOthersWrite() throws {
+        let key = SymmetricKey(size: .bits256)
+        let app = store(key: key)
+        let keyboard = store(key: key)
+        XCTAssertNil(app.upsertField(id: nil, kind: "name", label: "Name", value: "Sam Lee"))
+        XCTAssertEqual(keyboard.load().fields.count, 1)
+        XCTAssertNil(keyboard.addField(kind: "email", label: "Email", value: "sam@example.com"))
+        XCTAssertEqual(app.load().fields.map(\.value), ["Sam Lee", "sam@example.com"],
+                       "the app reads what the keyboard added")
+        XCTAssertNil(app.upsertSnippet(trigger: ";hi", text: "Hi there"))
+        XCTAssertEqual(keyboard.load().fields.count, 2, "the app's save kept the keyboard's detail")
+        XCTAssertEqual(Shorthand.expansion(for: ";hi", in: keyboard.load()), "Hi there")
+    }
+
+    /// Save tapped twice, or the same email added again, is one detail.
+    func testTheSameDetailAddedTwiceIsKeptOnce() {
+        let s = store()
+        XCTAssertNil(s.addField(kind: "email", label: "Email", value: "sam@example.com"))
+        XCTAssertNil(s.addField(kind: "email", label: "Email", value: " sam@example.com "))
+        XCTAssertEqual(s.load().fields.count, 1)
+        XCTAssertEqual(s.load().fields.first?.value, "sam@example.com", "saved trimmed")
+        XCTAssertNil(s.addField(kind: "email", label: "Email", value: "ria@example.com"))
+        XCTAssertEqual(s.load().fields.count, 2)
+        XCTAssertNotNil(s.addField(kind: "custom", label: "Other", value: "4242 4242 4242 4242"),
+                        "the keyboard's add is refused what the app's is")
+    }
+
+    /// The kinds a detail is added as, by the app's names. An address is
+    /// saved as Home; UPI only shows on a phone set to India.
+    func testDetailKindsAreTheAppsAndUPIIsIndiasOnly() {
+        let us = DetailKind.addable(region: "US")
+        XCTAssertEqual(us.map(\.title), ["Name", "Email", "Phone", "Address", "Wallet address", "Link", "Other"])
+        XCTAssertEqual(us.first { $0.kind == "address" }?.label, "Home")
+        XCTAssertFalse(DetailKind.addable(region: nil).contains { $0.kind == "upi" })
+        XCTAssertTrue(DetailKind.addable(region: "IN").contains { $0.kind == "upi" })
+        for kind in DetailKind.addable(region: "IN") {
+            XCTAssertTrue(VaultRules.allowedKinds.contains(kind.kind), "\(kind.kind) is storable")
+        }
+    }
+
     // MARK: Shorthand (§6.7 — prefix triggers only, predictable)
 
     func testShorthandExpansion() {
