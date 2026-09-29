@@ -57,8 +57,9 @@ class LearnedWord {
 }
 
 /// Vocabulary: packs of words by kind (work, local language, fun), what the
-/// keyboard learned from you, and packs made from a description. Everything
-/// the keyboard learns stays on the device.
+/// keyboard learned from you (your words, and the tone you keep), and packs
+/// made from a description. Everything the keyboard learns stays on the
+/// device.
 class VocabularyScreen extends StatefulWidget {
   const VocabularyScreen({super.key});
 
@@ -74,6 +75,10 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
   Set<String> _enabled = {};
   bool _learning = true;
   List<LearnedWord> _learned = [];
+  /// The style the AI is asked to lean into, from the rewrites kept and
+  /// closed; empty until one kind of rewrite is kept three more times than
+  /// it is closed.
+  String _toneHint = '';
   bool _loading = true;
 
   final _describe = TextEditingController();
@@ -103,10 +108,12 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
         .toList();
     final settings = await GlyfBridge.sharedSettings();
     final words = await GlyfBridge.typingWords();
+    final tone = await GlyfBridge.toneProfile();
     if (!mounted) return;
     setState(() {
       _packs = shipped;
       _custom = custom;
+      _toneHint = (tone['hint'] as String?) ?? '';
       // Never chosen yet: the keyboards start phones set to India on Hinglish.
       final region = WidgetsBinding.instance.platformDispatcher.locale.countryCode;
       _enabled = ((settings['vocabPacks'] as List?) ??
@@ -226,6 +233,13 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
     if (ok != true) return;
     await GlyfBridge.typingEdit('reset');
     setState(() => _learned = []);
+  }
+
+  Future<void> _resetTone() async {
+    await GlyfBridge.toneReset();
+    Telemetry.log('tone_reset');
+    final tone = await GlyfBridge.toneProfile();
+    if (mounted) setState(() => _toneHint = (tone['hint'] as String?) ?? '');
   }
 
   Future<void> _make() async {
@@ -422,6 +436,8 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
                       style: TextStyle(color: Glass.ink, fontSize: 28, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 16),
                   _myWordsCard(),
+                  const SizedBox(height: 12),
+                  _toneCard(),
                   const SizedBox(height: 22),
                   _makeCard(),
                   if (_custom.isNotEmpty) ...[
@@ -495,6 +511,42 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
           ),
         ]),
       ]),
+    );
+  }
+
+  /// The hint is written for the model ("The user tends to prefer writing
+  /// that is brief and to the point."); the person reads it about themselves.
+  static String toneLine(String hint) {
+    final m = RegExp(r'^The user tends to prefer writing that is (.+?)\.?$').firstMatch(hint.trim());
+    return m == null ? hint.trim() : 'You like writing that’s ${m.group(1)}.';
+  }
+
+  /// Beside My words: both are what the keyboard learned from you. It was a
+  /// row of its own on Profile.
+  Widget _toneCard() {
+    return Semantics(
+      identifier: 'vocab:tone',
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Expanded(
+              child: Text('Tone profile',
+                  style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w700)),
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_horiz, color: Glass.ink),
+              color: Colors.white,
+              onSelected: (v) => v == 'reset' ? _resetTone() : null,
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'reset', child: Text('Reset tone')),
+              ],
+            ),
+          ]),
+          Text(_toneHint.isNotEmpty ? toneLine(_toneHint) : 'Learning from your edits',
+              style: const TextStyle(color: Glass.inkSoft, fontSize: 14, height: 1.4)),
+        ]),
+      ),
     );
   }
 

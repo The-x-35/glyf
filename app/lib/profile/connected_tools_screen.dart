@@ -21,7 +21,6 @@ class ConnectedToolsScreen extends StatefulWidget {
 
 class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
   bool _calendar = false;
-  bool _contacts = false;
   /// Google Calendar and Meet: `connected`, `email`, `calendar`, `meet`.
   Map<String, dynamic> _google = const {'connected': false};
   /// Google's page is open, or the grant is being taken back.
@@ -39,13 +38,11 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
   Future<void> _load() async {
     final cal = await GlyfBridge.calendarStatus();
     final google = await GlyfBridge.googleStatus();
-    final contacts = await GlyfBridge.contactsStatus();
     final shared = await GlyfBridge.sharedSettings();
     if (!mounted) return;
     setState(() {
       _calendar = _calendarOn(cal);
       _google = google;
-      _contacts = contacts['enabled'] == true;
       final link = (shared['bookingLink'] as String?)?.trim() ?? '';
       _booking = link.isEmpty ? null : link;
     });
@@ -195,22 +192,6 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
     Telemetry.log(link == null ? 'tool_disconnected' : 'tool_connected', {'tool': 'booking'});
   }
 
-  Future<void> _toggleContacts(bool on) async {
-    if (!on) {
-      await GlyfBridge.contactsDisable();
-      setState(() => _contacts = false);
-      Telemetry.log('tool_disconnected', {'tool': 'contacts'});
-      return;
-    }
-    final res = await GlyfBridge.contactsEnable();
-    if (!mounted) return;
-    setState(() {
-      _contacts = res['ok'] == true;
-      _note = res['ok'] == true ? null : 'Allow Contacts for Glyf in Settings to search them from the keyboard.';
-    });
-    Telemetry.log('tool_connected', {'tool': 'contacts', 'ok': _contacts});
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -246,13 +227,6 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
             title: 'Booking link',
             useCase: _booking ?? 'Cal.com or Calendly: send times people can book, from the keyboard.',
             trailing: _actionPill(_booking == null ? 'Add' : 'Edit', 'tools:booking', _editBooking),
-          ),
-          const SizedBox(height: 12),
-          _toolCard(
-            brand: 'contacts',
-            title: 'Contacts',
-            useCase: 'Find a number or email without leaving the keyboard.',
-            trailing: _switch(_contacts, _toggleContacts, 'tools:contacts'),
           ),
           if (_note != null)
             Padding(

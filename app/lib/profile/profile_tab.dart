@@ -25,9 +25,12 @@ import 'brand_marks.dart' show GoogleG;
 import 'code_screen.dart';
 import 'keyboard_screen.dart';
 import 'paywall_sheet.dart';
+import 'search_sheet.dart';
 
-/// Settings — one scrollable screen. Everything you can change about the
-/// keyboard is here; there is no creator shelf and nothing to publish.
+/// Settings on one short page: the account card, a row per place, and the
+/// account's own actions at the foot. It had grown a row per switch; now a
+/// row that only holds a switch or two (Search) or a choice (Tour) opens a
+/// sheet, and Tone profile lives with the words in Vocabulary.
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key, required this.onRerunOnboarding, this.activeTab});
   final VoidCallback onRerunOnboarding;
@@ -41,7 +44,6 @@ class ProfileTab extends StatefulWidget {
 
 class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
   Map<String, dynamic> _settings = {};
-  Map<String, dynamic> _tone = {};
   String _displayName = 'You';
   bool _serverUp = false;
   int? _remaining;
@@ -106,7 +108,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
 
   Future<void> _refresh() async {
     final settings = await GlyfBridge.sharedSettings();
-    final tone = await GlyfBridge.toneProfile();
     final contacts = await GlyfBridge.contactsStatus();
     final calendar = await GlyfBridge.calendarStatus();
     final google = await GlyfBridge.googleStatus();
@@ -117,15 +118,14 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _settings = settings;
-      _tone = tone;
       _serverUp = up;
       _remaining = meter?.remaining;
       _serverPlan = meter?.plan;
       _perDay = meter?.perDay;
       _contactsOn = contacts['enabled'] == true;
       final booking = (settings['bookingLink'] as String?)?.trim() ?? '';
+      // Contacts is counted under Search, where its switch lives.
       _connectedTools = [
-        _contactsOn,
         calendar['enabled'] == true,
         google['meet'] == true,
         booking.isNotEmpty,
@@ -137,119 +137,13 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     });
   }
 
-  /// Turning a feature off is one tap on a row that reads like navigation,
-  /// so it asks first, the way turning it on does.
-  Future<bool> _confirmOff(String title, String body) async {
-    final go = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text(title),
-        content: Text('\n$body'),
-        actions: [
-          CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          CupertinoDialogAction(
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Turn off')),
-        ],
-      ),
-    );
-    return go == true;
-  }
-
-  /// Gboard-style contacts search: explain, ask the OS, sync locally.
-  Future<void> _toggleContacts() async {
-    if (_contactsOn) {
-      if (!await _confirmOff('Turn off Contacts search?',
-          'The keyboard forgets the names, numbers and emails it kept.')) {
-        return;
-      }
-      await GlyfBridge.contactsDisable();
-      _refresh();
-      return;
-    }
-    if (!mounted) return;
-    final go = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Contacts search'),
-        content: const Text(
-          '\nLook up names, numbers and emails right from the keyboard. '
-          'Contacts stay on this device. Nothing is uploaded.',
-        ),
-        actions: [
-          CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Not now')),
-          CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Turn on')),
-        ],
-      ),
-    );
-    if (go != true) return;
-    final res = await GlyfBridge.contactsEnable();
-    if (!mounted) return;
-    if (res['ok'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${res['count']} contacts ready in the keyboard')));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Allow contacts access in Settings to use this')));
-    }
-    _refresh();
-  }
-
-  /// "Near me" search: explain, ask the OS once, cache a coarse fix. The
-  /// keyboard cannot ask for location itself, so the app owns this.
-  Future<void> _toggleNearby() async {
-    if (_nearbyOn) {
-      if (!await _confirmOff('Turn off Nearby search?',
-          'The keyboard forgets where you are, so "near me" goes back to plain search.')) {
-        return;
-      }
-      await GlyfBridge.locationDisable();
-      _refresh();
-      return;
-    }
-    if (!mounted) return;
-    final go = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Nearby search'),
-        content: const Text(
-          '\nSo “coffee near me” finds coffee near you, and the keyboard can '
-          'answer local things like sunset and weather.\n\n'
-          'Approximate only, kept on this device, never stored on our servers.',
-        ),
-        actions: [
-          CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Not now')),
-          CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Turn on')),
-        ],
-      ),
-    );
-    if (go != true) return;
-    final res = await GlyfBridge.locationEnable();
-    if (!mounted) return;
-    final message = res['ok'] == true
-        ? 'Nearby search is on'
-        : switch (res['error']) {
-            'denied' => 'Allow location access in Settings to use this',
-            'nofix' => 'No recent location yet. Open Maps once, then retry.',
-            _ => 'Location isn\u2019t available on this device',
-          };
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-    _refresh();
-  }
+  /// The Search row says which of its two switches is on.
+  String get _searchStatus => switch ((_contactsOn, _nearbyOn)) {
+        (true, true) => 'On',
+        (true, false) => 'Contacts on',
+        (false, true) => 'Nearby on',
+        _ => '',
+      };
 
   /// The server's plan when it answered (that is the one being enforced);
   /// the phone's own record only while offline.
@@ -262,7 +156,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
   int get _planRuns => switch (_plan) { 'max' => 400, 'plus' => 150, _ => 20 };
 
   /// Who you are, how you signed in and your plan, in one card: the name
-  /// with Edit, the account under it, the plan, then Sign out.
+  /// with Edit, the account under it, the plan, then Got a code? (a code is
+  /// a plan too). Sign out is at the foot with the account's other actions.
   Widget _identityCard() {
     final id = Auth.identity();
     final email = id.email ?? '';
@@ -379,17 +274,25 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
         ),
         hairline(),
         Semantics(
-          identifier: 'profile:sign-out',
+          identifier: 'profile:code',
           button: true,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _signOut,
+            onTap: () async {
+              await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CodeScreen()));
+              _refresh();
+            },
             child: const Padding(
-              padding: EdgeInsets.fromLTRB(16, 13, 16, 14),
+              // 16 on the right lines its chevron up with the rows below.
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 13),
               child: Row(children: [
-                Text('Sign out',
-                    style: TextStyle(
-                        color: Glass.danger, fontSize: 14.5, fontWeight: FontWeight.w600)),
+                Expanded(
+                  child: Text('Got a code?',
+                      style: TextStyle(
+                          color: Glass.ink, fontSize: 14, fontWeight: FontWeight.w600)),
+                ),
+                Icon(Icons.chevron_right, color: Color(0xFFB9BEC7), size: 20),
               ]),
             ),
           ),
@@ -463,25 +366,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
         children: [
-          // Identity, account and plan
           _identityCard(),
-          const SizedBox(height: 10),
-          Semantics(
-            identifier: 'profile:code',
-            button: true,
-            child: _navCard(
-              icon: Icons.redeem_outlined,
-              title: 'Got a code?',
-              onTap: () async {
-                await Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const CodeScreen()));
-                _refresh();
-              },
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          _groupLabel('Keyboard'),
+          const SizedBox(height: 16),
           _navCard(
             icon: Icons.keyboard_alt_outlined,
             title: 'Keyboard',
@@ -498,20 +384,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
             onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const VocabularyScreen())),
           ),
-          const SizedBox(height: 18),
-          _groupLabel('You'),
-          _navCard(
-            icon: Icons.person_search_outlined,
-            title: 'Contacts search',
-            trailingText: _contactsOn ? 'On' : '',
-            onTap: _toggleContacts,
-          ),
-          _navCard(
-            icon: Icons.near_me_outlined,
-            title: 'Nearby search',
-            trailingText: _nearbyOn ? 'On' : '',
-            onTap: _toggleNearby,
-          ),
           _navCard(
             icon: Icons.lock_outline,
             title: 'Vault',
@@ -520,6 +392,19 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                   MaterialPageRoute(builder: (_) => const VaultScreen()));
               _refresh();
             },
+          ),
+          Semantics(
+            identifier: 'profile:search',
+            button: true,
+            child: _navCard(
+              icon: Icons.search,
+              title: 'Search',
+              trailingText: _searchStatus,
+              onTap: () async {
+                await showSearchSheet(context, contacts: _contactsOn, nearby: _nearbyOn);
+                _refresh();
+              },
+            ),
           ),
           _navCard(
             icon: Icons.cable_outlined,
@@ -531,15 +416,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
               _refresh();
             },
           ),
-          _navCard(
-            icon: Icons.auto_fix_high_outlined,
-            title: 'Tone profile',
-            trailingText:
-                (_tone['hint'] as String?)?.isNotEmpty == true ? 'Active' : '',
-            onTap: _showTone,
-          ),
-          const SizedBox(height: 18),
-          _groupLabel('More'),
           ValueListenableBuilder<PhantomLink?>(
             valueListenable: WalletFlow.link,
             builder: (context, link, _) => _navCard(
@@ -551,18 +427,31 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
               )),
             ),
           ),
-          _navCard(
-            icon: Icons.chat_bubble_outline,
-            title: 'Take the tour',
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-              fullscreenDialog: true,
-              builder: (ctx) => DemoChat(onDone: () => Navigator.of(ctx).pop()),
-            )),
+          Semantics(
+            identifier: 'profile:tour',
+            button: true,
+            child: _navCard(
+              icon: Icons.chat_bubble_outline,
+              title: 'Tour',
+              onTap: _showTour,
+            ),
           ),
-          _navCard(
-            icon: Icons.replay_outlined,
-            title: 'Replay onboarding',
-            onTap: _replayOnboarding,
+          const SizedBox(height: 8),
+
+          // The account's own actions, plain text at the foot. Only Sign out
+          // is red: two red lines read as a warning. Delete account stays one
+          // tap from the page, as App Store rule 5.1.1(v) asks.
+          Center(
+            child: Semantics(
+              identifier: 'profile:sign-out',
+              button: true,
+              child: TextButton(
+                onPressed: _signOut,
+                child: const Text('Sign out',
+                    style: TextStyle(
+                        color: Glass.danger, fontSize: 14.5, fontWeight: FontWeight.w600)),
+              ),
+            ),
           ),
           if (Auth.signedIn)
             Center(
@@ -570,10 +459,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                 key: const Key('profile:delete-account'),
                 onPressed: _deleteAccount,
                 child: const Text('Delete account',
-                    style: TextStyle(
-                        color: Glass.danger,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600)),
+                    style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w500)),
               ),
             ),
           Center(
@@ -602,15 +488,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
       ),
     );
   }
-
-  Widget _groupLabel(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 8, left: 2),
-        child: Text(text,
-            style: const TextStyle(
-                color: Glass.inkSoft,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600)),
-      );
 
   Widget _navCard({
     required IconData icon,
@@ -646,6 +523,80 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     );
   }
 
+  /// The tour plays the website's chats on the real keyboard; a replay
+  /// walks the setup steps again. Two jobs, one row: it asks which.
+  Future<void> _showTour() async {
+    final pick = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 20, 22, 14),
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              // Stretch, or the card shrinks to its longest line.
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+            const Text('Tour',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 14),
+            // One card of two rows, like the Search sheet's.
+            GlassCard(
+              padding: EdgeInsets.zero,
+              child: Column(children: [
+                _sheetRow(Icons.chat_bubble_outline, 'Take the tour', 'tour:chats',
+                    () => Navigator.of(ctx).pop('tour')),
+                Container(
+                    height: 1,
+                    margin: const EdgeInsets.only(left: 50),
+                    color: Glass.hairline),
+                _sheetRow(Icons.replay_outlined, 'Replay onboarding', 'tour:onboarding',
+                    () => Navigator.of(ctx).pop('onboarding')),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (pick) {
+      case 'tour':
+        await Navigator.of(context).push(MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (ctx) => DemoChat(onDone: () => Navigator.of(ctx).pop()),
+        ));
+      case 'onboarding':
+        await _replayOnboarding();
+    }
+  }
+
+  Widget _sheetRow(IconData icon, String title, String id, VoidCallback onTap) => Semantics(
+        identifier: id,
+        button: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+            child: Row(children: [
+              Icon(icon, color: Glass.ink, size: 21),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Text(title,
+                    style: const TextStyle(
+                        color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
+              ),
+              const Icon(Icons.chevron_right, color: Color(0xFFB9BEC7), size: 20),
+            ]),
+          ),
+        ),
+      );
+
   /// The steps again over Profile, with this person's own settings: nothing
   /// saved is lost and Close leaves from any step.
   Future<void> _replayOnboarding() async {
@@ -674,52 +625,4 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     } catch (_) {}
     _refresh();
   }
-
-  Future<void> _showTone() async {
-    final hint = (_tone['hint'] as String?) ?? '';
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
-          child: Column(
-              mainAxisSize: MainAxisSize.min,
-              // Stretch, or the sheet shrinks to its longest line and floats
-              // in the middle of the screen with gaps on either side.
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-            const Text('Tone profile',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 10),
-            Text(hint.isNotEmpty ? hint : 'Learning from your edits',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Glass.inkSoft, fontSize: 14, height: 1.5)),
-            const SizedBox(height: 8),
-            const Text('On this device only. Never your words.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFFB6BAC3), fontSize: 12)),
-            const SizedBox(height: 14),
-            TextButton(
-              onPressed: () async {
-                await GlyfBridge.toneReset();
-                Telemetry.log('tone_reset');
-                if (ctx.mounted) Navigator.of(ctx).pop();
-                _refresh();
-              },
-              child: const Text('Reset',
-                  style: TextStyle(color: Color(0xFFC03A2E), fontSize: 14)),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
 }

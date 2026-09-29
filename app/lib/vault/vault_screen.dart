@@ -31,6 +31,7 @@ class _VaultScreenState extends State<VaultScreen> {
     ('phone', 'Phone', Icons.phone_outlined),
     ('address', 'Address', Icons.home_outlined),
     ('wallet', 'Wallet address', Icons.account_balance_wallet_outlined),
+    ('upi', 'UPI', Icons.currency_rupee),
     ('link', 'Link', Icons.link),
     ('social', 'Social', Icons.alternate_email),
     ('bio', 'Bio', Icons.short_text),
@@ -319,6 +320,10 @@ class _VaultScreenState extends State<VaultScreen> {
     final valueCtl = TextEditingController(text: existing?['value'] as String? ?? '');
     var kind = existing?['kind'] as String? ?? 'address';
     if (!kinds.any((k) => k.$1 == kind)) kind = 'custom';
+    // UPI is offered where people use it, and always to a detail that is one
+    // (the keyboard saves UPI in India; editing it here had made it Other).
+    final region = WidgetsBinding.instance.platformDispatcher.locale.countryCode;
+    final offered = [for (final k in kinds) if (k.$1 != 'upi' || region == 'IN' || kind == 'upi') k];
     await _sheet(
       title: existing == null ? 'Add detail' : 'Edit detail',
       builder: (setSheetState, showError) => [
@@ -328,7 +333,7 @@ class _VaultScreenState extends State<VaultScreen> {
           decoration: _dec('Type'),
           style: const TextStyle(color: Glass.ink),
           items: [
-            for (final k in kinds) DropdownMenuItem(value: k.$1, child: Text(k.$2)),
+            for (final k in offered) DropdownMenuItem(value: k.$1, child: Text(k.$2)),
           ],
           onChanged: (v) => kind = v ?? 'custom',
         ),
