@@ -1264,6 +1264,40 @@ scenarios.push(
   } },
 );
 
+// --- 2026-09-30: a ✕ on every strip chip ---
+scenarios.push(
+  { id: "S215", title: "A chip's ✕ waves it off for those words, a new sum brings one back, and Insert never dismisses", run: async () => {
+    // "we should add some button to dismiss it, like a cross on left or something, figure out" (2026-09-30).
+    await fresh();
+    await type("2+5");
+    const chip = await waitFor(byId("strip:smart"), 3000);
+    if (!chip) return { pass: false, note: "no chip for 2+5" };
+    let s = await state();
+    const close = find(s, byId("strip:smart:close"));
+    if (!close) return { pass: false, note: `the chip '${chipLabel(s, chip)}' has no ✕` };
+    const target = `${close.w}x${close.h}`;
+    await screenshot("S215-chip");
+    await tapXY(close.x, close.y);
+    await sleep(1200);   // past a pass of the strip, which must not bring it back
+    s = await state();
+    const gone = !find(s, byId("strip:smart"));
+    // Back to what the strip shows without a chip: the tools, or words.
+    const strip = TOOL_IDS.some(id => find(s, byId(id))) ? "tools" : s.views.some(idStarts("suggest:")) ? "words" : "nothing";
+    const kept = s.text;
+    // More of the sum is a new sum: its chip comes.
+    await type("0");
+    const again = await waitFor(byId("strip:smart"), 3000);
+    const label = again ? chipLabel(await state(), again) : "none";
+    // Insert, pressed on the word itself beside the ✕, inserts; it never dismisses.
+    const verb = again && find(await state(), v => v.text === "Insert" &&
+      Math.abs(v.y - again.y) < again.h / 2 && Math.abs(v.x - again.x) < again.w / 2);
+    const r = verb ? await tapFor({ ...verb, id: "" }, x => x.includes("= 52"))
+      : { t: await text(), retried: false };
+    return { pass: gone && strip !== "nothing" && kept === "2+5" && label.includes("2+50 = 52") && r.t.includes("2+50 = 52"),
+      note: `✕ ${target}px; after it: chip gone ${gone}, strip shows ${strip}, text '${kept}'; typed 0 → '${label}'; Insert → '${r.t}'${second(r)}` };
+  } },
+);
+
 function chipLabel(s, chip) {
   if (chip.text) return chip.text;
   const inside = v => v !== chip && v.text && Math.abs(v.x - chip.x) <= chip.w / 2 && Math.abs(v.y - chip.y) <= chip.h / 2;

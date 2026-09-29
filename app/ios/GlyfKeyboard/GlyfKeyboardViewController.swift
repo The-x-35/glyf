@@ -565,11 +565,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
 #endif
         appearanceFlipped = false
         stopTourWatch()
+        // A chip's colours stop turning with the keyboard away.
+        toolbar.setMagicRunning(false)
         TypingStore.shared.saveNow()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        toolbar.setMagicRunning(true)
         Self.appearances += 1
         log.log("GLYF_KB height=\(self.view.bounds.height) target=\(self.totalHeight)")
         let mb = MemoryLogger.logAppearance(Self.appearances)
@@ -745,6 +748,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)
     }
     private var suggestedFor = ""
+    /// The text a chip was dismissed on with its ✕: no chip comes back for it
+    /// until the text changes (Arpit, 2026-09-30: "add some button to
+    /// dismiss it").
+    private var dismissedTail: String?
     private var suggestedChip: Smart.Chip?
     /// What Glyf itself just wrote into the field (a rewrite, an answer).
     /// Offering to tidy that up would be asking about its own work.
@@ -1554,6 +1561,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         let before = beforeContext ?? ""
         let tail = String(before.suffix(120))
+        if let gone = dismissedTail {
+            if gone == tail.trimmingCharacters(in: .whitespacesAndNewlines) {
+                cancelSuggestion()
+                toolbar.showSmart(nil)
+                return false
+            }
+            dismissedTail = nil
+        }
         // Something just copied rides in the strip as one chip, never as a
         // second row: history's copy when we already have it, otherwise the
         // offer itself (tapping reads, which is the moment iOS asks).
@@ -2722,11 +2737,17 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// marked done and never offered again — it is still in the clipboard
     /// panel if it turns out it was wanted after all.
     func toolbarSmartDismissed() {
-        ClipContext.markDone()
-        // The paste probe keeps its copy for a second: forget it too, or the
-        // chip comes straight back until the next key.
-        cachedPaste = nil
-        lastClipProbe = 0
+        if toolbar.smartIsPaste {
+            ClipContext.markDone()
+            // The paste probe keeps its copy for a second: forget it too, or
+            // the chip comes straight back until the next key.
+            cachedPaste = nil
+            lastClipProbe = 0
+        } else {
+            // Any other chip (a sum, money, an AI answer, a detail, a plan)
+            // stays gone for this text; the next change can bring one back.
+            dismissedTail = (beforeContext ?? "").suffix(120).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         suggestedChip = nil
         suggestedFor = ""
         toolbar.showSmart(nil)

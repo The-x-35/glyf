@@ -337,6 +337,14 @@ enum Glass {
     // MARK: Accent + status
 
     static let accentPrimary = UIColor(red: 0x7C / 255, green: 0x5C / 255, blue: 0xFF / 255, alpha: 1)
+    /// Purple words and marks on a strip chip ("Insert", sparkles, the
+    /// clipboard mark): lighter than the accent, which read as unreadable
+    /// there (Arpit, 2026-09-30). Semibold, each is over 3:1 on its chip:
+    /// 3.7 on white, 5.6 on the dark key colour.
+    static var chipAccent: UIColor {
+        chromeDark ? UIColor(red: 0xC3 / 255, green: 0xB4 / 255, blue: 0xFF / 255, alpha: 1)
+                   : UIColor(red: 0x8A / 255, green: 0x6C / 255, blue: 0xFF / 255, alpha: 1)
+    }
     /// iMessage blue — the website's send/Replace colour.
     static let imBlue = UIColor(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255, alpha: 1)
     static let accentSuccess = UIColor(red: 0x32 / 255, green: 0xD5 / 255, blue: 0x83 / 255, alpha: 1)
@@ -395,12 +403,15 @@ enum Glass {
 
     /// iOS 26 puts a 16pt band of its own sheet above every third-party
     /// keyboard and clips anything drawn into it (tested: a view placed
-    /// above our top edge is cut off at the edge). So the strip is short and
-    /// that band is its top padding: 16 + 36 + the keys' 6pt top gap lands
-    /// the first row 58pt under the sheet's edge, against Apple's 51 and our
-    /// old 66. The keys are bottom-anchored, so none of them move.
-    /// The strip's own content box — the same on every iOS.
-    static let stripContent: CGFloat = 36
+    /// above our top edge is cut off at the edge). So that band is the
+    /// strip's top padding, and the strip is only as tall as its chip needs:
+    /// 38pt with room for its glow (Arpit, 2026-09-30: "text seems too close
+    /// to border"), which is 8pt more than the 36 it was. 16 + 44 + the keys'
+    /// 6pt top gap lands the first row 66pt under the sheet's edge, against
+    /// Apple's 51. It is the same with a chip or without, so nothing jumps
+    /// when one comes or goes, and the keys are bottom-anchored, so none of
+    /// them move. The strip's own content box — the same on every iOS.
+    static let stripContent: CGFloat = 44
     /// …but only iOS 26 draws that band. Older iOS puts our top edge right
     /// against the keyboard's, so the strip reads as cut off (reported from
     /// a phone on an older iOS). There we add the band ourselves; the

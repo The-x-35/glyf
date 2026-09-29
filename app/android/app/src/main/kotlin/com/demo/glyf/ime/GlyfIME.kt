@@ -34,6 +34,13 @@ private const val ANCHOR_CHARS = 64
 /** The label a detail set aside by the debug "stash" tool carries. */
 private const val STASHED = "qa-stash:"
 
+/** The strip's height, in dp. Gboard's is 47; ours is 50, so a strip chip
+ *  stands 38dp tall with room for its glow above and below (Arpit,
+ *  2026-09-30: "text seems too close to border"). Whatever takes the
+ *  strip's place (the Glyf bar, translate, the act panel's head) matches
+ *  it, so nothing jumps. */
+private const val STRIP_DP = 50
+
 /**
  * Glyf for Android — the native IME (SPEC §1: keyboards are native per
  * platform; Flutter never runs in here). M-Android-1 slice: full typing
@@ -324,6 +331,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         out.put("clipMime", clip?.takeIf { it.mimeTypeCount > 0 }?.getMimeType(0) ?: "")
         // The notice over the keys lives on the overlay, outside the views above.
         out.put("notice", (noticeView as? TextView)?.text?.toString() ?: "")
+        // Strip chips whose colours are turning: none once the keyboard is hidden.
+        out.put("glowTurning", MagicChip.turning)
+        out.put("glowTicks", MagicChip.ticks)
+        out.put("glowDrawn", MagicChip.drawn)
         out.put("clipLabel", clip?.label?.toString() ?: "")
         val dir = java.io.File(filesDir, "qa").apply { mkdirs() }
         // Written whole, then swapped in: a reader never sees half a file.
@@ -351,11 +362,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(6), dp(10), dp(6))
+            // A chip's glow reaches past it, into the strip's padding: cut
+            // there, it ended in a hard edge.
+            clipChildren = false
+            clipToPadding = false
         }
         keyboard = GlyfKeyboardView(this, this)
-        // Gboard's toolbar: 47dp from the board's top edge to the key area.
+        // The strip: STRIP_DP from the board's top edge to the key area.
         root.addView(toolbar, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
         root.addView(keyboard)
         // Keep the key rows clear of the keyboard's navigation strip. With
         // gesture navigation Android draws a 48dp strip under an IME (hide
@@ -462,6 +477,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (!isSecureField()) com.demo.glyf.store.ClipboardStore.captureNow(this, settings)
         actGeneration++ // a late act result must not land in a new field
         recentFixes.clear()  // another field: its corrections are not these
+        dismissedChip = null // and a chip waved off there may come here
         dismissOverlay()
         if (searchActive) exitSearch()
         if (barActive) exitBar()
@@ -1750,7 +1766,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         field.addView(run, LinearLayout.LayoutParams(dp(26), dp(26)))
         row.addView(field, LinearLayout.LayoutParams(0, dp(34), 1f).apply { leftMargin = dp(8) })
-        strip.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
+        strip.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
         barPromptView = prompt
         barRunView = run
         styleBarRun()
@@ -1996,7 +2012,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 val mint = (chip as? Smart.Chip.Money)?.buy
                 // "1 SOL = $121.39": the ticker and its price, off the chip.
                 val shown = (chip as? Smart.Chip.Money)?.shown?.split(" ")
-                showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "",
+                return showStripChip("smart", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "",
                     extra = if (mint != null) "Buy" else null,
                     onExtra = {
                         hideStripChip()
@@ -2007,28 +2023,25 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     hideStripChip()
                     updateSuggestions()
                 }
-                return true
             }
             is Smart.Chip.Event -> {
                 // Nothing is typed: the plan becomes a New Event to check and add.
-                showStripChip("event", null, Smart.display(chip), "Add", lead = "calendar") {
+                return showStripChip("event", null, Smart.display(chip), "Add", lead = "calendar") {
                     hideStripChip()
                     showCalendarPanel().compose(chip.plan)
                 }
-                return true
             }
             is Smart.Chip.Booking -> {
                 // Their page's open times, to book one as the person.
-                showStripChip("booking", null, Smart.display(chip), "Book", lead = "calendar") {
+                return showStripChip("booking", null, Smart.display(chip), "Book", lead = "calendar") {
                     hideStripChip()
                     showCalendarPanel().openBooking(chip.link)
                 }
-                return true
             }
             // The keyboard never signs: Send and Buy open in the app, which
             // has Phantom sign.
             is Smart.Chip.Pay -> {
-                showStripChip("pay", Smart.key(chip), Smart.display(chip), "Send") {
+                return showStripChip("pay", Smart.key(chip), Smart.display(chip), "Send") {
                     hideStripChip()
                     if (tourStep() != null) {
                         openAppPath("wallet", sendQuery(chip.address, chip.amount, chip.token))
@@ -2036,21 +2049,19 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         showPayPanel(PayPanelView.Intent.Send(chip.address, chip.amount, chip.token))
                     }
                 }
-                return true
             }
             is Smart.Chip.Buy -> {
-                showStripChip("buy", Smart.key(chip), Smart.display(chip), "Buy") {
+                return showStripChip("buy", Smart.key(chip), Smart.display(chip), "Buy") {
                     hideStripChip()
                     showPayPanel(PayPanelView.Intent.Buy(chip.mint, chip.symbol, chip.price))
                 }
-                return true
             }
             else -> {}
         }
         val trimmed = tail.trim()
         val cached = suggestedChip
         if (cached != null && suggestedFor == trimmed) {
-            showStripChip("action", null, cached.label, "") {
+            return showStripChip("action", null, cached.label, "") {
                 suggestedChip = null
                 suggestedFor = ""
                 hideStripChip()
@@ -2058,7 +2069,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 startAct(ic?.getTextBeforeCursor(4000, 0)?.toString() ?: "",
                     ic?.getTextAfterCursor(4000, 0)?.toString() ?: "", cached.intent)
             }
-            return true
         }
         if (stripChipKind in smartKinds) hideStripChip()
         scheduleSuggestion(trimmed)
@@ -2203,58 +2213,103 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** What a "smart" chip holds, for the tour's coach: "calc" or "vault:<kind>". */
     private var stripSmartDetail: String? = null
 
-    /** One chip across the strip: content on the left, the action on the
-     *  right, and with [onClose] a ✕ at the very end to wave it off. */
+    /** One chip across the strip: first a ✕ that waves it off, in the same
+     *  place on every chip (Arpit, 2026-09-30: "we should add some button to
+     *  dismiss it"), then the content, and the action last on the right. A
+     *  chip waved off stays away for the same words; typing on brings chips
+     *  again. [onClose] is the paste chip's own way off (that copy stays
+     *  done). False when this chip was waved off for these words: not shown. */
     private fun showStripChip(kind: String, label: String?, value: String, verb: String,
                               lead: String? = null, extra: String? = null, onExtra: (() -> Unit)? = null,
                               onClose: (() -> Unit)? = null,
-                              onTap: () -> Unit) {
+                              onTap: () -> Unit): Boolean {
+        val key = chipKey(kind)
+        if (onClose == null && key == dismissedChip) {
+            if (stripChipKind == kind) hideStripChip()
+            return false
+        }
         hideStripChip()
-        val chip = LinearLayout(this).apply {
+        // The chip's purple, lighter so it reads on the card (Arpit,
+        // 2026-09-30: "insert button text etc to be lighter colour purple so
+        // it doesnt look unreadable"): over 3:1 in bold on either card.
+        val accent = if (chromeDark) Color.rgb(0xC3, 0xB4, 0xFF) else Color.rgb(0x8A, 0x6C, 0xFF)
+        val secondary = Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink()))
+        // Every chip wears the turning, glowing border (MagicChip), laid out
+        // as Safari's app banner is: the ✕ first, the action last and the
+        // default (Arpit, 2026-09-30: "no cross on right looks bad, insert
+        // should be the default action, maybe put cross in left"). A tap
+        // anywhere but the ✕ does the verb. Room is measured from the
+        // border's inner edge, 1.5dp in: the ✕'s cross starts 14dp inside it,
+        // and the verb ends 16dp inside it (an extra pill, 12dp).
+        val density = resources.displayMetrics.density
+        fun px(dp: Float) = Math.round(dp * density)
+        val endPad = when {
+            extra != null && onExtra != null -> 1.5f + 12f
+            // The sparkle's ink ends 3.2dp inside its box.
+            verb.isEmpty() -> 1.5f + 16f - 3.2f
+            else -> 1.5f + 16f
+        }
+        val chip = MagicChip(this, card(), chromeDark).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), 0, if (extra != null || onClose != null) dp(4) else dp(14), 0)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
-                setColor(card())
-            }
+            // The cross is 11dp across in the middle of its 36dp target, so
+            // 12.5dp in: the target starts 3dp from the chip's edge.
+            setPadding(px(1.5f + 14f - 12.5f), 0, px(endPad), 0)
             setTag(com.demo.glyf.R.id.qa_id, "strip:smart")
             setOnClickListener { onTap() }
         }
-        if (lead != null) chip.addView(ToolIcon(this, lead, ink()),
-            LinearLayout.LayoutParams(dp(18), dp(18)).apply { rightMargin = dp(8) })
+        chip.addView(ToolIcon(this, "close", secondary).apply {
+            setTint(secondary)
+            setTag(com.demo.glyf.R.id.qa_id, "strip:smart:close")
+            contentDescription = "Dismiss"
+            setOnClickListener { if (onClose != null) onClose() else dismissChip(key) }
+        }, LinearLayout.LayoutParams(dp(36), dp(36)))
+        // A hairline 10dp past the cross (so 2.5dp inside the ✕'s target),
+        // then 10dp to the chip's words: a thumb going for them never lands
+        // on the ✕.
+        chip.addView(View(this).apply {
+            setBackgroundColor(Color.argb(46, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+        }, LinearLayout.LayoutParams(maxOf(1, px(0.75f)), dp(18)).apply { leftMargin = px(-2.5f) })
+        // A lead glyph's ink sits 1.6dp inside its box; words start on their edge.
+        val lead0 = px(10f - 1.6f)
+        val text0 = px(10f)
+        if (lead != null) chip.addView(ToolIcon(this, lead, accent).apply { solid = true },
+            LinearLayout.LayoutParams(dp(18), dp(18)).apply { leftMargin = lead0; rightMargin = dp(6) })
         if (label != null) chip.addView(TextView(this).apply {
             text = label
             textSize = 13f
-            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+            setTextColor(secondary)
             setPadding(0, 0, dp(8), 0)
-        })
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (lead == null) leftMargin = text0 })
         chip.addView(TextView(this).apply {
             text = value
             textSize = 15f
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(ink())
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            if (lead == null && label == null) leftMargin = text0
+        })
         if (verb.isEmpty()) {
             // The model's suggestion: its words are the action, a sparkle marks it.
-            chip.addView(ToolIcon(this, "ask", Color.rgb(0x7C, 0x5C, 0xFF)),
+            chip.addView(ToolIcon(this, "ask", accent).apply { solid = true },
                 LinearLayout.LayoutParams(dp(22), dp(22)).apply { leftMargin = dp(8) })
         } else chip.addView(TextView(this).apply {
             text = verb
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(0x7C, 0x5C, 0xFF))
+            setTextColor(accent)
             setPadding(dp(10), 0, 0, 0)
         })
-        // A second action, as a small button: Buy beside a price, Send or
-        // Buy beside a copied address.
+        // A second action, as a small button, 10dp after the verb: Buy beside
+        // a price, Send or Buy beside a copied address.
         if (extra != null && onExtra != null) chip.addView(TextView(this).apply {
             text = extra
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(0x7C, 0x5C, 0xFF))
+            setTextColor(accent)
             setPadding(dp(12), 0, dp(12), 0)
             background = GradientDrawable().apply {
                 cornerRadius = dp(13).toFloat()
@@ -2263,16 +2318,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTag(com.demo.glyf.R.id.qa_id, "strip:smart:extra")
             setOnClickListener { onExtra() }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(26)).apply { leftMargin = dp(10) })
-        if (onClose != null) chip.addView(TextView(this).apply {
-            text = "✕"
-            textSize = 12f
-            gravity = Gravity.CENTER
-            setTextColor(Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
-            setTag(com.demo.glyf.R.id.qa_id, "strip:smart:close")
-            contentDescription = "Dismiss"
-            setOnClickListener { onClose() }
-        }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { leftMargin = dp(4) })
-        toolbar.addView(chip, 1, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+        // As tall as the strip allows with the glow's room above and below
+        // (all but its faint last dp), as on iOS: 38dp in the 50dp strip.
+        val stripH = toolbar.layoutParams?.height?.takeIf { it > 0 } ?: dp(STRIP_DP)
+        val chipH = stripH - 2 * dp(MagicChip.SPREAD.toInt() - 1) - dp(2)
+        toolbar.addView(chip, 1, LinearLayout.LayoutParams(0, chipH, 1f).apply {
             leftMargin = dp(8)
             // The chip ends as far in as Glyf's key starts (the key is drawn
             // centred in its 52dp view), so the strip sits centred over the keys.
@@ -2282,6 +2332,22 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         stripChipKind = kind
         applySuggestionVisibility()
         applyTourHint()
+        return true
+    }
+
+    /** The chip waved off, as its kind and the words it came for. */
+    private var dismissedChip: String? = null
+
+    private fun chipKey(kind: String): String {
+        val words = currentInputConnection?.getTextBeforeCursor(120, 0)?.toString()?.trim().orEmpty()
+        return "$kind\u0000$words"
+    }
+
+    /** Waved off: gone, and the strip shows what it would have without it. */
+    private fun dismissChip(key: String) {
+        dismissedChip = key
+        hideStripChip()
+        updateSuggestions()
     }
 
     private fun hideStripChip() {
@@ -2489,7 +2555,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Exactly the strip and the keys it stands in for, as on iOS: the
         // keyboard never grows when space is held. Results scroll.
         val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
-        actPanelHeight = dp(47) + keysH
+        actPanelHeight = dp(STRIP_DP) + keysH
         val panel = FrameLayout(this).apply { tag = "act" }
         root.addView(panel, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, actPanelHeight))
@@ -2506,7 +2572,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         panel.addView(ActRingsView(this, ink()), FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         panel.addView(actHeader(retry = false), FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, dp(47), Gravity.TOP))
+            FrameLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP), Gravity.TOP))
         if (title != null) {
             panel.addView(TextView(this).apply {
                 text = title; textSize = 15f
@@ -2592,7 +2658,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         panel.removeAllViews()
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         outer.addView(actHeader(retry = !streaming), LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), 0, dp(10), dp(10))
@@ -2688,7 +2754,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         panel.removeAllViews()
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         outer.addView(actHeader(retry = false), LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), 0, dp(10), dp(10))
@@ -3036,11 +3102,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             val fill = Autofill.match(currentInputEditorInfo, vaultFields())
             if (fill != null) {
                 // Same chip as iOS: the saved detail, Insert on the right.
-                showStripChip("fill", null, fill, "Insert") {
+                if (showStripChip("fill", null, fill, "Insert") {
                     currentInputConnection?.commitText(fill, 1)
                     hideStripChip()
-                }
-                return
+                }) return
             }
         }
         if (stripChipKind == "fill") hideStripChip()
@@ -4177,7 +4242,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** The board on Emoji from the emoji key; on GIFs from the menu's tile. */
     private fun showEmojiPanel(mode: EmojiBoardView.Mode = EmojiBoardView.Mode.EMOJI) {
         dismissFeaturePanel()
-        val barH = if (toolbar.height > 0) toolbar.height else dp(47)
+        val barH = if (toolbar.height > 0) toolbar.height else dp(STRIP_DP)
         val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
         emojiBoardFull = barH + keysH
         val board = EmojiBoardView(this, emojiHost)
@@ -4325,7 +4390,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         strip.addView(close)
         toolbar.visibility = View.GONE
         root.addView(strip, root.indexOfChild(toolbar),
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(47)))
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
         translateStrip = strip
         translateDir = dir
         translateText = text

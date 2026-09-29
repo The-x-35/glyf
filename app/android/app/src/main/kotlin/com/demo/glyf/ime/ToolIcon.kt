@@ -121,6 +121,12 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 sparkle(c, cx + dp(4.6f), cy - dp(4.6f), dp(3.4f))
                 sparkle(c, cx - dp(3.6f), cy - dp(5.6f), dp(1.8f))
             }
+            // A cross about 11dp across (its round ends included): the way a
+            // strip chip is waved off.
+            "close" -> {
+                c.drawLine(cx - dp(4.7f), cy - dp(4.7f), cx + dp(4.7f), cy + dp(4.7f), p)
+                c.drawLine(cx + dp(4.7f), cy - dp(4.7f), cx - dp(4.7f), cy + dp(4.7f), p)
+            }
             // A lightning bolt, the vault's New shorthand (iOS bolt).
             "bolt" -> {
                 val path = Path().apply {

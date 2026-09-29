@@ -640,6 +640,28 @@ final class GlyfScenarioUITests: XCTestCase {
         note("inserted: '\(value)'")
     }
 
+    /// S215: every chip has a ✕; a dismissed chip stays gone for the same
+    /// text, the next change brings one back, and Insert never dismisses
+    /// (Arpit, 2026-09-30: "we should add some button to dismiss it").
+    func testS215_AChipsCrossDismissesItForThatText() throws {
+        open()
+        clear()
+        type("2+5")
+        guard wait("strip:smart", 3) != nil else { return XCTFail("no chip for 2+5") }
+        guard let close = wait("strip:smart:close", 2) else { return XCTFail("the chip has no ✕") }
+        close.tap()
+        XCTAssertTrue(gone("strip:smart", 3), "the chip stayed after its ✕")
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertFalse(el("strip:smart").exists, "the dismissed chip came back for the same text")
+        XCTAssertTrue(value.hasPrefix("2+5") && !value.contains("="), "dismiss changed the text: '\(value)'")
+        type("0")
+        guard let again = wait("strip:smart", 3) else { return XCTFail("no chip for 2+50") }
+        XCTAssertTrue(again.label.contains("52"), "the strip shows '\(again.label)'")
+        again.tap()
+        XCTAssertTrue(waitValue(3) { $0.contains("2+50 = 52") }, "Insert gave '\(value)'")
+        note("dismissed 2+5, then 2+50 inserted '\(value)'")
+    }
+
     /// S214: money typed shows in the local currency in the strip (Arpit,
     /// 2026-09-30: "$20 not showing amount in local currency ... i want
     /// rupee, or whatever i set in as local currency here in app").
@@ -657,6 +679,7 @@ final class GlyfScenarioUITests: XCTestCase {
         keepScreenshot("money-strip")
         note(seen.joined(separator: "; "))
     }
+
 
     /// S198: a sum shows its answer in the strip as it is typed, no hold
     /// (user, 2026-09-29: "why am i needing to hold space, suggest it in strip").
@@ -1649,7 +1672,9 @@ final class GlyfScenarioUITests: XCTestCase {
             return (CGFloat(bytes[i]), CGFloat(bytes[i + 1]), CGFloat(bytes[i + 2]))
         }
         let f = button.frame
-        let keyX = f.minX + 15, keyTop = f.minY
+        // The 30pt key stands centred in the button, which is as tall as the
+        // strip's box (44pt since the chips grew, 2026-09-30).
+        let keyX = f.minX + 15, keyTop = f.minY + max(0, (f.height - 30) / 2)
         let face = rgb(CGPoint(x: keyX + 5, y: keyTop + 15))
         let h = (30 - 30 * 0.083 * 2) / 1.6565
         let letterX = 41 / 2 - h * 0.6699 / 2, letterY = 15 - h * 1.6565 / 2 + h * 0.6565
