@@ -42,9 +42,19 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
         var title: String {
             switch self {
-            case .note: return "＋ New note"
-            case .detail: return "＋ New detail"
-            case .shorthand: return "＋ New shorthand"
+            case .note: return "New note"
+            case .detail: return "New detail"
+            case .shorthand: return "New shorthand"
+            }
+        }
+
+        /// The app's Vault marks each the same way: a note, a detail card,
+        /// and shorthand's bolt.
+        var symbol: String {
+            switch self {
+            case .note: return "note.text"
+            case .detail: return "person.text.rectangle"
+            case .shorthand: return "bolt"
             }
         }
     }
@@ -72,9 +82,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         /// A picture kept in the vault: tap puts it back on the clipboard,
         /// which is as close to "insert" as any keyboard can get.
         case vaultImage(VaultImage)
-        /// Adds a note, a detail or a shorthand to the vault, in its own card
-        /// the way an accent action is.
-        case add(Adding)
     }
 
     struct Screen {
@@ -108,7 +115,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// A tile in the vault grid. Text tiles insert; an image tile can only
     /// go back on the clipboard, since no keyboard can type a picture into a
     /// host field. Editing and deleting happen in the APP; a note, a detail
-    /// or a shorthand can be added right here.
+    /// or a shorthand can be added right here, from the + in the corner.
     enum VaultCard {
         case text(label: String, value: String, insert: String)
         case image(VaultImage)
@@ -116,16 +123,28 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         case note(GlyfNote)
         /// A shorthand types what it expands to, as its shortcut would.
         case snippet(VaultSnippet)
-        /// The row that adds: a note, a detail or a shorthand.
-        case add(Adding)
         /// New detail: one kind it can be.
         case kind(DetailKind)
     }
 
     private var vaultCards: [VaultCard] = []
-    /// Where each card sits in the grid, three to a row: the adding cards
-    /// start a row of their own, apart from what is saved.
-    private var vaultSlots: [Int] = []
+
+    /// The vault's one way to add (user, 2026-09-29: "a single plus icon
+    /// floating button in bottom right corner, which expands to show this as
+    /// options"). It floats over the cards, so it stays put while they
+    /// scroll and shows on an empty vault too; a tap stacks the three
+    /// options above it and turns the + into a ×.
+    private let addButton = UIButton(type: .custom)
+    private let addIcon = UIImageView(image: UIImage(systemName: "plus"))
+    private var addOptions: [UIControl] = []
+    /// Dims the panel behind the options; a tap on it closes them.
+    private let addScrim = UIControl()
+    private var addOpen = false
+    private static let addSize: CGFloat = 46
+    private static let addMargin: CGFloat = 12
+    /// What the lists keep clear below their last card, so it can scroll out
+    /// from under the +.
+    private static var addClearance: CGFloat { addSize + addMargin + 6 }
     /// Every tool, in the website's order first. The ids are the strip's, so
     /// any tile can be dragged up to live there. People reorder them by
     /// holding one and moving it (saved as `menuOrder`).
@@ -207,7 +226,116 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         }, for: .touchUpInside)
         addSubview(footerButton)
 
+        buildAddButton()
         restoreOrRoot()
+    }
+
+    /// The +, its three options and the scrim behind them, over everything
+    /// the panel scrolls.
+    private func buildAddButton() {
+        addScrim.backgroundColor = Glass.scrim
+        addScrim.alpha = 0
+        addScrim.isHidden = true
+        addScrim.addAction(UIAction { [weak self] _ in self?.setAddOpen(false) }, for: .touchUpInside)
+        addSubview(addScrim)
+
+        for adding in Adding.allCases {
+            // The cards' own look, as a pill: an accent mark, then the words.
+            let option = UIControl()
+            option.backgroundColor = Glass.surfaceCard
+            option.layer.cornerCurve = .continuous
+            option.layer.shadowColor = UIColor.black.cgColor
+            option.layer.shadowOpacity = 0.12
+            option.layer.shadowRadius = 8
+            option.layer.shadowOffset = CGSize(width: 0, height: 2)
+            option.accessibilityIdentifier = "vault:new:\(adding.rawValue)"
+            option.accessibilityLabel = adding.title
+            option.isAccessibilityElement = true
+            option.accessibilityTraits = .button
+            option.isHidden = true
+            let mark = UIImageView(image: UIImage(systemName: adding.symbol))
+            mark.tag = 1
+            mark.tintColor = Glass.accentPrimary
+            mark.contentMode = .center
+            mark.preferredSymbolConfiguration = .init(pointSize: 14, weight: .semibold)
+            mark.isUserInteractionEnabled = false
+            option.addSubview(mark)
+            let title = UILabel()
+            title.tag = 2
+            title.text = adding.title
+            title.font = .systemFont(ofSize: 15, weight: .medium)
+            title.textColor = Glass.textPrimary
+            title.isUserInteractionEnabled = false
+            option.addSubview(title)
+            option.addAction(UIAction { [weak self] _ in
+                self?.setAddOpen(false, animated: false)
+                self?.add(adding)
+            }, for: .touchUpInside)
+            addSubview(option)
+            addOptions.append(option)
+        }
+
+        // Filled accent, a white +, and only the hairline shadow the cards
+        // and keys stand on.
+        addButton.backgroundColor = Glass.accentPrimary
+        addButton.layer.cornerRadius = Self.addSize / 2
+        addButton.layer.shadowColor = Glass.keyShadowColor.cgColor
+        addButton.layer.shadowOpacity = Glass.keyShadowOpacity
+        addButton.layer.shadowOffset = Glass.keyShadowOffset
+        addButton.layer.shadowRadius = 0
+        addButton.accessibilityIdentifier = "vault:add"
+        addButton.accessibilityLabel = "Add"
+        addButton.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.setAddOpen(!self.addOpen)
+        }, for: .touchUpInside)
+        addIcon.tintColor = .white
+        addIcon.contentMode = .center
+        addIcon.preferredSymbolConfiguration = .init(pointSize: 20, weight: .semibold)
+        addIcon.isUserInteractionEnabled = false
+        addButton.addSubview(addIcon)
+        addSubview(addButton)
+    }
+
+    /// Opens or closes the three options; the + turns an eighth of a turn
+    /// into a ×, and back.
+    private func setAddOpen(_ open: Bool, animated: Bool = true) {
+        guard open != addOpen else { return }
+        addOpen = open
+        addButton.accessibilityLabel = open ? "Close" : "Add"
+        let rest = CGAffineTransform(translationX: 0, y: 8)
+        if open {
+            addScrim.isHidden = false
+            for option in addOptions {
+                option.isHidden = false
+                option.alpha = 0
+                option.transform = rest
+            }
+        }
+        let change = {
+            self.addIcon.transform = open ? CGAffineTransform(rotationAngle: .pi / 4) : .identity
+            self.addScrim.alpha = open ? 1 : 0
+            for option in self.addOptions {
+                option.alpha = open ? 1 : 0
+                option.transform = open ? .identity : rest
+            }
+        }
+        let finish = { (_: Bool) in
+            // Hidden once closed, so nothing under them takes a touch.
+            guard !self.addOpen else { return }
+            self.addScrim.isHidden = true
+            for option in self.addOptions {
+                option.isHidden = true
+                option.transform = .identity
+            }
+        }
+        if animated, !Glass.reduceMotion {
+            UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut, .beginFromCurrentState],
+                           animations: change, completion: finish)
+        } else {
+            change()
+            finish(true)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -241,6 +369,38 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         footerButton.frame = CGRect(x: 0, y: bounds.height - footerH,
                                     width: bounds.width, height: footerH)
         footerButton.isHidden = footerH == 0
+        layoutAddButton(in: table.frame)
+    }
+
+    /// The + in the corner of what scrolls (above the "open in the app"
+    /// line in the list look), its options stacked over it, flush right.
+    private func layoutAddButton(in area: CGRect) {
+        addButton.isHidden = screen.id != "vault"
+        guard !addButton.isHidden else { return }
+        let s = Self.addSize, m = Self.addMargin
+        addButton.frame = CGRect(x: area.maxX - m - s, y: area.maxY - m - s, width: s, height: s)
+        // Bounds and centre, not frame: the icon may be turned into a ×.
+        addIcon.bounds = CGRect(x: 0, y: 0, width: s, height: s)
+        addIcon.center = CGPoint(x: s / 2, y: s / 2)
+        addScrim.frame = CGRect(x: 0, y: area.minY, width: bounds.width, height: bounds.height - area.minY)
+
+        // Three pills of one width, as tall as the room allows: an iPhone on
+        // its side has little over half a portrait panel.
+        let gap: CGFloat = 6
+        let room = addButton.frame.minY - 10 - (area.minY + 6)
+        let h = max(28, min(36, floor((room - gap * 2) / 3)))
+        let textW = addOptions.compactMap { ($0.viewWithTag(2) as? UILabel)?.intrinsicContentSize.width }.max() ?? 90
+        let w = ceil(14 + 18 + 8 + textW + 18)
+        var y = addButton.frame.minY - 10 - h * 3 - gap * 2
+        for option in addOptions {
+            // Bounds and centre again: an option may be mid-slide.
+            option.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+            option.center = CGPoint(x: addButton.frame.maxX - w / 2, y: y + h / 2)
+            option.layer.cornerRadius = h / 2
+            option.viewWithTag(1)?.frame = CGRect(x: 14, y: 0, width: 18, height: h)
+            option.viewWithTag(2)?.frame = CGRect(x: 14 + 18 + 8, y: 0, width: ceil(textW), height: h)
+            y += h + gap
+        }
     }
 
     // MARK: Root launcher grid
@@ -402,8 +562,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     // MARK: Vault grid (website 6.3)
 
     /// Nine cards, three to a row: label above value, tap inserts. The
-    /// details come first, then shorthand, notes and pictures, then the row
-    /// that adds. New detail is the same grid, one card per kind.
+    /// details come first, then shorthand, notes and pictures. New detail is
+    /// the same grid, one card per kind.
     private func buildVaultGrid() {
         vaultGrid.subviews.forEach { $0.removeFromSuperview() }
         if screen.id == "vault:detail" {
@@ -416,14 +576,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             vaultCards += vault.snippets.map { .snippet($0) }
             vaultCards += NotesStore.shared.load().map { .note($0) }
             vaultCards += vault.images.map { .image($0) }
-            vaultCards += Adding.allCases.map { .add($0) }
-        }
-        vaultSlots = []
-        var slot = 0
-        for item in vaultCards {
-            if case .add(.note) = item, slot % 3 != 0 { slot += 3 - slot % 3 }
-            vaultSlots.append(slot)
-            slot += 1
         }
         for (i, item) in vaultCards.enumerated() {
             let labelText: String
@@ -433,17 +585,16 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             // The shortcut as it is typed: its case is part of it.
             case .snippet(let s): labelText = s.trigger; valueText = s.text
             case .note(let n): labelText = "NOTE"; valueText = n.text
-            case .add(let adding): labelText = ""; valueText = adding.title
             case .kind(let k): labelText = ""; valueText = k.title
             case .image(let img): labelText = "IMAGE"; valueText = ShellCell.age(img.addedAt)
             }
             let cell = UIControl()
             cell.tag = 2000 + i
             cell.accessibilityLabel = labelText.isEmpty ? valueText : "\(labelText), \(valueText)"
-            switch item {
-            case .add(let adding): cell.accessibilityIdentifier = "vault:new:\(adding.rawValue)"
-            case .kind(let k): cell.accessibilityIdentifier = "vault:kind:\(k.kind)"
-            default: cell.accessibilityIdentifier = "vault:card:\(i)"
+            if case .kind(let k) = item {
+                cell.accessibilityIdentifier = "vault:kind:\(k.kind)"
+            } else {
+                cell.accessibilityIdentifier = "vault:card:\(i)"
             }
             cell.isAccessibilityElement = true
             cell.accessibilityTraits = .button
@@ -501,19 +652,17 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             value.tag = 3
             value.text = valueText
             value.font = .systemFont(ofSize: 13, weight: .medium)
-            value.textColor = { if case .add = item { return Glass.accentPrimary }; return Glass.textPrimary }()
+            value.textColor = Glass.textPrimary
             value.lineBreakMode = .byTruncatingTail
             value.isUserInteractionEnabled = false
             value.isHidden = { if case .image = item { return true }; return false }()
-            switch item {
-            case .add, .kind:
+            if case .kind = item {
                 value.textAlignment = .center
                 value.numberOfLines = 1
-                // "＋ New shorthand" is a card's whole width on a small phone:
+                // "Wallet address" is a card's whole width on a small phone:
                 // a touch smaller beats cut short.
                 value.adjustsFontSizeToFitWidth = true
                 value.minimumScaleFactor = 0.8
-            default: break
             }
             cell.addSubview(value)
 
@@ -525,8 +674,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                     self?.delegate?.shellInsertText(s.text)
                 case .note(let n):
                     self?.delegate?.shellInsertText(n.text)
-                case .add(let adding):
-                    self?.add(adding)
                 case .kind(let k):
                     self?.delegate?.shellAddDetail(k)
                 case .image(let img):
@@ -565,13 +712,13 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     private func layoutVaultGrid() {
         let cols = 3, gap: CGFloat = 6, side: CGFloat = 6
         let w = (vaultGrid.bounds.width - side * 2 - gap * CGFloat(cols - 1)) / CGFloat(cols)
-        let rows = max(1, (vaultSlots.last ?? 0) / cols + 1)
+        let rows = max(1, Int(ceil(Double(vaultCards.count) / Double(cols))))
         // Three rows fill the panel exactly; more than nine cards scroll.
         let h = (vaultGrid.bounds.height - gap * 2) / 3
         for case let cell as UIControl in vaultGrid.subviews {
             let i = cell.tag - 2000
-            guard i >= 0, i < vaultSlots.count else { continue }
-            let r = vaultSlots[i] / cols, c = vaultSlots[i] % cols
+            guard i >= 0, i < vaultCards.count else { continue }
+            let r = i / cols, c = i % cols
             cell.frame = CGRect(x: side + CGFloat(c) * (w + gap),
                                 y: CGFloat(r) * (h + gap), width: w, height: h)
             cell.viewWithTag(1)?.frame = cell.bounds
@@ -581,9 +728,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                 let top = (h - 22 - 5 - 17) / 2
                 icon.frame = CGRect(x: 0, y: top, width: w, height: 22)
                 cell.viewWithTag(3)?.frame = CGRect(x: 6, y: top + 27, width: w - 12, height: 17)
-            } else if cell.viewWithTag(2)?.isHidden == true {
-                // A card with one line (the adding row) centres it.
-                cell.viewWithTag(3)?.frame = CGRect(x: 5, y: (h - 17) / 2, width: w - 10, height: 17)
             } else {
                 let top = (h - 15 - 2 - 17) / 2
                 cell.viewWithTag(2)?.frame = CGRect(x: 8, y: top, width: w - 16, height: 15)
@@ -622,10 +766,16 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     var headerTitle: String { screen.id == "root" ? "Glyf" : screen.title }
 
     func render() {
+        // Going back, or on to New detail, closes the +'s options.
+        setAddOpen(false, animated: false)
         screen = Self.build(id: stack.last ?? "root")
         titleLabel.text = screen.title
         backButton.isHidden = screen.id == "root"
         if screen.id == "root" { refreshGrid() }
+        // The vault's last card can always scroll out from under the +.
+        let clearance = screen.id == "vault" ? Self.addClearance : 0
+        vaultGrid.contentInset.bottom = clearance
+        table.contentInset.bottom = 8 + clearance
         if usesCardGrid {
             buildVaultGrid()
             vaultGrid.setContentOffset(.zero, animated: false)
@@ -809,8 +959,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             for image in vault.images {
                 rows.append(.vaultImage(image))
             }
-            // Anything but a picture is added right here, from the field.
-            rows += Adding.allCases.map { .add($0) }
+            // Adding is the + floating over the list (layoutAddButton).
             return Screen(id: id, title: "Vault", rows: rows, appPath: "vault")
 
         case "vault:detail":
@@ -875,7 +1024,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         }
         func solo(_ r: Row) -> Bool {
             if case .action(_, let style, _) = r { return style != .plain }
-            if case .add = r { return true }
             return false
         }
         let me = rows[i]
@@ -916,8 +1064,6 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             } else {
                 push(target)
             }
-        case .add(let adding):
-            add(adding)
         case .action(_, _, let handler):
             handler()
             render()
@@ -1253,11 +1399,6 @@ private final class ShellCell: UITableViewCell {
             if target != "!none" { setTrailing(chevron()) }
             // "shell:key:v", "shell:detail:email", "shell:toolbar".
             readAsOne([t, detail], id: "shell:" + target.replacingOccurrences(of: "!", with: ""))
-        case .add(let adding):
-            title.text = adding.title
-            title.textAlignment = .center
-            title.textColor = Glass.accentPrimary
-            readAsOne([adding.title], id: "vault:new:\(adding.rawValue)")
         case .insert(let icon, let t, _):
             setIcon(icon)
             title.text = preview(t)

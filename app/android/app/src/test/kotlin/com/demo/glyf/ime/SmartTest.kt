@@ -97,9 +97,13 @@ class SmartTest {
      *  looks like one must stay quiet (Smart.swift twin). */
     @Test fun countsRangesScoresAndPhoneNumbersAreNotSums() {
         for (t in listOf("page 2 of 10", "episode 4 of 8", "call me at 555-1234", "555-1234", "the score was 3-2",
-            "3-2", "9-5", "10-11", "born 29/09/2024", "2024/09/29", "exp 09/2026", "open 24/7")) {
+            "3-2", "9-5", "10-11", "born 29/09/2024", "2024/09/29", "exp 09/2026")) {
             assertNull(t, Smart.calc(t))
         }
+        // Two small numbers over each other are a sum: Arpit wants "24/7"
+        // divided (2026-09-29).
+        assertEquals("3.43" to false, Smart.calc("open 24/7"))
+        assertEquals("24/7 = 3.43", Smart.display(Smart.chip("24/7", vault)!!))
         assertEquals("30" to false, Smart.calc("20% of 150"))
         assertEquals("105" to false, Smart.calc("150-45"))
         assertEquals("3" to false, Smart.calc("5 - 2"))
@@ -107,13 +111,12 @@ class SmartTest {
         assertEquals("7" to true, Smart.calc("10-3="))
     }
 
-    /** "24/7" and dates are numbers over numbers, not sums; a percentage
-     *  added or taken off is a share of the left side (Smart.swift twin). */
+    /** Whole dates are numbers over numbers, not sums; a percentage added or
+     *  taken off is a share of the left side (Smart.swift twin). */
     @Test fun datesAreNotSumsAndPercentagesAreShares() {
-        assertNull(Smart.calc("we're open 24/7"))
-        assertNull(Smart.calc("see you 9/28"))
-        assertNull(Smart.calc("due 28/9"))
-        assertNull(Smart.chip("open 24/7", vault) as? Smart.Chip.Calc)
+        assertNull(Smart.calc("see you 29/09/2024"))
+        assertNull(Smart.calc("due 2026/09/28"))
+        assertNull(Smart.chip("card expires 09/2026", vault) as? Smart.Chip.Calc)
         // Asked for with "=", or with bigger numbers, it is still a sum.
         assertEquals("3" to true, Smart.calc("12/4 ="))
         assertEquals("870" to false, Smart.calc("3480/4"))

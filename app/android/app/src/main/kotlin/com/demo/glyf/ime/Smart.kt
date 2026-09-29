@@ -296,9 +296,10 @@ object Smart {
         val b = m.groupValues[3].replace(",", "").toDoubleOrNull() ?: return false
         return a >= b && (a >= 100 || Regex("""\s-\s""").containsMatchIn(expr))
     }
-    /** "24/7" and dates: "9/28", "28/9", "29/09/2024", "2024/09/29", "exp 09/2026". */
+    /** Whole dates: "29/09/2024", "2024/09/29", "exp 09/2026". Two small
+     *  numbers are a sum: Arpit wants "24/7" divided (2026-09-29). */
     private val smallOverSmall = Regex(
-        """\s*(?:\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2})\s*""")
+        """\s*(?:\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2})\s*""")
 
     fun calc(text: String, indianGrouping: Boolean = true): Pair<String, Boolean>? =
         calcMatch(text, indianGrouping)?.let { it.first to it.second }
@@ -314,8 +315,8 @@ object Smart {
         // A dash is one only in a sum typed on its own ("150-45"): in a
         // sentence it is a range, a score or a phone number ("won 3-2").
         if (!hasEquals && !hasOperator.containsMatchIn(expr) && !(expr.trim() == text.trim() && loneSubtraction(expr))) return null
-        // "24/7" and dates read as numbers over numbers: with no "=", they
-        // are not a sum.
+        // A whole date reads as numbers over numbers: with no "=", it is not
+        // a sum.
         if (!hasEquals && smallOverSmall.matches(expr)) return null
         val v = evaluate(expr) ?: return null
         val currency = expr.firstOrNull { it in "₹$€£" }?.toString() ?: ""

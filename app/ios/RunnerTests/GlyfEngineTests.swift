@@ -729,9 +729,13 @@ final class GlyfEngineTests: XCTestCase {
     /// looks like one must stay quiet (SmartTest.kt twin).
     func testCountsRangesScoresAndPhoneNumbersAreNotSums() {
         for t in ["page 2 of 10", "episode 4 of 8", "call me at 555-1234", "555-1234", "the score was 3-2",
-                  "3-2", "9-5", "10-11", "born 29/09/2024", "2024/09/29", "exp 09/2026", "open 24/7"] {
+                  "3-2", "9-5", "10-11", "born 29/09/2024", "2024/09/29", "exp 09/2026"] {
             XCTAssertNil(Smart.calc(t), t)
         }
+        // Two small numbers over each other are a sum: Arpit wants "24/7"
+        // divided (2026-09-29).
+        XCTAssertEqual(Smart.calc("open 24/7")?.value, "3.43")
+        XCTAssertEqual(Smart.chip(for: "24/7", fields: [])?.value, "24/7 = 3.43")
         XCTAssertEqual(Smart.calc("20% of 150")?.value, "30")
         XCTAssertEqual(Smart.calc("150-45")?.value, "105")
         XCTAssertEqual(Smart.calc("5 - 2")?.value, "3")
@@ -742,8 +746,7 @@ final class GlyfEngineTests: XCTestCase {
 
     /// Audit 2026-09-28: sums people type, and details a sentence asks for.
     func testCalcReadsSumsNotDatesAndGroupsByRegion() {
-        XCTAssertNil(Smart.calc("open 24/7"), "24/7 is not a sum")
-        XCTAssertNil(Smart.calc("see you 9/28"), "a date is not a sum")
+        XCTAssertNil(Smart.calc("see you 29/09/2024"), "a whole date is not a sum")
         XCTAssertEqual(Smart.calc("10/2 =")?.value, "5")
         XCTAssertEqual(Smart.calc("200 + 10%")?.value, "220", "a percentage added is a share of the left side")
         XCTAssertEqual(Smart.calc("200 - 10%")?.value, "180")

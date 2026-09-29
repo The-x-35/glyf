@@ -199,17 +199,18 @@ final class GlyfScenarioUITests: XCTestCase {
         return card.waitForExistence(timeout: timeout) ? card : nil
     }
 
-    /// The vault's adding row, below what is saved: scrolled to if need be.
+    /// The vault's + in the corner, then one of the options it opens.
     private func tapVaultAdd(_ what: String, file: StaticString = #filePath, line: UInt = #line) {
-        guard let add = wait("vault:new:\(what)", 4) else {
-            return XCTFail("no \(what) in the vault's adding row", file: file, line: line)
+        if !el("vault:new:\(what)").exists { tap("vault:add", file: file, line: line) }
+        guard let option = wait("vault:new:\(what)", 4) else {
+            return XCTFail("the vault's + offers no \(what)", file: file, line: line)
         }
-        for _ in 0..<4 where !add.isHittable {
-            host.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'vault:'"))
-                .firstMatch.swipeUp()
-            usleep(400_000)
-        }
-        add.tap()
+        option.tap()
+    }
+
+    /// The three options the vault's + opens.
+    private var vaultOptions: [XCUIElement] {
+        ["note", "detail", "shorthand"].map { el("vault:new:\($0)") }
     }
 
     // MARK: - The keyboard's vault tools (DEBUG, debug-vault.json)
@@ -645,7 +646,8 @@ final class GlyfScenarioUITests: XCTestCase {
         open()
         clear()
         var seen: [String] = []
-        for (typed, answer) in [("2+5", "7"), ("12*12", "144"), ("100-15%", "85"), ("2^10", "1,024"), ("150-45", "105")] {
+        for (typed, answer) in [("2+5", "7"), ("12*12", "144"), ("100-15%", "85"), ("2^10", "1,024"), ("150-45", "105"),
+                                ("24/7", "3.43")] {
             clear()
             type(typed)
             let chip = wait("strip:smart", 3)
@@ -665,11 +667,11 @@ final class GlyfScenarioUITests: XCTestCase {
     }
 
     /// S210: what only looks like a sum stays quiet: a phone number, a date,
-    /// a count, "24/7" (audit 2026-09-29: "page 2 of 10" had offered "= 20").
+    /// a count (audit 2026-09-29: "page 2 of 10" had offered "= 20").
     func testS210_APhoneNumberADateOrACountShowsNoSum() throws {
         open()
         var seen: [String] = []
-        for typed in ["call me at 555-1234", "born 29/09/2024", "page 2 of 10", "open 24/7"] {
+        for typed in ["call me at 555-1234", "born 29/09/2024", "page 2 of 10"] {
             clear()
             type(typed)
             Thread.sleep(forTimeInterval: 1.0)
@@ -847,7 +849,7 @@ final class GlyfScenarioUITests: XCTestCase {
             usleep(400_000)
         }
         vRow.tap()
-        XCTAssertNotNil(wait("vault:new:note", 4), "V's row should open the vault")
+        XCTAssertNotNil(wait("vault:add", 4), "V's row should open the vault")
         keepScreenshot("my-glyfs-v-row-opened-vault")
     }
 
@@ -879,6 +881,24 @@ final class GlyfScenarioUITests: XCTestCase {
 
         clear()
         openTool("vault")
+        // One + in the corner (user, 2026-09-29): its three options stay out
+        // of sight until it is tapped, and × or the panel behind put them away.
+        guard let plus = wait("vault:add", 4) else { return XCTFail("no + in the vault") }
+        XCTAssertFalse(vaultOptions.contains { $0.exists }, "the options show before + is tapped")
+        keepScreenshot("vault-plus-closed")
+        plus.tap()
+        XCTAssertTrue(vaultOptions.allSatisfy { $0.waitForExistence(timeout: 2) }, "+ should open all three options")
+        XCTAssertEqual(el("vault:add").label, "Close", "the + turns into a ×")
+        sleep(1)
+        keepScreenshot("vault-plus-open")
+        tap("vault:add")
+        XCTAssertTrue(gone("vault:new:note", 2), "× should put the options away")
+        tap("vault:add")
+        XCTAssertNotNil(wait("vault:new:note", 2))
+        // Far left on the +'s own line: a card, or the empty panel, behind.
+        host.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 40, dy: plus.frame.midY)).tap()
+        XCTAssertTrue(gone("vault:new:note", 2), "a tap on the panel behind should put the options away")
+        XCTAssertEqual(value, "", "that tap must not type the card under it")
         tapVaultAdd("detail")
         guard wait("vault:kind:email", 4) != nil else { return XCTFail("no kinds to pick from") }
         keepScreenshot("new-detail-kinds")

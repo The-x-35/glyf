@@ -29,6 +29,16 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
     var scale = 1f
         set(value) { field = value; invalidate() }
 
+    /** Drawn in the tint itself, not the softer 80% the strip's tools use:
+     *  an accent glyph beside words matches the accent around it. */
+    var solid = false
+        set(value) {
+            field = value
+            p.alpha = if (value) 255 else 205
+            fill.alpha = p.alpha
+            invalidate()
+        }
+
     /** Recolour (the chosen tab is full ink, the rest are grey). */
     fun setTint(color: Int) {
         p.color = color
@@ -105,11 +115,24 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 c.drawLine(cx - dp(3.4f), cy - dp(2.6f), cx + dp(3.4f), cy - dp(2.6f), p)
                 c.drawLine(cx - dp(3.4f), cy + dp(0.8f), cx + dp(3.4f), cy + dp(0.8f), p)
             }
-            "rewrite", "bolt" -> {
+            "rewrite" -> {
                 // A wand: the stick, and the sparkle it leaves.
                 c.drawLine(cx - dp(6.4f), cy + dp(6.4f), cx + dp(2.4f), cy - dp(2.4f), p)
                 sparkle(c, cx + dp(4.6f), cy - dp(4.6f), dp(3.4f))
                 sparkle(c, cx - dp(3.6f), cy - dp(5.6f), dp(1.8f))
+            }
+            // A lightning bolt, the vault's New shorthand (iOS bolt).
+            "bolt" -> {
+                val path = Path().apply {
+                    moveTo(cx + dp(1.8f), cy - dp(8f))
+                    lineTo(cx - dp(5.4f), cy + dp(1.4f))
+                    lineTo(cx - dp(0.2f), cy + dp(1.4f))
+                    lineTo(cx - dp(1.8f), cy + dp(8f))
+                    lineTo(cx + dp(5.4f), cy - dp(1.4f))
+                    lineTo(cx + dp(0.2f), cy - dp(1.4f))
+                    close()
+                }
+                c.drawPath(path, p)
             }
             "ask" -> {
                 sparkle(c, cx - dp(1.2f), cy + dp(1.2f), dp(6.4f))
@@ -316,6 +339,26 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 c.drawCircle(cx + dp(3.2f), cy + dp(1f), dp(1f), fill)
                 c.drawCircle(cx + dp(5.6f), cy - dp(1.4f), dp(1f), fill)
             }
+        }
+    }
+
+    /** The glyph as a drawable [size] px square, to lead a line of text (a
+     *  TextView's start drawable), so the line stays one view. */
+    fun asDrawable(size: Int): android.graphics.drawable.Drawable {
+        layout(0, 0, size, size)
+        val icon = this
+        return object : android.graphics.drawable.Drawable() {
+            override fun draw(c: Canvas) {
+                c.save()
+                c.translate(bounds.left.toFloat(), bounds.top.toFloat())
+                icon.draw(c)
+                c.restore()
+            }
+            override fun getIntrinsicWidth() = size
+            override fun getIntrinsicHeight() = size
+            override fun setAlpha(alpha: Int) {}
+            override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+            override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
         }
     }
 

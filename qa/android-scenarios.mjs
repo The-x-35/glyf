@@ -277,6 +277,13 @@ async function inView(id) {
   return null;
 }
 
+// The vault's "+" floats in the panel's corner; what it adds (note, detail,
+// shorthand) shows only once it is tapped.
+async function vaultAdd(what) {
+  const plus = await waitFor(byId("vault:add"), 3000);
+  return plus ? await tapOpen(plus, byId(`vault:new:${what}`)) : null;
+}
+
 // The card a line of text sits in (a panel's rows carry their ids on the
 // card, their words on its children).
 const cardOf = (s, prefix, text) => {
@@ -1075,7 +1082,7 @@ scenarios.push(
       if (vaultKey) {
         const row = await inView(`glyfs:key:${vaultKey}`);
         if (row) await tapXY(row.x, row.y);
-        opened = (await waitFor(byId("vault:new:note"), 3000)) ? "the vault" : "nothing";
+        opened = (await waitFor(byId("vault:add"), 3000)) ? "the vault" : "nothing";
       }
       tool("close");
       return { pass: !keysTile && letters.length > 0 && holds.length === letters.length && !!ordered &&
@@ -1098,21 +1105,40 @@ scenarios.push(
     try {
       await fresh();
       if (!await openTool("vault")) return { pass: false, note: "no Vault on the strip or in the menu" };
-      await waitFor(byId("vault:new:note"), 3000);
+      await waitFor(byId("vault:add"), 3000);
       let s = await state();
       const short = cardOf(s, "vault:shorthand:", ";qapanel");
       if (!short) return { pass: false, note: "no shorthand in the vault panel" };
       const ys = p => s.views.filter(idStarts(p)).map(v => v.y);
       const between = Math.max(-1, ...ys("vault:card:")) < short.y &&
-        short.y < Math.min(Infinity, ...ys("vault:note:"), ...ys("vault:new:"));
+        short.y < Math.min(Infinity, ...ys("vault:note:"));
       await screenshot("S201-vault");
       const row = await inView(short.id);
       const typed = row ? await tapFor(row, x => x.includes("Shorthand from the vault")) : { t: "" };
-      // New detail → Email, typed on the keys, saved.
+      // New detail → Email, through the "+": what it adds stays hidden until
+      // it is tapped, and the × or a tap on the cards behind puts it away.
       await fresh();
       await openTool("vault");
-      const add = await inView("vault:new:detail");
-      if (!add) return { pass: false, note: "no New detail in the vault panel" };
+      const plus = await waitFor(byId("vault:add"), 3000);
+      if (!plus) return { pass: false, note: "no + in the vault panel" };
+      const hiddenFirst = !(await state()).views.some(idStarts("vault:new:"));
+      await tapXY(plus.x, plus.y);
+      await waitFor(byId("vault:new:shorthand"), 3000);
+      s = await state();
+      const shown = s.views.filter(idStarts("vault:new:")).map(v => v.text);
+      const asClose = find(s, byId("vault:add"))?.desc === "Close";
+      await screenshot("S201-plus-open");
+      const away = async () => { await sleep(500); return !(await state()).views.some(idStarts("vault:new:")); };
+      await tapXY(plus.x, plus.y);
+      const byX = await away();
+      await tapXY(plus.x, plus.y);
+      const dim = await waitFor(byId("vault:add:dim"), 3000);
+      // Left of the options, on the cards.
+      if (dim) await tapXY(dim.x - Math.round(dim.w / 4), dim.y);
+      const byCards = await away();
+      const plusOk = hiddenFirst && shown.join(", ") === "New note, New detail, New shorthand" && asClose && byX && byCards;
+      const add = await vaultAdd("detail");
+      if (!add) return { pass: false, note: "the + offers no New detail" };
       await tapXY(add.x, add.y);
       const kind = await waitFor(byId("vault:kind:email"), 3000);
       if (!kind) return { pass: false, note: "New detail offers no Email" };
@@ -1124,11 +1150,11 @@ scenarios.push(
       await screenshot("S201-detail-strip");
       const save = find(await state(), byId("vaultedit:save"));
       await tapXY(save.x, save.y);
-      await waitFor(byId("vault:new:note"), 3000);
+      await waitFor(byId("vault:add"), 3000);
       await sleep(400);   // the panel scrolls to what was just saved
       const saved = cardOf(await state(), "vault:card:", email);
       const screenH = Number(shell("wm size").match(/(\d+)x(\d+)/)[2]);
-      const shown = !!saved && saved.y + saved.h / 2 < screenH - 180;
+      const inSight = !!saved && saved.y + saved.h / 2 < screenH - 180;
       await screenshot("S201-saved");
       // At once: the strip offers it for "my email is".
       tool("close");
@@ -1138,10 +1164,12 @@ scenarios.push(
       const offered = !!find(await state(), v => v.text === email);
       await screenshot("S201-chip");
       const r = chip ? await tapFor(chip, x => x.includes(email)) : { t: await text(), retried: false };
-      return { pass: !!short && between && typed.t.includes("Shorthand from the vault") && field === email &&
-          shown && offered && r.t.trim().toLowerCase() === `sure my email is ${email}`,
+      return { pass: !!short && between && typed.t.includes("Shorthand from the vault") && plusOk && field === email &&
+          inSight && offered && r.t.trim().toLowerCase() === `sure my email is ${email}`,
         note: `shorthand card between details and notes: ${between}; tapped it: '${typed.t}'; ` +
-          `kinds: ${kinds.join(", ")}; strip read '${field}'; saved card: ${saved ? (shown ? "in view" : "below the fold") : "missing"}; ` +
+          `+: hidden until tapped ${hiddenFirst}, then '${shown.join(", ")}' with the + as ${asClose ? "Close" : "?"}, ` +
+          `put away by the × ${byX} and by the cards ${byCards}; ` +
+          `kinds: ${kinds.join(", ")}; strip read '${field}'; saved card: ${saved ? (inSight ? "in view" : "below the fold") : "missing"}; ` +
           `chip offered it: ${offered}; '${r.t}'${second(r)}` };
     } finally {
       tool("close");
@@ -1156,8 +1184,8 @@ scenarios.push(
     try {
       await fresh();
       if (!await openTool("vault")) return { pass: false, note: "no Vault on the strip or in the menu" };
-      const add = await inView("vault:new:shorthand");
-      if (!add) return { pass: false, note: "no New shorthand in the vault panel" };
+      const add = await vaultAdd("shorthand");
+      if (!add) return { pass: false, note: "the vault's + offers no New shorthand" };
       await tapXY(add.x, add.y);
       const field = await waitFor(byId("vaultedit:field"), 3000);
       if (!field) return { pass: false, note: "no strip to type the shortcut in" };
@@ -1171,7 +1199,7 @@ scenarios.push(
       await screenshot("S202-expansion-strip");
       const save = find(await state(), byId("vaultedit:save"));
       await tapXY(save.x, save.y);
-      await waitFor(byId("vault:new:note"), 3000);
+      await waitFor(byId("vault:add"), 3000);
       const card = cardOf(await state(), "vault:shorthand:", ";qazz");
       tool("close");
       await fresh();
@@ -1192,7 +1220,7 @@ scenarios.push(
     const seen = [];
     let ok = true;
     for (const [typed, shown] of [["2+5", "2+5 = 7"], ["12*12", "12*12 = 144"], ["100-15%", "100-15% = 85"],
-      ["150-45", "150-45 = 105"]]) {
+      ["150-45", "150-45 = 105"], ["24/7", "24/7 = 3.43"]]) {
       await fresh();
       await type(typed);
       const chip = await waitFor(byId("strip:smart"), 3000);
@@ -1206,7 +1234,7 @@ scenarios.push(
   { id: "S210", title: "A phone number, a date or a count shows no sum", run: async () => {
     const seen = [];
     let ok = true;
-    for (const typed of ["call me at 555-1234", "born 29/09/2024", "page 2 of 10", "open 24/7"]) {
+    for (const typed of ["call me at 555-1234", "born 29/09/2024", "page 2 of 10"]) {
       await fresh();
       await type(typed);
       await sleep(900);

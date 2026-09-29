@@ -299,10 +299,11 @@ enum Smart {
            !(alone && loneSubtraction(expr)) {
             return nil
         }
-        // "24/7" and dates ("9/28", "28/9", "29/09/2024", "exp 09/2026") read
-        // as numbers over numbers: with no "=", they are not a sum.
+        // A whole date ("29/09/2024", "2024/09/29", "exp 09/2026") reads as
+        // numbers over numbers: with no "=", it is not a sum. Two small
+        // numbers are one: Arpit wants "24/7" divided (2026-09-29).
         if !hasEquals,
-           expr.range(of: #"^\s*(?:\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2})\s*$"#,
+           expr.range(of: #"^\s*(?:\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2})\s*$"#,
                       options: .regularExpression) != nil {
             return nil
         }

@@ -383,6 +383,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         (featurePanel as? GamesPanelView)?.stop()
         featurePanel = null
         emojiBoard = null
+        if (vaultAddOpen) watchBack(false)
+        showVaultAdd = null
+        vaultAddOpen = false
         overlay = null
         searchActive = false
         searchQuery = ""
@@ -492,6 +495,46 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         main.removeCallbacks(tourTick)
         clearCoach()
         KeyboardTyping.saveNow(this)
+    }
+
+    /** A back press the vault's open "+" options are taking. */
+    private var backForOptions = false
+
+    /** Back puts the vault's "+" options away first; the next back hides
+     *  the keyboard, as always. The whole press is theirs: put away on the
+     *  down, the up went on to the app, which hid the keyboard (Android 16
+     *  sends the down here and the up to the app). */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && vaultAddOpen) {
+            backForOptions = true
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && backForOptions) {
+            backForOptions = false
+            showVaultAdd?.invoke(false)
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    /** From Android 13 the app takes the up of a back press (on 16 it slid
+     *  the keyboard away with the options out): a callback the keyboard puts
+     *  on its own window, while the options are out, is passed to the app
+     *  ahead of its own. */
+    private val vaultAddBack: Any? = if (android.os.Build.VERSION.SDK_INT >= 33)
+        android.window.OnBackInvokedCallback { showVaultAdd?.invoke(false) } else null
+
+    private fun watchBack(on: Boolean) {
+        if (android.os.Build.VERSION.SDK_INT < 33) return
+        val dispatcher = window?.window?.onBackInvokedDispatcher ?: return
+        val callback = vaultAddBack as android.window.OnBackInvokedCallback
+        if (on) dispatcher.registerOnBackInvokedCallback(
+            android.window.OnBackInvokedDispatcher.PRIORITY_OVERLAY, callback)
+        else dispatcher.unregisterOnBackInvokedCallback(callback)
     }
 
     // MARK: toolbar (g keycap + essentials)
@@ -1358,7 +1401,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (vaultEditActive) return TourCoach.Panel.Other("vaultedit:close")
         val panel = featurePanel ?: return TourCoach.Panel.None
         return when {
-            panel.tag == "vault" -> TourCoach.Panel.Vault
+            // The "+" options cover the cards: the × first.
+            panel.tag == "vault" -> if (vaultAddOpen) TourCoach.Panel.Other("vault:add") else TourCoach.Panel.Vault
             panel is ToolMenuView -> TourCoach.Panel.Menu
             panel is ClipboardPanelView -> TourCoach.Panel.Other("clip:back")
             else -> TourCoach.Panel.Other("panel:back|panel:abc")
@@ -3263,6 +3307,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         featurePanel?.let { root.removeView(it) }
         featurePanel = null
         emojiBoard = null
+        if (vaultAddOpen) watchBack(false)
+        showVaultAdd = null
+        vaultAddOpen = false
         gPill?.closing = false
         dropMarker?.let { if (::toolIcons.isInitialized) toolIcons.removeView(it) }
         dropMarker = null
@@ -3271,12 +3318,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (::toolbar.isInitialized) toolbar.visibility = View.VISIBLE
     }
 
+    /** A panel in place of the keys: [panel] the whole of it, [body] its rows,
+     *  which scroll inside [stage], the frame for anything that floats over
+     *  them, and [back], its ‹. */
+    private data class PanelShell(val panel: LinearLayout, val body: LinearLayout,
+                                  val stage: FrameLayout, val back: TextView)
+
     /** Container that replaces the keys; header row = back + title. */
     /** @param bottomBar adds the ABC / backspace row the system emoji
      *  keyboard has at its foot — muscle memory, on both platforms.
      *  @param onBack where ‹ goes when it is a step back, not a close. */
     private fun panelShell(title: String, bottomBar: Boolean = false, onBack: (() -> Unit)? = null):
-            Pair<LinearLayout, LinearLayout> {
+            PanelShell {
         dismissFeaturePanel()
         keyboard.visibility = View.GONE
         val panel = LinearLayout(this).apply {
@@ -3287,13 +3340,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(TextView(this).apply {
+        val back = TextView(this).apply {
             text = "‹"; textSize = 22f; setTextColor(ink())
             setPadding(dp(8), 0, dp(14), dp(2))
             setTag(com.demo.glyf.R.id.qa_id, "panel:back")
             contentDescription = if (onBack != null) "Back" else "Close"
             setOnClickListener { onBack?.invoke() ?: dismissFeaturePanel() }
-        })
+        }
+        header.addView(back)
         header.addView(TextView(this).apply {
             text = title; textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
@@ -3303,8 +3357,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             LinearLayout.LayoutParams.MATCH_PARENT, dp(34)))
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply { addView(body) }
+        val stage = FrameLayout(this).apply {
+            addView(scroll, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
         val barH = if (bottomBar) dp(40) else 0
-        panel.addView(scroll, LinearLayout.LayoutParams(
+        panel.addView(stage, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, keyboard.height - dp(36) - barH))
         if (bottomBar) {
             val bar = LinearLayout(this).apply {
@@ -3328,7 +3386,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         root.addView(panel)
         featurePanel = panel
-        return panel to body
+        return PanelShell(panel, body, stage, back)
     }
 
     private fun cardRow(body: LinearLayout, title: String, snippet: String,
@@ -3502,11 +3560,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** Vault = your details, your shorthand and your notes. Tap one to put
      *  it in; hold a note to edit it. A note, a detail or a shorthand can be
-     *  added from here, typed on the keys.
+     *  added from here, typed on the keys, through the "+" in the corner.
      *  @param reveal the card just saved, scrolled into view (below the
      *  fold it looked as if nothing had been saved). */
     private fun showVaultPanel(reveal: String? = null) {
-        val (panel, body) = panelShell("Vault")
+        val (panel, body, stage, back) = panelShell("Vault")
         panel.tag = "vault"
         for ((i, f) in vaultFields().withIndex()) {
             cardRow(body, f.title, f.value) {
@@ -3540,20 +3598,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 setOnLongClickListener { enterVaultEdit(VaultDraft.Note(id), text); true }
             }
         }
-        // The three things the vault keeps, each one tap to start.
-        val adds = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val starts = listOf<Triple<String, String, () -> Unit>>(
-            Triple("note", "＋ New note") { enterVaultEdit(VaultDraft.Note(null), "") },
-            Triple("detail", "＋ New detail") { showDetailKinds() },
-            // The ; is there already: only the word is left to type.
-            Triple("shorthand", "＋ New shorthand") { enterVaultEdit(VaultDraft.Shortcut, ";") },
-        )
-        for ((i, start) in starts.withIndex()) {
-            adds.addView(panelButton(start.second, "vault:new:${start.first}", onTap = start.third),
-                LinearLayout.LayoutParams(0, dp(40), 1f).apply { if (i > 0) leftMargin = dp(7) })
-        }
-        body.addView(adds, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        addVaultPlus(stage, body, back)
         val scroll = body.parent as? ScrollView ?: return
         val card = (0 until body.childCount).map { body.getChildAt(it) }
             .firstOrNull { reveal != null && it.getTag(com.demo.glyf.R.id.qa_id) == reveal } ?: return
@@ -3565,6 +3610,140 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 scroll.post { scroll.scrollTo(0, v.top - dp(4)) }
             }
         })
+    }
+
+    /** Whether the vault's "+" has its options out. */
+    private var vaultAddOpen = false
+    /** Puts the vault's "+" options out (true) or away; null with no vault up. */
+    private var showVaultAdd: ((Boolean) -> Unit)? = null
+
+    /** One "+" floating in the vault's bottom corner, over the cards as they
+     *  scroll, for the three things the vault keeps (user, 2026-09-29: "a
+     *  single plus icon floating button in bottom right corner, which
+     *  expands to show this as options when clicked"). Open, it is a "×"
+     *  and the cards dim behind the options; a tap on them, the ×, ‹ or
+     *  back puts the options away. */
+    private fun addVaultPlus(stage: FrameLayout, body: LinearLayout, back: TextView) {
+        val size = 48
+        val margin = 6
+        val pillH = 36
+        val gap = 6
+        // Scrolled to the end, the last card clears the "+".
+        body.setPadding(0, 0, 0, dp(size + margin + 8))
+        val dim = View(this).apply {
+            val b = keyboard.palette().board
+            setBackgroundColor(Color.argb(217, Color.red(b), Color.green(b), Color.blue(b)))
+            visibility = View.GONE
+            setTag(com.demo.glyf.R.id.qa_id, "vault:add:dim")
+            setOnClickListener { showVaultAdd?.invoke(false) }
+        }
+        val options = LinearLayout(this).apply { visibility = View.GONE }
+        val starts = listOf<Triple<String, String, () -> Unit>>(
+            Triple("note", "New note") { enterVaultEdit(VaultDraft.Note(null), "") },
+            Triple("detail", "New detail") { showDetailKinds() },
+            // The ; is there already: only the word is left to type.
+            Triple("shorthand", "New shorthand") { enterVaultEdit(VaultDraft.Shortcut, ";") },
+        )
+        // Each led by its accent glyph, as on iOS: a note, the vault's card, a bolt.
+        val glyphs = mapOf("note" to "notes", "detail" to "vault", "shorthand" to "bolt")
+        for ((id, label, start) in starts) options.addView(TextView(this).apply {
+            text = label; textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            maxLines = 1
+            setTextColor(ink())
+            setCompoundDrawablesRelativeWithIntrinsicBounds(
+                ToolIcon(context, glyphs.getValue(id), GlyfMark.VIOLET).apply { scale = 0.9f; solid = true }
+                    .asDrawable(dp(18)), null, null, null)
+            compoundDrawablePadding = dp(8)
+            setPadding(dp(12), 0, dp(16), 0)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat(); setColor(card())
+            }
+            setTag(com.demo.glyf.R.id.qa_id, "vault:new:$id")
+            setOnClickListener { start() }
+        })
+        val plus = PlusButton(this).apply {
+            setTag(com.demo.glyf.R.id.qa_id, "vault:add")
+            contentDescription = "Add"
+        }
+        vaultAddOpen = false
+        showVaultAdd = { open ->
+            vaultAddOpen = open
+            backForOptions = false
+            watchBack(open)
+            dim.visibility = if (open) View.VISIBLE else View.GONE
+            plus.contentDescription = if (open) "Close" else "Add"
+            plus.turnTo(if (open) 45f else 0f)
+            if (open) {
+                // Stacked over the "+"; beside it where a short keyboard (a
+                // phone on its side) has no room for the stack.
+                val stacked = stage.height >= dp(margin + size + 8 + 3 * pillH + 2 * gap)
+                options.orientation = if (stacked) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+                options.gravity = if (stacked) Gravity.END else Gravity.CENTER_VERTICAL
+                for (i in 0 until options.childCount) {
+                    options.getChildAt(i).layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT, dp(pillH)).apply {
+                        if (i > 0) { if (stacked) topMargin = dp(gap) else leftMargin = dp(gap) }
+                    }
+                }
+                options.layoutParams = (options.layoutParams as FrameLayout.LayoutParams).apply {
+                    bottomMargin = dp(if (stacked) margin + size + 8 else margin + (size - pillH) / 2)
+                    marginEnd = dp(if (stacked) 2 else 2 + size + 8)
+                }
+                options.alpha = 0f
+                options.translationY = dp(6).toFloat()
+                options.visibility = View.VISIBLE
+                options.animate().alpha(1f).translationY(0f).setDuration(160).start()
+            } else options.visibility = View.GONE
+        }
+        plus.setOnClickListener { showVaultAdd?.invoke(!vaultAddOpen) }
+        // ‹ puts the options away first, as back does; then it closes.
+        back.setOnClickListener { if (vaultAddOpen) showVaultAdd?.invoke(false) else dismissFeaturePanel() }
+        stage.addView(dim, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        stage.addView(options, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END))
+        stage.addView(plus, FrameLayout.LayoutParams(dp(size), dp(size), Gravity.BOTTOM or Gravity.END).apply {
+            bottomMargin = dp(margin); marginEnd = dp(2)
+        })
+    }
+
+    /** The vault's "+": a filled accent disc with a white plus, drawn so it
+     *  sits true in the middle and becomes a "×" turned an eighth. Only the
+     *  drawing turns: a turned view reports itself somewhere else on
+     *  screen, and a tap sent there missed it. */
+    private class PlusButton(ctx: android.content.Context) : View(ctx) {
+        private val disc = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = GlyfMark.VIOLET
+        }
+        private val bar = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeWidth = 2.2f * ctx.resources.displayMetrics.density
+        }
+        /** Degrees: 0 is the plus, 45 the ×. */
+        private var turn = 0f
+
+        fun turnTo(degrees: Float) {
+            android.animation.ValueAnimator.ofFloat(turn, degrees).apply {
+                duration = 160
+                addUpdateListener { turn = it.animatedValue as Float; invalidate() }
+            }.start()
+        }
+
+        override fun onDraw(c: android.graphics.Canvas) {
+            val cx = width / 2f
+            val cy = height / 2f
+            val r = minOf(width, height) / 2f
+            c.drawCircle(cx, cy, r, disc)
+            val arm = r * 0.36f
+            c.save()
+            c.rotate(turn, cx, cy)
+            c.drawLine(cx - arm, cy, cx + arm, cy, bar)
+            c.drawLine(cx, cy - arm, cx, cy + arm, bar)
+            c.restore()
+        }
     }
 
     /** A rounded button on a panel, its words made smaller (never below
