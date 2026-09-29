@@ -157,7 +157,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
 
   /// Who you are, how you signed in and your plan, in one card: the name
   /// with Edit, the account under it, the plan, then Got a code? (a code is
-  /// a plan too). Sign out is at the page's foot, Delete account under Edit.
+  /// a plan too). Sign out is at the page's foot.
   Widget _identityCard() {
     final id = Auth.identity();
     final email = id.email ?? '';
@@ -322,42 +322,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     if (go != true) return;
     await Auth.signOut();
     Telemetry.log('signed_out', {});
-    widget.onRerunOnboarding();
-  }
-
-  /// App Store rule 5.1.1(v): an account made in the app can be deleted in
-  /// the app. What stays on this phone (vault, notes, keyboard settings)
-  /// stays until the app is deleted. Offered at the foot of Edit's sheet,
-  /// out of sight of the page.
-  Future<void> _deleteAccount() async {
-    final email = Auth.identity().email;
-    final go = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Delete your Glyf account?'),
-        content: Text('${email == null || email.isEmpty ? '' : '\n$email\n\n'}'
-            'Your account and what Glyf keeps for it are deleted for good. '
-            'Your vault and notes stay on this phone.'),
-        actions: [
-          CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          CupertinoDialogAction(
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (go != true) return;
-    final done = await Auth.deleteAccount();
-    if (!mounted) return;
-    if (!done) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Couldn't reach Glyf. Try again in a moment")));
-      return;
-    }
-    Telemetry.log('account_deleted', {});
     widget.onRerunOnboarding();
   }
 
@@ -599,37 +563,19 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     _refresh();
   }
 
-  /// The account card's Edit: the name, and Delete account as the sheet's
-  /// last, quietest line.
+  /// The account card's Edit: the name. There is no Delete account in the
+  /// app (Arpit, 2026-09-29: "remove delete account option, we dont want
+  /// users to go idiot"); `Auth.deleteAccount` and the server's endpoint stay
+  /// for when it comes back.
   Future<void> _editName() async {
-    var deleting = false;
     final name = (await showTextSheet(
       context,
       title: 'Your name',
       action: 'Save',
       initial: _displayName == 'You' ? '' : _displayName,
       maxLength: 24,
-      footer: Auth.signedIn
-          ? (sheet) => Semantics(
-                identifier: 'profile:delete-account',
-                button: true,
-                child: TextButton(
-                  key: const Key('profile:delete-account'),
-                  onPressed: () {
-                    deleting = true;
-                    Navigator.of(sheet).pop();
-                  },
-                  child: const Text('Delete account',
-                      style: TextStyle(
-                          color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w500)),
-                ),
-              )
-          : null,
     ))
         ?.trim();
-    // The sheet is down before the dialog opens: a deleted account goes on
-    // to onboarding, and the sheet would have stayed standing over it.
-    if (deleting) return _deleteAccount();
     if (name == null || name.isEmpty) return;
     final state = await GlyfBridge.onboardingState();
     state['displayName'] = name;

@@ -8,10 +8,6 @@ import 'theme.dart';
 /// The sheet owns the field's controller. A controller the caller disposed
 /// as soon as the sheet's future completed was still in use while the sheet
 /// slid away and the keyboard dropped, and that crashed the app.
-///
-/// [footer] is the last thing on the sheet, under the button: a quiet action
-/// that belongs with the text but shouldn't be on the page (Profile's Edit
-/// puts Delete account there). It gets the sheet's own context, to close it.
 Future<String?> showTextSheet(
   BuildContext context, {
   required String title,
@@ -21,7 +17,6 @@ Future<String?> showTextSheet(
   int maxLines = 1,
   bool autofocus = true,
   TextStyle style = const TextStyle(color: Glass.ink, fontSize: 16),
-  Widget Function(BuildContext sheet)? footer,
 }) {
   return showModalBottomSheet<String>(
     context: context,
@@ -37,7 +32,6 @@ Future<String?> showTextSheet(
       maxLines: maxLines,
       autofocus: autofocus,
       style: style,
-      footer: footer,
     ),
   );
 }
@@ -51,7 +45,6 @@ class _TextSheet extends StatefulWidget {
     required this.maxLines,
     required this.autofocus,
     required this.style,
-    required this.footer,
   });
 
   final String title;
@@ -61,7 +54,6 @@ class _TextSheet extends StatefulWidget {
   final int maxLines;
   final bool autofocus;
   final TextStyle style;
-  final Widget Function(BuildContext sheet)? footer;
 
   @override
   State<_TextSheet> createState() => _TextSheetState();
@@ -102,7 +94,6 @@ class _TextSheetState extends State<_TextSheet> {
         const SizedBox(height: 12),
         PillButton(label: widget.action, onPressed: () => Navigator.of(context).pop(_text.text)),
         const SizedBox(height: 4),
-        if (widget.footer != null) widget.footer!(context),
       ]),
     );
   }

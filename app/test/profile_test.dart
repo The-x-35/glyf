@@ -157,51 +157,26 @@ void main() {
       await tester.scrollUntilVisible(find.text(action), 200);
       expect(find.text(action), findsOneWidget, reason: action);
     }
-    // Delete account is under Edit, not on the page.
+    // No Delete account anywhere (2026-09-29).
     expect(find.text('Delete account', skipOffstage: false), findsNothing);
     expect(find.byKey(const Key('profile:delete-account'), skipOffstage: false), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Delete account is the last thing under Edit, and asks before deleting', (tester) async {
+  testWidgets('Edit holds only the name: no Delete account anywhere', (tester) async {
     phone(tester);
     await tester.runAsync(Auth.restore);
-    var left = 0;
     await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: ProfileTab(onRerunOnboarding: () => left++)),
+      home: Scaffold(body: ProfileTab(onRerunOnboarding: () {})),
     ));
     await settle(tester);
 
     await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();
     expect(find.text('Your name'), findsOneWidget);
-    final delete = find.byKey(const Key('profile:delete-account'));
-    expect(delete, findsOneWidget);
-    expect(byId('profile:delete-account'), findsOneWidget);
-    // Under Save, the last line on the sheet.
-    expect(tester.getTopLeft(delete).dy, greaterThan(tester.getBottomLeft(find.text('Save')).dy));
-
-    // The sheet goes down and the same dialog asks; Cancel keeps the account.
-    await tester.tap(delete);
-    await tester.pumpAndSettle();
-    expect(find.text('Your name'), findsNothing);
-    expect(find.text('Delete your Glyf account?'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(left, 0);
-    expect(Auth.signedIn, isTrue);
-
-    // Delete deletes, signs out and leaves for onboarding.
-    await tester.tap(find.text('Edit'));
-    await tester.pumpAndSettle();
-    await tester.tap(delete);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Delete'));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
-    await tester.pumpAndSettle();
-    expect(left, 1);
-    expect(Auth.signedIn, isFalse);
+    expect(find.text('Delete account'), findsNothing);
+    expect(find.byKey(const Key('profile:delete-account')), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
   });
