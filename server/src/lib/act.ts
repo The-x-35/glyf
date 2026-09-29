@@ -76,7 +76,7 @@ export function rewriteStyles(ctx: SearchContext): { id: string; label: string; 
     { id: "work", label: "Professional", how: "professional and clear, for work" },
     { id: "polite", label: "Polite", how: "warm and courteous" },
     { id: "shorter", label: "Shorter", how: "at most half as long and under 30 words, one or two short sentences, keeping every fact" },
-    { id: "emoji", label: "Emoji", how: "friendly, with a few emoji that fit" },
+    { id: "emoji", label: "Emoji", how: "the basic version, friendly, with a few emoji that fit added" },
   ];
   const indian = ctx.country === "IN" || ctx.tz === "Asia/Kolkata" || ctx.tz === "Asia/Calcutta";
   if (indian) styles.splice(4, 0, { id: "hinglish", label: "Hinglish", how: "casual Hinglish in Roman script" });
@@ -267,7 +267,9 @@ export function profileBlock(profile?: Record<string, string>): string {
 /** Where people go: with "best" or "any" in front, a search for places. */
 const VENUES = "restaurants?|cafes?|cafés|coffee shops?|bars?|pubs?|hotels?|hostels?|resorts?|gyms?|" +
   "pharmac(?:y|ies)|hospitals?|clinics?|atms?|banks?|parks?|museums?|malls?|bakery|bakeries|salons?|spas?|" +
-  "places|spots|joints|clubs|breweries|brewery|cinemas?|theat(?:er|re)s?|beaches|stores|shops|dhabas?|eateries|diners?";
+  "places|spots|joints|clubs|breweries|brewery|cinemas?|theat(?:er|re)s?|beaches|stores|shops|dhabas?|eateries|diners?|" +
+  "dentists?|doctors?|vets?|plumbers?|electricians?|mechanics?|barbers?|barbershops?|laundromats?|dry cleaners?|" +
+  "supermarkets?|grocery stores?|gas stations?|florists?|bookstores?|nail salons?|car washes?";
 /** What people eat: a search only with somewhere to look ("best biryani
  *  near indiranagar"); "best dinner ever" is a message. */
 const DISHES = "coffee|pizza|sushi|burgers?|food|brunch|breakfast|lunch|dinner|dessert|ice cream|biryani|dosa|" +
@@ -392,8 +394,47 @@ function writeAsked(lower: string): boolean {
   // "translate thank you so much to hindi": what is to be translated may
   // well say "you".
   if (/^translate\b.+\b(?:to|into|in)\s+\p{L}+$/u.test(lower)) return true;
+  if (translationAsked(lower)) return true;
+  // "text to my boss saying im sick today" was tidied into "Text my boss
+  // saying I'm sick today." (audit 2026-09-29).
+  if (SAYING_ASK.test(lower)) return true;
   return documentAsk(lower);
 }
+
+const LANGUAGES = "english|spanish|french|german|italian|portuguese|japanese|chinese|mandarin|cantonese|korean|hindi|" +
+  "arabic|russian|turkish|dutch|greek|hebrew|swedish|norwegian|danish|finnish|polish|czech|ukrainian|romanian|" +
+  "hungarian|vietnamese|thai|indonesian|malay|tagalog|filipino|bengali|bangla|urdu|tamil|telugu|punjabi|marathi|" +
+  "gujarati|kannada|malayalam|swahili|persian|farsi|latin|irish|welsh|catalan|nepali|sinhala|burmese|khmer|amharic|zulu";
+
+/** "how do you say thank you in japanese", "what's hello in french",
+ *  "good morning in spanish": words wanted in another language. Audit
+ *  2026-09-29: the first was tidied as a message. "i'm fluent in spanish"
+ *  and "the movie is in french" say something about a language. */
+export function translationAsked(lower: string): boolean {
+  return translationOf(lower) !== null;
+}
+
+/** The words and the language of a translation asked for, so the model is
+ *  handed "Translate into Japanese: thank you" (asked "how do you say thank
+ *  you in japanese" it wrote "thank you in japanese is arigatou"). */
+export function translationOf(text: string): { words: string; language: string } | null {
+  const t = text.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").replace(/[?!.]+$/, "").trim();
+  const asked = t.match(new RegExp(String.raw`^(?:how (?:do|would|can|should) (?:you|i|u|we|one) say|how to say|how is|what(?:'s| is)|whats|say|translate)\s+["“']?(.{1,200}?)["”']?\s+(?:in|to|into)\s+(${LANGUAGES})$`));
+  if (asked && (!/^(?:what|whats|how is)/.test(t) || asked[1].split(" ").length <= 6)) {
+    return { words: asked[1], language: asked[2] };
+  }
+  const bare = t.match(new RegExp(String.raw`^["“']?([\p{L}' ]{1,30}?)["”']?\s+in\s+(${LANGUAGES})$`, "u"));
+  if (!bare || bare[1].split(" ").length > 4) return null;
+  if (/\b(i|i'm|im|we|we're|he|she|they|it's|its|is|are|was|were|be|speak|speaks|speaking|spoke|fluent|learn|learning|taught|teach|written|dubbed|class|classes|course|lessons?|movie|film|show|series|song|songs|book|books|subtitles?|news|degree|major|exam|test)\b/.test(bare[1])) {
+    return null;
+  }
+  return { words: bare[1], language: bare[2] };
+}
+
+/** "text to my boss saying im sick today", "email hr asking for 2 days off",
+ *  "message my landlord about the broken heater": what to say, and to whom.
+ *  "text me when you're home" is a message. */
+const SAYING_ASK = /^(?:please |pls |plz )?(?:(?:a|an|my) )?(?:text|message|msg|dm|email|e-mail|mail|note|reply|whatsapp|sms|letter)s?(?: (?:to|for))? (?!(?:me|you|u|us|ya)\b)[\p{L}'-]+(?: [\p{L}'-]+){0,3}? (?:saying|that says|telling|asking|about|to say|explaining|letting)\b/u;
 
 /** People talking to or about each other. A message mentions food, videos
  *  and the weather all the time; a search is typed as bare words. "near
@@ -419,6 +460,9 @@ export function titleLike(lower: string): boolean {
   return people.length <= 1 && !PEOPLE.test(words[0] ?? "");
 }
 
+/** "please", "pls", "kindly" before an ask to find, show or write. */
+const COURTESY = /^(?:please|pls|plz|kindly)[,\s]+(?=(?:find|show|search|look up|recommend|suggest|get|give|tell|play|write|draft|translate)\b)/i;
+
 /** Typed the way a search is: short, and nobody talking to anybody. */
 export function searchLike(text: string): boolean {
   const lower = text.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
@@ -434,7 +478,9 @@ export function searchLike(text: string): boolean {
  *  to write, the time or the weather asked for, and searches typed as
  *  searches. A message that mentions dinner or a video goes to the model. */
 export function planByRules(text: string): ActPlan | null {
-  const t = text.trim().replace(/\s+/g, " ");
+  // "please find me a good sushi place in brooklyn": the courtesy is not
+  // small talk, the ask after it is what counts.
+  const t = text.trim().replace(/\s+/g, " ").replace(COURTESY, "").replace(/[,\s]+(?:please|pls|plz)[.!]*$/i, "");
   if (!t) return null;
   const lower = t.toLowerCase().replace(/[’‘]/g, "'");
 
@@ -460,9 +506,16 @@ export function planByRules(text: string): ActPlan | null {
   // The time, the sun or the weather, asked for as such.
   if (liveAsk(t)) return { intent: "answer", query: t };
 
+  // "where can i get good tacos in austin": asked of anyone, the places
+  // are the answer.
+  const whereTo = lower.match(/^where (?:(?:can|could|should|do) (?:i|we|u|you|one) |to )(?:get|find|buy|eat|grab|have|go for)\s+(.+?)\??$/);
+  if (whereTo && (new RegExp(`\\b(${VENUES}|${DISHES}|${CUISINES})\\b`).test(whereTo[1]) || /\b(?:in|near|around)\s+\p{L}/u.test(whereTo[1]))) {
+    return { intent: "places", query: t };
+  }
+
   // Below, a few words anywhere decide, so only text typed as a search.
   if (!searchLike(lower)) return null;
-  if (/\b(near me|nearby|around me|close by|closest|nearest)\b/.test(lower)) {
+  if (/\b(near me|nearby|around me|around here|near here|close by|closest|nearest|in the area)\b/.test(lower)) {
     // "cafes near me" wants options; "nearest ATM" wants the one.
     return { intent: /\b(nearest|closest)\b/.test(lower) ? "place" : "places", query: t };
   }
@@ -534,6 +587,15 @@ const SECOND_PERSON = /\b(u|ur|you|your|yours|you're|youre|ya|tu|tum|tumhe|tumko
 /** A message that opens or ends by naming who it is for. */
 const ADDRESSED = /^(?:bhai|bro|bruh|yaar|dude|mom|mum|maa|papa|dad|didi|bhaiya|babe|baby|hey|hi|hello|yo|oye|arre)\b|\b(?:bhai|bro|yaar|dude|babe|bhaiya|didi)[?!.]*$/;
 
+/** Asked about the writer's own plans ("what time is the meeting tmrw",
+ *  "where is the party tonight", "who is coming"): nothing on the web knows.
+ *  Audit 2026-09-29: the first came back as an empty answer. */
+const OWN_PLANS = new RegExp(String.raw`\b(?:the|our|my|ur|your|this|tonight'?s|tomorrow'?s|tmrw'?s)\s+` +
+  String.raw`(?:meeting|meet|party|call|dinner|lunch|brunch|breakfast|appointment|appt|flight|reservation|booking|` +
+  String.raw`interview|class|practice|rehearsal|wedding|event|plan|plans|trip|standup|stand-up|shift|session|date|` +
+  String.raw`hangout|get together|get-together|pickup|pick up|drop off|shoot|exam|gig|reunion|sleepover|potluck)\b` +
+  String.raw`|\bwho(?:'s| is| all is| all are| are)\s+(?:coming|joining|going|in|bringing)\b`);
+
 export function checkPlan(p: ActPlan, text: string): ActPlan {
   const lower = text.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
   const message: ActPlan = { intent: "rewrite", query: text.trim() };
@@ -552,7 +614,10 @@ export function checkPlan(p: ActPlan, text: string): ActPlan {
     case "answer":
       // Said to someone, in English or Hindi: "where r u", "bhai kidhar hai
       // tu" is asked of a friend, never of Glyf (it once answered "I am an AI
-      // without a physical location").
+      // without a physical location"). And their own plans: only the people
+      // in the chat know when the meeting is.
+      // "where is the party tonight" too, though "where is" can be a search.
+      if (OWN_PLANS.test(lower) && !/\b(find|search|look up|show me|recommend|suggest)\b/.test(lower)) return message;
       return (SECOND_PERSON.test(lower) || ADDRESSED.test(lower)) && !finding ? message : p;
     default:
       return p;
@@ -588,6 +653,15 @@ export function rewriteTarget(text: string): string {
 
 /** Texting shorthand and missing apostrophes: the words a tidy-up fixes. */
 const SHORTHAND = /\b(u|ur|pls|plz|thx|tnx|b4|tmrw|tmr|tomo|2day|2nite|gonna|wanna|gotta|cuz|coz|abt|idk|rn|ppl|msg|kk|ya|yea|nah|dont|cant|wont|didnt|doesnt|isnt|wasnt|arent|im|ive|youre|theyre|thats|whats|lets|shouldnt|couldnt|wouldnt|havent)\b/i;
+/** Written with care already: a capital to start, a stop to end, no
+ *  shorthand, no lowercase "i". "Tidy this up" on it is noise
+ *  ("Thanks so much for dinner last night, it was lovely." was offered one). */
+export function readsTidy(text: string): boolean {
+  const t = text.trim().replace(/\s+/g, " ");
+  return /^[\p{Lu}\d"“‘'(]/u.test(t) && /[.!?…)"”’']$/.test(t) && !SHORTHAND.test(t)
+    && !/(^|\s)i(\s|'|’|$)/.test(t) && !/([a-z])\1{2,}/i.test(t) && !/\s[,.!?]/.test(t);
+}
+
 /** Anything a model should read first: a question, a place, a live fact,
  *  a video. Those can want the map, an answer or a search, not a tidy-up. */
 const LOOKUP = /\?|\b(where|who|when|which|what time|how much|how many|price|cost|score|near|nearby|meet at|at the|video|song|movie|weather|open now)\b/i;
@@ -768,7 +842,9 @@ class OpenerGate {
 }
 
 const WRITE_PROMPT =
-  "Write exactly what is asked for, ready to send as it is, in the language the request is written in. " +
+  "Write exactly what is asked for, ready to send as it is, in the language the request is written in; a " +
+  "translation is in the language asked for, and is only the translated words (in that language's own script, " +
+  "with how to say it in Latin letters in brackets when that script is not Latin). " +
   "Keep every detail it gives, as given: numbers, durations, dates, names and reasons (\"for 2 days\" says 2 days). " +
   "No preamble (no \"Here is\", no \"Sure\"), no notes after it, no markdown (no **bold**, no # headings), " +
   "and no placeholders like [Name] or [Date]: where a detail isn't known, write around it (sign off without " +
@@ -781,9 +857,22 @@ const WRITE_PROMPT =
   "threat in it; never reply with a refusal or an explanation.";
 
 const ANSWER_PROMPT =
-  "Answer this in at most four short lines, plainly, with no preamble and no markdown, in the language it is " +
-  "asked in. If the answer depends on current information you can't know (prices, exchange rates, scores, " +
-  "weather, news, schedules, anything happening today), or you are not sure, reply with the single word UNKNOWN.";
+  "Answer this in one to three short sentences, plainly, with no preamble and no markdown, in the language it is " +
+  "asked in. Answer only what is asked: no dates, names or history it doesn't ask for. If the answer depends on current " +
+  "information you can't know (prices, exchange rates, scores, weather, news, schedules, anything happening " +
+  "today), or you are not sure, reply with the single word UNKNOWN.";
+
+/** A small model's remarks about its own answer, never part of one: "This
+ *  information is well-established and not time-sensitive. No current
+ *  events change this fact." (audit 2026-09-29, after "who is the ceo of
+ *  tesla"). */
+const SELF_TALK = /\b(?:well[- ]established|time[- ]sensitive|current events|as of my (?:last|knowledge)|knowledge cut-?off|(?:i|we) (?:don't|do not|cannot|can't) (?:have|browse|access)|real[- ]time (?:data|information|access)|this (?:information|fact|answer) (?:is|may|might|does|was))\b/i;
+
+export function dropSelfTalk(text: string): string {
+  const sentences = text.match(/[^.!?\n]+(?:[.!?]+|$)\s*/g) ?? [text];
+  const kept = sentences.filter(s => !SELF_TALK.test(s));
+  return kept.length ? kept.join("").trim() : text.trim();
+}
 
 /** The model writes the thing (or answers the question) and it goes
  *  straight in the message, tidied: no opener, no markdown, no [Name]. */
@@ -793,9 +882,14 @@ async function written(
   // Asking someone for theirs ("send me your address") needs none of the
   // writer's own details.
   const profile = asksForTheirs(typed) ? undefined : opts.profile;
+  // A translation is asked for plainly, whatever words it came in.
+  const translation = kind === "write" ? translationOf(typed) : null;
+  const asked = translation
+    ? `Translate into ${translation.language[0].toUpperCase()}${translation.language.slice(1)}, written as it would be sent: ${translation.words}`
+    : typed;
   // The ask goes last, after the instructions and the day.
   const prompt = (extra: string) => (kind === "write" ? WRITE_PROMPT : ANSWER_PROMPT) + extra
-    + `\n\n${todayLine(ctx.tz)}` + profileBlock(profile) + `\n\n${kind === "write" ? "Asked for" : "Question"}: ${typed}`;
+    + `\n\n${todayLine(ctx.tz)}` + profileBlock(profile) + `\n\n${kind === "write" ? "Asked for" : "Question"}: ${asked}`;
   const gate = kind === "write" && opts.stream?.text ? new OpenerGate(opts.stream.text) : null;
   const draft = async (extra = ""): Promise<string> => {
     try {
@@ -808,6 +902,7 @@ async function written(
     }
   };
   let text = tidyWritten(await draft(), profile);
+  if (kind === "answer") text = dropSelfTalk(text);
   if (kind === "write" && REFUSAL.test(text)) {
     // Declined, most likely for a threat: what can be sent instead is the
     // same ask, calmly. Declined again, nothing goes in the message.
@@ -988,16 +1083,21 @@ async function actOn(text: string, ctx: SearchContext, opts: ActOptions): Promis
       const option = opts.stream?.option;
       // Asking someone for theirs is no place for the writer's own details.
       const profile = asksForTheirs(typed) ? undefined : opts.profile;
-      const language = styles.some(st => st.id === "hinglish")
+      // Audit 2026-09-29: "kal milte hai office ke baad" came back in English
+      // in every style but Basic, and the Emoji one kept "see u at jakes".
+      const language = (styles.some(st => st.id === "hinglish")
         ? "Every version is in the message's own language (a Spanish message stays Spanish), except the hinglish one. "
-        : "Every version is in the message's own language: a Spanish message stays Spanish. ";
+        : "Every version is in the message's own language: a Spanish message stays Spanish. ") +
+        "Hindi typed in Roman letters stays Hindi in Roman letters. Every version is spelled and punctuated properly, " +
+        "shorthand spelled out (\"see u at jakes\" is \"see you at Jake's\"). ";
       const ask = async (reminder: string) => {
         const live = option ? new OptionStream(styles, typed, option) : null;
         const reply = await modelText(
           "[[act.rewrite.options]]\nRewrite the message below in each of these styles, keeping the " +
           "writer's meaning. It is their message to send: rewrite it, never answer it or reply to it. " +
           "Keep every fact exactly: times, dates, numbers, amounts, names and places " +
-          "(\"b4 6\" is \"before 6\", a time; \"u\" is \"you\"; \"tmrw\" is \"tomorrow\"). Copy links, email " +
+          "(\"b4 6\" is \"before 6\", a time; \"u\" is \"you\"; \"tmrw\" is \"tomorrow\"); a time keeps " +
+          "what was typed (\"at 7\" never becomes \"7 PM\"). Copy links, email " +
           "addresses, phone numbers and street addresses exactly as typed. " + language + reminder +
           "Never add facts that are not in the message. If the message asks for a detail about the " +
           "writer that is listed below, fill it in, and when the message stops where one of their details belongs " +

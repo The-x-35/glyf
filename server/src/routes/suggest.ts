@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { checkPlan, needsTidy, planByRules, type ActIntent } from "../lib/act.js";
+import { checkPlan, needsTidy, planByRules, readsTidy, type ActIntent } from "../lib/act.js";
 import type { Guard } from "../lib/guard.js";
 import { TTLCache } from "../lib/cache.js";
 import { DETAIL_KINDS, detailNamed, type DetailKind } from "../lib/details.js";
@@ -46,6 +46,8 @@ function worthSuggesting(text: string, intent: ActIntent): boolean {
   if (t.length < 8) return false;
   // A half-typed word is not an intent yet.
   if (intent === "rewrite" && t.split(/\s+/).length < 4) return false;
+  // Already tidy: nothing to offer.
+  if (intent === "rewrite" && readsTidy(t)) return false;
   // "Look it up" only repeated what holding space already does.
   if (intent === "answer") return false;
   return true;

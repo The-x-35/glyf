@@ -121,4 +121,14 @@ describe("tidy by rule", () => {
       expect(needsTidy(t), t).toBe(false);
     }
   });
+
+  it("offers no tidy-up for a message already written with care", async () => {
+    const { readsTidy } = await import("../src/lib/act.js");
+    for (const t of ["Thanks so much for dinner last night, it was lovely.", "I will be there at 6.", "Are you coming tonight?"]) {
+      expect(readsTidy(t), t).toBe(true);
+    }
+    for (const t of ["i will be there at 6.", "Ok will send it tmrw.", "Sooo good!", "Meeting moved to 3pm", "Hey , are you there?"]) {
+      expect(readsTidy(t), t).toBe(false);
+    }
+  });
 });

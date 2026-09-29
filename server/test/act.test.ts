@@ -1,7 +1,7 @@
 import { signedInApp } from "./helpers.js";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../src/env.js";
-import { aroundPlace, checkPlan, dropPlaceholders, hasPlaceholder, keepsExact, keepsNumbers, listInsert, looksLikeRewrite,
+import { aroundPlace, checkPlan, dropPlaceholders, dropSelfTalk, hasPlaceholder, keepsExact, keepsNumbers, listInsert, looksLikeRewrite,
   mathQuestion, needsTidy, parsePlan, parseRewriteOptions, placeInsert, placeName, planByRules, priceAsked, rewriteStyles, rewriteTarget,
   searchLike, tidyWritten, todayLine } from "../src/lib/act.js";
 import { lastOutboundForTests } from "../src/providers/openrouter.js";
@@ -60,8 +60,25 @@ describe("a message stays a message (routing audit, 2026-09-28)", () => {
       ["50 euros in dollars", "answer"], ["$100 in inr", "answer"], ["how much is 1 sol in euros", "answer"],
       ["cafes in indiranagar", "places"], ["best biryani near indiranagar", "places"], ["good hotels in goa", "places"],
       ["send me the dune part 2 trailer", "video"], ["funny cat videos", "video"], ["nearest metro station", "place"],
+      // Suggest audit, 2026-09-29: a courtesy first, a "where can i", a trade.
+      ["please find me a good sushi place in brooklyn", "places"], ["find me a good sushi place in brooklyn pls", "places"],
+      ["where can i get good tacos in austin", "places"], ["where to get good tacos in austin", "places"],
+      ["know any good dentists around here", "places"], ["where can i buy a charger near me", "places"],
     ];
     for (const [t, intent] of cases) expect(planByRules(t)?.intent, t).toBe(intent);
+    // Write audit, 2026-09-29: words in another language, and what to say to whom.
+    for (const t of ["how do you say thank you in japanese", "what's hello in french", "good morning in spanish",
+      "say i love you in korean", "text to my boss saying im sick today", "text my boss saying i am sick today",
+      "message my landlord about the broken heater", "email hr asking for 2 days off", "reply to her saying thanks"]) {
+      expect(planByRules(t)?.intent, t).toBe("write");
+    }
+    for (const t of ["i'm fluent in spanish", "the movie is in french", "text me when you're home"]) {
+      expect(planByRules(t)?.intent, t).not.toBe("write");
+    }
+    // Asked of a person, nothing to search.
+    for (const t of ["where can i find the report", "please tell me when you're home", "where do u want to eat"]) {
+      expect(planByRules(t), t).toBeNull();
+    }
   });
 
   it("reads a search as a search and a chat as a chat", () => {
@@ -95,6 +112,13 @@ describe("a message stays a message (routing audit, 2026-09-28)", () => {
     expect(planByRules("how to make pancakes")?.intent).toBe("video");
   });
 
+  it("keeps an answer to the answer, without the model's remarks on it", () => {
+    expect(dropSelfTalk("Elon Musk is the CEO of Tesla. He has held this position since 2008. This information is " +
+      "well-established and not time-sensitive. No current events change this fact."))
+      .toBe("Elon Musk is the CEO of Tesla. He has held this position since 2008.");
+    expect(dropSelfTalk("Canberra is the capital of Australia.")).toBe("Canberra is the capital of Australia.");
+  });
+
   it("takes a second look at what the router says", () => {
     expect(checkPlan({ intent: "write", query: "x" }, "can u send me the invoice asap").intent).toBe("rewrite");
     expect(checkPlan({ intent: "video", query: "x" }, "this song is stuck in my head").intent).toBe("rewrite");
@@ -104,6 +128,15 @@ describe("a message stays a message (routing audit, 2026-09-28)", () => {
       expect(checkPlan({ intent: "answer", query: text }, text).intent, text).toBe("rewrite");
     }
     for (const text of ["who is the ceo of tesla", "how tall is the eiffel tower", "what does fomo mean"]) {
+      expect(checkPlan({ intent: "answer", query: text }, text).intent, text).toBe("answer");
+    }
+    // Their own plans: only the people in the chat know (audit 2026-09-29,
+    // "what time is the meeting tmrw" came back as an empty answer).
+    for (const text of ["what time is the meeting tmrw", "where is the party tonight", "who is coming tonight",
+      "what time is our flight", "when is the dinner"]) {
+      expect(checkPlan({ intent: "answer", query: text }, text).intent, text).toBe("rewrite");
+    }
+    for (const text of ["where is the nearest atm", "what time does costco close", "who won the game last night"]) {
       expect(checkPlan({ intent: "answer", query: text }, text).intent, text).toBe("answer");
     }
     // A song's title may hold a "you"; a message about a song is still a message.
