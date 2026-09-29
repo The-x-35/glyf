@@ -766,5 +766,59 @@
   "verdict": "pass",
   "note": "15% tip on 64 is 9.60 (73.60 in all) [left 107] · 5 ft 10 in is 177.8 cm [left 107] · 88 days until Christmas [left 107] · 2+5 = 7 [left 107]",
   "ms": 780
+ },
+ {
+  "id": "S203",
+  "area": "Chips",
+  "title": "A message already written with care gets no 'Tidy this up'; a rough one does",
+  "verdict": "pass",
+  "ms": 1522,
+  "status": 200,
+  "note": "clean: no chip · rough: Tidy this up (rerun)"
+ },
+ {
+  "id": "S204",
+  "area": "Chips",
+  "title": "'please find me a good sushi place in brooklyn' offers places",
+  "verdict": "pass",
+  "ms": 111,
+  "status": 200,
+  "note": "Show me places (rerun)"
+ },
+ {
+  "id": "S205",
+  "area": "Messages",
+  "title": "'what time is the meeting tmrw' is tidied, never looked up",
+  "verdict": "pass",
+  "ms": 2648,
+  "status": 200,
+  "note": "rewrite: What time is the meeting tomorrow? (rerun)"
+ },
+ {
+  "id": "S206",
+  "area": "Write",
+  "title": "'text to my boss saying im sick today' writes the text",
+  "verdict": "pass",
+  "ms": 1190,
+  "status": 200,
+  "note": "write: Hi, I'm not feeling well today so I won't be able to come in. (rerun)"
+ },
+ {
+  "id": "S207",
+  "area": "Translate",
+  "title": "Words asked for in another language come back in it",
+  "verdict": "pass",
+  "ms": 1814,
+  "status": 200,
+  "note": "es: Buenos días · ja: ありがとう (rerun)"
+ },
+ {
+  "id": "S208",
+  "area": "Answers",
+  "title": "An answer says only the answer, with no remarks on itself",
+  "verdict": "pass",
+  "ms": 2473,
+  "status": 200,
+  "note": "answer: FOMO stands for fear of missing out. It refers to the anxiety that an exciting or interesting event may currently be happening elsewhere, often aroused by posts (rerun)"
  }
 ]

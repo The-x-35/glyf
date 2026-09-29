@@ -563,6 +563,42 @@ scenarios.push(
         && /\d+ days? until Christmas|Christmas is today/.test(days.json.insert ?? "") && sum.json.insert === "2+5 = 7"
         && left.every(n => n === left[0]); },
     show: r => r.json.out.map(x => `${x.json.insert} [left ${x.json.remaining}]`).join(" · ") },
+  // The third audit, 2026-09-29: strip chips, tidy-ups, writing and answers.
+  { id: "S203", area: "Chips", title: "A message already written with care gets no 'Tidy this up'; a rough one does",
+    run: async () => {
+      const clean = await post("/suggest", { text: "Thanks so much for dinner last night, it was lovely." });
+      const rough = await post("/suggest", { text: "thx so much for dinner last nite it was lovely" });
+      return { status: Math.max(clean.status, rough.status), ms: clean.ms + rough.ms, json: { clean: clean.json, rough: rough.json } };
+    },
+    check: r => r.json.clean.suggestion === null && r.json.rough.suggestion?.label === "Tidy this up",
+    show: r => `clean: ${r.json.clean.suggestion?.label ?? "no chip"} · rough: ${r.json.rough.suggestion?.label ?? "no chip"}` },
+  { id: "S204", area: "Chips", title: "'please find me a good sushi place in brooklyn' offers places",
+    run: () => post("/suggest", { text: "please find me a good sushi place in brooklyn" }),
+    check: r => r.json.suggestion?.label === "Show me places",
+    show: r => r.json.suggestion?.label ?? "no chip" },
+  { id: "S205", area: "Messages", title: "'what time is the meeting tmrw' is tidied, never looked up",
+    run: () => act("what time is the meeting tmrw"),
+    check: r => r.json.intent === "rewrite" && /meeting/i.test(answerText(r)) && /tomorrow/i.test(answerText(r)),
+    show: r => `${r.json.intent}: ${answerText(r).slice(0, 100)}` },
+  { id: "S206", area: "Write", title: "'text to my boss saying im sick today' writes the text",
+    run: () => act("text to my boss saying im sick today"),
+    check: r => r.json.intent === "write" && sendable(answerText(r)) && /sick|unwell|not feeling well|under the weather/i.test(answerText(r))
+      && !/^text my boss/i.test(answerText(r)),
+    show: r => `${r.json.intent}: ${answerText(r).slice(0, 140)}` },
+  { id: "S207", area: "Translate", title: "Words asked for in another language come back in it",
+    run: async () => {
+      const es = await act("translate good morning to spanish");
+      const ja = await act("how do you say thank you in japanese");
+      return { status: Math.max(es.status, ja.status), ms: es.ms + ja.ms, json: { es: es.json, ja: ja.json } };
+    },
+    check: r => /buenos d[ií]as/i.test(r.json.es.insert ?? "") && /[\u3040-\u30ff\u4e00-\u9faf]/.test(r.json.ja.insert ?? "")
+      && !/\bthank you\b/i.test(r.json.ja.insert ?? ""),
+    show: r => `es: ${r.json.es.insert} · ja: ${r.json.ja.insert}` },
+  { id: "S208", area: "Answers", title: "An answer says only the answer, with no remarks on itself",
+    run: () => act("what does fomo mean", { country: "US", tz: "America/New_York" }),
+    check: r => /missing out/i.test(answerText(r))
+      && !/well[- ]established|time[- ]sensitive|current events|knowledge cut/i.test(answerText(r)),
+    show: r => `${r.json.intent}: ${answerText(r).slice(0, 160)}` },
 );
 
 const only = process.env.ONLY ? new Set(process.env.ONLY.split(",")) : null;
