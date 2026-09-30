@@ -2446,6 +2446,7 @@ a {
   display: grid;
   place-items: center;
   font-size: 13px;
+  color: #7c5cff;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
@@ -2633,6 +2634,7 @@ a {
   display: grid;
   place-items: center;
   font-size: 18px;
+  color: #3c3c43;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
@@ -4444,6 +4446,15 @@ a {
 
 .footer-legal a:hover {
   color: var(--ink);
+}
+
+/* Whose names these are (Google's co-branding rules ask for the line). */
+.footer-tm {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
 }
 
 /* ── Legal pages (/privacy): one readable column under the nav ── */

@@ -305,7 +305,8 @@ def store_badge(canvas, x, y, mark, small, big):
     h = 52.0
     small_f, big_f = font(10.5, 500), font(18, 600)
     small_tr, big_tr = 0.01 * px(10.5), -0.02 * px(18)
-    mark_size = 24.0 if mark == "apple" else 22.0
+    # No mark: the words alone (while Google reviews Glyf's branding).
+    mark_size = 24.0 if mark == "apple" else 22.0 if mark else -9.0
     lines_w = max(text_width(small_f, small, small_tr), text_width(big_f, big, big_tr)) / S
     w = 14 + mark_size + 9 + lines_w + 18
     layer = Image.new("RGBA", (px(w), px(h)), (0, 0, 0, 0))
@@ -315,7 +316,7 @@ def store_badge(canvas, x, y, mark, small, big):
     if mark == "apple":
         for poly in path_polys(APPLE, px(mark_size) / 24, px(mx), px(my)):
             d.polygon(poly, fill=(255, 255, 255, 255))
-    else:
+    elif mark:
         for p, op in PLAY:
             for poly in path_polys(p, px(mark_size) / 24, px(mx), px(my)):
                 d.polygon(poly, fill=(255, 255, 255, int(255 * op)))
@@ -371,11 +372,18 @@ def main():
 
     # badges: measure first, then centre the pair
     probe = Image.new("RGBA", (10, 10))
-    w1 = store_badge(probe, 0, 0, "apple", "Coming soon on", "App Store")
-    w2 = store_badge(probe, 0, 0, "play", "Coming soon on", "Google Play")
+    # BRAND-REVIEW (2026-09-30): the Apple and Google Play marks are hidden
+    # while Google reviews Glyf's sign-in branding; restore after it passes.
+    # w1 = store_badge(probe, 0, 0, "apple", "Coming soon on", "App Store")
+    # w2 = store_badge(probe, 0, 0, "play", "Coming soon on", "Google Play")
+    # bx = (W - (w1 + 12 + w2)) / 2
+    # store_badge(canvas, bx, y, "apple", "Coming soon on", "App Store")
+    # store_badge(canvas, bx + w1 + 12, y, "play", "Coming soon on", "Google Play")
+    w1 = store_badge(probe, 0, 0, None, "Coming soon on", "iPhone")
+    w2 = store_badge(probe, 0, 0, None, "Coming soon on", "Android")
     bx = (W - (w1 + 12 + w2)) / 2
-    store_badge(canvas, bx, y, "apple", "Coming soon on", "App Store")
-    store_badge(canvas, bx + w1 + 12, y, "play", "Coming soon on", "Google Play")
+    store_badge(canvas, bx, y, None, "Coming soon on", "iPhone")
+    store_badge(canvas, bx + w1 + 12, y, None, "Coming soon on", "Android")
     y += 52 + 31.2
 
     # waitlist form (.wl-box, max-width 460)

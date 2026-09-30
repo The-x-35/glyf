@@ -11,7 +11,8 @@ import {
   LockIcon,
   PersonIcon,
   PinIcon,
-  PlayRectIcon,
+  PlayIcon,
+  // PlayRectIcon, (BRAND-REVIEW)
   SearchIcon,
   SparkIcon,
   SwapIcon,
@@ -73,18 +74,25 @@ const FLOATS: Float[] = [
     // eslint-disable-next-line @next/next/no-img-element
     el: <img className="fx-coin" src="/brands/sol.png" alt="" width={58} height={58} /> },
   { pa: -30, ring: 1, a: -52, jr: 0.03, r: 8, d: 0.6, t: 6.8, delay: -3.4,
-    el: <Tile bg="linear-gradient(160deg, #3fcf6d, #1e9e4a)" label="Google Maps"><PinIcon /></Tile> },
+    // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+    // el: <Tile bg="linear-gradient(160deg, #3fcf6d, #1e9e4a)" label="Google Maps"><PinIcon /></Tile> },
+    // Meanwhile, the same tile in Glyf's own colours.
+    el: <Tile bg="linear-gradient(160deg, #9b82ff, #6a4bff)" label="Maps"><PinIcon /></Tile> },
   { pa: 60, ring: 1, a: -12, jr: -0.02, r: 6, d: 1.05, t: 6.4, delay: -1.8,
     el: <span className="fx-gkey">g<span className="fx-gdot" /></span> },
   { ring: 1, a: 28, jr: 0.02, r: -4, d: 0.55, t: 7.6, delay: -0.3,
     el: <Chip icon={<span className="fx-cash">$</span>} text="1 AAPL" meta="$341.07" /> },
   { pa: 30, ring: 1, a: 68, jr: -0.03, r: -9, d: 0.85, t: 6.6, delay: -2.4,
-    el: <Tile bg="linear-gradient(160deg, #ff4d5e, #e0102a)" label="YouTube"><PlayRectIcon /></Tile> },
+    // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+    // el: <Tile bg="linear-gradient(160deg, #ff4d5e, #e0102a)" label="YouTube"><PlayRectIcon /></Tile> },
+    el: <Tile bg="linear-gradient(160deg, #e07bff, #b23fe6)" label="Videos"><PlayIcon /></Tile> },
   { pa: 90, ring: 1, a: 108, jr: 0.03, r: -6, d: 0.4, t: 9, delay: -2.8,
     el: <span className="fx-note fx-note-yellow">coffee at 6? ☕</span> },
   { pa: 120, ring: 1, a: 150, r: 7, d: 0.95, t: 5.9, delay: -3.1, el: <Key k="T" /> },
   { pa: -150, ring: 1, a: 192, jr: 0.02, r: -8, d: 0.9, t: 6.2, delay: 0,
-    el: <Tile bg="linear-gradient(160deg, #4b8df8, #1a62d6)" label="Google Calendar"><CalendarIcon /></Tile> },
+    // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+    // el: <Tile bg="linear-gradient(160deg, #4b8df8, #1a62d6)" label="Google Calendar"><CalendarIcon /></Tile> },
+    el: <Tile bg="linear-gradient(160deg, #ffc56b, #f39a1e)" label="Calendar"><CalendarIcon /></Tile> },
   { pa: -120, ring: 1, a: 232, jr: -0.03, r: 4, d: 0.45, t: 7.4, delay: -2.1,
     el: <span className="fx-bubble">let&apos;s get coffee ☕</span> },
   // Outer ring, sixteen, 22.5° apart and half a step off the top.
@@ -93,7 +101,9 @@ const FLOATS: Float[] = [
   { pa: -60, ring: 2, a: -78.75, r: 5, d: 0.5, t: 8.4, delay: -4.4,
     el: <span className="fx-note fx-note-pink">send me the Meet link!</span> },
   { ring: 2, a: -56.25, jr: -0.02, r: 9, d: 0.7, t: 7.1, delay: -4.2,
-    el: <Tile bg="linear-gradient(160deg, #1fb57a, #0b8a58)" label="Google Meet"><VideoIcon /></Tile> },
+    // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+    // el: <Tile bg="linear-gradient(160deg, #1fb57a, #0b8a58)" label="Google Meet"><VideoIcon /></Tile> },
+    el: <Tile bg="linear-gradient(160deg, #62d4ff, #1f9fe0)" label="Video call"><VideoIcon /></Tile> },
   { ring: 2, a: -33.75, wide: true, r: -3, d: 0.35, t: 8, delay: -1,
     el: <Chip icon={<TranslateIcon />} text="hasta mañana" meta="Translate" /> },
   { ring: 2, a: -11.25, jr: 0.02, r: 10, d: 0.65, t: 7.2, delay: -5,
@@ -174,7 +184,9 @@ const WORKS_WITH = [
   { icon: <WalletIcon />, name: "Solana wallet" },
   { icon: <SwapIcon />, name: "Jupiter" },
   { icon: <PinIcon />, name: "Google Maps" },
-  { icon: <PlayRectIcon />, name: "YouTube" },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the play-in-a-box icon beside YouTube's name.
+  // { icon: <PlayRectIcon />, name: "YouTube" },
+  { icon: <PlayIcon />, name: "YouTube" },
   { icon: <PersonIcon />, name: "Contacts" },
   { icon: <GifIcon />, name: "GIFs by KLIPY" },
 ];

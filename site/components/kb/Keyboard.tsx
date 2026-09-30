@@ -10,7 +10,8 @@ import {
 import { hub } from "./hub";
 import { MagicBlockLogo, MagicBlockMark, SolIcon, UsdcIcon } from "./brands";
 import * as I from "./icons";
-import { ClockFace, GoogleG, SunArc, WeatherGlyph } from "./visuals";
+// BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: GoogleG.
+import { ClockFace, /* GoogleG, */ SunArc, WeatherGlyph } from "./visuals";
 
 export type SearchView = "suggest" | "type" | "results";
 
@@ -116,7 +117,8 @@ const MENU = [
 ];
 
 const TABS: { id: SearchTab; label: string; Icon: (p: { className?: string }) => ReactNode }[] = [
-  { id: "google", label: "Google", Icon: I.SearchIcon },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: label "Google". "Search" is what the app calls this tab.
+  { id: "google", label: "Search", Icon: I.SearchIcon },
   { id: "youtube", label: "YouTube", Icon: I.PlayRectIcon },
   { id: "maps", label: "Maps", Icon: I.PinIcon },
 ];
@@ -783,7 +785,8 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
       {c.kind === "answer" ? (
         <span className={cx("kb-ans", c.visual && `kb-ans--${c.visual}`)}>
           <span className="kb-ans-top">
-            <span className="kb-ans-g"><GoogleG /></span>
+            {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: <span className="kb-ans-g"><GoogleG /></span> */}
+            <span className="kb-ans-g"><I.SparkIcon /></span>
             <span className="kb-ans-meta">{c.meta}</span>
             <span className="kb-ans-when">Today</span>
           </span>
@@ -816,7 +819,8 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
               <span className="kb-badge">{c.badge}</span>
             </span>
           )}
-          {c.kind === "link" && <span className="kb-fav"><GoogleG /></span>}
+          {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: {c.kind === "link" && <span className="kb-fav"><GoogleG /></span>} */}
+          {c.kind === "link" && <span className="kb-fav"><I.SearchIcon /></span>}
           <span className="kb-card-body">
             <span className="kb-card-title">{c.title}</span>
             <span className="kb-card-meta">{c.meta}</span>

@@ -41,7 +41,8 @@ const SEND: Coach = { target: "send", label: "Send" };
 const CLOSE: Coach = { target: "close", label: "Close" };
 const DELETE: Coach = { target: "key:backspace", label: "Delete" };
 
-const TAB_LABEL: Record<SearchTab, string> = { google: "Google", youtube: "YouTube", maps: "Maps" };
+// BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: google: "Google".
+const TAB_LABEL: Record<SearchTab, string> = { google: "Search", youtube: "YouTube", maps: "Maps" };
 
 function searchCoach(k: KbSnapshot, tab: SearchTab, done: (t: string) => boolean): Coach {
   if (done(k.text)) return SEND;
@@ -201,7 +202,8 @@ export const SCENARIOS: Scenario[] = [
     name: "Kabir",
     avatar: "🚗",
     tint: "#34c759",
-    tag: "YouTube + Google",
+    // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: tag "YouTube + Google".
+    tag: "YouTube + Search",
     headline: ["Send the song,", "not the search."],
     beats: [
       {
