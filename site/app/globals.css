@@ -220,6 +220,13 @@ a {
   display: none;
 }
 
+/* The footer's tryglyf.com, the logo Google's sign-in shows. */
+.domain-logo img {
+  height: 22px;
+  margin-left: 0;
+  transform: none;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .wordmark-logo .wordmark-light {
     display: none;

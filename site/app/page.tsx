@@ -116,7 +116,13 @@ export default function Page() {
 
       <footer className="footer">
         <div className="wrap footer-inner">
-          <Wordmark href="#top" label="Glyf home" />
+          {/* BRAND-REVIEW (2026-09-30): the footer shows the logo sent to Google for sign-in, tryglyf.com, so
+              its brand check finds it on the page; restore after it passes:
+          <Wordmark href="#top" label="Glyf home" /> */}
+          <a className="wordmark wordmark-logo domain-logo" href="#top" aria-label="Glyf home">
+            <img className="wordmark-light" src="/brand/tryglyf-logo-light.png" alt="tryglyf.com" width={851} height={173} />
+            <img className="wordmark-dark" src="/brand/tryglyf-logo-dark.png" alt="" aria-hidden="true" width={851} height={173} />
+          </a>
           <p className="footer-legal">© 2026 Glyf · iPhone and Android · <a href="/privacy">Privacy</a></p>
           <p className="footer-tm">
             Android is a trademark of Google LLC. iPhone is a trademark of Apple Inc. Glyf is not affiliated with or
