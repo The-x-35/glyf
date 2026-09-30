@@ -546,7 +546,8 @@ export function infoQuestion(text: string): boolean {
   const lower = text.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
   if (lower.split(" ").length < 3) return false;
   if (!(QUESTION_START.test(lower) || /\?$/.test(lower))) return false;
-  if (CHITCHAT.test(lower) || SECOND_PERSON.test(lower) || ADDRESSED.test(lower) || OWN_PLANS.test(lower)) return false;
+  if (CHITCHAT.test(lower) || SECOND_PERSON.test(lower) || ADDRESSED.test(lower) || OWN_PLANS.test(lower)
+    || LOCAL_ASK.test(lower)) return false;
   // "does it hurt?", "is that true": short, and about something in the chat.
   if (lower.split(" ").length <= 4 && /\b(it|this|that|these|those|there)\b/.test(lower)) return false;
   return !PEOPLE.test(lower.replace(SEARCH_ME, " "));
@@ -604,6 +605,14 @@ const CHITCHAT = /^(?:ok(?:ay)?|k+|kk|hi+|hey+|hello|yo|sup|wass?up|what'?s up|w
 const SECOND_PERSON = /\b(u|ur|you|your|yours|you're|youre|ya|tu|tum|tumhe|tumko|tumne|tumhara|tumhari|tumhare|tera|teri|tere|aap|aapko|aapne|aapka|aapki|aapke)\b/;
 /** A message that opens or ends by naming who it is for. */
 const ADDRESSED = /^(?:bhai|bro|bruh|yaar|dude|mom|mum|maa|papa|dad|didi|bhaiya|babe|baby|hey|hi|hello|yo|oye|arre)\b|\b(?:bhai|bro|yaar|dude|babe|bhaiya|didi)[?!.]*$/;
+
+/** About something where the writer is ("is the store open", "whats the
+ *  wifi password", "where are the keys"): a question for a person there,
+ *  not one the AI can answer (audit, 2026-10-01). */
+const LOCAL_ASK = /\b(?:password|passcode|wifi|wi-fi|door code|the (?:store|shop|pharmacy|mall|gym|car|kids|dog|cat|baby|fridge|remote|charger|keys?))\b/;
+export function localAsk(text: string): boolean {
+  return LOCAL_ASK.test(text.toLowerCase().replace(/[’‘]/g, "'"));
+}
 
 /** Asked about the writer's own plans ("what time is the meeting tmrw",
  *  "where is the party tonight", "who is coming"): nothing on the web knows.
@@ -704,8 +713,18 @@ export function needsTidy(text: string): boolean {
   const words = t.split(" ");
   if (words.length < 4 || LOOKUP.test(t) || /\d\s*[-+*/×÷^%]\s*\d/.test(t)) return false;
   if (QUESTION_START.test(t.toLowerCase().replace(/[’‘]/g, "'")) || !readsAsEnglish(t)) return false;
+  return roughEnough(t);
+}
+
+/** Rough enough to be worth a tidy-up: texting shorthand, a lowercase "i",
+ *  stretched letters, or six words or more run together with no stop or
+ *  comma. A short casual line reads fine in a chat ("what time works for
+ *  you", "running late, be there in 10"): a chip on it is a nag (audit,
+ *  2026-10-01). */
+export function roughEnough(text: string): boolean {
+  const t = text.trim().replace(LINK, " link ").replace(/\s+/g, " ");
   return SHORTHAND.test(t) || /(^|\s)i(\s|'|$)/.test(t) || /([a-z])\1{2,}/i.test(t)
-    || (/^[a-z]/.test(t) && words.length >= 6 && !/[.!?]$/.test(t));
+    || (/^[a-z]/.test(t) && t.split(" ").length >= 6 && !/[.!?,;:]/.test(t));
 }
 
 /** Nothing live came back. Say so, keep the Google card to open, and put

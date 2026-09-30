@@ -54,6 +54,17 @@ describe("POST /suggest", () => {
     }
     expect((await ask(app, "who won the game last night")).json().suggestion).toBeNull();
     expect((await ask(app, "are you coming tonight?")).json().suggestion?.label).not.toBe("AI answer");
+    // A question for someone where the writer is (audit, 2026-10-01).
+    for (const text of ["is the store open", "whats the wifi password", "where are the keys"]) {
+      expect((await ask(app, text)).json().suggestion?.label, text).not.toBe("AI answer");
+    }
+  });
+
+  it("offers no tidy-up on a short casual line that reads fine", async () => {
+    const app = signedInApp();
+    for (const text of ["what time works for you", "running late, be there in 10"]) {
+      expect((await ask(app, text)).json().suggestion?.label, text).not.toBe("Tidy this up");
+    }
   });
 
   it("never spends a run: suggestions have their own allowance", async () => {
@@ -129,6 +140,22 @@ describe("tidy by rule", () => {
       "3480/4 is what each of us pays", "Thanks so much, see you tomorrow.", "ok see u"]) {
       expect(needsTidy(t), t).toBe(false);
     }
+  });
+
+  it("calls a message rough for shorthand, a lowercase i, stretched letters or a long run-on", async () => {
+    const { roughEnough } = await import("../src/lib/act.js");
+    for (const t of ["ok will send the deck before six tmrw", "i think so", "sooo good", "bro the meeting got moved to 4 tell everyone"]) {
+      expect(roughEnough(t), t).toBe(true);
+    }
+    for (const t of ["what time works for you", "running late, be there in 10", "see you at the station", "Thanks, see you soon"]) {
+      expect(roughEnough(t), t).toBe(false);
+    }
+  });
+
+  it("knows a question for someone where the writer is", async () => {
+    const { localAsk } = await import("../src/lib/act.js");
+    for (const t of ["is the store open", "Whats the WiFi password?", "where are the keys"]) expect(localAsk(t), t).toBe(true);
+    for (const t of ["who is the ceo of tesla", "when does the louvre open", "can dogs eat grapes"]) expect(localAsk(t), t).toBe(false);
   });
 
   it("offers no tidy-up for a message already written with care", async () => {

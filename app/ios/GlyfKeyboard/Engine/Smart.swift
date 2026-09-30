@@ -1156,7 +1156,7 @@ extension Smart {
         // "how to make pancakes" is a video to find, not a fact.
         if lower.hasPrefix("how to ") { return nil }
         for rule in [QuestionRules.chitchat, QuestionRules.secondPerson, QuestionRules.addressed,
-                     QuestionRules.ownPlans, QuestionRules.smallTalk, QuestionRules.rightNow]
+                     QuestionRules.ownPlans, QuestionRules.localAsk, QuestionRules.smallTalk, QuestionRules.rightNow]
         where matches(rule, lower) { return nil }
         // "does it hurt?", "is that true": short, and about the chat.
         if words.count <= 4, matches(QuestionRules.pointing, lower) { return nil }
@@ -1182,6 +1182,9 @@ extension Smart {
         static let secondPerson = rx(#"\b(?:u|ur|you|your|yours|you're|youre|ya|yall|y'all|tu|tum|tumhe|tumko|tumne|tumhara|tumhari|tumhare|tera|teri|tere|aap|aapko|aapne|aapka|aapki|aapke)\b"#)
         static let addressed = rx(#"^(?:bhai|bro|bruh|yaar|dude|mom|mum|maa|papa|dad|didi|bhaiya|babe|baby|hey|hi|hello|yo|oye|arre)\b|\b(?:bhai|bro|yaar|dude|babe|bhaiya|didi)[?!.]*$"#)
         static let ownPlans = rx(#"\b(?:the|our|my|ur|your|this|tonight'?s|tomorrow'?s|tmrw'?s)\s+(?:meeting|meet|party|call|dinner|lunch|brunch|breakfast|appointment|appt|flight|reservation|booking|interview|class|practice|rehearsal|wedding|event|plan|plans|trip|standup|stand-up|shift|session|date|hangout|get together|get-together|pickup|pick up|drop off|shoot|exam|gig|reunion|sleepover|potluck|bus|train|metro|subway|uber|lyft|cab|taxi|ride|delivery|order|package|parcel)\b|\bwho(?:'s| is| all is| all are| are)\s+(?:coming|joining|going|in|bringing)\b"#)
+        /// About something where the writer is ("is the store open", "whats
+        /// the wifi password"): a question for a person there, not the AI.
+        static let localAsk = rx(#"\b(?:password|passcode|wifi|wi-fi|door code|the (?:store|shop|pharmacy|mall|gym|car|kids|dog|cat|baby|fridge|remote|charger|keys?))\b"#)
         static let smallTalk = rx(#"\b(?:thanks|thank you|thx|tnx|ty|lol|lmao|lmfao|rofl|haha\w*|hehe\w*|omg|congrats|sorry|sry|pls|plz|please|hey|hi|hello|yo|bro|dude|yaar|bhai|okay|ok|kk|yeah|yep|yup|nope|sure)\b|!|\p{Extended_Pictographic}"#)
         /// Today's score or the news: the AI can't know, so no chip that would
         /// only say "Nothing found" (answers.ts rightNow).

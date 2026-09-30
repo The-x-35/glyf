@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { checkPlan, needsTidy, planByRules, readsTidy, type ActIntent } from "../lib/act.js";
+import { checkPlan, localAsk, needsTidy, planByRules, readsTidy, roughEnough, type ActIntent } from "../lib/act.js";
 import { rightNow } from "../lib/answers.js";
 import type { Guard } from "../lib/guard.js";
 import { TTLCache } from "../lib/cache.js";
@@ -50,10 +50,13 @@ function worthSuggesting(text: string, intent: ActIntent): boolean {
   // A half-typed word is not an intent yet.
   if (intent === "rewrite" && t.split(/\s+/).length < 4) return false;
   // Already tidy: nothing to offer.
-  if (intent === "rewrite" && readsTidy(t)) return false;
+  if (intent === "rewrite" && (readsTidy(t) || !roughEnough(t))) return false;
   // Today's score or the news: the AI can't know, so no chip that would
   // only say "Nothing found".
   if (intent === "answer" && rightNow(t)) return false;
+  // Asked of someone where the writer is ("is the store open", "whats the
+  // wifi password"): no AI chip, whatever the model read (audit, 2026-10-01).
+  if (intent === "answer" && localAsk(t)) return false;
   return true;
 }
 

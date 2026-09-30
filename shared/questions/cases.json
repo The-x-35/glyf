@@ -1,24 +1,78 @@
 {
-  "about": "Questions the strip offers \"AI answer\" for as they are typed (Smart.question on iOS, Smart.question on Android). \"ask\": typed text and the question it gives. \"not\": typed text that gives none. The rules are the server's (server/src/lib/act.ts infoQuestion, searchLike; answers.ts rightNow), plus: the question ends on a word of substance.",
+  "about": "Questions the strip offers \"AI answer\" for as they are typed (Smart.question on iOS, Smart.question on Android). \"ask\": typed text and the question it gives. \"not\": typed text that gives none. The rules are the server's (server/src/lib/act.ts infoQuestion, searchLike; answers.ts rightNow), plus: the question ends on a word of substance, and is not about something where the writer is (the wifi password, the store).",
   "ask": [
-    { "text": "who is the ceo of tesla", "question": "who is the ceo of tesla" },
-    { "text": "Who is the CEO of Tesla?", "question": "Who is the CEO of Tesla?" },
-    { "text": "what is a polynomial", "question": "what is a polynomial" },
-    { "text": "why is the sky blue", "question": "why is the sky blue" },
-    { "text": "how does photosynthesis work", "question": "how does photosynthesis work" },
-    { "text": "when did the titanic sink", "question": "when did the titanic sink" },
-    { "text": "where is mount everest", "question": "where is mount everest" },
-    { "text": "which planet is the largest", "question": "which planet is the largest" },
-    { "text": "is pluto a planet", "question": "is pluto a planet" },
-    { "text": "can dogs eat grapes", "question": "can dogs eat grapes" },
-    { "text": "how tall is the eiffel tower ", "question": "how tall is the eiffel tower" },
-    { "text": "what does ubiquitous mean", "question": "what does ubiquitous mean" },
-    { "text": "who wrote pride and prejudice", "question": "who wrote pride and prejudice" },
-    { "text": "whats the capital of australia", "question": "whats the capital of australia" },
-    { "text": "ok cool. who painted the mona lisa", "question": "who painted the mona lisa" },
-    { "text": "capital of australia?", "question": "capital of australia?" },
-    { "text": "who invented the telephone", "question": "who invented the telephone" },
-    { "text": "how many bones are in the human body", "question": "how many bones are in the human body" }
+    {
+      "text": "who is the ceo of tesla",
+      "question": "who is the ceo of tesla"
+    },
+    {
+      "text": "Who is the CEO of Tesla?",
+      "question": "Who is the CEO of Tesla?"
+    },
+    {
+      "text": "what is a polynomial",
+      "question": "what is a polynomial"
+    },
+    {
+      "text": "why is the sky blue",
+      "question": "why is the sky blue"
+    },
+    {
+      "text": "how does photosynthesis work",
+      "question": "how does photosynthesis work"
+    },
+    {
+      "text": "when did the titanic sink",
+      "question": "when did the titanic sink"
+    },
+    {
+      "text": "where is mount everest",
+      "question": "where is mount everest"
+    },
+    {
+      "text": "which planet is the largest",
+      "question": "which planet is the largest"
+    },
+    {
+      "text": "is pluto a planet",
+      "question": "is pluto a planet"
+    },
+    {
+      "text": "can dogs eat grapes",
+      "question": "can dogs eat grapes"
+    },
+    {
+      "text": "how tall is the eiffel tower ",
+      "question": "how tall is the eiffel tower"
+    },
+    {
+      "text": "what does ubiquitous mean",
+      "question": "what does ubiquitous mean"
+    },
+    {
+      "text": "who wrote pride and prejudice",
+      "question": "who wrote pride and prejudice"
+    },
+    {
+      "text": "whats the capital of australia",
+      "question": "whats the capital of australia"
+    },
+    {
+      "text": "ok cool. who painted the mona lisa",
+      "question": "who painted the mona lisa"
+    },
+    {
+      "text": "capital of australia?",
+      "question": "capital of australia?"
+    },
+    {
+      "text": "who invented the telephone",
+      "question": "who invented the telephone"
+    },
+    {
+      "text": "how many bones are in the human body",
+      "question": "how many bones are in the human body"
+    }
   ],
   "not": [
     "how are you",
@@ -44,6 +98,9 @@
     "the pizza here is good",
     "had dinner at the new place",
     "see you at 6",
-    "what time is it in tokyo"
+    "what time is it in tokyo",
+    "is the store open",
+    "whats the wifi password",
+    "where are the keys"
   ]
 }
