@@ -1667,8 +1667,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // Nothing local to say? Let the model look at the sentence and name
         // the thing Glyf could do with it (the website's coach).
         if chip == nil {
+            // A question for a fact shows "AI answer" as it is typed (Arpit,
+            // 2026-09-30: "we can detect questions too with what where like
+            // words"), with no wait for the server's read.
+            if hasFullAccess, SettingsStore.current.candidates, let q = Smart.question(in: tail) {
+                cancelSuggestion()
+                chip = .action(label: "AI answer", query: q, intent: "answer")
             // The answer is stored for the trimmed sentence: people end with a space.
-            if let cached = suggestedChip,
+            } else if let cached = suggestedChip,
                suggestedFor == tail.trimmingCharacters(in: .whitespacesAndNewlines) {
                 chip = cached
             } else {

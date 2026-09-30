@@ -99,6 +99,22 @@ final class GlyfToolbar: UIView {
     private let cardFill = CAShapeLayer()
     private let borderSpin = CAGradientLayer()
     private let borderMask = CAShapeLayer()
+    /// The card is glass (Arpit, 2026-09-30: "we should make the suggestion
+    /// strip glassy"): a frosted face the sheet shows through, Glyf's colours
+    /// drifting faintly through it, a sheen over its top half and a bright rim
+    /// inside the border, where light catches the edge of a pane. The colours
+    /// inside run in a band, not round the middle as the border's do: turned
+    /// round a point, they pinched to a spot in the middle of the card.
+    /// Android's twin.
+    private let glassWash = CALayer()
+    private let washFlow = CAGradientLayer()
+    private let washMask = CAShapeLayer()
+    /// One run of the colours through the card: half as long again as the card.
+    private var washPeriod: CGFloat = 0
+    private let glassSheen = CAGradientLayer()
+    private let sheenMask = CAShapeLayer()
+    private let glassRim = CAGradientLayer()
+    private let rimMask = CAShapeLayer()
     /// The keyboard is away: nothing turns until it is back.
     private var magicPaused = false
 
@@ -334,7 +350,6 @@ final class GlyfToolbar: UIView {
         for (band, stroke) in zip(Self.glowBands, glowStrokes) {
             stroke.fillColor = nil
             stroke.strokeColor = UIColor.black.cgColor
-            stroke.lineWidth = band.width
             stroke.opacity = band.alpha
             glowBox.addSublayer(stroke)
         }
@@ -348,8 +363,8 @@ final class GlyfToolbar: UIView {
         glowRing.addSublayer(glowSpin)
         glowRing.isHidden = true
         glowRing.opacity = Self.glowStrength
-        // Behind the card: its own face hides the strokes' inner halves, so
-        // only the outside glows.
+        // Behind the card, and only outside it: the face is glass, so a glow
+        // under it would show through as a band of colour inside the edge.
         layer.insertSublayer(glowRing, below: smartCard.layer)
         borderMask.fillColor = nil
         borderMask.strokeColor = UIColor.black.cgColor
@@ -357,9 +372,27 @@ final class GlyfToolbar: UIView {
         borderMask.lineWidth = 2
         borderRing.mask = borderMask
         borderRing.addSublayer(borderSpin)
-        // Over the card's face, under its words.
-        smartCard.layer.insertSublayer(borderRing, at: 0)
-        smartCard.layer.insertSublayer(cardFill, at: 0)
+        // Two runs of the colours side by side: sliding by one run loops.
+        washFlow.colors = Self.magicColors + Self.magicColors.dropFirst()
+        washFlow.startPoint = CGPoint(x: 0, y: 0.5)
+        washFlow.endPoint = CGPoint(x: 1, y: 0.5)
+        washFlow.anchorPoint = .zero
+        glassWash.addSublayer(washFlow)
+        glassWash.mask = washMask
+        glassSheen.startPoint = CGPoint(x: 0.5, y: 0)
+        glassSheen.endPoint = CGPoint(x: 0.5, y: 1)
+        glassSheen.locations = [0, 0.6]
+        glassSheen.mask = sheenMask
+        glassRim.startPoint = CGPoint(x: 0.5, y: 0)
+        glassRim.endPoint = CGPoint(x: 0.5, y: 1)
+        rimMask.fillColor = nil
+        rimMask.strokeColor = UIColor.black.cgColor
+        rimMask.lineWidth = 1
+        glassRim.mask = rimMask
+        // Face, wash, sheen, rim, border, then the card's words over them.
+        for glass in [borderRing, glassRim, glassSheen, glassWash, cardFill] as [CALayer] {
+            smartCard.layer.insertSublayer(glass, at: 0)
+        }
     }
 
     /// The border and glow on the chip's own rounded rect.
@@ -367,7 +400,12 @@ final class GlyfToolbar: UIView {
     /// layer's CGColor does not follow dark mode by itself).
     private func paintCardFace() {
         smartCard.backgroundColor = Glass.touchableGrid
-        cardFill.fillColor = Glass.surfaceCard.resolvedColor(with: traitCollection).cgColor
+        let dark = Glass.chromeDark
+        let white = { (a: CGFloat) in UIColor.white.withAlphaComponent(a).cgColor }
+        cardFill.fillColor = white(dark ? 0.10 : 0.55)
+        glassWash.opacity = dark ? 0.14 : 0.10
+        glassSheen.colors = [white(dark ? 0.12 : 0.6), white(0)]
+        glassRim.colors = [white(dark ? 0.32 : 0.95), white(dark ? 0.05 : 0.3)]
     }
 
     private func layoutMagic() {
@@ -384,11 +422,16 @@ final class GlyfToolbar: UIView {
         glowFade.frame = glowBox.bounds
         glowFade.startPoint = CGPoint(x: 0.5, y: -glowRing.frame.minY / h)
         glowFade.endPoint = CGPoint(x: 0.5, y: (4 - glowRing.frame.minY) / h)
-        let edge = UIBezierPath(roundedRect: CGRect(x: spread, y: spread, width: card.width, height: card.height),
-                                cornerRadius: radius).cgPath
-        for stroke in glowStrokes {
+        // Each band runs from half a point under the border (so no gap shows
+        // at the corners) out to its reach.
+        let edge = CGRect(x: spread, y: spread, width: card.width, height: card.height)
+        for (band, stroke) in zip(Self.glowBands, glowStrokes) {
+            let reach = band.width / 2
+            let centre = (reach - 0.5) / 2
             stroke.frame = glowBox.bounds
-            stroke.path = edge
+            stroke.lineWidth = reach + 0.5
+            stroke.path = UIBezierPath(roundedRect: edge.insetBy(dx: -centre, dy: -centre),
+                                       cornerRadius: radius + centre).cgPath
         }
         Self.cover(glowRing.bounds, with: glowSpin)
         // The face 1pt in, under the 2pt border, both on one squircle: no
@@ -402,6 +445,26 @@ final class GlyfToolbar: UIView {
         borderMask.path = UIBezierPath(roundedRect: smartCard.bounds.insetBy(dx: 1, dy: 1),
                                        cornerRadius: max(0, radius - 1)).cgPath
         Self.cover(borderRing.bounds, with: borderSpin)
+        let inside = { (inset: CGFloat) in
+            UIBezierPath(roundedRect: self.smartCard.bounds.insetBy(dx: inset, dy: inset),
+                         cornerRadius: max(0, radius - inset)).cgPath
+        }
+        for (glass, mask) in [(glassWash, washMask), (glassSheen, sheenMask), (glassRim, rimMask)] as [(CALayer, CAShapeLayer)] {
+            glass.frame = smartCard.bounds
+            mask.frame = glass.bounds
+        }
+        washMask.path = inside(1)
+        let period = max(1, (smartCard.bounds.width * 1.5).rounded())
+        washFlow.bounds = CGRect(x: 0, y: 0, width: period * 2, height: smartCard.bounds.height)
+        washFlow.position = .zero
+        if period != washPeriod {
+            washPeriod = period
+            // A new width is a new run: start the drift over on it.
+            if washFlow.animation(forKey: "flow") != nil { startWashFlow() }
+        }
+        // Inside the 2pt border; the rim's 1pt line just within it.
+        sheenMask.path = inside(2)
+        rimMask.path = inside(2.5)
         CATransaction.commit()
     }
 
@@ -445,13 +508,24 @@ final class GlyfToolbar: UIView {
         // A slow turn looks as smooth at 30 frames a second as at 120.
         turn.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
         // Added in one go, so the border and the glow turn as one.
-        glowSpin.add(turn, forKey: "turn")
-        borderSpin.add(turn, forKey: "turn")
+        for spin in [glowSpin, borderSpin] { spin.add(turn, forKey: "turn") }
+        startWashFlow()
+    }
+
+    /// The colours inside drift one run to the left every 6 s, and loop.
+    private func startWashFlow() {
+        let flow = CABasicAnimation(keyPath: "transform.translation.x")
+        flow.fromValue = 0
+        flow.toValue = -washPeriod
+        flow.duration = 6
+        flow.repeatCount = .infinity
+        flow.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
+        washFlow.add(flow, forKey: "flow")
     }
 
     private func stopMagic() {
-        glowSpin.removeAnimation(forKey: "turn")
-        borderSpin.removeAnimation(forKey: "turn")
+        for spin in [glowSpin, borderSpin] { spin.removeAnimation(forKey: "turn") }
+        washFlow.removeAnimation(forKey: "flow")
     }
 
     /// The keyboard went away, or came back: the colours turn only on screen.
@@ -914,13 +988,13 @@ final class GlyfToolbar: UIView {
         }
         let left = markRight + (Glass.solidLook ? 11 : 17)
         if !smartCard.isHidden {
-            // Room for the glow inside the strip: iOS cuts off anything drawn
-            // above the keyboard's top edge, and a glow cut there reads as a
-            // hard line. So the chip is as tall as the 44pt strip allows with
-            // the glow spent before either edge (34pt), up to chipHeight.
-            let room = Self.glowSpread - 1
-            let cardH = min(Self.chipHeight, bounds.height - room * 2)
-            let cardY = min(max(room, mid - cardH / 2), bounds.height - room - cardH)
+            // Level with the g key (Arpit, 2026-09-30: "why did the ai strip
+            // fall below, have it at same level as glyf logo"; it sat 5pt
+            // lower, clear of the top edge for its glow): centred on the
+            // key's middle, as tall as the strip allows there, up to
+            // chipHeight. The glow above it fades out at the keyboard's edge.
+            let cardH = min(Self.chipHeight, keyMid * 2, (bounds.height - keyMid) * 2)
+            let cardY = keyMid - cardH / 2
             smartCard.frame = CGRect(x: left, y: cardY,
                                      width: max(0, rightInk - left), height: cardH)
             let lead = !smartLead.isHidden

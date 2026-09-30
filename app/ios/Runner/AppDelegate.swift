@@ -72,6 +72,12 @@ import UIKit
     if args.contains("--glyf-clear-tour") {
       SettingsStore.update { s in s.tourHint = nil }
     }
+    if let i = args.firstIndex(of: "--glyf-money-currency"), i + 1 < args.count {
+      // Scenario tests: "Convert money to", so a test of the money chip
+      // doesn't depend on what the last run left ("auto" follows the region).
+      let code = args[i + 1]
+      SettingsStore.update { s in s.moneyCurrency = code }
+    }
     if let i = args.firstIndex(of: "--glyf-booking-link"), i + 1 < args.count {
       // Scenario tests: the booking page Connected tools would save.
       let link = args[i + 1]

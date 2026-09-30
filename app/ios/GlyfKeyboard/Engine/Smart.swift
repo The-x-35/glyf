@@ -569,8 +569,12 @@ enum Smart {
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.locale = Locale(identifier: code == "INR" ? "en_IN" : "en_US")
-        f.maximumFractionDigits = code == "JPY" || code == "KRW" ? 0 : 2
-        f.minimumFractionDigits = 0
+        let places = code == "JPY" || code == "KRW" ? 0 : 2
+        f.maximumFractionDigits = places
+        // Money with cents shows both places ("₹1,919.60", not "₹1,919.6");
+        // a whole amount shows none ("$20").
+        let cents = (value * 100).rounded() / 100
+        f.minimumFractionDigits = cents == cents.rounded() ? 0 : places
         return f.string(from: NSNumber(value: value)) ?? String(value)
     }
 
@@ -1117,5 +1121,83 @@ extension Smart {
         if u.one == "K" { return "\(text) K" }
         if u.one.hasPrefix("°") { return "\(text)\(u.one)" }
         return "\(text) \(abs(n) == 1 ? u.one : u.many)"
+    }
+}
+
+// MARK: - Questions (the AI answer chip, as it is typed)
+
+extension Smart {
+
+    /// A question for a fact, told by its words on the phone (Arpit,
+    /// 2026-09-30: "we can detect questions too with what where like words"):
+    /// the strip offers "AI answer" as it is typed, with no wait for the
+    /// server's read. The server's rules (lib/act.ts infoQuestion, searchLike,
+    /// answers.ts rightNow), with one more: the question has to end on a word
+    /// of substance, so "who is the" offers nothing yet. Returns the question
+    /// (the last sentence typed), or nil. Smart.kt's twin, and
+    /// shared/questions/cases.json holds the cases both run.
+    static func question(in text: String) -> String? {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "’", with: "'").replacingOccurrences(of: "‘", with: "'")
+        guard !t.isEmpty, t.count <= 160 else { return nil }
+        // The last line, then the last sentence: "ok cool. who painted it?"
+        if let nl = t.lastIndex(of: "\n") { t = String(t[t.index(after: nl)...]) }
+        let asked = t.hasSuffix("?")
+        var body = t.replacingOccurrences(of: #"[?!.\s]+$"#, with: "", options: .regularExpression)
+        if let end = body.range(of: #"^.*[.!?]\s+"#, options: .regularExpression) {
+            body = String(body[end.upperBound...])
+        }
+        let lower = body.lowercased()
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        let words = lower.split(separator: " ")
+        guard words.count >= 3, words.count <= 12 else { return nil }
+        guard asked || matches(QuestionRules.start, lower) else { return nil }
+        // "how to make pancakes" is a video to find, not a fact.
+        if lower.hasPrefix("how to ") { return nil }
+        for rule in [QuestionRules.chitchat, QuestionRules.secondPerson, QuestionRules.addressed,
+                     QuestionRules.ownPlans, QuestionRules.smallTalk, QuestionRules.rightNow]
+        where matches(rule, lower) { return nil }
+        // "does it hurt?", "is that true": short, and about the chat.
+        if words.count <= 4, matches(QuestionRules.pointing, lower) { return nil }
+        let bare = QuestionRules.searchMe.map {
+            $0.stringByReplacingMatches(in: lower, range: NSRange(lower.startIndex..., in: lower), withTemplate: " ")
+        } ?? lower
+        if matches(QuestionRules.people, bare) { return nil }
+        // Still being typed: "who is the", "what does".
+        if !asked, let last = words.last, QuestionRules.unfinished.contains(String(last)) { return nil }
+        let q = body.trimmingCharacters(in: .whitespaces)
+        return asked ? q + "?" : q
+    }
+
+    private static func matches(_ re: NSRegularExpression?, _ s: String) -> Bool {
+        guard let re else { return false }
+        return re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil
+    }
+
+    /// The server's word lists, as it has them (lib/act.ts).
+    private enum QuestionRules {
+        static let start = rx(#"^(?:what|what's|whats|who|who's|whos|whose|whom|where|where's|wheres|when|when's|whens|why|how|how's|hows|which|is|isn't|are|aren't|was|were|can|can't|could|do|does|don't|doesn't|did|didn't|will|won't|would|should|shall|have|has|may|might|any)\b"#)
+        static let chitchat = rx(#"^(?:ok(?:ay)?|k+|kk|hi+|hey+|hello|yo|sup|wass?up|what'?s up|whats up|wyd|hru|how (?:are|r) (?:you|u)|how'?s it going|good (?:morning|night|evening|afternoon)|gm|gn|thanks?|thank you|thx|ty|lol|haha\w*|yes|yeah|yep|no|nope|sure|cool|nice|great|done|np|no worries|see (?:you|u|ya)(?: soon| later)?|bye|cya|ttyl|lmk|brb|omw)(?:\s+(?:bro|dude|man|yaar|bhai|mate|buddy))?[\s!?.]*$"#)
+        static let secondPerson = rx(#"\b(?:u|ur|you|your|yours|you're|youre|ya|yall|y'all|tu|tum|tumhe|tumko|tumne|tumhara|tumhari|tumhare|tera|teri|tere|aap|aapko|aapne|aapka|aapki|aapke)\b"#)
+        static let addressed = rx(#"^(?:bhai|bro|bruh|yaar|dude|mom|mum|maa|papa|dad|didi|bhaiya|babe|baby|hey|hi|hello|yo|oye|arre)\b|\b(?:bhai|bro|yaar|dude|babe|bhaiya|didi)[?!.]*$"#)
+        static let ownPlans = rx(#"\b(?:the|our|my|ur|your|this|tonight'?s|tomorrow'?s|tmrw'?s)\s+(?:meeting|meet|party|call|dinner|lunch|brunch|breakfast|appointment|appt|flight|reservation|booking|interview|class|practice|rehearsal|wedding|event|plan|plans|trip|standup|stand-up|shift|session|date|hangout|get together|get-together|pickup|pick up|drop off|shoot|exam|gig|reunion|sleepover|potluck|bus|train|metro|subway|uber|lyft|cab|taxi|ride|delivery|order|package|parcel)\b|\bwho(?:'s| is| all is| all are| are)\s+(?:coming|joining|going|in|bringing)\b"#)
+        static let smallTalk = rx(#"\b(?:thanks|thank you|thx|tnx|ty|lol|lmao|lmfao|rofl|haha\w*|hehe\w*|omg|congrats|sorry|sry|pls|plz|please|hey|hi|hello|yo|bro|dude|yaar|bhai|okay|ok|kk|yeah|yep|yup|nope|sure)\b|!|\p{Extended_Pictographic}"#)
+        /// Today's score or the news: the AI can't know, so no chip that would
+        /// only say "Nothing found" (answers.ts rightNow).
+        static let rightNow = rx(#"\b(?:scores?|live|right now|today'?s?|tonight'?s?|this (?:morning|afternoon|evening|week|weekend)|yesterday'?s?|last night'?s?|news|headlines?|breaking|stock price|share price|trading at|exchange rates?|forex|forecast|weather|time is it|time in)\b"#)
+        static let pointing = rx(#"\b(?:it|this|that|these|those|there)\b"#)
+        static let people = rx(#"\b(?:i|i'm|im|i've|ive|i'll|i'd|me|my|mine|myself|we|we're|we've|we'll|we'd|us|our|ours|u|ur|you|you're|youre|you've|you'll|you'd|your|yours|ya|yall|y'all|let's|lets|he|she|him|her|his|hers|they|them|their|theirs)\b"#)
+        static let searchMe = rx(#"\b(?:near|around|for|to|from|with)\s+me\b|^(?:send|show|give|find|get|play|tell)\s+me\b"#)
+        /// A question can't end on these: it is still being typed.
+        static let unfinished: Set<String> = [
+            "the", "a", "an", "of", "in", "on", "at", "to", "for", "from", "with", "by", "and", "or", "but",
+            "is", "are", "was", "were", "be", "been", "do", "does", "did", "has", "have", "had", "what",
+            "who", "where", "when", "why", "how", "which", "whose", "whom", "this", "that", "these", "those",
+            "some", "any", "much", "many", "than", "as", "about", "into", "over", "like", "if", "so", "not",
+            "can", "could", "will", "would", "should", "shall", "may", "might", "must", "very", "more",
+            "most", "less", "per", "vs", "via", "its", "no",
+        ]
+        private static func rx(_ p: String) -> NSRegularExpression? { try? NSRegularExpression(pattern: p) }
     }
 }

@@ -673,7 +673,11 @@ final class GlyfScenarioUITests: XCTestCase {
     /// 2026-09-30: "$20 not showing amount in local currency ... i want
     /// rupee, or whatever i set in as local currency here in app").
     func testS214_MoneyShowsInTheLocalCurrencyInTheStrip() throws {
-        open()
+        // Rupees set in the app, whatever the region (an "auto" left by the
+        // last run followed a US region to dollars, and $20 had nothing to
+        // convert). Back to auto after.
+        open(["--glyf-money-currency", "INR"])
+        defer { open(["--glyf-money-currency", "auto"]) }
         var seen: [String] = []
         for typed in ["$20", "it costs $20"] {
             clear()

@@ -336,7 +336,11 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             case .space:
                 st.mode = .space
                 st.space = SpaceGesture(x: p.x, y: p.y, time: touch.timestamp)
-                kv.startChargeRing(duration: SpaceGesture.holdThreshold - 0.1, delay: 0.1)
+                // The same purple ring a glyf key shows, from the first
+                // moment (Arpit, 2026-09-30: "the space bar should also have
+                // that purple thing on pressing like other glyf keys"); it
+                // had waited 0.1 s, so a tap never showed it.
+                kv.startChargeRing(duration: SpaceGesture.holdThreshold)
                 st.holdTimer = Timer.scheduledTimer(
                     withTimeInterval: SpaceGesture.holdThreshold, repeats: false
                 ) { [weak self, weak st] _ in

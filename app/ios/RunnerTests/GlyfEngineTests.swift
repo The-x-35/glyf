@@ -1164,4 +1164,33 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(chip.value, "Tidy this up")
         XCTAssertEqual(chip.insert, "", "a tap runs hold space on the sentence instead of typing")
     }
+
+    /// Money with cents shows both places: "$20 = ₹1,919.6" read as a typo.
+    func testMoneyShowsBothCentsPlacesOrNone() {
+        XCTAssertEqual(Smart.format(1919.6, in: "INR"), "₹1,919.60")
+        XCTAssertEqual(Smart.format(1919.0, in: "INR"), "₹1,919")
+        XCTAssertEqual(Smart.format(20, in: "USD"), "$20")
+        XCTAssertEqual(Smart.format(12.5, in: "USD"), "$12.50")
+        XCTAssertEqual(Smart.format(0.999, in: "USD"), "$1")
+    }
+
+    // MARK: Questions (the AI answer chip as it is typed)
+
+    /// shared/questions/cases.json: the same cases Android's SmartTest runs.
+    func testQuestionsOfferAnAIAnswerAsTheyAreTyped() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/questions/cases.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var failures: [String] = []
+        for c in root["ask"] as? [[String: String]] ?? [] {
+            let got = Smart.question(in: c["text"] ?? "")
+            if got != c["question"] { failures.append("'\(c["text"] ?? "")' gave \(got ?? "nil"), wanted \(c["question"] ?? "")") }
+        }
+        for text in root["not"] as? [String] ?? [] {
+            if let got = Smart.question(in: text) { failures.append("'\(text)' gave '\(got)', wanted none") }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
 }

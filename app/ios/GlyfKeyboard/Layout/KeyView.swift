@@ -401,15 +401,21 @@ final class KeyView: UIControl {
         layer.addSublayer(ring)
         chargeRing = ring
 
-        let scale = CABasicAnimation(keyPath: "transform.scale")
-        scale.fromValue = Glass.Ripple.chargeRingStartScale
-        scale.toValue = 1.0
+        // The ring starts as far outside a wide key (the space bar) as it
+        // does outside a letter, not 18% of the bar's width past each end.
+        let start = Glass.Ripple.chargeRingStartScale - 1
+        let scaleX = CABasicAnimation(keyPath: "transform.scale.x")
+        scaleX.fromValue = 1 + start * min(1, 40 / max(bounds.width, 1))
+        scaleX.toValue = 1.0
+        let scaleY = CABasicAnimation(keyPath: "transform.scale.y")
+        scaleY.fromValue = 1 + start
+        scaleY.toValue = 1.0
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 0.0
         fade.toValue = 1.0
         fade.duration = 0.08
         let group = CAAnimationGroup()
-        group.animations = [scale, fade]
+        group.animations = [scaleX, scaleY, fade]
         group.duration = duration
         group.timingFunction = CAMediaTimingFunction(name: .easeOut)
         group.isRemovedOnCompletion = false
