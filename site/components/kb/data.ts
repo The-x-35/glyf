@@ -278,7 +278,9 @@ export function money(text: string): Money | null {
 export const WEATHER = "It's 24° and cloudy, rain after 6 PM ☔";
 
 /** Clipboard history. Links open in a new tab instead of pasting. */
-export const CLIPS = ["https://youtu.be/dQw4w9WgXcQ?si=ms6HzsvNvsPeLhH_", "meet.google.com/xk2-pqr-7ty", "Booking ref · QR7GH2", "the figma link from standup"];
+// BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the YouTube and Meet links.
+// export const CLIPS = ["https://youtu.be/dQw4w9WgXcQ?si=ms6HzsvNvsPeLhH_", "meet.google.com/xk2-pqr-7ty", "Booking ref · QR7GH2", "the figma link from standup"];
+export const CLIPS = ["https://www.tryglyf.com", "Gate 22 · boards 6:40 PM", "Booking ref · QR7GH2", "the figma link from standup"];
 export const CLIP_AGE = ["Just now", "2 min", "1 hr", "Yesterday"];
 export const isLink = (text: string) => /^https?:\/\//.test(text);
 
@@ -498,9 +500,14 @@ function answersFor(q: string): Card[] {
     const hm: [number, number] = [Number(parts.find((p) => p.type === "hour")?.value ?? 0), Number(parts.find((p) => p.type === "minute")?.value ?? 0)];
     return [{ kind: "answer", visual: "clock", title: now, meta: `Time · ${cap(zone)}`, sub: "Right now", hm, insert: `It's ${now} in ${cap(zone)} right now` }];
   }
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: google.com links.
+  // return [
+  //   { kind: "link", title: cap(q), meta: "google.com · Search", insert: `🔎 google.com/search?q=${encodeURIComponent(q)}` },
+  //   { kind: "link", title: `Images of ${q}`, meta: "google.com · Images", insert: `🔎 google.com/search?tbm=isch&q=${encodeURIComponent(q)}` },
+  // ];
   return [
-    { kind: "link", title: cap(q), meta: "google.com · Search", insert: `🔎 google.com/search?q=${encodeURIComponent(q)}` },
-    { kind: "link", title: `Images of ${q}`, meta: "google.com · Images", insert: `🔎 google.com/search?tbm=isch&q=${encodeURIComponent(q)}` },
+    { kind: "link", title: cap(q), meta: "Web · Search", insert: `🔎 ${cap(q)}` },
+    { kind: "link", title: `Images of ${q}`, meta: "Web · Images", insert: `🔎 Images of ${q}` },
   ];
 }
 
@@ -538,9 +545,10 @@ export function classify(raw: string): ActResult {
   const text = raw.trim();
   const t = text.toLowerCase();
   if (hasSecret(text)) return { kind: "refuse" };
-  if (/(near me|nearby|coffee|caf[eé]|dinner|lunch|breakfast|brunch|restaurant|pizza|\bpub\b|\bbar\b|drinks)/.test(t))
-    return { kind: "cards", label: "Places", cards: placesFor(text) };
-  if (/(video|watch|song|music|lofi|playlist|trailer|youtube|tutorial)/.test(t)) return { kind: "cards", label: "Videos", cards: videosFor(text) };
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: places and videos.
+  // if (/(near me|nearby|coffee|caf[eé]|dinner|lunch|breakfast|brunch|restaurant|pizza|\bpub\b|\bbar\b|drinks)/.test(t))
+  //   return { kind: "cards", label: "Places", cards: placesFor(text) };
+  // if (/(video|watch|song|music|lofi|playlist|trailer|youtube|tutorial)/.test(t)) return { kind: "cards", label: "Videos", cards: videosFor(text) };
   const items = listItems(text);
   if (/\b(list|groceries|grocery|to-?do|shopping|packing)\b/.test(t) && items.length >= 2)
     return { kind: "list", title: cap((t.match(/\b(groceries|grocery|to-?do|shopping|packing|list)\b/) ?? ["List"])[0]), items };
@@ -552,4 +560,6 @@ export function classify(raw: string): ActResult {
   };
 }
 
-export const TRY_CHIPS = ["coffee near me", "when is sunset?", "lofi to study", "groceries: milk, eggs and bread"];
+// BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: "coffee near me" and "lofi to study".
+// export const TRY_CHIPS = ["coffee near me", "when is sunset?", "lofi to study", "groceries: milk, eggs and bread"];
+export const TRY_CHIPS = ["when is sunset?", "time in london", "cant make it tmrw sry", "groceries: milk, eggs and bread"];

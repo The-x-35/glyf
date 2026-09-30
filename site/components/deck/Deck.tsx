@@ -67,7 +67,9 @@ const TRIPS = [
   { task: "Book a meeting", steps: ["Open Calendar", "Find a slot", "Create event", "Copy invite", "Back to chat", "Paste"], apps: 2 },
 ];
 
-const CONNECTORS = ["Google", "Notion", "Slack", "GitHub", "Linear", "Todoist", "Calendly", "Zoom", "Spotify"];
+// BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: "Google".
+// const CONNECTORS = ["Google", "Notion", "Slack", "GitHub", "Linear", "Todoist", "Calendly", "Zoom", "Spotify"];
+const CONNECTORS = ["Notion", "Slack", "GitHub", "Linear", "Todoist", "Calendly", "Zoom", "Spotify"];
 const TOOLS = [
   "Weather", "Crypto prices", "Currency", "Stocks", "Wikipedia", "Dictionary", "Synonyms", "Air quality", "Places", "Routes and ETA",
   "Holidays", "Books", "Tech news", "Sports", "Recipes", "Countries", "Food facts", "GitHub repos", "Quotes", "Jokes",
@@ -192,30 +194,32 @@ const SLIDES: Slide[] = [
       />
     ),
   },
-  {
-    id: "maps",
-    label: "Maps",
-    render: (c) => (
-      <Demo
-        id="sakshi"
-        eyebrow="Search inside the keyboard"
-        capture={c}
-        points={["Google, YouTube and Maps without leaving the chat", "Results drop in as rich cards, not bare links", "Hold space on a sentence and Glyf picks the search"]}
-      />
-    ),
-  },
-  {
-    id: "youtube",
-    label: "YouTube + Google",
-    render: (c) => (
-      <Demo
-        id="kabir"
-        eyebrow="Answers and videos"
-        capture={c}
-        points={["Send the video itself, not a search screenshot", "Answers come back as cards: sunset at 6:24", "Live facts only from real providers, never made up"]}
-      />
-    ),
-  },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the Maps slide.
+  // {
+    // id: "maps",
+    // label: "Maps",
+    // render: (c) => (
+      // <Demo
+        // id="sakshi"
+        // eyebrow="Search inside the keyboard"
+        // capture={c}
+        // points={["Google, YouTube and Maps without leaving the chat", "Results drop in as rich cards, not bare links", "Hold space on a sentence and Glyf picks the search"]}
+      // />
+    // ),
+  // },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the YouTube slide.
+  // {
+    // id: "youtube",
+    // label: "YouTube + Google",
+    // render: (c) => (
+      // <Demo
+        // id="kabir"
+        // eyebrow="Answers and videos"
+        // capture={c}
+        // points={["Send the video itself, not a search screenshot", "Answers come back as cards: sunset at 6:24", "Live facts only from real providers, never made up"]}
+      // />
+    // ),
+  // },
   {
     id: "vault",
     label: "Vault",
@@ -315,7 +319,8 @@ const SLIDES: Slide[] = [
         <h2 className="d-title d-title--center">
           <span>Your apps,</span> <span>one key away.</span>
         </h2>
-        <p className="d-lede d-lede--center">Nine apps sign in. Google and Notion run actions today.</p>
+        {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: <p className="d-lede d-lede--center">Nine apps sign in. Google and Notion run actions today.</p> */}
+        <p className="d-lede d-lede--center">Nine apps sign in. Two run actions today.</p>
         <div className="d-cloud">
           {CONNECTORS.map((c) => (
             <span key={c} className="d-tag d-tag--strong">
@@ -457,7 +462,8 @@ const SLIDES: Slide[] = [
             <small>Next</small>
             <ul>
               <li>Public TestFlight</li>
-              <li>App Store and Google Play launch</li>
+              {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: <li>App Store and Google Play launch</li> */}
+              <li>iPhone and Android launch</li>
               <li>Plus and Max subscriptions</li>
             </ul>
           </div>

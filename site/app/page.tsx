@@ -119,8 +119,8 @@ export default function Page() {
           <Wordmark href="#top" label="Glyf home" />
           <p className="footer-legal">© 2026 Glyf · iPhone and Android · <a href="/privacy">Privacy</a></p>
           <p className="footer-tm">
-            Android, Google Calendar, Google Maps, Google Meet and YouTube are trademarks of Google LLC. iPhone is a
-            trademark of Apple Inc. Glyf is not affiliated with or endorsed by Google or Apple.
+            Android is a trademark of Google LLC. iPhone is a trademark of Apple Inc. Glyf is not affiliated with or
+            endorsed by Google or Apple.
           </p>
         </div>
       </footer>

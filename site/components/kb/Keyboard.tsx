@@ -119,8 +119,9 @@ const MENU = [
 const TABS: { id: SearchTab; label: string; Icon: (p: { className?: string }) => ReactNode }[] = [
   // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: label "Google". "Search" is what the app calls this tab.
   { id: "google", label: "Search", Icon: I.SearchIcon },
-  { id: "youtube", label: "YouTube", Icon: I.PlayRectIcon },
-  { id: "maps", label: "Maps", Icon: I.PinIcon },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the YouTube and Maps tabs.
+  // { id: "youtube", label: "YouTube", Icon: I.PlayRectIcon },
+  // { id: "maps", label: "Maps", Icon: I.PinIcon },
 ];
 
 const TITLES: Partial<Record<Exclude<Panel, null>, [string, (p: { className?: string }) => ReactNode]>> = {

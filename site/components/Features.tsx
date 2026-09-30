@@ -6,6 +6,7 @@ import {
   ArrowDownIcon,
   CalendarCheckIcon,
   CalendarIcon,
+  ClipIcon,
   GifIcon,
   LinkIcon,
   LockIcon,
@@ -76,8 +77,8 @@ const FLOATS: Float[] = [
   { pa: -30, ring: 1, a: -52, jr: 0.03, r: 8, d: 0.6, t: 6.8, delay: -3.4,
     // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
     // el: <Tile bg="linear-gradient(160deg, #3fcf6d, #1e9e4a)" label="Google Maps"><PinIcon /></Tile> },
-    // Meanwhile, the same tile in Glyf's own colours.
-    el: <Tile bg="linear-gradient(160deg, #9b82ff, #6a4bff)" label="Maps"><PinIcon /></Tile> },
+    // Meanwhile, a tile for one of Glyf's own.
+    el: <Tile bg="linear-gradient(160deg, #9b82ff, #6a4bff)" label="Vault"><LockIcon /></Tile> },
   { pa: 60, ring: 1, a: -12, jr: -0.02, r: 6, d: 1.05, t: 6.4, delay: -1.8,
     el: <span className="fx-gkey">g<span className="fx-gdot" /></span> },
   { ring: 1, a: 28, jr: 0.02, r: -4, d: 0.55, t: 7.6, delay: -0.3,
@@ -85,7 +86,7 @@ const FLOATS: Float[] = [
   { pa: 30, ring: 1, a: 68, jr: -0.03, r: -9, d: 0.85, t: 6.6, delay: -2.4,
     // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
     // el: <Tile bg="linear-gradient(160deg, #ff4d5e, #e0102a)" label="YouTube"><PlayRectIcon /></Tile> },
-    el: <Tile bg="linear-gradient(160deg, #e07bff, #b23fe6)" label="Videos"><PlayIcon /></Tile> },
+    el: <Tile bg="linear-gradient(160deg, #e07bff, #b23fe6)" label="AI"><SparkIcon /></Tile> },
   { pa: 90, ring: 1, a: 108, jr: 0.03, r: -6, d: 0.4, t: 9, delay: -2.8,
     el: <span className="fx-note fx-note-yellow">coffee at 6? ☕</span> },
   { pa: 120, ring: 1, a: 150, r: 7, d: 0.95, t: 5.9, delay: -3.1, el: <Key k="T" /> },
@@ -99,11 +100,13 @@ const FLOATS: Float[] = [
   { ring: 2, a: -101.25, jr: 0.02, r: -6, d: 0.8, t: 7.9, delay: -0.6,
     el: <Tile bg="linear-gradient(160deg, #26262b, #0b0b0e)" label="MagicBlock"><MagicBlockMark /></Tile> },
   { pa: -60, ring: 2, a: -78.75, r: 5, d: 0.5, t: 8.4, delay: -4.4,
-    el: <span className="fx-note fx-note-pink">send me the Meet link!</span> },
+    // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+    // el: <span className="fx-note fx-note-pink">send me the Meet link!</span> },
+    el: <span className="fx-note fx-note-pink">send me your address!</span> },
   { ring: 2, a: -56.25, jr: -0.02, r: 9, d: 0.7, t: 7.1, delay: -4.2,
     // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
     // el: <Tile bg="linear-gradient(160deg, #1fb57a, #0b8a58)" label="Google Meet"><VideoIcon /></Tile> },
-    el: <Tile bg="linear-gradient(160deg, #62d4ff, #1f9fe0)" label="Video call"><VideoIcon /></Tile> },
+    el: <Tile bg="linear-gradient(160deg, #62d4ff, #1f9fe0)" label="Clipboard"><ClipIcon /></Tile> },
   { ring: 2, a: -33.75, wide: true, r: -3, d: 0.35, t: 8, delay: -1,
     el: <Chip icon={<TranslateIcon />} text="hasta mañana" meta="Translate" /> },
   { ring: 2, a: -11.25, jr: 0.02, r: 10, d: 0.65, t: 7.2, delay: -5,
@@ -117,7 +120,9 @@ const FLOATS: Float[] = [
   { ring: 2, a: 78.75, r: 5, d: 0.6, t: 6.9, delay: -3.6,
     el: <Tile bg="linear-gradient(160deg, #2b2b30, #111114)" label="Cal.com"><CalendarCheckIcon /></Tile> },
   { ring: 2, a: 101.25, wide: true, r: 3, d: 0.45, t: 7.7, delay: -0.9,
-    el: <Chip icon={<PinIcon />} text="Bean & Byte Café" meta="350 m" /> },
+    // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+    // el: <Chip icon={<PinIcon />} text="Bean & Byte Café" meta="350 m" /> },
+    el: <Chip icon={<SparkIcon />} text="Canberra" meta="AI answer" /> },
   { pa: 150, ring: 2, a: 123.75, jr: 0.02, r: -8, d: 0.3, t: 8.6, delay: -3.8,
     el: <Tile bg="linear-gradient(160deg, #ff5fb3, #d81b7c)" label="GIFs by KLIPY"><GifIcon /></Tile> },
   { ring: 2, a: 146.25, r: 8, d: 1.1, t: 5.2, delay: -2.6, el: <Key k="C" /> },
@@ -154,13 +159,17 @@ const BOUND = [
   { key: "C", label: "Calendar", icon: <CalendarIcon />, result: "Demo call · 6:00 PM" },
   { key: "V", label: "Vault", icon: <LockIcon />, result: "123 Market St, San Francisco" },
   { key: "T", label: "Translate", icon: <TranslateIcon />, result: "hasta mañana" },
-  { key: "M", label: "Meet link", icon: <VideoIcon />, result: "meet.google.com/abc-defg" },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+  // { key: "M", label: "Meet link", icon: <VideoIcon />, result: "meet.google.com/abc-defg" },
+  { key: "A", label: "Ask AI", icon: <SparkIcon />, result: "Canberra is the capital" },
 ];
 
 /** The strip's tools and what each opens above the keys. */
 const TOOLS = [
-  { icon: <SearchIcon />, label: "Search", panel: "coffee near me" },
-  { icon: <PinIcon />, label: "Maps", panel: "Bean & Byte Café · 350 m" },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: a places search and the Maps tool.
+  // { icon: <SearchIcon />, label: "Search", panel: "coffee near me" },
+  // { icon: <PinIcon />, label: "Maps", panel: "Bean & Byte Café · 350 m" },
+  { icon: <SearchIcon />, label: "Search", panel: "when is sunset?" },
   { icon: <CalendarIcon />, label: "Calendar", panel: "Demo call · Tomorrow 6:00 PM" },
   { icon: <WalletIcon />, label: "Wallet", panel: "Send 200 USDC, privately" },
   { icon: <TranslateIcon />, label: "Translate", panel: "see you tomorrow → hasta mañana" },
@@ -169,24 +178,26 @@ const TOOLS = [
 
 /** Answers that land in the strip instead of in another app. */
 const ANSWERS = [
-  { icon: <PinIcon />, text: "Bean & Byte Café", meta: "350 m" },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+  // { icon: <PinIcon />, text: "Bean & Byte Café", meta: "350 m" },
+  { icon: <SparkIcon />, text: "Canberra", meta: "AI answer" },
   { icon: <CalendarIcon />, text: "Demo call", meta: "Tomorrow 6:00 PM" },
   { icon: <span className="feat-cash">$</span>, text: "1 AAPL", meta: "$341.07" },
 ];
 
 /** What the keyboard reaches today (Connected tools, the wallet, search). */
 const WORKS_WITH = [
-  { icon: <CalendarIcon />, name: "Google Calendar" },
-  { icon: <VideoIcon />, name: "Google Meet" },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+  // { icon: <CalendarIcon />, name: "Google Calendar" },
+  // { icon: <VideoIcon />, name: "Google Meet" },
   { icon: <CalendarCheckIcon />, name: "Cal.com" },
   { icon: <LinkIcon />, name: "Calendly" },
   { icon: <MagicBlockMark />, name: "MagicBlock" },
   { icon: <WalletIcon />, name: "Solana wallet" },
   { icon: <SwapIcon />, name: "Jupiter" },
-  { icon: <PinIcon />, name: "Google Maps" },
-  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the play-in-a-box icon beside YouTube's name.
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes:
+  // { icon: <PinIcon />, name: "Google Maps" },
   // { icon: <PlayRectIcon />, name: "YouTube" },
-  { icon: <PlayIcon />, name: "YouTube" },
   { icon: <PersonIcon />, name: "Contacts" },
   { icon: <GifIcon />, name: "GIFs by KLIPY" },
 ];

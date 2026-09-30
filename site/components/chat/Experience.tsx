@@ -135,7 +135,8 @@ function Rich({ text }: { text: string }) {
         <MiniMap seed={hash(name)} />
         <span className="rich-body">
           <b>{name}</b>
-          <span>{dist ? `${dist} · Maps` : "Maps"}</span>
+          {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: <span>{dist ? `${dist} · Maps` : "Maps"}</span> */}
+          <span>{dist ? `${dist} away` : "Place"}</span>
         </span>
       </span>
     );
@@ -149,7 +150,7 @@ function Rich({ text }: { text: string }) {
         </span>
         <span className="rich-body">
           <b>{title}</b>
-          <span>youtube.com</span>
+          {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: <span>youtube.com</span> */}
         </span>
       </span>
     );

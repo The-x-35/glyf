@@ -67,24 +67,25 @@ const polished = (t: string) => /absolutely|sure thing|will send by 6|on it/i.te
 const placeName = (sent: string) => sent.replace(/^📍\s*/, "").split(" · ")[0];
 
 export const SCENARIOS: Scenario[] = [
-  {
-    id: "sakshi",
-    name: "Sakshi",
-    avatar: "☕",
-    tint: "#30b0c7",
-    tag: "Maps",
-    headline: ["Where to meet?", "Maps, mid-chat."],
-    beats: [
-      {
-        them: ["free this evening? 😊", "let's get coffee ☕ where should we meet?"],
-        goal: (t) => t.includes("📍"),
-        coach: (k) => searchCoach(k, "maps", (t) => t.includes("📍")),
-        reply: (sent) => [`perfect 🙌 ${placeName(sent)} at 6 then`, "can't wait to catch up!"],
-        tapback: "❤️",
-        nudge: "send me a place 😄",
-      },
-    ],
-  },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the Maps chat.
+  // {
+    // id: "sakshi",
+    // name: "Sakshi",
+    // avatar: "☕",
+    // tint: "#30b0c7",
+    // tag: "Maps",
+    // headline: ["Where to meet?", "Maps, mid-chat."],
+    // beats: [
+      // {
+        // them: ["free this evening? 😊", "let's get coffee ☕ where should we meet?"],
+        // goal: (t) => t.includes("📍"),
+        // coach: (k) => searchCoach(k, "maps", (t) => t.includes("📍")),
+        // reply: (sent) => [`perfect 🙌 ${placeName(sent)} at 6 then`, "can't wait to catch up!"],
+        // tapback: "❤️",
+        // nudge: "send me a place 😄",
+      // },
+    // ],
+  // },
   {
     id: "mom",
     name: "Mom",
@@ -197,33 +198,33 @@ export const SCENARIOS: Scenario[] = [
       },
     ],
   },
-  {
-    id: "kabir",
-    name: "Kabir",
-    avatar: "🚗",
-    tint: "#34c759",
-    // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: tag "YouTube + Google".
-    tag: "YouTube + Search",
-    headline: ["Send the song,", "not the search."],
-    beats: [
-      {
-        them: ["road trip tomorrow 🚗", "send me something good for the drive"],
-        goal: (t) => t.includes("▶"),
-        coach: (k) => searchCoach(k, "youtube", (t) => t.includes("▶")),
-        reply: ["ok this slaps 🔥"],
-        tapback: "🔥",
-        nudge: "send a song 😄",
-      },
-      {
-        them: ["also, terrace at sunset today? 🌇", "what time is sunset?"],
-        goal: (t) => t.includes("6:24"),
-        coach: (k) => searchCoach(k, "google", (t) => t.includes("6:24")),
-        reply: ["see you up there ☀️"],
-        tapback: "❤️",
-        nudge: "what time though? 🌅",
-      },
-    ],
-  },
+  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the YouTube chat.
+  // {
+    // id: "kabir",
+    // name: "Kabir",
+    // avatar: "🚗",
+    // tint: "#34c759",
+    // tag: "YouTube + Google",
+    // headline: ["Send the song,", "not the search."],
+    // beats: [
+      // {
+        // them: ["road trip tomorrow 🚗", "send me something good for the drive"],
+        // goal: (t) => t.includes("▶"),
+        // coach: (k) => searchCoach(k, "youtube", (t) => t.includes("▶")),
+        // reply: ["ok this slaps 🔥"],
+        // tapback: "🔥",
+        // nudge: "send a song 😄",
+      // },
+      // {
+        // them: ["also, terrace at sunset today? 🌇", "what time is sunset?"],
+        // goal: (t) => t.includes("6:24"),
+        // coach: (k) => searchCoach(k, "google", (t) => t.includes("6:24")),
+        // reply: ["see you up there ☀️"],
+        // tapback: "❤️",
+        // nudge: "what time though? 🌅",
+      // },
+    // ],
+  // },
   {
     id: "sofia",
     name: "Sofía",
