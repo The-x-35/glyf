@@ -98,9 +98,9 @@ class EventComposerView(
     private val startTime = pill("event:starts:time") { pick(1) }
     private val endDate = pill("event:ends:date") { pick(2) }
     private val endTime = pill("event:ends:time") { pick(2) }
-    private val allDay = Switch(ctx)
-    private val video = Switch(ctx)
-    private val share = Switch(ctx)
+    private val allDay = GlassSwitch(ctx, start.allDay) { on -> allDayChanged(on) }
+    private val video = GlassSwitch(ctx, start.videoCall) { on -> draft = draft.copy(videoCall = on) }
+    private val share = GlassSwitch(ctx, start.share) { on -> draft = draft.copy(share = on) }
     private val note = LinearLayout(ctx)
     private val wheels = LinearLayout(ctx)
     private val dayWheel = NumberPicker(ctx)
@@ -121,17 +121,17 @@ class EventComposerView(
         header.orientation = LinearLayout.HORIZONTAL
         header.gravity = Gravity.CENTER_VERTICAL
         cancel.apply {
-            text = "Cancel"; textSize = 16f; setTextColor(accent)
+            text = "Cancel"; Glass.style(this, 16f, Glass.REGULAR, accent)
             setPadding(dpi(14), dpi(8), dpi(10), dpi(8))
             tag(this, "event:cancel")
             setOnClickListener { cancelTapped() }
         }
         heading.apply {
-            text = if (edit) "Edit Event" else "New Event"; textSize = 16f; typeface = Typeface.DEFAULT_BOLD
-            setTextColor(palette.ink); gravity = Gravity.CENTER
+            text = if (edit) "Edit Event" else "New Event"; Glass.style(this, 16f, Glass.SEMIBOLD)
+            gravity = Gravity.CENTER
         }
         add.apply {
-            text = "Add"; textSize = 16f; typeface = Typeface.DEFAULT_BOLD; setTextColor(accent)
+            text = "Add"; Glass.style(this, 16f, Glass.SEMIBOLD, accent)
             setPadding(dpi(10), dpi(8), dpi(14), dpi(8))
             tag(this, "event:add")
             setOnClickListener { addTapped() }
@@ -143,14 +143,15 @@ class EventComposerView(
 
         // Title, Invitees, Starts, Ends, Video call, All-day.
         card.orientation = LinearLayout.VERTICAL
-        card.background = GradientDrawable().apply { cornerRadius = dp(12f); setColor(palette.card) }
+        card.background = Glass.card(ctx, radius = 12f)
+        card.clipToOutline = true
         card.addView(row().apply {
             tag(this, "event:title")
             setOnClickListener { begin(Field.TITLE) }
             // Every row reads the same way: its name, then its value on the right.
             addView(label("Title"), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             titleValue.apply {
-                textSize = 15f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                Glass.style(this, 15f); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
                 gravity = Gravity.END
             }
             addView(titleValue, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.6f))
@@ -162,7 +163,7 @@ class EventComposerView(
                 setOnClickListener { begin(Field.INVITEES) }
                 addView(label("Invitees"), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                 inviteValue.apply {
-                    textSize = 15f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.START
+                    Glass.style(this, 15f); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.START
                     gravity = Gravity.END
                 }
                 addView(inviteValue, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.6f))
@@ -191,9 +192,7 @@ class EventComposerView(
                     addView(toggle)
                 }, rowParams())
             }
-            video.setOnCheckedChangeListener { _, on -> draft = draft.copy(videoCall = on) }
-            share.setOnCheckedChangeListener { _, on -> draft = draft.copy(share = on) }
-            allDay.setOnCheckedChangeListener { _, on -> allDayChanged(on) }
+            // The switches report through their own callbacks (GlassSwitch).
         }
         rows.isVerticalScrollBarEnabled = false
         rows.addView(card)
@@ -206,10 +205,10 @@ class EventComposerView(
             note.gravity = Gravity.CENTER_VERTICAL
             note.addView(TextView(ctx).apply {
                 text = "Allow Calendar for Glyf to ${if (edit) "change" else "add"} events."
-                textSize = 13f; setTextColor(soft(150))
+                Glass.style(this, 13f, Glass.REGULAR, Glass.textSecondary)
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             note.addView(TextView(ctx).apply {
-                text = "Settings"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(accent)
+                text = "Settings"; Glass.style(this, 14f, Glass.SEMIBOLD, accent)
                 setPadding(dpi(10), dpi(6), dpi(4), dpi(6))
                 tag(this, "event:open-app")
                 setOnClickListener { onConnect() }
@@ -287,20 +286,22 @@ class EventComposerView(
 
     private fun rowParams() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(40))
 
-    private fun line() = View(context).apply { setBackgroundColor(soft(28)) }.also {
-        it.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { leftMargin = dpi(14) }
+    /** iOS's separator between rows: from the words' edge, half a point. */
+    private fun line() = View(context).apply { setBackgroundColor(Glass.strokeSeparator) }.also {
+        it.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            maxOf(1, dpi(1) / 2)).apply { leftMargin = dpi(14) }
     }
 
-    private fun label(t: String) = TextView(context).apply { text = t; textSize = 16f; setTextColor(palette.ink) }
+    private fun label(t: String) = TextView(context).apply { text = t; Glass.style(this, 15f) }
 
     private fun space() = View(context).apply { layoutParams = LinearLayout.LayoutParams(dpi(6), 1) }
 
+    /** iOS's date and time pills: the soft fill, 7 corners, 15 regular. */
     private fun pill(id: String, onTap: () -> Unit) = TextView(context).apply {
-        textSize = 15f
-        setTextColor(palette.ink)
+        Glass.style(this, 15f)
         gravity = Gravity.CENTER
-        setPadding(dpi(10), dpi(5), dpi(10), dpi(5))
-        background = GradientDrawable().apply { cornerRadius = dp(7f); setColor(soft(20)) }
+        setPadding(dpi(10), dpi(6), dpi(10), dpi(6))
+        background = Glass.card(context, fill = Glass.fillSoft, radius = 7f)
         tag(this, id)
         setOnClickListener { onTap() }
     }
@@ -448,14 +449,14 @@ class EventComposerView(
         val title = draft.title.trim()
         // Left empty it is added as "New Event", so it says so.
         titleValue.text = title.ifEmpty { "New Event" }
-        titleValue.setTextColor(if (title.isEmpty()) soft(120) else palette.ink)
+        titleValue.setTextColor(if (title.isEmpty()) Glass.textSecondary else Glass.textPrimary)
         val invitees = draft.invitees
         inviteValue.text = when (invitees.size) {
             0 -> "None"
             1 -> invitees[0]
             else -> "${invitees[0]} and ${invitees.size - 1} more"
         }
-        inviteValue.setTextColor(if (invitees.isEmpty()) soft(120) else palette.ink)
+        inviteValue.setTextColor(if (invitees.isEmpty()) Glass.textSecondary else Glass.textPrimary)
         stripTextView.text = stripText
         stripTextView.hint = if (editing == Field.INVITEES) "Emails, with spaces between" else "Title"
         stripTextView.setHintTextColor(soft(110))
@@ -469,9 +470,9 @@ class EventComposerView(
         startTime.visibility = if (draft.allDay) GONE else VISIBLE
         endTime.visibility = if (draft.allDay) GONE else VISIBLE
         endDate.visibility = if (sameDay && !draft.allDay) GONE else VISIBLE
-        if (allDay.isChecked != draft.allDay) allDay.isChecked = draft.allDay
-        if (video.isChecked != draft.videoCall) video.isChecked = draft.videoCall
-        if (share.isChecked != draft.share) share.isChecked = draft.share
+        if (allDay.isOn != draft.allDay) allDay.set(draft.allDay, animated = false)
+        if (video.isOn != draft.videoCall) video.set(draft.videoCall, animated = false)
+        if (share.isOn != draft.share) share.set(draft.share, animated = false)
         hint.text = when {
             editing == Field.INVITEES && invitees.isEmpty() -> "Google emails each one the invite"
             editing == Field.INVITEES -> "Invite ${invitees.joinToString(", ")}"

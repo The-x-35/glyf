@@ -94,8 +94,7 @@ class CalendarPanelView(
 
     /** The hold menu, over a scrim like the clipboard's. */
     private val scrim = View(ctx).apply {
-        setBackgroundColor(Color.argb(184, Color.red(palette.board),
-            Color.green(palette.board), Color.blue(palette.board)))
+        setBackgroundColor(Glass.scrim)
         visibility = GONE
         setTag(com.demo.glyf.R.id.qa_id, "calendar:scrim")
         setOnClickListener { dismissMenu() }
@@ -114,57 +113,43 @@ class CalendarPanelView(
         }
         loadEvents()
         val root = panelBody
-        // Header: close, then the tool's name, like the other panels.
-        val header = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dpi(8), 0, dpi(8), 0)
-        }
-        header.addView(TextView(ctx).apply {
-            text = "✕"; textSize = 16f; setTextColor(palette.ink)
-            setPadding(dpi(8), dpi(6), dpi(12), dpi(6))
-            setTag(com.demo.glyf.R.id.qa_id, "calendar:close"); contentDescription = "Close"
-            setOnClickListener { onClose() }
-        })
-        header.addView(TextView(ctx).apply {
-            text = "Calendar"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(palette.ink)
-        })
-        root.addView(header, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(40)))
-
+        // The strip names the panel (✕, the calendar's mark, "Calendar"), as
+        // on iOS: the panel spends no row on a header of its own.
         // The day (or the month, on the grid), with the way to the other.
         val dayRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dpi(12), 0, dpi(10), 0)
+            setPadding(dpi(12), 0, dpi(12), 0)
         }
-        title.apply { textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(palette.ink) }
+        title.apply { Glass.style(this, 15f, Glass.SEMIBOLD); maxLines = 1 }
         dayRow.addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        dayRow.addView(arrow("‹", "calendar:prev") { step(-1) })
-        dayRow.addView(arrow("›", "calendar:next") { step(1) })
+        dayRow.addView(arrow("chevron", "calendar:prev") { step(-1) })
+        dayRow.addView(arrow("chevronright", "calendar:next") { step(1) })
         modeButton.apply {
-            textSize = 13f; typeface = Typeface.DEFAULT_BOLD; setTextColor(palette.ink); gravity = Gravity.CENTER
-            setPadding(dpi(14), 0, dpi(14), 0)
-            background = GradientDrawable().apply { cornerRadius = dp(15f); setColor(palette.card) }
+            Glass.style(this, 13f, Glass.SEMIBOLD)
+            gravity = Gravity.CENTER
+            background = Glass.pill(Glass.surfaceCard)
             setTag(com.demo.glyf.R.id.qa_id, "calendar:month")
             setOnClickListener { toggleMonth() }
         }
-        dayRow.addView(modeButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dpi(30))
-            .apply { leftMargin = dpi(6) })
+        dayRow.addView(modeButton, LinearLayout.LayoutParams(dpi(76), dpi(30)).apply { leftMargin = dpi(6) })
         // A call link for the chat, without making an event.
         dayRow.addView(FrameLayout(ctx).apply {
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(palette.card) }
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Glass.surfaceCard) }
             setTag(com.demo.glyf.R.id.qa_id, "calendar:call"); contentDescription = "Send a call link"
-            addView(ToolIcon(ctx, "video", palette.ink), LayoutParams(dpi(20), dpi(20), Gravity.CENTER))
+            addView(ToolIcon(ctx, "video", Glass.textPrimary).apply { solid = true; weight = 2f; scale = 0.78f },
+                LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             setOnClickListener { v -> insertCallLink(v) }
         }, LinearLayout.LayoutParams(dpi(30), dpi(30)).apply { leftMargin = dpi(6) })
         // Calendar's own + for a new event, at the end of the row.
-        dayRow.addView(TextView(ctx).apply {
-            text = "+"; textSize = 20f; setTextColor(palette.ink); gravity = Gravity.CENTER
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(palette.card) }
+        dayRow.addView(FrameLayout(ctx).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Glass.surfaceCard) }
             setTag(com.demo.glyf.R.id.qa_id, "calendar:new"); contentDescription = "New event"
+            addView(ToolIcon(ctx, "plus", Glass.textPrimary).apply { solid = true; weight = 2f; scale = 0.8f },
+                LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             setOnClickListener { compose(null) }
         }, LinearLayout.LayoutParams(dpi(30), dpi(30)).apply { leftMargin = dpi(6) })
-        root.addView(dayRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(36)))
+        root.addView(dayRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(40)))
 
         // One space, holding either the events or the month.
         val body = FrameLayout(ctx)
@@ -176,22 +161,34 @@ class CalendarPanelView(
         })
         root.addView(body, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
+        // The day itself is the thing people most often type: "September 30".
+        actions.addView(TextView(ctx).apply {
+            text = "Insert date"
+            Glass.style(this, 13f, Glass.SEMIBOLD)
+            gravity = Gravity.CENTER
+            background = Glass.pill(Glass.surfaceCard)
+            setTag(com.demo.glyf.R.id.qa_id, "calendar:date")
+            setOnClickListener { onInsert(dateText(selected)) }
+        }, LinearLayout.LayoutParams(0, dpi(38), 1f))
         action.apply {
             text = if (connected) "Share free time" else "Allow Calendar in Settings"
-            textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.WHITE); gravity = Gravity.CENTER
-            background = GradientDrawable().apply { cornerRadius = dp(19f); setColor(accent) }
+            Glass.style(this, 13f, Glass.SEMIBOLD, Color.WHITE)
+            gravity = Gravity.CENTER
+            maxLines = 1
+            background = Glass.pill(accent)
             setTag(com.demo.glyf.R.id.qa_id, if (connected) "calendar:free" else "calendar:connect")
             setOnClickListener {
                 if (connected) onInsert(CalendarText.freeTime(selected, events)) else onConnect()
             }
         }
-        actions.addView(action, LinearLayout.LayoutParams(0, dpi(38), 1f))
+        actions.addView(action, LinearLayout.LayoutParams(0, dpi(38), 1f).apply { leftMargin = dpi(8) })
         // The person's own booking page, when the app has one.
         if (bookingLink != null) {
             actions.addView(TextView(ctx).apply {
                 text = "Book a time"
-                textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(palette.ink); gravity = Gravity.CENTER
-                background = GradientDrawable().apply { cornerRadius = dp(19f); setColor(palette.card) }
+                Glass.style(this, 13f, Glass.SEMIBOLD)
+                gravity = Gravity.CENTER
+                background = Glass.pill(Glass.surfaceCard)
                 setTag(com.demo.glyf.R.id.qa_id, "calendar:book")
                 setOnClickListener { openBooking() }
             }, LinearLayout.LayoutParams(0, dpi(38), 1f).apply { leftMargin = dpi(8) })
@@ -420,12 +417,19 @@ class CalendarPanelView(
         unlightLater()
     }
 
-    private fun arrow(label: String, id: String, onTap: () -> Unit) = TextView(context).apply {
-        text = label; textSize = 20f; setTextColor(palette.ink); gravity = Gravity.CENTER
-        setPadding(dpi(10), 0, dpi(10), dpi(2))
-        setTag(com.demo.glyf.R.id.qa_id, id)
-        setOnClickListener { onTap() }
-    }
+    private fun arrow(glyph: String, id: String, onTap: () -> Unit) =
+        ToolIcon(context, glyph, Glass.textPrimary).apply {
+            solid = true; weight = 2.2f; scale = 0.82f
+            setTag(com.demo.glyf.R.id.qa_id, id)
+            contentDescription = if (glyph == "chevron") "Previous" else "Next"
+            setOnClickListener { onTap() }
+            layoutParams = LinearLayout.LayoutParams(dpi(34), dpi(34))
+        }
+
+    /** "September 30", in the phone's own order for month and day (iOS). */
+    private fun dateText(day: Long): String = SimpleDateFormat(
+        android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "MMMMd"),
+        Locale.getDefault()).format(java.util.Date(day))
 
 
     private fun loadEvents() {
@@ -518,6 +522,9 @@ class CalendarPanelView(
             CalendarText.dayLabel(selected)
         }
         modeButton.text = if (showingMonth) "Done" else "Month"
+        modeButton.layoutParams = (modeButton.layoutParams as LinearLayout.LayoutParams).apply {
+            width = dpi(if (showingMonth) 66 else 76)
+        }
         modeButton.contentDescription = if (showingMonth) "Close the month" else "Open the month"
         grid.visibility = if (showingMonth) View.VISIBLE else View.GONE
         agendaScroll.visibility = if (showingMonth) View.GONE else View.VISIBLE
@@ -531,9 +538,10 @@ class CalendarPanelView(
         val day = CalendarText.on(selected, events)
         if (day.isEmpty()) {
             agenda.addView(TextView(context).apply {
-                text = "Nothing planned"; textSize = 14f; setTextColor(soft(150))
-                setPadding(dpi(2), dpi(10), 0, 0)
-            })
+                text = "Nothing planned"
+                Glass.style(this, 14f, Glass.REGULAR, Glass.textSecondary)
+                gravity = Gravity.CENTER_VERTICAL
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(40)))
         }
         for ((i, e) in day.withIndex()) {
             val row = eventRow(e, i)
@@ -550,7 +558,9 @@ class CalendarPanelView(
         }
         googleNote?.let { said ->
             agenda.addView(TextView(context).apply {
-                text = said; textSize = 12f; setTextColor(soft(150))
+                text = said
+                Glass.style(this, 12f, Glass.REGULAR, Glass.textSecondary)
+                maxLines = 2
                 setPadding(dpi(2), dpi(4), 0, 0)
                 setTag(com.demo.glyf.R.id.qa_id, "calendar:google")
             })
@@ -561,9 +571,9 @@ class CalendarPanelView(
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dpi(8), dpi(9), dpi(10), dpi(9))
+            setPadding(dpi(10), dpi(10), dpi(12), dpi(10))
             background = GradientDrawable().apply {
-                cornerRadius = dp(12f); setColor(palette.card)
+                cornerRadius = dp(12f); setColor(Glass.surfaceCard)
                 // What was just added, lit for a moment so the eye finds it.
                 if (isJustAdded(e)) setStroke(dpi(2), accent)
             }
@@ -579,30 +589,34 @@ class CalendarPanelView(
         val time = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         time.addView(TextView(context).apply {
             text = if (e.allDay) "All day" else CalendarText.clock(e.start)
-            textSize = if (e.allDay) 13f else 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(palette.ink)
+            Glass.style(this, if (e.allDay) 13f else 14f, Glass.SEMIBOLD)
             maxLines = 1
         })
         if (!e.allDay) {
             time.addView(TextView(context).apply {
-                text = CalendarText.clock(e.end); textSize = 12f; setTextColor(soft(150)); maxLines = 1
-            })
+                text = CalendarText.clock(e.end)
+                Glass.style(this, 12f, Glass.REGULAR, Glass.textSecondary)
+                maxLines = 1
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dpi(2) })
         }
-        row.addView(time, LinearLayout.LayoutParams(dpi(66), LinearLayout.LayoutParams.WRAP_CONTENT)
-            .apply { rightMargin = dpi(6) })
+        row.addView(time, LinearLayout.LayoutParams(dpi(74), LinearLayout.LayoutParams.WRAP_CONTENT)
+            .apply { rightMargin = dpi(8) })
 
         val text = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         text.addView(TextView(context).apply {
-            this.text = e.title; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(palette.ink)
+            this.text = e.title
+            Glass.style(this, 15f, Glass.SEMIBOLD)
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         })
         val place = e.location
         if (!place.isNullOrEmpty()) {
             text.addView(TextView(context).apply {
-                this.text = place; textSize = 12.5f; setTextColor(soft(150))
+                this.text = place
+                Glass.style(this, 12.5f, Glass.REGULAR, Glass.textSecondary)
                 maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-            })
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dpi(2) })
         }
         row.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         return row
@@ -629,17 +643,17 @@ class CalendarPanelView(
         refusal(e)?.let { return toast(it) }
         performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         popMenu(anchor, listOf(
-            MenuRow("✎", "Edit", "calendar:menu:edit") { dismissMenu(); edit(e) },
-            MenuRow("🗑", "Delete", "calendar:menu:delete", destructive = true) { confirmDelete(e, anchor) },
+            MenuRow("edit", "Edit", "calendar:menu:edit") { dismissMenu(); edit(e) },
+            MenuRow("trash", "Delete", "calendar:menu:delete", destructive = true) { confirmDelete(e, anchor) },
         ))
     }
 
     /** Delete asks once more, the way Calendar does: an event can have guests. */
     private fun confirmDelete(e: CalendarText.Event, anchor: View) {
         popMenu(anchor, listOf(
-            MenuRow("🗑", if (e.repeats) "Delete This Event Only" else "Delete Event", "calendar:menu:confirm",
+            MenuRow("trash", if (e.repeats) "Delete This Event Only" else "Delete Event", "calendar:menu:confirm",
                 destructive = true) { dismissMenu(); delete(e) },
-            MenuRow("✕", "Cancel", "calendar:menu:cancel") { dismissMenu() },
+            MenuRow("close", "Cancel", "calendar:menu:cancel") { dismissMenu() },
         ))
     }
 
@@ -651,21 +665,28 @@ class CalendarPanelView(
         menu?.let { removeView(it) }
         scrim.visibility = VISIBLE
         scrim.bringToFront()
-        val danger = Color.rgb(0xF0, 0x44, 0x38)
+        val danger = Glass.accentDanger
         val box = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            elevation = dp(8f)
+            elevation = dp(10f)
             minimumWidth = dpi(176)
-            background = GradientDrawable().apply { cornerRadius = dp(14f); setColor(palette.card) }
+            background = Glass.card(context, radius = 14f)
+            clipToOutline = true
         }
-        for (row in rows) {
+        for ((i, row) in rows.withIndex()) {
+            if (i > 0) box.addView(View(context).apply { setBackgroundColor(Glass.strokeHairline) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, maxOf(1, dpi(1) / 2)))
+            val ink = if (row.destructive) danger else Glass.textPrimary
             box.addView(TextView(context).apply {
-                text = "${row.icon}    ${row.label}"
-                textSize = 16f
+                text = row.label
+                Glass.style(this, 17f, Glass.REGULAR, ink)
                 maxLines = 1
-                setTextColor(if (row.destructive) danger else palette.ink)
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dpi(18), 0, dpi(18), 0)
+                setCompoundDrawablesRelativeWithIntrinsicBounds(
+                    ToolIcon(context, row.icon, ink).apply { solid = true; weight = 1.45f; scale = 1.2f }
+                        .asDrawable(dpi(26)), null, null, null)
+                compoundDrawablePadding = dpi(14)
+                setPadding(dpi(16), 0, dpi(18), 0)
                 setTag(com.demo.glyf.R.id.qa_id, row.id)
                 setOnClickListener { row.action() }
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(50)))
@@ -791,8 +812,8 @@ class CalendarPanelView(
             val headH = dp(20f)
             val cellH = (height - headH) / 6f
             text.textSize = dp(11f)
-            text.typeface = Typeface.DEFAULT_BOLD
-            text.color = soft(140)
+            text.typeface = Glass.font(context, Glass.SEMIBOLD)
+            text.color = Glass.textSecondary
             val names = SimpleDateFormat("EEEEE", Locale.getDefault())
             val cal = Calendar.getInstance().apply { set(Calendar.DAY_OF_WEEK, month.firstDayOfWeek) }
             for (i in 0 until 7) {
@@ -811,12 +832,12 @@ class CalendarPanelView(
                     fill.color = accent
                     c.drawCircle(cx, cy, r, fill)
                 } else if (isSelected) {
-                    fill.color = soft(34)
+                    fill.color = Glass.fillSoft
                     c.drawCircle(cx, cy, r, fill)
                 }
                 text.textSize = dp(15f)
-                text.typeface = if (isToday || isSelected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-                text.color = if (isToday) Color.WHITE else palette.ink
+                text.typeface = Glass.font(context, if (isToday || isSelected) Glass.SEMIBOLD else Glass.REGULAR)
+                text.color = if (isToday) Color.WHITE else Glass.textPrimary
                 val dom = Calendar.getInstance().apply { timeInMillis = day }.get(Calendar.DAY_OF_MONTH)
                 c.drawText("$dom", cx, cy - (text.descent() + text.ascent()) / 2, text)
                 if (CalendarText.on(day, events).isNotEmpty()) {

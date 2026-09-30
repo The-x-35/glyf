@@ -84,7 +84,6 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
     private val main = Handler(Looper.getMainLooper())
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
     private fun dp(v: Int) = dp(v.toFloat()).toInt()
-    private val inter = interFace(ctx)
 
     var mode = Mode.EMOJI
         private set
@@ -162,9 +161,11 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
 
     // MARK: building
 
-    private fun styleText(v: TextView, size: Float, bold: Boolean = false) {
+    /** Inter at iOS's weights: [bold] is semibold (the section labels,
+     *  ":-)"), [weight] names another (the KLIPY credit's medium). */
+    private fun styleText(v: TextView, size: Float, bold: Boolean = false, weight: Int? = null) {
         v.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
-        v.typeface = if (bold) android.graphics.Typeface.create(inter, android.graphics.Typeface.BOLD) else inter
+        v.typeface = Glass.font(context, weight ?: if (bold) Glass.SEMIBOLD else Glass.REGULAR)
         v.includeFontPadding = false
     }
 
@@ -237,7 +238,7 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
         sectionLabel.ellipsize = TextUtils.TruncateAt.END
         tag(sectionLabel, "emoji:section")
         labelRow.addView(sectionLabel, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-        styleText(attribution, 11f)
+        styleText(attribution, 11f, weight = Glass.MEDIUM)
         attribution.maxLines = 1
         tag(attribution, "emoji:attribution")
         labelRow.addView(attribution, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))

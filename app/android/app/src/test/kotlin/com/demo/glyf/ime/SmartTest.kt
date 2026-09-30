@@ -26,6 +26,16 @@ class SmartTest {
         assertEquals("12 * 12 = 144", Smart.display(Smart.chip("what is 12 * 12", vault)!!))
     }
 
+    /** iOS GlyfEngineTests.testMoneyShowsBothCentsPlacesOrNone: "₹1,919.6"
+     *  read as a typo. */
+    @Test fun moneyShowsBothCentsPlacesOrNone() {
+        assertEquals("₹1,919.60", Smart.format(1919.6, "INR"))
+        assertEquals("₹1,919", Smart.format(1919.0, "INR"))
+        assertEquals("$20", Smart.format(20.0, "USD"))
+        assertEquals("$12.50", Smart.format(12.5, "USD"))
+        assertEquals("$1", Smart.format(0.999, "USD"))
+    }
+
     @Test fun moneyWhereYouAreAndNeverAGuess() {
         val rates = Smart.RatesSnapshot(
             fiat = mapOf("USD" to 1.0, "INR" to 95.88, "EUR" to 0.8726),

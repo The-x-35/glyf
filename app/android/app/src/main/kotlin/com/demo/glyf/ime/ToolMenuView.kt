@@ -76,27 +76,34 @@ class ToolMenuView(
     }
 
     private fun tile(id: String, title: String): View {
+        // iOS's tile: the key colour, 14pt corners, no edge.
         val cell = FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 cornerRadius = dp(14f)
-                setColor(palette.card)
+                setColor(Glass.surfaceCard)
             }
             contentDescription = title
             setTag(com.demo.glyf.R.id.qa_id, "shell:tile:$id")
         }
         // The glyph answers to "menu:<tool>" (the temp mail spec's id for its
         // tile), the tile itself to "shell:tile:<tool>" as ever.
-        cell.addView(ToolIcon(context, id, palette.ink).apply {
-            scale = 1.15f
+        // Its symbol at 22pt in the ink, over its name (12 medium).
+        // iOS's menu marks GIFs with play.square.stack (the strip and the
+        // board keep the boxed "GIF").
+        cell.addView(ToolIcon(context, if (id == "gifs") "playstack" else id, Glass.textPrimary).apply {
+            scale = 1.4f
+            weight = 1.25f
+            solid = true
             setTag(com.demo.glyf.R.id.qa_id, "menu:$id")
-        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(28f).toInt(), Gravity.TOP))
+        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(26f).toInt(), Gravity.TOP))
         cell.addView(TextView(context).apply {
             text = title
-            textSize = 12f
+            Glass.style(this, 12f, Glass.MEDIUM)
             gravity = Gravity.CENTER
-            setTextColor(palette.ink)
             maxLines = 1
-        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(16f).toInt(), Gravity.TOP))
+        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(15f).toInt(), Gravity.TOP).apply {
+            leftMargin = dp(2f).toInt(); rightMargin = dp(2f).toInt()
+        })
         cell.setOnTouchListener(TileTouch(id))
         return cell
     }
@@ -111,9 +118,10 @@ class ToolMenuView(
     private fun layoutTiles(animated: Boolean) {
         val w = tileW
         val h = tileH
-        val iconH = dp(28f)
-        val capH = dp(16f)
-        val top = (h - iconH - dp(6f) - capH) / 2
+        // Icon over caption, centred as a column with an 8pt gap (iOS).
+        val iconH = dp(26f)
+        val capH = dp(15f)
+        val top = (h - iconH - dp(8f) - capH) / 2
         for ((i, id) in order.withIndex()) {
             val cell = tiles[id] ?: continue
             val lp = cell.layoutParams as LayoutParams
@@ -121,7 +129,7 @@ class ToolMenuView(
                 lp.width = w.toInt(); lp.height = h.toInt()
                 cell.layoutParams = lp
                 (cell as FrameLayout).getChildAt(0).translationY = top
-                cell.getChildAt(1).translationY = top + iconH + dp(6f)
+                cell.getChildAt(1).translationY = top + iconH + dp(8f)
             }
             if (id == dragging) continue
             val x = side + (i % cols) * (w + gap)

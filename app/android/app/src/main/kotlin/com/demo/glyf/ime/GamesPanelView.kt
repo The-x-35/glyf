@@ -92,9 +92,8 @@ class GamesPanelView(ctx: Context, private val palette: GlyfKeyboardView.KeyPale
     private fun card(game: String): View = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
-        background = GradientDrawable().apply {
-            cornerRadius = dp(16f); setColor(palette.card)
-        }
+        // iOS's picker card: the key colour, 16 corners, a half-point hairline.
+        background = Glass.card(context, radius = 16f, stroke = Glass.strokeHairline, strokeDp = 0.5f)
         setTag(com.demo.glyf.R.id.qa_id, "games:$game")
         contentDescription = if (game == "snake") "Snake" else "Chomp"
         addView(object : View(context) {
@@ -102,14 +101,16 @@ class GamesPanelView(ctx: Context, private val palette: GlyfKeyboardView.KeyPale
         }, LinearLayout.LayoutParams(dpi(96), dpi(52)))
         addView(TextView(context).apply {
             text = if (game == "snake") "Snake" else "Chomp"
-            textSize = 17f; typeface = Typeface.DEFAULT_BOLD
-            setTextColor(palette.ink); gravity = Gravity.CENTER
+            Glass.style(this, 17f, Glass.SEMIBOLD)
+            gravity = Gravity.CENTER
             setPadding(0, dpi(10), 0, 0)
         })
         addView(TextView(context).apply {
             tag = "best:$game"
-            textSize = 13f; gravity = Gravity.CENTER
-            setTextColor(Color.argb(150, Color.red(palette.ink), Color.green(palette.ink), Color.blue(palette.ink)))
+            Glass.style(this, 13f, Glass.REGULAR, Glass.textSecondary)
+            fontFeatureSettings = "tnum"
+            gravity = Gravity.CENTER
+            setPadding(0, dpi(2), 0, 0)
         })
         setOnClickListener { play(game) }
     }

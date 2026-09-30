@@ -269,12 +269,17 @@ object Smart {
         return "$" + java.math.BigDecimal(usd).round(java.math.MathContext(3)).stripTrailingZeros().toPlainString()
     }
 
-    /** "₹1,246", "$5.21", "AED 47.7": the symbol where one is common, the
-     *  code elsewhere; Indian grouping for rupees, whole yen and won. */
+    /** "₹1,246", "$5.21", "AED 47.70": the symbol where one is common, the
+     *  code elsewhere; Indian grouping for rupees, whole yen and won. Money
+     *  with cents shows both places ("₹1,919.60", not "₹1,919.6", which read
+     *  as a typo); a whole amount shows none ("$20"). iOS formatNumber. */
     fun format(value: Double, code: String): String {
         val v = if (code == "JPY" || code == "KRW") Math.round(value).toDouble() else value
-        return (currencySymbol[code] ?: "$code ") + format(v, code == "INR")
+        var text = format(v, code == "INR")
+        if (oneCentsPlace.containsMatchIn(text)) text += "0"
+        return (currencySymbol[code] ?: "$code ") + text
     }
+    private val oneCentsPlace = Regex("""\.\d$""")
 
     // MARK: Calculator
 
@@ -906,5 +911,79 @@ object Smart {
             u.one.startsWith("°") -> "$text${u.one}"
             else -> "$text ${if (kotlin.math.abs(n) == 1.0) u.one else u.many}"
         }
+    }
+
+    // MARK: questions (the AI answer chip, as it is typed)
+
+    /** A question for a fact, told by its words on the phone (Arpit,
+     *  2026-09-30: "we can detect questions too with what where like words"):
+     *  the strip offers "AI answer" as it is typed, with no wait for the
+     *  server's read. The server's rules (lib/act.ts infoQuestion, searchLike,
+     *  answers.ts rightNow), with one more: the question has to end on a word
+     *  of substance, so "who is the" offers nothing yet. The question (the
+     *  last sentence typed), or null. iOS Smart.question's twin;
+     *  shared/questions/cases.json holds the cases both run. */
+    fun question(text: String): String? {
+        var t = text.trim().replace('’', '\'').replace('‘', '\'')
+        if (t.isEmpty() || t.length > 160) return null
+        // The last line, then the last sentence: "ok cool. who painted it?"
+        val nl = t.lastIndexOf('\n')
+        if (nl >= 0) t = t.substring(nl + 1)
+        val asked = t.endsWith("?")
+        var body = t.replace(QuestionRules.trailing, "")
+        QuestionRules.lastSentence.find(body)?.let { body = body.substring(it.range.last + 1) }
+        val lower = body.lowercase().replace(QuestionRules.spaces, " ").trim()
+        val words = lower.split(' ').filter { it.isNotEmpty() }
+        if (words.size < 3 || words.size > 12) return null
+        if (!asked && !QuestionRules.start.containsMatchIn(lower)) return null
+        // "how to make pancakes" is a video to find, not a fact.
+        if (lower.startsWith("how to ")) return null
+        for (rule in listOf(QuestionRules.chitchat, QuestionRules.secondPerson, QuestionRules.addressed,
+                            QuestionRules.ownPlans, QuestionRules.localAsk, QuestionRules.smallTalk,
+                            QuestionRules.rightNow)) {
+            if (rule.containsMatchIn(lower)) return null
+        }
+        // "does it hurt?", "is that true": short, and about the chat.
+        if (words.size <= 4 && QuestionRules.pointing.containsMatchIn(lower)) return null
+        val bare = QuestionRules.searchMe.replace(lower, " ")
+        if (QuestionRules.people.containsMatchIn(bare)) return null
+        // Still being typed: "who is the", "what does".
+        if (!asked && words.last() in QuestionRules.unfinished) return null
+        val q = body.trim()
+        return if (asked) "$q?" else q
+    }
+
+    /** The server's word lists, as it has them (lib/act.ts), and iOS has them. */
+    private object QuestionRules {
+        val trailing = Regex("""[?!.\s]+$""")
+        val lastSentence = Regex("""^.*[.!?]\s+""")
+        val spaces = Regex("""\s+""")
+        val start = Regex("""^(?:what|what's|whats|who|who's|whos|whose|whom|where|where's|wheres|when|when's|whens|why|how|how's|hows|which|is|isn't|are|aren't|was|were|can|can't|could|do|does|don't|doesn't|did|didn't|will|won't|would|should|shall|have|has|may|might|any)\b""")
+        val chitchat = Regex("""^(?:ok(?:ay)?|k+|kk|hi+|hey+|hello|yo|sup|wass?up|what'?s up|whats up|wyd|hru|how (?:are|r) (?:you|u)|how'?s it going|good (?:morning|night|evening|afternoon)|gm|gn|thanks?|thank you|thx|ty|lol|haha\w*|yes|yeah|yep|no|nope|sure|cool|nice|great|done|np|no worries|see (?:you|u|ya)(?: soon| later)?|bye|cya|ttyl|lmk|brb|omw)(?:\s+(?:bro|dude|man|yaar|bhai|mate|buddy))?[\s!?.]*$""")
+        val secondPerson = Regex("""\b(?:u|ur|you|your|yours|you're|youre|ya|yall|y'all|tu|tum|tumhe|tumko|tumne|tumhara|tumhari|tumhare|tera|teri|tere|aap|aapko|aapne|aapka|aapki|aapke)\b""")
+        val addressed = Regex("""^(?:bhai|bro|bruh|yaar|dude|mom|mum|maa|papa|dad|didi|bhaiya|babe|baby|hey|hi|hello|yo|oye|arre)\b|\b(?:bhai|bro|yaar|dude|babe|bhaiya|didi)[?!.]*$""")
+        val ownPlans = Regex("""\b(?:the|our|my|ur|your|this|tonight'?s|tomorrow'?s|tmrw'?s)\s+(?:meeting|meet|party|call|dinner|lunch|brunch|breakfast|appointment|appt|flight|reservation|booking|interview|class|practice|rehearsal|wedding|event|plan|plans|trip|standup|stand-up|shift|session|date|hangout|get together|get-together|pickup|pick up|drop off|shoot|exam|gig|reunion|sleepover|potluck|bus|train|metro|subway|uber|lyft|cab|taxi|ride|delivery|order|package|parcel)\b|\bwho(?:'s| is| all is| all are| are)\s+(?:coming|joining|going|in|bringing)\b""")
+        /** A question for a person there, not a fact: "is the store open",
+         *  "whats the wifi password", "where are the keys". */
+        val localAsk = Regex("""\b(?:password|passcode|wifi|wi-fi|door code|the (?:store|shop|pharmacy|mall|gym|car|kids|dog|cat|baby|fridge|remote|charger|keys?))\b""")
+        /** iOS's \p{Extended_Pictographic}, as ranges the phone's and the
+         *  JVM's regex engines both read: the symbol blocks and the emoji
+         *  planes. */
+        val smallTalk = Regex("""\b(?:thanks|thank you|thx|tnx|ty|lol|lmao|lmfao|rofl|haha\w*|hehe\w*|omg|congrats|sorry|sry|pls|plz|please|hey|hi|hello|yo|bro|dude|yaar|bhai|okay|ok|kk|yeah|yep|yup|nope|sure)\b|!|[\x{00A9}\x{00AE}\x{203C}\x{2049}\x{2122}\x{2139}\x{2194}-\x{21AA}\x{231A}-\x{23FF}\x{24C2}\x{25AA}-\x{27BF}\x{2934}\x{2935}\x{2B05}-\x{2B55}\x{3030}\x{303D}\x{3297}\x{3299}\x{1F000}-\x{1FAFF}]""")
+        /** Today's score or the news: the AI can't know, so no chip that
+         *  would only say "Nothing found" (answers.ts rightNow). */
+        val rightNow = Regex("""\b(?:scores?|live|right now|today'?s?|tonight'?s?|this (?:morning|afternoon|evening|week|weekend)|yesterday'?s?|last night'?s?|news|headlines?|breaking|stock price|share price|trading at|exchange rates?|forex|forecast|weather|time is it|time in)\b""")
+        val pointing = Regex("""\b(?:it|this|that|these|those|there)\b""")
+        val people = Regex("""\b(?:i|i'm|im|i've|ive|i'll|i'd|me|my|mine|myself|we|we're|we've|we'll|we'd|us|our|ours|u|ur|you|you're|youre|you've|you'll|you'd|your|yours|ya|yall|y'all|let's|lets|he|she|him|her|his|hers|they|them|their|theirs)\b""")
+        val searchMe = Regex("""\b(?:near|around|for|to|from|with)\s+me\b|^(?:send|show|give|find|get|play|tell)\s+me\b""")
+        /** A question can't end on these: it is still being typed. */
+        val unfinished = setOf(
+            "the", "a", "an", "of", "in", "on", "at", "to", "for", "from", "with", "by", "and", "or", "but",
+            "is", "are", "was", "were", "be", "been", "do", "does", "did", "has", "have", "had", "what",
+            "who", "where", "when", "why", "how", "which", "whose", "whom", "this", "that", "these", "those",
+            "some", "any", "much", "many", "than", "as", "about", "into", "over", "like", "if", "so", "not",
+            "can", "could", "will", "would", "should", "shall", "may", "might", "must", "very", "more",
+            "most", "less", "per", "vs", "via", "its", "no",
+        )
     }
 }

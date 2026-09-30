@@ -115,6 +115,11 @@ class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
         set(value) { field = value; invalidate() }
     var ink = GlyfMark.INK
         set(value) { field = value; invalidate() }
+    /** The Glass look's hairline after the key, between it and the tools
+     *  (iOS's strip divider there). */
+    var divider = false
+        set(value) { field = value; invalidate() }
+    private val rule = Paint().apply { color = Glass.strokeHairline }
 
     private val face = Paint(Paint.ANTI_ALIAS_FLAG)
     private val letter = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -126,7 +131,7 @@ class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
     }
     private val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND
-        strokeWidth = 1.8f * ctx.resources.displayMetrics.density
+        strokeWidth = 2f * ctx.resources.displayMetrics.density
     }
 
     override fun onDraw(c: Canvas) {
@@ -134,8 +139,17 @@ class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
         val w = GlyfMark.keyWidth(h)
         val left = (width - w) / 2f
         val top = (height - h) / 2f
+        if (divider) {
+            // 15.5dp past the key's ink, where iOS's falls (the strip lets it
+            // draw past this view's edge), 24dp tall, 1dp wide.
+            val d = resources.displayMetrics.density
+            val x = left + w + 15.5f * d
+            rule.color = Glass.strokeHairline
+            c.drawRect(x - d / 2f, height / 2f - 12f * d, x + d / 2f, height / 2f + 12f * d, rule)
+        }
         if (closing) {
-            val r = h * 0.3f
+            // iOS's xmark at 17 medium: 16pt of ink, a 2pt stroke.
+            val r = h * 0.24f
             val cx = width / 2f; val cy = height / 2f
             cross.color = ink
             c.drawLine(cx - r, cy - r, cx + r, cy + r, cross)

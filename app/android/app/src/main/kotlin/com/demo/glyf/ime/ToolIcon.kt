@@ -29,6 +29,11 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
     var scale = 1f
         set(value) { field = value; invalidate() }
 
+    /** The stroke in dp at scale 1 (1.6 regular; iOS medium and semibold
+     *  symbols draw heavier). */
+    var weight = 1.6f
+        set(value) { field = value; invalidate() }
+
     /** Drawn in the tint itself, not the softer 80% the strip's tools use:
      *  an accent glyph beside words matches the accent around it. */
     var solid = false
@@ -51,7 +56,7 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
     private fun dp(v: Float) = v * resources.displayMetrics.density * scale
 
     override fun onDraw(c: Canvas) {
-        p.strokeWidth = dp(1.6f)
+        p.strokeWidth = dp(weight)
         val cx = width / 2f
         val cy = height / 2f
         when (kind) {
@@ -72,17 +77,20 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 c.drawLine(cx + dp(1f), cy - dp(2f), cx + dp(5f), cy - dp(2f), p)
                 c.drawLine(cx + dp(1f), cy + dp(1.6f), cx + dp(5f), cy + dp(1.6f), p)
             }
+            // SF gearshape: a toothed wheel round a hole.
             "settings", "gear" -> {
-                p.strokeWidth = dp(2.2f)
-                c.drawCircle(cx, cy, dp(3.1f), p)
-                for (i in 0 until 6) {
-                    val a = Math.toRadians(i * 60.0)
-                    val r1 = dp(5.4f)
-                    val r2 = dp(7.4f)
-                    c.drawLine(
-                        cx + (r1 * Math.cos(a)).toFloat(), cy + (r1 * Math.sin(a)).toFloat(),
-                        cx + (r2 * Math.cos(a)).toFloat(), cy + (r2 * Math.sin(a)).toFloat(), p)
+                val gear = Path()
+                val teeth = 8
+                for (i in 0 until teeth * 4) {
+                    val a = Math.toRadians(i * 360.0 / (teeth * 4) - 90)
+                    val r = if ((i / 2) % 2 == 0) dp(8f) else dp(6.3f)
+                    val x = cx + (r * Math.cos(a)).toFloat()
+                    val y = cy + (r * Math.sin(a)).toFloat()
+                    if (i == 0) gear.moveTo(x, y) else gear.lineTo(x, y)
                 }
+                gear.close()
+                c.drawPath(gear, p)
+                c.drawCircle(cx, cy, dp(2.6f), p)
             }
             "dictation", "mic" -> {
                 c.drawRoundRect(cx - dp(2.6f), cy - dp(8f), cx + dp(2.6f), cy + dp(1f),
@@ -98,16 +106,29 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 c.drawArc(cx - dp(3.6f), cy - dp(1.4f), cx + dp(3.6f), cy + dp(4.4f),
                     25f, 130f, false, p)
             }
+            // SF translate: two speech bubbles, A and 文.
             "translate" -> {
+                val back = RectF(cx - dp(8.4f), cy - dp(8f), cx + dp(1.6f), cy + dp(1f))
+                c.drawRoundRect(back, dp(2.2f), dp(2.2f), p)
                 val t = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = p.color; alpha = p.alpha
                     textAlign = Paint.Align.CENTER
-                    typeface = Typeface.DEFAULT_BOLD
+                    typeface = Glass.font(context, Glass.SEMIBOLD)
                 }
-                t.textSize = dp(11f)
-                c.drawText("A", cx - dp(3.4f), cy + dp(0.6f), t)
-                t.textSize = dp(9.5f)
-                c.drawText("文", cx + dp(3.8f), cy + dp(6.4f), t)
+                t.textSize = dp(7.4f)
+                c.drawText("A", back.centerX(), back.centerY() + dp(2.6f), t)
+                val front = RectF(cx - dp(1.6f), cy - dp(1.4f), cx + dp(8.6f), cy + dp(7.6f))
+                // The 文 is cut out of the front bubble, in a layer of its own.
+                val layer = c.saveLayer(front, null)
+                c.drawRoundRect(front, dp(2.2f), dp(2.2f), fill)
+                val cut = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)
+                    textAlign = Paint.Align.CENTER
+                    typeface = Glass.font(context, Glass.SEMIBOLD)
+                    textSize = dp(7f)
+                }
+                c.drawText("文", front.centerX(), front.centerY() + dp(2.5f), cut)
+                c.restoreToCount(layer)
             }
             "notes" -> {
                 c.drawRoundRect(cx - dp(6.4f), cy - dp(7f), cx + dp(6.4f), cy + dp(7f),
@@ -346,6 +367,253 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                     dp(2f), dp(2f), p)
                 c.drawLine(cx - dp(8.4f), cy - dp(2f), cx + dp(8.4f), cy - dp(2f), p)
                 c.drawLine(cx - dp(5.6f), cy + dp(2.8f), cx - dp(1.6f), cy + dp(2.8f), p)
+            }
+            // SF chevron.left: the strip's way back inside a panel.
+            "chevron" -> {
+                c.drawLine(cx + dp(2.6f), cy - dp(6.6f), cx - dp(3.6f), cy, p)
+                c.drawLine(cx - dp(3.6f), cy, cx + dp(2.6f), cy + dp(6.6f), p)
+            }
+            // SF chevron.right: a row that goes somewhere.
+            "chevronright" -> {
+                c.drawLine(cx - dp(2.6f), cy - dp(6.6f), cx + dp(3.6f), cy, p)
+                c.drawLine(cx + dp(3.6f), cy, cx - dp(2.6f), cy + dp(6.6f), p)
+            }
+            // SF play.rectangle: the YouTube tab.
+            "playrect" -> {
+                c.drawRoundRect(cx - dp(8.4f), cy - dp(6f), cx + dp(8.4f), cy + dp(6f), dp(2.4f), dp(2.4f), p)
+                val tri = Path().apply {
+                    moveTo(cx - dp(2f), cy - dp(3.2f)); lineTo(cx - dp(2f), cy + dp(3.2f))
+                    lineTo(cx + dp(3.4f), cy); close()
+                }
+                c.drawPath(tri, fill)
+            }
+            // SF map: a folded map, three panels.
+            "map" -> {
+                val m = Path().apply {
+                    moveTo(cx - dp(8.4f), cy - dp(5.6f)); lineTo(cx - dp(3f), cy - dp(7.6f))
+                    lineTo(cx + dp(3f), cy - dp(5.6f)); lineTo(cx + dp(8.4f), cy - dp(7.6f))
+                    lineTo(cx + dp(8.4f), cy + dp(5.6f)); lineTo(cx + dp(3f), cy + dp(7.6f))
+                    lineTo(cx - dp(3f), cy + dp(5.6f)); lineTo(cx - dp(8.4f), cy + dp(7.6f)); close()
+                }
+                c.drawPath(m, p)
+                c.drawLine(cx - dp(3f), cy - dp(7.6f), cx - dp(3f), cy + dp(5.6f), p)
+                c.drawLine(cx + dp(3f), cy - dp(5.6f), cx + dp(3f), cy + dp(7.6f), p)
+            }
+            // SF person.crop.circle: the Contacts tab.
+            "personcircle" -> {
+                c.drawCircle(cx, cy, dp(8.2f), p)
+                c.drawCircle(cx, cy - dp(2.2f), dp(2.9f), p)
+                c.drawArc(RectF(cx - dp(5.4f), cy + dp(2.4f), cx + dp(5.4f), cy + dp(11.4f)), 200f, 140f, false, p)
+            }
+            // SF character.bubble: a speech bubble holding an A (Translate).
+            "bubble" -> {
+                val b = Path().apply {
+                    addRoundRect(RectF(cx - dp(8f), cy - dp(7.4f), cx + dp(8f), cy + dp(4.6f)), dp(3.2f), dp(3.2f), Path.Direction.CW)
+                    moveTo(cx - dp(4.6f), cy + dp(4.6f)); lineTo(cx - dp(5.4f), cy + dp(8.2f)); lineTo(cx - dp(1.4f), cy + dp(4.6f))
+                }
+                c.drawPath(b, p)
+                val t = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = p.color; alpha = p.alpha
+                    textAlign = Paint.Align.CENTER
+                    typeface = Glass.font(context, Glass.SEMIBOLD)
+                    textSize = dp(9.5f)
+                }
+                c.drawText("A", cx, cy + dp(2f), t)
+            }
+            // SF clock: a recent search.
+            "clock" -> {
+                c.drawCircle(cx, cy, dp(7.6f), p)
+                c.drawLine(cx, cy, cx, cy - dp(4.4f), p)
+                c.drawLine(cx, cy, cx + dp(3.2f), cy + dp(1.8f), p)
+            }
+            // SF arrow.up.right: what is trending.
+            "trend" -> {
+                c.drawLine(cx - dp(5.4f), cy + dp(5.4f), cx + dp(5.4f), cy - dp(5.4f), p)
+                c.drawLine(cx + dp(5.4f), cy - dp(5.4f), cx - dp(1.8f), cy - dp(5.4f), p)
+                c.drawLine(cx + dp(5.4f), cy - dp(5.4f), cx + dp(5.4f), cy + dp(1.8f), p)
+            }
+            // SF envelope: an email.
+            "envelope" -> {
+                c.drawRoundRect(cx - dp(8f), cy - dp(5.8f), cx + dp(8f), cy + dp(5.8f), dp(2f), dp(2f), p)
+                val flap = Path().apply {
+                    moveTo(cx - dp(7f), cy - dp(4.6f)); lineTo(cx, cy + dp(0.8f)); lineTo(cx + dp(7f), cy - dp(4.6f))
+                }
+                c.drawPath(flap, p)
+            }
+            // SF play.square.stack: the menu's GIFs, a square with play on a stack.
+            "playstack" -> {
+                c.drawRoundRect(cx - dp(6.4f), cy - dp(5f), cx + dp(7.6f), cy + dp(8.4f), dp(2.4f), dp(2.4f), p)
+                c.drawLine(cx - dp(4.4f), cy - dp(7.4f), cx + dp(5.6f), cy - dp(7.4f), p)
+                val tri = Path().apply {
+                    moveTo(cx - dp(1.4f), cy - dp(1.4f)); lineTo(cx - dp(1.4f), cy + dp(4.8f))
+                    lineTo(cx + dp(3.8f), cy + dp(1.7f)); close()
+                }
+                c.drawPath(tri, fill)
+            }
+            // SF slider.horizontal.3: three rails, a knob on each.
+            "sliders" -> {
+                for ((dy, kx) in listOf(-5f to 2.6f, 0f to -2.8f, 5f to 1f)) {
+                    c.drawLine(cx - dp(7.4f), cy + dp(dy), cx + dp(7.4f), cy + dp(dy), p)
+                    c.drawCircle(cx + dp(kx), cy + dp(dy), dp(1.9f), fill)
+                }
+            }
+            // SF arrow.up: move a strip tool a place up.
+            "arrowup" -> {
+                c.drawLine(cx, cy + dp(6.4f), cx, cy - dp(6.4f), p)
+                c.drawLine(cx, cy - dp(6.4f), cx - dp(4.8f), cy - dp(1.6f), p)
+                c.drawLine(cx, cy - dp(6.4f), cx + dp(4.8f), cy - dp(1.6f), p)
+            }
+            // SF arrow.clockwise: the act panel's Try again.
+            "retry" -> {
+                val r = dp(6.6f)
+                c.drawArc(android.graphics.RectF(cx - r, cy - r + dp(0.6f), cx + r, cy + r + dp(0.6f)),
+                    -30f, 300f, false, p)
+                val tipX = cx + dp(0.8f); val tipY = cy - r + dp(0.6f)
+                c.drawLine(tipX, tipY, tipX - dp(3.6f), tipY - dp(3.4f), p)
+                c.drawLine(tipX, tipY, tipX - dp(3.6f), tipY + dp(3.4f), p)
+            }
+            // SF line.3.horizontal: the clipboard's All.
+            "lines" -> {
+                for (dy in listOf(-5f, 0f, 5f)) c.drawLine(cx - dp(7f), cy + dp(dy), cx + dp(7f), cy + dp(dy), p)
+            }
+            // SF textformat: "Aa", the clipboard's Text.
+            "textformat" -> {
+                val t = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = p.color; alpha = p.alpha
+                    textAlign = Paint.Align.CENTER
+                    typeface = Glass.font(context, Glass.SEMIBOLD)
+                    textSize = dp(14f)
+                }
+                c.drawText("Aa", cx, cy + dp(5f), t)
+            }
+            // SF link: two chain links, on the slant.
+            "link" -> {
+                c.save()
+                c.rotate(-45f, cx, cy)
+                val w = dp(8.4f); val h = dp(5.2f); val r = h / 2
+                c.drawRoundRect(cx - w - dp(0.6f), cy - h / 2, cx + dp(1.4f), cy + h / 2, r, r, p)
+                c.drawRoundRect(cx - dp(1.4f), cy - h / 2, cx + w + dp(0.6f), cy + h / 2, r, r, p)
+                c.restore()
+            }
+            // SF photo: a frame, a sun and a hill.
+            "photo" -> {
+                c.drawRoundRect(cx - dp(8f), cy - dp(6.4f), cx + dp(8f), cy + dp(6.4f), dp(2.2f), dp(2.2f), p)
+                c.drawCircle(cx - dp(3.2f), cy - dp(2.2f), dp(1.5f), fill)
+                val hill = Path().apply {
+                    moveTo(cx - dp(8f), cy + dp(4.6f))
+                    lineTo(cx - dp(2.4f), cy + dp(0.4f))
+                    lineTo(cx + dp(1.2f), cy + dp(3f))
+                    lineTo(cx + dp(4f), cy + dp(0.6f))
+                    lineTo(cx + dp(8f), cy + dp(4f))
+                }
+                c.drawPath(hill, p)
+            }
+            // SF pin / pin.slash: a pushpin, upright; slashed to unpin.
+            "pin", "pinslash" -> {
+                val head = Path().apply {
+                    moveTo(cx - dp(4f), cy - dp(7.6f)); lineTo(cx + dp(4f), cy - dp(7.6f))
+                    lineTo(cx + dp(3f), cy - dp(1.6f)); lineTo(cx + dp(5.6f), cy + dp(1.6f))
+                    lineTo(cx - dp(5.6f), cy + dp(1.6f)); lineTo(cx - dp(3f), cy - dp(1.6f)); close()
+                }
+                c.drawPath(head, p)
+                c.drawLine(cx, cy + dp(1.6f), cx, cy + dp(8f), p)
+                if (kind == "pinslash") c.drawLine(cx - dp(7.6f), cy - dp(7.6f), cx + dp(7.6f), cy + dp(7.6f), p)
+            }
+            // SF trash: a bin with its lid.
+            "trash" -> {
+                c.drawLine(cx - dp(7.4f), cy - dp(5f), cx + dp(7.4f), cy - dp(5f), p)
+                c.drawLine(cx - dp(2.4f), cy - dp(7.6f), cx + dp(2.4f), cy - dp(7.6f), p)
+                c.drawLine(cx - dp(2.4f), cy - dp(7.6f), cx - dp(2.4f), cy - dp(5f), p)
+                c.drawLine(cx + dp(2.4f), cy - dp(7.6f), cx + dp(2.4f), cy - dp(5f), p)
+                val bin = Path().apply {
+                    moveTo(cx - dp(5.8f), cy - dp(5f)); lineTo(cx - dp(5f), cy + dp(7.4f))
+                    lineTo(cx + dp(5f), cy + dp(7.4f)); lineTo(cx + dp(5.8f), cy - dp(5f))
+                }
+                c.drawPath(bin, p)
+                c.drawLine(cx - dp(1.8f), cy - dp(1.8f), cx - dp(1.6f), cy + dp(4.4f), p)
+                c.drawLine(cx + dp(1.8f), cy - dp(1.8f), cx + dp(1.6f), cy + dp(4.4f), p)
+            }
+            // SF hand.raised, reduced: an open palm.
+            "hand" -> {
+                val palm = Path().apply {
+                    moveTo(cx - dp(5f), cy + dp(1f))
+                    lineTo(cx - dp(5f), cy - dp(4.6f))
+                    moveTo(cx - dp(1.8f), cy - dp(1f)); lineTo(cx - dp(1.8f), cy - dp(7.4f))
+                    moveTo(cx + dp(1.4f), cy - dp(1f)); lineTo(cx + dp(1.4f), cy - dp(7f))
+                    moveTo(cx + dp(4.6f), cy - dp(0.4f)); lineTo(cx + dp(4.6f), cy - dp(5.4f))
+                }
+                c.drawPath(palm, p)
+                c.drawArc(RectF(cx - dp(6.6f), cy - dp(4f), cx + dp(6.2f), cy + dp(8.4f)), 0f, 180f, false, p)
+            }
+            // The detail kinds (iOS DetailKind symbols): person, at, phone,
+            // house, the rupee, wallet.bifold, and tag.
+            "person" -> {
+                c.drawCircle(cx, cy - dp(3.4f), dp(3.4f), p)
+                c.drawArc(RectF(cx - dp(7f), cy + dp(1.6f), cx + dp(7f), cy + dp(13.6f)), 180f, 180f, false, p)
+            }
+            "at" -> {
+                val t = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = p.color; alpha = p.alpha
+                    textAlign = Paint.Align.CENTER
+                    typeface = Glass.font(context, Glass.MEDIUM)
+                    textSize = dp(19f)
+                }
+                c.drawText("@", cx, cy + dp(6.6f), t)
+            }
+            "phone" -> {
+                val handset = Path().apply {
+                    moveTo(cx - dp(5.6f), cy - dp(7.4f))
+                    lineTo(cx - dp(2.4f), cy - dp(7.6f))
+                    lineTo(cx - dp(1.2f), cy - dp(3.4f))
+                    lineTo(cx - dp(3.2f), cy - dp(1.8f))
+                    quadTo(cx - dp(1f), cy + dp(2.4f), cx + dp(2f), cy + dp(3.2f))
+                    lineTo(cx + dp(3.6f), cy + dp(1.2f))
+                    lineTo(cx + dp(7.6f), cy + dp(2.6f))
+                    lineTo(cx + dp(7.4f), cy + dp(5.8f))
+                    quadTo(cx + dp(6.4f), cy + dp(8f), cx + dp(3.4f), cy + dp(7.4f))
+                    quadTo(cx - dp(6.4f), cy + dp(3.6f), cx - dp(7.6f), cy - dp(4.6f))
+                    quadTo(cx - dp(7.6f), cy - dp(7.2f), cx - dp(5.6f), cy - dp(7.4f))
+                    close()
+                }
+                c.drawPath(handset, p)
+            }
+            "house" -> {
+                val roof = Path().apply {
+                    moveTo(cx - dp(8f), cy - dp(0.6f)); lineTo(cx, cy - dp(7.6f)); lineTo(cx + dp(8f), cy - dp(0.6f))
+                }
+                c.drawPath(roof, p)
+                val walls = Path().apply {
+                    moveTo(cx - dp(5.8f), cy - dp(2.4f)); lineTo(cx - dp(5.8f), cy + dp(7f))
+                    lineTo(cx + dp(5.8f), cy + dp(7f)); lineTo(cx + dp(5.8f), cy - dp(2.4f))
+                }
+                c.drawPath(walls, p)
+                c.drawRoundRect(cx - dp(1.8f), cy + dp(2f), cx + dp(1.8f), cy + dp(7f), dp(0.8f), dp(0.8f), p)
+            }
+            "rupee" -> {
+                c.drawLine(cx - dp(5f), cy - dp(6.8f), cx + dp(5f), cy - dp(6.8f), p)
+                c.drawLine(cx - dp(5f), cy - dp(3f), cx + dp(5f), cy - dp(3f), p)
+                c.drawArc(RectF(cx - dp(7.6f), cy - dp(6.8f), cx + dp(1.4f), cy + dp(0.8f)), -90f, 180f, false, p)
+                c.drawLine(cx - dp(3.2f), cy + dp(0.8f), cx + dp(4.4f), cy + dp(7.6f), p)
+                c.drawLine(cx - dp(5f), cy + dp(0.8f), cx - dp(3.2f), cy + dp(0.8f), p)
+            }
+            "wallet" -> {
+                c.drawRoundRect(cx - dp(8f), cy - dp(6f), cx + dp(8f), cy + dp(6.4f), dp(2.6f), dp(2.6f), p)
+                c.drawRoundRect(cx + dp(1.6f), cy - dp(2.2f), cx + dp(8f), cy + dp(2.8f), dp(1.6f), dp(1.6f), p)
+                c.drawCircle(cx + dp(4.6f), cy + dp(0.3f), dp(0.9f), fill)
+            }
+            "tag" -> {
+                val body = Path().apply {
+                    moveTo(cx - dp(7.6f), cy - dp(7.6f)); lineTo(cx - dp(0.6f), cy - dp(7.6f))
+                    lineTo(cx + dp(7.8f), cy + dp(0.8f)); lineTo(cx + dp(0.8f), cy + dp(7.8f))
+                    lineTo(cx - dp(7.6f), cy - dp(0.6f)); close()
+                }
+                c.drawPath(body, p)
+                c.drawCircle(cx - dp(3.8f), cy - dp(3.8f), dp(1.2f), fill)
+            }
+            // SF plus, for "Add".
+            "plus" -> {
+                c.drawLine(cx - dp(7f), cy, cx + dp(7f), cy, p)
+                c.drawLine(cx, cy - dp(7f), cx, cy + dp(7f), p)
             }
             // A game controller: a rounded body, a cross on the left, two buttons.
             "games" -> {

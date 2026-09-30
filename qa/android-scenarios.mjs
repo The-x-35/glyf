@@ -286,10 +286,15 @@ async function vaultAdd(what) {
 
 // The card a line of text sits in (a panel's rows carry their ids on the
 // card, their words on its children).
+// The card holding [text]: in a list, the one at its height; in a grid (the
+// vault's three to a row), the one it sits inside.
 const cardOf = (s, prefix, text) => {
   const t = s.views.find(v => v.text === text);
-  return t && s.views.find(v => v.id.startsWith(prefix) && Math.abs(v.y - t.y) < v.h / 2);
+  return t && s.views.find(v => v.id.startsWith(prefix) && Math.abs(v.y - t.y) < v.h / 2 &&
+    Math.abs(v.x - t.x) < v.w / 2);
 };
+// Where a card comes in reading order: row by row, left to right.
+const readingPos = v => Math.round(v.y / 20) * 100000 + v.x;
 
 // Settings the app would write, set for one scenario and put back after it.
 const SETTINGS = "files/bridge/settings.json";
@@ -1109,9 +1114,11 @@ scenarios.push(
       let s = await state();
       const short = cardOf(s, "vault:shorthand:", ";qapanel");
       if (!short) return { pass: false, note: "no shorthand in the vault panel" };
-      const ys = p => s.views.filter(idStarts(p)).map(v => v.y);
-      const between = Math.max(-1, ...ys("vault:card:")) < short.y &&
-        short.y < Math.min(Infinity, ...ys("vault:note:"));
+      // Details first, then shorthand, then notes, in reading order (the
+      // vault is three cards to a row).
+      const ps = p => s.views.filter(idStarts(p)).map(readingPos);
+      const between = Math.max(-1, ...ps("vault:card:")) < readingPos(short) &&
+        readingPos(short) < Math.min(Infinity, ...ps("vault:note:"));
       await screenshot("S201-vault");
       const row = await inView(short.id);
       const typed = row ? await tapFor(row, x => x.includes("Shorthand from the vault")) : { t: "" };
@@ -1187,14 +1194,13 @@ scenarios.push(
       const add = await vaultAdd("shorthand");
       if (!add) return { pass: false, note: "the vault's + offers no New shorthand" };
       await tapXY(add.x, add.y);
-      const field = await waitFor(byId("vaultedit:field"), 3000);
-      if (!field) return { pass: false, note: "no strip to type the shortcut in" };
-      const start = field.text;           // the ; is there already
-      await type("qazz");
-      const next = find(await state(), byId("vaultedit:save"));
-      await tapXY(next.x, next.y);
-      const shortcut = await waitFor(byId("vaultedit:shortcut"), 3000);
-      if (!shortcut) return { pass: false, note: `Next didn't move on (strip '${find(await state(), byId("vaultedit:field"))?.text}', notice '${(await state()).notice}')` };
+      // iOS's strip: the shortcut and what it types out side by side, the
+      // shortcut first; return goes on to the second.
+      const first = await waitFor(byId("vaultedit:shortcut"), 3000);
+      if (!first) return { pass: false, note: "no strip to type the shortcut in" };
+      const start = first.text;           // the ; is there already
+      await type("qazz\n");
+      const shortcut = find(await state(), byId("vaultedit:shortcut"));
       await type("see you soon");
       await screenshot("S202-expansion-strip");
       const save = find(await state(), byId("vaultedit:save"));

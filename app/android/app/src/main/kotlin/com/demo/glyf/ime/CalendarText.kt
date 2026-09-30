@@ -378,8 +378,13 @@ object CalendarText {
             .sortedWith(compareBy({ if (it.allDay) 0 else 1 }, { it.start }))
     }
 
-    fun dayLabel(day: Long, tz: TimeZone = TimeZone.getDefault(), locale: Locale = Locale.getDefault()): String =
-        SimpleDateFormat("EEE d MMM", locale).apply { timeZone = tz }.format(day)
+    /** "Wed, Sep 30": iOS's template ("EEE d MMM") in the phone's own order. */
+    fun dayLabel(day: Long, tz: TimeZone = TimeZone.getDefault(), locale: Locale = Locale.getDefault()): String {
+        // The plain pattern where Android's pattern generator isn't there (JVM tests).
+        val pattern = runCatching { android.text.format.DateFormat.getBestDateTimePattern(locale, "EEEdMMM") }
+            .getOrNull() ?: "EEE d MMM"
+        return SimpleDateFormat(pattern, locale).apply { timeZone = tz }.format(day)
+    }
 
     fun clock(ms: Long, tz: TimeZone = TimeZone.getDefault(), locale: Locale = Locale.getDefault()): String =
         (DateFormat.getTimeInstance(DateFormat.SHORT, locale) as SimpleDateFormat).apply { timeZone = tz }.format(ms)

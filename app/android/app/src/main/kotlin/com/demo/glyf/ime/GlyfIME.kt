@@ -101,11 +101,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var searchActive = false
     private var searchTab = "web"
     private var searchQuery = ""
-    private var searchStrip: LinearLayout? = null
+    private var searchStrip: FrameLayout? = null
     private var searchResults: LinearLayout? = null
     private var searchResultCount = 0
-    private var searchQueryView: TextView? = null
+    private var searchQueryView: InlineField? = null
     private var searchStatusView: TextView? = null
+    /** The tab track's thumb and tabs, and ABC (shown with results). */
+    private var searchThumb: View? = null
+    private var searchTabs: List<Pair<String, ToolIcon>> = emptyList()
+    private var searchAbc: TextView? = null
     /// Suggestions shown while the KEYS STAY VISIBLE — you must be able to
     /// start typing over a suggestion, so this is a separate slot from
     /// `searchResults`, which does replace the keys.
@@ -113,7 +117,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** The row under the search strip that holds the suggestion chips. It
      *  keeps its height with or without chips, and results take its place and
      *  the keys', so the keyboard never changes size while you search. */
-    private var searchChipsRow: android.widget.HorizontalScrollView? = null
+    private var searchChipsRow: FrameLayout? = null
+    private var searchChipsScroll: android.widget.HorizontalScrollView? = null
 
     // MARK: lifecycle
 
@@ -215,6 +220,31 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     TempMailStore.clear(this@GlyfIME)
                     tempMails = emptyList()
                     main.removeCallbacks(tempTick)
+                }
+                // Screenshot runs: the phone's clipboard (the Mac's, on the
+                // emulator) is not filed while "on", so only the seeded
+                // copies show; "off" files again.
+                "cliphold" -> qaClipHeld = intent.getStringExtra("text") != "off"
+                // Screenshot runs: the vault made from files/qa/vault-seed.json
+                // ({"fields":[{kind,label,value}],"snippets":[{trigger,text}]}).
+                // The runner keeps the real vault's file and puts it back.
+                "qavaultseed" -> {
+                    val seed = runCatching {
+                        JSONObject(java.io.File(filesDir, "qa/vault-seed.json").readText())
+                    }.getOrNull() ?: return
+                    com.demo.glyf.store.Bridge.file(this@GlyfIME, "vault.enc").delete()
+                    val fields = seed.optJSONArray("fields") ?: org.json.JSONArray()
+                    for (i in 0 until fields.length()) {
+                        val f = fields.getJSONObject(i)
+                        VaultStore.upsertField(this@GlyfIME, null, f.optString("kind"),
+                            f.optString("label"), f.optString("value"))
+                    }
+                    val snippets = seed.optJSONArray("snippets") ?: org.json.JSONArray()
+                    for (i in 0 until snippets.length()) {
+                        val sn = snippets.getJSONObject(i)
+                        VaultStore.upsertSnippet(this@GlyfIME, sn.optString("trigger"), sn.optString("text"))
+                    }
+                    vaultFieldsStamp = -1L
                 }
                 // A token mail.tm no longer takes, so the next look re-takes
                 // one with the stored password (RULES.md's 401).
@@ -420,14 +450,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         searchActive = false
         searchQuery = ""
         searchStrip = null; searchResults = null; searchLanding = null; searchChipsRow = null
-        searchQueryView = null; searchStatusView = null
+        searchQueryView = null; searchStatusView = null; searchChipsScroll = null
+        searchThumb = null; searchTabs = emptyList(); searchAbc = null
         barActive = false
         barPrompt = ""
         barStrip = null; barPromptView = null; barRunView = null; barInput = null
         vaultEditActive = false
         vaultDraft = null
         vaultEditText = ""
-        vaultEditStrip = null; vaultEditView = null
+        vaultEditStrip = null; vaultEditView = null; vaultShortcutView = null; vaultEditStatus = null
+        vaultShortcutText = ""; vaultShortcutActive = false
         translateStrip = null; translateDir = null; translateText = null; translateReplace = null
         translateSource = ""; translateResult = ""; translateSpan = ""
         stripChip = null; stripChipKind = null; stripSmartDetail = null
@@ -439,6 +471,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         dropMarker = null
         gPill = null
     }
+
+    /** Screenshot runs only (the "cliphold" debug tool): the clipboard is
+     *  not filed and offers no paste chip, so a capture shows the seeded
+     *  copies and nothing else. */
+    private var qaClipHeld = false
 
     /** Bumped for every field, shown or not: an answer that arrives late
      *  (a calendar's Google or Cal.com reply) must not land in the next app. */
@@ -465,6 +502,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
         }
         keyboard.isDark = dark
+        // The surfaces' tokens (iOS Glass) read the same light or dark.
+        Glass.dark = dark
         keyboard.keyTheme = settings.optString("keyTheme", "site")
         // The colour and gradient themes are retired for now (user,
         // 2026-09-27); one picked before is ignored, like on the iPhone.
@@ -475,6 +514,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         keyboard.hapticsOn = settings.optBoolean("haptics", true)
         keyboard.clicksOn = settings.optBoolean("keyClicks", true)
         keyboard.kContext = KContext.from(info)
+        keyboard.returnAction = returnActionOf(info)
         keyboard.mode = Mode.LETTERS
         keyboard.bindings = settings.optJSONObject("bindings")?.let { b ->
             b.keys().asSequence().associateWith { b.optString(it) }
@@ -489,7 +529,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         main.postDelayed(tourTick, 400)
         // Android hands a keyboard the clipboard without asking, so history
         // fills itself: whatever was copied since last time is kept here.
-        if (!isSecureField()) com.demo.glyf.store.ClipboardStore.captureNow(this, settings)
+        if (!isSecureField() && !qaClipHeld) com.demo.glyf.store.ClipboardStore.captureNow(this, settings)
         actGeneration++ // a late act result must not land in a new field
         recentFixes.clear()  // another field: its corrections are not these
         dismissedChip = null // and a chip waved off there may come here
@@ -581,6 +621,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     private fun buildToolbar(dark: Boolean) {
         toolbar.removeAllViews()
+        stripTitleRow = null
         val ink = if (dark) Color.WHITE else Color.rgb(18, 18, 20)
 
         // Glyf's own key, the same as iOS's: the app icon as a 41 by 30 pill
@@ -590,6 +631,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val g = GlyfKeyView(this, dp(30).toFloat())
         g.dark = dark
         g.ink = ink
+        g.divider = glassLook
         g.apply {
             setTag(com.demo.glyf.R.id.qa_id, "toolbar:glyf")
             contentDescription = "Glyf menu"
@@ -623,7 +665,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // the iOS strip reads, so a tool pinned on one phone reads the same.
         val shown = stripTools()
         for (id in shown) {
-            val v = ToolIcon(this, id, ink)
+            // iOS draws the strip's tools as 21pt symbols in the ink at 78%.
+            val v = ToolIcon(this, id, ink).apply { scale = 1.22f; weight = 1.4f }
             v.setTag(com.demo.glyf.R.id.qa_id, id)
             v.contentDescription = ToolIcon.TOOLS.firstOrNull { it.first == id }?.second ?: id
             v.setOnClickListener { openTool(id) }
@@ -648,6 +691,80 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Vault it became, while a pinned Emoji becomes a pinned GIFs.
         return ids.filter { it !in hiddenSet }.map { ToolIcon.canonical(it) }
             .filter { it in known }.distinct()
+    }
+
+    // MARK: a panel's name in the strip (iOS Toolbar.showPanelHeader)
+
+    /** The open panel's ‹ and name, standing where the tools were. */
+    private var stripTitleRow: LinearLayout? = null
+
+    /** A panel is open (iOS and the website): the g key turns into ✕, and
+     *  the tools give way to a ‹ (when [onBack] is a step back inside the
+     *  panel, as the iPhone's shell has) and the panel's [title], with the
+     *  tool's [icon] before it where iOS shows one. Returns the ‹, which is
+     *  "panel:back" to the scenarios. */
+    private fun showStripTitle(title: String, onBack: (() -> Unit)?, icon: String? = null): View? {
+        clearStripTitle()
+        gPill?.closing = true
+        if (!::toolIcons.isInitialized) return null
+        // A chip goes with the tools: the strip says which panel is open.
+        stripChip?.let { toolbar.removeView(it) }
+        stripChip = null
+        stripChipKind = null
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setTag(com.demo.glyf.R.id.qa_id, "strip:title")
+        }
+        // iOS starts the row 11pt past the key's ink; the key is drawn
+        // centred in its 52dp view.
+        val keyInkRight = (dp(52) + GlyfMark.keyWidth(dp(30).toFloat())) / 2f
+        // The Glass look leaves room for its divider: 17 past the key, not 11.
+        val start = (keyInkRight + dp(if (glassLook) 17 else 11) - dp(52)).toInt()
+        var back: View? = null
+        if (onBack != null) {
+            // SF chevron.left at 15pt semibold.
+            back = ToolIcon(this, "chevron", Glass.textPrimary).apply {
+                solid = true
+                // 13pt of ink, as iOS's chevron.left at 15 semibold.
+                weight = 2.3f
+                scale = 0.88f
+                setTag(com.demo.glyf.R.id.qa_id, "panel:back")
+                contentDescription = "Back"
+                setOnClickListener { onBack() }
+            }
+            // 30dp for the tap, its glyph 4dp in from where the row starts.
+            row.addView(back, LinearLayout.LayoutParams(dp(30), LinearLayout.LayoutParams.MATCH_PARENT)
+                .apply { leftMargin = start - dp(4) })
+        }
+        if (icon != null) row.addView(ToolIcon(this, icon, Glass.textPrimary).apply {
+            solid = true
+            weight = 1.8f
+        }, LinearLayout.LayoutParams(dp(24), dp(24)).apply {
+            leftMargin = if (back == null) start else -dp(2)
+            rightMargin = dp(6)
+        })
+        row.addView(TextView(this).apply {
+            text = title
+            Glass.style(this, 15f, Glass.SEMIBOLD)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTag(com.demo.glyf.R.id.qa_id, "strip:title:text")
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            if (back == null && icon == null) leftMargin = start
+            else if (back != null && icon == null) leftMargin = -dp(2)
+        })
+        toolbar.addView(row, 1, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+        stripTitleRow = row
+        applySuggestionVisibility()
+        return back
+    }
+
+    /** The tools back on the strip, where a panel's name stood. */
+    private fun clearStripTitle() {
+        stripTitleRow?.let { if (::toolbar.isInitialized) toolbar.removeView(it) }
+        stripTitleRow = null
+        if (::toolIcons.isInitialized) applySuggestionVisibility()
     }
 
     /** Every tool opens the same way from the strip and from the g menu. */
@@ -680,7 +797,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "tempmail" -> showTempMailPanel()
             // Paying is signed in the app's wallet, never in the keyboard.
             "pay" -> showPayPanel(PayPanelView.Intent.Send(null, null, null))
-            "settings" -> { dismissFeaturePanel(); openApp() }
+            // The keyboard's own settings, in the keyboard (iOS's shell screen).
+            "settings" -> showSettingsPanel()
         }
     }
 
@@ -743,6 +861,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun ink() = keyboard.palette().ink
     private fun card() = keyboard.palette().card
 
+    /** Search as iOS draws it (SearchSurface): one 44dp row in the strip's
+     *  place (✕, the tab track with a sliding thumb, the query the keys type
+     *  into, the go button) over a 40dp row of suggestion chips; results
+     *  take the chips' and the keys' place, with ABC to bring them back. */
     private fun enterSearch() {
         if (searchActive) return
         removeClipCard()
@@ -757,88 +879,129 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             keyboard.invalidate()
         }
         toolbar.visibility = View.GONE
-        val strip = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(4), dp(8), dp(4))
-        }
-        val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        fun chip(label: String, tabId: String, mark: android.graphics.drawable.Drawable?) {
-            val c = TextView(this).apply {
-                text = label
-                textSize = 12.5f
-                gravity = Gravity.CENTER
-                setPadding(dp(11), dp(5), dp(13), dp(5))
-                // The brand marks keep their own colour through the active
-                // state; only the label follows the chip.
-                mark?.setBounds(0, 0, dp(15), dp(15))
-                setCompoundDrawables(mark, null, null, null)
-                compoundDrawablePadding = dp(6)
-                setOnClickListener {
-                    searchTab = tabId
-                    styleChips(chips)
-                    if (searchQuery.isBlank()) showLanding() else submitSearch()
-                }
-                tag = tabId
-                setTag(com.demo.glyf.R.id.qa_id, "search:tab:$tabId")
-            }
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(30))
-            lp.setMargins(0, 0, dp(7), 0)
-            chips.addView(c, lp)
-        }
-        chip("Search", "web", SearchCards.GoogleMark())
-        chip("YouTube", "yt", SearchCards.YouTubeMark())
-        chip("Maps", "maps", SearchCards.PinMark())
-        chip("Contacts", "contacts", null)
-        val chipScroll = android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(chips)
-        }
-        styleChips(chips)
-
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(5), 0, 0)
-        }
-        val back = TextView(this).apply {
-            text = "✕"; textSize = 16f; setTextColor(ink())
-            setPadding(dp(6), 0, dp(10), 0)
+        val rowH = dp(44)
+        val strip = FrameLayout(this)
+        strip.addView(ToolIcon(this, "close", Glass.textSecondary).apply {
+            solid = true; weight = 2f; scale = 0.95f
             setTag(com.demo.glyf.R.id.qa_id, "search:close"); contentDescription = "Close"
             setOnClickListener { exitSearch() }
-        }
-        val query = TextView(this).apply {
-            setTag(com.demo.glyf.R.id.qa_id, "search:query")
-            hint = "Type, then ⏎"
-            textSize = 15f
-            setTextColor(ink())
-            setHintTextColor(Color.argb(120, 128, 128, 136))
-            setPadding(dp(12), dp(7), dp(12), dp(7))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat(); setColor(card())
+        }, FrameLayout.LayoutParams(dp(32), dp(30)).apply { leftMargin = dp(2); topMargin = (rowH - dp(30)) / 2 })
+        // The website's tab track: a soft pill of icon-only tabs, a key-coloured
+        // thumb sliding to the chosen one.
+        val tabs = listOf("web" to "search", "yt" to "playrect", "maps" to "map",
+            "contacts" to "personcircle", "translate" to "bubble")
+        val pillW = dp(35); val pillH = dp(30); val pad = dp(3); val gap = dp(2)
+        val trackW = pillW * tabs.size + gap * (tabs.size - 1) + pad * 2
+        val trackH = pillH + pad * 2
+        val track = FrameLayout(this).apply { background = Glass.pill(Glass.fillSoft) }
+        val thumb = View(this).apply { background = Glass.pill(Glass.surfaceCard) }
+        track.addView(thumb, FrameLayout.LayoutParams(pillW, pillH).apply { leftMargin = pad; topMargin = pad })
+        val tabViews = mutableListOf<Pair<String, ToolIcon>>()
+        for ((i, pair) in tabs.withIndex()) {
+            val (tabId, glyph) = pair
+            val icon = ToolIcon(this, glyph, Glass.textSecondary).apply {
+                solid = true; weight = 1.7f; scale = 1.05f
+                contentDescription = when (tabId) {
+                    "web" -> "Search"; "yt" -> "YouTube"; "maps" -> "Maps"
+                    "contacts" -> "Contacts"; else -> "Translate"
+                }
+                setTag(com.demo.glyf.R.id.qa_id, "search:tab:$tabId")
+                setOnClickListener {
+                    if (tabId == "translate") {
+                        // The tab opens the translate strip, as on iOS.
+                        exitSearch()
+                        runTranslateOnField()
+                        return@setOnClickListener
+                    }
+                    searchTab = tabId
+                    styleSearchTabs(animated = true)
+                    if (searchQuery.isBlank()) showLanding() else submitSearch()
+                }
             }
+            track.addView(icon, FrameLayout.LayoutParams(pillW, pillH).apply {
+                leftMargin = pad + i * (pillW + gap); topMargin = pad
+            })
+            tabViews.add(tabId to icon)
         }
-        val go = TextView(this).apply {
-            text = "→"; textSize = 18f; setTextColor(ink())
-            setPadding(dp(12), 0, dp(6), 0)
+        strip.addView(track, FrameLayout.LayoutParams(trackW, trackH).apply {
+            leftMargin = dp(34); topMargin = (rowH - trackH) / 2
+        })
+        val queryX = dp(34) + trackW + dp(6)
+        val abc = TextView(this).apply {
+            text = "ABC"
+            Glass.style(this, 14f, Glass.SEMIBOLD)
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setTag(com.demo.glyf.R.id.qa_id, "search:abc")
+            setOnClickListener { backToLanding() }
+        }
+        strip.addView(abc, FrameLayout.LayoutParams(dp(46), dp(34)).apply {
+            leftMargin = queryX; topMargin = (rowH - dp(34)) / 2
+        })
+        val query = InlineField(this, "Search…").apply {
+            setTag(com.demo.glyf.R.id.qa_id, "search:query")
+            active = true
+        }
+        val goW = dp(34)
+        strip.addView(query, FrameLayout.LayoutParams(
+            maxOf(dp(60), resources.displayMetrics.widthPixels - dp(40) - dp(6) - queryX), dp(34)).apply {
+            leftMargin = queryX; topMargin = (rowH - dp(34)) / 2
+        })
+        strip.addView(GoButton(this).apply {
             setTag(com.demo.glyf.R.id.qa_id, "search:go"); contentDescription = "Search"
             setOnClickListener { submitSearch() }
-        }
-        row.addView(back)
-        row.addView(query, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(go)
-        val status = TextView(this).apply {
-            textSize = 11.5f; setTextColor(Color.GRAY); setPadding(dp(8), dp(2), 0, 0)
-        }
-        strip.addView(chipScroll)
-        strip.addView(row)
-        strip.addView(status)
-        root.addView(strip, 0)
+        }, FrameLayout.LayoutParams(goW, goW, Gravity.END or Gravity.TOP).apply {
+            rightMargin = dp(6); topMargin = (rowH - goW) / 2
+        })
+        root.addView(strip, 0, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, rowH))
         searchStrip = strip
         searchQueryView = query
-        searchStatusView = status
+        searchThumb = thumb
+        searchTabs = tabViews
+        searchAbc = abc
+        styleSearchTabs(animated = false)
         ensureSearchChipsRow()
         showLanding()
+    }
+
+    /** iOS's go button: arrow.forward.circle.fill in the ink. */
+    private class GoButton(ctx: android.content.Context) : View(ctx) {
+        private val disc = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        private val arrow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+        override fun onDraw(c: android.graphics.Canvas) {
+            val d = resources.displayMetrics.density
+            val cx = width / 2f; val cy = height / 2f
+            disc.color = if (Glass.dark) Color.WHITE else Glass.brandInk
+            arrow.color = if (Glass.dark) Glass.brandInk else Color.WHITE
+            arrow.strokeWidth = 2.1f * d
+            c.drawCircle(cx, cy, minOf(width, height) / 2f * 0.84f, disc)
+            c.drawLine(cx - 5.2f * d, cy, cx + 5.2f * d, cy, arrow)
+            c.drawLine(cx + 5.2f * d, cy, cx + 1f * d, cy - 4.2f * d, arrow)
+            c.drawLine(cx + 5.2f * d, cy, cx + 1f * d, cy + 4.2f * d, arrow)
+        }
+    }
+
+    /** The chosen tab in the ink on the thumb, the rest grey. */
+    private fun styleSearchTabs(animated: Boolean) {
+        val thumb = searchThumb ?: return
+        for ((i, pair) in searchTabs.withIndex()) {
+            val (tabId, icon) = pair
+            val on = tabId == searchTab
+            icon.setTint(if (on) Glass.textPrimary else Glass.textSecondary)
+            icon.solid = true
+            icon.isSelected = on
+            if (on) {
+                val x = (dp(3) + i * (dp(35) + dp(2))).toFloat()
+                val lp = thumb.layoutParams as FrameLayout.LayoutParams
+                if (animated && thumb.isLaidOut) thumb.animate().translationX(x - lp.leftMargin).setDuration(220)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(0.6f)).start()
+                else thumb.translationX = x - lp.leftMargin
+            }
+        }
     }
 
     /** What a tab shows BEFORE anything is typed: the user's own recents
@@ -846,13 +1009,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  server. Gboard never opens on a blank box. */
     private fun showLanding() {
         val vertical = searchTab
-        val recents = com.demo.glyf.store.SearchRecents.list(this, vertical)
+        // Three, like the website's landing; Contacts keeps no recents (a
+        // name is not a search).
+        val recents = if (vertical == "contacts") emptyList()
+            else com.demo.glyf.store.SearchRecents.list(this, vertical).take(3)
             .map { q ->
                 BackendClient.SearchCard(
                     kind = "query", id = "recent-$q", title = q, url = "",
                     source = "recent")
             }
-        if (recents.isNotEmpty()) showLandingRows(recents)
+        searchStatusView?.text = ""
+        // Even empty: the row forgets the last tab's chips.
+        showLandingRows(recents)
         if (vertical == "contacts") {
             searchStatusView?.text =
                 if (com.demo.glyf.store.Bridge.file(this, "contacts.json").exists())
@@ -879,20 +1047,24 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         )
     }
 
-    private fun styleChips(chips: LinearLayout) {
-        for (i in 0 until chips.childCount) {
-            val c = chips.getChildAt(i) as TextView
-            val active = c.tag == searchTab
-            c.setTextColor(if (active) card() else ink())
-            c.background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(if (active) ink() else card())
-            }
-        }
+    private fun renderQuery() {
+        searchQueryView?.show(searchQuery)
     }
 
-    private fun renderQuery() {
-        searchQueryView?.text = searchQuery
+    /** Contacts filter as the name is typed: the matches show as chips over
+     *  keys that stay live, so the next letter narrows them (iOS). */
+    private fun searchQueryChanged() {
+        if (searchTab != "contacts" || searchResults != null) return
+        val q = searchQuery.trim()
+        if (q.isEmpty()) { showLanding(); return }
+        if (!com.demo.glyf.store.Bridge.file(this, "contacts.json").exists()) {
+            showLandingRows(emptyList())
+            searchStatusView?.text = "Turn on Contacts search in the Glyf app"
+            return
+        }
+        val rows = contactMatches(q)
+        showLandingRows(rows)
+        searchStatusView?.text = if (rows.isEmpty()) "No contacts named “$q”" else ""
     }
 
     private fun submitSearch() {
@@ -903,7 +1075,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (rows.isEmpty()) {
                 searchStatusView?.text =
                     if (com.demo.glyf.store.Bridge.file(this, "contacts.json").exists())
-                        "No contact matches"
+                        "No contacts named “$q”"
                     else "Turn on Contacts search in the Glyf app"
             } else showSearchResults(rows)
             return
@@ -970,47 +1142,69 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     private val searchChipsHeight get() = dp(40)
 
-    /** Directly under the search strip, above the key grid (index 1). */
+    /** The 40dp row under the search row (index 1, over the keys): the
+     *  suggestion chips, or in their place the status line ("Searching…",
+     *  "Nothing found", "Type a name"), 12.5 grey, 16dp in (iOS). */
     private fun ensureSearchChipsRow(): android.widget.HorizontalScrollView {
-        searchChipsRow?.let { return it }
-        val row = android.widget.HorizontalScrollView(this).apply {
+        searchChipsScroll?.let { return it }
+        val frame = FrameLayout(this)
+        val scroll = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            setPadding(dp(8), 0, dp(8), 0)
+            overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
         }
-        root.addView(row, 1, LinearLayout.LayoutParams(
+        frame.addView(scroll, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        val status = TextView(this).apply {
+            Glass.style(this, 12.5f, Glass.REGULAR, Glass.textSecondary)
+            gravity = Gravity.CENTER_VERTICAL
+            maxLines = 1
+            setTag(com.demo.glyf.R.id.qa_id, "search:status")
+        }
+        frame.addView(status, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply {
+            leftMargin = dp(16); rightMargin = dp(16)
+        })
+        root.addView(frame, 1, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, searchChipsHeight))
-        searchChipsRow = row
-        return row
+        searchChipsRow = frame
+        searchChipsScroll = scroll
+        searchStatusView = status
+        return scroll
     }
 
     /** Suggestions as one row of chips side by side, so the keys stay where
-     *  they are: a recent or trending search runs when tapped. */
+     *  they are: a recent or trending search runs when tapped, a contact
+     *  goes into the message. iOS's chips: 30dp pills of the key colour, an
+     *  11 semibold mark (clock, trend arrow, phone, envelope), 13.5 medium. */
     private fun showLandingRows(cards: List<BackendClient.SearchCard>) {
         val row = ensureSearchChipsRow()
         row.removeAllViews()
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(4), 0)
         }
         for ((i, c) in cards.take(12).withIndex()) {
-            val icon = when {
-                c.kind == "contact" -> "👤"
-                c.source == "recent" -> "🕘"
-                else -> "↗"
+            val glyph = when {
+                c.kind == "contact" -> if (c.url.contains("@")) "envelope" else "phone"
+                c.source == "recent" -> "clock"
+                else -> "trend"
             }
             list.addView(TextView(this).apply {
-                text = "$icon  ${c.title}"
-                textSize = 13.5f
-                setTextColor(ink())
+                text = if (c.kind == "contact") "${c.title} · ${c.url}" else c.title
+                Glass.style(this, 13.5f, Glass.MEDIUM)
                 maxLines = 1
                 maxWidth = dp(230)
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER_VERTICAL
+                setCompoundDrawablesRelativeWithIntrinsicBounds(
+                    ToolIcon(this@GlyfIME, glyph, Glass.textSecondary).apply {
+                        solid = true; weight = 2f; scale = 0.72f
+                    }.asDrawable(dp(15)), null, null, null)
+                compoundDrawablePadding = dp(5)
                 setPadding(dp(11), 0, dp(12), 0)
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(15).toFloat(); setColor(card())
-                }
+                background = Glass.pill(Glass.surfaceCard)
                 setTag(com.demo.glyf.R.id.qa_id, "search:row:$i")
                 contentDescription = c.title
                 setOnClickListener { insertResult(c) }
@@ -1022,57 +1216,55 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
         row.scrollTo(0, 0)
         searchLanding = list
+        // Chips take the row; the status line gives way to them.
+        if (cards.isNotEmpty()) searchStatusView?.text = ""
     }
 
     private fun dismissLanding() {
-        searchChipsRow?.removeAllViews()
+        searchChipsScroll?.removeAllViews()
         searchLanding = null
     }
 
-    /** Results replace the keys (ABC returns), Gboard-style. */
+    /** Results replace the chips and the keys (ABC returns them): the same
+     *  height, so the keyboard stays put. iOS's result cards: the key
+     *  colour, 15 corners, a 1dp hairline, 10dp in and 4dp apart. */
     private fun showSearchResults(cards: List<BackendClient.SearchCard>) {
         dismissSearchResults()
         dismissLanding()
-        // The results take the chip row's place and the keys': the same
-        // height, so the keyboard stays put.
         val keysHeight = keyboard.height + searchChipsHeight
         searchChipsRow?.visibility = View.GONE
         keyboard.visibility = View.GONE
-        val panel = LinearLayout(this).apply {
+        searchAbc?.visibility = View.VISIBLE
+        relayoutSearchQuery()
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(4), dp(10), dp(10))
+            setPadding(0, dp(2), 0, dp(10))
         }
-        val abc = TextView(this).apply {
-            text = "ABC"; textSize = 14f; setTextColor(ink())
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(6), dp(4), dp(6), dp(6))
-            setOnClickListener { backToLanding() }
-        }
-        panel.addView(abc)
-        val scroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false }
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val theme = SearchCards.Theme(
-            ink = ink(), card = card(),
-            soft = Color.argb(170, 128, 128, 136), dp = ::dp, dark = chromeDark)
+            ink = Glass.textPrimary, card = Glass.surfaceCard,
+            soft = Glass.textSecondary, dp = ::dp, dark = chromeDark)
         val backendURL = settings.optString("backendURL")
         searchResultCount = cards.size
         for ((i, c) in cards.withIndex()) {
             val v = SearchCards.view(this, c, theme, backendURL) { tapped -> insertResult(tapped) }
             v.setTag(com.demo.glyf.R.id.qa_id, "search:card:$i")
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.setMargins(0, 0, 0, dp(8))
-            list.addView(v, lp)
+            list.addView(v, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(SearchCards.height(c.kind))).apply {
+                setMargins(dp(10), dp(4), dp(10), dp(4))
+            })
         }
         // Maps drawn from OpenStreetMap carry its credit, once, under the list.
         if (cards.any { it.thumb?.startsWith("/search/staticmap") == true }) {
             list.addView(TextView(this).apply {
                 text = "Maps © OpenStreetMap contributors · Geoapify"
-                textSize = 11f; setTextColor(Color.argb(170, 128, 128, 136))
+                Glass.style(this, 11f, Glass.REGULAR, Glass.textSecondary)
                 gravity = Gravity.CENTER
-                setPadding(0, dp(2), 0, dp(6))
-            })
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(26)))
         }
         scroll.addView(list)
         panel.addView(scroll, LinearLayout.LayoutParams(
@@ -1080,6 +1272,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         root.addView(panel, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, keysHeight))
         searchResults = panel
+    }
+
+    /** The query sits after ABC while results show, after the tabs otherwise. */
+    private fun relayoutSearchQuery() {
+        val q = searchQueryView ?: return
+        val abcOn = searchAbc?.visibility == View.VISIBLE
+        val trackW = dp(35) * 5 + dp(2) * 4 + dp(3) * 2
+        val x = dp(34) + trackW + dp(6) + (if (abcOn) dp(46) else 0)
+        q.layoutParams = (q.layoutParams as FrameLayout.LayoutParams).apply {
+            leftMargin = x
+            width = maxOf(dp(60), resources.displayMetrics.widthPixels - dp(40) - dp(6) - x)
+        }
     }
 
     /** A tapped result lands in the host field, formatted per the user's
@@ -1108,6 +1312,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         searchResults = null
         searchChipsRow?.visibility = View.VISIBLE
         keyboard.visibility = View.VISIBLE
+        if (searchAbc?.visibility == View.VISIBLE) {
+            searchAbc?.visibility = View.GONE
+            relayoutSearchQuery()
+        }
     }
 
     /** ABC returns you to suggestions, never to an empty panel. */
@@ -1122,8 +1330,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         dismissSearchResults()
         searchChipsRow?.let { root.removeView(it) }
         searchChipsRow = null
+        searchChipsScroll = null
+        searchStatusView = null
         searchStrip?.let { root.removeView(it) }
         searchStrip = null
+        searchQueryView = null
+        searchThumb = null
+        searchTabs = emptyList()
+        searchAbc = null
         toolbar.visibility = View.VISIBLE
         syncAutoShift()
     }
@@ -1150,24 +1364,31 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             return
         }
         if (searchActive) {
-            typeIntoStrip(id, char, searchQuery, { searchQuery = it; renderQuery() }) {
+            typeIntoStrip(id, char, searchQuery, { searchQuery = it; renderQuery(); searchQueryChanged() }) {
                 submitSearch()
             }
             return
         }
         if (barActive) {
-            typeIntoStrip(id, char, barPrompt, { barPrompt = it; barPromptView?.text = it; styleBarRun() }) {
+            typeIntoStrip(id, char, barPrompt, { barPrompt = it; barPromptView?.show(it); styleBarRun() }) {
                 runBarPrompt()
             }
             return
         }
         if (vaultEditActive) {
-            val update = { t: String -> vaultEditText = t; vaultEditView?.text = t }
-            typeIntoStrip(id, char, vaultEditText, update) {
+            val onShortcut = vaultShortcutActive
+            val current = if (onShortcut) vaultShortcutText else vaultEditText
+            val update: (String) -> Unit = { t ->
+                if (onShortcut) { vaultShortcutText = t; vaultShortcutView?.show(t) }
+                else { vaultEditText = t; vaultEditView?.show(t) }
+            }
+            typeIntoStrip(id, char, current, update) {
                 // A note or what a shorthand types out can run to lines; a
-                // detail or a shortcut is one, and return is done with it.
+                // shortcut goes on to what it types out; a detail is one
+                // line, and return saves it.
                 when (vaultDraft) {
-                    is VaultDraft.Note, is VaultDraft.Expansion -> update(vaultEditText + "\n")
+                    is VaultDraft.Note -> update(current + "\n")
+                    VaultDraft.Shorthand -> if (onShortcut) activateVaultField(shortcut = false) else update(current + "\n")
                     else -> saveVaultEdit()
                 }
             }
@@ -1251,7 +1472,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             id == "return" -> {
                 commitCurrentWord(ic)
-                ic.commitText("\n", 1)
+                // The field's own action where it has one (go, search, send,
+                // done, next), as the key now shows; a new line otherwise.
+                val action = returnActionOf(currentInputEditorInfo)
+                if (action == 0 || !ic.performEditorAction(action)) ic.commitText("\n", 1)
                 syncAutoShift()
                 updateSuggestions()
                 translateDraftChanged()
@@ -1263,13 +1487,31 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             id == "emojikey" -> showEmojiPanel()
             id.startsWith("mode:") -> {
-                keyboard.mode = when (id.removePrefix("mode:")) {
-                    "123", "?123" -> Mode.SYMBOLS1
-                    "#+=" -> Mode.SYMBOLS2
-                    else -> Mode.LETTERS
-                }
+                keyboard.mode = modeFor(id.removePrefix("mode:"))
                 keyboard.rebuild()
             }
+        }
+    }
+
+    /** The page a mode key opens. On the phone pad, +*# opens its symbols
+     *  and 123 goes back to the digits (iOS padRows). */
+    private fun modeFor(m: String): Mode = when {
+        keyboard.kContext == KContext.PHONE_PAD -> if (m == "+*#") Mode.SYMBOLS1 else Mode.LETTERS
+        m == "123" || m == "?123" -> Mode.SYMBOLS1
+        m == "#+=" -> Mode.SYMBOLS2
+        else -> Mode.LETTERS
+    }
+
+    /** The field's return action when the key should do it (go, search,
+     *  send, done, next), or 0 for a new line: a field that asks for no
+     *  enter action (a message box) gets its new line. */
+    private fun returnActionOf(info: EditorInfo?): Int {
+        info ?: return 0
+        if (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0) return 0
+        return when (val action = info.imeOptions and EditorInfo.IME_MASK_ACTION) {
+            EditorInfo.IME_ACTION_GO, EditorInfo.IME_ACTION_SEARCH, EditorInfo.IME_ACTION_SEND,
+            EditorInfo.IME_ACTION_DONE, EditorInfo.IME_ACTION_NEXT -> action
+            else -> 0
         }
     }
 
@@ -1297,11 +1539,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 keyboard.invalidate()
             }
             id.startsWith("mode:") -> {
-                keyboard.mode = when (id.removePrefix("mode:")) {
-                    "123", "?123" -> Mode.SYMBOLS1
-                    "#+=" -> Mode.SYMBOLS2
-                    else -> Mode.LETTERS
-                }
+                keyboard.mode = modeFor(id.removePrefix("mode:"))
                 keyboard.rebuild()
             }
         }
@@ -1664,9 +1902,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var barActive = false
     private var barPrompt = ""
     private var barStrip: LinearLayout? = null
-    private var barPromptView: TextView? = null
-    private var barRunView: TextView? = null
+    private var barPromptView: InlineField? = null
+    private var barRunView: FrameLayout? = null
     private var barInput: BarInput? = null
+    /** The chips row, once shown, keeps its room while the bar is open:
+     *  leaving the text out must not move the keys under the finger (iOS). */
+    private var barRowShown = false
 
     /** Same quick glyfs, same order, same titles as iOS GlyfCatalog. */
     /** The person's own glyfs, one tap each in the bar (as on iOS). */
@@ -1710,7 +1951,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if ((before + after).isNotBlank()) {
             return BarInput(before + after, "field")
         }
-        val clip = com.demo.glyf.store.ClipboardStore.clipText(this)
+        // The newest copy in Glyf's clipboard, as iOS reads it; what the
+        // system holds when that is empty or history is off.
+        val kept = if (settings.optBoolean("clipboardHistory", true))
+            com.demo.glyf.store.ClipboardStore.load(this).firstOrNull()?.text else null
+        val clip = kept?.takeIf { it.isNotBlank() } ?: com.demo.glyf.store.ClipboardStore.clipText(this)
         if (!clip.isNullOrBlank()) return BarInput(clip, "clipboard")
         return BarInput("", "empty")
     }
@@ -1723,6 +1968,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         barInput = collectBarInput()
         barActive = true
         barPrompt = ""
+        barRowShown = false
+        // The prompt starts a sentence: capitals up, as iOS's bar opens.
+        if (settings.optBoolean("autocapitalize", true) && keyboard.mode == Mode.LETTERS && !keyboard.shifted) {
+            keyboard.shifted = true
+            autoShifted = true
+            keyboard.invalidate()
+        }
         toolbar.visibility = View.GONE
         val strip = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(strip, 0)
@@ -1730,72 +1982,58 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         renderBar()
     }
 
-    /** Ask Glyf, the same bar as iOS. The strip row: close where the g was,
-     *  the prompt with its send arrow where the tools were, the keys typing
-     *  into it. Under it, only when there is something for it: the copied
-     *  text the prompt will work on (tap to leave it out) and the person's
-     *  own glyfs. Answers open in the act panel. */
+    /** Ask Glyf, iOS's GlyfBar: ✕ in the g key's box, the round prompt with
+     *  its sparkle where the tools were (the keys type into it) and the send
+     *  arrow inside its end. Under it, only when there is something for it:
+     *  the copied text the prompt will work on (tap to leave it out) and the
+     *  person's own glyfs. Answers open in the act panel. */
     private fun renderBar() {
         val strip = barStrip ?: return
         strip.removeAllViews()
-        val accent = Color.rgb(0x7C, 0x5C, 0xFF)
-        val quiet = Color.argb(170, 128, 128, 136)
-
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(6), dp(10), dp(6))
-        }
-        row.addView(TextView(this).apply {
-            text = "✕"; textSize = 16f
-            gravity = Gravity.CENTER
-            setTextColor(ink())
+        val w = resources.displayMetrics.widthPixels
+        val rowH = dp(STRIP_DP)
+        val row = FrameLayout(this)
+        // iOS: the close is the g pill's box, 52 by 34 at 5 in, fillSoft with
+        // 10 corners; the prompt starts 6 after it and ends 6 from the edge.
+        val boxW = dp(52); val boxH = dp(34)
+        val top = (rowH - boxH) / 2
+        row.addView(FrameLayout(this).apply {
+            background = Glass.card(this@GlyfIME, Glass.fillSoft, radius = 10f)
             setTag(com.demo.glyf.R.id.qa_id, "bar:close"); contentDescription = "Close"
-            background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(if (chromeDark) Color.argb(20, 255, 255, 255) else Color.argb(153, 255, 255, 255))
-            }
+            addView(ToolIcon(this@GlyfIME, "close", Glass.textPrimary).apply {
+                solid = true; weight = 1.9f; scale = 1.15f
+            }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             setOnClickListener { exitBar() }
-        }, LinearLayout.LayoutParams(dp(38), dp(30)))
-
-        val field = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(9), 0, dp(4), 0)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(17).toFloat(); setColor(card())
-                setStroke(dp(1), Color.argb(153, 0x7C, 0x5C, 0xFF))
-            }
-        }
-        field.addView(ToolIcon(this, "ask", accent).apply { scale = 0.85f },
-            LinearLayout.LayoutParams(dp(20), dp(20)))
-        val prompt = TextView(this).apply {
-            text = barPrompt
-            hint = "Ask Glyf"
-            textSize = 15f
-            maxLines = 1
-            // The end stays in view: that is where the typing is.
-            ellipsize = android.text.TextUtils.TruncateAt.START
-            setTextColor(ink())
-            setHintTextColor(quiet)
-            setPadding(dp(8), 0, dp(6), 0)
+        }, FrameLayout.LayoutParams(boxW, boxH).apply { leftMargin = dp(5); topMargin = top })
+        val left = dp(5) + boxW + dp(6)
+        val fieldW = maxOf(dp(80), w - left - dp(6))
+        val runD = boxH - dp(6)
+        val prompt = InlineField(this, "Ask Glyf", "ask").apply {
+            radiusDp = 17f
+            trailingDp = 38f
+            active = true
+            show(barPrompt)
             setTag(com.demo.glyf.R.id.qa_id, "bar:prompt"); contentDescription = "Ask Glyf"
         }
-        field.addView(prompt, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val run = TextView(this).apply {
-            text = "↑"; textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
+        row.addView(prompt, FrameLayout.LayoutParams(fieldW, boxH).apply {
+            leftMargin = left; topMargin = top
+        })
+        val run = FrameLayout(this).apply {
             setTag(com.demo.glyf.R.id.qa_id, "bar:run"); contentDescription = "Ask"
+            addView(ToolIcon(this@GlyfIME, "arrowup", Glass.textSecondary).apply {
+                solid = true; weight = 2.3f; scale = 0.74f
+            }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             setOnClickListener { runBarPrompt() }
         }
-        field.addView(run, LinearLayout.LayoutParams(dp(26), dp(26)))
-        row.addView(field, LinearLayout.LayoutParams(0, dp(34), 1f).apply { leftMargin = dp(8) })
-        strip.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
+        row.addView(run, FrameLayout.LayoutParams(runD, runD).apply {
+            leftMargin = left + fieldW - runD - dp(3); topMargin = top + (boxH - runD) / 2
+        })
+        strip.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, rowH))
         barPromptView = prompt
         barRunView = run
         styleBarRun()
 
+        // iOS's chips: 32 tall on the key colour, 16 corners, 6 apart from 6 in.
         val chips = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1807,24 +2045,25 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             chips.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(9), 0, dp(11), 0)
+                setPadding(dp(11), 0, dp(11), 0)
                 setTag(com.demo.glyf.R.id.qa_id, "bar:context")
                 contentDescription = if (copied) "Copied text, tap to leave it out"
                     else "Your text, tap to leave it out"
-                background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(card()) }
-                addView(ToolIcon(this@GlyfIME, if (copied) "clipboard" else "edit", accent).apply { scale = 0.75f },
-                    LinearLayout.LayoutParams(dp(18), dp(18)))
+                background = Glass.pill(Glass.surfaceCard)
+                addView(ToolIcon(this@GlyfIME, if (copied) "clipboard" else "edit", Glass.accentPrimary).apply {
+                    solid = true; weight = 1.9f; scale = 0.72f
+                }, LinearLayout.LayoutParams(dp(16), dp(16)))
                 addView(TextView(this@GlyfIME).apply {
                     text = "“${barPreview(context)}”"
-                    textSize = 13f
+                    Glass.style(this, 13f)
                     maxLines = 1
-                    setTextColor(ink())
-                    setPadding(dp(6), 0, dp(9), 0)
-                })
-                addView(TextView(this@GlyfIME).apply {
-                    text = "✕"; textSize = 11f
-                    setTextColor(quiet)
-                })
+                    maxWidth = dp(200)
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(6); rightMargin = dp(8) })
+                addView(ToolIcon(this@GlyfIME, "close", Glass.textSecondary).apply {
+                    solid = true; weight = 2.1f; scale = 0.72f
+                }, LinearLayout.LayoutParams(dp(12), dp(12)))
                 setOnClickListener {
                     // Leave the copied text out: the prompt runs on its own.
                     barInput = BarInput("", "empty")
@@ -1834,34 +2073,41 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         for ((glyfId, title) in myGlyfs()) {
             chips.addView(TextView(this).apply {
-                text = title; textSize = 13.5f
-                typeface = Typeface.DEFAULT_BOLD
+                text = title
+                Glass.style(this, 13.5f, Glass.SEMIBOLD)
                 gravity = Gravity.CENTER
-                setTextColor(ink())
                 setPadding(dp(13), 0, dp(13), 0)
                 setTag(com.demo.glyf.R.id.qa_id, "chip:$glyfId")
-                background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(card()) }
+                background = Glass.pill(Glass.surfaceCard)
                 setOnClickListener { runFromBar(glyfId, emptyMap(), title) }
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply { rightMargin = dp(6) })
         }
-        if (chips.childCount > 0) {
+        if (chips.childCount > 0 || barRowShown) {
+            barRowShown = true
             strip.addView(android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
                 clipToPadding = false
-                setPadding(dp(8), 0, dp(8), dp(6))
-                addView(chips)
+                // iOS: the chips 2 above the row's middle.
+                setPadding(dp(6), 0, dp(6), dp(4))
+                addView(chips, FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.MATCH_PARENT))
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)))
         }
     }
 
-    /** The send arrow: ink once there is something to ask. */
+    /** The send arrow: the ink once there is something to ask, else the
+     *  field grey with a grey arrow (iOS). */
     private fun styleBarRun() {
         val run = barRunView ?: return
         val ready = barPrompt.isNotBlank()
-        run.setTextColor(if (ready) card() else Color.argb(170, 128, 128, 136))
         run.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(if (ready) ink() else Color.argb(if (chromeDark) 40 else 30, 128, 128, 136))
+            setColor(if (ready) Glass.textPrimary else Glass.fillField)
+        }
+        (run.getChildAt(0) as? ToolIcon)?.apply {
+            setTint(if (!ready) Glass.textSecondary else if (Glass.dark) Glass.brandInk else Color.WHITE)
+            solid = true
         }
     }
 
@@ -2084,6 +2330,24 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             else -> {}
         }
         val trimmed = tail.trim()
+        // A question for a fact shows "AI answer" as it is typed (Arpit,
+        // 2026-09-30: "we can detect questions too with what where like
+        // words"), with no wait for the server's read (iOS Smart.question).
+        // iOS asks for Full Access first; an Android keyboard always has
+        // the network. A tap answers it as the server's AI answer chip does;
+        // its ✕ keeps it away for these words.
+        val question = if (settings.optBoolean("candidates", true)) Smart.question(tail) else null
+        if (question != null) {
+            cancelSuggestion()
+            val shown = showStripChip("action", null, "AI answer", "") {
+                hideStripChip()
+                val ic = currentInputConnection
+                startAct(ic?.getTextBeforeCursor(4000, 0)?.toString() ?: "",
+                    ic?.getTextAfterCursor(4000, 0)?.toString() ?: "", "answer")
+            }
+            if (!shown && stripChipKind in smartKinds) hideStripChip()
+            return shown
+        }
         val cached = suggestedChip
         if (cached != null && suggestedFor == trimmed) {
             return showStripChip("action", null, cached.label, "") {
@@ -2150,8 +2414,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         val stamp = cm.primaryClipDescription?.timestamp ?: 0L
         val text = com.demo.glyf.store.ClipboardStore.clipText(this)?.trim().orEmpty()
+        // The parity shots hold the clipboard as seeded (debug "cliphold"):
+        // what the Mac copies meanwhile must not put a paste chip in them.
         val busy = searchActive || barActive || vaultEditActive || overlay != null ||
-            featurePanel != null || isSecureField()
+            featurePanel != null || isSecureField() || qaClipHeld
         val fresh = stamp > 0 && System.currentTimeMillis() - stamp < 10 * 60 * 1000 &&
             stamp != imePrefs.getLong("clipDone", -1)
         val typed = currentInputConnection?.getTextBeforeCursor(1, 0)?.isNotEmpty() == true
@@ -2248,6 +2514,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                               lead: String? = null, extra: String? = null, onExtra: (() -> Unit)? = null,
                               onClose: (() -> Unit)? = null,
                               onTap: () -> Unit): Boolean {
+        // A panel's name is in the strip: its chips wait for the keys.
+        if (stripTitleRow != null) return false
         val key = chipKey(kind)
         if (onClose == null && key == dismissedChip) {
             if (stripChipKind == kind) hideStripChip()
@@ -2270,11 +2538,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         fun px(dp: Float) = Math.round(dp * density)
         val endPad = when {
             extra != null && onExtra != null -> 1.5f + 12f
-            // The sparkle's ink ends 3.2dp inside its box.
-            verb.isEmpty() -> 1.5f + 16f - 3.2f
+            // The sparkle, at iOS's size (0.8 of the tools'), ends 4.8dp
+            // inside its 22dp box.
+            verb.isEmpty() -> 1.5f + 16f - 4.8f
             else -> 1.5f + 16f
         }
-        val chip = MagicChip(this, card(), chromeDark).apply {
+        val chip = MagicChip(this, chromeDark).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             // The cross is 11dp across in the middle of its 36dp target, so
@@ -2318,7 +2587,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         })
         if (verb.isEmpty()) {
             // The model's suggestion: its words are the action, a sparkle marks it.
-            chip.addView(ToolIcon(this, "ask", accent).apply { solid = true },
+            chip.addView(ToolIcon(this, "ask", accent).apply { solid = true; scale = 0.8f },
                 LinearLayout.LayoutParams(dp(22), dp(22)).apply { leftMargin = dp(8) })
         } else chip.addView(TextView(this).apply {
             text = verb
@@ -2343,10 +2612,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTag(com.demo.glyf.R.id.qa_id, "strip:smart:extra")
             setOnClickListener { onExtra() }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(26)).apply { leftMargin = dp(10) })
-        // As tall as the strip allows with the glow's room above and below
-        // (all but its faint last dp), as on iOS: 38dp in the 50dp strip.
+        // Centred on Glyf's key (Arpit, 2026-09-30: "why did the ai strip
+        // fall below, have it at same level as glyf logo"), as on iOS: iOS's
+        // 38dp, or less where the key's middle leaves less room above or
+        // below. The strip centres both in its padded box, so the chip's
+        // middle is the key's.
         val stripH = toolbar.layoutParams?.height?.takeIf { it > 0 } ?: dp(STRIP_DP)
-        val chipH = stripH - 2 * dp(MagicChip.SPREAD.toInt() - 1) - dp(2)
+        val keyMid = toolbar.paddingTop + (stripH - toolbar.paddingTop - toolbar.paddingBottom) / 2
+        val chipH = minOf(dp(38), 2 * keyMid, 2 * (stripH - keyMid))
         toolbar.addView(chip, 1, LinearLayout.LayoutParams(0, chipH, 1f).apply {
             leftMargin = dp(8)
             // The chip ends as far in as Glyf's key starts (the key is drawn
@@ -2600,10 +2873,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             FrameLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP), Gravity.TOP))
         if (title != null) {
             panel.addView(TextView(this).apply {
-                text = title; textSize = 15f
-                typeface = Typeface.DEFAULT_BOLD
+                text = title
+                Glass.style(this, 15f, Glass.SEMIBOLD)
                 gravity = Gravity.CENTER
-                setTextColor(ink())
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(24), 0, dp(24), 0)
                 setTag(com.demo.glyf.R.id.qa_id, "act:skill"); contentDescription = "Working"
             }, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -2619,10 +2894,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             val trimmed = intent.trim()
             val quoted = if (trimmed.length > 80) trimmed.take(80) + "…" else trimmed
             text = if (quoted.isEmpty()) "" else "“$quoted”"
-            textSize = 14f
+            Glass.style(this, 14f, Glass.MEDIUM, Glass.textSecondary)
             maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
             gravity = Gravity.CENTER
-            setTextColor(Color.argb(170, 128, 128, 136))
             setPadding(dp(24), dp(12), dp(24), 0)
         })
         panel.addView(column, FrameLayout.LayoutParams(
@@ -2641,39 +2916,50 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** The strip while the act panel is open, the same as iOS and the
-     *  website: close where the g was, ✦ Glyf, and ↻ at the right once there
-     *  is an answer to try again. */
+    /** The strip while the act panel is open, iOS's panel header: ✕ where
+     *  the g was, ✦ Glyf, and ↻ at the right once there is an answer to try
+     *  again. Laid out as the strip lays out a panel's name. */
     private fun actHeader(retry: Boolean): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(10), dp(6), dp(10), dp(6))
-        addView(TextView(this@GlyfIME).apply {
-            text = "✕"; textSize = 16f
-            gravity = Gravity.CENTER
-            setTextColor(ink())
+        setPadding(dp(10), dp(6), 0, dp(6))
+        addView(GlyfKeyView(this@GlyfIME, dp(30).toFloat()).apply {
+            closing = true
+            ink = Glass.textPrimary
+            dark = chromeDark
+            divider = glassLook
             setTag(com.demo.glyf.R.id.qa_id, "act:close"); contentDescription = "Close"
-            background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(if (chromeDark) Color.argb(20, 255, 255, 255) else Color.argb(153, 255, 255, 255))
-            }
             setOnClickListener { actClose() }
-        }, LinearLayout.LayoutParams(dp(38), dp(30)))
-        addView(ToolIcon(this@GlyfIME, "ask", ink()),
-            LinearLayout.LayoutParams(dp(22), dp(22)).apply { leftMargin = dp(14) })
+        }, LinearLayout.LayoutParams(dp(52), dp(38)))
+        clipChildren = false
+        val keyInkRight = (dp(52) + GlyfMark.keyWidth(dp(30).toFloat())) / 2f
+        val start = (keyInkRight + dp(if (glassLook) 17 else 11) - dp(52)).toInt()
+        addView(ToolIcon(this@GlyfIME, "ask", Glass.textPrimary).apply {
+            solid = true; weight = 1.8f
+        }, LinearLayout.LayoutParams(dp(24), dp(24)).apply { leftMargin = start; rightMargin = dp(6) })
         addView(TextView(this@GlyfIME).apply {
-            text = "Glyf"; textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(ink())
-            setPadding(dp(8), 0, 0, 0)
+            text = "Glyf"
+            Glass.style(this, 15f, Glass.SEMIBOLD)
+            maxLines = 1
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        if (retry) addView(TextView(this@GlyfIME).apply {
-            text = "↻"; textSize = 19f
-            gravity = Gravity.CENTER
-            setTextColor(ink())
+        if (retry) addView(ToolIcon(this@GlyfIME, "retry", Glass.textPrimary).apply {
+            solid = true; weight = 2.1f; scale = 0.92f
             setTag(com.demo.glyf.R.id.qa_id, "act:retry"); contentDescription = "Try again"
             setOnClickListener { runAct() }
-        }, LinearLayout.LayoutParams(dp(40), dp(34)))
+        }, LinearLayout.LayoutParams(dp(44), dp(34)).apply { rightMargin = dp(4) })
+    }
+
+    /** The answer's box: the key colour, 15 corners, a hairline, 15.5 text
+     *  (iOS's text view and its insets). */
+    private fun actTextBox(body: String): TextView = TextView(this).apply {
+        text = body
+        Glass.style(this, 15.5f)
+        setLineSpacing(dp(1).toFloat(), 1f)
+        setPadding(dp(15), dp(11), dp(15), dp(11))
+        minHeight = dp(48)
+        setTag(com.demo.glyf.R.id.qa_id, "act:text"); contentDescription = "Answer"
+        background = Glass.card(this@GlyfIME, Glass.surfaceCard, radius = 15f,
+            stroke = Glass.strokeHairline)
     }
 
     /** `streaming`: versions are still arriving, so ↻ waits for the last. */
@@ -2684,35 +2970,30 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         outer.addView(actHeader(retry = !streaming), LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
+        // iOS: 4 under the strip, 10 a side; Copy and Insert 14 off the
+        // bottom, and versions run to the bottom.
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), 0, dp(10), dp(10))
+            setPadding(dp(10), dp(4), dp(10), if (r.options.isEmpty()) dp(14) else 0)
         }
         outer.addView(column, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         fun gap() = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            .apply { setMargins(0, 0, 0, dp(8)) }
+            .apply { setMargins(0, 0, 0, dp(2)) }
+        fun rowGap(h: Int = LinearLayout.LayoutParams.WRAP_CONTENT) = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, h).apply { setMargins(0, dp(4), 0, dp(4)) }
         if (r.options.isNotEmpty()) {
             // The website's rows: the style, then the message. Tap to put it
             // in; hold to copy it.
-            for (o in r.options) list.addView(optionRow(o), gap())
+            for (o in r.options) list.addView(optionRow(o), rowGap())
             actOptionList = list
         } else if (!r.text.isNullOrBlank()) {
-            list.addView(TextView(this).apply {
-                text = r.text
-                textSize = 15.5f
-                setTextColor(ink())
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                setTag(com.demo.glyf.R.id.qa_id, "act:text"); contentDescription = "Answer"
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(15).toFloat(); setColor(card())
-                }
-            }, gap())
+            list.addView(actTextBox(r.text), gap())
         }
-        val theme = SearchCards.Theme(ink = ink(), card = card(),
-            soft = Color.argb(170, 128, 128, 136), dp = ::dp, dark = chromeDark)
+        val theme = SearchCards.Theme(ink = Glass.textPrimary, card = Glass.surfaceCard,
+            soft = Glass.textSecondary, dp = ::dp, dark = chromeDark)
         val backendURL = settings.optString("backendURL")
         val style = settings.optString("pasteStyle", "titleAndLink")
         // One place → a real map above its card. The server draws it with
@@ -2734,7 +3015,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 setOnClickListener { actInsert(place.insertText(style)) }
             }
             list.addView(map, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(112)).apply { setMargins(0, 0, 0, dp(8)) })
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(112)).apply { setMargins(0, dp(2), 0, dp(2)) })
             val w = resources.displayMetrics.widthPixels / 2
             SearchCards.loadThumb(
                 "$backendURL/search/staticmap?lat=${place.lat}&lon=${place.lon}&w=$w&h=${dp(112) / 2}" +
@@ -2745,24 +3026,25 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             // Tapping one card drops just that one — a single place from a list.
             list.addView(SearchCards.view(this, c, theme, backendURL) { tapped ->
                 actInsert(if (tapped.kind == "query") tapped.url else tapped.insertText(style))
-            }, gap())
+            }, rowGap(dp(SearchCards.height(c.kind))))
         }
         column.addView(ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
             addView(list)
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
         if (r.options.isEmpty()) {
             val actions = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(8), 0, 0)
+                setPadding(0, dp(6), 0, 0)
             }
             // Copy and Insert only when there is one answer to take (↻ is up
             // in the strip, as on iOS).
             if (r.insert.isNotBlank()) {
                 actions.addView(pill("Copy", primary = false, id = "act:copy") { actCopy(r.insert) },
                     LinearLayout.LayoutParams(0, dp(38), 0.38f))
-                actions.addView(pill("Insert ↑", primary = true, id = "act:insert") { actInsert(r.insert) },
+                actions.addView(pill("Insert", primary = true, id = "act:insert", arrow = true) { actInsert(r.insert) },
                     LinearLayout.LayoutParams(0, dp(38), 0.62f).apply { leftMargin = dp(8) })
             }
             column.addView(actions)
@@ -2782,19 +3064,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), 0, dp(10), dp(10))
+            setPadding(dp(10), dp(4), dp(10), dp(14))
         }
         outer.addView(column, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-        val body = TextView(this).apply {
-            this.text = text
-            textSize = 15.5f
-            setTextColor(ink())
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            setTag(com.demo.glyf.R.id.qa_id, "act:text"); contentDescription = "Answer"
-            background = GradientDrawable().apply {
-                cornerRadius = dp(15).toFloat(); setColor(card())
-            }
-        }
+        val body = actTextBox(text)
         column.addView(ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             addView(body)
@@ -2807,29 +3080,29 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** One version of a rewrite, the website's row: the style, then the
      *  message. Tap to put it in; hold to copy it. */
     private fun optionRow(o: BackendClient.RewriteOption): View {
+        // iOS's OptionCell: the key colour, 14 corners; the style 13
+        // semibold grey in a 92 column 12 from the text, 15 regular, 3 lines.
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
             setTag(com.demo.glyf.R.id.qa_id, "act:option:${o.id}")
             contentDescription = "${o.label}: ${o.text}"
-            background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat(); setColor(card())
-            }
+            background = Glass.card(this@GlyfIME, Glass.surfaceCard, radius = 14f)
             setOnClickListener { actInsert(o.text) }
             setOnLongClickListener { actCopy(o.text); true }
         }
         row.addView(TextView(this).apply {
             text = o.label
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
-        }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
+            Glass.style(this, 13f, Glass.SEMIBOLD, Glass.textSecondary)
+            maxLines = 1
+            setPadding(0, dp(1), 0, 0)
+        }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(12) })
         row.addView(TextView(this).apply {
             text = o.text
-            textSize = 15f
+            Glass.style(this, 15f)
+            setLineSpacing(dp(1).toFloat(), 1f)
             maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(ink())
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         return row
     }
@@ -2849,7 +3122,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val row = optionRow(o)
         list.addView(row, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            .apply { setMargins(0, 0, 0, dp(8)) })
+            .apply { setMargins(0, dp(4), 0, dp(4)) })
         // A property animation: with animations off in Settings it lands at once.
         row.alpha = 0f
         row.animate().alpha(1f).setDuration(180).start()
@@ -2858,24 +3131,20 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun showActFailure(panel: FrameLayout, message: String) {
         actOptionList = null
         panel.removeAllViews()
+        // iOS: the strip names the panel; the message 14 grey, centred in
+        // what is left, a tap tries again.
         panel.addView(TextView(this).apply {
             text = message
-            textSize = 14f
+            Glass.style(this, 14f, Glass.REGULAR, Glass.textSecondary)
             gravity = Gravity.CENTER
-            setTextColor(Color.argb(170, 128, 128, 136))
-            setPadding(dp(24), 0, dp(24), 0)
+            maxLines = 3
+            setPadding(dp(24), dp(STRIP_DP), dp(24), dp(22))
             setTag(com.demo.glyf.R.id.qa_id, "act:status"); contentDescription = "Status"
             setOnClickListener { runAct() }
         }, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        panel.addView(TextView(this).apply {
-            text = "✕"; textSize = 16f; setTextColor(ink())
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-            setTag(com.demo.glyf.R.id.qa_id, "act:close"); contentDescription = "Close"
-            setOnClickListener { actClose() }
-        }, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.START))
+        panel.addView(actHeader(retry = false), FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP), Gravity.TOP))
     }
 
     /** Swaps exactly what the run read — both sides of the cursor. */
@@ -2947,34 +3216,56 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         else -> label
     }
 
-    private fun circleButton(label: String, id: String, onTap: () -> Unit) = TextView(this).apply {
-        text = label; textSize = 15f
-        gravity = Gravity.CENTER
-        setTextColor(ink())
+    /** iOS's round cancel: 36 on the key colour with a hairline, an xmark. */
+    private fun circleButton(label: String, id: String, onTap: () -> Unit) = FrameLayout(this).apply {
         setTag(com.demo.glyf.R.id.qa_id, id)
         contentDescription = spokenFor(id, label)
         background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL; setColor(card())
-            setStroke(1, Color.argb(if (chromeDark) 40 else 26, 128, 128, 136))
+            shape = GradientDrawable.OVAL; setColor(Glass.surfaceCard)
+            setStroke(maxOf(1, dp(1) / 2), Glass.strokeHairline)
         }
+        addView(ToolIcon(this@GlyfIME, "close", Glass.textPrimary).apply {
+            solid = true; weight = 1.9f; scale = 1.05f
+        }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         setOnClickListener { onTap() }
     }
 
     /** Black pill for the primary action, quiet hairline pills beside it;
      *  [accent] fills it with the keyboard's purple and white words, in light
      *  and dark alike (Temp mail's, as on iOS and the chips' Insert). */
+    /** iOS's buttons, fully round: the primary in the ink with inverse
+     *  words, the rest on the key colour with a hairline; [accent] fills it
+     *  with the accent and white words (Temp mail's Insert), [field] with the
+     *  field grey (Temp mail's Copy). [arrow] puts an up arrow after the word
+     *  (Insert ↑). */
     private fun pill(label: String, primary: Boolean, id: String, accent: Boolean = false,
+                     size: Float = 15f, field: Boolean = false, arrow: Boolean = false,
                      onTap: () -> Unit) = TextView(this).apply {
-        text = label; textSize = 15f
-        typeface = Typeface.DEFAULT_BOLD
+        text = label
+        val words = when {
+            accent -> Color.WHITE
+            primary -> if (Glass.dark) Glass.brandInk else Color.WHITE
+            else -> Glass.textPrimary
+        }
+        Glass.style(this, size, Glass.SEMIBOLD, words)
         gravity = Gravity.CENTER
-        setTextColor(if (accent) Color.WHITE else if (primary) card() else ink())
+        maxLines = 1
+        setPadding(dp(12), 0, dp(12), 0)
+        if (arrow) text = Glass.withTrailingIcon(label,
+            ToolIcon(this@GlyfIME, "arrowup", words).apply {
+                solid = true; weight = 2.5f; scale = 0.84f
+            }.asDrawable(dp(15)), dp(5))
         setTag(com.demo.glyf.R.id.qa_id, id)
         contentDescription = spokenFor(id, label)
         background = GradientDrawable().apply {
-            cornerRadius = dp(19).toFloat()
-            setColor(if (accent) GlyfMark.VIOLET else if (primary) ink() else card())
-            if (!primary && !accent) setStroke(1, Color.argb(if (chromeDark) 40 else 26, 128, 128, 136))
+            cornerRadius = dp(100).toFloat()
+            setColor(when {
+                accent -> Glass.accentPrimary
+                primary -> Glass.textPrimary
+                field -> Glass.fillField
+                else -> Glass.surfaceCard
+            })
+            if (!primary && !accent && !field) setStroke(maxOf(1, dp(1) / 2), Glass.strokeHairline)
         }
         setOnClickListener { onTap() }
     }
@@ -3228,6 +3519,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private fun applySuggestionVisibility() {
+        if (stripTitleRow != null) {
+            // An open panel's name owns the strip.
+            suggestionRow.visibility = View.GONE
+            toolIcons.visibility = View.GONE
+            return
+        }
         if (stripChip != null) {
             // A chip owns the strip while it is up.
             suggestionRow.visibility = View.GONE
@@ -3422,6 +3719,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         showVaultAdd = null
         vaultAddOpen = false
         gPill?.closing = false
+        clearStripTitle()
         dropMarker?.let { if (::toolIcons.isInitialized) toolIcons.removeView(it) }
         dropMarker = null
         keyboard.visibility = View.VISIBLE
@@ -3431,54 +3729,52 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** A panel in place of the keys: [panel] the whole of it, [body] its rows,
      *  which scroll inside [stage], the frame for anything that floats over
-     *  them, and [back], its ‹. */
+     *  them, and [back], the strip's ‹ (null with no step back). */
     private data class PanelShell(val panel: LinearLayout, val body: LinearLayout,
-                                  val stage: FrameLayout, val back: TextView)
+                                  val stage: FrameLayout, val back: View?)
 
-    /** Container that replaces the keys; header row = back + title. */
-    /** @param bottomBar adds the ABC / backspace row the system emoji
+    /** Container that replaces the keys. As on the iPhone, the panel spends
+     *  no row on its own header: the strip names it, the g key is its ✕ and
+     *  a ‹ leads where it has a step back ([onBack]; a panel opened as a
+     *  tool steps back to the g menu, as iOS's shell does).
+     *  @param bottomBar adds the ABC / backspace row the system emoji
      *  keyboard has at its foot — muscle memory, on both platforms.
-     *  @param onBack where ‹ goes when it is a step back, not a close. */
-    private fun panelShell(title: String, bottomBar: Boolean = false, onBack: (() -> Unit)? = null):
-            PanelShell {
+     *  @param pad the body's padding in dp (left, top, right, bottom). */
+    private fun panelShell(title: String, bottomBar: Boolean = false,
+                           onBack: (() -> Unit)? = { showMenuGrid() },
+                           pad: IntArray = intArrayOf(10, 2, 10, 8), icon: String? = null,
+                           /** One of iOS's shell screens, which the Glass look heads. */
+                           shell: Boolean = true): PanelShell {
         dismissFeaturePanel()
         keyboard.visibility = View.GONE
-        val panel = LinearLayout(this).apply {
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(2), dp(10), dp(8))
+            setPadding(dp(pad[0]), dp(pad[1]), dp(pad[2]), dp(pad[3]))
         }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(body)
         }
-        val back = TextView(this).apply {
-            text = "‹"; textSize = 22f; setTextColor(ink())
-            setPadding(dp(8), 0, dp(14), dp(2))
-            setTag(com.demo.glyf.R.id.qa_id, "panel:back")
-            contentDescription = if (onBack != null) "Back" else "Close"
-            setOnClickListener { onBack?.invoke() ?: dismissFeaturePanel() }
-        }
-        header.addView(back)
-        header.addView(TextView(this).apply {
-            text = title; textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(ink())
-        })
-        panel.addView(header, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(34)))
-        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply { addView(body) }
         val stage = FrameLayout(this).apply {
             addView(scroll, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         }
         val barH = if (bottomBar) dp(40) else 0
+        // The Glass look gives each screen a header row of its own, as iOS's
+        // shell does there (‹, the name, ✕), under the strip's.
+        val header = if (glassLook && shell) FrameLayout(this) else null
+        val headerH = if (header != null) dp(36) else 0
+        if (header != null) panel.addView(header, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, headerH))
         panel.addView(stage, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, keyboard.height - dp(36) - barH))
+            LinearLayout.LayoutParams.MATCH_PARENT, keyboard.height - barH - headerH))
         if (bottomBar) {
             val bar = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), 0, dp(10), 0)
             }
             bar.addView(TextView(this).apply {
                 text = "ABC"; textSize = 15f; setTextColor(ink())
@@ -3497,7 +3793,58 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         root.addView(panel)
         featurePanel = panel
+        val back = showStripTitle(title, onBack, icon)
+        if (header != null) fillShellHeader(header, title, onBack, back)
         return PanelShell(panel, body, stage, back)
+    }
+
+    /** The app's Glass look (Keyboard › Look › Glass): iOS draws its shell
+     *  as lists there (GlyfShell with solidLook off), each screen under a
+     *  header row of its own, every row 52 tall, and the vault a list. */
+    private val glassLook get() = keyboard.keyTheme == "glass" && keyboard.themeBg.isEmpty()
+
+    private fun shellRows(body: LinearLayout) =
+        ShellRows(this, body, if (glassLook) ShellRows.TWO_LINE_H else ShellRows.ROW_H)
+
+    /** iOS's shell header in the Glass look: ‹ (the same step back as the
+     *  strip's, options put away first), the name centred, ✕ in grey. */
+    private fun fillShellHeader(header: FrameLayout, title: String, onBack: (() -> Unit)?, stripBack: View?) {
+        if (onBack != null) header.addView(ToolIcon(this, "chevron", Glass.textPrimary).apply {
+            solid = true; weight = 1.7f; scale = 1.25f
+            setTag(com.demo.glyf.R.id.qa_id, "shell:back"); contentDescription = "Back"
+            setOnClickListener { if (stripBack != null) stripBack.performClick() else onBack() }
+        }, FrameLayout.LayoutParams(dp(44), FrameLayout.LayoutParams.MATCH_PARENT).apply { leftMargin = dp(4) })
+        header.addView(TextView(this).apply {
+            text = title
+            Glass.style(this, 15f, Glass.SEMIBOLD)
+            gravity = Gravity.CENTER
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply {
+            leftMargin = dp(52); rightMargin = dp(52)
+        })
+        header.addView(ToolIcon(this, "close", Glass.textSecondary).apply {
+            solid = true; weight = 1.5f; scale = 1.45f
+            setTag(com.demo.glyf.R.id.qa_id, "shell:close"); contentDescription = "Close"
+            setOnClickListener { dismissFeaturePanel() }
+        }, FrameLayout.LayoutParams(dp(44), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END).apply { rightMargin = dp(4) })
+    }
+
+    /** "Open in Glyf app ↗" at the foot of a Glass-look list that has more
+     *  in the app (iOS's footer, 30 tall); what scrolls ends above it. */
+    private fun pinOpenInApp(stage: FrameLayout, path: String): Int {
+        val h = dp(30)
+        stage.getChildAt(0)?.let { scroll ->
+            scroll.layoutParams = (scroll.layoutParams as FrameLayout.LayoutParams).apply { bottomMargin = h }
+        }
+        stage.addView(TextView(this).apply {
+            text = "Open in Glyf app ↗"
+            Glass.style(this, 13f, Glass.MEDIUM, Glass.accentPrimary)
+            gravity = Gravity.CENTER
+            setTag(com.demo.glyf.R.id.qa_id, "shell:openapp")
+            setOnClickListener { dismissFeaturePanel(); openAppPath(path) }
+        }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, h, Gravity.BOTTOM))
+        return h
     }
 
     private fun cardRow(body: LinearLayout, title: String, snippet: String,
@@ -3595,33 +3942,143 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     /** My glyfs: what each key holds first ("Hold V"), then the glyfs this
-     *  person built that are on no key, then Build your own. A tap does
+     *  person built that are on no key, then Build your own, as iOS lists
+     *  them: one grouped card of rows, each with its tool's mark. A tap does
      *  what holding the key does (the Keys panel said the same, so it went). */
     private fun showMyGlyfsPanel() {
-        val (_, body) = panelShell("My glyfs")
+        val (_, body) = panelShell("My glyfs", pad = intArrayOf(0, 0, 0, 8))
+        val rows = shellRows(body)
         val bindings = settings.optJSONObject("bindings")
         val bound = mutableSetOf<String>()
         for (letter in "qwertyuiopasdfghjklzxcvbnm".map { it.toString() }) {
             val target = bindings?.optString(letter)?.takeIf { it.isNotBlank() } ?: continue
             bound.add(target)
-            cardRow(body, bindingTitle(target), "Hold ${letter.uppercase()}") {
+            rows.row(ShellRows.Row(bindingTitle(target), glyph = bindingGlyph(target),
+                detail = "Hold ${letter.uppercase()}", qaId = "glyfs:key:$letter") {
                 dismissFeaturePanel()
                 runBinding(letter, target)
-            }
-            body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "glyfs:key:$letter")
+            })
         }
         val titles = settings.optJSONObject("customTitles")
         val own = titles?.keys()?.asSequence()?.filter { it !in bound }
             ?.sortedBy { skillTitle(it).lowercase() }?.toList() ?: emptyList()
         for ((i, id) in own.withIndex()) {
-            cardRow(body, skillTitle(id), "") {
+            rows.row(ShellRows.Row(skillTitle(id), glyph = "ask", qaId = "glyfs:own:$i") {
                 dismissFeaturePanel()
                 startSkill("", id)
-            }
-            body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "glyfs:own:$i")
+            })
         }
-        cardRow(body, "＋ Build your own", "") { dismissFeaturePanel(); openAppPath("build") }
-        body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "glyfs:build")
+        rows.row(ShellRows.Row("Build your own", glyph = "plus", qaId = "glyfs:build") {
+            dismissFeaturePanel(); openAppPath("build")
+        })
+        rows.flush()
+    }
+
+    /** The keyboard's settings, in the keyboard, as the iPhone keeps them
+     *  (GlyfShell "settings"): the same sections and words as the app's
+     *  Keyboard screen, a switch per row, the whole row flipping it. */
+    private fun showSettingsPanel() {
+        val (_, body) = panelShell("Settings", pad = intArrayOf(0, 0, 0, 8))
+        val rows = shellRows(body)
+        fun toggle(title: String, key: String, default: Boolean, apply: (Boolean) -> Unit = {}) {
+            val sw = GlassSwitch(this, settings.optBoolean(key, default)) { on ->
+                settings.put(key, on)
+                SettingsStore.save(this, settings.toString())
+                apply(on)
+            }
+            rows.row(ShellRows.Row(title, trailing = sw, chevron = false, qaId = "toggle:$title") {
+                sw.set(!sw.isOn, animated = true)
+            })
+        }
+        rows.header("Typing")
+        toggle("Autocorrect", "autocorrect", true)
+        toggle("Correct automatically", "autocorrectApply", true)
+        toggle("Suggestions", "candidates", true)
+        toggle("Auto-capitalize", "autocapitalize", true)
+        toggle("Double-space for period", "periodShortcut", true)
+        toggle("Number row", "numberRow", false) { on ->
+            keyboard.numberRow = on
+            keyboard.rebuild()
+        }
+        rows.header("Feel")
+        toggle("Sound on keypress", "keyClicks", true) { keyboard.clicksOn = it }
+        toggle("Haptic feedback on keypress", "haptics", true) { keyboard.hapticsOn = it }
+        rows.header("More")
+        val paste = GlassSwitch(this, settings.optString("pasteStyle", "titleAndLink") == "titleAndLink") { on ->
+            settings.put("pasteStyle", if (on) "titleAndLink" else "linkOnly")
+            SettingsStore.save(this, settings.toString())
+        }
+        rows.row(ShellRows.Row("Paste title with link", trailing = paste, chevron = false,
+            qaId = "toggle:Paste title with link") { paste.set(!paste.isOn, animated = true) })
+        rows.row(ShellRows.Row("Toolbar items", glyph = "sliders", qaId = "shell:toolbar") {
+            showToolbarItemsPanel()
+        })
+        rows.flush()
+    }
+
+    /** The strip's tools, one row each: its switch, and a ↑ that moves it a
+     *  place up the strip (the first has nowhere to go). iOS "toolbar". */
+    private fun showToolbarItemsPanel() {
+        val (_, body) = panelShell("Toolbar", onBack = { showSettingsPanel() }, pad = intArrayOf(0, 0, 0, 8))
+        val rows = shellRows(body)
+        val order = settings.optJSONArray("toolbarOrder")?.let { a -> (0 until a.length()).map { a.optString(it) } }
+            ?.map { ToolIcon.canonical(it) }?.distinct()
+            ?.ifEmpty { null } ?: listOf("search", "clipboard", "vault", "dictation", "translate")
+        val hidden = settings.optJSONArray("toolbarHidden")?.let { a -> (0 until a.length()).map { a.optString(it) } }
+            ?.toSet() ?: emptySet()
+        for ((position, id) in order.withIndex()) {
+            val title = ToolIcon.TOOLS.firstOrNull { it.first == id }?.second ?: id.replaceFirstChar { it.uppercase() }
+            val sw = GlassSwitch(this, id !in hidden) { visible ->
+                val keep = org.json.JSONArray()
+                val was = settings.optJSONArray("toolbarHidden")
+                for (i in 0 until (was?.length() ?: 0)) if (was!!.optString(i) != id) keep.put(was.optString(i))
+                if (!visible) keep.put(id)
+                settings.put("toolbarHidden", keep)
+                settings.put("toolbarOrder", org.json.JSONArray(order))
+                SettingsStore.save(this, settings.toString())
+                refreshStripUnder("Toolbar") { showSettingsPanel() }
+            }
+            val trailing = if (position == 0) sw else LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(ToolIcon(this@GlyfIME, "arrowup", Glass.textSecondary).apply {
+                    solid = true; weight = 2f; scale = 0.8f
+                    setTag(com.demo.glyf.R.id.qa_id, "toggle:$title:up")
+                    contentDescription = "Move up"
+                    setOnClickListener {
+                        val moved = order.toMutableList()
+                        java.util.Collections.swap(moved, position, position - 1)
+                        settings.put("toolbarOrder", org.json.JSONArray(moved))
+                        SettingsStore.save(this@GlyfIME, settings.toString())
+                        showToolbarItemsPanel()
+                        refreshStripUnder("Toolbar") { showSettingsPanel() }
+                    }
+                }, LinearLayout.LayoutParams(dp(34), dp(34)).apply { rightMargin = dp(6) })
+                addView(sw)
+            }
+            rows.row(ShellRows.Row(title, trailing = trailing, chevron = false, qaId = "toggle:$title") {
+                sw.set(!sw.isOn, animated = true)
+            })
+        }
+        rows.flush()
+    }
+
+    /** The strip redrawn for a changed tool list, with the open panel's name
+     *  and way back on it again. */
+    private fun refreshStripUnder(title: String, onBack: () -> Unit) {
+        buildToolbar(keyboard.isDark || keyboard.themeBg.isNotEmpty())
+        if (featurePanel != null) showStripTitle(title, onBack)
+    }
+
+    /** A held key's mark in My glyfs: the tool it opens, or the spark every
+     *  glyf wears (iOS glyfIcon). */
+    private fun bindingGlyph(target: String) = when (target) {
+        "surface:vault", "surface:notes" -> "vault"
+        "surface:translate-hud" -> "translate"
+        "surface:tones" -> "rewrite"
+        "connector:calendar", "connector:mockcal" -> "calendar"
+        "connector:meet" -> "video"
+        else -> "ask"
     }
 
     /** What a key holds, by name: a panel by its own, a glyf by its title. */
@@ -3640,7 +4097,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** The Rewrite hold (iOS TonesPopup): four tones over the keys; one tap
      *  rewrites the draft in that tone, the answer in the act panel. */
     private fun showTonesPanel(letter: String) {
-        val (_, body) = panelShell("Rewrite your draft as…")
+        val (_, body) = panelShell("Rewrite your draft as…", onBack = null, shell = false)
         val tones = listOf(
             "Natural" to "natural, human", "Professional" to "professional",
             "Casual" to "casual", "Gen-Z" to "gen-z playful")
@@ -3669,58 +4126,154 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** Vault = your details, your shorthand and your notes. Tap one to put
-     *  it in; hold a note to edit it. A note, a detail or a shorthand can be
-     *  added from here, typed on the keys, through the "+" in the corner.
+    /** Vault = your details, your shorthand and your notes, drawn as the
+     *  iPhone and the website draw them: cards three to a row, a small label
+     *  over its value, three rows filling the panel (more scroll). Tap one to
+     *  put it in; hold a note to edit it. A note, a detail or a shorthand is
+     *  added from the "+" in the corner, typed on the keys.
      *  @param reveal the card just saved, scrolled into view (below the
      *  fold it looked as if nothing had been saved). */
     private fun showVaultPanel(reveal: String? = null) {
-        val (panel, body, stage, back) = panelShell("Vault")
+        if (glassLook) { showVaultList(reveal); return }
+        val (panel, body, stage, back) = panelShell("Vault", pad = intArrayOf(6, 0, 6, 0))
         panel.tag = "vault"
-        for ((i, f) in vaultFields().withIndex()) {
-            cardRow(body, f.title, f.value) {
-                currentInputConnection?.commitText(f.value, 1)
-                dismissFeaturePanel()
-            }
-            body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "vault:card:$i")
+        val tiles = mutableListOf<View>()
+        for ((i, f) in vaultFields().withIndex()) tiles += vaultTile("vault:card:$i", f.title.uppercase(), f.value) {
+            currentInputConnection?.commitText(f.value, 1)
+            dismissFeaturePanel()
         }
-        // Shorthand: the shortcut over what it types out; a tap types it.
+        // Shorthand: the shortcut as it is typed, over what it types out.
         val snippets = VaultStore.load(this).optJSONArray("snippets") ?: org.json.JSONArray()
         for (i in 0 until snippets.length()) {
-            val s = snippets.getJSONObject(i)
-            cardRow(body, s.optString("trigger"), s.optString("text")) {
-                currentInputConnection?.commitText(s.optString("text"), 1)
+            val sn = snippets.getJSONObject(i)
+            tiles += vaultTile("vault:shorthand:$i", sn.optString("trigger"), sn.optString("text")) {
+                currentInputConnection?.commitText(sn.optString("text"), 1)
                 dismissFeaturePanel()
             }
-            body.getChildAt(body.childCount - 1).setTag(com.demo.glyf.R.id.qa_id, "vault:shorthand:$i")
         }
         val notes = com.demo.glyf.store.NotesStore.list(this)
         for (i in 0 until notes.length()) {
             val n = notes.getJSONObject(i)
             val text = n.optString("text")
             val id = n.optString("id")
-            val lines = text.lines().filter { it.isNotBlank() }
-            cardRow(body, lines.firstOrNull()?.take(44) ?: "", lines.drop(1).joinToString(" ")) {
+            tiles += vaultTile("vault:note:$i", "NOTE", text, onHold = { enterVaultEdit(VaultDraft.Note(id), text) }) {
                 currentInputConnection?.commitText(text, 1)
                 dismissFeaturePanel()
             }
-            body.getChildAt(body.childCount - 1).apply {
-                setTag(com.demo.glyf.R.id.qa_id, "vault:note:$i")
-                setOnLongClickListener { enterVaultEdit(VaultDraft.Note(id), text); true }
-            }
         }
+        vaultGrid(body, tiles)
         addVaultPlus(stage, body, back)
         val scroll = body.parent as? ScrollView ?: return
-        val card = (0 until body.childCount).map { body.getChildAt(it) }
-            .firstOrNull { reveal != null && it.getTag(com.demo.glyf.R.id.qa_id) == reveal } ?: return
+        val card = tiles.firstOrNull { reveal != null && it.getTag(com.demo.glyf.R.id.qa_id) == reveal } ?: return
         // Once it has a place: the scroll is set after the panel's layout.
         card.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
             override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int,
                                         ol: Int, ot: Int, orr: Int, ob: Int) {
                 v.removeOnLayoutChangeListener(this)
-                scroll.post { scroll.scrollTo(0, v.top - dp(4)) }
+                val row = v.parent as? View ?: return
+                scroll.post { scroll.scrollTo(0, row.top) }
             }
         })
+    }
+
+    /** The vault in the Glass look, iOS's list: a detail's name over its
+     *  value, a shortcut over what it types out, a note's first line with
+     *  its edit button, each a tap to type; the "+" over the list and "Open
+     *  in Glyf app ↗" under it. The same ids as the cards. */
+    private fun showVaultList(reveal: String?) {
+        val (panel, body, stage, back) = panelShell("Vault", pad = intArrayOf(0, 0, 0, 8))
+        panel.tag = "vault"
+        val rows = shellRows(body)
+        fun oneLine(t: String) = t.split('\n').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
+        for ((i, f) in vaultFields().withIndex()) rows.row(ShellRows.Row(f.title, glyph = "vault",
+            subtitle = oneLine(f.value), chevron = false, qaId = "vault:card:$i") {
+            currentInputConnection?.commitText(f.value, 1)
+            dismissFeaturePanel()
+        })
+        val snippets = VaultStore.load(this).optJSONArray("snippets") ?: org.json.JSONArray()
+        for (i in 0 until snippets.length()) {
+            val sn = snippets.getJSONObject(i)
+            rows.row(ShellRows.Row(sn.optString("trigger"), letter = ";", subtitle = oneLine(sn.optString("text")),
+                chevron = false, qaId = "vault:shorthand:$i") {
+                currentInputConnection?.commitText(sn.optString("text"), 1)
+                dismissFeaturePanel()
+            })
+        }
+        val notes = com.demo.glyf.store.NotesStore.list(this)
+        for (i in 0 until notes.length()) {
+            val n = notes.getJSONObject(i)
+            val text = n.optString("text")
+            val id = n.optString("id")
+            // iOS: square.and.pencil in the accent, a 34dp tap target of its own.
+            val edit = FrameLayout(this).apply {
+                addView(ToolIcon(this@GlyfIME, "edit", Glass.accentPrimary).apply {
+                    solid = true; weight = 1.8f; scale = 0.85f
+                    contentDescription = "Edit"
+                    setTag(com.demo.glyf.R.id.qa_id, "vault:note:$i:edit")
+                    setOnClickListener { enterVaultEdit(VaultDraft.Note(id), text) }
+                }, FrameLayout.LayoutParams(dp(34), dp(34)))
+            }
+            rows.row(ShellRows.Row(oneLine(text.lineSequence().firstOrNull().orEmpty()), glyph = "notes",
+                trailing = edit, chevron = false, qaId = "vault:note:$i") {
+                currentInputConnection?.commitText(text, 1)
+                dismissFeaturePanel()
+            })
+        }
+        rows.flush()
+        val foot = pinOpenInApp(stage, "vault")
+        addVaultPlus(stage, body, back, foot)
+        // What was just added, in view.
+        if (reveal != null) body.post {
+            val row = (0 until body.childCount).map { body.getChildAt(it) }
+                .firstOrNull { it.getTag(com.demo.glyf.R.id.qa_id) == reveal } ?: return@post
+            (body.parent as? ScrollView)?.scrollTo(0, row.top)
+        }
+    }
+
+    /** One vault card, iOS's: a small label (11 semibold, spaced) over its
+     *  value (13 medium), the pair centred, on the key colour. */
+    private fun vaultTile(id: String, label: String, value: String, onHold: (() -> Unit)? = null,
+                          onTap: () -> Unit): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(8), 0, dp(8), 0)
+        background = Glass.card(this@GlyfIME, radius = 12f)
+        setTag(com.demo.glyf.R.id.qa_id, id)
+        setOnClickListener { onTap() }
+        if (onHold != null) setOnLongClickListener { onHold(); true }
+        if (label.isNotEmpty()) addView(TextView(this@GlyfIME).apply {
+            text = label
+            Glass.style(this, 11f, Glass.SEMIBOLD, Glass.textSecondary)
+            letterSpacing = 0.04f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER_VERTICAL
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(15)))
+        addView(TextView(this@GlyfIME).apply {
+            text = value
+            Glass.style(this, 13f, Glass.MEDIUM)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER_VERTICAL
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(17))
+            .apply { if (label.isNotEmpty()) topMargin = dp(2) })
+    }
+
+    /** Cards three to a row, 6dp apart, three rows filling the panel as on
+     *  the iPhone; more than nine scroll. */
+    private fun vaultGrid(body: LinearLayout, tiles: List<View>) {
+        val gap = dp(6)
+        val cardH = ((keyboard.height - gap * 2) / 3).coerceAtLeast(dp(56))
+        for ((r, row) in tiles.chunked(3).withIndex()) {
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for (i in 0 until 3) {
+                val lp = LinearLayout.LayoutParams(0, cardH, 1f).apply { if (i > 0) leftMargin = gap }
+                line.addView(row.getOrNull(i) ?: View(this), lp)
+            }
+            body.addView(line, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { if (r > 0) topMargin = gap })
+        }
     }
 
     /** Whether the vault's "+" has its options out. */
@@ -3732,15 +4285,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  scroll, for the three things the vault keeps (user, 2026-09-29: "a
      *  single plus icon floating button in bottom right corner, which
      *  expands to show this as options when clicked"). Open, it is a "×"
-     *  and the cards dim behind the options; a tap on them, the ×, ‹ or
-     *  back puts the options away. */
-    private fun addVaultPlus(stage: FrameLayout, body: LinearLayout, back: TextView) {
-        val size = 48
-        val margin = 6
-        val pillH = 36
+     *  with three pills stacked over it, iOS's: the key colour, an accent
+     *  mark, the words; a tap beside them, the ×, ‹ or back puts them away. */
+    private fun addVaultPlus(stage: FrameLayout, body: LinearLayout, back: View?, foot: Int = 0) {
+        val size = 46
+        val margin = 12
         val gap = 6
         // Scrolled to the end, the last card clears the "+".
-        body.setPadding(0, 0, 0, dp(size + margin + 8))
+        body.setPadding(body.paddingLeft, body.paddingTop, body.paddingRight, dp(size + margin + 6))
         // No wash over the cards (Arpit: "why white layover when menu open,
         // that looks bad"): the layer only catches the tap that closes the
         // options.
@@ -3755,24 +4307,29 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             Triple("note", "New note") { enterVaultEdit(VaultDraft.Note(null), "") },
             Triple("detail", "New detail") { showDetailKinds() },
             // The ; is there already: only the word is left to type.
-            Triple("shorthand", "New shorthand") { enterVaultEdit(VaultDraft.Shortcut, ";") },
+            Triple("shorthand", "New shorthand") { enterVaultEdit(VaultDraft.Shorthand, ";") },
         )
-        // Each led by its accent glyph, as on iOS: a note, the vault's card, a bolt.
+        // Each led by its accent mark, as on iOS: a note, the vault's card, a bolt.
         val glyphs = mapOf("note" to "notes", "detail" to "vault", "shorthand" to "bolt")
+        // One width for the three: the longest title's.
+        val paint = android.text.TextPaint(android.text.TextPaint.ANTI_ALIAS_FLAG).apply {
+            typeface = Glass.font(this@GlyfIME, Glass.MEDIUM)
+            textSize = dp(15).toFloat()
+        }
+        val textW = starts.maxOf { paint.measureText(it.second) }
+        val optionW = dp(14 + 18 + 8 + 18) + Math.ceil(textW.toDouble()).toInt()
         for ((id, label, start) in starts) options.addView(TextView(this).apply {
-            text = label; textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
+            text = label
+            Glass.style(this, 15f, Glass.MEDIUM)
+            gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
-            setTextColor(ink())
             setCompoundDrawablesRelativeWithIntrinsicBounds(
-                ToolIcon(context, glyphs.getValue(id), GlyfMark.VIOLET).apply { scale = 0.9f; solid = true }
-                    .asDrawable(dp(18)), null, null, null)
+                ToolIcon(context, glyphs.getValue(id), Glass.accentPrimary).apply {
+                    scale = 0.8f; solid = true; weight = 2f
+                }.asDrawable(dp(18)), null, null, null)
             compoundDrawablePadding = dp(8)
-            setPadding(dp(12), 0, dp(16), 0)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat(); setColor(card())
-            }
+            setPadding(dp(14), 0, dp(18), 0)
+            background = Glass.pill(Glass.surfaceCard)
             // Lifted off the cards behind it, as on iOS.
             elevation = dp(3).toFloat()
             setTag(com.demo.glyf.R.id.qa_id, "vault:new:$id")
@@ -3791,36 +4348,40 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             plus.contentDescription = if (open) "Close" else "Add"
             plus.turnTo(if (open) 45f else 0f)
             if (open) {
-                // Stacked over the "+"; beside it where a short keyboard (a
-                // phone on its side) has no room for the stack.
-                val stacked = stage.height >= dp(margin + size + 8 + 3 * pillH + 2 * gap)
+                // Three pills as tall as the room allows (a phone on its side
+                // has little over half a panel), stacked over the "+"; beside
+                // it where even the shortest stack doesn't fit.
+                val room = stage.height - foot - dp(margin + size + 10 + 6)
+                val pillH = ((room - dp(gap) * 2) / 3).coerceIn(dp(28), dp(36))
+                val stacked = room >= pillH * 3 + dp(gap) * 2
                 options.orientation = if (stacked) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
                 options.gravity = if (stacked) Gravity.END else Gravity.CENTER_VERTICAL
                 for (i in 0 until options.childCount) {
                     options.getChildAt(i).layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT, dp(pillH)).apply {
+                        if (stacked) optionW else LinearLayout.LayoutParams.WRAP_CONTENT, pillH).apply {
                         if (i > 0) { if (stacked) topMargin = dp(gap) else leftMargin = dp(gap) }
                     }
                 }
                 options.layoutParams = (options.layoutParams as FrameLayout.LayoutParams).apply {
-                    bottomMargin = dp(if (stacked) margin + size + 8 else margin + (size - pillH) / 2)
-                    marginEnd = dp(if (stacked) 2 else 2 + size + 8)
+                    bottomMargin = foot + if (stacked) dp(margin + size + 10) else dp(margin) + (dp(size) - pillH) / 2
+                    marginEnd = dp(if (stacked) margin else margin + size + 8)
                 }
                 options.alpha = 0f
-                options.translationY = dp(6).toFloat()
+                options.translationY = dp(8).toFloat()
                 options.visibility = View.VISIBLE
-                options.animate().alpha(1f).translationY(0f).setDuration(160).start()
+                options.animate().alpha(1f).translationY(0f).setDuration(200)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
             } else options.visibility = View.GONE
         }
         plus.setOnClickListener { showVaultAdd?.invoke(!vaultAddOpen) }
-        // ‹ puts the options away first, as back does; then it closes.
-        back.setOnClickListener { if (vaultAddOpen) showVaultAdd?.invoke(false) else dismissFeaturePanel() }
+        // ‹ puts the options away first, as back does; then it steps back.
+        back?.setOnClickListener { if (vaultAddOpen) showVaultAdd?.invoke(false) else showMenuGrid() }
         stage.addView(dim, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         stage.addView(options, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END))
         stage.addView(plus, FrameLayout.LayoutParams(dp(size), dp(size), Gravity.BOTTOM or Gravity.END).apply {
-            bottomMargin = dp(margin); marginEnd = dp(2)
+            bottomMargin = dp(margin) + foot; marginEnd = dp(margin)
         })
     }
 
@@ -3830,19 +4391,21 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  screen, and a tap sent there missed it. */
     private class PlusButton(ctx: android.content.Context) : View(ctx) {
         private val disc = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = GlyfMark.VIOLET
+            color = Glass.accentPrimary
         }
         private val bar = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             strokeCap = android.graphics.Paint.Cap.ROUND
-            strokeWidth = 2.2f * ctx.resources.displayMetrics.density
+            // SF's plus at 20pt semibold.
+            strokeWidth = 2.4f * ctx.resources.displayMetrics.density
         }
         /** Degrees: 0 is the plus, 45 the ×. */
         private var turn = 0f
 
         fun turnTo(degrees: Float) {
             android.animation.ValueAnimator.ofFloat(turn, degrees).apply {
-                duration = 160
+                duration = 200
+                interpolator = android.view.animation.DecelerateInterpolator()
                 addUpdateListener { turn = it.animatedValue as Float; invalidate() }
             }.start()
         }
@@ -3852,7 +4415,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             val cy = height / 2f
             val r = minOf(width, height) / 2f
             c.drawCircle(cx, cy, r, disc)
-            val arm = r * 0.36f
+            val arm = 8f * resources.displayMetrics.density
             c.save()
             c.rotate(turn, cx, cy)
             c.drawLine(cx - arm, cy, cx + arm, cy, bar)
@@ -3861,68 +4424,78 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** A rounded button on a panel, its words made smaller (never below
-     *  10sp) where a narrow phone can't fit them at [size]. */
-    private fun panelButton(label: String, qaId: String, size: Int = 13, onTap: () -> Unit): TextView =
-        TextView(this).apply {
-            text = label
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            maxLines = 1
-            setTextColor(ink())
-            setPadding(dp(6), 0, dp(6), 0)
-            setAutoSizeTextTypeUniformWithConfiguration(10, size, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat(); setColor(card())
-            }
-            setTag(com.demo.glyf.R.id.qa_id, qaId)
-            setOnClickListener { onTap() }
-        }
-
     /** Where the phone is, as the app last said (else the phone's own). */
     private val inIndia get() =
         settings.optString("region").ifEmpty { java.util.Locale.getDefault().country } == "IN"
 
-    /** The kinds a detail can be, named as the app's Vault screen names them:
-     *  kind, name, and the label it is kept under. UPI only where people pay
-     *  with it. */
-    private fun detailKinds(): List<Triple<String, String, String>> = buildList {
-        add(Triple("name", "Name", "Name"))
-        add(Triple("email", "Email", "Email"))
-        add(Triple("phone", "Phone", "Phone"))
-        add(Triple("address", "Address", "Home"))
-        if (inIndia) add(Triple("upi", "UPI", "UPI"))
-        add(Triple("wallet", "Wallet address", "Wallet address"))
-        add(Triple("link", "Link", "Link"))
-        add(Triple("custom", "Other", "Other"))
+    /** A kind a detail can be, named as the app's Vault screen names it:
+     *  its kind, name, the label it is kept under, and iOS's symbol. */
+    private data class DetailKindInfo(val kind: String, val name: String, val label: String, val glyph: String)
+
+    /** The kinds a detail can be (iOS DetailKind.addable). UPI only where
+     *  people pay with it. */
+    private fun detailKinds(): List<DetailKindInfo> = buildList {
+        add(DetailKindInfo("name", "Name", "Name", "person"))
+        add(DetailKindInfo("email", "Email", "Email", "at"))
+        add(DetailKindInfo("phone", "Phone", "Phone", "phone"))
+        add(DetailKindInfo("address", "Address", "Home", "house"))
+        if (inIndia) add(DetailKindInfo("upi", "UPI", "UPI", "rupee"))
+        add(DetailKindInfo("wallet", "Wallet address", "Wallet address", "wallet"))
+        add(DetailKindInfo("link", "Link", "Link", "link"))
+        add(DetailKindInfo("custom", "Other", "Other", "tag"))
     }
 
-    /** New detail, first what kind it is; the value is then typed on the
+    /** New detail, first what kind it is, as the vault's own grid: a card
+     *  per kind, its symbol over its name. The value is then typed on the
      *  keys, in the strip a note uses. */
     private fun showDetailKinds() {
-        val (panel, body) = panelShell("New detail", onBack = { showVaultPanel() })
-        panel.tag = "vault:kinds"
-        for (row in detailKinds().chunked(3)) {
-            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            for (i in 0 until 3) {
-                val kind = row.getOrNull(i)
-                val lp = LinearLayout.LayoutParams(0, dp(44), 1f).apply { if (i > 0) leftMargin = dp(7) }
-                if (kind == null) { line.addView(View(this), lp); continue }
-                val (id, name, label) = kind
-                line.addView(panelButton(name, "vault:kind:$id", size = 14) {
-                    enterVaultEdit(VaultDraft.Detail(id, name, label), "")
-                }, lp)
-            }
-            body.addView(line, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                .apply { bottomMargin = dp(7) })
+        if (glassLook) {
+            // iOS's list in the Glass look: each kind's mark, its name, a chevron.
+            val (panel, body) = panelShell("New detail", onBack = { showVaultPanel() }, pad = intArrayOf(0, 0, 0, 8))
+            panel.tag = "vault:kinds"
+            val rows = shellRows(body)
+            for (k in detailKinds()) rows.row(ShellRows.Row(k.name, glyph = k.glyph, qaId = "vault:kind:${k.kind}") {
+                enterVaultEdit(VaultDraft.Detail(k.kind, k.name, k.label), "")
+            })
+            rows.flush()
+            return
         }
+        val (panel, body) = panelShell("New detail", onBack = { showVaultPanel() }, pad = intArrayOf(6, 0, 6, 0))
+        panel.tag = "vault:kinds"
+        val tiles = detailKinds().map { k ->
+            // Symbol over name, centred as a column (iOS: 22 + 5 + 17).
+            object : TextView(this) {
+                override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+                    super.onSizeChanged(w, h, ow, oh)
+                    val top = ((h - dp(22 + 5 + 17)) / 2).coerceAtLeast(0)
+                    if (paddingTop != top) post { setPadding(dp(6), top, dp(6), 0) }
+                }
+            }.apply {
+                text = k.name
+                Glass.style(this, 13f, Glass.MEDIUM)
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                maxLines = 1
+                // "Wallet address" is a card's whole width on a small phone:
+                // a touch smaller beats cut short.
+                setAutoSizeTextTypeUniformWithConfiguration(10, 13, 1, android.util.TypedValue.COMPLEX_UNIT_DIP)
+                setCompoundDrawablesRelativeWithIntrinsicBounds(null,
+                    ToolIcon(context, k.glyph, Glass.textPrimary).apply {
+                        solid = true; weight = 1.2f; scale = 1.25f
+                    }.asDrawable(dp(22)), null, null)
+                compoundDrawablePadding = dp(5)
+                setPadding(dp(6), 0, dp(6), 0)
+                background = Glass.card(this@GlyfIME, radius = 12f)
+                setTag(com.demo.glyf.R.id.qa_id, "vault:kind:${k.kind}")
+                setOnClickListener { enterVaultEdit(VaultDraft.Detail(k.kind, k.name, k.label), "") }
+            }
+        }
+        vaultGrid(body, tiles)
     }
 
     /** Gboard's clipboard, identical to the iOS panel: it takes the whole
      *  keyboard, toolbar included, the way Gboard's does. */
     private fun showClipboardPanel() {
-        com.demo.glyf.store.ClipboardStore.captureNow(this, settings)
+        if (!qaClipHeld) com.demo.glyf.store.ClipboardStore.captureNow(this, settings)
         dismissFeaturePanel()
         keyboard.visibility = View.GONE
         toolbar.visibility = View.GONE
@@ -3973,7 +4546,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT, keysH))
         featurePanel = panel
-        gPill?.closing = true
+        // iOS: the strip names it, "✕ [dollarsign.circle] Pay".
+        showStripTitle("Pay", onBack = null, icon = "pay")
     }
 
     /** A payment finished while the keyboard was away (the app wrote how it
@@ -4001,7 +4575,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT, keysH))
         featurePanel = panel
-        gPill?.closing = true
+        // iOS: the strip names it, "✕ [gamecontroller] Games".
+        showStripTitle("Games", onBack = null, icon = "games")
     }
 
     private fun showCalendarPanel(): CalendarPanelView {
@@ -4048,6 +4623,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT, keysH))
         featurePanel = panel
+        // iOS: the strip names it, "✕ [calendar] Calendar".
+        showStripTitle("Calendar", onBack = null, icon = "calendar")
         return panel
     }
 
@@ -4087,17 +4664,29 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         data class Note(val id: String?) : VaultDraft()
         /** A detail of one kind, kept under that kind's [label]. */
         data class Detail(val kind: String, val name: String, val label: String) : VaultDraft()
-        /** A shorthand's shortcut (";sig"), then what it types out. */
-        object Shortcut : VaultDraft()
-        data class Expansion(val trigger: String) : VaultDraft()
+        /** A shorthand: its shortcut (";sig") and what it types out, side by
+         *  side as on iOS, the shortcut typed first. */
+        object Shorthand : VaultDraft()
     }
 
     private var vaultEditActive = false
     private var vaultDraft: VaultDraft? = null
+    /** The note, the detail, or what a shorthand types out. */
     private var vaultEditText = ""
-    private var vaultEditStrip: LinearLayout? = null
-    private var vaultEditView: TextView? = null
+    /** A shorthand's shortcut. */
+    private var vaultShortcutText = ""
+    /** The keys are typing a shorthand's shortcut, not what it types out. */
+    private var vaultShortcutActive = false
+    private var vaultEditStrip: FrameLayout? = null
+    private var vaultEditView: InlineField? = null
+    private var vaultShortcutView: InlineField? = null
+    /** Why Save didn't save, in the strip under the fields (iOS). */
+    private var vaultEditStatus: TextView? = null
 
+    /** Adding to the vault without leaving the keyboard, iOS's strip
+     *  (NoteEditSurface): ✕, the field(s) the keys type into, Save, and a
+     *  line under them for why a save was refused. A note, a detail of the
+     *  kind picked, or a shorthand's shortcut beside what it types out. */
     private fun enterVaultEdit(draft: VaultDraft, initial: String) {
         dismissFeaturePanel()
         if (searchActive) exitSearch()
@@ -4105,7 +4694,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (vaultEditActive) exitVaultEdit()
         vaultEditActive = true
         vaultDraft = draft
-        vaultEditText = initial
+        val shorthand = draft == VaultDraft.Shorthand
+        vaultShortcutText = if (shorthand) initial else ""
+        vaultEditText = if (shorthand) "" else initial
         toolbar.visibility = View.GONE
         // The keys for what is typed: @ at hand for an email, a dial pad for
         // a phone number, letters for everything else (even over a number
@@ -4117,103 +4708,121 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             else -> KContext.TEXT
         }
         keyboard.mode = Mode.LETTERS
-        // Words start with a capital; addresses to type exactly (an email,
-        // a shortcut, a wallet) start lower.
-        keyboard.shifted = initial.isEmpty() && when (draft) {
-            is VaultDraft.Note, is VaultDraft.Expansion -> true
-            is VaultDraft.Detail -> draft.kind in setOf("name", "address", "custom")
-            VaultDraft.Shortcut -> false
-        }
         autoShifted = false
         keyboard.rebuild()
-        val strip = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(6))
-        }
-        strip.addView(TextView(this).apply {
-            text = "✕"; textSize = 16f; setTextColor(ink())
-            setPadding(dp(6), 0, dp(10), 0)
-            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:close"); contentDescription = "Close"
+        val strip = FrameLayout(this)
+        strip.addView(ToolIcon(this, "close", Glass.textSecondary).apply {
+            solid = true
+            weight = 2f
+            scale = 0.95f
+            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:close")
+            contentDescription = "Close"
             setOnClickListener { exitVaultEdit() }
-        })
-        // What it types out, beside the shortcut it is for.
-        if (draft is VaultDraft.Expansion) strip.addView(TextView(this).apply {
-            text = draft.trigger; textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(ink())
-            setPadding(0, 0, dp(8), 0)
-            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:shortcut")
-        })
-        val field = TextView(this).apply {
-            hint = when (draft) {
-                is VaultDraft.Note -> "Write a note…"
-                is VaultDraft.Detail -> if (draft.kind == "custom") "Detail" else draft.name
-                VaultDraft.Shortcut -> "Shortcut, like ;sig"
-                is VaultDraft.Expansion -> "Types out"
-            }
-            text = vaultEditText
-            textSize = 15f
-            maxLines = 2
-            setTextColor(ink())
-            setHintTextColor(Color.argb(120, 128, 128, 136))
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat(); setColor(card())
-            }
-            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:field")
+        }, FrameLayout.LayoutParams(dp(36), dp(34)).apply { leftMargin = dp(2); topMargin = dp(8) })
+        val placeholder = when (draft) {
+            is VaultDraft.Note -> "Write a note…"
+            is VaultDraft.Detail -> draft.name
+            VaultDraft.Shorthand -> "Types out"
         }
-        strip.addView(field, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        strip.addView(TextView(this).apply {
-            text = if (draft == VaultDraft.Shortcut) "Next" else "Save"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(card())
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(15).toFloat(); setColor(ink())
+        // The kind's mark stays in the field once what is typed replaces its name.
+        val glyph = (draft as? VaultDraft.Detail)?.let { d -> detailKinds().firstOrNull { it.kind == d.kind }?.glyph }
+        val field = InlineField(this, placeholder, glyph).apply {
+            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:field")
+            show(vaultEditText)
+            setOnClickListener { activateVaultField(shortcut = false) }
+        }
+        val fieldsW = resources.displayMetrics.widthPixels - dp(120)
+        if (shorthand) {
+            // [;shortcut][types out], the shortcut a third of the way.
+            val w = minOf(dp(112), (fieldsW * 0.36f).toInt())
+            val shortcut = InlineField(this, "Shortcut").apply {
+                setTag(com.demo.glyf.R.id.qa_id, "vaultedit:shortcut")
+                show(vaultShortcutText)
+                setOnClickListener { activateVaultField(shortcut = true) }
             }
+            strip.addView(shortcut, FrameLayout.LayoutParams(w, dp(34)).apply {
+                leftMargin = dp(40); topMargin = dp(8)
+            })
+            strip.addView(field, FrameLayout.LayoutParams(fieldsW - w - dp(6), dp(34)).apply {
+                leftMargin = dp(40) + w + dp(6); topMargin = dp(8)
+            })
+            vaultShortcutView = shortcut
+        } else strip.addView(field, FrameLayout.LayoutParams(fieldsW, dp(34)).apply {
+            leftMargin = dp(40); topMargin = dp(8)
+        })
+        // The ink's own pill: black on a light board, white on a dark one.
+        strip.addView(TextView(this).apply {
+            text = "Save"
+            Glass.style(this, 14f, Glass.BOLD, if (Glass.dark) Glass.brandInk else Color.WHITE)
+            gravity = Gravity.CENTER
+            background = Glass.pill(Glass.textPrimary)
             setTag(com.demo.glyf.R.id.qa_id, "vaultedit:save")
             setOnClickListener { saveVaultEdit() }
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
-        root.addView(strip, 0)
+        }, FrameLayout.LayoutParams(dp(62), dp(30), Gravity.TOP or Gravity.END).apply {
+            topMargin = dp(10); rightMargin = dp(10)
+        })
+        val status = TextView(this).apply {
+            Glass.style(this, 12f, Glass.REGULAR, Glass.accentDanger)
+            gravity = Gravity.CENTER
+            maxLines = 2
+            setTag(com.demo.glyf.R.id.qa_id, "vaultedit:status")
+        }
+        strip.addView(status, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(34)).apply {
+            leftMargin = dp(12); rightMargin = dp(12); topMargin = dp(48)
+        })
+        root.addView(strip, 0, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(96)))
         vaultEditStrip = strip
         vaultEditView = field
+        vaultEditStatus = status
+        activateVaultField(shortcut = shorthand)
+    }
+
+    /** The keys type into the shortcut ([shortcut]) or the main field. */
+    private fun activateVaultField(shortcut: Boolean) {
+        vaultShortcutActive = shortcut && vaultShortcutView != null
+        vaultShortcutView?.active = vaultShortcutActive
+        vaultEditView?.active = !vaultShortcutActive
+        // Words start with a capital: a note, a name, an address or what a
+        // shorthand types out; a shortcut, an email, a link or a wallet
+        // never do (";Sig" would never expand from ";sig").
+        val empty = if (vaultShortcutActive) vaultShortcutText.isEmpty() else vaultEditText.isEmpty()
+        keyboard.shifted = empty && when (val d = vaultDraft) {
+            is VaultDraft.Note -> true
+            is VaultDraft.Detail -> d.kind in setOf("name", "address", "custom")
+            VaultDraft.Shorthand -> !vaultShortcutActive
+            null -> false
+        }
+        autoShifted = false
+        keyboard.invalidate()
     }
 
     /** Saved where the app's Vault screen reads it, and in use at once: a
-     *  detail feeds the strip's chips, a shorthand expands on the space. */
+     *  detail feeds the strip's chips, a shorthand expands on the space. A
+     *  refusal (a secret, a shortcut that isn't one) shows under the fields. */
     private fun saveVaultEdit() {
         val text = vaultEditText
-        val err = when (val d = vaultDraft ?: return) {
+        val d = vaultDraft ?: return
+        var trigger = ""
+        val err = when (d) {
             is VaultDraft.Note -> com.demo.glyf.store.NotesStore.upsert(this, d.id, text)
             is VaultDraft.Detail -> VaultStore.addField(this, d.kind, d.label, text)
-            VaultDraft.Shortcut -> {
+            VaultDraft.Shorthand -> {
                 // "sig" is ";sig": the ; is the shortcut's, whoever typed it.
-                val trigger = text.trim().lowercase().let { if (it.startsWith(";")) it else ";$it" }
-                VaultStore.triggerRefusal(trigger)?.let { notice(it); return }
-                // A shortcut kept already shows what it types now, to change.
-                val snippets = VaultStore.load(this).optJSONArray("snippets") ?: org.json.JSONArray()
-                val kept = (0 until snippets.length()).map { snippets.getJSONObject(it) }
-                    .firstOrNull { it.optString("trigger") == trigger }?.optString("text").orEmpty()
-                enterVaultEdit(VaultDraft.Expansion(trigger), kept)
-                return
+                trigger = vaultShortcutText.trim().lowercase().let { if (it.startsWith(";")) it else ";$it" }
+                VaultStore.triggerRefusal(trigger) ?: VaultStore.upsertSnippet(this, trigger, text.trim())
             }
-            is VaultDraft.Expansion -> VaultStore.upsertSnippet(this, d.trigger, text.trim())
         }
         if (err != null) {
-            notice(err)
+            vaultEditStatus?.text = err
             return
         }
         vaultFieldsStamp = -1L
         // Its card: a new detail is the last one, a new note the first.
-        val reveal = when (val d = vaultDraft) {
+        val reveal = when (d) {
             is VaultDraft.Detail -> "vault:card:${vaultFields().lastIndex}"
-            is VaultDraft.Expansion -> {
+            VaultDraft.Shorthand -> {
                 val snippets = VaultStore.load(this).optJSONArray("snippets") ?: org.json.JSONArray()
-                (0 until snippets.length()).firstOrNull { snippets.getJSONObject(it).optString("trigger") == d.trigger }
+                (0 until snippets.length()).firstOrNull { snippets.getJSONObject(it).optString("trigger") == trigger }
                     ?.let { "vault:shorthand:$it" }
             }
             is VaultDraft.Note -> {
@@ -4222,7 +4831,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     notes.getJSONObject(it).optString("id") == d.id
                 })?.let { "vault:note:$it" }
             }
-            else -> null
         }
         exitVaultEdit()
         showVaultPanel(reveal)
@@ -4234,7 +4842,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         vaultEditStrip?.let { root.removeView(it) }
         vaultEditStrip = null
         vaultEditView = null
+        vaultShortcutView = null
+        vaultEditStatus = null
         vaultEditText = ""
+        vaultShortcutText = ""
+        vaultShortcutActive = false
         toolbar.visibility = View.VISIBLE
         // The host field's own keys again.
         val host = KContext.from(currentInputEditorInfo)
@@ -4436,52 +5048,55 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private fun showTempInbox() {
-        val (panel, body, stage) = panelShell("Temp mail")
+        val (panel, body, stage) = panelShell("Temp mail", pad = intArrayOf(12, 8, 12, 8))
         panel.tag = "tempmail"
         tempLine = null
         pinTempCredit(stage)
         val box = TempMailStore.load(this)
         if (box == null) {
-            body.addView(pill("Create address", primary = true, id = "tempmail:create", accent = true) {
+            // iOS: a 200 by 44 accent pill in the middle of the panel.
+            stage.addView(pill("Create address", primary = true, id = "tempmail:create", accent = true, size = 14f) {
                 createTempBox { if (featurePanel?.tag == "tempmail") showTempInbox() }
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42))
-                .apply { topMargin = dp(6) })
+            }, FrameLayout.LayoutParams(dp(200), dp(44), Gravity.CENTER).apply { bottomMargin = dp(20) })
             return
         }
-        // The address: one line, its middle given up where it doesn't fit.
-        val cardV = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(card()) }
+        // iOS's address card, 82 tall: the address on a line of its own, its
+        // middle given up where it doesn't fit; Insert and Copy under it, New
+        // and Delete at the far end.
+        val cardV = FrameLayout(this).apply {
+            background = Glass.card(this@GlyfIME, Glass.surfaceCard, radius = 12f)
         }
         cardV.addView(TextView(this).apply {
             text = box.address
-            textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
+            Glass.style(this, 15f, Glass.MEDIUM)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-            setTextColor(ink())
+            gravity = Gravity.CENTER_VERTICAL
             setTag(com.demo.glyf.R.id.qa_id, "tempmail:address")
+        }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(22)).apply {
+            leftMargin = dp(14); rightMargin = dp(14); topMargin = dp(10)
         })
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        actions.addView(pill("Insert", primary = true, id = "tempmail:insert", accent = true) {
+        actions.addView(pill("Insert", primary = true, id = "tempmail:insert", accent = true, size = 14f) {
             currentInputConnection?.commitText(box.address, 1)
             restartTempWatch(box)
             dismissFeaturePanel()
             scheduleTempCheck()
-        }, LinearLayout.LayoutParams(dp(92), dp(36)))
-        actions.addView(pill("Copy", primary = false, id = "tempmail:copy") {
+        }.apply { minWidth = dp(84); setPadding(dp(16), 0, dp(16), 0) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)))
+        actions.addView(pill("Copy", primary = false, id = "tempmail:copy", size = 14f, field = true) {
             (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                 .setPrimaryClip(android.content.ClipData.newPlainText("", box.address))
             notice("Copied")
-        }, LinearLayout.LayoutParams(dp(80), dp(36)).apply { leftMargin = dp(8) })
+        }.apply { minWidth = dp(72); setPadding(dp(14), 0, dp(14), 0) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply { leftMargin = dp(8) })
         actions.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         actions.addView(smallAction("New", "tempmail:new") {
             createTempBox { if (featurePanel?.tag == "tempmail") showTempInbox() }
-        })
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)))
         actions.addView(smallAction("Delete", "tempmail:delete") {
             MailTm.delete(tempBase(), box)
             TempMailStore.clear(this)
@@ -4489,50 +5104,55 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             main.removeCallbacks(tempTick)
             if (stripChipKind == "tempmail") hideStripChip()
             showTempInbox()
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)))
+        cardV.addView(actions, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(32)).apply {
+            leftMargin = dp(10); rightMargin = dp(4); topMargin = dp(40)
         })
-        cardV.addView(actions, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
-        body.addView(cardV, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT))
-        // "Watching · 14:32 left", or "Stopped · Watch again".
+        body.addView(cardV, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(82)))
+        // "Watching · 14:32 left", or "Stopped · Watch again": 12 grey, 6
+        // under the card and 4 in.
         val line = TextView(this).apply {
-            textSize = 13f
-            setPadding(dp(4), dp(10), dp(4), dp(8))
-            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+            Glass.style(this, 12f, Glass.REGULAR, Glass.textSecondary)
+            gravity = Gravity.CENTER_VERTICAL
+            maxLines = 1
         }
-        body.addView(line)
+        body.addView(line, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(22)).apply {
+            leftMargin = dp(4); topMargin = dp(6)
+        })
         tempLine = line
         renderTempLine()
         main.removeCallbacks(tempClock)
         main.postDelayed(tempClock, 1000)
         if (tempMails.isEmpty()) {
+            // Centred in what is left above the credit, as iOS's inbox is.
+            val rest = keyboard.height - dp(20) - dp(8 + 82 + 6 + 22 + 4) - dp(8)
             body.addView(TextView(this).apply {
                 text = "No mail yet"
-                textSize = 14f
+                Glass.style(this, 14f, Glass.REGULAR, Glass.textSecondary)
                 gravity = Gravity.CENTER
-                setPadding(0, dp(18), 0, dp(18))
-                setTextColor(Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
                 setTag(com.demo.glyf.R.id.qa_id, "tempmail:empty")
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, maxOf(dp(40), rest)).apply {
+                topMargin = dp(4)
             })
         } else for ((i, mail) in tempMails.withIndex()) body.addView(tempRow(i, mail),
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(7) })
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52)).apply {
+                topMargin = if (i == 0) dp(4) else dp(6)
+            })
     }
 
     /** mail.tm asks to be linked to where it is used: a quiet line pinned
      *  at the panel's foot on every screen of it (what scrolls ends above
      *  it), opening its site. */
     private fun pinTempCredit(stage: FrameLayout) {
-        val h = dp(24)
+        val h = dp(20)
         stage.getChildAt(0)?.let { scroll ->
             scroll.layoutParams = (scroll.layoutParams as FrameLayout.LayoutParams).apply { bottomMargin = h }
         }
         stage.addView(TextView(this).apply {
             text = "via mail.tm"
-            textSize = 12f
+            Glass.style(this, 11f, Glass.REGULAR, Glass.textSecondary)
             gravity = Gravity.CENTER
             setPadding(dp(16), 0, dp(16), 0)
-            setTextColor(Color.argb(130, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
             setTag(com.demo.glyf.R.id.qa_id, "tempmail:credit")
             setOnClickListener {
                 runCatching {
@@ -4556,7 +5176,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             line.isClickable = false
         } else {
             val words = android.text.SpannableString("Stopped · Watch again")
-            words.setSpan(android.text.style.ForegroundColorSpan(stripAccent()), 10, words.length, 0)
+            words.setSpan(android.text.style.ForegroundColorSpan(Glass.chipAccent), 10, words.length, 0)
+            words.setSpan(android.text.style.TypefaceSpan(Glass.font(this, Glass.SEMIBOLD)), 10, words.length, 0)
             line.text = words
             line.setTag(com.demo.glyf.R.id.qa_id, "tempmail:watch")
             line.setOnClickListener {
@@ -4567,129 +5188,148 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** A mail in the inbox: who, when, what; a code to put in straight away. */
+    /** A mail in the inbox, iOS's 52 tall row: who and when, then what,
+     *  with a code to put in straight away on a pill at the end. */
     private fun tempRow(i: Int, mail: TempMail): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(card()) }
+        val row = FrameLayout(this).apply {
+            background = Glass.card(this@GlyfIME, Glass.surfaceCard, radius = 12f)
             setTag(com.demo.glyf.R.id.qa_id, "tempmail:row:$i")
             setOnClickListener { showTempMail(mail) }
         }
-        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         top.addView(TextView(this).apply {
             text = mail.from.ifBlank { mail.fromAddress }
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
+            Glass.style(this, 14f, Glass.BOLD)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(ink())
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         top.addView(TextView(this).apply {
             text = TempMailRules.ago(mail.receivedAt)
-            textSize = 12f
-            setTextColor(Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+            Glass.style(this, 12f, Glass.REGULAR, Glass.textSecondary)
+            gravity = Gravity.END
+            maxLines = 1
+            minWidth = dp(40)
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
+        row.addView(top, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(18)).apply {
+            leftMargin = dp(12); rightMargin = dp(12); topMargin = dp(8)
         })
-        row.addView(top)
-        if (mail.subject.isNotBlank()) row.addView(TextView(this).apply {
+        val bottom = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        bottom.addView(TextView(this).apply {
             text = mail.subject
-            textSize = 13f
+            Glass.style(this, 13f, Glass.REGULAR, Glass.textSecondary)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(Color.argb(190, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
-        })
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         val code = mail.code
-        if (code != null) row.addView(TextView(this).apply {
+        // One run of words, so the scenarios read the code off the pill.
+        if (code != null) bottom.addView(TextView(this).apply {
             val words = android.text.SpannableString("$code  Insert")
-            words.setSpan(android.text.style.ForegroundColorSpan(stripAccent()), code.length + 2, words.length, 0)
-            words.setSpan(android.text.style.StyleSpan(Typeface.BOLD), 0, words.length, 0)
+            words.setSpan(android.text.style.ForegroundColorSpan(Glass.chipAccent), code.length + 2, words.length, 0)
             text = words
-            textSize = 14f
-            setTextColor(ink())
-            setPadding(dp(12), dp(5), dp(12), dp(5))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(13).toFloat()
-                setColor(Color.argb(36, 0x7C, 0x5C, 0xFF))
-            }
+            Glass.style(this, 13f, Glass.SEMIBOLD)
+            fontFeatureSettings = "tnum"
+            gravity = Gravity.CENTER
+            maxLines = 1
+            setPadding(dp(10), 0, dp(10), 0)
+            background = Glass.pill(Glass.fillField)
             setTag(com.demo.glyf.R.id.qa_id, "tempmail:rowcode:$i")
             setOnClickListener {
                 currentInputConnection?.commitText(code, 1)
                 dismissFeaturePanel()
             }
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(22)).apply { leftMargin = dp(8) })
+        row.addView(bottom, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(22)).apply {
+            leftMargin = dp(12); rightMargin = if (code != null) dp(8) else dp(12); topMargin = dp(26)
+        })
         return row
     }
 
-    /** One mail: what it says, and its code big, to put in or copy. */
+    /** One mail, iOS's: the subject and who, the code big on a card with
+     *  Copy and Insert at its end, the link, then the words. */
     private fun showTempMail(mail: TempMail) {
-        val (panel, body, stage) = panelShell("Temp mail", onBack = { showTempInbox() })
+        val (panel, body, stage) = panelShell("Temp mail", onBack = { showTempInbox() },
+            pad = intArrayOf(12, 10, 12, 12))
         panel.tag = "tempmail:mail"
         pinTempCredit(stage)
         main.removeCallbacks(tempClock)
         body.addView(TextView(this).apply {
             text = mail.subject.ifBlank { mail.from }
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(ink())
+            Glass.style(this, 16f, Glass.SEMIBOLD)
             setTag(com.demo.glyf.R.id.qa_id, "tempmail:subject")
         })
         body.addView(TextView(this).apply {
             text = "${mail.from.ifBlank { mail.fromAddress }} · ${TempMailRules.ago(mail.receivedAt)}"
-            textSize = 13f
-            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
-            setPadding(0, dp(2), 0, dp(8))
-        })
+            Glass.style(this, 12f, Glass.REGULAR, Glass.textSecondary)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER_VERTICAL
+            setTag(com.demo.glyf.R.id.qa_id, "tempmail:from")
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(16)).apply { topMargin = dp(2) })
         val code = mail.code
         if (code != null) {
             val block = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(14), dp(10), dp(10), dp(10))
-                background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(card()) }
+                setPadding(dp(14), 0, dp(10), 0)
+                background = Glass.card(this@GlyfIME, Glass.surfaceCard, radius = 12f)
             }
             block.addView(TextView(this).apply {
                 text = code
-                textSize = 26f
-                typeface = Typeface.DEFAULT_BOLD
-                letterSpacing = 0.08f
-                setTextColor(ink())
+                Glass.style(this, 28f, Glass.SEMIBOLD)
+                fontFeatureSettings = "tnum"
+                letterSpacing = 0.07f
+                gravity = Gravity.CENTER_VERTICAL
+                maxLines = 1
+                setAutoSizeTextTypeUniformWithConfiguration(17, 28, 1, android.util.TypedValue.COMPLEX_UNIT_DIP)
                 setTag(com.demo.glyf.R.id.qa_id, "tempmail:code")
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            block.addView(pill("Insert", primary = true, id = "tempmail:code:insert", accent = true) {
-                currentInputConnection?.commitText(code, 1)
-                dismissFeaturePanel()
-            }, LinearLayout.LayoutParams(dp(84), dp(36)))
-            block.addView(pill("Copy", primary = false, id = "tempmail:code:copy") {
+            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = dp(10) })
+            block.addView(pill("Copy", primary = false, id = "tempmail:code:copy", size = 14f, field = true) {
                 (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                     .setPrimaryClip(android.content.ClipData.newPlainText("", code))
                 notice("Copied")
-            }, LinearLayout.LayoutParams(dp(72), dp(36)).apply { leftMargin = dp(8) })
-            body.addView(block, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)))
+            block.addView(pill("Insert", primary = true, id = "tempmail:code:insert", accent = true, size = 14f) {
+                currentInputConnection?.commitText(code, 1)
+                dismissFeaturePanel()
+            }.apply { setPadding(dp(14), 0, dp(14), 0) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)).apply { leftMargin = dp(8) })
+            body.addView(block, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)).apply {
+                topMargin = dp(10)
+            })
         }
         val link = mail.link
-        if (link != null) body.addView(pill("Insert link", primary = false, id = "tempmail:link") {
+        if (link != null) body.addView(pill("Insert link", primary = false, id = "tempmail:link", size = 14f, field = true) {
             currentInputConnection?.commitText(link, 1)
             dismissFeaturePanel()
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)).apply { bottomMargin = dp(8) })
+        }.apply { setPadding(dp(14), 0, dp(14), 0) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply {
+                topMargin = if (code != null) dp(8) else dp(10)
+            })
         body.addView(TextView(this).apply {
             text = mail.text
-            textSize = 14f
-            setTextColor(ink())
+            Glass.style(this, 14f)
             setLineSpacing(dp(2).toFloat(), 1f)
             setTag(com.demo.glyf.R.id.qa_id, "tempmail:text")
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = if (link != null) dp(8) else if (code != null) dp(8) else dp(10)
         })
     }
 
-    /** A quiet text action beside the card's buttons (New, Delete). */
+    /** A quiet text action beside the card's buttons (New, Delete): 13
+     *  medium grey, 8 either side (iOS). */
     private fun smallAction(label: String, id: String, onTap: () -> Unit) = TextView(this).apply {
         text = label
-        textSize = 13f
-        typeface = Typeface.DEFAULT_BOLD
+        Glass.style(this, 13f, Glass.MEDIUM, Glass.textSecondary)
         gravity = Gravity.CENTER
-        setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
-        setPadding(dp(10), dp(8), dp(6), dp(8))
+        setPadding(dp(8), 0, dp(8), 0)
         setTag(com.demo.glyf.R.id.qa_id, id)
         setOnClickListener { onTap() }
     }
@@ -4839,52 +5479,44 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), 0, dp(4), 0)
         }
+        // iOS's translate bar (TranslationHUD): the direction in a pill of
+        // the key colour, the translation 17 semibold on one line (its end
+        // in view), Replace in iMessage blue, and a quiet ✕.
         val dir = TextView(this).apply {
             text = "Translate"
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(ink())
+            Glass.style(this, 13f, Glass.SEMIBOLD)
             gravity = Gravity.CENTER
+            maxLines = 1
             setPadding(dp(12), 0, dp(12), 0)
-            background = GradientDrawable().apply { cornerRadius = dp(15).toFloat(); setColor(card()) }
+            background = Glass.pill(Glass.surfaceCard)
             setTag(com.demo.glyf.R.id.qa_id, "hud:direction")
             setOnClickListener { cycleTranslateTarget() }
         }
         val text = TextView(this).apply {
             text = "…"
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
-            maxLines = 1
+            Glass.style(this, 17f, Glass.SEMIBOLD)
+            isSingleLine = true
             ellipsize = android.text.TextUtils.TruncateAt.START
-            setTextColor(ink())
             setPadding(dp(10), 0, dp(8), 0)
         }
         val replace = TextView(this).apply {
             this.text = "Replace"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
+            Glass.style(this, 14f, Glass.SEMIBOLD, Color.WHITE)
             gravity = Gravity.CENTER
-            setPadding(dp(14), 0, dp(14), 0)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(15).toFloat(); setColor(Color.rgb(0x0A, 0x84, 0xFF))
-            }
+            background = Glass.pill(Color.rgb(0x0A, 0x84, 0xFF))
             alpha = 0.3f
             setTag(com.demo.glyf.R.id.qa_id, "hud:replace")
             setOnClickListener { applyTranslation() }
         }
-        val close = TextView(this).apply {
-            this.text = "✕"
-            textSize = 14f
-            setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
-            setPadding(dp(10), dp(8), dp(8), dp(8))
+        val close = ToolIcon(this, "close", Glass.textSecondary).apply {
+            solid = true; weight = 2f; scale = 0.95f
             setTag(com.demo.glyf.R.id.qa_id, "hud:close"); contentDescription = "Close"
             setOnClickListener { exitTranslate() }
         }
         strip.addView(dir, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)))
         strip.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        strip.addView(replace, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)))
-        strip.addView(close)
+        strip.addView(replace, LinearLayout.LayoutParams(dp(84), dp(30)))
+        strip.addView(close, LinearLayout.LayoutParams(dp(36), dp(34)))
         toolbar.visibility = View.GONE
         root.addView(strip, root.indexOfChild(toolbar),
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
@@ -5014,24 +5646,27 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             main.removeCallbacks(hideNotice)
             noticeView?.let { root.overlay.remove(it) }
+            // iOS's KeyboardToast: a 28 tall pill, 14 corners, near-black at
+            // 94%, 13 semibold white, 8 into the keyboard's view (iOS 26's
+            // sheet band sits above that view; Android has none).
             val label = TextView(this).apply {
                 this.text = text
-                textSize = 14f
-                setTextColor(Color.WHITE)
+                Glass.style(this, 13f, Glass.SEMIBOLD, Color.WHITE)
                 gravity = Gravity.CENTER
-                setPadding(dp(16), dp(9), dp(16), dp(9))
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(13), 0, dp(13), 0)
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(18).toFloat()
-                    setColor(Color.argb(235, 0x1C, 0x1C, 0x1E))
+                    cornerRadius = dp(14).toFloat()
+                    setColor(Color.argb(240, 31, 31, 31))
                 }
                 setTag(com.demo.glyf.R.id.qa_id, "kb:notice")
             }
             label.measure(
-                View.MeasureSpec.makeMeasureSpec((root.width * 0.86f).toInt(), View.MeasureSpec.AT_MOST),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-            // Just under the strip, centred over the keys.
+                View.MeasureSpec.makeMeasureSpec(root.width - dp(24), View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(dp(28), View.MeasureSpec.EXACTLY))
             val left = (root.width - label.measuredWidth) / 2
-            val top = dp(54)
+            val top = dp(8)
             label.layout(left, top, left + label.measuredWidth, top + label.measuredHeight)
             root.overlay.add(label)
             noticeView = label

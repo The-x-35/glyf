@@ -8,11 +8,32 @@ data class Key(
     val id: String,          // char, or shift/delete/space/return/globe/mode:x/emojikey
     val char: String? = null,
     val units: Float = 1f,   // -1 = fill (space bar)
+    /** shift, delete and the third row's mode key: they keep their one and
+     *  a half columns but are drawn at 1.35 letters, which leaves the wider
+     *  gap iOS draws between them and the letters. */
+    val sideKey: Boolean = false,
+    /** Which side the air is on (delete keeps its right edge). */
+    val gapLeading: Boolean = false,
+    /** A digit-pad key: Apple's pad typography (22pt digits, their letters
+     *  under them) and no press balloon. */
+    val pad: Boolean = false,
+    /** The letters under a pad digit ("ABC"). */
+    val subtitle: String? = null,
+    /** Drawn without a key cap, like the function keys on Apple's pads. */
+    val bare: Boolean = false,
+    /** Shown instead of what the key types ("pause" types a comma). */
+    val title: String? = null,
+    /** Greyed and inert: the digits under the phone pad's symbols page,
+     *  and the number pad's empty corner. */
+    val disabled: Boolean = false,
 )
 
 enum class Mode { LETTERS, SYMBOLS1, SYMBOLS2 }
 
-enum class KContext { TEXT, EMAIL, URL, NUMBER_PAD, DECIMAL_PAD, PHONE_PAD;
+/** What the focused field asked for (iOS KeyboardContext): plain text, the
+ *  keys an email, web address or search field needs on the space row, or a
+ *  digit pad for number, decimal and phone fields. */
+enum class KContext { TEXT, EMAIL, URL, WEB_SEARCH, NUMBER_PAD, DECIMAL_PAD, PHONE_PAD;
 
     val isPad get() = this == NUMBER_PAD || this == DECIMAL_PAD || this == PHONE_PAD
 
@@ -28,7 +49,15 @@ enum class KContext { TEXT, EMAIL, URL, NUMBER_PAD, DECIMAL_PAD, PHONE_PAD;
                     when (it and InputType.TYPE_MASK_VARIATION) {
                         InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
                         InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS -> EMAIL
-                        InputType.TYPE_TEXT_VARIATION_URI -> URL
+                        // A browser's address bar takes searches too (its
+                        // action is go or search): it keeps a space bar, as
+                        // Safari's does on the iPhone.
+                        InputType.TYPE_TEXT_VARIATION_URI -> {
+                            val action = info.imeOptions and EditorInfo.IME_MASK_ACTION
+                            // (info is the field that asked: never null here)
+                            if (action == EditorInfo.IME_ACTION_GO || action == EditorInfo.IME_ACTION_SEARCH)
+                                WEB_SEARCH else URL
+                        }
                         else -> TEXT
                     }
                 else -> TEXT
@@ -39,8 +68,7 @@ enum class KContext { TEXT, EMAIL, URL, NUMBER_PAD, DECIMAL_PAD, PHONE_PAD;
 
 object KeyboardLayout {
 
-    /** Measured off Gboard (427dp emulator): every row is ten columns, and
-     *  shift, delete, the mode key and enter take one and a half of them. */
+    /** shift, delete and the third row's mode key: one and a half columns. */
     const val SIDE_UNITS = 1.5f
 
     /** What a held key offers after itself: iOS's table, key for key
@@ -67,82 +95,118 @@ object KeyboardLayout {
         "!" to listOf("¡"),
         "?" to listOf("¿"),
         "." to listOf("…"),
+        // The long press on .com, like Apple's.
+        ".com" to listOf(".net", ".org", ".edu", ".io", ".co"),
     )
 
     private fun ch(c: String) = Key(id = c, char = c)
-    /** (10 - two 1.5 side keys) / 5 punctuation keys. */
+    /** (10 - two 1.5 side keys) / 5 punctuation keys, Apple-style stretch. */
     private fun wide(c: String) = Key(id = c, char = c, units = 1.4f)
+    private fun side(id: String, leading: Boolean = false) =
+        Key(id, units = SIDE_UNITS, sideKey = true, gapLeading = leading)
 
     fun rows(mode: Mode, numberRow: Boolean, context: KContext): List<List<Key>> {
-        if (context.isPad) return padRows(context)
+        if (context.isPad) return padRows(context, mode)
         val out = mutableListOf<List<Key>>()
         when (mode) {
             Mode.LETTERS -> {
                 if (numberRow) out.add("1234567890".map { ch(it.toString()) })
                 out.add("qwertyuiop".map { ch(it.toString()) })
                 out.add("asdfghjkl".map { ch(it.toString()) })
-                out.add(listOf(Key("shift", units = SIDE_UNITS)) +
+                out.add(listOf(side("shift")) +
                         "zxcvbnm".map { ch(it.toString()) } +
-                        listOf(Key("delete", units = SIDE_UNITS)))
-                out.add(bottomRow("?123", context))
+                        listOf(side("delete", leading = true)))
+                out.add(bottomRow("123", context))
             }
             Mode.SYMBOLS1 -> {
                 out.add("1234567890".map { ch(it.toString()) })
                 out.add(listOf("-", "/", ":", ";", "(", ")", "$", "&", "@", "\"").map { ch(it) })
-                out.add(listOf(Key("mode:#+=", units = SIDE_UNITS)) +
+                out.add(listOf(side("mode:#+=")) +
                         listOf(".", ",", "?", "!", "'").map { wide(it) } +
-                        listOf(Key("delete", units = SIDE_UNITS)))
+                        listOf(side("delete", leading = true)))
                 out.add(bottomRow("ABC", context))
             }
             Mode.SYMBOLS2 -> {
                 out.add(listOf("[", "]", "{", "}", "#", "%", "^", "*", "+", "=").map { ch(it) })
                 out.add(listOf("_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•").map { ch(it) })
-                out.add(listOf(Key("mode:123", units = SIDE_UNITS)) +
+                out.add(listOf(side("mode:123")) +
                         listOf(".", ",", "?", "!", "'").map { wide(it) } +
-                        listOf(Key("delete", units = SIDE_UNITS)))
+                        listOf(side("delete", leading = true)))
                 out.add(bottomRow("ABC", context))
             }
         }
         return out
     }
 
-    /** Gboard's bottom row, measured on the 427dp emulator: ?123 1.5, the
-     *  field's own key 1, emoji 1, space 4, period 1, enter 1.5. */
+    /** iOS's space row for each field type (KeyboardLayout.swift, measured
+     *  against Apple's keyboard), ten columns:
+     *
+     *      text        123 · emoji · space · return
+     *      email       123 · emoji · space · @ · . · return
+     *      web address 123 · emoji · . · / · .com (sharing what is left) · return
+     *      search bar  123 · emoji · space · . (1) · return (1.75)
+     */
     private fun bottomRow(modeLabel: String, context: KContext): List<Key> {
-        val row = mutableListOf(Key("mode:$modeLabel", units = SIDE_UNITS))
+        val row = mutableListOf(Key("mode:$modeLabel", units = 1.25f), Key("emojikey", units = 1.25f))
+        val dot = Key(".", ".", units = 1.25f)
         when (context) {
-            // Gboard keeps the emoji key in every context, with the field's
-            // own key on the far side of the space bar.
             KContext.EMAIL -> {
-                row.add(ch("@")); row.add(Key("emojikey"))
-                row.add(Key("space", units = -1f)); row.add(ch("."))
+                row.add(Key("space", units = -1f))
+                row.add(Key("@", "@", units = 1.25f))
+                row.add(dot)
             }
             KContext.URL -> {
-                row.add(ch("/")); row.add(Key("emojikey"))
-                row.add(Key("space", units = -1f)); row.add(ch("."))
+                // No space bar: a web address has no spaces.
+                row.add(Key(".", ".", units = -1f))
+                row.add(Key("/", "/", units = -1f))
+                row.add(Key(".com", ".com", units = -1f))
             }
-            else -> {
-                row.add(ch(","))
-                row.add(Key("emojikey"))
+            KContext.WEB_SEARCH -> {
                 row.add(Key("space", units = -1f))
-                row.add(ch("."))
+                row.add(Key(".", ".", units = 1f))
+                row.add(Key("return", units = 1.75f))
+                return row
             }
+            else -> row.add(Key("space", units = -1f))
         }
-        row.add(Key("return", units = SIDE_UNITS))
+        row.add(Key("return", units = 2.5f))
         return row
     }
 
-    private fun padRows(context: KContext): List<List<Key>> {
+    /** The letters under each digit, as on Apple's pads. */
+    private val padLetters = mapOf("2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
+        "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ")
+
+    /** Apple's digit pad for number, phone and decimal fields: three wide
+     *  keys a row, the corner and delete drawn bare. The number pad's corner
+     *  is empty, the decimal pad's is the separator, and the phone pad's
+     *  opens a second page (pause, wait, *, #, +) over greyed digits. */
+    private fun padRows(context: KContext, mode: Mode): List<List<Key>> {
+        fun digit(d: String, disabled: Boolean = false) =
+            Key(d, d, pad = true, subtitle = padLetters[d], disabled = disabled)
+        fun symbol(c: String, title: String? = null) = Key(c, c, pad = true, title = title)
+        val delete = Key("delete", pad = true, bare = true)
+        if (context == KContext.PHONE_PAD && mode != Mode.LETTERS) {
+            return listOf(
+                listOf(digit("1", true), digit("2", true), digit("3", true)),
+                listOf(symbol(",", "pause"), digit("5", true), symbol(";", "wait")),
+                listOf(symbol("*"), digit("8", true), symbol("#")),
+                listOf(Key("mode:123", pad = true, bare = true), symbol("+"), delete),
+            )
+        }
         val corner = when (context) {
-            KContext.DECIMAL_PAD -> ch(".")
-            KContext.PHONE_PAD -> ch("+")
-            else -> Key("space")
+            KContext.DECIMAL_PAD -> {
+                val sep = java.text.DecimalFormatSymbols.getInstance().decimalSeparator.toString()
+                Key(sep, sep, pad = true, bare = true)
+            }
+            KContext.PHONE_PAD -> Key("mode:+*#", pad = true, bare = true)
+            else -> Key("padcorner", "", pad = true, bare = true, disabled = true)
         }
         return listOf(
-            listOf(ch("1"), ch("2"), ch("3")),
-            listOf(ch("4"), ch("5"), ch("6")),
-            listOf(ch("7"), ch("8"), ch("9")),
-            listOf(corner, ch("0"), Key("delete")),
+            listOf(digit("1"), digit("2"), digit("3")),
+            listOf(digit("4"), digit("5"), digit("6")),
+            listOf(digit("7"), digit("8"), digit("9")),
+            listOf(corner, digit("0"), delete),
         )
     }
 }

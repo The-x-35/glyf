@@ -46,28 +46,28 @@
   "area": "Android",
   "title": "A rough message offers Tidy this up",
   "verdict": "pass",
-  "note": "chip 'Tidy this up', versions shown after 1.8s"
+  "note": "chip 'Tidy this up', versions shown after 2.4s"
  },
  {
   "id": "S91",
   "area": "Android",
   "title": "Hold space: pick the Professional version",
   "verdict": "pass",
-  "note": "versions: basic, work, polite, shorter, emoji; inserted 'I will send the deck before 6:00 PM.'"
+  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'I will send the deck before 6.'"
  },
  {
   "id": "S92",
   "area": "Android",
   "title": "Hold space on a place search sends places",
   "verdict": "pass",
-  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/dRtlZh8crkv4'"
+  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/6hw9Ot8jIbpT'"
  },
  {
   "id": "S93",
   "area": "Android",
   "title": "The g button opens the tool menu",
   "verdict": "pass",
-  "note": "tiles: Search, Rewrite, Translate, Vault, Clipboard, Emoji"
+  "note": "tiles: rewrite, calendar, tempmail, gifs, ask, glyfs, pay, games, settings"
  },
  {
   "id": "S94",
@@ -81,7 +81,7 @@
   "area": "Android",
   "title": "Translate as you type, then Replace",
   "verdict": "pass",
-  "note": "strip 'Let's meet tomorrow after the office.', message 'Let's meet tomorrow after the office. '"
+  "note": "strip 'We will meet tomorrow after the office', message 'We will meet tomorrow after the office '"
  },
  {
   "id": "S96",
@@ -116,14 +116,14 @@
   "area": "Android",
   "title": "New Event from the keyboard's calendar lands in the calendar",
   "verdict": "pass",
-  "note": "starts '1:00 PM', hint 'Wed 30 Sep, 1:00–2:00 PM', message '📅 Lunch with sam · Wed 30 Sep, 1:00–2:00 PM'"
+  "note": "starts '1:00 PM', hint 'Fri, Oct 2, 1:00–2:00 PM', message '📅 Lunch with sam · Fri, Oct 2, 1:00–2:00 PM'"
  },
  {
   "id": "S112",
   "area": "Android",
   "title": "A plan in a message offers Add to calendar",
   "verdict": "pass",
-  "note": "chip 'Dinner · Fri 2 Oct 8:00 PM', starts '8:00 PM', message 'dinner friday 8pm'"
+  "note": "chip 'Dinner · Tomorrow 8:00 PM', starts '8:00 PM', message 'dinner friday 8pm'"
  },
  {
   "id": "S117",
@@ -137,35 +137,35 @@
   "area": "Android",
   "title": "Book a time on your own page for someone, with a guest",
   "verdict": "pass",
-  "note": "hint 'Sam lee · sam@example.com · 1 guest'; booked Sam lee <sam@example.com> + ria@example.com; message 'Booked for Tue 29 Sep, 10:00 AM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1'"
+  "note": "hint 'Sam lee · sam@example.com · 1 guest'; booked Sam lee <sam@example.com> + ria@example.com; message 'Booked for Thu, Oct 1, 10:00 AM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1'"
  },
  {
   "id": "S120",
   "area": "Android",
   "title": "Someone's booking page in a message offers Book",
   "verdict": "pass",
-  "note": "chip 'A time on cal.com/sam-lee/intro'; booked on sam-lee/intro as Sim Tester <sim-e2e@example.com>; message 'grab a time cal.com/sam-lee/intro Booked for Tue 29 Sep, 10:00 AM. The invite is on its way to sim-e2e@example.com. Call: https://app.cal.com/video/bk_1'"
+  "note": "chip 'A time on cal.com/sam-lee/intro'; booked on sam-lee/intro as Sim Tester <sim-e2e@example.com>; message 'grab a time cal.com/sam-lee/intro Booked for Fri, Oct 2, 10:00 AM. The invite is on its way to sim-e2e@example.com. Call: https://app.cal.com/video/bk_1'"
  },
  {
   "id": "S125",
   "area": "Android",
   "title": "A Meet link from the calendar, with Google connected",
   "verdict": "pass",
-  "note": "message 'Join me on a call: https://meet.google.com/bax-opkc-yuy'; Meet links made 1"
+  "note": "message 'Join me on a call: https://meet.google.com/beh-onxf-psr'; Meet links made 1"
  },
  {
   "id": "S126",
   "area": "Android",
   "title": "New Event with a guest goes to Google Calendar, which invites them",
   "verdict": "pass",
-  "note": "event 'Review' for sam@example.com, sendUpdates=all; message '📅 Review · Fri 2 Oct, 3:00–4:00 PM · https://meet.google.com/pzr-ydtw-xdp'"
+  "note": "event 'Review' for sam@example.com, sendUpdates=all; message '📅 Review · Fri, Oct 2, 3:00–4:00 PM · https://meet.google.com/knh-frrr-qso'"
  },
  {
   "id": "S127",
   "area": "Android",
   "title": "Without Google, New Event goes into the message",
   "verdict": "pass",
-  "note": "message '📅 Lunch with sam · Wed 30 Sep, 1:00–2:00 PM'"
+  "note": "message '📅 Lunch with sam · Fri, Oct 2, 1:00–2:00 PM'"
  },
  {
   "id": "S137",
@@ -179,7 +179,7 @@
   "area": "Android",
   "title": "A key held for a Meet link",
   "verdict": "pass",
-  "note": "message 'Join me on a call: https://meet.google.com/nhe-muur-tpv'"
+  "note": "message 'Join me on a call: https://meet.google.com/oqy-affw-tsx'"
  },
  {
   "id": "S97",
@@ -200,7 +200,7 @@
   "area": "Android",
   "title": "Dark mode keys are dark, light mode keys are light",
   "verdict": "pass",
-  "note": "key face 0.21 dark, 1.00 light"
+  "note": "key face 0.25 dark, 1.00 light"
  },
  {
   "id": "S130",
@@ -228,21 +228,21 @@
   "area": "Android",
   "title": "$sol shows SOL's price, never your wallet",
   "verdict": "pass",
-  "note": "strip: '1 SOL = $119.72'"
+  "note": "strip: '1 SOL = $118.21'"
  },
  {
   "id": "S165",
   "area": "Android",
   "title": "$appl shows Apple's price as AAPL",
   "verdict": "pass",
-  "note": "strip: '1 AAPL = $339.78'"
+  "note": "strip: '1 AAPL = $336.74'"
  },
  {
   "id": "S166",
   "area": "Android",
   "title": "Search never changes the keyboard's height",
   "verdict": "pass",
-  "note": "q key y 2074 → 2074 → 2074; search row y 1748 → 1748 (results)"
+  "note": "q key y 2106 → 2106 → 2106; search row y 1836 → 1836 (results)"
  },
  {
   "id": "S167",
@@ -256,7 +256,7 @@
   "area": "Android",
   "title": "Hold space on 2+5: the answer is there at once, worked out on the phone",
   "verdict": "pass",
-  "note": "'2+5 = 7', answer up 1669 ms after the hold began"
+  "note": "'2+5 = 7', answer up 1799 ms after the hold began"
  },
  {
   "id": "S190",
@@ -264,5 +264,82 @@
   "title": "A correction slid away and typed again stays as typed, and is learned",
   "verdict": "pass",
   "note": "'so hello ' → slid to 'so ' → typed again 'so helloo ' → next time 'helloo '"
+ },
+ {
+  "id": "S199",
+  "area": "Android",
+  "title": "The g menu holds only what the strip doesn't, and GIFs opens the GIF tab",
+  "verdict": "pass",
+  "note": "strip: search, translate, vault, clipboard, dictation; menu: rewrite, calendar, tempmail, gifs, ask, glyfs, pay, games, settings; GIFs opens the GIF tab with GIFs"
+ },
+ {
+  "id": "S200",
+  "area": "Android",
+  "title": "My glyfs shows what each key holds, and there is no Keys tile",
+  "verdict": "pass",
+  "note": "keys held: C=connector:calendar, V=surface:vault; rows with Hold X: C, V; unbound glyf after them: true; Keys tile: false; tapping Hold V opened the vault"
+ },
+ {
+  "id": "S201",
+  "area": "Android",
+  "title": "The vault shows shorthand, and an email added from the keys is offered for 'my email is'",
+  "verdict": "pass",
+  "note": "shorthand card between details and notes: true; tapped it: 'Shorthand from the vault'; +: hidden until tapped true, then 'New note, New detail, New shorthand' with the + as Close, put away by the × true and by the cards true; kinds: Name, Email, Phone, Address, Wallet address, Link, Other; strip read 'qa.keys@example.com'; saved card: in view; chip offered it: true; 'Sure my email is qa.keys@example.com'"
+ },
+ {
+  "id": "S202",
+  "area": "Android",
+  "title": "A shorthand added from the keys expands when typed",
+  "verdict": "pass",
+  "note": "strip started ';', shortcut ';qazz', card in the vault: true; typed 'ok ;qazz ' → 'Ok See you soon '"
+ },
+ {
+  "id": "S209",
+  "area": "Android",
+  "title": "A sum shows its answer in the strip as it is typed, no hold",
+  "verdict": "pass",
+  "note": "2+5 → 2+5 = 7 Insert; 12*12 → 12*12 = 144 Insert; 100-15% → 100-15% = 85 Insert; 150-45 → 150-45 = 105 Insert; 24/7 → 24/7 = 3.43 Insert; 2-3 → 2-3 = -1 Insert; 2x3 → 2x3 = 6 Insert; 5>3 → 5>3 = true Insert"
+ },
+ {
+  "id": "S210",
+  "area": "Android",
+  "title": "A phone number, a date or a count shows no sum",
+  "verdict": "pass",
+  "note": "call me at 555-1234 → no chip; born 29/09/2024 → no chip; page 2 of 10 → no chip"
+ },
+ {
+  "id": "S213",
+  "area": "Android",
+  "title": "A question offers AI answer in the strip, and a tap answers it",
+  "verdict": "pass",
+  "note": "chip 'AI answer' → 'A polynomial is a mathematical expression consisting of variables and coefficients that involves only the operations of '"
+ },
+ {
+  "id": "S215",
+  "area": "Android",
+  "title": "A chip's ✕ waves it off for those words, a new sum brings one back, and Insert never dismisses",
+  "verdict": "pass",
+  "note": "✕ 108x108px; after it: chip gone true, strip shows tools, text '2+5'; typed 0 → '2+50 = 52 Insert'; Insert → '2+50 = 52'"
+ },
+ {
+  "id": "S216",
+  "area": "Android",
+  "title": "Temp mail: the g menu makes an address, and Insert types it",
+  "verdict": "pass",
+  "note": "address made, 'Watching · 14:59 left', 'via mail.tm'; Insert typed 'swift2a0218@glyf-temp.example'"
+ },
+ {
+  "id": "S217",
+  "area": "Android",
+  "title": "Temp mail: a code that arrives shows on the strip, and Insert types just the code",
+  "verdict": "pass",
+  "note": "strip '482913 · Acme Insert' after 8.9s; Insert typed '482913'"
+ },
+ {
+  "id": "S218",
+  "area": "Android",
+  "title": "Temp mail: the inbox lists the mail, opening it shows its text and code, and Delete ends the address",
+  "verdict": "pass",
+  "note": "row 'Acme | now | Your Acme code | 482913  Insert', pill '482913  Insert'; opened: code '482913', text 'Your verification code is 482913.'; after Delete: Create address"
  }
 ]

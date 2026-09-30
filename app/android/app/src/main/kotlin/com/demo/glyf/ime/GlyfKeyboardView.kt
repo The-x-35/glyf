@@ -73,6 +73,10 @@ class GlyfKeyboardView(
     var keyBorders = false
     var themeDim = 0f
     var bindings: Map<String, String> = emptyMap()
+    /** The field's return action (EditorInfo IME_ACTION_*), or 0 for a plain
+     *  return: go, search, send and done draw iOS's blue key. */
+    var returnAction = 0
+        set(value) { field = value; invalidate() }
 
     /** Solid keys with a hard bottom edge: the website look and every colour
      *  theme, which are the same keyboard in another colour (mirrors
@@ -120,6 +124,25 @@ class GlyfKeyboardView(
                     card = if (light) Color.WHITE else blend(board, Color.WHITE, 0.065f),
                     darkChrome = !light,
                 )
+            }
+
+            /**
+             * iOS's keyboard on the system sheet (GlassTokens.swift), the
+             * default look on both phones (Arpit, 2026-09-30: "i need it
+             * similar in everything as a brand identity it is"): the sheet
+             * #E2E4E8 with white keys in light, #1B1B1D with #404041 keys in
+             * dark, every key one colour (iOS 26's), black or white glyphs,
+             * a press darkened 14% towards the glyph, and no edge under them.
+             */
+            fun ios(dark: Boolean): KeyPalette {
+                val board = if (dark) Color.rgb(0x1B, 0x1B, 0x1D) else Color.rgb(0xE2, 0xE4, 0xE8)
+                val key = if (dark) Color.rgb(0x40, 0x40, 0x41) else Color.WHITE
+                val ink = if (dark) Color.WHITE else Color.BLACK
+                val pressed = blend(key, ink, 0.14f)
+                return KeyPalette(board = board, key = key, keyPressed = pressed,
+                    fn = key, fnPressed = pressed, ink = ink,
+                    inkSoft = blend(ink, board, if (dark) 0.40f else 0.42f),
+                    edge = Color.TRANSPARENT, card = key, darkChrome = dark)
             }
 
             /**
@@ -191,10 +214,10 @@ class GlyfKeyboardView(
     fun palette(): KeyPalette {
         val cacheKey = "$themeBg|$isDark|$keyTheme|$themeDim"
         paletteCache?.let { if (it.first == cacheKey) return it.second }
-        // The default look on Android 12+ is Gboard's: the phone's own colours.
-        // Picked colour themes are still built from their seed.
-        val made = if (keyTheme == "site" && themeBg.isEmpty() && Build.VERSION.SDK_INT >= 31)
-            KeyPalette.gboardDefault(context, isDark)
+        // The default look is iOS's keyboard (it was Gboard's, the phone's
+        // own colours, until 2026-09-30). Picked colour themes are still
+        // built from their seed.
+        val made = if (keyTheme == "site" && themeBg.isEmpty()) KeyPalette.ios(isDark)
         else KeyPalette.fromBoard(paletteSeed())
         paletteCache = cacheKey to made
         return made
@@ -381,22 +404,24 @@ class GlyfKeyboardView(
         else -> Color.argb(20, 0, 0, 0)
     }
 
+    /** The board. The Glass look's translucent keys sit on the sheet iOS
+     *  draws under every keyboard, #E2E4E8 / #1B1B1D, as they do there. */
     fun backdrop(): Int =
         if (solidLook) palette().board
-        else if (isDark) Color.rgb(28, 28, 30) else Color.rgb(209, 212, 217)
+        else if (isDark) Color.rgb(0x1B, 0x1B, 0x1D) else Color.rgb(0xE2, 0xE4, 0xE8)
 
     // MARK: measurement + drawing
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         val w = MeasureSpec.getSize(widthSpec)
-        // Gboard's rows are 59dp, not the iPhone's 54 — measured on a 427dp
-        // emulator: four rows of keys are 236dp there. With the number row
-        // on, every page is that tall, so ?123 and ABC never change the
-        // keyboard's height (the symbols' four rows share it); a digit pad
-        // keeps its four rows whatever the setting (iOS keysHeight).
-        val pitch = if (sideways) LANDSCAPE_ROW_PITCH else ROW_PITCH
-        val rowsH = dp(if (numberRow && !kContext.isPad) pitch * 5 else pitch * 4)
-        setMeasuredDimension(w, rowsH.toInt())
+        // iOS's key region (KeyMetrics): four rows of 54, or 56 on a phone
+        // 414 wide or more, 42 more with the number row (every page shares
+        // it, so 123 and ABC never change the height), and four 40 rows on
+        // a phone on its side. A digit pad keeps its four rows.
+        val numbers = numberRow && !kContext.isPad
+        val rowsH = if (sideways) 160f + (if (numbers) 32f else 0f)
+                    else rowPitchDp(w) * 4 + (if (numbers) 42f else 0f)
+        setMeasuredDimension(w, dp(rowsH).toInt())
     }
 
     /** Where every key goes for the current rows and size. Drawing and
@@ -408,40 +433,49 @@ class GlyfKeyboardView(
                 it.smallestScreenWidthDp < 600
         }
 
+    /** iOS's row pitch for a view [w] px wide: 56 on Plus/Max-class widths. */
+    private fun rowPitchDp(w: Int) = if (w / density >= 414f) 56f else 54f
+
     private fun layoutKeys() {
         keyRects.clear()
         keyRowOf.clear()
         if (rows.isEmpty()) rows = KeyboardLayout.rows(mode, numberRow && mode == Mode.LETTERS, kContext)
         if (rows.isEmpty() || width == 0 || height == 0) return
         keysDirty = false
-        val hGap = dp(6f)
-        val vGap = dp(if (sideways) 8f else 12f)
-        val side = dp(5f)   // Gboard's margin
-        val availW = width - side * 2
+        // iOS's grid (KeyboardLayout.frames): Apple's constant margins and
+        // gaps, ten columns (three on a pad), keys with units < 0 sharing
+        // what the fixed ones leave.
         val isPad = kContext.isPad
-        // Ten columns across the row, exactly as Gboard lays them out: a key
-        // is its share of the pitch minus one gap, so 1.5-column keys come
-        // out 57dp wide instead of 54.
+        val hGap = dp(if (isPad) 6.5f else 6f)
+        val margin = dp(if (isPad) 5.5f else 6.5f)
+        val availW = width - margin * 2
         val columns = if (isPad) 3f else 10f
-        val padInset = if (isPad) dp(80f) else 0f
-        val pitch = (availW - padInset + hGap) / columns
+        val pitch = (availW + hGap) / columns
+        val unitW = pitch - hGap
         val rowH = height / rows.size.toFloat()
-        val keyH = min(rowH - vGap, if (isPad) dp(52f) else Float.MAX_VALUE)
+        // Short rows (a phone on its side) close the gap up.
+        val vGap = if (rowH / density < 45f) dp(8f) else dp(11f)
+        val keyH = if (isPad) min(rowH, dp(rowPitchDp(width))) - dp(6f) else rowH - vGap
+        val gapV = rowH - keyH
         keyPitchPx = pitch
         rowPitchPx = rowH
 
         rows.forEachIndexed { r, row ->
             val fixedUnits = row.filter { it.units > 0 }.sumOf { it.units.toDouble() }.toFloat()
-            val hasFlex = row.any { it.units < 0 }
-            val flexUnits = maxOf(1f, columns - fixedUnits)
-            val rowUnits = if (hasFlex) columns else fixedUnits
+            val flexCount = row.count { it.units < 0 }
+            val flexUnits = if (flexCount > 0) maxOf(1f, columns - fixedUnits) / flexCount else 0f
+            val rowUnits = if (flexCount > 0) columns else fixedUnits
             val rowW = rowUnits * pitch - hGap
-            var x = side + (availW - rowW) / 2f
-            val y = r * rowH + vGap / 2f
+            var x = margin + (availW - rowW) / 2f
+            val y = r * rowH + gapV / 2f
             for (key in row) {
                 val units = if (key.units < 0) flexUnits else key.units
-                val w = units * pitch - hGap
-                keyRects.add(key to RectF(x, y, x + w, y + keyH))
+                val block = units * pitch - hGap
+                // shift, delete and the mode key sit at 1.35 letters, which
+                // leaves the wider gap iOS draws beside them.
+                val w = if (key.sideKey) unitW * 1.35f else block
+                val left = if (key.gapLeading) x + block - w else x
+                keyRects.add(key to RectF(left, y, left + w, y + keyH))
                 keyRowOf.add(r)
                 x += units * pitch
             }
@@ -471,22 +505,35 @@ class GlyfKeyboardView(
         return best
     }
 
+    /** iOS's blue return: the field's action is go, search, send or done. */
+    private val primaryReturn get() = returnAction == android.view.inputmethod.EditorInfo.IME_ACTION_GO ||
+        returnAction == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH ||
+        returnAction == android.view.inputmethod.EditorInfo.IME_ACTION_SEND ||
+        returnAction == android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+
+    /** The iOS look: flat keys of one colour, no edge under them. */
+    private val iosLook get() = keyTheme == "site" && themeBg.isEmpty()
+
     override fun onDraw(canvas: Canvas) {
         val keys = placed()
-        val isPad = kContext.isPad
-        // Gboard's keys: 6dp corners, and ?123 and enter as pills.
-        val radius = dp(6f)
-        val lastRowIndex = keyRowOf.lastOrNull() ?: 0
+        // iOS's keys: 9.5 corners on every key (Glass.radiusKey).
+        val radius = dp(9.5f)
 
         for ((i, placedKey) in keys.withIndex()) {
             val (key, rect) = placedKey
-            val lastRow = keyRowOf[i] == lastRowIndex && !isPad
-            val pill = lastRow && (key.id == "return" || key.id.startsWith("mode:"))
-            val radius = if (pill) rect.height() / 2f else radius
-
             val isPressed = pressed?.id == key.id && pressedRect == rect
+            if (key.bare) {
+                // Apple's pad function keys have no cap; a press shows one.
+                if (isPressed && !key.disabled) {
+                    keyPaint.color = keyFill(false)
+                    canvas.drawRoundRect(rect, radius, radius, keyPaint)
+                }
+                if (!trackpadLook) drawFace(canvas, key, rect)
+                continue
+            }
             val bound = key.char != null && bindings.containsKey(key.char)
             val glowKey = keyTheme == "glow" && bound && !isPressed && themeBg.isEmpty()
+            val blue = key.id == "return" && primaryReturn
             // GPU-painted shadow: offset round-rect (the crisp 1dp iOS
             // drop). Glow keys get a soft accent halo from two stacked
             // translucent rects — no blur layers, no CPU rendering.
@@ -501,23 +548,27 @@ class GlyfKeyboardView(
                 canvas.drawRoundRect(halo1, radius, radius, shadowPaint)
                 keyPaint.color = if (isDark) Color.rgb(92, 87, 122)
                                  else Color.rgb(246, 244, 255)
+            } else if (blue) {
+                // Apple's #007AFF (#0A84FF dark), 18% darker pressed.
+                val base = if (isDark) Color.rgb(10, 132, 255) else Color.rgb(0, 122, 255)
+                keyPaint.color = if (isPressed) KeyPalette.blend(base, Color.BLACK, 0.18f) else base
             } else {
-                // The website draws a hard 2dp edge under each key, not a
-                // blur: an offset round-rect in the palette's edge colour.
-                // Gboard's roles: the emoji key wears the letter colour,
-                // the bottom row's punctuation wears the function colour.
-                val fn = solidLook && when {
+                // iOS 26: every key one colour, flat. Other looks keep the
+                // website's hard 2dp edge under each key.
+                val fn = !iosLook && solidLook && when {
                     key.id == "emojikey" || key.id == "space" -> false
-                    key.char != null -> lastRow
+                    key.char != null -> false
                     else -> true
                 }
-                val lift = if (solidLook) dp(2f) else dp(1f)
-                shadowPaint.color =
-                    if (solidLook) palette().edge
-                    else Color.argb(if (keyTheme == "glass") 26 else 56, 0, 0, 0)
-                val drop = RectF(rect.left, rect.top + lift,
-                    rect.right, rect.bottom + lift)
-                canvas.drawRoundRect(drop, radius, radius, shadowPaint)
+                if (!iosLook) {
+                    val lift = if (solidLook) dp(2f) else dp(1f)
+                    shadowPaint.color =
+                        if (solidLook) palette().edge
+                        else Color.argb(if (keyTheme == "glass") 26 else 56, 0, 0, 0)
+                    val drop = RectF(rect.left, rect.top + lift,
+                        rect.right, rect.bottom + lift)
+                    canvas.drawRoundRect(drop, radius, radius, shadowPaint)
+                }
                 keyPaint.color = keyFill(isPressed, fn)
             }
             canvas.drawRoundRect(rect, radius, radius, keyPaint)
@@ -549,21 +600,25 @@ class GlyfKeyboardView(
         }
 
         chargeRect?.let { rect ->
-            // 1.18× → 1× over the hold, fading in fast; stays closed once armed.
-            val scale = 1.18f - 0.18f * chargeProgress
-            val hw = rect.width() * scale / 2f
-            val hh = rect.height() * scale / 2f
+            // 1.18× → 1× over the hold, fading in fast; stays closed once
+            // armed. A wide key (the space bar) starts as far outside itself
+            // as a letter does, not 18% of its width past each end (iOS).
+            val out = 0.18f * (1f - chargeProgress)
+            val sx = 1f + out * min(1f, dp(40f) / maxOf(rect.width(), 1f))
+            val sy = 1f + out
+            val hw = rect.width() * sx / 2f
+            val hh = rect.height() * sy / 2f
             ringPaint.strokeWidth = dp(2f)
             ringPaint.alpha = (255 * min(1f, chargeProgress * 4f)).toInt()
             canvas.drawRoundRect(
                 RectF(rect.centerX() - hw, rect.centerY() - hh, rect.centerX() + hw, rect.centerY() + hh),
-                radius * scale, radius * scale, ringPaint)
+                radius * sx, radius * sy, ringPaint)
         }
 
         // Press preview balloon (chars only).
         val p = pressed
         val pr = pressedRect
-        if (p?.char != null && pr != null && !longPressFired && !trackpadLook) {
+        if (p?.char != null && p.char.length == 1 && !p.pad && pr != null && !longPressFired && !trackpadLook) {
             val bw = pr.width() * 1.55f
             val bh = pr.height() * 1.3f
             var bx = pr.centerX() - bw / 2
@@ -626,12 +681,23 @@ class GlyfKeyboardView(
     }
 
     private fun drawFace(canvas: Canvas, key: Key, rect: RectF) {
-        textPaint.color = ink()
+        // Greyed: the phone pad's digits behind +*#, as Apple draws them.
+        val ink = if (key.disabled) withAlpha(ink(), 0.35f) else ink()
+        textPaint.color = ink
+        textPaint.letterSpacing = 0f
         when (key.id) {
             "shift" -> { drawShift(canvas, rect); return }
             "return" -> { drawReturn(canvas, rect); return }
+            "delete" -> { drawDelete(canvas, rect, big = key.pad); return }
+            "emojikey" -> { drawSmiley(canvas, rect); return }
         }
+        if (key.pad) { drawPadFace(canvas, key, rect, ink); return }
         val label: String = when {
+            key.char != null && key.char.length > 1 -> {
+                // ".com": Apple sets it like a word, never in capitals.
+                textPaint.textSize = dp(17f)
+                key.char
+            }
             key.char != null -> {
                 // Same optical size as the iOS build (a letter fills about
                 // half the key's height), so the two keyboards are twins —
@@ -641,36 +707,67 @@ class GlyfKeyboardView(
                 display(key)
             }
             key.id == "space" -> {
-                // The brand watermark must read on EVERY theme (§5) — keyed
-                // to chrome darkness, not just system dark mode.
+                // The "glyf" watermark: the key's glyph colour at 40%.
                 textPaint.textSize = dp(13.5f)
-                textPaint.color = if (chromeDark) Color.argb(150, 255, 255, 255)
-                                  else Color.argb(105, 40, 40, 46)
+                textPaint.color = withAlpha(ink(), 0.40f)
                 "glyf"
             }
-            key.id == "delete" -> { textPaint.textSize = dp(18f); "⌫" }
-            key.id == "emojikey" -> { drawSmiley(canvas, rect); return }
             key.id.startsWith("mode:") -> {
-                textPaint.textSize = dp(15f)
-                key.id.removePrefix("mode:")
+                // Apple's "123" and "ABC" at 18pt, "#+=" at 13pt.
+                val m = key.id.removePrefix("mode:")
+                textPaint.textSize = dp(if (m == "#+=") 12f else 16f)
+                m
             }
             else -> ""
         }
         canvas.drawText(label, rect.centerX(),
             rect.centerY() + textPaint.textSize * 0.36f, textPaint)
-        // Gboard's number hints on the top row: the digit a hold types. Keys
-        // that hold a glyf show their dot instead, and keep their hold.
-        val digit = holdDigit(key)
-        if (digit != null) {
-            val size = textPaint.textSize
-            textPaint.textSize = dp(10.5f)
-            textPaint.color = Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink()))
-            canvas.drawText(digit, rect.right - dp(7f), rect.top + dp(13f), textPaint)
-            textPaint.textSize = size
+    }
+
+    /** Apple's pad faces: digits with their letters under them, the
+     *  phone pad's symbols, "pause" and "wait", and its +*# and 123. */
+    private fun drawPadFace(canvas: Canvas, key: Key, rect: RectF, ink: Int) {
+        val c = key.char
+        val title = key.title
+        when {
+            key.id.startsWith("mode:") -> {
+                val m = key.id.removePrefix("mode:")
+                textPaint.textSize = dp(if (m == "+*#") 20.5f else 19f)
+                if (m == "+*#") textPaint.letterSpacing = 0.14f
+                canvas.drawText(m, rect.centerX(), rect.centerY() + dp(6f) * 0.9f, textPaint)
+                textPaint.letterSpacing = 0f
+            }
+            title != null -> {
+                textPaint.textSize = dp(15f)
+                canvas.drawText(title, rect.centerX(), rect.centerY() + textPaint.textSize * 0.36f, textPaint)
+            }
+            c != null && c.length == 1 && c[0].isDigit() -> {
+                textPaint.textSize = dp(20f)
+                val sub = key.subtitle
+                // Apple: a digit's baseline 2.7 below the middle, its letters 18 below.
+                canvas.drawText(c, rect.centerX(), rect.centerY() + dp(2.5f), textPaint)
+                if (sub != null) {
+                    textPaint.textSize = dp(8.5f)
+                    textPaint.typeface = Glass.font(context, Glass.SEMIBOLD)
+                    textPaint.letterSpacing = 0.22f
+                    canvas.drawText(sub, rect.centerX(), rect.centerY() + dp(16f), textPaint)
+                    textPaint.letterSpacing = 0f
+                    textPaint.typeface = interFace(context)
+                }
+            }
+            c != null && c.isNotEmpty() -> {
+                // "*", "#" and "+" at 30pt, a separator a little higher.
+                textPaint.textSize = dp(if (c in listOf("*", "#", "+")) 27f else 20f)
+                canvas.drawText(c, rect.centerX(), rect.centerY() + textPaint.textSize * 0.36f, textPaint)
+            }
         }
     }
 
-    /** The digit a held top-row letter types, or null. */
+    private fun withAlpha(c: Int, a: Float) =
+        Color.argb((a * 255).toInt(), Color.red(c), Color.green(c), Color.blue(c))
+
+    /** The digit a held top-row letter types, or null. Nothing is drawn for
+     *  it (iOS shows no hints); the hold still types it. */
     private fun holdDigit(key: Key): String? {
         if (mode != Mode.LETTERS || numberRow) return null
         val c = key.char ?: return null
@@ -679,58 +776,121 @@ class GlyfKeyboardView(
         return if (i < 0) null else ((i + 1) % 10).toString()
     }
 
-    /** Outline smiley — the emoji glyph can't tint with themes. */
+    /** SF face.smiling at iOS's size, outline, in the glyph colour. */
     private fun drawSmiley(canvas: Canvas, rect: RectF) {
         glyphPaint.color = ink()
         glyphPaint.style = Paint.Style.STROKE
-        glyphPaint.strokeWidth = dp(1.5f)
+        glyphPaint.strokeWidth = dp(1.35f)
         val cx = rect.centerX(); val cy = rect.centerY()
-        canvas.drawCircle(cx, cy, dp(7f), glyphPaint)
+        canvas.drawCircle(cx, cy, dp(8.6f), glyphPaint)
         val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ink() }
-        canvas.drawCircle(cx - dp(2.6f), cy - dp(2f), dp(1f), dot)
-        canvas.drawCircle(cx + dp(2.6f), cy - dp(2f), dp(1f), dot)
-        canvas.drawArc(cx - dp(3.6f), cy - dp(1.5f), cx + dp(3.6f), cy + dp(4.4f),
-            25f, 130f, false, glyphPaint)
+        canvas.drawOval(RectF(cx - dp(3.9f), cy - dp(3.6f), cx - dp(2.3f), cy - dp(0.9f)), dot)
+        canvas.drawOval(RectF(cx + dp(2.3f), cy - dp(3.6f), cx + dp(3.9f), cy - dp(0.9f)), dot)
+        canvas.drawArc(cx - dp(4.4f), cy - dp(1.6f), cx + dp(4.4f), cy + dp(5f),
+            20f, 140f, false, glyphPaint)
     }
 
-    /** Apple-weight shift arrow: outline normally, filled while shifted. */
+    /** SF shift (light): an outlined arrow, filled while shifted. */
     private fun drawShift(canvas: Canvas, rect: RectF) {
         val cx = rect.centerX(); val cy = rect.centerY()
         val w = dp(9f); val stem = dp(4f)
         val path = android.graphics.Path().apply {
-            moveTo(cx, cy - dp(7f))            // apex
+            moveTo(cx, cy - dp(7.5f))            // apex
             lineTo(cx + w, cy + dp(1f))
             lineTo(cx + stem, cy + dp(1f))
-            lineTo(cx + stem, cy + dp(7f))
-            lineTo(cx - stem, cy + dp(7f))
+            lineTo(cx + stem, cy + dp(7.5f))
+            lineTo(cx - stem, cy + dp(7.5f))
             lineTo(cx - stem, cy + dp(1f))
             lineTo(cx - w, cy + dp(1f))
             close()
         }
         glyphPaint.color = ink()
-        glyphPaint.strokeWidth = dp(1.4f)
+        glyphPaint.strokeWidth = dp(1.3f)
         glyphPaint.style = if (shifted) Paint.Style.FILL_AND_STROKE else Paint.Style.STROKE
         canvas.drawPath(path, glyphPaint)
     }
 
-    /** Return: down-then-left hooked arrow, stroke-drawn. */
-    private fun drawReturn(canvas: Canvas, rect: RectF) {
-        val cx = rect.centerX(); val cy = rect.centerY()
+    /** SF delete.left (light): a tag pointing left with a cross in it;
+     *  Apple's pads draw a bigger one. */
+    private fun drawDelete(canvas: Canvas, rect: RectF, big: Boolean) {
+        val k = if (big) 1.2f else 1f
+        val cx = rect.centerX() + dp(0.5f) * k; val cy = rect.centerY()
+        val path = android.graphics.Path().apply {
+            moveTo(cx - dp(10.5f) * k, cy)
+            lineTo(cx - dp(5f) * k, cy - dp(7.5f) * k)
+            lineTo(cx + dp(9f) * k, cy - dp(7.5f) * k)
+            quadTo(cx + dp(10.5f) * k, cy - dp(7.5f) * k, cx + dp(10.5f) * k, cy - dp(6f) * k)
+            lineTo(cx + dp(10.5f) * k, cy + dp(6f) * k)
+            quadTo(cx + dp(10.5f) * k, cy + dp(7.5f) * k, cx + dp(9f) * k, cy + dp(7.5f) * k)
+            lineTo(cx - dp(5f) * k, cy + dp(7.5f) * k)
+            close()
+        }
         glyphPaint.color = ink()
         glyphPaint.style = Paint.Style.STROKE
-        glyphPaint.strokeWidth = dp(1.7f)
-        val path = android.graphics.Path().apply {
-            moveTo(cx + dp(6f), cy - dp(6f))
-            lineTo(cx + dp(6f), cy + dp(3f))
-            lineTo(cx - dp(6f), cy + dp(3f))
-        }
+        glyphPaint.strokeWidth = dp(1.3f)
         canvas.drawPath(path, glyphPaint)
-        val head = android.graphics.Path().apply {
-            moveTo(cx - dp(2.5f), cy - dp(0.5f))
-            lineTo(cx - dp(6f), cy + dp(3f))
-            lineTo(cx - dp(2.5f), cy + dp(6.5f))
+        val x0 = cx + dp(0.4f) * k; val r = dp(3.1f) * k
+        canvas.drawLine(x0 - r, cy - r, x0 + r, cy + r, glyphPaint)
+        canvas.drawLine(x0 + r, cy - r, x0 - r, cy + r, glyphPaint)
+    }
+
+    /** Return, as iOS draws it for the field: its ⏎ glyph, or on the blue
+     *  key a white arrow (go), magnifier (search), up arrow (send) or
+     *  check (done); a chevron for next. */
+    private fun drawReturn(canvas: Canvas, rect: RectF) {
+        val cx = rect.centerX(); val cy = rect.centerY()
+        glyphPaint.style = Paint.Style.STROKE
+        glyphPaint.color = if (primaryReturn) Color.WHITE else ink()
+        when (returnAction) {
+            android.view.inputmethod.EditorInfo.IME_ACTION_GO -> {
+                glyphPaint.strokeWidth = dp(1.9f)
+                canvas.drawLine(cx - dp(7.5f), cy, cx + dp(7.5f), cy, glyphPaint)
+                canvas.drawLine(cx + dp(7.5f), cy, cx + dp(1.8f), cy - dp(5.8f), glyphPaint)
+                canvas.drawLine(cx + dp(7.5f), cy, cx + dp(1.8f), cy + dp(5.8f), glyphPaint)
+            }
+            android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH -> {
+                glyphPaint.strokeWidth = dp(1.6f)
+                canvas.drawCircle(cx - dp(1.5f), cy - dp(1.5f), dp(6f), glyphPaint)
+                canvas.drawLine(cx + dp(3f), cy + dp(3f), cx + dp(7.8f), cy + dp(7.8f), glyphPaint)
+            }
+            android.view.inputmethod.EditorInfo.IME_ACTION_SEND -> {
+                glyphPaint.strokeWidth = dp(1.9f)
+                canvas.drawLine(cx, cy + dp(7.5f), cx, cy - dp(7.5f), glyphPaint)
+                canvas.drawLine(cx, cy - dp(7.5f), cx - dp(5.8f), cy - dp(1.8f), glyphPaint)
+                canvas.drawLine(cx, cy - dp(7.5f), cx + dp(5.8f), cy - dp(1.8f), glyphPaint)
+            }
+            android.view.inputmethod.EditorInfo.IME_ACTION_DONE -> {
+                glyphPaint.strokeWidth = dp(1.9f)
+                val tick = android.graphics.Path().apply {
+                    moveTo(cx - dp(6.8f), cy + dp(0.4f))
+                    lineTo(cx - dp(2.2f), cy + dp(5.2f))
+                    lineTo(cx + dp(7f), cy - dp(5.6f))
+                }
+                canvas.drawPath(tick, glyphPaint)
+            }
+            android.view.inputmethod.EditorInfo.IME_ACTION_NEXT -> {
+                glyphPaint.strokeWidth = dp(1.4f)
+                canvas.drawLine(cx - dp(2.8f), cy - dp(7.5f), cx + dp(3.6f), cy, glyphPaint)
+                canvas.drawLine(cx + dp(3.6f), cy, cx - dp(2.8f), cy + dp(7.5f), glyphPaint)
+            }
+            else -> {
+                // SF return (light): down from the top right, then left to an arrowhead.
+                glyphPaint.strokeWidth = dp(1.3f)
+                val path = android.graphics.Path().apply {
+                    moveTo(cx + dp(8f), cy - dp(6.5f))
+                    lineTo(cx + dp(8f), cy + dp(1.5f))
+                    quadTo(cx + dp(8f), cy + dp(3.5f), cx + dp(6f), cy + dp(3.5f))
+                    lineTo(cx - dp(8f), cy + dp(3.5f))
+                }
+                canvas.drawPath(path, glyphPaint)
+                val head = android.graphics.Path().apply {
+                    moveTo(cx - dp(4f), cy - dp(0.5f))
+                    lineTo(cx - dp(8f), cy + dp(3.5f))
+                    lineTo(cx - dp(4f), cy + dp(7.5f))
+                }
+                canvas.drawPath(head, glyphPaint)
+            }
         }
-        canvas.drawPath(head, glyphPaint)
     }
 
     // MARK: touch
@@ -798,6 +958,9 @@ class GlyfKeyboardView(
 
     private fun touchDown(x: Float, y: Float, time: Long) {
         val (key, rect) = keyAt(x, y) ?: return
+        // A greyed key (the number pad's empty corner, the digits behind the
+        // phone pad's symbols) takes no touch at all.
+        if (key.disabled) return
         pressed = key
         pressedRect = rect
         downX = x
@@ -809,9 +972,11 @@ class GlyfKeyboardView(
         if (key.id == "space") {
             val gesture = SpaceGesture(x / density, y / density, time)
             spaceGesture = gesture
-            // Held back 100ms so an ordinary tap never flashes the ring;
-            // it closes exactly when the AI launches.
-            startCharge(rect, SpaceGesture.HOLD_MS - 100, delayMs = 100)
+            // The same purple ring a glyf key shows, from the first moment
+            // (Arpit, 2026-09-30: "the space bar should also have that purple
+            // thing on pressing like other glyf keys"); it closes exactly
+            // when the AI launches.
+            startCharge(rect, SpaceGesture.HOLD_MS)
             handler2.postDelayed({ perform(gesture.holdElapsed()) }, SpaceGesture.HOLD_MS)
             invalidate()
             return

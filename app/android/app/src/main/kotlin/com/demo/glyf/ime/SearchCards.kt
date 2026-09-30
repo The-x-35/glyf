@@ -205,10 +205,35 @@ object SearchCards {
         val dark: Boolean = false,
     )
 
+    /** iOS's row heights less the 4dp above and below each card. */
+    fun height(kind: String): Int = when (kind) {
+        "query" -> 50
+        "answer" -> 96
+        "video" -> 74
+        "place" -> 70
+        else -> 58
+    }
+
     private fun rounded(colour: Int, radiusPx: Int) = GradientDrawable().apply {
         cornerRadius = radiusPx.toFloat()
         setColor(colour)
     }
+
+    /** The site's .ss-card, as iOS draws it: the key colour, 15 corners, a
+     *  1pt hairline border. */
+    private fun cardFace(ctx: Context, t: Theme) = GradientDrawable().apply {
+        cornerRadius = t.dp(15).toFloat()
+        setColor(t.card)
+        setStroke(maxOf(1, t.dp(1)), Glass.strokeHairline)
+    }
+
+    private fun label(ctx: Context, text: String?, size: Float, weight: Int, color: Int, lines: Int = 1) =
+        TextView(ctx).apply {
+            this.text = text
+            Glass.style(this, size, weight, color)
+            maxLines = lines
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
 
     /** Builds the right view for a card's `kind`. */
     fun view(
@@ -219,7 +244,6 @@ object SearchCards {
         onTap: (BackendClient.SearchCard) -> Unit,
     ): View {
         val v = when (c.kind) {
-            "query" -> queryCard(ctx, c, t)
             "answer" -> answerCard(ctx, c, t)
             "video" -> videoCard(ctx, c, t)
             "place" -> placeCard(ctx, c, t, backendURL)
@@ -230,205 +254,163 @@ object SearchCards {
         return v
     }
 
+    /** The big answer. Sun and weather get the site's dusk gradient; the
+     *  rest stay on the card so they read as text, not as a banner. */
     private fun answerCard(ctx: Context, c: BackendClient.SearchCard, t: Theme): View {
         val painted = c.art == "sun" || c.art == "weather"
-        val row = object : LinearLayout(ctx) {
-            override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-                super.onSizeChanged(w, h, ow, oh)
-                if (!painted || w == 0) return
-                // The site's dusk gradient, left-bottom to right-top.
-                background = GradientDrawable().apply {
-                    cornerRadius = t.dp(15).toFloat()
-                    colors = intArrayOf(
-                        Color.rgb(47, 48, 71),
-                        Color.rgb(107, 74, 124),
-                        Color.rgb(201, 111, 106))
-                    orientation = GradientDrawable.Orientation.BL_TR
-                }
-            }
-        }.apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(t.dp(15), t.dp(12), t.dp(12), t.dp(12))
-            background = rounded(if (painted) Color.rgb(47, 48, 71) else t.card, t.dp(15))
-        }
-        val fg = if (painted) Color.WHITE else t.ink
-        val sub = if (painted) Color.argb(200, 255, 255, 255) else t.soft
-
-        val text = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        val long = (c.value ?: "").length > 12
-        text.addView(TextView(ctx).apply {
-            this.text = c.value ?: c.title
-            textSize = if (long) 20f else 30f
-            setTextColor(fg)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            maxLines = 1
-        })
-        (c.sub ?: c.source)?.let {
-            text.addView(TextView(ctx).apply {
-                this.text = it
-                textSize = 12.5f
-                setTextColor(sub)
-                maxLines = if (c.art == "define") 3 else 2
-                setPadding(0, t.dp(3), 0, 0)
-            })
-        }
-        row.addView(text, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        if (c.art == "sun") {
-            row.addView(SunArcView(ctx),
-                LinearLayout.LayoutParams(t.dp(96), t.dp(44)))
-        }
-        return row
-    }
-
-    /** A suggestion row: clock for the user's own history, trend arrow for
-     *  what's popular — the two icons Gboard uses. */
-    private fun queryCard(ctx: Context, c: BackendClient.SearchCard, t: Theme): View {
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(t.dp(12), t.dp(11), t.dp(12), t.dp(11))
-            background = rounded(t.card, t.dp(15))
+            gravity = Gravity.TOP
+            setPadding(t.dp(15), t.dp(14), t.dp(14), t.dp(8))
+            background = if (painted) GradientDrawable(GradientDrawable.Orientation.BL_TR, intArrayOf(
+                Color.rgb(47, 48, 71), Color.rgb(107, 74, 124), Color.rgb(201, 111, 106))).apply {
+                cornerRadius = t.dp(15).toFloat()
+            } else cardFace(ctx, t)
+            clipToOutline = true
         }
-        row.addView(TextView(ctx).apply {
-            text = if (c.source == "recent") "\u2941" else "\u2197"
-            textSize = 15f
-            setTextColor(t.soft)
-            gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(t.dp(28), t.dp(28)).apply { rightMargin = t.dp(10) })
-        row.addView(TextView(ctx).apply {
-            text = c.title
-            textSize = 14.5f
-            setTextColor(t.ink)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val fg = if (painted) Color.WHITE else t.ink
+        val sub = if (painted) Color.argb(199, 255, 255, 255) else t.soft
+        val text = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        // A definition's headline is the word; a time or a temperature is big.
+        val long = (c.value ?: "").length > 12
+        text.addView(label(ctx, c.value ?: c.title, if (long) 22f else 34f, Glass.BOLD, fg).apply {
+            setAutoSizeTextTypeUniformWithConfiguration(14, if (long) 22 else 34, 1, android.util.TypedValue.COMPLEX_UNIT_DIP)
+            gravity = Gravity.CENTER_VERTICAL
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, t.dp(40)))
+        (c.sub ?: c.source)?.let {
+            text.addView(label(ctx, it, 12.5f, Glass.REGULAR, sub, if (c.art == "define") 3 else 2),
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = t.dp(2) })
+        }
+        row.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+        if (c.art == "sun") {
+            row.addView(SunArcView(ctx), LinearLayout.LayoutParams(t.dp(130), t.dp(48)).apply {
+                topMargin = t.dp(10)
+            })
+        }
         return row
     }
 
+    /** A web result, a suggestion or a contact: a 36dp chip (the page's
+     *  picture, or a grey mark), the title over its detail. */
     private fun linkCard(ctx: Context, c: BackendClient.SearchCard, t: Theme): View {
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(t.dp(12), t.dp(10), t.dp(12), t.dp(10))
-            background = rounded(t.card, t.dp(15))
+            setPadding(t.dp(12), 0, t.dp(14), 0)
+            background = cardFace(ctx, t)
         }
-        val chip = ImageView(ctx).apply {
+        val glyph = when (c.kind) {
+            "contact" -> if (c.url.contains("@")) "envelope" else "phone"
+            "query" -> if (c.source == "recent") "clock" else "trend"
+            else -> "search"
+        }
+        val chip = android.widget.FrameLayout(ctx).apply {
             background = rounded(Color.argb(36, 128, 128, 128), t.dp(10))
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            setPadding(t.dp(8), t.dp(8), t.dp(8), t.dp(8))
+            clipToOutline = true
         }
+        val mark = ToolIcon(ctx, glyph, t.soft).apply { solid = true; weight = 1.7f; scale = 0.85f }
+        chip.addView(mark, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
         if (!c.thumb.isNullOrEmpty()) {
-            loadThumb(c.thumb, chip) { chip.setImageDrawable(GoogleMark()) }
-        } else {
-            chip.setImageDrawable(if (c.kind == "contact") PinMark() else GoogleMark())
-            if (c.kind == "contact") chip.setImageDrawable(null)
+            val pic = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            chip.addView(pic, android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
+            loadThumb(c.thumb, pic, maxWidth = 120, onLoaded = { mark.visibility = View.GONE })
         }
-        row.addView(chip, LinearLayout.LayoutParams(t.dp(36), t.dp(36)).apply {
-            rightMargin = t.dp(12)
-        })
+        row.addView(chip, LinearLayout.LayoutParams(t.dp(36), t.dp(36)).apply { rightMargin = t.dp(12) })
         val text = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        text.addView(TextView(ctx).apply {
-            this.text = c.title
-            textSize = 14.5f
-            setTextColor(t.ink)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        val detail = if (c.kind == "contact") c.snippet else (c.domain ?: c.snippet)
-        if (!detail.isNullOrBlank()) text.addView(TextView(ctx).apply {
-            this.text = detail
-            textSize = 12.5f
-            setTextColor(t.soft)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, t.dp(2), 0, 0)
-        })
-        row.addView(text, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        text.addView(label(ctx, c.title, 14.5f, Glass.MEDIUM, t.ink))
+        val detail = when (c.kind) {
+            "contact" -> c.snippet
+            "query" -> null   // a suggestion is one line
+            else -> c.domain ?: c.snippet
+        }
+        if (!detail.isNullOrBlank()) text.addView(label(ctx, detail, 12.5f, Glass.REGULAR, t.soft),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = t.dp(3) })
+        row.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         return row
     }
 
+    /** A YouTube result: its thumbnail fitted (never cropped: YouTube's
+     *  rule) with a duration badge, the title over the channel, and
+     *  YouTube's mark on every card. */
     private fun videoCard(ctx: Context, c: BackendClient.SearchCard, t: Theme): View {
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(t.dp(10), t.dp(9), t.dp(12), t.dp(9))
-            background = rounded(t.card, t.dp(15))
+            setPadding(t.dp(10), 0, t.dp(12), 0)
+            background = cardFace(ctx, t)
         }
-        // The badge overlaps the thumbnail's bottom-right, as on YouTube.
         val art = android.widget.FrameLayout(ctx)
         val thumb = ImageView(ctx).apply {
-            // YouTube's policies forbid altering a thumbnail, so it is fitted
-            // inside the frame rather than cropped to fill it.
             scaleType = ImageView.ScaleType.FIT_CENTER
             background = rounded(Color.argb(46, 128, 128, 128), t.dp(9))
             clipToOutline = true
             outlineProvider = roundOutline(t.dp(9))
         }
         art.addView(thumb, android.widget.FrameLayout.LayoutParams(t.dp(94), t.dp(54)))
-        if (!c.thumb.isNullOrEmpty()) loadThumb(c.thumb, thumb)
+        val play = PlayMark(ctx).apply { visibility = View.GONE }
+        art.addView(play, android.widget.FrameLayout.LayoutParams(t.dp(94), t.dp(54)))
+        if (!c.thumb.isNullOrEmpty()) loadThumb(c.thumb, thumb, onLoaded = { play.visibility = View.VISIBLE })
         val badgeText = if (c.live) "LIVE" else c.duration
         if (!badgeText.isNullOrEmpty()) {
             art.addView(TextView(ctx).apply {
                 text = badgeText
-                textSize = 9.5f
-                setTextColor(Color.WHITE)
-                setPadding(t.dp(4), t.dp(1), t.dp(4), t.dp(1))
+                Glass.style(this, 10f, Glass.SEMIBOLD, Color.WHITE)
+                gravity = Gravity.CENTER
+                setPadding(t.dp(4), 0, t.dp(4), 0)
                 background = rounded(
-                    if (c.live) Color.rgb(255, 0, 51) else Color.argb(184, 0, 0, 0),
-                    t.dp(4))
+                    if (c.live) Color.argb(242, 255, 0, 51) else Color.argb(184, 0, 0, 0), t.dp(4))
             }, android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, t.dp(14)).apply {
                 gravity = Gravity.BOTTOM or Gravity.END
-                bottomMargin = t.dp(4); rightMargin = t.dp(4)
+                bottomMargin = t.dp(4); rightMargin = t.dp(5)
             })
         }
-        row.addView(art, LinearLayout.LayoutParams(t.dp(94), t.dp(54)).apply {
-            rightMargin = t.dp(12)
-        })
+        row.addView(art, LinearLayout.LayoutParams(t.dp(94), t.dp(54)).apply { rightMargin = t.dp(12) })
         val text = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        text.addView(TextView(ctx).apply {
-            this.text = c.title
-            textSize = 14f
-            setTextColor(t.ink)
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        // YouTube requires its mark on EVERY card showing its content — a
-        // single header attribution is explicitly not sufficient when results
-        // from several sources share one surface.
+        text.addView(label(ctx, c.title, 14f, Glass.MEDIUM, t.ink, 2))
         val byline = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, t.dp(3), 0, 0)
         }
-        byline.addView(ImageView(ctx).apply {
-            setImageDrawable(YouTubeMark())
-        }, LinearLayout.LayoutParams(t.dp(14), t.dp(14)).apply { rightMargin = t.dp(5) })
-        byline.addView(TextView(ctx).apply {
-            this.text = c.channel ?: "YouTube"
-            textSize = 12.5f
-            setTextColor(t.soft)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        text.addView(byline)
-        row.addView(text, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        byline.addView(ImageView(ctx).apply { setImageDrawable(YouTubeMark()) },
+            LinearLayout.LayoutParams(t.dp(13), t.dp(13)).apply { rightMargin = t.dp(5) })
+        byline.addView(label(ctx, c.channel ?: "YouTube", 12.5f, Glass.REGULAR, t.soft))
+        text.addView(byline, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = t.dp(4) })
+        row.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         return row
     }
 
+    /** iOS's play.circle.fill over a loaded thumbnail. */
+    private class PlayMark(ctx: Context) : View(ctx) {
+        private val disc = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(235, 255, 255, 255) }
+        private val tri = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(200, 0, 0, 0) }
+        override fun onDraw(c: Canvas) {
+            val d = resources.displayMetrics.density
+            val cx = width / 2f; val cy = height / 2f
+            c.drawCircle(cx, cy, 11f * d, disc)
+            val p = Path().apply {
+                moveTo(cx - 3.2f * d, cy - 5f * d); lineTo(cx - 3.2f * d, cy + 5f * d)
+                lineTo(cx + 5f * d, cy); close()
+            }
+            c.drawPath(p, tri)
+        }
+    }
+
+    /** A Maps result: its photo (or a drawn map, the pin holding the corner
+     *  until it comes), the name, then distance · open · rating. */
     private fun placeCard(
         ctx: Context, c: BackendClient.SearchCard, t: Theme, backendURL: String,
     ): View {
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(t.dp(10), t.dp(9), t.dp(12), t.dp(9))
-            background = rounded(t.card, t.dp(15))
+            setPadding(t.dp(10), 0, t.dp(12), 0)
+            background = cardFace(ctx, t)
         }
         val art = ImageView(ctx).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -436,33 +418,20 @@ object SearchCards {
             clipToOutline = true
             outlineProvider = roundOutline(t.dp(9))
             setImageDrawable(PinMark())
-            setPadding(t.dp(24), t.dp(14), t.dp(24), t.dp(14))
+            setPadding(t.dp(26), t.dp(15), t.dp(26), t.dp(15))
         }
         val thumb = c.thumb
         if (!thumb.isNullOrEmpty()) {
             val own = !thumb.startsWith("http")
             val map = own && thumb.startsWith("/search/staticmap")
-            // A place with no photo shows its map, drawn dark on a dark board,
-            // cropped to the middle above the credit along its bottom (the
-            // list credits the maps once). The pin stays until it comes.
             val url = if (own) backendURL + thumb + (if (map && t.dark) "&dark=1" else "") else thumb
-            // Half of Geoapify's 600px is still more than the 74dp art
-            // needs, and a quarter of the memory in the 3 MB cache.
             loadThumb(url, art, maxWidth = 320, signed = own,
                 crop = if (map) android.graphics.RectF(0f, 0.14f, 1f, 0.84f) else null, keep = true,
                 onLoaded = { art.setPadding(0, 0, 0, 0) })
         }
-        row.addView(art, LinearLayout.LayoutParams(t.dp(74), t.dp(52)).apply {
-            rightMargin = t.dp(12)
-        })
+        row.addView(art, LinearLayout.LayoutParams(t.dp(74), t.dp(52)).apply { rightMargin = t.dp(12) })
         val text = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        text.addView(TextView(ctx).apply {
-            this.text = c.title
-            textSize = 14.5f
-            setTextColor(t.ink)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
+        text.addView(label(ctx, c.title, 14.5f, Glass.MEDIUM, t.ink))
         val bits = mutableListOf<String>()
         c.distance?.let { bits.add(it) }
         c.openNow?.let { bits.add(if (it) "Open" else "Closed") }
@@ -471,16 +440,10 @@ object SearchCards {
                      else "%.1f ★".format(r))
         }
         if (bits.isEmpty()) c.address?.let { bits.add(it) }
-        if (bits.isNotEmpty()) text.addView(TextView(ctx).apply {
-            this.text = bits.joinToString(" · ")
-            textSize = 12.5f
-            setTextColor(t.soft)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, t.dp(2), 0, 0)
-        })
-        row.addView(text, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (bits.isNotEmpty()) text.addView(label(ctx, bits.joinToString(" · "), 12.5f, Glass.REGULAR, t.soft),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = t.dp(3) })
+        row.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         return row
     }
 
