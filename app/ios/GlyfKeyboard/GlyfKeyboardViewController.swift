@@ -351,7 +351,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
             hostTraitDark = traitCollection.userInterfaceStyle == .dark
         }
         let traitDark = hostTraitDark
-        let hostDark = appearanceFlipped
+        // The sheet iOS draws behind the keys follows the host's trait. The
+        // field's keyboardAppearance can be stale: Messages focused in dark
+        // keeps reporting .dark after the phone turns light, even when the
+        // keyboard comes back later, which drew dark keys on a light sheet
+        // and the strip's words white on white (Arpit, 2026-10-01: "not
+        // visible"). So once the host's trait can be read it decides; the
+        // field's word counts only before then.
+        let hostDark = view.superview != nil || appearanceFlipped
             ? traitDark
             : textDocumentProxy.keyboardAppearance == .dark || traitDark
         let dark = pref == "dark" || (pref == "auto" && hostDark)
@@ -597,6 +604,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // On screen now: the host's trait can be read, and it may overrule
+        // the guess made before the view had a superview.
+        resolveAppearance()
         toolbar.setMagicRunning(true)
         TempMailWatcher.shared.fullAccess = hasFullAccess
         TempMailWatcher.shared.setVisible(true)
