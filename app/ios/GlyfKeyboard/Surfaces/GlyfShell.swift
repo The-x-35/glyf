@@ -26,6 +26,8 @@ protocol GlyfShellDelegate: AnyObject {
     func shellCopyImage(id: String)
     /// Puts text on the clipboard (a temp address, a code) and says so.
     func shellCopyText(_ text: String)
+    /// Opens a web page in the browser (temp mail's credit to mail.tm).
+    func shellOpenLink(_ url: URL)
 }
 
 /// §6.3 — the in-keyboard navigation shell. HARD memory rules:
@@ -241,6 +243,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         tempMailView.isHidden = true
         tempMailView.onInsert = { [weak self] text in self?.delegate?.shellInsertText(text) }
         tempMailView.onCopy = { [weak self] text in self?.delegate?.shellCopyText(text) }
+        tempMailView.onOpenLink = { [weak self] url in self?.delegate?.shellOpenLink(url) }
         tempMailView.onOpenMail = { [weak self] id in
             TempMailWatcher.shared.openedId = id
             self?.push("tempmail:mail")

@@ -43,8 +43,8 @@ enum Smart {
         /// (TempMailWatcher).
         case tempMail(id: String, from: String, code: String?)
         /// An email field with nothing typed in it: the temp address still
-        /// live, typed again (making one spends one of the day's few), or,
-        /// with none, a new one made, typed and watched, in one tap.
+        /// live, typed again (its inbox is the one being watched), or, with
+        /// none, a new one made, typed and watched, in one tap.
         case tempAddress(live: String?)
 
         var key: String {

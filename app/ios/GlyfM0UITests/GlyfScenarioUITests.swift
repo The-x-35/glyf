@@ -1039,18 +1039,42 @@ final class GlyfScenarioUITests: XCTestCase {
         note("typed 'meet me ;s202 ' -> '\(value)'")
     }
 
-    // MARK: - Temp mail (qa/fake-tempmail.mjs on 8798, behind the local server)
+    // MARK: - Temp mail (qa/fake-mailtm.mjs on 8798, standing in for mail.tm)
 
-    private static let fakeTempMail = "http://127.0.0.1:8798"
+    private static let fakeMailTM = "http://127.0.0.1:8798"
+
+    /// The keyboard asks mail.tm itself; for this scenario it asks the
+    /// stand-in instead (the setting `tempMailBase`), and asks mail.tm again
+    /// after.
+    private func useFakeMailTM() {
+        guard let url = bridgeDir?.appendingPathComponent("settings.json") else {
+            return XCTFail("no App Group folder found")
+        }
+        func edit(_ change: (inout [String: Any]) -> Void) {
+            guard let data = try? Data(contentsOf: url),
+                  var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            change(&json)
+            if let out = try? JSONSerialization.data(withJSONObject: json) { try? out.write(to: url, options: .atomic) }
+        }
+        let before = (try? Data(contentsOf: url))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["tempMailBase"]
+        edit { $0["tempMailBase"] = Self.fakeMailTM }
+        addTeardownBlock {
+            edit { json in
+                if let before { json["tempMailBase"] = before } else { json.removeValue(forKey: "tempMailBase") }
+            }
+        }
+    }
 
     /// Drops a mail into a temp address at the stand-in, the way a sign-up
     /// form's mail arrives.
     @discardableResult
     private func injectMail(_ address: String, subject: String, text: String,
-                            from: String = "\"Acme\" <no-reply@acme.example>") -> Bool {
-        guard let url = URL(string: "\(Self.fakeTempMail)/_inject"),
+                            from: String = "Acme", fromAddress: String = "no-reply@acme.example") -> Bool {
+        guard let url = URL(string: "\(Self.fakeMailTM)/_inject"),
               let body = try? JSONSerialization.data(withJSONObject: [
-                  "email": address, "subject": subject, "text": text, "from": from]) else { return false }
+                  "email": address, "subject": subject, "text": text,
+                  "fromName": from, "fromAddress": fromAddress]) else { return false }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.httpBody = body
@@ -1190,17 +1214,22 @@ final class GlyfScenarioUITests: XCTestCase {
     /// what lands at it with its code ready to type (Arpit, 2026-09-30:
     /// "option to enter temporary mail and we will monitor its mails for
     /// next some times and show the mails gotten on it"). The panel on a
-    /// light sheet (Glyf) and a dark one (Messages).
+    /// light sheet (Glyf) and a dark one (Messages), with its credit to
+    /// mail.tm at the foot.
     func testS216_TempMailMakesAnAddressAndShowsWhatComesIn() throws {
+        useFakeMailTM()
         open()
         clear()
         addTeardownBlock { [self] in forgetTempMail() }
         XCTAssertFalse(el("toolbar:tempmail").exists, "Temp mail sits in the menu, not on the strip")
         openTempMailEmpty()
         XCTAssertFalse(el("tempmail:address").exists, "no address before Create")
+        XCTAssertEqual(el("tempmail:credit").label, "via mail.tm", "mail.tm asks for a link back")
         keepScreenshot("tempmail-empty-light")
         guard let address = makeTempAddress() else { return XCTFail("no address after Create") }
-        XCTAssertTrue(address.contains("@"), "the card reads '\(address)'")
+        // A word, six hex digits and the stand-in's domain.
+        XCTAssertNotNil(address.range(of: "^[a-z]+[0-9a-f]{6}@glyf-temp\\.example$", options: .regularExpression),
+                        "the card reads '\(address)'")
         XCTAssertNotNil(wait("tempmail:empty", 3), "a new address has no mail yet")
         let watching = el("tempmail:watching").label
         XCTAssertTrue(watching.hasPrefix("Watching · 1") && watching.hasSuffix(" left"), "the line reads '\(watching)'")
@@ -1215,7 +1244,7 @@ final class GlyfScenarioUITests: XCTestCase {
         openTool("tempmail")
         XCTAssertTrue(injectMail(address, subject: "Your Acme code",
                                  text: "Your verification code is 482913. Or confirm here: https://acme.example/verify?t=s216"),
-                      "the stand-in took no mail (is qa/fake-tempmail.mjs running?)")
+                      "the stand-in took no mail (is qa/fake-mailtm.mjs running?)")
         let landed = Date()
         guard wait("tempmail:row:0", 25) != nil else { return XCTFail("the mail did not show in the panel") }
         note(String(format: "listed %.1f s after it landed", Date().timeIntervalSince(landed)))
@@ -1237,6 +1266,7 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertTrue(from.hasPrefix("Acme · "), "the sender reads '\(from)'")
         XCTAssertTrue(el("tempmail:text").label.contains("verification code is 482913"), "the words are missing")
         XCTAssertTrue(el("tempmail:code:insert").exists && el("tempmail:code:copy").exists, "the code has no Insert or Copy")
+        XCTAssertTrue(el("tempmail:credit").exists, "the credit stays at the foot of an open mail")
         keepScreenshot("tempmail-mail-light")
         tap("tempmail:link")
         XCTAssertTrue(waitValue(3) { $0 == "https://acme.example/verify?t=s216" }, "Insert link typed '\(value)'")
@@ -1253,7 +1283,11 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("tempmail:delete", 4)
         XCTAssertNotNil(wait("tempmail:create", 4), "Delete should bring Create back")
         keepScreenshot("tempmail-empty-dark")
-        tap("toolbar:close")
+        // The credit opens mail.tm in the browser.
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        addTeardownBlock { safari.terminate() }
+        tap("tempmail:credit")
+        XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 8), "via mail.tm did not open the browser")
     }
 
     /// S217: a mail that lands while the panel is closed comes up in the
@@ -1261,6 +1295,7 @@ final class GlyfScenarioUITests: XCTestCase {
     /// code), or with none the mail ("Mail from Nova … Open", a tap opens
     /// it). Each mail's chip shows once, and its ✕ puts it away.
     func testS217_AMailThatLandsWhileTypingComesUpInTheStrip() throws {
+        useFakeMailTM()
         open()
         clear()
         addTeardownBlock { [self] in forgetTempMail() }
@@ -1269,7 +1304,7 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("toolbar:close")
 
         XCTAssertTrue(injectMail(address, subject: "Your Acme code", text: "Your verification code is 482913."),
-                      "the stand-in took no mail (is qa/fake-tempmail.mjs running?)")
+                      "the stand-in took no mail (is qa/fake-mailtm.mjs running?)")
         var landed = Date()
         guard let chip = waitChip(30, { $0.contains("482913") }) else {
             return XCTFail("no chip for the code; the strip shows '\(el("strip:smart").label)'")
@@ -1286,7 +1321,7 @@ final class GlyfScenarioUITests: XCTestCase {
 
         // No code: the mail itself, opened in the panel.
         XCTAssertTrue(injectMail(address, subject: "Welcome to Nova", text: "Thanks for joining Nova.",
-                                 from: "\"Nova\" <hello@nova.example>"))
+                                 from: "Nova", fromAddress: "hello@nova.example"))
         guard let mail = waitChip(30, { $0.contains("Nova") }) else {
             return XCTFail("no chip for the mail; the strip shows '\(el("strip:smart").label)'")
         }
@@ -1301,7 +1336,7 @@ final class GlyfScenarioUITests: XCTestCase {
 
         // ✕ puts a chip away, and it stays away.
         XCTAssertTrue(injectMail(address, subject: "Your Zeta code", text: "Use 771204 to sign in to Zeta.",
-                                 from: "\"Zeta\" <no-reply@zeta.example>"))
+                                 from: "Zeta", fromAddress: "no-reply@zeta.example"))
         guard waitChip(30, { $0.contains("771204") }) != nil else {
             return XCTFail("no chip for Zeta's code; the strip shows '\(el("strip:smart").label)'")
         }
@@ -1316,7 +1351,7 @@ final class GlyfScenarioUITests: XCTestCase {
         openTool("tempmail")
         tap("toolbar:close")
         XCTAssertTrue(injectMail(address, subject: "Your Orbit code", text: "Your Orbit verification code is 305917.",
-                                 from: "\"Orbit\" <no-reply@orbit.example>"))
+                                 from: "Orbit", fromAddress: "no-reply@orbit.example"))
         landed = Date()
         guard let dark = waitChip(30, { $0.contains("305917") }) else {
             return XCTFail("no chip on the dark sheet; the strip shows '\(el("strip:smart").label)'")
@@ -1330,12 +1365,13 @@ final class GlyfScenarioUITests: XCTestCase {
     /// S218: an email field with nothing in it offers a temp address. None
     /// live and no email saved: "Temp email … Create" makes one, types it and
     /// watches it. One live: the chip names it ("<address> … Insert") and
-    /// types it again, rather than spending another of the day's few. An
-    /// email saved: its chip carries "Temp" beside it, which types the live
-    /// one. In Contacts' New Contact, whose email box is an email field, on
-    /// a light sheet and a dark one; the contact is never saved.
+    /// types it again, the inbox being watched. An email saved: its chip
+    /// carries "Temp" beside it, which types the live one. In Contacts' New
+    /// Contact, whose email box is an email field, on a light sheet and a
+    /// dark one; the contact is never saved.
     func testS218_AnEmptyEmailFieldOffersATempAddress() throws {
         let saved = "s218@example.com"
+        useFakeMailTM()
         open()
         clear()
         // Saved emails are set aside for the run (kept in the vault as
@@ -1356,8 +1392,7 @@ final class GlyfScenarioUITests: XCTestCase {
         endTempAddress()
 
         guard newContactEmail(contacts) else { return }
-        // No email saved, none live: Create. One address for the whole run
-        // (a day allows a few).
+        // No email saved, none live: Create.
         guard let create = waitChip(6, { $0.contains("Temp email") }) else {
             return XCTFail("no Temp email chip; the strip shows '\(el("strip:smart").label)'")
         }

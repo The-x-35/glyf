@@ -256,7 +256,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         paste.addTypeIdentifiers(forAccepting: UIImage.self)
         pasteConfiguration = paste
         // A mail at the temp address, while it is watched: the strip offers
-        // its code, or the mail. Notices are the server's own words.
+        // its code, or the mail.
         TempMailWatcher.shared.onNewMail = { [weak self] mail in
             guard let self else { return }
             self.mailChip = (.tempMail(id: mail.id, from: mail.from, code: mail.code), Date())
@@ -1633,7 +1633,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // beside your own email, "Temp" for one.
         var extra: String?
         if before.isEmpty, (textDocumentProxy.documentContextAfterInput ?? "").isEmpty,
-           hasFullAccess, GlyfSession.token() != nil, fieldHint(emptyField: true).kind == "email" {
+           hasFullAccess, fieldHint(emptyField: true).kind == "email" {
             if chip == nil {
                 chip = .tempAddress(live: TempMailWatcher.shared.address)
             } else if case .vault(let f)? = chip, f.kind == "email" {
@@ -3161,6 +3161,10 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         // Our own copy: the strip must not offer it back as a paste.
         ClipboardStore.ignoreNextChange()
         KeyboardToast.show(in: content, text: "Copied")
+    }
+
+    func shellOpenLink(_ url: URL) {
+        HostAppOpener.open(url, from: self) { _ in }
     }
 }
 

@@ -906,30 +906,11 @@ Per the 2026-09-15 context snapshot, `server/.env` was set to the Gemini/Groq ch
 
 ---
 
-### 5.11 Temp mail (`lib/tempmail.ts`, `routes/tempmail.ts`)
+### 5.11 Temp mail: not on the server
 
-Asked for on 2026-09-30: "i need to integrate temporary mails here ... option to enter temporary mail and we will monitor its mails for next some times and show the mails gotten on it, so user can get temporary mails directly inside their keyboards". A throwaway address typed into a sign-up form, its inbox watched for 15 minutes, and the code in the mail one tap from the field.
+Asked for on 2026-09-30 ("option to enter temporary mail and we will monitor its mails for next some times and show the mails gotten on it ... directly inside their keyboards"). It runs entirely on the phones, on **mail.tm** (free, keyless): Arpit asked for a free API ("i said to fucking find free temp mail apis"), and mail.tm's terms forbid proxying its API under another domain, so Glyf's server never sits between. Each phone calls `https://api.mail.tm` itself (its own 8 requests a second per IP, far above what a keyboard asks), and mail never passes through Glyf. The rules both keyboards follow, and their shared cases: `shared/tempmail/RULES.md`, `cases.json`; the keyboards: docs/APPS.md 5.30.
 
-**Provider: [Temp-Mail.io](https://docs.temp-mail.io)** (API shape from its official client, github.com/temp-mail-io/temp-mail-go). Compared that day:
-
-| Option | Why not / why |
-|---|---|
-| mail.tm | Free and keyless, but its terms bar wrapping it in a paid product, and it caps each caller at 8 requests a second per IP (one server for everyone would hit it) |
-| Mailsac | Free addresses are public: anyone who guesses one reads its codes |
-| MailSlurp | Built for QA; 100 inboxes a month on free |
-| DevInbox | Unlimited temporary inboxes and a long-poll wait, but one domain (devinbox.io) that sign-up forms can turn away at once |
-| **Temp-Mail.io** | A consumer temp-mail brand with public and premium domains, one key (`X-API-Key`), addresses that live up to 30 days, messages listed with their bodies (one request a check), and a monthly request allowance per plan. Its own help says the API needs a Temp-Mail premium subscription; a third-party listing that day gave 1,000 requests a month free, $9 for 10,000 and $29 for 50,000 (check when subscribing) |
-
-**Routes** (signed in; addresses only in bodies, never URLs; the log carries events only):
-- `POST /tempmail {deviceId}` → `{ok, address, expiresAt, token}`. Premium domain first, public if the plan has none.
-- `POST /tempmail/messages {deviceId, address, token}` → messages newest first: `{id, from, fromAddress, subject, text, receivedAt, code?, link?}`. HTML becomes text; `extractCode` reads a one-time code ("482913", "G-482913", "123 456") only in the subject or beside a code word, never a year, a price, a phone or an order number; `extractLink` takes a verify, confirm or sign-in link, never a logo.
-- `POST /tempmail/delete {deviceId, address, token}`.
-
-**Only its maker reads an address:** the token is an HMAC (SESSION_SECRET) of the account, the address and its expiry, checked on every read. Nothing is stored: a list is cached 6 s so keyboards checking every 8 s cost one request upstream.
-
-**Allowances** (Guard, apart from runs): new addresses 5 a day free, 20 Plus, 50 Max; checks 450 free, 1,800 Plus, 3,600 Max. The keyboards check every 8 s for the first 3 minutes, then every 20 s up to 15 minutes, and stop 2 minutes after a code arrives unless the panel is open: about 60 checks, 61 requests upstream at most, for one address.
-
-**Setup:** `TEMP_MAIL_API_KEY` in server/.env and on Railway. Without it every route says "Temp mail isn't set up yet". For devices without a key, `qa/fake-tempmail.mjs` (port 8798) stands in; run the local server with `TEMP_MAIL_BASE_URL=http://127.0.0.1:8798 TEMP_MAIL_API_KEY=local-fake`, and drop a mail with `POST :8798/_inject {email, subject, text}`. Never set `TEMP_MAIL_BASE_URL` on Railway. Tests: `test/tempmail.test.ts`.
+Tried first the same day and removed: Temp-Mail.io behind `/tempmail` routes with HMAC inbox tokens and daily allowances (commit 0ab154e): its API needs a paid premium plan. Also looked at: Mailsac (free addresses are public), MailSlurp (QA, 100 inboxes a month), DevInbox (key, one domain).
 
 ## 6. Search suite
 

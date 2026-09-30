@@ -1298,15 +1298,33 @@ scenarios.push(
   } },
 );
 
-// --- 2026-09-30: temp mail in the keyboard, against the stand-in ---
-// Start qa/fake-tempmail.mjs (8798) and run the local server with
-// TEMP_MAIL_BASE_URL=http://127.0.0.1:8798. Addresses cost one of the day's
-// five on the free plan, so S217 and S218 use the one S216 made when it is
+// --- 2026-09-30: temp mail in the keyboard, on mail.tm, against a stand-in ---
+// The keyboard calls mail.tm itself (shared/tempmail/RULES.md). Start
+// qa/fake-mailtm.mjs (8798); the run points the keyboard at it with the
+// setting tempMailBase (the emulator reaches the Mac on 10.0.2.2) and puts the
+// setting back at the end. S217 and S218 use the address S216 made when it is
 // there, and S218 deletes it.
 const FAKE_TEMPMAIL = "http://127.0.0.1:8798";
 
+// The keyboard pointed at the stand-in for this run (once), and back after.
+let fakeMailTmOn = false;
+async function useFakeMailTm() {
+  if (fakeMailTmOn) return;
+  const before = readSettings();
+  writeSettings(JSON.stringify({ ...JSON.parse(before), tempMailBase: "http://10.0.2.2:8798" }));
+  atEnd.push(() => {
+    const now = JSON.parse(readSettings());
+    const had = JSON.parse(before);
+    if (had.tempMailBase === undefined) delete now.tempMailBase; else now.tempMailBase = had.tempMailBase;
+    writeSettings(JSON.stringify(now));
+  });
+  fakeMailTmOn = true;
+  await sleep(900);   // the keyboard looks at its settings every 0.4 s
+}
+
 // The Temp mail panel's address, made if there is none; the panel is left open.
 async function tempAddress() {
+  await useFakeMailTm();
   await fresh();
   tool("tempmail");
   let addr = await waitFor(byId("tempmail:address"), 3000);
@@ -1340,6 +1358,7 @@ async function chipWith(part, ms) {
 scenarios.push(
   { id: "S216", title: "Temp mail: the g menu makes an address, and Insert types it", run: async () => {
     // "option to enter temporary mail ... so user can get temporary mails directly inside their keyboards" (2026-09-30).
+    await useFakeMailTm();
     tool("tempmailclear");   // this one makes the address
     await fresh();
     const g = find(await state(), byId("toolbar:glyf"));
@@ -1355,11 +1374,13 @@ scenarios.push(
     const addr = await waitFor(byId("tempmail:address"), 12000);
     if (!addr) return { pass: false, note: `no address came (notice '${(await state()).notice}')` };
     const watching = find(await state(), byId("tempmail:watching"))?.text ?? "";
+    const credit = find(await state(), byId("tempmail:credit"))?.text ?? "";
     await screenshot("S216-address");
     const insert = find(await state(), byId("tempmail:insert"));
     const r = await tapFor(insert, x => x.includes("@glyf-temp.example"));
-    return { pass: /^[a-z]+\.[0-9a-f]+@glyf-temp\.example$/.test(addr.text) && r.t.trim() === addr.text && /^Watching · 1[45]:\d\d left$/.test(watching),
-      note: `address made, '${watching}'; Insert typed '${r.t}'${second(r)}` };
+    return { pass: /^[a-z]+[0-9a-f]{6}@glyf-temp\.example$/.test(addr.text) && r.t.trim() === addr.text &&
+        /^Watching · 1[45]:\d\d left$/.test(watching) && credit === "via mail.tm",
+      note: `address made, '${watching}', '${credit}'; Insert typed '${r.t}'${second(r)}` };
   } },
   { id: "S217", title: "Temp mail: a code that arrives shows on the strip, and Insert types just the code", run: async () => {
     const address = await tempAddress();

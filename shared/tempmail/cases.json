@@ -1,0 +1,72 @@
+{
+ "codes": [
+  {
+   "subject": "Your verification code",
+   "text": "Your code is 482913. It expires in 10 minutes.",
+   "code": "482913"
+  },
+  {
+   "subject": "482913 is your Instagram code",
+   "text": "",
+   "code": "482913"
+  },
+  {
+   "subject": "Welcome to Google",
+   "text": "G-482913 is your Google verification code.",
+   "code": "G-482913"
+  },
+  {
+   "subject": "Sign in to Acme",
+   "text": "Use 123 456 to sign in.",
+   "code": "123456"
+  },
+  {
+   "subject": "Security code",
+   "text": "Your one-time passcode: 7391",
+   "code": "7391"
+  },
+  {
+   "subject": "Confirm your email",
+   "text": "Enter this code to confirm your account:\n\n  90217\n\nThanks",
+   "code": "90217"
+  },
+  {
+   "subject": "Your order shipped",
+   "text": "Order #48291376 is on its way. Questions? Call 555-123-4567.",
+   "code": null
+  },
+  {
+   "subject": "Autumn sale",
+   "text": "Our 2026 sale: 50% off everything, now $1299.",
+   "code": null
+  },
+  {
+   "subject": "Meeting",
+   "text": "See you at 10:30 on 29/09/2026 in room 204.",
+   "code": null
+  }
+ ],
+ "links": [
+  {
+   "text": "",
+   "html": "<a href=\"https://acme.com\"><img src=\"logo.png\"></a> <a href=\"https://acme.com/v?t=abc&amp;u=1\">Verify email</a>",
+   "link": "https://acme.com/v?t=abc&u=1"
+  },
+  {
+   "text": "Confirm here: https://x.io/confirm/123.",
+   "html": "",
+   "link": "https://x.io/confirm/123"
+  },
+  {
+   "text": "Visit https://acme.com for more",
+   "html": "",
+   "link": null
+  }
+ ],
+ "html": [
+  {
+   "html": "<style>p{}</style><p>Hi&nbsp;there</p><p>Code: <b>1234</b></p>",
+   "text": "Hi there\nCode: 1234"
+  }
+ ]
+}

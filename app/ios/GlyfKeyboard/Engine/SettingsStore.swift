@@ -137,6 +137,9 @@ struct GlyfSettings: Codable, Equatable {
     /// How the last payment went, written by the app when Phantom answers
     /// ({"title","detail","at"}); the keyboard says it once and clears it.
     var walletOutcome: String? = nil
+    /// Where temp mail asks: unset is mail.tm itself. Scenarios name the
+    /// stand-in here (qa/fake-mailtm.mjs).
+    var tempMailBase: String? = nil
 
     /// The deployed API. Changing the domain? This is the only place.
     static let productionBackend = "https://api.tryglyf.com"

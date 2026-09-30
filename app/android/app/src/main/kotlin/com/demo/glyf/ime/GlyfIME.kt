@@ -216,13 +216,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     tempMails = emptyList()
                     main.removeCallbacks(tempTick)
                 }
-                // Checks turned away until midnight, as a 429 leaves them
-                // ("--es text off" lifts it): the rest of that path, seen.
-                "tempmailblock" -> TempMailStore.load(this@GlyfIME)?.let { box ->
-                    val off = intent.getStringExtra("text") == "off"
-                    tempBlockedNotice = if (off) null else "No more checks today"
-                    TempMailStore.save(this@GlyfIME, box.copy(
-                        blockedUntil = if (off) 0L else TempMailClient.nextMidnight()))
+                // A token mail.tm no longer takes, so the next look re-takes
+                // one with the stored password (RULES.md's 401).
+                "tempmailbadtoken" -> TempMailStore.load(this@GlyfIME)?.let {
+                    TempMailStore.save(this@GlyfIME, it.copy(token = "expired"))
                 }
                 // A detail a scenario added, gone again (by its value).
                 "dropdetail" -> {
@@ -348,6 +345,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         out.put("notice", (noticeView as? TextView)?.text?.toString() ?: "")
         // Strip chips whose colours are turning: none once the keyboard is hidden.
         out.put("glowTurning", MagicChip.turning)
+        // Temp mail looks so far, and the current run of turned-away ones.
+        out.put("tempLooks", tempLooks)
+        out.put("tempFails", tempFails)
         out.put("glowTicks", MagicChip.ticks)
         out.put("glowDrawn", MagicChip.drawn)
         out.put("clipLabel", clip?.label?.toString() ?: "")
@@ -512,6 +512,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         KeyboardTyping.prepare(this) { updateSuggestions() }
         // A temp address being watched: carry on here, with a look at once
         // (a mail may have come while the keyboard was away).
+        tempViewUp = true
         main.removeCallbacks(tempTick)
         if (TempMailStore.load(this)?.let { tempWatching(it) } == true) main.postDelayed(tempTick, 1500)
 
@@ -529,6 +530,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         super.onFinishInputView(finishingInput)
         main.removeCallbacks(tourTick)
         // Temp mail is checked only while the keyboard is up.
+        tempViewUp = false
         main.removeCallbacks(tempTick)
         main.removeCallbacks(tempClock)
         clearCoach()
@@ -4244,12 +4246,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         syncAutoShift()
     }
 
-    // MARK: temp mail (TempMail.kt): an address Glyf watches, its mails here
+    // MARK: temp mail (TempMail.kt): an address on mail.tm, watched from here
 
     /** The watched address's mails, newest first: in memory only, never on disk. */
     private var tempMails: List<TempMail> = emptyList()
     private var tempChecking = false
     private var tempCreating = false
+    /** Checks in a row that mail.tm turned away (429) or that got no answer. */
+    private var tempFails = 0
+    /** Looks asked for so far (the scenarios read it). */
+    private var tempLooks = 0
+    /** The keyboard is up: temp mail is only checked then. */
+    private var tempViewUp = false
     /** The watching line on the panel, kept to count down in place. */
     private var tempLine: TextView? = null
 
@@ -4262,64 +4270,68 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
+    /** mail.tm, or the stand-in a test run points the keyboard at. */
+    private fun tempBase() = settings.optString("tempMailBase").ifBlank { TempMailRules.DEFAULT_BASE }
+
     private fun tempPanelShowing() = featurePanel?.tag == "tempmail" || featurePanel?.tag == "tempmail:mail"
 
     /** Checked from Create, Insert or opening the panel for 15 minutes, and
      *  for two minutes after a mail with a code (unless the panel is open). */
     private fun tempWatching(box: TempBox, now: Long = System.currentTimeMillis()) =
-        now < box.expiresAt && now < box.watchUntil && now >= box.blockedUntil &&
-            (box.codeStop == 0L || now < box.codeStop || tempPanelShowing())
-
-    /** The server's words when it turned the day's checks away (said again
-     *  when a new watch is asked for before midnight). */
-    private var tempBlockedNotice: String? = null
+        now < box.expiresAt && now < box.watchUntil &&
+            (box.codeAt == 0L || now < box.codeAt + TempMailRules.AFTER_CODE_MS || tempPanelShowing())
 
     /** A new watch window, from now. */
-    private fun restartTempWatch(box: TempBox): TempBox {
-        val now = System.currentTimeMillis()
-        val next = box.copy(watchStart = now, watchUntil = now + TempMailClient.WATCH_MS, codeStop = 0L)
-        TempMailStore.save(this, next)
-        // Checks turned away for today stay away, and it says why.
-        if (now < next.blockedUntil) notice(tempBlockedNotice ?: "Try again tomorrow")
-        return next
-    }
+    private fun restartTempWatch(box: TempBox): TempBox =
+        box.copy(watchUntil = System.currentTimeMillis() + TempMailRules.WATCH_MS, codeAt = 0L)
+            .also { TempMailStore.save(this, it) }
 
     /** The next look: every 8 s for a window's first 3 minutes and while the
-     *  panel is open, every 20 s after (Temp-Mail.io requests are counted). */
+     *  panel is open, every 20 s after; a minute's rest after three looks in
+     *  a row were turned away or lost. */
     private fun scheduleTempCheck() {
         main.removeCallbacks(tempTick)
+        if (!tempViewUp) return
         val box = TempMailStore.load(this) ?: return
         if (!tempWatching(box)) return
-        val fast = tempPanelShowing() ||
-            System.currentTimeMillis() - box.watchStart < TempMailClient.FAST_FOR_MS
-        main.postDelayed(tempTick, if (fast) TempMailClient.FAST_MS else TempMailClient.SLOW_MS)
+        val delay = when {
+            tempFails >= TempMailRules.FAILS_BEFORE_REST -> { tempFails = 0; TempMailRules.REST_MS }
+            tempPanelShowing() || System.currentTimeMillis() - box.watchStart < TempMailRules.FAST_FOR_MS ->
+                TempMailRules.FAST_MS
+            else -> TempMailRules.SLOW_MS
+        }
+        main.postDelayed(tempTick, delay)
     }
 
     private fun checkTempMail() {
+        if (!tempViewUp) return
         val box = TempMailStore.load(this) ?: return
         val now = System.currentTimeMillis()
-        if (now >= box.expiresAt) { endTempBox("That address has expired"); return }
+        if (now >= box.expiresAt) { endTempBox("That address has expired", letGo = true); return }
         if (!tempWatching(box, now)) { renderTempLine(); return }
         if (tempChecking) { scheduleTempCheck(); return }
         tempChecking = true
-        TempMailClient.messages(settings.optString("backendURL"), settings.optString("deviceId"), box) { r ->
+        tempLooks++
+        MailTm.check(tempBase(), box, tempMails.associateBy { it.id }) { mails, status, used ->
             main.post {
                 tempChecking = false
                 // Replaced or deleted meanwhile: that answer is for no one.
-                val latest = TempMailStore.load(this)?.takeIf { it.address == box.address } ?: return@post
-                val json = r.json
+                var latest = TempMailStore.load(this)?.takeIf { it.address == box.address } ?: return@post
+                // A new token (mail.tm's first 401) is kept for the next look.
+                if (used.token != latest.token) latest = latest.copy(token = used.token).also { TempMailStore.save(this, it) }
                 when {
-                    json != null -> gotTempMails(latest, TempMailClient.mails(json))
-                    r.status == 403 || r.status == 410 -> { endTempBox(r.error); return@post }
-                    // The day's checks are spent: none until local midnight,
-                    // here or in another app, and it says so once.
-                    r.status == 429 -> {
-                        tempBlockedNotice = r.error
-                        TempMailStore.save(this, latest.copy(blockedUntil = TempMailClient.nextMidnight()))
-                        notice(r.error ?: "Try again tomorrow")
-                        renderTempLine()
+                    // A second 401: the address is gone at mail.tm.
+                    status == 401 -> {
+                        endTempBox("That address has expired", letGo = false)
                         return@post
                     }
+                    // The list came; a read turned away counts as a miss.
+                    mails != null -> {
+                        tempFails = if (status == 200) 0 else 1
+                        gotTempMails(latest, mails)
+                    }
+                    // Turned away (429) or no answer: skip this look.
+                    else -> tempFails++
                 }
                 scheduleTempCheck()
             }
@@ -4332,9 +4344,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val fresh = mails.filter { it.id !in box.seen }
         var next = box.copy(seen = box.seen + fresh.map { it.id })
         // A code has come: two more minutes of watching, then its job is done.
-        if (next.codeStop == 0L && fresh.any { it.code != null }) {
-            next = next.copy(codeStop = System.currentTimeMillis() + TempMailClient.AFTER_CODE_MS)
-        }
+        if (next.codeAt == 0L && fresh.any { it.code != null }) next = next.copy(codeAt = System.currentTimeMillis())
         if (next != box) TempMailStore.save(this, next)
         when {
             featurePanel?.tag == "tempmail" -> if (changed) showTempInbox()
@@ -4361,8 +4371,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** The address gone (expired, deleted elsewhere): forgotten here too. */
-    private fun endTempBox(message: String?) {
+    /** The address gone (expired, or mail.tm no longer knows it): forgotten
+     *  here too, and let go on mail.tm when it may still be there. */
+    private fun endTempBox(message: String?, letGo: Boolean) {
+        val box = TempMailStore.load(this)
+        if (letGo && box != null) MailTm.delete(tempBase(), box)
         TempMailStore.clear(this)
         tempMails = emptyList()
         main.removeCallbacks(tempTick)
@@ -4371,31 +4384,25 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (tempPanelShowing()) showTempInbox()
     }
 
-    /** A new address, then [then] with it; the server's words when it can't.
-     *  The one it replaces (New) is let go once the new one is here, and a
-     *  day's turned-away checks stay turned away. */
+    /** A new address on mail.tm, then [then] with it; words for the person
+     *  when it can't. The one it replaces (New) is let go once the new one
+     *  is here. */
     private fun createTempBox(then: (TempBox) -> Unit) {
         if (tempCreating) return
         tempCreating = true
         val old = TempMailStore.load(this)
-        TempMailClient.create(settings.optString("backendURL"), settings.optString("deviceId")) { r ->
+        val base = tempBase()
+        MailTm.create(base) { box, status ->
             main.post {
                 tempCreating = false
-                val json = r.json
-                val address = json?.optString("address").orEmpty()
-                val token = json?.optString("token").orEmpty()
-                if (address.isEmpty() || token.isEmpty()) {
-                    notice(r.error ?: "Temp mail didn't answer. Try again in a moment")
+                if (box == null) {
+                    notice(MailTm.createNotice(status))
                     return@post
                 }
-                val now = System.currentTimeMillis()
-                val box = TempBox(address, token, json!!.optLong("expiresAt", now + 3_600_000L),
-                    now, now + TempMailClient.WATCH_MS, 0L, emptySet(), old?.blockedUntil ?: 0L)
                 TempMailStore.save(this, box)
                 tempMails = emptyList()
-                if (old != null && old.address != address) {
-                    TempMailClient.delete(settings.optString("backendURL"), settings.optString("deviceId"), old)
-                }
+                tempFails = 0
+                if (old != null && old.address != box.address) MailTm.delete(base, old)
                 scheduleTempCheck()
                 then(box)
             }
@@ -4419,7 +4426,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  Opening it starts a new watch window, with a look at once. */
     private fun showTempMailPanel(openId: String? = null) {
         TempMailStore.load(this)?.let { box ->
-            if (System.currentTimeMillis() >= box.expiresAt) { endTempBox("That address has expired"); return@let }
+            if (System.currentTimeMillis() >= box.expiresAt) { endTempBox("That address has expired", letGo = true); return@let }
             restartTempWatch(box)
         }
         val mail = openId?.let { id -> tempMails.firstOrNull { it.id == id } }
@@ -4429,9 +4436,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private fun showTempInbox() {
-        val (panel, body) = panelShell("Temp mail")
+        val (panel, body, stage) = panelShell("Temp mail")
         panel.tag = "tempmail"
         tempLine = null
+        pinTempCredit(stage)
         val box = TempMailStore.load(this)
         if (box == null) {
             body.addView(pill("Create address", primary = true, id = "tempmail:create", accent = true) {
@@ -4475,9 +4483,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             createTempBox { if (featurePanel?.tag == "tempmail") showTempInbox() }
         })
         actions.addView(smallAction("Delete", "tempmail:delete") {
-            TempMailClient.delete(settings.optString("backendURL"), settings.optString("deviceId"), box) { r ->
-                main.post { if (r.json == null && r.status != 403 && r.status != 410) r.error?.let { notice(it) } }
-            }
+            MailTm.delete(tempBase(), box)
             TempMailStore.clear(this)
             tempMails = emptyList()
             main.removeCallbacks(tempTick)
@@ -4508,11 +4514,34 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 setTextColor(Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
                 setTag(com.demo.glyf.R.id.qa_id, "tempmail:empty")
             })
-            return
-        }
-        for ((i, mail) in tempMails.withIndex()) body.addView(tempRow(i, mail),
+        } else for ((i, mail) in tempMails.withIndex()) body.addView(tempRow(i, mail),
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(7) })
+    }
+
+    /** mail.tm asks to be linked to where it is used: a quiet line pinned
+     *  at the panel's foot on every screen of it (what scrolls ends above
+     *  it), opening its site. */
+    private fun pinTempCredit(stage: FrameLayout) {
+        val h = dp(24)
+        stage.getChildAt(0)?.let { scroll ->
+            scroll.layoutParams = (scroll.layoutParams as FrameLayout.LayoutParams).apply { bottomMargin = h }
+        }
+        stage.addView(TextView(this).apply {
+            text = "via mail.tm"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setPadding(dp(16), 0, dp(16), 0)
+            setTextColor(Color.argb(130, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
+            setTag(com.demo.glyf.R.id.qa_id, "tempmail:credit")
+            setOnClickListener {
+                runCatching {
+                    startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://mail.tm"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            }
+        }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, h,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
     }
 
     private fun renderTempLine() {
@@ -4557,7 +4586,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTextColor(ink())
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         top.addView(TextView(this).apply {
-            text = TempMailClient.ago(mail.receivedAt)
+            text = TempMailRules.ago(mail.receivedAt)
             textSize = 12f
             setTextColor(Color.argb(150, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
         })
@@ -4594,8 +4623,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** One mail: what it says, and its code big, to put in or copy. */
     private fun showTempMail(mail: TempMail) {
-        val (panel, body) = panelShell("Temp mail", onBack = { showTempInbox() })
+        val (panel, body, stage) = panelShell("Temp mail", onBack = { showTempInbox() })
         panel.tag = "tempmail:mail"
+        pinTempCredit(stage)
         main.removeCallbacks(tempClock)
         body.addView(TextView(this).apply {
             text = mail.subject.ifBlank { mail.from }
@@ -4605,7 +4635,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTag(com.demo.glyf.R.id.qa_id, "tempmail:subject")
         })
         body.addView(TextView(this).apply {
-            text = "${mail.from.ifBlank { mail.fromAddress }} · ${TempMailClient.ago(mail.receivedAt)}"
+            text = "${mail.from.ifBlank { mail.fromAddress }} · ${TempMailRules.ago(mail.receivedAt)}"
             textSize = 13f
             setTextColor(Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
             setPadding(0, dp(2), 0, dp(8))

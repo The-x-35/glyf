@@ -57,6 +57,7 @@
 		6AC48EB71DCDEE4579DB32CC /* Games.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DCC7C657F3DAF1BA19C8227 /* Games.swift */; };
 		6B502FA1491B78CA9CCF7F63 /* InlineEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E97DFE2A588F7A69880F23A /* InlineEditor.swift */; };
 		6D705D6C53780C162B803930 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F69B8F550E5B5270B4D18FCA /* Pods_Runner.framework */; };
+		6D9A920640A3CCC16F104913 /* MailTM.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7720920DD18FF5AFF744AD53 /* MailTM.swift */; };
 		719B86642624213ECDBF06EE /* WalletSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD7C3A22F17A9CEEDF8122E /* WalletSecrets.swift */; };
 		735137DEAC3D31AC61DBBBFB /* CalendarText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7C9B275603B0968648339E /* CalendarText.swift */; };
 		737B2D28D4945E95B7BCC5E5 /* GlyfSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */; };
@@ -261,6 +262,7 @@
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		74BB8405F8AB9A49632A3940 /* GlyfEngineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfEngineTests.swift; sourceTree = "<group>"; };
 		7508C7D7086528DBA50605BC /* GlassTokens.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlassTokens.swift; sourceTree = "<group>"; };
+		7720920DD18FF5AFF744AD53 /* MailTM.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MailTM.swift; sourceTree = "<group>"; };
 		776A7108B0C97C06AAEA8F53 /* SearchRecents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchRecents.swift; sourceTree = "<group>"; };
 		7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		79A18448EF0F4C763B35281E /* VaultTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultTests.swift; sourceTree = "<group>"; };
@@ -491,6 +493,7 @@
 				2DCC7C657F3DAF1BA19C8227 /* Games.swift */,
 				E10C49ED64EB5C3D1C4AF361 /* TempMail.swift */,
 				E222BB8A869057CCA4BE3324 /* TempMailWatcher.swift */,
+				7720920DD18FF5AFF744AD53 /* MailTM.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -982,6 +985,7 @@
 				A93D1F9F01F94D57A3A33B19 /* TempMail.swift in Sources */,
 				3627AE07B1300C53E00B26D0 /* TempMailWatcher.swift in Sources */,
 				3030BB09C6837BD7E0B85F68 /* TempMailView.swift in Sources */,
+				6D9A920640A3CCC16F104913 /* MailTM.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

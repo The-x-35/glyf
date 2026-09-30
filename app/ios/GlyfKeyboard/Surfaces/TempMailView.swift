@@ -10,6 +10,8 @@ final class TempMailView: UIView {
     var onInsert: ((String) -> Void)?
     var onCopy: ((String) -> Void)?
     var onOpenMail: ((String) -> Void)?
+    /// Opens a page in the browser (the credit's mail.tm).
+    var onOpenLink: ((URL) -> Void)?
 
     private let watcher = TempMailWatcher.shared
     /// One mail open, rather than the inbox.
@@ -30,6 +32,8 @@ final class TempMailView: UIView {
     // The inbox
     private let inbox = ControlScrollView()
     private let emptyLabel = UILabel()
+    /// mail.tm asks for a visible link back: one quiet line at the foot.
+    private let creditButton = UIButton(type: .system)
     // One mail
     private let mailScroll = ControlScrollView()
     private let subjectLabel = UILabel()
@@ -104,6 +108,15 @@ final class TempMailView: UIView {
         emptyLabel.textAlignment = .center
         emptyLabel.accessibilityIdentifier = "tempmail:empty"
         addSubview(emptyLabel)
+        creditButton.setTitle("via mail.tm", for: .normal)
+        creditButton.titleLabel?.font = .systemFont(ofSize: 11)
+        creditButton.setTitleColor(Glass.textSecondary, for: .normal)
+        creditButton.accessibilityIdentifier = "tempmail:credit"
+        creditButton.addAction(UIAction { [weak self] _ in
+            guard let url = URL(string: "https://mail.tm") else { return }
+            self?.onOpenLink?(url)
+        }, for: .touchUpInside)
+        addSubview(creditButton)
 
         mailScroll.alwaysBounceVertical = true
         mailScroll.showsVerticalScrollIndicator = false
@@ -355,7 +368,11 @@ final class TempMailView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let w = bounds.width, h = bounds.height, side: CGFloat = 12
+        let w = bounds.width, side: CGFloat = 12
+        // The credit sits under everything, on every screen of the panel.
+        let creditH: CGFloat = 20
+        creditButton.frame = CGRect(x: (w - 120) / 2, y: bounds.height - creditH, width: 120, height: creditH)
+        let h = bounds.height - creditH
 
         createButton.frame = CGRect(x: (w - 200) / 2, y: (h - 44) / 2, width: 200, height: 44)
         createButton.layer.cornerRadius = 22
@@ -415,7 +432,7 @@ final class TempMailView: UIView {
 
         // One mail: its subject and sender, the code big with Insert and Copy,
         // the link, then the words, all of it scrolling.
-        mailScroll.frame = bounds
+        mailScroll.frame = CGRect(x: 0, y: 0, width: w, height: h)
         let mw = w - side * 2
         let subjectH = ceil(subjectLabel.sizeThatFits(CGSize(width: mw, height: .greatestFiniteMagnitude)).height)
         subjectLabel.frame = CGRect(x: side, y: 10, width: mw, height: subjectH)

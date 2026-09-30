@@ -32,10 +32,6 @@ export const PAID_PER_DAY = {
   runs: { plus: 150, max: 400 },
   suggestions: { plus: 300, max: 600 },
   translations: { plus: 400, max: 1000 },
-  // Temp mail (lib/tempmail.ts): each address and each check is a request
-  // Temp-Mail.io bills. A check every 8 s for 15 minutes is ~110 checks.
-  tempInboxes: { plus: 20, max: 50 },
-  tempChecks: { plus: 1800, max: 3600 },
 } as const;
 
 function perDay(kind: keyof typeof PAID_PER_DAY, plan: Plan, freePerDay: number): number {
@@ -61,17 +57,6 @@ export function suggestCapsFor(plan: Plan, freePerDay: number): Caps {
  *  can take a dozen translations: they are counted apart from runs. */
 export function translateCapsFor(plan: Plan, freePerDay: number): Caps {
   return { runsPerDay: perDay("translations", plan, freePerDay), burstPerMinute: 40 };
-}
-
-/** New temp mail addresses: a handful a day, apart from runs. */
-export function tempInboxCapsFor(plan: Plan, freePerDay: number): Caps {
-  return { runsPerDay: perDay("tempInboxes", plan, freePerDay), burstPerMinute: 5 };
-}
-
-/** Checks of a temp inbox: the keyboard asks every few seconds while it
- *  watches one, so these are many and cheap, and apart from runs too. */
-export function tempCheckCapsFor(plan: Plan, freePerDay: number): Caps {
-  return { runsPerDay: perDay("tempChecks", plan, freePerDay), burstPerMinute: 20 };
 }
 
 export type Window = "day" | "minute";
