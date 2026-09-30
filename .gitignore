@@ -23,3 +23,6 @@ docs/evidence/*.mp4
 
 # Scenario screenshots are evidence for a run, not source.
 qa/results/*.png
+
+# Parity pass reference and before/after shots (2026-09-30): large, kept locally.
+qa/results/parity/*.png

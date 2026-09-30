@@ -232,9 +232,14 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     private func paintPills() {
         for (kind, pill) in filterPills {
             let on = kind == filter
-            pill.backgroundColor = on ? Glass.brandInk : Glass.surfaceCard
-            (pill.viewWithTag(1) as? UIImageView)?.tintColor = on ? .white : Glass.textPrimary
-            (pill.viewWithTag(2) as? UILabel)?.textColor = on ? .white : Glass.textPrimary
+            // Ink on light, white on dark: a black pill on the dark sheet
+            // vanished and left "All" as bare text (found 2026-09-30).
+            let dark = Glass.isDark
+            let fill: UIColor = dark ? .white : Glass.brandInk
+            let ink: UIColor = dark ? Glass.brandInk : .white
+            pill.backgroundColor = on ? fill : Glass.surfaceCard
+            (pill.viewWithTag(1) as? UIImageView)?.tintColor = on ? ink : Glass.textPrimary
+            (pill.viewWithTag(2) as? UILabel)?.textColor = on ? ink : Glass.textPrimary
             pill.accessibilityTraits = on ? [.button, .selected] : .button
         }
     }

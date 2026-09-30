@@ -69,7 +69,15 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     /// What searching adds to the keyboard: the same in every state.
     static var extraHeight: CGFloat { max(0, stripHeight - Glass.toolbarHeight) }
     private var cards: [Card] = []
-    private var status = ""
+    /// The line under the query ("Searching…", "Nothing found", "Type a
+    /// name"). It was laid out but never given its words (found 2026-09-30
+    /// while capturing the Android parity reference).
+    private var status = "" {
+        didSet {
+            statusLabel.text = status
+            setNeedsLayout()
+        }
+    }
     /// Read and decoded once per search, not on every letter of a name.
     private lazy var contacts = AppGroupStore.readContacts()
 
