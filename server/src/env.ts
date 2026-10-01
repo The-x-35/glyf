@@ -32,16 +32,17 @@ export const env = {
   /** So do the translate bar's translations. */
   freeTranslationsPerDay: 100,
   /** §8.3 fallback chains, most-preferred first, measured 2026-09-26 for
-   *  speed and price (docs/BACKEND.md 5.10). Never hard-code one :free id.
-   *  Hold space and chip taps: Qwen 3.7 Flash writes all six rewrite
-   *  versions for about $0.03 a thousand; Gemini 2.5 Flash-Lite stands
-   *  behind it, then Gemini's own free tier. */
-  fastModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro",
-    "gemini:gemini-flash-lite-latest", "openrouter/free"],
+   *  speed and price (docs/BACKEND.md 5.10). Paid OpenRouter models only,
+   *  every request denying data collection (requestOptions): no free tier,
+   *  whose providers may keep or train on what they are sent (Google's OAuth
+   *  review, 2026-10-01; the privacy policy promises it). Never hard-code
+   *  one :free id. Hold space and chip taps: Qwen 3.7 Flash writes all six
+   *  rewrite versions for about $0.03 a thousand; Gemini 2.5 Flash-Lite
+   *  stands behind it. */
+  fastModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro", "google/gemini-2.5-flash-lite"],
   /** The Builder: Ling 3.0 Flash made a valid glyf six times out of six in
    *  about 2 s for $0.03 a thousand; Gemini 2.5 Flash-Lite (1.4 s) next. */
-  smartModels: ["inclusionai/ling-3.0-flash", "google/gemini-2.5-flash-lite:nitro",
-    "gemini:gemini-flash-lite-latest", "openrouter/free"],
+  smartModels: ["inclusionai/ling-3.0-flash", "google/gemini-2.5-flash-lite:nitro", "google/gemini-2.5-flash-lite"],
   /** A question answered from what a model knows (hold space, the strip's
    *  "AI answer", the web tab), there being no search for now. Measured
    *  2026-09-29 on 18 facts twice at temperature 0: Gemini 3.1 Flash-Lite
@@ -49,8 +50,7 @@ export const env = {
    *  "France won the 2022 FIFA World Cup" every time and a made-up Super
    *  Bowl LX; Gemini 2.5 Flash-Lite thought the 2024 election was still to
    *  come. */
-  answerModels: ["google/gemini-3.1-flash-lite", "qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro",
-    "gemini:gemini-flash-lite-latest"],
+  answerModels: ["google/gemini-3.1-flash-lite", "qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro"],
   /** What reads a pause in typing for the strip's chip: small, paid, cheap
    *  (about $8 a million reads on Qwen 3.7 Flash) and never a free tier
    *  that keeps what it is sent. */

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/privacy" },
 };
 
-const UPDATED = "25 September 2026";
+const UPDATED = "2 October 2026";
 const EMAIL = "arpit@tryglyf.com";
 
 export default function Privacy() {
@@ -40,7 +40,12 @@ export default function Privacy() {
             <li>We don&rsquo;t keep the text you send, unless you share it as a page. Our server logs that something ran and how long it took, never your words.</li>
             <li>Your saved details, notes, clipboard, contacts, calendar and learned words stay on your phone.</li>
             <li>We don&rsquo;t sell your data, show ads, or track you across other apps.</li>
-            <li>You can delete your account in the app at any time.</li>
+            <li>
+              Google data (from Sign in with Google, Google Calendar and Google Meet) is used only for those features,
+              is never sent to an AI model, and is never used to train one.
+            </li>
+            <li>AI requests go only to providers that don&rsquo;t keep or train on what they are sent.</li>
+            <li>You can have your account and its data deleted at any time.</li>
           </ul>
 
           <h2>What stays on your phone</h2>
@@ -105,7 +110,7 @@ export default function Privacy() {
             and time zone, and when you joined and were last seen. We also keep your plan, the keyboard settings that
             aren&rsquo;t private, the kinds of details in your vault and how many notes and shortcuts you have (never
             their contents), and app activity such as which screens you open, as names and counts, never text. We
-            use this to run your account, keep daily limits fair, and improve Glyf.
+            use this only to run your account, keep daily limits fair, and improve Glyf&rsquo;s features.
           </p>
           <p>
             Your phone also has a random ID, used to count requests when you are signed out and to keep the Glyfs
@@ -120,11 +125,11 @@ export default function Privacy() {
           <h2>Who else handles your data</h2>
           <ul>
             <li>
-              <strong>AI providers.</strong> AI requests are processed by OpenRouter and the model providers it
-              connects to (such as Google, Mistral, Meta through Groq, and Alibaba&rsquo;s Qwen), and by
-              Google&rsquo;s Gemini API. Suggestions only go to providers that don&rsquo;t store or train on what
-              they are sent. Other requests are handled under each provider&rsquo;s own terms; content sent to
-              Google&rsquo;s Gemini API on its unpaid tier can be used by Google to improve its services.
+              <strong>AI providers.</strong> The text you choose to run an AI feature on, and with Suggestions on the
+              sentence you are typing, is sent through OpenRouter to the model that answers: Qwen, Ling or Gemini,
+              served by providers such as Alibaba Cloud, Novita and Google. Every request tells OpenRouter to use only
+              providers that don&rsquo;t keep or train on what they are sent, and Glyf uses no free AI tiers. They
+              process it only to return the result to you. No Google user data is ever sent to an AI provider.
             </li>
             <li>
               <strong>Search and maps.</strong> Your search goes to providers such as Google (Places and YouTube),
@@ -139,13 +144,8 @@ export default function Privacy() {
             </li>
             <li>
               <strong>Google Calendar and Meet.</strong> If you connect Google, the keyboard adds events to your
-              Google Calendar and makes Meet links directly from your phone. The access stays on your phone; we never
-              see your calendar. Glyf uses what Google gives it only for the event or Meet link you ask for, and its
-              use of information received from Google APIs adheres to the{" "}
-              <a href="https://developers.google.com/terms/api-services-user-data-policy">
-                Google API Services User Data Policy
-              </a>
-              , including the Limited Use requirements.
+              Google Calendar and makes Meet links directly from your phone; see{" "}
+              <a href="#google-user-data">Google user data</a> below.
             </li>
             <li>
               <strong>Wallet.</strong> If you use Glyf&rsquo;s wallet, signing is handled by the wallet app you choose, such as
@@ -158,6 +158,61 @@ export default function Privacy() {
           </ul>
           <p>We share data with these services only to provide the feature you are using.</p>
 
+          <h2 id="google-user-data">Google user data</h2>
+          <p>Glyf asks Google for access only when you turn on a feature that needs it:</p>
+          <ul>
+            <li>
+              <strong>Sign in with Google:</strong> your Google account ID, name and email address, to create your
+              Glyf account and sign you in.
+            </li>
+            <li>
+              <strong>Google Calendar</strong> (permission to see, create, change and delete events on calendars you
+              own): to add the events you create in the keyboard to your Google Calendar, invite the guests you name,
+              and change or delete those events when you ask.
+            </li>
+            <li>
+              <strong>Google Meet</strong> (permission to create Meet conferences): to make a Meet link when you ask
+              for one, for an event or for a message.
+            </li>
+          </ul>
+          <p>How Glyf handles it:</p>
+          <ul>
+            <li>
+              Calendar and Meet requests go straight from your phone to Google, and the access Google grants is stored
+              only on your phone. Glyf&rsquo;s servers never receive your calendar events or your Meet details.
+            </li>
+            <li>
+              Glyf uses Google user data only to provide and improve these features for you. It is not used for
+              advertising, it is not sold, and it is not used to build a profile of you.
+            </li>
+            <li>
+              Glyf never sends Google user data to any AI model or AI provider, and never uses it, raw, aggregated or
+              derived, to develop, improve or train AI or machine-learning models.
+            </li>
+            <li>
+              Glyf does not transfer Google user data to anyone, except as part of a feature you ask for (such as an
+              event&rsquo;s details put into your message) or where the law requires it. No person reads it.
+            </li>
+            <li>
+              You can turn Calendar or Meet off at any time in the Glyf app under Profile, Connected tools, and
+              remove Glyf&rsquo;s access at{" "}
+              <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+            </li>
+          </ul>
+          <p>
+            Glyf&rsquo;s use and transfer to any other app of information received from Google APIs will adhere to
+            the{" "}
+            <a href="https://developers.google.com/terms/api-services-user-data-policy">
+              Google API Services User Data Policy
+            </a>
+            , including the Limited Use requirements. The use of raw or derived user data received from Google
+            Workspace APIs will adhere to the{" "}
+            <a href="https://developers.google.com/workspace/workspace-api-user-data-developer-policy">
+              Google Workspace API User Data and Developer Policy
+            </a>
+            , including the Limited Use requirements.
+          </p>
+
           <h2>The waitlist</h2>
           <p>
             If you join the waitlist on this website, we keep your email and where you signed up, to tell you when
@@ -166,9 +221,9 @@ export default function Privacy() {
 
           <h2>Deleting your data</h2>
           <p>
-            In the Glyf app, go to Profile and tap Delete account. That deletes your account, its settings and its
-            activity from our server. What is stored on your phone stays until you delete the app. You can also email
-            us to delete your data or get a copy of it.
+            Email <a href={`mailto:${EMAIL}`}>{EMAIL}</a> from the address on your account and we will delete your
+            account, its settings and its activity from our server within 30 days, or send you a copy. What is stored
+            on your phone stays until you delete the app.
           </p>
 
           <h2>Children</h2>

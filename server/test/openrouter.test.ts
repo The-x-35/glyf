@@ -111,6 +111,19 @@ describe("requestOptions", () => {
       .toMatchObject({ reasoning: { effort: "low", exclude: true } });
   });
 
+  it("sends every tier only to providers that neither keep nor train on it", async () => {
+    const or = (m: string) => ep("https://openrouter.ai/api/v1/chat/completions", m, true);
+    for (const tier of ["fast", "smart", "answer", "suggest"] as const) {
+      expect(requestOptions(or("qwen/qwen3.7-flash"), tier), tier).toMatchObject({ provider: { data_collection: "deny" } });
+    }
+    // Paid OpenRouter models only: no free tier and no direct free API in any chain.
+    const { env } = await import("../src/env.js");
+    for (const id of [...env.fastModels, ...env.smartModels, ...env.answerModels, ...env.suggestModels]) {
+      expect(id.includes(":") && !id.endsWith(":nitro"), id).toBe(false);
+      expect(id.startsWith("openrouter/") || id.endsWith(":free"), id).toBe(false);
+    }
+  });
+
   it("keeps the strip's reads short, steady, unthinking and away from providers that keep them", () => {
     const or = (m: string) => ep("https://openrouter.ai/api/v1/chat/completions", m, true);
     expect(requestOptions(or("google/gemini-2.5-flash-lite"), "suggest")).toEqual({

@@ -55,11 +55,13 @@ export function requestOptions(ep: Endpoint, tier: Tier): Record<string, unknown
   const quick = tier !== "smart";
   const id = ep.model.toLowerCase();
   if (tier === "suggest") {
-    // A few words of JSON, the same every time, and only to providers that
-    // neither keep nor train on what they are sent: it is someone's typing.
+    // A few words of JSON, the same every time.
     opts.temperature = 0;
-    if (ep.openrouter) opts.provider = { data_collection: "deny" };
   }
+  // Every tier, only to providers that neither keep nor train on what they
+  // are sent: it is someone's typing (the privacy policy says so, and
+  // Google's OAuth review asked, 2026-10-01).
+  if (ep.openrouter) opts.provider = { data_collection: "deny" };
   if (ep.openrouter) {
     // Hybrid models (Qwen 3.7 Flash, DeepSeek V4 Flash, Ling) think first
     // unless told not to: measured, a rewrite took 16 s and ten times the
