@@ -69,7 +69,11 @@ class EventComposerView(
 
     private enum class Field { TITLE, INVITEES }
 
-    private var draft = start
+    /** A new event comes with its call link when one can be made, so the
+     *  message it goes into carries the link (Arpit, 2026-10-01: "creating a
+     *  calendar event should also send its meeting link in chat with calendar
+     *  details"). Off with a tap, as before; Edit Event has no Video call. */
+    private var draft = if (meet && !edit) start.copy(videoCall = true) else start
     /** Whatever the title said, so the rows and the event agree. */
     private var typed = start.title
     /** The invitees as typed ("sam@x.com ria@y.com"). */
@@ -99,7 +103,7 @@ class EventComposerView(
     private val endDate = pill("event:ends:date") { pick(2) }
     private val endTime = pill("event:ends:time") { pick(2) }
     private val allDay = GlassSwitch(ctx, start.allDay) { on -> allDayChanged(on) }
-    private val video = GlassSwitch(ctx, start.videoCall) { on -> draft = draft.copy(videoCall = on) }
+    private val video = GlassSwitch(ctx, draft.videoCall) { on -> draft = draft.copy(videoCall = on) }
     private val share = GlassSwitch(ctx, start.share) { on -> draft = draft.copy(share = on) }
     private val note = LinearLayout(ctx)
     private val wheels = LinearLayout(ctx)

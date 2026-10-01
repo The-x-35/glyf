@@ -156,17 +156,98 @@ class SmartTest {
             Smart.Field("upi", "UPI", "me@okbank"))
         val asks = listOf(
             "my email is" to "email", "Email ID:" to "email", "you can email me at" to "email",
+            // The word alone asks for it (Arpit, 2026-10-01: "when i type email
+            // it should show my email id from vault").
+            "email" to "email", "send it to my email" to "email", "email id" to "email",
+            "gmail" to "email", "mail id" to "email", "ok, email" to "email",
             "address:" to "address", "our office address:" to "address", "ship it to" to "address",
             "my number is" to "phone", "phone:" to "phone", "reach me at" to "phone",
             "my wallet" to "wallet", "sol address:" to "wallet", "follow me on insta" to "social",
             "upi id:" to "upi")
         for ((text, kind) in asks) assertEquals(text, kind, Smart.vaultMatch(text, all)?.kind)
-        for (text in listOf("can you email", "i'll email", "email", "what's the address", "wrong address",
+        // "email" the verb is about sending one, not yours.
+        for (text in listOf("can you email", "i'll email", "please email", "pls email", "we'll email",
+                "could u email", "can you email the deck", "hotmail", "voicemail", "what's the address", "wrong address",
                 "the address is", "ip address:", "i lost my phone", "my phone is dead",
                 "phantom wallet is down", "saw it on insta", "i use paytm", "this is great",
                 "my linkedin is")) {
             assertNull(text, Smart.vaultMatch(text, all))
         }
+    }
+
+    /** Two saved emails show both (Arpit, 2026-10-01: "if i added 2 mail ids
+     *  i should see both"), in the vault's order; one shows the one chip it
+     *  always did; a question for someone else shows none. */
+    @Test fun everySavedValueOfTheKindTheSentenceAsksFor() {
+        val work = Smart.Field("email", "Work", "alex.rivera@example.com")
+        val home = Smart.Field("address", "Home", "123 Market St")
+        val personal = Smart.Field("email", "Personal", "alex@gmail.com")
+        val mobile = Smart.Field("phone", "Mobile", "+1 415 555 0100")
+        val office = Smart.Field("phone", "Office", "+1 415 555 0199")
+        val vault = listOf(work, home, personal, mobile, office)
+        val both = Smart.Chip.Details(listOf(work, personal), temp = false)
+        for (text in listOf("my email is", "email", "send it to my email", "Email ID:", "gmail", "email id")) {
+            assertEquals(text, both, Smart.chip(text, vault))
+        }
+        assertEquals(listOf(work, personal), Smart.vaultMatches("my email is", vault))
+        // One saved: the single chip, as before.
+        assertEquals(Smart.Chip.Vault(work), Smart.chip("my email is", listOf(work, home)))
+        assertEquals(Smart.Chip.Vault(work), Smart.chip("email", listOf(work, home)))
+        // Someone else's, or the verb: nothing.
+        for (text in listOf("your email", "what's your email", "send me ur email", "can you email",
+                "i'll email", "please email")) {
+            assertNull(text, Smart.chip(text, vault))
+        }
+        // A phone number, two saved: both.
+        assertEquals(Smart.Chip.Details(listOf(mobile, office), temp = false), Smart.chip("my number is", vault))
+        assertEquals(Smart.Chip.Details(listOf(mobile, office), temp = false), Smart.chip("call me at", vault))
+        // At most three; a value saved twice shows once.
+        val many = listOf(work, personal, Smart.Field("email", "Old", "a@b.co"), Smart.Field("email", "", "c@d.co"),
+            Smart.Field("email", "Again", "alex@gmail.com"))
+        assertEquals(listOf(work, personal, many[2]), (Smart.chip("email", many) as Smart.Chip.Details).fields)
+        // A handle stays the platform's own.
+        val handles = listOf(Smart.Field("social", "Instagram", "@alex"), Smart.Field("social", "LinkedIn", "in/alex"))
+        assertEquals(Smart.Chip.Vault(handles[0]), Smart.chip("my insta is", handles))
+        // An empty form field asking for a kind we hold: every value of it.
+        assertEquals(both, Smart.chip("", vault, fieldKind = "email"))
+        assertEquals(Smart.Chip.Vault(home), Smart.chip("", vault, fieldKind = "address"))
+        assertNull(Smart.chip("", vault, fieldKind = "upi"))
+        assertNull(Smart.chip("", vault))
+        // What the chip says and does: each part is its own action.
+        assertEquals("alex.rivera@example.com · alex@gmail.com", Smart.display(both))
+        assertNull(Smart.verb(both))
+        assertEquals("", Smart.insert(both))
+    }
+
+    /** An email chip gets Temp mail beside your emails (two at most); any
+     *  other chip stays as it is. */
+    @Test fun emailsComeWithATempAddress() {
+        val work = Smart.Field("email", "Work", "alex.rivera@example.com")
+        val personal = Smart.Field("email", "Personal", "alex@gmail.com")
+        val old = Smart.Field("email", "Old", "a@b.co")
+        val phone = Smart.Field("phone", "Mobile", "+1 415 555 0100")
+        assertEquals(Smart.Chip.Details(listOf(work), temp = true), Smart.withTempMail(Smart.Chip.Vault(work)))
+        assertEquals(Smart.Chip.Details(listOf(work, personal), temp = true),
+            Smart.withTempMail(Smart.Chip.Details(listOf(work, personal, old), temp = false)))
+        assertEquals(Smart.Chip.Details(listOf(work, personal), temp = true),
+            Smart.withTempMail(Smart.chip("email", listOf(work, personal, phone))))
+        assertEquals(Smart.Chip.Vault(phone), Smart.withTempMail(Smart.Chip.Vault(phone)))
+        val phones = Smart.Chip.Details(listOf(phone, phone.copy(value = "+1 415 555 0199")), temp = false)
+        assertEquals(phones, Smart.withTempMail(phones))
+        assertNull(Smart.withTempMail(null))
+        assertEquals("alex.rivera@example.com · Temp mail",
+            Smart.display(Smart.Chip.Details(listOf(work), temp = true)))
+    }
+
+    /** A saved detail typed after a word gets a space before it ("email" +
+     *  a tap is "email alex@…", never "emailalex@…"). */
+    @Test fun aDetailIsSpacedFromTheWordBeforeIt() {
+        assertEquals(" a@b.co", Smart.spaced("a@b.co", "email"))
+        assertEquals(" a@b.co", Smart.spaced("a@b.co", "Email:"))
+        assertEquals("a@b.co", Smart.spaced("a@b.co", "my email is "))
+        assertEquals("a@b.co", Smart.spaced("a@b.co", "line one\n"))
+        assertEquals("a@b.co", Smart.spaced("a@b.co", ""))
+        assertEquals("a@b.co", Smart.spaced("a@b.co", null))
     }
 
     /** "I lost 5 pounds" is weight; a conversion the chip put in is not

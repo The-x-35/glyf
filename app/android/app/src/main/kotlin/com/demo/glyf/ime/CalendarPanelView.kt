@@ -22,8 +22,9 @@ import java.util.Locale
  * events, full width, because that is what you reach for mid-message. Tap one
  * to put it in the message, or share when you are free that day. Month opens
  * the grid to jump to another day. + makes an event (in Google Calendar,
- * which emails the invitees, when Google is connected; with a call link if
- * asked; into the message if shared), the camera puts a call link in the
+ * which emails the invitees, when Google is connected; with a call link
+ * whenever Google Meet can make one; into the message with it, unless Share
+ * in chat is turned off), the camera puts a call link in the
  * message, and Book a time shows the open times on the person's Cal.com page.
  * Holding an event opens the clipboard's kind of menu: Edit (the composer,
  * as Edit Event) and Delete.
@@ -206,11 +207,13 @@ class CalendarPanelView(
      *  else the chosen day at the next hour (9 AM on another day). */
     fun compose(plan: EventParse.Plan?) {
         val draft = if (plan != null) {
-            // The plan is in the message already: nothing more goes in. Its
-            // day is the calendar's, so Cancel shows what else is on then.
+            // The event, with its call link, goes into the message once added,
+            // as one made from the calendar does: the plan in the message has
+            // no link yet. Its day is the calendar's, so Cancel shows what
+            // else is on then.
             show(plan.start)
             loadEvents()
-            EventComposerView.Draft(plan.title, plan.start, plan.end, plan.allDay)
+            EventComposerView.Draft(plan.title, plan.start, plan.end, plan.allDay, share = true)
         } else {
             val now = System.currentTimeMillis()
             val start = if (selected == CalendarText.startOfDay(now)) {

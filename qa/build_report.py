@@ -61,17 +61,20 @@ ANDROID_INPUT = {
     "S107": "😊 key → GIF → Trending → tap a GIF",
     "S108": "😊 key → Stickers → Trending → tap a sticker",
     "S111": "calendar → + → Title “lunch with sam tomorrow 1pm” → Add → tap the event",
-    "S112": "dinner friday 8pm → tap the chip → Add",
+    "S112": "dinner friday 8pm → tap the chip → Add (Share in chat on)",
     "S117": "Google not connected → calendar → camera",
     "S118": "Booking link cal.com/fake-host/30min → calendar → Book a time → first time → “sam lee sam@example.com ria@example.com” → Book it",
     "S120": "“grab a time cal.com/sam-lee/intro” → tap the Book chip → first time → Book it",
     "S125": "Google connected (stand-in) → calendar → camera",
-    "S126": "Google connected (stand-in) → calendar → + → “review friday 3pm” → Invitees “sam@example.com” → Video call → Add",
+    "S126": "Google connected (stand-in) → calendar → + → “review friday 3pm” → Invitees “sam@example.com” → Add (Video call on by itself)",
     "S127": "Google not connected → calendar → + → “lunch with sam tomorrow 1pm” → Add",
     "S128": "M bound to Meet link, Google connected (stand-in) → hold M",
     "S130": "open the keyboard, light then dark (uimode night); tap the key",
     "S133": "g → Games → Snake → swipe up → tap",
     "S134": "g → Games → Chomp → tap, wait 2s → swipe down → ‹",
+    "S219": "two saved emails → email → tap the second part",
+    "S220": "g → Temp mail → Insert; a mail with a code and a link → the inbox's code pill, the mail's Insert, Insert link",
+    "S221": "Google connected (stand-in) → calendar → + → “sync with ria friday 4pm” → Add; then Meet only → “catch up with sam friday 4pm” → Add",
 }
 ANDROID_FIXED = {"S85", "S86", "S87", "S88", "S89", "S90", "S91"}
 

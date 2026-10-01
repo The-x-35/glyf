@@ -206,7 +206,7 @@ async function screenshotsOn() {
   const file = "files/bridge/settings.json";
   const before = adb("shell", `run-as ${PKG} cat ${file}`);
   const settings = JSON.parse(before);
-  const write = text => execFileSync(ADB, ["shell", `run-as ${PKG} sh -c 'cat > ${file}'`], { input: text });
+  const write = text => writeSettings(text);
   if (!granted) shell(`pm grant ${PKG} ${perm}`);
   if (settings.clipboardScreenshots === false) write(JSON.stringify({ ...settings, clipboardScreenshots: true }));
   if (!granted) atEnd.push(() => shell(`pm revoke ${PKG} ${perm}`));
@@ -239,6 +239,11 @@ async function rowInView(id) {
 const byId = id => v => v.id === id;
 const idStarts = p => v => v.id.startsWith(p);
 const textHas = t => v => (v.text || "").toLowerCase().includes(t.toLowerCase());
+
+// Where a tap types a chip's saved value: a details chip (two saved values,
+// or your email and Temp mail, 2026-10-01) holds each value on a part of its
+// own, so the first part; any other chip anywhere on it.
+const firstValue = (s, chip) => find(s, byId("strip:smart:choice:0")) || chip;
 
 // Every tool, by the id the strip's icon and the menu's tile carry.
 const TOOL_IDS = ["search", "rewrite", "translate", "vault", "calendar", "tempmail", "clipboard", "gifs",
@@ -299,8 +304,14 @@ const readingPos = v => Math.round(v.y / 20) * 100000 + v.x;
 // Settings the app would write, set for one scenario and put back after it.
 const SETTINGS = "files/bridge/settings.json";
 const readSettings = () => adb("shell", `run-as ${PKG} cat ${SETTINGS}`);
-const writeSettings = text =>
-  execFileSync(ADB, ["shell", `run-as ${PKG} sh -c 'cat > ${SETTINGS}'`], { input: text });
+// Written beside it, then swapped in, as the app writes it: the keyboard
+// looks at its settings every 0.4 s, and a file caught half-written (`cat >`
+// empties it first) reads as missing, which puts the defaults in its place
+// (2026-10-01: a run lost tempMailBase that way, and the phone's deviceId).
+function writeSettings(text) {
+  execFileSync(ADB, ["shell", `run-as ${PKG} sh -c 'cat > ${SETTINGS}.qa && mv ${SETTINGS}.qa ${SETTINGS}'`],
+    { input: text });
+}
 
 const scenarios = [
   { id: "S84", title: "A typo in a sentence is fixed on space", run: async () => {
@@ -340,7 +351,7 @@ const scenarios = [
     await type("sure my address is ");
     const chip = await waitFor(byId("strip:smart"), 3000);
     if (!chip) return { pass: false, note: "no address chip" };
-    const r = await tapFor(chip, x => x.length > "sure my address is ".length + 4);
+    const r = await tapFor(firstValue(await state(), chip), x => x.length > "sure my address is ".length + 4);
     return { pass: /^sure my address is \S/i.test(r.t) && /\d/.test(r.t), note: `'${r.t}'${second(r)}` };
   } },
   { id: "S89", title: "Asked for your wallet address, it is one tap away", run: async () => {
@@ -349,7 +360,7 @@ const scenarios = [
     await type("my wallet address is ");
     const chip = await waitFor(byId("strip:smart"), 3000);
     if (!chip) return { pass: false, note: "no wallet chip" };
-    const r = await tapFor(chip, x => /[1-9A-HJ-NP-Za-km-z]{32,44}/.test(x));
+    const r = await tapFor(firstValue(await state(), chip), x => /[1-9A-HJ-NP-Za-km-z]{32,44}/.test(x));
     return { pass: /^my wallet address is [1-9A-HJ-NP-Za-km-z]{32,44}/i.test(r.t), note: `'${r.t}'${second(r)}` };
   } },
   { id: "S90", title: "A rough message offers Tidy this up", run: async () => {
@@ -537,7 +548,7 @@ const scenarios = [
     return { pass: (starts?.text || "").includes("1:00") && r.t.includes("Lunch with sam"),
       note: `starts '${starts?.text}', hint '${hint}', message '${r.t}'${second(r)}` };
   } },
-  { id: "S112", title: "A plan in a message offers Add to calendar", run: async () => {
+  { id: "S112", title: "A plan in a message offers Add to calendar, and the event follows the plan into the message", run: async () => {
     await calendarOn();
     await fresh();
     await type("dinner friday 8pm");
@@ -548,11 +559,14 @@ const scenarios = [
     const add = await waitFor(byId("event:add"), 4000);
     if (!add) return { pass: false, note: `chip '${words}' didn't open New Event` };
     const starts = (find(await state(), byId("event:starts:time")) || {}).text || "";
-    await tapXY(add.x, add.y);
-    const row = await waitFor(v => v.text === "Dinner", 5000);
-    const t = await text();
-    return { pass: !!row && starts.includes("8:00") && t.toLowerCase().trim() === "dinner friday 8pm",
-      note: `chip '${words}', starts '${starts}', message '${t}'` };
+    // Share in chat is on from a plan too (2026-10-01: "creating a calendar
+    // event should also send its meeting link in chat with calendar
+    // details"); without Google there is no call link to send.
+    const share = await rowInView("event:share");
+    const r = await tapFor(add, x => x.includes("📅 Dinner"), 6000);
+    return { pass: starts.includes("8:00") && share?.selected === true &&
+        /^dinner friday 8pm 📅 Dinner · .*8:00/i.test(r.t) && !r.t.includes("http"),
+      note: `chip '${words}', starts '${starts}', Share in chat ${share ? (share.selected ? "on" : "off") : "missing"}; message '${r.t}'${second(r)}` };
   } },
   // Call links, Book a time and invites (2026-09-24). S118 to S120 need the
   // stand-in Cal.com and Resend (qa/fake-scheduling.mjs on 8796) behind the
@@ -682,10 +696,10 @@ const scenarios = [
       if (!(await tapOpen(invitees, byId("event:invitees:field")))) return { pass: false, note: "no invitees strip" };
       await type("sam@example.com");
       await key("return");
+      // Video call is on from the start when Meet can make the link (2026-10-01).
       const video = await rowInView("event:video");
       if (!video) return { pass: false, note: "no Video call row" };
-      await tapXY(video.x, video.y);
-      await sleep(300);
+      if (!video.selected) return { pass: false, note: "Video call started off with Google connected" };
       const add = await waitFor(byId("event:add"), 3000);
       if (!add) return { pass: false, note: "no Add" };
       // Share in chat is on from +: the event lands in the message too.
@@ -951,7 +965,7 @@ scenarios.push(
     // and the old settings come back afterwards.
     const file = "files/bridge/settings.json";
     const before = adb("shell", `run-as ${PKG} cat ${file}`);
-    const write = text => execFileSync(ADB, ["shell", `run-as ${PKG} sh -c 'cat > ${file}'`], { input: text });
+    const write = text => writeSettings(text);
     const had = JSON.parse(before);
     if (had.lastLat === undefined) {
       write(JSON.stringify({ ...had, lastLat: 12.9719, lastLon: 77.6412 }));
@@ -1170,7 +1184,9 @@ scenarios.push(
       const chip = await waitFor(byId("strip:smart"), 4000);
       const offered = !!find(await state(), v => v.text === email);
       await screenshot("S201-chip");
-      const r = chip ? await tapFor(chip, x => x.includes(email)) : { t: await text(), retried: false };
+      // Your email sits beside Temp mail (2026-10-01): tap the email itself.
+      const r = chip ? await tapFor(firstValue(await state(), chip), x => x.includes(email))
+        : { t: await text(), retried: false };
       return { pass: !!short && between && typed.t.includes("Shorthand from the vault") && plusOk && field === email &&
           inSight && offered && r.t.trim().toLowerCase() === `sure my email is ${email}`,
         note: `shorthand card between details and notes: ${between}; tapped it: '${typed.t}'; ` +
@@ -1383,7 +1399,9 @@ scenarios.push(
     const credit = find(await state(), byId("tempmail:credit"))?.text ?? "";
     await screenshot("S216-address");
     const insert = find(await state(), byId("tempmail:insert"));
-    const r = await tapFor(insert, x => x.includes("@glyf-temp.example"));
+    // The panel stays after Insert (2026-10-01), so a retried tap would type
+    // it twice: the check is for this address, whichever domain it is on.
+    const r = await tapFor(insert, x => x.includes(addr.text));
     return { pass: /^[a-z]+[0-9a-f]{6}@glyf-temp\.example$/.test(addr.text) && r.t.trim() === addr.text &&
         /^Watching · 1[45]:\d\d left$/.test(watching) && credit === "via mail.tm",
       note: `address made, '${watching}', '${credit}'; Insert typed '${r.t}'${second(r)}` };
@@ -1429,6 +1447,162 @@ scenarios.push(
     return { pass: /Acme/.test(rowWords) && /482913/.test(pill?.text ?? "") && code?.text === "482913" &&
         body.includes("verification code is 482913") && !!ended,
       note: `row '${rowWords}', pill '${pill?.text ?? "none"}'; opened: code '${code?.text ?? "none"}', text '${body.slice(0, 60)}'; after Delete: ${ended ? "Create address" : "still an address"}` };
+  } },
+);
+
+// --- 2026-10-01: every saved email, Temp mail beside them, Insert stays, events carry their call link ---
+// "when i type email it should show my email id from vault / and if i added 2
+// mail ids i should see both / and i should also see a temp mail option /
+// when i click insert in temp mail i should not redirect back to keyboard,
+// should stay here / also creating a calendar event should also send its
+// meeting link in chat with calendar details"
+scenarios.push(
+  { id: "S219", title: "Two saved emails: typing email shows both and Temp mail, and a tap types the one tapped", run: async () => {
+    const first = "qa.work@example.com";
+    const other = "qa.home@example.com";
+    // These two must be the only emails: any saved already is set aside
+    // (kept in the vault, marked) and put back at the end.
+    tool("stash", "--es text email");
+    tool("adddetail", `--es text 'email|QA Work|${first}'`);
+    tool("adddetail", `--es text 'email|QA Home|${other}'`);
+    try {
+      await fresh();
+      await type("email");
+      const chip = await waitFor(byId("strip:smart:choice:1"), 4000);
+      let s = await state();
+      const card = find(s, byId("strip:smart"));
+      if (!chip || !card) return { pass: false, note: `no details chip; strip shows '${card ? chipLabel(s, card) : "nothing"}'` };
+      const close = find(s, byId("strip:smart:close"));
+      const parts = ["strip:smart:choice:0", "strip:smart:choice:1", "strip:smart:choice:temp"].map(id => find(s, byId(id)));
+      const [p0, p1, temp] = parts;
+      const words = v => v ? chipLabel(s, v).trim() : "";
+      // A row of chips (2026-10-01: "it should be 2-3 diff strips not all in
+      // one strip"): the ✕ first, then a chip for each email and one for Temp
+      // (an envelope and its word), apart from each other and level with
+      // Glyf's key.
+      const ordered = !!close && parts.every(Boolean) && close.x < p0.x && p0.x < p1.x && p1.x < temp.x;
+      const gaps = parts.every(Boolean) ? [p1.x - p1.w / 2 - (p0.x + p0.w / 2), temp.x - temp.w / 2 - (p1.x + p1.w / 2)] : [];
+      const apart = gaps.length === 2 && gaps.every(g => g >= 20);
+      const g = find(s, byId("toolbar:glyf"));
+      const level = !!g && parts.every(v => v && Math.abs(v.y - g.y) <= 3);
+      const widths = parts.filter(Boolean).map(v => v.w);
+      const noVerb = !s.views.some(v => v.text === "Insert" && Math.abs(v.y - card.y) < card.h / 2);
+      await screenshot("S219-chip");
+      const r = await tapFor(p1, x => x.includes(other));
+      return { pass: words(p0) === first && words(p1) === other && words(temp) === "Temp" && temp?.desc === "Temp mail" &&
+          ordered && apart && level && noVerb && r.t.trim().toLowerCase() === `email ${other}`,
+        note: `chips '${words(p0)}' | '${words(p1)}' | '${words(temp)}' (${temp?.desc}); widths ${widths.join("/")}px, ` +
+          `gaps ${gaps.join("/")}px, ✕ first ${ordered}, level with g ${level}, no Insert ${noVerb}; ` +
+          `tapped the second: '${r.t}'${second(r)}` };
+    } finally {
+      tool("dropdetail", `--es text ${first}`);
+      tool("dropdetail", `--es text ${other}`);
+      tool("unstash");
+      await sleep(500);
+    }
+  } },
+  { id: "S220", title: "Temp mail: every Insert types into the message and the panel stays open", run: async () => {
+    await useFakeMailTm();
+    tool("tempmailclear");   // a new address, with an empty inbox
+    try {
+      const address = await tempAddress();
+      if (!address) return { pass: false, note: `no address (notice '${(await state()).notice}')` };
+      const seen = [];
+      // Taps an Insert and watches from that moment (the notice lasts 2.4 s,
+      // about two dumps on a busy Mac): the message becomes [want], "Added to
+      // the message" shows, and the panel ([id]) is still open. A second tap
+      // only when the first changed nothing: one more on a panel that stays
+      // would type it twice.
+      const insertStays = async (what, view, want, id) => {
+        const was = (await state()).text;
+        await tapXY(view.x, view.y);
+        let s = null, noticed = false, again = false;
+        const start = Date.now();
+        while (Date.now() - start < 7000) {
+          s = await state();
+          noticed ||= s.notice === "Added to the message";
+          if (s.text === want && noticed) break;
+          if (!again && s.text === was && Date.now() - start > 2500) {
+            again = true;
+            await tapXY(view.x, view.y);
+          }
+          await sleep(150);
+        }
+        const open = !!find(s, byId(id));
+        const ok = s.text === want && noticed && open;
+        seen.push(`${what}: ${s.text === want ? "typed" : "not typed"}, notice ${noticed ? "seen" : "not seen"}, ` +
+          `panel ${open ? "open" : "closed"}${again ? " (took a second tap)" : ""}`);
+        return ok;
+      };
+      // The address.
+      const insert = await waitFor(byId("tempmail:insert"), 3000);
+      const addressOk = await insertStays("address", insert, address, "tempmail:address");
+      await screenshot("S220-after-insert");
+      // A mail with a code and a link: the code pill in the inbox.
+      if (!await injectMail(address, "Confirm your Acme account",
+          "Your verification code is 482913. Or confirm here: https://acme.example/verify?t=qa220")) {
+        return { pass: false, note: "the stand-in took no mail (is qa/fake-mailtm.mjs running?)" };
+      }
+      const pill = await waitFor(byId("tempmail:rowcode:0"), 16000);
+      if (!pill) return { pass: false, note: `no mail in the inbox; ${seen.join("; ")}` };
+      const pillOk = await insertStays("inbox code", pill, `${address}482913`, "tempmail:row:0");
+      // The mail opened: its code's Insert, then Insert link.
+      const row = find(await state(), byId("tempmail:row:0"));
+      await tapXY(row.x, row.y - Math.round(row.h / 4));   // the row, above its code pill
+      const codeInsert = await waitFor(byId("tempmail:code:insert"), 3000);
+      if (!codeInsert) return { pass: false, note: `the mail didn't open; ${seen.join("; ")}` };
+      const codeOk = await insertStays("code", codeInsert, `${address}482913482913`, "tempmail:code");
+      const link = await waitFor(byId("tempmail:link"), 2000);
+      const linkOk = !!link && await insertStays("link", link,
+        `${address}482913482913https://acme.example/verify?t=qa220`, "tempmail:code");
+      await screenshot("S220-mail-open");
+      return { pass: addressOk && pillOk && codeOk && linkOk,
+        note: `${seen.join("; ")}; message '${await text()}'` };
+    } finally {
+      tool("close");
+      tool("tempmailclear");
+    }
+  } },
+  { id: "S221", title: "New Event with Google Meet connected puts the event and its call link in the message", run: async () => {
+    await fetch(`${FAKE_GOOGLE}/_reset`);
+    await calendarOn();
+    const notes = [];
+    let ok = true;
+    // With Google Calendar and Meet the event goes to Google, which makes the
+    // call; with Meet alone it goes to the phone's calendar with a Meet link.
+    // Either way nothing is turned on by hand.
+    for (const [scopes, title] of [["", "Sync with ria"], ["meet", "Catch up with sam"]]) {
+      tool("googlefake", `--es text ${FAKE_GOOGLE_FOR_PHONE}${scopes ? ` --es scopes ${scopes}` : ""}`);
+      try {
+        await fresh();
+        tool("calendar");
+        const plus = await waitFor(byId("calendar:new"), 4000);
+        if (!plus) return { pass: false, note: "no + on the calendar" };
+        const titleRow = await tapOpen(plus, byId("event:title"));
+        if (!titleRow) return { pass: false, note: "New Event didn't open" };
+        if (!(await tapOpen(titleRow, byId("event:title:field")))) return { pass: false, note: "no title strip" };
+        await type(`${title.toLowerCase()} friday 4pm`);
+        await key("return");
+        const video = await rowInView("event:video");
+        const share = await waitFor(byId("event:share"), 1500);
+        const add = await waitFor(byId("event:add"), 3000);
+        if (!add) return { pass: false, note: "no Add" };
+        const before = (await (await fetch(`${FAKE_GOOGLE}/_log`)).json());
+        const r = await tapFor(add, x => x.includes(`📅 ${title}`) && x.includes("https://meet.google.com/"), 10000);
+        const log = await (await fetch(`${FAKE_GOOGLE}/_log`)).json();
+        const viaGoogle = !scopes ? !!log.events.at(-1)?.body?.conferenceData?.createRequest
+          : log.spaces.length > before.spaces.length && log.events.length === before.events.length;
+        const shape = new RegExp(`^📅 ${title} · .*4:00.* · https://meet\\.google\\.com/\\S+$`).test(r.t);
+        if (scopes === "" ) await screenshot("S221-message");
+        const pass = video?.selected === true && share?.selected === true && shape && viaGoogle;
+        if (!pass) ok = false;
+        notes.push(`${scopes || "calendar+meet"}: Video call ${video ? (video.selected ? "on" : "off") : "missing"}, ` +
+          `Share in chat ${share ? (share.selected ? "on" : "off") : "missing"}, ${viaGoogle ? "link made" : "no link made"}; '${r.t}'${second(r)}`);
+      } finally {
+        tool("googlefake");
+      }
+    }
+    return { pass: ok, note: notes.join("; ") };
   } },
 );
 

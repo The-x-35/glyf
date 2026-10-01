@@ -251,6 +251,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 "tempmailbadtoken" -> TempMailStore.load(this@GlyfIME)?.let {
                     TempMailStore.save(this@GlyfIME, it.copy(token = "expired"))
                 }
+                // A detail a scenario needs, as "kind|label|value" (two
+                // emails for the details chip); "dropdetail" takes it away.
+                "adddetail" -> {
+                    val parts = intent.getStringExtra("text").orEmpty().split("|", limit = 3)
+                    if (parts.size == 3) VaultStore.addField(this@GlyfIME, parts[0], parts[1], parts[2])
+                }
                 // A detail a scenario added, gone again (by its value).
                 "dropdetail" -> {
                     val value = intent.getStringExtra("text").orEmpty()
@@ -2251,13 +2257,21 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Nothing in the words, but the model heard the sentence asking for a detail.
         val detail = suggestedDetail
         if (chip == null && detail != null && suggestedFor == tail.trim()) chip = Smart.Chip.Vault(detail)
+        // Your emails, with a temp address beside them, wherever one is asked
+        // for (Arpit, 2026-10-01: "i should also see a temp mail option").
+        // Android has no Full Access to wait for, as the email field's own
+        // temp address chip never did.
+        chip = Smart.withTempMail(chip)
         // The tour keeps the strip for the step it is coaching.
         val step = tourStep()
         if (step != null) {
+            // One tap on the chip is what the coach asks for: the first value.
+            if (chip is Smart.Chip.Details) chip = chip.fields.firstOrNull()?.let { Smart.Chip.Vault(it) }
             val kind = when (chip) {
                 is Smart.Chip.Calc -> "calc"
                 is Smart.Chip.Money -> "money"
                 is Smart.Chip.Vault -> "vault:${chip.field.kind}"
+                is Smart.Chip.Details -> "vault:${chip.fields.firstOrNull()?.kind.orEmpty()}"
                 is Smart.Chip.Pay -> "pay"
                 is Smart.Chip.Buy -> "buy"
                 is Smart.Chip.Action -> "action"
@@ -2290,10 +2304,28 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         if (mint != null) showPayPanel(PayPanelView.Intent.Buy(
                             mint, shown?.getOrNull(1) ?: "", shown?.getOrNull(3)))
                     }) {
-                    currentInputConnection?.commitText(Smart.insert(chip), 1)
+                    val ic = currentInputConnection
+                    // A saved detail after "email" or "my number is", with a space between.
+                    ic?.commitText(if (chip is Smart.Chip.Vault)
+                        Smart.spaced(chip.field.value, ic.getTextBeforeCursor(1, 0)?.toString())
+                        else Smart.insert(chip), 1)
                     hideStripChip()
                     updateSuggestions()
                 }
+            }
+            is Smart.Chip.Details -> {
+                stripSmartDetail = "vault:${chip.fields.firstOrNull()?.kind.orEmpty()}"
+                // A part types its value, as its own vault chip would; Temp
+                // mail types a temp address, as the email field's chip does.
+                return showDetailsChip("smart", chip, onValue = { field ->
+                    val ic = currentInputConnection
+                    ic?.commitText(Smart.spaced(field.value, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                    hideStripChip()
+                    updateSuggestions()
+                }, onTemp = {
+                    hideStripChip()
+                    insertTempAddress()
+                })
             }
             is Smart.Chip.Event -> {
                 // Nothing is typed: the plan becomes a New Event to check and add.
@@ -2514,26 +2546,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                               lead: String? = null, extra: String? = null, onExtra: (() -> Unit)? = null,
                               onClose: (() -> Unit)? = null,
                               onTap: () -> Unit): Boolean {
-        // A panel's name is in the strip: its chips wait for the keys.
-        if (stripTitleRow != null) return false
-        val key = chipKey(kind)
-        if (onClose == null && key == dismissedChip) {
-            if (stripChipKind == kind) hideStripChip()
-            return false
-        }
-        hideStripChip()
         // The chip's purple, lighter so it reads on the card (Arpit,
         // 2026-09-30: "insert button text etc to be lighter colour purple so
         // it doesnt look unreadable"): over 3:1 in bold on either card.
         val accent = stripAccent()
-        val secondary = Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink()))
-        // Every chip wears the turning, glowing border (MagicChip), laid out
-        // as Safari's app banner is: the ✕ first, the action last and the
-        // default (Arpit, 2026-09-30: "no cross on right looks bad, insert
-        // should be the default action, maybe put cross in left"). A tap
-        // anywhere but the ✕ does the verb. Room is measured from the
-        // border's inner edge, 1.5dp in: the ✕'s cross starts 14dp inside it,
-        // and the verb ends 16dp inside it (an extra pill, 12dp).
+        val secondary = chipSecondary()
+        // Room is measured from the border's inner edge, 1.5dp in: the verb
+        // ends 16dp inside it (an extra pill, 12dp).
         val density = resources.displayMetrics.density
         fun px(dp: Float) = Math.round(dp * density)
         val endPad = when {
@@ -2543,27 +2562,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             verb.isEmpty() -> 1.5f + 16f - 4.8f
             else -> 1.5f + 16f
         }
-        val chip = MagicChip(this, chromeDark).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            // The cross is 11dp across in the middle of its 36dp target, so
-            // 12.5dp in: the target starts 3dp from the chip's edge.
-            setPadding(px(1.5f + 14f - 12.5f), 0, px(endPad), 0)
-            setTag(com.demo.glyf.R.id.qa_id, "strip:smart")
-            setOnClickListener { onTap() }
-        }
-        chip.addView(ToolIcon(this, "close", secondary).apply {
-            setTint(secondary)
-            setTag(com.demo.glyf.R.id.qa_id, "strip:smart:close")
-            contentDescription = "Dismiss"
-            setOnClickListener { if (onClose != null) onClose() else dismissChip(key) }
-        }, LinearLayout.LayoutParams(dp(36), dp(36)))
-        // A hairline 10dp past the cross (so 2.5dp inside the ✕'s target),
-        // then 10dp to the chip's words: a thumb going for them never lands
-        // on the ✕.
-        chip.addView(View(this).apply {
-            setBackgroundColor(Color.argb(46, Color.red(ink()), Color.green(ink()), Color.blue(ink())))
-        }, LinearLayout.LayoutParams(maxOf(1, px(0.75f)), dp(18)).apply { leftMargin = px(-2.5f) })
+        val chip = chipCard(kind, endPad, onClose) ?: return false
+        // A tap anywhere but the ✕ does the verb.
+        chip.setOnClickListener { onTap() }
         // A lead glyph's ink sits 1.6dp inside its box; words start on their edge.
         val lead0 = px(10f - 1.6f)
         val text0 = px(10f)
@@ -2612,16 +2613,154 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTag(com.demo.glyf.R.id.qa_id, "strip:smart:extra")
             setOnClickListener { onExtra() }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(26)).apply { leftMargin = dp(10) })
-        // Centred on Glyf's key (Arpit, 2026-09-30: "why did the ai strip
-        // fall below, have it at same level as glyf logo"), as on iOS: iOS's
-        // 38dp, or less where the key's middle leaves less room above or
-        // below. The strip centres both in its padded box, so the chip's
-        // middle is the key's.
+        placeChip(chip, kind)
+        return true
+    }
+
+    /** Several saved values at once (Smart.Chip.Details: two emails, your
+     *  email and a temp one), as a row of chips (Arpit, 2026-10-01: "it
+     *  should be 2-3 diff strips not all in one strip"): one plain ✕ for the
+     *  row, then a glowing glass chip of its own for each value, and one for
+     *  Temp (its envelope and "Temp" in the chip's purple). A chip's words are
+     *  its action, so there is no verb: a value types itself ([onValue]),
+     *  Temp gives a temp address ([onTemp]). ChipRow lays them out as iOS's
+     *  row does. False when waved off for these words. */
+    private fun showDetailsChip(kind: String, details: Smart.Chip.Details,
+                                onValue: (Smart.Field) -> Unit, onTemp: () -> Unit): Boolean {
+        // A panel's name is in the strip: its chips wait for the keys.
+        if (stripTitleRow != null) return false
+        val key = chipKey(kind)
+        if (key == dismissedChip) {
+            if (stripChipKind == kind) hideStripChip()
+            return false
+        }
+        hideStripChip()
+        val accent = stripAccent()
+        val secondary = chipSecondary()
+        val values = details.fields.take(3)
+        val row = ChipRow(this, stripChipHeight()).apply {
+            setTag(com.demo.glyf.R.id.qa_id, "strip:smart")
+            contentDescription = (values.map { it.value } + if (details.temp) listOf("Temp mail") else emptyList())
+                .joinToString(", ")
+        }
+        // The row's one ✕: plain, its 11dp cross in a 28dp target.
+        row.setClose(ToolIcon(this, "close", secondary).apply {
+            setTint(secondary)
+            setTag(com.demo.glyf.R.id.qa_id, "strip:smart:close")
+            contentDescription = "Dismiss"
+            setOnClickListener { dismissChip(key) }
+        })
+        fun card(id: String, said: String, onTap: () -> Unit) = MagicChip(this, chromeDark).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setTag(com.demo.glyf.R.id.qa_id, id)
+            contentDescription = said
+            setOnClickListener { onTap() }
+        }
+        for ((i, field) in values.withIndex()) {
+            val chip = card("strip:smart:choice:$i", field.value) { onValue(field) }
+            // An address is known by its start ("alex.s219@exa…"): cut in the
+            // middle, two emails read the same ("alex….com").
+            val words = TextView(this).apply {
+                text = field.value
+                textSize = 15f
+                setTextColor(ink())
+                gravity = Gravity.CENTER
+                isSingleLine = true
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+            chip.addView(words, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            row.addPart(ChipRow.Part(chip, words, temp = false))
+        }
+        if (details.temp) {
+            val chip = card("strip:smart:choice:temp", "Temp mail") { onTemp() }
+            // iOS: the envelope in a 17dp box, 6dp before the word.
+            chip.addView(ToolIcon(this, "tempmail", accent).apply { solid = true; weight = 1.8f },
+                LinearLayout.LayoutParams(dp(ChipRow.MARK.toInt()), dp(ChipRow.MARK.toInt())).apply {
+                    rightMargin = dp(ChipRow.MARK_GAP.toInt())
+                })
+            val words = TextView(this).apply {
+                text = "Temp"
+                textSize = 15f
+                typeface = if (android.os.Build.VERSION.SDK_INT >= 28)
+                    Typeface.create(Typeface.DEFAULT, 600, false) else Typeface.DEFAULT_BOLD
+                setTextColor(accent)
+                isSingleLine = true
+            }
+            chip.addView(words, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT))
+            row.addPart(ChipRow.Part(chip, words, temp = true))
+        }
+        // From 6dp left of where a chip starts (the ✕'s room) to where it ends.
+        placeChip(row, kind, lead = dp(6))
+        return true
+    }
+
+    /** Words that sit back on a chip: its small label and its ✕. */
+    private fun chipSecondary() = Color.argb(170, Color.red(ink()), Color.green(ink()), Color.blue(ink()))
+
+    /** The hairline after a chip's ✕. */
+    private fun chipRule() = Color.argb(46, Color.red(ink()), Color.green(ink()), Color.blue(ink()))
+
+    /** The card every chip is: glass with the turning, glowing border
+     *  (MagicChip), laid out as Safari's app banner is: the ✕ first, then a
+     *  hairline, then what the chip holds (Arpit, 2026-09-30: "no cross on
+     *  right looks bad, insert should be the default action, maybe put cross
+     *  in left"). [endPad] is the room after the content, in dp from the
+     *  chip's edge. Null when the chip was waved off for these words, or a
+     *  panel's name holds the strip. */
+    private fun chipCard(kind: String, endPad: Float, onClose: (() -> Unit)?): MagicChip? {
+        // A panel's name is in the strip: its chips wait for the keys.
+        if (stripTitleRow != null) return null
+        val key = chipKey(kind)
+        if (onClose == null && key == dismissedChip) {
+            if (stripChipKind == kind) hideStripChip()
+            return null
+        }
+        hideStripChip()
+        val secondary = chipSecondary()
+        val density = resources.displayMetrics.density
+        fun px(dp: Float) = Math.round(dp * density)
+        val chip = MagicChip(this, chromeDark).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            // The cross is 11dp across in the middle of its 36dp target, so
+            // 12.5dp in: the target starts 3dp from the chip's edge (the
+            // cross 14dp inside the border's inner edge, 1.5dp in).
+            setPadding(px(1.5f + 14f - 12.5f), 0, px(endPad), 0)
+            setTag(com.demo.glyf.R.id.qa_id, "strip:smart")
+        }
+        chip.addView(ToolIcon(this, "close", secondary).apply {
+            setTint(secondary)
+            setTag(com.demo.glyf.R.id.qa_id, "strip:smart:close")
+            contentDescription = "Dismiss"
+            setOnClickListener { if (onClose != null) onClose() else dismissChip(key) }
+        }, LinearLayout.LayoutParams(dp(36), dp(36)))
+        // A hairline 10dp past the cross (so 2.5dp inside the ✕'s target),
+        // then 10dp to the chip's words: a thumb going for them never lands
+        // on the ✕.
+        chip.addView(View(this).apply { setBackgroundColor(chipRule()) },
+            LinearLayout.LayoutParams(maxOf(1, px(0.75f)), dp(18)).apply { leftMargin = px(-2.5f) })
+        return chip
+    }
+
+    /** A strip chip's height, centred on Glyf's key (Arpit, 2026-09-30: "why
+     *  did the ai strip fall below, have it at same level as glyf logo"), as
+     *  on iOS: iOS's 38dp, or less where the key's middle leaves less room
+     *  above or below. The strip centres it in its padded box, so the chip's
+     *  middle is the key's. */
+    private fun stripChipHeight(): Int {
         val stripH = toolbar.layoutParams?.height?.takeIf { it > 0 } ?: dp(STRIP_DP)
         val keyMid = toolbar.paddingTop + (stripH - toolbar.paddingTop - toolbar.paddingBottom) / 2
-        val chipH = minOf(dp(38), 2 * keyMid, 2 * (stripH - keyMid))
-        toolbar.addView(chip, 1, LinearLayout.LayoutParams(0, chipH, 1f).apply {
-            leftMargin = dp(8)
+        return minOf(dp(38), 2 * keyMid, 2 * (stripH - keyMid))
+    }
+
+    /** [chip] (a chip, or a details chip's row of them) into the strip,
+     *  where it owns the strip until it goes; [lead] is room it takes to the
+     *  left of where a chip starts (the row's ✕). */
+    private fun placeChip(chip: View, kind: String, lead: Int = 0) {
+        toolbar.addView(chip, 1, LinearLayout.LayoutParams(0, stripChipHeight(), 1f).apply {
+            leftMargin = dp(8) - lead
             // The chip ends as far in as Glyf's key starts (the key is drawn
             // centred in its 52dp view), so the strip sits centred over the keys.
             rightMargin = ((dp(52) - GlyfMark.keyWidth(dp(30).toFloat())) / 2).toInt()
@@ -2630,7 +2769,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         stripChipKind = kind
         applySuggestionVisibility()
         applyTourHint()
-        return true
     }
 
     /** The chip waved off, as its kind and the words it came for. */
@@ -3418,17 +3556,27 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // that want none (an email field, a form's NO_SUGGESTIONS) are the
         // ones it is for (an email field never showed the saved email).
         if (before.isEmpty() && !isSecureField()) {
-            // The cached fields: decrypting the vault here ran on every pass.
-            val fill = Autofill.match(currentInputEditorInfo, vaultFields())
-            // An email field can take a temp address instead: beside the
-            // saved email as "Temp", or on its own chip when none is saved.
-            val email = Autofill.kind(currentInputEditorInfo) == "email"
-            if (fill != null) {
+            val kind = Autofill.kind(currentInputEditorInfo)
+            // Every saved value of the kind the field asks for (the cached
+            // fields: decrypting the vault here ran on every pass); an email
+            // field also offers a temp address beside your emails.
+            val email = kind == "email"
+            var fill = kind?.let { Smart.chip("", vaultFields(), fieldKind = it) }
+            if (email) fill = Smart.withTempMail(fill)
+            if (fill is Smart.Chip.Details) {
+                // One part each, Temp mail last (the old email chip's "Temp").
+                if (showDetailsChip("fill", fill, onValue = { field ->
+                        currentInputConnection?.commitText(field.value, 1)
+                        hideStripChip()
+                    }, onTemp = {
+                        hideStripChip()
+                        insertTempAddress()
+                    })) return
+            } else if (fill is Smart.Chip.Vault) {
                 // Same chip as iOS: the saved detail, Insert on the right.
-                if (showStripChip("fill", null, fill, "Insert",
-                        extra = if (email) "Temp" else null,
-                        onExtra = { hideStripChip(); insertTempAddress() }) {
-                    currentInputConnection?.commitText(fill, 1)
+                val value = fill.field.value
+                if (showStripChip("fill", null, value, "Insert") {
+                    currentInputConnection?.commitText(value, 1)
                     hideStripChip()
                 }) return
             } else if (email) {
@@ -5021,12 +5169,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** An email field's Create (or Temp): the live address, else a new one,
-     *  typed in, and watched from now. */
+    /** An email field's Create, or a chip's Temp mail: the live address,
+     *  else a new one, typed in (after "email", with a space between), and
+     *  watched from now. */
     private fun insertTempAddress() {
         val live = TempMailStore.load(this)?.takeIf { System.currentTimeMillis() < it.expiresAt }
         val put = { box: TempBox ->
-            currentInputConnection?.commitText(box.address, 1)
+            val ic = currentInputConnection
+            ic?.commitText(Smart.spaced(box.address, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
             restartTempWatch(box)
             scheduleTempCheck()
             updateSuggestions()
@@ -5081,9 +5231,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             gravity = Gravity.CENTER_VERTICAL
         }
         actions.addView(pill("Insert", primary = true, id = "tempmail:insert", accent = true, size = 14f) {
-            currentInputConnection?.commitText(box.address, 1)
+            // Typed, and the panel stays: its inbox is what comes next.
+            tempInsert(box.address)
             restartTempWatch(box)
-            dismissFeaturePanel()
+            renderTempLine()
             scheduleTempCheck()
         }.apply { minWidth = dp(84); setPadding(dp(16), 0, dp(16), 0) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)))
@@ -5240,10 +5391,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setPadding(dp(10), 0, dp(10), 0)
             background = Glass.pill(Glass.fillField)
             setTag(com.demo.glyf.R.id.qa_id, "tempmail:rowcode:$i")
-            setOnClickListener {
-                currentInputConnection?.commitText(code, 1)
-                dismissFeaturePanel()
-            }
+            setOnClickListener { tempInsert(code) }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(22)).apply { leftMargin = dp(8) })
         row.addView(bottom, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(22)).apply {
             leftMargin = dp(12); rightMargin = if (code != null) dp(8) else dp(12); topMargin = dp(26)
@@ -5296,8 +5444,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 notice("Copied")
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)))
             block.addView(pill("Insert", primary = true, id = "tempmail:code:insert", accent = true, size = 14f) {
-                currentInputConnection?.commitText(code, 1)
-                dismissFeaturePanel()
+                tempInsert(code)
             }.apply { setPadding(dp(14), 0, dp(14), 0) },
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)).apply { leftMargin = dp(8) })
             body.addView(block, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)).apply {
@@ -5306,8 +5453,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         val link = mail.link
         if (link != null) body.addView(pill("Insert link", primary = false, id = "tempmail:link", size = 14f, field = true) {
-            currentInputConnection?.commitText(link, 1)
-            dismissFeaturePanel()
+            tempInsert(link)
         }.apply { setPadding(dp(14), 0, dp(14), 0) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply {
                 topMargin = if (code != null) dp(8) else dp(10)
@@ -5321,6 +5467,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = if (link != null) dp(8) else if (code != null) dp(8) else dp(10)
         })
+    }
+
+    /** Temp mail's Insert (the address, a code, a link): typed into the
+     *  message, and the panel stays (Arpit, 2026-10-01: "when i click insert
+     *  in temp mail i should not redirect back to keyboard, should stay
+     *  here"), saying so over the keys. */
+    private fun tempInsert(text: String) {
+        currentInputConnection?.commitText(text, 1)
+        notice("Added to the message")
     }
 
     /** A quiet text action beside the card's buttons (New, Delete): 13

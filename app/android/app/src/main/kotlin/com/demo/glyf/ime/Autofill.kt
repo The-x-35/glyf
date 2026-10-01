@@ -60,11 +60,6 @@ object Autofill {
             else -> null
         }
     }
-
-    /** The saved value for this field, or null. [fields] are the vault's
-     *  (Smart.fields, blank values already left out). */
-    fun match(info: EditorInfo?, fields: List<Smart.Field>): String? {
-        val kind = kind(info) ?: return null
-        return fields.firstOrNull { it.kind == kind }?.value
-    }
+    // What the vault has for the field: Smart.chip("", fields, fieldKind = kind),
+    // every saved value of that kind (a details chip when there are more).
 }

@@ -279,3 +279,123 @@ class MagicChip(ctx: Context, dark: Boolean) : LinearLayout(ctx) {
             private set
     }
 }
+
+/**
+ * A details chip as a row of chips (Arpit, 2026-10-01: "it should be 2-3 diff
+ * strips not all in one strip"): one plain ✕ for the row, then a chip of its
+ * own for each saved value and one for Temp, each a MagicChip with the whole
+ * magic (its own turning border, glow, glass face, sheen and rim). iOS's
+ * choice row (Toolbar.layoutChoiceRow, GlowChip): each chip as wide as its
+ * words and 14dp either side (Temp: its envelope, 17dp, and 6dp before the
+ * word), 10dp apart and 4dp after the ✕, every one [chipHeight] tall and
+ * centred in the row. Short of room it tightens (10dp sides, 8dp apart, the
+ * values a size smaller); still short, Temp keeps its width and the values
+ * share what is left, the shorter ones whole first, 44dp at the least.
+ */
+class ChipRow(ctx: Context, private val chipHeight: Int) : android.view.ViewGroup(ctx) {
+
+    /** One chip of the row: its card, its words, and whether it is Temp. */
+    class Part(val card: MagicChip, val label: android.widget.TextView, val temp: Boolean)
+
+    private val metrics = resources.displayMetrics
+    private fun px(dp: Float) = Math.round(dp * metrics.density)
+    private fun sp(size: Float) = android.util.TypedValue.applyDimension(
+        android.util.TypedValue.COMPLEX_UNIT_SP, size, metrics)
+
+    private var close: android.view.View? = null
+    private val parts = mutableListOf<Part>()
+    private val words = android.text.TextPaint(Paint.ANTI_ALIAS_FLAG)
+    private var start = 0
+    private var gap = 0
+
+    /** Short of room: less air in and between the chips, the values smaller. */
+    var tight = false
+        private set
+
+    init {
+        // Each chip's glow reaches past it.
+        clipChildren = false
+        clipToPadding = false
+    }
+
+    /** The row's ✕, at its left. */
+    fun setClose(v: android.view.View) {
+        close = v
+        addView(v)
+    }
+
+    fun addPart(p: Part) {
+        parts += p
+        addView(p.card)
+    }
+
+    /** What [p] needs to show its words whole, at [size] sp with [pad] dp either side. */
+    private fun natural(p: Part, size: Float, pad: Float): Int {
+        words.typeface = p.label.typeface
+        words.textSize = sp(size)
+        val text = Math.ceil(words.measureText(p.label.text.toString()).toDouble()).toInt()
+        val mark = if (p.temp) px(MARK + MARK_GAP) else 0
+        return text + mark + 2 * px(pad)
+    }
+
+    private fun exactly(size: Int) = android.view.View.MeasureSpec.makeMeasureSpec(maxOf(0, size), android.view.View.MeasureSpec.EXACTLY)
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val w = android.view.View.MeasureSpec.getSize(widthMeasureSpec)
+        val h = android.view.View.MeasureSpec.getSize(heightMeasureSpec)
+        val closeW = px(CLOSE)
+        close?.measure(exactly(closeW), exactly(closeW))
+        start = closeW + px(4f)
+        val n = parts.size
+        if (n > 0) {
+            tight = parts.sumOf { natural(it, 15f, 14f) } > w - start - px(10f) * (n - 1)
+            gap = px(if (tight) 8f else 10f)
+            val pad = if (tight) 10f else 14f
+            // Temp's word stays 15 and semibold; the values go a size down when tight.
+            fun size(p: Part) = if (tight && !p.temp) 14f else 15f
+            val widths = parts.map { natural(it, size(it), pad) }.toMutableList()
+            val room = w - start - gap * (n - 1)
+            if (widths.sum() > room) {
+                val temp = parts.last().temp
+                val values = n - if (temp) 1 else 0
+                var rest = (room - if (temp) widths[n - 1] else 0).toFloat()
+                val open = (0 until values).toMutableList()
+                while (true) {
+                    val share = rest / maxOf(1, open.size)
+                    val whole = open.filter { widths[it] <= share }
+                    if (whole.isEmpty()) break
+                    for (i in whole) rest -= widths[i]
+                    open.removeAll(whole)
+                }
+                val share = rest / maxOf(1, open.size)
+                for (i in open) widths[i] = maxOf(px(44f), share.toInt())
+            }
+            for ((i, p) in parts.withIndex()) {
+                if (p.label.textSize != sp(size(p))) {
+                    p.label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, size(p))
+                }
+                p.card.setPadding(px(pad), 0, px(pad), 0)
+                p.card.measure(exactly(widths[i]), exactly(chipHeight))
+            }
+        }
+        setMeasuredDimension(w, h)
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        val h = b - t
+        close?.let { it.layout(0, (h - it.measuredHeight) / 2, it.measuredWidth, (h + it.measuredHeight) / 2) }
+        var x = start
+        for (p in parts) {
+            val top = (h - p.card.measuredHeight) / 2
+            p.card.layout(x, top, x + p.card.measuredWidth, top + p.card.measuredHeight)
+            x += p.card.measuredWidth + gap
+        }
+    }
+
+    companion object {
+        /** The ✕'s target, the envelope's box and the room after it, in dp. */
+        const val CLOSE = 28f
+        const val MARK = 17f
+        const val MARK_GAP = 6f
+    }
+}

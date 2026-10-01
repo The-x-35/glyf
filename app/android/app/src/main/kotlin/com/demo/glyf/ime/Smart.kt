@@ -30,6 +30,13 @@ object Smart {
         }
         /** "my upi id is " -> the saved UPI. */
         data class Vault(val field: Field) : Chip()
+        /** More than one saved detail of the kind the sentence (or an empty
+         *  form field) asks for: two emails, a home and a work address; or
+         *  an email with a temp address beside it ([temp]). One part of the
+         *  chip for each, and a tap on a part types it (Arpit, 2026-10-01:
+         *  "if i added 2 mail ids i should see both, and i should also see
+         *  a temp mail option"). Smart.swift's `.details`. */
+        data class Details(val fields: List<Field>, val temp: Boolean) : Chip()
         /** The model read the sentence and named what Glyf could do with it. */
         data class Action(val label: String, val query: String, val intent: String) : Chip()
         /** Someone's Solana wallet on screen: Send opens in the app with it
@@ -90,14 +97,15 @@ object Smart {
         else -> null
     }
 
-    /** What a tap does, on the chip's right edge; null for the model's own words. */
+    /** What a tap does, on the chip's right edge; null for the model's own
+     *  words, and for a details chip, whose parts are each their own action. */
     fun verb(chip: Chip): String? = when (chip) {
         is Chip.Calc, is Chip.Vault, is Chip.Money -> "Insert"
         is Chip.Event -> "Add"
         is Chip.Booking -> "Book"
         is Chip.Pay -> "Send"
         is Chip.Buy -> "Buy"
-        is Chip.Action -> null
+        is Chip.Action, is Chip.Details -> null
     }
 
     /** What the chip says. */
@@ -107,6 +115,8 @@ object Smart {
         is Chip.Calc -> if (chip.expression.isEmpty() || chip.expression.length > 22) "= ${chip.result}"
             else "${chip.expression} = ${chip.result}"
         is Chip.Vault -> chip.field.value
+        is Chip.Details -> (chip.fields.map { it.value } + if (chip.temp) listOf("Temp mail") else emptyList())
+            .joinToString(" · ")
         is Chip.Action -> chip.label
         is Chip.Money -> chip.shown
         is Chip.Event -> EventParse.summary(chip.plan)
@@ -123,7 +133,26 @@ object Smart {
         is Chip.Calc -> if (chip.hasEquals) " ${chip.result}" else " = ${chip.result}"
         is Chip.Vault -> chip.field.value
         is Chip.Money -> chip.insert
-        is Chip.Action, is Chip.Pay, is Chip.Buy, is Chip.Event, is Chip.Booking -> ""
+        // A part's own tap types it.
+        is Chip.Action, is Chip.Pay, is Chip.Buy, is Chip.Event, is Chip.Booking, is Chip.Details -> ""
+    }
+
+    /** A saved detail typed after what is there, with a space between when
+     *  it would otherwise run on from the word before ("email" + a tap gives
+     *  "email alex@example.com"). iOS's spaced(_:after:). */
+    fun spaced(value: String, before: String?): String {
+        val last = before?.lastOrNull() ?: return value
+        return if (last.isWhitespace()) value else " $value"
+    }
+
+    /** An email chip gets a Temp mail part (Arpit, 2026-10-01: "i should
+     *  also see a temp mail option"): your email and Temp mail, or two of
+     *  yours and Temp mail. Any other chip is left as it is. */
+    fun withTempMail(chip: Chip?): Chip? = when {
+        chip is Chip.Vault && chip.field.kind == "email" -> Chip.Details(listOf(chip.field), temp = true)
+        chip is Chip.Details && !chip.temp && chip.fields.firstOrNull()?.kind == "email" ->
+            Chip.Details(chip.fields.take(2), temp = true)
+        else -> chip
     }
 
     private val bookingPattern = Regex(
@@ -154,10 +183,23 @@ object Smart {
     }
 
     /** One chip at most, in the website's order: a payment, a sum, an amount
-     *  in another currency, a detail. */
+     *  in another currency, a detail. [fieldKind] is what an empty form
+     *  field asks for (Autofill.kind: "email", "phone", …): with nothing
+     *  typed, the detail of that kind we hold, or every one of them. */
     fun chip(text: String, fields: List<Field>, indianGrouping: Boolean = true,
              rates: RatesSnapshot = RatesSnapshot.EMPTY, ownBooking: String? = null,
-             ownWallet: String? = null): Chip? {
+             ownWallet: String? = null, fieldKind: String? = null): Chip? {
+        // A form asking for something we already know: one tap fills it,
+        // one part each when there is more than one (nothing else reads an
+        // empty field).
+        if (text.isEmpty()) {
+            val held = fields.filter { it.kind == fieldKind }.distinctBy { it.value.trim() }
+            return when {
+                fieldKind == null || held.isEmpty() -> null
+                held.size > 1 -> Chip.Details(held.take(3), temp = false)
+                else -> Chip.Vault(held[0])
+            }
+        }
         // An address: Send to a wallet, Buy a token. Your own wallet is one
         // you are sharing, not paying. Until the lookup says which, nothing
         // (the keyboard asks, and the strip is arranged again).
@@ -178,7 +220,10 @@ object Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if (cashtag(text) != null) return null
-        vaultMatch(text, fields)?.let { return Chip.Vault(it) }
+        // Every saved value the sentence asks for: two emails show both.
+        val matches = vaultMatches(text, fields)
+        if (matches.size > 1) return Chip.Details(matches.take(3), temp = false)
+        matches.firstOrNull()?.let { return Chip.Vault(it) }
         EventParse.looksLikePlan(text)?.let { return Chip.Event(it) }
         bookingLink(text, ownBooking)?.let { return Chip.Booking(it) }
         return null
@@ -490,8 +535,9 @@ object Smart {
     /** Sentence endings that mean "the next thing I type is X": the
      *  sentence leads into one of your own details ("my email is", "call me
      *  at", "ship it to") or labels it ("Email:"). A bare word at the end is
-     *  not enough: "wrong address", "can you email", "i lost my phone" and
-     *  "saw it on insta" are about something else. Smart.swift's twin. */
+     *  not enough, "email" itself aside: "wrong address", "can you email",
+     *  "i lost my phone" and "saw it on insta" are about something else.
+     *  Smart.swift's twin. */
     private val triggers: List<Triple<Regex, List<String>, String?>> = listOf(
         // "This is" introduces you only at the start: "Hi, this is", not "this is great".
         Triple("""(?:\bmy name is|\bname:|(?:^|[.!?,\n]\s*|\b(?:hi|hey|hello|hii|hiya)\W*)this is)\s*$""", listOf("name"), null),
@@ -501,6 +547,11 @@ object Smart {
         Triple("""(?<!\$)\b(?:(?:my|our)\s+(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet(?:\s+(?:address|addy))?|(?:my|our)\s+(?:sol|solana|phantom|usdc|crypto)\s+(?:address|addy)|(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet(?:\s+(?:address|addy))?\s*:|(?:sol|solana|phantom|usdc|crypto)\s+(?:address|addy)\s*:)\s*(?:is\s*)?:?\s*$""", listOf("wallet"), null),
         // Before address: "my email address is" is an email.
         Triple("""\b(?:(?:my|our)\s+(?:e-?mail|g-?mail|mail)(?:\s*(?:id|address|addy))?|(?:e-?mail|g-?mail|mail)\s+(?:me|us)\s+(?:at|on)|(?:e-?mail|g-?mail)(?:\s*(?:id|address|addy))?\s*:|mail\s*id\s*:)\s*(?:is\s*)?:?\s*$""", listOf("email"), null),
+        // The word alone at the end offers it too (Arpit, 2026-10-01: "when
+        // i type email it should show my email id"): "email", "send it to my
+        // email", "email id", "gmail". Never the verb ("can you email", "i'll
+        // email", "please email"), and it goes as soon as the sentence moves on.
+        Triple("""(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$""", listOf("email"), null),
         // An IP, web or website address is no place to deliver to.
         Triple("""(?:\b(?:my|our)\s+(?:(?:home|delivery|shipping|office|current|new)\s+)?(?:address|addy)|(?<!e-?mail\s)(?<!gmail\s)(?<!ip\s)(?<!web\s)(?<!website\s)(?<!mac\s)\b(?:(?:home|delivery|shipping|office)\s+)?address\s*:|\bdeliver(?:\s+it)?\s+to|\bsend\s+it\s+to|\bship\s+(?:it\s+)?to|\bcome\s+(?:over\s+)?to|\bpick\s+me\s+up\s+(?:from|at))\s*(?:is\s*)?:?\s*$""", listOf("address"), null),
         Triple("""\b(?:(?:my|our)\s+(?:upi|vpa|gpay|google\s+pay|phonepe|paytm)(?:\s+(?:id|number|handle))?|(?:upi|vpa|gpay|phonepe|paytm)(?:\s*id)?\s*:|(?:pay|gpay|phonepe|paytm)\s+me\s+(?:at|on))\s*(?:is\s*)?:?\s*$""", listOf("upi"), null),
@@ -545,6 +596,16 @@ object Smart {
             return candidates.firstOrNull()
         }
         return firstPersonMatch(text, fields)
+    }
+
+    /** Every saved detail the sentence asks for: the one vaultMatch finds
+     *  first, then the others of its kind in the vault's order (a value saved
+     *  twice shows once). A handle stays the platform's own: "my insta" is
+     *  never the LinkedIn one. Smart.swift's vaultMatches. */
+    fun vaultMatches(text: String, fields: List<Field>): List<Field> {
+        val first = vaultMatch(text, fields) ?: return emptyList()
+        if (first.kind == "social" || first.kind == "handle") return listOf(first)
+        return (listOf(first) + fields.filter { it.kind == first.kind }).distinctBy { it.value.trim() }
     }
 
     /** The platform the words named for a handle ("insta", "x",
