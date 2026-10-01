@@ -1181,6 +1181,9 @@ final class GlyfEngineTests: XCTestCase {
             XCTAssertEqual(Smart.chip(for: typed, fields: all), .details(fields: [home, work], temp: false), typed)
         }
         XCTAssertEqual(Smart.chip(for: "email", fields: [home, cell]), .vault(field: home))
+        // The same address saved twice is one chip.
+        let again = VaultField(id: "e3", kind: "email", label: "Copy", value: "Alex@Example.com")
+        XCTAssertEqual(Smart.chip(for: "email", fields: [home, again, work]), .details(fields: [home, work], temp: false))
         XCTAssertNil(Smart.chip(for: "whats your email", fields: all))
         XCTAssertEqual(Smart.chip(for: "my number is", fields: all), .details(fields: [cell, desk], temp: false))
         // An empty field asking for an email.

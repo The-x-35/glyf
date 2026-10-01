@@ -282,7 +282,8 @@ enum Smart {
         }
         // A form asking for something we already know: one tap fills it.
         if text.isEmpty, field.empty, let kind = field.kind {
-            let held = fields.filter { $0.kind == kind }
+            var seen: Set<String> = []
+            let held = fields.filter { $0.kind == kind && seen.insert($0.value.lowercased()).inserted }
             if held.count > 1 { return .details(fields: Array(held.prefix(3)), temp: false) }
             if let f = held.first { return .vault(field: f) }
         }
@@ -694,7 +695,11 @@ enum Smart {
     static func vaultMatches(_ text: String, fields: [VaultField]) -> [VaultField] {
         guard let first = vaultMatch(text, fields: fields) else { return [] }
         if first.kind == "social" || first.kind == "handle" { return [first] }
-        return [first] + fields.filter { $0.kind == first.kind && $0.id != first.id }
+        // One chip per value: the same address saved twice shows once.
+        var seen: Set<String> = [first.value.lowercased()]
+        return [first] + fields.filter {
+            $0.kind == first.kind && $0.id != first.id && seen.insert($0.value.lowercased()).inserted
+        }
     }
 
     /// Words that lead into one of your own details near the end of the

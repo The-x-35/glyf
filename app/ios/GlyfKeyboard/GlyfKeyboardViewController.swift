@@ -1684,7 +1684,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             // The answer is stored for the trimmed sentence: people end with a space.
             } else if let cached = suggestedChip,
                suggestedFor == tail.trimmingCharacters(in: .whitespacesAndNewlines) {
-                chip = cached
+                // An email the server read the sentence asking for gets Temp too.
+                chip = hasFullAccess ? Self.withTempMail(cached) : cached
             } else {
                 askForSuggestion(tail)
             }
@@ -3021,15 +3022,16 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// and watched from now.
     private func useTempAddress() {
         let watcher = TempMailWatcher.shared
+        // After "email", with a space between, as a saved one goes in.
         if let live = watcher.address {
-            hostInsert(live)
+            hostInsert(Self.spaced(live, after: beforeContext))
             watcher.restartWatch()
             updateCandidates()
             return
         }
         watcher.create { [weak self] address in
             guard let self, let address else { return }
-            self.hostInsert(address)
+            self.hostInsert(Self.spaced(address, after: self.beforeContext))
             self.updateCandidates()
         }
     }
