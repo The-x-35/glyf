@@ -3,6 +3,9 @@ import UIKit
 protocol GlyfShellDelegate: AnyObject {
     func shellClosed()
     func shellInsertText(_ text: String)
+    /// Typed into the message with the panel left open (temp mail's
+    /// Insert: its inbox is still being watched).
+    func shellInsertTextStaying(_ text: String)
     func shellOpenApp(path: String)
     func shellStateChanged()
     func shellOpenSearch()
@@ -241,7 +244,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     private func buildTempMail() {
         tempMailView.isHidden = true
-        tempMailView.onInsert = { [weak self] text in self?.delegate?.shellInsertText(text) }
+        // Insert types and stays (Arpit, 2026-10-01: "when i click insert in
+        // temp mail i should not redirect back to keyboard, should stay here").
+        tempMailView.onInsert = { [weak self] text in self?.delegate?.shellInsertTextStaying(text) }
         tempMailView.onCopy = { [weak self] text in self?.delegate?.shellCopyText(text) }
         tempMailView.onOpenLink = { [weak self] url in self?.delegate?.shellOpenLink(url) }
         tempMailView.onOpenMail = { [weak self] id in

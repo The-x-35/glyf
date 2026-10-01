@@ -93,6 +93,11 @@ final class EventComposer: UIView {
         self.google = google
         self.meet = meet
         self.edit = edit
+        // A new event comes with its call link when one can be made, so the
+        // message it goes into carries the link (Arpit, 2026-10-01: "creating
+        // a calendar event should also send its meeting link in chat with
+        // calendar details"). Off with a tap, as before.
+        if meet && !edit { self.draft.videoCall = true }
         super.init(frame: .zero)
         typed = draft.title
         inviteLine = draft.invitees.joined(separator: " ")

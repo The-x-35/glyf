@@ -812,7 +812,10 @@ final class GlyfEngineTests: XCTestCase {
         for (text, kind) in asks {
             XCTAssertEqual(Smart.vaultMatch(text, fields: all)?.kind, kind, text)
         }
-        for text in ["can you email", "i'll email", "email", "what's the address", "wrong address",
+        // The word alone offers an email now (Arpit, 2026-10-01); the verb
+        // still doesn't.
+        XCTAssertEqual(Smart.vaultMatch("email", fields: all)?.kind, "email")
+        for text in ["can you email", "i'll email", "please email", "what's the address", "wrong address",
                      "the address is", "ip address:", "i lost my phone", "my phone is dead",
                      "phantom wallet is down", "saw it on insta", "i use paytm", "this is great",
                      "my linkedin is"] {
@@ -1163,6 +1166,26 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(chip.verb, "a sparkle marks it: its words are already the action")
         XCTAssertEqual(chip.value, "Tidy this up")
         XCTAssertEqual(chip.insert, "", "a tap runs hold space on the sentence instead of typing")
+    }
+
+    /// Typing "email" offers every saved email; one saved stays a plain
+    /// chip; asking someone else for theirs offers nothing (Arpit,
+    /// 2026-10-01: "if i added 2 mail ids i should see both").
+    func testEverySavedDetailOfTheKindIsOffered() {
+        let home = VaultField(id: "e1", kind: "email", label: "Email", value: "alex@example.com")
+        let work = VaultField(id: "e2", kind: "email", label: "Work", value: "alex@acme.example")
+        let cell = VaultField(id: "p1", kind: "phone", label: "Mobile", value: "+1 415 555 0134")
+        let desk = VaultField(id: "p2", kind: "phone", label: "Office", value: "+1 415 555 0199")
+        let all = [home, cell, work, desk]
+        for typed in ["my email is ", "email", "send it to my email", "Email:", "my gmail", "email id"] {
+            XCTAssertEqual(Smart.chip(for: typed, fields: all), .details(fields: [home, work], temp: false), typed)
+        }
+        XCTAssertEqual(Smart.chip(for: "email", fields: [home, cell]), .vault(field: home))
+        XCTAssertNil(Smart.chip(for: "whats your email", fields: all))
+        XCTAssertEqual(Smart.chip(for: "my number is", fields: all), .details(fields: [cell, desk], temp: false))
+        // An empty field asking for an email.
+        XCTAssertEqual(Smart.chip(for: "", fields: all, field: Smart.FieldHint(kind: "email", empty: true)),
+                       .details(fields: [home, work], temp: false))
     }
 
     /// Money with cents shows both places: "$20 = ₹1,919.6" read as a typo.

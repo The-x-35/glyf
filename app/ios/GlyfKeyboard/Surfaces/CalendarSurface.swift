@@ -164,9 +164,12 @@ final class CalendarSurface: UIView {
     func compose(plan: EventParse.Plan? = nil) {
         let draft: EventComposer.Draft
         if let plan {
-            // The plan is in the message already: nothing more goes in. Its
-            // day is the calendar's, so Cancel shows what else is on then.
-            draft = .init(title: plan.title, start: plan.start, end: plan.end, allDay: plan.allDay)
+            // The event, with its call link, goes into the message once added,
+            // as one made from the calendar does: the plan in the message
+            // has no link yet. Its day is the calendar's, so Cancel shows what
+            // else is on then.
+            draft = .init(title: plan.title, start: plan.start, end: plan.end, allDay: plan.allDay,
+                          share: true)
             show(day: plan.start)
             load()
         } else {

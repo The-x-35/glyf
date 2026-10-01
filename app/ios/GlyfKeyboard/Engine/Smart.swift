@@ -46,6 +46,12 @@ enum Smart {
         /// live, typed again (its inbox is the one being watched), or, with
         /// none, a new one made, typed and watched, in one tap.
         case tempAddress(live: String?)
+        /// More than one saved detail of the kind the sentence asks for (two
+        /// emails, a home and a work address), or an email with a temp
+        /// address beside it: one part of the chip for each, and a tap on a
+        /// part types it (Arpit, 2026-10-01: "if i added 2 mail ids i should
+        /// see both, and i should also see a temp mail option").
+        case details(fields: [VaultField], temp: Bool)
 
         var key: String {
             switch self {
@@ -58,6 +64,7 @@ enum Smart {
             case .action: return "Glyf"
             case .tempMail: return "Mail"
             case .tempAddress(let live): return live == nil ? "Email" : "Temp email"
+            case .details(let fields, _): return fields.first?.title ?? "Email"
             }
         }
         /// The verb on the chip's right edge: what a tap does. Nil for the
@@ -73,6 +80,7 @@ enum Smart {
             case .action: return nil
             case .tempMail(_, _, let code): return code == nil ? "Open" : "Insert"
             case .tempAddress(let live): return live == nil ? "Create" : "Insert"
+            case .details: return nil    // each part is its own action
             }
         }
         /// A second action, as a button beside the first: Buy on a token's
@@ -123,6 +131,8 @@ enum Smart {
             case .tempMail(_, let from, let code):
                 return code.map { "\($0) · \(from)" } ?? "Mail from \(from)"
             case .tempAddress(let live): return live ?? "Temp email"
+            case .details(let fields, let temp):
+                return (fields.map(\.value) + (temp ? ["Temp mail"] : [])).joined(separator: " · ")
             }
         }
         /// What tapping the chip puts in the field.
@@ -139,6 +149,7 @@ enum Smart {
             case .action: return ""    // runs a glyf instead of typing
             case .tempMail(_, _, let code): return code ?? ""   // no code: opens the mail
             case .tempAddress(let live): return live ?? ""   // none live: made first, then typed
+            case .details: return ""   // a part's own tap types it
             }
         }
     }
@@ -260,7 +271,9 @@ enum Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if cashtag(in: text) != nil { return nil }
-        if let f = vaultMatch(text, fields: fields) { return .vault(field: f) }
+        let matches = vaultMatches(text, fields: fields)
+        if matches.count > 1 { return .details(fields: Array(matches.prefix(3)), temp: false) }
+        if let f = matches.first { return .vault(field: f) }
         if let plan = EventParse.looksLikePlan(text, dayFirst: EventParse.regionDayFirst) {
             return .event(plan: plan)
         }
@@ -268,9 +281,10 @@ enum Smart {
             return .booking(link: link)
         }
         // A form asking for something we already know: one tap fills it.
-        if text.isEmpty, field.empty, let kind = field.kind,
-           let f = fields.first(where: { $0.kind == kind }) {
-            return .vault(field: f)
+        if text.isEmpty, field.empty, let kind = field.kind {
+            let held = fields.filter { $0.kind == kind }
+            if held.count > 1 { return .details(fields: Array(held.prefix(3)), temp: false) }
+            if let f = held.first { return .vault(field: f) }
         }
         if let paste, !paste.isEmpty, text.isEmpty { return .paste(text: paste) }
         return nil
@@ -635,6 +649,11 @@ enum Smart {
         (#"(?<!\$)\b(?:(?:my|our)\s+(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet(?:\s+(?:address|addy))?|(?:my|our)\s+(?:sol|solana|phantom|usdc|crypto)\s+(?:address|addy)|(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet(?:\s+(?:address|addy))?\s*:|(?:sol|solana|phantom|usdc|crypto)\s+(?:address|addy)\s*:)\s*(?:is\s*)?:?\s*$"#, "wallet", nil),
         // Before address: "my email address is" is an email.
         (#"\b(?:(?:my|our)\s+(?:e-?mail|g-?mail|mail)(?:\s*(?:id|address|addy))?|(?:e-?mail|g-?mail|mail)\s+(?:me|us)\s+(?:at|on)|(?:e-?mail|g-?mail)(?:\s*(?:id|address|addy))?\s*:|mail\s*id\s*:)\s*(?:is\s*)?:?\s*$"#, "email", nil),
+        // The word alone at the end offers it too (Arpit, 2026-10-01: "when i
+        // type email it should show my email id"): "email", "send it to my
+        // email", "email id", "gmail". Not the verb: "can you email", "i'll
+        // email", "please email" ask for one to be sent.
+        (#"(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$"#, "email", nil),
         // An IP, web or website address is no place to deliver to.
         (#"(?:\b(?:my|our)\s+(?:(?:home|delivery|shipping|office|current|new)\s+)?(?:address|addy)|(?<!e-?mail\s)(?<!gmail\s)(?<!ip\s)(?<!web\s)(?<!website\s)(?<!mac\s)\b(?:(?:home|delivery|shipping|office)\s+)?address\s*:|\bdeliver(?:\s+it)?\s+to|\bsend\s+it\s+to|\bship\s+(?:it\s+)?to|\bcome\s+(?:over\s+)?to|\bpick\s+me\s+up\s+(?:from|at))\s*(?:is\s*)?:?\s*$"#, "address", nil),
         (#"\b(?:(?:my|our)\s+(?:upi|vpa|gpay|google\s+pay|phonepe|paytm)(?:\s+(?:id|number|handle))?|(?:upi|vpa|gpay|phonepe|paytm)(?:\s*id)?\s*:|(?:pay|gpay|phonepe|paytm)\s+me\s+(?:at|on))\s*(?:is\s*)?:?\s*$"#, "upi", nil),
@@ -667,6 +686,15 @@ enum Smart {
             return candidates.first
         }
         return firstPersonMatch(text, fields: fields)
+    }
+
+    /// Every saved detail the sentence asks for: the one vaultMatch finds
+    /// first, then the others of its kind in the vault's order (a handle
+    /// stays the platform's own).
+    static func vaultMatches(_ text: String, fields: [VaultField]) -> [VaultField] {
+        guard let first = vaultMatch(text, fields: fields) else { return [] }
+        if first.kind == "social" || first.kind == "handle" { return [first] }
+        return [first] + fields.filter { $0.kind == first.kind && $0.id != first.id }
     }
 
     /// Words that lead into one of your own details near the end of the

@@ -1639,17 +1639,15 @@ final class GlyfKeyboardViewController: UIInputViewController {
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
                               rates: rates, ownWallet: ownWallet,
                               indianGrouping: (SettingsStore.current.region ?? "IN") == "IN")
-        // An email field with nothing in it: a temp address in one tap, or,
-        // beside your own email, "Temp" for one.
-        var extra: String?
+        // An email field with nothing in it and no email saved: a temp
+        // address in one tap.
         if before.isEmpty, (textDocumentProxy.documentContextAfterInput ?? "").isEmpty,
-           hasFullAccess, fieldHint(emptyField: true).kind == "email" {
-            if chip == nil {
-                chip = .tempAddress(live: TempMailWatcher.shared.address)
-            } else if case .vault(let f)? = chip, f.kind == "email" {
-                extra = "Temp"
-            }
+           hasFullAccess, fieldHint(emptyField: true).kind == "email", chip == nil {
+            chip = .tempAddress(live: TempMailWatcher.shared.address)
         }
+        // Your emails, with a temp address beside them, wherever one is asked
+        // for (Arpit, 2026-10-01: "i should also see a temp mail option").
+        if hasFullAccess, let c = chip { chip = Self.withTempMail(c) }
         // An address on screen or copied: a wallet (Send) or a token (Buy)?
         // Only a lookup can tell; the strip is arranged again when it lands.
         if chip == nil, hasFullAccess,
@@ -1693,8 +1691,21 @@ final class GlyfKeyboardViewController: UIInputViewController {
         } else {
             cancelSuggestion()
         }
-        toolbar.showSmart(chip, extra: extra)
+        toolbar.showSmart(chip)
         return chip != nil
+    }
+
+    /// An email chip gets a Temp mail part: your email and Temp, or two of
+    /// yours and Temp.
+    private static func withTempMail(_ chip: Smart.Chip) -> Smart.Chip {
+        switch chip {
+        case .vault(let f) where f.kind == "email":
+            return .details(fields: [f], temp: true)
+        case .details(let fields, false) where fields.first?.kind == "email":
+            return .details(fields: Array(fields.prefix(2)), temp: true)
+        default:
+            return chip
+        }
     }
 
     private static func chipKind(_ chip: Smart.Chip) -> String {
@@ -1702,6 +1713,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .calc: return "calc"
         case .money: return "money"
         case .vault(let f): return "vault:\(f.kind)"
+        case .details(let fields, _): return "vault:\(fields.first?.kind ?? "")"
         case .paste: return "paste"
         case .pay: return "pay"
         case .buy: return "buy"
@@ -2855,6 +2867,9 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             toolbar.showSmart(nil)
             useTempAddress()
             return
+        case .details:
+            // Its parts are the actions (toolbarSmartChoiceTapped).
+            return
         default:
             break
         }
@@ -2920,6 +2935,9 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             } else {
                 hostInsert(Self.spaced(text, after: beforeContext))
             }
+        } else if case .vault(let f) = chip {
+            // After "email" or "my number is", with a space between.
+            hostInsert(Self.spaced(f.value, after: beforeContext))
         } else {
             hostInsert(chip.insert)
         }
@@ -2975,11 +2993,6 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             ClipContext.markDone()
             cachedPaste = nil
             pendingPay = .buy(mint: mint, symbol: symbol, price: price)
-        case .vault(let f) where f.kind == "email":
-            // "Temp", beside your own email in an email field.
-            toolbar.showSmart(nil)
-            useTempAddress()
-            return
         case .money(let shown, _, let mint?):
             // "1 SOL = $121.39": the ticker and its price, off the chip.
             let parts = shown.split(separator: " ")
@@ -2990,6 +3003,18 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             return
         }
         setSurface(.pay)
+    }
+
+    /// One part of a details chip: a saved detail types itself, as its own
+    /// chip would; Temp mail types a temp address.
+    func toolbarSmartChoiceTapped(_ chip: Smart.Chip, index: Int) {
+        guard case .details(let fields, let temp) = chip else { return }
+        if index < fields.count {
+            toolbarSmartTapped(.vault(field: fields[index]))
+        } else if temp {
+            toolbar.showSmart(nil)
+            useTempAddress()
+        }
     }
 
     /// An email field's temp address: the live one, or a new one, typed in
@@ -3092,6 +3117,11 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
     func shellInsertText(_ text: String) {
         setSurface(.none)
         hostInsert(text)
+    }
+
+    func shellInsertTextStaying(_ text: String) {
+        hostInsert(text)
+        KeyboardToast.show(in: content, text: "Added to the message")
     }
 
     func shellOpenApp(path: String) {

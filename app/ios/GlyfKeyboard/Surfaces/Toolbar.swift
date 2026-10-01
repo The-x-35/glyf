@@ -21,6 +21,9 @@ protocol ToolbarDelegate: AnyObject {
     /// The second action on a chip: Buy beside a price, Send or Buy beside
     /// a copied address.
     func toolbarSmartExtraTapped(_ chip: Smart.Chip)
+    /// One part of a details chip: a saved detail (by its place), or Temp
+    /// mail after them.
+    func toolbarSmartChoiceTapped(_ chip: Smart.Chip, index: Int)
 }
 
 /// §6.2 — the 44pt strip above the keys. When autocorrect candidates show,
@@ -70,6 +73,12 @@ final class GlyfToolbar: UIView {
     /// Between a chip's action and its ✕, so a thumb going for Insert never
     /// lands on the ✕.
     private let smartRule = UIView()
+    /// A details chip's parts: each saved detail, then Temp mail, sharing the
+    /// chip's width equally with hairlines between, like the system bar's
+    /// three slots.
+    private let choiceButtons = (0..<3).map { _ in UIButton(type: .system) }
+    private let choiceLines = [UIView(), UIView()]
+    private var choiceCount = 0
     private(set) var smartChip: Smart.Chip?
     /// How tall a chip stands: its words 9pt clear of the border above and
     /// below (Arpit, 2026-09-30: "text seems too close to border").
@@ -331,6 +340,24 @@ final class GlyfToolbar: UIView {
         smartRule.isUserInteractionEnabled = false
         smartRule.isHidden = true
         smartCard.addSubview(smartRule)
+        for (i, button) in choiceButtons.enumerated() {
+            button.isHidden = true
+            button.titleLabel?.font = .systemFont(ofSize: 15)
+            // An address is known by its start ("alex.s219@exa…"): cut in
+            // the middle, two emails read the same ("alex….com").
+            button.titleLabel?.lineBreakMode = .byTruncatingTail
+            button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
+            button.addAction(UIAction { [weak self] _ in
+                guard let self, let chip = self.smartChip else { return }
+                self.delegate?.toolbarSmartChoiceTapped(chip, index: i)
+            }, for: .touchUpInside)
+            smartCard.addSubview(button)
+        }
+        for line in choiceLines {
+            line.isUserInteractionEnabled = false
+            line.isHidden = true
+            smartCard.addSubview(line)
+        }
         addSubview(smartCard)
         buildMagic()
 
@@ -742,6 +769,7 @@ final class GlyfToolbar: UIView {
         smartExtra.backgroundColor = accent.withAlphaComponent(0.14)
         smartClose.tintColor = Glass.textSecondary
         smartRule.backgroundColor = Glass.textSecondary.withAlphaComponent(0.35)
+        paintChoices()
     }
 
     /// One chip across the strip, or nil to go back to tools and suggestions.
@@ -795,6 +823,7 @@ final class GlyfToolbar: UIView {
                 smartValue.textColor = Glass.textPrimary
                 smartValue.text = chip.value
             }
+            showChoices(chip)
             paintCardFace()
             smartCard.accessibilityLabel = "\(chip.key) \(chip.value)"
             // The ✕ leads every chip, so the hairline after it always shows.
@@ -814,6 +843,50 @@ final class GlyfToolbar: UIView {
             runsChip.isHidden = true
         }
         setNeedsLayout()
+    }
+
+    /// A details chip shows its parts in place of the value and the verb;
+    /// any other chip hides them.
+    private func showChoices(_ chip: Smart.Chip) {
+        guard case .details(let fields, let temp) = chip else {
+            choiceCount = 0
+            for v in choiceButtons as [UIView] + choiceLines { v.isHidden = true }
+            smartValue.isHidden = false
+            return
+        }
+        let parts = fields.map(\.value) + (temp ? ["Temp mail"] : [])
+        choiceCount = min(parts.count, choiceButtons.count)
+        for (i, button) in choiceButtons.enumerated() {
+            button.isHidden = i >= choiceCount
+            guard i < choiceCount else { continue }
+            let isTemp = temp && i == choiceCount - 1
+            button.setTitle(isTemp ? " Temp" : parts[i], for: .normal)
+            button.setImage(isTemp ? UIImage(systemName: "envelope",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)) : nil, for: .normal)
+            button.accessibilityIdentifier = isTemp ? "strip:smart:choice:temp" : "strip:smart:choice:\(i)"
+            button.accessibilityLabel = isTemp ? "Temp mail" : parts[i]
+        }
+        for (i, line) in choiceLines.enumerated() { line.isHidden = i >= choiceCount - 1 }
+        // The parts are the chip's content: no value, verb or second action.
+        smartValue.isHidden = true
+        smartKey.isHidden = true
+        smartExtra.isHidden = true
+        smartLead.isHidden = true
+        paintChoices()
+    }
+
+    private func paintChoices() {
+        guard choiceCount > 0, case .details(_, let temp)? = smartChip else { return }
+        for (i, button) in choiceButtons.prefix(choiceCount).enumerated() {
+            let isTemp = temp && i == choiceCount - 1
+            let ink = isTemp ? Glass.chipAccent : Glass.textPrimary
+            button.setTitleColor(ink, for: .normal)
+            button.tintColor = ink
+            // Three parts take a point less, so more of each address shows.
+            let size: CGFloat = choiceCount > 2 ? 14 : 15
+            button.titleLabel?.font = isTemp ? .systemFont(ofSize: size, weight: .semibold) : .systemFont(ofSize: size)
+        }
+        for line in choiceLines { line.backgroundColor = Glass.textSecondary.withAlphaComponent(0.35) }
     }
 
     @objc private func glyfTapped() {
@@ -1025,6 +1098,27 @@ final class GlyfToolbar: UIView {
             smartKey.frame = CGRect(x: right - keyW, y: 0, width: keyW, height: cardH)
             if keyW > 0 { right = smartKey.frame.minX - 10 }
             let contentX = ruleX + 0.5 + 10
+            if choiceCount > 0 {
+                // Temp takes what its icon and word need; the details share
+                // the rest equally.
+                let start = ruleX + 0.5 + 4, end = w - 8
+                var tempW: CGFloat = 0
+                if case .details(_, true)? = smartChip {
+                    tempW = ceil(choiceButtons[choiceCount - 1].intrinsicContentSize.width) + 6
+                }
+                let values = choiceCount - (tempW > 0 ? 1 : 0)
+                let segW = values > 0 ? (end - start - tempW) / CGFloat(values) : 0
+                var x = start
+                for (i, button) in choiceButtons.prefix(choiceCount).enumerated() {
+                    let width = tempW > 0 && i == choiceCount - 1 ? tempW : segW
+                    button.frame = CGRect(x: x, y: 0, width: width, height: cardH)
+                    x += width
+                    if i < choiceCount - 1 {
+                        choiceLines[i].frame = CGRect(x: x.rounded(), y: (cardH * 0.28).rounded(),
+                                                      width: 0.5, height: (cardH * 0.44).rounded())
+                    }
+                }
+            }
             if lead { smartLead.frame = CGRect(x: contentX, y: (cardH - 16) / 2, width: 16, height: 16) }
             let textX = lead ? contentX + 16 + 8 : contentX
             smartValue.frame = CGRect(x: textX, y: 0, width: max(0, right - textX), height: cardH)

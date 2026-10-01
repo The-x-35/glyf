@@ -669,6 +669,35 @@ final class GlyfScenarioUITests: XCTestCase {
         note("dismissed 2+5, then 2+50 inserted '\(value)'")
     }
 
+    /// S219: typing "email" offers every saved email and a temp address;
+    /// a tap on a part types it (Arpit, 2026-10-01: "when i type email it
+    /// should show my email id from vault, and if i added 2 mail ids i
+    /// should see both, and i should also see a temp mail option").
+    func testS219_TypingEmailOffersEverySavedEmailAndTempMail() throws {
+        open()
+        let first = "alex.s219@example.com", second = "alex@acme-s219.example"
+        XCTAssertTrue(vaultTool(["op": "adddetail", "kind": "email", "label": "Email", "value": first]))
+        XCTAssertTrue(vaultTool(["op": "adddetail", "kind": "email", "label": "Work", "value": second]))
+        defer {
+            _ = vaultTool(["op": "dropdetail", "value": first])
+            _ = vaultTool(["op": "dropdetail", "value": second])
+        }
+        clear()
+        type("email")
+        guard wait("strip:smart:choice:0", 6) != nil else {
+            return XCTFail("no email parts; the strip shows '\(el("strip:smart").label)'")
+        }
+        let parts = [el("strip:smart:choice:0").label, el("strip:smart:choice:1").label]
+        XCTAssertEqual(Set(parts), Set([first, second]), "the chip offers \(parts)")
+        XCTAssertTrue(el("strip:smart:choice:temp").exists, "no Temp mail beside the emails")
+        keepScreenshot("email-choices")
+        let pick = el("strip:smart:choice:1").label
+        el("strip:smart:choice:1").tap()
+        // "email" may have taken a capital at the start of the message.
+        XCTAssertTrue(waitValue(3) { $0.lowercased() == "email \(pick)".lowercased() }, "the tap typed '\(value)'")
+        note("parts \(parts), typed '\(value)'")
+    }
+
     /// S214: money typed shows in the local currency in the strip (Arpit,
     /// 2026-09-30: "$20 not showing amount in local currency ... i want
     /// rupee, or whatever i set in as local currency here in app").
@@ -1240,7 +1269,11 @@ final class GlyfScenarioUITests: XCTestCase {
         keepScreenshot("tempmail-address-light")
         tap("tempmail:insert")
         XCTAssertTrue(waitValue(3) { $0 == address }, "Insert typed '\(value)'")
-        XCTAssertTrue(gone("tempmail:insert", 3), "Insert closes the panel")
+        // Insert types and stays: the inbox is still being watched (Arpit,
+        // 2026-10-01: "should stay here").
+        sleep(1)
+        XCTAssertTrue(el("tempmail:insert").exists, "Insert closed the panel")
+        tap("toolbar:close")
 
         // A mail with a code and a link: listed, newest first, its code
         // ready to type from the row.
@@ -1258,8 +1291,10 @@ final class GlyfScenarioUITests: XCTestCase {
         keepScreenshot("tempmail-inbox-light")
         pill.tap()
         XCTAssertTrue(waitValue(3) { $0 == "482913" }, "the row's Insert typed '\(value)'")
+        XCTAssertTrue(el("tempmail:row:0").exists, "the row's Insert closed the panel")
 
-        // Opened: the code big, the link, the words.
+        // Opened: the code big, the link, the words. The panel is still up.
+        tap("toolbar:close")
         clear()
         openTool("tempmail")
         tap("tempmail:row:0", 10)
@@ -1274,6 +1309,8 @@ final class GlyfScenarioUITests: XCTestCase {
         keepScreenshot("tempmail-mail-light")
         tap("tempmail:link")
         XCTAssertTrue(waitValue(3) { $0 == "https://acme.example/verify?t=s216" }, "Insert link typed '\(value)'")
+        XCTAssertTrue(el("tempmail:code").exists, "Insert link closed the mail")
+        tap("toolbar:close")
 
         // The same panel on a dark sheet.
         guard darkMessages() != nil else { return }
@@ -1420,14 +1457,15 @@ final class GlyfScenarioUITests: XCTestCase {
             again.tap()
             XCTAssertTrue(waitValue(3) { $0 == address }, "\(look): the live chip typed '\(value)'")
 
-            // An email saved: its chip, with Temp beside it.
+            // An email saved: the chip offers it, and Temp mail beside it.
             XCTAssertTrue(vaultTool(["op": "adddetail", "kind": "email", "label": "Email", "value": saved]))
             clear()
             guard waitChip(6, { $0.contains(saved) }) != nil else {
                 return XCTFail("\(look): the saved email is not offered; the strip shows '\(el("strip:smart").label)'")
             }
-            let temp = el("strip:smart:extra")
-            XCTAssertTrue(temp.exists && temp.isHittable && temp.label == "Temp", "\(look): beside the email sits '\(temp.label)'")
+            XCTAssertEqual(el("strip:smart:choice:0").label, saved, "\(look): the chip's first part")
+            let temp = el("strip:smart:choice:temp")
+            XCTAssertTrue(temp.exists && temp.isHittable && temp.label == "Temp mail", "\(look): beside the email sits '\(temp.label)'")
             keepScreenshot("tempmail-field-vault-\(look)")
             temp.tap()
             XCTAssertTrue(waitValue(3) { $0 == address }, "\(look): Temp typed '\(value)'")
@@ -1606,10 +1644,12 @@ final class GlyfScenarioUITests: XCTestCase {
         let starts = el("event:starts:time").label
         XCTAssertTrue(starts.contains("8:00"), "starts at '\(starts)'")
         tap("event:add")
-        XCTAssertTrue(eventRow("Dinner").waitForExistence(timeout: 6), "the event isn't in the calendar")
-        note("chip '\(label)'")
-        // Nothing was typed into the message by the chip.
-        XCTAssertEqual(value.trimmingCharacters(in: .whitespaces).lowercased(), "dinner friday 8pm")
+        // Added, the event goes into the message after the plan (Arpit,
+        // 2026-10-01: "creating a calendar event should also send ... in chat
+        // with calendar details"); without Google there is no call link.
+        XCTAssertTrue(waitValue(8) { $0.lowercased().hasPrefix("dinner friday 8pm") && $0.contains("📅 Dinner") },
+                      "got '\(value)'")
+        note("chip '\(label)'; message '\(value)'")
     }
 
     func testS113_CallLinkAndBookATime() throws {
@@ -1730,7 +1770,8 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("event:invitees", 4)
         type("sam@example.com")
         tap("key:return")
-        tap("event:video", 3)
+        // Video call is on from the start with Google connected.
+        XCTAssertEqual(el("event:video").value as? String, "1", "Video call starts off")
         tap("event:add")
         // Share in chat is on from +: the event lands in the message too.
         XCTAssertTrue(waitValue(10) { $0.contains("Review") && $0.contains("https://meet.google.com/") }, "got '\(value)'")
@@ -1879,7 +1920,8 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("key:return")
         XCTAssertFalse(el("event:invitees").exists, "Invitees shows only with Google Calendar")
         guard let video = wait("event:video", 4) else { return XCTFail("no Video call row") }
-        video.tap()
+        // On from the start whenever a call link can be made.
+        XCTAssertEqual(video.value as? String, "1", "Video call starts off")
         // Share in chat off: this one is looked for in the day's list.
         tap("event:share", 3)
         tap("event:add")
