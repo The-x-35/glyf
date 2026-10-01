@@ -73,84 +73,21 @@ final class GlyfToolbar: UIView {
     /// Between a chip's action and its ✕, so a thumb going for Insert never
     /// lands on the ✕.
     private let smartRule = UIView()
-    /// A details chip's parts: each saved detail, then Temp mail, sharing the
-    /// chip's width equally with hairlines between, like the system bar's
-    /// three slots.
-    private let choiceButtons = (0..<3).map { _ in UIButton(type: .system) }
-    private let choiceLines = [UIView(), UIView()]
+    /// A details chip as a row of its own chips (Arpit, 2026-10-01: "it
+    /// should be 2-3 diff strips not all in one strip"): one ✕ for the row,
+    /// then a glowing glass chip for each saved detail and one for Temp.
+    private let choiceRow = UIView()
+    private let choiceClose = UIButton(type: .system)
+    private let choiceChips = (0..<3).map { _ in GlowChip() }
     private var choiceCount = 0
+    /// The row is too narrow for every chip's words: tighter chips.
+    private var choiceTight = false
     private(set) var smartChip: Smart.Chip?
     /// How tall a chip stands: its words 9pt clear of the border above and
     /// below (Arpit, 2026-09-30: "text seems too close to border").
     static let chipHeight: CGFloat = 38
-
-    /// Every chip's border and glow (Arpit, 2026-09-30: "a colourful glowy
-    /// border so it feels like its magic, all types of strips"). One conic
-    /// gradient in Glyf's colours shows through a 1.5pt stroke on the chip
-    /// and, behind the chip, through wider and fainter strokes that fade out
-    /// 6pt past its edge. It turns once every 4 s while a chip shows; Core
-    /// Animation turns it, so nothing is redrawn frame by frame. Layers take
-    /// no touches, and the glow sits behind the card, so the chip's taps are
-    /// its own. Android's twin.
-    private let glowRing = CALayer()
-    private let glowSpin = CAGradientLayer()
-    private let glowMask = CALayer()
-    /// The strokes, under a fade to nothing at the keyboard's top edge: iOS
-    /// cuts off anything drawn above it, and a glow cut there is a hard line.
-    private let glowBox = CALayer()
-    private let glowFade = CAGradientLayer()
-    private let glowStrokes = GlyfToolbar.glowBands.map { _ in CAShapeLayer() }
-    private let borderRing = CALayer()
-    /// The card's face, on the same squircle as its border (Arpit, 2026-09-30:
-    /// "white area leaking out of coloured border": the layer's own corner
-    /// curve and the border's path parted at the corners). The view keeps
-    /// only the faint colour an extension needs to take touches.
-    private let cardFill = CAShapeLayer()
-    private let borderSpin = CAGradientLayer()
-    private let borderMask = CAShapeLayer()
-    /// The card is glass (Arpit, 2026-09-30: "we should make the suggestion
-    /// strip glassy"): a frosted face the sheet shows through, Glyf's colours
-    /// drifting faintly through it, a sheen over its top half and a bright rim
-    /// inside the border, where light catches the edge of a pane. The colours
-    /// inside run in a band, not round the middle as the border's do: turned
-    /// round a point, they pinched to a spot in the middle of the card.
-    /// Android's twin.
-    private let glassWash = CALayer()
-    private let washFlow = CAGradientLayer()
-    private let washMask = CAShapeLayer()
-    /// One run of the colours through the card: half as long again as the card.
-    private var washPeriod: CGFloat = 0
-    private let glassSheen = CAGradientLayer()
-    private let sheenMask = CAShapeLayer()
-    private let glassRim = CAGradientLayer()
-    private let rimMask = CAShapeLayer()
-    /// The keyboard is away: nothing turns until it is back.
-    private var magicPaused = false
-
-    /// Violet, magenta, pink, amber, cyan and round to violet again.
-    private static let magicColors: [CGColor] = [0x7C5CFF, 0xD35CFF, 0xFF5C8A, 0xFFB547, 0x3CC8FF, 0x7C5CFF]
-        .map { UIColor(red: CGFloat(($0 >> 16) & 0xFF) / 255, green: CGFloat(($0 >> 8) & 0xFF) / 255,
-                       blue: CGFloat($0 & 0xFF) / 255, alpha: 1).cgColor }
-    /// How far the glow reaches past the chip's edge.
-    static let glowSpread: CGFloat = 6
-    /// The glow's strokes, innermost first: each reaches a point further out
-    /// than the last and is fainter, so together they fall off softly, with
-    /// the square of the distance, to nothing at the spread.
-    private static let glowBands: [(width: CGFloat, alpha: Float)] = {
-        let n = 6
-        let step = glowSpread / CGFloat(n)
-        let shown = (0..<n).map { k in 0.85 * pow(1 - (Double(k) + 0.5) / Double(n), 2) }
-        var bands: [(width: CGFloat, alpha: Float)] = []
-        var through = 1.0   // what the wider, outer strokes already leave clear
-        for k in stride(from: n - 1, through: 0, by: -1) {
-            let alpha = 1 - (1 - shown[k]) / through
-            through *= 1 - alpha
-            bands.insert((width: step * CGFloat(k + 1) * 2, alpha: Float(alpha)), at: 0)
-        }
-        return bands
-    }()
-    /// The glow's strength over the sheet: a dark one needs more to show.
-    private static var glowStrength: Float { Glass.chromeDark ? 0.55 : 0.40 }
+    /// The strip chip's border, glow and glass.
+    private let magic = ChipMagic()
     /// The strip item currently lifted by a hold, if any.
     private var draggingId: String?
     /// Where a dropped tool would land, drawn as a thin accent bar.
@@ -340,225 +277,49 @@ final class GlyfToolbar: UIView {
         smartRule.isUserInteractionEnabled = false
         smartRule.isHidden = true
         smartCard.addSubview(smartRule)
-        for (i, button) in choiceButtons.enumerated() {
-            button.isHidden = true
-            button.titleLabel?.font = .systemFont(ofSize: 15)
-            // An address is known by its start ("alex.s219@exa…"): cut in
-            // the middle, two emails read the same ("alex….com").
-            button.titleLabel?.lineBreakMode = .byTruncatingTail
-            button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
-            button.addAction(UIAction { [weak self] _ in
-                guard let self, let chip = self.smartChip else { return }
-                self.delegate?.toolbarSmartChoiceTapped(chip, index: i)
-            }, for: .touchUpInside)
-            smartCard.addSubview(button)
-        }
-        for line in choiceLines {
-            line.isUserInteractionEnabled = false
-            line.isHidden = true
-            smartCard.addSubview(line)
-        }
         addSubview(smartCard)
-        buildMagic()
+        magic.attach(to: smartCard, in: self)
+        buildChoiceRow()
 
         reloadItems()
     }
 
-    /// The glow behind the chip and the border on its edge: each a turning
-    /// conic gradient seen through a stroke-shaped mask. The masks stay put
-    /// while the gradients turn under them.
-    private func buildMagic() {
-        for spin in [glowSpin, borderSpin] {
-            spin.type = .conic
-            spin.colors = Self.magicColors
-            spin.startPoint = CGPoint(x: 0.5, y: 0.5)
-            spin.endPoint = CGPoint(x: 0.5, y: 0)
+    /// The row of chips a details chip shows as: its ✕, then a chip each.
+    private func buildChoiceRow() {
+        choiceRow.isHidden = true
+        choiceRow.accessibilityIdentifier = "strip:smart"
+        choiceClose.setImage(UIImage(systemName: "xmark",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)), for: .normal)
+        choiceClose.tintColor = Glass.textSecondary
+        choiceClose.backgroundColor = Glass.touchableGrid
+        choiceClose.accessibilityLabel = "Dismiss"
+        choiceClose.accessibilityIdentifier = "strip:smart:close"
+        choiceClose.addAction(UIAction { [weak self] _ in
+            self?.delegate?.toolbarSmartDismissed()
+        }, for: .touchUpInside)
+        choiceRow.addSubview(choiceClose)
+        for (i, chip) in choiceChips.enumerated() {
+            chip.isHidden = true
+            chip.addAction(UIAction { [weak self] _ in
+                guard let self, let smart = self.smartChip else { return }
+                self.delegate?.toolbarSmartChoiceTapped(smart, index: i)
+            }, for: .touchUpInside)
+            choiceRow.addSubview(chip)
+            chip.magic.attach(to: chip, in: choiceRow)
         }
-        for (band, stroke) in zip(Self.glowBands, glowStrokes) {
-            stroke.fillColor = nil
-            stroke.strokeColor = UIColor.black.cgColor
-            stroke.opacity = band.alpha
-            glowBox.addSublayer(stroke)
-        }
-        glowFade.colors = [UIColor.clear.cgColor, UIColor.black.cgColor]
-        glowBox.mask = glowFade
-        glowMask.addSublayer(glowBox)
-        // Drawn once and kept: only the gradient under it moves.
-        glowMask.shouldRasterize = true
-        glowMask.rasterizationScale = UIScreen.main.scale
-        glowRing.mask = glowMask
-        glowRing.addSublayer(glowSpin)
-        glowRing.isHidden = true
-        glowRing.opacity = Self.glowStrength
-        // Behind the card, and only outside it: the face is glass, so a glow
-        // under it would show through as a band of colour inside the edge.
-        layer.insertSublayer(glowRing, below: smartCard.layer)
-        borderMask.fillColor = nil
-        borderMask.strokeColor = UIColor.black.cgColor
-        // 2pt, the card's outermost edge (Arpit: "expand border").
-        borderMask.lineWidth = 2
-        borderRing.mask = borderMask
-        borderRing.addSublayer(borderSpin)
-        // Two runs of the colours side by side: sliding by one run loops.
-        washFlow.colors = Self.magicColors + Self.magicColors.dropFirst()
-        washFlow.startPoint = CGPoint(x: 0, y: 0.5)
-        washFlow.endPoint = CGPoint(x: 1, y: 0.5)
-        washFlow.anchorPoint = .zero
-        glassWash.addSublayer(washFlow)
-        glassWash.mask = washMask
-        glassSheen.startPoint = CGPoint(x: 0.5, y: 0)
-        glassSheen.endPoint = CGPoint(x: 0.5, y: 1)
-        glassSheen.locations = [0, 0.6]
-        glassSheen.mask = sheenMask
-        glassRim.startPoint = CGPoint(x: 0.5, y: 0)
-        glassRim.endPoint = CGPoint(x: 0.5, y: 1)
-        rimMask.fillColor = nil
-        rimMask.strokeColor = UIColor.black.cgColor
-        rimMask.lineWidth = 1
-        glassRim.mask = rimMask
-        // Face, wash, sheen, rim, border, then the card's words over them.
-        for glass in [borderRing, glassRim, glassSheen, glassWash, cardFill] as [CALayer] {
-            smartCard.layer.insertSublayer(glass, at: 0)
-        }
+        addSubview(choiceRow)
     }
 
-    /// The border and glow on the chip's own rounded rect.
-    /// The card's face colour, resolved for the current appearance (a
-    /// layer's CGColor does not follow dark mode by itself).
+    /// The card's face for the sheet of the moment.
     private func paintCardFace() {
         smartCard.backgroundColor = Glass.touchableGrid
-        let dark = Glass.chromeDark
-        let white = { (a: CGFloat) in UIColor.white.withAlphaComponent(a).cgColor }
-        cardFill.fillColor = white(dark ? 0.10 : 0.55)
-        glassWash.opacity = dark ? 0.14 : 0.10
-        glassSheen.colors = [white(dark ? 0.12 : 0.6), white(0)]
-        glassRim.colors = [white(dark ? 0.32 : 0.95), white(dark ? 0.05 : 0.3)]
-    }
-
-    private func layoutMagic() {
-        let card = smartCard.frame
-        let radius = smartCard.layer.cornerRadius
-        let spread = Self.glowSpread
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        glowRing.frame = card.insetBy(dx: -spread, dy: -spread)
-        glowMask.frame = glowRing.bounds
-        glowBox.frame = glowMask.bounds
-        // Clear at the keyboard's top edge, whole 4pt below it.
-        let h = max(1, glowBox.bounds.height)
-        glowFade.frame = glowBox.bounds
-        glowFade.startPoint = CGPoint(x: 0.5, y: -glowRing.frame.minY / h)
-        glowFade.endPoint = CGPoint(x: 0.5, y: (4 - glowRing.frame.minY) / h)
-        // Each band runs from half a point under the border (so no gap shows
-        // at the corners) out to its reach.
-        let edge = CGRect(x: spread, y: spread, width: card.width, height: card.height)
-        for (band, stroke) in zip(Self.glowBands, glowStrokes) {
-            let reach = band.width / 2
-            let centre = (reach - 0.5) / 2
-            stroke.frame = glowBox.bounds
-            stroke.lineWidth = reach + 0.5
-            stroke.path = UIBezierPath(roundedRect: edge.insetBy(dx: -centre, dy: -centre),
-                                       cornerRadius: radius + centre).cgPath
-        }
-        Self.cover(glowRing.bounds, with: glowSpin)
-        // The face 1pt in, under the 2pt border, both on one squircle: no
-        // white shows outside the colours.
-        cardFill.frame = smartCard.bounds
-        cardFill.path = UIBezierPath(roundedRect: smartCard.bounds.insetBy(dx: 1, dy: 1),
-                                     cornerRadius: max(0, radius - 1)).cgPath
-        borderRing.frame = smartCard.bounds
-        borderMask.frame = borderRing.bounds
-        // Inset by half the line, so the whole 2pt lies on the card.
-        borderMask.path = UIBezierPath(roundedRect: smartCard.bounds.insetBy(dx: 1, dy: 1),
-                                       cornerRadius: max(0, radius - 1)).cgPath
-        Self.cover(borderRing.bounds, with: borderSpin)
-        let inside = { (inset: CGFloat) in
-            UIBezierPath(roundedRect: self.smartCard.bounds.insetBy(dx: inset, dy: inset),
-                         cornerRadius: max(0, radius - inset)).cgPath
-        }
-        for (glass, mask) in [(glassWash, washMask), (glassSheen, sheenMask), (glassRim, rimMask)] as [(CALayer, CAShapeLayer)] {
-            glass.frame = smartCard.bounds
-            mask.frame = glass.bounds
-        }
-        washMask.path = inside(1)
-        let period = max(1, (smartCard.bounds.width * 1.5).rounded())
-        washFlow.bounds = CGRect(x: 0, y: 0, width: period * 2, height: smartCard.bounds.height)
-        washFlow.position = .zero
-        if period != washPeriod {
-            washPeriod = period
-            // A new width is a new run: start the drift over on it.
-            if washFlow.animation(forKey: "flow") != nil { startWashFlow() }
-        }
-        // Inside the 2pt border; the rim's 1pt line just within it.
-        sheenMask.path = inside(2)
-        rimMask.path = inside(2.5)
-        CATransaction.commit()
-    }
-
-    /// A square over the whole diagonal, so it covers the rect at any angle
-    /// it turns to. Bounds and position, not frame: it may be mid-turn. Both
-    /// gradients share the chip's centre, so their colours line up.
-    private static func cover(_ rect: CGRect, with spin: CAGradientLayer) {
-        let side = ceil(hypot(rect.width, rect.height))
-        spin.bounds = CGRect(x: 0, y: 0, width: side, height: side)
-        spin.position = CGPoint(x: rect.midX, y: rect.midY)
-    }
-
-    /// With the chip: a chip that has just appeared fades its glow in, and
-    /// the colours turn only while one shows. Reduce Motion keeps them still.
-    private func setMagic(showing: Bool, fresh: Bool) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        glowRing.isHidden = !showing
-        glowRing.opacity = Self.glowStrength
-        CATransaction.commit()
-        guard showing else { return stopMagic() }
-        if fresh, !Glass.reduceMotion {
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 0
-            fade.toValue = Self.glowStrength
-            fade.duration = 0.25
-            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            glowRing.add(fade, forKey: "fade")
-        }
-        startMagic()
-    }
-
-    private func startMagic() {
-        guard !magicPaused, !Glass.reduceMotion, !smartCard.isHidden,
-              glowSpin.animation(forKey: "turn") == nil else { return }
-        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
-        turn.fromValue = 0
-        turn.toValue = CGFloat.pi * 2
-        turn.duration = 4
-        turn.repeatCount = .infinity
-        // A slow turn looks as smooth at 30 frames a second as at 120.
-        turn.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
-        // Added in one go, so the border and the glow turn as one.
-        for spin in [glowSpin, borderSpin] { spin.add(turn, forKey: "turn") }
-        startWashFlow()
-    }
-
-    /// The colours inside drift one run to the left every 6 s, and loop.
-    private func startWashFlow() {
-        let flow = CABasicAnimation(keyPath: "transform.translation.x")
-        flow.fromValue = 0
-        flow.toValue = -washPeriod
-        flow.duration = 6
-        flow.repeatCount = .infinity
-        flow.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
-        washFlow.add(flow, forKey: "flow")
-    }
-
-    private func stopMagic() {
-        for spin in [glowSpin, borderSpin] { spin.removeAnimation(forKey: "turn") }
-        washFlow.removeAnimation(forKey: "flow")
+        magic.paint()
     }
 
     /// The keyboard went away, or came back: the colours turn only on screen.
     func setMagicRunning(_ running: Bool) {
-        magicPaused = !running
-        if running { startMagic() } else { stopMagic() }
+        magic.setRunning(running)
+        for chip in choiceChips { chip.magic.setRunning(running) }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -582,10 +343,8 @@ final class GlyfToolbar: UIView {
         paintCardFace()
         smartValue.textColor = Glass.textPrimary
         paintChip()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        glowRing.opacity = Self.glowStrength
-        CATransaction.commit()
+        for chip in choiceChips { chip.magic.paint() }
+        choiceClose.backgroundColor = Glass.touchableGrid
         // Suggestion words are drawn with the ink of the moment they were
         // made; redraw them or they stay dark on a sheet that just went dark.
         let words = suggestions
@@ -597,7 +356,10 @@ final class GlyfToolbar: UIView {
     }
 
     /// The chip's frame while it is showing, for the tour's ring.
-    var smartFrame: CGRect? { smartCard.isHidden ? nil : smartCard.frame }
+    var smartFrame: CGRect? {
+        if !smartCard.isHidden { return smartCard.frame }
+        return choiceRow.isHidden ? nil : choiceRow.frame
+    }
     /// Whether the chip showing is the clipboard's (its ✕ forgets the copy).
     var smartIsPaste: Bool { !smartCard.isHidden && smartChip?.copiedText != nil }
     var glyfFrame: CGRect { glyfButton.frame }
@@ -777,9 +539,12 @@ final class GlyfToolbar: UIView {
     /// beside your email, in an email field).
     func showSmart(_ chip: Smart.Chip?, extra: String? = nil) {
         smartChip = chip
-        let wasShowing = !smartCard.isHidden
-        smartCard.isHidden = chip == nil || panelTitle != nil
-        setMagic(showing: !smartCard.isHidden, fresh: !wasShowing)
+        let isRow: Bool = { if case .details? = chip { return true }; return false }()
+        let wasShowing = !smartCard.isHidden || !choiceRow.isHidden
+        smartCard.isHidden = chip == nil || panelTitle != nil || isRow
+        choiceRow.isHidden = !isRow || panelTitle != nil
+        magic.show(!smartCard.isHidden, fresh: !wasShowing)
+        showChoices(chip, fresh: !wasShowing)
         if let chip {
             // A copy (plain, or an address with Send or Buy beside it) is the
             // clipboard pill: the tap pastes it.
@@ -823,14 +588,13 @@ final class GlyfToolbar: UIView {
                 smartValue.textColor = Glass.textPrimary
                 smartValue.text = chip.value
             }
-            showChoices(chip)
             paintCardFace()
             smartCard.accessibilityLabel = "\(chip.key) \(chip.value)"
             // The ✕ leads every chip, so the hairline after it always shows.
             smartRule.isHidden = false
             paintChip()
         }
-        if smartCard.isHidden {
+        if smartCard.isHidden && choiceRow.isHidden {
             // No chip: back to whichever of tools / suggestions the strip was
             // showing. Never both — they share the same space and used to
             // draw over each other when a chip went away.
@@ -845,48 +609,98 @@ final class GlyfToolbar: UIView {
         setNeedsLayout()
     }
 
-    /// A details chip shows its parts in place of the value and the verb;
-    /// any other chip hides them.
-    private func showChoices(_ chip: Smart.Chip) {
-        guard case .details(let fields, let temp) = chip else {
+    /// A details chip shows as a row of chips, one per saved detail, then
+    /// Temp; any other chip hides the row.
+    private func showChoices(_ chip: Smart.Chip?, fresh: Bool) {
+        guard case .details(let fields, let temp)? = chip, panelTitle == nil else {
             choiceCount = 0
-            for v in choiceButtons as [UIView] + choiceLines { v.isHidden = true }
-            smartValue.isHidden = false
+            for c in choiceChips {
+                c.isHidden = true
+                c.magic.show(false, fresh: false)
+            }
             return
         }
-        let parts = fields.map(\.value) + (temp ? ["Temp mail"] : [])
-        choiceCount = min(parts.count, choiceButtons.count)
-        for (i, button) in choiceButtons.enumerated() {
-            button.isHidden = i >= choiceCount
-            guard i < choiceCount else { continue }
+        let values = fields.map(\.value)
+        choiceCount = min(values.count + (temp ? 1 : 0), choiceChips.count)
+        for (i, c) in choiceChips.enumerated() {
+            let shown = i < choiceCount
+            c.isHidden = !shown
+            c.magic.show(shown, fresh: fresh)
+            guard shown else { continue }
             let isTemp = temp && i == choiceCount - 1
-            button.setTitle(isTemp ? " Temp" : parts[i], for: .normal)
-            button.setImage(isTemp ? UIImage(systemName: "envelope",
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)) : nil, for: .normal)
-            button.accessibilityIdentifier = isTemp ? "strip:smart:choice:temp" : "strip:smart:choice:\(i)"
-            button.accessibilityLabel = isTemp ? "Temp mail" : parts[i]
+            c.label.text = isTemp ? "Temp" : values[i]
+            c.icon.image = isTemp ? UIImage(systemName: "envelope",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)) : nil
+            c.accessibilityIdentifier = isTemp ? "strip:smart:choice:temp" : "strip:smart:choice:\(i)"
+            c.accessibilityLabel = isTemp ? "Temp mail" : values[i]
         }
-        for (i, line) in choiceLines.enumerated() { line.isHidden = i >= choiceCount - 1 }
-        // The parts are the chip's content: no value, verb or second action.
-        smartValue.isHidden = true
-        smartKey.isHidden = true
-        smartExtra.isHidden = true
-        smartLead.isHidden = true
+        choiceRow.accessibilityLabel = (values + (temp ? ["Temp mail"] : [])).joined(separator: ", ")
+        paintChoices()
+        setNeedsLayout()
+    }
+
+    /// The row from the strip chip's left to its right, level with the g key
+    /// and as tall as the strip chip: its ✕, then each chip as wide as its
+    /// words. Too wide for the strip, Temp keeps its width and the details
+    /// share what is left, the shorter one whole first.
+    private func layoutChoiceRow(left: CGFloat, right: CGFloat, keyMid: CGFloat) {
+        let cardH = min(Self.chipHeight, keyMid * 2, (bounds.height - keyMid) * 2)
+        choiceRow.frame = CGRect(x: left - 6, y: 0, width: max(0, right - left + 6), height: bounds.height)
+        let closeW: CGFloat = 28
+        choiceClose.frame = CGRect(x: 0, y: keyMid - closeW / 2, width: closeW, height: closeW)
+        let start = closeW + 4
+        let chips = Array(choiceChips.prefix(choiceCount))
+        guard !chips.isEmpty else { return }
+        // Tight for room: less air in and between the chips, and the details
+        // a point smaller, so more of each shows ("alex.s219@…", not "alex.s…").
+        let roomy = choiceRow.bounds.width - start - 10 * CGFloat(chips.count - 1)
+        setChoiceTight(false)
+        if chips.map(\.naturalWidth).reduce(0, +) > roomy { setChoiceTight(true) }
+        let gap: CGFloat = choiceTight ? 8 : 10
+        var widths = chips.map(\.naturalWidth)
+        let room = choiceRow.bounds.width - start - gap * CGFloat(chips.count - 1)
+        if widths.reduce(0, +) > room, case .details(_, let temp)? = smartChip {
+            let values = chips.count - (temp ? 1 : 0)
+            var rest = room - (temp ? widths[chips.count - 1] : 0)
+            var open = Array(0..<values)
+            var settled = false
+            while !settled {
+                settled = true
+                let share = rest / CGFloat(max(1, open.count))
+                for i in open where widths[i] <= share {
+                    rest -= widths[i]
+                    open.removeAll { $0 == i }
+                    settled = false
+                }
+            }
+            let share = rest / CGFloat(max(1, open.count))
+            for i in open { widths[i] = max(44, share) }
+        }
+        var x = start
+        for (chip, w) in zip(chips, widths) {
+            chip.frame = CGRect(x: x, y: keyMid - cardH / 2, width: w, height: cardH)
+            chip.layer.cornerRadius = 12
+            chip.magic.layout(frame: chip.frame, radius: 12)
+            x += w + gap
+        }
+    }
+
+    private func setChoiceTight(_ tight: Bool) {
+        choiceTight = tight
+        for c in choiceChips { c.padding = tight ? 10 : 14 }
         paintChoices()
     }
 
     private func paintChoices() {
-        guard choiceCount > 0, case .details(_, let temp)? = smartChip else { return }
-        for (i, button) in choiceButtons.prefix(choiceCount).enumerated() {
+        choiceClose.tintColor = Glass.textSecondary
+        guard case .details(_, let temp)? = smartChip else { return }
+        for (i, c) in choiceChips.prefix(choiceCount).enumerated() {
             let isTemp = temp && i == choiceCount - 1
-            let ink = isTemp ? Glass.chipAccent : Glass.textPrimary
-            button.setTitleColor(ink, for: .normal)
-            button.tintColor = ink
-            // Three parts take a point less, so more of each address shows.
-            let size: CGFloat = choiceCount > 2 ? 14 : 15
-            button.titleLabel?.font = isTemp ? .systemFont(ofSize: size, weight: .semibold) : .systemFont(ofSize: size)
+            let size: CGFloat = choiceTight && !isTemp ? 14 : 15
+            c.label.font = isTemp ? .systemFont(ofSize: 15, weight: .semibold) : .systemFont(ofSize: size)
+            c.label.textColor = isTemp ? Glass.chipAccent : Glass.textPrimary
+            c.icon.tintColor = Glass.chipAccent
         }
-        for line in choiceLines { line.backgroundColor = Glass.textSecondary.withAlphaComponent(0.35) }
     }
 
     @objc private func glyfTapped() {
@@ -1098,32 +912,12 @@ final class GlyfToolbar: UIView {
             smartKey.frame = CGRect(x: right - keyW, y: 0, width: keyW, height: cardH)
             if keyW > 0 { right = smartKey.frame.minX - 10 }
             let contentX = ruleX + 0.5 + 10
-            if choiceCount > 0 {
-                // Temp takes what its icon and word need; the details share
-                // the rest equally.
-                let start = ruleX + 0.5 + 4, end = w - 8
-                var tempW: CGFloat = 0
-                if case .details(_, true)? = smartChip {
-                    tempW = ceil(choiceButtons[choiceCount - 1].intrinsicContentSize.width) + 6
-                }
-                let values = choiceCount - (tempW > 0 ? 1 : 0)
-                let segW = values > 0 ? (end - start - tempW) / CGFloat(values) : 0
-                var x = start
-                for (i, button) in choiceButtons.prefix(choiceCount).enumerated() {
-                    let width = tempW > 0 && i == choiceCount - 1 ? tempW : segW
-                    button.frame = CGRect(x: x, y: 0, width: width, height: cardH)
-                    x += width
-                    if i < choiceCount - 1 {
-                        choiceLines[i].frame = CGRect(x: x.rounded(), y: (cardH * 0.28).rounded(),
-                                                      width: 0.5, height: (cardH * 0.44).rounded())
-                    }
-                }
-            }
             if lead { smartLead.frame = CGRect(x: contentX, y: (cardH - 16) / 2, width: 16, height: 16) }
             let textX = lead ? contentX + 16 + 8 : contentX
             smartValue.frame = CGRect(x: textX, y: 0, width: max(0, right - textX), height: cardH)
-            layoutMagic()
+            magic.layout(frame: smartCard.frame, radius: smartCard.layer.cornerRadius)
         }
+        if !choiceRow.isHidden { layoutChoiceRow(left: left, right: rightInk, keyMid: keyMid) }
         if panelTitle != nil {
             var x = left
             let row = Glass.stripBox(height: h, mid: mid)
@@ -1186,5 +980,321 @@ final class GlyfToolbar: UIView {
                 + candidatesStack.spacing * CGFloat(i) + candidatesStack.spacing / 2
             line.frame = CGRect(x: x.rounded() - 0.5, y: mid - lineH / 2, width: 1, height: lineH)
         }
+    }
+}
+
+// MARK: - A chip's magic, for any card in the strip
+
+/// Every strip chip's magic (Arpit, 2026-09-30: "a colourful glowy border so
+/// it feels like its magic, all types of strips", "we should make the
+/// suggestion strip glassy"): a conic gradient in Glyf's colours turning
+/// under a 2pt stroke on the card's edge and, behind the card, under wider,
+/// fainter strokes that fade out 6pt past it (the glow, drawn outside the card
+/// only); and a glass face: a frosted fill the sheet shows through, the
+/// colours drifting through it as a band, a sheen over its top half and a
+/// bright rim inside the border. The face and the border go on the card's own
+/// layer, under its words; the glow behind the card, on its parent's layer.
+/// Core Animation turns and drifts them; nothing is redrawn frame by frame.
+/// Android's twin is MagicChip.
+final class ChipMagic {
+
+    /// Violet, magenta, pink, amber, cyan and round to violet again.
+    static let colors: [CGColor] = [0x7C5CFF, 0xD35CFF, 0xFF5C8A, 0xFFB547, 0x3CC8FF, 0x7C5CFF]
+        .map { UIColor(red: CGFloat(($0 >> 16) & 0xFF) / 255, green: CGFloat(($0 >> 8) & 0xFF) / 255,
+                       blue: CGFloat($0 & 0xFF) / 255, alpha: 1).cgColor }
+    /// How far the glow reaches past the chip's edge.
+    static let glowSpread: CGFloat = 6
+    /// The glow's strokes, innermost first: each reaches a point further out
+    /// than the last and is fainter, so together they fall off softly, with
+    /// the square of the distance, to nothing at the spread.
+    static let glowBands: [(width: CGFloat, alpha: Float)] = {
+        let n = 6
+        let step = glowSpread / CGFloat(n)
+        let shown = (0..<n).map { k in 0.85 * pow(1 - (Double(k) + 0.5) / Double(n), 2) }
+        var bands: [(width: CGFloat, alpha: Float)] = []
+        var through = 1.0   // what the wider, outer strokes already leave clear
+        for k in stride(from: n - 1, through: 0, by: -1) {
+            let alpha = 1 - (1 - shown[k]) / through
+            through *= 1 - alpha
+            bands.insert((width: step * CGFloat(k + 1) * 2, alpha: Float(alpha)), at: 0)
+        }
+        return bands
+    }()
+    /// The glow's strength over the sheet: a dark one needs more to show.
+    static var glowStrength: Float { Glass.chromeDark ? 0.55 : 0.40 }
+
+    private let glowRing = CALayer()
+    private let glowSpin = CAGradientLayer()
+    private let glowMask = CALayer()
+    /// The strokes, under a fade to nothing at the keyboard's top edge: iOS
+    /// cuts off anything drawn above it, and a glow cut there is a hard line.
+    private let glowBox = CALayer()
+    private let glowFade = CAGradientLayer()
+    private let glowStrokes = ChipMagic.glowBands.map { _ in CAShapeLayer() }
+    private let borderRing = CALayer()
+    private let borderSpin = CAGradientLayer()
+    private let borderMask = CAShapeLayer()
+    /// The face, on the same squircle as the border (a layer's own corner
+    /// curve and the border's path parted at the corners, and white showed
+    /// outside the colours).
+    private let cardFill = CAShapeLayer()
+    private let glassWash = CALayer()
+    private let washFlow = CAGradientLayer()
+    private let washMask = CAShapeLayer()
+    /// One run of the colours through the card: half as long again as it.
+    private var washPeriod: CGFloat = 0
+    private let glassSheen = CAGradientLayer()
+    private let sheenMask = CAShapeLayer()
+    private let glassRim = CAGradientLayer()
+    private let rimMask = CAShapeLayer()
+    private weak var card: UIView?
+    /// The keyboard is away: nothing turns until it is back.
+    private var paused = false
+
+    init() {
+        for spin in [glowSpin, borderSpin] {
+            spin.type = .conic
+            spin.colors = Self.colors
+            spin.startPoint = CGPoint(x: 0.5, y: 0.5)
+            spin.endPoint = CGPoint(x: 0.5, y: 0)
+        }
+        for (band, stroke) in zip(Self.glowBands, glowStrokes) {
+            stroke.fillColor = nil
+            stroke.strokeColor = UIColor.black.cgColor
+            stroke.opacity = band.alpha
+            glowBox.addSublayer(stroke)
+        }
+        glowFade.colors = [UIColor.clear.cgColor, UIColor.black.cgColor]
+        glowBox.mask = glowFade
+        glowMask.addSublayer(glowBox)
+        // Drawn once and kept: only the gradient under it moves.
+        glowMask.shouldRasterize = true
+        glowMask.rasterizationScale = UIScreen.main.scale
+        glowRing.mask = glowMask
+        glowRing.addSublayer(glowSpin)
+        glowRing.isHidden = true
+        glowRing.opacity = Self.glowStrength
+        borderMask.fillColor = nil
+        borderMask.strokeColor = UIColor.black.cgColor
+        // 2pt, the card's outermost edge (Arpit: "expand border").
+        borderMask.lineWidth = 2
+        borderRing.mask = borderMask
+        borderRing.addSublayer(borderSpin)
+        // Two runs of the colours side by side: sliding by one run loops.
+        washFlow.colors = Self.colors + Self.colors.dropFirst()
+        washFlow.startPoint = CGPoint(x: 0, y: 0.5)
+        washFlow.endPoint = CGPoint(x: 1, y: 0.5)
+        washFlow.anchorPoint = .zero
+        glassWash.addSublayer(washFlow)
+        glassWash.mask = washMask
+        glassSheen.startPoint = CGPoint(x: 0.5, y: 0)
+        glassSheen.endPoint = CGPoint(x: 0.5, y: 1)
+        glassSheen.locations = [0, 0.6]
+        glassSheen.mask = sheenMask
+        glassRim.startPoint = CGPoint(x: 0.5, y: 0)
+        glassRim.endPoint = CGPoint(x: 0.5, y: 1)
+        rimMask.fillColor = nil
+        rimMask.strokeColor = UIColor.black.cgColor
+        rimMask.lineWidth = 1
+        glassRim.mask = rimMask
+    }
+
+    /// The glow behind `card` on `parent`'s layer (only outside the card:
+    /// its face is glass, and a glow under it would show inside the edge);
+    /// the face, wash, sheen, rim and border on the card, under its words.
+    func attach(to card: UIView, in parent: UIView) {
+        self.card = card
+        parent.layer.insertSublayer(glowRing, below: card.layer)
+        for glass in [borderRing, glassRim, glassSheen, glassWash, cardFill] as [CALayer] {
+            card.layer.insertSublayer(glass, at: 0)
+        }
+        paint()
+    }
+
+    /// The face for the sheet of the moment (a layer's CGColor does not
+    /// follow dark mode by itself).
+    func paint() {
+        let dark = Glass.chromeDark
+        let white = { (a: CGFloat) in UIColor.white.withAlphaComponent(a).cgColor }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        cardFill.fillColor = white(dark ? 0.10 : 0.55)
+        glassWash.opacity = dark ? 0.14 : 0.10
+        glassSheen.colors = [white(dark ? 0.12 : 0.6), white(0)]
+        glassRim.colors = [white(dark ? 0.32 : 0.95), white(dark ? 0.05 : 0.3)]
+        glowRing.opacity = Self.glowStrength
+        CATransaction.commit()
+    }
+
+    /// The card at `frame` in its parent, with corners of `radius`; `edgeY`
+    /// is the keyboard's top edge in the parent's coordinates (the glow is
+    /// clear there and whole 4pt below it).
+    func layout(frame card: CGRect, radius: CGFloat, edgeY: CGFloat = 0) {
+        let spread = Self.glowSpread
+        let bounds = CGRect(origin: .zero, size: card.size)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        glowRing.frame = card.insetBy(dx: -spread, dy: -spread)
+        glowMask.frame = glowRing.bounds
+        glowBox.frame = glowMask.bounds
+        let h = max(1, glowBox.bounds.height)
+        glowFade.frame = glowBox.bounds
+        glowFade.startPoint = CGPoint(x: 0.5, y: (edgeY - glowRing.frame.minY) / h)
+        glowFade.endPoint = CGPoint(x: 0.5, y: (edgeY + 4 - glowRing.frame.minY) / h)
+        // Each band runs from half a point under the border (so no gap shows
+        // at the corners) out to its reach.
+        let edge = CGRect(x: spread, y: spread, width: card.width, height: card.height)
+        for (band, stroke) in zip(Self.glowBands, glowStrokes) {
+            let reach = band.width / 2
+            let centre = (reach - 0.5) / 2
+            stroke.frame = glowBox.bounds
+            stroke.lineWidth = reach + 0.5
+            stroke.path = UIBezierPath(roundedRect: edge.insetBy(dx: -centre, dy: -centre),
+                                       cornerRadius: radius + centre).cgPath
+        }
+        Self.cover(glowRing.bounds, with: glowSpin)
+        let inside = { (inset: CGFloat) in
+            UIBezierPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
+                         cornerRadius: max(0, radius - inset)).cgPath
+        }
+        // The face 1pt in, under the 2pt border, both on one squircle: no
+        // white shows outside the colours. The border inset by half its
+        // line, so the whole 2pt lies on the card.
+        cardFill.frame = bounds
+        cardFill.path = inside(1)
+        borderRing.frame = bounds
+        borderMask.frame = bounds
+        borderMask.path = inside(1)
+        Self.cover(bounds, with: borderSpin)
+        for (glass, mask) in [(glassWash, washMask), (glassSheen, sheenMask), (glassRim, rimMask)] as [(CALayer, CAShapeLayer)] {
+            glass.frame = bounds
+            mask.frame = bounds
+        }
+        washMask.path = inside(1)
+        let period = max(1, (card.width * 1.5).rounded())
+        washFlow.bounds = CGRect(x: 0, y: 0, width: period * 2, height: card.height)
+        washFlow.position = .zero
+        if period != washPeriod {
+            washPeriod = period
+            // A new width is a new run: start the drift over on it.
+            if washFlow.animation(forKey: "flow") != nil { startFlow() }
+        }
+        // Inside the 2pt border; the rim's 1pt line just within it.
+        sheenMask.path = inside(2)
+        rimMask.path = inside(2.5)
+        CATransaction.commit()
+    }
+
+    /// A square over the whole diagonal, so it covers the rect at any angle
+    /// it turns to. Bounds and position, not frame: it may be mid-turn. The
+    /// glow's and the border's share the card's centre, so their colours
+    /// line up.
+    private static func cover(_ rect: CGRect, with spin: CAGradientLayer) {
+        let side = ceil(hypot(rect.width, rect.height))
+        spin.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        spin.position = CGPoint(x: rect.midX, y: rect.midY)
+    }
+
+    /// With the card: one that has just appeared fades its glow in, and the
+    /// colours move only while one shows. Reduce Motion keeps them still.
+    func show(_ showing: Bool, fresh: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        glowRing.isHidden = !showing
+        glowRing.opacity = Self.glowStrength
+        CATransaction.commit()
+        guard showing else { return stop() }
+        if fresh, !Glass.reduceMotion {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = Self.glowStrength
+            fade.duration = 0.25
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            glowRing.add(fade, forKey: "fade")
+        }
+        start()
+    }
+
+    /// The keyboard went away, or came back: the colours move only on screen.
+    func setRunning(_ running: Bool) {
+        paused = !running
+        if running { start() } else { stop() }
+    }
+
+    private func start() {
+        guard !paused, !Glass.reduceMotion, card?.isHidden == false, !glowRing.isHidden,
+              glowSpin.animation(forKey: "turn") == nil else { return }
+        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+        turn.fromValue = 0
+        turn.toValue = CGFloat.pi * 2
+        turn.duration = 4
+        turn.repeatCount = .infinity
+        // A slow turn looks as smooth at 30 frames a second as at 120.
+        turn.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
+        // Added in one go, so the border and the glow turn as one.
+        for spin in [glowSpin, borderSpin] { spin.add(turn, forKey: "turn") }
+        startFlow()
+    }
+
+    /// The colours inside drift one run to the left every 6 s, and loop.
+    private func startFlow() {
+        let flow = CABasicAnimation(keyPath: "transform.translation.x")
+        flow.fromValue = 0
+        flow.toValue = -washPeriod
+        flow.duration = 6
+        flow.repeatCount = .infinity
+        flow.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
+        washFlow.add(flow, forKey: "flow")
+    }
+
+    private func stop() {
+        for spin in [glowSpin, borderSpin] { spin.removeAnimation(forKey: "turn") }
+        washFlow.removeAnimation(forKey: "flow")
+    }
+}
+
+/// One chip of a row of them (Arpit, 2026-10-01: "it should be 2-3 diff
+/// strips not all in one strip"): a saved detail, or Temp, on its own glowing
+/// glass card. Its words are the action; the row has the one ✕.
+final class GlowChip: UIControl {
+    let label = UILabel()
+    let icon = UIImageView()
+    let magic = ChipMagic()
+    /// Room either side of the words: less when a row is tight for space.
+    var padding: CGFloat = 14
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        // A keyboard extension takes no touches on clear pixels.
+        backgroundColor = Glass.touchableGrid
+        layer.cornerCurve = .continuous
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+        label.lineBreakMode = .byTruncatingTail
+        label.textAlignment = .center
+        label.isUserInteractionEnabled = false
+        addSubview(label)
+        icon.contentMode = .scaleAspectFit
+        icon.isUserInteractionEnabled = false
+        addSubview(icon)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// What it needs to show its words whole.
+    var naturalWidth: CGFloat {
+        let words = ceil(label.intrinsicContentSize.width)
+        let mark: CGFloat = icon.image == nil ? 0 : 17 + 6
+        return words + mark + padding * 2
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let mark: CGFloat = icon.image == nil ? 0 : 17
+        let gap: CGFloat = mark > 0 ? 6 : 0
+        let words = min(ceil(label.intrinsicContentSize.width), bounds.width - padding * 2 - mark - gap)
+        let x = max(padding, (bounds.width - mark - gap - words) / 2)
+        icon.frame = CGRect(x: x, y: (bounds.height - 17) / 2, width: mark, height: 17)
+        label.frame = CGRect(x: x + mark + gap, y: 0, width: max(0, words), height: bounds.height)
     }
 }

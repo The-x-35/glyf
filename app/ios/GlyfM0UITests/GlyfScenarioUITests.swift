@@ -1460,10 +1460,10 @@ final class GlyfScenarioUITests: XCTestCase {
             // An email saved: the chip offers it, and Temp mail beside it.
             XCTAssertTrue(vaultTool(["op": "adddetail", "kind": "email", "label": "Email", "value": saved]))
             clear()
-            guard waitChip(6, { $0.contains(saved) }) != nil else {
+            guard let first = wait("strip:smart:choice:0", 6) else {
                 return XCTFail("\(look): the saved email is not offered; the strip shows '\(el("strip:smart").label)'")
             }
-            XCTAssertEqual(el("strip:smart:choice:0").label, saved, "\(look): the chip's first part")
+            XCTAssertEqual(first.label, saved, "\(look): the first chip")
             let temp = el("strip:smart:choice:temp")
             XCTAssertTrue(temp.exists && temp.isHittable && temp.label == "Temp mail", "\(look): beside the email sits '\(temp.label)'")
             keepScreenshot("tempmail-field-vault-\(look)")
