@@ -9,17 +9,21 @@ import XCTest
 final class BillingTests: XCTestCase {
     private static let ids = ["com.arpit.glyf.plus.monthly", "com.arpit.glyf.plus.yearly",
                               "com.arpit.glyf.max.monthly", "com.arpit.glyf.max.yearly"]
+    private static let probe = "com.arpit.glyf.storekit.probe"
     private var session: SKTestSession!
 
     override func setUp() async throws {
         session = try SKTestSession(configurationFileNamed: "Glyf")
         session.disableDialogs = true
         session.clearTransactions()
-        // Command-line runs on this Mac can't reach StoreKit testing's local
-        // store (SKInternalErrorDomain 3); run these from Xcode, where the
-        // scheme's Glyf.storekit is in charge.
-        if try await Product.products(for: Self.ids).isEmpty {
-            throw XCTSkip("StoreKit testing isn't reachable here: run BillingTests from Xcode")
+        // StoreKit testing must be in charge, not Apple's sandbox: since the
+        // plans exist in App Store Connect (2026-10-02) the sandbox sells them
+        // too, and a purchase there waits for a signed-in Apple Account. The
+        // probe is a product only Glyf.storekit has. Command-line runs on this
+        // Mac can't reach StoreKit testing (SKInternalErrorDomain 3); run
+        // these from Xcode, where the scheme's Glyf.storekit is in charge.
+        if try await Product.products(for: [Self.probe]).isEmpty {
+            throw XCTSkip("StoreKit testing isn't in charge here: run BillingTests from Xcode")
         }
     }
 

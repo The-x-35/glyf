@@ -1,7 +1,23 @@
 {
   "identifier": "4F6A2C10",
   "nonRenewingSubscriptions": [],
-  "products": [],
+  "products": [
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "5B1D3E05",
+      "localizations": [
+        {
+          "description": "Only here: tells BillingTests StoreKit testing is in charge",
+          "displayName": "StoreKit testing probe",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.arpit.glyf.storekit.probe",
+      "referenceName": "StoreKit testing probe",
+      "type": "NonConsumable"
+    }
+  ],
   "settings": {
     "_applicationInternalID": "6744000001",
     "_developerTeamID": "YNABR226PF",
