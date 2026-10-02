@@ -227,7 +227,7 @@ object Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if (cashtag(text) != null) return null
-        (conversions(text, region) ?: zoneTimes(text, region = region))?.let { return Chip.Convert(it.source, it.results) }
+        quickAnswer(text, region = region)?.let { return Chip.Convert(it.source, it.results) }
         // Every saved value the sentence asks for: two emails show both.
         val matches = vaultMatches(text, fields)
         if (matches.size > 1) return Chip.Details(matches.take(3), temp = false)
@@ -1264,6 +1264,13 @@ object Smart {
                 return Conversions(m.value.trim(), listOf(stripNamed(metres * 100, "cm"), stripNamed(metres, "m")))
             }
         }
+        // "it's 30 degrees": on the phone's own scale, shown on the other one.
+        firstMatch("""\b(?:it'?s|it\s+is|feels\s+like|high\s+of|low\s+of|temp(?:erature)?\s+(?:is\s+|of\s+)?|was|hitting|around|about)\s+(-?\d{1,3}(?:\.\d+)?)\s*(?:°|degrees?|deg)\.?\s?$""", t)?.let { g ->
+            val n = g[1]?.toDoubleOrNull() ?: return@let
+            val fahrenheit = (region ?: "").uppercase() in setOf("US", "BS", "BZ", "KY", "PR", "PW")
+            val result = if (fahrenheit) stripNamed((n - 32) * 5 / 9, "°C") else stripNamed(n * 9 / 5 + 32, "°F")
+            return Conversions((g[0] ?: "").trim(), listOf(result))
+        }
         val m = stripMeasure.find(t)?.takeIf { !partOfMore(it) } ?: return null
         val n = amount(m.groupValues[1])?.takeIf { it.isFinite() } ?: return null
         val name = m.groupValues[2].lowercase()
@@ -1346,6 +1353,86 @@ object Smart {
         "wat" to "Africa/Lagos", "eat" to "Africa/Nairobi", "brt" to "America/Sao_Paulo",
         "ny time" to "America/New_York", "new york time" to "America/New_York", "la time" to "America/Los_Angeles",
         "tokyo time" to "Asia/Tokyo", "singapore time" to "Asia/Singapore", "sydney time" to "Australia/Sydney",
+        // Cities, as Raycast takes them ("5pm london"); none that is also a
+        // word ("reading", "nice", "bath", "split").
+        "london" to "Europe/London",
+        "paris" to "Europe/Paris",
+        "berlin" to "Europe/Berlin",
+        "madrid" to "Europe/Madrid",
+        "rome" to "Europe/Rome",
+        "amsterdam" to "Europe/Amsterdam",
+        "brussels" to "Europe/Brussels",
+        "vienna" to "Europe/Vienna",
+        "zurich" to "Europe/Zurich",
+        "stockholm" to "Europe/Stockholm",
+        "dublin" to "Europe/Dublin",
+        "lisbon" to "Europe/Lisbon",
+        "athens" to "Europe/Athens",
+        "istanbul" to "Europe/Istanbul",
+        "moscow" to "Europe/Moscow",
+        "dubai" to "Asia/Dubai",
+        "abu dhabi" to "Asia/Dubai",
+        "riyadh" to "Asia/Riyadh",
+        "doha" to "Asia/Qatar",
+        "karachi" to "Asia/Karachi",
+        "lahore" to "Asia/Karachi",
+        "mumbai" to "Asia/Kolkata",
+        "delhi" to "Asia/Kolkata",
+        "new delhi" to "Asia/Kolkata",
+        "bangalore" to "Asia/Kolkata",
+        "bengaluru" to "Asia/Kolkata",
+        "chennai" to "Asia/Kolkata",
+        "hyderabad" to "Asia/Kolkata",
+        "kolkata" to "Asia/Kolkata",
+        "dhaka" to "Asia/Dhaka",
+        "colombo" to "Asia/Colombo",
+        "bangkok" to "Asia/Bangkok",
+        "jakarta" to "Asia/Jakarta",
+        "singapore" to "Asia/Singapore",
+        "kuala lumpur" to "Asia/Kuala_Lumpur",
+        "manila" to "Asia/Manila",
+        "hong kong" to "Asia/Hong_Kong",
+        "shanghai" to "Asia/Shanghai",
+        "beijing" to "Asia/Shanghai",
+        "taipei" to "Asia/Taipei",
+        "seoul" to "Asia/Seoul",
+        "tokyo" to "Asia/Tokyo",
+        "sydney" to "Australia/Sydney",
+        "melbourne" to "Australia/Melbourne",
+        "brisbane" to "Australia/Brisbane",
+        "perth" to "Australia/Perth",
+        "auckland" to "Pacific/Auckland",
+        "honolulu" to "Pacific/Honolulu",
+        "los angeles" to "America/Los_Angeles",
+        "la" to "America/Los_Angeles",
+        "san francisco" to "America/Los_Angeles",
+        "sf" to "America/Los_Angeles",
+        "seattle" to "America/Los_Angeles",
+        "vancouver" to "America/Vancouver",
+        "denver" to "America/Denver",
+        "phoenix" to "America/Phoenix",
+        "chicago" to "America/Chicago",
+        "dallas" to "America/Chicago",
+        "houston" to "America/Chicago",
+        "austin" to "America/Chicago",
+        "toronto" to "America/Toronto",
+        "montreal" to "America/Toronto",
+        "new york" to "America/New_York",
+        "nyc" to "America/New_York",
+        "boston" to "America/New_York",
+        "miami" to "America/New_York",
+        "atlanta" to "America/New_York",
+        "washington" to "America/New_York",
+        "mexico city" to "America/Mexico_City",
+        "sao paulo" to "America/Sao_Paulo",
+        "são paulo" to "America/Sao_Paulo",
+        "buenos aires" to "America/Argentina/Buenos_Aires",
+        "lagos" to "Africa/Lagos",
+        "nairobi" to "Africa/Nairobi",
+        "cairo" to "Africa/Cairo",
+        "johannesburg" to "Africa/Johannesburg",
+        "cape town" to "Africa/Johannesburg",
+        "tel aviv" to "Asia/Jerusalem",
     )
 
     /** How a zone is named in the result: the letters people know, or the
@@ -1426,6 +1513,241 @@ object Smart {
             clock = java.time.format.DateTimeFormatter.ofPattern("EEE", java.util.Locale.US).format(mine) + " " + clock
         }
         return Conversions(m.value.trim(), listOf("$clock ${zoneLabel(here, instant)}"))
+    }
+
+    // MARK: bills, arrivals and dates, worked out as they are typed (Smart.swift twin)
+
+    /** Everything the strip works out on the phone from how the message
+     *  ends, in the order tried: a measurement, a time in another zone, a
+     *  bill (split, tip, discount, tax), when someone will be there, how long
+     *  a span of minutes is, and a date in words. One chip per result; a tap
+     *  adds it in brackets. shared/quick/strip-cases.json. */
+    fun quickAnswer(text: String, now: java.time.Instant = java.time.Instant.now(),
+                    here: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+                    region: String? = java.util.Locale.getDefault().country): Conversions? {
+        if (text.length > 400) return null
+        return conversions(text, region)
+            ?: zoneTimes(text, now, here, region)
+            ?: billMath(text)
+            ?: arrival(text, now, here)
+            ?: dateInWords(text, now, here, region)
+    }
+
+    /** Patterns are built once: the strip asks on every key. */
+    private val patternCache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+
+    private fun firstMatch(pattern: String, text: String): List<String?>? {
+        val re = patternCache.getOrPut(pattern) { Regex(pattern, RegexOption.IGNORE_CASE) }
+        val m = re.find(text) ?: return null
+        return m.groups.map { it?.value }
+    }
+
+    private const val SYM = """([$€£₹¥])?"""
+    private const val AMT = """(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"""
+    private const val PCT = """(\d+(?:\.\d+)?)\s*%"""
+    private const val END = """[.?!]?\s?$"""
+
+    /** Money as it is written back: the sign typed, cents only when there
+     *  are some ("$30", "$33.33"), none for yen. */
+    fun billMoney(n: Double, symbol: String): String {
+        val cents = Math.round(n * 100) / 100.0
+        val whole = symbol == "¥" || cents == kotlin.math.round(cents)
+        val f = java.text.DecimalFormat(if (whole) "#,##0" else "#,##0.00", java.text.DecimalFormatSymbols(java.util.Locale.US))
+            .apply { roundingMode = java.math.RoundingMode.HALF_UP }
+        return symbol + f.format(cents)
+    }
+
+    private fun number(s: String?): Double? = s?.replace(",", "")?.toDoubleOrNull()
+
+    /** "split 120 4 ways" → 30 each; "15% tip on 80" → 12 tip, 92 total;
+     *  "20% off 80" → 64, save 16; "$80 + 8.875% tax" → $87.10 total,
+     *  $7.10 tax. Each needs its word (split, tip, off, tax), so "50% sure"
+     *  and "24/7" stay what they are. */
+    fun billMath(text: String): Conversions? {
+        val ways = """\s*(?:ways?|people|persons|of us|friends)?"""
+        val splits = listOf(
+            """\bsplit\s+(?:the\s+)?(?:bill\s+(?:of\s+)?)?$SYM\s*$AMT\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+|with\s+)?(\d{1,2})$ways$END""",
+            """$SYM\s*$AMT\s+(?:split|divided)\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+)?(\d{1,2})$ways$END""",
+            """$SYM\s*$AMT\s+(?:between|among)\s+(\d{1,2})\s+(?:people|persons|of us|friends)$END""",
+        )
+        for (p in splits) {
+            val g = firstMatch(p, text) ?: continue
+            val bill = number(g[2]) ?: continue
+            val n = number(g[3]) ?: continue
+            if (n < 2 || n > 50) continue
+            return Conversions(g[0]!!.trim(), listOf("${billMoney(bill / n, g[1] ?: "")} each"))
+        }
+        // (percent, sign, amount) or (sign, amount, percent)
+        fun pick(g: List<String?>, percentFirst: Boolean): Triple<Double, String, Double>? {
+            val p = number(if (percentFirst) g[1] else g[3]) ?: return null
+            val s = (if (percentFirst) g[2] else g[1]) ?: ""
+            val a = number(if (percentFirst) g[3] else g[2]) ?: return null
+            return if (p > 0 && p <= 100) Triple(p, s, a) else null
+        }
+        val tips = listOf(
+            """\b$PCT\s*tip\s*(?:on|for|of)?\s*$SYM\s*$AMT$END""" to true,
+            """\btip\s+(?:of\s+)?$PCT\s*(?:on|for)\s*$SYM\s*$AMT$END""" to true,
+            """$SYM\s*$AMT\s*(?:\+|plus|with|and)\s*$PCT\s*tip$END""" to false,
+        )
+        for ((p, first) in tips) {
+            val g = firstMatch(p, text) ?: continue
+            val (percent, s, bill) = pick(g, first) ?: continue
+            val tip = bill * percent / 100
+            return Conversions(g[0]!!.trim(), listOf("${billMoney(tip, s)} tip", "${billMoney(bill + tip, s)} total"))
+        }
+        val offs = listOf(
+            """\b$PCT\s*off\s*(?:of\s+)?$SYM\s*$AMT$END""" to true,
+            """$SYM\s*$AMT\s*(?:with\s+|at\s+|less\s+|minus\s+|-\s*)?$PCT\s*off$END""" to false,
+        )
+        for ((p, first) in offs) {
+            val g = firstMatch(p, text) ?: continue
+            val (percent, s, price) = pick(g, first) ?: continue
+            val saved = price * percent / 100
+            return Conversions(g[0]!!.trim(), listOf(billMoney(price - saved, s), "save ${billMoney(saved, s)}"))
+        }
+        val taxes = listOf(
+            """$SYM\s*$AMT\s*(?:\+|plus|with|and)\s*$PCT\s*(?:sales\s+)?(?:tax|gst|vat)$END""" to false,
+            """\b$PCT\s*(?:sales\s+)?(?:tax|gst|vat)\s*(?:on|for|of)\s*$SYM\s*$AMT$END""" to true,
+        )
+        for ((p, first) in taxes) {
+            val g = firstMatch(p, text) ?: continue
+            val (percent, s, price) = pick(g, first) ?: continue
+            val tax = price * percent / 100
+            return Conversions(g[0]!!.trim(), listOf("${billMoney(price + tax, s)} total", "${billMoney(tax, s)} tax"))
+        }
+        return null
+    }
+
+    private fun clockAt(at: java.time.ZonedDateTime, now: java.time.ZonedDateTime): String {
+        var text = java.time.format.DateTimeFormatter.ofPattern(if (at.minute == 0) "h a" else "h:mm a", java.util.Locale.US)
+            .format(at).replace(' ', ' ')
+        if (at.toLocalDate() != now.toLocalDate()) {
+            text = java.time.format.DateTimeFormatter.ofPattern("EEE", java.util.Locale.US).format(at) + " " + text
+        }
+        return text
+    }
+
+    private val smallNumbers = mapOf(
+        "a" to 1.0, "an" to 1.0, "one" to 1.0, "two" to 2.0, "three" to 3.0, "four" to 4.0, "five" to 5.0, "six" to 6.0,
+        "seven" to 7.0, "eight" to 8.0, "nine" to 9.0, "ten" to 10.0, "eleven" to 11.0, "twelve" to 12.0, "fifteen" to 15.0,
+        "twenty" to 20.0, "thirty" to 30.0, "forty" to 40.0, "forty five" to 45.0, "fifty" to 50.0, "half an" to 0.5,
+        "a couple of" to 2.0, "couple of" to 2.0,
+    )
+    private const val COUNT_WORD = """(\d+(?:\.\d+)?|a couple of|couple of|half an|forty five|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty)"""
+
+    /** "there in 20 mins" → the clock then; "back in 2 hrs"; "eta 45 min".
+     *  Under ten minutes only when the words say someone is coming. "movie is
+     *  145 mins" → 2 h 25 min (from 90 minutes up). */
+    fun arrival(text: String, now: java.time.Instant, here: java.time.ZoneId): Conversions? {
+        val unit = """(mins?|minutes?|hrs?|hours?)"""
+        val coming = Regex("""\b(?:eta|back|there|home|ready|leav(?:e|ing)|land(?:s|ing)?|reach(?:ing)?|arriv(?:e|ing)|be\s+(?:there|back|home|ready|free|done)|see\s+(?:you|u)|done|free|out|wait)\b""",
+            RegexOption.IGNORE_CASE)
+        firstMatch("""\b(?:in|within|eta)\s*:?\s*(?:about\s+|around\s+|like\s+|~\s*)?$COUNT_WORD\s*$unit$END""", text)?.let { g ->
+            val n = g[1]?.let { it.toDoubleOrNull() ?: smallNumbers[it.lowercase()] } ?: return@let
+            val mins = if (g[2]!!.lowercase().startsWith("h")) n * 60 else n
+            if (mins <= 0 || mins > 12 * 60) return@let
+            if (mins < 10 && !coming.containsMatchIn(text)) return null
+            val start = now.atZone(here)
+            val at = start.plusSeconds(Math.round(mins * 60))
+            return Conversions(g[0]!!.trim(), listOf(clockAt(at, start)))
+        }
+        firstMatch("""(?<![\d.])(\d{2,4})\s*(mins?|minutes?)$END""", text)?.let { g ->
+            if (Regex("""\b(?:in|within)\s+\d+\s*(?:mins?|minutes?)\.?\s?$""", RegexOption.IGNORE_CASE).containsMatchIn(text)) return@let
+            val n = number(g[1]) ?: return@let
+            if (n < 90 || n >= 24 * 60) return@let
+            val h = n.toInt() / 60
+            val m = n.toInt() % 60
+            return Conversions(g[0]!!.trim(), listOf(if (m == 0) "$h h" else "$h h $m min"))
+        }
+        return null
+    }
+
+    private val weekdays = listOf(
+        "sunday" to 7, "sun" to 7, "monday" to 1, "mon" to 1, "tuesday" to 2, "tues" to 2, "tue" to 2,
+        "wednesday" to 3, "wed" to 3, "thursday" to 4, "thurs" to 4, "thur" to 4, "thu" to 4,
+        "friday" to 5, "fri" to 5, "saturday" to 6, "sat" to 6,
+    )
+    private val datedMonths = listOf(
+        "january" to 1, "jan" to 1, "february" to 2, "feb" to 2, "march" to 3, "mar" to 3, "april" to 4, "apr" to 4,
+        "may" to 5, "june" to 6, "jun" to 6, "july" to 7, "jul" to 7, "august" to 8, "aug" to 8,
+        "september" to 9, "sept" to 9, "sep" to 9, "october" to 10, "oct" to 10, "november" to 11, "nov" to 11,
+        "december" to 12, "dec" to 12,
+    )
+
+    /** A day as people write dates: "Fri 9 Oct", or "Fri, Oct 9" in the US;
+     *  the year when it is not this one. */
+    private fun dayName(date: java.time.LocalDate, today: java.time.LocalDate, region: String?): String {
+        val us = region.equals("US", ignoreCase = true)
+        var text = java.time.format.DateTimeFormatter.ofPattern(if (us) "EEE, MMM d" else "EEE d MMM", java.util.Locale.US).format(date)
+        if (date.year != today.year) text += (if (us) ", " else " ") + date.year
+        return text
+    }
+
+    /** "next friday" → Fri 9 Oct (and Fri 16 Oct when the coming Friday is
+     *  still this week); "this friday"; "in 3 weeks"; "day after tomorrow";
+     *  "the 14th"; "oct 14" or "14 october". Never a lone weekday, "today"
+     *  or "tomorrow". */
+    fun dateInWords(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
+        val today = now.atZone(here).toLocalDate()
+        fun say(g: List<String?>, dates: List<java.time.LocalDate>) =
+            Conversions(g[0]!!.trim(), dates.map { dayName(it, today, region) })
+        val dayNames = weekdays.joinToString("|") { it.first }
+        firstMatch("""\b(next|this|coming)\s+($dayNames)$END""", text)?.let { g ->
+            val which = g[1]!!.lowercase()
+            val target = weekdays.first { it.first == g[2]!!.lowercase() }.second
+            var ahead = (target - today.dayOfWeek.value + 7) % 7
+            if (which == "next" && ahead == 0) ahead = 7
+            val coming = today.plusDays(ahead.toLong())
+            val week = java.time.temporal.WeekFields.ISO
+            val sameWeek = coming.get(week.weekOfWeekBasedYear()) == today.get(week.weekOfWeekBasedYear()) &&
+                coming.get(week.weekBasedYear()) == today.get(week.weekBasedYear())
+            return if (which == "next" && sameWeek) say(g, listOf(coming, coming.plusDays(7))) else say(g, listOf(coming))
+        }
+        firstMatch("""\bin\s+$COUNT_WORD\s*(days?|weeks?|wks?|months?)$END""", text)?.let { g ->
+            val n = (g[1]!!.toDoubleOrNull() ?: smallNumbers[g[1]!!.lowercase()] ?: 0.0).toInt()
+            val u = g[2]!!.lowercase()
+            val most = if (u.startsWith("d")) 365 else if (u.startsWith("w")) 52 else 24
+            if (n < 1 || n > most) return null
+            val date = when {
+                u.startsWith("d") -> today.plusDays(n.toLong())
+                u.startsWith("w") -> today.plusDays(n * 7L)
+                else -> today.plusMonths(n.toLong())
+            }
+            return say(g, listOf(date))
+        }
+        firstMatch("""\bday\s+after\s+tomorrow$END""", text)?.let { g -> return say(g, listOf(today.plusDays(2))) }
+        // "the 14th", "on the 3rd", "by the 21st": the next such day.
+        firstMatch("""\b(?:(?:on|by|till|until|before|after|from)\s+)?the\s+(\d{1,2})(?:st|nd|rd|th)$END""", text)?.let { g ->
+            val d = g[1]!!.toInt()
+            if (d < 1 || d > 31) return null
+            for (add in 0L..2L) {
+                val month = today.withDayOfMonth(1).plusMonths(add)
+                if (d > month.lengthOfMonth()) continue
+                val date = month.withDayOfMonth(d)
+                if (!date.isBefore(today)) return say(g, listOf(date))
+            }
+            return null
+        }
+        // "oct 14", "october 14th", "14 oct", "14th of october": that day's weekday.
+        val months = datedMonths.joinToString("|") { it.first }
+        val monthFirst = firstMatch("""\b($months)\.?\s+(\d{1,2})(?:st|nd|rd|th)?$END""", text)
+        val dayFirst = if (monthFirst == null) firstMatch("""\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?($months)$END""", text) else null
+        val g = monthFirst ?: dayFirst ?: return null
+        val mName = if (monthFirst != null) g[1] else g[2]
+        val dText = if (monthFirst != null) g[2] else g[1]
+        val m = datedMonths.firstOrNull { it.first == mName?.lowercase() }?.second ?: return null
+        val d = dText?.toIntOrNull() ?: return null
+        if (d < 1 || d > 31) return null
+        // "may 5" could be "you may 5…": May only with a word before it that dates.
+        if (m == 5 && monthFirst != null && !Regex("""\b(?:on|by|till|until|before|after|from|since|in)\s+may\s+\d""",
+                RegexOption.IGNORE_CASE).containsMatchIn(text)) return null
+        if (d > java.time.YearMonth.of(today.year, m).lengthOfMonth()) return null
+        var date = java.time.LocalDate.of(today.year, m, d)
+        if (date.isBefore(today)) {
+            if (d > java.time.YearMonth.of(today.year + 1, m).lengthOfMonth()) return null
+            date = java.time.LocalDate.of(today.year + 1, m, d)
+        }
+        return say(g, listOf(date))
     }
 
     // MARK: questions (the AI answer chip, as it is typed)

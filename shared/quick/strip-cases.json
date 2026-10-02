@@ -1,0 +1,450 @@
+{
+ "about": "What the strip works out from how a message ends (Smart.quickAnswer on both keyboards): bills (split, tip, discount, tax), when someone will be there, a span of minutes, a date in words, a bare temperature on the phone's own scale, a time in a city. \"now\" and \"here\" (the phone's zone) fixed per case; \"results\" in order; [] means no chip.",
+ "cases": [
+  {
+   "text": "split 120 4 ways",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "30 each"
+   ]
+  },
+  {
+   "text": "$100 split 3",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$33.33 each"
+   ]
+  },
+  {
+   "text": "split the bill of ₹2,400 between 6",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "₹400 each"
+   ]
+  },
+  {
+   "text": "$90 between 4 people",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$22.50 each"
+   ]
+  },
+  {
+   "text": "15% tip on 80",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "12 tip",
+    "92 total"
+   ]
+  },
+  {
+   "text": "18% tip on $64.50",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$11.61 tip",
+    "$76.11 total"
+   ]
+  },
+  {
+   "text": "$45 + 20% tip",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$9 tip",
+    "$54 total"
+   ]
+  },
+  {
+   "text": "20% off 80",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "64",
+    "save 16"
+   ]
+  },
+  {
+   "text": "$120 with 25% off",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$90",
+    "save $30"
+   ]
+  },
+  {
+   "text": "$80 + 8.875% tax",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$87.10 total",
+    "$7.10 tax"
+   ]
+  },
+  {
+   "text": "18% gst on ₹1,000",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "₹1,180 total",
+    "₹180 tax"
+   ]
+  },
+  {
+   "text": "50% sure",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "100% agree",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "let's split up",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "split 120 1 way",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "there in 20 mins",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "5:50 PM"
+   ]
+  },
+  {
+   "text": "back in 2 hrs",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "7:30 PM"
+   ]
+  },
+  {
+   "text": "eta 45 min",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "6:15 PM"
+   ]
+  },
+  {
+   "text": "be there in 5 mins",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "5:35 PM"
+   ]
+  },
+  {
+   "text": "landing in 8 hours",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sun 1:30 AM"
+   ]
+  },
+  {
+   "text": "ready in half an hour",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "6 PM"
+   ]
+  },
+  {
+   "text": "call me in 5 minutes",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "movie is 145 mins",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "2 h 25 min"
+   ]
+  },
+  {
+   "text": "it was 90 minutes",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "1 h 30 min"
+   ]
+  },
+  {
+   "text": "20 mins",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "next friday",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Fri 9 Oct"
+   ]
+  },
+  {
+   "text": "next friday?",
+   "now": "2026-10-05T06:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Fri 9 Oct",
+    "Fri 16 Oct"
+   ]
+  },
+  {
+   "text": "next friday",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Fri, Oct 9"
+   ]
+  },
+  {
+   "text": "this sunday",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sun 4 Oct"
+   ]
+  },
+  {
+   "text": "next sat",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sat 10 Oct"
+   ]
+  },
+  {
+   "text": "in 3 weeks",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sat 24 Oct"
+   ]
+  },
+  {
+   "text": "in 10 days",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Tue 13 Oct"
+   ]
+  },
+  {
+   "text": "in 2 months",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Thu 3 Dec"
+   ]
+  },
+  {
+   "text": "day after tomorrow",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Mon 5 Oct"
+   ]
+  },
+  {
+   "text": "on the 14th",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Wed 14 Oct"
+   ]
+  },
+  {
+   "text": "by the 2nd",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Mon 2 Nov"
+   ]
+  },
+  {
+   "text": "the 31st",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sat 31 Oct"
+   ]
+  },
+  {
+   "text": "oct 14",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Wed 14 Oct"
+   ]
+  },
+  {
+   "text": "14th of october",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Wed 14 Oct"
+   ]
+  },
+  {
+   "text": "jan 5",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Tue 5 Jan 2027"
+   ]
+  },
+  {
+   "text": "see you friday",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "tomorrow",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "you may 5",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "next week",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "it's 30 degrees",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/Berlin",
+   "region": "DE",
+   "results": [
+    "86°F"
+   ]
+  },
+  {
+   "text": "it's 75°",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "23.9°C"
+   ]
+  },
+  {
+   "text": "turn 90 degrees",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/Berlin",
+   "region": "DE",
+   "results": []
+  },
+  {
+   "text": "5pm london",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "9:30 PM IST"
+   ]
+  },
+  {
+   "text": "call at 9am new york",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "6:30 PM IST"
+   ]
+  },
+  {
+   "text": "8:30pm in tokyo",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "12:30 PM BST"
+   ]
+  },
+  {
+   "text": "3pm sf",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sun 3:30 AM IST"
+   ]
+  }
+ ]
+}

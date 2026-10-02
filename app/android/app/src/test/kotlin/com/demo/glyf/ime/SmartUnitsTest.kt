@@ -48,6 +48,22 @@ class SmartUnitsTest {
         assertEquals(failures.joinToString("\n"), 0, failures.size)
     }
 
+    /** shared/quick/strip-cases.json: bills, arrivals, spans, dates in
+     *  words, a bare temperature and a time in a city, each with its own "now". */
+    @Test fun theStripWorksOutBillsArrivalsAndDates() {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        while (dir != null && !File(dir, "shared/quick/strip-cases.json").exists()) dir = dir.parentFile
+        val quick = JSONObject(File(requireNotNull(dir), "shared/quick/strip-cases.json").readText())
+        val cases = quick.getJSONArray("cases")
+        val failures = (0 until cases.length()).map { cases.getJSONObject(it) }.mapNotNull { c ->
+            val want = c.getJSONArray("results").let { a -> (0 until a.length()).map { a.getString(it) } }
+            val got = Smart.quickAnswer(c.getString("text"), java.time.Instant.parse(c.getString("now")),
+                java.time.ZoneId.of(c.getString("here")), c.optString("region").ifEmpty { null })?.results.orEmpty()
+            if (got == want) null else "'${c.getString("text")}' (${c.optString("region")}): got $got, want $want"
+        }
+        assertEquals(failures.joinToString("\n"), 0, failures.size)
+    }
+
     @Test fun aMeasurementIsAChipAndATapAddsItInBrackets() {
         assertEquals(Smart.Chip.Convert("10 inch", listOf("25.4 cm", "0.254 m")),
             Smart.chip("lets 10 inch", emptyList(), region = "US"))

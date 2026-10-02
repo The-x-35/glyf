@@ -288,7 +288,7 @@ enum Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if cashtag(in: text) != nil { return nil }
-        if let c = conversions(in: text, region: region) ?? zoneTimes(in: text, region: region) {
+        if let c = quickAnswer(in: text, region: region) {
             return .convert(source: c.source, results: c.results)
         }
         let matches = vaultMatches(text, fields: fields)
@@ -1505,6 +1505,13 @@ extension Smart {
             let metres = feet * 0.3048 + inches * 0.0254
             return Conversions(source: source(m), results: [stripNamed(metres * 100, "cm"), stripNamed(metres, "m")])
         }
+        // "it's 30 degrees": on the phone's own scale, shown on the other one.
+        if let g = firstMatch(#"\b(?:it'?s|it\s+is|feels\s+like|high\s+of|low\s+of|temp(?:erature)?\s+(?:is\s+|of\s+)?|was|hitting|around|about)\s+(-?\d{1,3}(?:\.\d+)?)\s*(?:°|degrees?|deg)\.?\s?$"#, in: t),
+           let n = g[1].flatMap(Double.init) {
+            let fahrenheit = ["US", "BS", "BZ", "KY", "PR", "PW"].contains(region?.uppercased() ?? "")
+            let result = fahrenheit ? stripNamed((n - 32) * 5 / 9, "°C") : stripNamed(n * 9 / 5 + 32, "°F")
+            return Conversions(source: (g[0] ?? "").trimmingCharacters(in: .whitespaces), results: [result])
+        }
         guard let m = stripMeasure?.firstMatch(in: t, range: all), !partOfMore(m),
               let typed = group(m, 1), let n = amount(typed), n.isFinite,
               let name = group(m, 2)?.lowercased(), let unit = stripNames[name] else { return nil }
@@ -1588,6 +1595,86 @@ extension Smart {
         "wat": "Africa/Lagos", "eat": "Africa/Nairobi", "brt": "America/Sao_Paulo",
         "ny time": "America/New_York", "new york time": "America/New_York", "la time": "America/Los_Angeles",
         "tokyo time": "Asia/Tokyo", "singapore time": "Asia/Singapore", "sydney time": "Australia/Sydney",
+        // Cities, as Raycast takes them ("5pm london"); none that is also a
+        // word ("reading", "nice", "bath", "split").
+        "london": "Europe/London",
+        "paris": "Europe/Paris",
+        "berlin": "Europe/Berlin",
+        "madrid": "Europe/Madrid",
+        "rome": "Europe/Rome",
+        "amsterdam": "Europe/Amsterdam",
+        "brussels": "Europe/Brussels",
+        "vienna": "Europe/Vienna",
+        "zurich": "Europe/Zurich",
+        "stockholm": "Europe/Stockholm",
+        "dublin": "Europe/Dublin",
+        "lisbon": "Europe/Lisbon",
+        "athens": "Europe/Athens",
+        "istanbul": "Europe/Istanbul",
+        "moscow": "Europe/Moscow",
+        "dubai": "Asia/Dubai",
+        "abu dhabi": "Asia/Dubai",
+        "riyadh": "Asia/Riyadh",
+        "doha": "Asia/Qatar",
+        "karachi": "Asia/Karachi",
+        "lahore": "Asia/Karachi",
+        "mumbai": "Asia/Kolkata",
+        "delhi": "Asia/Kolkata",
+        "new delhi": "Asia/Kolkata",
+        "bangalore": "Asia/Kolkata",
+        "bengaluru": "Asia/Kolkata",
+        "chennai": "Asia/Kolkata",
+        "hyderabad": "Asia/Kolkata",
+        "kolkata": "Asia/Kolkata",
+        "dhaka": "Asia/Dhaka",
+        "colombo": "Asia/Colombo",
+        "bangkok": "Asia/Bangkok",
+        "jakarta": "Asia/Jakarta",
+        "singapore": "Asia/Singapore",
+        "kuala lumpur": "Asia/Kuala_Lumpur",
+        "manila": "Asia/Manila",
+        "hong kong": "Asia/Hong_Kong",
+        "shanghai": "Asia/Shanghai",
+        "beijing": "Asia/Shanghai",
+        "taipei": "Asia/Taipei",
+        "seoul": "Asia/Seoul",
+        "tokyo": "Asia/Tokyo",
+        "sydney": "Australia/Sydney",
+        "melbourne": "Australia/Melbourne",
+        "brisbane": "Australia/Brisbane",
+        "perth": "Australia/Perth",
+        "auckland": "Pacific/Auckland",
+        "honolulu": "Pacific/Honolulu",
+        "los angeles": "America/Los_Angeles",
+        "la": "America/Los_Angeles",
+        "san francisco": "America/Los_Angeles",
+        "sf": "America/Los_Angeles",
+        "seattle": "America/Los_Angeles",
+        "vancouver": "America/Vancouver",
+        "denver": "America/Denver",
+        "phoenix": "America/Phoenix",
+        "chicago": "America/Chicago",
+        "dallas": "America/Chicago",
+        "houston": "America/Chicago",
+        "austin": "America/Chicago",
+        "toronto": "America/Toronto",
+        "montreal": "America/Toronto",
+        "new york": "America/New_York",
+        "nyc": "America/New_York",
+        "boston": "America/New_York",
+        "miami": "America/New_York",
+        "atlanta": "America/New_York",
+        "washington": "America/New_York",
+        "mexico city": "America/Mexico_City",
+        "sao paulo": "America/Sao_Paulo",
+        "são paulo": "America/Sao_Paulo",
+        "buenos aires": "America/Argentina/Buenos_Aires",
+        "lagos": "Africa/Lagos",
+        "nairobi": "Africa/Nairobi",
+        "cairo": "Africa/Cairo",
+        "johannesburg": "Africa/Johannesburg",
+        "cape town": "Africa/Johannesburg",
+        "tel aviv": "Asia/Jerusalem",
     ]
 
     /// How a zone is named in the result: the letters people know, or the
@@ -1683,6 +1770,285 @@ extension Smart {
         }
         let result = "\(clock) \(zoneLabel(here, at: when))"
         return Conversions(source: ns.substring(with: m.range).trimmingCharacters(in: .whitespaces), results: [result])
+    }
+}
+
+// MARK: - Bills, arrivals and dates, worked out as they are typed
+
+extension Smart {
+
+    /// Everything the strip works out on the phone from how the message
+    /// ends (Arpit, 2026-10-03: "finding more things we can do faster with
+    /// regex like we did math email etc ... raycast and apple's default
+    /// spotlight search has a lot of things too lets try"), in the order
+    /// tried: a measurement, a time in another zone, a bill (split, tip,
+    /// discount, tax), when someone will be there, how long a span of
+    /// minutes is, and a date in words. One chip per result; a tap adds it
+    /// in brackets. Smart.kt's twin; shared/quick/strip-cases.json.
+    static func quickAnswer(in text: String, now: Date = Date(), here: TimeZone = .current,
+                            region: String? = Locale.current.region?.identifier) -> Conversions? {
+        guard text.count <= 400 else { return nil }
+        return conversions(in: text, region: region)
+            ?? zoneTimes(in: text, now: now, here: here, region: region)
+            ?? billMath(in: text)
+            ?? arrival(in: text, now: now, here: here)
+            ?? dateInWords(in: text, now: now, here: here, region: region)
+    }
+
+    /// Patterns are built once: the strip asks on every key.
+    private static let patternCache = NSCache<NSString, NSRegularExpression>()
+
+    static func firstMatch(_ pattern: String, in text: String) -> [String?]? {
+        let re: NSRegularExpression
+        if let cached = patternCache.object(forKey: pattern as NSString) {
+            re = cached
+        } else {
+            guard let made = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+            patternCache.setObject(made, forKey: pattern as NSString)
+            re = made
+        }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        return (0..<m.numberOfRanges).map { m.range(at: $0).location == NSNotFound ? nil : ns.substring(with: m.range(at: $0)) }
+    }
+
+    // MARK: Bills
+
+    private static let sym = #"([$€£₹¥])?"#
+    private static let amt = #"(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"#
+    private static let pct = #"(\d+(?:\.\d+)?)\s*%"#
+    private static let end = #"[.?!]?\s?$"#
+
+    /// Money as it is written back: the sign typed, cents only when there
+    /// are some ("$30", "$33.33"), none for yen.
+    static func billMoney(_ n: Double, _ symbol: String) -> String {
+        let cents = (n * 100).rounded() / 100
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: "en_US")
+        f.roundingMode = .halfUp
+        let whole = symbol == "¥" || cents == cents.rounded()
+        f.minimumFractionDigits = whole ? 0 : 2
+        f.maximumFractionDigits = whole ? 0 : 2
+        return symbol + (f.string(from: NSNumber(value: cents)) ?? String(cents))
+    }
+
+    private static func number(_ s: String?) -> Double? { s.flatMap { Double($0.replacingOccurrences(of: ",", with: "")) } }
+
+    /// "split 120 4 ways" → $30 each; "15% tip on 80" → $12 tip, $92 total;
+    /// "20% off 80" → $64, save $16; "$80 + 8.875% tax" → $87.10 total,
+    /// $7.10 tax. Each needs its word (split, tip, off, tax), so "50% sure"
+    /// and "24/7" stay what they are.
+    static func billMath(in text: String) -> Conversions? {
+        let ways = #"\s*(?:ways?|people|persons|of us|friends)?"#
+        let splits = [
+            #"\bsplit\s+(?:the\s+)?(?:bill\s+(?:of\s+)?)?"# + sym + #"\s*"# + amt + #"\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+|with\s+)?(\d{1,2})"# + ways + end,
+            sym + #"\s*"# + amt + #"\s+(?:split|divided)\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+)?(\d{1,2})"# + ways + end,
+            sym + #"\s*"# + amt + #"\s+(?:between|among)\s+(\d{1,2})\s+(?:people|persons|of us|friends)"# + end,
+        ]
+        for p in splits {
+            guard let g = firstMatch(p, in: text), let bill = number(g[2]), let n = number(g[3]), n >= 2, n <= 50 else { continue }
+            let s = g[1] ?? ""
+            return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces), results: ["\(billMoney(bill / n, s)) each"])
+        }
+        // (percent, sign, amount) or (sign, amount, percent)
+        func pick(_ g: [String?], percentFirst: Bool) -> (Double, String, Double)? {
+            let p = number(percentFirst ? g[1] : g[3]), s = (percentFirst ? g[2] : g[1]) ?? "", a = number(percentFirst ? g[3] : g[2])
+            guard let p, let a, p > 0, p <= 100 else { return nil }
+            return (p, s, a)
+        }
+        let tips: [(String, Bool)] = [
+            (#"\b"# + pct + #"\s*tip\s*(?:on|for|of)?\s*"# + sym + #"\s*"# + amt + end, true),
+            (#"\btip\s+(?:of\s+)?"# + pct + #"\s*(?:on|for)\s*"# + sym + #"\s*"# + amt + end, true),
+            (sym + #"\s*"# + amt + #"\s*(?:\+|plus|with|and)\s*"# + pct + #"\s*tip"# + end, false),
+        ]
+        for (p, first) in tips {
+            guard let g = firstMatch(p, in: text), let r = pick(g, percentFirst: first) else { continue }
+            let (percent, s, bill) = r
+            let tip = bill * percent / 100
+            return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces),
+                               results: ["\(billMoney(tip, s)) tip", "\(billMoney(bill + tip, s)) total"])
+        }
+        let offs: [(String, Bool)] = [
+            (#"\b"# + pct + #"\s*off\s*(?:of\s+)?"# + sym + #"\s*"# + amt + end, true),
+            (sym + #"\s*"# + amt + #"\s*(?:with\s+|at\s+|less\s+|minus\s+|-\s*)?"# + pct + #"\s*off"# + end, false),
+        ]
+        for (p, first) in offs {
+            guard let g = firstMatch(p, in: text), let r = pick(g, percentFirst: first) else { continue }
+            let (percent, s, price) = r
+            let saved = price * percent / 100
+            return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces),
+                               results: [billMoney(price - saved, s), "save \(billMoney(saved, s))"])
+        }
+        let taxes: [(String, Bool)] = [
+            (sym + #"\s*"# + amt + #"\s*(?:\+|plus|with|and)\s*"# + pct + #"\s*(?:sales\s+)?(?:tax|gst|vat)"# + end, false),
+            (#"\b"# + pct + #"\s*(?:sales\s+)?(?:tax|gst|vat)\s*(?:on|for|of)\s*"# + sym + #"\s*"# + amt + end, true),
+        ]
+        for (p, first) in taxes {
+            guard let g = firstMatch(p, in: text), let r = pick(g, percentFirst: first) else { continue }
+            let (percent, s, price) = r
+            let tax = price * percent / 100
+            return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces),
+                               results: ["\(billMoney(price + tax, s)) total", "\(billMoney(tax, s)) tax"])
+        }
+        return nil
+    }
+
+    // MARK: Arrivals and spans
+
+    private static func clock(_ date: Date, from now: Date, here: TimeZone) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = here
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = here
+        f.dateFormat = cal.component(.minute, from: date) == 0 ? "h a" : "h:mm a"
+        var text = f.string(from: date).replacingOccurrences(of: "\u{202F}", with: " ")
+        if !cal.isDate(date, inSameDayAs: now) {
+            f.dateFormat = "EEE"
+            text = f.string(from: date) + " " + text
+        }
+        return text
+    }
+
+    private static let smallNumbers: [String: Double] = [
+        "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+        "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20,
+        "thirty": 30, "forty": 40, "forty five": 45, "fifty": 50, "half an": 0.5, "a couple of": 2, "couple of": 2,
+    ]
+    private static let countWord = #"(\d+(?:\.\d+)?|a couple of|couple of|half an|forty five|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty)"#
+
+    /// "there in 20 mins" → the clock then (12:58 AM); "back in 2 hrs";
+    /// "eta 45 min". Under ten minutes only when the words say someone is
+    /// coming. "movie is 145 mins" → 2 h 25 min (from 90 minutes up).
+    static func arrival(in text: String, now: Date, here: TimeZone) -> Conversions? {
+        let unit = #"(mins?|minutes?|hrs?|hours?)"#
+        let coming = #"\b(?:eta|back|there|home|ready|leav(?:e|ing)|land(?:s|ing)?|reach(?:ing)?|arriv(?:e|ing)|be\s+(?:there|back|home|ready|free|done)|see\s+(?:you|u)|done|free|out|wait)\b"#
+        func minutes(_ count: String?, _ u: String?) -> Double? {
+            guard let count, let u else { return nil }
+            let n = Double(count) ?? smallNumbers[count.lowercased()]
+            guard let n else { return nil }
+            return u.lowercased().hasPrefix("h") ? n * 60 : n
+        }
+        if let g = firstMatch(#"\b(?:in|within|eta)\s*:?\s*(?:about\s+|around\s+|like\s+|~\s*)?"# + countWord + #"\s*"# + unit + end, in: text),
+           let mins = minutes(g[1], g[2]), mins > 0, mins <= 12 * 60 {
+            let said = text.range(of: coming, options: [.regularExpression, .caseInsensitive]) != nil
+            guard mins >= 10 || said else { return nil }
+            let when = now.addingTimeInterval(mins * 60)
+            return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces), results: [clock(when, from: now, here: here)])
+        }
+        if let g = firstMatch(#"(?<![\d.])(\d{2,4})\s*(mins?|minutes?)"# + end, in: text),
+           text.range(of: #"\b(?:in|within)\s+\d+\s*(?:mins?|minutes?)\.?\s?$"#, options: [.regularExpression, .caseInsensitive]) == nil,
+           let n = number(g[1]), n >= 90, n < 24 * 60 {
+            let h = Int(n) / 60, m = Int(n) % 60
+            return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces), results: [m == 0 ? "\(h) h" : "\(h) h \(m) min"])
+        }
+        return nil
+    }
+
+    // MARK: Dates in words
+
+    private static let weekdays: [(String, Int)] = [
+        ("sunday", 1), ("sun", 1), ("monday", 2), ("mon", 2), ("tuesday", 3), ("tues", 3), ("tue", 3),
+        ("wednesday", 4), ("wed", 4), ("thursday", 5), ("thurs", 5), ("thur", 5), ("thu", 5),
+        ("friday", 6), ("fri", 6), ("saturday", 7), ("sat", 7),
+    ]
+    private static let months: [(String, Int)] = [
+        ("january", 1), ("jan", 1), ("february", 2), ("feb", 2), ("march", 3), ("mar", 3), ("april", 4), ("apr", 4),
+        ("may", 5), ("june", 6), ("jun", 6), ("july", 7), ("jul", 7), ("august", 8), ("aug", 8),
+        ("september", 9), ("sept", 9), ("sep", 9), ("october", 10), ("oct", 10), ("november", 11), ("nov", 11),
+        ("december", 12), ("dec", 12),
+    ]
+
+    /// A day as people write dates: "Fri 9 Oct", or "Fri, Oct 9" in the US;
+    /// the year when it is not this one.
+    private static func dayName(_ date: Date, now: Date, here: TimeZone, region: String?) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = here
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = here
+        let us = region?.uppercased() == "US"
+        f.dateFormat = us ? "EEE, MMM d" : "EEE d MMM"
+        var text = f.string(from: date)
+        if cal.component(.year, from: date) != cal.component(.year, from: now) {
+            f.dateFormat = "yyyy"
+            text += (us ? ", " : " ") + f.string(from: date)
+        }
+        return text
+    }
+
+    /// "next friday" → Fri 9 Oct (and Fri 16 Oct when the coming Friday is
+    /// still this week, as "next" can mean either); "this friday"; "in 3
+    /// weeks" → Sat 24 Oct; "day after tomorrow"; "the 14th" → Wed 14 Oct;
+    /// "oct 14" or "14 october" → Wed 14 Oct. Never a lone weekday, "today"
+    /// or "tomorrow": those are said all day long.
+    static func dateInWords(in text: String, now: Date, here: TimeZone, region: String?) -> Conversions? {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = here
+        cal.firstWeekday = 2   // weeks start on Monday
+        let today = cal.startOfDay(for: now)
+        func say(_ g: [String?], _ dates: [Date]) -> Conversions {
+            Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces),
+                        results: dates.map { dayName($0, now: now, here: here, region: region) })
+        }
+        let dayNames = weekdays.map(\.0).joined(separator: "|")
+        if let g = firstMatch(#"\b(next|this|coming)\s+("# + dayNames + #")"# + end, in: text),
+           let which = g[1]?.lowercased(), let name = g[2]?.lowercased(),
+           let target = weekdays.first(where: { $0.0 == name })?.1 {
+            let todayDay = cal.component(.weekday, from: today)
+            var ahead = (target - todayDay + 7) % 7
+            if which == "next", ahead == 0 { ahead = 7 }
+            guard let coming = cal.date(byAdding: .day, value: ahead, to: today) else { return nil }
+            if which == "next", cal.isDate(coming, equalTo: today, toGranularity: .weekOfYear),
+               let after = cal.date(byAdding: .day, value: 7, to: coming) {
+                return say(g, [coming, after])
+            }
+            return say(g, [coming])
+        }
+        if let g = firstMatch(#"\bin\s+"# + countWord + #"\s*(days?|weeks?|wks?|months?)"# + end, in: text),
+           let count = g[1], let u = g[2]?.lowercased() {
+            let n = Int(Double(count) ?? smallNumbers[count.lowercased()] ?? 0)
+            let (component, most): (Calendar.Component, Int) = u.hasPrefix("d") ? (.day, 365) : u.hasPrefix("w") ? (.day, 52) : (.month, 24)
+            guard n >= 1, n <= most,
+                  let date = cal.date(byAdding: component, value: u.hasPrefix("w") ? n * 7 : n, to: today) else { return nil }
+            return say(g, [date])
+        }
+        if let g = firstMatch(#"\bday\s+after\s+tomorrow"# + end, in: text),
+           let date = cal.date(byAdding: .day, value: 2, to: today) {
+            return say(g, [date])
+        }
+        // "the 14th", "on the 3rd", "by the 21st": the next such day.
+        if let g = firstMatch(#"\b(?:(?:on|by|till|until|before|after|from)\s+)?the\s+(\d{1,2})(?:st|nd|rd|th)"# + end, in: text),
+           let d = g[1].flatMap({ Int($0) }), d >= 1, d <= 31 {
+            for add in 0..<3 {
+                guard let month = cal.date(byAdding: .month, value: add, to: today) else { continue }
+                var c = cal.dateComponents([.year, .month], from: month)
+                c.day = d
+                if let date = cal.date(from: c), cal.component(.day, from: date) == d, date >= today {
+                    return say(g, [date])
+                }
+            }
+            return nil
+        }
+        // "oct 14", "october 14th", "14 oct", "14th of october": that day's weekday.
+        let monthNames = months.map(\.0).joined(separator: "|")
+        let monthFirst = firstMatch(#"\b("# + monthNames + #")\.?\s+(\d{1,2})(?:st|nd|rd|th)?"# + end, in: text)
+        let dayFirst = monthFirst == nil ? firstMatch(#"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?("# + monthNames + #")"# + end, in: text) : nil
+        if let g = monthFirst ?? dayFirst {
+            let (mName, dText) = monthFirst != nil ? (g[1], g[2]) : (g[2], g[1])
+            guard let m = months.first(where: { $0.0 == mName?.lowercased() })?.1, let d = dText.flatMap({ Int($0) }),
+                  d >= 1, d <= 31 else { return nil }
+            // "may 5" could be "you may 5…": May only with a word before it that dates.
+            if m == 5, monthFirst != nil, text.range(of: #"\b(?:on|by|till|until|before|after|from|since|in)\s+may\s+\d"#, options: [.regularExpression, .caseInsensitive]) == nil { return nil }
+            var c = cal.dateComponents([.year], from: today)
+            c.month = m
+            c.day = d
+            guard var date = cal.date(from: c), cal.component(.day, from: date) == d else { return nil }
+            if date < today, let next = cal.date(byAdding: .year, value: 1, to: date) { date = next }
+            return say(g, [date])
+        }
+        return nil
     }
 }
 

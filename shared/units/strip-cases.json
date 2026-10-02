@@ -304,7 +304,9 @@
   {
    "text": "it's 30 degrees",
    "region": "DE",
-   "results": []
+   "results": [
+    "86°F"
+   ]
   },
   {
    "text": "10 c",
@@ -334,6 +336,11 @@
   {
    "text": "version 2.5",
    "region": "US",
+   "results": []
+  },
+  {
+   "text": "turn 90 degrees",
+   "region": "DE",
    "results": []
   }
  ]
