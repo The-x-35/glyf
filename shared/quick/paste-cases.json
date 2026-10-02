@@ -1,0 +1,37 @@
+{
+ "about": "A copy worth pasting in parts (Smart.pieces on both keyboards): its emails, links and phone numbers in order, at most two, when the copy is more than one of them; null means the plain paste chip.",
+ "cases": [
+  {
+   "copy": "Jo, 415-555-0123, jo@x.com, 12 Main St",
+   "parts": [
+    "415-555-0123",
+    "jo@x.com"
+   ]
+  },
+  {
+   "copy": "see https://tryglyf.com/download for the app",
+   "parts": [
+    "https://tryglyf.com/download"
+   ]
+  },
+  {
+   "copy": "Call +1 (415) 555-0123 or email sam@acme.io, thanks",
+   "parts": [
+    "+1 (415) 555-0123",
+    "sam@acme.io"
+   ]
+  },
+  {
+   "copy": "alex@example.com",
+   "parts": null
+  },
+  {
+   "copy": "Meeting at 5pm in room 12",
+   "parts": null
+  },
+  {
+   "copy": "the date is 12/09/2024 ok",
+   "parts": null
+  }
+ ]
+}

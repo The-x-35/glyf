@@ -1635,11 +1635,17 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         let rates = RatesStore.shared.snapshot()
         let ownWallet = SettingsStore.current.walletAddress
-        var chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
+        let vault = VaultStore.shared.load()
+        var chip = Smart.chip(for: tail, fields: vault.fields,
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
                               rates: rates, ownWallet: ownWallet,
                               indianGrouping: (SettingsStore.current.region ?? "IN") == "IN",
                               region: SettingsStore.current.region ?? Locale.current.region?.identifier)
+        // The person's own shorthand of the same name wins over ";date".
+        if case .convert(let c)? = chip, Smart.builtInShortcuts.contains(c.source),
+           Shorthand.expansion(for: c.source, in: vault) != nil {
+            chip = nil
+        }
         // An email field with nothing in it and no email saved: a temp
         // address in one tap.
         if before.isEmpty, (textDocumentProxy.documentContextAfterInput ?? "").isEmpty,
@@ -3058,10 +3064,33 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// One part of a details chip: a saved detail types itself, as its own
     /// chip would; Temp mail types a temp address.
     func toolbarSmartChoiceTapped(_ chip: Smart.Chip, index: Int) {
-        if case .convert(_, let results) = chip {
-            // "10 inch" → "10 inch (25.4 cm)": the result after the measurement.
-            guard index < results.count else { return }
-            hostInsert(Smart.conversionInsert(results[index], before: beforeContext))
+        if case .convert(let c) = chip {
+            guard index < c.results.count else { return }
+            let text = c.insert(index)
+            switch c.how(index) {
+            case .bracket:
+                // "10 inch" → "10 inch (25.4 cm)": the answer after what was typed.
+                hostInsert(Smart.conversionInsert(text, before: beforeContext))
+            case .after:
+                // A link after the number, or a piece of what was copied (the
+                // copy is then used, as a paste uses it).
+                hostInsert(Self.spaced(text, after: beforeContext))
+                if c.source.isEmpty {
+                    ClipContext.markDone()
+                    cachedPaste = nil
+                    lastClipProbe = 0
+                }
+            case .replace:
+                // ";date" → the date: what was typed goes, the answer stays.
+                let before = beforeContext ?? ""
+                let space = before.hasSuffix(" ") ? " " : ""
+                if !c.source.isEmpty, (before.hasSuffix(c.source) || before.hasSuffix(c.source + " ")) {
+                    for _ in 0..<(c.source.count + space.count) { hostDelete() }
+                    hostInsert(text + space)
+                } else {
+                    hostInsert(Self.spaced(text, after: beforeContext))
+                }
+            }
             toolbar.showSmart(nil)
             updateCandidates()
             return

@@ -55,14 +55,14 @@ enum Smart {
         /// A measurement the message ends on, in the other system: one part
         /// for each result ("10 inch" → 25.4 cm, 0.254 m), and a tap on a
         /// part adds it in brackets (Smart.conversions).
-        case convert(source: String, results: [String])
+        case convert(Conversions)
 
         /// The parts of a chip drawn as a row of chips: the saved details (and
         /// Temp), or a measurement's results.
         var choices: (values: [String], temp: Bool)? {
             switch self {
             case .details(let fields, let temp): return (fields.map(\.value), temp)
-            case .convert(_, let results): return (results, false)
+            case .convert(let c): return (c.results, false)
             default: return nil
             }
         }
@@ -112,6 +112,8 @@ enum Smart {
             switch self {
             case .paste(let t): return t
             case .pay(_, _, _, let copied), .buy(_, _, _, let copied): return copied
+            // A copy shown in its parts: the whole copy is the first part.
+            case .convert(let c) where c.source.isEmpty: return c.inserts?.first
             default: return nil
             }
         }
@@ -147,8 +149,8 @@ enum Smart {
             case .tempAddress(let live): return live ?? "Temp email"
             case .details(let fields, let temp):
                 return (fields.map(\.value) + (temp ? ["Temp mail"] : [])).joined(separator: " · ")
-            case .convert(let source, let results):
-                return "\(source) = " + results.joined(separator: " · ")
+            case .convert(let c):
+                return c.source.isEmpty ? c.results.joined(separator: " · ") : "\(c.source) = " + c.results.joined(separator: " · ")
             }
         }
         /// What tapping the chip puts in the field.
@@ -288,9 +290,7 @@ enum Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if cashtag(in: text) != nil { return nil }
-        if let c = quickAnswer(in: text, region: region) {
-            return .convert(source: c.source, results: c.results)
-        }
+        if let c = quickAnswer(in: text, region: region) { return .convert(c) }
         let matches = vaultMatches(text, fields: fields)
         if matches.count > 1 { return .details(fields: Array(matches.prefix(3)), temp: false) }
         if let f = matches.first { return .vault(field: f) }
@@ -306,7 +306,15 @@ enum Smart {
             if held.count > 1 { return .details(fields: Array(held.prefix(3)), temp: false) }
             if let f = held.first { return .vault(field: f) }
         }
-        if let paste, !paste.isEmpty, text.isEmpty { return .paste(text: paste) }
+        if let paste, !paste.isEmpty, text.isEmpty {
+            // A copy with emails, links or numbers in it: the whole, then each.
+            if let parts = pieces(of: paste) {
+                let all = [paste] + parts
+                return .convert(Conversions(source: "", results: ["Paste all"] + parts,
+                                            inserts: all, hows: Array(repeating: .after, count: all.count)))
+            }
+            return .paste(text: paste)
+        }
         return nil
     }
 
@@ -1318,10 +1326,29 @@ extension Smart {
     /// "in", "m", "min", "c" or "f" without "°", and "4g" are other things.
     /// Smart.kt's twin; shared/units/strip-cases.json holds the cases.
     struct Conversions: Equatable {
-        /// The measurement as typed: "10 inch".
+        /// What the answer is about, as typed: "10 inch".
         var source: String
-        /// What it is in the other system, best first: ["25.4 cm", "0.254 m"].
+        /// What each chip says, best first: ["25.4 cm", "0.254 m"].
         var results: [String]
+        /// What each chip puts in the message, when it is not its words (a
+        /// carrier's link behind "UPS tracking").
+        var inserts: [String]? = nil
+        /// How each goes in; in brackets after what was typed when nil.
+        var hows: [Insertion]? = nil
+
+        func insert(_ i: Int) -> String { inserts.flatMap { i < $0.count ? $0[i] : nil } ?? results[i] }
+        func how(_ i: Int) -> Insertion { hows.flatMap { i < $0.count ? $0[i] : nil } ?? .bracket }
+    }
+
+    /// How a tap on an answer goes into the message.
+    enum Insertion: Equatable {
+        /// " (25.4 cm)" after what was typed.
+        case bracket
+        /// " https://…" after what was typed, or what was copied, pasted.
+        case after
+        /// In place of what was typed: ";date" → the date, "4155550123" →
+        /// "(415) 555-0123".
+        case replace
     }
 
     /// Unit names a measurement in a chat can end on, and the unit each is.
@@ -1788,11 +1815,23 @@ extension Smart {
     static func quickAnswer(in text: String, now: Date = Date(), here: TimeZone = .current,
                             region: String? = Locale.current.region?.identifier) -> Conversions? {
         guard text.count <= 400 else { return nil }
-        return conversions(in: text, region: region)
-            ?? zoneTimes(in: text, now: now, here: here, region: region)
-            ?? billMath(in: text)
-            ?? arrival(in: text, now: now, here: here)
-            ?? dateInWords(in: text, now: now, here: here, region: region)
+        let tries: [() -> Conversions?] = [
+            { shortcut(in: text, now: now, here: here, region: region) },
+            { conversions(in: text, region: region) },
+            { zoneTimes(in: text, now: now, here: here, region: region) },
+            { billMath(in: text) },
+            { arrival(in: text, now: now, here: here) },
+            { dateInWords(in: text, now: now, here: here, region: region) },
+            { bases(in: text) },
+            { colours(in: text) },
+            { tracking(in: text) },
+            { flight(in: text) },
+            { phone(in: text, region: region) },
+            { unixTime(in: text, here: here, region: region) },
+            { bigNumber(in: text, region: region) },
+        ]
+        for attempt in tries { if let answer = attempt() { return answer } }
+        return nil
     }
 
     /// Patterns are built once: the strip asks on every key.
@@ -2049,6 +2088,430 @@ extension Smart {
             return say(g, [date])
         }
         return nil
+    }
+}
+
+// MARK: - Shortcuts, numbers, colours, parcels, flights and phones
+
+extension Smart {
+
+    private static func trimmed(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespaces) }
+
+    // MARK: Shortcuts
+
+    /// The shortcuts the keyboard knows itself; the person's own shorthand
+    /// of the same name wins (the keyboard leaves the chip out then).
+    static let builtInShortcuts: Set<String> = [";date", ";today", ";time", ";now", ";tmrw", ";tomorrow", ";yday", ";yesterday", ";iso"]
+
+    /// ";date" → Sat 3 Oct 2026, ";time" → 1:15 AM, ";now", ";tmrw",
+    /// ";yday", ";iso" (Raycast's {date} placeholders): typed in place of
+    /// the shortcut.
+    static func shortcut(in text: String, now: Date, here: TimeZone, region: String?) -> Conversions? {
+        guard let g = firstMatch(#"(?:^|\s)(;(?:date|today|time|now|tmrw|tomorrow|yday|yesterday|iso))\s?$"#, in: text),
+              let token = g[1]?.lowercased() else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = here
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = here
+        let us = region?.uppercased() == "US"
+        func day(_ d: Date, year: Bool) -> String {
+            f.dateFormat = us ? (year ? "EEE, MMM d, yyyy" : "EEE, MMM d") : (year ? "EEE d MMM yyyy" : "EEE d MMM")
+            return f.string(from: d)
+        }
+        func time(_ d: Date) -> String {
+            f.dateFormat = "h:mm a"
+            return f.string(from: d).replacingOccurrences(of: "\u{202F}", with: " ")
+        }
+        let out: String
+        switch token {
+        case ";date", ";today": out = day(now, year: true)
+        case ";time": out = time(now)
+        case ";now": out = day(now, year: false) + ", " + time(now)
+        case ";tmrw", ";tomorrow": out = day(cal.date(byAdding: .day, value: 1, to: now) ?? now, year: false)
+        case ";yday", ";yesterday": out = day(cal.date(byAdding: .day, value: -1, to: now) ?? now, year: false)
+        default:
+            f.dateFormat = "yyyy-MM-dd"
+            out = f.string(from: now)
+        }
+        return Conversions(source: token, results: [out], hows: [.replace])
+    }
+
+    // MARK: Number bases and Roman numerals
+
+    static func roman(_ n: Int) -> String? {
+        guard n >= 1, n <= 3999 else { return nil }
+        let table: [(Int, String)] = [(1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+                                      (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")]
+        var n = n, out = ""
+        for (value, letters) in table { while n >= value { out += letters; n -= value } }
+        return out
+    }
+
+    /// "0xFF" → 255 · 0b11111111; "0b1010" → 10 · 0xA; "255 in hex" →
+    /// 0xFF; "10 in binary" → 0b1010; "1010 in decimal" or "binary 1010" →
+    /// 10; "hex ff" → 255; "2026 in roman" → MMXXVI (Arpit: "binary to
+    /// decimal things maybe too").
+    static func bases(in text: String) -> Conversions? {
+        func binary(_ n: UInt64) -> String? { n < (1 << 32) ? "0b" + String(n, radix: 2) : nil }
+        func hex(_ n: UInt64) -> String { "0x" + String(n, radix: 16).uppercased() }
+        if let g = firstMatch(#"(?<![\w])0x([0-9a-f]{1,15})"# + end, in: text), let n = UInt64(g[1] ?? "", radix: 16) {
+            return Conversions(source: trimmed(g[0]), results: [String(n)] + [binary(n)].compactMap { $0 })
+        }
+        if let g = firstMatch(#"(?<![\w])0b([01]{1,63})"# + end, in: text), let n = UInt64(g[1] ?? "", radix: 2) {
+            return Conversions(source: trimmed(g[0]), results: [String(n), hex(n)])
+        }
+        if let g = firstMatch(#"\b(\d{1,18})\s+(?:in|to|as|into)\s+(hex|hexadecimal|binary|bin|octal|oct|roman|roman numerals?)"# + end, in: text),
+           let n = UInt64(g[1] ?? "") {
+            let to = (g[2] ?? "").lowercased()
+            let out: String?
+            if to.hasPrefix("hex") { out = hex(n) }
+            else if to.hasPrefix("bin") { out = binary(n) }
+            else if to.hasPrefix("oct") { out = "0o" + String(n, radix: 8) }
+            else { out = roman(Int(clamping: n)) }
+            guard let out else { return nil }
+            return Conversions(source: trimmed(g[0]), results: [out])
+        }
+        if let g = firstMatch(#"\b([01]{2,63})\s+(?:in|to|as|into)\s+(?:decimal|dec|denary|base 10)"# + end, in: text)
+            ?? firstMatch(#"\bbinary\s+([01]{2,63})"# + end, in: text),
+           let n = UInt64(g[1] ?? "", radix: 2) {
+            return Conversions(source: trimmed(g[0]), results: [String(n)])
+        }
+        if let g = firstMatch(#"\bhex\s+([0-9a-f]{1,15})"# + end, in: text), let n = UInt64(g[1] ?? "", radix: 16) {
+            return Conversions(source: trimmed(g[0]), results: [String(n)])
+        }
+        return nil
+    }
+
+    // MARK: Colours
+
+    private static func hsl(_ r: Double, _ g: Double, _ b: Double) -> String {
+        let r = r / 255, g = g / 255, b = b / 255
+        let most = max(r, g, b), least = min(r, g, b)
+        let l = (most + least) / 2
+        var h = 0.0, s = 0.0
+        if most != least {
+            let d = most - least
+            s = l > 0.5 ? d / (2 - most - least) : d / (most + least)
+            if most == r { h = (g - b) / d + (g < b ? 6 : 0) }
+            else if most == g { h = (b - r) / d + 2 }
+            else { h = (r - g) / d + 4 }
+            h *= 60
+        }
+        func round(_ x: Double) -> Int { Int(x.rounded(.toNearestOrAwayFromZero)) }
+        return "hsl(\(round(h) % 360), \(round(s * 100))%, \(round(l * 100))%)"
+    }
+
+    /// "#ff6363" → rgb(255, 99, 99) · hsl(0, 100%, 69%); "rgb(255, 99, 99)"
+    /// → #FF6363 · hsl(0, 100%, 69%). A hashtag that is a word (#bad,
+    /// #cafe, #decade) is not a colour: a hex with no digit needs a word
+    /// about colour in the message.
+    static func colours(in text: String) -> Conversions? {
+        if let g = firstMatch(#"(?<![\w&#])#([0-9a-f]{6}|[0-9a-f]{3}|[0-9a-f]{8})"# + end, in: text), var hex = g[1] {
+            let colourWords = text.range(of: #"\b(?:colou?rs?|hex|shade|bg|background|fill|stroke|tint|hue)\b"#,
+                                         options: [.regularExpression, .caseInsensitive]) != nil
+            guard hex.range(of: #"\d"#, options: .regularExpression) != nil || colourWords else { return nil }
+            if hex.count == 3 { hex = hex.map { "\($0)\($0)" }.joined() }
+            guard let v = UInt64(String(hex.prefix(6)), radix: 16) else { return nil }
+            let r = Double((v >> 16) & 0xFF), gg = Double((v >> 8) & 0xFF), b = Double(v & 0xFF)
+            return Conversions(source: trimmed(g[0]), results: ["rgb(\(Int(r)), \(Int(gg)), \(Int(b)))", hsl(r, gg, b)])
+        }
+        if let g = firstMatch(#"\brgba?\(\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*(?:[,/]\s*[\d.]+%?\s*)?\)"# + end, in: text),
+           let r = Int(g[1] ?? ""), let gg = Int(g[2] ?? ""), let b = Int(g[3] ?? ""), r <= 255, gg <= 255, b <= 255 {
+            let hex = String(format: "#%02X%02X%02X", r, gg, b)
+            return Conversions(source: trimmed(g[0]), results: [hex, hsl(Double(r), Double(gg), Double(b))])
+        }
+        return nil
+    }
+
+    // MARK: Parcels
+
+    /// UPS's check digit: the 15 characters after 1Z, letters as
+    /// (code − 63) mod 10, odd places once and even places twice.
+    static func upsValid(_ n: String) -> Bool {
+        let s = Array(n.uppercased())
+        guard s.count == 18, s[0] == "1", s[1] == "Z" else { return false }
+        var sum = 0
+        for (i, c) in s[2..<17].enumerated() {
+            guard let v = c.isNumber ? c.wholeNumberValue : c.asciiValue.map({ (Int($0) - 63) % 10 }) else { return false }
+            sum += i % 2 == 0 ? v : v * 2
+        }
+        return (10 - sum % 10) % 10 == s[17].wholeNumberValue
+    }
+
+    /// The postal format every country shares (RA123456785IN): its check
+    /// digit, weights 8 6 4 2 3 5 9 7.
+    static func s10Valid(_ n: String) -> Bool {
+        let s = Array(n.uppercased())
+        guard s.count == 13 else { return false }
+        let digits = s[2..<11].compactMap(\.wholeNumberValue)
+        guard digits.count == 9 else { return false }
+        let weights = [8, 6, 4, 2, 3, 5, 9, 7]
+        let sum = zip(digits.prefix(8), weights).map(*).reduce(0, +)
+        var check = 11 - sum % 11
+        if check == 10 { check = 0 } else if check == 11 { check = 5 }
+        return check == digits[8]
+    }
+
+    /// A tracking number the message ends on, with its carrier's own page:
+    /// UPS (1Z…, check digit), the postal format (check digit; Royal Mail,
+    /// USPS, Canada Post and Australia Post have pages a number can open),
+    /// and, with the carrier named in the message, USPS (20–22 digits from
+    /// 9), FedEx (12 or 15 digits) and DHL (10 digits). The chip names the
+    /// carrier; a tap adds the link.
+    static func tracking(in text: String) -> Conversions? {
+        func link(_ label: String, _ url: String, _ g: [String?]) -> Conversions {
+            Conversions(source: trimmed(g[0]), results: [label], inserts: [url], hows: [.after])
+        }
+        if let g = firstMatch(#"\b(1Z[0-9A-Z]{16})"# + end, in: text), let n = g[1]?.uppercased(), upsValid(n) {
+            return link("UPS tracking", "https://www.ups.com/track?tracknum=\(n)", g)
+        }
+        if let g = firstMatch(#"\b([A-Z]{2}\d{9}[A-Z]{2})"# + end, in: text), let n = g[1]?.uppercased(), s10Valid(n) {
+            switch String(n.suffix(2)) {
+            case "GB": return link("Royal Mail tracking", "https://www.royalmail.com/track-your-item#/tracking-results/\(n)", g)
+            case "US": return link("USPS tracking", "https://tools.usps.com/go/TrackConfirmAction?tLabels=\(n)", g)
+            case "CA": return link("Canada Post tracking", "https://www.canadapost-postescanada.ca/track-reperage/en#/search?searchFor=\(n)", g)
+            case "AU": return link("Australia Post tracking", "https://auspost.com.au/mypost/track/#/details/\(n)", g)
+            default: return nil
+            }
+        }
+        let says = { (word: String) in text.range(of: "\\b\(word)\\b", options: [.regularExpression, .caseInsensitive]) != nil }
+        if let g = firstMatch(#"(?<![\d])(9[2-5](?:\s?\d){18,20})"# + end, in: text), says("usps") {
+            let n = (g[1] ?? "").filter(\.isNumber)
+            return link("USPS tracking", "https://tools.usps.com/go/TrackConfirmAction?tLabels=\(n)", g)
+        }
+        if let g = firstMatch(#"(?<![\d])(\d{12}|\d{15})"# + end, in: text), says("fedex") {
+            return link("FedEx tracking", "https://www.fedex.com/fedextrack/?trknbr=\(g[1] ?? "")", g)
+        }
+        if let g = firstMatch(#"(?<![\d])(\d{10})"# + end, in: text), says("dhl") {
+            return link("DHL tracking", "https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=\(g[1] ?? "")", g)
+        }
+        return nil
+    }
+
+    // MARK: Flights
+
+    private static let airlines: [String: String] = [
+        "AA": "American", "UA": "United", "DL": "Delta", "WN": "Southwest", "B6": "JetBlue", "AS": "Alaska",
+        "NK": "Spirit", "F9": "Frontier", "HA": "Hawaiian", "AC": "Air Canada", "WS": "WestJet", "AM": "Aeroméxico",
+        "BA": "British Airways", "VS": "Virgin Atlantic", "EI": "Aer Lingus", "LH": "Lufthansa", "AF": "Air France",
+        "KL": "KLM", "LX": "Swiss", "OS": "Austrian", "SN": "Brussels Airlines", "IB": "Iberia", "VY": "Vueling",
+        "TP": "TAP", "AY": "Finnair", "SK": "SAS", "DY": "Norwegian", "FR": "Ryanair", "U2": "easyJet", "W6": "Wizz Air",
+        "LO": "LOT", "A3": "Aegean", "TK": "Turkish Airlines", "EK": "Emirates", "QR": "Qatar Airways", "EY": "Etihad",
+        "FZ": "flydubai", "G9": "Air Arabia", "SV": "Saudia", "GF": "Gulf Air", "WY": "Oman Air", "KU": "Kuwait Airways",
+        "LY": "El Al", "MS": "EgyptAir", "ET": "Ethiopian", "KQ": "Kenya Airways", "SA": "South African",
+        "AI": "Air India", "6E": "IndiGo", "IX": "Air India Express", "SG": "SpiceJet", "QP": "Akasa Air",
+        "UL": "SriLankan", "PK": "PIA", "BG": "Biman", "SQ": "Singapore Airlines", "TR": "Scoot", "CX": "Cathay Pacific",
+        "MH": "Malaysia Airlines", "AK": "AirAsia", "TG": "Thai", "VN": "Vietnam Airlines", "GA": "Garuda",
+        "PR": "Philippine Airlines", "5J": "Cebu Pacific", "JL": "JAL", "NH": "ANA", "KE": "Korean Air", "OZ": "Asiana",
+        "CA": "Air China", "MU": "China Eastern", "CZ": "China Southern", "BR": "EVA Air", "CI": "China Airlines",
+        "QF": "Qantas", "VA": "Virgin Australia", "JQ": "Jetstar", "NZ": "Air New Zealand", "LA": "LATAM",
+        "AV": "Avianca", "CM": "Copa", "AR": "Aerolíneas Argentinas", "G3": "Gol", "AD": "Azul",
+    ]
+
+    /// A flight number the message ends on, with its status page: "flight
+    /// AI 101", "landing on UA 123", "boarding BA287". Codes look like a lot
+    /// of things ("AI 2027", "PS5", "OS 18"), so the message has to say
+    /// something about flying, or the code is in capitals after "on" or
+    /// "taking".
+    static func flight(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"\b([A-Za-z0-9]{2})\s?(\d{1,4})"# + end, in: text),
+              let typed = g[1], let digits = g[2], let name = airlines[typed.uppercased()],
+              typed.range(of: #"[A-Za-z]"#, options: .regularExpression) != nil else { return nil }
+        let flying = text.range(of: #"\b(?:flight|flights|flying|fly|flies|flew|landing|lands|landed|departs|departing|departure|arrives|arriving|arrival|boarding|board|gate|terminal|airport|layover|connecting|plane)\b"#,
+                                options: [.regularExpression, .caseInsensitive]) != nil
+        let onIt = typed == typed.uppercased() &&
+            text.range(of: #"\b(?:on|taking|catching|booked)\s+[A-Z0-9]{2}\s?\d{1,4}[.?!]?\s?$"#, options: .regularExpression) != nil
+        guard flying || onIt, let number = Int(digits), number > 0 else { return nil }
+        let code = typed.uppercased()
+        return Conversions(source: trimmed(g[0]), results: ["\(name) \(number) status"],
+                           inserts: ["https://www.flightaware.com/live/flight/\(code)\(number)"], hows: [.after])
+    }
+
+    // MARK: Phone numbers
+
+    /// A phone number the message ends on, written out properly, and its
+    /// WhatsApp link: "call me on 4155550123" → (415) 555-0123 ·
+    /// WhatsApp (https://wa.me/14155550123). A string of digits counts only with
+    /// a "+" or a word that says it is a number (call, phone, number,
+    /// whatsapp, text me, mobile, cell, contact): codes and order numbers
+    /// are digits too.
+    static func phone(in text: String, region: String?) -> Conversions? {
+        guard let g = firstMatch(#"(?<![\w+])(\+?)(\(?\d[\d\s().-]{8,16}\d)"# + end, in: text) else { return nil }
+        let plus = g[1] == "+"
+        let digits = (g[2] ?? "").filter(\.isNumber)
+        let said = text.range(of: #"\b(?:call|calling|phone|ph|tel|number|no|num|whatsapp|wa|text\s+me|msg\s+me|mobile|mob|cell|contact|reach\s+me|ring)\b"#,
+                              options: [.regularExpression, .caseInsensitive]) != nil
+        guard plus || said else { return nil }
+        let r = region?.uppercased() ?? ""
+        var cc = "", national = ""
+        if plus {
+            if digits.hasPrefix("1"), digits.count == 11 { cc = "1"; national = String(digits.dropFirst()) }
+            else if digits.hasPrefix("91"), digits.count == 12 { cc = "91"; national = String(digits.dropFirst(2)) }
+            else if digits.hasPrefix("44"), digits.count == 12 { cc = "44"; national = String(digits.dropFirst(2)) }
+            else if digits.count >= 8, digits.count <= 15 {
+                return Conversions(source: trimmed(g[0]), results: ["WhatsApp"],
+                                   inserts: ["https://wa.me/\(digits)"], hows: [.after])
+            } else { return nil }
+        } else if ["US", "CA"].contains(r), digits.count == 10 || (digits.count == 11 && digits.hasPrefix("1")) {
+            cc = "1"; national = String(digits.suffix(10))
+        } else if r == "IN", digits.count == 10 || (digits.count == 11 && digits.hasPrefix("0")) {
+            cc = "91"; national = String(digits.suffix(10))
+        } else if r == "GB", digits.count == 11, digits.hasPrefix("0") {
+            cc = "44"; national = String(digits.dropFirst())
+        } else { return nil }
+        let n = Array(national)
+        func part(_ a: Int, _ b: Int) -> String { String(n[a..<b]) }
+        var local = "", world = ""
+        switch cc {
+        case "1":
+            guard n.count == 10, n[0] != "0", n[0] != "1", n[3] != "0", n[3] != "1" else { return nil }
+            local = "(\(part(0, 3))) \(part(3, 6))-\(part(6, 10))"
+            world = "+1 \(part(0, 3))-\(part(3, 6))-\(part(6, 10))"
+        case "91":
+            guard n.count == 10, "6789".contains(n[0]) else { return nil }
+            local = "\(part(0, 5)) \(part(5, 10))"
+            world = "+91 \(local)"
+        default:
+            guard n.count == 10, n[0] == "7" else { return nil }
+            local = "0\(part(0, 4)) \(part(4, 10))"
+            world = "+44 \(part(0, 4)) \(part(4, 10))"
+        }
+        // Two chips fit the strip: the number as it is written where it was
+        // typed (with its country when a "+" was), and WhatsApp.
+        let written = plus ? world : local
+        return Conversions(source: trimmed(g[0]), results: [written, "WhatsApp"],
+                           inserts: [written, "https://wa.me/\(cc)\(national)"], hows: [.replace, .after])
+    }
+
+    // MARK: Unix and ISO times
+
+    /// A Unix time (seconds or milliseconds, 2001 to 2036) or an ISO 8601
+    /// time, as a date where the phone is: "1733823083" → Tue 10 Dec 2024,
+    /// 3:01 PM IST. A bare number counts when it is the whole message or the
+    /// message says it is a time (timestamp, epoch, unix, ts).
+    static func unixTime(in text: String, here: TimeZone, region: String?) -> Conversions? {
+        func say(_ date: Date) -> String {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US")
+            f.timeZone = here
+            f.dateFormat = region?.uppercased() == "US" ? "EEE, MMM d, yyyy, h:mm a" : "EEE d MMM yyyy, h:mm a"
+            return f.string(from: date).replacingOccurrences(of: "\u{202F}", with: " ") + " " + zoneLabel(here, at: date)
+        }
+        if let g = firstMatch(#"\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2}))"# + end, in: text),
+           let iso = g[1] {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = iso.contains(".") ? [.withInternetDateTime, .withFractionalSeconds] : [.withInternetDateTime]
+            guard let date = f.date(from: iso) else { return nil }
+            return Conversions(source: iso, results: [say(date)])
+        }
+        guard let g = firstMatch(#"(?<![\d.])(\d{10}|\d{13})"# + end, in: text), let digits = g[1], var n = Double(digits) else { return nil }
+        if digits.count == 13 { n /= 1000 }
+        guard n >= 1_000_000_000, n <= 2_100_000_000 else { return nil }
+        let alone = text.trimmingCharacters(in: .whitespacesAndNewlines) == digits
+        let said = text.range(of: #"\b(?:timestamp|epoch|unix|ts|time)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+        guard alone || said else { return nil }
+        return Conversions(source: digits, results: [say(Date(timeIntervalSince1970: n))])
+    }
+
+    // MARK: Big and short numbers
+
+    /// A number in words or short, written out, and back: "$2.4m" →
+    /// $2,400,000 · $2.4 million; "3 crore" → 3,00,00,000 · 30 million in
+    /// India; "1500000" → 1,500,000 · 1.5 million (15,00,000 · 15 lakh in
+    /// India). k, m and bn only beside money ("10k run", "4k video" are
+    /// not); plain digits from seven to nine.
+    static func bigNumber(in text: String, region: String?) -> Conversions? {
+        let india = region?.uppercased() == "IN"
+        var value: Double, symbol = "", source: String
+        let scale: [String: Double] = ["k": 1e3, "thousand": 1e3, "m": 1e6, "mn": 1e6, "mm": 1e6, "mil": 1e6, "million": 1e6,
+                                       "b": 1e9, "bn": 1e9, "billion": 1e9, "lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "lacs": 1e5,
+                                       "crore": 1e7, "crores": 1e7, "cr": 1e7]
+        if let g = firstMatch(#"([$€£₹¥])\s?(\d+(?:\.\d+)?)\s?(k|m|mn|mm|b|bn|thousand|million|mil|billion|lakhs?|lacs?|crores?|cr)\b"# + end, in: text)
+            ?? firstMatch(#"()(?<![\d.,])(\d+(?:\.\d+)?)\s?(thousand|million|billion|lakhs?|lacs?|crores?)\b"# + end, in: text),
+           let n = Double(g[2] ?? ""), let s = scale[(g[3] ?? "").lowercased()] {
+            value = n * s
+            symbol = g[1] ?? ""
+            source = trimmed(g[0])
+        } else if let g = firstMatch(#"(?<![\d.,+])(\d{7,9})"# + end, in: text), let n = Double(g[1] ?? "") {
+            value = n
+            source = trimmed(g[0])
+        } else { return nil }
+        guard value >= 1000, value < 1e15 else { return nil }
+        func short(_ n: Double) -> String {
+            let f = NumberFormatter()
+            f.locale = Locale(identifier: "en_US")
+            f.maximumFractionDigits = 2
+            f.roundingMode = .halfUp
+            return f.string(from: NSNumber(value: n)) ?? String(n)
+        }
+        func grouped(_ n: Double) -> String {
+            let whole = String(format: "%.0f", n.rounded())
+            guard india, whole.count > 3 else {
+                let f = NumberFormatter()
+                f.numberStyle = .decimal
+                f.locale = Locale(identifier: "en_US")
+                f.maximumFractionDigits = 0
+                return f.string(from: NSNumber(value: n.rounded())) ?? whole
+            }
+            // 1,23,45,678: the last three, then twos.
+            var head = String(whole.dropLast(3)), groups: [String] = []
+            while head.count > 2 { groups.insert(String(head.suffix(2)), at: 0); head = String(head.dropLast(2)) }
+            if !head.isEmpty { groups.insert(head, at: 0) }
+            return groups.joined(separator: ",") + "," + whole.suffix(3)
+        }
+        func words(indian: Bool) -> String? {
+            if indian {
+                if value >= 1e7 { return "\(short(value / 1e7)) crore" }
+                if value >= 1e5 { return "\(short(value / 1e5)) lakh" }
+                return nil
+            }
+            // "10 thousand" says nothing "10,000" doesn't.
+            if value >= 1e9 { return "\(short(value / 1e9)) billion" }
+            if value >= 1e6 { return "\(short(value / 1e6)) million" }
+            return nil
+        }
+        // Two chips fit the strip: written out, then in words (lakh and
+        // crore in India).
+        var results = [symbol + grouped(value)]
+        let spoken = [words(indian: india), india ? words(indian: false) : nil].compactMap { $0 }.map { symbol + $0 }
+        if let w = spoken.first(where: { $0.lowercased() != source.lowercased() }) { results.append(w) }
+        // What was typed is not offered back.
+        results = results.filter { $0.lowercased() != source.lowercased() }
+        guard !results.isEmpty else { return nil }
+        return Conversions(source: source, results: Array(results.prefix(3)), hows: Array(repeating: .replace, count: min(3, results.count)))
+    }
+
+    // MARK: Copied text, in its parts
+
+    /// What a copy holds that is worth pasting alone (Gboard's paste
+    /// chips): the emails, links and phone numbers in it, in order, when
+    /// the copy is more than just one of them. The whole copy comes first.
+    static func pieces(of copy: String) -> [String]? {
+        let t = copy.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count >= 8, t.count <= 2000 else { return nil }
+        let patterns = [
+            #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#,
+            #"\bhttps?://[^\s<>"]+|\bwww\.[^\s<>"]+"#,
+            #"(?<![\w+])\+?\(?\d[\d\s().-]{8,16}\d(?![\w])"#,
+        ]
+        var found: [(NSRange, String)] = []
+        let ns = t as NSString
+        for p in patterns {
+            guard let re = try? NSRegularExpression(pattern: p, options: [.caseInsensitive]) else { continue }
+            for m in re.matches(in: t, range: NSRange(location: 0, length: ns.length)) {
+                var s = ns.substring(with: m.range).trimmingCharacters(in: CharacterSet(charactersIn: " .,;:)!?'\""))
+                if p.contains("\\d[") {
+                    // A phone has ten digits or more; dates and sums have fewer.
+                    guard s.filter(\.isNumber).count >= 10 else { continue }
+                    s = s.trimmingCharacters(in: .whitespaces)
+                }
+                if !found.contains(where: { $0.1 == s || NSIntersectionRange($0.0, m.range).length > 0 }) { found.append((m.range, s)) }
+            }
+        }
+        let parts = found.sorted { $0.0.location < $1.0.location }.map(\.1)
+        guard !parts.isEmpty, !(parts.count == 1 && parts[0] == t) else { return nil }
+        return Array(parts.prefix(2))
     }
 }
 

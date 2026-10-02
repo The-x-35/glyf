@@ -2236,6 +2236,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN", rates = rates,
                               ownBooking = settings.optString("bookingLink"), ownWallet = ownWallet,
                               region = region)
+        // The person's own shorthand of the same name wins over ";date".
+        (chip as? Smart.Chip.Convert)?.answer?.source?.takeIf { it in Smart.builtInShortcuts }?.let { token ->
+            val snippets = VaultStore.load(this).optJSONArray("snippets")
+            if (snippets != null && (0 until snippets.length()).any { snippets.getJSONObject(it).optString("trigger") == token }) {
+                chip = null
+            }
+        }
         // An address on screen: a wallet (Send) or a token (Buy)? Only a
         // lookup can tell; the strip is arranged again when it lands.
         if (chip == null) Smart.addressToCheck(tail, rates, ownWallet)?.let {
@@ -2317,10 +2324,28 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             is Smart.Chip.Convert -> {
                 stripSmartDetail = "convert"
-                // "10 inch" → "10 inch (25.4 cm)": the result after the measurement.
-                return showChoiceRow("smart", chip.results, temp = false, onIndex = { i ->
+                val a = chip.answer
+                return showChoiceRow("smart", a.results, temp = false, onIndex = { i ->
                     val ic = currentInputConnection
-                    ic?.commitText(Smart.conversionInsert(chip.results[i], ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                    val text = a.insert(i)
+                    when (a.how(i)) {
+                        // "10 inch" → "10 inch (25.4 cm)": the answer after what was typed.
+                        Smart.Insertion.BRACKET ->
+                            ic?.commitText(Smart.conversionInsert(text, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                        // A link after the number.
+                        Smart.Insertion.AFTER -> ic?.commitText(Smart.spaced(text, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                        // ";date" → the date: what was typed goes, the answer stays.
+                        Smart.Insertion.REPLACE -> {
+                            val before = ic?.getTextBeforeCursor(a.source.length + 1, 0)?.toString().orEmpty()
+                            val space = if (before.endsWith(" ")) " " else ""
+                            if (a.source.isNotEmpty() && (before.endsWith(a.source) || before.endsWith(a.source + " "))) {
+                                ic?.deleteSurroundingText(a.source.length + space.length, 0)
+                                ic?.commitText(text + space, 1)
+                            } else {
+                                ic?.commitText(Smart.spaced(text, before), 1)
+                            }
+                        }
+                    }
                     hideStripChip()
                     updateSuggestions()
                 }, onTemp = {})
@@ -2525,6 +2550,19 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             return
         }
+        // A copy with emails, links or numbers in it: the whole, then each
+        // (Gboard's paste chips).
+        Smart.pieces(text)?.let { parts ->
+            val all = listOf(text) + parts
+            stripSmartDetail = "pieces"
+            showChoiceRow("paste", listOf("Paste all") + parts, temp = false, onIndex = { i ->
+                used()
+                val ic = currentInputConnection
+                ic?.commitText(Smart.spaced(all[i], ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                hideStripChip()
+            }, onTemp = {}, onClose = dismiss)
+            return
+        }
         showStripChip("paste", null, text.replace('\n', ' '), "Paste", onClose = dismiss) {
             used()
             currentInputConnection?.commitText(text, 1)
@@ -2648,7 +2686,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  [onIndex] its place), and Temp when [temp]. Saved details and a
      *  measurement's results both draw with it. */
     private fun showChoiceRow(kind: String, values: List<String>, temp: Boolean,
-                              onIndex: (Int) -> Unit, onTemp: () -> Unit): Boolean {
+                              onIndex: (Int) -> Unit, onTemp: () -> Unit,
+                              onClose: (() -> Unit)? = null): Boolean {
         // A panel's name is in the strip: its chips wait for the keys.
         if (stripTitleRow != null) return false
         val key = chipKey(kind)
@@ -2668,7 +2707,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTint(secondary)
             setTag(com.demo.glyf.R.id.qa_id, "strip:smart:close")
             contentDescription = "Dismiss"
-            setOnClickListener { dismissChip(key) }
+            setOnClickListener { onClose?.invoke() ?: dismissChip(key) }
         })
         fun card(id: String, said: String, onTap: () -> Unit) = MagicChip(this, chromeDark).apply {
             orientation = LinearLayout.HORIZONTAL

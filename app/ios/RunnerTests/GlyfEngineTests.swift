@@ -831,10 +831,10 @@ final class GlyfEngineTests: XCTestCase {
         let usd = Smart.RatesSnapshot(fiat: ["USD": 1, "GBP": 0.75], local: "USD")
         XCTAssertEqual(Smart.chip(for: "it costs 5 pounds", fields: [], rates: usd, region: "US")?.value, "£5 = $6.67")
         XCTAssertEqual(Smart.chip(for: "I lost 5 pounds", fields: [], rates: usd, region: "US"),
-                       .convert(source: "5 pounds", results: ["2.27 kg"]))
+                       .convert(Smart.Conversions(source: "5 pounds", results: ["2.27 kg"])))
         XCTAssertNil(Smart.chip(for: "I lost 5 pounds", fields: [], rates: usd, region: "GB"))
         XCTAssertEqual(Smart.chip(for: "bench press 100 pounds", fields: [], rates: usd, region: "US"),
-                       .convert(source: "100 pounds", results: ["45.4 kg"]))
+                       .convert(Smart.Conversions(source: "100 pounds", results: ["45.4 kg"])))
         let india = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88], crypto: ["SOL": 111.77], local: "INR")
         XCTAssertNil(Smart.chip(for: "it costs $13 = ₹1,246.44", fields: [], rates: india))
         XCTAssertNil(Smart.chip(for: "buying $sol = $111.77", fields: [], rates: india))
@@ -1302,22 +1302,59 @@ final class GlyfEngineTests: XCTestCase {
             let now = try XCTUnwrap(iso.date(from: c["now"] as? String ?? ""))
             let here = try XCTUnwrap(TimeZone(identifier: c["here"] as? String ?? ""))
             let want = c["results"] as? [String] ?? []
-            let got = Smart.quickAnswer(in: text, now: now, here: here, region: c["region"] as? String)?.results ?? []
-            if got != want { failures.append("'\(text)' (\(c["region"] ?? "-")): got \(got), want \(want)") }
+            let answer = Smart.quickAnswer(in: text, now: now, here: here, region: c["region"] as? String)
+            let got = answer?.results ?? []
+            if got != want { failures.append("'\(text)' (\(c["region"] ?? "-")): got \(got), want \(want)"); continue }
+            if let inserts = c["inserts"] as? [String], let answer {
+                let had = (0..<got.count).map { answer.insert($0) }
+                if had != inserts { failures.append("'\(text)': inserts \(had), want \(inserts)") }
+            }
+            if let hows = c["how"] as? [String], let answer {
+                let had = (0..<got.count).map { i -> String in
+                    switch answer.how(i) { case .bracket: return "bracket"; case .after: return "after"; case .replace: return "replace" }
+                }
+                if had != hows { failures.append("'\(text)': how \(had), want \(hows)") }
+            }
         }
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
+    /// shared/quick/paste-cases.json: a copy shown in its parts (Android runs
+    /// the same file), and the chip that shows them.
+    func testACopyShowsInItsParts() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/quick/paste-cases.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var failures: [String] = []
+        for c in root["cases"] as? [[String: Any]] ?? [] {
+            let copy = c["copy"] as? String ?? ""
+            let want = c["parts"] as? [String]
+            let got = Smart.pieces(of: copy)
+            if got != want { failures.append("'\(copy)': got \(got ?? []), want \(want ?? [])") }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+        let copy = "Jo, 415-555-0123, jo@x.com"
+        guard case .convert(let c)? = Smart.chip(for: "", fields: [], paste: copy, region: "US") else {
+            return XCTFail("a copy with parts is a row")
+        }
+        XCTAssertEqual(c.results, ["Paste all", "415-555-0123", "jo@x.com"])
+        XCTAssertEqual(c.insert(0), copy)
+        XCTAssertEqual(c.how(1), .after)
+        XCTAssertEqual(Smart.Chip.convert(c).copiedText, copy)
     }
 
     /// The strip offers a measurement as its own chip, and a tap adds the
     /// result in brackets after what was typed.
     func testAMeasurementIsAChipAndATapAddsItInBrackets() {
         XCTAssertEqual(Smart.chip(for: "lets 10 inch", fields: [], region: "US"),
-                       .convert(source: "10 inch", results: ["25.4 cm", "0.254 m"]))
+                       .convert(Smart.Conversions(source: "10 inch", results: ["25.4 cm", "0.254 m"])))
         // A sum is still a sum, and money still money.
         if case .convert? = Smart.chip(for: "12+30", fields: [], region: "US") { XCTFail("a sum became units") }
         XCTAssertEqual(Smart.conversionInsert("25.4 cm", before: "lets 10 inch"), " (25.4 cm)")
         XCTAssertEqual(Smart.conversionInsert("25.4 cm", before: "lets 10 inch "), "(25.4 cm) ")
-        XCTAssertEqual(Smart.Chip.convert(source: "10 inch", results: ["25.4 cm"]).choices?.values, ["25.4 cm"])
+        XCTAssertEqual(Smart.Chip.convert(Smart.Conversions(source: "10 inch", results: ["25.4 cm"])).choices?.values, ["25.4 cm"])
     }
 
     /// Money with cents shows both places: "$20 = ₹1,919.6" read as a typo.

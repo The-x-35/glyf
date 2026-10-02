@@ -1,5 +1,5 @@
 {
- "about": "What the strip works out from how a message ends (Smart.quickAnswer on both keyboards): bills (split, tip, discount, tax), when someone will be there, a span of minutes, a date in words, a bare temperature on the phone's own scale, a time in a city. \"now\" and \"here\" (the phone's zone) fixed per case; \"results\" in order; [] means no chip.",
+ "about": "What the strip works out from how a message ends (Smart.quickAnswer on both keyboards): bills (split, tip, discount, tax), when someone will be there, a span of minutes, a date in words, a bare temperature on the phone's own scale, a time in a city, shortcuts (;date), number bases and Roman numerals, colours, parcel and flight links, phone numbers, Unix and ISO times, big and short numbers. \"inserts\" (when given) is what each chip puts in; \"how\" (when given) is bracket, after or replace. \"now\" and \"here\" (the phone's zone) fixed per case; \"results\" in order; [] means no chip.",
  "cases": [
   {
    "text": "split 120 4 ways",
@@ -445,6 +445,603 @@
    "results": [
     "Sun 3:30 AM IST"
    ]
+  },
+  {
+   "text": ";date",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sat 3 Oct 2026"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "today is ;date",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sat 3 Oct 2026"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": ";time",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "5:30 PM"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": ";now",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sat 3 Oct, 5:30 PM"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": ";tmrw",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sun 4 Oct"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": ";yday",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Fri 2 Oct"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": ";iso",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "2026-10-03"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": ";date",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Sat, Oct 3, 2026"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "a;date",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "0xFF",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "255",
+    "0b11111111"
+   ]
+  },
+  {
+   "text": "0b1010",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "10",
+    "0xA"
+   ]
+  },
+  {
+   "text": "255 in hex",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "0xFF"
+   ]
+  },
+  {
+   "text": "10 in binary",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "0b1010"
+   ]
+  },
+  {
+   "text": "1010 in decimal",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "10"
+   ]
+  },
+  {
+   "text": "binary 1010",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "10"
+   ]
+  },
+  {
+   "text": "hex ff",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "255"
+   ]
+  },
+  {
+   "text": "2026 in roman",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "MMXXVI"
+   ]
+  },
+  {
+   "text": "#ff6363",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "rgb(255, 99, 99)",
+    "hsl(0, 100%, 69%)"
+   ]
+  },
+  {
+   "text": "try #0f0",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "rgb(0, 255, 0)",
+    "hsl(120, 100%, 50%)"
+   ]
+  },
+  {
+   "text": "rgb(255, 99, 99)",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "#FF6363",
+    "hsl(0, 100%, 69%)"
+   ]
+  },
+  {
+   "text": "colour #bad",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "rgb(187, 170, 221)",
+    "hsl(260, 43%, 77%)"
+   ]
+  },
+  {
+   "text": "so #bad",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "#decade",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "tracking 1Z999AA10123456784",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "UPS tracking"
+   ],
+   "inserts": [
+    "https://www.ups.com/track?tracknum=1Z999AA10123456784"
+   ],
+   "how": [
+    "after"
+   ]
+  },
+  {
+   "text": "tracking 1Z999AA10123456785",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "parcel RA123456785GB",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "Royal Mail tracking"
+   ],
+   "inserts": [
+    "https://www.royalmail.com/track-your-item#/tracking-results/RA123456785GB"
+   ],
+   "how": [
+    "after"
+   ]
+  },
+  {
+   "text": "fedex 123456789012",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "FedEx tracking"
+   ],
+   "inserts": [
+    "https://www.fedex.com/fedextrack/?trknbr=123456789012"
+   ],
+   "how": [
+    "after"
+   ]
+  },
+  {
+   "text": "dhl 1234567890",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/Berlin",
+   "region": "DE",
+   "results": [
+    "DHL tracking"
+   ],
+   "inserts": [
+    "https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=1234567890"
+   ],
+   "how": [
+    "after"
+   ]
+  },
+  {
+   "text": "my order 123456789012",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "flight AI 101",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Air India 101 status"
+   ],
+   "inserts": [
+    "https://www.flightaware.com/live/flight/AI101"
+   ],
+   "how": [
+    "after"
+   ]
+  },
+  {
+   "text": "landing on UA 123",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "United 123 status"
+   ],
+   "inserts": [
+    "https://www.flightaware.com/live/flight/UA123"
+   ],
+   "how": [
+    "after"
+   ]
+  },
+  {
+   "text": "i'm on BA287",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "British Airways 287 status"
+   ],
+   "inserts": [
+    "https://www.flightaware.com/live/flight/BA287"
+   ],
+   "how": [
+    "after"
+   ]
+  },
+  {
+   "text": "flight 6E 2345",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "IndiGo 2345 status"
+   ],
+   "inserts": [
+    "https://www.flightaware.com/live/flight/6E2345"
+   ],
+   "how": [
+    "after"
+   ]
+  },
+  {
+   "text": "read AI 2027",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "got a ps5",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "call me on 4155550123",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "(415) 555-0123",
+    "WhatsApp"
+   ],
+   "how": [
+    "replace",
+    "after"
+   ],
+   "inserts": [
+    "(415) 555-0123",
+    "https://wa.me/14155550123"
+   ]
+  },
+  {
+   "text": "my number is 9876543210",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "98765 43210",
+    "WhatsApp"
+   ],
+   "how": [
+    "replace",
+    "after"
+   ],
+   "inserts": [
+    "98765 43210",
+    "https://wa.me/919876543210"
+   ]
+  },
+  {
+   "text": "whatsapp +447700900123",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "+44 7700 900123",
+    "WhatsApp"
+   ],
+   "how": [
+    "replace",
+    "after"
+   ],
+   "inserts": [
+    "+44 7700 900123",
+    "https://wa.me/447700900123"
+   ]
+  },
+  {
+   "text": "my french number +33 6 12 34 56 78",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/Paris",
+   "region": "FR",
+   "results": [
+    "WhatsApp"
+   ],
+   "how": [
+    "after"
+   ],
+   "inserts": [
+    "https://wa.me/33612345678"
+   ]
+  },
+  {
+   "text": "order 4155550123",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "call 1234567890",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "1733823083",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Tue 10 Dec 2024, 3:01 PM IST"
+   ]
+  },
+  {
+   "text": "ts 1733823083000",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Tue 10 Dec 2024, 3:01 PM IST"
+   ]
+  },
+  {
+   "text": "order 1733823083",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "2024-03-15T14:30:00Z",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Fri 15 Mar 2024, 8:00 PM IST"
+   ]
+  },
+  {
+   "text": "$2.4m",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$2,400,000",
+    "$2.4 million"
+   ],
+   "how": [
+    "replace",
+    "replace"
+   ]
+  },
+  {
+   "text": "raised 2.4 million",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "2,400,000"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "3 crore",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "3,00,00,000",
+    "30 million"
+   ],
+   "how": [
+    "replace",
+    "replace"
+   ]
+  },
+  {
+   "text": "1500000",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "1,500,000",
+    "1.5 million"
+   ],
+   "how": [
+    "replace",
+    "replace"
+   ]
+  },
+  {
+   "text": "1500000",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "15,00,000",
+    "15 lakh"
+   ],
+   "how": [
+    "replace",
+    "replace"
+   ]
+  },
+  {
+   "text": "$10k",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$10,000"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "10k run",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "4k video",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "12345",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
   }
  ]
 }

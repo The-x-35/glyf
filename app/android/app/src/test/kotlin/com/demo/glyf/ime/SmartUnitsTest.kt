@@ -57,15 +57,36 @@ class SmartUnitsTest {
         val cases = quick.getJSONArray("cases")
         val failures = (0 until cases.length()).map { cases.getJSONObject(it) }.mapNotNull { c ->
             val want = c.getJSONArray("results").let { a -> (0 until a.length()).map { a.getString(it) } }
-            val got = Smart.quickAnswer(c.getString("text"), java.time.Instant.parse(c.getString("now")),
-                java.time.ZoneId.of(c.getString("here")), c.optString("region").ifEmpty { null })?.results.orEmpty()
-            if (got == want) null else "'${c.getString("text")}' (${c.optString("region")}): got $got, want $want"
+            val answer = Smart.quickAnswer(c.getString("text"), java.time.Instant.parse(c.getString("now")),
+                java.time.ZoneId.of(c.getString("here")), c.optString("region").ifEmpty { null })
+            val got = answer?.results.orEmpty()
+            if (got != want) return@mapNotNull "'${c.getString("text")}' (${c.optString("region")}): got $got, want $want"
+            val inserts = c.optJSONArray("inserts")?.let { a -> (0 until a.length()).map { a.getString(it) } }
+            if (inserts != null && answer != null && got.indices.map { answer.insert(it) } != inserts)
+                return@mapNotNull "'${c.getString("text")}': inserts ${got.indices.map { answer.insert(it) }}, want $inserts"
+            val hows = c.optJSONArray("how")?.let { a -> (0 until a.length()).map { a.getString(it) } }
+            if (hows != null && answer != null && got.indices.map { answer.how(it).name.lowercase() } != hows)
+                return@mapNotNull "'${c.getString("text")}': how ${got.indices.map { answer.how(it).name.lowercase() }}, want $hows"
+            null
+        }
+        assertEquals(failures.joinToString("\n"), 0, failures.size)
+    }
+
+    /** shared/quick/paste-cases.json: a copy shown in its parts. */
+    @Test fun aCopyShowsInItsParts() {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        while (dir != null && !File(dir, "shared/quick/paste-cases.json").exists()) dir = dir.parentFile
+        val cases = JSONObject(File(requireNotNull(dir), "shared/quick/paste-cases.json").readText()).getJSONArray("cases")
+        val failures = (0 until cases.length()).map { cases.getJSONObject(it) }.mapNotNull { c ->
+            val want = if (c.isNull("parts")) null else c.getJSONArray("parts").let { a -> (0 until a.length()).map { a.getString(it) } }
+            val got = Smart.pieces(c.getString("copy"))
+            if (got == want) null else "'${c.getString("copy")}': got $got, want $want"
         }
         assertEquals(failures.joinToString("\n"), 0, failures.size)
     }
 
     @Test fun aMeasurementIsAChipAndATapAddsItInBrackets() {
-        assertEquals(Smart.Chip.Convert("10 inch", listOf("25.4 cm", "0.254 m")),
+        assertEquals(Smart.Chip.Convert(Smart.Conversions("10 inch", listOf("25.4 cm", "0.254 m"))),
             Smart.chip("lets 10 inch", emptyList(), region = "US"))
         // A sum is still a sum.
         assertTrue(Smart.chip("12+30", emptyList(), region = "US") is Smart.Chip.Calc)

@@ -40,7 +40,7 @@ object Smart {
         /** A measurement the message ends on, in the other system: one part
          *  for each result ("10 inch" → 25.4 cm, 0.254 m), and a tap on a part
          *  adds it in brackets (Smart.conversions). Smart.swift's `.convert`. */
-        data class Convert(val source: String, val results: List<String>) : Chip()
+        data class Convert(val answer: Conversions) : Chip()
         /** The model read the sentence and named what Glyf could do with it. */
         data class Action(val label: String, val query: String, val intent: String) : Chip()
         /** Someone's Solana wallet on screen: Send opens in the app with it
@@ -121,7 +121,8 @@ object Smart {
         is Chip.Vault -> chip.field.value
         is Chip.Details -> (chip.fields.map { it.value } + if (chip.temp) listOf("Temp mail") else emptyList())
             .joinToString(" · ")
-        is Chip.Convert -> "${chip.source} = " + chip.results.joinToString(" · ")
+        is Chip.Convert -> if (chip.answer.source.isEmpty()) chip.answer.results.joinToString(" · ")
+            else "${chip.answer.source} = " + chip.answer.results.joinToString(" · ")
         is Chip.Action -> chip.label
         is Chip.Money -> chip.shown
         is Chip.Event -> EventParse.summary(chip.plan)
@@ -227,7 +228,7 @@ object Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if (cashtag(text) != null) return null
-        quickAnswer(text, region = region)?.let { return Chip.Convert(it.source, it.results) }
+        quickAnswer(text, region = region)?.let { return Chip.Convert(it) }
         // Every saved value the sentence asks for: two emails show both.
         val matches = vaultMatches(text, fields)
         if (matches.size > 1) return Chip.Details(matches.take(3), temp = false)
@@ -1110,7 +1111,25 @@ object Smart {
      *  Only names that can't be anything else after a number in a chat:
      *  "in", "m", "min", "c" or "f" without "°", and "4g" are other things.
      *  shared/units/strip-cases.json holds the cases. */
-    data class Conversions(val source: String, val results: List<String>)
+    data class Conversions(
+        /** What the answer is about, as typed: "10 inch". */
+        val source: String,
+        /** What each chip says, best first: ["25.4 cm", "0.254 m"]. */
+        val results: List<String>,
+        /** What each chip puts in the message, when it is not its words (a
+         *  carrier's link behind "UPS tracking"). */
+        val inserts: List<String>? = null,
+        /** How each goes in; in brackets after what was typed when null. */
+        val hows: List<Insertion>? = null,
+    ) {
+        fun insert(i: Int): String = inserts?.getOrNull(i) ?: results[i]
+        fun how(i: Int): Insertion = hows?.getOrNull(i) ?: Insertion.BRACKET
+    }
+
+    /** How a tap on an answer goes into the message: in brackets after what
+     *  was typed, after it (a link, a piece of a copy), or in its place
+     *  (";date" → the date). */
+    enum class Insertion { BRACKET, AFTER, REPLACE }
 
     private val stripNames: Map<String, String> = buildMap {
         fun add(unit: String, vararg names: String) { for (n in names) put(n, unit) }
@@ -1526,11 +1545,19 @@ object Smart {
                     here: java.time.ZoneId = java.time.ZoneId.systemDefault(),
                     region: String? = java.util.Locale.getDefault().country): Conversions? {
         if (text.length > 400) return null
-        return conversions(text, region)
+        return shortcut(text, now, here, region)
+            ?: conversions(text, region)
             ?: zoneTimes(text, now, here, region)
             ?: billMath(text)
             ?: arrival(text, now, here)
             ?: dateInWords(text, now, here, region)
+            ?: bases(text)
+            ?: colours(text)
+            ?: tracking(text)
+            ?: flight(text)
+            ?: phone(text, region)
+            ?: unixTime(text, here, region)
+            ?: bigNumber(text, region)
     }
 
     /** Patterns are built once: the strip asks on every key. */
@@ -1748,6 +1775,392 @@ object Smart {
             date = java.time.LocalDate.of(today.year + 1, m, d)
         }
         return say(g, listOf(date))
+    }
+
+    // MARK: shortcuts, numbers, colours, parcels, flights and phones (Smart.swift twin)
+
+    /** The shortcuts the keyboard knows itself; the person's own shorthand
+     *  of the same name wins (the keyboard leaves the chip out then). */
+    val builtInShortcuts = setOf(";date", ";today", ";time", ";now", ";tmrw", ";tomorrow", ";yday", ";yesterday", ";iso")
+
+    /** ";date" → Sat 3 Oct 2026, ";time" → 1:15 AM, ";now", ";tmrw",
+     *  ";yday", ";iso": typed in place of the shortcut. */
+    fun shortcut(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
+        val g = firstMatch("""(?:^|\s)(;(?:date|today|time|now|tmrw|tomorrow|yday|yesterday|iso))\s?$""", text) ?: return null
+        val token = g[1]?.lowercase() ?: return null
+        val at = now.atZone(here)
+        val us = region.equals("US", ignoreCase = true)
+        fun day(d: java.time.ZonedDateTime, year: Boolean): String = java.time.format.DateTimeFormatter.ofPattern(
+            if (us) (if (year) "EEE, MMM d, yyyy" else "EEE, MMM d") else (if (year) "EEE d MMM yyyy" else "EEE d MMM"),
+            java.util.Locale.US).format(d)
+        fun time(d: java.time.ZonedDateTime): String =
+            java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.US).format(d).replace(' ', ' ')
+        val out = when (token) {
+            ";date", ";today" -> day(at, true)
+            ";time" -> time(at)
+            ";now" -> day(at, false) + ", " + time(at)
+            ";tmrw", ";tomorrow" -> day(at.plusDays(1), false)
+            ";yday", ";yesterday" -> day(at.minusDays(1), false)
+            else -> java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd", java.util.Locale.US).format(at)
+        }
+        return Conversions(token, listOf(out), hows = listOf(Insertion.REPLACE))
+    }
+
+    fun roman(n: Long): String? {
+        if (n < 1 || n > 3999) return null
+        val table = listOf(1000 to "M", 900 to "CM", 500 to "D", 400 to "CD", 100 to "C", 90 to "XC",
+            50 to "L", 40 to "XL", 10 to "X", 9 to "IX", 5 to "V", 4 to "IV", 1 to "I")
+        var left = n.toInt()
+        val out = StringBuilder()
+        for ((value, letters) in table) while (left >= value) { out.append(letters); left -= value }
+        return out.toString()
+    }
+
+    /** "0xFF" → 255 · 0b11111111; "0b1010" → 10 · 0xA; "255 in hex" → 0xFF;
+     *  "10 in binary" → 0b1010; "1010 in decimal" or "binary 1010" → 10;
+     *  "hex ff" → 255; "2026 in roman" → MMXXVI. */
+    fun bases(text: String): Conversions? {
+        fun binary(n: Long): String? = if (n < (1L shl 32)) "0b" + java.lang.Long.toBinaryString(n) else null
+        fun hex(n: Long) = "0x" + java.lang.Long.toHexString(n).uppercase()
+        firstMatch("""(?<![\w])0x([0-9a-f]{1,15})$END""", text)?.let { g ->
+            val n = g[1]?.toLongOrNull(16) ?: return@let
+            return Conversions(g[0]!!.trim(), listOfNotNull(n.toString(), binary(n)))
+        }
+        firstMatch("""(?<![\w])0b([01]{1,62})$END""", text)?.let { g ->
+            val n = g[1]?.toLongOrNull(2) ?: return@let
+            return Conversions(g[0]!!.trim(), listOf(n.toString(), hex(n)))
+        }
+        firstMatch("""\b(\d{1,18})\s+(?:in|to|as|into)\s+(hex|hexadecimal|binary|bin|octal|oct|roman|roman numerals?)$END""", text)?.let { g ->
+            val n = g[1]?.toLongOrNull() ?: return@let
+            val to = g[2]!!.lowercase()
+            val out = when {
+                to.startsWith("hex") -> hex(n)
+                to.startsWith("bin") -> binary(n)
+                to.startsWith("oct") -> "0o" + java.lang.Long.toOctalString(n)
+                else -> roman(n)
+            } ?: return null
+            return Conversions(g[0]!!.trim(), listOf(out))
+        }
+        (firstMatch("""\b([01]{2,62})\s+(?:in|to|as|into)\s+(?:decimal|dec|denary|base 10)$END""", text)
+            ?: firstMatch("""\bbinary\s+([01]{2,62})$END""", text))?.let { g ->
+            val n = g[1]?.toLongOrNull(2) ?: return@let
+            return Conversions(g[0]!!.trim(), listOf(n.toString()))
+        }
+        firstMatch("""\bhex\s+([0-9a-f]{1,15})$END""", text)?.let { g ->
+            val n = g[1]?.toLongOrNull(16) ?: return@let
+            return Conversions(g[0]!!.trim(), listOf(n.toString()))
+        }
+        return null
+    }
+
+    private fun hsl(r0: Double, g0: Double, b0: Double): String {
+        val r = r0 / 255; val g = g0 / 255; val b = b0 / 255
+        val most = maxOf(r, g, b); val least = minOf(r, g, b)
+        val l = (most + least) / 2
+        var h = 0.0; var s = 0.0
+        if (most != least) {
+            val d = most - least
+            s = if (l > 0.5) d / (2 - most - least) else d / (most + least)
+            h = when (most) {
+                r -> (g - b) / d + (if (g < b) 6 else 0)
+                g -> (b - r) / d + 2
+                else -> (r - g) / d + 4
+            }
+            h *= 60
+        }
+        return "hsl(${Math.round(h).toInt() % 360}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)"
+    }
+
+    /** "#ff6363" → rgb(255, 99, 99) · hsl(0, 100%, 69%); "rgb(255, 99, 99)"
+     *  → #FF6363 · hsl(0, 100%, 69%). A hashtag that is a word (#bad, #cafe,
+     *  #decade) is not a colour: a hex with no digit needs a word about
+     *  colour in the message. */
+    fun colours(text: String): Conversions? {
+        firstMatch("""(?<![\w&#])#([0-9a-f]{6}|[0-9a-f]{3}|[0-9a-f]{8})$END""", text)?.let { g ->
+            var hex = g[1] ?: return@let
+            val colourWords = Regex("""\b(?:colou?rs?|hex|shade|bg|background|fill|stroke|tint|hue)\b""",
+                RegexOption.IGNORE_CASE).containsMatchIn(text)
+            if (hex.none { it.isDigit() } && !colourWords) return null
+            if (hex.length == 3) hex = hex.map { "$it$it" }.joinToString("")
+            val v = hex.take(6).toLongOrNull(16) ?: return null
+            val r = ((v shr 16) and 0xFF).toDouble(); val gg = ((v shr 8) and 0xFF).toDouble(); val b = (v and 0xFF).toDouble()
+            return Conversions(g[0]!!.trim(), listOf("rgb(${r.toInt()}, ${gg.toInt()}, ${b.toInt()})", hsl(r, gg, b)))
+        }
+        firstMatch("""\brgba?\(\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*(?:[,/]\s*[\d.]+%?\s*)?\)$END""", text)?.let { g ->
+            val r = g[1]?.toIntOrNull() ?: return@let
+            val gg = g[2]?.toIntOrNull() ?: return@let
+            val b = g[3]?.toIntOrNull() ?: return@let
+            if (r > 255 || gg > 255 || b > 255) return null
+            return Conversions(g[0]!!.trim(), listOf("#%02X%02X%02X".format(r, gg, b), hsl(r.toDouble(), gg.toDouble(), b.toDouble())))
+        }
+        return null
+    }
+
+    /** UPS's check digit: the 15 characters after 1Z, letters as
+     *  (code − 63) mod 10, odd places once and even places twice. */
+    fun upsValid(n: String): Boolean {
+        val s = n.uppercase()
+        if (s.length != 18 || !s.startsWith("1Z")) return false
+        var sum = 0
+        for ((i, c) in s.substring(2, 17).withIndex()) {
+            val v = if (c.isDigit()) c - '0' else if (c in 'A'..'Z') (c.code - 63) % 10 else return false
+            sum += if (i % 2 == 0) v else v * 2
+        }
+        return (10 - sum % 10) % 10 == s[17] - '0'
+    }
+
+    /** The postal format every country shares (RA123456785IN): its check
+     *  digit, weights 8 6 4 2 3 5 9 7. */
+    fun s10Valid(n: String): Boolean {
+        val s = n.uppercase()
+        if (s.length != 13) return false
+        val digits = s.substring(2, 11).map { if (it.isDigit()) it - '0' else return false }
+        val weights = listOf(8, 6, 4, 2, 3, 5, 9, 7)
+        val sum = digits.take(8).zip(weights).sumOf { (d, w) -> d * w }
+        var check = 11 - sum % 11
+        if (check == 10) check = 0 else if (check == 11) check = 5
+        return check == digits[8]
+    }
+
+    /** A tracking number the message ends on, with its carrier's own page
+     *  (Smart.swift's tracking(in:)). The chip names the carrier; a tap adds
+     *  the link. */
+    fun tracking(text: String): Conversions? {
+        fun link(label: String, url: String, g: List<String?>) =
+            Conversions(g[0]!!.trim(), listOf(label), inserts = listOf(url), hows = listOf(Insertion.AFTER))
+        firstMatch("""\b(1Z[0-9A-Z]{16})$END""", text)?.let { g ->
+            val n = g[1]!!.uppercase()
+            if (upsValid(n)) return link("UPS tracking", "https://www.ups.com/track?tracknum=$n", g)
+        }
+        firstMatch("""\b([A-Z]{2}\d{9}[A-Z]{2})$END""", text)?.let { g ->
+            val n = g[1]!!.uppercase()
+            if (s10Valid(n)) return when (n.takeLast(2)) {
+                "GB" -> link("Royal Mail tracking", "https://www.royalmail.com/track-your-item#/tracking-results/$n", g)
+                "US" -> link("USPS tracking", "https://tools.usps.com/go/TrackConfirmAction?tLabels=$n", g)
+                "CA" -> link("Canada Post tracking", "https://www.canadapost-postescanada.ca/track-reperage/en#/search?searchFor=$n", g)
+                "AU" -> link("Australia Post tracking", "https://auspost.com.au/mypost/track/#/details/$n", g)
+                else -> null
+            }
+        }
+        fun says(word: String) = Regex("""\b$word\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
+        firstMatch("""(?<![\d])(9[2-5](?:\s?\d){18,20})$END""", text)?.let { g ->
+            if (says("usps")) return link("USPS tracking", "https://tools.usps.com/go/TrackConfirmAction?tLabels=${g[1]!!.filter { it.isDigit() }}", g)
+        }
+        firstMatch("""(?<![\d])(\d{12}|\d{15})$END""", text)?.let { g ->
+            if (says("fedex")) return link("FedEx tracking", "https://www.fedex.com/fedextrack/?trknbr=${g[1]}", g)
+        }
+        firstMatch("""(?<![\d])(\d{10})$END""", text)?.let { g ->
+            if (says("dhl")) return link("DHL tracking", "https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${g[1]}", g)
+        }
+        return null
+    }
+
+    private val airlines = mapOf(
+        "AA" to "American", "UA" to "United", "DL" to "Delta", "WN" to "Southwest", "B6" to "JetBlue", "AS" to "Alaska",
+        "NK" to "Spirit", "F9" to "Frontier", "HA" to "Hawaiian", "AC" to "Air Canada", "WS" to "WestJet", "AM" to "Aeroméxico",
+        "BA" to "British Airways", "VS" to "Virgin Atlantic", "EI" to "Aer Lingus", "LH" to "Lufthansa", "AF" to "Air France",
+        "KL" to "KLM", "LX" to "Swiss", "OS" to "Austrian", "SN" to "Brussels Airlines", "IB" to "Iberia", "VY" to "Vueling",
+        "TP" to "TAP", "AY" to "Finnair", "SK" to "SAS", "DY" to "Norwegian", "FR" to "Ryanair", "U2" to "easyJet", "W6" to "Wizz Air",
+        "LO" to "LOT", "A3" to "Aegean", "TK" to "Turkish Airlines", "EK" to "Emirates", "QR" to "Qatar Airways", "EY" to "Etihad",
+        "FZ" to "flydubai", "G9" to "Air Arabia", "SV" to "Saudia", "GF" to "Gulf Air", "WY" to "Oman Air", "KU" to "Kuwait Airways",
+        "LY" to "El Al", "MS" to "EgyptAir", "ET" to "Ethiopian", "KQ" to "Kenya Airways", "SA" to "South African",
+        "AI" to "Air India", "6E" to "IndiGo", "IX" to "Air India Express", "SG" to "SpiceJet", "QP" to "Akasa Air",
+        "UL" to "SriLankan", "PK" to "PIA", "BG" to "Biman", "SQ" to "Singapore Airlines", "TR" to "Scoot", "CX" to "Cathay Pacific",
+        "MH" to "Malaysia Airlines", "AK" to "AirAsia", "TG" to "Thai", "VN" to "Vietnam Airlines", "GA" to "Garuda",
+        "PR" to "Philippine Airlines", "5J" to "Cebu Pacific", "JL" to "JAL", "NH" to "ANA", "KE" to "Korean Air", "OZ" to "Asiana",
+        "CA" to "Air China", "MU" to "China Eastern", "CZ" to "China Southern", "BR" to "EVA Air", "CI" to "China Airlines",
+        "QF" to "Qantas", "VA" to "Virgin Australia", "JQ" to "Jetstar", "NZ" to "Air New Zealand", "LA" to "LATAM",
+        "AV" to "Avianca", "CM" to "Copa", "AR" to "Aerolíneas Argentinas", "G3" to "Gol", "AD" to "Azul",
+    )
+
+    /** A flight number the message ends on, with its status page (Smart.swift's
+     *  flight(in:)): the message has to say something about flying, or the
+     *  code is in capitals after "on" or "taking". */
+    fun flight(text: String): Conversions? {
+        val g = firstMatch("""\b([A-Za-z0-9]{2})\s?(\d{1,4})$END""", text) ?: return null
+        val typed = g[1] ?: return null
+        val name = airlines[typed.uppercase()] ?: return null
+        if (typed.none { it.isLetter() }) return null
+        val flying = Regex("""\b(?:flight|flights|flying|fly|flies|flew|landing|lands|landed|departs|departing|departure|arrives|arriving|arrival|boarding|board|gate|terminal|airport|layover|connecting|plane)\b""",
+            RegexOption.IGNORE_CASE).containsMatchIn(text)
+        val onIt = typed == typed.uppercase() &&
+            Regex("""\b(?:on|taking|catching|booked)\s+[A-Z0-9]{2}\s?\d{1,4}[.?!]?\s?$""").containsMatchIn(text)
+        val number = g[2]?.toIntOrNull() ?: return null
+        if (!(flying || onIt) || number <= 0) return null
+        val code = typed.uppercase()
+        return Conversions(g[0]!!.trim(), listOf("$name $number status"),
+            inserts = listOf("https://www.flightaware.com/live/flight/$code$number"), hows = listOf(Insertion.AFTER))
+    }
+
+    /** A phone number the message ends on, written out properly, and its
+     *  WhatsApp link (Smart.swift's phone(in:region:)). A string of digits
+     *  counts only with a "+" or a word that says it is a number. */
+    fun phone(text: String, region: String?): Conversions? {
+        val g = firstMatch("""(?<![\w+])(\+?)(\(?\d[\d\s().-]{8,16}\d)$END""", text) ?: return null
+        val plus = g[1] == "+"
+        val digits = g[2]!!.filter { it.isDigit() }
+        val said = Regex("""\b(?:call|calling|phone|ph|tel|number|no|num|whatsapp|wa|text\s+me|msg\s+me|mobile|mob|cell|contact|reach\s+me|ring)\b""",
+            RegexOption.IGNORE_CASE).containsMatchIn(text)
+        if (!plus && !said) return null
+        val r = region?.uppercase() ?: ""
+        val cc: String
+        val national: String
+        when {
+            plus && digits.startsWith("1") && digits.length == 11 -> { cc = "1"; national = digits.drop(1) }
+            plus && digits.startsWith("91") && digits.length == 12 -> { cc = "91"; national = digits.drop(2) }
+            plus && digits.startsWith("44") && digits.length == 12 -> { cc = "44"; national = digits.drop(2) }
+            plus -> return if (digits.length in 8..15)
+                Conversions(g[0]!!.trim(), listOf("WhatsApp"), inserts = listOf("https://wa.me/$digits"),
+                    hows = listOf(Insertion.AFTER)) else null
+            r in setOf("US", "CA") && (digits.length == 10 || (digits.length == 11 && digits.startsWith("1"))) -> {
+                cc = "1"; national = digits.takeLast(10)
+            }
+            r == "IN" && (digits.length == 10 || (digits.length == 11 && digits.startsWith("0"))) -> {
+                cc = "91"; national = digits.takeLast(10)
+            }
+            r == "GB" && digits.length == 11 && digits.startsWith("0") -> { cc = "44"; national = digits.drop(1) }
+            else -> return null
+        }
+        val n = national
+        val local: String
+        val world: String
+        when (cc) {
+            "1" -> {
+                if (n.length != 10 || n[0] in "01" || n[3] in "01") return null
+                local = "(${n.substring(0, 3)}) ${n.substring(3, 6)}-${n.substring(6)}"
+                world = "+1 ${n.substring(0, 3)}-${n.substring(3, 6)}-${n.substring(6)}"
+            }
+            "91" -> {
+                if (n.length != 10 || n[0] !in "6789") return null
+                local = "${n.substring(0, 5)} ${n.substring(5)}"
+                world = "+91 $local"
+            }
+            else -> {
+                if (n.length != 10 || n[0] != '7') return null
+                local = "0${n.substring(0, 4)} ${n.substring(4)}"
+                world = "+44 ${n.substring(0, 4)} ${n.substring(4)}"
+            }
+        }
+        // Two chips fit the strip: the number as it is written where it was
+        // typed (with its country when a "+" was), and WhatsApp.
+        val written = if (plus) world else local
+        return Conversions(g[0]!!.trim(), listOf(written, "WhatsApp"),
+            inserts = listOf(written, "https://wa.me/$cc$national"), hows = listOf(Insertion.REPLACE, Insertion.AFTER))
+    }
+
+    /** A Unix time (seconds or milliseconds, 2001 to 2036) or an ISO 8601
+     *  time, as a date where the phone is (Smart.swift's unixTime). */
+    fun unixTime(text: String, here: java.time.ZoneId, region: String?): Conversions? {
+        fun say(instant: java.time.Instant): String {
+            val at = instant.atZone(here)
+            val pattern = if (region.equals("US", ignoreCase = true)) "EEE, MMM d, yyyy, h:mm a" else "EEE d MMM yyyy, h:mm a"
+            return java.time.format.DateTimeFormatter.ofPattern(pattern, java.util.Locale.US).format(at).replace(' ', ' ') +
+                " " + zoneLabel(here, instant)
+        }
+        firstMatch("""\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2}))$END""", text)?.let { g ->
+            val iso = g[1] ?: return@let
+            val instant = runCatching { java.time.OffsetDateTime.parse(iso).toInstant() }.getOrNull() ?: return null
+            return Conversions(iso, listOf(say(instant)))
+        }
+        val g = firstMatch("""(?<![\d.])(\d{10}|\d{13})$END""", text) ?: return null
+        val digits = g[1] ?: return null
+        var n = digits.toDoubleOrNull() ?: return null
+        if (digits.length == 13) n /= 1000
+        if (n < 1_000_000_000 || n > 2_100_000_000) return null
+        val alone = text.trim() == digits
+        val said = Regex("""\b(?:timestamp|epoch|unix|ts|time)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
+        if (!alone && !said) return null
+        return Conversions(digits, listOf(say(java.time.Instant.ofEpochSecond(n.toLong()))))
+    }
+
+    /** A number in words or short, written out, and back (Smart.swift's
+     *  bigNumber): "$2.4m" → $2,400,000 · $2.4 million; "3 crore" →
+     *  3,00,00,000 · 30 million in India; "1500000" → 1,500,000 · 1.5 million. */
+    fun bigNumber(text: String, region: String?): Conversions? {
+        val india = region.equals("IN", ignoreCase = true)
+        val scale = mapOf("k" to 1e3, "thousand" to 1e3, "m" to 1e6, "mn" to 1e6, "mm" to 1e6, "mil" to 1e6, "million" to 1e6,
+            "b" to 1e9, "bn" to 1e9, "billion" to 1e9, "lakh" to 1e5, "lakhs" to 1e5, "lac" to 1e5, "lacs" to 1e5,
+            "crore" to 1e7, "crores" to 1e7, "cr" to 1e7)
+        var value: Double
+        var symbol = ""
+        val source: String
+        val worded = firstMatch("""([$€£₹¥])\s?(\d+(?:\.\d+)?)\s?(k|m|mn|mm|b|bn|thousand|million|mil|billion|lakhs?|lacs?|crores?|cr)\b$END""", text)
+            ?: firstMatch("""()(?<![\d.,])(\d+(?:\.\d+)?)\s?(thousand|million|billion|lakhs?|lacs?|crores?)\b$END""", text)
+        if (worded != null) {
+            val n = worded[2]?.toDoubleOrNull() ?: return null
+            val s = scale[worded[3]!!.lowercase()] ?: return null
+            value = n * s
+            symbol = worded[1] ?: ""
+            source = worded[0]!!.trim()
+        } else {
+            val g = firstMatch("""(?<![\d.,+])(\d{7,9})$END""", text) ?: return null
+            value = g[1]!!.toDouble()
+            source = g[0]!!.trim()
+        }
+        if (value < 1000 || value >= 1e15) return null
+        fun short(n: Double): String = java.text.DecimalFormat("#,##0.##", java.text.DecimalFormatSymbols(java.util.Locale.US))
+            .apply { roundingMode = java.math.RoundingMode.HALF_UP }.format(n)
+        fun grouped(n: Double): String {
+            val whole = Math.round(n).toString()
+            if (!india || whole.length <= 3) {
+                return java.text.DecimalFormat("#,##0", java.text.DecimalFormatSymbols(java.util.Locale.US)).format(Math.round(n))
+            }
+            // 1,23,45,678: the last three, then twos.
+            var head = whole.dropLast(3)
+            val groups = ArrayDeque<String>()
+            while (head.length > 2) { groups.addFirst(head.takeLast(2)); head = head.dropLast(2) }
+            if (head.isNotEmpty()) groups.addFirst(head)
+            return groups.joinToString(",") + "," + whole.takeLast(3)
+        }
+        fun words(indian: Boolean): String? = if (indian) when {
+            value >= 1e7 -> "${short(value / 1e7)} crore"
+            value >= 1e5 -> "${short(value / 1e5)} lakh"
+            else -> null
+        } else when {
+            // "10 thousand" says nothing "10,000" doesn't.
+            value >= 1e9 -> "${short(value / 1e9)} billion"
+            value >= 1e6 -> "${short(value / 1e6)} million"
+            else -> null
+        }
+        // Two chips fit the strip: written out, then in words (lakh and
+        // crore in India).
+        val spoken = listOfNotNull(words(india), if (india) words(false) else null).map { symbol + it }
+        val results = buildList {
+            add(symbol + grouped(value))
+            spoken.firstOrNull { !it.equals(source, ignoreCase = true) }?.let { add(it) }
+        }.filter { !it.equals(source, ignoreCase = true) }.take(3)
+        if (results.isEmpty()) return null
+        return Conversions(source, results, hows = List(results.size) { Insertion.REPLACE })
+    }
+
+    /** What a copy holds that is worth pasting alone (Gboard's paste chips):
+     *  its emails, links and phone numbers, in order, at most two, when the
+     *  copy is more than just one of them (Smart.swift's pieces(of:)). */
+    fun pieces(copy: String): List<String>? {
+        val t = copy.trim()
+        if (t.length < 8 || t.length > 2000) return null
+        val patterns = listOf(
+            """[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""",
+            """\bhttps?://[^\s<>"]+|\bwww\.[^\s<>"]+""",
+            """(?<![\w+])\+?\(?\d[\d\s().-]{8,16}\d(?![\w])""",
+        )
+        val found = mutableListOf<Pair<IntRange, String>>()
+        for ((i, p) in patterns.withIndex()) {
+            for (m in Regex(p, RegexOption.IGNORE_CASE).findAll(t)) {
+                var s = m.value.trim(' ', '.', ',', ';', ':', ')', '!', '?', '\'', '"')
+                if (i == 2) {
+                    // A phone has ten digits or more; dates and sums have fewer.
+                    if (s.count { it.isDigit() } < 10) continue
+                    s = s.trim()
+                }
+                if (found.none { it.second == s || (it.first.first <= m.range.last && m.range.first <= it.first.last) }) {
+                    found.add(m.range to s)
+                }
+            }
+        }
+        val parts = found.sortedBy { it.first.first }.map { it.second }
+        if (parts.isEmpty() || (parts.size == 1 && parts[0] == t)) return null
+        return parts.take(2)
     }
 
     // MARK: questions (the AI answer chip, as it is typed)

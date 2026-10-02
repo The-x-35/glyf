@@ -361,7 +361,7 @@ final class GlyfToolbar: UIView {
         return choiceRow.isHidden ? nil : choiceRow.frame
     }
     /// Whether the chip showing is the clipboard's (its ✕ forgets the copy).
-    var smartIsPaste: Bool { !smartCard.isHidden && smartChip?.copiedText != nil }
+    var smartIsPaste: Bool { smartChip?.copiedText != nil && (!smartCard.isHidden || !choiceRow.isHidden) }
     var glyfFrame: CGRect { glyfButton.frame }
 
     /// Index a tool would take if dropped at this point (strip coordinates),
