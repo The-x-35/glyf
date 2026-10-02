@@ -105,6 +105,7 @@ final class GlyfToolbar: UIView {
         "gifs": "play.square.stack",
         "ask": "sparkles",
         "tempmail": "envelope",
+        "style": "bold.italic.underline",
         "dictation": "mic",
         "glyfs": "square.grid.2x2",
         "pay": "creditcard",

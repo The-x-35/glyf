@@ -801,6 +801,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             "games" -> showGamesPanel()
             "glyfs", "keys" -> showMyGlyfsPanel()
             "tempmail" -> showTempMailPanel()
+            "style" -> showStylePanel()
             // Paying is signed in the app's wallet, never in the keyboard.
             "pay" -> showPayPanel(PayPanelView.Intent.Send(null, null, null))
             // The keyboard's own settings, in the keyboard (iOS's shell screen).
@@ -4179,6 +4180,59 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             dismissFeaturePanel(); openAppPath("build")
         })
         rows.flush()
+    }
+
+    /** Style (Arpit, 2026-10-03: "option to stylise text in glyf menu like
+     *  bold italic underline, cut, etc"): each style shows what it makes of
+     *  the words picked out, or of the message so far, and a tap restyles
+     *  them (GlyfShell's "style"). */
+    private fun showStylePanel() {
+        val (_, body) = panelShell("Style", pad = intArrayOf(0, 0, 0, 8))
+        val rows = shellRows(body)
+        val ic = currentInputConnection
+        val picked = ic?.getSelectedText(0)?.toString().orEmpty()
+        val sample = picked.ifEmpty { ic?.getTextBeforeCursor(2000, 0)?.toString().orEmpty() }.trim()
+        rows.header(if (sample.isEmpty()) "Type something, then pick a style" else "Tap a style to restyle your text")
+        for (style in Smart.TextStyle.values()) {
+            val text = if (sample.isEmpty()) style.title else sample.take(40)
+            rows.row(ShellRows.Row(Smart.styled(text, style), letter = styleLetter(style), detail = style.title,
+                qaId = "shell:style:${style.id}") { applyStyle(style) })
+        }
+        rows.flush()
+    }
+
+    private fun styleLetter(style: Smart.TextStyle) = when (style) {
+        Smart.TextStyle.BOLD, Smart.TextStyle.SERIF_BOLD -> "B"
+        Smart.TextStyle.ITALIC -> "I"
+        Smart.TextStyle.BOLD_ITALIC -> "BI"
+        Smart.TextStyle.UNDERLINE -> "U"
+        Smart.TextStyle.STRIKE -> "S"
+        Smart.TextStyle.SCRIPT -> "𝓢"
+        Smart.TextStyle.DOUBLE_STRUCK -> "𝔻"
+        Smart.TextStyle.MONOSPACE -> "M"
+        Smart.TextStyle.BUBBLE -> "Ⓐ"
+        Smart.TextStyle.SMALL_CAPS -> "ᴀ"
+        Smart.TextStyle.WIDE -> "Ｗ"
+        Smart.TextStyle.UPSIDE_DOWN -> "∀"
+        Smart.TextStyle.PLAIN -> "Aa"
+    }
+
+    /** The words picked out become their styled form; with none, the
+     *  message so far does. */
+    private fun applyStyle(style: Smart.TextStyle) {
+        val ic = currentInputConnection ?: return
+        val picked = ic.getSelectedText(0)?.toString().orEmpty()
+        if (picked.isNotEmpty()) {
+            ic.commitText(Smart.styled(picked, style), 1)
+        } else {
+            val before = ic.getTextBeforeCursor(2000, 0)?.toString().orEmpty()
+            if (before.isBlank()) { notice("Type something first"); return }
+            ic.deleteSurroundingText(before.length, 0)
+            ic.commitText(Smart.styled(before, style), 1)
+        }
+        dismissFeaturePanel()
+        notice(style.title)
+        updateSuggestions()
     }
 
     /** The keyboard's settings, in the keyboard, as the iPhone keeps them

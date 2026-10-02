@@ -85,6 +85,34 @@ class SmartUnitsTest {
         assertEquals(failures.joinToString("\n"), 0, failures.size)
     }
 
+    /** shared/style/cases.json: text in each of Style's styles, and Plain
+     *  turning it back. */
+    @Test fun textTakesEachStyleAndPlainTurnsItBack() {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        while (dir != null && !File(dir, "shared/style/cases.json").exists()) dir = dir.parentFile
+        val root = JSONObject(File(requireNotNull(dir), "shared/style/cases.json").readText())
+        val back = root.getJSONArray("plainBack").let { a -> (0 until a.length()).map { a.getString(it) } }
+        val cases = root.getJSONArray("cases")
+        val failures = mutableListOf<String>()
+        for (i in 0 until cases.length()) {
+            val c = cases.getJSONObject(i)
+            val text = c.getString("text")
+            val styled = c.getJSONObject("styled")
+            for (id in styled.keys()) {
+                val style = Smart.TextStyle.of(id)
+                if (style == null) { failures.add("no style $id"); continue }
+                val got = Smart.styled(text, style)
+                if (got != styled.getString(id)) failures.add("$id '$text': got $got, want ${styled.getString(id)}")
+                if (id in back && Smart.plainText(got) != text) failures.add("plain of $id '$got': got ${Smart.plainText(got)}")
+            }
+        }
+        // A style starts from plain letters: bold over italic is bold.
+        assertEquals(Smart.styled("Hi", Smart.TextStyle.BOLD), Smart.styled(Smart.styled("Hi", Smart.TextStyle.ITALIC), Smart.TextStyle.BOLD))
+        // Plain leaves what was never styled: ™, ½, emoji.
+        assertEquals("Glyf™ ½ 🎉", Smart.plainText("Glyf™ ½ 🎉"))
+        assertEquals(failures.joinToString("\n"), 0, failures.size)
+    }
+
     @Test fun aMeasurementIsAChipAndATapAddsItInBrackets() {
         assertEquals(Smart.Chip.Convert(Smart.Conversions("10 inch", listOf("25.4 cm", "0.254 m"))),
             Smart.chip("lets 10 inch", emptyList(), region = "US"))

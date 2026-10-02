@@ -1357,6 +1357,34 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(Smart.Chip.convert(Smart.Conversions(source: "10 inch", results: ["25.4 cm"])).choices?.values, ["25.4 cm"])
     }
 
+    /// shared/style/cases.json: text in each of Style's styles, and Plain
+    /// turning it back (Android runs the same file).
+    func testTextTakesEachStyleAndPlainTurnsItBack() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/style/cases.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var failures: [String] = []
+        let back = root["plainBack"] as? [String] ?? []
+        for c in root["cases"] as? [[String: Any]] ?? [] {
+            let text = c["text"] as? String ?? ""
+            for (id, want) in c["styled"] as? [String: String] ?? [:] {
+                guard let style = Smart.TextStyle(rawValue: id) else { failures.append("no style \(id)"); continue }
+                let got = Smart.styled(text, style)
+                if got != want { failures.append("\(id) '\(text)': got \(got), want \(want)") }
+                if back.contains(id), Smart.plainText(got) != text {
+                    failures.append("plain of \(id) '\(got)': got \(Smart.plainText(got))")
+                }
+            }
+        }
+        // A style starts from plain letters: bold over italic is bold.
+        XCTAssertEqual(Smart.styled(Smart.styled("Hi", .italic), .bold), Smart.styled("Hi", .bold))
+        // Plain leaves what was never styled: ™, ½, emoji.
+        XCTAssertEqual(Smart.plainText("Glyf™ ½ 🎉"), "Glyf™ ½ 🎉")
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
     /// Money with cents shows both places: "$20 = ₹1,919.6" read as a typo.
     func testMoneyShowsBothCentsPlacesOrNone() {
         XCTAssertEqual(Smart.format(1919.6, in: "INR"), "₹1,919.60")

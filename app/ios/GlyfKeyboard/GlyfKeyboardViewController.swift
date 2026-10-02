@@ -2761,7 +2761,11 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             setSurface(.pay)
         case "calendar": setSurface(.connector("calendar"))
         case "games": setSurface(.games)
-        case "vault", "glyfs", "settings", "tempmail":
+        case "vault", "glyfs", "settings", "tempmail", "style":
+            if id == "style" {
+                let picked = textDocumentProxy.selectedText ?? ""
+                GlyfShell.styleSample = picked.isEmpty ? (beforeContext ?? "") : picked
+            }
             if surface != .shell { setSurface(.shell) }
             shell?.push(id)
         default: break
@@ -3295,6 +3299,26 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         // Our own copy: the strip must not offer it back as a paste.
         ClipboardStore.ignoreNextChange()
         KeyboardToast.show(in: content, text: "Copied")
+    }
+
+    /// Style: the words picked out are replaced by their styled form; with
+    /// none, the message so far is.
+    func shellApplyStyle(_ id: String) {
+        guard let style = Smart.TextStyle(rawValue: id) else { return }
+        if let picked = textDocumentProxy.selectedText, !picked.isEmpty {
+            hostInsert(Smart.styled(picked, style))
+        } else {
+            let before = beforeContext ?? ""
+            guard !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                KeyboardToast.show(in: content, text: "Type something first")
+                return
+            }
+            for _ in 0..<before.count { hostDelete() }
+            hostInsert(Smart.styled(before, style))
+        }
+        setSurface(.none)
+        KeyboardToast.show(in: content, text: style.title)
+        updateCandidates()
     }
 
     func shellOpenLink(_ url: URL) {

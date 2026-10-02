@@ -1,0 +1,58 @@
+{
+ "about": "Text in each of the g menu Style's styles (Smart.styled on both keyboards), from Unicode's styled alphabets: what has no styled form stays as it is. \"plainBack\" lists the styles Plain turns back to the text exactly (upside down is left as it is).",
+ "cases": [
+  {
+   "text": "Hello World 123",
+   "styled": {
+    "bold": "𝗛𝗲𝗹𝗹𝗼 𝗪𝗼𝗿𝗹𝗱 𝟭𝟮𝟯",
+    "italic": "𝘏𝘦𝘭𝘭𝘰 𝘞𝘰𝘳𝘭𝘥 123",
+    "boldItalic": "𝙃𝙚𝙡𝙡𝙤 𝙒𝙤𝙧𝙡𝙙 𝟭𝟮𝟯",
+    "underline": "H̲e̲l̲l̲o̲ ̲W̲o̲r̲l̲d̲ ̲1̲2̲3̲",
+    "strike": "H̶e̶l̶l̶o̶ ̶W̶o̶r̶l̶d̶ ̶1̶2̶3̶",
+    "serifBold": "𝐇𝐞𝐥𝐥𝐨 𝐖𝐨𝐫𝐥𝐝 𝟏𝟐𝟑",
+    "script": "𝓗𝓮𝓵𝓵𝓸 𝓦𝓸𝓻𝓵𝓭 123",
+    "doubleStruck": "ℍ𝕖𝕝𝕝𝕠 𝕎𝕠𝕣𝕝𝕕 𝟙𝟚𝟛",
+    "monospace": "𝙷𝚎𝚕𝚕𝚘 𝚆𝚘𝚛𝚕𝚍 𝟷𝟸𝟹",
+    "bubble": "Ⓗⓔⓛⓛⓞ Ⓦⓞⓡⓛⓓ ①②③",
+    "smallCaps": "Hᴇʟʟᴏ Wᴏʀʟᴅ 123",
+    "wide": "Ｈｅｌｌｏ　Ｗｏｒｌｄ　１２３",
+    "upsideDown": "ƐᄅƖ pןɹoM oןןǝH",
+    "plain": "Hello World 123"
+   }
+  },
+  {
+   "text": "CHQZ cool!",
+   "styled": {
+    "bold": "𝗖𝗛𝗤𝗭 𝗰𝗼𝗼𝗹!",
+    "italic": "𝘊𝘏𝘘𝘡 𝘤𝘰𝘰𝘭!",
+    "boldItalic": "𝘾𝙃𝙌𝙕 𝙘𝙤𝙤𝙡!",
+    "underline": "C̲H̲Q̲Z̲ ̲c̲o̲o̲l̲!̲",
+    "strike": "C̶H̶Q̶Z̶ ̶c̶o̶o̶l̶!̶",
+    "serifBold": "𝐂𝐇𝐐𝐙 𝐜𝐨𝐨𝐥!",
+    "script": "𝓒𝓗𝓠𝓩 𝓬𝓸𝓸𝓵!",
+    "doubleStruck": "ℂℍℚℤ 𝕔𝕠𝕠𝕝!",
+    "monospace": "𝙲𝙷𝚀𝚉 𝚌𝚘𝚘𝚕!",
+    "bubble": "ⒸⒽⓆⓏ ⓒⓞⓞⓛ!",
+    "smallCaps": "CHQZ ᴄᴏᴏʟ!",
+    "wide": "ＣＨＱＺ　ｃｏｏｌ！",
+    "upsideDown": "¡ןooɔ ZΌHƆ",
+    "plain": "CHQZ cool!"
+   }
+  }
+ ],
+ "plainBack": [
+  "bold",
+  "italic",
+  "boldItalic",
+  "underline",
+  "strike",
+  "serifBold",
+  "script",
+  "doubleStruck",
+  "monospace",
+  "bubble",
+  "smallCaps",
+  "wide",
+  "plain"
+ ]
+}

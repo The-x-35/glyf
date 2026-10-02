@@ -2163,6 +2163,126 @@ object Smart {
         return parts.take(2)
     }
 
+    // MARK: styled text, the g menu's Style (Smart.swift twin)
+
+    /** The g menu's Style (Arpit, 2026-10-03: "option to stylise text in glyf
+     *  menu like bold italic underline, cut, etc"): letters from Unicode's
+     *  styled alphabets, which show in any app because they are characters,
+     *  not formatting. Screen readers read some letter by letter, so Plain
+     *  puts text back. shared/style/cases.json. */
+    enum class TextStyle(val id: String, val title: String, val upper: Int = 0, val lower: Int = 0, val digit: Int? = null) {
+        BOLD("bold", "Bold", 0x1D5D4, 0x1D5EE, 0x1D7EC),
+        ITALIC("italic", "Italic", 0x1D608, 0x1D622),
+        BOLD_ITALIC("boldItalic", "Bold italic", 0x1D63C, 0x1D656, 0x1D7EC),
+        UNDERLINE("underline", "Underline"),
+        STRIKE("strike", "Strikethrough"),
+        SERIF_BOLD("serifBold", "Serif bold", 0x1D400, 0x1D41A, 0x1D7CE),
+        SCRIPT("script", "Script", 0x1D4D0, 0x1D4EA),
+        DOUBLE_STRUCK("doubleStruck", "Double-struck", 0x1D538, 0x1D552, 0x1D7D8),
+        MONOSPACE("monospace", "Monospace", 0x1D670, 0x1D68A, 0x1D7F6),
+        BUBBLE("bubble", "Bubble"),
+        SMALL_CAPS("smallCaps", "Small caps"),
+        WIDE("wide", "Wide"),
+        UPSIDE_DOWN("upsideDown", "Upside down"),
+        PLAIN("plain", "Plain");
+
+        companion object { fun of(id: String) = values().firstOrNull { it.id == id } }
+    }
+
+    /** Double-struck capitals Unicode had already: ℂ ℍ ℕ ℙ ℚ ℝ ℤ. */
+    private val doubleStruckHoles = mapOf('C' to 0x2102, 'H' to 0x210D, 'N' to 0x2115, 'P' to 0x2119, 'Q' to 0x211A,
+        'R' to 0x211D, 'Z' to 0x2124)
+    private val holeScalars = doubleStruckHoles.values.toSet()
+    private val smallCapsLetters = "abcdefghijklmnopqrstuvwxyz".toList().zip(listOf("ᴀ", "ʙ", "ᴄ", "ᴅ", "ᴇ", "ꜰ", "ɢ", "ʜ", "ɪ", "ᴊ", "ᴋ",
+        "ʟ", "ᴍ", "ɴ", "ᴏ", "ᴘ", "ǫ", "ʀ", "ꜱ", "ᴛ", "ᴜ", "ᴠ", "ᴡ", "x", "ʏ", "ᴢ")).toMap()
+    private val flipped: Map<String, String> = buildMap {
+        "abcdefghijklmnopqrstuvwxyz".toList().zip(listOf("ɐ", "q", "ɔ", "p", "ǝ", "ɟ", "ƃ", "ɥ", "ı", "ɾ", "ʞ", "ן", "ɯ", "u", "o",
+            "d", "b", "ɹ", "s", "ʇ", "n", "ʌ", "ʍ", "x", "ʎ", "z")).forEach { (k, v) -> put(k.toString(), v) }
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toList().zip(listOf("∀", "ꓭ", "Ɔ", "ᗡ", "Ǝ", "Ⅎ", "⅁", "H", "I", "ſ", "ꓘ", "˥", "W", "N", "O",
+            "Ԁ", "Ό", "ꓤ", "S", "⊥", "∩", "Λ", "M", "X", "⅄", "Z")).forEach { (k, v) -> put(k.toString(), v) }
+        "1234567890".toList().zip(listOf("Ɩ", "ᄅ", "Ɛ", "ㄣ", "ϛ", "9", "ㄥ", "8", "6", "0")).forEach { (k, v) -> put(k.toString(), v) }
+        putAll(mapOf("." to "˙", "," to "'", "'" to ",", "?" to "¿", "!" to "¡", "(" to ")", ")" to "(", "[" to "]",
+            "]" to "[", "{" to "}", "}" to "{", "<" to ">", ">" to "<", "&" to "⅋", "_" to "‾"))
+    }
+
+    /** What a person sees as one character each (an emoji with its joins,
+     *  a letter with its marks), as iOS's Characters are. */
+    private fun graphemes(text: String): List<String> {
+        val it = java.text.BreakIterator.getCharacterInstance(java.util.Locale.ROOT)
+        it.setText(text)
+        val out = mutableListOf<String>()
+        var start = it.first()
+        var end = it.next()
+        while (end != java.text.BreakIterator.DONE) { out.add(text.substring(start, end)); start = end; end = it.next() }
+        return out
+    }
+
+    private fun cp(v: Int) = String(Character.toChars(v))
+
+    /** Text in a style. It starts from plain letters, so styles don't pile
+     *  up; what has no styled form (punctuation, emoji) stays as it is. */
+    fun styled(text: String, style: TextStyle): String {
+        val base = plainText(text)
+        val g = graphemes(base)
+        fun ascii(s: String): Int? = if (s.length == 1 && s[0].code < 0x80) s[0].code else null
+        return when (style) {
+            TextStyle.PLAIN -> base
+            TextStyle.UNDERLINE, TextStyle.STRIKE -> {
+                val mark = if (style == TextStyle.UNDERLINE) "̲" else "̶"
+                g.joinToString("") { if (it == "\n") "\n" else it + mark }
+            }
+            TextStyle.BUBBLE -> g.joinToString("") { s ->
+                when (val v = ascii(s)) {
+                    in 0x41..0x5A -> cp(0x24B6 + v!! - 0x41)
+                    in 0x61..0x7A -> cp(0x24D0 + v!! - 0x61)
+                    in 0x31..0x39 -> cp(0x2460 + v!! - 0x31)
+                    0x30 -> "⓪"
+                    else -> s
+                }
+            }
+            TextStyle.SMALL_CAPS -> g.joinToString("") { s -> s.singleOrNull()?.let { smallCapsLetters[it] } ?: s }
+            TextStyle.WIDE -> g.joinToString("") { s ->
+                val v = ascii(s)
+                when {
+                    v == 0x20 -> "　"
+                    v != null && v in 0x21..0x7E -> cp(v + 0xFEE0)
+                    else -> s
+                }
+            }
+            TextStyle.UPSIDE_DOWN -> g.reversed().joinToString("") { flipped[it] ?: it }
+            else -> g.joinToString("") { s ->
+                when (val v = ascii(s)) {
+                    in 0x41..0x5A -> if (style == TextStyle.DOUBLE_STRUCK && doubleStruckHoles[s[0]] != null)
+                        cp(doubleStruckHoles[s[0]]!!) else cp(style.upper + v!! - 0x41)
+                    in 0x61..0x7A -> cp(style.lower + v!! - 0x61)
+                    in 0x30..0x39 -> style.digit?.let { cp(it + v!! - 0x30) } ?: s
+                    else -> s
+                }
+            }
+        }
+    }
+
+    /** Styled text back to plain letters (Smart.swift's plainText): marks
+     *  off, the styled alphabets, circles and wide letters back to their
+     *  own, small capitals to small letters. ™, ½ and emoji stay. */
+    fun plainText(text: String): String {
+        val small = smallCapsLetters.entries.filter { it.key != 'x' }.associate { (k, v) -> v to k }
+        val out = StringBuilder()
+        for (g in graphemes(text)) {
+            val s = g.replace("̲", "").replace("̶", "")
+            if (s.isEmpty()) continue
+            val v = s.codePointAt(0)
+            val styledLetter = v in 0x1D400..0x1D7FF || v in holeScalars || v in 0x2460..0x24FF ||
+                v in 0xFF01..0xFF5E || v == 0x3000
+            when {
+                styledLetter -> out.append(java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKC))
+                small[s] != null -> out.append(small[s])
+                else -> out.append(s)
+            }
+        }
+        return out.toString()
+    }
+
     // MARK: questions (the AI answer chip, as it is typed)
 
     /** A question for a fact, told by its words on the phone (Arpit,

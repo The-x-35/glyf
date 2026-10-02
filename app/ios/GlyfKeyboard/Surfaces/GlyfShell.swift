@@ -31,6 +31,8 @@ protocol GlyfShellDelegate: AnyObject {
     func shellCopyText(_ text: String)
     /// Opens a web page in the browser (temp mail's credit to mail.tm).
     func shellOpenLink(_ url: URL)
+    /// Style: the words picked out, or the message so far, in a style.
+    func shellApplyStyle(_ id: String)
 }
 
 /// §6.3 — the in-keyboard navigation shell. HARD memory rules:
@@ -156,7 +158,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// any tile can be dragged up to live there. People reorder them by
     /// holding one and moving it (saved as `menuOrder`).
     static let tools: [(id: String, title: String)] = [
-        ("search", "Search"), ("rewrite", "Rewrite"), ("translate", "Translate"),
+        ("search", "Search"), ("rewrite", "Rewrite"), ("style", "Style"), ("translate", "Translate"),
         ("vault", "Vault"), ("calendar", "Calendar"), ("tempmail", "Temp mail"),
         ("clipboard", "Clipboard"), ("gifs", "GIFs"),
         ("ask", "Ask Glyf"), ("dictation", "Voice"), ("glyfs", "My glyfs"),
@@ -1014,6 +1016,19 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             // Drawn by TempMailView: the address and its inbox, or one mail.
             return Screen(id: id, title: "Temp mail", rows: [], showOpenInApp: false)
 
+        case "style":
+            // Each style shows what it makes of the words picked out, or of
+            // the message so far, or of its own name when nothing is typed.
+            let sample = styleSample.trimmingCharacters(in: .whitespacesAndNewlines)
+            var rows: [Row] = [.info(title: sample.isEmpty ? "Type something, then pick a style" : "Tap a style to restyle your text",
+                                     detail: nil)]
+            for style in Smart.TextStyle.allCases {
+                let text = sample.isEmpty ? style.title : String(sample.prefix(40))
+                rows.append(.nav(icon: styleIcon(style), title: Smart.styled(text, style),
+                                 detail: style.title, target: "!style:\(style.rawValue)"))
+            }
+            return Screen(id: id, title: "Style", rows: rows, showOpenInApp: false)
+
         case "vault:detail":
             // The kinds, as the app's Vault names them; one tap and the
             // strip over the keys takes its value.
@@ -1024,6 +1039,28 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
         default:
             return Screen(id: id, title: id, rows: [.info(title: "…", detail: nil)])
+        }
+    }
+
+    /// What the Style screen shows its styles on (the keyboard sets it as
+    /// the screen opens): the words picked out, or the message so far.
+    static var styleSample = ""
+
+    private static func styleIcon(_ style: Smart.TextStyle) -> String {
+        switch style {
+        case .bold, .serifBold: return "bold"
+        case .italic: return "italic"
+        case .boldItalic: return "bold.italic.underline"
+        case .underline: return "underline"
+        case .strike: return "strikethrough"
+        case .script: return "signature"
+        case .doubleStruck: return "textformat.size"
+        case .monospace: return "chevron.left.forwardslash.chevron.right"
+        case .bubble: return "circle.circle"
+        case .smallCaps: return "textformat.size.smaller"
+        case .wide: return "arrow.left.and.right"
+        case .upsideDown: return "arrow.up.arrow.down"
+        case .plain: return "textformat"
         }
     }
 
@@ -1113,6 +1150,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                 delegate?.shellOpenApp(path: String(target.dropFirst("!app:".count)))
             } else if target.hasPrefix("!connector:") {
                 delegate?.shellOpenTool(String(target.dropFirst("!connector:".count)))
+            } else if target.hasPrefix("!style:") {
+                delegate?.shellApplyStyle(String(target.dropFirst("!style:".count)))
             } else {
                 push(target)
             }

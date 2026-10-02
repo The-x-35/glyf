@@ -142,6 +142,17 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 sparkle(c, cx + dp(4.6f), cy - dp(4.6f), dp(3.4f))
                 sparkle(c, cx - dp(3.6f), cy - dp(5.6f), dp(1.8f))
             }
+            // A bold B over a line: Style (iOS bold.italic.underline).
+            "style" -> {
+                val letter = android.graphics.Paint(p).apply {
+                    style = android.graphics.Paint.Style.FILL
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    textSize = dp(13f).toFloat()
+                    typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                }
+                c.drawText("B", cx, cy + dp(3f), letter)
+                c.drawLine(cx - dp(5.6f), cy + dp(7f), cx + dp(5.6f), cy + dp(7f), p)
+            }
             // An envelope: Temp mail.
             "tempmail" -> {
                 c.drawRoundRect(cx - dp(7.6f), cy - dp(5.6f), cx + dp(7.6f), cy + dp(5.6f),
@@ -664,7 +675,7 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
     companion object {
         /** Every tool, in the website's order first; titles as the grid shows them. */
         val TOOLS = listOf(
-            "search" to "Search", "rewrite" to "Rewrite", "translate" to "Translate",
+            "search" to "Search", "rewrite" to "Rewrite", "style" to "Style", "translate" to "Translate",
             "vault" to "Vault", "calendar" to "Calendar", "tempmail" to "Temp mail",
             "clipboard" to "Clipboard", "gifs" to "GIFs",
             "ask" to "Ask Glyf", "dictation" to "Voice", "glyfs" to "My glyfs",

@@ -2515,6 +2515,152 @@ extension Smart {
     }
 }
 
+// MARK: - Styled text (the g menu's Style)
+
+extension Smart {
+
+    /// The g menu's Style (Arpit, 2026-10-03: "option to stylise text in
+    /// glyf menu like bold italic underline, cut, etc"): letters from
+    /// Unicode's styled alphabets, which show in any app because they are
+    /// characters, not formatting (chats have no bold of their own). Screen
+    /// readers read some letter by letter, so Plain puts text back.
+    /// Smart.kt's twin; shared/style/cases.json.
+    enum TextStyle: String, CaseIterable {
+        case bold, italic, boldItalic, underline, strike, serifBold, script, doubleStruck, monospace,
+             bubble, smallCaps, wide, upsideDown, plain
+
+        var title: String {
+            switch self {
+            case .bold: return "Bold"
+            case .italic: return "Italic"
+            case .boldItalic: return "Bold italic"
+            case .underline: return "Underline"
+            case .strike: return "Strikethrough"
+            case .serifBold: return "Serif bold"
+            case .script: return "Script"
+            case .doubleStruck: return "Double-struck"
+            case .monospace: return "Monospace"
+            case .bubble: return "Bubble"
+            case .smallCaps: return "Small caps"
+            case .wide: return "Wide"
+            case .upsideDown: return "Upside down"
+            case .plain: return "Plain"
+            }
+        }
+
+        /// Where A, a and 0 start in Unicode's styled alphabets.
+        fileprivate var starts: (upper: UInt32, lower: UInt32, digit: UInt32?)? {
+            switch self {
+            case .bold: return (0x1D5D4, 0x1D5EE, 0x1D7EC)
+            case .italic: return (0x1D608, 0x1D622, nil)
+            case .boldItalic: return (0x1D63C, 0x1D656, 0x1D7EC)
+            case .serifBold: return (0x1D400, 0x1D41A, 0x1D7CE)
+            case .script: return (0x1D4D0, 0x1D4EA, nil)
+            case .doubleStruck: return (0x1D538, 0x1D552, 0x1D7D8)
+            case .monospace: return (0x1D670, 0x1D68A, 0x1D7F6)
+            default: return nil
+            }
+        }
+    }
+
+    /// Double-struck capitals Unicode had already: ℂ ℍ ℕ ℙ ℚ ℝ ℤ.
+    private static let doubleStruckHoles: [Character: String] = [
+        "C": "\u{2102}", "H": "\u{210D}", "N": "\u{2115}", "P": "\u{2119}", "Q": "\u{211A}", "R": "\u{211D}", "Z": "\u{2124}",
+    ]
+    private static let smallCapsLetters: [Character: String] = [
+        "a": "ᴀ", "b": "ʙ", "c": "ᴄ", "d": "ᴅ", "e": "ᴇ", "f": "ꜰ", "g": "ɢ", "h": "ʜ", "i": "ɪ", "j": "ᴊ", "k": "ᴋ",
+        "l": "ʟ", "m": "ᴍ", "n": "ɴ", "o": "ᴏ", "p": "ᴘ", "q": "ǫ", "r": "ʀ", "s": "ꜱ", "t": "ᴛ", "u": "ᴜ", "v": "ᴠ",
+        "w": "ᴡ", "x": "x", "y": "ʏ", "z": "ᴢ",
+    ]
+    private static let flipped: [Character: String] = [
+        "a": "ɐ", "b": "q", "c": "ɔ", "d": "p", "e": "ǝ", "f": "ɟ", "g": "ƃ", "h": "ɥ", "i": "ı", "j": "ɾ", "k": "ʞ",
+        "l": "ן", "m": "ɯ", "n": "u", "o": "o", "p": "d", "q": "b", "r": "ɹ", "s": "s", "t": "ʇ", "u": "n", "v": "ʌ",
+        "w": "ʍ", "x": "x", "y": "ʎ", "z": "z",
+        "A": "∀", "B": "ꓭ", "C": "Ɔ", "D": "ᗡ", "E": "Ǝ", "F": "Ⅎ", "G": "⅁", "H": "H", "I": "I", "J": "ſ", "K": "ꓘ",
+        "L": "˥", "M": "W", "N": "N", "O": "O", "P": "Ԁ", "Q": "Ό", "R": "ꓤ", "S": "S", "T": "⊥", "U": "∩", "V": "Λ",
+        "W": "M", "X": "X", "Y": "⅄", "Z": "Z",
+        "1": "Ɩ", "2": "ᄅ", "3": "Ɛ", "4": "ㄣ", "5": "ϛ", "6": "9", "7": "ㄥ", "8": "8", "9": "6", "0": "0",
+        ".": "˙", ",": "'", "'": ",", "?": "¿", "!": "¡", "(": ")", ")": "(", "[": "]", "]": "[", "{": "}", "}": "{",
+        "<": ">", ">": "<", "&": "⅋", "_": "‾",
+    ]
+    private static func scalar(_ v: UInt32) -> String { Unicode.Scalar(v).map { String(Character($0)) } ?? "" }
+
+    /// Text in a style. It starts from plain letters, so styles don't pile
+    /// up; what has no styled form (punctuation, emoji) stays as it is.
+    static func styled(_ text: String, _ style: TextStyle) -> String {
+        let base = plainText(text)
+        switch style {
+        case .plain:
+            return base
+        case .underline, .strike:
+            let mark = style == .underline ? "\u{0332}" : "\u{0336}"
+            return base.map { $0 == "\n" ? "\n" : String($0) + mark }.joined()
+        case .bubble:
+            return base.map { c -> String in
+                guard let v = c.unicodeScalars.first?.value, c.unicodeScalars.count == 1 else { return String(c) }
+                switch v {
+                case 0x41...0x5A: return scalar(0x24B6 + v - 0x41)
+                case 0x61...0x7A: return scalar(0x24D0 + v - 0x61)
+                case 0x31...0x39: return scalar(0x2460 + v - 0x31)
+                case 0x30: return "\u{24EA}"
+                default: return String(c)
+                }
+            }.joined()
+        case .smallCaps:
+            return base.map { smallCapsLetters[$0] ?? String($0) }.joined()
+        case .wide:
+            return base.map { c -> String in
+                guard let v = c.unicodeScalars.first?.value, c.unicodeScalars.count == 1 else { return String(c) }
+                if v == 0x20 { return "\u{3000}" }
+                return (0x21...0x7E).contains(v) ? scalar(v + 0xFEE0) : String(c)
+            }.joined()
+        case .upsideDown:
+            return base.reversed().map { flipped[$0] ?? String($0) }.joined()
+        default:
+            guard let s = style.starts else { return base }
+            return base.map { c -> String in
+                guard let v = c.unicodeScalars.first?.value, c.unicodeScalars.count == 1 else { return String(c) }
+                switch v {
+                case 0x41...0x5A:
+                    if style == .doubleStruck, let hole = doubleStruckHoles[c] { return hole }
+                    return scalar(s.upper + v - 0x41)
+                case 0x61...0x7A: return scalar(s.lower + v - 0x61)
+                case 0x30...0x39: return s.digit.map { scalar($0 + v - 0x30) } ?? String(c)
+                default: return String(c)
+                }
+            }.joined()
+        }
+    }
+
+    /// The double-struck capitals' code points, the only letterlike symbols
+    /// Plain turns back (™ and ℃ stay as they are).
+    private static let holeScalars: Set<UInt32> = [0x2102, 0x210D, 0x2115, 0x2119, 0x211A, 0x211D, 0x2124]
+
+    /// Styled text back to plain letters: underlines and strikes off, the
+    /// styled alphabets, circles and wide letters back to their own, small
+    /// capitals to small letters. Upside-down text stays as it is: its
+    /// letters are ordinary letters of other alphabets ("ı" is Turkish).
+    static func plainText(_ text: String) -> String {
+        var out = ""
+        for c in text {
+            let scalars = c.unicodeScalars.filter { $0.value != 0x0332 && $0.value != 0x0336 }
+            guard let first = scalars.first else { continue }
+            let v = first.value
+            let styledLetter = (0x1D400...0x1D7FF).contains(v) || holeScalars.contains(v)
+                || (0x2460...0x24FF).contains(v) || (0xFF01...0xFF5E).contains(v) || v == 0x3000
+            if styledLetter {
+                let s = String(String.UnicodeScalarView(scalars))
+                out += s.precomposedStringWithCompatibilityMapping
+            } else if let small = smallCapsLetters.first(where: { $0.value == String(c) && $0.key != "x" })?.key {
+                out.append(small)
+            } else {
+                out += String(String.UnicodeScalarView(scalars))
+            }
+        }
+        return out
+    }
+}
+
 // MARK: - Questions (the AI answer chip, as it is typed)
 
 extension Smart {
