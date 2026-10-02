@@ -21,25 +21,43 @@ object Autofill {
             ?: info.extras?.getStringArray("autofillHints")
         for (hint in declared.orEmpty()) {
             when (hint) {
-                "emailAddress", "username" -> return "email"
+                "emailAddress", "username", "newUsername" -> return "email"
                 "phone", "phoneNumber", "phoneNational" -> return "phone"
+                // A postcode field wants the postcode in the address, a first
+                // name field the first word of the name (Smart.detailsFor).
+                "postalCode" -> return "postcode"
                 "postalAddress", "postalAddressRegion", "postalAddressLocality",
-                "streetAddress", "postalCode" -> return "address"
-                "name", "personName", "personGivenName", "personFamilyName" -> return "name"
+                "streetAddress" -> return "address"
+                "personGivenName" -> return "givenName"
+                "personFamilyName" -> return "familyName"
+                "name", "personName" -> return "name"
             }
         }
+        // The field's own words: its hint, its label, and the name the app
+        // gave it ("zip_code", "firstName"), said as words.
         val words = listOfNotNull(
             info.hintText?.toString(),
             info.label?.toString(),
+            info.fieldName?.replace(Regex("([a-z])([A-Z])"), "\$1 \$2")?.replace(Regex("[_.-]+"), " "),
         ).joinToString(" ")
         kindFromWords(words)?.let { return it }
-        return when (info.inputType and EditorInfo.TYPE_MASK_VARIATION) {
-            EditorInfo.TYPE_TEXT_VARIATION_EMAIL_ADDRESS -> "email"
+        return kindFromInputType(info.inputType)
+    }
+
+    /** What the input type alone says. A variation means something only on
+     *  a text field (a time field's variation is an email's number), and
+     *  Chrome marks <input type=email> as a web email address. */
+    fun kindFromInputType(type: Int): String? {
+        val cls = type and EditorInfo.TYPE_MASK_CLASS
+        if (cls == EditorInfo.TYPE_CLASS_PHONE) return "phone"
+        if (cls != EditorInfo.TYPE_CLASS_TEXT) return null
+        return when (type and EditorInfo.TYPE_MASK_VARIATION) {
+            EditorInfo.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            EditorInfo.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS -> "email"
             EditorInfo.TYPE_TEXT_VARIATION_POSTAL_ADDRESS -> "address"
             EditorInfo.TYPE_TEXT_VARIATION_PERSON_NAME -> "name"
             EditorInfo.TYPE_TEXT_VARIATION_URI -> "link"
-            else -> if (info.inputType and EditorInfo.TYPE_MASK_CLASS ==
-                        EditorInfo.TYPE_CLASS_PHONE) "phone" else null
+            else -> null
         }
     }
 
@@ -48,11 +66,13 @@ object Autofill {
         val h = raw.lowercase()
         fun has(vararg words: String) = words.any { h.contains(it) }
         return when {
-            has("e-mail", "email", "mail id") -> "email"
+            has("e-mail", "email", "mail id", "username", "user name", "login") -> "email"
             has("phone", "mobile", "contact number", "whatsapp") -> "phone"
-            has("address", "street", "flat", "house", "city", "pincode",
-                "postal", "zip", "delivery") -> "address"
-            has("full name", "your name", "first name", "last name", "name") -> "name"
+            has("zip", "pincode", "pin code", "postcode", "post code", "postal code") -> "postcode"
+            has("address", "street", "flat", "house", "city", "postal", "delivery") -> "address"
+            has("first name", "given name", "firstname", "givenname") -> "givenName"
+            has("last name", "surname", "family name", "lastname", "familyname") -> "familyName"
+            has("full name", "your name", "name") -> "name"
             has("upi", "vpa", "gpay", "phonepe", "paytm") -> "upi"
             has("website", "url", "link", "portfolio") -> "link"
             has("company", "organisation", "organization", "employer") -> "company"

@@ -282,8 +282,7 @@ enum Smart {
         }
         // A form asking for something we already know: one tap fills it.
         if text.isEmpty, field.empty, let kind = field.kind {
-            var seen: Set<String> = []
-            let held = fields.filter { $0.kind == kind && seen.insert($0.value.lowercased()).inserted }
+            let held = detailsFor(kind: kind, fields: fields)
             if held.count > 1 { return .details(fields: Array(held.prefix(3)), temp: false) }
             if let f = held.first { return .vault(field: f) }
         }
@@ -699,6 +698,57 @@ enum Smart {
             return candidates.first
         }
         return firstPersonMatch(text, fields: fields)
+    }
+
+    /// What the vault holds for a field of this kind, one per value: its
+    /// saved details, or a part of one (the postcode in an address, the first
+    /// or last word of the name, a detail labelled as the company). Both
+    /// keyboards; shared/vault/field-cases.json.
+    static func detailsFor(kind: String, fields: [VaultField]) -> [VaultField] {
+        let found: [VaultField]
+        switch kind {
+        case "postcode":
+            found = fields.filter { $0.kind == "address" }.compactMap { a in
+                postcode(in: a.value).map { VaultField(id: a.id + ":postcode", kind: "postcode", label: "Postcode", value: $0) }
+            }
+        case "givenName", "familyName":
+            found = fields.filter { $0.kind == "name" }.compactMap { n in
+                let parts = n.value.split(separator: " ").map(String.init)
+                guard !parts.isEmpty, kind == "givenName" || parts.count >= 2 else { return nil }
+                return VaultField(id: n.id + ":" + kind, kind: kind,
+                                  label: kind == "givenName" ? "First name" : "Last name",
+                                  value: kind == "givenName" ? parts[0] : parts[parts.count - 1])
+            }
+        case "company":
+            found = fields.filter {
+                $0.kind == "company" || $0.label.range(of: #"\b(?:company|organi[sz]ation|employer|workplace)\b"#,
+                                                        options: [.regularExpression, .caseInsensitive]) != nil
+            }
+        default:
+            found = fields.filter { $0.kind == kind }
+        }
+        var seen: Set<String> = []
+        return found.filter { seen.insert($0.value.trimmingCharacters(in: .whitespaces).lowercased()).inserted }
+    }
+
+    /// The postcode in an address, the last one written: a UK or Canadian
+    /// postcode, a US ZIP, a six-digit PIN, or four digits at the very end.
+    static func postcode(in address: String) -> String? {
+        let patterns = [
+            #"\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b"#,   // UK: SW1A 2AA
+            #"\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b"#,            // Canada: K1A 0B1
+            #"\b\d{5}(?:-\d{4})?\b"#,                     // US ZIP: 94103, 94103-1234
+            #"\b\d{3}\s?\d{3}\b"#,                        // six digits: 560038, 560 038
+            #"\b\d{4}\s*$"#,                              // four at the end: 2000, 1012
+        ]
+        let ns = address as NSString
+        for p in patterns {
+            guard let re = try? NSRegularExpression(pattern: p, options: [.caseInsensitive]),
+                  let m = re.matches(in: address, range: NSRange(location: 0, length: ns.length)).last
+            else { continue }
+            return ns.substring(with: m.range).trimmingCharacters(in: .whitespaces).uppercased()
+        }
+        return nil
     }
 
     /// Every saved detail the sentence asks for: the one vaultMatch finds

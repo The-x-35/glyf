@@ -193,7 +193,7 @@ object Smart {
         // one part each when there is more than one (nothing else reads an
         // empty field).
         if (text.isEmpty()) {
-            val held = fields.filter { it.kind == fieldKind }.distinctBy { it.value.trim() }
+            val held = fieldKind?.let { detailsFor(it, fields) }.orEmpty()
             return when {
                 fieldKind == null || held.isEmpty() -> null
                 held.size > 1 -> Chip.Details(held.take(3), temp = false)
@@ -609,6 +609,47 @@ object Smart {
             return candidates.firstOrNull()
         }
         return firstPersonMatch(text, fields)
+    }
+
+    /** What the vault holds for a field of this kind, one per value: its
+     *  saved details, or a part of one (the postcode in an address, the first
+     *  or last word of the name, a detail labelled as the company).
+     *  Smart.swift's detailsFor; shared/vault/field-cases.json. */
+    fun detailsFor(kind: String, fields: List<Field>): List<Field> {
+        val found = when (kind) {
+            "postcode" -> fields.filter { it.kind == "address" }
+                .mapNotNull { a -> postcode(a.value)?.let { Field("postcode", "Postcode", it) } }
+            "givenName", "familyName" -> fields.filter { it.kind == "name" }.mapNotNull { n ->
+                val parts = n.value.trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }
+                if (parts.isEmpty() || (kind == "familyName" && parts.size < 2)) null
+                else if (kind == "givenName") Field(kind, "First name", parts.first())
+                else Field(kind, "Last name", parts.last())
+            }
+            "company" -> fields.filter {
+                it.kind == "company" ||
+                    Regex("""\b(?:company|organi[sz]ation|employer|workplace)\b""", RegexOption.IGNORE_CASE)
+                        .containsMatchIn(it.label)
+            }
+            else -> fields.filter { it.kind == kind }
+        }
+        return found.distinctBy { it.value.trim().lowercase() }
+    }
+
+    /** The postcode in an address, the last one written: a UK or Canadian
+     *  postcode, a US ZIP, a six-digit PIN, or four digits at the very end. */
+    fun postcode(address: String): String? {
+        val patterns = listOf(
+            """\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b""",   // UK: SW1A 2AA
+            """\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b""",            // Canada: K1A 0B1
+            """\b\d{5}(?:-\d{4})?\b""",                     // US ZIP: 94103, 94103-1234
+            """\b\d{3}\s?\d{3}\b""",                        // six digits: 560038, 560 038
+            """\b\d{4}\s*$""",                              // four at the end: 2000, 1012
+        )
+        for (p in patterns) {
+            val m = Regex(p, RegexOption.IGNORE_CASE).findAll(address).lastOrNull() ?: continue
+            return m.value.trim().uppercase()
+        }
+        return null
     }
 
     /** Every saved detail the sentence asks for: the one vaultMatch finds

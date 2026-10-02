@@ -1734,19 +1734,66 @@ final class GlyfKeyboardViewController: UIInputViewController {
         guard !isSecureField else { return .none }
         let proxy = textDocumentProxy
         var kind: String?
-        switch proxy.keyboardType {
-        case .emailAddress: kind = "email"
-        case .phonePad, .namePhonePad: kind = "phone"
-        // A web address field may want your site; a search box (Safari's
-        // address bar) is asking what to look for, not for your link.
-        case .URL: kind = "link"
+        // What the field says it holds, when the app or the website declares
+        // it (autocomplete="email", "postal-code", "given-name"): iOS shares
+        // that much with a keyboard, never a field's label or placeholder
+        // (measured 2026-10-02 on iOS 26.5; Arpit: "if field says email, we
+        // can suggest"). Phone fields never come: iOS shows its own pad there.
+        switch fieldContentType {
+        case .emailAddress?, .username?: kind = "email"
+        case .telephoneNumber?: kind = "phone"
+        case .fullStreetAddress?, .streetAddressLine1?: kind = "address"
+        case .postalCode?: kind = "postcode"
+        case .name?, .nickname?: kind = "name"
+        case .givenName?: kind = "givenName"
+        case .familyName?: kind = "familyName"
+        // A search box (Safari's address bar) is asking what to look for,
+        // not for your link, whatever it declares.
+        case .URL?: kind = proxy.keyboardType == .webSearch ? nil : "link"
+        case .organizationName?: kind = "company"
         default: break
+        }
+        if kind == nil {
+            switch proxy.keyboardType {
+            case .emailAddress: kind = "email"
+            case .phonePad, .namePhonePad: kind = "phone"
+            // A web address field may want your site; a search box (Safari's
+            // address bar) is asking what to look for, not for your link.
+            case .URL: kind = "link"
+            default: break
+            }
         }
         if kind == nil, proxy.autocapitalizationType == .words,
            proxy.returnKeyType == .next {
             kind = "name"
         }
         return Smart.FieldHint(kind: kind, empty: emptyField)
+    }
+
+    /// The field's declared content type, kept for the field: iOS can say it
+    /// once and nil on a later read of the same field.
+    private var contentTypeSeen: (doc: UUID, type: UITextContentType)?
+    private var fieldContentType: UITextContentType? {
+        let proxy = textDocumentProxy
+        guard let doc = documentID else { return proxy.textContentType ?? nil }
+        if let type = proxy.textContentType ?? nil {
+            contentTypeSeen = (doc, type)
+            return type
+        }
+        if let seen = contentTypeSeen, seen.doc == doc { return seen.type }
+        return nil
+    }
+
+    /// The field's document, or nil between fields. Swift reads the proxy's
+    /// documentIdentifier as a UUID that is always there, and the nil iOS
+    /// hands back while moving between web form fields crashed the keyboard
+    /// (2026-10-02), so it is asked for without bridging.
+    private var documentID: UUID? {
+        let proxy = textDocumentProxy as AnyObject
+        let getter = NSSelectorFromString("documentIdentifier")
+        guard proxy.responds(to: getter),
+              let id = proxy.perform(getter)?.takeUnretainedValue() as? NSUUID else { return nil }
+        return id as UUID
     }
 
     /// Debounced, cancellable, and never for a half-typed word: a pause of

@@ -1213,6 +1213,33 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 
+    /// shared/vault/field-cases.json: an empty field of a known kind, and
+    /// the postcode read out of an address (Android runs the same file).
+    func testAFieldOfAKnownKindIsOfferedItsDetailOrAPartOfIt() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/vault/field-cases.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let fields = (root["fields"] as? [[String: String]] ?? []).map {
+            VaultField(id: $0["id"] ?? "", kind: $0["kind"] ?? "", label: $0["label"] ?? "", value: $0["value"] ?? "")
+        }
+        var failures: [String] = []
+        for c in root["cases"] as? [[String: Any]] ?? [] {
+            let kind = c["kind"] as? String ?? ""
+            let want = c["values"] as? [String] ?? []
+            let got = Smart.detailsFor(kind: kind, fields: fields).map(\.value)
+            if got != want { failures.append("\(kind): got \(got), want \(want)") }
+        }
+        for c in root["postcodes"] as? [[String: Any]] ?? [] {
+            let address = c["address"] as? String ?? ""
+            let want = c["postcode"] as? String
+            let got = Smart.postcode(in: address)
+            if got != want { failures.append("postcode of '\(address)': got \(got ?? "nil"), want \(want ?? "nil")") }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
     /// Money with cents shows both places: "$20 = ₹1,919.6" read as a typo.
     func testMoneyShowsBothCentsPlacesOrNone() {
         XCTAssertEqual(Smart.format(1919.6, in: "INR"), "₹1,919.60")

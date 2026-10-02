@@ -1,0 +1,32 @@
+{
+  "about": "What an empty field of a known kind is offered from the vault (Smart.detailsFor on iOS and Android): the field's kind comes from what it declares (iOS: the text content type, e.g. a web form's autocomplete=\"postal-code\"; Android: autofill hints, the hint or label, the input type). A part of a detail can be what is asked: the postcode in an address, the first or last word of the name. \"values\" in order; [] means no chip.",
+  "fields": [
+    { "id": "n1", "kind": "name", "label": "Name", "value": "Alex Rivera" },
+    { "id": "e1", "kind": "email", "label": "Email", "value": "alex@example.com" },
+    { "id": "e2", "kind": "email", "label": "Work", "value": "alex@acme.example" },
+    { "id": "a1", "kind": "address", "label": "Home", "value": "123 Market St, San Francisco, CA 94103" },
+    { "id": "a2", "kind": "address", "label": "Work", "value": "10 Downing St, London SW1A 2AA" },
+    { "id": "c1", "kind": "custom", "label": "Company", "value": "Acme Inc" }
+  ],
+  "cases": [
+    { "kind": "email", "values": ["alex@example.com", "alex@acme.example"] },
+    { "kind": "address", "values": ["123 Market St, San Francisco, CA 94103", "10 Downing St, London SW1A 2AA"] },
+    { "kind": "postcode", "values": ["94103", "SW1A 2AA"] },
+    { "kind": "name", "values": ["Alex Rivera"] },
+    { "kind": "givenName", "values": ["Alex"] },
+    { "kind": "familyName", "values": ["Rivera"] },
+    { "kind": "company", "values": ["Acme Inc"] },
+    { "kind": "link", "values": [] }
+  ],
+  "postcodes": [
+    { "address": "123 Market St, San Francisco, CA 94103", "postcode": "94103" },
+    { "address": "1600 Amphitheatre Pkwy, Mountain View, CA 94043-1351", "postcode": "94043-1351" },
+    { "address": "10 Downing St, London SW1A 2AA", "postcode": "SW1A 2AA" },
+    { "address": "24 Sussex Dr, Ottawa, ON K1M 1M4", "postcode": "K1M 1M4" },
+    { "address": "Flat 4B, Rose Apartments, Bengaluru 560038", "postcode": "560038" },
+    { "address": "1 Martin Pl, Sydney NSW 2000", "postcode": "2000" },
+    { "address": "Damrak 1, Amsterdam 1012", "postcode": "1012" },
+    { "address": "12345 Main Street, Springfield", "postcode": "12345" },
+    { "address": "Building 7, Office Park", "postcode": null }
+  ]
+}
