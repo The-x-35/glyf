@@ -1266,6 +1266,26 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 
+    /// shared/zones/strip-cases.json: a time in someone else's zone, in the
+    /// phone's own, with "now" fixed (Android runs the same file).
+    func testATimeInAnotherZoneShowsInYours() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/zones/strip-cases.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: root["now"] as? String ?? ""))
+        var failures: [String] = []
+        for c in root["cases"] as? [[String: Any]] ?? [] {
+            let text = c["text"] as? String ?? ""
+            let here = try XCTUnwrap(TimeZone(identifier: c["here"] as? String ?? ""))
+            let want = c["results"] as? [String] ?? []
+            let got = Smart.zoneTimes(in: text, now: now, here: here, region: c["region"] as? String)?.results ?? []
+            if got != want { failures.append("'\(text)' in \(here.identifier): got \(got), want \(want)") }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
     /// The strip offers a measurement as its own chip, and a tap adds the
     /// result in brackets after what was typed.
     func testAMeasurementIsAChipAndATapAddsItInBrackets() {

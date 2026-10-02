@@ -31,6 +31,23 @@ class SmartUnitsTest {
         assertEquals(failures.joinToString("\n"), 0, failures.size)
     }
 
+    /** shared/zones/strip-cases.json: a time in someone else's zone, in the
+     *  phone's own, with "now" fixed. */
+    @Test fun aTimeInAnotherZoneShowsInYours() {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        while (dir != null && !File(dir, "shared/zones/strip-cases.json").exists()) dir = dir.parentFile
+        val zones = JSONObject(File(requireNotNull(dir), "shared/zones/strip-cases.json").readText())
+        val now = java.time.Instant.parse(zones.getString("now"))
+        val cases = zones.getJSONArray("cases")
+        val failures = (0 until cases.length()).map { cases.getJSONObject(it) }.mapNotNull { c ->
+            val want = c.getJSONArray("results").let { a -> (0 until a.length()).map { a.getString(it) } }
+            val here = java.time.ZoneId.of(c.getString("here"))
+            val got = Smart.zoneTimes(c.getString("text"), now, here, c.optString("region").ifEmpty { null })?.results.orEmpty()
+            if (got == want) null else "'${c.getString("text")}' in $here: got $got, want $want"
+        }
+        assertEquals(failures.joinToString("\n"), 0, failures.size)
+    }
+
     @Test fun aMeasurementIsAChipAndATapAddsItInBrackets() {
         assertEquals(Smart.Chip.Convert("10 inch", listOf("25.4 cm", "0.254 m")),
             Smart.chip("lets 10 inch", emptyList(), region = "US"))

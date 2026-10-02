@@ -1,0 +1,144 @@
+{
+ "about": "A time in someone else's zone the message ends on, in the phone's own zone (Smart.zoneTimes on both keyboards), with \"now\" fixed. \"here\" is the phone's zone, \"region\" its region (CST is China's in CN, IST Ireland's in IE and Israel's in IL). \"results\" in order; [] means no chip.",
+ "now": "2026-10-03T12:00:00Z",
+ "cases": [
+  {
+   "text": "call at 3pm EST",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sun 12:30 AM IST"
+   ]
+  },
+  {
+   "text": "meeting at 9am IST",
+   "here": "America/Los_Angeles",
+   "region": "US",
+   "results": [
+    "Fri 8:30 PM PDT"
+   ]
+  },
+  {
+   "text": "5:30 pm PT",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "Sun 1:30 AM BST"
+   ]
+  },
+  {
+   "text": "at 15:00 GMT",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "8:30 PM IST"
+   ]
+  },
+  {
+   "text": "10am EST",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "9am JST",
+   "here": "Europe/Berlin",
+   "region": "DE",
+   "results": [
+    "2 AM CEST"
+   ]
+  },
+  {
+   "text": "3pm CST",
+   "here": "Asia/Kolkata",
+   "region": "CN",
+   "results": [
+    "12:30 PM IST"
+   ]
+  },
+  {
+   "text": "2:30pm AEST",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "12:30 AM EDT"
+   ]
+  },
+  {
+   "text": "at 6 PM UTC",
+   "here": "Asia/Singapore",
+   "region": "SG",
+   "results": [
+    "Sun 2 AM SGT"
+   ]
+  },
+  {
+   "text": "9:45 am india time",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "5:15 AM BST"
+   ]
+  },
+  {
+   "text": "call me at 11:30pm (PST)",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sun 12 PM IST"
+   ]
+  },
+  {
+   "text": "3 est",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "see you at 9am pt",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "9:30 PM IST"
+   ]
+  },
+  {
+   "text": "noon PST",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "et al",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "at 25:00 GMT",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "3pm EST works for me",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "at 9:30 pt",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "at 9:30 PT",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "10 PM IST"
+   ]
+  }
+ ]
+}

@@ -227,7 +227,7 @@ object Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if (cashtag(text) != null) return null
-        conversions(text, region)?.let { return Chip.Convert(it.source, it.results) }
+        (conversions(text, region) ?: zoneTimes(text, region = region))?.let { return Chip.Convert(it.source, it.results) }
         // Every saved value the sentence asks for: two emails show both.
         val matches = vaultMatches(text, fields)
         if (matches.size > 1) return Chip.Details(matches.take(3), temp = false)
@@ -1321,6 +1321,111 @@ object Smart {
     fun conversionInsert(result: String, before: String?): String {
         val last = before?.lastOrNull()
         return if (last == null || last == ' ' || last == '\n') "($result) " else " ($result)"
+    }
+
+    // MARK: a time in someone else's zone, in yours (Smart.swift twin)
+
+    /** Zones people write after a time, with the place each means. EST, CST
+     *  and IST say more than one place; the one most people mean wins, and
+     *  the phone's region picks the other (China's CST, Ireland's and
+     *  Israel's IST). ET/PT and the like follow summer time, as people mean
+     *  them, and so do EST and PST. */
+    private val zoneNames: Map<String, String> = mapOf(
+        "et" to "America/New_York", "est" to "America/New_York", "edt" to "America/New_York", "eastern" to "America/New_York",
+        "ct" to "America/Chicago", "cst" to "America/Chicago", "cdt" to "America/Chicago", "central" to "America/Chicago",
+        "mt" to "America/Denver", "mst" to "America/Denver", "mdt" to "America/Denver", "mountain" to "America/Denver",
+        "pt" to "America/Los_Angeles", "pst" to "America/Los_Angeles", "pdt" to "America/Los_Angeles", "pacific" to "America/Los_Angeles",
+        "akst" to "America/Anchorage", "akdt" to "America/Anchorage", "hst" to "Pacific/Honolulu",
+        "gmt" to "GMT", "utc" to "GMT", "bst" to "Europe/London", "uk time" to "Europe/London", "london time" to "Europe/London",
+        "cet" to "Europe/Paris", "cest" to "Europe/Paris", "eet" to "Europe/Athens", "eest" to "Europe/Athens",
+        "msk" to "Europe/Moscow", "ist" to "Asia/Kolkata", "india time" to "Asia/Kolkata", "pkt" to "Asia/Karachi",
+        "gst" to "Asia/Dubai", "dubai time" to "Asia/Dubai", "ict" to "Asia/Bangkok", "wib" to "Asia/Jakarta",
+        "sgt" to "Asia/Singapore", "hkt" to "Asia/Hong_Kong", "pht" to "Asia/Manila", "jst" to "Asia/Tokyo",
+        "kst" to "Asia/Seoul", "aest" to "Australia/Sydney", "aedt" to "Australia/Sydney", "awst" to "Australia/Perth",
+        "nzst" to "Pacific/Auckland", "nzdt" to "Pacific/Auckland", "sast" to "Africa/Johannesburg",
+        "wat" to "Africa/Lagos", "eat" to "Africa/Nairobi", "brt" to "America/Sao_Paulo",
+        "ny time" to "America/New_York", "new york time" to "America/New_York", "la time" to "America/Los_Angeles",
+        "tokyo time" to "Asia/Tokyo", "singapore time" to "Asia/Singapore", "sydney time" to "Australia/Sydney",
+    )
+
+    /** How a zone is named in the result: the letters people know, or the
+     *  offset ("GMT+6") for a zone without them. */
+    private val zoneLetters: Map<String, Pair<String, String>> = mapOf(
+        "America/New_York" to ("EST" to "EDT"), "America/Toronto" to ("EST" to "EDT"), "America/Chicago" to ("CST" to "CDT"),
+        "America/Mexico_City" to ("CST" to "CST"), "America/Denver" to ("MST" to "MDT"), "America/Phoenix" to ("MST" to "MST"),
+        "America/Los_Angeles" to ("PST" to "PDT"), "America/Vancouver" to ("PST" to "PDT"), "America/Anchorage" to ("AKST" to "AKDT"),
+        "Pacific/Honolulu" to ("HST" to "HST"), "Europe/London" to ("GMT" to "BST"), "GMT" to ("GMT" to "GMT"), "UTC" to ("UTC" to "UTC"),
+        "Europe/Paris" to ("CET" to "CEST"), "Europe/Berlin" to ("CET" to "CEST"), "Europe/Madrid" to ("CET" to "CEST"),
+        "Europe/Rome" to ("CET" to "CEST"), "Europe/Amsterdam" to ("CET" to "CEST"), "Europe/Brussels" to ("CET" to "CEST"),
+        "Europe/Vienna" to ("CET" to "CEST"), "Europe/Stockholm" to ("CET" to "CEST"), "Europe/Zurich" to ("CET" to "CEST"),
+        "Europe/Warsaw" to ("CET" to "CEST"), "Europe/Athens" to ("EET" to "EEST"), "Europe/Helsinki" to ("EET" to "EEST"),
+        "Europe/Moscow" to ("MSK" to "MSK"), "Asia/Dubai" to ("GST" to "GST"), "Asia/Karachi" to ("PKT" to "PKT"),
+        "Asia/Kolkata" to ("IST" to "IST"), "Asia/Calcutta" to ("IST" to "IST"), "Asia/Bangkok" to ("ICT" to "ICT"),
+        "Asia/Jakarta" to ("WIB" to "WIB"), "Asia/Singapore" to ("SGT" to "SGT"), "Asia/Hong_Kong" to ("HKT" to "HKT"),
+        "Asia/Manila" to ("PHT" to "PHT"), "Asia/Tokyo" to ("JST" to "JST"), "Asia/Seoul" to ("KST" to "KST"),
+        "Australia/Sydney" to ("AEST" to "AEDT"), "Australia/Melbourne" to ("AEST" to "AEDT"), "Australia/Perth" to ("AWST" to "AWST"),
+        "Pacific/Auckland" to ("NZST" to "NZDT"), "Africa/Johannesburg" to ("SAST" to "SAST"), "Africa/Lagos" to ("WAT" to "WAT"),
+        "Africa/Nairobi" to ("EAT" to "EAT"), "America/Sao_Paulo" to ("BRT" to "BRT"),
+    )
+
+    private fun zoneLabel(zone: java.time.ZoneId, at: java.time.Instant): String {
+        zoneLetters[zone.id]?.let { (standard, summer) -> return if (zone.rules.isDaylightSavings(at)) summer else standard }
+        val seconds = zone.rules.getOffset(at).totalSeconds
+        val h = kotlin.math.abs(seconds) / 3600
+        val m = kotlin.math.abs(seconds) % 3600 / 60
+        return "GMT" + (if (seconds < 0) "-" else "+") + h + (if (m > 0) ":%02d".format(m) else "")
+    }
+
+    private val zoneTime: Regex by lazy {
+        val names = zoneNames.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
+        Regex("""(?<![\d:.])(\d{1,2})(?::([0-5]\d))?\s*(am|pm|a\.m\.|p\.m\.)?\s*\(?(?:in\s+)?(""" + names + """)\)?\.?\s?$""",
+            RegexOption.IGNORE_CASE)
+    }
+
+    /** A time in someone else's zone the message ends on, in the phone's own
+     *  (Raycast's "5pm PT in London", in the strip): "call at 3pm EST" →
+     *  "Sun 12:30 AM IST" in India. A time needs am/pm or minutes ("3 est"
+     *  is not one); nothing when the zone is the phone's own. The day shows
+     *  when it is not the same day there. shared/zones/strip-cases.json. */
+    fun zoneTimes(text: String, now: java.time.Instant = java.time.Instant.now(),
+                  here: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+                  region: String? = java.util.Locale.getDefault().country): Conversions? {
+        if (text.none { it.isDigit() }) return null
+        val m = zoneTime.find(text) ?: return null
+        var hour = m.groupValues[1].toIntOrNull() ?: return null
+        val minuteText = m.groups[2]?.value
+        val minute = minuteText?.toIntOrNull() ?: 0
+        val half = m.groups[3]?.value?.lowercase()?.replace(".", "")
+        if (half != null) {
+            if (hour !in 1..12) return null
+            if (half == "pm" && hour < 12) hour += 12
+            if (half == "am" && hour == 12) hour = 0
+        } else {
+            // "3 est" is not a time; "15:00 GMT" and "9:30 IST" are.
+            if (minuteText == null || hour !in 0..23) return null
+        }
+        val typed = m.groupValues[4]
+        val name = typed.lowercase()
+        // A two-letter zone in small letters only after am/pm ("9am pt"):
+        // "9:30 pt" may be a part or a point.
+        if (name.length == 2 && half == null && typed != typed.uppercase()) return null
+        val r = region?.uppercase()
+        var id = zoneNames[name] ?: return null
+        if (name == "cst" && r == "CN") id = "Asia/Shanghai"
+        if (name == "ist" && r == "IE") id = "Europe/Dublin"
+        if (name == "ist" && r == "IL") id = "Asia/Jerusalem"
+        val there = runCatching { java.time.ZoneId.of(id) }.getOrNull() ?: return null
+        // That time today, where it was said.
+        val said = java.time.ZonedDateTime.of(now.atZone(there).toLocalDate(), java.time.LocalTime.of(hour, minute), there)
+        val instant = said.toInstant()
+        if (there.rules.getOffset(instant) == here.rules.getOffset(instant)) return null
+        val mine = instant.atZone(here)
+        var clock = java.time.format.DateTimeFormatter.ofPattern(if (mine.minute == 0) "h a" else "h:mm a", java.util.Locale.US)
+            .format(mine).replace(' ', ' ')
+        if (mine.toLocalDate() != said.toLocalDate()) {
+            clock = java.time.format.DateTimeFormatter.ofPattern("EEE", java.util.Locale.US).format(mine) + " " + clock
+        }
+        return Conversions(m.value.trim(), listOf("$clock ${zoneLabel(here, instant)}"))
     }
 
     // MARK: questions (the AI answer chip, as it is typed)

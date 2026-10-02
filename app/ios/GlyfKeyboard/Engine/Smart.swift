@@ -288,7 +288,9 @@ enum Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if cashtag(in: text) != nil { return nil }
-        if let c = conversions(in: text, region: region) { return .convert(source: c.source, results: c.results) }
+        if let c = conversions(in: text, region: region) ?? zoneTimes(in: text, region: region) {
+            return .convert(source: c.source, results: c.results)
+        }
         let matches = vaultMatches(text, fields: fields)
         if matches.count > 1 { return .details(fields: Array(matches.prefix(3)), temp: false) }
         if let f = matches.first { return .vault(field: f) }
@@ -1558,6 +1560,129 @@ extension Smart {
     static func conversionInsert(_ result: String, before: String?) -> String {
         let last = before?.last
         return last == nil || last == " " || last == "\n" ? "(\(result)) " : " (\(result))"
+    }
+}
+
+// MARK: - A time in someone else's zone, in yours
+
+extension Smart {
+
+    /// Zones people write after a time, with the place each means. EST, CST
+    /// and IST say more than one place; the one most people mean wins, and
+    /// the phone's region picks the other (China's CST, Ireland's and
+    /// Israel's IST). ET/PT and the like follow summer time, as people mean
+    /// them, and so do EST and PST.
+    private static let zoneNames: [String: String] = [
+        "et": "America/New_York", "est": "America/New_York", "edt": "America/New_York", "eastern": "America/New_York",
+        "ct": "America/Chicago", "cst": "America/Chicago", "cdt": "America/Chicago", "central": "America/Chicago",
+        "mt": "America/Denver", "mst": "America/Denver", "mdt": "America/Denver", "mountain": "America/Denver",
+        "pt": "America/Los_Angeles", "pst": "America/Los_Angeles", "pdt": "America/Los_Angeles", "pacific": "America/Los_Angeles",
+        "akst": "America/Anchorage", "akdt": "America/Anchorage", "hst": "Pacific/Honolulu",
+        "gmt": "GMT", "utc": "GMT", "bst": "Europe/London", "uk time": "Europe/London", "london time": "Europe/London",
+        "cet": "Europe/Paris", "cest": "Europe/Paris", "eet": "Europe/Athens", "eest": "Europe/Athens",
+        "msk": "Europe/Moscow", "ist": "Asia/Kolkata", "india time": "Asia/Kolkata", "pkt": "Asia/Karachi",
+        "gst": "Asia/Dubai", "dubai time": "Asia/Dubai", "ict": "Asia/Bangkok", "wib": "Asia/Jakarta",
+        "sgt": "Asia/Singapore", "hkt": "Asia/Hong_Kong", "pht": "Asia/Manila", "jst": "Asia/Tokyo",
+        "kst": "Asia/Seoul", "aest": "Australia/Sydney", "aedt": "Australia/Sydney", "awst": "Australia/Perth",
+        "nzst": "Pacific/Auckland", "nzdt": "Pacific/Auckland", "sast": "Africa/Johannesburg",
+        "wat": "Africa/Lagos", "eat": "Africa/Nairobi", "brt": "America/Sao_Paulo",
+        "ny time": "America/New_York", "new york time": "America/New_York", "la time": "America/Los_Angeles",
+        "tokyo time": "Asia/Tokyo", "singapore time": "Asia/Singapore", "sydney time": "Australia/Sydney",
+    ]
+
+    /// How a zone is named in the result: the letters people know, or the
+    /// offset ("GMT+6") for a zone without them.
+    private static let zoneLetters: [String: (String, String)] = [
+        "America/New_York": ("EST", "EDT"), "America/Toronto": ("EST", "EDT"), "America/Chicago": ("CST", "CDT"),
+        "America/Mexico_City": ("CST", "CST"), "America/Denver": ("MST", "MDT"), "America/Phoenix": ("MST", "MST"),
+        "America/Los_Angeles": ("PST", "PDT"), "America/Vancouver": ("PST", "PDT"), "America/Anchorage": ("AKST", "AKDT"),
+        "Pacific/Honolulu": ("HST", "HST"), "Europe/London": ("GMT", "BST"), "GMT": ("GMT", "GMT"), "UTC": ("UTC", "UTC"),
+        "Europe/Paris": ("CET", "CEST"), "Europe/Berlin": ("CET", "CEST"), "Europe/Madrid": ("CET", "CEST"),
+        "Europe/Rome": ("CET", "CEST"), "Europe/Amsterdam": ("CET", "CEST"), "Europe/Brussels": ("CET", "CEST"),
+        "Europe/Vienna": ("CET", "CEST"), "Europe/Stockholm": ("CET", "CEST"), "Europe/Zurich": ("CET", "CEST"),
+        "Europe/Warsaw": ("CET", "CEST"), "Europe/Athens": ("EET", "EEST"), "Europe/Helsinki": ("EET", "EEST"),
+        "Europe/Moscow": ("MSK", "MSK"), "Asia/Dubai": ("GST", "GST"), "Asia/Karachi": ("PKT", "PKT"),
+        "Asia/Kolkata": ("IST", "IST"), "Asia/Calcutta": ("IST", "IST"), "Asia/Bangkok": ("ICT", "ICT"),
+        "Asia/Jakarta": ("WIB", "WIB"), "Asia/Singapore": ("SGT", "SGT"), "Asia/Hong_Kong": ("HKT", "HKT"),
+        "Asia/Manila": ("PHT", "PHT"), "Asia/Tokyo": ("JST", "JST"), "Asia/Seoul": ("KST", "KST"),
+        "Australia/Sydney": ("AEST", "AEDT"), "Australia/Melbourne": ("AEST", "AEDT"), "Australia/Perth": ("AWST", "AWST"),
+        "Pacific/Auckland": ("NZST", "NZDT"), "Africa/Johannesburg": ("SAST", "SAST"), "Africa/Lagos": ("WAT", "WAT"),
+        "Africa/Nairobi": ("EAT", "EAT"), "America/Sao_Paulo": ("BRT", "BRT"),
+    ]
+
+    private static func zoneLabel(_ zone: TimeZone, at date: Date) -> String {
+        if let pair = zoneLetters[zone.identifier] {
+            return zone.isDaylightSavingTime(for: date) ? pair.1 : pair.0
+        }
+        let seconds = zone.secondsFromGMT(for: date)
+        let h = abs(seconds) / 3600, m = abs(seconds) % 3600 / 60
+        return "GMT" + (seconds < 0 ? "-" : "+") + "\(h)" + (m > 0 ? String(format: ":%02d", m) : "")
+    }
+
+    private static let zoneTime: NSRegularExpression? = {
+        let names = zoneNames.keys.sorted { $0.count > $1.count }
+            .map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+        return try? NSRegularExpression(pattern:
+            #"(?<![\d:.])(\d{1,2})(?::([0-5]\d))?\s*(am|pm|a\.m\.|p\.m\.)?\s*\(?(?:in\s+)?("# + names + #")\)?\.?\s?$"#,
+            options: [.caseInsensitive])
+    }()
+
+    /// A time in someone else's zone the message ends on, in the phone's own
+    /// (Raycast's "5pm PT in London", in the strip): "call at 3pm EST" →
+    /// "Sun 12:30 AM IST" in India. A time needs am/pm or minutes ("3 est"
+    /// is not one); nothing when the zone is the phone's own. The day shows
+    /// when it is not the same day there. Smart.kt's twin;
+    /// shared/zones/strip-cases.json.
+    static func zoneTimes(in text: String, now: Date = Date(), here: TimeZone = .current,
+                          region: String? = Locale.current.region?.identifier) -> Conversions? {
+        guard let re = zoneTime, text.range(of: #"\d"#, options: .regularExpression) != nil else { return nil }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        func group(_ i: Int) -> String? { m.range(at: i).location == NSNotFound ? nil : ns.substring(with: m.range(at: i)) }
+        guard var hour = group(1).flatMap({ Int($0) }), let name = group(4)?.lowercased() else { return nil }
+        let minute = group(2).flatMap { Int($0) } ?? 0
+        let half = group(3)?.lowercased().replacingOccurrences(of: ".", with: "")
+        if let half {
+            guard (1...12).contains(hour) else { return nil }
+            if half == "pm", hour < 12 { hour += 12 }
+            if half == "am", hour == 12 { hour = 0 }
+        } else {
+            // "3 est" is not a time; "15:00 GMT" and "9:30 IST" are.
+            guard group(2) != nil, (0...23).contains(hour) else { return nil }
+        }
+        // A two-letter zone in small letters only after am/pm ("9am pt"):
+        // "9:30 pt" may be a part or a point.
+        if name.count == 2, half == nil, group(4) != group(4)?.uppercased() { return nil }
+        let r = region?.uppercased()
+        var id = zoneNames[name] ?? ""
+        if name == "cst", r == "CN" { id = "Asia/Shanghai" }
+        if name == "ist", r == "IE" { id = "Europe/Dublin" }
+        if name == "ist", r == "IL" { id = "Asia/Jerusalem" }
+        guard let there = TimeZone(identifier: id) else { return nil }
+
+        // That time today, where it was said.
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = there
+        var day = cal.dateComponents([.year, .month, .day], from: now)
+        day.hour = hour
+        day.minute = minute
+        guard let when = cal.date(from: day) else { return nil }
+        if there.secondsFromGMT(for: when) == here.secondsFromGMT(for: when) { return nil }
+
+        var mine = Calendar(identifier: .gregorian)
+        mine.timeZone = here
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = here
+        f.dateFormat = mine.component(.minute, from: when) == 0 ? "h a" : "h:mm a"
+        var clock = f.string(from: when).replacingOccurrences(of: "\u{202F}", with: " ")
+        let sameDay = mine.component(.day, from: when) == cal.component(.day, from: when)
+        if !sameDay {
+            f.dateFormat = "EEE"
+            clock = f.string(from: when) + " " + clock
+        }
+        let result = "\(clock) \(zoneLabel(here, at: when))"
+        return Conversions(source: ns.substring(with: m.range).trimmingCharacters(in: .whitespaces), results: [result])
     }
 }
 
