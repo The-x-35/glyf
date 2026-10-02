@@ -823,13 +823,18 @@ final class GlyfEngineTests: XCTestCase {
         }
     }
 
-    /// "I lost 5 pounds" is weight; a conversion the chip put in is not
-    /// converted back. SmartTest.poundsOfWeightAndInsertedAnswersAreNotMoney.
+    /// "I lost 5 pounds" is weight, never money: kilograms where pounds are
+    /// weight (the US), nothing where they are money; a conversion the chip
+    /// put in is not converted back.
+    /// SmartTest.poundsOfWeightAndInsertedAnswersAreNotMoney.
     func testPoundsOfWeightAndInsertedAnswersAreNotMoney() {
         let usd = Smart.RatesSnapshot(fiat: ["USD": 1, "GBP": 0.75], local: "USD")
-        XCTAssertEqual(Smart.chip(for: "it costs 5 pounds", fields: [], rates: usd)?.value, "£5 = $6.67")
-        XCTAssertNil(Smart.chip(for: "I lost 5 pounds", fields: [], rates: usd))
-        XCTAssertNil(Smart.chip(for: "bench press 100 pounds", fields: [], rates: usd))
+        XCTAssertEqual(Smart.chip(for: "it costs 5 pounds", fields: [], rates: usd, region: "US")?.value, "£5 = $6.67")
+        XCTAssertEqual(Smart.chip(for: "I lost 5 pounds", fields: [], rates: usd, region: "US"),
+                       .convert(source: "5 pounds", results: ["2.27 kg"]))
+        XCTAssertNil(Smart.chip(for: "I lost 5 pounds", fields: [], rates: usd, region: "GB"))
+        XCTAssertEqual(Smart.chip(for: "bench press 100 pounds", fields: [], rates: usd, region: "US"),
+                       .convert(source: "100 pounds", results: ["45.4 kg"]))
         let india = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88], crypto: ["SOL": 111.77], local: "INR")
         XCTAssertNil(Smart.chip(for: "it costs $13 = ₹1,246.44", fields: [], rates: india))
         XCTAssertNil(Smart.chip(for: "buying $sol = $111.77", fields: [], rates: india))
@@ -1238,6 +1243,39 @@ final class GlyfEngineTests: XCTestCase {
             if got != want { failures.append("postcode of '\(address)': got \(got ?? "nil"), want \(want ?? "nil")") }
         }
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
+    /// shared/units/strip-cases.json: a measurement the message ends on, in
+    /// the other system, one chip per result (Android runs the same file).
+    func testAMeasurementShowsInTheOtherSystem() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/units/strip-cases.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let cases = root["cases"] as? [[String: Any]] ?? []
+        XCTAssertGreaterThan(cases.count, 30)
+        var failures: [String] = []
+        for c in cases {
+            let text = c["text"] as? String ?? ""
+            let region = c["region"] as? String
+            let want = c["results"] as? [String] ?? []
+            let got = Smart.conversions(in: text, region: region)?.results ?? []
+            if got != want { failures.append("'\(text)' (\(region ?? "-")): got \(got), want \(want)") }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
+    /// The strip offers a measurement as its own chip, and a tap adds the
+    /// result in brackets after what was typed.
+    func testAMeasurementIsAChipAndATapAddsItInBrackets() {
+        XCTAssertEqual(Smart.chip(for: "lets 10 inch", fields: [], region: "US"),
+                       .convert(source: "10 inch", results: ["25.4 cm", "0.254 m"]))
+        // A sum is still a sum, and money still money.
+        if case .convert? = Smart.chip(for: "12+30", fields: [], region: "US") { XCTFail("a sum became units") }
+        XCTAssertEqual(Smart.conversionInsert("25.4 cm", before: "lets 10 inch"), " (25.4 cm)")
+        XCTAssertEqual(Smart.conversionInsert("25.4 cm", before: "lets 10 inch "), "(25.4 cm) ")
+        XCTAssertEqual(Smart.Chip.convert(source: "10 inch", results: ["25.4 cm"]).choices?.values, ["25.4 cm"])
     }
 
     /// Money with cents shows both places: "$20 = ₹1,919.6" read as a typo.

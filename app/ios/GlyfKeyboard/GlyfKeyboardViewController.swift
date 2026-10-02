@@ -1638,7 +1638,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         var chip = Smart.chip(for: tail, fields: VaultStore.shared.load().fields,
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
                               rates: rates, ownWallet: ownWallet,
-                              indianGrouping: (SettingsStore.current.region ?? "IN") == "IN")
+                              indianGrouping: (SettingsStore.current.region ?? "IN") == "IN",
+                              region: SettingsStore.current.region ?? Locale.current.region?.identifier)
         // An email field with nothing in it and no email saved: a temp
         // address in one tap.
         if before.isEmpty, (textDocumentProxy.documentContextAfterInput ?? "").isEmpty,
@@ -1715,6 +1716,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .money: return "money"
         case .vault(let f): return "vault:\(f.kind)"
         case .details(let fields, _): return "vault:\(fields.first?.kind ?? "")"
+        case .convert: return "convert"
         case .paste: return "paste"
         case .pay: return "pay"
         case .buy: return "buy"
@@ -2915,7 +2917,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             toolbar.showSmart(nil)
             useTempAddress()
             return
-        case .details:
+        case .details, .convert:
             // Its parts are the actions (toolbarSmartChoiceTapped).
             return
         default:
@@ -3056,6 +3058,14 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// One part of a details chip: a saved detail types itself, as its own
     /// chip would; Temp mail types a temp address.
     func toolbarSmartChoiceTapped(_ chip: Smart.Chip, index: Int) {
+        if case .convert(_, let results) = chip {
+            // "10 inch" → "10 inch (25.4 cm)": the result after the measurement.
+            guard index < results.count else { return }
+            hostInsert(Smart.conversionInsert(results[index], before: beforeContext))
+            toolbar.showSmart(nil)
+            updateCandidates()
+            return
+        }
         guard case .details(let fields, let temp) = chip else { return }
         if index < fields.count {
             toolbarSmartTapped(.vault(field: fields[index]))

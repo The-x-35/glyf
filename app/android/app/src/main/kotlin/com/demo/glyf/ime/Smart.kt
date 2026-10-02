@@ -37,6 +37,10 @@ object Smart {
          *  "if i added 2 mail ids i should see both, and i should also see
          *  a temp mail option"). Smart.swift's `.details`. */
         data class Details(val fields: List<Field>, val temp: Boolean) : Chip()
+        /** A measurement the message ends on, in the other system: one part
+         *  for each result ("10 inch" → 25.4 cm, 0.254 m), and a tap on a part
+         *  adds it in brackets (Smart.conversions). Smart.swift's `.convert`. */
+        data class Convert(val source: String, val results: List<String>) : Chip()
         /** The model read the sentence and named what Glyf could do with it. */
         data class Action(val label: String, val query: String, val intent: String) : Chip()
         /** Someone's Solana wallet on screen: Send opens in the app with it
@@ -105,7 +109,7 @@ object Smart {
         is Chip.Booking -> "Book"
         is Chip.Pay -> "Send"
         is Chip.Buy -> "Buy"
-        is Chip.Action, is Chip.Details -> null
+        is Chip.Action, is Chip.Details, is Chip.Convert -> null
     }
 
     /** What the chip says. */
@@ -117,6 +121,7 @@ object Smart {
         is Chip.Vault -> chip.field.value
         is Chip.Details -> (chip.fields.map { it.value } + if (chip.temp) listOf("Temp mail") else emptyList())
             .joinToString(" · ")
+        is Chip.Convert -> "${chip.source} = " + chip.results.joinToString(" · ")
         is Chip.Action -> chip.label
         is Chip.Money -> chip.shown
         is Chip.Event -> EventParse.summary(chip.plan)
@@ -134,7 +139,8 @@ object Smart {
         is Chip.Vault -> chip.field.value
         is Chip.Money -> chip.insert
         // A part's own tap types it.
-        is Chip.Action, is Chip.Pay, is Chip.Buy, is Chip.Event, is Chip.Booking, is Chip.Details -> ""
+        is Chip.Action, is Chip.Pay, is Chip.Buy, is Chip.Event, is Chip.Booking, is Chip.Details,
+        is Chip.Convert -> ""
     }
 
     /** A saved detail typed after what is there, with a space between when
@@ -188,7 +194,8 @@ object Smart {
      *  typed, the detail of that kind we hold, or every one of them. */
     fun chip(text: String, fields: List<Field>, indianGrouping: Boolean = true,
              rates: RatesSnapshot = RatesSnapshot.EMPTY, ownBooking: String? = null,
-             ownWallet: String? = null, fieldKind: String? = null): Chip? {
+             ownWallet: String? = null, fieldKind: String? = null,
+             region: String? = java.util.Locale.getDefault().country): Chip? {
         // A form asking for something we already know: one tap fills it,
         // one part each when there is more than one (nothing else reads an
         // empty field).
@@ -220,6 +227,7 @@ object Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if (cashtag(text) != null) return null
+        conversions(text, region)?.let { return Chip.Convert(it.source, it.results) }
         // Every saved value the sentence asks for: two emails show both.
         val matches = vaultMatches(text, fields)
         if (matches.size > 1) return Chip.Details(matches.take(3), temp = false)
@@ -1090,6 +1098,229 @@ object Smart {
             u.one.startsWith("°") -> "$text${u.one}"
             else -> "$text ${if (kotlin.math.abs(n) == 1.0) u.one else u.many}"
         }
+    }
+
+    // MARK: measurements, in the other system as they are typed (Smart.swift twin)
+
+    /** A measurement the message ends on, in the other system (Arpit,
+     *  2026-10-03: "when i write lets 10 inch, i see in cm or meteres, diff
+     *  strips with suggestions"): "10 inch" → 25.4 cm, 0.254 m; "5'11" →
+     *  180 cm, 1.8 m; "72°F" → 22.2°C; "1/2 cup" → 118 ml. Each result is a
+     *  chip of its own, and a tap adds it in brackets after the measurement.
+     *  Only names that can't be anything else after a number in a chat:
+     *  "in", "m", "min", "c" or "f" without "°", and "4g" are other things.
+     *  shared/units/strip-cases.json holds the cases. */
+    data class Conversions(val source: String, val results: List<String>)
+
+    private val stripNames: Map<String, String> = buildMap {
+        fun add(unit: String, vararg names: String) { for (n in names) put(n, unit) }
+        add("mm", "mm", "millimeter", "millimeters", "millimetre", "millimetres")
+        add("cm", "cm", "cms", "centimeter", "centimeters", "centimetre", "centimetres")
+        add("m", "meter", "meters", "metre", "metres", "mtr", "mtrs")
+        add("km", "km", "kms", "kilometer", "kilometers", "kilometre", "kilometres")
+        add("inch", "inch", "inches")
+        add("foot", "ft", "foot", "feet")
+        add("yard", "yd", "yds", "yard", "yards")
+        add("mile", "mile", "miles")
+        add("g", "g", "gm", "gms", "gram", "grams")
+        add("kg", "kg", "kgs", "kilo", "kilos", "kilogram", "kilograms")
+        add("oz", "oz", "ounce", "ounces")
+        add("lb", "lb", "lbs", "pound", "pounds")
+        add("stone", "stone", "stones")
+        add("°C", "°c", "° c", "ºc", "deg c", "degree c", "degrees c", "celsius", "degrees celsius", "centigrade")
+        add("°F", "°f", "° f", "ºf", "deg f", "degree f", "degrees f", "fahrenheit", "degrees fahrenheit")
+        add("ml", "ml", "milliliter", "milliliters", "millilitre", "millilitres")
+        add("litre", "litre", "litres", "liter", "liters", "ltr", "ltrs")
+        add("tsp", "tsp", "teaspoon", "teaspoons")
+        add("tbsp", "tbsp", "tablespoon", "tablespoons")
+        add("fl oz", "fl oz", "fluid ounce", "fluid ounces")
+        add("cup", "cup", "cups")
+        add("pint", "pint", "pints")
+        add("quart", "quart", "quarts")
+        add("gallon", "gal", "gallon", "gallons")
+        add("km/h", "km/h", "kmh", "kmph", "kph", "km per hour", "kilometers per hour", "kilometres per hour")
+        add("mph", "mph", "miles per hour")
+        add("m/s", "m/s", "meters per second", "metres per second")
+        add("knot", "knot", "knots")
+        add("sq ft", "sq ft", "sqft", "square feet", "square foot", "ft2")
+        add("sq m", "sq m", "sqm", "square meter", "square meters", "square metre", "square metres", "m2")
+        add("acre", "acre", "acres")
+        add("hectare", "hectare", "hectares")
+    }
+
+    /** A number as typed: 10, 2.5, 1,500, 1/2, 1 1/2, ½, 1½, -5. */
+    private const val STRIP_AMOUNT = """(-?\d+\s+\d+/\d+|\d+/\d+|-?\d*[½⅓⅔¼¾⅛]|-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|-?\.\d+)"""
+    private val stripMeasure: Regex by lazy {
+        val names = stripNames.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
+        Regex("""(?<![\p{L}\d.,/])""" + STRIP_AMOUNT + """\s*(?:degrees?\s+)?(""" + names + """)\.?\s?$""",
+            RegexOption.IGNORE_CASE)
+    }
+    /** A height: 5'11, 5'11", 5 ft 11 in, 5 feet 11 inches, 5ft11. */
+    private val stripHeight = Regex(
+        """(?<![\p{L}\d.])([1-8])\s*(?:'|′|ft|feet|foot)\s*(\d{1,2}(?:\.\d+)?)\s*(?:"|″|''|in|inch|inches)?\.?\s?$""",
+        RegexOption.IGNORE_CASE)
+    private val partOfMore = Regex("""\d\s*(?:-|–|to|x|×|by)\s*$""", RegexOption.IGNORE_CASE)
+    private val fractions = mapOf('½' to 0.5, '⅓' to 1.0 / 3, '⅔' to 2.0 / 3, '¼' to 0.25, '¾' to 0.75, '⅛' to 0.125)
+
+    private fun amount(s: String): Double? {
+        val t = s.trim()
+        val last = t.lastOrNull() ?: return null
+        fractions[last]?.let { part ->
+            val whole = t.dropLast(1)
+            if (whole.isEmpty()) return part
+            if (whole == "-") return -part
+            val w = whole.toDoubleOrNull() ?: return null
+            return if (w < 0) w - part else w + part
+        }
+        val pieces = t.split(" ").filter { it.isNotEmpty() }
+        if (pieces.size == 2) {
+            val w = pieces[0].toDoubleOrNull()
+            val f = amount(pieces[1])
+            if (w != null && f != null) return if (w < 0) w - f else w + f
+        }
+        if ('/' in t) {
+            val ab = t.split("/").mapNotNull { it.toDoubleOrNull() }
+            if (ab.size != 2 || ab[1] == 0.0) return null
+            return ab[0] / ab[1]
+        }
+        return t.replace(",", "").toDoubleOrNull()
+    }
+
+    /** Sizes in metres, kilograms, litres, metres a second and square metres;
+     *  in Britain pints, gallons and fluid ounces are imperial ones. */
+    private fun stripSize(unit: String, uk: Boolean): Double? = when (unit) {
+        "mm" -> 0.001; "cm" -> 0.01; "m" -> 1.0; "km" -> 1000.0
+        "inch" -> 0.0254; "foot" -> 0.3048; "yard" -> 0.9144; "mile" -> 1609.344
+        "g" -> 0.001; "kg" -> 1.0; "oz" -> 0.028349523125; "lb" -> 0.45359237; "stone" -> 6.35029318
+        "ml" -> 0.001; "litre", "L" -> 1.0
+        "tsp" -> 0.00492892159375; "tbsp" -> 0.01478676478125
+        "fl oz" -> if (uk) 0.0284130625 else 0.0295735295625
+        "cup" -> 0.2365882365
+        "pint" -> if (uk) 0.56826125 else 0.473176473
+        "quart" -> if (uk) 1.1365225 else 0.946352946
+        "gallon" -> if (uk) 4.54609 else 3.785411784
+        "km/h" -> 1 / 3.6; "mph" -> 0.44704; "m/s" -> 1.0; "knot" -> 1852.0 / 3600
+        "sq ft" -> 0.09290304; "sq m" -> 1.0; "acre" -> 4046.8564224; "hectare" -> 10000.0
+        else -> null
+    }
+
+    /** How a result is written: "25.4 cm", "3.11 miles", "22.2°C". */
+    private fun stripNamed(n: Double, unit: String): String {
+        val text = stripNumber(n)
+        val one = kotlin.math.abs(n) == 1.0
+        return when (unit) {
+            "°C", "°F" -> text + unit
+            "inch" -> "$text in"
+            "foot" -> "$text ft"
+            "yard" -> "$text yd"
+            "mile" -> "$text ${if (one) "mile" else "miles"}"
+            "litre" -> "$text L"
+            "cup" -> "$text ${if (one) "cup" else "cups"}"
+            "pint" -> "$text ${if (one) "pint" else "pints"}"
+            "gallon" -> "$text gal"
+            "acre" -> "$text ${if (one) "acre" else "acres"}"
+            "hectare" -> "$text ${if (one) "hectare" else "hectares"}"
+            else -> "$text $unit"
+        }
+    }
+
+    /** Three figures, whole numbers from 100: 25.4, 3.94, 0.254, 180, 1,609. */
+    fun stripNumber(n: Double): String {
+        val size = kotlin.math.abs(n)
+        val text = if (size >= 1 || size == 0.0) {
+            val decimals = when { size >= 100 -> 0; size >= 10 -> 1; else -> 2 }
+            val pattern = "#,##0" + if (decimals > 0) "." + "#".repeat(decimals) else ""
+            java.text.DecimalFormat(pattern, java.text.DecimalFormatSymbols(java.util.Locale.US))
+                .apply { roundingMode = java.math.RoundingMode.HALF_UP }.format(n)
+        } else {
+            java.math.BigDecimal(n).round(java.math.MathContext(3, java.math.RoundingMode.HALF_UP))
+                .stripTrailingZeros().toPlainString()
+        }
+        return if (text == "-0") "0" else text
+    }
+
+    /** Feet and inches, for a height: "5 ft 11 in". */
+    private fun feetInches(metres: Double): String {
+        var feet = kotlin.math.floor(metres / 0.3048).toInt()
+        var inches = Math.round((metres / 0.3048 - feet) * 12).toInt()
+        if (inches == 12) { feet += 1; inches = 0 }
+        return if (inches > 0) "$feet ft $inches in" else "$feet ft"
+    }
+
+    fun conversions(text: String, region: String? = java.util.Locale.getDefault().country): Conversions? {
+        val t = text.replace('’', '\'')
+        // "½" is a number too, if not a digit.
+        if (t.none { it.isDigit() || it in fractions }) return null
+        val uk = region.equals("GB", ignoreCase = true)
+        val us = region.equals("US", ignoreCase = true)
+        // A range or a size ("5-10 km", "10x20 cm") would be half answered.
+        fun partOfMore(m: MatchResult) = partOfMore.containsMatchIn(t.substring(0, m.range.first))
+
+        stripHeight.find(t)?.takeIf { !partOfMore(it) }?.let { m ->
+            val feet = m.groupValues[1].toDoubleOrNull()
+            val inches = m.groupValues[2].toDoubleOrNull()
+            if (feet != null && inches != null && inches < 12) {
+                val metres = feet * 0.3048 + inches * 0.0254
+                return Conversions(m.value.trim(), listOf(stripNamed(metres * 100, "cm"), stripNamed(metres, "m")))
+            }
+        }
+        val m = stripMeasure.find(t)?.takeIf { !partOfMore(it) } ?: return null
+        val n = amount(m.groupValues[1])?.takeIf { it.isFinite() } ?: return null
+        val name = m.groupValues[2].lowercase()
+        val unit = stripNames[name] ?: return null
+        // "4g", "5g": a network, not grams. "10 pounds" is money outside the US.
+        if (unit == "g" && name == "g" && Regex("^[2-6]g", RegexOption.IGNORE_CASE).containsMatchIn(m.value)) return null
+        if (name.startsWith("pound") && !us) return null
+        if (n < 0 && unit != "°C" && unit != "°F") return null
+
+        val results: List<String> = when (unit) {
+            "°C" -> listOf(stripNamed(n * 9 / 5 + 32, "°F"))
+            "°F" -> listOf(stripNamed((n - 32) * 5 / 9, "°C"))
+            else -> {
+                val size = stripSize(unit, uk) ?: return null
+                if (n <= 0) return null
+                val base = n * size
+                fun to(u: String) = stripNamed(base / (stripSize(u, uk) ?: 1.0), u)
+                // Millilitres under a litre, grams under a kilo.
+                fun metricVolume() = if (base < 1) to("ml") else to("litre")
+                fun metricMass() = if (base < 1) to("g") else to("kg")
+                when (unit) {
+                    "mm" -> listOf(to("inch"))
+                    "cm" -> if (base >= 0.3 && base < 3) listOf(feetInches(base), to("inch")) else listOf(to("inch"))
+                    "m" -> if (base < 3) listOf(feetInches(base), to("foot")) else listOf(to("foot"), to("yard"))
+                    "km" -> listOf(to("mile"))
+                    "inch" -> listOf(to("cm"), to("m"))
+                    "foot" -> if (n < 10) listOf(to("m"), to("cm")) else listOf(to("m"))
+                    "yard" -> listOf(to("m"))
+                    "mile" -> listOf(to("km"))
+                    "g" -> listOf(to("oz"))
+                    "kg" -> listOf(to("lb"))
+                    "oz" -> listOf(metricMass())
+                    "lb" -> listOf(to("kg"))
+                    "stone" -> listOf(to("kg"), to("lb"))
+                    "ml" -> listOf(to("fl oz"))
+                    "litre" -> if (uk) listOf(to("pint"), to("gallon")) else listOf(to("gallon"), to("fl oz"))
+                    "tsp", "tbsp", "fl oz", "cup", "pint" -> listOf(metricVolume())
+                    "quart", "gallon" -> listOf(to("litre"))
+                    "km/h" -> listOf(to("mph"))
+                    "mph" -> listOf(to("km/h"))
+                    "m/s", "knot" -> listOf(to("km/h"), to("mph"))
+                    "sq ft" -> listOf(to("sq m"))
+                    "sq m" -> listOf(to("sq ft"))
+                    "acre" -> listOf(to("hectare"))
+                    "hectare" -> listOf(to("acre"))
+                    else -> return null
+                }
+            }
+        }
+        return if (results.isEmpty()) null else Conversions(m.value.trim(), results)
+    }
+
+    /** What a tap on a result adds after the measurement: " (25.4 cm)", or
+     *  "(25.4 cm) " after a space already typed. */
+    fun conversionInsert(result: String, before: String?): String {
+        val last = before?.lastOrNull()
+        return if (last == null || last == ' ' || last == '\n') "($result) " else " ($result)"
     }
 
     // MARK: questions (the AI answer chip, as it is typed)

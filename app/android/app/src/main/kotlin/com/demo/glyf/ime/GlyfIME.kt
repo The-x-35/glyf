@@ -2234,7 +2234,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val rates = RatesStore.snapshot(region, settings.optString("moneyCurrency"))
         val ownWallet = settings.optString("walletAddress").ifEmpty { null }
         var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN", rates = rates,
-                              ownBooking = settings.optString("bookingLink"), ownWallet = ownWallet)
+                              ownBooking = settings.optString("bookingLink"), ownWallet = ownWallet,
+                              region = region)
         // An address on screen: a wallet (Send) or a token (Buy)? Only a
         // lookup can tell; the strip is arranged again when it lands.
         if (chip == null) Smart.addressToCheck(tail, rates, ownWallet)?.let {
@@ -2272,6 +2273,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 is Smart.Chip.Money -> "money"
                 is Smart.Chip.Vault -> "vault:${chip.field.kind}"
                 is Smart.Chip.Details -> "vault:${chip.fields.firstOrNull()?.kind.orEmpty()}"
+                is Smart.Chip.Convert -> "convert"
                 is Smart.Chip.Pay -> "pay"
                 is Smart.Chip.Buy -> "buy"
                 is Smart.Chip.Action -> "action"
@@ -2312,6 +2314,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     hideStripChip()
                     updateSuggestions()
                 }
+            }
+            is Smart.Chip.Convert -> {
+                stripSmartDetail = "convert"
+                // "10 inch" → "10 inch (25.4 cm)": the result after the measurement.
+                return showChoiceRow("smart", chip.results, temp = false, onIndex = { i ->
+                    val ic = currentInputConnection
+                    ic?.commitText(Smart.conversionInsert(chip.results[i], ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                    hideStripChip()
+                    updateSuggestions()
+                }, onTemp = {})
             }
             is Smart.Chip.Details -> {
                 stripSmartDetail = "vault:${chip.fields.firstOrNull()?.kind.orEmpty()}"
@@ -2627,6 +2639,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  row does. False when waved off for these words. */
     private fun showDetailsChip(kind: String, details: Smart.Chip.Details,
                                 onValue: (Smart.Field) -> Unit, onTemp: () -> Unit): Boolean {
+        val fields = details.fields.take(3)
+        return showChoiceRow(kind, fields.map { it.value }, details.temp,
+            onIndex = { i -> onValue(fields[i]) }, onTemp = onTemp)
+    }
+
+    /** The row itself: one ✕, a glass chip per value (a tap gives
+     *  [onIndex] its place), and Temp when [temp]. Saved details and a
+     *  measurement's results both draw with it. */
+    private fun showChoiceRow(kind: String, values: List<String>, temp: Boolean,
+                              onIndex: (Int) -> Unit, onTemp: () -> Unit): Boolean {
         // A panel's name is in the strip: its chips wait for the keys.
         if (stripTitleRow != null) return false
         val key = chipKey(kind)
@@ -2637,11 +2659,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         hideStripChip()
         val accent = stripAccent()
         val secondary = chipSecondary()
-        val values = details.fields.take(3)
         val row = ChipRow(this, stripChipHeight()).apply {
             setTag(com.demo.glyf.R.id.qa_id, "strip:smart")
-            contentDescription = (values.map { it.value } + if (details.temp) listOf("Temp mail") else emptyList())
-                .joinToString(", ")
+            contentDescription = (values + if (temp) listOf("Temp mail") else emptyList()).joinToString(", ")
         }
         // The row's one ✕: plain, its 11dp cross in a 28dp target.
         row.setClose(ToolIcon(this, "close", secondary).apply {
@@ -2657,12 +2677,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             contentDescription = said
             setOnClickListener { onTap() }
         }
-        for ((i, field) in values.withIndex()) {
-            val chip = card("strip:smart:choice:$i", field.value) { onValue(field) }
+        for ((i, value) in values.take(3).withIndex()) {
+            val chip = card("strip:smart:choice:$i", value) { onIndex(i) }
             // An address is known by its start ("alex.s219@exa…"): cut in the
             // middle, two emails read the same ("alex….com").
             val words = TextView(this).apply {
-                text = field.value
+                text = value
                 textSize = 15f
                 setTextColor(ink())
                 gravity = Gravity.CENTER
@@ -2672,7 +2692,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             chip.addView(words, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addPart(ChipRow.Part(chip, words, temp = false))
         }
-        if (details.temp) {
+        if (temp) {
             val chip = card("strip:smart:choice:temp", "Temp mail") { onTemp() }
             // iOS: the envelope in a 17dp box, 6dp before the word.
             chip.addView(ToolIcon(this, "tempmail", accent).apply { solid = true; weight = 1.8f },

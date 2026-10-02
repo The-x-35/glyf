@@ -539,7 +539,7 @@ final class GlyfToolbar: UIView {
     /// beside your email, in an email field).
     func showSmart(_ chip: Smart.Chip?, extra: String? = nil) {
         smartChip = chip
-        let isRow: Bool = { if case .details? = chip { return true }; return false }()
+        let isRow = chip?.choices != nil
         let wasShowing = !smartCard.isHidden || !choiceRow.isHidden
         smartCard.isHidden = chip == nil || panelTitle != nil || isRow
         choiceRow.isHidden = !isRow || panelTitle != nil
@@ -610,9 +610,9 @@ final class GlyfToolbar: UIView {
     }
 
     /// A details chip shows as a row of chips, one per saved detail, then
-    /// Temp; any other chip hides the row.
+    /// Temp; a measurement as one per result; any other chip hides the row.
     private func showChoices(_ chip: Smart.Chip?, fresh: Bool) {
-        guard case .details(let fields, let temp)? = chip, panelTitle == nil else {
+        guard let parts = chip?.choices, panelTitle == nil else {
             choiceCount = 0
             for c in choiceChips {
                 c.isHidden = true
@@ -620,7 +620,7 @@ final class GlyfToolbar: UIView {
             }
             return
         }
-        let values = fields.map(\.value)
+        let values = parts.values, temp = parts.temp
         choiceCount = min(values.count + (temp ? 1 : 0), choiceChips.count)
         for (i, c) in choiceChips.enumerated() {
             let shown = i < choiceCount
@@ -659,7 +659,7 @@ final class GlyfToolbar: UIView {
         let gap: CGFloat = choiceTight ? 8 : 10
         var widths = chips.map(\.naturalWidth)
         let room = choiceRow.bounds.width - start - gap * CGFloat(chips.count - 1)
-        if widths.reduce(0, +) > room, case .details(_, let temp)? = smartChip {
+        if widths.reduce(0, +) > room, let temp = smartChip?.choices?.temp {
             let values = chips.count - (temp ? 1 : 0)
             var rest = room - (temp ? widths[chips.count - 1] : 0)
             var open = Array(0..<values)
@@ -693,7 +693,7 @@ final class GlyfToolbar: UIView {
 
     private func paintChoices() {
         choiceClose.tintColor = Glass.textSecondary
-        guard case .details(_, let temp)? = smartChip else { return }
+        guard let temp = smartChip?.choices?.temp else { return }
         for (i, c) in choiceChips.prefix(choiceCount).enumerated() {
             let isTemp = temp && i == choiceCount - 1
             let size: CGFloat = choiceTight && !isTemp ? 14 : 15

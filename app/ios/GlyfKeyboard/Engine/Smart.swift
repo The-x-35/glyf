@@ -52,11 +52,25 @@ enum Smart {
         /// part types it (Arpit, 2026-10-01: "if i added 2 mail ids i should
         /// see both, and i should also see a temp mail option").
         case details(fields: [VaultField], temp: Bool)
+        /// A measurement the message ends on, in the other system: one part
+        /// for each result ("10 inch" → 25.4 cm, 0.254 m), and a tap on a
+        /// part adds it in brackets (Smart.conversions).
+        case convert(source: String, results: [String])
+
+        /// The parts of a chip drawn as a row of chips: the saved details (and
+        /// Temp), or a measurement's results.
+        var choices: (values: [String], temp: Bool)? {
+            switch self {
+            case .details(let fields, let temp): return (fields.map(\.value), temp)
+            case .convert(_, let results): return (results, false)
+            default: return nil
+            }
+        }
 
         var key: String {
             switch self {
             case .event, .booking: return "Calendar"
-            case .calc, .money: return "="
+            case .calc, .money, .convert: return "="
             case .vault(let f): return f.title
             case .paste: return "Paste"
             case .pay: return "Send"
@@ -80,7 +94,7 @@ enum Smart {
             case .action: return nil
             case .tempMail(_, _, let code): return code == nil ? "Open" : "Insert"
             case .tempAddress(let live): return live == nil ? "Create" : "Insert"
-            case .details: return nil    // each part is its own action
+            case .details, .convert: return nil    // each part is its own action
             }
         }
         /// A second action, as a button beside the first: Buy on a token's
@@ -133,6 +147,8 @@ enum Smart {
             case .tempAddress(let live): return live ?? "Temp email"
             case .details(let fields, let temp):
                 return (fields.map(\.value) + (temp ? ["Temp mail"] : [])).joined(separator: " · ")
+            case .convert(let source, let results):
+                return "\(source) = " + results.joined(separator: " · ")
             }
         }
         /// What tapping the chip puts in the field.
@@ -149,7 +165,7 @@ enum Smart {
             case .action: return ""    // runs a glyf instead of typing
             case .tempMail(_, _, let code): return code ?? ""   // no code: opens the mail
             case .tempAddress(let live): return live ?? ""   // none live: made first, then typed
-            case .details: return ""   // a part's own tap types it
+            case .details, .convert: return ""   // a part's own tap types it
             }
         }
     }
@@ -247,7 +263,8 @@ enum Smart {
     /// for, then something freshly copied.
     static func chip(for text: String, fields: [VaultField], paste: String? = nil,
                      field: FieldHint = .none, rates: RatesSnapshot = .empty,
-                     ownWallet: String? = nil, indianGrouping: Bool = true) -> Chip? {
+                     ownWallet: String? = nil, indianGrouping: Bool = true,
+                     region: String? = Locale.current.region?.identifier) -> Chip? {
         // An address: Send to a wallet, Buy a token. Your own wallet is one
         // you are sharing, not paying. Until the lookup says which, nothing
         // (the keyboard asks, and the strip is arranged again).
@@ -271,6 +288,7 @@ enum Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if cashtag(in: text) != nil { return nil }
+        if let c = conversions(in: text, region: region) { return .convert(source: c.source, results: c.results) }
         let matches = vaultMatches(text, fields: fields)
         if matches.count > 1 { return .details(fields: Array(matches.prefix(3)), temp: false) }
         if let f = matches.first { return .vault(field: f) }
@@ -1282,6 +1300,264 @@ extension Smart {
         if u.one == "K" { return "\(text) K" }
         if u.one.hasPrefix("°") { return "\(text)\(u.one)" }
         return "\(text) \(abs(n) == 1 ? u.one : u.many)"
+    }
+}
+
+// MARK: - Measurements, in the other system as they are typed
+
+extension Smart {
+
+    /// A measurement the message ends on, in the other system (Arpit,
+    /// 2026-10-03: "when i write lets 10 inch, i see in cm or meteres, diff
+    /// strips with suggestions"): "10 inch" → 25.4 cm, 0.254 m; "5'11" →
+    /// 180 cm, 1.8 m; "72°F" → 22.2°C; "1/2 cup" → 118 ml. Each result is a
+    /// chip of its own, and a tap adds it in brackets after the measurement.
+    /// Only names that can't be anything else after a number in a chat:
+    /// "in", "m", "min", "c" or "f" without "°", and "4g" are other things.
+    /// Smart.kt's twin; shared/units/strip-cases.json holds the cases.
+    struct Conversions: Equatable {
+        /// The measurement as typed: "10 inch".
+        var source: String
+        /// What it is in the other system, best first: ["25.4 cm", "0.254 m"].
+        var results: [String]
+    }
+
+    /// Unit names a measurement in a chat can end on, and the unit each is.
+    private static let stripNames: [String: String] = {
+        var out: [String: String] = [:]
+        func add(_ unit: String, _ names: [String]) { for n in names { out[n] = unit } }
+        add("mm", ["mm", "millimeter", "millimeters", "millimetre", "millimetres"])
+        add("cm", ["cm", "cms", "centimeter", "centimeters", "centimetre", "centimetres"])
+        add("m", ["meter", "meters", "metre", "metres", "mtr", "mtrs"])
+        add("km", ["km", "kms", "kilometer", "kilometers", "kilometre", "kilometres"])
+        add("inch", ["inch", "inches"])
+        add("foot", ["ft", "foot", "feet"])
+        add("yard", ["yd", "yds", "yard", "yards"])
+        add("mile", ["mile", "miles"])
+        add("g", ["g", "gm", "gms", "gram", "grams"])
+        add("kg", ["kg", "kgs", "kilo", "kilos", "kilogram", "kilograms"])
+        add("oz", ["oz", "ounce", "ounces"])
+        add("lb", ["lb", "lbs", "pound", "pounds"])
+        add("stone", ["stone", "stones"])
+        add("°C", ["°c", "° c", "ºc", "deg c", "degree c", "degrees c", "celsius", "degrees celsius", "centigrade"])
+        add("°F", ["°f", "° f", "ºf", "deg f", "degree f", "degrees f", "fahrenheit", "degrees fahrenheit"])
+        add("ml", ["ml", "milliliter", "milliliters", "millilitre", "millilitres"])
+        add("litre", ["litre", "litres", "liter", "liters", "ltr", "ltrs"])
+        add("tsp", ["tsp", "teaspoon", "teaspoons"])
+        add("tbsp", ["tbsp", "tablespoon", "tablespoons"])
+        add("fl oz", ["fl oz", "fluid ounce", "fluid ounces"])
+        add("cup", ["cup", "cups"])
+        add("pint", ["pint", "pints"])
+        add("quart", ["quart", "quarts"])
+        add("gallon", ["gal", "gallon", "gallons"])
+        add("km/h", ["km/h", "kmh", "kmph", "kph", "km per hour", "kilometers per hour", "kilometres per hour"])
+        add("mph", ["mph", "miles per hour"])
+        add("m/s", ["m/s", "meters per second", "metres per second"])
+        add("knot", ["knot", "knots"])
+        add("sq ft", ["sq ft", "sqft", "square feet", "square foot", "ft2"])
+        add("sq m", ["sq m", "sqm", "square meter", "square meters", "square metre", "square metres", "m2"])
+        add("acre", ["acre", "acres"])
+        add("hectare", ["hectare", "hectares"])
+        return out
+    }()
+
+    /// A number as typed: 10, 2.5, 1,500, 1/2, 1 1/2, ½, 1½, -5.
+    private static let stripAmount = #"(-?\d+\s+\d+/\d+|\d+/\d+|-?\d*[½⅓⅔¼¾⅛]|-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|-?\.\d+)"#
+    private static let stripMeasure: NSRegularExpression? = {
+        let names = stripNames.keys.sorted { $0.count > $1.count }
+            .map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+        return try? NSRegularExpression(pattern: #"(?<![\p{L}\d.,/])"# + stripAmount + #"\s*(?:degrees?\s+)?("# + names + #")\.?\s?$"#,
+                                        options: [.caseInsensitive])
+    }()
+    /// A height: 5'11, 5'11", 5 ft 11 in, 5 feet 11 inches, 5ft11.
+    private static let stripHeight = try? NSRegularExpression(pattern:
+        #"(?<![\p{L}\d.])([1-8])\s*(?:'|′|ft|feet|foot)\s*(\d{1,2}(?:\.\d+)?)\s*(?:"|″|''|in|inch|inches)?\.?\s?$"#,
+        options: [.caseInsensitive])
+
+    private static let fractions: [Character: Double] = ["½": 0.5, "⅓": 1.0 / 3, "⅔": 2.0 / 3, "¼": 0.25, "¾": 0.75, "⅛": 0.125]
+
+    private static func amount(_ s: String) -> Double? {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        if let last = t.last, let part = fractions[last] {
+            let whole = String(t.dropLast())
+            if whole.isEmpty { return part }
+            if whole == "-" { return -part }
+            guard let w = Double(whole) else { return nil }
+            return w < 0 ? w - part : w + part
+        }
+        let pieces = t.split(separator: " ").map(String.init)
+        if pieces.count == 2, let w = Double(pieces[0]), let f = amount(pieces[1]) { return w < 0 ? w - f : w + f }
+        if t.contains("/") {
+            let ab = t.split(separator: "/").compactMap { Double($0) }
+            guard ab.count == 2, ab[1] != 0 else { return nil }
+            return ab[0] / ab[1]
+        }
+        return Double(t.replacingOccurrences(of: ",", with: ""))
+    }
+
+    /// Sizes in metres, kilograms, litres, metres a second and square metres;
+    /// in Britain pints, gallons and fluid ounces are imperial ones.
+    private static func stripSize(_ unit: String, uk: Bool) -> Double? {
+        switch unit {
+        case "mm": return 0.001
+        case "cm": return 0.01
+        case "m": return 1
+        case "km": return 1000
+        case "inch": return 0.0254
+        case "foot": return 0.3048
+        case "yard": return 0.9144
+        case "mile": return 1609.344
+        case "g": return 0.001
+        case "kg": return 1
+        case "oz": return 0.028349523125
+        case "lb": return 0.45359237
+        case "stone": return 6.35029318
+        case "ml": return 0.001
+        case "litre", "L": return 1
+        case "tsp": return 0.00492892159375
+        case "tbsp": return 0.01478676478125
+        case "fl oz": return uk ? 0.0284130625 : 0.0295735295625
+        case "cup": return 0.2365882365
+        case "pint": return uk ? 0.56826125 : 0.473176473
+        case "quart": return uk ? 1.1365225 : 0.946352946
+        case "gallon": return uk ? 4.54609 : 3.785411784
+        case "km/h": return 1 / 3.6
+        case "mph": return 0.44704
+        case "m/s": return 1
+        case "knot": return 1852.0 / 3600
+        case "sq ft": return 0.09290304
+        case "sq m": return 1
+        case "acre": return 4046.8564224
+        case "hectare": return 10000
+        default: return nil
+        }
+    }
+
+    /// How a result is written: "25.4 cm", "3.11 miles", "22.2°C".
+    private static func stripNamed(_ n: Double, _ unit: String) -> String {
+        let text = stripNumber(n)
+        switch unit {
+        case "°C", "°F": return text + unit
+        case "inch": return "\(text) in"
+        case "foot": return "\(text) ft"
+        case "yard": return "\(text) yd"
+        case "mile": return "\(text) \(abs(n) == 1 ? "mile" : "miles")"
+        case "litre": return "\(text) L"
+        case "cup": return "\(text) \(abs(n) == 1 ? "cup" : "cups")"
+        case "pint": return "\(text) \(abs(n) == 1 ? "pint" : "pints")"
+        case "gallon": return "\(text) gal"
+        case "acre": return "\(text) \(abs(n) == 1 ? "acre" : "acres")"
+        case "hectare": return "\(text) \(abs(n) == 1 ? "hectare" : "hectares")"
+        default: return "\(text) \(unit)"
+        }
+    }
+
+    /// Three figures, whole numbers from 100: 25.4, 3.94, 0.254, 180, 1,609.
+    static func stripNumber(_ n: Double) -> String {
+        let size = abs(n)
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: "en_US")
+        f.minimumFractionDigits = 0
+        f.roundingMode = .halfUp
+        if size >= 1 || size == 0 {
+            f.maximumFractionDigits = size >= 100 ? 0 : size >= 10 ? 1 : 2
+        } else {
+            f.usesSignificantDigits = true
+            f.maximumSignificantDigits = 3
+        }
+        let text = f.string(from: NSNumber(value: n)) ?? String(n)
+        return text == "-0" ? "0" : text
+    }
+
+    /// Feet and inches, for a height: "5 ft 11 in".
+    private static func feetInches(metres: Double) -> String {
+        var feet = Int((metres / 0.3048).rounded(.down))
+        var inches = Int(((metres / 0.3048 - Double(feet)) * 12).rounded(.toNearestOrAwayFromZero))
+        if inches == 12 { feet += 1; inches = 0 }
+        return inches > 0 ? "\(feet) ft \(inches) in" : "\(feet) ft"
+    }
+
+    static func conversions(in text: String, region: String? = Locale.current.region?.identifier) -> Conversions? {
+        let t = text.replacingOccurrences(of: "’", with: "'")
+        // "½" is a number too, if not a digit.
+        guard t.range(of: #"[\d½⅓⅔¼¾⅛]"#, options: .regularExpression) != nil else { return nil }
+        let ns = t as NSString
+        let all = NSRange(location: 0, length: ns.length)
+        let uk = region?.uppercased() == "GB"
+        let us = region?.uppercased() == "US"
+        func group(_ m: NSTextCheckingResult, _ i: Int) -> String? {
+            m.range(at: i).location == NSNotFound ? nil : ns.substring(with: m.range(at: i))
+        }
+        func source(_ m: NSTextCheckingResult) -> String {
+            ns.substring(with: m.range).trimmingCharacters(in: .whitespaces)
+        }
+        // A range or a size ("5-10 km", "10x20 cm") would be half answered.
+        func partOfMore(_ m: NSTextCheckingResult) -> Bool {
+            let before = ns.substring(to: m.range.location)
+            return before.range(of: #"\d\s*(?:-|–|to|x|×|by)\s*$"#, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+
+        if let m = stripHeight?.firstMatch(in: t, range: all), !partOfMore(m),
+           let feet = group(m, 1).flatMap(Double.init), let inches = group(m, 2).flatMap(Double.init), inches < 12 {
+            let metres = feet * 0.3048 + inches * 0.0254
+            return Conversions(source: source(m), results: [stripNamed(metres * 100, "cm"), stripNamed(metres, "m")])
+        }
+        guard let m = stripMeasure?.firstMatch(in: t, range: all), !partOfMore(m),
+              let typed = group(m, 1), let n = amount(typed), n.isFinite,
+              let name = group(m, 2)?.lowercased(), let unit = stripNames[name] else { return nil }
+        // "4g", "5g": a network, not grams. "10 pounds" is money outside the US.
+        if unit == "g", name == "g", ns.substring(with: m.range).range(of: #"^[2-6]g"#, options: [.regularExpression, .caseInsensitive]) != nil { return nil }
+        if name.hasPrefix("pound"), !us { return nil }
+        if n < 0, unit != "°C", unit != "°F" { return nil }
+
+        var results: [String] = []
+        switch unit {
+        case "°C": results = [stripNamed(n * 9 / 5 + 32, "°F")]
+        case "°F": results = [stripNamed((n - 32) * 5 / 9, "°C")]
+        default:
+            guard let size = stripSize(unit, uk: uk), n > 0 else { return nil }
+            let base = n * size
+            func to(_ u: String) -> String { stripNamed(base / (stripSize(u, uk: uk) ?? 1), u) }
+            // Millilitres under a litre, grams under a kilo.
+            func metricVolume() -> String { base < 1 ? to("ml") : to("litre") }
+            func metricMass() -> String { base < 1 ? to("g") : to("kg") }
+            switch unit {
+            case "mm": results = [to("inch")]
+            case "cm": results = base >= 0.3 && base < 3 ? [feetInches(metres: base), to("inch")] : [to("inch")]
+            case "m": results = base < 3 ? [feetInches(metres: base), to("foot")] : [to("foot"), to("yard")]
+            case "km": results = [to("mile")]
+            case "inch": results = [to("cm"), to("m")]
+            case "foot": results = n < 10 ? [to("m"), to("cm")] : [to("m")]
+            case "yard": results = [to("m")]
+            case "mile": results = [to("km")]
+            case "g": results = [to("oz")]
+            case "kg": results = [to("lb")]
+            case "oz": results = [metricMass()]
+            case "lb": results = [to("kg")]
+            case "stone": results = [to("kg"), to("lb")]
+            case "ml": results = [to("fl oz")]
+            case "litre": results = uk ? [to("pint"), to("gallon")] : [to("gallon"), to("fl oz")]
+            case "tsp", "tbsp", "fl oz", "cup", "pint": results = [metricVolume()]
+            case "quart", "gallon": results = [to("litre")]
+            case "km/h": results = [to("mph")]
+            case "mph": results = [to("km/h")]
+            case "m/s", "knot": results = [to("km/h"), to("mph")]
+            case "sq ft": results = [to("sq m")]
+            case "sq m": results = [to("sq ft")]
+            case "acre": results = [to("hectare")]
+            case "hectare": results = [to("acre")]
+            default: return nil
+            }
+        }
+        return results.isEmpty ? nil : Conversions(source: source(m), results: results)
+    }
+
+    /// What a tap on a result adds after the measurement: " (25.4 cm)", or
+    /// "(25.4 cm) " after a space already typed.
+    static func conversionInsert(_ result: String, before: String?) -> String {
+        let last = before?.last
+        return last == nil || last == " " || last == "\n" ? "(\(result)) " : " (\(result))"
     }
 }
 

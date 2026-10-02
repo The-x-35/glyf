@@ -1,0 +1,340 @@
+{
+ "about": "A measurement the message ends on, in the other system, as chips in the strip (Smart.conversions on both keyboards). \"results\" in order; [] means no chip. \"region\" is the phone's region: pounds are weight only in the US, pints and gallons are imperial in Britain.",
+ "cases": [
+  {
+   "text": "lets 10 inch",
+   "region": "US",
+   "results": [
+    "25.4 cm",
+    "0.254 m"
+   ]
+  },
+  {
+   "text": "the box is 10 inches ",
+   "region": "US",
+   "results": [
+    "25.4 cm",
+    "0.254 m"
+   ]
+  },
+  {
+   "text": "it's 72°F",
+   "region": "US",
+   "results": [
+    "22.2°C"
+   ]
+  },
+  {
+   "text": "it's -5 °C",
+   "region": "DE",
+   "results": [
+    "23°F"
+   ]
+  },
+  {
+   "text": "feels like 30 degrees celsius",
+   "region": "IN",
+   "results": [
+    "86°F"
+   ]
+  },
+  {
+   "text": "fever of 98.6°F",
+   "region": "US",
+   "results": [
+    "37°C"
+   ]
+  },
+  {
+   "text": "i'm 5'11",
+   "region": "US",
+   "results": [
+    "180 cm",
+    "1.8 m"
+   ]
+  },
+  {
+   "text": "he is 5 ft 11 in",
+   "region": "US",
+   "results": [
+    "180 cm",
+    "1.8 m"
+   ]
+  },
+  {
+   "text": "i'm 180 cm",
+   "region": "DE",
+   "results": [
+    "5 ft 11 in",
+    "70.9 in"
+   ]
+  },
+  {
+   "text": "it's 2 meters",
+   "region": "DE",
+   "results": [
+    "6 ft 7 in",
+    "6.56 ft"
+   ]
+  },
+  {
+   "text": "the pool is 100 metres",
+   "region": "GB",
+   "results": [
+    "328 ft",
+    "109 yd"
+   ]
+  },
+  {
+   "text": "6 ft",
+   "region": "US",
+   "results": [
+    "1.83 m",
+    "183 cm"
+   ]
+  },
+  {
+   "text": "ran 10 km",
+   "region": "DE",
+   "results": [
+    "6.21 miles"
+   ]
+  },
+  {
+   "text": "a 26.2 miles",
+   "region": "US",
+   "results": [
+    "42.2 km"
+   ]
+  },
+  {
+   "text": "only 1 mile",
+   "region": "US",
+   "results": [
+    "1.61 km"
+   ]
+  },
+  {
+   "text": "lost 5 lbs",
+   "region": "GB",
+   "results": [
+    "2.27 kg"
+   ]
+  },
+  {
+   "text": "lost 10 pounds",
+   "region": "US",
+   "results": [
+    "4.54 kg"
+   ]
+  },
+  {
+   "text": "i weigh 70 kg",
+   "region": "IN",
+   "results": [
+    "154 lb"
+   ]
+  },
+  {
+   "text": "100g",
+   "region": "DE",
+   "results": [
+    "3.53 oz"
+   ]
+  },
+  {
+   "text": "8 oz",
+   "region": "US",
+   "results": [
+    "227 g"
+   ]
+  },
+  {
+   "text": "40 oz",
+   "region": "US",
+   "results": [
+    "1.13 kg"
+   ]
+  },
+  {
+   "text": "3 stone",
+   "region": "GB",
+   "results": [
+    "19.1 kg",
+    "42 lb"
+   ]
+  },
+  {
+   "text": "add 2 tbsp",
+   "region": "US",
+   "results": [
+    "29.6 ml"
+   ]
+  },
+  {
+   "text": "1/2 cup",
+   "region": "US",
+   "results": [
+    "118 ml"
+   ]
+  },
+  {
+   "text": "1 1/2 cups",
+   "region": "US",
+   "results": [
+    "355 ml"
+   ]
+  },
+  {
+   "text": "½ cup",
+   "region": "US",
+   "results": [
+    "118 ml"
+   ]
+  },
+  {
+   "text": "2 litres",
+   "region": "US",
+   "results": [
+    "0.528 gal",
+    "67.6 fl oz"
+   ]
+  },
+  {
+   "text": "2 litres",
+   "region": "GB",
+   "results": [
+    "3.52 pints",
+    "0.44 gal"
+   ]
+  },
+  {
+   "text": "2 pints",
+   "region": "GB",
+   "results": [
+    "1.14 L"
+   ]
+  },
+  {
+   "text": "2 pints",
+   "region": "US",
+   "results": [
+    "946 ml"
+   ]
+  },
+  {
+   "text": "500 ml",
+   "region": "DE",
+   "results": [
+    "16.9 fl oz"
+   ]
+  },
+  {
+   "text": "5 gallons",
+   "region": "US",
+   "results": [
+    "18.9 L"
+   ]
+  },
+  {
+   "text": "doing 60 mph",
+   "region": "US",
+   "results": [
+    "96.6 km/h"
+   ]
+  },
+  {
+   "text": "100 km/h",
+   "region": "DE",
+   "results": [
+    "62.1 mph"
+   ]
+  },
+  {
+   "text": "1500 sq ft",
+   "region": "US",
+   "results": [
+    "139 sq m"
+   ]
+  },
+  {
+   "text": "2 acres",
+   "region": "US",
+   "results": [
+    "0.809 hectares"
+   ]
+  },
+  {
+   "text": "1,500 km",
+   "region": "IN",
+   "results": [
+    "932 miles"
+   ]
+  },
+  {
+   "text": "brb 5 min",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "on 4g",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "at 2 in",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "got 1 m",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "5-10 km",
+   "region": "DE",
+   "results": []
+  },
+  {
+   "text": "10x20 cm",
+   "region": "DE",
+   "results": []
+  },
+  {
+   "text": "it's 30 degrees",
+   "region": "DE",
+   "results": []
+  },
+  {
+   "text": "10 c",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "100 l",
+   "region": "DE",
+   "results": []
+  },
+  {
+   "text": "2 hours",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "lost 10 pounds",
+   "region": "GB",
+   "results": []
+  },
+  {
+   "text": "10 inch screen",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "version 2.5",
+   "region": "US",
+   "results": []
+  }
+ ]
+}
