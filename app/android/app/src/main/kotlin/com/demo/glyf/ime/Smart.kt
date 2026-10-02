@@ -551,7 +551,7 @@ object Smart {
         // i type email it should show my email id"): "email", "send it to my
         // email", "email id", "gmail". Never the verb ("can you email", "i'll
         // email", "please email"), and it goes as soon as the sentence moves on.
-        Triple("""(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$""", listOf("email"), null),
+        Triple("""(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna|the|this|that|a|an)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$""", listOf("email"), null),
         // An IP, web or website address is no place to deliver to.
         Triple("""(?:\b(?:my|our)\s+(?:(?:home|delivery|shipping|office|current|new)\s+)?(?:address|addy)|(?<!e-?mail\s)(?<!gmail\s)(?<!ip\s)(?<!web\s)(?<!website\s)(?<!mac\s)\b(?:(?:home|delivery|shipping|office)\s+)?address\s*:|\bdeliver(?:\s+it)?\s+to|\bsend\s+it\s+to|\bship\s+(?:it\s+)?to|\bcome\s+(?:over\s+)?to|\bpick\s+me\s+up\s+(?:from|at))\s*(?:is\s*)?:?\s*$""", listOf("address"), null),
         Triple("""\b(?:(?:my|our)\s+(?:upi|vpa|gpay|google\s+pay|phonepe|paytm)(?:\s+(?:id|number|handle))?|(?:upi|vpa|gpay|phonepe|paytm)(?:\s*id)?\s*:|(?:pay|gpay|phonepe|paytm)\s+me\s+(?:at|on))\s*(?:is\s*)?:?\s*$""", listOf("upi"), null),
@@ -561,6 +561,19 @@ object Smart {
         // A phone number, not an account, card, order or ticket number, and
         // not the phone itself ("i lost my phone").
         Triple("""\b(?:(?:my|our)\s+(?:(?:phone|mobile|cell|contact|whatsapp)\s+)?(?:number|no\.?|num)|(?:my|our)\s+whatsapp|(?:phone|mobile|cell|contact|whatsapp)(?:\s+(?:number|no\.?|num))?\s*:|(?:call|text|whatsapp|ping|reach|ring)\s+(?:me|us)\s+(?:at|on))\s*(?:is\s*)?:?\s*$""", listOf("phone"), null),
+        // The kind's own words, two of them, alone at the end (Arpit,
+        // 2026-10-02: "for all data in vault, it should be super fast using
+        // regex"): "phone number", "shipping address", "wallet address", "upi
+        // id", "instagram", "linkedin". Never someone else's ("your number",
+        // "the phone number", "whose address"), nor where something was seen
+        // ("saw it on insta"). Smart.swift's twins.
+        Triple("""(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:phone|mobile|cell|contact|whatsapp)\s+(?:number|no\.?|num)\s*(?:is\s*)?:?\s*$""", listOf("phone"), null),
+        Triple("""(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:home|delivery|shipping|billing|office|work|current|postal|mailing)\s+(?:address|addy)\s*(?:is\s*)?:?\s*$""", listOf("address"), null),
+        Triple("""(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet\s+(?:address|addy)|(?:sol|solana)\s+(?:address|addy))\s*(?:is\s*)?:?\s*$""", listOf("wallet"), null),
+        Triple("""(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:upi|vpa)(?:\s*(?:id|handle))?\s*(?:is\s*)?:?\s*$""", listOf("upi"), null),
+        Triple("""(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what|on|in|from|at|via|to)\s)(?:insta|instagram|ig\s+(?:handle|id|username))(?:\s+(?:handle|id|username))?\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "insta"),
+        Triple("""(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:twitter|x)\s+(?:handle|id|username)\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "x"),
+        Triple("""(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what|on|in|from|at|via|to)\s)linkedin(?:\s+(?:profile|url|handle|id))?\s*(?:is\s*)?:?\s*$""", listOf("social", "handle"), "linkedin"),
     ).map { (p, kinds, label) -> Triple(Regex(p, RegexOption.IGNORE_CASE), kinds, label) }
 
     /** Words that lead into one of your own details near the end of the
@@ -603,9 +616,73 @@ object Smart {
      *  twice shows once). A handle stays the platform's own: "my insta" is
      *  never the LinkedIn one. Smart.swift's vaultMatches. */
     fun vaultMatches(text: String, fields: List<Field>): List<Field> {
+        // The person's own name for a detail wins: "work email" is the work one.
+        val named = labelMatches(text, fields)
+        if (named.isNotEmpty()) return named
         val first = vaultMatch(text, fields) ?: return emptyList()
         if (first.kind == "social" || first.kind == "handle") return listOf(first)
         return (listOf(first) + fields.filter { it.kind == first.kind }).distinctBy { it.value.trim() }
+    }
+
+    /** The word a qualifying label is followed by, per kind: "work" +
+     *  "email", "home" + "address", "office" + "number". */
+    private val kindWords = mapOf(
+        "email" to """e-?mail|g-?mail|mail(?:\s*id)?""",
+        "phone" to """(?:phone\s+)?(?:number|no\.?|num)|phone|line""",
+        "address" to """address|addy""",
+        "link" to """link|url|website|site""",
+        "upi" to """upi(?:\s*id)?""",
+        "wallet" to """(?:wallet\s+)?(?:address|addy)""",
+        "handle" to """handle|username|id""",
+        "social" to """handle|username|id""",
+    )
+    /** A label that is just the kind's own name ("Email", "Phone number"):
+     *  the plain kind, which the triggers already offer. "Mobile", "Work" or
+     *  "Home" are not: they say which one. */
+    private val kindNames = mapOf(
+        "email" to """e-?mail(?:\s+(?:address|id))?|g-?mail|mail(?:\s*id)?""",
+        "phone" to """phone(?:\s+number)?|number|tel(?:ephone)?|contact(?:\s+number)?""",
+        "address" to """address""",
+        "link" to """link|url|website|site""",
+        "upi" to """upi(?:\s*id)?|vpa""",
+        "wallet" to """wallet(?:\s+address)?|address""",
+        "handle" to """handle|username""",
+        "social" to """handle|username""",
+    )
+    /** What a detail's own label may end on, or be followed by, and still
+     *  name that detail: "passport number", "locker code", "car plate". */
+    private const val DETAIL_NOUNS = """number|no\.?|num|id|code|pin|address|link|handle|account|acct|plate"""
+
+    /** Saved details named by the person's own label for them, at the end of
+     *  the sentence: "work email", "my office number is", "my passport number
+     *  is", "locker code:", "car:". A label that only qualifies a kind (Home,
+     *  Work, Office) needs the kind's word after it ("on my way home" is no
+     *  address); a label of the person's own naming stands alone when it ends
+     *  on a detail's noun ("locker code"), else takes one after it or a colon
+     *  ("car number", "car:"; "my car is" is not the plate). Never someone
+     *  else's ("your passport number", "the locker code"). Vault order.
+     *  Smart.swift's labelMatches; shared/vault/cases.json. */
+    fun labelMatches(text: String, fields: List<Field>): List<Field> {
+        val clause = text.lowercase().split(Regex("[.!?\n]")).lastOrNull()?.trim().orEmpty()
+        if (clause.isEmpty() || asksSomeoneElse(text)) return emptyList()
+        val lead = """(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)"""
+        val ending = """\s*(?:(?:is|are|=)\s*)?:?\s*$"""
+        return fields.filter { f ->
+            val label = f.label.lowercase().trim()
+            if (label.length < 2) return@filter false
+            val words = label.split(Regex("""\s+""")).joinToString("""\s+""") { Regex.escape(it) }
+            val kind = kindWords[f.kind]
+            val pattern = when {
+                kind != null -> {
+                    val name = kindNames[f.kind]
+                    if (name != null && Regex("^(?:$name)$").matches(label)) return@filter false
+                    lead + words + """\s+(?:""" + kind + ")" + ending
+                }
+                Regex("""\b(?:$DETAIL_NOUNS)$""").containsMatchIn(label) -> lead + words + ending
+                else -> lead + words + """(?:\s+(?:$DETAIL_NOUNS)""" + ending + """|\s*:\s*$)"""
+            }
+            Regex(pattern).containsMatchIn(clause)
+        }
     }
 
     /** The platform the words named for a handle ("insta", "x",

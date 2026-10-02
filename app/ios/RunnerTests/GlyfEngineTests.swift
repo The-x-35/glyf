@@ -1191,6 +1191,28 @@ final class GlyfEngineTests: XCTestCase {
                        .details(fields: [home, work], temp: false))
     }
 
+    /// shared/vault/cases.json: the same cases Android's SmartVaultTest runs
+    /// (Arpit, 2026-10-02: "for all data in vault, it should be super fast
+    /// using regex").
+    func testVaultDetailsComeUpByTheirKindsWordsAndTheirOwnLabels() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/vault/cases.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let fields = (root["fields"] as? [[String: String]] ?? []).map {
+            VaultField(id: $0["id"] ?? "", kind: $0["kind"] ?? "", label: $0["label"] ?? "", value: $0["value"] ?? "")
+        }
+        var failures: [String] = []
+        for c in root["cases"] as? [[String: Any]] ?? [] {
+            let text = c["text"] as? String ?? ""
+            let want = c["values"] as? [String] ?? []
+            let got = Smart.vaultMatches(text, fields: fields).map(\.value)
+            if got != want { failures.append("'\(text)': got \(got), want \(want)") }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
     /// Money with cents shows both places: "$20 = ₹1,919.6" read as a typo.
     func testMoneyShowsBothCentsPlacesOrNone() {
         XCTAssertEqual(Smart.format(1919.6, in: "INR"), "₹1,919.60")

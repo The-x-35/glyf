@@ -654,7 +654,7 @@ enum Smart {
         // type email it should show my email id"): "email", "send it to my
         // email", "email id", "gmail". Not the verb: "can you email", "i'll
         // email", "please email" ask for one to be sent.
-        (#"(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$"#, "email", nil),
+        (#"(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna|the|this|that|a|an)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$"#, "email", nil),
         // An IP, web or website address is no place to deliver to.
         (#"(?:\b(?:my|our)\s+(?:(?:home|delivery|shipping|office|current|new)\s+)?(?:address|addy)|(?<!e-?mail\s)(?<!gmail\s)(?<!ip\s)(?<!web\s)(?<!website\s)(?<!mac\s)\b(?:(?:home|delivery|shipping|office)\s+)?address\s*:|\bdeliver(?:\s+it)?\s+to|\bsend\s+it\s+to|\bship\s+(?:it\s+)?to|\bcome\s+(?:over\s+)?to|\bpick\s+me\s+up\s+(?:from|at))\s*(?:is\s*)?:?\s*$"#, "address", nil),
         (#"\b(?:(?:my|our)\s+(?:upi|vpa|gpay|google\s+pay|phonepe|paytm)(?:\s+(?:id|number|handle))?|(?:upi|vpa|gpay|phonepe|paytm)(?:\s*id)?\s*:|(?:pay|gpay|phonepe|paytm)\s+me\s+(?:at|on))\s*(?:is\s*)?:?\s*$"#, "upi", nil),
@@ -664,6 +664,18 @@ enum Smart {
         // A phone number, not an account, card, order or ticket number, and
         // not the phone itself ("i lost my phone").
         (#"\b(?:(?:my|our)\s+(?:(?:phone|mobile|cell|contact|whatsapp)\s+)?(?:number|no\.?|num)|(?:my|our)\s+whatsapp|(?:phone|mobile|cell|contact|whatsapp)(?:\s+(?:number|no\.?|num))?\s*:|(?:call|text|whatsapp|ping|reach|ring)\s+(?:me|us)\s+(?:at|on))\s*(?:is\s*)?:?\s*$"#, "phone", nil),
+        // The kind's own words, two of them, alone at the end (Arpit,
+        // 2026-10-02: "for all data in vault, it should be super fast using
+        // regex"): "phone number", "shipping address", "wallet address", "upi
+        // id", "instagram", "linkedin". Never someone else's ("your number",
+        // "the phone number", "whose address").
+        (#"(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:phone|mobile|cell|contact|whatsapp)\s+(?:number|no\.?|num)\s*(?:is\s*)?:?\s*$"#, "phone", nil),
+        (#"(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:home|delivery|shipping|billing|office|work|current|postal|mailing)\s+(?:address|addy)\s*(?:is\s*)?:?\s*$"#, "address", nil),
+        (#"(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:(?:(?:sol|solana|phantom|usdc|crypto)\s+)?wallet\s+(?:address|addy)|(?:sol|solana)\s+(?:address|addy))\s*(?:is\s*)?:?\s*$"#, "wallet", nil),
+        (#"(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:upi|vpa)(?:\s*(?:id|handle))?\s*(?:is\s*)?:?\s*$"#, "upi", nil),
+        (#"(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what|on|in|from|at|via|to)\s)(?:insta|instagram|ig\s+(?:handle|id|username))(?:\s+(?:handle|id|username))?\s*(?:is\s*)?:?\s*$"#, "social", "insta"),
+        (#"(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)(?:twitter|x)\s+(?:handle|id|username)\s*(?:is\s*)?:?\s*$"#, "social", "x"),
+        (#"(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what|on|in|from|at|via|to)\s)linkedin(?:\s+(?:profile|url|handle|id))?\s*(?:is\s*)?:?\s*$"#, "social", "linkedin"),
     ]
 
     static func vaultMatch(_ text: String, fields: [VaultField]) -> VaultField? {
@@ -693,12 +705,78 @@ enum Smart {
     /// first, then the others of its kind in the vault's order (a handle
     /// stays the platform's own).
     static func vaultMatches(_ text: String, fields: [VaultField]) -> [VaultField] {
+        // The person's own name for a detail wins: "work email" is the work one.
+        let named = labelMatches(text, fields: fields)
+        if !named.isEmpty { return named }
         guard let first = vaultMatch(text, fields: fields) else { return [] }
         if first.kind == "social" || first.kind == "handle" { return [first] }
         // One chip per value: the same address saved twice shows once.
         var seen: Set<String> = [first.value.lowercased()]
         return [first] + fields.filter {
             $0.kind == first.kind && $0.id != first.id && seen.insert($0.value.lowercased()).inserted
+        }
+    }
+
+    /// The word a qualifying label is followed by, per kind: "work" +
+    /// "email", "home" + "address", "office" + "number".
+    private static let kindWords: [String: String] = [
+        "email": #"e-?mail|g-?mail|mail(?:\s*id)?"#,
+        "phone": #"(?:phone\s+)?(?:number|no\.?|num)|phone|line"#,
+        "address": #"address|addy"#,
+        "link": #"link|url|website|site"#,
+        "upi": #"upi(?:\s*id)?"#,
+        "wallet": #"(?:wallet\s+)?(?:address|addy)"#,
+        "handle": #"handle|username|id"#,
+        "social": #"handle|username|id"#,
+    ]
+    /// A label that is just the kind's own name ("Email", "Phone number"):
+    /// the plain kind, which the triggers already offer. "Mobile", "Work" or
+    /// "Home" are not: they say which one.
+    private static let kindNames: [String: String] = [
+        "email": #"e-?mail(?:\s+(?:address|id))?|g-?mail|mail(?:\s*id)?"#,
+        "phone": #"phone(?:\s+number)?|number|tel(?:ephone)?|contact(?:\s+number)?"#,
+        "address": #"address"#,
+        "link": #"link|url|website|site"#,
+        "upi": #"upi(?:\s*id)?|vpa"#,
+        "wallet": #"wallet(?:\s+address)?|address"#,
+        "handle": #"handle|username"#,
+        "social": #"handle|username"#,
+    ]
+    /// What a detail's own label may end on, or be followed by, and still
+    /// name that detail: "passport number", "locker code", "car plate".
+    private static let detailNouns = #"number|no\.?|num|id|code|pin|address|link|handle|account|acct|plate"#
+
+    /// Saved details named by the person's own label for them, at the end of
+    /// the sentence: "work email", "my office number is", "my passport number
+    /// is", "locker code:", "car:". A label that only qualifies a kind (Home,
+    /// Work, Office) needs the kind's word after it ("on my way home" is no
+    /// address); a label of the person's own naming stands alone when it ends
+    /// on a detail's noun ("locker code"), else takes one after it or a colon
+    /// ("car number", "car:"; "my car is" is not the plate). Never someone
+    /// else's ("your passport number", "the locker code"). Vault order.
+    static func labelMatches(_ text: String, fields: [VaultField]) -> [VaultField] {
+        let clause = lastClause(text)
+        guard !clause.isEmpty, !asksSomeoneElse(text) else { return [] }
+        let lead = #"(?:^|[\s,(])(?<!\b(?:your|ur|his|her|their|the|this|that|a|an|whose|which|what)\s)"#
+        let ending = #"\s*(?:(?:is|are|=)\s*)?:?\s*$"#
+        return fields.filter { f in
+            let label = f.label.lowercased().trimmingCharacters(in: .whitespaces)
+            guard label.count >= 2 else { return false }
+            let words = NSRegularExpression.escapedPattern(for: label)
+                .replacingOccurrences(of: #"\s+"#, with: #"\\s+"#, options: .regularExpression)
+            let pattern: String
+            if let kind = kindWords[f.kind] {
+                // The kind's own name as the label ("Email") is the plain kind,
+                // which the triggers above already offer.
+                if let name = kindNames[f.kind],
+                   label.range(of: "^(?:" + name + ")$", options: .regularExpression) != nil { return false }
+                pattern = lead + words + #"\s+(?:"# + kind + ")" + ending
+            } else if label.range(of: #"\b(?:"# + detailNouns + ")$", options: .regularExpression) != nil {
+                pattern = lead + words + ending
+            } else {
+                pattern = lead + words + #"(?:\s+(?:"# + detailNouns + ")" + ending + #"|\s*:\s*$)"#
+            }
+            return clause.range(of: pattern, options: .regularExpression) != nil
         }
     }
 
