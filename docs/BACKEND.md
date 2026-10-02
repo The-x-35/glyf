@@ -835,14 +835,14 @@ Examples that were verified live on 2026-09-14/15: "Times Square Starbucks" retu
 
 The same six versions on Gemini 2.5 Flash-Lite, the backup, cost $0.000095. Planning numbers, rounded up to cover writes and the backup: a run $0.00006, a suggestion or a translation $0.00001.
 
-A month with every cap spent every day: Free $0.10, Plus $0.48, Max $1.20. What a plan brings in a month after Apple's 15% (Small Business Program) and, where the price includes it, VAT or GST:
+A month with every cap spent every day: Free $0.10, Plus $0.48, Max $1.20. What a plan brings in a month: Apple's proceeds, after its 15% (Small Business Program) and the storefront's VAT or GST, at the prices of 2026-10-02:
 
-| | US monthly | US yearly, per month | EU yearly with 20% VAT, per month | India monthly (18% GST inside) |
-|---|---|---|---|---|
-| Plus | $1.69 | $1.42 | $1.18 | ₹143 at ₹199 |
-| Max | $4.24 | $3.54 | $2.95 | ₹359 at ₹499 |
+| | US monthly ($2 / $5) | US yearly, per month ($20 / $50) | Germany yearly, per month (€20 / €60) | India monthly (₹199 / ₹499) | Lowest of the 175 storefronts, per month |
+|---|---|---|---|---|---|
+| Plus | $1.70 | $1.42 | €1.19 | ₹143 | $1.14 (Uganda, yearly) |
+| Max | $4.25 | $3.54 | €3.57 | ₹359 | $2.85 (Turkey, yearly) |
 
-So even someone who spends every cap every day leaves 59% (EU yearly) to 72% (US monthly) of the plan. A typical day (10 runs, 60 suggestions, 20 translations) costs about $0.03 a month. `test/limits.test.ts` ("keeps a month of every cap under half of what the plan brings in") fails if a cap is raised past that line. The caps and models before 2026-09-26 (Plus 400 runs and 3,000 suggestions a day, Max 1,000 and 7,500, translations spending runs, Gemini first) could cost about $3.80 a month for Plus and $9.50 for Max, more than either plan brought in.
+So even someone who spends every cap every day leaves 58% (the lowest storefront) to 72% (US monthly) of the plan, and no storefront is at a loss; at Apple's 30% (a first year without the Small Business Program) the lowest still leaves about 49%. A typical day (10 runs, 60 suggestions, 20 translations) costs about $0.03 a month. `tools/appstore/price-plan.mjs` prints the lowest take in every storefront at the day's exchange rates; `test/limits.test.ts` ("keeps a month of every cap under half of what the plan brings in") holds a month of every cap under half of the lowest and fails if a cap is raised past that line. The caps and models before 2026-09-26 (Plus 400 runs and 3,000 suggestions a day, Max 1,000 and 7,500, translations spending runs, Gemini first) could cost about $3.80 a month for Plus and $9.50 for Max, more than either plan brought in.
 
 Not in these numbers: map and YouTube searches run on free quotas shared by every user (Geoapify 3,000 a day, YouTube about 100 searches a day), and Railway and Neon are a fixed monthly cost.
 

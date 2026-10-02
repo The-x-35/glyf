@@ -60,11 +60,13 @@ describe("hard limits", () => {
     // rounded up: a run $0.00006, a suggestion or a translation $0.00001.
     const month = (plan: "plus" | "max") => 30 * (PAID_PER_DAY.runs[plan] * 0.00006
       + PAID_PER_DAY.suggestions[plan] * 0.00001 + PAID_PER_DAY.translations[plan] * 0.00001);
-    // The least a plan brings in a month: the yearly price in a 20% VAT
-    // country, after the store's 15%.
-    const least = (yearly: number) => yearly / 1.2 * 0.85 / 12;
-    expect(month("plus")).toBeLessThan(least(19.99) / 2);
-    expect(month("max")).toBeLessThan(least(49.99) / 2);
+    // The least a plan brings in a month in any of the App Store's 175
+    // storefronts: a yearly plan, after Apple's 15% and the storefront's
+    // taxes, at the exchange rates of 2026-10-02 (Plus in Uganda, Max in
+    // Turkey; tools/appstore/price-plan.mjs prints it).
+    const least = { plus: 1.14, max: 2.85 };
+    expect(month("plus")).toBeLessThan(least.plus / 2);
+    expect(month("max")).toBeLessThan(least.max / 2);
   });
 
   it("spends a day's runs and then refuses", async () => {
