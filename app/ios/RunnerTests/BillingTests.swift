@@ -29,7 +29,8 @@ final class BillingTests: XCTestCase {
         let plus = try XCTUnwrap(items.first { $0["id"] as? String == "com.arpit.glyf.plus.yearly" })
         XCTAssertEqual(plus["period"] as? String, "year")
         XCTAssertEqual(plus["name"] as? String, "Glyf Plus")
-        XCTAssertTrue((plus["price"] as? String ?? "").contains("19.99"))
+        // Whole amounts come without cents: "$20", not "$20.00".
+        XCTAssertEqual(plus["price"] as? String, "$20")
     }
 
     func testAPurchaseComesBackSignedAndIsHeldAfterwards() async throws {

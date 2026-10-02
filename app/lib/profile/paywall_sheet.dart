@@ -9,8 +9,9 @@ import '../core/theme.dart';
 /// Apple's standard licence, which Glyf's subscriptions are sold under.
 const _termsURL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
-/// §6.16 — two plans over free. Free: 20 runs a day · Plus $1.99 a month or
-/// $19.99 a year: 150 a day · Max $4.99 a month or $49.99 a year: 400 a day.
+/// §6.16 — two plans over free, in whole dollars. Free: 20 runs a day ·
+/// Plus $2 a month or $20 a year: 150 a day · Max $5 a month or $50 a year:
+/// 400 a day (yearly is two months free).
 /// Suggestions and translations have their own daily counts; the server
 /// enforces all of them (server/src/lib/limits.ts).
 ///
@@ -78,10 +79,10 @@ class _PaywallSheetState extends State<_PaywallSheet> {
   String _price(String plan, {required bool yearly}) =>
       _store[Billing.productFor(plan, yearly: yearly)]?.price ??
       switch ((plan, yearly)) {
-        ('plus', false) => '\$1.99',
-        ('plus', true) => '\$19.99',
-        ('max', false) => '\$4.99',
-        _ => '\$49.99',
+        ('plus', false) => '\$2',
+        ('plus', true) => '\$20',
+        ('max', false) => '\$5',
+        _ => '\$50',
       };
 
   Future<void> _buy() async {

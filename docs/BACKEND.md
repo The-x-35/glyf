@@ -809,11 +809,11 @@ Examples that were verified live on 2026-09-14/15: "Times Square Starbucks" retu
 
 `server/src/lib/limits.ts` (the caps) and `lib/guard.ts` (who is asking), SPEC §6.16. Counted in Postgres (`glyf_usage`), per account when signed in and per device when not, per UTC day (resets at 05:30 IST), plus a per-minute burst so nothing drains a day in seconds. The plan comes from the account's row in the database, never from the client.
 
-| Plan | Price (2026-09-26) | Runs a day | Suggestions a day | Translations a day | Runs a minute |
+| Plan | Price (2026-10-02) | Runs a day | Suggestions a day | Translations a day | Runs a minute |
 |---|---|---|---|---|---|
 | Free | $0 | 20 | 100 | 100 | 8 |
-| Plus | $1.99 a month or $19.99 a year | 150 | 300 | 400 | 12 |
-| Max | $4.99 a month or $49.99 a year | 400 | 600 | 1,000 | 15 |
+| Plus | $2 a month or $20 a year | 150 | 300 | 400 | 12 |
+| Max | $5 a month or $50 a year | 400 | 600 | 1,000 | 15 |
 
 - All of these numbers are in code (`env.ts` for free, `PAID_PER_DAY` in `lib/limits.ts` for Plus and Max); no environment variable changes them since 2026-09-26.
 - A run is one request to `/act`, `/glyf/run`, `/vocab/generate`, the Builder, or a search answer a model writes.
@@ -1540,6 +1540,7 @@ Status values: **Active** (in force), **Superseded** (replaced by a later row), 
 | 2026-09-26 | Plus and Max for sale on the iPhone with StoreKit 2; the server verifies Apple's signed transactions itself (pinned Apple root, marker extensions, signature), binds each subscription to one account, follows Apple's server notifications; no RevenueCat | Arpit: "fix the payments too i need payments available as well" | Active |
 | 2026-09-26 | Models and daily caps set in code, not by environment variables; the Builder on Ling 3.0 Flash; "Tidy this up" and hold-space routing by rule for messages full of shorthand (`needsTidy`), no model call; stock cashtags priced by Jupiter's verified tokenized shares (xStocks), which also runs the Stock check glyf (stooq's free CSV is gone) | Arpit: "models and runs per day etc just put in code no need for vars", "i need fast and cheap both", "tidy this up and maths etc can be done with regex etc too we are using ai which is slow", "i would like to receive stock prices too integrate jupiter api too on solana" | Active |
 | 2026-09-26 | Plans priced to stay profitable when every cap is spent: Free 20 runs a day, Plus 150 ($1.99 a month or $19.99 a year), Max 400 ($4.99 or $49.99); suggestions (only model reads count) and translations on their own daily counts; Qwen 3.7 Flash first for hold space and suggestions, thinking off; nothing "unlimited" or "smartest models" on the cards | Arpit: "i feel thats too less margin to play along, and for yearly even worse we in loss / figure out profitable pricing reduce runs etc / or find cheaper models / or use v cheap models for suggestiosn etc" | Active |
+| 2026-10-02 | Whole-dollar prices: Plus $2 a month or $20 a year, Max $5 a month or $50 a year, the yearly plans two months free; caps unchanged | Arpit: "make it 2 and like whole nos only not 1.99 etc / lets keep 2$ and 5$ plans and the yearly ones with discounts etc" | Active |
 | 2026-09-25 | Hold space and chip taps on a faster chain (Gemini 2.5 Flash-Lite, then Llama 3.3 70B on Groq, both through OpenRouter) and streamed: each version shows as it is written. `/act` takes `intent: "write"` (the "Write it for me" chip used to get a 400) and the planner accepts a model's `write` (it used to become a tidy-up) | Arpit: "5.4 s is too much, cant we find some faster ai , and maybe add streams so it looks better" | Active |
 | 2026-09-24 | GIFs and stickers from KLIPY, called from the phone with a key the server hands out; Noto animated emoji as keyless stickers; GIPHY proxy removed | Tenor's API closed 2026-06-30; GIPHY is paid past 100 calls an hour and forbids proxies; KLIPY is free but wants device-side calls | Active |
 | 2026-09-12 | Mock calendar routes (events, then a month grid) power the in-keyboard calendar until OAuth exists | Keep the ConnectorSurface testable; Arpit asked for "a button to view months calendar along with my todays tasks" | Active |

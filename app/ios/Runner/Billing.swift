@@ -28,13 +28,40 @@ final class Billing {
         }
     }
 
+    #if DEBUG
+    private static let preview: [[String: Any]] = [
+        ["id": "com.arpit.glyf.plus.monthly", "price": "$2", "name": "Glyf Plus", "period": "month"],
+        ["id": "com.arpit.glyf.plus.yearly", "price": "$20", "name": "Glyf Plus", "period": "year"],
+        ["id": "com.arpit.glyf.max.monthly", "price": "$5", "name": "Glyf Max", "period": "month"],
+        ["id": "com.arpit.glyf.max.yearly", "price": "$50", "name": "Glyf Max", "period": "year"],
+    ]
+    #endif
+
+    /// The store's price in the person's own currency. Glyf's plans are
+    /// whole amounts, so a price with no cents is shown without them ("$2",
+    /// "2 €", not "$2.00"); any other keeps the store's own text.
+    static func shownPrice(_ product: Product) -> String {
+        var price = product.price, whole = Decimal()
+        NSDecimalRound(&whole, &price, 0, .plain)
+        guard whole == product.price else { return product.displayPrice }
+        return product.price.formatted(product.priceFormatStyle.precision(.fractionLength(0)))
+    }
+
     /// The store's names and prices, in the person's own currency.
     func products(ids: [String]) async throws -> [[String: Any]] {
+        #if DEBUG
+        // Screenshots (App Review's shot of the paywall): the four plans as
+        // the US store prices them, with no store to ask. Nothing can be
+        // bought: a purchase finds no product.
+        if ProcessInfo.processInfo.arguments.contains("--glyf-store-preview") {
+            return Self.preview.filter { ids.contains($0["id"] as? String ?? "") }
+        }
+        #endif
         let found = try await Product.products(for: ids)
         for product in found { products[product.id] = product }
         return found.map { product in
             var item: [String: Any] = [
-                "id": product.id, "price": product.displayPrice, "name": product.displayName,
+                "id": product.id, "price": Self.shownPrice(product), "name": product.displayName,
             ]
             if let period = product.subscription?.subscriptionPeriod {
                 item["period"] = switch period.unit {
