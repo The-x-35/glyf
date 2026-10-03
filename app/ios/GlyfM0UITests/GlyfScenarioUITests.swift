@@ -698,6 +698,65 @@ final class GlyfScenarioUITests: XCTestCase {
         note("parts \(parts), typed '\(value)'")
     }
 
+    /// S222: a measurement shows in the other system, one chip each, and a
+    /// tap adds it in brackets (Arpit, 2026-10-03: "when i write lets 10
+    /// inch, i see in cm or meteres, diff strips with suggestions").
+    func testS222_AMeasurementShowsInTheOtherSystem() throws {
+        open()
+        clear()
+        type("lets 10 inch")
+        guard wait("strip:smart:choice:1", 6) != nil else {
+            return XCTFail("no unit chips; the strip shows '\(el("strip:smart").label)'")
+        }
+        let parts = [el("strip:smart:choice:0").label, el("strip:smart:choice:1").label]
+        XCTAssertEqual(parts, ["25.4 cm", "0.254 m"])
+        keepScreenshot("unit-chips")
+        el("strip:smart:choice:0").tap()
+        XCTAssertTrue(waitValue(3) { $0.lowercased() == "lets 10 inch (25.4 cm)" }, "the tap typed '\(value)'")
+        note("chips \(parts), typed '\(value)'")
+    }
+
+    /// S223: a bill split shows what each pays.
+    func testS223_ABillSplitShowsWhatEachPays() throws {
+        open()
+        clear()
+        type("split 120 4 ways")
+        guard wait("strip:smart:choice:0", 6) != nil else {
+            return XCTFail("no split chip; the strip shows '\(el("strip:smart").label)'")
+        }
+        XCTAssertEqual(el("strip:smart:choice:0").label, "30 each")
+        note("chip '\(el("strip:smart:choice:0").label)'")
+    }
+
+    /// S224: a ;date shortcut is replaced by the date.
+    func testS224_ADateShortcutIsReplacedByTheDate() throws {
+        open()
+        clear()
+        type("today is ;date")
+        guard wait("strip:smart:choice:0", 6) != nil else {
+            return XCTFail("no date chip; the strip shows '\(el("strip:smart").label)'")
+        }
+        let date = el("strip:smart:choice:0").label
+        el("strip:smart:choice:0").tap()
+        XCTAssertTrue(waitValue(3) { $0.lowercased() == "today is \(date)".lowercased() }, "the tap typed '\(value)'")
+        note("chip '\(date)', typed '\(value)'")
+    }
+
+    /// S225: g menu → Style: Bold restyles the message (Arpit, 2026-10-03:
+    /// "option to stylise text in glyf menu like bold italic underline").
+    func testS225_StyleBoldRestylesTheMessage() throws {
+        open()
+        clear()
+        type("hello world")
+        openTool("style")
+        guard let bold = wait("shell:style:bold", 6) else { return XCTFail("no Style screen") }
+        keepScreenshot("style-screen")
+        bold.tap()
+        // "hello world" may have taken a capital at the start.
+        XCTAssertTrue(waitValue(3) { ["𝗛𝗲𝗹𝗹𝗼 𝘄𝗼𝗿𝗹𝗱", "𝗵𝗲𝗹𝗹𝗼 𝘄𝗼𝗿𝗹𝗱"].contains($0) }, "Bold made '\(value)'")
+        note("after Bold: '\(value)'")
+    }
+
     /// S214: money typed shows in the local currency in the strip (Arpit,
     /// 2026-09-30: "$20 not showing amount in local currency ... i want
     /// rupee, or whatever i set in as local currency here in app").

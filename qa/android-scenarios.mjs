@@ -1606,6 +1606,73 @@ scenarios.push(
   } },
 );
 
+scenarios.push(
+  { id: "S222", title: "A measurement shows in the other system, one chip each, and a tap adds it in brackets", run: async () => {
+    await fresh();
+    await type("lets 10 inch");
+    const chip = await waitFor(byId("strip:smart:choice:1"), 4000);
+    const s = await state();
+    const parts = ["strip:smart:choice:0", "strip:smart:choice:1"].map(id => find(s, byId(id)));
+    const words = parts.map(v => v ? chipLabel(s, v).trim() : "");
+    await screenshot("S222-chip");
+    if (!chip || !parts[0]) return { pass: false, note: `no unit chips; strip shows '${words.join(" | ")}'` };
+    const r = await tapFor(parts[0], x => x.includes("("));
+    return { pass: words[0] === "25.4 cm" && words[1] === "0.254 m" && r.t.trim().toLowerCase() === "lets 10 inch (25.4 cm)",
+      note: `chips '${words[0]}' | '${words[1]}'; tapped the first: '${r.t}'${second(r)}` };
+  } },
+  { id: "S223", title: "A bill split shows what each pays", run: async () => {
+    await fresh();
+    await type("split 120 4 ways");
+    const chip = await waitFor(byId("strip:smart:choice:0"), 4000);
+    const s = await state();
+    const word = chip ? chipLabel(s, find(s, byId("strip:smart:choice:0"))).trim() : "";
+    await screenshot("S223-chip");
+    return { pass: word === "30 each", note: `chip '${word}'` };
+  } },
+  { id: "S224", title: "A ;date shortcut is replaced by the date", run: async () => {
+    await fresh();
+    await type("today is ;date");
+    const chip = await waitFor(byId("strip:smart:choice:0"), 4000);
+    if (!chip) return { pass: false, note: "no date chip" };
+    const s = await state();
+    const word = chipLabel(s, find(s, byId("strip:smart:choice:0"))).trim();
+    const r = await tapFor(find(s, byId("strip:smart:choice:0")), x => !x.includes(";date"));
+    const ok = /^\w{3}(,)? /.test(word) && r.t.trim().toLowerCase() === `today is ${word}`.toLowerCase();
+    return { pass: ok, note: `chip '${word}'; tapped: '${r.t}'${second(r)}` };
+  } },
+  { id: "S225", title: "Style in the g menu: Bold restyles the message", run: async () => {
+    await fresh();
+    await type("hello world");
+    // Style is new: a menu order saved before it puts it last, below the
+    // fold of the grid, so the grid is swiped up until its tile shows.
+    let s = await state();
+    const g = find(s, byId("toolbar:glyf"));
+    if (!g) return { pass: false, note: "no g key" };
+    // The first tap after typing can be dropped: tap g until the grid shows.
+    for (let i = 0; i < 3; i++) {
+      await tapXY(g.x, g.y);
+      if (await waitFor(v => (v.id || "").startsWith("shell:tile:"), 2500)) break;
+    }
+    const screenH = Number(shell("wm size").match(/(\d+)x(\d+)/)[2]);
+    let opened = false;
+    for (let i = 0; i < 6 && !opened; i++) {
+      s = await state();
+      const tile = find(s, byId("shell:tile:style"));
+      if (tile && tile.y + tile.h / 2 < screenH - 170) { await tapXY(tile.x, tile.y); opened = true; break; }
+      shell(`input swipe ${g.x + 200} ${screenH - 300} ${g.x + 200} ${screenH - 700} 300`);
+      await sleep(600);
+    }
+    if (!opened) return { pass: false, note: "no Style tile in the menu" };
+    const bold = await waitFor(byId("shell:style:bold"), 4000);
+    await screenshot("S225-panel");
+    if (!bold) return { pass: false, note: "no Bold row" };
+    const r = await tapFor(bold, x => x.includes("\u{1D5F9}"));
+    const want = "\u{1D5DB}\u{1D5F2}\u{1D5F9}\u{1D5F9}\u{1D5FC} \u{1D604}\u{1D5FC}\u{1D5FF}\u{1D5F9}\u{1D5F1}";
+    const lower = "\u{1D5F5}\u{1D5F2}\u{1D5F9}\u{1D5F9}\u{1D5FC} \u{1D604}\u{1D5FC}\u{1D5FF}\u{1D5F9}\u{1D5F1}";
+    return { pass: r.t.trim() === want || r.t.trim() === lower, note: `after Bold: '${r.t}'${second(r)}` };
+  } },
+);
+
 function chipLabel(s, chip) {
   if (chip.text) return chip.text;
   const inside = v => v !== chip && v.text && Math.abs(v.x - chip.x) <= chip.w / 2 && Math.abs(v.y - chip.y) <= chip.h / 2;
