@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../build/build_tab.dart';
+import '../core/ai_consent.dart';
 import '../core/theme.dart';
 import '../home/home_tab.dart';
 import '../profile/profile_tab.dart';
@@ -27,6 +28,10 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     AppShell.requestedTab.addListener(_onRequestedTab);
     _onRequestedTab();
+    // Set up before "What Glyf sends" was asked: ask once, now.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (await AiConsent.needed() && mounted) await showAiConsentSheet(context);
+    });
   }
 
   void _onRequestedTab() {

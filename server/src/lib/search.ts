@@ -357,7 +357,17 @@ function haversine(aLat: number, aLon: number, bLat: number, bLon: number): numb
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-export function formatDistance(metres: number): string {
+/** Miles where the signs are in miles, as Google Maps shows them there: feet
+ *  (US) or yards (UK) under a tenth of a mile. Kilometres everywhere else. */
+export function formatDistance(metres: number, country?: string): string {
+  const c = country?.toUpperCase();
+  if (c === "US" || c === "GB") {
+    const miles = metres / 1609.344;
+    if (miles < 0.1) {
+      return c === "US" ? `${Math.round(metres / 0.3048 / 10) * 10} ft` : `${Math.round(metres / 0.9144 / 10) * 10} yd`;
+    }
+    return `${miles.toFixed(miles < 9.5 ? 1 : 0)} mi`;
+  }
   if (metres < 950) return `${Math.round(metres / 10) * 10} m`;
   return `${(metres / 1000).toFixed(metres < 9500 ? 1 : 0)} km`;
 }
@@ -420,7 +430,7 @@ async function googlePlaces(q: string, ctx: SearchContext): Promise<PlaceCard[]>
       lat, lon,
       distance: lat !== undefined && lon !== undefined
         && ctx.lat !== undefined && ctx.lon !== undefined
-        ? formatDistance(haversine(ctx.lat, ctx.lon, lat, lon)) : undefined,
+        ? formatDistance(haversine(ctx.lat, ctx.lon, lat, lon), ctx.country) : undefined,
       // Proxied so the API key never reaches a client; no photo, its map.
       thumb: photo ? `/search/photo?ref=${encodeURIComponent(photo)}` : mapThumb(lat, lon),
       url: p.googleMapsUri ?? mapsURL(name, p.id),
@@ -524,7 +534,7 @@ function geoapifyCard(f: GeoapifyFeature, ctx: SearchContext): PlaceCard[] {
     title: name,
     address,
     lat: p.lat, lon: p.lon,
-    distance: metres !== undefined ? formatDistance(metres) : undefined,
+    distance: metres !== undefined ? formatDistance(metres, ctx.country) : undefined,
     // OpenStreetMap has no photos: the card shows where it is instead.
     thumb: mapThumb(p.lat, p.lon),
     url: mapsURL(`${name} ${address ?? ""}`.trim()),
@@ -701,7 +711,7 @@ export function placeQuery(q: string): PlaceQuery {
  *  OVERPASS_API_BASE to a instance you control to turn nearby-by-category on
  *  for the keyless path; with a Places key this never runs. */
 async function overpassNearby(
-  q: string, lat: number, lon: number,
+  q: string, lat: number, lon: number, country?: string,
 ): Promise<PlaceCard[]> {
   const base = process.env.OVERPASS_API_BASE;
   if (!base) return [];
@@ -739,7 +749,7 @@ async function overpassNearby(
           title: name,
           address: address || undefined,
           lat: pLat, lon: pLon,
-          distance: formatDistance(haversine(lat, lon, pLat, pLon)),
+          distance: formatDistance(haversine(lat, lon, pLat, pLon), country),
           url: mapsURL(`${name} ${address}`.trim()),
           emoji: "📍",
           extra: address || undefined,
@@ -806,7 +816,7 @@ async function nominatimPlaces(q: string, ctx: SearchContext): Promise<PlaceCard
   let term = pq.where || pq.nearby ? pq.what : q.replace(NEARBY, " ").replace(/\s+/g, " ").trim() || q;
 
   if (here && pq.nearby && !pq.where) {
-    const near = await overpassNearby(term, ctx.lat!, ctx.lon!).catch(() => []);
+    const near = await overpassNearby(term, ctx.lat!, ctx.lon!, ctx.country).catch(() => []);
     if (near.length) return near;
   }
   // Nominatim matches names, but it also knows OSM's categories by their
@@ -870,7 +880,7 @@ async function nominatimPlaces(q: string, ctx: SearchContext): Promise<PlaceCard
         address,
         lat, lon,
         // Distance is from the caller, even when the search was around an area.
-        distance: here ? formatDistance(haversine(ctx.lat!, ctx.lon!, lat, lon)) : undefined,
+        distance: here ? formatDistance(haversine(ctx.lat!, ctx.lon!, lat, lon), ctx.country) : undefined,
         url: mapsURL(`${name} ${address}`.trim()),
         emoji: "📍",
         extra: address,
@@ -893,7 +903,7 @@ async function nominatimPlaces(q: string, ctx: SearchContext): Promise<PlaceCard
         metres: center ? haversine(center.lat, center.lon, lat, lon) : 0,
         card: {
           kind: "place" as const, id: `osm-host-${lat},${lon}`, title, address, lat, lon,
-          distance: here ? formatDistance(haversine(ctx.lat!, ctx.lon!, lat, lon)) : undefined,
+          distance: here ? formatDistance(haversine(ctx.lat!, ctx.lon!, lat, lon), ctx.country) : undefined,
           url: mapsURL(`${title} ${address}`.trim()), emoji: "📍", extra: address,
         },
       });
@@ -1085,7 +1095,7 @@ export async function searchNearby(
       openNow: p.currentOpeningHours?.openNow,
       lat: pLat, lon: pLon,
       distance: pLat !== undefined && pLon !== undefined
-        ? formatDistance(haversine(lat, lon, pLat, pLon)) : undefined,
+        ? formatDistance(haversine(lat, lon, pLat, pLon), country) : undefined,
       thumb: photo ? `/search/photo?ref=${encodeURIComponent(photo)}` : mapThumb(pLat, pLon),
       url: p.googleMapsUri ?? mapsURL(name, p.id),
       emoji: "📍",

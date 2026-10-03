@@ -13,6 +13,18 @@ import UIKit
       let done = #"{"done": true, "pack": "writer"}"#
       try? done.data(using: .utf8)?.write(
         to: dir.appendingPathComponent("onboarding.json"), options: .atomic)
+      // As someone who agreed on "What Glyf sends": the strip's AI
+      // suggestions and details in AI requests are part of what the
+      // scenarios check.
+      SettingsStore.update { s in
+        s.aiSuggest = true
+        s.aiUsesVault = true
+        if s.aiConsent == nil { s.aiConsent = "uitest" }
+      }
+    }
+    if args.contains("--glyf-ai-not-now") {
+      // S235: the other answer, Not now.
+      SettingsStore.update { s in s.aiSuggest = false }
     }
     if args.contains("--glyf-reset-onboarding"), let dir = AppGroupStore.bridgeDir {
       try? FileManager.default.removeItem(

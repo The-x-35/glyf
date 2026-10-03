@@ -36,7 +36,7 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     private var menu: UIView?
 
     private var items: [ClipItem] = []
-    /// Screenshots from the last hour, when turned on and Photos allows it.
+    /// Screenshots from the last two days, when turned on and Photos allows it.
     private var shots: [PHAsset] = []
     private var shotViews: [(card: UIControl, asset: PHAsset)] = []
     private var editing = false

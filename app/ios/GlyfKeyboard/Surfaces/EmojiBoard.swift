@@ -900,10 +900,11 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
     }
 
     /// Frequently Used: the person's go-to emoji (set in the app) first,
-    /// then what they used last, each once.
+    /// then what they used last, each once, topped up with the world's most
+    /// used so it stays full, as Apple's does.
     static func frequentlyUsed() -> [String] {
         var out: [String] = []
-        for e in EmojiData.emoji(in: SettingsStore.current.favoriteEmoji ?? "") + loadRecents() where !out.contains(e) {
+        for e in EmojiData.emoji(in: SettingsStore.current.favoriteEmoji ?? "") + loadRecents() + EmojiData.seed where !out.contains(e) {
             out.append(e)
         }
         return Array(out.prefix(40))

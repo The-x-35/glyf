@@ -27,7 +27,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Glyf shows your screenshots from the last hour in the clipboard so you can paste them. They stay on your phone.</string>
+	<string>Glyf shows your screenshots from the last two days in the clipboard so you can paste them. They stay on your phone.</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>

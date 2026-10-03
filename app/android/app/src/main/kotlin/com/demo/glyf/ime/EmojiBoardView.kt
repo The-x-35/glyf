@@ -647,8 +647,10 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
     /** Frequently Used: the person's go-to emoji (set in the app) first,
      *  then what they used last, each once; the world's most used before
      *  anything has been (iOS twin). */
+    // Topped up with the world's most used, as Apple's stays full: the first
+    // emoji someone used was replacing all 30 of them.
     private fun frequentlyUsed(): List<String> =
-        (EmojiData.emojiIn(host.favoriteEmoji) + TextRecents.load(context, RECENT_EMOJI, EmojiData.seed)).distinct().take(40)
+        (EmojiData.emojiIn(host.favoriteEmoji) + TextRecents.load(context, RECENT_EMOJI) + EmojiData.seed).distinct().take(40)
 
     /** The tone last picked for each emoji: Apple's board shows it from then on. */
     private fun loadTones(): Map<String, String> = runCatching {

@@ -150,6 +150,7 @@ final class TranslationHUD: UIView {
         // The draft moved on: never leave the previous translation standing.
         lastTranslation = ""
         textLabel.text = "…"
+        setNeedsLayout()
         updateReplaceEnabled()
         pendingWork?.cancel()
         let forced = forcedTarget
@@ -163,6 +164,7 @@ final class TranslationHUD: UIView {
                 self.lastTranslation = result.text
                 self.textLabel.text = result.text
                 self.textLabel.textColor = Glass.textPrimary
+                self.setNeedsLayout()
                 self.updateReplaceEnabled()
             }
         }
@@ -208,7 +210,30 @@ final class TranslationHUD: UIView {
                                      width: replaceW, height: replaceH)
         replaceButton.layer.cornerRadius = replaceH / 2
         let textX = directionButton.frame.maxX + 10
-        textLabel.frame = CGRect(x: textX, y: row.y,
-                                 width: max(20, replaceButton.frame.minX - textX - 8), height: row.height)
+        let textW = max(20, replaceButton.frame.minX - textX - 8)
+        let lines = fitText(width: textW)
+        let textH = lines == 2 ? max(row.height, ceil(textLabel.font.lineHeight * 2) + 2) : row.height
+        textLabel.frame = CGRect(x: textX, y: lines == 2 ? mid - textH / 2 : row.y, width: textW, height: textH)
+    }
+
+    /// The translation: one line at 17, shrinking to 14; then two lines at 14
+    /// when they hold all of it; else one line at 14 with its start cut, the
+    /// newest words in view. Beside the direction pill a phone's width left
+    /// only "…emos a las 8!" of "¡Nos vemos a las 8!" (Android twin:
+    /// GlyfIME.fitTranslation). Returns the number of lines.
+    private func fitText(width: CGFloat) -> Int {
+        let s = (textLabel.text ?? "") as NSString
+        func font(_ size: CGFloat) -> UIFont { .systemFont(ofSize: size, weight: .semibold) }
+        var size: CGFloat = 17
+        while size > 14, s.size(withAttributes: [.font: font(size)]).width > width { size -= 0.5 }
+        textLabel.font = font(size)
+        let tooLong = s.size(withAttributes: [.font: font(size)]).width > width
+        let twoLines = tooLong && s.boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin], attributes: [.font: font(size)], context: nil
+        ).height <= font(size).lineHeight * 2 + 1
+        textLabel.numberOfLines = twoLines ? 2 : 1
+        textLabel.lineBreakMode = twoLines ? .byWordWrapping : .byTruncatingHead
+        return twoLines ? 2 : 1
     }
 }

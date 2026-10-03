@@ -162,8 +162,11 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
                 denied: Platform.isIOS
                     ? 'Photos are off for Glyf. Allow them in Settings › Glyf › Photos'
                     : 'Photos are off for Glyf. Allow them in Settings › Apps › Glyf › Permissions'),
-            _note('Shots from the last hour, beside what you copied. Turning '
+            _note('Shots from the last two days, beside what you copied. Turning '
                 'this on is when Glyf asks for your photos.'),
+            _switch('AI suggestions as you type', 'aiSuggest'),
+            _note('When you pause, the sentence you’re typing goes to Glyf’s AI '
+                'so the strip can offer an action. Off: AI only when you ask.'),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),
           ]),
         ],

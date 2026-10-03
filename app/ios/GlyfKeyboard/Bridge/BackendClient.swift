@@ -15,9 +15,11 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         "company", "bio",
     ]
 
-    /// nil when the setting is off or there is nothing worth sending.
+    /// nil when the setting is off, before the person has answered "What
+    /// Glyf sends" in the app, or when there is nothing worth sending.
     static func shareableProfile() -> [String: String]? {
-        guard SettingsStore.current.aiUsesVault != false else { return nil }
+        guard SettingsStore.current.aiUsesVault != false, SettingsStore.current.aiConsent != nil
+        else { return nil }
         var out: [String: String] = [:]
         for field in VaultStore.shared.load().fields
         where shareableKinds.contains(field.kind) {

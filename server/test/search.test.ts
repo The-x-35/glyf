@@ -161,6 +161,16 @@ describe("formatters", () => {
     expect(formatDistance(350)).toBe("350 m");
     expect(formatDistance(1200)).toBe("1.2 km");
     expect(formatDistance(23000)).toBe("23 km");
+    expect(formatDistance(350, "DE")).toBe("350 m");
+  });
+
+  it("says miles in the US and the UK, as Google Maps does there", () => {
+    expect(formatDistance(50, "US")).toBe("160 ft");
+    expect(formatDistance(230, "us")).toBe("0.1 mi");
+    expect(formatDistance(1200, "US")).toBe("0.7 mi");
+    expect(formatDistance(23000, "US")).toBe("14 mi");
+    expect(formatDistance(50, "GB")).toBe("50 yd");
+    expect(formatDistance(3000, "GB")).toBe("1.9 mi");
   });
 });
 

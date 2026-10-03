@@ -1824,6 +1824,25 @@ scenarios.push(
     const r = await tapFor(find(s, byId("emoji:suggestion:0")), x => x.includes("🥹"));
     return { pass: r.t.includes("🥹"), note: `first result '${word}'; typed '${r.t}'${second(r)}` };
   } },
+  { id: "S235", title: "Not now on 'What Glyf sends': a pause sends nothing, so S90's message gets no Tidy this up", run: async () => {
+    // Google Play's prominent disclosure: the sentence goes to the server on
+    // a pause only after the person agreed (aiSuggest). Here they said Not now.
+    const before = adb("shell", `run-as ${PKG} cat ${SETTINGS}`);
+    writeSettings(JSON.stringify({ ...JSON.parse(before), aiSuggest: false }));
+    try {
+      await fresh();
+      await type("ya ok will send the deck before six tmrw ");
+      // S90 sees its chip within 10 s; give this one as long.
+      const chip = await waitFor(v => v.id === "strip:smart", 10000);
+      const s = await state();
+      const label = chip ? s.views.filter(v => v.text).map(v => v.text).join(" ") : "";
+      return { pass: !chip || !/tidy|places|look/i.test(label),
+        note: chip ? `a chip showed: '${label.slice(0, 80)}'` : "no AI suggestion after 10 s" };
+    } finally {
+      writeSettings(before);
+      tool("close");
+    }
+  } },
 );
 
 function chipLabel(s, chip) {
@@ -1857,6 +1876,16 @@ async function openGame(game) {
   await tapXY(card.x, card.y);
   await sleep(600);
   return find(await state(), v => v.id === "games:board");
+}
+
+// As someone who agreed on the app's "What Glyf sends": the strip's AI
+// suggestions (S90 and others) and saved details in AI requests only go out
+// after that. S235 checks the other answer.
+{
+  const now = JSON.parse(adb("shell", `run-as ${PKG} cat ${SETTINGS}`));
+  if (now.aiSuggest !== true || now.aiUsesVault === false || !now.aiConsent) {
+    writeSettings(JSON.stringify({ ...now, aiSuggest: true, aiUsesVault: true, aiConsent: now.aiConsent || "qa" }));
+  }
 }
 
 const only = process.env.ONLY ? new Set(process.env.ONLY.split(",")) : null;

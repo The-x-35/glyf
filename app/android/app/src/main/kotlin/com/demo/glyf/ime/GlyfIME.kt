@@ -2211,9 +2211,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  row above the keyboard. */
     /** Vault kinds the model may see when asked to write or fill something
      *  (iOS BackendClient.shareableKinds), only while "Let AI use your saved
-     *  details" is on. Anything secret-shaped never reaches the vault. */
+     *  details" is on, and never before the person has answered "What Glyf
+     *  sends" in the app. Anything secret-shaped never reaches the vault. */
     private fun shareableProfile(): Map<String, String>? {
-        if (!settings.optBoolean("aiUsesVault", true)) return null
+        if (!settings.optBoolean("aiUsesVault", true) || !settings.has("aiConsent")) return null
         val kinds = setOf("name", "email", "phone", "address", "upi", "link", "social",
             "handle", "company", "bio")
         val out = LinkedHashMap<String, String>()
@@ -2473,13 +2474,21 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  suggestions have their own allowance on the server. */
     private fun scheduleSuggestion(text: String) {
         main.removeCallbacks(suggestWork)
+        // Only once the person agreed to it ("What Glyf sends" in the app).
         if (text.length < 12 || text.split(" ").size < 3 || text == suggestedFor ||
             (glyfWrote.isNotEmpty() && text.trim().endsWith(glyfWrote)) ||
-            !settings.optBoolean("candidates", true)) return
+            !settings.optBoolean("candidates", true) || !settings.optBoolean("aiSuggest", false) ||
+            incognitoField()) return
         main.postDelayed(suggestWork, 700)
     }
 
+    /** A field that asks for no learning: an incognito tab, a private note.
+     *  Nothing typed there goes to the server unasked. */
+    private fun incognitoField(): Boolean =
+        (currentInputEditorInfo?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
+
     private fun askForSuggestion() {
+        if (incognitoField()) return
         val ic = currentInputConnection ?: return
         val text = (ic.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
         if (text.length < 12) return
@@ -5845,7 +5854,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             Glass.style(this, 17f, Glass.SEMIBOLD)
             isSingleLine = true
             ellipsize = android.text.TextUtils.TruncateAt.START
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), 0, dp(8), 0)
+            // The direction pill grows ("Translate" → "English → Spanish")
+            // as the translation lands: fit again to the room left.
+            addOnLayoutChangeListener { v, l, _, r, _, oldL, _, oldR, _ ->
+                if (r - l != oldR - oldL) fitTranslation(v as TextView, (v as TextView).text.toString())
+            }
         }
         val replace = TextView(this).apply {
             this.text = "Replace"
@@ -5862,7 +5877,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setOnClickListener { exitTranslate() }
         }
         strip.addView(dir, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)))
-        strip.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        strip.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
         strip.addView(replace, LinearLayout.LayoutParams(dp(84), dp(30)))
         strip.addView(close, LinearLayout.LayoutParams(dp(36), dp(34)))
         toolbar.visibility = View.GONE
@@ -5911,7 +5926,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         translateReplaced = ""
         translateSource = text
         translateResult = ""
-        translateText?.text = "…"
+        translateText?.let { fitTranslation(it, "…") }
         translateReplace?.alpha = 0.3f
         val (primary, secondary) = translatePair()
         BackendClient.translate(settings.optString("backendURL"), settings.optString("deviceId"),
@@ -5921,7 +5936,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 translateDetected = result.detected
                 translateTarget = result.target
                 translateDir?.text = "${result.detected} → ${result.target}"
-                translateText?.text = result.text
+                translateText?.let { fitTranslation(it, result.text) }
                 translateResult = result.text
                 translateReplace?.alpha = 1f
                 if (result.detected != primary && result.detected != "Unknown" &&
@@ -5971,6 +5986,35 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         translateResult = ""
         translateText?.text = ""
         translateReplace?.alpha = 0.3f
+    }
+
+    /** The translation in the bar: one line at 17, shrinking to 14; then two
+     *  lines at 14 when they hold all of it; else one line at 14 with its
+     *  start cut, the newest words in view (iOS twin: TranslationHUD.fitText).
+     *  Beside the direction pill a 411 dp phone showed only "…emos a las 8!"
+     *  of "¡Nos vemos a las 8!". (Android's own autosize never shrinks an
+     *  ellipsized single line: it always "fits".) */
+    private fun fitTranslation(tv: TextView, s: String) {
+        tv.text = s
+        val room = tv.width - tv.paddingLeft - tv.paddingRight
+        if (room <= 0) { tv.post { if (tv.text.toString() == s) fitTranslation(tv, s) }; return }
+        val paint = android.text.TextPaint(tv.paint)
+        fun px(sp: Float) = android.util.TypedValue.applyDimension(
+            android.util.TypedValue.COMPLEX_UNIT_SP, sp, resources.displayMetrics)
+        var sp = 17f
+        paint.textSize = px(sp)
+        while (sp > 14f && paint.measureText(s) > room) { sp -= 0.5f; paint.textSize = px(sp) }
+        val twoLines = paint.measureText(s) > room &&
+            android.text.StaticLayout.Builder.obtain(s, 0, s.length, paint, room).build().lineCount <= 2
+        if (twoLines) {
+            tv.isSingleLine = false
+            tv.maxLines = 2
+            tv.ellipsize = android.text.TextUtils.TruncateAt.END
+        } else {
+            tv.isSingleLine = true
+            tv.ellipsize = android.text.TextUtils.TruncateAt.START
+        }
+        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, sp)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

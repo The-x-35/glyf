@@ -57,6 +57,14 @@ struct GlyfSettings: Codable, Equatable {
     /// phone, address, UPI, links), so "write my address" and form filling
     /// work. Off means runs never carry your details.
     var aiUsesVault: Bool? = true
+    /// AI suggestions as you type: on a pause, the sentence before the cursor
+    /// goes to the server so the strip can offer an action. Off until the
+    /// person agrees on the app's "What Glyf sends" screen (Google Play's
+    /// prominent disclosure); nil reads as off.
+    var aiSuggest: Bool? = nil
+    /// When the person answered "What Glyf sends" (ISO 8601), nil until they
+    /// have. Until then no AI request carries saved details either.
+    var aiConsent: String? = nil
     /// Keep what you copy in the keyboard's clipboard history.
     var clipboardHistory: Bool? = true
     /// Take every copy into the clipboard, rather than waiting to be handed

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/privacy" },
 };
 
-const UPDATED = "2 October 2026";
+const UPDATED = "3 October 2026";
 const EMAIL = "arpit@tryglyf.com";
 
 export default function Privacy() {
@@ -36,7 +36,7 @@ export default function Privacy() {
 
           <h2>The short version</h2>
           <ul>
-            <li>What you type stays on your phone unless you use a feature that needs our server: AI features, suggestions, search and translation.</li>
+            <li>What you type stays on your phone unless you use a feature that needs our server: AI features, search and translation, and AI suggestions as you type if you agree to them.</li>
             <li>We don&rsquo;t keep the text you send, unless you share it as a page. Our server logs that something ran and how long it took, never your words.</li>
             <li>Your saved details, notes, clipboard, contacts, calendar and learned words stay on your phone.</li>
             <li>We don&rsquo;t sell your data, show ads, or track you across other apps.</li>
@@ -53,7 +53,7 @@ export default function Privacy() {
           <ul>
             <li>Your vault: the details you save, such as your address or payment ID, encrypted on the device.</li>
             <li>Notes, shorthand, and the words the keyboard learns from your typing.</li>
-            <li>Clipboard history, and the screenshots from the last hour it shows (with the photo permission).</li>
+            <li>Clipboard history, and the screenshots from the last two days it shows (with the photo permission).</li>
             <li>Contacts, when you let the keyboard search them.</li>
             <li>Your calendar, when you let the keyboard show it and add events to it.</li>
             <li>Dictation, which is turned into text on the device.</li>
@@ -62,8 +62,10 @@ export default function Privacy() {
 
           <h2>What the keyboard sends, and when</h2>
           <p>
-            A keyboard with Full Access can reach the internet. Glyf uses that only for the features below;
-            everything else you type stays on your phone.
+            On iPhone a keyboard reaches the internet only with Full Access; on Android it can by default. Glyf uses
+            it only for the features below; everything else you type stays on your phone. The app shows this list on a
+            &ldquo;What Glyf sends&rdquo; screen before the keyboard is turned on, and nothing marked &ldquo;only if
+            you agree&rdquo; is sent until you do.
           </p>
           <ul>
             <li>
@@ -71,16 +73,18 @@ export default function Privacy() {
               Glyf key or translate, the text involved goes to our server and to an AI model to produce the result.
             </li>
             <li>
-              <strong>Suggestions.</strong> With Full Access and Suggestions on, when you pause while typing, the
-              sentence you are typing is sent to suggest one action, such as &ldquo;Tidy this up&rdquo;. It is sent
-              with the kinds of details in your vault (for example &ldquo;address&rdquo;), never the details
-              themselves. Turn this off in the Glyf app under Profile, Keyboard, Suggestions.
+              <strong>AI suggestions as you type, only if you agree.</strong> When you pause while typing, the
+              sentence you are typing (up to its last 120 characters) is sent to suggest one action, such as
+              &ldquo;Tidy this up&rdquo;. It is sent with the kinds of details in your vault (for example
+              &ldquo;address&rdquo;), never the details themselves. Never from password fields, and on Android never
+              from a field that asks for no learning, such as an incognito tab. Turn it on or off in the Glyf app under
+              Profile, Keyboard, AI suggestions as you type.
             </li>
             <li>
-              <strong>Your saved details.</strong> With &ldquo;Let AI use your saved details&rdquo; on (the default),
-              a request that asks for one of your details, like &ldquo;send them my address&rdquo;, can include your
-              name, email, phone number, address, payment ID or links so the answer can fill them in. Turn it off
-              under Profile, Keyboard.
+              <strong>Your saved details, only if you agree.</strong> With &ldquo;Let AI use your saved
+              details&rdquo; on, each AI request you start carries the details you saved (your name, email, phone
+              number, address, payment ID, links, social handles, company and bio) so an answer like &ldquo;send them
+              my address&rdquo; can fill them in. Turn it off under Profile, Keyboard.
             </li>
             <li>
               <strong>Search.</strong> What you search in the keyboard&rsquo;s Search, YouTube and Maps tabs goes to
@@ -136,7 +140,8 @@ export default function Privacy() {
               Geoapify and Wikipedia to find results.
             </li>
             <li>
-              <strong>GIFs and stickers.</strong> Searches in the emoji board go from your phone straight to KLIPY.
+              <strong>GIFs and stickers.</strong> Searches in the emoji board go from your phone straight to KLIPY,
+              with a random ID of their own so KLIPY can show the GIFs you used recently.
             </li>
             <li>
               <strong>Booking.</strong> When you book a time on someone&rsquo;s Cal.com page, the name, email and
@@ -148,8 +153,20 @@ export default function Privacy() {
               <a href="#google-user-data">Google user data</a> below.
             </li>
             <li>
+              <strong>Temporary email.</strong> A throwaway address comes from mail.tm, which your phone reaches
+              directly: it receives only the address and password Glyf made up for it, and the inbox is read onto your
+              phone.
+            </li>
+            <li>
+              <strong>Prices.</strong> A cashtag such as $SOL, or a wallet address you copy, is looked up for its price
+              through our server, which asks Jupiter. Exchange rates for money in the strip are the European Central
+              Bank&rsquo;s, which our server fetches from Frankfurter with nothing of yours attached.
+            </li>
+            <li>
               <strong>Wallet.</strong> If you use Glyf&rsquo;s wallet, signing is handled by the wallet app you choose, such as
-              Phantom; Glyf never holds your keys. Blockchain transactions are public by nature.
+              Phantom; Glyf never holds your keys. Transactions you sign go to the Solana network through our server,
+              which passes them on without storing or logging them; swaps you start go from your phone to Jupiter, and
+              private sends to MagicBlock. Blockchain transactions are public by nature.
             </li>
             <li>
               <strong>Hosting.</strong> Our server runs on Railway, our database on Neon, and this website on
@@ -219,7 +236,7 @@ export default function Privacy() {
             Glyf launches. Email us to be removed.
           </p>
 
-          <h2>Deleting your data</h2>
+          <h2 id="delete">Deleting your account and data</h2>
           <p>
             Email <a href={`mailto:${EMAIL}`}>{EMAIL}</a> from the address on your account and we will delete your
             account, its settings and its activity from our server within 30 days, or send you a copy. What is stored

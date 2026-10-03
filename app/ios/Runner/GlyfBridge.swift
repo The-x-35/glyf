@@ -367,7 +367,7 @@ final class GlyfBridge {
                 }
             }
         // Screenshots in the keyboard's clipboard: the app asks for Photos;
-        // the keyboard then lists the last hour's screenshots.
+        // the keyboard then lists the last two days' screenshots.
         case "screenshotAccess":
             PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
                 DispatchQueue.main.async { result(status == .authorized || status == .limited) }

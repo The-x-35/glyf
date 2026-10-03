@@ -933,6 +933,20 @@ final class GlyfScenarioUITests: XCTestCase {
         note("first result '\(found)' (\(first.label)), typed '\(value)'")
     }
 
+    /// Not now on the app's "What Glyf sends" (Google Play's prominent
+    /// disclosure): the sentence goes to the server on a pause only after a
+    /// yes, so S63's message gets no Tidy this up.
+    func testS235_NotNowOnWhatGlyfSendsSendsNothingOnAPause() throws {
+        open(["--glyf-ai-not-now"])
+        clear()
+        type("ya ok will send the deck before six tmrw ")
+        // S63 sees its chip within 10 s; give this one as long.
+        let chip = wait("strip:smart", 10)
+        note(chip.map { "a chip showed: '\($0.label)'" } ?? "no AI suggestion after 10 s")
+        XCTAssertFalse(chip?.label.localizedCaseInsensitiveContains("tidy") ?? false,
+                       "a suggestion showed: '\(chip?.label ?? "")'")
+    }
+
     /// S214: money typed shows in the local currency in the strip (Arpit,
     /// 2026-09-30: "$20 not showing amount in local currency ... i want
     /// rupee, or whatever i set in as local currency here in app").

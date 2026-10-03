@@ -5,6 +5,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
+import '../core/ai_consent.dart';
 import '../core/auth.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
@@ -46,8 +47,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// 'connect' only when this server can actually sign in with Google.
   // 'connect' (Google calendar/mail) is out of the flow until the connector
   // works end to end; it stays reachable from Profile › Connected tools.
+  // 'ai' (What Glyf sends) comes before the keyboard is turned on: Google
+  // Play wants that said, and agreed to, before anything goes.
   List<String> _steps = const [
-    'signin', 'meet', 'details', 'feel', 'setup', 'nearby', 'calendar', 'tour'
+    'signin', 'meet', 'details', 'feel', 'ai', 'setup', 'nearby', 'calendar', 'tour'
   ];
   int _step = 0;
 
@@ -439,6 +442,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       });
     }
     Telemetry.log('onboarding_step_view', {'step': _steps[_step]});
+  }
+
+  /// "What Glyf sends": either answer is recorded, then on to the keyboard.
+  Future<void> _answerAi(bool agreed) async {
+    await AiConsent.answer(agreed);
+    if (mounted) _advance();
   }
 
   /// Back is there once signed in and past the orb's hello, up to the tour
@@ -1015,6 +1024,18 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const Spacer(),
           _pill('Continue', onTap: _advance),
           const SizedBox(height: 20),
+        ]);
+
+      // What the keyboard sends and a real choice (core/ai_consent.dart).
+      case 'ai':
+        return _frame(children: [
+          const SizedBox(height: 30),
+          _headline('What Glyf sends'),
+          const SizedBox(height: 16),
+          const Expanded(child: SingleChildScrollView(child: AiConsentText())),
+          const SizedBox(height: 12),
+          _pill('Agree and turn on', onTap: () => _answerAi(true)),
+          _skip(label: 'Not now', id: 'onb:ai:notnow', onTap: () => _answerAi(false)),
         ]);
 
       // Both things Glyf needs from the phone on one screen: each row opens

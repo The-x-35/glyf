@@ -1810,8 +1810,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// a run: suggestions have their own allowance on the server.
     private func askForSuggestion(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Only once the person agreed to it ("What Glyf sends" in the app).
         guard hasFullAccess, !isSecureField, surface == .none,
-              SettingsStore.current.candidates,
+              SettingsStore.current.candidates, SettingsStore.current.aiSuggest == true,
               trimmed.count >= 12, trimmed.split(separator: " ").count >= 3,
               trimmed != suggestedFor,
               glyfWrote.isEmpty || !trimmed.hasSuffix(glyfWrote)
