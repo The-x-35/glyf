@@ -62,7 +62,8 @@ class ToolMenuView(
     private var order: MutableList<String> = savedOrder(context).filter { it !in onStrip }.toMutableList()
     private var dragging: String? = null
 
-    private val cols = 4
+    /** Four tiles a row on a phone, more on a wide screen (a tile about 110 dp). */
+    private val cols: Int get() = (width / dp(110f)).toInt().coerceIn(4, 8)
     private val gap get() = dp(8f)
     private val side get() = dp(6f)
     private val tileW get() = (width - side * 2 - gap * (cols - 1)) / cols

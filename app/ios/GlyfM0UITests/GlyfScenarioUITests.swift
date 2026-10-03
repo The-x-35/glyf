@@ -914,6 +914,25 @@ final class GlyfScenarioUITests: XCTestCase {
         note("chips \(parts), typed '\(value)'")
     }
 
+    /// S234: the emoji board has every emoji Apple's has, found by its words:
+    /// "tears" finds 🥹 first (Arpit, 2026-10-03: "some emoji like happy watery
+    /// eyes i couldnt find in ours").
+    func testS234_EmojiSearchFindsTheFaceHoldingBackTears() throws {
+        open()
+        clear()
+        tap("key:emojikey")
+        if let emoji = wait("emoji:mode:emoji", 3) { emoji.tap() }
+        tap("emoji:search")
+        type("tears")
+        guard let first = wait("emoji:result:0", 6) else { return XCTFail("no results for 'tears'") }
+        let found = first.value as? String ?? ""
+        XCTAssertEqual(found, "🥹", "the first result was \(first.label)")
+        keepScreenshot("emoji-tears")
+        first.tap()
+        XCTAssertTrue(waitValue(3) { $0.contains("🥹") }, "the tap typed '\(value)'")
+        note("first result '\(found)' (\(first.label)), typed '\(value)'")
+    }
+
     /// S214: money typed shows in the local currency in the strip (Arpit,
     /// 2026-09-30: "$20 not showing amount in local currency ... i want
     /// rupee, or whatever i set in as local currency here in app").

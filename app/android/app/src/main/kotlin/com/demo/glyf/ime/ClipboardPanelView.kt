@@ -320,20 +320,22 @@ class ClipboardPanelView(
         })
     }
 
-    /** Two columns, each card as tall as it needs (Gboard's masonry): every
-     *  card lands in whichever column is shorter, in the order given. */
+    /** Columns of cards, each as tall as it needs (Gboard's masonry): two on
+     *  a phone, more on a wide screen (a column about 200 dp), every card in
+     *  whichever column is shorter, in the order given. */
     private fun addGrid(items: List<Entry>) {
         val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        val cols = List(2) { LinearLayout(context).apply { orientation = LinearLayout.VERTICAL } }
-        val heights = FloatArray(2)
-        val screenW = resources.displayMetrics.widthPixels
-        val colW = (screenW - dp(side) * 2 - dp(gap)) / 2f
+        val screenW = if (width > 0) width else resources.displayMetrics.widthPixels
+        val n = (screenW / density / 200f).toInt().coerceIn(2, 4)
+        val cols = List(n) { LinearLayout(context).apply { orientation = LinearLayout.VERTICAL } }
+        val heights = FloatArray(n)
+        val colW = (screenW - dp(side) * 2 - dp(gap) * (n - 1)) / n.toFloat()
         val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
             typeface = Glass.font(context)
             textSize = dpf(clipTextSize)
         }
         for (entry in items) {
-            val c = if (heights[0] <= heights[1]) 0 else 1
+            val c = heights.indices.minByOrNull { heights[it] } ?: 0
             when (entry) {
                 is Entry.Text -> {
                     val flat = entry.item.text.trim()
@@ -359,12 +361,12 @@ class ClipboardPanelView(
                 }
             }
         }
-        row.addView(cols[0], LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply {
-            leftMargin = dp(side); rightMargin = dp(gap / 2)
-        })
-        row.addView(cols[1], LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply {
-            leftMargin = dp(gap / 2); rightMargin = dp(side)
-        })
+        for ((i, col) in cols.withIndex()) {
+            row.addView(col, LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = if (i == 0) dp(side) else dp(gap / 2)
+                rightMargin = if (i == n - 1) dp(side) else dp(gap / 2)
+            })
+        }
         body.addView(row)
     }
 

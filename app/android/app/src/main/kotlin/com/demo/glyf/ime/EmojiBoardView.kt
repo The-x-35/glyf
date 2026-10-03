@@ -48,6 +48,8 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
         val palette: GlyfKeyboardView.KeyPalette
         val dark: Boolean
         val online: Boolean
+        /** The person's go-to emoji, set in the app: first in Frequently Used. */
+        val favoriteEmoji: String
         /** Types text; `spaced` puts a space in front after a word. */
         fun commitText(text: String, spaced: Boolean)
         fun deleteBackward()
@@ -130,6 +132,10 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
 
     // Emoji data
     private var sections: List<Pair<String, List<String>>> = emptyList()
+    /** Rows in the emoji grid: five, as Apple's, fewer where it is short (a
+     *  phone on its side), each at least 30 dp and all of them whole (rows
+     *  of 36 used to overflow the 162 dp a phone's grid has). */
+    private var rows = ROWS
     private var flat: List<String> = emptyList()
     private var sectionStarts: IntArray = IntArray(0)
     private var currentSection = 0
@@ -147,6 +153,7 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
     private var emoticons: List<String> = emptyList()
 
     init {
+        EmojiData.load(context)
         orientation = VERTICAL
         setPadding(dp(8), dp(4), dp(8), 0)
         buildTop()
@@ -244,6 +251,21 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
         labelRow.addView(attribution, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         labelRow.setPadding(dp(6), 0, dp(6), 0)
         addView(labelRow, LayoutParams(LayoutParams.MATCH_PARENT, dp(20)))
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        post {
+            val fit = (emojiList.height / dp(30)).coerceIn(2, ROWS)
+            if (emojiList.height > 0 && fit != rows) {
+                rows = fit
+                (emojiList.layoutManager as? GridLayoutManager)?.spanCount = rows
+                reloadSections()
+            }
+            // GIFs and stickers: two columns on a phone, more on a wide screen.
+            val spans = (width / dp(180)).coerceIn(2, 5)
+            (mediaList.layoutManager as? StaggeredGridLayoutManager)?.let { if (it.spanCount != spans) it.spanCount = spans }
+        }
     }
 
     private fun buildContent() {
@@ -622,14 +644,35 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
 
     // MARK: emoji
 
+    /** Frequently Used: the person's go-to emoji (set in the app) first,
+     *  then what they used last, each once; the world's most used before
+     *  anything has been (iOS twin). */
+    private fun frequentlyUsed(): List<String> =
+        (EmojiData.emojiIn(host.favoriteEmoji) + TextRecents.load(context, RECENT_EMOJI, EmojiData.seed)).distinct().take(40)
+
+    /** The tone last picked for each emoji: Apple's board shows it from then on. */
+    private fun loadTones(): Map<String, String> = runCatching {
+        val o = org.json.JSONObject(com.demo.glyf.store.Bridge.file(context, TONES).readText())
+        o.keys().asSequence().associateWith { o.getString(it) }
+    }.getOrDefault(emptyMap())
+
+    private fun rememberTone(picked: String) {
+        val base = EmojiData.base(picked)
+        if (EmojiData.variants(base).size < 2) return
+        val map = loadTones().toMutableMap()
+        if (picked == base) map.remove(base) else map[base] = picked
+        runCatching { com.demo.glyf.store.Bridge.file(context, TONES).writeText(org.json.JSONObject(map as Map<*, *>).toString()) }
+    }
+
     private fun reloadSections() {
-        val recents = TextRecents.load(context, RECENT_EMOJI, DEFAULT_RECENTS)
-        sections = listOf("recents" to recents) + EmojiData.categories
+        val recents = frequentlyUsed()
+        val tones = loadTones()
+        sections = listOf("recents" to recents) + EmojiData.categories.map { (id, list) -> id to list.map { tones[it] ?: it } }
         // Every section starts a new column, as on Apple's board: its last
         // column is filled out with blanks, which also leaves Apple's gap
         // between sections. Otherwise a tab jump lands mid-column and the
         // name above the grid snaps back to the section before.
-        val padded = sections.map { (_, list) -> list + List((ROWS - list.size % ROWS) % ROWS) { "" } }
+        val padded = sections.map { (_, list) -> list + List((rows - list.size % rows) % rows) { "" } }
         flat = padded.flatten()
         var at = 0
         sectionStarts = IntArray(sections.size) { i -> at.also { at += padded[i].size } }
@@ -662,6 +705,16 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
         host.commitText(e, spaced = false)
     }
 
+    /** The tabs with the tone just picked, the grid left where it was
+     *  (Frequently Used catches up next time, as Apple's does). */
+    private fun showPickedTones() {
+        if (sections.size < 2 || searchActive) return
+        val tones = loadTones()
+        sections = listOf(sections[0]) + EmojiData.categories.map { (id, list) -> id to list.map { tones[it] ?: it } }
+        flat = sections.map { (_, list) -> list + List((rows - list.size % rows) % rows) { "" } }.flatten()
+        emojiList.adapter?.notifyDataSetChanged()
+    }
+
     private fun showTones(base: String, anchor: View) {
         val variants = EmojiData.variants(base)
         if (variants.size < 2) return
@@ -675,7 +728,11 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
         for (v in variants) {
             pop.addView(TextView(context).apply {
                 this.text = v; setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f); gravity = Gravity.CENTER
-                setOnClickListener { pickEmoji(v) }
+                setOnClickListener {
+                    rememberTone(v)
+                    pickEmoji(v)
+                    showPickedTones()
+                }
             }, LayoutParams(dp(40), dp(44)))
         }
         val w = dp(40) * variants.size + dp(8)
@@ -762,7 +819,7 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
         renderField()
         val typed = query.trim()
         when (mode) {
-            Mode.EMOJI -> showSuggestions(if (typed.isEmpty()) TextRecents.load(context, RECENT_EMOJI, DEFAULT_RECENTS)
+            Mode.EMOJI -> showSuggestions(if (typed.isEmpty()) frequentlyUsed()
                 else EmojiData.search(typed), emoji = true)
             Mode.EMOTICONS -> {
                 val hits = if (typed.isEmpty()) TextRecents.load(context, RECENT_EMOTICONS)
@@ -828,7 +885,7 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
                 gravity = Gravity.CENTER
                 includeFontPadding = false
             }
-            val rowH = maxOf(dp(36), parent.height / 5)
+            val rowH = maxOf(dp(30), parent.height / rows)
             tv.layoutParams = RecyclerView.LayoutParams(dp(47), rowH)
             return EmojiHolder(tv)
         }
@@ -842,7 +899,7 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
                 h.tv.isClickable = false
             } else {
                 h.tv.setOnClickListener { pickEmoji(e) }
-                h.tv.setOnLongClickListener { showTones(e, h.tv); true }
+                h.tv.setOnLongClickListener { showTones(EmojiData.base(e), h.tv); true }
             }
             val rowH = maxOf(dp(36), emojiList.height / 5)
             if (h.tv.layoutParams.height != rowH) h.tv.layoutParams = RecyclerView.LayoutParams(dp(47), rowH)
@@ -962,7 +1019,8 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
         const val ROWS = 5
         const val RECENT_EMOJI = "emoji-recents.json"
         const val RECENT_EMOTICONS = "emoticon-recents.json"
-        val DEFAULT_RECENTS = listOf("😂", "❤️", "👍", "🙏", "😊", "🔥", "🎉", "😍")
+        /** The tone picked for each emoji (iOS's emoji-tones.json). */
+        const val TONES = "emoji-tones.json"
         val GIF_FEELINGS = listOf(
             "Haha" to "haha", "Love" to "love", "Sad" to "sad", "Yes" to "yes", "No" to "no",
             "Wow" to "wow", "OMG" to "omg", "Thanks" to "thank you", "Hi" to "hello", "Bye" to "bye",

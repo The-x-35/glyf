@@ -1,0 +1,246 @@
+{
+ "about": "The emoji board's table (shared/emoji/emoji.tsv) as both keyboards read it, everything drawable: tab sizes, search results (first ones, best first), skin tones a long press shows, emoji found in a go-to string, and which Emoji versions each OS draws.",
+ "tabs": {
+  "smileys": 482,
+  "animals": 218,
+  "food": 130,
+  "activity": 123,
+  "travel": 131,
+  "objects": 227,
+  "symbols": 302,
+  "flags": 260
+ },
+ "total": 1873,
+ "seed": [
+  "😂",
+  "❤️",
+  "🤣",
+  "👍",
+  "😭",
+  "🙏",
+  "😘",
+  "🥰",
+  "😍",
+  "😊"
+ ],
+ "search": [
+  {
+   "query": "tears",
+   "first": [
+    "🥹",
+    "😂",
+    "😹"
+   ]
+  },
+  {
+   "query": "thumbs up",
+   "first": [
+    "👍"
+   ]
+  },
+  {
+   "query": "heart",
+   "first": [
+    "❤️",
+    "🫀"
+   ]
+  },
+  {
+   "query": "happy",
+   "first": [
+    "😂",
+    "🤣",
+    "😁"
+   ]
+  },
+  {
+   "query": "pizza",
+   "first": [
+    "🍕"
+   ]
+  },
+  {
+   "query": "india",
+   "first": [
+    "🇮🇳"
+   ]
+  },
+  {
+   "query": "usa",
+   "first": [
+    "🇺🇸"
+   ]
+  },
+  {
+   "query": "lol",
+   "first": [
+    "😂"
+   ]
+  },
+  {
+   "query": "cry",
+   "first": [
+    "😢",
+    "😿",
+    "🔮"
+   ]
+  },
+  {
+   "query": "holding back",
+   "first": [
+    "🥹"
+   ]
+  },
+  {
+   "query": "fire",
+   "first": [
+    "🔥"
+   ]
+  },
+  {
+   "query": "party",
+   "first": [
+    "🎉",
+    "🥳"
+   ]
+  },
+  {
+   "query": "xyzzy",
+   "first": []
+  }
+ ],
+ "variants": {
+  "👍": [
+   "👍",
+   "👍🏻",
+   "👍🏼",
+   "👍🏽",
+   "👍🏾",
+   "👍🏿"
+  ],
+  "🤝": [
+   "🤝",
+   "🤝🏻",
+   "🤝🏼",
+   "🤝🏽",
+   "🤝🏾",
+   "🤝🏿"
+  ],
+  "😀": [
+   "😀"
+  ],
+  "👩‍❤️‍👨": [
+   "👩‍❤️‍👨",
+   "👩🏻‍❤️‍👨🏻",
+   "👩🏼‍❤️‍👨🏼",
+   "👩🏽‍❤️‍👨🏽",
+   "👩🏾‍❤️‍👨🏾",
+   "👩🏿‍❤️‍👨🏿"
+  ],
+  "🫶": [
+   "🫶",
+   "🫶🏻",
+   "🫶🏼",
+   "🫶🏽",
+   "🫶🏾",
+   "🫶🏿"
+  ]
+ },
+ "emojiIn": [
+  {
+   "text": "🫶 😭 hi 💕❤️ 👍🏽!",
+   "emoji": [
+    "🫶",
+    "😭",
+    "💕",
+    "❤️",
+    "👍🏽"
+   ]
+  }
+ ],
+ "ios": [
+  {
+   "version": "13.1",
+   "os": "17.0",
+   "draws": true
+  },
+  {
+   "version": "15.0",
+   "os": "17.0",
+   "draws": true
+  },
+  {
+   "version": "15.1",
+   "os": "17.3",
+   "draws": false
+  },
+  {
+   "version": "15.1",
+   "os": "17.4",
+   "draws": true
+  },
+  {
+   "version": "16.0",
+   "os": "18.3",
+   "draws": false
+  },
+  {
+   "version": "16.0",
+   "os": "18.4",
+   "draws": true
+  },
+  {
+   "version": "17.0",
+   "os": "26.3",
+   "draws": false
+  },
+  {
+   "version": "17.0",
+   "os": "26.4",
+   "draws": true
+  },
+  {
+   "version": "18.0",
+   "os": "26.5",
+   "draws": false
+  }
+ ],
+ "android": [
+  {
+   "sdk": 29,
+   "newest": 12.1
+  },
+  {
+   "sdk": 30,
+   "newest": 13.0
+  },
+  {
+   "sdk": 31,
+   "newest": 13.1
+  },
+  {
+   "sdk": 32,
+   "newest": 14.0
+  },
+  {
+   "sdk": 33,
+   "newest": 14.0
+  },
+  {
+   "sdk": 34,
+   "newest": 15.0
+  },
+  {
+   "sdk": 35,
+   "newest": 15.1
+  },
+  {
+   "sdk": 36,
+   "newest": 16.0
+  },
+  {
+   "sdk": 37,
+   "newest": 17.0
+  }
+ ]
+}

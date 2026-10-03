@@ -401,6 +401,28 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         super.onDestroy()
     }
 
+    /** The strip's height: 50, or 42 on a phone held sideways, which has
+     *  little height to spare (AOSP's landscape strip is 36). */
+    private val stripDp: Int
+        get() = resources.configuration.let {
+            if (it.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
+                it.smallestScreenWidthDp < 600) 42 else STRIP_DP
+        }
+
+    /** A tablet's keyboard is centred, its letter keys no wider than 1.5
+     *  times their height (GlyfKeyboardView.tabletContentDp): what is left
+     *  on each side, in px. */
+    private fun tabletSide(): Int {
+        val cfg = resources.configuration
+        if (cfg.smallestScreenWidthDp < 600) return 0
+        val w = cfg.screenWidthDp.toFloat()
+        return dp(((w - GlyfKeyboardView.tabletContentDp(w)) / 2f).coerceAtLeast(0f).toInt())
+    }
+
+    /** Never the full-screen editor: the app stays in sight above the keys,
+     *  as on iOS (Android's default covers it on every phone held sideways). */
+    override fun onEvaluateFullscreenMode(): Boolean = false
+
     @SuppressLint("InflateParams")
     override fun onCreateInputView(): View {
         forgetSurfaces()
@@ -421,7 +443,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         keyboard = GlyfKeyboardView(this, this)
         // The strip: STRIP_DP from the board's top edge to the key area.
         root.addView(toolbar, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(stripDp)))
         root.addView(keyboard)
         // Keep the key rows clear of the keyboard's navigation strip. With
         // gesture navigation Android draws a 48dp strip under an IME (hide
@@ -430,13 +452,23 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // and leaves 6dp more, measured on the emulator.
         // Start at the usual answer (a 48dp strip) so the first show is laid
         // out right; the insets below correct it where a phone differs.
-        root.setPadding(0, 0, 0, dp(48) + dp(6))
+        val centre = tabletSide()
+        root.setPadding(centre, 0, centre, dp(48) + dp(6))
         root.setOnApplyWindowInsetsListener { v, insets ->
             val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 maxOf(insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom,
                       insets.getInsets(android.view.WindowInsets.Type.tappableElement()).bottom)
             } else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
-            if (v.paddingBottom != bottom + dp(6)) v.setPadding(0, 0, 0, bottom + dp(6))
+            // Sides: a camera cutout or a navigation bar beside a phone held
+            // sideways keeps the keys clear of it; a tablet's are centred.
+            val side = if (android.os.Build.VERSION.SDK_INT >= 30)
+                insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+            else null
+            val left = (side?.left ?: 0) + centre
+            val right = (side?.right ?: 0) + centre
+            if (v.paddingBottom != bottom + dp(6) || v.paddingLeft != left || v.paddingRight != right) {
+                v.setPadding(left, 0, right, bottom + dp(6))
+            }
             insets
         }
         return root
@@ -1998,7 +2030,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val strip = barStrip ?: return
         strip.removeAllViews()
         val w = resources.displayMetrics.widthPixels
-        val rowH = dp(STRIP_DP)
+        val rowH = dp(stripDp)
         val row = FrameLayout(this)
         // iOS: the close is the g pill's box, 52 by 34 at 5 in, fillSoft with
         // 10 corners; the prompt starts 6 after it and ends 6 from the edge.
@@ -2823,7 +2855,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  above or below. The strip centres it in its padded box, so the chip's
      *  middle is the key's. */
     private fun stripChipHeight(): Int {
-        val stripH = toolbar.layoutParams?.height?.takeIf { it > 0 } ?: dp(STRIP_DP)
+        val stripH = toolbar.layoutParams?.height?.takeIf { it > 0 } ?: dp(stripDp)
         val keyMid = toolbar.paddingTop + (stripH - toolbar.paddingTop - toolbar.paddingBottom) / 2
         return minOf(dp(38), 2 * keyMid, 2 * (stripH - keyMid))
     }
@@ -3064,7 +3096,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Exactly the strip and the keys it stands in for, as on iOS: the
         // keyboard never grows when space is held. Results scroll.
         val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
-        actPanelHeight = dp(STRIP_DP) + keysH
+        actPanelHeight = dp(stripDp) + keysH
         val panel = FrameLayout(this).apply { tag = "act" }
         root.addView(panel, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, actPanelHeight))
@@ -3081,7 +3113,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         panel.addView(ActRingsView(this, ink()), FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         panel.addView(actHeader(retry = false), FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP), Gravity.TOP))
+            FrameLayout.LayoutParams.MATCH_PARENT, dp(stripDp), Gravity.TOP))
         if (title != null) {
             panel.addView(TextView(this).apply {
                 text = title
@@ -3180,7 +3212,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         panel.removeAllViews()
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         outer.addView(actHeader(retry = !streaming), LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(stripDp)))
         // iOS: 4 under the strip, 10 a side; Copy and Insert 14 off the
         // bottom, and versions run to the bottom.
         val column = LinearLayout(this).apply {
@@ -3272,7 +3304,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         panel.removeAllViews()
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         outer.addView(actHeader(retry = false), LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(stripDp)))
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(4), dp(10), dp(14))
@@ -3349,13 +3381,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             Glass.style(this, 14f, Glass.REGULAR, Glass.textSecondary)
             gravity = Gravity.CENTER
             maxLines = 3
-            setPadding(dp(24), dp(STRIP_DP), dp(24), dp(22))
+            setPadding(dp(24), dp(stripDp), dp(24), dp(22))
             setTag(com.demo.glyf.R.id.qa_id, "act:status"); contentDescription = "Status"
             setOnClickListener { runAct() }
         }, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         panel.addView(actHeader(retry = false), FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP), Gravity.TOP))
+            FrameLayout.LayoutParams.MATCH_PARENT, dp(stripDp), Gravity.TOP))
     }
 
     /** Swaps exactly what the run read — both sides of the cursor. */
@@ -5662,6 +5694,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         override val backendURL: String get() = settings.optString("backendURL")
         override val palette: GlyfKeyboardView.KeyPalette get() = keyboard.palette()
         override val dark: Boolean get() = chromeDark
+        override val favoriteEmoji: String get() = settings.optString("favoriteEmoji")
         override val online: Boolean get() = runCatching {
             val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
             cm.activeNetwork != null
@@ -5694,7 +5727,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** The board on Emoji from the emoji key; on GIFs from the menu's tile. */
     private fun showEmojiPanel(mode: EmojiBoardView.Mode = EmojiBoardView.Mode.EMOJI) {
         dismissFeaturePanel()
-        val barH = if (toolbar.height > 0) toolbar.height else dp(STRIP_DP)
+        val barH = if (toolbar.height > 0) toolbar.height else dp(stripDp)
         val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
         emojiBoardFull = barH + keysH
         val board = EmojiBoardView(this, emojiHost)
@@ -5834,7 +5867,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         strip.addView(close, LinearLayout.LayoutParams(dp(36), dp(34)))
         toolbar.visibility = View.GONE
         root.addView(strip, root.indexOfChild(toolbar),
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(stripDp)))
         translateStrip = strip
         translateDir = dir
         translateText = text

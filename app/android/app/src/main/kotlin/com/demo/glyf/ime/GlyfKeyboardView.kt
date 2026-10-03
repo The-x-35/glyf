@@ -248,11 +248,16 @@ class GlyfKeyboardView(
         /** Gboard's default key long-press delay. */
         const val DIGIT_HOLD_MS = 300L
 
-        /** Row height in dp, measured off Gboard. */
-        const val ROW_PITCH = 59f
-        /** A phone on its side keeps Gboard's shorter rows, so the app still
-         *  has room above the keys: 59dp rows took 330 of its 427dp. */
-        const val LANDSCAPE_ROW_PITCH = 44f
+        /** A tablet's row height from its width (an iPad's 66 at 768 dp,
+         *  88 at 1024), between AOSP's sw600 and sw768 keyboards. */
+        fun tabletPitchDp(screenWidthDp: Float) = (0.086f * screenWidthDp).coerceIn(56f, 88f)
+
+        /** How wide a tablet's keyboard grows: letter keys no wider than 1.5
+         *  times their height (Gboard splits beyond that), centred. */
+        fun tabletContentDp(screenWidthDp: Float): Float {
+            val pitch = tabletPitchDp(screenWidthDp)
+            return minOf(screenWidthDp, 10f * (1.5f * 0.8f * pitch + 0.11f * pitch) + 13f)
+        }
 
         /** The website's two board colours (--kb). */
         val SITE_BOARD_LIGHT = Color.rgb(0xD5, 0xD8, 0xDE)
@@ -415,12 +420,14 @@ class GlyfKeyboardView(
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         val w = MeasureSpec.getSize(widthSpec)
         // iOS's key region (KeyMetrics): four rows of 54, or 56 on a phone
-        // 414 wide or more, 42 more with the number row (every page shares
-        // it, so 123 and ABC never change the height), and four 40 rows on
-        // a phone on its side. A digit pad keeps its four rows.
+        // 414 wide or more, and 0.78 of a row more with the number row (every
+        // page shares it, so 123 and ABC never change the height). A phone on
+        // its side, a tablet and a small screen size their rows by the screen
+        // (rowPitchDp). A digit pad keeps its four rows.
         val numbers = numberRow && !kContext.isPad
-        val rowsH = if (sideways) 160f + (if (numbers) 32f else 0f)
-                    else rowPitchDp(w) * 4 + (if (numbers) 42f else 0f)
+        val pitch = rowPitchDp(w)
+        val rowsH = if (sideways) pitch * 4 + (if (numbers) 32f else 0f)
+                    else pitch * 4 + (if (numbers) pitch * 0.78f else 0f)
         setMeasuredDimension(w, dp(rowsH).toInt())
     }
 
@@ -433,8 +440,28 @@ class GlyfKeyboardView(
                 it.smallestScreenWidthDp < 600
         }
 
-    /** iOS's row pitch for a view [w] px wide: 56 on Plus/Max-class widths. */
-    private fun rowPitchDp(w: Int) = if (w / density >= 414f) 56f else 54f
+    /** A tablet or an unfolded foldable: 600 dp or more each way. */
+    private val tablet: Boolean get() = resources.configuration.smallestScreenWidthDp >= 600
+
+    /** Row height in dp for a view [w] px wide, every Android screen (Gboard
+     *  and AOSP LatinIME scale by the screen; Glyf keeps iOS's proportions):
+     *  iOS's 54, 56 from Plus/Max widths, eased in from 402 dp so the 411 dp
+     *  most Android phones have isn't a cliff; a tablet's from its width; a
+     *  phone on its side from its height; and never so tall that the strip,
+     *  the keys and the bar under them take more than half the screen. */
+    private fun rowPitchDp(w: Int): Float {
+        val cfg = resources.configuration
+        val hDp = cfg.screenHeightDp.toFloat().takeIf { it > 0 } ?: 800f
+        val pitch = when {
+            sideways -> (0.10f * hDp).coerceIn(34f, 40f)
+            tablet -> tabletPitchDp(cfg.screenWidthDp.toFloat())
+            else -> 54f + 2f * ((w / density - 402f) / 12f).coerceIn(0f, 1f)
+        }
+        if (sideways) return pitch
+        val rows = 4f + (if (numberRow && !kContext.isPad) 0.78f else 0f)
+        val room = 0.5f * hDp - 50f - 54f
+        return minOf(pitch, maxOf(44f, room / rows))
+    }
 
     private fun layoutKeys() {
         keyRects.clear()
@@ -446,15 +473,19 @@ class GlyfKeyboardView(
         // gaps, ten columns (three on a pad), keys with units < 0 sharing
         // what the fixed ones leave.
         val isPad = kContext.isPad
-        val hGap = dp(if (isPad) 6.5f else 6f)
+        val rowH = height / rows.size.toFloat()
+        // A tablet's gaps grow with its rows (AOSP's sw600 proportions).
+        val hGap = if (tablet && !isPad) rowH * 0.11f else dp(if (isPad) 6.5f else 6f)
         val margin = dp(if (isPad) 5.5f else 6.5f)
-        val availW = width - margin * 2
+        // A digit pad on a tablet keeps a phone pad's width, centred.
+        val padW = if (isPad && tablet) minOf(width - margin * 2, dp(480f)) else width - margin * 2
+        val inset = (width - margin * 2 - padW) / 2f
+        val availW = padW
         val columns = if (isPad) 3f else 10f
         val pitch = (availW + hGap) / columns
         val unitW = pitch - hGap
-        val rowH = height / rows.size.toFloat()
         // Short rows (a phone on its side) close the gap up.
-        val vGap = if (rowH / density < 45f) dp(8f) else dp(11f)
+        val vGap = if (tablet && !isPad) rowH * 0.2f else if (rowH / density < 45f) dp(8f) else dp(11f)
         val keyH = if (isPad) min(rowH, dp(rowPitchDp(width))) - dp(6f) else rowH - vGap
         val gapV = rowH - keyH
         keyPitchPx = pitch
@@ -466,7 +497,7 @@ class GlyfKeyboardView(
             val flexUnits = if (flexCount > 0) maxOf(1f, columns - fixedUnits) / flexCount else 0f
             val rowUnits = if (flexCount > 0) columns else fixedUnits
             val rowW = rowUnits * pitch - hGap
-            var x = margin + (availW - rowW) / 2f
+            var x = margin + inset + (availW - rowW) / 2f
             val y = r * rowH + gapV / 2f
             for (key in row) {
                 val units = if (key.units < 0) flexUnits else key.units
@@ -702,8 +733,10 @@ class GlyfKeyboardView(
                 // Same optical size as the iOS build (a letter fills about
                 // half the key's height), so the two keyboards are twins —
                 // and, like the system keyboards, capitals are drawn smaller
-                // (22:25 on iOS) so both cases read as one size.
-                textPaint.textSize = dp(if (shifted) 20f else 22f)
+                // (22:25 on iOS) so both cases read as one size. Taller keys
+                // (a tablet) take bigger letters, up to 30.
+                val letter = (0.51f * rect.height() / density).coerceIn(20f, 30f)
+                textPaint.textSize = dp(if (shifted) letter * 20f / 22f else letter)
                 display(key)
             }
             key.id == "space" -> {

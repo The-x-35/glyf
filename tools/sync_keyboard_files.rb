@@ -18,6 +18,7 @@ TEST_SHARED = %w[
   Layout/KeyboardLayout.swift
   Design/GlassTokens.swift
   Design/GlyfMark.swift
+  Design/EmojiData.swift
   Engine/Games.swift
   Engine/SpaceGesture.swift
   Engine/Smart.swift

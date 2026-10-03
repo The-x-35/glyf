@@ -895,8 +895,37 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         guard let dir = AppGroupStore.bridgeDir,
               let data = try? Data(contentsOf: dir.appendingPathComponent(recentsKey)),
               let list = try? JSONDecoder().decode([String].self, from: data)
-        else { return ["😂", "❤️", "👍", "🙏", "😊", "🔥", "🎉", "😍"] }
+        else { return EmojiData.seed }
         return list
+    }
+
+    /// Frequently Used: the person's go-to emoji (set in the app) first,
+    /// then what they used last, each once.
+    static func frequentlyUsed() -> [String] {
+        var out: [String] = []
+        for e in EmojiData.emoji(in: SettingsStore.current.favoriteEmoji ?? "") + loadRecents() where !out.contains(e) {
+            out.append(e)
+        }
+        return Array(out.prefix(40))
+    }
+
+    static let tonesKey = "emoji-tones.json"
+
+    /// The tone last picked for each emoji: Apple's board shows it from then on.
+    static func loadTones() -> [String: String] {
+        guard let dir = AppGroupStore.bridgeDir,
+              let data = try? Data(contentsOf: dir.appendingPathComponent(tonesKey)),
+              let map = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return map
+    }
+
+    static func rememberTone(_ picked: String) {
+        let base = EmojiData.base(of: picked)
+        guard EmojiData.variants(of: base).count > 1 else { return }
+        var map = loadTones()
+        map[base] = picked == base ? nil : picked
+        guard let dir = AppGroupStore.bridgeDir, let data = try? JSONEncoder().encode(map) else { return }
+        try? data.write(to: dir.appendingPathComponent(tonesKey), options: .atomic)
     }
 
     static func pushRecent(_ e: String) {
@@ -908,8 +937,9 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
     }
 
     private func reload() {
-        sections = [("FREQUENTLY USED", Self.loadRecents())] + EmojiData.categories.map {
-            (Self.sectionTitles[$0.id] ?? $0.id.uppercased(), $0.emoji)
+        let tones = Self.loadTones()
+        sections = [("FREQUENTLY USED", Self.frequentlyUsed())] + EmojiData.categories.map {
+            (Self.sectionTitles[$0.id] ?? $0.id.uppercased(), $0.emoji.map { tones[$0] ?? $0 })
         }
         collection.reloadData()
         collection.setContentOffset(.zero, animated: false)
@@ -953,7 +983,14 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
             return cell
         }
         let cell = cv.dequeueReusableCell(withReuseIdentifier: "e", for: indexPath) as! EmojiCell
-        cell.label.text = emoji(at: indexPath)
+        let e = emoji(at: indexPath)
+        cell.label.text = e
+        // VoiceOver reads the emoji's name; tests find a result by its place.
+        cell.isAccessibilityElement = true
+        cell.accessibilityLabel = EmojiData.info(EmojiData.base(of: e))?.name ?? e
+        cell.accessibilityValue = e
+        cell.accessibilityIdentifier = searchResults != nil ? "emoji:result:\(indexPath.item)"
+            : "emoji:grid:\(indexPath.section):\(indexPath.item)"
         return cell
     }
 
@@ -1009,6 +1046,20 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         delegate?.emojiPicked(e)
     }
 
+    /// The tabs with the tone just picked, the grid left where it was
+    /// (Frequently Used catches up next time, as Apple's does).
+    private func showPickedTones() {
+        guard searchResults == nil, sections.count > 1 else { return }
+        let tones = Self.loadTones()
+        for (i, c) in EmojiData.categories.enumerated() where i + 1 < sections.count {
+            sections[i + 1].emoji = c.emoji.map { tones[$0] ?? $0 }
+        }
+        let offset = collection.contentOffset
+        collection.reloadData()
+        collection.layoutIfNeeded()
+        collection.setContentOffset(offset, animated: false)
+    }
+
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if scrollView === mediaGrid {
             let remaining = scrollView.contentSize.height - scrollView.contentOffset.y - scrollView.bounds.height
@@ -1031,7 +1082,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         case .began:
             let p = g.location(in: collection)
             guard let ip = collection.indexPathForItem(at: p) else { return }
-            let base = emoji(at: ip)
+            let base = EmojiData.base(of: emoji(at: ip))
             let variants = EmojiData.variants(of: base)
             guard variants.count > 1, let cell = collection.cellForItem(at: ip) else { return }
             showTonePopup(variants, over: collection.convert(cell.frame, to: self))
@@ -1063,7 +1114,9 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
             b.addAction(UIAction { [weak self] _ in
                 self?.tonePopup?.removeFromSuperview()
                 self?.tonePopup = nil
+                Self.rememberTone(v)
                 self?.pick(v)
+                self?.showPickedTones()
             }, for: .touchUpInside)
             pop.addSubview(b)
         }

@@ -46,28 +46,28 @@
   "area": "Android",
   "title": "A rough message offers Tidy this up",
   "verdict": "pass",
-  "note": "chip 'Tidy this up', versions shown after 4.8s"
+  "note": "chip 'Tidy this up', versions shown after 2.6s"
  },
  {
   "id": "S91",
   "area": "Android",
   "title": "Hold space: pick the Professional version",
   "verdict": "pass",
-  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'Understood. I will send the deck before 6.'"
+  "note": "versions: basic, work, polite, shorter, hinglish, emoji; inserted 'I will send the deck before 6.'"
  },
  {
   "id": "S92",
   "area": "Android",
   "title": "Hold space on a place search sends places",
   "verdict": "pass",
-  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/PsH8oGWmExki'"
+  "note": "'best biryani near indiranagar\nhttp://127.0.0.1:8787/p/qbymeAlJMTf7'"
  },
  {
   "id": "S93",
   "area": "Android",
   "title": "The g button opens the tool menu",
   "verdict": "pass",
-  "note": "tiles: rewrite, calendar, tempmail, gifs, ask, glyfs, pay, games, settings"
+  "note": "tiles: rewrite, style, calendar, tempmail, gifs, ask, glyfs, pay, games, settings"
  },
  {
   "id": "S94",
@@ -101,29 +101,29 @@
   "id": "S107",
   "area": "Android",
   "title": "The GIF tab shows GIFs and hands one over",
-  "verdict": "fail",
-  "note": "clipboard now holds text/plain ()"
+  "verdict": "pass",
+  "note": "clipboard now holds image/gif (GIF)"
  },
  {
   "id": "S108",
   "area": "Android",
   "title": "The Stickers tab shows stickers and hands one over",
-  "verdict": "fail",
-  "note": "clipboard now holds image/gif (GIF)"
+  "verdict": "pass",
+  "note": "clipboard now holds image/gif (Sticker)"
  },
  {
   "id": "S111",
   "area": "Android",
   "title": "New Event from the keyboard's calendar lands in the calendar",
   "verdict": "pass",
-  "note": "starts '1:00 PM', hint 'Fri, Oct 2, 1:00–2:00 PM', message '📅 Lunch with sam · Fri, Oct 2, 1:00–2:00 PM'"
+  "note": "starts '1:00 PM', hint 'Sun, Oct 4, 1:00–2:00 PM', message '📅 Lunch with sam · Sun, Oct 4, 1:00–2:00 PM'"
  },
  {
   "id": "S112",
   "area": "Android",
   "title": "A plan in a message offers Add to calendar, and the event follows the plan into the message",
   "verdict": "pass",
-  "note": "chip 'Dinner · Tomorrow 8:00 PM', starts '8:00 PM', Share in chat on; message 'dinner friday 8pm 📅 Dinner · Fri, Oct 2, 8:00–9:00 PM'"
+  "note": "chip 'Dinner · Fri, Oct 9 8:00 PM', starts '8:00 PM', Share in chat on; message 'dinner friday 8pm 📅 Dinner · Fri, Oct 9, 8:00–9:00 PM'"
  },
  {
   "id": "S117",
@@ -137,49 +137,49 @@
   "area": "Android",
   "title": "Book a time on your own page for someone, with a guest",
   "verdict": "pass",
-  "note": "hint 'Sam lee · sam@example.com · 1 guest'; booked Sam lee <sam@example.com> + ria@example.com; message 'Booked for Fri, Oct 2, 10:00 AM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1'"
+  "note": "hint 'Sam lee · sam@example.com · 1 guest'; booked Sam lee <sam@example.com> + ria@example.com; message 'Booked for Sat, Oct 3, 5:30 PM. The invite is on its way to sam@example.com and ria@example.com. Call: https://app.cal.com/video/bk_1'"
  },
  {
   "id": "S120",
   "area": "Android",
   "title": "Someone's booking page in a message offers Book",
   "verdict": "pass",
-  "note": "chip 'A time on cal.com/sam-lee/intro'; booked on sam-lee/intro as Sim Tester <sim-e2e@example.com>; message 'grab a time cal.com/sam-lee/intro Booked for Fri, Oct 2, 10:00 AM. The invite is on its way to sim-e2e@example.com. Call: https://app.cal.com/video/bk_1'"
+  "note": "chip 'A time on cal.com/sam-lee/intro'; booked on sam-lee/intro as Sim Tester <sim-e2e@example.com>; message 'grab a time cal.com/sam-lee/intro Booked for Sat, Oct 3, 5:30 PM. The invite is on its way to sim-e2e@example.com. Call: https://app.cal.com/video/bk_1'"
  },
  {
   "id": "S125",
   "area": "Android",
   "title": "A Meet link from the calendar, with Google connected",
   "verdict": "pass",
-  "note": "message 'Join me on a call: https://meet.google.com/hrv-yxar-lqo'; Meet links made 1"
+  "note": "message 'Join me on a call: https://meet.google.com/myg-bqgv-xho'; Meet links made 1"
  },
  {
   "id": "S126",
   "area": "Android",
   "title": "New Event with a guest goes to Google Calendar, which invites them",
   "verdict": "pass",
-  "note": "event 'Review' for sam@example.com, sendUpdates=all; message '📅 Review · Fri, Oct 2, 3:00–4:00 PM · https://meet.google.com/rtv-bvuw-ywu'"
+  "note": "event 'Review' for sam@example.com, sendUpdates=all; message '📅 Review · Fri, Oct 9, 3:00–4:00 PM · https://meet.google.com/pqz-nnvp-qek'"
  },
  {
   "id": "S127",
   "area": "Android",
   "title": "Without Google, New Event goes into the message",
   "verdict": "pass",
-  "note": "message '📅 Lunch with sam · Fri, Oct 2, 1:00–2:00 PM'"
+  "note": "message '📅 Lunch with sam · Sun, Oct 4, 1:00–2:00 PM'"
  },
  {
   "id": "S137",
   "area": "Android",
   "title": "Without Google, the Meet key says where to connect it",
-  "verdict": "fail",
-  "note": "notice '', message 'm'"
+  "verdict": "pass",
+  "note": "notice 'Connect Google Meet in Glyf › Connected tools', message ''"
  },
  {
   "id": "S128",
   "area": "Android",
   "title": "A key held for a Meet link",
   "verdict": "pass",
-  "note": "message 'Join me on a call: https://meet.google.com/enj-rdiv-yea'"
+  "note": "message 'Join me on a call: https://meet.google.com/fiv-lmpw-nxn'"
  },
  {
   "id": "S97",
@@ -228,14 +228,14 @@
   "area": "Android",
   "title": "$sol shows SOL's price, never your wallet",
   "verdict": "pass",
-  "note": "strip: '1 SOL = $116.95'"
+  "note": "strip: '1 SOL = $119.35'"
  },
  {
   "id": "S165",
   "area": "Android",
   "title": "$appl shows Apple's price as AAPL",
   "verdict": "pass",
-  "note": "strip: '1 AAPL = $328.02'"
+  "note": "strip: '1 AAPL = $333.83'"
  },
  {
   "id": "S166",
@@ -256,7 +256,7 @@
   "area": "Android",
   "title": "Hold space on 2+5: the answer is there at once, worked out on the phone",
   "verdict": "pass",
-  "note": "'2+5 = 7', answer up 2509 ms after the hold began"
+  "note": "'2+5 = 7', answer up 1693 ms after the hold began"
  },
  {
   "id": "S190",
@@ -270,7 +270,7 @@
   "area": "Android",
   "title": "The g menu holds only what the strip doesn't, and GIFs opens the GIF tab",
   "verdict": "pass",
-  "note": "strip: search, translate, vault, clipboard, dictation; menu: rewrite, calendar, tempmail, gifs, ask, glyfs, pay, games, settings; GIFs opens the GIF tab with GIFs"
+  "note": "strip: search, translate, vault, clipboard, dictation; menu: rewrite, style, calendar, tempmail, gifs, ask, glyfs, pay, games, settings; GIFs opens the GIF tab with GIFs"
  },
  {
   "id": "S200",
@@ -326,14 +326,14 @@
   "area": "Android",
   "title": "Temp mail: the g menu makes an address, and Insert types it",
   "verdict": "pass",
-  "note": "address made, 'Watching · 14:59 left', 'via mail.tm'; Insert typed 'embera1eb54@glyf-temp.example'"
+  "note": "address made, 'Watching · 14:59 left', 'via mail.tm'; Insert typed 'cobalt1f436e@glyf-temp.example'"
  },
  {
   "id": "S217",
   "area": "Android",
   "title": "Temp mail: a code that arrives shows on the strip, and Insert types just the code",
   "verdict": "pass",
-  "note": "strip '482913 · Acme Insert' after 9.0s; Insert typed '482913'"
+  "note": "strip '482913 · Acme Insert' after 11.4s; Insert typed '482913'"
  },
  {
   "id": "S218",
@@ -354,13 +354,97 @@
   "area": "Android",
   "title": "Temp mail: every Insert types into the message and the panel stays open",
   "verdict": "pass",
-  "note": "address: typed, notice seen, panel open; inbox code: typed, notice seen, panel open; code: typed, notice seen, panel open; link: typed, notice seen, panel open; message 'pebble24bda9@glyf-temp.example482913482913https://acme.example/verify?t=qa220'"
+  "note": "address: typed, notice seen, panel open; inbox code: typed, notice seen, panel open; code: typed, notice seen, panel open; link: typed, notice seen, panel open; message 'ember393ccb@glyf-temp.example482913482913https://acme.example/verify?t=qa220'"
  },
  {
   "id": "S221",
   "area": "Android",
   "title": "New Event with Google Meet connected puts the event and its call link in the message",
   "verdict": "pass",
-  "note": "calendar+meet: Video call on, Share in chat on, link made; '📅 Sync with ria · Fri, Oct 2, 4:00–5:00 PM · https://meet.google.com/mal-nkhj-rkc'; meet: Video call on, Share in chat on, link made; '📅 Catch up with sam · Fri, Oct 2, 4:00–5:00 PM · https://meet.google.com/ivk-chwh-dgi'"
+  "note": "calendar+meet: Video call on, Share in chat on, link made; '📅 Sync with ria · Fri, Oct 9, 4:00–5:00 PM · https://meet.google.com/nam-etlc-vjb'; meet: Video call on, Share in chat on, link made; '📅 Catch up with sam · Fri, Oct 9, 4:00–5:00 PM · https://meet.google.com/ppr-atkl-lbp'"
+ },
+ {
+  "id": "S222",
+  "area": "Android",
+  "title": "A measurement shows in the other system, one chip each, and a tap adds it in brackets",
+  "verdict": "pass",
+  "note": "chips '25.4 cm' | '0.254 m'; tapped the first: 'lets 10 inch (25.4 cm)'"
+ },
+ {
+  "id": "S223",
+  "area": "Android",
+  "title": "A bill split shows what each pays",
+  "verdict": "pass",
+  "note": "chip '30 each'"
+ },
+ {
+  "id": "S224",
+  "area": "Android",
+  "title": "A ;date shortcut is replaced by the date",
+  "verdict": "pass",
+  "note": "chip 'Sat, Oct 3, 2026'; tapped: 'today is Sat, Oct 3, 2026'"
+ },
+ {
+  "id": "S225",
+  "area": "Android",
+  "title": "Style in the g menu: Bold restyles the message",
+  "verdict": "pass",
+  "note": "after Bold: '𝗵𝗲𝗹𝗹𝗼 𝘄𝗼𝗿𝗹𝗱'"
+ },
+ {
+  "id": "S226",
+  "area": "Android",
+  "title": "A link loses its trackers in one tap",
+  "verdict": "pass",
+  "note": "chip 'Remove tracking'; tapped: 'check https://youtu.be/abc123'"
+ },
+ {
+  "id": "S227",
+  "area": "Android",
+  "title": "A face by its name: /shrug",
+  "verdict": "pass",
+  "note": "chip '¯\\_(ツ)_/¯'; tapped: 'ok ¯\\_(ツ)_/¯'"
+ },
+ {
+  "id": "S228",
+  "area": "Android",
+  "title": "Cups of flour in grams",
+  "verdict": "pass",
+  "note": "chips '240 g' | '8.47 oz'; tapped the first: '2 cups flour (240 g)'"
+ },
+ {
+  "id": "S229",
+  "area": "Android",
+  "title": "A shift on the clock, worked out",
+  "verdict": "pass",
+  "note": "chip '7 h 45 min' for 'shift 9:30-5:15'"
+ },
+ {
+  "id": "S230",
+  "area": "Android",
+  "title": "A coin flipped from the strip",
+  "verdict": "pass",
+  "note": "chip '🪙 Heads'; tapped: 'flip a coin 🪙 Heads'"
+ },
+ {
+  "id": "S231",
+  "area": "Android",
+  "title": "Style: UPPERCASE, with the message's count",
+  "verdict": "pass",
+  "note": "count '2 words · 11 characters'; after UPPERCASE: 'HELLO WORLD'"
+ },
+ {
+  "id": "S232",
+  "area": "Android",
+  "title": "Shorthand with blanks: {day} filled in, {cursor} where typing goes on",
+  "verdict": "pass",
+  "note": "{day}: 'ok Today is Saturday '; {cursor}: 'Hi sam, thanks!'"
+ },
+ {
+  "id": "S233",
+  "area": "Android",
+  "title": "An hourly rate as a year and a month",
+  "verdict": "pass",
+  "note": "chips '$93,600/yr' | '$7,800/mo'; tapped the first: '$45/hr ($93,600/yr)'"
  }
 ]

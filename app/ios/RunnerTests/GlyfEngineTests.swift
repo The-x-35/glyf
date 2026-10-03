@@ -1361,6 +1361,44 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(link.how(0), .replace)
     }
 
+    /// shared/emoji/cases.json: Apple's whole emoji board in its tabs, search
+    /// by name and keyword ("tears" → 🥹), the tones a long press shows, and
+    /// which Emoji versions each iOS draws (Android runs the same file).
+    func testTheEmojiBoardHasAppleSetAndFindsItsWords() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/emoji/cases.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var failures: [String] = []
+        // The simulator runs iOS 26.4 or later, which draws all of them.
+        let tabs = root["tabs"] as? [String: Int] ?? [:]
+        for c in EmojiData.categories where tabs[c.id] != c.emoji.count {
+            failures.append("tab \(c.id): \(c.emoji.count), want \(tabs[c.id] ?? 0)")
+        }
+        let seed = root["seed"] as? [String] ?? []
+        if Array(EmojiData.seed.prefix(seed.count)) != seed { failures.append("seed \(EmojiData.seed.prefix(10))") }
+        for c in root["search"] as? [[String: Any]] ?? [] {
+            let q = c["query"] as? String ?? "", want = c["first"] as? [String] ?? []
+            let got = Array(EmojiData.search(q).prefix(max(want.count, 1)))
+            if want.isEmpty ? !got.isEmpty : got != want { failures.append("search '\(q)': \(got), want \(want)") }
+        }
+        for (base, want) in root["variants"] as? [String: [String]] ?? [:] where EmojiData.variants(of: base) != want {
+            failures.append("tones of \(base): \(EmojiData.variants(of: base))")
+        }
+        for c in root["emojiIn"] as? [[String: Any]] ?? [] {
+            let got = EmojiData.emoji(in: c["text"] as? String ?? "")
+            if got != c["emoji"] as? [String] ?? [] { failures.append("emoji in '\(c["text"] ?? "")': \(got)") }
+        }
+        for c in root["ios"] as? [[String: Any]] ?? [] {
+            let v = c["version"] as? String ?? "", os = (c["os"] as? String ?? "").split(separator: ".").compactMap { Int($0) }
+            let draws = EmojiData.drawable(v, os: OperatingSystemVersion(majorVersion: os[0], minorVersion: os[1], patchVersion: 0))
+            if draws != c["draws"] as? Bool { failures.append("Emoji \(v) on iOS \(os): \(draws)") }
+        }
+        XCTAssertEqual(EmojiData.base(of: "👍🏽"), "👍")
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
     /// shared/vault/fill-cases.json: a shorthand's blanks filled as it is
     /// typed out, and where the cursor ends (Android runs the same file).
     func testShorthandBlanksFillInAsItIsTypedOut() throws {

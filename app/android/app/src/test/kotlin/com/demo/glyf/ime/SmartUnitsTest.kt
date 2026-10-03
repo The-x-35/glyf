@@ -74,6 +74,46 @@ class SmartUnitsTest {
         assertEquals(failures.joinToString("\n"), 0, failures.size)
     }
 
+    /** shared/emoji/cases.json: Apple's whole emoji board in its tabs, search
+     *  by name and keyword ("tears" → 🥹), the tones a long press shows, and
+     *  which Emoji versions each Android release draws (iOS runs the same file). */
+    @Test fun theEmojiBoardHasAppleSetAndFindsItsWords() {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        while (dir != null && !File(dir, "shared/emoji/cases.json").exists()) dir = dir.parentFile
+        val root = JSONObject(File(requireNotNull(dir), "shared/emoji/cases.json").readText())
+        EmojiData.use(File(dir, "shared/emoji/emoji.tsv").readText())
+        val failures = mutableListOf<String>()
+        val tabs = root.getJSONObject("tabs")
+        for ((id, list) in EmojiData.categories) if (tabs.optInt(id) != list.size) failures += "tab $id: ${list.size}"
+        val seed = root.getJSONArray("seed").let { a -> (0 until a.length()).map { a.getString(it) } }
+        if (EmojiData.seed.take(seed.size) != seed) failures += "seed ${EmojiData.seed.take(10)}"
+        val search = root.getJSONArray("search")
+        for (i in 0 until search.length()) {
+            val c = search.getJSONObject(i)
+            val want = c.getJSONArray("first").let { a -> (0 until a.length()).map { a.getString(it) } }
+            val got = EmojiData.search(c.getString("query")).take(maxOf(want.size, 1))
+            if (if (want.isEmpty()) got.isNotEmpty() else got != want) failures += "search '${c.getString("query")}': $got, want $want"
+        }
+        val variants = root.getJSONObject("variants")
+        for (base in variants.keys()) {
+            val want = variants.getJSONArray(base).let { a -> (0 until a.length()).map { a.getString(it) } }
+            if (EmojiData.variants(base) != want) failures += "tones of $base: ${EmojiData.variants(base)}"
+        }
+        val within = root.getJSONArray("emojiIn")
+        for (i in 0 until within.length()) {
+            val c = within.getJSONObject(i)
+            val want = c.getJSONArray("emoji").let { a -> (0 until a.length()).map { a.getString(it) } }
+            if (EmojiData.emojiIn(c.getString("text")) != want) failures += "emoji in '${c.getString("text")}': ${EmojiData.emojiIn(c.getString("text"))}"
+        }
+        val android = root.getJSONArray("android")
+        for (i in 0 until android.length()) {
+            val c = android.getJSONObject(i)
+            if (EmojiData.newestFor(c.getInt("sdk")) != c.getDouble("newest")) failures += "sdk ${c.getInt("sdk")}: ${EmojiData.newestFor(c.getInt("sdk"))}"
+        }
+        assertEquals("👍", EmojiData.base("👍🏽"))
+        assertEquals(failures.joinToString("\n"), 0, failures.size)
+    }
+
     /** shared/vault/fill-cases.json: a shorthand's blanks filled as it is
      *  typed out, and where the cursor ends. */
     @Test fun shorthandBlanksFillInAsItIsTypedOut() {

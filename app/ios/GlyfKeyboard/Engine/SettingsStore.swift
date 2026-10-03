@@ -127,6 +127,9 @@ struct GlyfSettings: Codable, Equatable {
     /// The language besides the phone's own that this person types in, as
     /// translate last detected it. Where English drafts get translated to.
     var translateOther: String? = nil
+    /// The emoji the person uses most, set in the app (Keyboard → Go-to
+    /// emoji): first in the board's Frequently Used, before the recents.
+    var favoriteEmoji: String? = nil
     /// The person's Cal.com or Calendly booking page, set in the app
     /// (Connected tools → Booking link). The calendar's Book a time uses it.
     var bookingLink: String? = nil

@@ -1806,6 +1806,26 @@ scenarios.push(
   } },
 );
 
+scenarios.push(
+  { id: "S234", title: "Emoji search finds 🥹 for 'tears' (every emoji Apple's board has)", run: async () => {
+    await fresh();
+    await key("emojikey");
+    const mode = await waitFor(byId("emoji:mode:emoji"), 3000);
+    if (mode) await tapXY(mode.x, mode.y);
+    const search = await waitFor(byId("emoji:search"), 3000);
+    if (!search) return { pass: false, note: "no emoji search" };
+    await tapXY(search.x, search.y);
+    await type("tears");
+    const first = await waitFor(byId("emoji:suggestion:0"), 4000);
+    const s = await state();
+    const word = first ? (find(s, byId("emoji:suggestion:0")).text || "") : "";
+    await screenshot("S234-tears");
+    if (word !== "🥹") return { pass: false, note: `first result '${word}'` };
+    const r = await tapFor(find(s, byId("emoji:suggestion:0")), x => x.includes("🥹"));
+    return { pass: r.t.includes("🥹"), note: `first result '${word}'; typed '${r.t}'${second(r)}` };
+  } },
+);
+
 function chipLabel(s, chip) {
   if (chip.text) return chip.text;
   const inside = v => v !== chip && v.text && Math.abs(v.x - chip.x) <= chip.w / 2 && Math.abs(v.y - chip.y) <= chip.h / 2;
