@@ -1880,7 +1880,11 @@ object Smart {
             var hex = g[1] ?: return@let
             val colourWords = Regex("""\b(?:colou?rs?|hex|shade|bg|background|fill|stroke|tint|hue)\b""",
                 RegexOption.IGNORE_CASE).containsMatchIn(text)
-            if (hex.none { it.isDigit() } && !colourWords) return null
+            // Six or eight characters with a digit are a colour; three need a
+            // letter too ("#f00"), since "#007" and "#123" are hashtags.
+            val digit = hex.any { it.isDigit() }
+            val letter = hex.any { it.lowercaseChar() in 'a'..'f' }
+            if (!(colourWords || (digit && (hex.length != 3 || letter)))) return null
             if (hex.length == 3) hex = hex.map { "$it$it" }.joinToString("")
             val v = hex.take(6).toLongOrNull(16) ?: return null
             val r = ((v shr 16) and 0xFF).toDouble(); val gg = ((v shr 8) and 0xFF).toDouble(); val b = (v and 0xFF).toDouble()

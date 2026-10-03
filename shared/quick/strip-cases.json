@@ -1042,6 +1042,33 @@
    "here": "America/New_York",
    "region": "US",
    "results": []
+  },
+  {
+   "text": "#007",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "#000000",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "rgb(0, 0, 0)",
+    "hsl(0, 0%, 0%)"
+   ]
+  },
+  {
+   "text": "#f00",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "rgb(255, 0, 0)",
+    "hsl(0, 100%, 50%)"
+   ]
   }
  ]
 }

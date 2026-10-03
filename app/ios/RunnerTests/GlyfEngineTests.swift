@@ -1385,6 +1385,43 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 
+    /// shared/quick/everyday.json: everyday lines typed word by word show
+    /// only the chips they should; anything else is a false alarm (Android
+    /// runs the same file).
+    func testEverydayLinesShowOnlyTheChipsTheyShould() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/quick/everyday.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: root["now"] as? String ?? ""))
+        let here = try XCTUnwrap(TimeZone(identifier: root["here"] as? String ?? ""))
+        let lines = root["lines"] as? [String] ?? []
+        let allowed = root["allowed"] as? [String: [String]] ?? [:]
+        var failures: [String] = []
+        for region in ["US", "IN"] {
+            let want = Set(allowed[region] ?? [])
+            var got = Set<String>()
+            for line in lines {
+                let words = line.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+                var seen: [String: String] = [:]
+                var order: [String] = []
+                for i in 1...words.count {
+                    let prefix = words.prefix(i).joined(separator: " ")
+                    for t in [prefix, prefix + " "] {
+                        guard let a = Smart.quickAnswer(in: t, now: now, here: here, region: region) else { continue }
+                        let hit = "\(a.source) → \(a.results.joined(separator: " · "))"
+                        if seen[hit] == nil { seen[hit] = prefix; order.append(hit) }
+                    }
+                }
+                for hit in order { got.insert("\(line) | at '\(seen[hit] ?? "")' | \(hit)") }
+            }
+            for h in got.subtracting(want).sorted() { failures.append("\(region) shows \(h)") }
+            for h in want.subtracting(got).sorted() { failures.append("\(region) no longer shows \(h)") }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
     /// Money with cents shows both places: "$20 = ₹1,919.6" read as a typo.
     func testMoneyShowsBothCentsPlacesOrNone() {
         XCTAssertEqual(Smart.format(1919.6, in: "INR"), "₹1,919.60")

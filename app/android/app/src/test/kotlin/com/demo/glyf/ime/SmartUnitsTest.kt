@@ -113,6 +113,38 @@ class SmartUnitsTest {
         assertEquals(failures.joinToString("\n"), 0, failures.size)
     }
 
+    /** shared/quick/everyday.json: everyday lines typed word by word show
+     *  only the chips they should; anything else is a false alarm. */
+    @Test fun everydayLinesShowOnlyTheChipsTheyShould() {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        while (dir != null && !File(dir, "shared/quick/everyday.json").exists()) dir = dir.parentFile
+        val root = JSONObject(File(requireNotNull(dir), "shared/quick/everyday.json").readText())
+        val now = java.time.Instant.parse(root.getString("now"))
+        val here = java.time.ZoneId.of(root.getString("here"))
+        val lines = root.getJSONArray("lines").let { a -> (0 until a.length()).map { a.getString(it) } }
+        val allowed = root.getJSONObject("allowed")
+        val failures = mutableListOf<String>()
+        for (region in listOf("US", "IN")) {
+            val want = allowed.getJSONArray(region).let { a -> (0 until a.length()).map { a.getString(it) } }.toSet()
+            val got = linkedSetOf<String>()
+            for (line in lines) {
+                val words = line.split(" ")
+                val seen = linkedMapOf<String, String>()
+                for (i in 1..words.size) {
+                    val prefix = words.take(i).joinToString(" ")
+                    for (t in listOf(prefix, "$prefix ")) {
+                        val a = Smart.quickAnswer(t, now, here, region) ?: continue
+                        seen.putIfAbsent("${a.source} → ${a.results.joinToString(" · ")}", prefix)
+                    }
+                }
+                for ((hit, at) in seen) got.add("$line | at '$at' | $hit")
+            }
+            (got - want).forEach { failures.add("$region shows $it") }
+            (want - got).forEach { failures.add("$region no longer shows $it") }
+        }
+        assertEquals(failures.joinToString("\n"), 0, failures.size)
+    }
+
     @Test fun aMeasurementIsAChipAndATapAddsItInBrackets() {
         assertEquals(Smart.Chip.Convert(Smart.Conversions("10 inch", listOf("25.4 cm", "0.254 m"))),
             Smart.chip("lets 10 inch", emptyList(), region = "US"))

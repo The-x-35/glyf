@@ -2210,7 +2210,11 @@ extension Smart {
         if let g = firstMatch(#"(?<![\w&#])#([0-9a-f]{6}|[0-9a-f]{3}|[0-9a-f]{8})"# + end, in: text), var hex = g[1] {
             let colourWords = text.range(of: #"\b(?:colou?rs?|hex|shade|bg|background|fill|stroke|tint|hue)\b"#,
                                          options: [.regularExpression, .caseInsensitive]) != nil
-            guard hex.range(of: #"\d"#, options: .regularExpression) != nil || colourWords else { return nil }
+            // Six or eight characters with a digit are a colour; three need a
+            // letter too ("#f00"), since "#007" and "#123" are hashtags.
+            let digit = hex.range(of: #"\d"#, options: .regularExpression) != nil
+            let letter = hex.range(of: #"[a-f]"#, options: [.regularExpression, .caseInsensitive]) != nil
+            guard colourWords || (digit && (hex.count != 3 || letter)) else { return nil }
             if hex.count == 3 { hex = hex.map { "\($0)\($0)" }.joined() }
             guard let v = UInt64(String(hex.prefix(6)), radix: 16) else { return nil }
             let r = Double((v >> 16) & 0xFF), gg = Double((v >> 8) & 0xFF), b = Double(v & 0xFF)
