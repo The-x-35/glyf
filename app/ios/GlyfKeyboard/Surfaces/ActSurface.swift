@@ -9,6 +9,10 @@ protocol ActSurfaceDelegate: AnyObject {
     func actRetry()
     /// Whether ↻ makes sense now (an answer or an error is showing).
     func actRetryAvailable(_ available: Bool)
+    /// Whether Report makes sense now (a result the AI wrote is showing).
+    func actReportAvailable(_ available: Bool)
+    /// Flag what the panel shows (Google Play's AI-Generated Content policy).
+    func actReport()
     func actClosed()
     /// A hand-off card (a search to finish elsewhere) opens instead of pasting.
     func actOpen(_ url: URL)
@@ -55,6 +59,9 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     private let textView = UITextView()
     private let table = UITableView(frame: .zero, style: .plain)
     private let retryButton = UIButton(type: .system)
+    /// Report (a flag), beside ↻ in the glass looks; the website look keeps
+    /// it in the strip.
+    private let reportButton = UIButton(type: .system)
     private let copyButton = UIButton(type: .system)
     private let insertButton = UIButton(type: .system)
     private let statusLabel = UILabel()
@@ -187,6 +194,14 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         retryButton.addAction(UIAction { [weak self] _ in self?.retryTapped() }, for: .touchUpInside)
         addSubview(retryButton)
 
+        reportButton.setImage(UIImage(systemName: "flag"), for: .normal)
+        style(reportButton, primary: false)
+        reportButton.tintColor = Glass.textSecondary
+        reportButton.accessibilityIdentifier = "act:report"
+        reportButton.accessibilityLabel = "Report"
+        reportButton.addAction(UIAction { [weak self] _ in self?.delegate?.actReport() }, for: .touchUpInside)
+        addSubview(reportButton)
+
         copyButton.setTitle("Copy", for: .normal)
         style(copyButton, primary: false)
         copyButton.accessibilityIdentifier = "act:copy"
@@ -256,8 +271,9 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             textView.text = text
             setNeedsLayout()
         }
-        for b in [retryButton, copyButton, insertButton] { b.isHidden = true }
+        for b in [retryButton, copyButton, insertButton, reportButton] { b.isHidden = true }
         delegate?.actRetryAvailable(false)
+        delegate?.actReportAvailable(false)
     }
 
     /// One version, the moment the model finishes it: the rows fill in one
@@ -267,6 +283,8 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         guard phase == .result, !options.isEmpty else {
             showOptions([option])
             delegate?.actRetryAvailable(false)
+            delegate?.actReportAvailable(false)
+            reportButton.isHidden = true
             return
         }
         guard !options.contains(where: { $0.id == option.id }) else { return }
@@ -274,6 +292,25 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         table.insertRows(at: [IndexPath(row: options.count - 1, section: 0)],
                          with: Glass.reduceMotion ? .none : .fade)
         delegate?.actRetryAvailable(false)
+        delegate?.actReportAvailable(false)
+        reportButton.isHidden = true
+    }
+
+    /// What of the result the AI wrote, as the panel shows it: every version
+    /// labelled, written text, an AI answer. Nil for what the phone worked
+    /// out (a sum) or found (places, videos): there is nothing to report.
+    var reportableText: String? {
+        guard phase == .result else { return nil }
+        var parts = options.map { "\($0.label): \($0.text)" }
+        if let text = textView.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append(text)
+        }
+        for c in cards where c.kind == "answer" && c.id != "local" {
+            parts.append([c.title, c.say ?? c.value, c.sub].compactMap { $0 }
+                .filter { !$0.isEmpty }.joined(separator: " · "))
+        }
+        let joined = parts.joined(separator: "\n\n")
+        return joined.isEmpty ? nil : joined
     }
 
     /// A rewrite's versions as rows: the style on the left, the message on
@@ -370,7 +407,11 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         table.isHidden = !result
         // The strip carries ↻ in the website look; glass looks keep their row.
         retryButton.isHidden = !result || Glass.solidLook
+        let reportable = result && reportableText != nil
+        reportButton.isHidden = !reportable || Glass.solidLook
         delegate?.actRetryAvailable(!working)
+        delegate?.actReportAvailable(reportable)
+        setNeedsLayout()      // the title makes room for Report
         // Nothing worth putting in the message: no Copy, no Insert.
         for v in [copyButton, insertButton] as [UIView] { v.isHidden = !result || insertText.isEmpty }
         mapView.isHidden = !result || mapPlace == nil
@@ -462,7 +503,6 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         // strip already names the panel and closes it, so this row collapses.
         let headerH: CGFloat = Glass.solidLook ? 0 : 40
         closeButton.frame = CGRect(x: 6, y: 4, width: 38, height: headerH - 4)
-        titleLabel.frame = CGRect(x: 46, y: 4, width: w - 104, height: headerH - 4)
         // Versions to pick from have no Copy/Insert row (a tap inserts, a hold
         // copies), so the list runs to the bottom and ↻ sits in the header.
         let listOnly = !options.isEmpty
@@ -470,6 +510,11 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         retryButton.frame = headerH > 0 && listOnly
             ? CGRect(x: w - 50, y: 4, width: 44, height: headerH - 4)
             : CGRect(x: 10, y: actionsY, width: 44, height: 38)
+        // Report sits at the header's right end, left of ↻ when ↻ is there.
+        let reportX = w - 50 - (listOnly ? 48 : 0)
+        reportButton.frame = CGRect(x: reportX, y: 4, width: 44, height: max(0, headerH - 4))
+        let titleEnd = reportButton.isHidden ? w - 58 : reportX - 4
+        titleLabel.frame = CGRect(x: 46, y: 4, width: max(0, titleEnd - 46), height: headerH - 4)
         let pillsX: CGFloat = Glass.solidLook ? 10 : 62
         let pillsW = w - pillsX - 10
         copyButton.frame = CGRect(x: pillsX, y: actionsY, width: pillsW * 0.38, height: 38)

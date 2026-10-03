@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Glyf feature graphic</title>
+<style>
+  @font-face {
+    font-family: "InterV";
+    src: url("../../../site/public/fonts/Inter-Variable.ttf") format("truetype");
+    font-weight: 100 900;
+  }
+  :root {
+    --bg: #ffffff;
+    --ink: #1d1d1f;
+    --ink-2: #6e6e73;
+    --accent: #7c5cff;
+    --kb: #d5d8de;
+    --key: #ffffff;
+    --edge: rgba(0, 0, 0, 0.22);
+  }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1024px; height: 500px; overflow: hidden; position: relative;
+    background: var(--bg); color: var(--ink);
+    font-family: "InterV", -apple-system, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .head {
+    position: absolute; left: 0; right: 0; top: 58px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+  h1 {
+    margin: 0; font-weight: 800; font-size: 86px; line-height: 1;
+    letter-spacing: -0.047em; white-space: nowrap;
+  }
+  .g { position: relative; display: inline-block; margin-right: 0.14em; }
+  .g::after {
+    content: ""; position: absolute; right: -0.2em; top: -0.06em;
+    width: 0.2em; height: 0.2em; border-radius: 50%; background: var(--accent);
+  }
+  .sub { margin: 0; font-weight: 500; font-size: 29px; letter-spacing: -0.012em; color: var(--ink-2); }
+
+  /* The keyboard rising from the bottom edge, faded at its sides. */
+  .kb {
+    position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+    width: 900px; height: 214px;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 16%, #000 84%, transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0, #000 16%, #000 84%, transparent 100%);
+  }
+  .board {
+    position: absolute; inset: 0; border-radius: 26px 26px 0 0;
+    background: linear-gradient(to bottom, rgba(213, 216, 222, 0) 0, rgba(213, 216, 222, 0.75) 26%, var(--kb) 56%);
+  }
+  .strip {
+    position: absolute; top: 14px; left: 0; right: 0; height: 58px;
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+  }
+  .gkey {
+    position: relative; width: 66px; height: 48px; border-radius: 13px; background: var(--key);
+    display: grid; place-items: center; font-weight: 600; font-size: 31px; padding-bottom: 6px; box-sizing: border-box;
+    box-shadow: 0 1px 0 var(--edge);
+  }
+  .gkey::after {
+    content: ""; position: absolute; right: 10px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  }
+  .chip {
+    height: 54px; padding: 0 26px; border-radius: 16px; box-sizing: border-box;
+    display: flex; align-items: center; gap: 14px;
+    font-weight: 600; font-size: 27px; letter-spacing: -0.01em; white-space: nowrap;
+    border: 3px solid transparent;
+    background:
+      linear-gradient(100deg, #fbf9ff 0%, #fff7fb 45%, #f3fbff 100%) padding-box,
+      linear-gradient(100deg, #7c5cff, #d35cff, #ff5c8a, #ffb547, #3cc8ff, #7c5cff) border-box;
+    box-shadow: 0 10px 28px -12px rgba(124, 92, 255, 0.45);
+  }
+  .chip .x { color: var(--ink-2); font-weight: 400; font-size: 26px; padding-right: 14px; border-right: 1.5px solid rgba(0,0,0,0.12); line-height: 1; }
+  .chip .ins { color: var(--accent); font-weight: 600; }
+  .rows { position: absolute; left: 0; right: 0; top: 86px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .row { display: flex; gap: 10px; }
+  .key {
+    position: relative; width: 70px; height: 58px; border-radius: 11px; background: var(--key);
+    box-shadow: 0 1px 0 var(--edge);
+    display: grid; place-items: center; font-weight: 400; font-size: 30px; padding-bottom: 4px; box-sizing: border-box;
+  }
+  .key.dot::after {
+    content: ""; position: absolute; right: 8px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>Type less. <span class="g">glyf</span> more.</h1>
+    <p class="sub">The AI keyboard that does the rest.</p>
+  </div>
+  <div class="kb">
+    <div class="board"></div>
+    <div class="strip">
+      <div class="gkey">g</div>
+      <div class="chip"><span class="x">✕</span><span>$22.50 each</span></div>
+    </div>
+    <div class="rows">
+      <div class="row">
+        <div class="key">q</div><div class="key">w</div><div class="key dot">e</div><div class="key">r</div><div class="key">t</div>
+        <div class="key">y</div><div class="key">u</div><div class="key">i</div><div class="key">o</div><div class="key">p</div>
+      </div>
+      <div class="row">
+        <div class="key">a</div><div class="key dot">s</div><div class="key">d</div><div class="key">f</div><div class="key">g</div>
+        <div class="key">h</div><div class="key dot">j</div><div class="key">k</div><div class="key">l</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

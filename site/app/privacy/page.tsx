@@ -106,6 +106,10 @@ export default function Privacy() {
             page with a link, holding the words you typed as its title and the places found. Anyone with the link
             can open it.
           </p>
+          <p>
+            Another: when you report an AI result with the flag beside it, we keep that result, what kind of request
+            made it, your account and your phone&rsquo;s random ID, so we can look into it and fix what went wrong.
+          </p>
 
           <h2>Your account</h2>
           <p>

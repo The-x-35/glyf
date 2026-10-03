@@ -298,5 +298,8 @@ export class Users {
     await this.ensureSchema();
     const sql = await this.sql();
     await sql(`delete from glyf_users where user_id = $1`, [id]);
+    // Reports of AI results carry the account, so they go with it
+    // (lib/reports.ts; the table exists only once someone has reported).
+    await sql(`delete from glyf_reports where user_id = $1`, [id]).catch(() => {});
   }
 }

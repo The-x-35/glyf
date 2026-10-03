@@ -58,6 +58,10 @@ final class GlyfToolbar: UIView {
     /// A panel's own action at the strip's right edge (↻ on an answer).
     private let panelAction = UIButton(type: .system)
     private var panelActionHandler: (() -> Void)?
+    /// Report (a flag) left of the panel's action: the AI panel's, for a
+    /// result the AI wrote (Google Play's AI-Generated Content policy).
+    private let panelReport = UIButton(type: .system)
+    private var panelReportHandler: (() -> Void)?
     private(set) var panelTitle: String?
     /// Smart chip: one card across the strip, accent key then value.
     private let smartCard = UIControl()
@@ -225,6 +229,16 @@ final class GlyfToolbar: UIView {
         panelAction.isHidden = true
         panelAction.addAction(UIAction { [weak self] _ in self?.panelActionHandler?() }, for: .touchUpInside)
         addSubview(panelAction)
+        panelReport.setImage(UIImage(systemName: "flag"), for: .normal)
+        panelReport.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold), forImageIn: .normal)
+        panelReport.tintColor = Glass.textSecondary
+        panelReport.backgroundColor = Glass.touchableGrid
+        panelReport.isHidden = true
+        panelReport.accessibilityIdentifier = "act:report"
+        panelReport.accessibilityLabel = "Report"
+        panelReport.addAction(UIAction { [weak self] _ in self?.panelReportHandler?() }, for: .touchUpInside)
+        addSubview(panelReport)
         panelBack.addAction(UIAction { [weak self] _ in self?.delegate?.toolbarBackTapped() },
                             for: .touchUpInside)
         addSubview(panelBack)
@@ -481,6 +495,7 @@ final class GlyfToolbar: UIView {
             // (tools on, suggestions on) drew words over the icons after
             // the emoji page closed.
             setPanelAction(symbol: nil, label: nil, handler: nil)
+            setPanelReport(handler: nil)
             applyCandidatesVisibility(toolsVisible: !showingCandidates || userPinnedTools)
         }
         if open {
@@ -520,6 +535,13 @@ final class GlyfToolbar: UIView {
         panelAction.accessibilityLabel = label
         panelAction.accessibilityIdentifier = "toolbar:panelAction"
         panelAction.isHidden = handler == nil || panelTitle == nil
+        setNeedsLayout()
+    }
+
+    /// Report beside the open panel's action, or nil for none.
+    func setPanelReport(handler: (() -> Void)?) {
+        panelReportHandler = handler
+        panelReport.isHidden = handler == nil || panelTitle == nil
         setNeedsLayout()
     }
 
@@ -929,11 +951,14 @@ final class GlyfToolbar: UIView {
             panelIcon.frame = CGRect(x: x, y: mid - 12, width: 24, height: 24)
             let textX = panelIcon.isHidden ? x : x + 30
             let actionW: CGFloat = panelAction.isHidden ? 0 : 44
+            let reportW: CGFloat = panelReport.isHidden ? 0 : 40
             let action = Glass.stripBox(height: 34, mid: mid)
             panelAction.frame = CGRect(x: bounds.width - actionW - 4, y: action.y,
                                        width: actionW, height: action.height)
+            panelReport.frame = CGRect(x: bounds.width - actionW - 4 - reportW, y: action.y,
+                                       width: reportW, height: action.height)
             panelLabel.frame = CGRect(x: textX, y: row.y,
-                                      width: bounds.width - textX - 10 - actionW, height: row.height)
+                                      width: bounds.width - textX - 10 - actionW - reportW, height: row.height)
         }
         // One gap for the whole row, margins included.
         //

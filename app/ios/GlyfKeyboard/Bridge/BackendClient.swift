@@ -405,6 +405,27 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         return task
     }
 
+    /// POST /report: flag an AI result (Google Play's AI-Generated Content
+    /// policy). `onDone(true)` once the server has it, on the main queue.
+    func report(feature: String, result: String, onDone: @escaping (Bool) -> Void) {
+        let s = SettingsStore.current
+        guard let url = URL(string: "\(s.backendURL)/report") else { onDone(false); return }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.httpMethod = "POST"
+        req.timeoutInterval = 10
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "deviceId": s.deviceId, "feature": String(feature.prefix(64)),
+            "result": String(result.prefix(4000)), "platform": "ios",
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        session.dataTask(with: req) { _, response, _ in
+            let ok = ((response as? HTTPURLResponse)?.statusCode ?? 0) / 100 == 2
+            DispatchQueue.main.async { onDone(ok) }
+        }.resume()
+    }
+
     /// POST /act as a stream: each version of a rewrite the moment the model
     /// finishes it, written text as it comes, then the whole result. A
     /// `reset` means the model was swapped midway: drop what was shown.

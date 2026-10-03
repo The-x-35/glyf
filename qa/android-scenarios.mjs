@@ -1843,6 +1843,33 @@ scenarios.push(
       tool("close");
     }
   } },
+  { id: "S236", title: "Report in the AI panel flags what the AI wrote and says thanks; a sum the phone worked out has none", run: async () => {
+    // Google Play's AI-Generated Content policy: an AI result can be reported
+    // without leaving the app.
+    await fresh();
+    await type("2+5");
+    let s = await state();
+    await hold(s.keys.space[0], s.keys.space[1], 1100);
+    await waitFor(byId("act:insert"), 4000);
+    const onSum = !!find(await state(), byId("act:report"));
+    tool("close");
+    await fresh();
+    await type("ya ok will send deck b4 6");
+    s = await state();
+    await hold(s.keys.space[0], s.keys.space[1], 1100);
+    if (!await waitFor(byId("act:option:work"), 25000)) return { pass: false, note: "no versions after 25s" };
+    // Report comes with ↻, once the last version is in.
+    const flag = await waitFor(byId("act:report"), 15000);
+    if (!flag) return { pass: false, note: "no Report in the panel" };
+    let notice = "";
+    for (let attempt = 0; attempt < 2 && !/Reported/.test(notice); attempt++) {
+      await tapXY(flag.x, flag.y);
+      for (let i = 0; i < 12 && !/Reported/.test(notice); i++) { await sleep(400); notice = (await state()).notice || ""; }
+    }
+    tool("close");
+    return { pass: /Reported/.test(notice) && !onSum,
+      note: `notice '${notice}'; Report on the sum: ${onSum ? "shown" : "none"}` };
+  } },
 );
 
 function chipLabel(s, chip) {

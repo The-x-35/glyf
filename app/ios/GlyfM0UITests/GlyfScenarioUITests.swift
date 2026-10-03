@@ -947,6 +947,51 @@ final class GlyfScenarioUITests: XCTestCase {
                        "a suggestion showed: '\(chip?.label ?? "")'")
     }
 
+    /// Report in the AI panel (Google Play's AI-Generated Content policy: an
+    /// AI result can be reported without leaving the app): it flags what the
+    /// AI wrote and says thanks; a sum the phone worked out has none.
+    func testS236_ReportFlagsWhatTheAIWroteAndSaysThanks() throws {
+        open()
+        clear()
+        type("2+5")
+        holdSpace()
+        XCTAssertNotNil(wait("act:insert", 4), "no answer for the sum")
+        let onSum = el("act:report").exists
+        if el("act:close").exists { tap("act:close") } else { tap("toolbar:close") }
+        clear()
+        type("ya ok will send deck b4 6")
+        holdSpace()
+        guard wait("act:option:work", 25) != nil else { return XCTFail("no versions") }
+        // Report comes with ↻, once the last version is in.
+        guard let flag = wait("act:report", 15) else { return XCTFail("no Report in the panel") }
+        flag.tap()
+        let toast = wait("kb:toast", 8)
+        note("toast '\(toast?.label ?? "none")'; Report on the sum: \(onSum ? "shown" : "none")")
+        XCTAssertTrue(toast?.label.contains("Reported") == true, "toast '\(toast?.label ?? "none")'")
+        XCTAssertFalse(onSum, "a sum worked out on the phone offered Report")
+    }
+
+    /// S236 in the glass look, where the panel keeps its own header and
+    /// Report sits on it beside ↻ rather than in the strip.
+    func testS236b_ReportOnTheGlassLookPanel() throws {
+        open(["--glyf-look", "glass"])
+        defer {
+            // Back to the default look for every test after this one.
+            app.terminate()
+            open(["--glyf-look", "site"])
+        }
+        clear()
+        type("ya ok will send deck b4 6")
+        holdSpace()
+        guard wait("act:option:work", 25) != nil else { return XCTFail("no versions") }
+        guard let flag = wait("act:report", 15) else { return XCTFail("no Report on the glass panel") }
+        keepScreenshot("report-glass")
+        flag.tap()
+        let toast = wait("kb:toast", 8)
+        note("toast '\(toast?.label ?? "none")'")
+        XCTAssertTrue(toast?.label.contains("Reported") == true, "toast '\(toast?.label ?? "none")'")
+    }
+
     /// S214: money typed shows in the local currency in the strip (Arpit,
     /// 2026-09-30: "$20 not showing amount in local currency ... i want
     /// rupee, or whatever i set in as local currency here in app").

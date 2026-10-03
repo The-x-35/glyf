@@ -22,6 +22,40 @@ object BackendClient {
         bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
     }
 
+    /** POST /report — flag an AI result (Google Play's AI-Generated Content
+     *  policy). `onDone(true)` once the server has it. */
+    fun report(
+        backendURL: String,
+        deviceId: String,
+        feature: String,
+        result: String,
+        onDone: (Boolean) -> Unit,
+    ) {
+        pool.execute {
+            var conn: HttpURLConnection? = null
+            val ok = try {
+                conn = (URL("$backendURL/report").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 5000
+                    readTimeout = 10000
+                    setRequestProperty("Content-Type", "application/json")
+                    signIn()
+                }
+                val body = JSONObject(mapOf(
+                    "deviceId" to deviceId, "feature" to feature.take(64),
+                    "result" to result.take(4000), "platform" to "android"))
+                conn.outputStream.use { it.write(body.toString().toByteArray()) }
+                conn.responseCode in 200..299
+            } catch (_: Exception) {
+                false
+            } finally {
+                conn?.disconnect()
+            }
+            onDone(ok)
+        }
+    }
+
     data class ToolRow(val title: String, val snippet: String, val url: String)
 
     /** POST /tools/run — keyless search-suite tools; rows for the panel. */

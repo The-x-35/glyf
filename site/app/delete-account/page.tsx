@@ -47,6 +47,7 @@ export default function DeleteAccount() {
               platform, app version, language, region and time zone, and when you joined and were last seen.
             </li>
             <li>The keyboard settings and the app activity (names and counts, never text) kept with it.</li>
+            <li>AI results you reported with the flag in the keyboard.</li>
           </ul>
 
           <h2>What is kept</h2>

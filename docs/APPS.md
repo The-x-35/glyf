@@ -272,6 +272,7 @@ The default map was 10 keys in M5 (`t r s c j p e x w q`). On 2026-09-12 it was 
 | `POST /glyf/run` (SSE) | iOS keyboard (bar, skills, Translation HUD), Android IME (overlay, skills), Flutter app (dictation Clean/Formal) | Run a Glyf on text |
 | `POST /act` | both keyboards | Hold space on typed text, or a tapped strip chip: server routes to place, list, answer, video, rewrite or write; returns cards plus the text Insert should put in. Streamed (`stream: true`): each version appears as it is written |
 | `POST /suggest` | both keyboards | The strip's chip for a paused sentence; its own allowance, never a run |
+| `POST /report` | both keyboards | Report an AI result from the act panel (Google Play's AI-Generated Content policy): the result as shown, the feature, the phone and the account, kept in Postgres `glyf_reports`; 10 an hour a phone |
 | `POST /search` | both keyboards | Search / YouTube / Maps tabs, typed result cards |
 | `GET /search/suggest` | both keyboards | Landing rows before typing: trending searches, popular videos, nearby places |
 | `GET /search/photo` | both keyboards (place thumbnails come back as a server-relative path) | Photo proxy so the Places key stays on the server |
@@ -554,6 +555,8 @@ When the space hold launches (`kbSpaceHoldIgnited`, 60 ms after the ripple ignit
 
 - **There is typed text** (before or after the cursor), Full Access is on, and the field is not secure → **Act** on it.
 - **Otherwise** → the **Glyf Bar** (it explains when Full Access is missing).
+
+**Report** (2026-10-03, both keyboards, for Google Play's AI-Generated Content policy): a flag beside ↻ once a result the AI wrote is showing (versions, written text, an AI answer; never a sum worked out on the phone or places and videos found). One tap sends what the panel shows to `POST /report` and says "Reported. Thanks for telling us." iOS: in the strip (`Toolbar.setPanelReport`) in the website look, on the panel in the glass look (`ActSurface.reportButton`, `reportableText`); Android `GlyfIME.actHeader(report:)`, `reportable`. Scenario S236 on both. `server/.env` points at production's database, so a local server used for QA should replace `Reports.add` with a log line before `buildApp()`, or QA reports land there.
 
 **Act** (built 2026-09-14 from Acti's launch video; section 7). The keyboard sends the text to `POST /act`. The server routes it with rules plus one fast JSON model call to a place search, a list, an answer, a video, or a rewrite, and returns a title, cards and the exact text Insert should put in. It never invents live facts; with no provider it returns a Google handoff card.
 

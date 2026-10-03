@@ -3168,10 +3168,39 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
+    /** The result the act panel shows, for Report. */
+    private var actShown: BackendClient.ActResult? = null
+
+    /** What of a result the AI wrote, as the panel shows it: every version
+     *  labelled, written text, an AI answer. Nil for what the phone worked
+     *  out (a sum) or found (places, videos): there is nothing to report. */
+    private fun reportable(r: BackendClient.ActResult): String? {
+        val parts = mutableListOf<String>()
+        r.options.forEach { parts += "${it.label}: ${it.text}" }
+        r.text?.takeIf { it.isNotBlank() }?.let { parts += it }
+        r.cards.filter { it.kind == "answer" && it.id != "local" }
+            .forEach { c -> parts += listOfNotNull(c.title, c.say ?: c.value, c.sub).joinToString(" · ") }
+        return parts.joinToString("\n\n").takeIf { it.isNotBlank() }
+    }
+
+    /** Google Play's AI-Generated Content policy: an AI result can be
+     *  flagged without leaving the app. One tap sends what the panel shows,
+     *  and says so. */
+    private fun reportActResult() {
+        val r = actShown ?: return
+        val result = reportable(r) ?: return
+        val feature = if (r.intent == "skill") actSkill?.first ?: "skill" else r.intent
+        BackendClient.report(settings.optString("backendURL"), settings.optString("deviceId"),
+            feature, result) { ok ->
+            main.post { notice(if (ok) "Reported. Thanks for telling us." else "Couldn't send the report. Try again in a moment.") }
+        }
+    }
+
     /** The strip while the act panel is open, iOS's panel header: ✕ where
      *  the g was, ✦ Glyf, and ↻ at the right once there is an answer to try
-     *  again. Laid out as the strip lays out a panel's name. */
-    private fun actHeader(retry: Boolean): LinearLayout = LinearLayout(this).apply {
+     *  again, with Report (a flag) beside it when the AI wrote that answer.
+     *  Laid out as the strip lays out a panel's name. */
+    private fun actHeader(retry: Boolean, report: Boolean = false): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(10), dp(6), 0, dp(6))
@@ -3194,6 +3223,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             Glass.style(this, 15f, Glass.SEMIBOLD)
             maxLines = 1
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (report) addView(ToolIcon(this@GlyfIME, "flag", Glass.textSecondary).apply {
+            solid = true; weight = 1.8f; scale = 0.9f
+            setTag(com.demo.glyf.R.id.qa_id, "act:report"); contentDescription = "Report"
+            setOnClickListener { reportActResult() }
+        }, LinearLayout.LayoutParams(dp(40), dp(34)))
         if (retry) addView(ToolIcon(this@GlyfIME, "retry", Glass.textPrimary).apply {
             solid = true; weight = 2.1f; scale = 0.92f
             setTag(com.demo.glyf.R.id.qa_id, "act:retry"); contentDescription = "Try again"
@@ -3218,10 +3252,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun showActResult(panel: FrameLayout, r: BackendClient.ActResult, streaming: Boolean = false) {
         actStreamView = null
         actOptionList = null
+        actShown = r
         panel.removeAllViews()
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        outer.addView(actHeader(retry = !streaming), LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(stripDp)))
+        outer.addView(actHeader(retry = !streaming, report = !streaming && reportable(r) != null),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(stripDp)))
         // iOS: 4 under the strip, 10 a side; Copy and Insert 14 off the
         // bottom, and versions run to the bottom.
         val column = LinearLayout(this).apply {

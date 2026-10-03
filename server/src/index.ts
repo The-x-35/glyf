@@ -27,6 +27,7 @@ import { authRoutes } from "./routes/auth.js";
 import { meRoutes } from "./routes/me.js";
 import { billingRoutes } from "./routes/billing.js";
 import { codeRoutes } from "./routes/codes.js";
+import { reportRoutes } from "./routes/report.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -100,6 +101,7 @@ export function buildApp(kv: KV = defaultKV()) {
   meRoutes(app);
   billingRoutes(app);
   codeRoutes(app);
+  reportRoutes(app);
   return app;
 }
 

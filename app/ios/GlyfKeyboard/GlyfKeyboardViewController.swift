@@ -2571,6 +2571,23 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
                                handler: available ? { [weak self] in self?.actRetry() } : nil)
     }
 
+    func actReportAvailable(_ available: Bool) {
+        guard surface == .act, Glass.solidLook else { return }
+        toolbar.setPanelReport(handler: available ? { [weak self] in self?.actReport() } : nil)
+    }
+
+    /// Google Play's AI-Generated Content policy: an AI result can be flagged
+    /// without leaving the app. One tap sends what the panel shows, and says so.
+    func actReport() {
+        guard let act, let result = act.reportableText else { return }
+        let feature = actSkill?.glyfId ?? actIntent ?? "act"
+        BackendClient.shared.report(feature: feature, result: result) { [weak self] ok in
+            guard let self, let act = self.act else { return }
+            KeyboardToast.show(in: act, text: ok ? "Reported. Thanks for telling us."
+                                                 : "Couldn't send the report. Try again in a moment.")
+        }
+    }
+
     func actOpen(_ url: URL) {
         HostAppOpener.open(url, from: self) { _ in }
     }

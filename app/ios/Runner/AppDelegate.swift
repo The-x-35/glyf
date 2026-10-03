@@ -26,6 +26,11 @@ import UIKit
       // S235: the other answer, Not now.
       SettingsStore.update { s in s.aiSuggest = false }
     }
+    if let i = args.firstIndex(of: "--glyf-look"), i + 1 < args.count {
+      // S236b: the glass look keeps the panel's own header ("site" puts it back).
+      let look = args[i + 1]
+      SettingsStore.update { s in s.keyTheme = look }
+    }
     if args.contains("--glyf-reset-onboarding"), let dir = AppGroupStore.bridgeDir {
       try? FileManager.default.removeItem(
         at: dir.appendingPathComponent("onboarding.json"))
