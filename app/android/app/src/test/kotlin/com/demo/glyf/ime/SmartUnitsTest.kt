@@ -57,6 +57,8 @@ class SmartUnitsTest {
         val cases = quick.getJSONArray("cases")
         val failures = (0 until cases.length()).map { cases.getJSONObject(it) }.mapNotNull { c ->
             val want = c.getJSONArray("results").let { a -> (0 until a.length()).map { a.getString(it) } }
+            // A coin, a die or a pick comes from the keyboard's draw.
+            c.optString("luck").toULongOrNull()?.let { Smart.luck = it }
             val answer = Smart.quickAnswer(c.getString("text"), java.time.Instant.parse(c.getString("now")),
                 java.time.ZoneId.of(c.getString("here")), c.optString("region").ifEmpty { null })
             val got = answer?.results.orEmpty()
@@ -68,6 +70,22 @@ class SmartUnitsTest {
             if (hows != null && answer != null && got.indices.map { answer.how(it).name.lowercase() } != hows)
                 return@mapNotNull "'${c.getString("text")}': how ${got.indices.map { answer.how(it).name.lowercase() }}, want $hows"
             null
+        }
+        assertEquals(failures.joinToString("\n"), 0, failures.size)
+    }
+
+    /** shared/vault/fill-cases.json: a shorthand's blanks filled as it is
+     *  typed out, and where the cursor ends. */
+    @Test fun shorthandBlanksFillInAsItIsTypedOut() {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        while (dir != null && !File(dir, "shared/vault/fill-cases.json").exists()) dir = dir.parentFile
+        val cases = JSONObject(File(requireNotNull(dir), "shared/vault/fill-cases.json").readText()).getJSONArray("cases")
+        val failures = (0 until cases.length()).map { cases.getJSONObject(it) }.mapNotNull { c ->
+            val template = c.getString("template")
+            val got = Smart.fillIn(template, java.time.Instant.parse(c.getString("now")), java.time.ZoneId.of(c.getString("here")),
+                c.optString("region").ifEmpty { null }, clipboard = { if (c.has("clipboard")) c.getString("clipboard") else null })
+            if (got.first == c.getString("text") && got.second == c.getInt("back")) null
+            else "'$template': got '${got.first}' back ${got.second}, want '${c.getString("text")}' back ${c.getInt("back")}"
         }
         assertEquals(failures.joinToString("\n"), 0, failures.size)
     }
@@ -110,6 +128,13 @@ class SmartUnitsTest {
         assertEquals(Smart.styled("Hi", Smart.TextStyle.BOLD), Smart.styled(Smart.styled("Hi", Smart.TextStyle.ITALIC), Smart.TextStyle.BOLD))
         // Plain leaves what was never styled: ™, ½, emoji.
         assertEquals("Glyf™ ½ 🎉", Smart.plainText("Glyf™ ½ 🎉"))
+        // What the Style screen says of the text.
+        val counts = root.getJSONArray("counts")
+        for (i in 0 until counts.length()) {
+            val c = counts.getJSONObject(i)
+            val got = Smart.textCount(c.getString("text"))
+            if (got != c.getString("count")) failures.add("count '${c.getString("text")}': got $got")
+        }
         assertEquals(failures.joinToString("\n"), 0, failures.size)
     }
 
@@ -143,6 +168,23 @@ class SmartUnitsTest {
             (want - got).forEach { failures.add("$region no longer shows $it") }
         }
         assertEquals(failures.joinToString("\n"), 0, failures.size)
+    }
+
+    /** A copied link with trackers comes back clean; a bill that ends on an
+     *  amount beats converting the amount; a link longer than the strip's
+     *  view still loses its trackers. */
+    @Test fun linksLoseTrackersAndBillsBeatTheirLastAmount() {
+        assertEquals("https://youtu.be/dQw4w9WgXcQ", Smart.cleanCopy("https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123"))
+        assertEquals(null, Smart.cleanCopy("https://youtu.be/dQw4w9WgXcQ"))
+        assertEquals(null, Smart.cleanCopy("look https://youtu.be/dQw4w9WgXcQ?si=x"))
+        val rates = Smart.RatesSnapshot(fiat = mapOf("USD" to 1.0, "INR" to 95.88), local = "INR")
+        val bill = Smart.chip("3 for \$10", emptyList(), rates = rates, region = "US")
+        assertEquals(listOf("\$3.33 each"), (bill as Smart.Chip.Convert).answer.results)
+        assertTrue(Smart.chip("it was \$10", emptyList(), rates = rates, region = "US") is Smart.Chip.Money)
+        val long = "look https://example.com/" + "a".repeat(150) + "?utm_source=x&id=7"
+        val link = Smart.chip(long.takeLast(120), emptyList(), region = "US", linkContext = long) as Smart.Chip.Convert
+        assertEquals("https://example.com/" + "a".repeat(150) + "?id=7", link.answer.insert(0))
+        assertEquals(Smart.Insertion.REPLACE, link.answer.how(0))
     }
 
     @Test fun aMeasurementIsAChipAndATapAddsItInBrackets() {

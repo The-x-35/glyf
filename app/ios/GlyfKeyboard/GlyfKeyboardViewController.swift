@@ -1640,7 +1640,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
                               rates: rates, ownWallet: ownWallet,
                               indianGrouping: (SettingsStore.current.region ?? "IN") == "IN",
-                              region: SettingsStore.current.region ?? Locale.current.region?.identifier)
+                              region: SettingsStore.current.region ?? Locale.current.region?.identifier,
+                              linkContext: String(before.suffix(2048)))
         // The person's own shorthand of the same name wins over ";date".
         if case .convert(let c)? = chip, Smart.builtInShortcuts.contains(c.source),
            Shorthand.expansion(for: c.source, in: vault) != nil {
@@ -1936,6 +1937,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             wordTouchesFor = ""
         }
         guard !word.isEmpty else { return }
+        // A link, an email or a handle: its parts are not words to fix or learn.
+        if WordTracker.insideLinkOrAddress(beforeContext: before) { return }
         let policy = typingPolicy
         let previous = WordTracker.previousWord(beforeContext: before)
         let head = String((before ?? "").dropLast(word.count))
@@ -2127,11 +2130,17 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
            let token = Shorthand.pendingToken(
                beforeContext: beforeContext),
            let expansion = Shorthand.expansion(for: token, in: VaultStore.shared.load()) {
+            let filled = fillShorthand(expansion)
             for _ in 0..<token.count { hostDelete() }
-            hostInsert(expansion)
-            lastCorrection = Correction(original: token, replacement: expansion, fromEngine: false)
-            hostInsert(" ")
-            lastCorrection?.anchor = beforeContext
+            hostInsert(filled.text)
+            if filled.back > 0 {
+                // {cursor}: typing goes on inside what was typed out.
+                textDocumentProxy.adjustTextPosition(byCharacterOffset: -filled.back)
+            } else {
+                lastCorrection = Correction(original: token, replacement: filled.text, fromEngine: false)
+                hostInsert(" ")
+                lastCorrection?.anchor = beforeContext
+            }
             syncAutoShift()
             scheduleCandidates()
             notifyHUD()
@@ -3095,6 +3104,8 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
                     hostInsert(Self.spaced(text, after: beforeContext))
                 }
             }
+            // A coin, a die or a pick that was used: the next one is a new draw.
+            Smart.luck = UInt64.random(in: 1...UInt64.max)
             toolbar.showSmart(nil)
             updateCandidates()
             return
@@ -3209,6 +3220,30 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
     func shellInsertText(_ text: String) {
         setSurface(.none)
         hostInsert(text)
+    }
+
+    func shellInsertShorthand(_ text: String) {
+        setSurface(.none)
+        let filled = fillShorthand(text)
+        hostInsert(filled.text)
+        if filled.back > 0 { textDocumentProxy.adjustTextPosition(byCharacterOffset: -filled.back) }
+    }
+
+    /// A shorthand's blanks filled where the phone is ({date}, {clipboard}…).
+    private func fillShorthand(_ template: String) -> (text: String, back: Int) {
+        Smart.fillIn(template, region: SettingsStore.current.region ?? Locale.current.region?.identifier,
+                     clipboard: { [weak self] in self?.copiedForShorthand() })
+    }
+
+    /// What was copied, for {clipboard}: the keyboard's own copy of it when
+    /// it has the latest, or iOS's (which asks "Allow Paste?" for a copy it
+    /// hasn't seen: the person asked for it by typing the shorthand).
+    private func copiedForShorthand() -> String? {
+        guard hasFullAccess else { return nil }
+        if !ClipboardStore.pasteboardHasNewContent(), let kept = ClipboardStore.load().first?.text, !kept.isEmpty {
+            return kept
+        }
+        return UIPasteboard.general.string
     }
 
     func shellInsertTextStaying(_ text: String) {

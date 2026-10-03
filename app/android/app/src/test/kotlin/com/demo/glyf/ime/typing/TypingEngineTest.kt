@@ -179,6 +179,17 @@ class TypingEngineTest {
         assertEquals(listOf("you"), trie.bigrams(trie.firstEntry(thank)).map { trie.form(it.first) })
     }
 
+    /** Words inside a link, an email or a handle are not corrected or
+     *  learned ("youtu" of youtu.be became "youth" in S226). */
+    @Test fun nothingInsideALinkOrAnAddressIsCorrected() {
+        assertTrue(com.demo.glyf.ime.typing.WordContext.insideLinkOrAddress("check https://youtu"))
+        assertTrue(com.demo.glyf.ime.typing.WordContext.insideLinkOrAddress("mail me at sam@gmial"))
+        assertTrue(com.demo.glyf.ime.typing.WordContext.insideLinkOrAddress("ask @arpit"))
+        assertTrue(com.demo.glyf.ime.typing.WordContext.insideLinkOrAddress("go to www.exampel"))
+        assertFalse(com.demo.glyf.ime.typing.WordContext.insideLinkOrAddress("i saw the youtu"))
+        assertFalse(com.demo.glyf.ime.typing.WordContext.insideLinkOrAddress("https://x.com great"))
+    }
+
     @Test fun editDistanceAndKeys() {
         assertEquals(1, TypingText.editDistance(TypingText.scalars("teh"), TypingText.scalars("the")))
         assertEquals(1, TypingText.editDistance(TypingText.scalars("arpit"), TypingText.scalars("armpit")))

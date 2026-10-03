@@ -2236,7 +2236,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val ownWallet = settings.optString("walletAddress").ifEmpty { null }
         var chip = Smart.chip(tail, vaultFields(), indianGrouping = region == "IN", rates = rates,
                               ownBooking = settings.optString("bookingLink"), ownWallet = ownWallet,
-                              region = region)
+                              region = region, linkContext = before.takeLast(2048))
         // The person's own shorthand of the same name wins over ";date".
         (chip as? Smart.Chip.Convert)?.answer?.source?.takeIf { it in Smart.builtInShortcuts }?.let { token ->
             val snippets = VaultStore.load(this).optJSONArray("snippets")
@@ -2347,6 +2347,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                             }
                         }
                     }
+                    // A coin, a die or a pick that was used: the next one is a new draw.
+                    Smart.luck = kotlin.random.Random.nextLong().toULong() or 1UL
                     hideStripChip()
                     updateSuggestions()
                 }, onTemp = {})
@@ -2549,6 +2551,17 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 hideStripChip()
                 showCalendarPanel().openBooking(booking)
             }
+            return
+        }
+        // A copied link with trackers: clean, or as it was copied.
+        Smart.cleanCopy(text)?.let { clean ->
+            stripSmartDetail = "pieces"
+            showChoiceRow("paste", listOf("Paste clean link", "Paste as copied"), temp = false, onIndex = { i ->
+                used()
+                val ic = currentInputConnection
+                ic?.commitText(Smart.spaced(if (i == 0) clean else text, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                hideStripChip()
+            }, onTemp = {}, onClose = dismiss)
             return
         }
         // A copy with emails, links or numbers in it: the whole, then each
@@ -3522,10 +3535,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 for (i in 0 until snippets.length()) {
                     val s = snippets.getJSONObject(i)
                     if (s.optString("trigger") == token) {
+                        val (text, back) = fillShorthand(s.optString("text"))
                         ic.deleteSurroundingText(token.length, 0)
-                        ic.commitText(s.optString("text") + " ", 1)
-                        lastCorrection = Correction(token, s.optString("text"), fromEngine = false,
-                            anchor = anchorHere(ic))
+                        if (back > 0) {
+                            // {cursor}: typing goes on inside what was typed out.
+                            ic.commitText(text, 1)
+                            cursorBack(ic, back)
+                        } else {
+                            ic.commitText("$text ", 1)
+                            lastCorrection = Correction(token, text, fromEngine = false, anchor = anchorHere(ic))
+                        }
                         syncAutoShift()
                         updateSuggestions()
                         return
@@ -3796,6 +3815,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         wordTouchesFor = if (touchesSnapshot) word else ""
         try {
             if (word.isEmpty()) return
+            // A link, an email or a handle: its parts are not words to fix or learn.
+            if (WordContext.insideLinkOrAddress(before)) return
             val engine = KeyboardTyping.engine ?: return
             val policy = typingPolicy()
             val previous = WordContext.previousWord(before)
@@ -4193,6 +4214,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val picked = ic?.getSelectedText(0)?.toString().orEmpty()
         val sample = picked.ifEmpty { ic?.getTextBeforeCursor(2000, 0)?.toString().orEmpty() }.trim()
         rows.header(if (sample.isEmpty()) "Type something, then pick a style" else "Tap a style to restyle your text")
+        // How long it is, for a post or a bio with a limit.
+        if (sample.isNotEmpty()) rows.row(ShellRows.Row(Smart.textCount(sample), letter = "#", chevron = false, qaId = "shell:style:count"))
         for (style in Smart.TextStyle.values()) {
             val text = if (sample.isEmpty()) style.title else sample.take(40)
             rows.row(ShellRows.Row(Smart.styled(text, style), letter = styleLetter(style), detail = style.title,
@@ -4215,6 +4238,30 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         Smart.TextStyle.WIDE -> "Ｗ"
         Smart.TextStyle.UPSIDE_DOWN -> "∀"
         Smart.TextStyle.PLAIN -> "Aa"
+        Smart.TextStyle.UPPER -> "AB"
+        Smart.TextStyle.LOWER -> "ab"
+        Smart.TextStyle.TITLE_CASE -> "Ab"
+        Smart.TextStyle.SENTENCE_CASE -> "A."
+    }
+
+    /** A shorthand's blanks filled where the phone is ({date}, {clipboard}…). */
+    private fun fillShorthand(template: String): Pair<String, Int> =
+        Smart.fillIn(template, region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country },
+            clipboard = { com.demo.glyf.store.ClipboardStore.clipText(this) })
+
+    /** A shorthand typed out from the vault, its blanks filled. */
+    private fun insertShorthand(template: String) {
+        val ic = currentInputConnection ?: return
+        val (text, back) = fillShorthand(template)
+        ic.commitText(text, 1)
+        if (back > 0) cursorBack(ic, back)
+    }
+
+    /** The cursor moved back into what was just typed ({cursor}). */
+    private fun cursorBack(ic: android.view.inputmethod.InputConnection, back: Int) {
+        val et = ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0) ?: return
+        val at = et.startOffset + et.selectionStart - back
+        if (at >= 0) ic.setSelection(at, at)
     }
 
     /** The words picked out become their styled form; with none, the
@@ -4408,7 +4455,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         for (i in 0 until snippets.length()) {
             val sn = snippets.getJSONObject(i)
             tiles += vaultTile("vault:shorthand:$i", sn.optString("trigger"), sn.optString("text")) {
-                currentInputConnection?.commitText(sn.optString("text"), 1)
+                insertShorthand(sn.optString("text"))
                 dismissFeaturePanel()
             }
         }
@@ -4456,7 +4503,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             val sn = snippets.getJSONObject(i)
             rows.row(ShellRows.Row(sn.optString("trigger"), letter = ";", subtitle = oneLine(sn.optString("text")),
                 chevron = false, qaId = "vault:shorthand:$i") {
-                currentInputConnection?.commitText(sn.optString("text"), 1)
+                insertShorthand(sn.optString("text"))
                 dismissFeaturePanel()
             })
         }

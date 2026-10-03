@@ -420,6 +420,19 @@ class _VaultScreenState extends State<VaultScreen> {
             minLines: 1,
             style: const TextStyle(color: Glass.ink),
             decoration: _dec('Types out')),
+        const SizedBox(height: 12),
+        // Blanks the keyboard fills as it types the shorthand out (Raycast's
+        // snippets have them): a tap puts one where the cursor is.
+        const Text('Fills in as it is typed',
+            style: TextStyle(color: Glass.inkSoft, fontSize: 12.5, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final blank in const ['{date}', '{time}', '{tomorrow}', '{clipboard}', '{cursor}'])
+            _blankChip(blank, textCtl),
+        ]),
+        const SizedBox(height: 6),
+        const Text('{cursor} is where you carry on typing.',
+            style: TextStyle(color: Glass.inkSoft, fontSize: 12)),
       ],
       onSave: () async {
         final trigger = trigCtl.text.trim();
@@ -432,6 +445,31 @@ class _VaultScreenState extends State<VaultScreen> {
       },
     );
     _disposeLater([trigCtl, textCtl]);
+  }
+
+  /// A blank for a shorthand ("{date}"): a tap puts it where the cursor is.
+  Widget _blankChip(String blank, TextEditingController ctl) {
+    return Semantics(
+      identifier: 'vault-blank-${blank.substring(1, blank.length - 1)}',
+      button: true,
+      child: GestureDetector(
+        onTap: () {
+          final text = ctl.text;
+          final sel = ctl.selection;
+          final start = sel.isValid ? sel.start : text.length;
+          final end = sel.isValid ? sel.end : text.length;
+          ctl.value = TextEditingValue(
+              text: text.replaceRange(start, end, blank),
+              selection: TextSelection.collapsed(offset: start + blank.length));
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(color: const Color(0xFFF2F3F7), borderRadius: BorderRadius.circular(10)),
+          child: Text(blank,
+              style: const TextStyle(color: Glass.accent, fontSize: 13, fontWeight: FontWeight.w600)),
+        ),
+      ),
+    );
   }
 
   InputDecoration _dec(String hint) {

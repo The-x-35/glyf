@@ -177,6 +177,17 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(WordTracker.previousWord(beforeContext: "hello"))
     }
 
+    /// Words inside a link, an email or a handle are not corrected or
+    /// learned ("youtu" of youtu.be became "youth" in S226).
+    func testNothingInsideALinkOrAnAddressIsCorrected() {
+        XCTAssertTrue(WordTracker.insideLinkOrAddress(beforeContext: "check https://youtu"))
+        XCTAssertTrue(WordTracker.insideLinkOrAddress(beforeContext: "mail me at sam@gmial"))
+        XCTAssertTrue(WordTracker.insideLinkOrAddress(beforeContext: "ask @arpit"))
+        XCTAssertTrue(WordTracker.insideLinkOrAddress(beforeContext: "go to www.exampel"))
+        XCTAssertFalse(WordTracker.insideLinkOrAddress(beforeContext: "i saw the youtu"))
+        XCTAssertFalse(WordTracker.insideLinkOrAddress(beforeContext: "https://x.com great"))
+    }
+
     // MARK: Settings migration
 
     /// Old files gain every new toolbar item, and the user's existing order
@@ -1302,6 +1313,8 @@ final class GlyfEngineTests: XCTestCase {
             let now = try XCTUnwrap(iso.date(from: c["now"] as? String ?? ""))
             let here = try XCTUnwrap(TimeZone(identifier: c["here"] as? String ?? ""))
             let want = c["results"] as? [String] ?? []
+            // A coin, a die or a pick comes from the keyboard's draw.
+            if let luck = (c["luck"] as? String).flatMap({ UInt64($0) }) { Smart.luck = luck }
             let answer = Smart.quickAnswer(in: text, now: now, here: here, region: c["region"] as? String)
             let got = answer?.results ?? []
             if got != want { failures.append("'\(text)' (\(c["region"] ?? "-")): got \(got), want \(want)"); continue }
@@ -1314,6 +1327,58 @@ final class GlyfEngineTests: XCTestCase {
                     switch answer.how(i) { case .bracket: return "bracket"; case .after: return "after"; case .replace: return "replace" }
                 }
                 if had != hows { failures.append("'\(text)': how \(had), want \(hows)") }
+            }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
+    /// A copied link with trackers offers itself clean or as copied; a bill
+    /// that ends on an amount beats converting the amount; a link longer
+    /// than the strip's view still loses its trackers.
+    func testLinksLoseTrackersAndBillsBeatTheirLastAmount() {
+        let copy = "https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123"
+        guard case .convert(let c)? = Smart.chip(for: "", fields: [], paste: copy, region: "US") else {
+            return XCTFail("a tracked copy is a row")
+        }
+        XCTAssertEqual(c.results, ["Paste clean link", "Paste as copied"])
+        XCTAssertEqual(c.inserts, ["https://youtu.be/dQw4w9WgXcQ", copy])
+        XCTAssertNotNil(Smart.Chip.convert(c).copiedText, "the row is the clipboard pill")
+        XCTAssertEqual(Smart.chip(for: "", fields: [], paste: "https://youtu.be/dQw4w9WgXcQ", region: "US"),
+                       .paste(text: "https://youtu.be/dQw4w9WgXcQ"), "a clean copy is a plain paste")
+        let rates = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88], local: "INR")
+        guard case .convert(let bill)? = Smart.chip(for: "3 for $10", fields: [], rates: rates, region: "US") else {
+            return XCTFail("the unit price wins")
+        }
+        XCTAssertEqual(bill.results, ["$3.33 each"])
+        if case .money? = Smart.chip(for: "it was $10", fields: [], rates: rates, region: "US") {} else {
+            XCTFail("an amount alone is still converted")
+        }
+        let long = "look https://example.com/" + String(repeating: "a", count: 150) + "?utm_source=x&id=7"
+        guard case .convert(let link)? = Smart.chip(for: String(long.suffix(120)), fields: [], region: "US", linkContext: long) else {
+            return XCTFail("a long link still loses its trackers")
+        }
+        XCTAssertEqual(link.insert(0), "https://example.com/" + String(repeating: "a", count: 150) + "?id=7")
+        XCTAssertEqual(link.how(0), .replace)
+    }
+
+    /// shared/vault/fill-cases.json: a shorthand's blanks filled as it is
+    /// typed out, and where the cursor ends (Android runs the same file).
+    func testShorthandBlanksFillInAsItIsTypedOut() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/vault/fill-cases.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let iso = ISO8601DateFormatter()
+        var failures: [String] = []
+        for c in root["cases"] as? [[String: Any]] ?? [] {
+            let template = c["template"] as? String ?? ""
+            let now = try XCTUnwrap(iso.date(from: c["now"] as? String ?? ""))
+            let here = try XCTUnwrap(TimeZone(identifier: c["here"] as? String ?? ""))
+            let got = Smart.fillIn(template, now: now, here: here, region: c["region"] as? String,
+                                   clipboard: { c["clipboard"] as? String })
+            if got.text != c["text"] as? String || got.back != c["back"] as? Int {
+                failures.append("'\(template)': got '\(got.text)' back \(got.back), want '\(c["text"] ?? "")' back \(c["back"] ?? 0)")
             }
         }
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
@@ -1382,6 +1447,10 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(Smart.styled(Smart.styled("Hi", .italic), .bold), Smart.styled("Hi", .bold))
         // Plain leaves what was never styled: ™, ½, emoji.
         XCTAssertEqual(Smart.plainText("Glyf™ ½ 🎉"), "Glyf™ ½ 🎉")
+        // What the Style screen says of the text.
+        for c in root["counts"] as? [[String: String]] ?? [] where Smart.textCount(c["text"] ?? "") != c["count"] {
+            failures.append("count '\(c["text"] ?? "")': got \(Smart.textCount(c["text"] ?? ""))")
+        }
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 

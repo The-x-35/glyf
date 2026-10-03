@@ -1,5 +1,5 @@
 {
- "about": "Text in each of the g menu Style's styles (Smart.styled on both keyboards), from Unicode's styled alphabets: what has no styled form stays as it is. \"plainBack\" lists the styles Plain turns back to the text exactly (upside down is left as it is).",
+ "about": "Text in each of the g menu Style's styles (Smart.styled on both keyboards), from Unicode's styled alphabets: what has no styled form stays as it is. \"plainBack\" lists the styles Plain turns back to the text exactly (upside down is left as it is). UPPERCASE, lowercase, Title Case and Sentence case change only the letters' case (a word in capitals, \"NASA\", stays unless everything was in capitals); they are not turned back by Plain. \"counts\" is what the Style screen says of a text.",
  "cases": [
   {
    "text": "Hello World 123",
@@ -17,7 +17,11 @@
     "smallCaps": "Hᴇʟʟᴏ Wᴏʀʟᴅ 123",
     "wide": "Ｈｅｌｌｏ　Ｗｏｒｌｄ　１２３",
     "upsideDown": "ƐᄅƖ pןɹoM oןןǝH",
-    "plain": "Hello World 123"
+    "plain": "Hello World 123",
+    "upper": "HELLO WORLD 123",
+    "lower": "hello world 123",
+    "titleCase": "Hello World 123",
+    "sentenceCase": "Hello world 123"
    }
   },
   {
@@ -36,7 +40,41 @@
     "smallCaps": "CHQZ ᴄᴏᴏʟ!",
     "wide": "ＣＨＱＺ　ｃｏｏｌ！",
     "upsideDown": "¡ןooɔ ZΌHƆ",
-    "plain": "CHQZ cool!"
+    "plain": "CHQZ cool!",
+    "upper": "CHQZ COOL!",
+    "lower": "chqz cool!",
+    "titleCase": "CHQZ Cool!",
+    "sentenceCase": "CHQZ cool!"
+   }
+  },
+  {
+   "text": "the lord of the rings",
+   "styled": {
+    "titleCase": "The Lord of the Rings",
+    "sentenceCase": "The lord of the rings",
+    "upper": "THE LORD OF THE RINGS"
+   }
+  },
+  {
+   "text": "HELLO THERE. HOW ARE YOU? i am FINE",
+   "styled": {
+    "sentenceCase": "Hello there. How are you? I am fine",
+    "titleCase": "Hello There. How Are You? I Am Fine",
+    "lower": "hello there. how are you? i am fine",
+    "upper": "HELLO THERE. HOW ARE YOU? I AM FINE"
+   }
+  },
+  {
+   "text": "i love NASA and the moon",
+   "styled": {
+    "sentenceCase": "I love NASA and the moon",
+    "titleCase": "I Love NASA and the Moon"
+   }
+  },
+  {
+   "text": "ok. i'm in\nsee you there",
+   "styled": {
+    "sentenceCase": "Ok. I'm in\nSee you there"
    }
   }
  ],
@@ -54,5 +92,19 @@
   "smallCaps",
   "wide",
   "plain"
+ ],
+ "counts": [
+  {
+   "text": "Hello World 123",
+   "count": "3 words · 15 characters"
+  },
+  {
+   "text": "hi",
+   "count": "1 word · 2 characters"
+  },
+  {
+   "text": "ok 👍🏽 done",
+   "count": "3 words · 9 characters"
+  }
  ]
 }

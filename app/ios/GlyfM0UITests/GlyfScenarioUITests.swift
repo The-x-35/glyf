@@ -757,6 +757,163 @@ final class GlyfScenarioUITests: XCTestCase {
         note("after Bold: '\(value)'")
     }
 
+    // MARK: What launchers work out (Arpit, 2026-10-03: "find more things from raycast etc too")
+
+    /// S226: a link loses its trackers in one tap (Raycast's Link Cleaner).
+    func testS226_ALinkLosesItsTrackers() throws {
+        open()
+        clear()
+        type("check https://youtu.be/abc123?si=xyz789")
+        guard let chip = wait("strip:smart:choice:0", 6) else {
+            keepScreenshot("clean-link-missing")
+            return XCTFail("no chip for '\(value)'")
+        }
+        let label = chip.label
+        XCTAssertEqual(label, "Remove tracking")
+        keepScreenshot("clean-link")
+        chip.tap()
+        XCTAssertTrue(waitValue(3) { $0.lowercased() == "check https://youtu.be/abc123" }, "the tap typed '\(value)'")
+        note("chip '\(label)', typed '\(value)'")
+    }
+
+    /// S227: a face by its name, as Slack has /shrug.
+    func testS227_AFaceByItsName() throws {
+        open()
+        clear()
+        type("ok /shrug")
+        guard let chip = wait("strip:smart:choice:0", 6) else {
+            return XCTFail("no face; the strip shows '\(el("strip:smart").label)'")
+        }
+        let label = chip.label
+        XCTAssertEqual(label, "¯\\_(ツ)_/¯")
+        chip.tap()
+        XCTAssertTrue(waitValue(3) { $0.lowercased() == "ok ¯\\_(ツ)_/¯" }, "the tap typed '\(value)'")
+        note("chip '\(label)', typed '\(value)'")
+    }
+
+    /// S228: cups of flour in grams, from King Arthur's weights.
+    func testS228_ARecipesCupsInGrams() throws {
+        open()
+        clear()
+        type("2 cups flour")
+        guard wait("strip:smart:choice:1", 6) != nil else {
+            return XCTFail("no weight chips; the strip shows '\(el("strip:smart").label)'")
+        }
+        let parts = [el("strip:smart:choice:0").label, el("strip:smart:choice:1").label]
+        XCTAssertEqual(parts, ["240 g", "8.47 oz"])
+        keepScreenshot("cups-in-grams")
+        el("strip:smart:choice:0").tap()
+        XCTAssertTrue(waitValue(3) { $0.lowercased() == "2 cups flour (240 g)" }, "the tap typed '\(value)'")
+        note("chips \(parts), typed '\(value)'")
+    }
+
+    /// S229: a shift on the clock, worked out.
+    func testS229_AShiftOnTheClockWorkedOut() throws {
+        open()
+        clear()
+        type("shift 9:30-5:15")
+        guard let chip = wait("strip:smart:choice:0", 6) else {
+            return XCTFail("no span; the strip shows '\(el("strip:smart").label)' for '\(value)'")
+        }
+        XCTAssertEqual(chip.label, "7 h 45 min")
+        note("chip '\(chip.label)'")
+    }
+
+    /// S230: a coin flipped from the strip, added after.
+    func testS230_ACoinFlippedFromTheStrip() throws {
+        open()
+        clear()
+        type("flip a coin")
+        guard let chip = wait("strip:smart:choice:0", 6) else {
+            return XCTFail("no coin; the strip shows '\(el("strip:smart").label)'")
+        }
+        let label = chip.label
+        XCTAssertTrue(["🪙 Heads", "🪙 Tails"].contains(label), "the coin said '\(label)'")
+        chip.tap()
+        XCTAssertTrue(waitValue(3) { $0.lowercased() == "flip a coin \(label)".lowercased() }, "the tap typed '\(value)'")
+        note("chip '\(label)', typed '\(value)'")
+    }
+
+    /// S231: g menu → Style: UPPERCASE, with the message's count on top.
+    func testS231_StyleUppercaseAndTheCount() throws {
+        open()
+        clear()
+        type("hello world")
+        openTool("style")
+        guard wait("shell:style:bold", 6) != nil else { return XCTFail("no Style screen") }
+        let count = host.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "2 words · 11 characters")).firstMatch
+        let counted = count.exists
+        XCTAssertTrue(counted, "no count on the Style screen")
+        keepScreenshot("style-case")
+        // The cases sit under the styles: the list is swiped up, on whichever
+        // row shows, until they do.
+        // A drag with no fling: the lowest row shown up to the top one.
+        let order = ["bold", "italic", "boldItalic", "underline", "strike", "upper", "lower", "titleCase", "sentenceCase",
+                     "serifBold", "script", "doubleStruck", "monospace", "bubble", "smallCaps", "wide", "upsideDown", "plain"]
+        for _ in 0..<8 where !(el("shell:style:upper").exists && el("shell:style:upper").isHittable) {
+            let shown = order.indices.filter { el("shell:style:\(order[$0])").exists && el("shell:style:\(order[$0])").isHittable }
+            guard let first = shown.first, let last = shown.last, first != last else { break }
+            let top = el("shell:style:\(order[first])"), bottom = el("shell:style:\(order[last])")
+            // Held at the end, so the list doesn't fling on past; back down
+            // when it went too far.
+            if first > order.firstIndex(of: "upper")! {
+                top.press(forDuration: 0.1, thenDragTo: bottom, withVelocity: .slow, thenHoldForDuration: 0.3)
+            } else {
+                bottom.press(forDuration: 0.1, thenDragTo: top, withVelocity: .slow, thenHoldForDuration: 0.3)
+            }
+        }
+        guard let upper = wait("shell:style:upper", 3) else {
+            keepScreenshot("style-no-upper")
+            return XCTFail("no UPPERCASE in Style")
+        }
+        upper.tap()
+        XCTAssertTrue(waitValue(3) { $0 == "HELLO WORLD" }, "UPPERCASE made '\(value)'")
+        note("count shown: \(counted); after UPPERCASE: '\(value)'")
+    }
+
+    /// S232: shorthand with blanks: {day} filled in, and {cursor} is where
+    /// typing goes on.
+    func testS232_ShorthandBlanksFillIn() throws {
+        open()
+        clear()
+        addTeardownBlock { [self] in
+            if !(el("toolbar:glyf").exists || el("toolbar:close").exists) { open() }
+            vaultTool(["op": "snippet", "text": ";s232="])
+            vaultTool(["op": "snippet", "text": ";s232b="])
+        }
+        XCTAssertTrue(vaultTool(["op": "snippet", "text": ";s232=Today is {day}"]))
+        XCTAssertTrue(vaultTool(["op": "snippet", "text": ";s232b=Hi {cursor}, thanks!"]))
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.dateFormat = "EEEE"
+        let day = f.string(from: Date())
+        type("ok ;s232 ")
+        XCTAssertTrue(waitValue(3) { $0.lowercased().contains("today is \(day.lowercased())") && !$0.contains("{") },
+                      "';s232' typed '\(value)'")
+        let first = value
+        clear()
+        type(";s232b ")
+        type("sam")
+        XCTAssertTrue(waitValue(3) { $0.lowercased() == "hi sam, thanks!" }, "';s232b' then 'sam' made '\(value)'")
+        note("{day}: '\(first)'; {cursor}: '\(value)'")
+    }
+
+    /// S233: an hourly rate as a year and a month (40 hours a week).
+    func testS233_AnHourlyRateAsAYear() throws {
+        open()
+        clear()
+        type("$45/hr")
+        guard wait("strip:smart:choice:1", 6) != nil else {
+            return XCTFail("no pay chips; the strip shows '\(el("strip:smart").label)' for '\(value)'")
+        }
+        let parts = [el("strip:smart:choice:0").label, el("strip:smart:choice:1").label]
+        XCTAssertEqual(parts, ["$93,600/yr", "$7,800/mo"])
+        el("strip:smart:choice:0").tap()
+        XCTAssertTrue(waitValue(3) { $0 == "$45/hr ($93,600/yr)" }, "the tap typed '\(value)'")
+        note("chips \(parts), typed '\(value)'")
+    }
+
     /// S214: money typed shows in the local currency in the strip (Arpit,
     /// 2026-09-30: "$20 not showing amount in local currency ... i want
     /// rupee, or whatever i set in as local currency here in app").

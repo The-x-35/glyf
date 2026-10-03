@@ -196,7 +196,8 @@ object Smart {
     fun chip(text: String, fields: List<Field>, indianGrouping: Boolean = true,
              rates: RatesSnapshot = RatesSnapshot.EMPTY, ownBooking: String? = null,
              ownWallet: String? = null, fieldKind: String? = null,
-             region: String? = java.util.Locale.getDefault().country): Chip? {
+             region: String? = java.util.Locale.getDefault().country,
+             linkContext: String? = null): Chip? {
         // A form asking for something we already know: one tap fills it,
         // one part each when there is more than one (nothing else reads an
         // empty field).
@@ -221,14 +222,24 @@ object Smart {
                 null -> null
             }
         }
+        // A link longer than the strip's view of the message: its trackers.
+        if (linkContext != null && linkContext.length > text.length && endsInLink(text)) {
+            cleanLink(linkContext)?.let { return Chip.Convert(it) }
+        }
         calcMatch(text, indianGrouping)?.let { (value, hasEquals, expression) ->
             return Chip.Calc(value, hasEquals).also { it.expression = expression }
         }
-        money(text, rates)?.let { return it }
+        val quick = quickAnswer(text, region = region)
+        money(text, rates)?.let { m ->
+            // "18% gst on ₹1,000", "3 for $10": the bill says more than the
+            // amount it ends on.
+            if (quick != null && quick.source.length > moneyTailLength(text)) return Chip.Convert(quick)
+            return m
+        }
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if (cashtag(text) != null) return null
-        quickAnswer(text, region = region)?.let { return Chip.Convert(it) }
+        quick?.let { return Chip.Convert(it) }
         // Every saved value the sentence asks for: two emails show both.
         val matches = vaultMatches(text, fields)
         if (matches.size > 1) return Chip.Details(matches.take(3), temp = false)
@@ -253,6 +264,9 @@ object Smart {
     private val currencySymbol = mapOf(
         "USD" to "$", "EUR" to "€", "GBP" to "£", "INR" to "₹", "JPY" to "¥", "CNY" to "¥", "KRW" to "₩",
     )
+    /** How much of the message's end the money chip reads ("₹1,000"). */
+    fun moneyTailLength(text: String): Int = amountPattern.find(text)?.value?.trim()?.length ?: 0
+
     /** An amount at the end of the text: "$13", "13 usd", "₹500", "20 euros". */
     private val amountPattern = Regex(
         """(?:([$€£₹¥])\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?([$€£₹¥]|[A-Za-z]{2,7}))\s*$""",
@@ -1537,26 +1551,50 @@ object Smart {
     // MARK: bills, arrivals and dates, worked out as they are typed (Smart.swift twin)
 
     /** Everything the strip works out on the phone from how the message
-     *  ends, in the order tried: a measurement, a time in another zone, a
-     *  bill (split, tip, discount, tax), when someone will be there, how long
-     *  a span of minutes is, and a date in words. One chip per result; a tap
-     *  adds it in brackets. shared/quick/strip-cases.json. */
+     *  ends, most particular first: a shortcut, a face, a measurement or a
+     *  recipe's, a time in another zone or on the clock, a pace, a bill, a
+     *  price or a loan, when someone will be there, a date or a holiday,
+     *  numbers in other forms, links, and a coin or a pick. One chip per
+     *  result; a tap adds it in brackets unless the answer says otherwise.
+     *  shared/quick/strip-cases.json. */
     fun quickAnswer(text: String, now: java.time.Instant = java.time.Instant.now(),
                     here: java.time.ZoneId = java.time.ZoneId.systemDefault(),
                     region: String? = java.util.Locale.getDefault().country): Conversions? {
         if (text.length > 400) return null
+        // A link's digits are its address: only its trackers are worth a chip.
+        if (endsInLink(text)) return cleanLink(text)
         return shortcut(text, now, here, region)
+            ?: face(text)
+            ?: symbol(text)
+            ?: unitPrice(text)
             ?: conversions(text, region)
+            ?: cooking(text, region)
+            ?: fuel(text, region)
             ?: zoneTimes(text, now, here, region)
+            ?: clockMaths(text)
+            ?: everyHours(text)
+            ?: pace(text)
             ?: billMath(text)
+            ?: taxInside(text, region)
+            ?: change(text)
+            ?: ratio(text)
+            ?: payRate(text)
+            ?: loan(text)
             ?: arrival(text, now, here)
+            ?: holiday(text, now, here, region)
             ?: dateInWords(text, now, here, region)
+            ?: workingDays(text, now, here, region)
+            ?: weekNumber(text, now, here, region)
+            ?: age(text, now, here, region)
             ?: bases(text)
             ?: colours(text)
             ?: tracking(text)
             ?: flight(text)
             ?: phone(text, region)
             ?: unixTime(text, here, region)
+            ?: inWords(text, region)
+            ?: download(text)
+            ?: luckAnswer(text)
             ?: bigNumber(text, region)
     }
 
@@ -1712,12 +1750,19 @@ object Smart {
 
     /** "next friday" → Fri 9 Oct (and Fri 16 Oct when the coming Friday is
      *  still this week); "this friday"; "in 3 weeks"; "day after tomorrow";
-     *  "the 14th"; "oct 14" or "14 october". Never a lone weekday, "today"
-     *  or "tomorrow". */
+     *  "the 14th"; "oct 14" or "14 october" → Wed 14 Oct · in 11 days (how
+     *  far off, from a week away). Never a lone weekday, "today" or
+     *  "tomorrow". */
     fun dateInWords(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
         val today = now.atZone(here).toLocalDate()
-        fun say(g: List<String?>, dates: List<java.time.LocalDate>) =
-            Conversions(g[0]!!.trim(), dates.map { dayName(it, today, region) })
+        fun say(g: List<String?>, dates: List<java.time.LocalDate>, counted: Boolean = false): Conversions {
+            val results = dates.map { dayName(it, today, region) }.toMutableList()
+            val first = dates.firstOrNull()
+            if (counted && first != null && java.time.temporal.ChronoUnit.DAYS.between(today, first) >= 7) {
+                results += countdown(first, today)
+            }
+            return Conversions(g[0]!!.trim(), results)
+        }
         val dayNames = weekdays.joinToString("|") { it.first }
         firstMatch("""\b(next|this|coming)\s+($dayNames)$END""", text)?.let { g ->
             val which = g[1]!!.lowercase()
@@ -1751,7 +1796,7 @@ object Smart {
                 val month = today.withDayOfMonth(1).plusMonths(add)
                 if (d > month.lengthOfMonth()) continue
                 val date = month.withDayOfMonth(d)
-                if (!date.isBefore(today)) return say(g, listOf(date))
+                if (!date.isBefore(today)) return say(g, listOf(date), counted = true)
             }
             return null
         }
@@ -1774,14 +1819,16 @@ object Smart {
             if (d > java.time.YearMonth.of(today.year + 1, m).lengthOfMonth()) return null
             date = java.time.LocalDate.of(today.year + 1, m, d)
         }
-        return say(g, listOf(date))
+        return say(g, listOf(date), counted = true)
     }
 
     // MARK: shortcuts, numbers, colours, parcels, flights and phones (Smart.swift twin)
 
     /** The shortcuts the keyboard knows itself; the person's own shorthand
      *  of the same name wins (the keyboard leaves the chip out then). */
-    val builtInShortcuts = setOf(";date", ";today", ";time", ";now", ";tmrw", ";tomorrow", ";yday", ";yesterday", ";iso")
+    val builtInShortcuts: Set<String> by lazy {
+        setOf(";date", ";today", ";time", ";now", ";tmrw", ";tomorrow", ";yday", ";yesterday", ";iso") + faces.keys.map { ";$it" }
+    }
 
     /** ";date" → Sat 3 Oct 2026, ";time" → 1:15 AM, ";now", ";tmrw",
      *  ";yday", ";iso": typed in place of the shortcut. */
@@ -2167,6 +2214,1128 @@ object Smart {
         return parts.take(2)
     }
 
+    // MARK: what launchers work out: Raycast, Alfred, Spotlight (Smart.swift twin)
+
+    /** Query keys that only say where a click came from, never what the
+     *  page shows (Raycast's Link Cleaner, Firefox's Copy Clean Link). */
+    private val trackerKeys = setOf(
+        "fbclid", "gclid", "gclsrc", "dclid", "gbraid", "wbraid", "gad_source", "gad_campaignid", "srsltid",
+        "msclkid", "yclid", "twclid", "ttclid", "li_fat_id", "mc_cid", "mc_eid", "_hsenc", "_hsmi",
+        "__hssc", "__hstc", "__hsfp", "hsctatracking", "mkt_tok", "igshid", "igsh", "mibextid",
+        "oly_anon_id", "oly_enc_id", "rb_clickid", "s_cid", "s_kwcid", "ef_id", "vero_id", "vero_conv",
+        "wickedid", "_openstat", "ocid", "icid", "ncid", "_branch_match_id", "_branch_referrer",
+        "ref_src", "ref_url", "wt.mc_id", "pk_campaign", "pk_kwd", "pk_source", "pk_medium", "pk_content",
+        "pk_cid", "utm", "_ga", "_gl",
+    )
+    private val trackerPrefixes = listOf("utm_", "mtm_", "matomo_")
+
+    /** Keys that track on their own sites only: "si" on YouTube and
+     *  Spotify, "s" and "t" on X ("t" is a time on YouTube), "ref" on
+     *  Amazon and Reddit (elsewhere it can be a referral code). */
+    private fun siteTrackers(host: String): Pair<Set<String>, List<String>> {
+        fun on(domain: String) = host == domain || host.endsWith(".$domain")
+        return when {
+            on("youtube.com") || on("youtu.be") -> setOf("si", "pp") to emptyList()
+            on("spotify.com") || on("spotify.link") -> setOf("si", "nd") to emptyList()
+            on("x.com") || on("twitter.com") -> setOf("s", "t") to emptyList()
+            on("tiktok.com") -> setOf("_r", "_t", "is_from_webapp", "sender_device", "is_copy_url", "share_app_id",
+                "share_link_id", "social_sharing", "u_code", "preview_pb", "share_item_id", "tt_from") to emptyList()
+            on("linkedin.com") -> setOf("trk", "trackingid", "lipi", "midtoken", "midsig", "trkemail", "eid", "refid", "rcm") to emptyList()
+            on("facebook.com") || on("fb.com") || on("fb.watch") -> setOf("rdid", "sfnsn", "__tn__") to listOf("__cft__")
+            on("reddit.com") -> setOf("share_id", "rdt", "ref", "ref_source") to emptyList()
+            host.startsWith("amazon.") || host.contains(".amazon.") -> setOf("crid", "dib", "dib_tag", "qid", "sprefix", "sr",
+                "keywords", "ref", "ref_", "content-id", "_encoding", "spla", "sp_csd") to listOf("pd_rd_", "pf_rd_")
+            else -> emptySet<String>() to emptyList()
+        }
+    }
+
+    /** The link without its trackers, or null when it has none. A time
+     *  ("t=42"), a page, a search and the part after "#" stay. */
+    fun withoutTrackers(link: String): String? {
+        var rest = link
+        var fragment = ""
+        rest.indexOf('#').takeIf { it >= 0 }?.let { fragment = rest.substring(it); rest = rest.substring(0, it) }
+        var path = rest
+        var query = ""
+        rest.indexOf('?').takeIf { it >= 0 }?.let { path = rest.substring(0, it); query = rest.substring(it + 1) }
+        val afterScheme = path.indexOf("://").let { if (it >= 0) path.substring(it + 3) else path }
+        var host = afterScheme.takeWhile { it != '/' && it != ':' }.lowercase()
+        for (p in listOf("www.", "m.", "mobile.", "smile.")) if (host.startsWith(p)) host = host.removePrefix(p)
+        val (keys, prefixes) = siteTrackers(host)
+        var cleanPath = path
+        // Amazon says which list a click came from in the path ("/ref=sr_1_3").
+        if (host.startsWith("amazon.") || host.contains(".amazon.")) cleanPath = cleanPath.replace(Regex("""/ref=[^/]*"""), "")
+        val youtube = host == "youtube.com" || host.endsWith(".youtube.com") || host == "youtu.be"
+        var removed = cleanPath != path
+        val kept = query.split("&").filter { pair ->
+            val key = pair.substringBefore("=").lowercase()
+            val value = if ('=' in pair) pair.substringAfter("=").lowercase() else ""
+            val tracker = key in trackerKeys || key in keys || (trackerPrefixes + prefixes).any { key.startsWith(it) } ||
+                (youtube && key == "feature" && value.startsWith("share"))
+            if (tracker) removed = true
+            !tracker
+        }
+        if (!removed) return null
+        val left = kept.filter { it.isNotEmpty() }
+        return cleanPath + (if (left.isEmpty()) "" else "?" + left.joinToString("&")) + fragment
+    }
+
+    /** The link the message ends on, without its trackers: "Remove
+     *  tracking" puts it back clean, in its place. */
+    fun cleanLink(text: String): Conversions? {
+        val g = firstMatch("""(?:^|\s)((?:https?://|www\.)[^\s<>"]+)\s?$""", text) ?: return null
+        val link = g[1] ?: return null
+        if (link.last() in ".,;:!?)]}'\"") return null
+        val clean = withoutTrackers(link) ?: return null
+        return Conversions(link, listOf("Remove tracking"), listOf(clean), listOf(Insertion.REPLACE))
+    }
+
+    /** A copy that is one link with trackers: the link without them. */
+    fun cleanCopy(copy: String): String? {
+        val t = copy.trim()
+        if (t.any { it.isWhitespace() } || !Regex("""^(?:https?://|www\.)""", RegexOption.IGNORE_CASE).containsMatchIn(t)) return null
+        return withoutTrackers(t)
+    }
+
+    /** Whether the message ends inside a link, or what is left of one in
+     *  the strip's last characters: its digits are an address, not a sum,
+     *  a phone number or a parcel. */
+    fun endsInLink(text: String): Boolean {
+        val token = text.split(' ', '\n').lastOrNull { it.isNotEmpty() }?.lowercase() ?: return false
+        if ("://" in token || token.startsWith("www.")) return true
+        if (Regex("""^(?:[a-z0-9-]+\.)+[a-z]{2,}/""").containsMatchIn(token)) return true
+        // A query cut off at the front: "…ource=news&utm_medium=email".
+        return '=' in token && ('&' in token || '?' in token)
+    }
+
+    /** Faces by name, as Slack has /shrug: the Emoticons tab's own faces. */
+    val faces = mapOf(
+        "shrug" to "¯\\_(ツ)_/¯", "tableflip" to "(╯°□°）╯︵ ┻━┻", "flip" to "(╯°□°）╯︵ ┻━┻",
+        "unflip" to "┬─┬ノ( º _ ºノ)", "lenny" to "( ͡° ͜ʖ ͡°)", "disapprove" to "ಠ_ಠ", "lod" to "ಠ_ಠ",
+        "happy" to "(◕‿◕)", "hug" to "(づ｡◕‿‿◕｡)づ", "cry" to "(╥﹏╥)", "love" to "(♥ω♥)", "bear" to "ʕ•ᴥ•ʔ",
+        "cool" to "(⌐■_■)", "sparkle" to "(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧", "cat" to "(=^･ω･^=)", "dance" to "ᕕ( ᐛ )ᕗ",
+        "angry" to "(╬ Ò﹏Ó)", "shock" to "(⊙_⊙)", "fight" to "(ง •̀_•́)ง", "yay" to "\\(^o^)/",
+    )
+
+    /** "/shrug" or ";shrug" → ¯\_(ツ)_/¯ in its place, and "shrug" alone. */
+    fun face(text: String): Conversions? {
+        val names = faces.keys.sortedByDescending { it.length }.joinToString("|")
+        firstMatch("""(?:^|\s)([/;](?:$names))\s?$""", text)?.let { g ->
+            val typed = g[1] ?: return@let
+            faces[typed.drop(1).lowercase()]?.let { return Conversions(typed, listOf(it), hows = listOf(Insertion.REPLACE)) }
+        }
+        firstMatch("""^\s*(shrug|tableflip|lenny)\s?$""", text)?.let { g ->
+            val typed = g[1] ?: return@let
+            faces[typed.lowercase()]?.let { return Conversions(typed, listOf(it), hows = listOf(Insertion.REPLACE)) }
+        }
+        return null
+    }
+
+    private val symbolSwaps = mapOf(
+        "<->" to "↔", "<=>" to "⇔", "->" to "→", "<-" to "←", "=>" to "⇒", "+/-" to "±", "+-" to "±",
+        "!=" to "≠", "=/=" to "≠", "~=" to "≈", "<=" to "≤", ">=" to "≥", "(tm)" to "™",
+    )
+
+    /** "->" → →, "+-" → ±, "!=" → ≠, "(tm)" → ™, in its place. A heart
+     *  ("<3") and a face (":->") stay as they are. */
+    fun symbol(text: String): Conversions? {
+        val g = firstMatch("""(?:^|[\s\w])(<->|<=>|->|<-|=>|\+/-|\+-|!=|=/=|~=|<=|>=|\(tm\))\s?$""", text) ?: return null
+        val typed = g[1] ?: return null
+        val swap = symbolSwaps[typed.lowercase()] ?: return null
+        return Conversions(typed, listOf(swap), hows = listOf(Insertion.REPLACE))
+    }
+
+    private val onesWords = listOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen")
+    private val tensWords = listOf("", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+
+    /** Under a thousand in words: "two hundred fifty-six". */
+    private fun hundredsInWords(n: Int): String {
+        val parts = mutableListOf<String>()
+        if (n >= 100) parts += onesWords[n / 100] + " hundred"
+        val r = n % 100
+        if (r > 0) parts += if (r < 20) onesWords[r] else tensWords[r / 10] + (if (r % 10 > 0) "-" + onesWords[r % 10] else "")
+        return parts.joinToString(" ")
+    }
+
+    /** A whole number in words, as a cheque has it: "one thousand two
+     *  hundred fifty"; in India "one lakh twenty thousand". */
+    fun numberInWords(n: Long, indian: Boolean): String {
+        if (n == 0L) return "zero"
+        val scales = if (indian) listOf(10_000_000L to "crore", 100_000L to "lakh", 1000L to "thousand")
+        else listOf(1_000_000_000_000L to "trillion", 1_000_000_000L to "billion", 1_000_000L to "million", 1000L to "thousand")
+        val parts = mutableListOf<String>()
+        var rest = n
+        for ((size, name) in scales) {
+            if (rest < size) continue
+            val count = rest / size
+            parts += (if (count >= 1000) numberInWords(count, indian) else hundredsInWords(count.toInt())) + " " + name
+            rest %= size
+        }
+        if (rest > 0) parts += hundredsInWords(rest.toInt())
+        return parts.joinToString(" ")
+    }
+
+    private val moneyWords = mapOf(
+        "$" to listOf("dollar", "dollars", "cent", "cents"), "€" to listOf("euro", "euros", "cent", "cents"),
+        "£" to listOf("pound", "pounds", "penny", "pence"), "₹" to listOf("rupee", "rupees", "paisa", "paise"),
+    )
+
+    /** "1,250 in words" → One thousand two hundred fifty; "$1,250.50 in
+     *  words" → … dollars and fifty cents; lakh and crore in India (a
+     *  cheque wants words). Typed in place of what was asked. */
+    fun inWords(text: String, region: String?): Conversions? {
+        val g = firstMatch("""(?<![\w.,])([$€£₹])?\s?(\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d{1,13}(?:\.\d{1,2})?)\s+(?:in|into|to)\s+words$END""", text)
+            ?: return null
+        val parts = (g[2] ?: return null).replace(",", "").split(".")
+        val whole = parts[0].toLongOrNull()?.takeIf { it < 1_000_000_000_000L } ?: return null
+        val symbol = g[1]
+        var words = numberInWords(whole, region.equals("IN", ignoreCase = true) || symbol == "₹")
+        val w = symbol?.let { moneyWords[it] }
+        if (w != null) {
+            words += " " + (if (whole == 1L) w[0] else w[1])
+            if (parts.size == 2) {
+                val c = (if (parts[1].length == 1) parts[1] + "0" else parts[1]).toIntOrNull()
+                if (c != null && c > 0) words += " and " + hundredsInWords(c) + " " + (if (c == 1) w[2] else w[3])
+            }
+        } else if (parts.size == 2) {
+            words += " point " + parts[1].mapNotNull { it.digitToIntOrNull() }.joinToString(" ") { onesWords[it] }
+        }
+        return Conversions(g[0]!!.trim(), listOf(words.replaceFirstChar { it.uppercase() }), hows = listOf(Insertion.REPLACE))
+    }
+
+    private const val CLOCK_PART = """(\d{1,2})(?::([0-5]\d))?\s*(am|pm|a\.m\.|p\.m\.)?"""
+
+    /** Minutes after midnight, or null when it can't be a time of day. */
+    private fun dayMinutes(h: Int, m: Int, ap: String?): Int? {
+        if (m >= 60) return null
+        if (ap != null) {
+            if (h < 1 || h > 12) return null
+            return (h % 12 + if (ap.lowercase().startsWith("p")) 12 else 0) * 60 + m
+        }
+        return if (h <= 23) h * 60 + m else null
+    }
+
+    /** "7 h 45 min", "8 h", "45 min". */
+    private fun spanText(minutes: Int): String {
+        val h = minutes / 60
+        val m = minutes % 60
+        if (h == 0) return "$m min"
+        return if (m == 0) "$h h" else "$h h $m min"
+    }
+
+    /** "6:15 PM" where am/pm was said, "16:30" on a 24-hour clock. */
+    private fun clockText(minutes: Int, twelve: Boolean): String {
+        val t = (minutes % 1440 + 1440) % 1440
+        val h = t / 60
+        val m = t % 60
+        val mm = if (m < 10) "0$m" else "$m"
+        if (!twelve) return "$h:$mm"
+        val h12 = if (h % 12 == 0) 12 else h % 12
+        val ap = if (h < 12) "AM" else "PM"
+        return if (m == 0) "$h12 $ap" else "$h12:$mm $ap"
+    }
+
+    /** "9:30–5:15", "shift 9am to 5:30pm" → 7 h 45 min; "3:45pm + 2h30",
+     *  "9am plus 8 hours" → 6:15 PM. A span needs minutes or am/pm at one
+     *  end ("working 9 to 5" is a phrase, "won 3-1" a score), and is said
+     *  only when it takes working out (not "2-3pm"). */
+    fun clockMaths(text: String): Conversions? {
+        firstMatch("""(?<![\d:.$€£₹/])$CLOCK_PART\s*(?:-|–|—|to|till|til|until)\s*$CLOCK_PART$END""", text)?.let { g ->
+            val h1 = g[1]?.toIntOrNull() ?: return@let
+            val h2 = g[4]?.toIntOrNull() ?: return@let
+            if (g[2] == null && g[3] == null && g[5] == null && g[6] == null) return@let
+            val m1 = g[2]?.toIntOrNull() ?: 0
+            val m2 = g[5]?.toIntOrNull() ?: 0
+            var ap1 = g[3]
+            var ap2 = g[6]
+            fun flip(ap: String) = if (ap.lowercase().startsWith("a")) "pm" else "am"
+            if (ap1 == null && ap2 != null) {
+                val a = ap2
+                ap1 = a
+                val s = dayMinutes(h1, m1, a)
+                val f = dayMinutes(h2, m2, a)
+                if (s != null && f != null && s > f) ap1 = flip(a)
+            } else if (ap1 != null && ap2 == null) {
+                val a = ap1
+                ap2 = a
+                val s = dayMinutes(h1, m1, a)
+                val f = dayMinutes(h2, m2, a)
+                if (s != null && f != null && f <= s) ap2 = flip(a)
+            }
+            val s = dayMinutes(h1, m1, ap1) ?: return null
+            var f = dayMinutes(h2, m2, ap2) ?: return null
+            if (ap1 == null && h1 <= 12 && h2 <= 12) {
+                // "9:30–5:15": the end is the next time the clock says it.
+                while (f <= s) f += 12 * 60
+            } else if (f <= s) {
+                f += 24 * 60
+            }
+            val span = f - s
+            if (span <= 0 || span >= 24 * 60 || (span % 60 == 0 && span < 3 * 60)) return null
+            return Conversions(g[0]!!.trim(), listOf(spanText(span)))
+        }
+        val duration = """(?:(\d{1,2}(?:\.\d+)?)\s*(?:h|hrs?|hours?)\s*(?:(\d{1,2})\s*(?:m|mins?|minutes?)?)?|(\d{1,3})\s*(?:m|mins?|minutes?))"""
+        val g = firstMatch("""(?<![\d:.$€£₹/])$CLOCK_PART\s*(\+|plus|-|minus)\s*$duration$END""", text) ?: return null
+        val h = g[1]?.toIntOrNull() ?: return null
+        if (g[2] == null && g[3] == null) return null
+        val start = dayMinutes(h, g[2]?.toIntOrNull() ?: 0, g[3]) ?: return null
+        val add = g[5]?.toDoubleOrNull()?.let { it * 60 + (g[6]?.toDoubleOrNull() ?: 0.0) } ?: g[7]?.toDoubleOrNull() ?: 0.0
+        if (add <= 0 || add >= 48 * 60) return null
+        val op = g[4]!!.lowercase()
+        val at = start + (if (op == "-" || op == "minus") -1 else 1) * Math.round(add).toInt()
+        return Conversions(g[0]!!.trim(), listOf(clockText(at, twelve = g[3] != null)))
+    }
+
+    /** "every 8 hours from 7am" → 7 AM, 3 PM, 11 PM: the times on the clock
+     *  in a day, from four hours apart to twelve. */
+    fun everyHours(text: String): Conversions? {
+        val counts = mapOf("four" to 4, "five" to 5, "six" to 6, "eight" to 8, "twelve" to 12)
+        val g = firstMatch("""\bevery\s+(\d{1,2}|four|five|six|eight|twelve)\s*(?:h|hrs?|hours?)\s+(?:from|starting(?:\s+(?:at|from))?|beginning(?:\s+at)?|at)\s+$CLOCK_PART$END""", text)
+            ?: return null
+        val n = g[1]?.toIntOrNull() ?: counts[g[1]!!.lowercase()] ?: return null
+        if (n < 4 || n > 12) return null
+        val h = g[2]?.toIntOrNull() ?: return null
+        if (g[3] == null && g[4] == null && h <= 12) return null
+        val start = dayMinutes(h, g[3]?.toIntOrNull() ?: 0, g[4]) ?: return null
+        val times = (0 until 24 * 60 step n * 60).map { clockText(start + it, twelve = g[4] != null) }
+        return Conversions(g[0]!!.trim(), listOf(times.joinToString(", ")))
+    }
+
+    /** The weekday of a date, Sunday 0 to Saturday 6 (Sakamoto's method). */
+    private fun weekdayOf(y: Int, m: Int, d: Int): Int {
+        val t = intArrayOf(0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4)
+        val yy = if (m < 3) y - 1 else y
+        return (yy + yy / 4 - yy / 100 + yy / 400 + t[m - 1] + d) % 7
+    }
+
+    private fun daysIn(y: Int, m: Int): Int {
+        val leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+        return intArrayOf(31, if (leap) 29 else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)[m - 1]
+    }
+
+    /** The nth weekday (Sunday 0) of a month; n = -1 is the last. */
+    private fun nthWeekday(y: Int, m: Int, weekday: Int, n: Int): Pair<Int, Int> {
+        if (n < 0) {
+            val last = daysIn(y, m)
+            return m to last - (weekdayOf(y, m, last) - weekday + 7) % 7
+        }
+        return m to 1 + (weekday - weekdayOf(y, m, 1) + 7) % 7 + (n - 1) * 7
+    }
+
+    /** Easter Sunday, by the Gregorian computus. */
+    private fun easter(y: Int): Pair<Int, Int> {
+        val a = y % 19; val b = y / 100; val c = y % 100; val d = b / 4; val e = b % 4
+        val f = (b + 8) / 25; val g = (b - f + 1) / 3
+        val h = (19 * a + b - d - g + 15) % 30; val i = c / 4; val k = c % 4
+        val l = (32 + 2 * e + 2 * i - h - k) % 7; val m = (a + 11 * h + 22 * l) / 451
+        return (h + l - 7 * m + 114) / 31 to (h + l - 7 * m + 114) % 31 + 1
+    }
+
+    /** A month and day some days later or earlier in the same year. */
+    private fun shifted(y: Int, md: Pair<Int, Int>, days: Int): Pair<Int, Int> {
+        var (m, d) = md
+        d += days
+        while (d < 1) { m -= 1; d += daysIn(y, m) }
+        while (d > daysIn(y, m)) { d -= daysIn(y, m); m += 1 }
+        return m to d
+    }
+
+    /** Diwali (Lakshmi Puja) and the Lunar New Year follow the moon. */
+    private val diwaliDays = mapOf(2025 to (10 to 20), 2026 to (11 to 8), 2027 to (10 to 29), 2028 to (10 to 17),
+        2029 to (11 to 5), 2030 to (10 to 26))
+    private val lunarNewYears = mapOf(2025 to (1 to 29), 2026 to (2 to 17), 2027 to (2 to 6), 2028 to (1 to 26),
+        2029 to (2 to 13), 2030 to (2 to 3))
+
+    /** Holidays as people name them; apostrophes and dots optional. */
+    private const val HOLIDAY_NAMES = """new\s+year'?s\s+eve|nye|new\s+year'?s\s+day|new\s+year'?s|new\s+year|valentine'?s\s+day|valentine'?s|st\.?\s+patrick'?s\s+day|saint\s+patrick'?s\s+day|paddy'?s\s+day|easter\s+sunday|easter\s+monday|easter|good\s+friday|mother'?s\s+day|father'?s\s+day|memorial\s+day|independence\s+day|(?:4th|fourth)\s+of\s+july|labou?r\s+day|halloween|thanksgiving|black\s+friday|cyber\s+monday|christmas\s+eve|xmas\s+eve|christmas\s+day|christmas|xmas|boxing\s+day|mlk\s+day|martin\s+luther\s+king(?:\s+jr\.?)?\s+day|presidents'?\s+day|juneteenth|veterans'?\s+day|remembrance\s+day|canada\s+day|australia\s+day|bastille\s+day|guy\s+fawkes(?:\s+night)?|bonfire\s+night|april\s+fools'?(?:\s+day)?|earth\s+day|groundhog\s+day|cinco\s+de\s+mayo|diwali|deepavali|lunar\s+new\s+year|chinese\s+new\s+year|republic\s+day|gandhi\s+jayanti"""
+
+    /** A holiday's month and day in a year, where the phone is (Mother's
+     *  Day is in Lent in Britain, Thanksgiving in October in Canada). */
+    private fun holidayDay(name: String, y: Int, region: String?): Pair<Int, Int>? {
+        val r = region?.uppercase() ?: ""
+        val n = name.lowercase().replace("'", "").replace(".", "").replace(Regex("""\s+"""), " ")
+        val thanksgiving = nthWeekday(y, 11, 4, 4)
+        return when (n) {
+            "new years eve", "nye" -> 12 to 31
+            "new years day", "new years", "new year" -> 1 to 1
+            "valentines day", "valentines" -> 2 to 14
+            "st patricks day", "saint patricks day", "paddys day" -> 3 to 17
+            "easter", "easter sunday" -> easter(y)
+            "good friday" -> shifted(y, easter(y), -2)
+            "easter monday" -> shifted(y, easter(y), 1)
+            "mothers day" -> if (r in setOf("GB", "IE")) shifted(y, easter(y), -21) else nthWeekday(y, 5, 0, 2)
+            "fathers day" -> if (r in setOf("AU", "NZ")) nthWeekday(y, 9, 0, 1) else nthWeekday(y, 6, 0, 3)
+            "memorial day" -> nthWeekday(y, 5, 1, -1)
+            "independence day" -> if (r == "IN") 8 to 15 else 7 to 4
+            "4th of july", "fourth of july" -> 7 to 4
+            "labor day", "labour day" -> if (r in setOf("US", "CA")) nthWeekday(y, 9, 1, 1) else 5 to 1
+            "halloween" -> 10 to 31
+            "thanksgiving" -> if (r == "CA") nthWeekday(y, 10, 1, 2) else thanksgiving
+            "black friday" -> shifted(y, thanksgiving, 1)
+            "cyber monday" -> shifted(y, thanksgiving, 4)
+            "christmas eve", "xmas eve" -> 12 to 24
+            "christmas", "xmas", "christmas day" -> 12 to 25
+            "boxing day" -> 12 to 26
+            "mlk day", "martin luther king day", "martin luther king jr day" -> nthWeekday(y, 1, 1, 3)
+            "presidents day" -> nthWeekday(y, 2, 1, 3)
+            "juneteenth" -> 6 to 19
+            "veterans day", "remembrance day" -> 11 to 11
+            "canada day" -> 7 to 1
+            "australia day" -> 1 to 26
+            "bastille day" -> 7 to 14
+            "guy fawkes", "guy fawkes night", "bonfire night" -> 11 to 5
+            "april fools", "april fools day" -> 4 to 1
+            "earth day" -> 4 to 22
+            "groundhog day" -> 2 to 2
+            "cinco de mayo" -> 5 to 5
+            "diwali", "deepavali" -> diwaliDays[y]
+            "lunar new year", "chinese new year" -> lunarNewYears[y]
+            "republic day" -> if (r == "IN") 1 to 26 else null
+            "gandhi jayanti" -> 10 to 2
+            else -> null
+        }
+    }
+
+    /** The next time a month and day comes round, today included. */
+    private fun nextDay(day: (Int) -> Pair<Int, Int>?, today: java.time.LocalDate): java.time.LocalDate? {
+        for (y in listOf(today.year, today.year + 1)) {
+            val (m, d) = day(y) ?: continue
+            val date = java.time.LocalDate.of(y, m, d)
+            if (!date.isBefore(today)) return date
+        }
+        return null
+    }
+
+    /** "today", "tomorrow", "in 54 days". */
+    private fun countdown(date: java.time.LocalDate, today: java.time.LocalDate): String {
+        val days = java.time.temporal.ChronoUnit.DAYS.between(today, date)
+        return when (days) { 0L -> "today"; 1L -> "tomorrow"; else -> "in $days days" }
+    }
+
+    /** "oct 14", "14th of october": a month and day. */
+    private fun monthAndDay(s: String): Pair<Int, Int>? {
+        val words = s.lowercase().replace(Regex("""(\d)(?:st|nd|rd|th)"""), "$1")
+            .split(' ', '.', ',').filter { it.isNotEmpty() && it != "of" }
+        if (words.size != 2) return null
+        val (dText, mText) = if (words[0].toIntOrNull() != null) words[0] to words[1] else words[1] to words[0]
+        val d = dText.toIntOrNull() ?: return null
+        val m = datedMonths.firstOrNull { it.first == mText }?.second ?: return null
+        if (d < 1 || d > daysIn(2024, m)) return null
+        return m to d
+    }
+
+    /** "after thanksgiving" → Thu 26 Nov · in 54 days; "christmas party";
+     *  "days until christmas" → 83 days. A holiday needs a word that dates
+     *  it ("merry christmas" is a greeting), and only days ahead count. */
+    fun holiday(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
+        val t = text.replace('’', '\'')
+        val today = now.atZone(here).toLocalDate()
+        val monthNames = datedMonths.joinToString("|") { it.first }
+        val monthDay = """(?:$monthNames)\.?\s+\d{1,2}(?:st|nd|rd|th)?|\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:$monthNames)"""
+        // "days until christmas", "how many days till dec 25", "sleeps to christmas".
+        firstMatch("""\b(?:how\s+many\s+)?(days?|weeks?|sleeps)\s+(?:left\s+)?(?:until|till|til|to|before)\s+(?:the\s+)?($HOLIDAY_NAMES|$monthDay)$END""", t)?.let { g ->
+            val what = g[2] ?: return null
+            val named = firstMatch("""^(?:$HOLIDAY_NAMES)$""", what) != null
+            val date = (if (named) nextDay({ holidayDay(what, it, region) }, today)
+            else monthAndDay(what)?.let { md -> nextDay({ md }, today) }) ?: return null
+            val days = java.time.temporal.ChronoUnit.DAYS.between(today, date).toInt()
+            val unit = g[1]!!.lowercase()
+            val count = if (unit.startsWith("week") && days >= 7) {
+                "${days / 7} week${if (days / 7 == 1) "" else "s"}" + (if (days % 7 > 0) " ${days % 7} day${if (days % 7 == 1) "" else "s"}" else "")
+            } else {
+                "$days " + if (unit == "sleeps") (if (days == 1) "sleep" else "sleeps") else (if (days == 1) "day" else "days")
+            }
+            return Conversions(g[0]!!.trim(), listOf(count, dayName(date, today, region)))
+        }
+        val lead = """\b(?:on|after|before|by|till|til|until|for|over|during|around|this|next|from|at)\s+(?:the\s+)?($HOLIDAY_NAMES)(?:\s+(?:day|weekend|break|holidays?|party|parties|trip|sale|sales|dinner|lunch|brunch|plans?|week|vacation))?$END"""
+        val tail = """(?<!\blast\s)(?<!\bpast\s)\b($HOLIDAY_NAMES)\s+(?:weekend|break|party|parties|trip|sale|sales|dinner|lunch|brunch|plans?|holidays?|vacation|week)$END"""
+        for (p in listOf(lead, tail)) {
+            val g = firstMatch(p, t) ?: continue
+            val name = g[1] ?: continue
+            val date = nextDay({ holidayDay(name, it, region) }, today) ?: continue
+            return Conversions(g[0]!!.trim(), listOf(dayName(date, today, region), countdown(date, today)))
+        }
+        return null
+    }
+
+    /** Weekends on Friday and Saturday where the week runs that way. */
+    private val fridayWeekends = setOf("SA", "EG", "IL", "QA", "KW", "OM", "BH", "JO", "IQ", "DZ", "LY", "SD", "YE")
+
+    /** "10 working days from today", "in 5 business days" → Fri 16 Oct:
+     *  weekdays counted from tomorrow (public holidays aside). */
+    fun workingDays(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
+        val g = firstMatch("""\b$COUNT_WORD\s+(?:working|business|work)\s+days?(?:\s+(?:from\s+(?:today|now)|after\s+today))?$END""", text)
+            ?: return null
+        val whole = g[0]!!
+        // "3-5 business days": a range, half answered.
+        val head = text.dropLast(whole.length)
+        if (Regex("""\d\s*(?:-|–|to)\s*$""", RegexOption.IGNORE_CASE).containsMatchIn(head)) return null
+        val count = g[1]!!
+        val n = (count.toDoubleOrNull() ?: smallNumbers[count.lowercase()] ?: 0.0).toInt()
+        if (n < 1 || n > 260) return null
+        val friday = (region?.uppercase() ?: "") in fridayWeekends
+        val today = now.atZone(here).toLocalDate()
+        var day = today
+        var left = n
+        while (left > 0) {
+            day = day.plusDays(1)
+            val wd = day.dayOfWeek
+            val weekend = if (friday) wd == java.time.DayOfWeek.FRIDAY || wd == java.time.DayOfWeek.SATURDAY
+            else wd == java.time.DayOfWeek.SATURDAY || wd == java.time.DayOfWeek.SUNDAY
+            if (!weekend) left -= 1
+        }
+        return Conversions(whole.trim(), listOf(dayName(day, today, region)))
+    }
+
+    /** "12–18 Oct" ("Oct 12–18" in the US), across months "28 Sep–4 Oct". */
+    private fun dayRange(a: java.time.LocalDate, b: java.time.LocalDate, today: java.time.LocalDate, region: String?): String {
+        val month = java.time.format.DateTimeFormatter.ofPattern("MMM", java.util.Locale.US)
+        val ma = month.format(a)
+        val mb = month.format(b)
+        val us = region.equals("US", ignoreCase = true)
+        var text = if (ma == mb) (if (us) "$ma ${a.dayOfMonth}–${b.dayOfMonth}" else "${a.dayOfMonth}–${b.dayOfMonth} $mb")
+        else (if (us) "$ma ${a.dayOfMonth}–$mb ${b.dayOfMonth}" else "${a.dayOfMonth} $ma–${b.dayOfMonth} $mb")
+        if (b.year != today.year) text += (if (us) ", " else " ") + b.year
+        return text
+    }
+
+    /** "cw 42", "KW 42", "calendar week 42", "week no. 42" → 12–18 Oct: an
+     *  ISO week, Monday to Sunday. "week 3" alone is a count, not a date. */
+    fun weekNumber(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
+        val g = firstMatch("""\b(?:cw|kw|calendar\s+week|week\s+(?:no\.?|number|num|#))\s*#?\s*(\d{1,2})$END""", text) ?: return null
+        val n = g[1]?.toIntOrNull()?.takeIf { it in 1..53 } ?: return null
+        val today = now.atZone(here).toLocalDate()
+        val thisYear = today.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR)
+        for (year in listOf(thisYear, thisYear + 1)) {
+            val anchor = java.time.LocalDate.of(year, 1, 4)
+            if (n > java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR.rangeRefinedBy(anchor).maximum) continue
+            val monday = anchor.with(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR, n.toLong())
+                .with(java.time.DayOfWeek.MONDAY)
+            val sunday = monday.plusDays(6)
+            if (sunday.isBefore(today)) continue
+            return Conversions(g[0]!!.trim(), listOf(dayRange(monday, sunday, today, region)))
+        }
+        return null
+    }
+
+    /** A whole date as written: "14 mar 1998", "march 14, 1998",
+     *  "14/03/1998" (month first in the US), "1998-03-14". Twelve groups. */
+    private val fullDatePattern: String by lazy {
+        val m = datedMonths.joinToString("|") { it.first }
+        """(?:(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?($m)\.?,?\s+(\d{4})|($m)\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})|(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})|(\d{4})-(\d{1,2})-(\d{1,2}))"""
+    }
+
+    /** The year, month and day of a whole date matched from group [i]. */
+    private fun fullDate(g: List<String?>, i: Int, region: String?): Triple<Int, Int, Int>? {
+        fun month(s: String?) = s?.let { w -> datedMonths.firstOrNull { it.first == w.lowercase() }?.second }
+        fun int(k: Int) = g[i + k]?.toIntOrNull()
+        val d0 = int(0); val m1 = month(g[i + 1]); val y2 = int(2)
+        val m3 = month(g[i + 3]); val d4 = int(4); val y5 = int(5)
+        val a6 = int(6); val b7 = int(7); val y8 = int(8)
+        val y9 = int(9); val m10 = int(10); val d11 = int(11)
+        val date = when {
+            d0 != null && m1 != null && y2 != null -> Triple(y2, m1, d0)
+            m3 != null && d4 != null && y5 != null -> Triple(y5, m3, d4)
+            a6 != null && b7 != null && y8 != null -> if (region.equals("US", ignoreCase = true)) Triple(y8, a6, b7) else Triple(y8, b7, a6)
+            y9 != null && m10 != null && d11 != null -> Triple(y9, m10, d11)
+            else -> return null
+        }
+        val (y, m, d) = date
+        if (y < 1900 || m < 1 || m > 12 || d < 1 || d > daysIn(y, m)) return null
+        return date
+    }
+
+    /** "born 14 mar 1998" → 28 years old; "together since 12 june 2021" →
+     *  5 years 3 months. A whole date only: "born in 1995" says it already. */
+    fun age(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
+        val today = now.atZone(here).toLocalDate()
+        val ty = today.year; val tm = today.monthValue; val td = today.dayOfMonth
+        fun before(a: Triple<Int, Int, Int>, b: Triple<Int, Int, Int>) =
+            a.first < b.first || (a.first == b.first && (a.second < b.second || (a.second == b.second && a.third < b.third)))
+        val now3 = Triple(ty, tm, td)
+        firstMatch("""\b(?:born|dob|d\.o\.b\.?|date\s+of\s+birth|birthday|bday|b'day)\s*(?:is\s+|was\s+|:\s*|-\s*)?(?:on\s+)?$fullDatePattern$END""", text)?.let { g ->
+            val b = fullDate(g, 1, region) ?: return@let
+            if (before(now3, b)) return@let
+            val years = ty - b.first - (if (tm < b.second || (tm == b.second && td < b.third)) 1 else 0)
+            if (years >= 130) return null
+            return Conversions(g[0]!!.trim(), listOf(if (years == 1) "1 year old" else "$years years old"))
+        }
+        firstMatch("""\bsince\s+$fullDatePattern$END""", text)?.let { g ->
+            val b = fullDate(g, 1, region) ?: return@let
+            if (!before(b, now3)) return@let
+            var years = ty - b.first
+            var months = tm - b.second
+            var days = td - b.third
+            if (days < 0) {
+                months -= 1
+                days += daysIn(if (tm == 1) ty - 1 else ty, if (tm == 1) 12 else tm - 1)
+            }
+            if (months < 0) { years -= 1; months += 12 }
+            fun plural(n: Int, word: String) = "$n $word" + if (n == 1) "" else "s"
+            val said = when {
+                years > 0 -> plural(years, "year") + (if (months > 0) " " + plural(months, "month") else "")
+                months > 0 -> plural(months, "month") + (if (days > 0) " " + plural(days, "day") else "")
+                else -> plural(days, "day")
+            }
+            return Conversions(g[0]!!.trim(), listOf(said))
+        }
+        return null
+    }
+
+    /** Whole numbers grouped the Indian way: 1,23,45,678. */
+    fun indianGrouped(n: Double): String {
+        val whole = Math.round(n).toString()
+        if (whole.length <= 3) return whole
+        var head = whole.dropLast(3)
+        val groups = ArrayDeque<String>()
+        while (head.length > 2) { groups.addFirst(head.takeLast(2)); head = head.dropLast(2) }
+        if (head.isNotEmpty()) groups.addFirst(head)
+        return groups.joinToString(",") + "," + whole.takeLast(3)
+    }
+
+    /** Money for pay and loans: cents under a hundred, whole above, rupees
+     *  grouped in lakhs. */
+    private fun wholeMoney(n: Double, symbol: String): String {
+        if (n < 100) return billMoney(n, symbol)
+        return if (symbol == "₹") "₹" + indianGrouped(n) else billMoney(Math.round(n).toDouble(), symbol)
+    }
+
+    /** One decimal at most: 54.1, 1.2, 3. */
+    private fun oneDecimal(n: Double): String {
+        val r = Math.round(n * 10) / 10.0
+        return if (r == Math.floor(r)) r.toLong().toString() else r.toString()
+    }
+
+    /** Money said short: "$383k", "$1.2M", "₹54.1 lakh". */
+    private fun shortMoney(n: Double, symbol: String): String {
+        if (symbol == "₹") {
+            if (n >= 1e7) return "₹" + oneDecimal(n / 1e7) + " crore"
+            if (n >= 1e5) return "₹" + oneDecimal(n / 1e5) + " lakh"
+            return wholeMoney(n, symbol)
+        }
+        if (n >= 1e6) return symbol + oneDecimal(n / 1e6) + "M"
+        if (n >= 1e4) return symbol + Math.round(n / 1e3) + "k"
+        return wholeMoney(n, symbol)
+    }
+
+    private val payWords = Regex("""\b(?:pay|pays|paid|paying|rate|salary|wage|wages|earn|earns|earning|earned|make|makes|making|charge|charges|charging|offer|offered|offering|job|gig|freelance|contract|income|hourly|ctc|package)\b""",
+        RegexOption.IGNORE_CASE)
+
+    /** "$45/hr" → $93,600/yr · $7,800/mo (40 hours a week); "$120k a year"
+     *  → $57.69/hr · $10,000/mo; "18 LPA" → ₹1,50,000/mo. Without a currency
+     *  sign the message has to be about pay. */
+    fun payRate(text: String): Conversions? {
+        val about = payWords.containsMatchIn(text)
+        firstMatch("""(?<![\w.,])([$€£₹¥])?\s?(\d{1,4}(?:\.\d{1,2})?)\s*(?:/\s*(?:hr|hour|h)|an?\s+hour|per\s+hour|hourly)$END""", text)?.let { g ->
+            val n = g[2]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return@let
+            if (g[1] == null && !about) return@let
+            val s = g[1] ?: ""
+            val year = n * 2080
+            return Conversions(g[0]!!.trim(), listOf("${wholeMoney(year, s)}/yr", "${wholeMoney(year / 12, s)}/mo"))
+        }
+        firstMatch("""(?<![\w.,])([$€£₹¥])?\s?(\d{1,3}(?:,\d{2,3})+|\d+(?:\.\d+)?)\s*(k|m)?\s*(?:/\s*(?:yr|year|y|annum)|(?:a|per)\s+(?:year|annum)|p\.?\s?a\.?|annually|yearly)$END""", text)?.let { g ->
+            val base = number(g[2]) ?: return@let
+            val scale = g[3]?.lowercase()
+            val year = base * (if (scale == "k") 1e3 else if (scale == "m") 1e6 else 1.0)
+            if (year < 1000 || (g[1] == null && !about)) return null
+            val s = g[1] ?: ""
+            return Conversions(g[0]!!.trim(), listOf("${wholeMoney(year / 2080, s)}/hr", "${wholeMoney(year / 12, s)}/mo"))
+        }
+        val g = firstMatch("""(?<![\w.,])(\d{1,3}(?:\.\d{1,2})?)\s*(?:lpa|l\.p\.a\.?|lakhs?\s+(?:per\s+annum|a\s+year|p\.?a\.?))$END""", text)
+            ?: return null
+        val lakhs = g[1]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val year = lakhs * 1e5
+        return Conversions(g[0]!!.trim(), listOf("${wholeMoney(year / 12, "₹")}/mo", "${wholeMoney(year / 2080, "₹")}/hr"))
+    }
+
+    private val scaleWords = mapOf(
+        "k" to 1e3, "m" to 1e6, "mn" to 1e6, "million" to 1e6, "b" to 1e9, "bn" to 1e9, "billion" to 1e9,
+        "l" to 1e5, "lakh" to 1e5, "lakhs" to 1e5, "lac" to 1e5, "lacs" to 1e5, "cr" to 1e7, "crore" to 1e7, "crores" to 1e7,
+    )
+    /** An amount with its sign and its size word: "$300k", "50 lakh". Three groups. */
+    private const val SCALED_AMOUNT = """([$€£₹¥])?\s?(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(k|m|mn|million|b|bn|billion|l|lakhs?|lacs?|cr|crores?)?"""
+
+    /** "$300k mortgage at 6.5% for 30 years" → $1,896/mo · $383k interest;
+     *  "50 lakh home loan @ 8.5% 20 years" → ₹43,391/mo; "10k at 7% for 10
+     *  years" → $19,672 · +$9,672 (grown once a year). */
+    fun loan(text: String): Conversions? {
+        val rate = """(\d{1,2}(?:\.\d{1,3})?)\s*%"""
+        val term = """(\d{1,3})\s*(years?|yrs?|y|months?|mos?)"""
+        val kinds = """(?:home\s+|car\s+|auto\s+|personal\s+|student\s+|education\s+)?(?:mortgage|loan|emi)"""
+        val borrowing = Regex("""\b(?:mortgage|loan|emi|borrow\w*|owe|debt)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
+        val patterns = listOf(
+            """\b$kinds\s+(?:of\s+|for\s+|on\s+)?$SCALED_AMOUNT\s*(?:at|@)\s*$rate\s*(?:for|over)\s*$term$END""" to true,
+            """(?<![\w.,])$SCALED_AMOUNT\s+$kinds\s*(?:at|@)?\s*$rate\s*(?:for|over)?\s*$term$END""" to true,
+            """(?<![\w.,])$SCALED_AMOUNT\s*(?:at|@)\s*$rate\s*(?:for|over)\s*$term$END""" to false,
+        )
+        for ((p, borrowed) in patterns) {
+            if (!borrowed && borrowing) continue
+            val g = firstMatch(p, text) ?: continue
+            val base = number(g[2]) ?: continue
+            val size = g[3]?.lowercase() ?: ""
+            val principal = base * (scaleWords[size] ?: 1.0)
+            val r = g[4]?.toDoubleOrNull() ?: continue
+            val t = g[5]?.toDoubleOrNull() ?: continue
+            if (r <= 0 || r > 50 || t <= 0 || principal < 100) continue
+            // Lakh and crore are rupees, said or not.
+            val s = g[1] ?: if (size in setOf("l", "lakh", "lakhs", "lac", "lacs", "cr", "crore", "crores")) "₹" else ""
+            val inMonths = g[6]!!.lowercase().startsWith("m")
+            if (borrowed) {
+                val n = if (inMonths) t else t * 12
+                if (n > 600) continue
+                val i = r / 100 / 12
+                val pay = principal * i / (1 - Math.pow(1 + i, -n))
+                return Conversions(g[0]!!.trim(), listOf("${wholeMoney(pay, s)}/mo", "${shortMoney(pay * n - principal, s)} interest"))
+            }
+            if (inMonths || t > 60) continue
+            val total = principal * Math.pow(1 + r / 100, t)
+            return Conversions(g[0]!!.trim(), listOf(wholeMoney(total, s), "+" + wholeMoney(total - principal, s)))
+        }
+        return null
+    }
+
+    private val vatRates = mapOf(
+        "GB" to 20.0, "IE" to 23.0, "DE" to 19.0, "AT" to 20.0, "FR" to 20.0, "IT" to 22.0, "ES" to 21.0, "NL" to 21.0,
+        "BE" to 21.0, "PT" to 23.0, "LU" to 17.0, "FI" to 25.5, "SE" to 25.0, "DK" to 25.0, "NO" to 25.0, "PL" to 23.0,
+        "CH" to 8.1, "AE" to 5.0, "SA" to 15.0, "ZA" to 15.0,
+    )
+    private val gstRates = mapOf("AU" to 10.0, "NZ" to 15.0, "SG" to 9.0)
+    private val euroRegions = setOf("IE", "DE", "AT", "FR", "IT", "ES", "NL", "BE", "PT", "LU", "FI")
+
+    /** "£120 inc VAT" → £100 + £20 VAT; "€99 inkl. MwSt" at the rate where
+     *  the phone is; "₹1,180 incl 18% GST". Where the rate depends on what
+     *  is bought (India's GST, a US sales tax) it has to be typed. */
+    fun taxInside(text: String, region: String?): Conversions? {
+        val g = firstMatch("""(?<![\w.,])(?:([$€£₹])\s?$AMT|$AMT\s?([$€£₹])|$AMT)\s*(?:inc\.?|incl\.?|including|inkl\.?|inclusive\s+of|incl\.?\s+of)\s*(?:(\d{1,2}(?:\.\d+)?)\s*%\s*)?(vat|gst|mwst|tva|iva|btw|moms|tax)$END""", text)
+            ?: return null
+        val gross = number(g[2] ?: g[3] ?: g[5])?.takeIf { it > 0 } ?: return null
+        val word = g[7]?.lowercase() ?: return null
+        val symbol = g[1] ?: g[4] ?: ""
+        val r = region?.uppercase() ?: ""
+        var rate = g[6]?.toDoubleOrNull()
+        if (rate == null && word != "tax") {
+            rate = when {
+                word == "gst" -> if (symbol.isEmpty() || symbol == "$") gstRates[r] else null
+                symbol == "£" -> 20.0
+                symbol == "€" -> if (r in euroRegions) vatRates[r] else null
+                symbol.isEmpty() -> vatRates[r]
+                else -> null
+            }
+        }
+        if (rate == null || rate <= 0 || rate >= 100) return null
+        val net = gross / (1 + rate / 100)
+        val label = mapOf("vat" to "VAT", "gst" to "GST", "mwst" to "MwSt", "tva" to "TVA", "iva" to "IVA", "btw" to "BTW")[word] ?: word
+        return Conversions(g[0]!!.trim(), listOf("${billMoney(net, symbol)} + ${billMoney(gross - net, symbol)} $label"))
+    }
+
+    /** "$12.99 for 24" → $0.54 each; "3 for $10" → $3.33 each; "₹300 for
+     *  5 kg" → ₹60/kg; "$4 for 500 g" → $8/kg · $0.80/100 g. A price is
+     *  needed: "table for 4" is a booking. */
+    fun unitPrice(text: String): Conversions? {
+        val weights = """(kg|kgs|g|gm|gms|grams?|lbs?|pounds?|oz|l|litres?|liters?|ml)"""
+        var price: Double? = null
+        var quantity: Double? = null
+        var unit: String? = null
+        var symbol = ""
+        var source = ""
+        val a = firstMatch("""([$€£₹¥])\s?$AMT\s+(?:for|per)\s+(\d+(?:\.\d+)?)\s*$weights$END""", text)
+        val b = if (a == null) firstMatch("""(?<![\w.,])(\d+(?:\.\d+)?)\s*$weights\s+for\s+([$€£₹¥])\s?$AMT$END""", text) else null
+        val c = if (a == null && b == null) firstMatch("""([$€£₹¥])\s?$AMT\s+for\s+(?:a\s+)?(\d{1,4}|dozen|pair)\s*(?:pack|pk|pcs|pieces|count|ct|items|units|cans|bottles)?$END""", text) else null
+        val d = if (a == null && b == null && c == null) firstMatch("""(?<![\w.,$€£₹¥])(\d{1,4})\s+for\s+([$€£₹¥])\s?$AMT$END""", text) else null
+        when {
+            a != null -> { symbol = a[1] ?: ""; price = number(a[2]); quantity = a[3]?.toDoubleOrNull(); unit = a[4]; source = a[0]!!.trim() }
+            b != null -> { symbol = b[3] ?: ""; price = number(b[4]); quantity = b[1]?.toDoubleOrNull(); unit = b[2]; source = b[0]!!.trim() }
+            c != null -> {
+                val q = c[3]!!.lowercase()
+                symbol = c[1] ?: ""; price = number(c[2])
+                quantity = if (q == "dozen") 12.0 else if (q == "pair") 2.0 else q.toDoubleOrNull()
+                source = c[0]!!.trim()
+            }
+            d != null -> { symbol = d[2] ?: ""; price = number(d[3]); quantity = d[1]?.toDoubleOrNull(); source = d[0]!!.trim() }
+        }
+        val p = price?.takeIf { it > 0 } ?: return null
+        val q = quantity?.takeIf { it > 0 } ?: return null
+        fun per(amount: Double, label: String) = "${billMoney(p / amount, symbol)}$label"
+        val u = unit?.lowercase()
+        if (u == null) {
+            if (q < 2 || p / q < 0.01) return null
+            return Conversions(source, listOf(per(q, " each")))
+        }
+        val results = when (u) {
+            "kg", "kgs" -> listOf(per(q, "/kg"))
+            "g", "gm", "gms", "gram", "grams" -> listOf(per(q / 1000, "/kg"), per(q / 100, "/100 g"))
+            "lb", "lbs", "pound", "pounds" -> listOf(per(q, "/lb"), per(q * 0.45359237, "/kg"))
+            "oz" -> listOf(per(q, "/oz"), per(q * 28.349523125 / 100, "/100 g"))
+            "ml" -> listOf(per(q / 1000, "/L"), per(q / 100, "/100 ml"))
+            else -> listOf(per(q, "/L"))
+        }
+        return Conversions(source, results)
+    }
+
+    /** "+37.5%", "-20%": one decimal at most. */
+    private fun percentChange(p: Double) = (if (p > 0) "+" else "-") + oneDecimal(kotlin.math.abs(p)) + "%"
+
+    /** "went from $40 to $55" → +37.5% · +$15; "followers jumped from 1.2k
+     *  to 3k" → +150%. A change needs its verb, or money on both sides:
+     *  "from 9 to 5" is a working day. */
+    fun change(text: String): Conversions? {
+        val side = """([$€£₹¥])?\s?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(k|m)?"""
+        val verbs = """(?:went|gone|grew|grown|rose|risen|jumped|dropped|fell|fallen|increased|decreased|climbed|raised|cut|surged|slipped|declined|spiked|up|down)"""
+        val g = firstMatch("""\b$verbs\s+(?:from\s+)?$side\s+to\s+$side$END""", text)
+            ?: firstMatch("""\bfrom\s+([$€£₹¥])\s?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(k|m)?\s+to\s+$side$END""", text)
+            ?: return null
+        fun scale(s: String?) = when (s?.lowercase()) { "k" -> 1e3; "m" -> 1e6; else -> 1.0 }
+        val a = (number(g[2]) ?: return null) * scale(g[3])
+        val b = (number(g[5]) ?: return null) * scale(g[6])
+        if (a <= 0 || a == b) return null
+        val results = mutableListOf(percentChange((b - a) / a * 100))
+        (g[1] ?: g[4])?.let { s -> results += (if (b > a) "+" else "-") + billMoney(kotlin.math.abs(b - a), s) }
+        return Conversions(g[0]!!.trim(), results)
+    }
+
+    /** "aspect ratio 1920x1080" → 16:9; "2560x1080 ratio" → ≈21:9. The
+     *  word is needed: "10x20 cm" is a size. */
+    fun ratio(text: String): Conversions? {
+        val g = firstMatch("""\b(?:aspect(?:\s+ratio)?|ratio|resolution|res)\s*(?:of\s+|is\s+|:\s*|=\s*)?(\d{1,5})\s*[x×:]\s*(\d{1,5})$END""", text)
+            ?: firstMatch("""(?<![\w.])(\d{1,5})\s*[x×]\s*(\d{1,5})\s+(?:aspect(?:\s+ratio)?|ratio|resolution)$END""", text)
+            ?: return null
+        val a = g[1]?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+        val b = g[2]?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+        tailrec fun gcd(x: Int, y: Int): Int = if (y == 0) x else gcd(y, x % y)
+        val d = gcd(a, b)
+        val x = a / d
+        val y = b / d
+        val said = when {
+            x == 8 && y == 5 -> "16:10"
+            x == 5 && y == 8 -> "10:16"
+            x <= 21 && y <= 21 -> if (x == a && y == b) return null else "$x:$y"
+            else -> {
+                val value = a.toDouble() / b
+                val named = listOf(1 to 1, 5 to 4, 4 to 3, 3 to 2, 16 to 10, 16 to 9, 2 to 1, 21 to 9, 32 to 9,
+                    4 to 5, 3 to 4, 2 to 3, 10 to 16, 9 to 16, 9 to 21)
+                val near = named.minByOrNull { kotlin.math.abs(it.first.toDouble() / it.second - value) }!!
+                when {
+                    kotlin.math.abs(near.first.toDouble() / near.second - value) / value < 0.03 -> "≈${near.first}:${near.second}"
+                    value >= 1 -> String.format(java.util.Locale.US, "%.2f:1", value)
+                    else -> String.format(java.util.Locale.US, "1:%.2f", 1 / value)
+                }
+            }
+        }
+        return Conversions(g[0]!!.trim(), listOf(said))
+    }
+
+    /** Grams in a US cup, from King Arthur Baking's ingredient weight chart. */
+    private val cupGrams = mapOf(
+        "all-purpose flour" to 120.0, "all purpose flour" to 120.0, "plain flour" to 120.0, "ap flour" to 120.0,
+        "bread flour" to 120.0, "cake flour" to 120.0, "self-raising flour" to 120.0, "self raising flour" to 120.0,
+        "self-rising flour" to 120.0, "flour" to 120.0, "maida" to 120.0, "whole wheat flour" to 113.0,
+        "wholemeal flour" to 113.0, "atta" to 113.0, "almond flour" to 96.0, "almond meal" to 96.0, "semolina" to 163.0,
+        "rice flour" to 142.0, "cornmeal" to 138.0, "cornstarch" to 112.0, "corn starch" to 112.0, "cornflour" to 112.0,
+        "brown sugar" to 213.0, "powdered sugar" to 113.0, "icing sugar" to 113.0, "confectioners sugar" to 113.0,
+        "confectioners' sugar" to 113.0, "sugar" to 198.0, "caster sugar" to 198.0, "butter" to 226.8, "honey" to 336.0,
+        "maple syrup" to 312.0, "corn syrup" to 312.0, "molasses" to 340.0, "cocoa powder" to 84.0, "cocoa" to 84.0,
+        "oats" to 89.0, "rolled oats" to 89.0, "oatmeal" to 89.0, "rice" to 198.0, "quinoa" to 177.0,
+        "chocolate chips" to 170.0, "chocolate" to 170.0, "peanut butter" to 270.0, "cheese" to 113.0, "cheddar" to 113.0,
+        "mozzarella" to 113.0, "parmesan" to 100.0, "cream cheese" to 227.0, "sour cream" to 227.0, "yogurt" to 227.0,
+        "yoghurt" to 227.0, "ricotta" to 227.0, "raisins" to 149.0, "walnuts" to 113.0, "pecans" to 105.0,
+        "almonds" to 142.0, "coconut" to 85.0, "breadcrumbs" to 112.0, "bread crumbs" to 112.0, "salt" to 288.0,
+        "baking powder" to 192.0, "baking soda" to 288.0, "bicarbonate of soda" to 288.0, "yeast" to 144.0,
+        "banana" to 227.0, "pumpkin puree" to 227.0, "applesauce" to 255.0,
+    )
+    /** Poured by volume: millilitres say it best. */
+    private val pouredLiquids = setOf(
+        "milk", "water", "cream", "heavy cream", "whipping cream", "buttermilk", "oil", "olive oil", "vegetable oil",
+        "vinegar", "juice", "lemon juice", "lime juice", "orange juice", "stock", "broth", "wine", "coconut milk",
+        "vanilla", "vanilla extract", "soy sauce",
+    )
+    private const val KITCHEN_WORDS = """(?:(?:packed|sifted|softened|melted|unsalted|salted|granulated|white|light|dark|cold|warm|chopped|grated|shredded|mashed|dried|fresh|plain|raw|uncooked|dry|fine|ground|light\s+brown|dark\s+brown)\s+)*"""
+    private val ingredientNames: String by lazy {
+        (cupGrams.keys + pouredLiquids).sortedWith(compareByDescending<String> { it.length }.thenBy { it })
+            .joinToString("|") { Regex.escape(it) }
+    }
+
+    /** Gas marks with their oven temperatures in °C and °F. */
+    private val gasMarks = listOf(
+        Triple("¼", 110, 225), Triple("½", 120, 250), Triple("1", 140, 275), Triple("2", 150, 300), Triple("3", 170, 325),
+        Triple("4", 180, 350), Triple("5", 190, 375), Triple("6", 200, 400), Triple("7", 220, 425), Triple("8", 230, 450),
+        Triple("9", 240, 475),
+    )
+
+    /** Grams as a cook writes them: "240 g", "4 g", "1.5 g". */
+    private fun gramsText(g: Double) = if (g >= 10) "${Math.round(g)} g" else "${oneDecimal(g)} g"
+
+    /** "1⅔ cups", "¾ cup", "3 tbsp", "½ tsp": the nearest a cup measures. */
+    private fun cupsText(grams: Double, perCup: Double): String {
+        fun nice(x: Double): Pair<Int, String> {
+            val parts = listOf(0.0 to "", 0.25 to "¼", 1.0 / 3 to "⅓", 0.5 to "½", 2.0 / 3 to "⅔", 0.75 to "¾", 1.0 to "")
+            var whole = kotlin.math.floor(x).toInt()
+            val near = parts.minByOrNull { kotlin.math.abs(it.first - (x - whole)) }!!
+            if (near.first == 1.0) whole += 1
+            return whole to (if (near.first == 1.0) "" else near.second)
+        }
+        val cups = grams / perCup
+        val (wf, unit) = when {
+            cups >= 0.25 -> nice(cups) to "cup"
+            cups * 16 >= 1 -> nice(cups * 16) to "tbsp"
+            else -> nice(cups * 48) to "tsp"
+        }
+        val (w, f) = wf
+        val amount = (if (w > 0) "$w" else "") + f
+        val named = if (unit == "cup" && (w > 1 || (w == 1 && f.isNotEmpty()))) "cups" else unit
+        return "${amount.ifEmpty { "0" }} $named"
+    }
+
+    /** "2 cups flour" → 240 g · 8.47 oz (King Arthur's weights); "1 cup
+     *  milk" → 237 ml; in the US "200 g flour" → 1⅔ cups; "gas mark 4" →
+     *  180°C · 350°F; "bake at 350" → 180°C · gas mark 4. */
+    fun cooking(text: String, region: String?): Conversions? {
+        val units = """(cups?|c\.|tbsps?|tablespoons?|tbs|tbl|tsps?|teaspoons?|sticks?)"""
+        firstMatch("""(?<![\w.,/])$STRIP_AMOUNT\s*$units\s+(?:of\s+)?$KITCHEN_WORDS($ingredientNames)$END""", text)?.let { g ->
+            val n = g[1]?.let { amount(it) }?.takeIf { it > 0 } ?: return@let
+            val u = g[2]!!.lowercase()
+            val name = g[3]!!.lowercase()
+            val cups = when {
+                u.startsWith("c") -> n
+                u.startsWith("tb") || u.startsWith("tablespoon") -> n / 16
+                u.startsWith("ts") || u.startsWith("teaspoon") -> n / 48
+                name == "butter" -> n / 2
+                else -> return null
+            }
+            if (name in pouredLiquids) {
+                val ml = cups * 236.5882365
+                return Conversions(g[0]!!.trim(), listOf(if (ml < 1000) stripNamed(ml, "ml") else stripNamed(ml / 1000, "litre")))
+            }
+            val perCup = cupGrams[name] ?: return null
+            val grams = cups * perCup
+            return Conversions(g[0]!!.trim(), listOf(gramsText(grams), stripNamed(grams / 28.349523125, "oz")))
+        }
+        if (region.equals("US", ignoreCase = true)) {
+            firstMatch("""(?<![\w.,/])(\d+(?:\.\d+)?)\s*(g|gm|gms|grams?|kg|kgs)\s+(?:of\s+)?$KITCHEN_WORDS($ingredientNames)$END""", text)?.let { g ->
+                val n = g[1]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return@let
+                val perCup = cupGrams[g[3]!!.lowercase()] ?: return@let
+                val grams = if (g[2]!!.lowercase().startsWith("k")) n * 1000 else n
+                return Conversions(g[0]!!.trim(), listOf(cupsText(grams, perCup), stripNamed(grams / 28.349523125, "oz")))
+            }
+        }
+        firstMatch("""\bgas\s+mark\s+(1/4|1/2|¼|½|[1-9])$END""", text)?.let { g ->
+            val mark = g[1]!!.replace("1/4", "¼").replace("1/2", "½")
+            val gm = gasMarks.firstOrNull { it.first == mark } ?: return null
+            return Conversions(g[0]!!.trim(), listOf("${gm.second}°C", "${gm.third}°F"))
+        }
+        val g = firstMatch("""\b(?:oven|bake|baking|preheat(?:\s+(?:the\s+)?oven)?|roast|roasting)\s+(?:it\s+)?(?:at|to|on)\s+(\d{2,3})\s*(?:degrees?|deg|°)?$END""", text)
+            ?: return null
+        val v = g[1]?.toIntOrNull() ?: return null
+        // 300 and up is Fahrenheit, 250 and under Celsius; between, the
+        // scale the phone's country bakes in.
+        val fahrenheit = v >= 300 || (v > 250 && (region?.uppercase() ?: "") in setOf("US", "BS", "BZ", "KY", "PR", "PW"))
+        fun five(x: Double) = (Math.round(x / 5) * 5).toInt()
+        if (fahrenheit) {
+            if (v > 550) return null
+            val gm = gasMarks.firstOrNull { it.third == v }
+            val c = gm?.second ?: five((v - 32) * 5.0 / 9)
+            return Conversions(g[0]!!.trim(), listOf("$c°C") + listOfNotNull(gm?.let { "gas mark ${it.first}" }))
+        }
+        if (v < 90) return null
+        val gm = gasMarks.firstOrNull { it.second == v }
+        val f = gm?.third ?: five(v * 9.0 / 5 + 32)
+        return Conversions(g[0]!!.trim(), listOf("$f°F") + listOfNotNull(gm?.let { "gas mark ${it.first}" }))
+    }
+
+    /** "30 mpg" → 7.84 L/100 km · 12.8 km/L; "6.5 L/100km" → 36.2 mpg;
+     *  "15 kmpl" → 35.3 mpg. Imperial gallons in Britain. */
+    fun fuel(text: String, region: String?): Conversions? {
+        val g = firstMatch("""(?<![\w.])(\d{1,3}(?:\.\d+)?)\s*(mpg|miles\s+per\s+gallon|l/100\s?km|l\s+per\s+100\s?km|lit(?:re|er)s?\s+per\s+100\s?km|km/l|kmpl|km\s+per\s+lit(?:re|er)|kpl)$END""", text)
+            ?: return null
+        val n = g[1]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val u = g[2]!!.lowercase()
+        val uk = region.equals("GB", ignoreCase = true)
+        val litresTimesMpg = if (uk) 282.480936 else 235.214583
+        val kmlPerMpg = if (uk) 0.35400619 else 0.42514371
+        val results = when {
+            u.startsWith("mpg") || u.startsWith("miles") ->
+                listOf("${stripNumber(litresTimesMpg / n)} L/100 km", "${stripNumber(n * kmlPerMpg)} km/L")
+            u.startsWith("l") -> listOf("${stripNumber(litresTimesMpg / n)} mpg", "${stripNumber(100 / n)} km/L")
+            else -> listOf("${stripNumber(n / kmlPerMpg)} mpg", "${stripNumber(100 / n)} L/100 km")
+        }
+        return Conversions(g[0]!!.trim(), results)
+    }
+
+    /** "5:15", "1:05:30": minutes and seconds, hours when there are some. */
+    private fun durationClock(seconds: Double): String {
+        val s = Math.round(seconds).toInt()
+        fun pad(n: Int) = if (n < 10) "0$n" else "$n"
+        return if (s >= 3600) "${s / 3600}:${pad(s % 3600 / 60)}:${pad(s % 60)}" else "${s / 60}:${pad(s % 60)}"
+    }
+
+    /** "ran 10k in 52:30" → 5:15 /km · 8:27 /mi; "half marathon in 1:45:00";
+     *  "rode 40 km in 1h 20m" → 30 km/h · 18.6 mph; "5:30/km" → 8:51 /mi ·
+     *  27:30 for 5k. A time is needed: "run 5k this morning" is a plan. */
+    fun pace(text: String): Conversions? {
+        val dist = """(half[\s-]?marathon|full\s+marathon|marathon|half|(\d{1,3}(?:\.\d+)?)\s*(k|km|kms|kilomet(?:er|re)s?|mi|miles?))"""
+        val time = """(?:(\d{1,2}):([0-5]\d)(?::([0-5]\d))?|(\d{1,3})\s*(?:min|mins|minutes)|(\d)\s*(?:h|hr|hrs|hours?)\s*(\d{1,2})\s*(?:m|min|mins)?)"""
+        firstMatch("""\b(?:(ran|run|running|did|finished|done|completed|walked|cycled|rode|biked)\s+)?(?:a\s+|the\s+|my\s+)?$dist\s+in\s+$time$END""", text)?.let { g ->
+            val d = g[2]!!.lowercase()
+            val km = when {
+                d.startsWith("half") -> 21.0975
+                "marathon" in d -> 42.195
+                else -> {
+                    val n = g[3]?.toDoubleOrNull() ?: return null
+                    if (g[4]!!.lowercase().startsWith("mi")) n * 1.609344 else n
+                }
+            }
+            if (km <= 0) return null
+            val riding = g[1]?.lowercase() in setOf("cycled", "rode", "biked")
+            val a = g[5]?.toDoubleOrNull()
+            val b = g[6]?.toDoubleOrNull()
+            val options = when {
+                a != null && b != null -> {
+                    val c = g[7]?.toDoubleOrNull()
+                    if (c != null) listOf(a * 3600 + b * 60 + c)
+                    else if (km >= 21 || riding) listOf(a * 3600 + b * 60, a * 60 + b) else listOf(a * 60 + b, a * 3600 + b * 60)
+                }
+                g[8] != null -> listOf(g[8]!!.toDouble() * 60)
+                g[9] != null && g[10] != null -> listOf(g[9]!!.toDouble() * 3600 + g[10]!!.toDouble() * 60)
+                else -> emptyList()
+            }
+            if (riding) {
+                val secs = options.firstOrNull { km / (it / 3600) in 5.0..80.0 } ?: return null
+                val kmh = km / (secs / 3600)
+                return Conversions(g[0]!!.trim(), listOf("${stripNumber(kmh)} km/h", "${stripNumber(kmh / 1.609344)} mph"))
+            }
+            val secs = options.firstOrNull { it / km in 120.0..1200.0 } ?: return null
+            return Conversions(g[0]!!.trim(), listOf(durationClock(secs / km) + " /km", durationClock(secs / km * 1.609344) + " /mi"))
+        }
+        val g = firstMatch("""(?<![\d:])(\d{1,2}):([0-5]\d)\s*(?:/\s*|per\s+|a\s+)(km|k|kilomet(?:er|re)s?|mi|miles?)$END""", text) ?: return null
+        val m = g[1]?.toDoubleOrNull() ?: return null
+        val s = g[2]?.toDoubleOrNull() ?: return null
+        val mile = g[3]!!.lowercase().startsWith("mi")
+        val perKm = if (mile) (m * 60 + s) / 1.609344 else m * 60 + s
+        if (perKm < 120 || perKm > 1200) return null
+        val other = if (mile) durationClock(perKm) + " /km" else durationClock(perKm * 1.609344) + " /mi"
+        return Conversions(g[0]!!.trim(), listOf(other, durationClock(perKm * 5) + " for 5k"))
+    }
+
+    /** "12 s", "6 min 16 s", "1 h 23 min", "2 days 3 h". */
+    private fun durationWords(seconds: Double): String {
+        val s = Math.round(seconds).toInt()
+        if (s < 60) return "$s s"
+        if (s < 3600) return if (s % 60 == 0) "${s / 60} min" else "${s / 60} min ${s % 60} s"
+        val minutes = Math.round(seconds / 60).toInt()
+        if (minutes < 1440) return if (minutes % 60 == 0) "${minutes / 60} h" else "${minutes / 60} h ${minutes % 60} min"
+        val hours = Math.round(seconds / 3600).toInt()
+        return "${hours / 24} day${if (hours / 24 == 1) "" else "s"}" + (if (hours % 24 > 0) " ${hours % 24} h" else "")
+    }
+
+    /** "4.7 GB at 100 Mbps" → ≈ 6 min 16 s. "Mbps" and "Mb/s" are bits,
+     *  "MB/s" and "MBps" bytes (and "mb/s", as download managers write it). */
+    fun download(text: String): Conversions? {
+        val g = firstMatch("""(?<![\w.])(\d+(?:\.\d+)?)\s*(kb|mb|gb|tb)\s+(?:at|@|on|with|over|via)\s+(\d+(?:\.\d+)?)\s*(kbps|mbps|gbps|kb/s|mb/s|gb/s|kbit/s|mbit/s|gbit/s)$END""", text)
+            ?: return null
+        val size = g[1]?.toDoubleOrNull() ?: return null
+        val speed = g[3]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val speedUnit = g[4] ?: return null
+        if (speedUnit.length < 4) return null
+        val bytes = size * (mapOf("kb" to 1e3, "mb" to 1e6, "gb" to 1e9, "tb" to 1e12)[g[2]!!.lowercase()] ?: 1.0)
+        val scale = when (speedUnit[0].lowercaseChar()) { 'k' -> 1e3; 'm' -> 1e6; else -> 1e9 }
+        val inBytes = "bit" !in speedUnit.lowercase() &&
+            (speedUnit[1] == 'B' || (speedUnit.endsWith("/s") && speedUnit == speedUnit.lowercase()))
+        val seconds = bytes * 8 / (speed * scale * (if (inBytes) 8 else 1))
+        if (seconds < 1 || seconds >= 30 * 86400) return null
+        return Conversions(g[0]!!.trim(), listOf("≈ " + durationWords(seconds)))
+    }
+
+    /** A shorthand's text with its blanks filled, as Raycast's snippets
+     *  have them: {date}, {date+2d}, {date-1w}, {tomorrow}, {yesterday},
+     *  {time}, {day}, {clipboard} and {cursor}, where typing goes on (the
+     *  first one). The second is how far before the end the cursor ends, in
+     *  UTF-16 units. A blank it doesn't know stays. */
+    fun fillIn(template: String, now: java.time.Instant = java.time.Instant.now(),
+               here: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+               region: String? = java.util.Locale.getDefault().country,
+               clipboard: () -> String? = { null }): Pair<String, Int> {
+        if ('{' !in template) return template to 0
+        val re = Regex("""\{\s*(date|time|day|tomorrow|yesterday|clipboard|cursor)(?:\s*([+-])\s*(\d{1,3})\s*([dw]))?\s*\}""",
+            RegexOption.IGNORE_CASE)
+        val at = now.atZone(here)
+        val today = at.toLocalDate()
+        val out = StringBuilder()
+        var cursor = -1
+        var last = 0
+        for (m in re.findAll(template)) {
+            out.append(template, last, m.range.first)
+            last = m.range.last + 1
+            val g = m.groups
+            when (val name = g[1]!!.value.lowercase()) {
+                "cursor" -> if (cursor < 0) cursor = out.length
+                "clipboard" -> out.append(clipboard() ?: "")
+                "time" -> out.append(java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.US).format(at).replace('\u202F', ' '))
+                "day" -> out.append(java.time.format.DateTimeFormatter.ofPattern("EEEE", java.util.Locale.US).format(at))
+                else -> {
+                    var days = if (name == "tomorrow") 1L else if (name == "yesterday") -1L else 0L
+                    g[3]?.value?.toLongOrNull()?.let { n ->
+                        days += (if (g[2]?.value == "-") -1 else 1) * n * (if (g[4]?.value?.lowercase() == "w") 7 else 1)
+                    }
+                    out.append(dayName(today.plusDays(days), today, region))
+                }
+            }
+        }
+        out.append(template, last, template.length)
+        val text = out.toString()
+        return text to (if (cursor < 0) 0 else text.length - cursor)
+    }
+
+    /** The keyboard's draw for the next coin, die or pick: the same until
+     *  one is used, so the answer can't change under the finger. */
+    var luck: ULong = kotlin.random.Random.nextLong().toULong() or 1UL
+
+    /** A number below n from what was asked and the draw (FNV-1a, then
+     *  SplitMix64: the same on both keyboards). */
+    fun lucky(asked: String, n: Int, salt: ULong = 0UL): Int {
+        var h = 0xcbf29ce484222325UL
+        for (b in asked.lowercase().toByteArray(Charsets.UTF_8)) h = (h xor (b.toULong() and 0xFFUL)) * 0x100000001b3UL
+        var z = (h xor luck xor salt) + 0x9E3779B97F4A7C15UL
+        z = (z xor (z shr 30)) * 0xBF58476D1CE4E5B9UL
+        z = (z xor (z shr 27)) * 0x94D049BB133111EBUL
+        z = z xor (z shr 31)
+        return (z % n.toULong()).toInt()
+    }
+
+    /** "flip a coin" → 🪙 Heads; "roll a die" → 🎲 4, "roll two dice" →
+     *  🎲 3 + 5 = 8, "roll a d20"; "pick a number between 1 and 10" → 🎲 7;
+     *  "pick one: pizza, sushi or tacos" → 🎯 sushi; rock, paper, scissors.
+     *  A tap adds it after; the next draw is new. */
+    fun luckAnswer(text: String): Conversions? {
+        fun said(g: List<String?>, result: String) = Conversions(g[0]!!.trim(), listOf(result), hows = listOf(Insertion.AFTER))
+        firstMatch("""\b(?:flip\s+a\s+coin|coin\s+(?:flip|toss)|toss\s+a\s+coin|heads\s+or\s+tails)$END""", text)?.let {
+            return said(it, if (lucky("coin", 2) == 0) "🪙 Heads" else "🪙 Tails")
+        }
+        firstMatch("""\b(?:rock\s*,?\s*paper\s*,?\s*(?:or\s+|and\s+)?scissors|rps)$END""", text)?.let {
+            return said(it, listOf("✊ Rock", "✋ Paper", "✌️ Scissors")[lucky("rps", 3)])
+        }
+        firstMatch("""\broll\s+(?:(a|an|one|the|two|three|1|2|3)\s+)?(?:dice|die|d(4|6|8|10|12|20|100))$END""", text)?.let { g ->
+            val count = mapOf("two" to 2, "2" to 2, "three" to 3, "3" to 3)[g[1]?.lowercase()] ?: 1
+            val sides = g[2]?.toIntOrNull() ?: 6
+            val rolls = (0 until count).map { lucky("die", sides, it.toULong()) + 1 }
+            return said(g, "🎲 " + if (count == 1) "${rolls[0]}" else rolls.joinToString(" + ") + " = ${rolls.sum()}")
+        }
+        (firstMatch("""\b(?:pick|choose|give\s+me|random)\s+(?:a\s+)?(?:random\s+)?number\s+(?:between|from)\s+(-?\d{1,6})\s+(?:and|to|-)\s+(-?\d{1,6})$END""", text)
+            ?: firstMatch("""\brandom\s+number\s+(-?\d{1,6})\s*(?:-|to)\s*(-?\d{1,6})$END""", text))?.let { g ->
+            val a = g[1]?.toIntOrNull() ?: return@let
+            val b = g[2]?.toIntOrNull() ?: return@let
+            if (a == b) return@let
+            val lo = minOf(a, b)
+            val hi = maxOf(a, b)
+            return said(g, "🎲 ${lo + lucky("number $lo $hi", hi - lo + 1)}")
+        }
+        val g = firstMatch("""\b(?:pick|choose)\s+(?:one|1|for\s+me|from|between|among)\s*[:\-–]?\s*(.+?)$END""", text)
+            ?: firstMatch("""\bdecide\s+between\s+(.+?)$END""", text) ?: return null
+        val items = (g[1] ?: return null).replace(Regex("""\s*(?:,|/|\bor\b|\band\b|\bvs\.?)\s*""", RegexOption.IGNORE_CASE), "\n")
+            .split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        if (items.size < 2 || items.size > 8 || items.any { it.length > 40 || it.split(" ").size > 5 }) return null
+        return said(g, "🎯 " + items[lucky(items.joinToString("|"), items.size)])
+    }
+
     // MARK: styled text, the g menu's Style (Smart.swift twin)
 
     /** The g menu's Style (Arpit, 2026-10-03: "option to stylise text in glyf
@@ -2175,11 +3344,17 @@ object Smart {
      *  not formatting. Screen readers read some letter by letter, so Plain
      *  puts text back. shared/style/cases.json. */
     enum class TextStyle(val id: String, val title: String, val upper: Int = 0, val lower: Int = 0, val digit: Int? = null) {
+        // Bold to strikethrough first (what Arpit asked for), then the case
+        // changes people reach for most, then the fancier letters; Plain last.
         BOLD("bold", "Bold", 0x1D5D4, 0x1D5EE, 0x1D7EC),
         ITALIC("italic", "Italic", 0x1D608, 0x1D622),
         BOLD_ITALIC("boldItalic", "Bold italic", 0x1D63C, 0x1D656, 0x1D7EC),
         UNDERLINE("underline", "Underline"),
         STRIKE("strike", "Strikethrough"),
+        UPPER("upper", "UPPERCASE"),
+        LOWER("lower", "lowercase"),
+        TITLE_CASE("titleCase", "Title Case"),
+        SENTENCE_CASE("sentenceCase", "Sentence case"),
         SERIF_BOLD("serifBold", "Serif bold", 0x1D400, 0x1D41A, 0x1D7CE),
         SCRIPT("script", "Script", 0x1D4D0, 0x1D4EA),
         DOUBLE_STRUCK("doubleStruck", "Double-struck", 0x1D538, 0x1D552, 0x1D7D8),
@@ -2231,6 +3406,9 @@ object Smart {
         fun ascii(s: String): Int? = if (s.length == 1 && s[0].code < 0x80) s[0].code else null
         return when (style) {
             TextStyle.PLAIN -> base
+            TextStyle.UPPER -> base.uppercase()
+            TextStyle.LOWER -> base.lowercase()
+            TextStyle.TITLE_CASE, TextStyle.SENTENCE_CASE -> recased(base, title = style == TextStyle.TITLE_CASE)
             TextStyle.UNDERLINE, TextStyle.STRIKE -> {
                 val mark = if (style == TextStyle.UNDERLINE) "̲" else "̶"
                 g.joinToString("") { if (it == "\n") "\n" else it + mark }
@@ -2264,6 +3442,65 @@ object Smart {
                 }
             }
         }
+    }
+
+    /** Words that stay small inside a title. */
+    private val smallWords = setOf("a", "an", "the", "and", "but", "or", "nor", "for", "so", "yet", "on",
+        "at", "to", "by", "of", "in", "up", "as", "is", "vs", "via", "per")
+
+    /** The first letter in capitals: "(hello" → "(Hello". */
+    private fun capitalised(w: String): String {
+        val i = w.indexOfFirst { it.isLetter() }
+        if (i < 0) return w
+        return w.substring(0, i) + w[i].uppercase() + w.substring(i + 1)
+    }
+
+    /** Title Case ("The Lord of the Rings": small words stay small inside)
+     *  or Sentence case (a capital to start each sentence, and for "I").
+     *  A word in capitals ("NASA") stays as it is, unless the whole text
+     *  was in capitals: then it was caps lock. */
+    fun recased(text: String, title: Boolean): String {
+        val letters = text.filter { it.isLetter() }
+        val shouting = letters.isNotEmpty() && letters.count { it.isUpperCase() }.toDouble() / letters.length >= 0.6
+        // Words and the space between them, in turn.
+        val tokens = mutableListOf<String>()
+        val current = StringBuilder()
+        var inSpace: Boolean? = null
+        for (ch in text) {
+            if (inSpace != null && inSpace != ch.isWhitespace()) { tokens.add(current.toString()); current.clear() }
+            current.append(ch)
+            inSpace = ch.isWhitespace()
+        }
+        if (current.isNotEmpty()) tokens.add(current.toString())
+        val words = tokens.indices.filter { !tokens[it][0].isWhitespace() }
+        var startsSentence = true
+        val out = StringBuilder()
+        for ((i, token) in tokens.withIndex()) {
+            if (token[0].isWhitespace()) {
+                if ('\n' in token) startsSentence = true
+                out.append(token)
+                continue
+            }
+            val acronym = !shouting && token.length > 1 && token == token.uppercase() && token != token.lowercase()
+            val lower = token.lowercase()
+            var word = when {
+                acronym -> token
+                title -> if (i != words.first() && i != words.last() && lower in smallWords) lower else capitalised(lower)
+                startsSentence || lower == "i" || lower.startsWith("i'") -> capitalised(lower)
+                else -> lower
+            }
+            if (title && startsSentence) word = capitalised(word)
+            out.append(word)
+            startsSentence = token.last() in ".!?"
+        }
+        return out.toString()
+    }
+
+    /** "12 words · 64 characters": what the Style screen says of the text. */
+    fun textCount(text: String): String {
+        val words = text.split(Regex("""\s+""")).count { it.isNotEmpty() }
+        val characters = graphemes(text).size
+        return "$words word${if (words == 1) "" else "s"} · $characters character${if (characters == 1) "" else "s"}"
     }
 
     /** Styled text back to plain letters (Smart.swift's plainText): marks

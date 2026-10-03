@@ -1,5 +1,5 @@
 {
- "about": "What the strip works out from how a message ends (Smart.quickAnswer on both keyboards): bills (split, tip, discount, tax), when someone will be there, a span of minutes, a date in words, a bare temperature on the phone's own scale, a time in a city, shortcuts (;date), number bases and Roman numerals, colours, parcel and flight links, phone numbers, Unix and ISO times, big and short numbers. \"inserts\" (when given) is what each chip puts in; \"how\" (when given) is bracket, after or replace. \"now\" and \"here\" (the phone's zone) fixed per case; \"results\" in order; [] means no chip.",
+ "about": "What the strip works out from how a message ends (Smart.quickAnswer on both keyboards): bills (split, tip, discount, tax, tax inside a price), unit prices, changes and ratios, pay, loans and growth, when someone will be there, spans and sums on the clock, every few hours, a date in words (and how far off), holidays and countdowns, working days, ISO weeks, ages and time since, a bare temperature on the phone's own scale, a time in a city, shortcuts (;date) and faces (/shrug), symbols (->), numbers in words, number bases and Roman numerals, colours, parcel and flight links, phone numbers, Unix and ISO times, big and short numbers, recipes by weight and oven temperatures, fuel economy, running pace, download times, a coin, a die or a pick, and links without their trackers. \"inserts\" (when given) is what each chip puts in; \"how\" (when given) is bracket, after or replace; \"luck\" (when given) is the keyboard's draw for a coin, a die or a pick. \"now\" and \"here\" (the phone's zone) fixed per case; \"results\" in order; [] means no chip.",
  "cases": [
   {
    "text": "split 120 4 ways",
@@ -309,7 +309,8 @@
    "here": "Asia/Kolkata",
    "region": "IN",
    "results": [
-    "Wed 14 Oct"
+    "Wed 14 Oct",
+    "in 11 days"
    ]
   },
   {
@@ -318,7 +319,8 @@
    "here": "Asia/Kolkata",
    "region": "IN",
    "results": [
-    "Mon 2 Nov"
+    "Mon 2 Nov",
+    "in 30 days"
    ]
   },
   {
@@ -327,7 +329,8 @@
    "here": "Asia/Kolkata",
    "region": "IN",
    "results": [
-    "Sat 31 Oct"
+    "Sat 31 Oct",
+    "in 28 days"
    ]
   },
   {
@@ -336,7 +339,8 @@
    "here": "Asia/Kolkata",
    "region": "IN",
    "results": [
-    "Wed 14 Oct"
+    "Wed 14 Oct",
+    "in 11 days"
    ]
   },
   {
@@ -345,7 +349,8 @@
    "here": "Asia/Kolkata",
    "region": "IN",
    "results": [
-    "Wed 14 Oct"
+    "Wed 14 Oct",
+    "in 11 days"
    ]
   },
   {
@@ -354,7 +359,8 @@
    "here": "Asia/Kolkata",
    "region": "IN",
    "results": [
-    "Tue 5 Jan 2027"
+    "Tue 5 Jan 2027",
+    "in 94 days"
    ]
   },
   {
@@ -1069,6 +1075,1430 @@
     "rgb(255, 0, 0)",
     "hsl(0, 100%, 50%)"
    ]
+  },
+  {
+   "text": "check this https://youtu.be/dQw4w9WgXcQ?si=AbCdEf123",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Remove tracking"
+   ],
+   "inserts": [
+    "https://youtu.be/dQw4w9WgXcQ"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s&si=xyz",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Remove tracking"
+   ],
+   "inserts": [
+    "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "https://www.youtube.com/watch?v=abc&feature=shared",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Remove tracking"
+   ],
+   "inserts": [
+    "https://www.youtube.com/watch?v=abc"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "https://www.instagram.com/reel/C9abc/?igsh=MWQ1ZGUxMzBkMA==",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Remove tracking"
+   ],
+   "inserts": [
+    "https://www.instagram.com/reel/C9abc/"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "https://example.com/post?utm_source=newsletter&utm_medium=email&id=7",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Remove tracking"
+   ],
+   "inserts": [
+    "https://example.com/post?id=7"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=a1b2c3d4",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Remove tracking"
+   ],
+   "inserts": [
+    "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "https://x.com/user/status/1234567890?s=20&t=abc123",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Remove tracking"
+   ],
+   "inserts": [
+    "https://x.com/user/status/1234567890"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "https://www.amazon.com/Echo-Dot/dp/B09B8V1LZ3/ref=sr_1_3?crid=2X9&keywords=echo+dot&qid=1696&sr=8-3",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Remove tracking"
+   ],
+   "inserts": [
+    "https://www.amazon.com/Echo-Dot/dp/B09B8V1LZ3"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "see https://example.com/?fbclid=IwAR0abc#section",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Remove tracking"
+   ],
+   "inserts": [
+    "https://example.com/#section"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "https://example.com/join?ref=invite123",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "https://site.com/p/12345678",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "https://wa.me/14155550123",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "https://www.google.com/search?q=glyf",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "ource=newsletter&utm_medium=email",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "https://youtu.be/abc?si=xyz.",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "/shrug",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "¯\\_(ツ)_/¯"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "lol ;tableflip",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "(╯°□°）╯︵ ┻━┻"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "Shrug",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "¯\\_(ツ)_/¯"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "ok /lenny",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "( ͡° ͜ʖ ͡°)"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "cd /home",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "I shrug",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "home ->",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "→"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "5 +-",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "±"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "x !=",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "≠"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "Glyf(tm)",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "™"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "a <=>",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "⇔"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "miss u <3",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "wait -->",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "1,250 in words",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "One thousand two hundred fifty"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "$1,250.50 in words",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "One thousand two hundred fifty dollars and fifty cents"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "₹1,20,000 in words",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "One lakh twenty thousand rupees"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "12345678 in words",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "One crore twenty-three lakh forty-five thousand six hundred seventy-eight"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "21 in words",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Twenty-one"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "3.5 in words",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Three point five"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "1000000 in words",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "One million"
+   ],
+   "how": [
+    "replace"
+   ]
+  },
+  {
+   "text": "shift 9:30-5:15",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "7 h 45 min"
+   ]
+  },
+  {
+   "text": "9am to 5:30pm",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "8 h 30 min"
+   ]
+  },
+  {
+   "text": "10pm-6am",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "8 h"
+   ]
+  },
+  {
+   "text": "2-3pm",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "9am-5pm",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "8 h"
+   ]
+  },
+  {
+   "text": "10:15 to 12:45",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "2 h 30 min"
+   ]
+  },
+  {
+   "text": "working 9 to 5",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "3:45pm + 2h30",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "6:15 PM"
+   ]
+  },
+  {
+   "text": "9am plus 8 hours",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "5 PM"
+   ]
+  },
+  {
+   "text": "14:30 + 45 min",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/Berlin",
+   "region": "DE",
+   "results": [
+    "15:15"
+   ]
+  },
+  {
+   "text": "11pm + 3 hours",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "2 AM"
+   ]
+  },
+  {
+   "text": "every 8 hours from 7am",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "7 AM, 3 PM, 11 PM"
+   ]
+  },
+  {
+   "text": "every 6 hours starting at 9:30pm",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "9:30 PM, 3:30 AM, 9:30 AM, 3:30 PM"
+   ]
+  },
+  {
+   "text": "every 2 hours from 7am",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "after thanksgiving",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Thu, Nov 26",
+    "in 54 days"
+   ]
+  },
+  {
+   "text": "christmas party",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Fri 25 Dec",
+    "in 83 days"
+   ]
+  },
+  {
+   "text": "merry christmas",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "happy new year 2027",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "on diwali",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Sun 8 Nov",
+    "in 36 days"
+   ]
+  },
+  {
+   "text": "days until christmas",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "83 days",
+    "Fri, Dec 25"
+   ]
+  },
+  {
+   "text": "how many sleeps till christmas",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "83 sleeps",
+    "Fri 25 Dec"
+   ]
+  },
+  {
+   "text": "weeks until new year",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "12 weeks 6 days",
+    "Fri, Jan 1, 2027"
+   ]
+  },
+  {
+   "text": "days till dec 25",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "83 days",
+    "Fri 25 Dec"
+   ]
+  },
+  {
+   "text": "for mother's day",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "Sun 7 Mar 2027",
+    "in 155 days"
+   ]
+  },
+  {
+   "text": "for mother's day",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Sun, May 9, 2027",
+    "in 218 days"
+   ]
+  },
+  {
+   "text": "thanksgiving weekend",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/Toronto",
+   "region": "CA",
+   "results": [
+    "Mon 12 Oct",
+    "in 9 days"
+   ]
+  },
+  {
+   "text": "last christmas party",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "on black friday",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Fri, Nov 27",
+    "in 55 days"
+   ]
+  },
+  {
+   "text": "by easter",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Sun, Mar 28, 2027",
+    "in 176 days"
+   ]
+  },
+  {
+   "text": "10 working days from today",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Fri, Oct 16"
+   ]
+  },
+  {
+   "text": "in 5 business days",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "Fri 9 Oct"
+   ]
+  },
+  {
+   "text": "3-5 business days",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "2 working days",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Riyadh",
+   "region": "SA",
+   "results": [
+    "Mon 5 Oct"
+   ]
+  },
+  {
+   "text": "by cw 42",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "12–18 Oct"
+   ]
+  },
+  {
+   "text": "by cw 42",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "Oct 12–18"
+   ]
+  },
+  {
+   "text": "KW 40",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/Berlin",
+   "region": "DE",
+   "results": [
+    "28 Sep–4 Oct"
+   ]
+  },
+  {
+   "text": "calendar week 2",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "11–17 Jan 2027"
+   ]
+  },
+  {
+   "text": "week 3 of training",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "born 14 mar 1998",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "28 years old"
+   ]
+  },
+  {
+   "text": "born on 25/12/2000",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "25 years old"
+   ]
+  },
+  {
+   "text": "dob: 12/25/2000",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "25 years old"
+   ]
+  },
+  {
+   "text": "together since 12 june 2021",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "5 years 3 months"
+   ]
+  },
+  {
+   "text": "married since 2024-09-01",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "2 years 1 month"
+   ]
+  },
+  {
+   "text": "since 1 oct 2026",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "2 days"
+   ]
+  },
+  {
+   "text": "born in 1995",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "$45/hr",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$93,600/yr",
+    "$7,800/mo"
+   ]
+  },
+  {
+   "text": "$120k a year",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$57.69/hr",
+    "$10,000/mo"
+   ]
+  },
+  {
+   "text": "£45,000 per annum",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "£21.63/hr",
+    "£3,750/mo"
+   ]
+  },
+  {
+   "text": "18 LPA",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "₹1,50,000/mo",
+    "₹865/hr"
+   ]
+  },
+  {
+   "text": "she makes 25 an hour",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "52,000/yr",
+    "4,333/mo"
+   ]
+  },
+  {
+   "text": "earning 50k a month",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "$300k mortgage at 6.5% for 30 years",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$1,896/mo",
+    "$383k interest"
+   ]
+  },
+  {
+   "text": "50 lakh home loan @ 8.5% 20 years",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "₹43,391/mo",
+    "₹54.1 lakh interest"
+   ]
+  },
+  {
+   "text": "car loan of $25,000 at 5% for 60 months",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$472/mo",
+    "$3,307 interest"
+   ]
+  },
+  {
+   "text": "$10k at 7% for 10 years",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$19,672",
+    "+$9,672"
+   ]
+  },
+  {
+   "text": "£120 inc VAT",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "£100 + £20 VAT"
+   ]
+  },
+  {
+   "text": "€99 inkl. MwSt",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/Berlin",
+   "region": "DE",
+   "results": [
+    "€83.19 + €15.81 MwSt"
+   ]
+  },
+  {
+   "text": "₹1,180 incl 18% GST",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "₹1,000 + ₹180 GST"
+   ]
+  },
+  {
+   "text": "₹1,180 incl GST",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": []
+  },
+  {
+   "text": "$110 inc GST",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Australia/Sydney",
+   "region": "AU",
+   "results": [
+    "$100 + $10 GST"
+   ]
+  },
+  {
+   "text": "$120 inc tax",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "$12.99 for 24",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$0.54 each"
+   ]
+  },
+  {
+   "text": "3 for $10",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$3.33 each"
+   ]
+  },
+  {
+   "text": "₹300 for 5 kg",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "₹60/kg"
+   ]
+  },
+  {
+   "text": "$4 for 500 g",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$8/kg",
+    "$0.80/100 g"
+   ]
+  },
+  {
+   "text": "$5 for 2 lb",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$2.50/lb",
+    "$5.51/kg"
+   ]
+  },
+  {
+   "text": "$5 for a dozen",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "$0.42 each"
+   ]
+  },
+  {
+   "text": "table for 4",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "went from $40 to $55",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "+37.5%",
+    "+$15"
+   ]
+  },
+  {
+   "text": "dropped from 80 to 60",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "-25%"
+   ]
+  },
+  {
+   "text": "from $1.2k to $3k",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "+150%",
+    "+$1,800"
+   ]
+  },
+  {
+   "text": "from 9 to 5",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "aspect ratio 1920x1080",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "16:9"
+   ]
+  },
+  {
+   "text": "1920x1200 resolution",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "16:10"
+   ]
+  },
+  {
+   "text": "2560x1080 ratio",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "≈21:9"
+   ]
+  },
+  {
+   "text": "ratio 16:9",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "2 cups flour",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "240 g",
+    "8.47 oz"
+   ]
+  },
+  {
+   "text": "3/4 cup brown sugar",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "160 g",
+    "5.64 oz"
+   ]
+  },
+  {
+   "text": "1 stick butter",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "113 g",
+    "4 oz"
+   ]
+  },
+  {
+   "text": "2 tbsp butter",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "28 g",
+    "1 oz"
+   ]
+  },
+  {
+   "text": "1 tsp baking soda",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "6 g",
+    "0.212 oz"
+   ]
+  },
+  {
+   "text": "1 cup milk",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "237 ml"
+   ]
+  },
+  {
+   "text": "200 g flour",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "1⅔ cups",
+    "7.05 oz"
+   ]
+  },
+  {
+   "text": "200 g flour",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": []
+  },
+  {
+   "text": "gas mark 4",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "180°C",
+    "350°F"
+   ]
+  },
+  {
+   "text": "bake at 350",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "180°C",
+    "gas mark 4"
+   ]
+  },
+  {
+   "text": "preheat oven to 180",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "350°F",
+    "gas mark 4"
+   ]
+  },
+  {
+   "text": "bake at 375 degrees",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "190°C",
+    "gas mark 5"
+   ]
+  },
+  {
+   "text": "30 mpg",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "7.84 L/100 km",
+    "12.8 km/L"
+   ]
+  },
+  {
+   "text": "6.5 L/100km",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/Berlin",
+   "region": "DE",
+   "results": [
+    "36.2 mpg",
+    "15.4 km/L"
+   ]
+  },
+  {
+   "text": "15 kmpl",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "results": [
+    "35.3 mpg",
+    "6.67 L/100 km"
+   ]
+  },
+  {
+   "text": "40 mpg",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "7.06 L/100 km",
+    "14.2 km/L"
+   ]
+  },
+  {
+   "text": "ran 10k in 52:30",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "5:15 /km",
+    "8:27 /mi"
+   ]
+  },
+  {
+   "text": "half marathon in 1:45:00",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "4:59 /km",
+    "8:01 /mi"
+   ]
+  },
+  {
+   "text": "marathon in 3:30",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "4:59 /km",
+    "8:01 /mi"
+   ]
+  },
+  {
+   "text": "5k in 25 min",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "5:00 /km",
+    "8:03 /mi"
+   ]
+  },
+  {
+   "text": "run 5k this morning",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "5:30/km",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "8:51 /mi",
+    "27:30 for 5k"
+   ]
+  },
+  {
+   "text": "rode 40 km in 1h 20m",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "30 km/h",
+    "18.6 mph"
+   ]
+  },
+  {
+   "text": "4.7 GB at 100 Mbps",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "≈ 6 min 16 s"
+   ]
+  },
+  {
+   "text": "1 GB at 10 MB/s",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "≈ 1 min 40 s"
+   ]
+  },
+  {
+   "text": "50 GB at 20 mbps",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "≈ 5 h 33 min"
+   ]
+  },
+  {
+   "text": "flip a coin",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "🪙 Heads"
+   ],
+   "how": [
+    "after"
+   ],
+   "luck": "1"
+  },
+  {
+   "text": "rock paper scissors",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "✌️ Scissors"
+   ],
+   "how": [
+    "after"
+   ],
+   "luck": "1"
+  },
+  {
+   "text": "roll a die",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "🎲 4"
+   ],
+   "how": [
+    "after"
+   ],
+   "luck": "1"
+  },
+  {
+   "text": "roll two dice",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "🎲 4 + 1 = 5"
+   ],
+   "how": [
+    "after"
+   ],
+   "luck": "1"
+  },
+  {
+   "text": "roll a d20",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "🎲 4"
+   ],
+   "how": [
+    "after"
+   ],
+   "luck": "1"
+  },
+  {
+   "text": "pick a number between 1 and 10",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "🎲 3"
+   ],
+   "how": [
+    "after"
+   ],
+   "luck": "1"
+  },
+  {
+   "text": "pick one: pizza, sushi or tacos",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "🎯 tacos"
+   ],
+   "how": [
+    "after"
+   ],
+   "luck": "1"
+  },
+  {
+   "text": "pick me up at 7",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
   }
  ]
 }

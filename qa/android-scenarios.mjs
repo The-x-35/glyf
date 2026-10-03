@@ -1675,6 +1675,137 @@ scenarios.push(
   } },
 );
 
+// --- What launchers work out (Arpit, 2026-10-03: "find more things from raycast etc too") ---
+scenarios.push(
+  { id: "S226", title: "A link loses its trackers in one tap", run: async () => {
+    await fresh();
+    // Committed straight into the field, as S120's link: autocorrect would
+    // split a link typed key by key. `input text` drops a key now and then.
+    const want = "check https://youtu.be/abc123?si=xyz789";
+    let typed = "";
+    for (let i = 0; i < 4 && typed !== want; i++) {
+      if (i > 0) { tool("clear"); await sleep(500); }
+      shell("input text 'check%shttps://youtu.be/abc123?si=xyz789'");
+      typed = await waitText(x => x === want, 3000);
+    }
+    if (typed !== want) return { pass: false, note: `the link never arrived whole: '${typed}'` };
+    const chip = await waitFor(byId("strip:smart:choice:0"), 5000);
+    const s = await state();
+    const word = chip ? chipLabel(s, find(s, byId("strip:smart:choice:0"))).trim() : "";
+    await screenshot("S226-chip");
+    if (word !== "Remove tracking") return { pass: false, note: `chip '${word}'` };
+    const r = await tapFor(find(s, byId("strip:smart:choice:0")), x => !x.includes("si="));
+    return { pass: r.t.trim() === "check https://youtu.be/abc123", note: `chip '${word}'; tapped: '${r.t}'${second(r)}` };
+  } },
+  { id: "S227", title: "A face by its name: /shrug", run: async () => {
+    await fresh();
+    await type("ok /shrug");
+    const chip = await waitFor(byId("strip:smart:choice:0"), 4000);
+    if (!chip) return { pass: false, note: "no face chip" };
+    const s = await state();
+    const word = chipLabel(s, find(s, byId("strip:smart:choice:0"))).trim();
+    const r = await tapFor(find(s, byId("strip:smart:choice:0")), x => x.includes("ツ"));
+    return { pass: word === "¯\\_(ツ)_/¯" && r.t.trim().toLowerCase() === "ok ¯\\_(ツ)_/¯",
+      note: `chip '${word}'; tapped: '${r.t}'${second(r)}` };
+  } },
+  { id: "S228", title: "Cups of flour in grams", run: async () => {
+    await fresh();
+    await type("2 cups flour");
+    const chip = await waitFor(byId("strip:smart:choice:1"), 4000);
+    const s = await state();
+    const parts = ["strip:smart:choice:0", "strip:smart:choice:1"].map(id => find(s, byId(id)));
+    const words = parts.map(v => v ? chipLabel(s, v).trim() : "");
+    await screenshot("S228-chip");
+    if (!chip || !parts[0]) return { pass: false, note: `no weight chips; strip shows '${words.join(" | ")}'` };
+    const r = await tapFor(parts[0], x => x.includes("("));
+    return { pass: words[0] === "240 g" && words[1] === "8.47 oz" && r.t.trim().toLowerCase() === "2 cups flour (240 g)",
+      note: `chips '${words[0]}' | '${words[1]}'; tapped the first: '${r.t}'${second(r)}` };
+  } },
+  { id: "S229", title: "A shift on the clock, worked out", run: async () => {
+    await fresh();
+    await type("shift 9:30-5:15");
+    const chip = await waitFor(byId("strip:smart:choice:0"), 4000);
+    const s = await state();
+    const word = chip ? chipLabel(s, find(s, byId("strip:smart:choice:0"))).trim() : "";
+    return { pass: word === "7 h 45 min", note: `chip '${word}' for '${s.text}'` };
+  } },
+  { id: "S230", title: "A coin flipped from the strip", run: async () => {
+    await fresh();
+    await type("flip a coin");
+    const chip = await waitFor(byId("strip:smart:choice:0"), 4000);
+    if (!chip) return { pass: false, note: "no coin chip" };
+    const s = await state();
+    const word = chipLabel(s, find(s, byId("strip:smart:choice:0"))).trim();
+    const r = await tapFor(find(s, byId("strip:smart:choice:0")), x => x.includes("🪙"));
+    return { pass: ["🪙 Heads", "🪙 Tails"].includes(word) && r.t.trim().toLowerCase() === `flip a coin ${word}`.toLowerCase(),
+      note: `chip '${word}'; tapped: '${r.t}'${second(r)}` };
+  } },
+  { id: "S231", title: "Style: UPPERCASE, with the message's count", run: async () => {
+    await fresh();
+    await type("hello world");
+    let s = await state();
+    const g = find(s, byId("toolbar:glyf"));
+    if (!g) return { pass: false, note: "no g key" };
+    for (let i = 0; i < 3; i++) {
+      await tapXY(g.x, g.y);
+      if (await waitFor(v => (v.id || "").startsWith("shell:tile:"), 2500)) break;
+    }
+    const screenH = Number(shell("wm size").match(/(\d+)x(\d+)/)[2]);
+    let opened = false;
+    for (let i = 0; i < 6 && !opened; i++) {
+      s = await state();
+      const tile = find(s, byId("shell:tile:style"));
+      if (tile && tile.y + tile.h / 2 < screenH - 170) { await tapXY(tile.x, tile.y); opened = true; break; }
+      shell(`input swipe ${g.x + 200} ${screenH - 300} ${g.x + 200} ${screenH - 700} 300`);
+      await sleep(600);
+    }
+    if (!opened) return { pass: false, note: "no Style tile in the menu" };
+    // UPPERCASE sits under the styles: the panel is swiped up until it shows.
+    let upper = null;
+    for (let i = 0; i < 6 && !upper; i++) {
+      s = await state();
+      const row = find(s, byId("shell:style:upper"));
+      if (row && row.y + row.h / 2 < screenH - 170) { upper = row; break; }
+      shell(`input swipe ${g.x + 200} ${screenH - 300} ${g.x + 200} ${screenH - 700} 300`);
+      await sleep(600);
+    }
+    const count = s.views.map(v => v.text || "").find(t => t.includes("words ·")) || "";
+    await screenshot("S231-panel");
+    if (!upper) return { pass: false, note: `no UPPERCASE row (count '${count}')` };
+    const r = await tapFor(upper, x => x === "HELLO WORLD");
+    return { pass: r.t.trim() === "HELLO WORLD" && count === "2 words · 11 characters",
+      note: `count '${count}'; after UPPERCASE: '${r.t}'${second(r)}` };
+  } },
+  { id: "S232", title: "Shorthand with blanks: {day} filled in, {cursor} where typing goes on", run: async () => {
+    tool("snippet", "--es text ';s232=Today is {day}'");
+    tool("snippet", "--es text ';s232b=Hi {cursor}, thanks!'");
+    atEnd.push(() => { tool("snippet", "--es text ';s232='"); tool("snippet", "--es text ';s232b='"); });
+    await fresh();
+    const day = shell("date +%A").trim();
+    await type("ok ;s232 ");
+    const first = await waitText(x => x.toLowerCase().includes(`today is ${day.toLowerCase()}`), 3000);
+    await fresh();
+    await type(";s232b ");
+    await type("sam");
+    const second2 = await waitText(x => x.toLowerCase() === "hi sam, thanks!", 3000);
+    return { pass: first.toLowerCase().includes(`today is ${day.toLowerCase()}`) && !first.includes("{") &&
+        second2.toLowerCase() === "hi sam, thanks!",
+      note: `{day}: '${first}'; {cursor}: '${second2}'` };
+  } },
+  { id: "S233", title: "An hourly rate as a year and a month", run: async () => {
+    await fresh();
+    await type("$45/hr");
+    const chip = await waitFor(byId("strip:smart:choice:1"), 4000);
+    const s = await state();
+    const parts = ["strip:smart:choice:0", "strip:smart:choice:1"].map(id => find(s, byId(id)));
+    const words = parts.map(v => v ? chipLabel(s, v).trim() : "");
+    if (!chip || !parts[0]) return { pass: false, note: `no pay chips; strip shows '${words.join(" | ")}' for '${s.text}'` };
+    const r = await tapFor(parts[0], x => x.includes("("));
+    return { pass: words[0] === "$93,600/yr" && words[1] === "$7,800/mo" && r.t.trim() === "$45/hr ($93,600/yr)",
+      note: `chips '${words[0]}' | '${words[1]}'; tapped the first: '${r.t}'${second(r)}` };
+  } },
+);
+
 function chipLabel(s, chip) {
   if (chip.text) return chip.text;
   const inside = v => v !== chip && v.text && Math.abs(v.x - chip.x) <= chip.w / 2 && Math.abs(v.y - chip.y) <= chip.h / 2;

@@ -1,0 +1,94 @@
+{
+ "about": "A shorthand's blanks filled as it is typed out (Smart.fillIn on both keyboards): {date}, {date+2d}, {date-1w}, {tomorrow}, {yesterday}, {time}, {day}, {clipboard} (what was copied, \"clipboard\" here) and {cursor}, where typing goes on. \"back\" is how far before the end the cursor ends, in UTF-16 units. A blank the keyboard doesn't know stays as typed.",
+ "cases": [
+  {
+   "template": "Thanks! I'll send it by {date+2d}",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "text": "Thanks! I'll send it by Mon 5 Oct",
+   "back": 0,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "Meeting notes {date}\n{cursor}",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "text": "Meeting notes Sat 3 Oct\n",
+   "back": 0,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "Hi {cursor}, thanks for {clipboard}",
+   "here": "Asia/Kolkata",
+   "region": "IN",
+   "clipboard": "the deck",
+   "text": "Hi , thanks for the deck",
+   "back": 21,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "It's {time} on {day}",
+   "here": "America/New_York",
+   "region": "US",
+   "text": "It's 8:00 AM on Saturday",
+   "back": 0,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "see you {tomorrow}",
+   "here": "America/New_York",
+   "region": "US",
+   "text": "see you Sun, Oct 4",
+   "back": 0,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "due {date+1w}",
+   "here": "Europe/London",
+   "region": "GB",
+   "text": "due Sat 10 Oct",
+   "back": 0,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "back on {date-1d}",
+   "here": "Europe/London",
+   "region": "GB",
+   "text": "back on Fri 2 Oct",
+   "back": 0,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "{date+100d}",
+   "here": "America/New_York",
+   "region": "US",
+   "text": "Mon, Jan 11, 2027",
+   "back": 0,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "{Cursor} ✨ {clipboard}",
+   "here": "America/New_York",
+   "region": "US",
+   "text": " ✨ ",
+   "back": 3,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "{unknown} stays",
+   "here": "America/New_York",
+   "region": "US",
+   "text": "{unknown} stays",
+   "back": 0,
+   "now": "2026-10-03T12:00:00Z"
+  },
+  {
+   "template": "no blanks",
+   "here": "America/New_York",
+   "region": "US",
+   "text": "no blanks",
+   "back": 0,
+   "now": "2026-10-03T12:00:00Z"
+  }
+ ]
+}

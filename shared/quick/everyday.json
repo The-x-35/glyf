@@ -1,5 +1,5 @@
 {
- "about": "Everyday chat lines, each typed word by word, and every chip the strip's quick answers (Smart.quickAnswer) may show while they are: a measurement, a flight, a number in words. Anything else showing is a false alarm and fails the test on both keyboards. \"now\" and \"here\" fixed; each line checked after every word, with and without a space after it.",
+ "about": "Everyday chat lines, each typed word by word, and every chip the strip's quick answers (Smart.quickAnswer) may show while they are: a measurement or a recipe's, a flight, a number in words. Anything else showing is a false alarm and fails the test on both keyboards. \"now\" and \"here\" fixed; each line checked after every word, with and without a space after it.",
  "now": "2026-10-03T12:00:00Z",
  "here": "Asia/Kolkata",
  "lines": [
@@ -263,7 +263,8 @@
    "1 lakh rupees | at '1 lakh' | 1 lakh → 100,000",
    "1 crore views | at '1 crore' | 1 crore → 10,000,000 · 10 million",
    "10 million subscribers | at '10 million' | 10 million → 10,000,000",
-   "3 billion people | at '3 billion' | 3 billion → 3,000,000,000"
+   "3 billion people | at '3 billion' | 3 billion → 3,000,000,000",
+   "add 1 cup sugar | at 'add 1 cup sugar' | 1 cup sugar → 198 g · 6.98 oz"
   ],
   "IN": [
    "6 feet apart please | at '6 feet' | 6 feet → 1.83 m · 183 cm",
@@ -280,7 +281,8 @@
    "1 lakh rupees | at '1 lakh' | 1 lakh → 1,00,000",
    "1 crore views | at '1 crore' | 1 crore → 1,00,00,000 · 10 million",
    "10 million subscribers | at '10 million' | 10 million → 1,00,00,000 · 1 crore",
-   "3 billion people | at '3 billion' | 3 billion → 3,00,00,00,000 · 300 crore"
+   "3 billion people | at '3 billion' | 3 billion → 3,00,00,00,000 · 300 crore",
+   "add 1 cup sugar | at 'add 1 cup sugar' | 1 cup sugar → 198 g · 6.98 oz"
   ]
  }
 }

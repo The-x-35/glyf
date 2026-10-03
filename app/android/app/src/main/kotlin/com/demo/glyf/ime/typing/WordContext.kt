@@ -27,6 +27,16 @@ object WordContext {
         return sb.toString()
     }
 
+    /** Whether the word being typed is part of a link, an email or a
+     *  handle: the run since the last space has "://", "@" or "www." in it.
+     *  Nothing there is a word to correct or learn ("youtu" of youtu.be
+     *  became "youth"). */
+    fun insideLinkOrAddress(before: String?): Boolean {
+        if (before.isNullOrEmpty()) return false
+        val run = before.split(' ', '\n', '\t').last().lowercase()
+        return "://" in run || '@' in run || run.startsWith("www.")
+    }
+
     /** The word before the one being typed, nil across a sentence end. */
     fun previousWord(before: String?): String? {
         if (before.isNullOrEmpty()) return null

@@ -3,6 +3,8 @@ import UIKit
 protocol GlyfShellDelegate: AnyObject {
     func shellClosed()
     func shellInsertText(_ text: String)
+    /// A shorthand typed out, its blanks ({date}, {cursor}…) filled.
+    func shellInsertShorthand(_ text: String)
     /// Typed into the message with the panel left open (temp mail's
     /// Insert: its inbox is still being watched).
     func shellInsertTextStaying(_ text: String)
@@ -710,7 +712,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                 case .text(_, _, let insert):
                     self?.delegate?.shellInsertText(insert)
                 case .snippet(let s):
-                    self?.delegate?.shellInsertText(s.text)
+                    self?.delegate?.shellInsertShorthand(s.text)
                 case .note(let n):
                     self?.delegate?.shellInsertText(n.text)
                 case .kind(let k):
@@ -1020,8 +1022,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             // Each style shows what it makes of the words picked out, or of
             // the message so far, or of its own name when nothing is typed.
             let sample = styleSample.trimmingCharacters(in: .whitespacesAndNewlines)
-            var rows: [Row] = [.info(title: sample.isEmpty ? "Type something, then pick a style" : "Tap a style to restyle your text",
-                                     detail: nil)]
+            // How long it is, for a post or a bio with a limit.
+            var rows: [Row] = [.info(title: sample.isEmpty ? "Type something, then pick a style"
+                                         : "\(Smart.textCount(sample)) · tap a style", detail: nil)]
             for style in Smart.TextStyle.allCases {
                 let text = sample.isEmpty ? style.title : String(sample.prefix(40))
                 rows.append(.nav(icon: styleIcon(style), title: Smart.styled(text, style),
@@ -1061,6 +1064,10 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         case .wide: return "arrow.left.and.right"
         case .upsideDown: return "arrow.up.arrow.down"
         case .plain: return "textformat"
+        case .upper: return "textformat.size.larger"
+        case .lower: return "textformat.size.smaller"
+        case .titleCase: return "textformat.alt"
+        case .sentenceCase: return "text.alignleft"
         }
     }
 
@@ -1169,7 +1176,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         case .note(let note):
             delegate?.shellInsertText(note.text)
         case .snippet(_, let text):
-            delegate?.shellInsertText(text)
+            delegate?.shellInsertShorthand(text)
         case .vaultImage(let image):
             // No keyboard can type a picture into a host text box, so the
             // most a tap can do is put it back on the clipboard, ready for

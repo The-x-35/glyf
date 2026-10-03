@@ -26,6 +26,17 @@ enum WordTracker {
         return word
     }
 
+    /// Whether the word being typed is part of a link, an email or a
+    /// handle: the run since the last space has "://", "@" or "www." in it.
+    /// Nothing there is a word to correct or learn ("youtu" of youtu.be
+    /// became "youth").
+    static func insideLinkOrAddress(beforeContext: String?) -> Bool {
+        guard let ctx = beforeContext, !ctx.isEmpty else { return false }
+        let run = ctx.split(omittingEmptySubsequences: false, whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
+            .last.map { $0.lowercased() } ?? ""
+        return run.contains("://") || run.contains("@") || run.hasPrefix("www.")
+    }
+
     /// Should the next letter be auto-capitalized? True at text start and
     /// after sentence-ending punctuation + space(s).
     static func wantsCapital(beforeContext: String?) -> Bool {
