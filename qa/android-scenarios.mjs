@@ -627,12 +627,14 @@ const scenarios = [
     // typed key by key); the strip reads the message all the same.
     // `input text` drops a key now and then ("…/intr"): type it again.
     const want = "grab a time cal.com/sam-lee/intro";
-    for (let i = 0; i < 2; i++) {
+    let typed = "";
+    for (let i = 0; i < 4 && typed !== want; i++) {
+      if (i > 0) { tool("clear"); await sleep(500); }
       shell("input text 'grab%sa%stime%scal.com/sam-lee/intro'");
-      if ((await waitText(x => x === want, 3000)) === want) break;
-      tool("clear");
-      await sleep(500);
+      typed = await waitText(x => x === want, 3000);
     }
+    // Four tries that each dropped a key are the emulator's typing, not the chip.
+    if (typed !== want) return { pass: false, note: `the link never arrived whole: '${typed}'` };
     const chip = await waitFor(v => v.id === "strip:smart", 5000);
     const words = (await state()).views.map(v => v.text).find(t => /A time on/.test(t || "")) || "";
     if (!chip || !words) return { pass: false, note: `no Book chip (strip says '${words}')` };
