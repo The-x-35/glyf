@@ -270,6 +270,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         layout.minimumLineSpacing = 0
         layout.sectionInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 14)
         collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        collection.noEdgeEffects()
         collection.backgroundColor = Glass.touchableGrid
         collection.dataSource = self
         collection.delegate = self
@@ -297,6 +298,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
             return self.mode == .stickers ? 1 : self.feed.items[ip.item].aspect
         }
         mediaGrid = UICollectionView(frame: .zero, collectionViewLayout: masonry)
+        mediaGrid.noEdgeEffects()
         mediaGrid.backgroundColor = Glass.touchableGrid
         mediaGrid.dataSource = self
         mediaGrid.delegate = self
@@ -311,6 +313,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         emoticonLayout.minimumLineSpacing = 2
         emoticonLayout.sectionInset = UIEdgeInsets(top: 0, left: 8, bottom: 10, right: 8)
         emoticonGrid = UICollectionView(frame: .zero, collectionViewLayout: emoticonLayout)
+        emoticonGrid.noEdgeEffects()
         emoticonGrid.backgroundColor = Glass.touchableGrid
         emoticonGrid.dataSource = self
         emoticonGrid.delegate = self
@@ -362,6 +365,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         chipBar.showsHorizontalScrollIndicator = false
         chipBar.accessibilityIdentifier = "emoji:chips"
         chipFade.addSubview(chipBar)
+        chipBar.noEdgeEffects()
         chipFadeMask.startPoint = CGPoint(x: 0, y: 0.5)
         chipFadeMask.endPoint = CGPoint(x: 1, y: 0.5)
         chipFadeMask.colors = [UIColor.clear, .black, .black, .clear].map(\.cgColor)
@@ -370,6 +374,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         suggestionBar.showsHorizontalScrollIndicator = false
         suggestionBar.accessibilityIdentifier = "emoji:suggestions"
         addSubview(suggestionBar)
+        suggestionBar.noEdgeEffects()
 
         modeThumb.backgroundColor = Self.thumbColor
         modeBar.addSubview(modeThumb)

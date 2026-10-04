@@ -97,6 +97,7 @@ final class BookingSheet: UIView {
 
         scroll.showsVerticalScrollIndicator = false
         addSubview(scroll)
+        scroll.noEdgeEffects()
 
         status.font = .systemFont(ofSize: 14)
         status.textColor = Glass.textSecondary

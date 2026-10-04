@@ -612,6 +612,49 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertTrue(chip.label.contains(String(copied.prefix(12))), "strip offers '\(chip.label)'")
     }
 
+    /// S237: putting the copy chip away with its ✕ brings the tools back
+    /// sharp (a tester's iPhone 17 showed them blurred and faint after it,
+    /// 2026-10-04). The screenshots are the evidence: before, and twice after.
+    func testS237_ClosingTheCopyChipBringsTheToolsBackSharp() throws {
+        open()
+        clear()
+        type("sry running late traffic is crazy")
+        holdSpace()
+        guard let basic = wait("act:option:basic", 15) else { return XCTFail("no Basic version") }
+        basic.press(forDuration: 0.8)
+        if el("act:close").exists { tap("act:close") } else { tap("toolbar:close") }
+        clear()
+        guard wait("strip:smart", 4) != nil else { return XCTFail("no copy chip on the strip") }
+        keepScreenshot("copy-chip")
+        tap("strip:smart:close")
+        usleep(400_000)
+        keepScreenshot("tools-after-close")
+        sleep(2)
+        keepScreenshot("tools-2s-later")
+        XCTAssertTrue(el("toolbar:search").waitForExistence(timeout: 2), "the tools didn't come back")
+    }
+
+    /// S237b: the tester's path. A copy made in another app is named once
+    /// iOS's "Allow Paste" is answered, then the chip is put away.
+    func testS237b_ClosingAChipForACopyFromAnotherApp() throws {
+        UIPasteboard.general.string = "Yeah Clipboard is working"
+        open()
+        clear()
+        for _ in 0..<4 {
+            allowPasteIfAsked()
+            if let chip = wait("strip:smart", 1.5), chip.label.contains("Clipboard is working") { break }
+        }
+        guard let chip = wait("strip:smart", 3) else { return XCTFail("no chip for the copy") }
+        note("chip '\(chip.label)'")
+        keepScreenshot("named-chip")
+        tap("strip:smart:close")
+        usleep(400_000)
+        keepScreenshot("tools-after-close")
+        sleep(2)
+        keepScreenshot("tools-2s-later")
+        XCTAssertTrue(el("toolbar:search").waitForExistence(timeout: 2), "the tools didn't come back")
+    }
+
     func testS66_HoldSpaceOnAPlaceSearchSendsPlaces() throws {
         open()
         clear()

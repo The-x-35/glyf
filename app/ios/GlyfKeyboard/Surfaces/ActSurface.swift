@@ -153,6 +153,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         textView.textContainerInset = UIEdgeInsets(top: 11, left: 10, bottom: 11, right: 10)
         textView.accessibilityIdentifier = "act:text"
         addSubview(textView)
+        textView.noEdgeEffects()
 
         mapView.contentMode = .scaleAspectFill
         mapView.clipsToBounds = true
@@ -178,6 +179,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         table.register(PlaceCell.self, forCellReuseIdentifier: "place")
         table.register(OptionCell.self, forCellReuseIdentifier: "option")
         addSubview(table)
+        table.noEdgeEffects()
 
         statusLabel.font = .systemFont(ofSize: 14)
         statusLabel.textColor = Glass.textSecondary

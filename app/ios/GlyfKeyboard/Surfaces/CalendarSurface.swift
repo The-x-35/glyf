@@ -459,6 +459,7 @@ final class CalendarSurface: UIView {
         agendaStack.spacing = 8
         agenda.addSubview(agendaStack)
         addSubview(agenda)
+        agenda.noEdgeEffects()
 
         styleAction(freeButton, title: "Share free time")
         freeButton.accessibilityIdentifier = "calendar:free"

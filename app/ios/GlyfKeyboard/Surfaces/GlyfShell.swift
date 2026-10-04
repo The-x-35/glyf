@@ -221,6 +221,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         table.delegate = self
         table.register(ShellCell.self, forCellReuseIdentifier: "c")
         addSubview(table)
+        table.noEdgeEffects()
 
         buildGrid()
         addSubview(grid)

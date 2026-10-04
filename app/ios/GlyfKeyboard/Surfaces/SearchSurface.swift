@@ -190,6 +190,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         table.register(PlaceCell.self, forCellReuseIdentifier: "place")
         table.isHidden = true
         addSubview(table)
+        table.noEdgeEffects()
 
         styleChips()
         MemoryLogger.logSurface("search")

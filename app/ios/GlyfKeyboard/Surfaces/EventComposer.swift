@@ -134,6 +134,7 @@ final class EventComposer: UIView {
 
         rows.showsVerticalScrollIndicator = false
         addSubview(rows)
+        rows.noEdgeEffects()
         card.backgroundColor = Glass.surfaceCard
         card.layer.cornerRadius = 12
         card.layer.cornerCurve = .continuous

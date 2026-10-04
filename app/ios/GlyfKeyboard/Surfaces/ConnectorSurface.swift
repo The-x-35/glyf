@@ -86,6 +86,7 @@ final class ConnectorSurface: UIView, UITableViewDataSource, UITableViewDelegate
         table.delegate = self
         table.register(UITableViewCell.self, forCellReuseIdentifier: "c")
         addSubview(table)
+        table.noEdgeEffects()
 
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = Glass.textSecondary

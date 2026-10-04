@@ -1590,6 +1590,7 @@ Both targets carry a privacy manifest (`PrivacyInfo.xcprivacy`), which App Store
 
 **iOS keyboard and simulator**
 
+- **Open (2026-10-04):** on a tester's iPhone 17 the strip's tools showed blurred and faint under a frosted panel after they dismissed the paste chip (or iOS's paste prompt), the g key beside them sharp. It never reproduced on the iOS 26.5 simulator: S237 (a copy made in the keyboard) and S237b (a copy from another app) close a copy chip and keep screenshots, sharp each time. As a precaution every scroll view in the keyboard turns off iOS 26's scroll edge effects (`UIScrollView.noEdgeEffects()` in `ControlScrollView.swift`, called by `ControlScrollView` itself and after each other table, collection, text and scroll view; a new one should call it too), but that is not shown to be the cause: with an edge element placed over the tools and the effect forced on, the simulator's strip stayed sharp.
 - A Flutter text field never tells a keyboard extension about text the app pasted in: `documentContextBeforeInput` stays empty until the keyboard types. Test typed-text chips in a native field (Safari's address bar), not the Home try field.
 - The simulator tool's "type text" pastes through CoreSimulatorBridge (an "Allow Paste?" prompt) and leaves the simulator in hardware-keyboard mode: no on-screen keyboard until a reboot. Tap keys instead, or put text on the clipboard with `xcrun simctl pbcopy`.
 - `xcodebuild test` with parallel testing clones the simulator and can leave the original shut down; pass `-parallel-testing-enabled NO`.
