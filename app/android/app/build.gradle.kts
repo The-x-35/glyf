@@ -81,6 +81,11 @@ dependencies {
     // Google Calendar and Meet for the keyboard: Play services' authorization
     // hands out access tokens; the version Credential Manager already brings.
     implementation("com.google.android.gms:play-services-auth:21.1.1")
+    // Google Play Billing, for Plus and Max on Android. In the bundle before the
+    // paywall uses it: Play lets subscriptions be created only for an app with a
+    // billing library, and read a bare BILLING permission as the retired AIDL
+    // billing (it asked for 8.0.0 or newer).
+    implementation("com.android.billingclient:billing-ktx:9.1.0")
     // JVM unit tests for the IME's pure logic (gestures, typing engine) —
     // the same cases RunnerTests covers on iOS.
     testImplementation("junit:junit:4.13.2")
