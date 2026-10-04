@@ -205,6 +205,10 @@ abstract final class Auth {
         return null;
       case 'not_configured':
         return 'Google sign-in is not set up yet.';
+      case 'unregistered':
+        // Google doesn't know this copy of the app yet (Android: its package
+        // and signing certificate aren't a client of the project).
+        return "Google sign-in isn't ready on this version of Glyf yet. Try again soon.";
       case 'apple_unavailable':
         return 'Sign in with Apple is not available on this phone.';
       case 'no_account':

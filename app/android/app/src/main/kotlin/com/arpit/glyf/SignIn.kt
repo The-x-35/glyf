@@ -74,10 +74,21 @@ object SignIn {
                 }
 
                 override fun onError(e: GetCredentialException) {
-                    done(mapOf("error" to when (e) {
-                        is GetCredentialCancellationException -> "cancelled"
-                        is NoCredentialException -> "no_account"
-                        else -> e.message ?: e.type
+                    val message = e.message.orEmpty()
+                    android.util.Log.w("GlyfSignIn", "Google sign-in: ${e.type}: $message")
+                    done(mapOf("error" to when {
+                        // Google answers an app it doesn't know (no Android
+                        // client for this package and signing certificate in
+                        // the web client's project) right after the account is
+                        // picked, with "[16] Account reauth failed" dressed as
+                        // a cancellation: it must not read as closing the sheet
+                        // (2026-10-05, "i select account and nothing happens").
+                        message.contains("[16]") || message.contains("reauth", ignoreCase = true) ||
+                            message.contains("[28444]") || message.contains("developer console", ignoreCase = true) ->
+                            "unregistered"
+                        e is GetCredentialCancellationException -> "cancelled"
+                        e is NoCredentialException -> "no_account"
+                        else -> message.ifEmpty { e.type }
                     }))
                 }
             })
