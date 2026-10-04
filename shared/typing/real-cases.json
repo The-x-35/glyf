@@ -1176,6 +1176,90 @@
    "expect": {
     "autocorrect": "congratulations"
    }
+  },
+  {
+   "name": "two words before predict the next: on my way",
+   "typed": "",
+   "beforePrevious": "on",
+   "previous": "my",
+   "expect": {
+    "predictionsInclude": [
+     "way"
+    ]
+   }
+  },
+  {
+   "name": "two words before predict the next: let me know",
+   "typed": "",
+   "beforePrevious": "let",
+   "previous": "me",
+   "expect": {
+    "predictionsInclude": [
+     "know"
+    ]
+   }
+  },
+  {
+   "name": "two words before predict the next: I want to",
+   "typed": "",
+   "beforePrevious": "I",
+   "previous": "want",
+   "expect": {
+    "predictionsInclude": [
+     "to"
+    ]
+   }
+  },
+  {
+   "name": "a letter after on my offers way, never another letter",
+   "typed": "w",
+   "beforePrevious": "on",
+   "previous": "my",
+   "expect": {
+    "alternativesInclude": [
+     "way"
+    ],
+    "alternativesExclude": [
+     "a"
+    ]
+   }
+  },
+  {
+   "name": "k after I don't is know, never I",
+   "typed": "k",
+   "beforePrevious": "I",
+   "previous": "don't",
+   "expect": {
+    "alternativesInclude": [
+     "know"
+    ],
+    "alternativesExclude": [
+     "I"
+    ]
+   }
+  },
+  {
+   "name": "having written they were, wer after they is still were",
+   "typed": "wer",
+   "previous": "they",
+   "state": {
+    "learned": [
+     [
+      "they",
+      3
+     ]
+    ],
+    "pairs": [
+     [
+      "they",
+      "were",
+      3
+     ]
+    ]
+   },
+   "expect": {
+    "autocorrect": "were"
+   }
   }
  ]
 }

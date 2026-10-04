@@ -3678,7 +3678,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val head = before.substring(0, before.length - word.length)
         if (head.endsWith(";")) return null
         return engine.suggestions(word, if (wordTouchesFor == word) ArrayList(wordTouches) else null,
-            WordContext.previousWord(before), WordContext.wantsCapital(head), policy)
+            WordContext.previousWord(before), WordContext.wantsCapital(head), policy,
+            beforePrevious = WordContext.wordBeforePrevious(before))
     }
 
     /** Suggestions and the smart strip are recomputed once typing settles,
@@ -3757,7 +3758,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             showSuggestions(when {
                 corr != null -> listOf(Suggestion(corr.original, Suggestion.Kind.UNDO))
                 engine != null && before.endsWith(" ") && previous != null ->
-                    engine.predictions(previous, policy).map { Suggestion(it, Suggestion.Kind.WORD) }
+                    engine.predictions(previous, policy, beforePrevious = WordContext.wordBeforePrevious(before))
+                        .map { Suggestion(it, Suggestion.Kind.WORD) }
                 else -> emptyList()
             })
             return

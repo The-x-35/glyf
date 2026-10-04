@@ -35,7 +35,7 @@ final class TypingEngineTests: XCTestCase {
 
     /// Both engines on the same inputs, line for line (off unless asked for):
     /// TEST_RUNNER_GLYF_PARITY_DIR holds in.tsv (previous word, typed, "1" at
-    /// a sentence start); this writes swift.tsv and the JUnit TypingParity
+    /// a sentence start, the word before the previous); this writes swift.tsv and the JUnit TypingParity
     /// writes kotlin.tsv from the same file. They must match.
     func testParityDump() throws {
         guard let dir = ProcessInfo.processInfo.environment["GLYF_PARITY_DIR"],
@@ -47,14 +47,16 @@ final class TypingEngineTests: XCTestCase {
         let engine = TypingEngine(base: trie)
         var out = ""
         for line in input.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-            let parts = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init) + ["", "", ""]
+            let parts = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init) + ["", "", "", ""]
             let prev = parts[0].isEmpty ? nil : parts[0]
+            let prev2 = parts[3].isEmpty ? nil : parts[3]
             if parts[1].isEmpty {
-                out += engine.predictions(previous: prev, policy: .all, today: today).joined(separator: ",") + "\n"
+                out += engine.predictions(previous: prev, beforePrevious: prev2, policy: .all, today: today)
+                    .joined(separator: ",") + "\n"
                 continue
             }
-            let s = engine.suggestions(typed: parts[1], previous: prev, sentenceStart: parts[2] == "1",
-                                       policy: .all, today: today)
+            let s = engine.suggestions(typed: parts[1], previous: prev, beforePrevious: prev2,
+                                       sentenceStart: parts[2] == "1", policy: .all, today: today)
             out += (s.autocorrect ?? "-") + "\t" + s.alternatives.joined(separator: ",") + "\t" + (s.known ? "known" : "") + "\n"
         }
         try out.write(toFile: dir + "/swift.tsv", atomically: true, encoding: .utf8)
@@ -124,10 +126,12 @@ final class TypingEngineTests: XCTestCase {
 
             let typed = c["typed"] as? String ?? ""
             let previous = c["previous"] as? String
+            let beforePrevious = c["beforePrevious"] as? String
             let expect = c["expect"] as? [String: Any] ?? [:]
 
             if typed.isEmpty {
-                let predictions = engine.predictions(previous: previous, policy: policy, today: today)
+                let predictions = engine.predictions(previous: previous, beforePrevious: beforePrevious,
+                                                     policy: policy, today: today)
                 for word in expect["predictionsInclude"] as? [String] ?? [] where !predictions.contains(word) {
                     failures.append("\(name): predictions \(predictions) lack \(word)")
                 }
@@ -136,6 +140,7 @@ final class TypingEngineTests: XCTestCase {
 
             let touches = (c["touches"] as? [[Double]])?.map { t -> (Float, Float)? in (Float(t[0]), Float(t[1])) }
             let s = engine.suggestions(typed: typed, touches: touches, previous: previous,
+                                       beforePrevious: beforePrevious,
                                        sentenceStart: c["sentenceStart"] as? Bool ?? false,
                                        policy: policy, today: today)
             if expect.keys.contains("autocorrect") {

@@ -116,10 +116,11 @@ class TypingEngineTest {
 
             val typed = c.optString("typed", "")
             val previous = if (c.has("previous")) c.getString("previous") else null
+            val beforePrevious = if (c.has("beforePrevious")) c.getString("beforePrevious") else null
             val expect = c.optJSONObject("expect") ?: JSONObject()
 
             if (typed.isEmpty()) {
-                val predictions = engine.predictions(previous, policy, today)
+                val predictions = engine.predictions(previous, policy, today, beforePrevious)
                 expect.optJSONArray("predictionsInclude")?.strings()?.forEach {
                     if (it !in predictions) failures.add("$name: predictions $predictions lack $it")
                 }
@@ -129,7 +130,8 @@ class TypingEngineTest {
             val touches = c.optJSONArray("touches")?.let { arr ->
                 (0 until arr.length()).map { i -> arr.getJSONArray(i).let { floatArrayOf(it.getDouble(0).toFloat(), it.getDouble(1).toFloat()) } }
             }
-            val s = engine.suggestions(typed, touches, previous, c.optBoolean("sentenceStart", false), policy, today)
+            val s = engine.suggestions(typed, touches, previous, c.optBoolean("sentenceStart", false), policy, today,
+                beforePrevious)
             if (expect.has("autocorrect")) {
                 val want = if (expect.isNull("autocorrect")) null else expect.getString("autocorrect")
                 if (s.autocorrect != want) failures.add("$name: autocorrect ${s.autocorrect} ≠ $want (alternatives ${s.alternatives})")

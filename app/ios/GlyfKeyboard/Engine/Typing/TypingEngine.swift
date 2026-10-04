@@ -34,6 +34,10 @@ final class TypingEngine {
     static let predictionFloor: Float = 150
     /// Next words are the likeliest of each word's pairs: this many are read.
     static let predictionRows = 64
+    /// What two words before predict ranks this far above what one does
+    /// ("I want" → to, you, a): 38% of next words are among the three, 30%
+    /// on the previous word alone (2026-10-05).
+    static let tripleLift: Float = 15
     /// A dictionary fix of apostrophes ("cant" → "can't") beats a real word
     /// with the typed spelling only when it's this much more common.
     static let whitelistGap: Float = 40
@@ -99,6 +103,9 @@ final class TypingEngine {
         followersOf = nil
         followerMap = [:]
         likelyFollowers = []
+        triplesFor = nil
+        tripleMap = [:]
+        likelyTriples = []
         rebuildExtra()
     }
 
@@ -134,7 +141,8 @@ final class TypingEngine {
     // MARK: Suggestions
 
     func suggestions(typed: String, touches: [(Float, Float)?]? = nil, previous: String?,
-                     sentenceStart: Bool, policy: Policy = .all, today: Int = TypingText.day()) -> Suggestions {
+                     beforePrevious: String? = nil, sentenceStart: Bool, policy: Policy = .all,
+                     today: Int = TypingText.day()) -> Suggestions {
         guard policy.contains(.suggestions), !typed.isEmpty, !TypingText.isWebish(typed) else { return .empty(typed) }
         let key = TypingText.key(typed)
         let typedScalars = Array(typed.unicodeScalars)
@@ -145,6 +153,7 @@ final class TypingEngine {
 
         let prevKey = previous.map(TypingText.key).flatMap { $0.isEmpty ? nil : $0 }
         let prevBaseEntry = prevKey.flatMap { baseEntry(forKey: $0) }
+        useTriples(prevBaseEntry: prevBaseEntry, beforePrevious: beforePrevious)
 
         // Forms spelled by exactly these letters.
         var exactForms: [Candidate] = []
@@ -181,9 +190,13 @@ final class TypingEngine {
         }
         var seen: Set<String> = [typed.lowercased()]
         if let ac = result.autocorrect { seen.insert(ac.lowercased()) }
+        let keyScalars = TypingText.scalars(key)
         for c in ranked where !c.offensive {
             // "United States" is no completion for "u".
             if c.form.contains(" ") && c.key != key { continue }
+            // One letter is the start of a word, not a slip: "k" offers "know",
+            // never "I" (2026-10-05).
+            if keyScalars.count == 1 && TypingText.scalars(c.key).first != keyScalars[0] { continue }
             let shown = TypingText.matchCase(typed: typed, form: c.form)
             guard seen.insert(shown.lowercased()).inserted else { continue }
             result.alternatives.append(shown)
@@ -282,7 +295,7 @@ final class TypingEngine {
             let typedKey = TypingText.scalars(key)
             let slips = typedKey.count >= 3 ? 1 : 0
             _ = followers(base, prevBaseEntry)
-            for follower in likelyFollowers {
+            for follower in likelyTriples + likelyFollowers {
                 let (target, form, formKey) = (follower.entry, follower.form, follower.key)
                 guard !personal.isBlocked(formKey),
                       let fit = TypingText.prefixFit(typedKey, follower.scalars),
@@ -364,13 +377,16 @@ final class TypingEngine {
     private func languageProbability(key: String, form: String, baseProbability: Float?, entry: UInt32?,
                                      prevKey: String?, prevBaseEntry: UInt32?, today: Int) -> Language {
         var f = baseProbability ?? 0
-        if let p = personal.probability(key, today: today) { f = max(f, p) }
+        // What the person types counts for the spelling they type: having
+        // written "they were" never lifts "we're" (2026-10-05).
+        let theirs = personal.word(key).map { TypingText.sameSpelling($0.form, form) } ?? true
+        if theirs, let p = personal.probability(key, today: today) { f = max(f, p) }
         if packForms[key] != nil { f = max(f, Self.packProbability) }
         if contactForms[key] != nil { f = max(f, Self.contactProbability) }
         var pair: Float?
         var unseen: Float = 0
         if let prevKey {
-            if let p = personal.pairProbability(previous: prevKey, key, today: today) { pair = p }
+            if theirs, let p = personal.pairProbability(previous: prevKey, key, today: today) { pair = p }
             if packPairs[prevKey]?.contains(where: { TypingText.key($0) == key }) == true {
                 pair = max(pair ?? 0, Self.packPhraseProbability)
             }
@@ -386,6 +402,8 @@ final class TypingEngine {
                     unseen = f - capped
                     f = capped
                 }
+                // The two words before, when they were seen together enough.
+                if let target, let t = tripleMap[target] { pair = max(pair ?? 0, Float(t)) }
             }
             if let pair { f = max(f, pair) }
         }
@@ -397,6 +415,33 @@ final class TypingEngine {
         let form: String
         let key: String
         let scalars: [UInt32]
+    }
+
+    private var triplesFor: (UInt32, UInt32)?
+    /// The likeliest words after the word two back and the previous one.
+    private var tripleMap: [UInt32: UInt8] = [:]
+    private var likelyTriples: [Follower] = []
+
+    /// Reads what the two words before say, once per pair of them.
+    private func useTriples(prevBaseEntry: UInt32?, beforePrevious: String?) {
+        guard let base, let prevBaseEntry,
+              let twoBackKey = beforePrevious.map(TypingText.key), !twoBackKey.isEmpty,
+              let twoBack = baseEntry(forKey: twoBackKey) else {
+            tripleMap = [:]
+            likelyTriples = []
+            triplesFor = nil
+            return
+        }
+        if let current = triplesFor, current == (twoBack, prevBaseEntry) { return }
+        let rows = base.trigrams(twoBack: twoBack, previous: prevBaseEntry)
+            .filter { base.flags($0.target) & (GlydTrie.flagOffensive | GlydTrie.flagNotAWord) == 0 }
+        tripleMap = Dictionary(rows.map { ($0.target, $0.probability) }, uniquingKeysWith: { first, _ in first })
+        likelyTriples = rows.map { t in
+            let form = base.form(t.target)
+            let key = TypingText.key(form)
+            return Follower(entry: t.target, form: form, key: key, scalars: TypingText.scalars(key))
+        }
+        triplesFor = (twoBack, prevBaseEntry)
     }
 
     private var followersOf: UInt32?
@@ -591,11 +636,17 @@ final class TypingEngine {
 
     // MARK: Next word
 
-    func predictions(previous: String?, policy: Policy = .all, today: Int = TypingText.day()) -> [String] {
+    func predictions(previous: String?, beforePrevious: String? = nil, policy: Policy = .all,
+                     today: Int = TypingText.day()) -> [String] {
         guard policy.contains(.suggestions), let previous, !TypingText.isWebish(previous) else { return [] }
         let prevKey = TypingText.key(previous)
         guard !prevKey.isEmpty else { return [] }
         var scores: [String: Float] = [:]
+        // What the two words before were followed by ("I want" → to, you, a).
+        useTriples(prevBaseEntry: baseEntry(forKey: prevKey), beforePrevious: beforePrevious)
+        for t in likelyTriples where !personal.isBlocked(t.key) {
+            scores[t.form] = max(scores[t.form] ?? 0, Float(tripleMap[t.entry] ?? 0) + Self.tripleLift)
+        }
         if let base, let node = base.node(forKey: prevKey) {
             let first = base.firstEntry(node)
             for e in first..<(first + base.entryCount(node)) {

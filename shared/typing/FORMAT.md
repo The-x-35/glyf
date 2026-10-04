@@ -13,10 +13,11 @@ and memory-mapped read-only by both keyboards. Little-endian.
 
 | Section | Layout |
 |---|---|
-| Header (44 bytes) | `"GLYD"`, u32 version, nodeCount, entryCount, bigramCount, stringBytes, nodesOffset, entriesOffset, bigramsOffset, stringsOffset, reserved |
+| Header (44 bytes) | `"GLYD"`, u32 version, nodeCount, entryCount, bigramCount, stringBytes, nodesOffset, entriesOffset, bigramsOffset, stringsOffset, contextsOffset (0 = none) |
 | Node (16 bytes) | u32 `scalar \| maxProb << 24`, u32 firstChild (`0xFFFFFFFF` none), u16 childCount, u16 entryCount, u32 entryFirst |
 | Entry (16 bytes) | u32 stringOffset, u16 stringLength, u8 probability, u8 flags, u32 bigramFirst, u16 bigramCount, u16 reserved |
 | Bigram (8 bytes) | u32 targetEntry, u8 probability, 3 bytes padding |
+| Contexts | u32 contextCount, u32 reserved, then per context (16 bytes): u32 entry two back, u32 previous entry, u32 first row, u16 rowCount, u16 reserved |
 | Strings | UTF-8 forms |
 
 - Node 0 is the root. Nodes are breadth-first, so a node's children are
@@ -33,6 +34,11 @@ and memory-mapped read-only by both keyboards. Little-endian.
   same form under its own key is the word itself, and bigrams point there.
 - An entry's bigrams are its next words, most probable first, one row per
   target; only the word's own entry has them.
+- A context is two words in a row (each the most probable form of its key,
+  like a previous word) and the words seen after both, most probable first,
+  in rows after all the bigrams. Contexts are sorted by (two back, previous)
+  for a binary search. A file without them is version 1 all the same: the
+  offset was the reserved slot.
 - Flags: 1 possibly offensive (known, never suggested), 2 not a word,
   4 whitelist (typing the key autocorrects to this form: `dont` → `don't`),
   8 form has an uppercase letter.
@@ -72,8 +78,12 @@ Language `f` = max of: base unigram, learned unigram
 `255 + 8.59·log2((commits−1)/max(total, 8192)) − 32` (commits ≥ 2), kept word
 120, pack word 160, word added in the app 160, contact name 40 — and then,
 after a previous word, the max of that and its **pair** evidence: base bigram,
-learned bigram `255 + 8.59·log2(pair/max(prev, 2)) − 4`, pack phrase 180.
-The previous word's base entry is the most probable form under its key.
+learned bigram `255 + 8.59·log2(pair/max(prev, 2)) − 4`, pack phrase 180, and
+the context row when the word two back and the previous word have one ("I
+want" → to). The previous word's (and the one two back's) base entry is the
+most probable form under its key. Learned unigrams and pairs count only for
+the spelling the person last typed for that key (`'` and `’` alike): having
+written "they were" never lifts `we're`.
 
 A word the previous word has pairs for, but never this one (no pair evidence
 at all), and that is no name (capitalized, not `I` or `I'…`), ranks lower:
@@ -90,15 +100,20 @@ A name typed in lowercase (or capitalized only by the sentence start) that is
 not exactly the typed letters ranks 40 lower (`I hsven` is never `Haven` or
 `Hagen`).
 
-Candidates: the decoder's, plus the previous word's 256 likeliest followers
-that the typed letters start with at most one slip (none under three typed
-letters), at `0.45` a slip plus the completion cost of the letters left; a
+Candidates: the decoder's, plus the context's rows and the previous word's
+256 likeliest followers that the typed letters start with at most one slip
+(none under three typed letters), at `0.45` a slip plus the completion cost of the letters left; a
 word the decoder also found keeps the decoder's kinds, a new one counts as a
 far slip and/or a completion. Each form keeps its best score.
 
 The `+1.1` exact bonus goes only to spellings of the typed letters with
 `f ≥ 60` (or from learned, pack and contact words): "wats" offers `was`,
-not `wat's`.
+not `wat's`. After a single letter the strip offers only words that start
+with it ("k" never offers `I`).
+
+Next-word predictions: the context's rows at their probability + 15, the
+previous word's 64 likeliest pairs (each of its key's forms), learned pairs
+and pack phrases; the three best of at least 150.
 
 ## When Glyf autocorrects
 
@@ -155,10 +170,10 @@ letters — applies only if all hold:
     `f ≥ 110` (`priya` is not `Oriya`), never an acronym (`ngl` is not `NFL`).
 
 Measured on 2,000 held-out Tatoeba sentences (`StripEval`, 2026-10-05): a
-typo is fixed 75% of the time (58% before), fixed or shown 93% (87%), turned
-into another word 1.9%; a correct word is changed 0.1%. The next word is in
-the three predictions 30% (3%), and in the strip's two after one, two, three
-letters 43%, 52%, 64% (19%, 22%, 39%).
+typo is fixed 76.5% of the time (58% before), fixed or shown 93% (87%),
+turned into another word 1.8%; a correct word is changed 0.1%. The next word
+is in the three predictions 38% (3%), and in the strip's two after one, two,
+three letters 54%, 57%, 67% (19%, 22%, 39%).
 
 The applied form keeps the typed leading capital unless the form has its own
 capitals (`Pune`, `I'm`). Alternatives never include a multi-word form for
@@ -169,15 +184,16 @@ other letters ("United States" is no completion for "u").
 `app/dict/en.glyd` = AOSP `en_wordlist.combined` (US + UK spellings, 165k
 words, Apache-2.0) + `app/dict/supplement_en.combined` (texting words, Indian
 names/apps/places, chat word pairs that stay on top) +
-`app/dict/bigrams_en.combined.gz` (294k word pairs counted by
-`tools/typing/build_bigrams.py` from Tatoeba's English sentences, CC BY 2.0
-FR, one in ten held out for measuring). `shared/typing/real-cases.json` holds
+`app/dict/ngrams_en.combined.gz` (294k word pairs and 263k word triples
+counted by `tools/typing/build_ngrams.py` from Tatoeba's English sentences,
+CC BY 2.0 FR, one in ten held out for measuring). `shared/typing/real-cases.json` holds
 both engines to the same answers on it; `app/dict/NOTICE.md` has the rebuild
 commands.
 
 Word pairs: every pair seen 3 times, `f = 255 + 8.59·log2((count − 0.5)/n)`
 with `n` the previous word's count, attached to the most probable form of its
-key. Names never follow (Tatoeba's Tom and Mary), except days, months,
+key. Triples: seen 4 times, the 32 likeliest after each two words, `n` the
+count of those two words followed by anything. Names never follow (Tatoeba's Tom and Mary), except days, months,
 languages, a few others and all-capital words (`OK`, `TV`); a rare word far
 more often a contraction missing its apostrophe counts as the contraction
 (`wont` → `won't`). Words much commoner in sentences than in AOSP's list are

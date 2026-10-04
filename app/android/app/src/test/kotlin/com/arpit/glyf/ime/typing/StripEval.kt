@@ -7,7 +7,7 @@ import kotlin.random.Random
 
 /**
  * How good the strip is on real sentences the dictionary's word pairs never
- * saw (tools/typing/build_bigrams.py holds one Tatoeba sentence in ten out).
+ * saw (tools/typing/build_ngrams.py holds one Tatoeba sentence in ten out).
  * Off unless asked for:
  *
  *   GLYF_EVAL_SENTENCES=~/.cache/glyf-typing/heldout.txt GLYF_EVAL_DICT=app/dict/en.glyd \
@@ -97,31 +97,33 @@ class StripEval {
             for (run in runs(sentence)) {
                 for ((i, word) in run.withIndex()) {
                     val prev = if (i > 0) run[i - 1] else null
+                    // GLYF_EVAL_ONE_WORD=1: the previous word alone, as before word triples.
+                    val prev2 = if (i > 1 && System.getenv("GLYF_EVAL_ONE_WORD") == null) run[i - 2] else null
                     val start = i == 0
                     val target = word.lowercase()
                     // Names are left out: the pairs never predict them, and the
                     // test sentences are full of "Tom" and "Mary".
                     val name = word.any { it.isUpperCase() } && !start && word != "I" && !word.startsWith("I'")
                     if (name) continue
-                    if (prev != null) next.add(engine.predictions(prev).any { it.lowercase() == target })
+                    if (prev != null) next.add(engine.predictions(prev, TypingEngine.ALL, TypingText.day(), prev2).any { it.lowercase() == target })
                     for (k in 1..3) {
                         val letters = word.filter { it.isLetter() }
                         if (letters.length <= k) continue
                         val typed = letters.substring(0, k).let { if (word == "I" || word.startsWith("I'")) it else it.lowercase() }
-                        val s = engine.suggestions(typed, null, prev, start, TypingEngine.ALL)
+                        val s = engine.suggestions(typed, null, prev, start, TypingEngine.ALL, TypingText.day(), prev2)
                         val shown = (listOfNotNull(s.autocorrect) + s.alternatives).take(2)
                         after[k - 1].add(shown.any { it.lowercase() == target })
                     }
                     val asTyped = if (start || word == "I" || word.startsWith("I'")) word else word.lowercase()
                     if (asTyped.length >= 2 && !word.any { it.isUpperCase() && word != "I" && !word.startsWith("I'") && !start }) {
-                        val s = engine.suggestions(asTyped, null, prev, start, TypingEngine.ALL)
+                        val s = engine.suggestions(asTyped, null, prev, start, TypingEngine.ALL, TypingText.day(), prev2)
                         val changed = s.autocorrect != null && s.autocorrect.lowercase() != asTyped.lowercase()
                         wrong.add(changed)
                         if (changed) wrongExamples.add("WRONG  '${prev ?: ""} $asTyped' -> ${s.autocorrect}")
                     }
                     if (word.any { it.isUpperCase() } && !start && word != "I" && !word.startsWith("I'")) continue
                     val t = typo(word, rnd) ?: continue
-                    val s = engine.suggestions(t, null, prev, start, TypingEngine.ALL)
+                    val s = engine.suggestions(t, null, prev, start, TypingEngine.ALL, TypingText.day(), prev2)
                     val ok = s.autocorrect?.lowercase() == target
                     fixed.add(ok)
                     byKind.getOrPut(lastKind) { Tally("typo ($lastKind): autocorrected") }.add(ok)

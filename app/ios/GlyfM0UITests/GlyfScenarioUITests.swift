@@ -407,6 +407,21 @@ final class GlyfScenarioUITests: XCTestCase {
         note("'they wer ' -> '\(value)'")
     }
 
+    /// S240: the two words before choose the next: "on my " offers way
+    /// (on "my" alone it was father, life, mother).
+    func testS240_TwoWordsBeforePredictTheNext() throws {
+        open(["--glyf-reset-typing"])
+        clear()
+        type("on my ")
+        guard wait("suggest:0", 3) != nil else { return XCTFail("no predictions after 'on my '") }
+        let words = (0..<3).compactMap { i -> String? in
+            let e = el("suggest:\(i)")
+            return e.exists ? e.label : nil
+        }
+        note("'on my ' -> \(words)")
+        XCTAssertTrue(words.contains("way"), "predictions \(words)")
+    }
+
     func testS55_NumbersThenBackToLetters() throws {
         open()
         clear()

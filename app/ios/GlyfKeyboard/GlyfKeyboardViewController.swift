@@ -1878,8 +1878,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 toolbar.showSuggestions([.init(text: corr.original, kind: .undo)])
             } else if let engine = typing, before?.hasSuffix(" ") == true,
                       let previous = WordTracker.previousWord(beforeContext: before) {
-                toolbar.showSuggestions(engine.predictions(previous: previous, policy: policy)
-                    .map { .init(text: $0, kind: .word) })
+                toolbar.showSuggestions(engine.predictions(
+                    previous: previous, beforePrevious: WordTracker.wordBeforePrevious(beforeContext: before),
+                    policy: policy).map { .init(text: $0, kind: .word) })
             } else {
                 toolbar.showSuggestions([])
             }
@@ -1923,6 +1924,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             typed: word,
             touches: wordTouchesFor == word ? wordTouches : nil,
             previous: WordTracker.previousWord(beforeContext: before),
+            beforePrevious: WordTracker.wordBeforePrevious(beforeContext: before),
             sentenceStart: WordTracker.wantsCapital(beforeContext: head),
             policy: policy)
     }

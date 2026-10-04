@@ -66,6 +66,11 @@ enum TypingText {
         return best
     }
 
+    /// The same spelling, whichever apostrophe it was typed with.
+    static func sameSpelling(_ a: String, _ b: String) -> Bool {
+        a.replacingOccurrences(of: "’", with: "'") == b.replacingOccurrences(of: "’", with: "'")
+    }
+
     /// Optimal-string-alignment Damerau-Levenshtein (AOSP's autocorrect weight).
     static func editDistance(_ a: [UInt32], _ b: [UInt32]) -> Int {
         if a.isEmpty { return b.count }

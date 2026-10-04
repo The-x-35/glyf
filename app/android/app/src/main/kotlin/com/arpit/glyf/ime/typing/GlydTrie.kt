@@ -129,11 +129,15 @@ class GlydTrie private constructor(private val buf: ByteBuffer) {
     private val entriesOff = buf.getInt(28)
     private val bigramsOff = buf.getInt(32)
     private val stringsOff = buf.getInt(36)
+    /** Word triples (FORMAT.md "Contexts"), in the header's last slot; 0 = none. */
+    private val contextsOff = buf.getInt(40)
+    private val contextCount = if (contextsOff > 0 && contextsOff.toLong() + 8 <= buf.capacity()) buf.getInt(contextsOff) else 0
     private val valid = nodeCount > 0 &&
         nodesOff.toLong() + nodeCount * 16L <= buf.capacity() &&
         entriesOff.toLong() + entryCount * 16L <= buf.capacity() &&
         bigramsOff.toLong() + bigramCount * 8L <= buf.capacity() &&
-        stringsOff.toLong() + stringBytes <= buf.capacity()
+        stringsOff.toLong() + stringBytes <= buf.capacity() &&
+        (contextCount == 0 || contextsOff.toLong() + 8 + contextCount * 16L <= buf.capacity())
 
     fun scalar(node: Int): Int = buf.getInt(nodesOff + node * 16) and 0xFFFFFF
     fun maxProbability(node: Int): Int = buf.getInt(nodesOff + node * 16) ushr 24
@@ -208,4 +212,27 @@ class GlydTrie private constructor(private val buf: ByteBuffer) {
     }
 
     fun bigramProbability(from: Int, to: Int): Int? = followers(from)[to]
+
+    /** The likeliest words after two others (the word two back, then the
+     *  previous one), most probable first: (target entry, probability). */
+    fun trigrams(twoBack: Int, previous: Int): List<Pair<Int, Int>> {
+        var lo = 0
+        var hi = contextCount
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            val at = contextsOff + 8 + mid * 16
+            val a = buf.getInt(at)
+            val b = buf.getInt(at + 4)
+            if (a == twoBack && b == previous) {
+                val first = buf.getInt(at + 8)
+                val count = buf.getShort(at + 12).toInt() and 0xFFFF
+                return (0 until count).map { i ->
+                    val row = bigramsOff + (first + i) * 8
+                    buf.getInt(row) to (buf.get(row + 4).toInt() and 0xFF)
+                }
+            }
+            if (a < twoBack || (a == twoBack && b < previous)) lo = mid + 1 else hi = mid
+        }
+        return emptyList()
+    }
 }

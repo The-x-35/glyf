@@ -1885,6 +1885,13 @@ scenarios.push(
     const t = await text();
     return { pass: t.toLowerCase() === "they were ", note: `'${t}'` };
   } },
+  { id: "S240", title: "The two words before choose the next: 'on my ' offers way", run: async () => {
+    await fresh();
+    await type("on my ");
+    const s = await state();
+    const words = s.views.filter(v => v.text && v.y < s.keys.q[1]).map(v => v.text);
+    return { pass: words.includes("way"), note: `strip: ${words.join(" | ")}` };
+  } },
 );
 
 function chipLabel(s, chip) {

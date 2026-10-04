@@ -15,12 +15,15 @@ is specified in shared/typing/FORMAT.md; keep the two in sync.
 
 Several inputs merge: a word keeps its highest frequency and all its flags.
 
-Input lines (AOSP CombinedFormatUtils):
+Input lines (AOSP CombinedFormatUtils, plus Glyf's trigram lines: the word
+after `prev` and this one):
     dictionary=main:en_us,locale=en_US,...
      word=the,f=222,flags=,originalFreq=222
       bigram=first,f=10
       shortcut=don't,f=whitelist
      word=dont,f=0,not_a_word=true,possibly_offensive=true
+     word=want,f=0
+      trigram=to,prev=I,f=250
 """
 import gzip
 import struct
@@ -40,6 +43,7 @@ HEADER_FMT = "<4s10I"       # magic + 10 u32
 NODE_FMT = "<IIHHI"         # scalar|maxProb<<24, firstChild, childCount, entryCount, entryFirst
 ENTRY_FMT = "<IHBBIHH"      # stringOffset, stringLength, probability, flags, bigramFirst, bigramCount, reserved
 BIGRAM_FMT = "<IB3x"        # targetEntry, probability
+CONTEXT_FMT = "<IIIHH"      # entry two back, previous entry, first row, row count, reserved
 
 
 def word_key(word):
@@ -65,7 +69,7 @@ def parse_attrs(line):
 
 def read_combined(path):
     opener = gzip.open if path.endswith(".gz") else open
-    words = []          # [word, prob, flags, bigrams[(target, f)], shortcuts[(target, f)]]
+    words = []          # [word, prob, flags, bigrams[(target, f)], shortcuts[(target, f)], trigrams[(prev, target, f)]]
     current = None
     with opener(path, "rt", encoding="utf-8") as fh:
         for raw in fh:
@@ -81,7 +85,7 @@ def read_combined(path):
                 if attrs.get("not_a_word") == "true":
                     flags |= FLAG_NOT_A_WORD
                 prob = int(attrs.get("f", "0") or 0)
-                current = [attrs["word"], max(0, min(255, prob)), flags, [], []]
+                current = [attrs["word"], max(0, min(255, prob)), flags, [], [], []]
                 words.append(current)
             elif "bigram" in attrs and current is not None:
                 current[3].append((attrs["bigram"], int(attrs.get("f", "0") or 0)))
@@ -89,6 +93,8 @@ def read_combined(path):
                 current[3].append((attrs["ngram"], int(attrs.get("f", "0") or 0)))
             elif "shortcut" in attrs and current is not None:
                 current[4].append((attrs["shortcut"], attrs.get("f", "")))
+            elif "trigram" in attrs and current is not None:
+                current[5].append((attrs.get("prev", ""), attrs["trigram"], int(attrs.get("f", "0") or 0)))
     return words
 
 
@@ -96,6 +102,7 @@ def compile_words(words, min_prob=0):
     # Bigram probabilities come either 4-bit encoded (0..15, relative to the
     # target's unigram, AOSP v2) or absolute (0..255). Normalize to absolute.
     max_bigram = max((f for w in words for _, f in w[3]), default=0)
+    trigrams = {}  # (form two back, previous form) -> {target form: prob}
     four_bit = max_bigram <= 15
     unigram = {}
     for w in words:
@@ -124,7 +131,10 @@ def compile_words(words, min_prob=0):
         else:
             g[form] = [prob, flags]
 
-    for word, prob, flags, bgs, shortcuts in words:
+    for word, prob, flags, bgs, shortcuts, tris in words:
+        for prev, target, f in tris:
+            row = trigrams.setdefault((prev, word), {})
+            row[target] = max(row.get(target, 0), max(0, min(255, f)))
         if flags & FLAG_NOT_A_WORD:
             # Not typable as itself, but its whitelist shortcuts still apply:
             # "dont" -> "don't". Stored under the typed key.
@@ -218,6 +228,21 @@ def compile_words(words, min_prob=0):
             e[4] = len(rows)
             bigram_rows.extend(rows)
 
+    # Two words back and the previous one -> their likeliest next words, in
+    # the same rows as bigrams, contexts sorted for a binary search.
+    contexts = []
+    for (prev, word), row in trigrams.items():
+        if prev not in entry_index or word not in entry_index:
+            continue
+        targets = sorted(((entry_index[t], p) for t, p in row.items() if t in entry_index), key=lambda r: (-r[1], r[0]))
+        if targets:
+            contexts.append((entry_index[prev], entry_index[word], targets))
+    contexts.sort(key=lambda c: (c[0], c[1]))
+    context_records = []
+    for a, b, targets in contexts:
+        context_records.append((a, b, len(bigram_rows), len(targets)))
+        bigram_rows.extend(targets)
+
     strings = bytearray()
     entry_bytes = bytearray()
     for form, prob, flags, bfirst, bcount in entries:
@@ -243,18 +268,25 @@ def compile_words(words, min_prob=0):
     for target, prob in bigram_rows:
         bigram_bytes += struct.pack(BIGRAM_FMT, target, prob)
 
+    context_bytes = bytearray()
+    if context_records:
+        context_bytes += struct.pack("<II", len(context_records), 0)
+        for a, b, first, count in context_records:
+            context_bytes += struct.pack(CONTEXT_FMT, a, b, first, min(count, 0xFFFF), 0)
+
     header_size = struct.calcsize(HEADER_FMT)
     nodes_off = header_size
     entries_off = nodes_off + len(node_bytes)
     bigrams_off = entries_off + len(entry_bytes)
-    strings_off = bigrams_off + len(bigram_bytes)
+    contexts_off = bigrams_off + len(bigram_bytes)
+    strings_off = contexts_off + len(context_bytes)
     header = struct.pack(
         HEADER_FMT, MAGIC, VERSION, len(nodes), len(entries), len(bigram_rows), len(strings),
-        nodes_off, entries_off, bigrams_off, strings_off, 0,
+        nodes_off, entries_off, bigrams_off, strings_off, contexts_off if context_records else 0,
     )
-    return header + node_bytes + entry_bytes + bigram_bytes + bytes(strings), {
+    return header + node_bytes + entry_bytes + bigram_bytes + bytes(context_bytes) + bytes(strings), {
         "nodes": len(nodes), "entries": len(entries), "bigrams": len(bigram_rows),
-        "bigramScale": "4-bit" if four_bit else "absolute",
+        "contexts": len(context_records), "bigramScale": "4-bit" if four_bit else "absolute",
     }
 
 

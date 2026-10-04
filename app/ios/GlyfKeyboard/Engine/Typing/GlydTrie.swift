@@ -18,6 +18,9 @@ final class GlydTrie {
     private let entries: UnsafeRawPointer
     private let bigrams: UnsafeRawPointer
     private let strings: UnsafeRawPointer
+    /// Word triples (FORMAT.md "Contexts"): records after a count, or none.
+    private let contexts: UnsafeRawPointer?
+    private let contextCount: Int
 
     private init?(pointer: UnsafeRawPointer, length: Int, storage: AnyObject) {
         guard length >= 44,
@@ -28,16 +31,21 @@ final class GlydTrie {
         entryCount = u32(12)
         let bigramCount = u32(16), stringBytes = u32(20)
         let nodesOff = u32(24), entriesOff = u32(28), bigramsOff = u32(32), stringsOff = u32(36)
+        let contextsOff = u32(40)
+        let contextCount = contextsOff > 0 && contextsOff + 8 <= length ? u32(contextsOff) : 0
         guard nodeCount > 0,
               nodesOff + nodeCount * 16 <= length,
               entriesOff + entryCount * 16 <= length,
               bigramsOff + bigramCount * 8 <= length,
-              stringsOff + stringBytes <= length else { return nil }
+              stringsOff + stringBytes <= length,
+              contextCount == 0 || contextsOff + 8 + contextCount * 16 <= length else { return nil }
         self.storage = storage
         nodes = pointer + nodesOff
         entries = pointer + entriesOff
         bigrams = pointer + bigramsOff
         strings = pointer + stringsOff
+        contexts = contextCount > 0 ? pointer + contextsOff + 8 : nil
+        self.contextCount = contextCount
     }
 
     /// Maps a dictionary file; nil if missing or malformed.
@@ -148,6 +156,30 @@ final class GlydTrie {
 
     func bigramProbability(from entry: UInt32, to target: UInt32) -> UInt8? {
         followers(entry)[target]
+    }
+
+    /// The likeliest words after two others (the word two back, then the
+    /// previous one), most probable first.
+    func trigrams(twoBack: UInt32, previous: UInt32) -> [(target: UInt32, probability: UInt8)] {
+        guard let contexts else { return [] }
+        var lo = 0, hi = contextCount
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            let at = mid * 16
+            let a = contexts.loadUnaligned(fromByteOffset: at, as: UInt32.self)
+            let b = contexts.loadUnaligned(fromByteOffset: at + 4, as: UInt32.self)
+            if a == twoBack && b == previous {
+                let first = Int(contexts.loadUnaligned(fromByteOffset: at + 8, as: UInt32.self))
+                let count = Int(contexts.loadUnaligned(fromByteOffset: at + 12, as: UInt16.self))
+                return (0..<count).map { i in
+                    let row = (first + i) * 8
+                    return (bigrams.loadUnaligned(fromByteOffset: row, as: UInt32.self),
+                            bigrams.loadUnaligned(fromByteOffset: row + 4, as: UInt8.self))
+                }
+            }
+            if a < twoBack || (a == twoBack && b < previous) { lo = mid + 1 } else { hi = mid }
+        }
+        return []
     }
 
     // MARK: Building (pack, added and learned words)

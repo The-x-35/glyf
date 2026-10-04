@@ -47,6 +47,14 @@ object WordContext {
         return currentWord(rest).ifEmpty { null }
     }
 
+    /** The word before that one ("I" in "I want t"), for the word triples;
+     *  null across a sentence end. */
+    fun wordBeforePrevious(before: String?): String? {
+        if (before.isNullOrEmpty() || previousWord(before) == null) return null
+        val current = currentWord(before)
+        return previousWord(before.substring(0, before.length - current.length).trimEnd(' '))
+    }
+
     /** Sentence start: text start, or sentence punctuation then space(s). */
     fun wantsCapital(before: String?): Boolean {
         val ctx = before?.replace("￼", "") ?: return true

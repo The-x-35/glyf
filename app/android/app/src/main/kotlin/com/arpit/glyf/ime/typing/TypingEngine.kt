@@ -35,6 +35,10 @@ class TypingEngine(
         const val PREDICTION_FLOOR = 150f
         /** Next words are the likeliest of each word's pairs: this many are read. */
         const val PREDICTION_ROWS = 64
+        /** What two words before predict ranks this far above what one does
+         *  ("I want" → to, you, a): 38% of next words are among the three,
+         *  30% on the previous word alone (2026-10-05). */
+        const val TRIPLE_LIFT = 15f
         /** A dictionary fix of apostrophes ("cant" → "can't") beats a real word
          *  with the typed spelling only when it's this much more common. */
         const val WHITELIST_GAP = 40f
@@ -106,6 +110,9 @@ class TypingEngine(
         followersOf = -1
         followerMap = emptyMap()
         likelyFollowers = emptyList()
+        triplesFor = -1L
+        tripleMap = emptyMap()
+        likelyTriples = emptyList()
         rebuildExtra()
     }
 
@@ -163,7 +170,8 @@ class TypingEngine(
         listOfNotNull(base?.let { it to Source.BASE }, extra?.let { it to Source.EXTRA })
 
     fun suggestions(typed: String, touches: List<FloatArray?>? = null, previous: String?,
-                    sentenceStart: Boolean, policy: Int = ALL, today: Int = TypingText.day()): Suggestions {
+                    sentenceStart: Boolean, policy: Int = ALL, today: Int = TypingText.day(),
+                    beforePrevious: String? = null): Suggestions {
         if (policy and SUGGESTIONS == 0 || typed.isEmpty() || TypingText.isWebish(typed)) return Suggestions.empty(typed)
         val key = TypingText.key(typed)
         val typedScalars = TypingText.scalars(typed)
@@ -174,6 +182,7 @@ class TypingEngine(
 
         val prevKey = previous?.let { TypingText.key(it) }?.takeIf { it.isNotEmpty() }
         val prevBaseEntry = prevKey?.let { baseEntry(it) }
+        useTriples(prevBaseEntry, beforePrevious)
 
         val exactForms = ArrayList<Candidate>()
         for ((trie, source) in sources()) {
@@ -206,10 +215,14 @@ class TypingEngine(
         seen.add(typed.lowercase())
         autocorrect?.let { seen.add(it.lowercase()) }
         val alternatives = ArrayList<String>()
+        val keyScalars = TypingText.scalars(key)
         for (c in ranked) {
             if (c.offensive) continue
             // "United States" is no completion for "u".
             if (c.form.contains(' ') && c.key != key) continue
+            // One letter is the start of a word, not a slip: "k" offers "know",
+            // never "I" (2026-10-05).
+            if (keyScalars.size == 1 && TypingText.scalars(c.key).firstOrNull() != keyScalars[0]) continue
             val shown = TypingText.matchCase(typed, c.form)
             if (!seen.add(shown.lowercase())) continue
             alternatives.add(shown)
@@ -274,7 +287,7 @@ class TypingEngine(
             val typedKey = TypingText.scalars(key)
             val slips = if (typedKey.size >= 3) 1 else 0
             followers(b, prevBaseEntry)
-            for (follower in likelyFollowers) {
+            for (follower in likelyTriples + likelyFollowers) {
                 if (personal.isBlocked(follower.key)) continue
                 val (edits, added) = TypingText.prefixFit(typedKey, follower.scalars) ?: continue
                 if (edits > slips || (edits == 0 && added == 0)) continue
@@ -338,13 +351,16 @@ class TypingEngine(
     private fun languageProbability(key: String, form: String, baseProbability: Float?, entry: Int?,
                                     prevKey: String?, prevBaseEntry: Int?, today: Int): Language {
         var f = baseProbability ?: 0f
-        personal.probability(key, today)?.let { f = maxOf(f, it) }
+        // What the person types counts for the spelling they type: having
+        // written "they were" never lifts "we're" (2026-10-05).
+        val theirs = personal.word(key)?.form?.let { TypingText.sameSpelling(it, form) } ?: true
+        if (theirs) personal.probability(key, today)?.let { f = maxOf(f, it) }
         if (packForms.containsKey(key)) f = maxOf(f, PACK_PROBABILITY)
         if (contactForms.containsKey(key)) f = maxOf(f, CONTACT_PROBABILITY)
         var pair: Float? = null
         var unseen = 0f
         if (prevKey != null) {
-            personal.pairProbability(prevKey, key, today)?.let { pair = it }
+            if (theirs) personal.pairProbability(prevKey, key, today)?.let { pair = it }
             if (packPairs[prevKey]?.any { TypingText.key(it) == key } == true) pair = maxOf(pair ?: 0f, PACK_PHRASE_PROBABILITY)
             val b = base
             if (prevBaseEntry != null && b != null) {
@@ -359,6 +375,8 @@ class TypingEngine(
                     unseen = f - capped
                     f = capped
                 }
+                // The two words before, when they were seen together enough.
+                target?.let { tripleMap[it] }?.let { pair = maxOf(pair ?: 0f, it.toFloat()) }
             }
             pair?.let { f = maxOf(f, it) }
         }
@@ -367,6 +385,31 @@ class TypingEngine(
     }
 
     private class Follower(val entry: Int, val form: String, val key: String, val scalars: IntArray)
+
+    private var triplesFor = -1L
+    /** The likeliest words after the word two back and the previous one. */
+    private var tripleMap: Map<Int, Int> = emptyMap()
+    private var likelyTriples: List<Follower> = emptyList()
+
+    /** Reads what the two words before say, once per pair of them. */
+    private fun useTriples(prevBaseEntry: Int?, beforePrevious: String?) {
+        val b = base
+        val twoBack = if (prevBaseEntry == null || b == null) null
+            else beforePrevious?.let { TypingText.key(it) }?.takeIf { it.isNotEmpty() }?.let { baseEntry(it) }
+        if (twoBack == null || prevBaseEntry == null || b == null) {
+            tripleMap = emptyMap()
+            likelyTriples = emptyList()
+            triplesFor = -1L
+            return
+        }
+        val id = (twoBack.toLong() shl 32) or (prevBaseEntry.toLong() and 0xFFFFFFFFL)
+        if (id == triplesFor) return
+        val rows = b.trigrams(twoBack, prevBaseEntry)
+            .filter { (t, _) -> b.flags(t) and (GlydTrie.FLAG_OFFENSIVE or GlydTrie.FLAG_NOT_A_WORD) == 0 }
+        tripleMap = rows.associate { it.first to it.second }
+        likelyTriples = rows.map { (t, _) -> val form = b.form(t); val k = TypingText.key(form); Follower(t, form, k, TypingText.scalars(k)) }
+        triplesFor = id
+    }
 
     private var followersOf = -1
     private var followerMap: Map<Int, Int> = emptyMap()
@@ -533,11 +576,13 @@ class TypingEngine(
     }
 
     /** Top candidates with their numbers, for tuning (tests only). */
-    internal fun debugCandidates(typed: String, previous: String?, limit: Int = 5, sentenceStart: Boolean = false): List<String> {
+    internal fun debugCandidates(typed: String, previous: String?, limit: Int = 5, sentenceStart: Boolean = false,
+                                 beforePrevious: String? = null): List<String> {
         val key = TypingText.key(typed)
         val points = touchPoints(TypingText.scalars(typed), null)
         val prevKey = previous?.let { TypingText.key(it) }?.takeIf { it.isNotEmpty() }
         val prevBaseEntry = prevKey?.let { baseEntry(it) }
+        useTriples(prevBaseEntry, beforePrevious)
         val typedKey = TypingText.scalars(key)
         return rank(typed, key, points, prevKey, prevBaseEntry, sentenceStart, TypingText.day()).first.take(limit).map { c ->
             val ck = TypingText.scalars(c.key)
@@ -550,11 +595,18 @@ class TypingEngine(
 
     // Next word
 
-    fun predictions(previous: String?, policy: Int = ALL, today: Int = TypingText.day()): List<String> {
+    fun predictions(previous: String?, policy: Int = ALL, today: Int = TypingText.day(),
+                    beforePrevious: String? = null): List<String> {
         if (policy and SUGGESTIONS == 0 || previous == null || TypingText.isWebish(previous)) return emptyList()
         val prevKey = TypingText.key(previous)
         if (prevKey.isEmpty()) return emptyList()
         val scores = HashMap<String, Float>()
+        // What the two words before were followed by ("I want" → to, you, a).
+        useTriples(baseEntry(prevKey), beforePrevious)
+        for (t in likelyTriples) {
+            if (personal.isBlocked(t.key)) continue
+            scores[t.form] = maxOf(scores[t.form] ?: 0f, (tripleMap[t.entry] ?: 0) + TRIPLE_LIFT)
+        }
         base?.let { b ->
             val node = b.node(prevKey)
             if (node != GlydTrie.NONE) {

@@ -133,6 +133,9 @@ object TypingText {
         return if (isCapitalized(typed)) capitalizeFirst(form) else form
     }
 
+    /** The same spelling, whichever apostrophe it was typed with. */
+    fun sameSpelling(a: String, b: String): Boolean = a.replace('’', '\'') == b.replace('’', '\'')
+
     /** Exactly this form, or a lowercase word with its first letter capitalized. */
     fun sameWord(typed: String, form: String): Boolean =
         typed == form || (!hasUppercase(form) && typed == capitalizeFirst(form))

@@ -67,6 +67,15 @@ enum WordTracker {
         return word.isEmpty ? nil : word
     }
 
+    /// The word before that one ("I" in "I want t|"), for the word triples.
+    /// Nil across a sentence end.
+    static func wordBeforePrevious(beforeContext: String?) -> String? {
+        guard let ctx = beforeContext, previousWord(beforeContext: ctx) != nil else { return nil }
+        var rest = ctx.dropLast(currentWord(beforeContext: ctx).count)
+        while let last = rest.last, last == " " { rest = rest.dropLast() }
+        return previousWord(beforeContext: String(rest))
+    }
+
     /// Characters that end a word and trigger autocorrect before they land.
     static let correctionBoundaries = Set(".,!?;:")
 
