@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Google Play lets an app have subscriptions only once a build with this
+         is uploaded; buying on Android arrives with Play Billing. -->
+    <uses-permission android:name="com.android.vending.BILLING"/>
     <!-- The emoji board asks whether the phone is online before GIFs and
          stickers: without this, that question crashed the keyboard. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>

@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 
 const ADB = "/opt/homebrew/share/android-commandlinetools/platform-tools/adb";
-const PKG = "com.demo.glyf";
+const PKG = "com.arpit.glyf";
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const adb = (...args) => execFileSync(ADB, args, { encoding: "utf8" });
 const shell = cmd => adb("shell", cmd);

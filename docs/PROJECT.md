@@ -109,7 +109,7 @@ Not in git: `server/.env`, `site/.env.local`, build output, `docs/evidence/*.mp4
 |---|---|
 | iOS app bundle ID | `com.arpit.glyf` (since 2026-09-25, Arpit's own account; was `com.demo.glyf`) |
 | iOS keyboard bundle ID | `com.arpit.glyf.keyboard` (App Group `group.com.arpit.glyf`) |
-| Android application ID | `com.demo.glyf` (IME `com.demo.glyf/.ime.GlyfIME`) |
+| Android application ID | `com.arpit.glyf` since 2026-10-04 (IME `com.arpit.glyf/.ime.GlyfIME`; was `com.demo.glyf`) |
 | Apple signing team | `XFSL58LKTQ` |
 | App Group | `group.so.glyf.shared` |
 | Keychain group / vault service | `so.glyf.shared` / `so.glyf.vault` |

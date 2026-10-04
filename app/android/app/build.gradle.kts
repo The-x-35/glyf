@@ -15,7 +15,7 @@ val uploadKey = Properties().apply {
 }
 
 android {
-    namespace = "com.demo.glyf"
+    namespace = "com.arpit.glyf"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -30,7 +30,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.demo.glyf"
+        // Glyf's ID on Google Play and the iPhone app's too; fixed for good at
+        // the first upload (2026-10-04). It was com.demo.glyf before that.
+        applicationId = "com.arpit.glyf"
         // 26+ for java.time in the stores; Android 8.0 covers ~97% of devices.
         // 28: first set for Privy's wallet SDK (gone); kept as the tested floor.
         minSdk = maxOf(28, flutter.minSdkVersion)

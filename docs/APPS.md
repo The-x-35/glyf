@@ -39,8 +39,8 @@ Written on 2026-09-16 from the repo state at that time (app code as of commit `c
 |---|---|---|
 | iOS app bundle ID | `com.arpit.glyf` (since 2026-09-25; was `com.demo.glyf`) | `app/ios/Runner.xcodeproj/project.pbxproj` (Runner, 3 configs) |
 | iOS keyboard extension bundle ID | `com.arpit.glyf.keyboard` | same file (GlyfKeyboard, 3 configs) |
-| Android applicationId / namespace | `com.demo.glyf` (unchanged: the iOS move was for the App Store account) | `app/android/app/build.gradle.kts` |
-| Android IME component | `com.demo.glyf/.ime.GlyfIME` | `app/android/app/src/main/AndroidManifest.xml` |
+| Android applicationId / namespace | `com.arpit.glyf` (since 2026-10-04, for Google Play; was `com.demo.glyf`, which test phones may still have installed as a separate app) | `app/android/app/build.gradle.kts` |
+| Android IME component | `com.arpit.glyf/.ime.GlyfIME` | `app/android/app/src/main/AndroidManifest.xml` |
 | App Group (iOS) | `group.com.arpit.glyf` (since 2026-09-25; was `group.so.glyf.shared`) | `app/ios/Runner/Runner.entitlements`, `app/ios/GlyfKeyboard/GlyfKeyboard.entitlements`, `AppGroupStore.groupID` |
 | Keychain access group (iOS) | `$(AppIdentifierPrefix)so.glyf.shared` | both entitlements files |
 | Vault key (iOS Keychain) | service `so.glyf.vault`, account `vault-key-v1` | `app/ios/GlyfKeyboard/Engine/VaultStore.swift` |
@@ -87,7 +87,7 @@ The product spec is `SPEC.md` (a working copy of the original `GLYF_BUILD_PROMPT
 ```
                  iPhone                                         Android phone
 ┌───────────────────────────────────────────┐   ┌─────────────────────────────────────────┐
-│ Runner.app (Flutter container app)        │   │ com.demo.glyf (one package, one process │
+│ Runner.app (Flutter container app)        │   │ com.arpit.glyf (one package, one process │
 │  lib/: onboarding, Home, Build, Profile,  │   │  when both are running)                 │
 │  vault/notes editors, dictation sheet     │   │  MainActivity: the same Flutter app     │
 │  ios/Runner: GlyfBridge, DictationEngine, │   │  GlyfBridge.kt: same channel methods    │
@@ -110,7 +110,7 @@ The product spec is `SPEC.md` (a working copy of the original `GLYF_BUILD_PROMPT
 - **iOS keyboard extension** (`app/ios/GlyfKeyboard`). Native Swift and UIKit, `UIInputViewController` subclass `GlyfKeyboardViewController`. It is a separate process with a tight memory cap, embedded in `Runner.app/PlugIns/GlyfKeyboard.appex`. **No Flutter, ever** (SPEC 1.1). A build phase ("Glyf CI Guard") fails the Runner build if Flutter links into it.
 - **iOS native host code** (`app/ios/Runner`): `GlyfBridge.swift` (MethodChannel handler), `DictationEngine.swift` (on-device speech), `LocationOnce.swift` (one coarse location fix), `AppDelegate.swift` (test launch arguments, channel attach), `SceneDelegate.swift` (deep links arrive through the scene lifecycle in Flutter 3.44's template).
 - **Swift files compiled into more than one target** (so the app and keyboard share one implementation): `Bridge/AppGroupStore.swift`, `Bridge/IntentStore.swift`, `Bridge/Contracts.generated.swift`, `Engine/SecretScanner.swift`, `Engine/VaultStore.swift`, `Engine/SettingsStore.swift`, `Engine/ToneProfile.swift`, `Engine/NotesStore.swift`. The list lives in `tools/sync_keyboard_files.rb` (`RUNNER_SHARED`).
-- **Android** (`app/android`). A single package `com.demo.glyf` holds the Flutter `MainActivity` and the native Kotlin keyboard service `ime/GlyfIME.kt` (an `InputMethodService` with a canvas-drawn key view). Because app and keyboard are the same package, sharing is just the app's files directory. The Kotlin stores (`store/Stores.kt`, `store/VaultStore.kt`, `store/SecretScanner.kt`) mirror the Swift ones and use the same JSON file names and schemas.
+- **Android** (`app/android`). A single package `com.arpit.glyf` holds the Flutter `MainActivity` and the native Kotlin keyboard service `ime/GlyfIME.kt` (an `InputMethodService` with a canvas-drawn key view). Because app and keyboard are the same package, sharing is just the app's files directory. The Kotlin stores (`store/Stores.kt`, `store/VaultStore.kt`, `store/SecretScanner.kt`) mirror the Swift ones and use the same JSON file names and schemas.
 - **Backend** (`server/`). Holds every provider key and OAuth token. The apps only call it over HTTP(S). It is not deployed yet, so today it runs on Arpit's Mac.
 
 ### 3.2 Repo map (app-related parts)
@@ -1497,11 +1497,11 @@ cd server && npm run dev
 # terminal 2, repo root
 cd app && flutter build apk --debug
 $ADB install -r build/app/outputs/flutter-apk/app-debug.apk
-$ADB shell am start -n com.demo.glyf/.MainActivity
+$ADB shell am start -n com.arpit.glyf/.MainActivity
 # ALWAYS after a reinstall: reinstalling over the active keyboard wedges it
 $ADB shell ime reset
-$ADB shell ime enable com.demo.glyf/.ime.GlyfIME
-$ADB shell ime set com.demo.glyf/.ime.GlyfIME
+$ADB shell ime enable com.arpit.glyf/.ime.GlyfIME
+$ADB shell ime set com.arpit.glyf/.ime.GlyfIME
 ```
 
 - Run `ime set` **after** launching the app (after an install and force-stop the system falls back to Gboard), then tap a text field. After the keyboard hides, a focused Flutter field needs a second tap to bring it back.
@@ -1516,7 +1516,7 @@ $ADB shell ime set com.demo.glyf/.ime.GlyfIME
 - Space hold: `adb shell "input motionevent DOWN x y; sleep 0.9; log -t GlyfTest before-UP; input motionevent UP x y"`, then check that logcat shows `space hold → AI` (tag `GlyfKB`) **before** the marker.
 - After `input text`, wait about 2.5 s before a glide (it races Flutter's debug editing state).
 - Flutter field text is not visible to `uiautomator`; read it from screenshots. For native fields `uiautomator dump` lists `text=` before `class=`.
-- Theme testing: write settings directly with `adb shell run-as com.demo.glyf sh -c 'cat > files/bridge/settings.json'`, then refocus a field.
+- Theme testing: write settings directly with `adb shell run-as com.arpit.glyf sh -c 'cat > files/bridge/settings.json'`, then refocus a field.
 
 ### 10.7 Regenerating shared artifacts
 

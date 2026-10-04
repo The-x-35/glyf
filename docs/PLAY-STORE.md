@@ -15,7 +15,7 @@ Done in the code:
 
 Still to decide or do (Arpit):
 
-1. **Package name** is permanent once uploaded. It is `com.demo.glyf` today; rename (for example `com.arpit.glyf`, as on iOS) before the first upload, or keep it forever.
+1. ~~**Package name**~~ **Done 2026-10-04:** `com.arpit.glyf` everywhere (debug and release, and the Kotlin package), the iPhone app's ID too. The first bundle (1.0.0, build 13) went to internal testing with it.
 2. **Delete account inside the app.** Play requires an in-app path for any app where accounts are created (the web page alone isn't enough). It was removed on 2026-09-29; `Auth.deleteAccount` and `DELETE /me` still exist, so a quiet row (or a link to the web page) brings it back.
 3. **Recent screenshots on Android** use `READ_MEDIA_IMAGES`. Play's Photo and Video Permissions policy allows it only when broad photo access is core to the app, and needs a declaration form. Dropping the permission and the Android switch is the safe choice.
 4. **Wallet on Play.** The Financial features form must be answered either way. Phantom signs and Glyf holds no keys (non-custodial), but buying tokenized stocks (xStocks) is a regulated-looking feature its issuer doesn't offer in the US, UK, Canada or Australia. Ship the wallet without stock buys on Android, or leave the wallet out of the Play build.
