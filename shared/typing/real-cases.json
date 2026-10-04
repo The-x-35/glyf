@@ -7,7 +7,7 @@
   {
    "name": "fixes teh",
    "typed": "teh",
-   "previous": "the",
+   "previous": "in",
    "expect": {
     "autocorrect": "the"
    }
@@ -15,7 +15,7 @@
   {
    "name": "fixes hte",
    "typed": "hte",
-   "previous": "the",
+   "previous": "of",
    "expect": {
     "autocorrect": "the"
    }
@@ -175,7 +175,7 @@
   {
    "name": "fixes waht",
    "typed": "waht",
-   "previous": "the",
+   "previous": "so",
    "expect": {
     "autocorrect": "what"
    }
@@ -271,7 +271,7 @@
   {
    "name": "fixes hsa",
    "typed": "hsa",
-   "previous": "the",
+   "previous": "he",
    "expect": {
     "autocorrect": "has"
    }

@@ -33,6 +33,33 @@ final class TypingEngineTests: XCTestCase {
         XCTAssert(failures.isEmpty, "\n" + failures.joined(separator: "\n"))
     }
 
+    /// Both engines on the same inputs, line for line (off unless asked for):
+    /// TEST_RUNNER_GLYF_PARITY_DIR holds in.tsv (previous word, typed, "1" at
+    /// a sentence start); this writes swift.tsv and the JUnit TypingParity
+    /// writes kotlin.tsv from the same file. They must match.
+    func testParityDump() throws {
+        guard let dir = ProcessInfo.processInfo.environment["GLYF_PARITY_DIR"],
+              let input = try? String(contentsOfFile: dir + "/in.tsv", encoding: .utf8) else {
+            throw XCTSkip("GLYF_PARITY_DIR/in.tsv not given")
+        }
+        let repo = Self.sharedDir.deletingLastPathComponent().deletingLastPathComponent()
+        let trie = try XCTUnwrap(GlydTrie.mapped(path: repo.appendingPathComponent("app/dict/en.glyd").path))
+        let engine = TypingEngine(base: trie)
+        var out = ""
+        for line in input.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
+            let parts = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init) + ["", "", ""]
+            let prev = parts[0].isEmpty ? nil : parts[0]
+            if parts[1].isEmpty {
+                out += engine.predictions(previous: prev, policy: .all, today: today).joined(separator: ",") + "\n"
+                continue
+            }
+            let s = engine.suggestions(typed: parts[1], previous: prev, sentenceStart: parts[2] == "1",
+                                       policy: .all, today: today)
+            out += (s.autocorrect ?? "-") + "\t" + s.alternatives.joined(separator: ",") + "\t" + (s.known ? "known" : "") + "\n"
+        }
+        try out.write(toFile: dir + "/swift.tsv", atomically: true, encoding: .utf8)
+    }
+
     /// Pack words and phrases by id, split the way the keyboards load them.
     private func packContent(_ url: URL?, ids: [String]) throws -> (words: [String], phrases: [String]) {
         guard let url, !ids.isEmpty else { return ([], []) }

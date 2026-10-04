@@ -12,8 +12,19 @@
   licence (not yet compiled into the keyboards).
 - `supplement_en.combined` — written for Glyf: everyday texting words, Indian
   names, apps and places the 2014 AOSP list lacks, and common word pairs.
+- `bigrams_en.combined.gz` — which word follows which, and how often, counted
+  by `tools/typing/build_bigrams.py` from the English sentences of Tatoeba
+  (https://tatoeba.org), licensed under Creative Commons Attribution 2.0
+  France (CC BY 2.0 FR, https://creativecommons.org/licenses/by/2.0/fr/).
+  Only the counts are kept, never the sentences.
 
 Rebuild:
 
+    python3 tools/typing/build_bigrams.py ~/.cache/glyf-typing/eng_sentences.tsv \
+        app/dict/bigrams_en.combined && gzip -9 -n -f app/dict/bigrams_en.combined
     python3 tools/build_dictionary.py app/dict/source/en_wordlist.combined.gz \
-        app/dict/supplement_en.combined app/dict/en.glyd
+        app/dict/supplement_en.combined app/dict/bigrams_en.combined.gz app/dict/en.glyd
+
+`eng_sentences.tsv` is Tatoeba's English export
+(https://downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2,
+unpacked). Only `en.glyd` and this notice ship in the apps.

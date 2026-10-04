@@ -294,9 +294,12 @@ enum Decoder {
 
     /// Words that continue what's been typed, best-first by cost plus the
     /// most probable word still reachable below each node.
+    /// What finishing a word costs: the first letter not typed, then each after.
+    static func completionCost(_ added: Int) -> Float { 0.4836 + 0.00624 * Float(added - 1) }
+
     private static func completions(_ trie: GlydTrie, from seeds: [State], limit: Int) -> [Hit] {
         struct Item { var node: UInt32; var spatial: Float; var added: Int; var kinds: Kind; var proximity: UInt8; var edits: UInt8; var bound: Float }
-        @inline(__always) func completion(_ added: Int) -> Float { 0.4836 + 0.00624 * Float(added - 1) }
+        @inline(__always) func completion(_ added: Int) -> Float { completionCost(added) }
         @inline(__always) func language(_ p: UInt8) -> Float { 1.1214 * Float(255 - Int(p)) / 255 }
 
         var heap = MinHeap<Item> { $0.bound != $1.bound ? $0.bound < $1.bound : $0.node < $1.node }

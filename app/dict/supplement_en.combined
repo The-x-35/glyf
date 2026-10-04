@@ -185,15 +185,15 @@ dictionary=supplement:en,locale=en,description=Glyf supplement to the AOSP Engli
  word=see,f=175
   bigram=you,f=215
  word=how,f=190
-  bigram=are,f=205
+  bigram=are,f=240
   bigram=is,f=185
   bigram=was,f=180
  word=are,f=200
   bigram=you,f=210
  word=good,f=185
-  bigram=morning,f=215
-  bigram=night,f=210
-  bigram=luck,f=200
+  bigram=morning,f=232
+  bigram=night,f=231
+  bigram=luck,f=230
  word=on,f=205
   bigram=my,f=195
   bigram=the,f=200
@@ -209,7 +209,7 @@ dictionary=supplement:en,locale=en,description=Glyf supplement to the AOSP Engli
  word=love,f=180
   bigram=you,f=215
  word=happy,f=160
-  bigram=birthday,f=220
+  bigram=birthday,f=240
  word=what,f=200
   bigram=are,f=190
   bigram=is,f=190
@@ -229,7 +229,7 @@ dictionary=supplement:en,locale=en,description=Glyf supplement to the AOSP Engli
  word=do,f=195
   bigram=you,f=200
  word=no,f=190
-  bigram=problem,f=200
+  bigram=problem,f=236
  word=take,f=160
   bigram=care,f=215
  word=have,f=195
@@ -241,7 +241,7 @@ dictionary=supplement:en,locale=en,description=Glyf supplement to the AOSP Engli
  word=just,f=190
   bigram=now,f=185
  word=sounds,f=140
-  bigram=good,f=215
+  bigram=good,f=243
  word=all,f=190
   bigram=the,f=200
  word=as,f=200

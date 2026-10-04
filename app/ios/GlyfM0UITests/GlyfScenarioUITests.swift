@@ -384,6 +384,29 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertEqual(value.lowercased(), "teh")
     }
 
+    /// S238: Arpit's screenshot (2026-10-05): "I hsven" offered "hsven",
+    /// Haven and Hagen. The words "I" is followed by lead now.
+    func testS238_ATypoAfterIOffersHavenNeverTheNames() throws {
+        open(["--glyf-reset-typing"])
+        clear()
+        type("i hsven")
+        guard wait("suggest:2", 3) != nil else { return XCTFail("no suggestions for 'hsven'") }
+        let words = (0..<3).map { el("suggest:\($0)").label }
+        note("'I hsven' -> \(words)")
+        XCTAssertTrue(words.contains("haven") && words.contains("haven't"), "strip shows \(words)")
+        XCTAssertFalse(words.contains("Haven") || words.contains("Hagen"), "strip shows \(words)")
+    }
+
+    /// S239: the word before decides the fix: "they wer" is "they were",
+    /// not the dictionary's "we're".
+    func testS239_TheWordBeforeDecidesTheFix() throws {
+        open(["--glyf-reset-typing"])
+        clear()
+        type("they wer ")
+        XCTAssertTrue(waitValue(3) { $0.lowercased() == "they were " }, "got '\(value)'")
+        note("'they wer ' -> '\(value)'")
+    }
+
     func testS55_NumbersThenBackToLetters() throws {
         open()
         clear()

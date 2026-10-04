@@ -34,6 +34,38 @@ enum TypingText {
         return scalars.count == 1 ? scalars.first!.value : UInt32(v)
     }
 
+    /// How `typed` fits the start of `word`: the fewest edits (as
+    /// editDistance counts them) to some prefix of `word` within one letter
+    /// of `typed`'s length, and how many letters of `word` remain after that
+    /// prefix. Nil when `word` is too short to start with `typed`.
+    static func prefixFit(_ typed: [UInt32], _ word: [UInt32]) -> (edits: Int, added: Int)? {
+        guard !typed.isEmpty, word.count >= typed.count - 1 else { return nil }
+        let w = word.count + 1
+        var d = [Int](repeating: 0, count: (typed.count + 1) * w)
+        for i in 0...typed.count { d[i * w] = i }
+        for j in 0...word.count { d[j] = j }
+        if !word.isEmpty {
+            for i in 1...typed.count {
+                for j in 1...word.count {
+                    let cost = typed[i - 1] == word[j - 1] ? 0 : 1
+                    var v = min(d[(i - 1) * w + j] + 1, d[i * w + j - 1] + 1, d[(i - 1) * w + j - 1] + cost)
+                    if i > 1, j > 1, typed[i - 1] == word[j - 2], typed[i - 2] == word[j - 1] {
+                        v = min(v, d[(i - 2) * w + j - 2] + 1)
+                    }
+                    d[i * w + j] = v
+                }
+            }
+        }
+        var best: (edits: Int, added: Int)?
+        for j in max(0, typed.count - 1)...min(word.count, typed.count + 1) {
+            let edits = d[typed.count * w + j]
+            if best == nil || edits < best!.edits || (edits == best!.edits && word.count - j < best!.added) {
+                best = (edits, word.count - j)
+            }
+        }
+        return best
+    }
+
     /// Optimal-string-alignment Damerau-Levenshtein (AOSP's autocorrect weight).
     static func editDistance(_ a: [UInt32], _ b: [UInt32]) -> Int {
         if a.isEmpty { return b.count }

@@ -31,6 +31,36 @@ object TypingText {
     /** Lowercase base letter used for key matching: "É" → "e". */
     fun base(cp: Int): Int = if (cp in foldTable.indices) foldTable[cp] else Character.toLowerCase(cp)
 
+    /** How `typed` fits the start of `word`: the fewest edits (as
+     *  editDistance counts them) to some prefix of `word` within one letter
+     *  of `typed`'s length, and how many letters of `word` remain after that
+     *  prefix. Null when `word` is too short to start with `typed`. */
+    fun prefixFit(typed: IntArray, word: IntArray): Pair<Int, Int>? {
+        if (typed.isEmpty() || word.size < typed.size - 1) return null
+        val w = word.size + 1
+        val d = IntArray((typed.size + 1) * w)
+        for (i in 0..typed.size) d[i * w] = i
+        for (j in 0..word.size) d[j] = j
+        for (i in 1..typed.size) {
+            for (j in 1..word.size) {
+                val cost = if (typed[i - 1] == word[j - 1]) 0 else 1
+                var v = min(min(d[(i - 1) * w + j] + 1, d[i * w + j - 1] + 1), d[(i - 1) * w + j - 1] + cost)
+                if (i > 1 && j > 1 && typed[i - 1] == word[j - 2] && typed[i - 2] == word[j - 1]) {
+                    v = min(v, d[(i - 2) * w + j - 2] + 1)
+                }
+                d[i * w + j] = v
+            }
+        }
+        var best: Pair<Int, Int>? = null
+        for (j in maxOf(0, typed.size - 1)..minOf(word.size, typed.size + 1)) {
+            val edits = d[typed.size * w + j]
+            if (best == null || edits < best.first || (edits == best.first && word.size - j < best.second)) {
+                best = edits to word.size - j
+            }
+        }
+        return best
+    }
+
     /** Optimal-string-alignment Damerau-Levenshtein. */
     fun editDistance(a: IntArray, b: IntArray): Int {
         if (a.isEmpty()) return b.size

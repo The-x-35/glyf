@@ -181,16 +181,31 @@ class GlydTrie private constructor(private val buf: ByteBuffer) {
     fun flags(entry: Int): Int = buf.get(entriesOff + entry * 16 + 7).toInt() and 0xFF
 
     /** Next words recorded for this entry, most probable first: (target entry, probability). */
-    fun bigrams(entry: Int): List<Pair<Int, Int>> {
+    fun bigrams(entry: Int, limit: Int = Int.MAX_VALUE): List<Pair<Int, Int>> {
         val base = entriesOff + entry * 16
         val first = buf.getInt(base + 8)
-        val count = buf.getShort(base + 12).toInt() and 0xFFFF
-        if (first == NONE || count == 0) return emptyList()
+        val count = minOf(buf.getShort(base + 12).toInt() and 0xFFFF, limit)
+        if (first == NONE || count <= 0) return emptyList()
         return (0 until count).map { i ->
             val at = bigramsOff + (first + i) * 8
             buf.getInt(at) to (buf.get(at + 4).toInt() and 0xFF)
         }
     }
 
-    fun bigramProbability(from: Int, to: Int): Int? = bigrams(from).firstOrNull { it.first == to }?.second
+    /** Every next word of this entry, target entry → probability: looked up
+     *  for each candidate while one word is typed. */
+    fun followers(entry: Int): Map<Int, Int> {
+        val base = entriesOff + entry * 16
+        val first = buf.getInt(base + 8)
+        val count = buf.getShort(base + 12).toInt() and 0xFFFF
+        if (first == NONE || count == 0) return emptyMap()
+        val out = HashMap<Int, Int>(count * 2)
+        for (i in 0 until count) {
+            val at = bigramsOff + (first + i) * 8
+            out.putIfAbsent(buf.getInt(at), buf.get(at + 4).toInt() and 0xFF)
+        }
+        return out
+    }
+
+    fun bigramProbability(from: Int, to: Int): Int? = followers(from)[to]
 }

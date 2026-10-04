@@ -48,7 +48,7 @@
     { "name": "research: kal is not kcal", "typed": "kal", "expect": { "autocorrect": null } },
     { "name": "offensive words are known", "typed": "damn", "expect": { "autocorrect": null, "known": true } },
     { "name": "offensive words are never offered", "typed": "dam", "expect": { "alternativesExclude": ["damn"] } },
-    { "name": "completions", "typed": "hel", "expect": { "autocorrect": null, "alternativesInclude": ["help", "hello"] } },
+    { "name": "completions, the best of them finishing a word", "typed": "hel", "expect": { "autocorrect": "help", "alternativesInclude": ["hello"] } },
     { "name": "double letter left out", "typed": "helo", "expect": { "alternativesInclude": ["hello"] } },
     { "name": "next word after thank", "typed": "", "previous": "thank", "expect": { "predictionsInclude": ["you"] } },
     { "name": "next word after good", "typed": "", "previous": "good", "expect": { "predictionsInclude": ["morning"] } },

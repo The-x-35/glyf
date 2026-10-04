@@ -1870,6 +1870,21 @@ scenarios.push(
     return { pass: /Reported/.test(notice) && !onSum,
       note: `notice '${notice}'; Report on the sum: ${onSum ? "shown" : "none"}` };
   } },
+  { id: "S238", title: "A typo after I offers haven and haven't, never the names Haven or Hagen", run: async () => {
+    // Arpit's screenshot (2026-10-05): "I hsven" offered "hsven", Haven, Hagen.
+    await fresh();
+    await type("i hsven");
+    const s = await state();
+    const words = s.views.filter(v => v.text && v.y < s.keys.q[1]).map(v => v.text);
+    return { pass: words.includes("haven") && words.includes("haven't") && !words.includes("Haven") && !words.includes("Hagen"),
+      note: `strip: ${words.join(" | ")}` };
+  } },
+  { id: "S239", title: "The word before decides the fix: 'they wer' is 'they were'", run: async () => {
+    await fresh();
+    await type("they wer ");
+    const t = await text();
+    return { pass: t.toLowerCase() === "they were ", note: `'${t}'` };
+  } },
 );
 
 function chipLabel(s, chip) {

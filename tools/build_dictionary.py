@@ -156,6 +156,12 @@ def compile_words(words, min_prob=0):
         for ch in key:
             node = node["children"].setdefault(ch, {"children": {}, "forms": None})
         node["forms"] = groups[key]
+        node["key"] = key
+        # A fix's target hung under the misspelling ("have" under "nave") is
+        # no word there: only the typed key reaches it, never a search.
+        for form, v in groups[key].items():
+            if word_key(form) != key:
+                v[1] |= FLAG_NOT_A_WORD
 
     # Entries: grouped per key, in BFS node order.
     order = [(root, 0)]
@@ -170,17 +176,18 @@ def compile_words(words, min_prob=0):
 
     index_of = {id(n[0]): i for i, n in enumerate(nodes)}
     entries = []
-    entry_index = {}
+    entry_index = {}    # form -> its entry under its own key (bigrams point here)
     for n in nodes:
         forms = n[0]["forms"]
         if not forms:
             continue
         n[3] = len(entries)
-        # Most probable form first within a key.
-        for form, (prob, flags) in sorted(forms.items(), key=lambda kv: (-kv[1][0], kv[0])):
+        # Words first, most probable first; fixes' targets last.
+        for form, (prob, flags) in sorted(forms.items(), key=lambda kv: (bool(kv[1][1] & FLAG_NOT_A_WORD), -kv[1][0], kv[0])):
             if any(ch.isupper() for ch in form):
                 flags |= FLAG_HAS_UPPER
-            entry_index[form] = len(entries)
+            if word_key(form) == n[0]["key"]:
+                entry_index[form] = len(entries)
             entries.append([form, prob, flags, NONE, 0])
 
     # Subtree max probability (suggestable entries only), bottom-up.
@@ -197,11 +204,15 @@ def compile_words(words, min_prob=0):
         max_prob[i] = best
 
     bigram_rows = []
-    for e in entries:
+    for i, e in enumerate(entries):
         pairs = bigrams.get(e[0])
-        if not pairs:
+        if not pairs or entry_index.get(e[0]) != i:
             continue
-        rows = sorted(((entry_index[t], p) for t, p in pairs if t in entry_index), key=lambda r: -r[1])
+        best = {}
+        for t, p in pairs:
+            if t in entry_index:
+                best[entry_index[t]] = max(best.get(entry_index[t], 0), p)
+        rows = sorted(best.items(), key=lambda r: (-r[1], r[0]))
         if rows:
             e[3] = len(bigram_rows)
             e[4] = len(rows)

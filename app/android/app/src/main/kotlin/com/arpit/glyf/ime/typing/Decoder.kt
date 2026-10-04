@@ -222,7 +222,7 @@ object Decoder {
     private class Item(val node: Int, val spatial: Float, val added: Int, val kinds: Int,
                        val proximity: Int, val edits: Int, val bound: Float)
 
-    private fun completionCost(added: Int): Float = 0.4836f + 0.00624f * (added - 1).toFloat()
+    fun completionCost(added: Int): Float = 0.4836f + 0.00624f * (added - 1).toFloat()
     private fun languageCost(p: Int): Float = 1.1214f * (255 - p).toFloat() / 255f
 
     private fun completions(trie: GlydTrie, seeds: List<State>, limit: Int): List<Hit> {

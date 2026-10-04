@@ -22,10 +22,17 @@ and memory-mapped read-only by both keyboards. Little-endian.
 - Node 0 is the root. Nodes are breadth-first, so a node's children are
   contiguous and sorted by scalar.
 - A node's path is the **key**: NFC, lowercase, apostrophes (`'` `’`) and
-  hyphens dropped. All forms sharing a key hang off one node, most probable
-  first (`its`/`it's`, `us`/`US`).
+  hyphens dropped. All forms sharing a key hang off one node: words first,
+  most probable first (`its`/`it's`, `us`/`US`), then the targets of
+  dictionary fixes hung under a misspelling (below).
 - `maxProb` is the highest probability of any suggestable entry in the subtree
   (best-first completion).
+- A whitelist (dictionary fix) target spelled with other letters is stored
+  under the misspelling's key flagged `2 | 4` (`have` under `nave`, `his`
+  under `hid`): only typing exactly that key reaches it, never a search. The
+  same form under its own key is the word itself, and bigrams point there.
+- An entry's bigrams are its next words, most probable first, one row per
+  target; only the word's own entry has them.
 - Flags: 1 possibly offensive (known, never suggested), 2 not a word,
   4 whitelist (typing the key autocorrects to this form: `dont` → `don't`),
   8 form has an uppercase letter.
@@ -61,17 +68,44 @@ point, 170 after.
 (`−0.01` case, `−0.02` accent). Autocorrect confidence:
 `score · (1 − DL(typed, candidate)/len(candidate))`.
 
-Language `f` = max of: base unigram, base bigram (previous word), learned
-unigram `255 + 8.59·log2((commits−1)/max(total, 8192)) − 32` (commits ≥ 2),
-learned bigram `255 + 8.59·log2(pair/max(prev, 2)) − 4`, kept word 120,
-pack word 160, word added in the app 160, contact name 40.
+Language `f` = max of: base unigram, learned unigram
+`255 + 8.59·log2((commits−1)/max(total, 8192)) − 32` (commits ≥ 2), kept word
+120, pack word 160, word added in the app 160, contact name 40 — and then,
+after a previous word, the max of that and its **pair** evidence: base bigram,
+learned bigram `255 + 8.59·log2(pair/max(prev, 2)) − 4`, pack phrase 180.
+The previous word's base entry is the most probable form under its key.
+
+A word the previous word has pairs for, but never this one (no pair evidence
+at all), and that is no name (capitalized, not `I` or `I'…`), ranks lower:
+`f' = max(min(f, floor), f − 45)`, `floor` = the previous word's rarest pair.
+"your my" is no English; "your ket" is `key`, not `let`. Names are exempt:
+pairs never predict them.
+
+That penalty only counts when the previous word speaks to the choice: when
+none of the three likeliest candidates (ranked as if unpenalized, ties by
+form) has pair evidence, every candidate and every spelling of the typed
+letters ranks as if alone ("the recieve" is still `receive`).
+
+A name typed in lowercase (or capitalized only by the sentence start) that is
+not exactly the typed letters ranks 40 lower (`I hsven` is never `Haven` or
+`Hagen`).
+
+Candidates: the decoder's, plus the previous word's 256 likeliest followers
+that the typed letters start with at most one slip (none under three typed
+letters), at `0.45` a slip plus the completion cost of the letters left; a
+word the decoder also found keeps the decoder's kinds, a new one counts as a
+far slip and/or a completion. Each form keeps its best score.
+
+The `+1.1` exact bonus goes only to spellings of the typed letters with
+`f ≥ 60` (or from learned, pack and contact words): "wats" offers `was`,
+not `wat's`.
 
 ## When Glyf autocorrects
 
 Never when: autocorrect is off or the field disallows it; the token has a
 digit, two or more capitals, or any of `@ # . / : _`; the typed word is known
 (one of its own spellings is in the dictionary incl. offensive, learned, kept,
-in a pack, added, or a contact); the word is one letter; it is capitalized
+in a pack, added, or a contact), save the name rule below; the word is one letter; it is capitalized
 mid-sentence; the user reverted this exact correction before; the word is
 stretched for emphasis, a letter three or more times in a row (`sooo`,
 `yesss`, `cuteee`: 2026-09-29, `sooo` had become `solo`).
@@ -81,17 +115,33 @@ Dictionary fixes (AOSP whitelist shortcuts):
   typed spelling is a real word less than 40 below the fix (`id` 99 stays,
   `I'd` is 136; `cant` 70 becomes `can't` 160);
 - a different word (`alot` → `a lot`, `wierd` → `weird`): only when the typed
-  spelling is no word at all — AOSP's `hum` → `him`, `bot` → `not`,
-  `hid` → `his` never happen.
+  spelling is no word at all, or only a rare one (every spelling `f < 60`) and
+  the previous word has pair evidence for the fix (`it os` is `it is`; `the
+  os` stays) — AOSP's `hum` → `him`, `bot` → `not`, `hid` → `his` never
+  happen. Such a fix gives way to the search's own pick (below) when that is
+  likelier: by any margin when it has the fix's letters (`they wer` is
+  `were`, not `we're`), by 40 otherwise.
+- A fix held back is never put in by the search either.
 
-Same letters with other capitals: only into a lowercase form or a Title-case
-proper noun with `f ≥ 60` (`delhi` → `Delhi`); never an acronym (`hsa` is not
-`HSA`) or a capitalized contraction (`bas` is not `BA's`).
+A known word that is far more often a name becomes the name: a Title-case
+form at least 40 above the typed spelling (`mike` 57 → `Mike` 122, `john` →
+`John`; `bill` and `will` stay), unless the person uses the lowercase word.
 
-Otherwise the best candidate — never a spelling of the typed letters and
-never a whitelist target — applies only if all hold:
+Same letters with other capitals or apostrophes: only into a lowercase form
+or a Title-case proper noun with `f ≥ 60` (`delhi` → `Delhi`); never an
+acronym (`hsa` is not `HSA`) or a capitalized contraction (`bas` is not
+`BA's`). When that form is a name (not a contact) or a rare spelling
+(lowercase, `f < 120`: `ne'er`, `di's`), a search pick (below) with `f` 40
+higher wins instead — for a name of `f ≥ 100`, only when its pair evidence is
+that high too (`I've ben` → `been`; `call mike` stays `Mike`). If some
+candidate one edit away is that strong but not sure enough to put in, the
+word stays as typed (`Tom wats`).
+
+Otherwise the search's best candidate — never a spelling of the typed
+letters — applies only if all hold:
+- the word is more than one letter, and not capitalized mid-sentence;
 - Damerau-Levenshtein ≤ 1 for typed length ≤ 4, ≤ 2 otherwise;
-- confidence ≥ 0.185 (AOSP "modest");
+- confidence ≥ 0.16;
 - it beats the runner-up's confidence by ≥ 0.05, or ≥ 0.02 when it is two
   swapped letters and at least as common as the runner-up (`waht`);
 - trust gates:
@@ -99,11 +149,16 @@ never a whitelist target — applies only if all hold:
   - far substitution: never in words of ≤ 4 letters (`yaar` is not `year`),
     `f ≥ 90` from 7 letters (`definately`), else `f ≥ 150`;
   - an omission or insertion of a different letter, a completion or a
-    trailing letter needs `f ≥ 120`;
+    trailing letter needs `f ≥ 100`, `f ≥ 60` from 7 typed letters;
   - two edits need `f ≥ 100` from 8 letters, else `f ≥ 150` from 6 letters;
-  - finishing a word (letters missing at the end) needs 4 typed letters;
   - a lowercase word becomes a proper noun only if Title-case with
     `f ≥ 110` (`priya` is not `Oriya`), never an acronym (`ngl` is not `NFL`).
+
+Measured on 2,000 held-out Tatoeba sentences (`StripEval`, 2026-10-05): a
+typo is fixed 75% of the time (58% before), fixed or shown 93% (87%), turned
+into another word 1.9%; a correct word is changed 0.1%. The next word is in
+the three predictions 30% (3%), and in the strip's two after one, two, three
+letters 43%, 52%, 64% (19%, 22%, 39%).
 
 The applied form keeps the typed leading capital unless the form has its own
 capitals (`Pune`, `I'm`). Alternatives never include a multi-word form for
@@ -113,8 +168,24 @@ other letters ("United States" is no completion for "u").
 
 `app/dict/en.glyd` = AOSP `en_wordlist.combined` (US + UK spellings, 165k
 words, Apache-2.0) + `app/dict/supplement_en.combined` (texting words, Indian
-names/apps/places, common word pairs). `shared/typing/real-cases.json` holds
-both engines to the same answers on it.
+names/apps/places, chat word pairs that stay on top) +
+`app/dict/bigrams_en.combined.gz` (294k word pairs counted by
+`tools/typing/build_bigrams.py` from Tatoeba's English sentences, CC BY 2.0
+FR, one in ten held out for measuring). `shared/typing/real-cases.json` holds
+both engines to the same answers on it; `app/dict/NOTICE.md` has the rebuild
+commands.
+
+Word pairs: every pair seen 3 times, `f = 255 + 8.59·log2((count − 0.5)/n)`
+with `n` the previous word's count, attached to the most probable form of its
+key. Names never follow (Tatoeba's Tom and Mary), except days, months,
+languages, a few others and all-capital words (`OK`, `TV`); a rare word far
+more often a contraction missing its apostrophe counts as the contraction
+(`wont` → `won't`). Words much commoner in sentences than in AOSP's list are
+lifted (`f − 8` of their sentence frequency, at most 230), unless another
+spelling of their letters is commoner (`ill` stays below `I'll`).
+
+Parity: `TypingParity` (JUnit) and `testParityDump` (RunnerTests) write every
+answer for the same `in.tsv`; the two files must be identical.
 
 ## Packs
 

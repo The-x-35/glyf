@@ -98,6 +98,12 @@ android {
         // The typing engine's base dictionary (tools/build_dictionary.py).
         getByName("main") { assets.srcDir("../../dict") }
     }
+    androidResources {
+        // aapt's defaults, plus the dictionary's build sources: only en.glyd
+        // and its NOTICE.md ship.
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:" +
+            "!*.combined:!*.combined.gz:<dir>source"
+    }
     testOptions {
         // android.* calls in pure-logic tests return defaults instead of throwing.
         unitTests.isReturnDefaultValues = true

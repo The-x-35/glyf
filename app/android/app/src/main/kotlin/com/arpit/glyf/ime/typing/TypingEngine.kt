@@ -29,16 +29,45 @@ class TypingEngine(
         )
         const val ALL = SUGGESTIONS or AUTOCORRECT or LEARNING
 
-        const val AUTOCORRECT_THRESHOLD = 0.185f
+        const val AUTOCORRECT_THRESHOLD = 0.16f
         const val AMBIGUITY_GAP = 0.05f
         const val SWAP_GAP = 0.02f
         const val PREDICTION_FLOOR = 150f
+        /** Next words are the likeliest of each word's pairs: this many are read. */
+        const val PREDICTION_ROWS = 64
         /** A dictionary fix of apostrophes ("cant" → "can't") beats a real word
          *  with the typed spelling only when it's this much more common. */
         const val WHITELIST_GAP = 40f
         const val PACK_PROBABILITY = 160f
         const val CONTACT_PROBABILITY = 40f
         const val PACK_PHRASE_PROBABILITY = 180f
+        /** A name (capitalized, not one of I's forms) ranks as if this much
+         *  rarer when it isn't what was typed and the typing was lowercase:
+         *  "I hsven" is "haven" and "haven't", never "Haven" or "Hagen"
+         *  (2026-10-05). TypingEngine.swift's twin. */
+        const val NAME_PENALTY = 40f
+        /** What one slip costs a word the previous word expects. */
+        const val CONTEXT_EDIT_COST = 0.45f
+        /** How many of the previous word's likeliest followers are tried
+         *  against what's typed so far. */
+        const val CONTEXT_FOLLOWERS = 256
+        /** The previous word ranks the candidates only when it was seen before
+         *  one of the likeliest this many of them. */
+        const val CONTEXT_TOP = 3
+        /** A word never seen after the previous word, when that word was seen
+         *  before others, ranks no higher than the rarest of them, and at most
+         *  this much lower than it would alone: "your my" is no English. */
+        const val UNSEEN_PAIR_MOST = 45f
+        /** A same-letters fix into a name or a rare spelling gives way to a
+         *  word this much likelier ("I've ben" is "been", not "Ben")... */
+        const val RIVAL_GAP = 40f
+        /** ...when the name is this rare, or the previous word says so... */
+        const val RARE_NAME = 100f
+        /** ...and a spelling with an apostrophe below this is rare ("ne'er"). */
+        const val RARE_FORM = 120f
+        /** A dictionary spelling of exactly the typed letters below this ranks
+         *  as any other word, not first: "wats" offers "was", not "wat's". */
+        const val EXACT_FLOOR = 60f
 
         /** Words, not codes: no digits, no addresses, no secrets. */
         fun isLearnable(word: String): Boolean {
@@ -72,7 +101,13 @@ class TypingEngine(
 
     init { rebuildExtra() }
 
-    fun setBase(trie: GlydTrie?) { base = trie; rebuildExtra() }
+    fun setBase(trie: GlydTrie?) {
+        base = trie
+        followersOf = -1
+        followerMap = emptyMap()
+        likelyFollowers = emptyList()
+        rebuildExtra()
+    }
 
     fun setPackWords(forms: List<String>) {
         // First spelling wins, like the Swift engine.
@@ -111,7 +146,16 @@ class TypingEngine(
     private class Candidate(
         val form: String, val key: String, val score: Float, val probability: Float, val kinds: Int,
         val offensive: Boolean, val whitelist: Boolean, val whitelistOnly: Boolean,
-    )
+        /** What the previous word says for this one, when anything does. */
+        val pair: Float?,
+        /** How much rarer it ranks for never following the previous word, and
+         *  what that took off its score. */
+        val unseen: Float = 0f, val unseenScore: Float = 0f,
+    ) {
+        /** As if the previous word said nothing about it. */
+        fun alone() = if (unseen == 0f) this else Candidate(form, key, score + unseenScore, probability + unseen,
+            kinds, offensive, whitelist, whitelistOnly, pair)
+    }
 
     private enum class Source { BASE, EXTRA }
 
@@ -125,12 +169,7 @@ class TypingEngine(
         val typedScalars = TypingText.scalars(typed)
         if (key.isEmpty() || typedScalars.size > 48) return Suggestions.empty(typed)
 
-        val points = ArrayList<TouchPoint>()
-        typedScalars.forEachIndexed { i, cp ->
-            if (cp == '\''.code || cp == 0x2019 || cp == '-'.code) return@forEachIndexed
-            val offset = touches?.let { if (i < it.size) it[i] else null }
-            points.add(TouchPoint(cp, offset, geometry))
-        }
+        val points = touchPoints(typedScalars, touches)
         if (points.isEmpty()) return Suggestions.empty(typed)
 
         val prevKey = previous?.let { TypingText.key(it) }?.takeIf { it.isNotEmpty() }
@@ -148,31 +187,21 @@ class TypingEngine(
             }
         }
 
+        val personalForm = personalForm(key)
+
+        val (ranked, informative) = rank(typed, key, points, prevKey, prevBaseEntry, sentenceStart, today)
+        // Read against the same evidence as the ranking.
+        val exact = if (informative) exactForms else exactForms.map { it.alone() }
+
         // A whitelist target spelled differently ("his" under "hid") is not a
         // form of the typed word; everything else under this key is.
-        val realForms = exactForms.filter { !it.whitelistOnly && !(it.whitelist && it.key != key) }
-        val personalForm = if (personal.isKnown(key)) personal.word(key)?.form else null
+        val realForms = exact.filter { !it.whitelistOnly && !(it.whitelist && it.key != key) }
         val known = (personalForm?.lowercase() == typed.lowercase()) ||
             realForms.any { TypingText.sameWord(typed, it.form) }
 
-        val best = HashMap<String, Candidate>()
-        for ((trie, source) in sources()) {
-            for (hit in Decoder.search(trie, points, geometry)) {
-                val first = trie.firstEntry(hit.node)
-                for (e in first until first + trie.entryCount(hit.node)) {
-                    if (trie.flags(e) and GlydTrie.FLAG_NOT_A_WORD != 0) continue
-                    val c = candidate(trie, source, e, null, hit, points.size, prevKey, prevBaseEntry, today)
-                    if (personal.isBlocked(c.key)) continue
-                    val existing = best[c.form]
-                    if (existing != null && existing.score >= c.score) continue
-                    best[c.form] = c
-                }
-            }
-        }
-        val ranked = best.values.sortedWith(compareByDescending<Candidate> { it.score }.thenBy { it.form })
-
+        lastHeldBack = null
         val autocorrect = if (policy and AUTOCORRECT != 0)
-            decide(typed, key, known, sentenceStart, exactForms, realForms, ranked, prevKey) else null
+            decide(typed, key, known, sentenceStart, exact, realForms, ranked, prevKey) else null
         val seen = HashSet<String>()
         seen.add(typed.lowercase())
         autocorrect?.let { seen.add(it.lowercase()) }
@@ -202,38 +231,160 @@ class TypingEngine(
         return Suggestions(typed, known, autocorrect, alternatives)
     }
 
+    private fun personalForm(key: String): String? = if (personal.isKnown(key)) personal.word(key)?.form else null
+
+    private fun touchPoints(typedScalars: IntArray, touches: List<FloatArray?>?): List<TouchPoint> {
+        val points = ArrayList<TouchPoint>()
+        typedScalars.forEachIndexed { i, cp ->
+            if (cp == '\''.code || cp == 0x2019 || cp == '-'.code) return@forEachIndexed
+            val offset = touches?.let { if (i < it.size) it[i] else null }
+            points.add(TouchPoint(cp, offset, geometry))
+        }
+        return points
+    }
+
+    /** Every word the touches could have meant, best first, and whether the
+     *  previous word had a say in the order. */
+    private fun rank(typed: String, key: String, points: List<TouchPoint>, prevKey: String?, prevBaseEntry: Int?,
+                     sentenceStart: Boolean, today: Int): kotlin.Pair<List<Candidate>, Boolean> {
+        // Typed in lowercase (a capital the sentence start put there counts as
+        // lowercase): names then rank lower unless they're what was typed.
+        val lowerish = !TypingText.hasUppercase(typed) ||
+            (sentenceStart && TypingText.capitalCount(typed) == 1 && TypingText.isCapitalized(typed))
+        val nameKey = if (lowerish) key else null
+        val best = HashMap<String, Candidate>()
+        for ((trie, source) in sources()) {
+            for (hit in Decoder.search(trie, points, geometry)) {
+                val first = trie.firstEntry(hit.node)
+                for (e in first until first + trie.entryCount(hit.node)) {
+                    if (trie.flags(e) and GlydTrie.FLAG_NOT_A_WORD != 0) continue
+                    val c = candidate(trie, source, e, null, hit, points.size, prevKey, prevBaseEntry, today, nameKey)
+                    if (personal.isBlocked(c.key)) continue
+                    val existing = best[c.form]
+                    if (existing != null && existing.score >= c.score) continue
+                    best[c.form] = c
+                }
+            }
+        }
+        // The previous word's likely followers, where what's typed so far fits
+        // one with at most a slip: the decoder's completions go by commonness
+        // alone, so after "I" an "h" never reached "haven't" (2026-10-05).
+        val b = base
+        if (prevBaseEntry != null && b != null) {
+            val typedKey = TypingText.scalars(key)
+            val slips = if (typedKey.size >= 3) 1 else 0
+            followers(b, prevBaseEntry)
+            for (follower in likelyFollowers) {
+                if (personal.isBlocked(follower.key)) continue
+                val (edits, added) = TypingText.prefixFit(typedKey, follower.scalars) ?: continue
+                if (edits > slips || (edits == 0 && added == 0)) continue
+                val spatial = edits * CONTEXT_EDIT_COST + (if (added > 0) Decoder.completionCost(added) else 0f)
+                val target = follower.entry
+                val formKey = follower.key
+                val existing = best[follower.form]
+                // The decoder's own find keeps its account of the slip (a far
+                // key stays a far key); a new one is taken as a far slip, so
+                // autocorrect stays as careful with it ("I hav" is not "had").
+                val kinds = existing?.kinds ?: ((if (added > 0) Decoder.COMPLETION else 0) or
+                    (if (edits > 0) Decoder.FAR_SUBSTITUTION else 0))
+                val c = candidate(b, Source.BASE, target, formKey, Decoder.Hit(GlydTrie.NONE, spatial, kinds),
+                    points.size, prevKey, prevBaseEntry, today, nameKey)
+                if (existing == null || existing.score < c.score) best[c.form] = c
+            }
+        }
+        // When none of the likeliest words ever followed the previous word, it
+        // says nothing about them: "the recieve" is still "receive", not a
+        // tie with "relieve" (2026-10-05).
+        val informative = best.values
+            .sortedWith(compareByDescending<Candidate> { it.score + it.unseenScore }.thenBy { it.form })
+            .take(CONTEXT_TOP).any { it.pair != null }
+        val all = if (informative) best.values else best.values.map { it.alone() }
+        return all.sortedWith(compareByDescending<Candidate> { it.score }.thenBy { it.form }) to informative
+    }
+
     private fun candidate(trie: GlydTrie, source: Source, entry: Int, key: String?, hit: Decoder.Hit,
-                          points: Int, prevKey: String?, prevBaseEntry: Int?, today: Int): Candidate {
+                          points: Int, prevKey: String?, prevBaseEntry: Int?, today: Int,
+                          nameKey: String? = null): Candidate {
         val form = trie.form(entry)
         val formKey = key ?: TypingText.key(form)
         val flags = trie.flags(entry)
-        val f = languageProbability(formKey, form,
+        // A fix's target under the misspelling ("have" under "nave") reads the
+        // previous word's pairs through the word's own entry.
+        val own = source == Source.BASE && flags and GlydTrie.FLAG_NOT_A_WORD == 0
+        val language = languageProbability(formKey, form,
             if (source == Source.BASE) trie.probability(entry).toFloat() else null,
-            if (source == Source.BASE) entry else null, prevKey, prevBaseEntry, today)
-        val language = 1.1214f * (255f - f) / 255f
-        var score = 1f - (hit.spatial + language) / (1.1214f + 0.1f * points.toFloat())
-        if (hit.exact) score += 1.1f
+            if (own) entry else null, prevKey, prevBaseEntry, today)
+        var f = language.f
+        if (nameKey != null && formKey != nameKey && isName(form)) f = maxOf(0f, f - NAME_PENALTY)
+        val scale = 1.1214f + 0.1f * points.toFloat()
+        var score = 1f - (hit.spatial + 1.1214f * (255f - f) / 255f) / scale
+        // The typed letters' own spellings come first, unless the dictionary's
+        // is junk ("wat's", "di's"): those rank as any other word would.
+        if (hit.exact && (source == Source.EXTRA || f >= EXACT_FLOOR)) score += 1.1f
         return Candidate(form, formKey, score, f, hit.kinds,
             flags and GlydTrie.FLAG_OFFENSIVE != 0, flags and GlydTrie.FLAG_WHITELIST != 0,
-            flags and GlydTrie.FLAG_NOT_A_WORD != 0)
+            flags and GlydTrie.FLAG_NOT_A_WORD != 0, language.pair, language.unseen, 1.1214f * language.unseen / 255f / scale)
     }
 
+    /** Capitalized and not one of I's own forms ("I", "I'm"): word pairs
+     *  never predict these, so no pair says anything against them either. */
+    private fun isName(form: String) = TypingText.hasUppercase(form) && form != "I" && !form.startsWith("I'")
+
+    private class Language(val f: Float, val pair: Float?, val unseen: Float)
+
+    /** FORMAT.md "Language f": the best evidence any source has for the word,
+     *  what the previous word says for it on its own, and how much rarer it
+     *  ranks for never following the previous word. */
     private fun languageProbability(key: String, form: String, baseProbability: Float?, entry: Int?,
-                                    prevKey: String?, prevBaseEntry: Int?, today: Int): Float {
+                                    prevKey: String?, prevBaseEntry: Int?, today: Int): Language {
         var f = baseProbability ?: 0f
         personal.probability(key, today)?.let { f = maxOf(f, it) }
         if (packForms.containsKey(key)) f = maxOf(f, PACK_PROBABILITY)
         if (contactForms.containsKey(key)) f = maxOf(f, CONTACT_PROBABILITY)
+        var pair: Float? = null
+        var unseen = 0f
         if (prevKey != null) {
-            personal.pairProbability(prevKey, key, today)?.let { f = maxOf(f, it) }
-            if (packPairs[prevKey]?.any { TypingText.key(it) == key } == true) f = maxOf(f, PACK_PHRASE_PROBABILITY)
+            personal.pairProbability(prevKey, key, today)?.let { pair = it }
+            if (packPairs[prevKey]?.any { TypingText.key(it) == key } == true) pair = maxOf(pair ?: 0f, PACK_PHRASE_PROBABILITY)
             val b = base
             if (prevBaseEntry != null && b != null) {
+                val followers = followers(b, prevBaseEntry)
                 val target = entry ?: baseEntry(key, form)
-                if (target != null) b.bigramProbability(prevBaseEntry, target)?.let { f = maxOf(f, it.toFloat()) }
+                val p = target?.let { followers[it] }
+                if (p != null) pair = maxOf(pair ?: 0f, p.toFloat())
+                // The previous word was seen before plenty of others, never this
+                // one: "your ket" is "key", not "let" (2026-10-05).
+                else if (pair == null && followers.isNotEmpty() && !isName(form)) {
+                    val capped = maxOf(minOf(f, followerFloor.toFloat()), f - UNSEEN_PAIR_MOST)
+                    unseen = f - capped
+                    f = capped
+                }
             }
+            pair?.let { f = maxOf(f, it) }
         }
-        return minOf(f, 255f)
+        val clamped = f.coerceIn(0f, 255f)
+        return Language(clamped, pair, unseen)
+    }
+
+    private class Follower(val entry: Int, val form: String, val key: String, val scalars: IntArray)
+
+    private var followersOf = -1
+    private var followerMap: Map<Int, Int> = emptyMap()
+    private var followerFloor = 0
+    /** The likeliest of them, spelled out for matching what's typed. */
+    private var likelyFollowers: List<Follower> = emptyList()
+
+    /** The previous word's followers, read once per word typed after it. */
+    private fun followers(b: GlydTrie, entry: Int): Map<Int, Int> {
+        if (entry != followersOf) {
+            followerMap = b.followers(entry)
+            followerFloor = followerMap.values.minOrNull() ?: 0
+            likelyFollowers = b.bigrams(entry, CONTEXT_FOLLOWERS)
+                .filter { (t, _) -> b.flags(t) and (GlydTrie.FLAG_OFFENSIVE or GlydTrie.FLAG_NOT_A_WORD) == 0 }
+                .map { (t, _) -> val form = b.form(t); val k = TypingText.key(form); Follower(t, form, k, TypingText.scalars(k)) }
+            followersOf = entry
+        }
+        return followerMap
     }
 
     private fun baseEntry(key: String, form: String? = null): Int? {
@@ -245,13 +396,16 @@ class TypingEngine(
         return (first until first + b.entryCount(node)).firstOrNull { b.form(it) == form }
     }
 
+    /** Tests only: the rule that kept the last suggestions() call from autocorrecting. */
+    internal var lastHeldBack: String? = null
+
     /** FORMAT.md "When Glyf autocorrects". */
     private fun decide(typed: String, key: String, known: Boolean, sentenceStart: Boolean,
                        exactForms: List<Candidate>, realForms: List<Candidate>, ranked: List<Candidate>,
                        previous: String? = null): String? {
-        if (TypingText.hasDigit(typed) || TypingText.capitalCount(typed) >= 2) return null
+        if (TypingText.hasDigit(typed) || TypingText.capitalCount(typed) >= 2) run { lastHeldBack = "digit-or-caps"; return null }
         // Stretched for emphasis ("sooo", "yesss"): meant, never "solo".
-        if (TypingText.isStretched(typed)) return null
+        if (TypingText.isStretched(typed)) run { lastHeldBack = "stretched"; return null }
 
         // Dictionary fixes: apostrophes unless the typed spelling is a real word
         // nearly as common; a different word only when the typed spelling is no
@@ -261,37 +415,86 @@ class TypingEngine(
         val keptHere = typedReal != null && previous != null && previous in KEPT_AFTER[key].orEmpty()
         exactForms.filter { c ->
             if (!c.whitelist || personal.isRejected(typed, c.form) || keptHere) false
-            else if (c.key != key) !known && realForms.isEmpty()
+            // Into other letters only when the typed ones are no word, or only
+            // a rare one and the word before wants the fix: "it os" is "it is",
+            // "the os" stays (OS).
+            else if (c.key != key) !known && (realForms.isEmpty() ||
+                (c.pair != null && realForms.all { it.probability < EXACT_FLOOR }))
             else if (typedReal != null) c.probability >= typedReal + WHITELIST_GAP
             else !known
         }.maxByOrNull { it.probability }?.let { w ->
             val fixed = TypingText.matchCase(typed, w.form)
-            return if (fixed == typed) null else fixed
+            if (fixed == typed) return null
+            // A fix into other letters gives way to the word this sentence
+            // wants: "they wer" is "were", not AOSP's "we're" (2026-10-05).
+            if (w.key != key) contender(typed, key, sentenceStart, ranked)?.let { rival ->
+                if (rival.probability > w.probability + (if (rival.key == w.key) 0f else RIVAL_GAP)) {
+                    return TypingText.matchCase(typed, rival.form)
+                }
+            }
+            return fixed
         }
-        if (known) return null
+        // A rare lowercase word that is far more often a name is the name:
+        // "mike" is Mike, "john" is John; "bill" and "will" stay (2026-10-05).
+        val personallyKnown = personalForm(key)?.lowercase() == typed.lowercase()
+        if (known && typedReal != null && !personallyKnown && !TypingText.hasUppercase(typed)) {
+            realForms.filter { c ->
+                !c.offensive && TypingText.isTitleCase(c.form) && !c.form.contains('\'') &&
+                    c.probability >= typedReal + WHITELIST_GAP && !personal.isRejected(typed, c.form)
+            }.maxByOrNull { it.probability }?.let { return it.form }
+        }
+        if (known) run { lastHeldBack = "known"; return null }
+        // A fix the dictionary has for these letters but held back is not
+        // put in by a search either.
+        val declined = exactForms.filter { it.whitelist && it.key != key }.map { it.form }.toSet()
 
         // Same letters, different apostrophes or capitals — never into an
         // acronym ("HSA") or a capitalized contraction ("BA's").
-        realForms.filter { c ->
+        val sameLetters = realForms.filter { c ->
             !c.offensive && !personal.isRejected(typed, c.form) &&
                 (!TypingText.hasUppercase(c.form) ||
                     (TypingText.isTitleCase(c.form) && !c.form.contains('\'') && c.probability >= 60f))
+        }.maxByOrNull { it.probability }?.takeIf { fix ->
+            TypingText.matchCase(typed, fix.form) != typed &&
+                (sentenceStart || !TypingText.isCapitalized(typed) || TypingText.hasUppercase(fix.form))
         }
-            .maxByOrNull { it.probability }?.let { fix ->
-                val fixed = TypingText.matchCase(typed, fix.form)
-                if (fixed != typed && (sentenceStart || !TypingText.isCapitalized(typed) || TypingText.hasUppercase(fix.form))) {
-                    return fixed
+        if (sameLetters != null) {
+            // A name, or a rare spelling, gives way to a word a slip away that
+            // is far likelier here: "I've ben" is "been" and "neer" is "never",
+            // never "Ben" or "ne'er"; "call mike" stays Mike (2026-10-05). A
+            // contact's name never gives way.
+            val name = TypingText.hasUppercase(sameLetters.form) && !contactForms.containsKey(key)
+            val rare = !TypingText.hasUppercase(sameLetters.form) && sameLetters.probability < RARE_FORM
+            if (name || rare) {
+                val gap = sameLetters.probability + RIVAL_GAP
+                fun strong(c: Candidate) = c.probability >= gap &&
+                    (rare || sameLetters.probability < RARE_NAME || (c.pair ?: 0f) >= gap)
+                val rival = contender(typed, key, sentenceStart, ranked, declined)
+                if (rival != null && strong(rival)) return TypingText.matchCase(typed, rival.form)
+                // Not sure enough of the other word to put it in, but too sure
+                // of it to put in the rare one: "Tom wats" stays as typed.
+                val typedKey = TypingText.scalars(key)
+                if (ranked.any { !it.offensive && it.key != key && strong(it) &&
+                        TypingText.editDistance(typedKey, TypingText.scalars(it.key)) <= 1 }) {
+                    run { lastHeldBack = "contested"; return null }
                 }
             }
+            return TypingText.matchCase(typed, sameLetters.form)
+        }
+        return contender(typed, key, sentenceStart, ranked, declined)?.let { TypingText.matchCase(typed, it.form) }
+    }
 
-        if (typed.codePointCount(0, typed.length) <= 1) return null
-        if (TypingText.isCapitalized(typed) && !sentenceStart) return null
+    /** The best word a slip or two from what was typed, when it's sure
+     *  enough to put in (FORMAT.md "When Glyf autocorrects"). */
+    private fun contender(typed: String, key: String, sentenceStart: Boolean, ranked: List<Candidate>,
+                          declined: Set<String> = emptySet()): Candidate? {
+        if (typed.codePointCount(0, typed.length) <= 1) run { lastHeldBack = "one-letter"; return null }
+        if (TypingText.isCapitalized(typed) && !sentenceStart) run { lastHeldBack = "capitalized"; return null }
 
-        // Spellings of the typed letters were settled above, and dictionary
-        // fixes only ever apply through the rule above.
-        val contenders = ranked.filter { !it.offensive && it.key != key && !it.whitelist }
-        val first = contenders.firstOrNull() ?: return null
-        if (personal.isRejected(typed, first.form)) return null
+        // Spellings of the typed letters were settled before this.
+        val contenders = ranked.filter { !it.offensive && it.key != key && it.form !in declined }
+        val first = contenders.firstOrNull() ?: run { lastHeldBack = "no-contender"; return null }
+        if (personal.isRejected(typed, first.form)) run { lastHeldBack = "rejected"; return null }
 
         val typedKey = TypingText.scalars(key)
         val typedLength = typedKey.size
@@ -302,54 +505,46 @@ class TypingEngine(
             return c.score * (1f - distance.toFloat() / ck.size.toFloat()) to distance
         }
         val (conf, distance) = confidence(first)
-        if (distance > (if (typedLength <= 4) 1 else 2) || conf < AUTOCORRECT_THRESHOLD) return null
+        if (distance > (if (typedLength <= 4) 1 else 2)) run { lastHeldBack = "too-far"; return null }
+        if (conf < AUTOCORRECT_THRESHOLD) run { lastHeldBack = "low-confidence"; return null }
         contenders.drop(1).firstOrNull { it.key != first.key }?.let { second ->
             // Two letters swapped is the clearest typo there is ("waht").
             val swap = first.kinds == Decoder.TRANSPOSITION && first.probability >= second.probability
-            if (conf - confidence(second).first < (if (swap) SWAP_GAP else AMBIGUITY_GAP)) return null
+            if (conf - confidence(second).first < (if (swap) SWAP_GAP else AMBIGUITY_GAP)) run { lastHeldBack = "ambiguous"; return null }
         }
 
         val kinds = first.kinds
-        if (kinds and Decoder.FIRST_LETTER_FAR_SUBSTITUTION != 0) return null
+        if (kinds and Decoder.FIRST_LETTER_FAR_SUBSTITUTION != 0) run { lastHeldBack = "first-letter-far"; return null }
         if (kinds and Decoder.FAR_SUBSTITUTION != 0) {
             // A far-off key in a short word is another word ("yaar" isn't "year").
-            if (typedLength <= 4) return null
-            if (first.probability < (if (typedLength >= 7) 90f else 150f)) return null
+            if (typedLength <= 4) run { lastHeldBack = "far-short"; return null }
+            if (first.probability < (if (typedLength >= 7) 90f else 150f)) run { lastHeldBack = "far-rare"; return null }
         }
         // A lowercase word becomes a proper noun only if it's a common one,
         // and never an acronym ("ngl" is not "NFL").
         if (TypingText.hasUppercase(first.form) && !TypingText.hasUppercase(typed) &&
-            (TypingText.capitalCount(first.form) > 1 || first.probability < 110f)) return null
+            (TypingText.capitalCount(first.form) > 1 || first.probability < 110f)) run { lastHeldBack = "rare-name"; return null }
         val loose = Decoder.OMISSION_OTHER or Decoder.INSERTION_OTHER or Decoder.COMPLETION or Decoder.TRAILING_INSERTION
-        if (kinds and loose != 0 && first.probability < 120f) return null
+        if (kinds and loose != 0 && first.probability < (if (typedLength >= 7) 60f else 100f)) run { lastHeldBack = "loose-rare"; return null }
         if (distance == 2 && !((typedLength >= 8 && first.probability >= 100f) || (typedLength >= 6 && first.probability >= 150f))) {
-            return null
+            run { lastHeldBack = "two-edits"; return null }
         }
-        if (kinds and Decoder.COMPLETION != 0 && typedLength < 4) return null
-        return TypingText.matchCase(typed, first.form)
+        return first
     }
 
     /** Top candidates with their numbers, for tuning (tests only). */
-    internal fun debugCandidates(typed: String, previous: String?, limit: Int = 5): List<String> {
+    internal fun debugCandidates(typed: String, previous: String?, limit: Int = 5, sentenceStart: Boolean = false): List<String> {
         val key = TypingText.key(typed)
-        val points = TypingText.scalars(typed).filter { it != '\''.code }.map { TouchPoint(it, null, geometry) }
-        val prevKey = previous?.let { TypingText.key(it) }
+        val points = touchPoints(TypingText.scalars(typed), null)
+        val prevKey = previous?.let { TypingText.key(it) }?.takeIf { it.isNotEmpty() }
         val prevBaseEntry = prevKey?.let { baseEntry(it) }
-        val best = HashMap<String, Candidate>()
-        for ((trie, source) in sources()) for (hit in Decoder.search(trie, points, geometry)) {
-            val first = trie.firstEntry(hit.node)
-            for (e in first until first + trie.entryCount(hit.node)) {
-                if (trie.flags(e) and GlydTrie.FLAG_NOT_A_WORD != 0) continue
-                val c = candidate(trie, source, e, null, hit, points.size, prevKey, prevBaseEntry, TypingText.day())
-                if ((best[c.form]?.score ?: -9f) < c.score) best[c.form] = c
-            }
-        }
         val typedKey = TypingText.scalars(key)
-        return best.values.sortedByDescending { it.score }.take(limit).map { c ->
+        return rank(typed, key, points, prevKey, prevBaseEntry, sentenceStart, TypingText.day()).first.take(limit).map { c ->
             val ck = TypingText.scalars(c.key)
             val d = TypingText.editDistance(typedKey, ck)
             val conf = if (d >= ck.size) 0f else c.score * (1f - d.toFloat() / ck.size)
-            "%s score=%.3f conf=%.3f f=%.0f dl=%d kinds=%d".format(c.form, c.score, conf, c.probability, d, c.kinds)
+            "%s%s score=%.3f conf=%.3f f=%.0f pair=%s dl=%d kinds=%d".format(c.form, if (c.whitelist) "[w]" else "",
+                c.score, conf, c.probability, c.pair?.let { "%.0f".format(it) } ?: "-", d, c.kinds)
         }
     }
 
@@ -365,7 +560,7 @@ class TypingEngine(
             if (node != GlydTrie.NONE) {
                 val first = b.firstEntry(node)
                 for (e in first until first + b.entryCount(node)) {
-                    for ((target, p) in b.bigrams(e)) {
+                    for ((target, p) in b.bigrams(e, PREDICTION_ROWS)) {
                         if (b.flags(target) and (GlydTrie.FLAG_OFFENSIVE or GlydTrie.FLAG_NOT_A_WORD) != 0) continue
                         val form = b.form(target)
                         if (personal.isBlocked(TypingText.key(form))) continue

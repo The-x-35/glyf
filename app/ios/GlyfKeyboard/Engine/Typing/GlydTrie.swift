@@ -118,10 +118,10 @@ final class GlydTrie {
     }
 
     /// Next words recorded for this entry, most probable first.
-    func bigrams(_ entry: UInt32) -> [(target: UInt32, probability: UInt8)] {
+    func bigrams(_ entry: UInt32, limit: Int = .max) -> [(target: UInt32, probability: UInt8)] {
         let base = Int(entry) * 16
         let first = entries.loadUnaligned(fromByteOffset: base + 8, as: UInt32.self)
-        let count = Int(entries.loadUnaligned(fromByteOffset: base + 12, as: UInt16.self))
+        let count = min(Int(entries.loadUnaligned(fromByteOffset: base + 12, as: UInt16.self)), limit)
         guard first != Self.none, count > 0 else { return [] }
         return (0..<count).map { i in
             let at = (Int(first) + i) * 8
@@ -130,8 +130,24 @@ final class GlydTrie {
         }
     }
 
+    /// Every next word of this entry, target entry → probability: looked up
+    /// for each candidate while one word is typed.
+    func followers(_ entry: UInt32) -> [UInt32: UInt8] {
+        let base = Int(entry) * 16
+        let first = entries.loadUnaligned(fromByteOffset: base + 8, as: UInt32.self)
+        let count = Int(entries.loadUnaligned(fromByteOffset: base + 12, as: UInt16.self))
+        guard first != Self.none, count > 0 else { return [:] }
+        var out = [UInt32: UInt8](minimumCapacity: count)
+        for i in 0..<count {
+            let at = (Int(first) + i) * 8
+            let target = bigrams.loadUnaligned(fromByteOffset: at, as: UInt32.self)
+            if out[target] == nil { out[target] = bigrams.loadUnaligned(fromByteOffset: at + 4, as: UInt8.self) }
+        }
+        return out
+    }
+
     func bigramProbability(from entry: UInt32, to target: UInt32) -> UInt8? {
-        bigrams(entry).first { $0.target == target }?.probability
+        followers(entry)[target]
     }
 
     // MARK: Building (pack, added and learned words)

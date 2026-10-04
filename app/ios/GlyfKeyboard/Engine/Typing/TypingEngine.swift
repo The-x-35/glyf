@@ -28,10 +28,12 @@ final class TypingEngine {
         }
     }
 
-    static let autocorrectThreshold: Float = 0.185
+    static let autocorrectThreshold: Float = 0.16
     static let ambiguityGap: Float = 0.05
     static let swapGap: Float = 0.02
     static let predictionFloor: Float = 150
+    /// Next words are the likeliest of each word's pairs: this many are read.
+    static let predictionRows = 64
     /// A dictionary fix of apostrophes ("cant" → "can't") beats a real word
     /// with the typed spelling only when it's this much more common.
     static let whitelistGap: Float = 40
@@ -48,6 +50,32 @@ final class TypingEngine {
     static let packProbability: Float = 160
     static let contactProbability: Float = 40
     static let packPhraseProbability: Float = 180
+    /// A name (capitalized, not one of I's forms) ranks as if this much rarer
+    /// when it isn't what was typed and the typing was lowercase: "I hsven" is
+    /// "haven" and "haven't", never "Haven" or "Hagen" (2026-10-05).
+    static let namePenalty: Float = 40
+    /// What one slip costs a word the previous word expects.
+    static let contextEditCost: Float = 0.45
+    /// How many of the previous word's likeliest followers are tried against
+    /// what's typed so far.
+    static let contextFollowers = 256
+    /// The previous word ranks the candidates only when it was seen before one
+    /// of the likeliest this many of them.
+    static let contextTop = 3
+    /// A word never seen after the previous word, when that word was seen
+    /// before others, ranks no higher than the rarest of them, and at most
+    /// this much lower than it would alone: "your my" is no English.
+    static let unseenPairMost: Float = 45
+    /// A same-letters fix into a name or a rare spelling gives way to a word
+    /// this much likelier ("I've ben" is "been", not "Ben")...
+    static let rivalGap: Float = 40
+    /// ...when the name is this rare, or the previous word says so...
+    static let rareName: Float = 100
+    /// ...and a spelling with an apostrophe below this is rare ("ne'er").
+    static let rareForm: Float = 120
+    /// A dictionary spelling of exactly the typed letters below this ranks as
+    /// any other word, not first: "wats" offers "was", not "wat's".
+    static let exactFloor: Float = 60
 
     let geometry: KeyGeometry
     private(set) var base: GlydTrie?
@@ -68,6 +96,9 @@ final class TypingEngine {
 
     func setBase(_ trie: GlydTrie?) {
         base = trie
+        followersOf = nil
+        followerMap = [:]
+        likelyFollowers = []
         rebuildExtra()
     }
 
@@ -109,11 +140,7 @@ final class TypingEngine {
         let typedScalars = Array(typed.unicodeScalars)
         guard !key.isEmpty, typedScalars.count <= 48 else { return .empty(typed) }
 
-        let points = typedScalars.enumerated().compactMap { i, u -> TouchPoint? in
-            guard u != "'" && u != "\u{2019}" && u != "-" else { return nil }
-            let offset = touches.flatMap { i < $0.count ? $0[i] : nil }
-            return TouchPoint(character: u, offset: offset, geometry: geometry)
-        }
+        let points = touchPoints(typedScalars, touches: touches)
         guard !points.isEmpty else { return .empty(typed) }
 
         let prevKey = previous.map(TypingText.key).flatMap { $0.isEmpty ? nil : $0 }
@@ -133,35 +160,23 @@ final class TypingEngine {
             }
         }
 
+        let personalForm = self.personalForm(key)
+        let (ranked, informative) = rank(typed: typed, key: key, points: points, prevKey: prevKey,
+                                         prevBaseEntry: prevBaseEntry, sentenceStart: sentenceStart, today: today)
+        // Read against the same evidence as the ranking.
+        let exact = informative ? exactForms : exactForms.map { $0.alone() }
+
         // A whitelist target spelled differently ("his" under "hid") is not a
         // form of the typed word; everything else under this key is.
-        let realForms = exactForms.filter { !$0.whitelistOnly && !($0.whitelist && $0.key != key) }
-        let personalForm = personal.isKnown(key) ? personal.word(key)?.form : nil
+        let realForms = exact.filter { !$0.whitelistOnly && !($0.whitelist && $0.key != key) }
         let known = personalForm.map { $0.lowercased() == typed.lowercased() } ?? false
             || realForms.contains { TypingText.sameWord(typed: typed, form: $0.form) }
 
-        // Everything the touches could have meant, best first.
-        var best: [String: Candidate] = [:]
-        for (trie, source) in sources() {
-            for hit in Decoder.search(trie, points: points, geometry: geometry) {
-                let first = trie.firstEntry(hit.node)
-                for e in first..<(first + trie.entryCount(hit.node)) {
-                    let flags = trie.flags(e)
-                    guard flags & GlydTrie.flagNotAWord == 0 else { continue }
-                    let c = candidate(trie: trie, source: source, entry: e, key: nil, hit: hit,
-                                      points: points.count, prevKey: prevKey, prevBaseEntry: prevBaseEntry, today: today)
-                    guard !personal.isBlocked(c.key) else { continue }
-                    if let existing = best[c.form], existing.score >= c.score { continue }
-                    best[c.form] = c
-                }
-            }
-        }
-        let ranked = best.values.sorted { $0.score != $1.score ? $0.score > $1.score : $0.form < $1.form }
-
         var result = Suggestions(typed: typed, known: known, autocorrect: nil, alternatives: [])
+        lastHeldBack = nil
         if policy.contains(.autocorrect) {
             result.autocorrect = decide(typed: typed, key: key, known: known, sentenceStart: sentenceStart,
-                                        exactForms: exactForms, realForms: realForms, ranked: ranked,
+                                        exactForms: exact, realForms: realForms, ranked: ranked,
                                         previous: prevKey)
         }
         var seen: Set<String> = [typed.lowercased()]
@@ -199,6 +214,20 @@ final class TypingEngine {
         let whitelist: Bool
         /// A not-a-word entry that only exists to point at its whitelist form.
         let whitelistOnly: Bool
+        /// What the previous word says for this one, when anything does.
+        let pair: Float?
+        /// How much rarer it ranks for never following the previous word, and
+        /// what that took off its score.
+        var unseen: Float = 0
+        var unseenScore: Float = 0
+
+        /// As if the previous word said nothing about it.
+        func alone() -> Candidate {
+            guard unseen != 0 else { return self }
+            return Candidate(form: form, key: key, score: score + unseenScore, probability: probability + unseen,
+                             kinds: kinds, offensive: offensive, whitelist: whitelist,
+                             whitelistOnly: whitelistOnly, pair: pair)
+        }
     }
 
     private enum Source { case base, extra }
@@ -210,42 +239,187 @@ final class TypingEngine {
         return out
     }
 
+    private func personalForm(_ key: String) -> String? {
+        personal.isKnown(key) ? personal.word(key)?.form : nil
+    }
+
+    private func touchPoints(_ typedScalars: [Unicode.Scalar], touches: [(Float, Float)?]?) -> [TouchPoint] {
+        typedScalars.enumerated().compactMap { i, u -> TouchPoint? in
+            guard u != "'" && u != "\u{2019}" && u != "-" else { return nil }
+            let offset = touches.flatMap { i < $0.count ? $0[i] : nil }
+            return TouchPoint(character: u, offset: offset, geometry: geometry)
+        }
+    }
+
+    /// Every word the touches could have meant, best first, and whether the
+    /// previous word had a say in the order.
+    private func rank(typed: String, key: String, points: [TouchPoint], prevKey: String?, prevBaseEntry: UInt32?,
+                      sentenceStart: Bool, today: Int) -> ([Candidate], Bool) {
+        // Typed in lowercase (a capital the sentence start put there counts as
+        // lowercase): names then rank lower unless they're what was typed.
+        let lowerish = !TypingText.hasUppercase(typed)
+            || (sentenceStart && TypingText.capitalCount(typed) == 1 && TypingText.isCapitalized(typed))
+        let nameKey = lowerish ? key : nil
+        var best: [String: Candidate] = [:]
+        for (trie, source) in sources() {
+            for hit in Decoder.search(trie, points: points, geometry: geometry) {
+                let first = trie.firstEntry(hit.node)
+                for e in first..<(first + trie.entryCount(hit.node)) {
+                    guard trie.flags(e) & GlydTrie.flagNotAWord == 0 else { continue }
+                    let c = candidate(trie: trie, source: source, entry: e, key: nil, hit: hit,
+                                      points: points.count, prevKey: prevKey, prevBaseEntry: prevBaseEntry,
+                                      today: today, nameKey: nameKey)
+                    guard !personal.isBlocked(c.key) else { continue }
+                    if let existing = best[c.form], existing.score >= c.score { continue }
+                    best[c.form] = c
+                }
+            }
+        }
+        // The previous word's likely followers, where what's typed so far fits
+        // one with at most a slip: the decoder's completions go by commonness
+        // alone, so after "I" an "h" never reached "haven't" (2026-10-05).
+        if let prevBaseEntry, let base {
+            let typedKey = TypingText.scalars(key)
+            let slips = typedKey.count >= 3 ? 1 : 0
+            _ = followers(base, prevBaseEntry)
+            for follower in likelyFollowers {
+                let (target, form, formKey) = (follower.entry, follower.form, follower.key)
+                guard !personal.isBlocked(formKey),
+                      let fit = TypingText.prefixFit(typedKey, follower.scalars),
+                      fit.edits <= slips, fit.edits > 0 || fit.added > 0 else { continue }
+                let spatial = Float(fit.edits) * Self.contextEditCost
+                    + (fit.added > 0 ? Decoder.completionCost(fit.added) : 0)
+                let existing = best[form]
+                // The decoder's own find keeps its account of the slip (a far
+                // key stays a far key); a new one is taken as a far slip, so
+                // autocorrect stays as careful with it ("I hav" is not "had").
+                var kinds: Decoder.Kind = []
+                if let existing { kinds = existing.kinds } else {
+                    if fit.added > 0 { kinds.insert(.completion) }
+                    if fit.edits > 0 { kinds.insert(.farSubstitution) }
+                }
+                let c = candidate(trie: base, source: .base, entry: target, key: formKey,
+                                  hit: Decoder.Hit(node: GlydTrie.none, spatial: spatial, kinds: kinds),
+                                  points: points.count, prevKey: prevKey, prevBaseEntry: prevBaseEntry,
+                                  today: today, nameKey: nameKey)
+                if existing == nil || existing!.score < c.score { best[c.form] = c }
+            }
+        }
+        // When none of the likeliest words ever followed the previous word, it
+        // says nothing about them: "the recieve" is still "receive", not a
+        // tie with "relieve" (2026-10-05).
+        let informative = best.values
+            .sorted { a, b in
+                let x = a.score + a.unseenScore, y = b.score + b.unseenScore
+                return x != y ? x > y : a.form < b.form
+            }
+            .prefix(Self.contextTop).contains { $0.pair != nil }
+        let all = informative ? Array(best.values) : best.values.map { $0.alone() }
+        return (all.sorted { $0.score != $1.score ? $0.score > $1.score : $0.form < $1.form }, informative)
+    }
+
     private func candidate(trie: GlydTrie, source: Source, entry: UInt32, key: String?, hit: Decoder.Hit,
-                           points: Int, prevKey: String?, prevBaseEntry: UInt32?, today: Int) -> Candidate {
+                           points: Int, prevKey: String?, prevBaseEntry: UInt32?, today: Int,
+                           nameKey: String? = nil) -> Candidate {
         let form = trie.form(entry)
         let formKey = key ?? TypingText.key(form)
         let flags = trie.flags(entry)
-        let f = languageProbability(key: formKey, form: form,
-                                    baseProbability: source == .base ? Float(trie.probability(entry)) : nil,
-                                    entry: source == .base ? entry : nil,
-                                    prevKey: prevKey, prevBaseEntry: prevBaseEntry, today: today)
-        let language = 1.1214 * (255 - f) / 255
-        var score = 1 - (hit.spatial + language) / (1.1214 + 0.1 * Float(points))
-        if hit.exact { score += 1.1 }
+        // A fix's target under the misspelling ("have" under "nave") reads the
+        // previous word's pairs through the word's own entry.
+        let own = source == .base && flags & GlydTrie.flagNotAWord == 0
+        let language = languageProbability(key: formKey, form: form,
+                                           baseProbability: source == .base ? Float(trie.probability(entry)) : nil,
+                                           entry: own ? entry : nil,
+                                           prevKey: prevKey, prevBaseEntry: prevBaseEntry, today: today)
+        var f = language.f
+        if let nameKey, formKey != nameKey, Self.isName(form) { f = max(0, f - Self.namePenalty) }
+        let scale = 1.1214 + 0.1 * Float(points)
+        var score = 1 - (hit.spatial + 1.1214 * (255 - f) / 255) / scale
+        // The typed letters' own spellings come first, unless the dictionary's
+        // is junk ("wat's", "di's"): those rank as any other word would.
+        if hit.exact && (source == .extra || f >= Self.exactFloor) { score += 1.1 }
         return Candidate(form: form, key: formKey, score: score, probability: f, kinds: hit.kinds,
                          offensive: flags & GlydTrie.flagOffensive != 0,
                          whitelist: flags & GlydTrie.flagWhitelist != 0,
-                         whitelistOnly: flags & GlydTrie.flagNotAWord != 0)
+                         whitelistOnly: flags & GlydTrie.flagNotAWord != 0,
+                         pair: language.pair, unseen: language.unseen,
+                         unseenScore: 1.1214 * language.unseen / 255 / scale)
     }
 
-    /// FORMAT.md "Language f": the best evidence any source has for the word.
+    /// Capitalized and not one of I's own forms ("I", "I'm"): word pairs never
+    /// predict these, so no pair says anything against them either.
+    private static func isName(_ form: String) -> Bool {
+        TypingText.hasUppercase(form) && form != "I" && !form.hasPrefix("I'")
+    }
+
+    private struct Language {
+        let f: Float
+        let pair: Float?
+        let unseen: Float
+    }
+
+    /// FORMAT.md "Language f": the best evidence any source has for the word,
+    /// what the previous word says for it on its own, and how much rarer it
+    /// ranks for never following the previous word.
     private func languageProbability(key: String, form: String, baseProbability: Float?, entry: UInt32?,
-                                     prevKey: String?, prevBaseEntry: UInt32?, today: Int) -> Float {
+                                     prevKey: String?, prevBaseEntry: UInt32?, today: Int) -> Language {
         var f = baseProbability ?? 0
         if let p = personal.probability(key, today: today) { f = max(f, p) }
         if packForms[key] != nil { f = max(f, Self.packProbability) }
         if contactForms[key] != nil { f = max(f, Self.contactProbability) }
+        var pair: Float?
+        var unseen: Float = 0
         if let prevKey {
-            if let p = personal.pairProbability(previous: prevKey, key, today: today) { f = max(f, p) }
+            if let p = personal.pairProbability(previous: prevKey, key, today: today) { pair = p }
             if packPairs[prevKey]?.contains(where: { TypingText.key($0) == key }) == true {
-                f = max(f, Self.packPhraseProbability)
+                pair = max(pair ?? 0, Self.packPhraseProbability)
             }
             if let prevBaseEntry, let base {
+                let followers = self.followers(base, prevBaseEntry)
                 let target = entry ?? baseEntry(forKey: key, form: form)
-                if let target, let p = base.bigramProbability(from: prevBaseEntry, to: target) { f = max(f, Float(p)) }
+                if let target, let p = followers[target] {
+                    pair = max(pair ?? 0, Float(p))
+                } else if pair == nil && !followers.isEmpty && !Self.isName(form) {
+                    // The previous word was seen before plenty of others, never
+                    // this one: "your ket" is "key", not "let" (2026-10-05).
+                    let capped = max(min(f, Float(followerFloor)), f - Self.unseenPairMost)
+                    unseen = f - capped
+                    f = capped
+                }
             }
+            if let pair { f = max(f, pair) }
         }
-        return min(f, 255)
+        return Language(f: min(max(f, 0), 255), pair: pair, unseen: unseen)
+    }
+
+    private struct Follower {
+        let entry: UInt32
+        let form: String
+        let key: String
+        let scalars: [UInt32]
+    }
+
+    private var followersOf: UInt32?
+    private var followerMap: [UInt32: UInt8] = [:]
+    private var followerFloor: UInt8 = 0
+    /// The likeliest of them, spelled out for matching what's typed.
+    private var likelyFollowers: [Follower] = []
+
+    /// The previous word's followers, read once per word typed after it.
+    private func followers(_ base: GlydTrie, _ entry: UInt32) -> [UInt32: UInt8] {
+        if entry != followersOf {
+            followerMap = base.followers(entry)
+            followerFloor = followerMap.values.min() ?? 0
+            likelyFollowers = base.bigrams(entry, limit: Self.contextFollowers)
+                .filter { base.flags($0.target) & (GlydTrie.flagOffensive | GlydTrie.flagNotAWord) == 0 }
+                .map { t in
+                    let form = base.form(t.target)
+                    let key = TypingText.key(form)
+                    return Follower(entry: t.target, form: form, key: key, scalars: TypingText.scalars(key))
+                }
+            followersOf = entry
+        }
+        return followerMap
     }
 
     private func baseEntry(forKey key: String, form: String? = nil) -> UInt32? {
@@ -255,32 +429,69 @@ final class TypingEngine {
         return (first..<(first + base.entryCount(node))).first { base.form($0) == form }
     }
 
+    /// Tests only: the rule that kept the last suggestions() call from autocorrecting.
+    private(set) var lastHeldBack: String?
+
     /// FORMAT.md "When Glyf autocorrects".
     private func decide(typed: String, key: String, known: Bool, sentenceStart: Bool,
                         exactForms: [Candidate], realForms: [Candidate], ranked: [Candidate],
                         previous: String? = nil) -> String? {
-        guard !TypingText.hasDigit(typed), TypingText.capitalCount(typed) < 2 else { return nil }
+        guard !TypingText.hasDigit(typed), TypingText.capitalCount(typed) < 2 else {
+            lastHeldBack = "digit-or-caps"
+            return nil
+        }
         // Stretched for emphasis ("sooo", "yesss"): meant, never "solo".
-        guard !TypingText.isStretched(typed) else { return nil }
+        guard !TypingText.isStretched(typed) else {
+            lastHeldBack = "stretched"
+            return nil
+        }
 
         // Dictionary fixes. Apostrophes ("cant" → "can't") unless the typed
         // spelling is a real word nearly as common ("id" stays "id"); a
         // different word ("alot" → "a lot") only when the typed spelling is no
-        // word at all — AOSP's "hum" → "him" and "bot" → "not" never happen.
+        // word at all — AOSP's "hum" → "him" and "bot" → "not" never happen —
+        // or only a rare one and the word before wants the fix: "it os" is
+        // "it is", "the os" stays (OS).
         let typedReal = realForms.filter { TypingText.sameWord(typed: typed, form: $0.form) }.map(\.probability).max()
         // "feel ill" is sick: the word before makes the real word the one meant.
         let keptHere = typedReal != nil && previous.map { Self.keptAfter[key]?.contains($0) ?? false } == true
         let fixes = exactForms.filter { c in
             guard c.whitelist, !personal.isRejected(typed: typed, correction: c.form), !keptHere else { return false }
-            if c.key != key { return !known && realForms.isEmpty }
+            if c.key != key {
+                return !known && (realForms.isEmpty || (c.pair != nil && realForms.allSatisfy { $0.probability < Self.exactFloor }))
+            }
             if let typedReal { return c.probability >= typedReal + Self.whitelistGap }
             return !known
         }
         if let w = fixes.max(by: { $0.probability < $1.probability }) {
             let fixed = TypingText.matchCase(typed: typed, form: w.form)
-            return fixed == typed ? nil : fixed
+            if fixed == typed { return nil }
+            // A fix into other letters gives way to the word this sentence
+            // wants: "they wer" is "were", not AOSP's "we're" (2026-10-05).
+            if w.key != key, let rival = contender(typed: typed, key: key, sentenceStart: sentenceStart, ranked: ranked),
+               rival.probability > w.probability + (rival.key == w.key ? 0 : Self.rivalGap) {
+                return TypingText.matchCase(typed: typed, form: rival.form)
+            }
+            return fixed
         }
-        if known { return nil }
+        // A rare lowercase word that is far more often a name is the name:
+        // "mike" is Mike, "john" is John; "bill" and "will" stay (2026-10-05).
+        let personallyKnown = personalForm(key)?.lowercased() == typed.lowercased()
+        if known, let typedReal, !personallyKnown, !TypingText.hasUppercase(typed),
+           let name = realForms.filter({ c in
+               !c.offensive && TypingText.isTitleCase(c.form) && !c.form.contains("'")
+                   && c.probability >= typedReal + Self.whitelistGap
+                   && !personal.isRejected(typed: typed, correction: c.form)
+           }).max(by: { $0.probability < $1.probability }) {
+            return name.form
+        }
+        if known {
+            lastHeldBack = "known"
+            return nil
+        }
+        // A fix the dictionary has for these letters but held back is not put
+        // in by a search either.
+        let declined = Set(exactForms.filter { $0.whitelist && $0.key != key }.map(\.form))
 
         // Same letters, different apostrophes or capitals: "thats" → "that's",
         // "delhi" → "Delhi". Never into an acronym ("hsa" is not "HSA") or a
@@ -289,21 +500,56 @@ final class TypingEngine {
             !c.offensive && !personal.isRejected(typed: typed, correction: c.form)
                 && (!TypingText.hasUppercase(c.form)
                     || (TypingText.isTitleCase(c.form) && !c.form.contains("'") && c.probability >= 60))
-        }).max(by: { $0.probability < $1.probability }) {
-            let fixed = TypingText.matchCase(typed: typed, form: fix.form)
-            if fixed != typed && (sentenceStart || !TypingText.isCapitalized(typed) || TypingText.hasUppercase(fix.form)) {
-                return fixed
+        }).max(by: { $0.probability < $1.probability }),
+           TypingText.matchCase(typed: typed, form: fix.form) != typed,
+           sentenceStart || !TypingText.isCapitalized(typed) || TypingText.hasUppercase(fix.form) {
+            // A name, or a rare spelling, gives way to a word a slip away that
+            // is far likelier here: "I've ben" is "been" and "neer" is "never",
+            // never "Ben" or "ne'er"; "call mike" stays Mike (2026-10-05). A
+            // contact's name never gives way.
+            let name = TypingText.hasUppercase(fix.form) && contactForms[key] == nil
+            let rare = !TypingText.hasUppercase(fix.form) && fix.probability < Self.rareForm
+            if name || rare {
+                let gap = fix.probability + Self.rivalGap
+                func strong(_ c: Candidate) -> Bool {
+                    c.probability >= gap && (rare || fix.probability < Self.rareName || (c.pair ?? 0) >= gap)
+                }
+                if let rival = contender(typed: typed, key: key, sentenceStart: sentenceStart, ranked: ranked,
+                                         declined: declined), strong(rival) {
+                    return TypingText.matchCase(typed: typed, form: rival.form)
+                }
+                // Not sure enough of the other word to put it in, but too sure
+                // of it to put in the rare one: "Tom wats" stays as typed.
+                let typedKey = TypingText.scalars(key)
+                if ranked.contains(where: { c in
+                    !c.offensive && c.key != key && strong(c)
+                        && TypingText.editDistance(typedKey, TypingText.scalars(c.key)) <= 1
+                }) {
+                    lastHeldBack = "contested"
+                    return nil
+                }
             }
+            return TypingText.matchCase(typed: typed, form: fix.form)
         }
+        return contender(typed: typed, key: key, sentenceStart: sentenceStart, ranked: ranked, declined: declined)
+            .map { TypingText.matchCase(typed: typed, form: $0.form) }
+    }
 
-        guard typed.unicodeScalars.count > 1 else { return nil }
-        if TypingText.isCapitalized(typed) && !sentenceStart { return nil }
+    /// The best word a slip or two from what was typed, when it's sure enough
+    /// to put in (FORMAT.md "When Glyf autocorrects").
+    private func contender(typed: String, key: String, sentenceStart: Bool, ranked: [Candidate],
+                           declined: Set<String> = []) -> Candidate? {
+        func hold(_ reason: String) -> Candidate? {
+            lastHeldBack = reason
+            return nil
+        }
+        guard typed.unicodeScalars.count > 1 else { return hold("one-letter") }
+        if TypingText.isCapitalized(typed) && !sentenceStart { return hold("capitalized") }
 
-        // Spellings of the typed letters were settled above, and dictionary
-        // fixes only ever apply through the rule above.
-        let contenders = ranked.filter { !$0.offensive && $0.key != key && !$0.whitelist }
-        guard let first = contenders.first,
-              !personal.isRejected(typed: typed, correction: first.form) else { return nil }
+        // Spellings of the typed letters were settled before this.
+        let contenders = ranked.filter { !$0.offensive && $0.key != key && !declined.contains($0.form) }
+        guard let first = contenders.first else { return hold("no-contender") }
+        if personal.isRejected(typed: typed, correction: first.form) { return hold("rejected") }
 
         let typedKey = TypingText.scalars(key)
         let typedLength = typedKey.count
@@ -314,33 +560,33 @@ final class TypingEngine {
             return (c.score * (1 - Float(distance) / Float(ck.count)), distance)
         }
         let (conf, distance) = confidence(first)
-        guard distance <= (typedLength <= 4 ? 1 : 2), conf >= Self.autocorrectThreshold else { return nil }
+        if distance > (typedLength <= 4 ? 1 : 2) { return hold("too-far") }
+        if conf < Self.autocorrectThreshold { return hold("low-confidence") }
         if let second = contenders.dropFirst().first(where: { $0.key != first.key }) {
             // Two letters swapped is the clearest typo there is ("waht"): a
             // smaller lead suffices when the swap is also the commoner word.
             let swap = first.kinds == .transposition && first.probability >= second.probability
-            guard conf - confidence(second).0 >= (swap ? Self.swapGap : Self.ambiguityGap) else { return nil }
+            if conf - confidence(second).0 < (swap ? Self.swapGap : Self.ambiguityGap) { return hold("ambiguous") }
         }
 
         let kinds = first.kinds
-        if kinds.contains(.firstLetterFarSubstitution) { return nil }
+        if kinds.contains(.firstLetterFarSubstitution) { return hold("first-letter-far") }
         if kinds.contains(.farSubstitution) {
             // A far-off key in a short word is another word ("yaar" isn't
             // "year"); in a long word it's a slip ("definately").
-            if typedLength <= 4 { return nil }
-            if first.probability < (typedLength >= 7 ? 90 : 150) { return nil }
+            if typedLength <= 4 { return hold("far-short") }
+            if first.probability < (typedLength >= 7 ? 90 : 150) { return hold("far-rare") }
         }
         // A lowercase word becomes a proper noun only if it's a common one
         // ("priya" is not "Oriya"), and never an acronym ("ngl" is not "NFL").
         if TypingText.hasUppercase(first.form) && !TypingText.hasUppercase(typed)
-            && (TypingText.capitalCount(first.form) > 1 || first.probability < 110) { return nil }
+            && (TypingText.capitalCount(first.form) > 1 || first.probability < 110) { return hold("rare-name") }
         if !kinds.isDisjoint(with: [.omissionOther, .insertionOther, .completion, .trailingInsertion])
-            && first.probability < 120 { return nil }
+            && first.probability < (typedLength >= 7 ? 60 : 100) { return hold("loose-rare") }
         if distance == 2 && !((typedLength >= 8 && first.probability >= 100) || (typedLength >= 6 && first.probability >= 150)) {
-            return nil
+            return hold("two-edits")
         }
-        if kinds.contains(.completion) && typedLength < 4 { return nil }
-        return TypingText.matchCase(typed: typed, form: first.form)
+        return first
     }
 
     // MARK: Next word
@@ -353,7 +599,7 @@ final class TypingEngine {
         if let base, let node = base.node(forKey: prevKey) {
             let first = base.firstEntry(node)
             for e in first..<(first + base.entryCount(node)) {
-                for (target, p) in base.bigrams(e) {
+                for (target, p) in base.bigrams(e, limit: Self.predictionRows) {
                     let flags = base.flags(target)
                     guard flags & (GlydTrie.flagOffensive | GlydTrie.flagNotAWord) == 0 else { continue }
                     let form = base.form(target)
