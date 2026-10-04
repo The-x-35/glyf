@@ -261,12 +261,16 @@ class _CodeScreenState extends State<CodeScreen> with SingleTickerProviderStateM
 
   Widget _success(CodeRedeemed done) {
     final plan = done.codePlan == 'max' ? 'Glyf Max' : 'Glyf Plus';
+    // A code of a hundred years or more is for life (SAKSHI, 2026-10-04):
+    // "Free for life", with no end date under it.
+    final lifetime = done.days >= 36500;
     final span = switch (done.days) {
       365 => 'a year',
       30 => 'a month',
+      _ when lifetime => 'life',
       final d => '$d days',
     };
-    final until = done.plan == done.codePlan ? done.expiresAt : null;
+    final until = done.plan == done.codePlan && !lifetime ? done.expiresAt : null;
     return Padding(
       key: const ValueKey('done'),
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
