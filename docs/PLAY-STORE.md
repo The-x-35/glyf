@@ -20,7 +20,7 @@ Still to decide or do (Arpit):
 3. **Recent screenshots on Android** use `READ_MEDIA_IMAGES`. Play's Photo and Video Permissions policy allows it only when broad photo access is core to the app, and needs a declaration form. Dropping the permission and the Android switch is the safe choice.
 4. **Wallet on Play.** The Financial features form must be answered either way. Phantom signs and Glyf holds no keys (non-custodial), but buying tokenized stocks (xStocks) is a regulated-looking feature its issuer doesn't offer in the US, UK, Canada or Australia. Ship the wallet without stock buys on Android, or leave the wallet out of the Play build.
 5. **Developer account.** A personal account needs a closed test with at least 12 testers for 14 days before production; an organization account needs a D-U-N-S number but skips that.
-6. **Upload key**: create it (below) and register both SHA-1s (upload key and Play App Signing) on the Android OAuth client in Google Cloud, or Sign in with Google fails in the Play build.
+6. ~~**Upload key**~~ **Done 2026-10-04**, and on 2026-10-05 an Android OAuth client for `com.arpit.glyf` with the Play app signing key's SHA-1 (`586086490194-qsovd854q3iuouvtjtvs1f9tm67csi6d.apps.googleusercontent.com`, in glyf-508610 with the web client the app signs in with). Without it, Google turned sign-in down right after the account was picked ("[16] Account reauth failed"), which builds before 16 showed as nothing at all. Each SHA-1 needs its own Android client: add the upload key's (`36:D6:2C:17:67:83:20:78:1E:6B:3C:4D:1F:7C:F0:EB:A3:70:E1:2B`) for a sideloaded release build and the debug key's (`23:DB:A8:BE:A8:CB:31:6E:E7:87:E8:AA:EA:07:A8:E6:FE:F6:F0:B2`) for debug builds. Play's page for them is Protected with Play → Play Store protection → Protect app signing key.
 7. **Deploy before the new builds go out**: push the server (`POST /report`, miles) and the site (privacy policy, `/delete-account`). Push to main deploys both.
 8. **KLIPY_APP_KEY on Railway**, or cut "GIFs and stickers (search KLIPY)" from the description.
 
@@ -169,4 +169,4 @@ keyPassword=…
 cd app && flutter build appbundle --release
 ```
 
-The bundle is `app/build/app/outputs/bundle/release/app-release.aab`; its version code is the `+N` in `pubspec.yaml`, and each upload needs a higher one. Turn on Play App Signing, then add the SHA-1 Play shows for the app signing key, and the upload key's (`keytool -list -v -keystore ~/glyf-upload.jks -alias upload`), to the Android OAuth client in Google Cloud. Target API 36 is already met.
+The bundle is `app/build/app/outputs/bundle/release/app-release.aab`; its version code is the `+N` in `pubspec.yaml`, and each upload needs a higher one. Turn on Play App Signing, then give the SHA-1 Play shows for the app signing key, and the upload key's (`keytool -printcert -jarfile` on a built bundle reads it without the password), an Android OAuth client each in Google Cloud. Target API 36 is already met.
