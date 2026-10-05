@@ -591,6 +591,44 @@ final class GlyfEngineTests: XCTestCase {
 
     // MARK: Settings file shared with the app
 
+    func testCoachChecksTheInvestorsDayThenBooksIt() {
+        var s = TourCoach.State(step: "investor:0", text: "")
+        s.calendarKey = "c"
+        // Hold c (the calendar's key), close the day, then the plan is typed.
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "key:c", label: "Hold C"))
+        XCTAssertNil(TourCoach.autotype(s))
+        var day = s
+        day.panel = .calendar(composing: false)
+        day.calendarSeen = true
+        XCTAssertEqual(TourCoach.coach(day), .init(target: "toolbar:close|connector:close", label: "Close"))
+        s.calendarSeen = true
+        XCTAssertEqual(TourCoach.autotype(s), TourCoach.investorPlan)
+        XCTAssertNil(TourCoach.coach(s))
+        s.text = "investor me"
+        XCTAssertNil(TourCoach.coach(s), "the keyboard is typing the plan")
+        // Its chip becomes New Event, and Add puts it in the message.
+        s.text = TourCoach.investorPlan
+        var chipped = s
+        if let plan = EventParse.looksLikePlan(TourCoach.investorPlan) { chipped.chip = .event(plan: plan) }
+        XCTAssertEqual(TourCoach.coach(chipped), .init(target: "strip:smart", label: "Tap"))
+        var composing = s
+        composing.panel = .calendar(composing: true)
+        XCTAssertEqual(TourCoach.coach(composing), .init(target: "event:add", label: "Add"))
+        s.text = "investor meet at 10pm 📅 Investor meet · Today, 10:00 – 11:00 PM"
+        XCTAssertNil(TourCoach.coach(s), "the chat points at Send")
+        s.text = "hello"
+        XCTAssertEqual(TourCoach.coach(s), .init(target: "key:delete", label: "Delete"))
+        XCTAssertTrue(TourCoach.allowsChip("event", step: "investor:0"))
+        XCTAssertFalse(TourCoach.allowsChip("calc", step: "investor:0"))
+    }
+
+    func testPracticeDayLeavesTenPMFree() {
+        let cal = Calendar(identifier: .gregorian)
+        let day = CalendarText.practiceDay(around: Date(), calendar: cal)
+        XCTAssertEqual(day.map(\.title), ["Standup", "Lunch with Sam", "Gym"])
+        XCTAssertTrue(day.allSatisfy { cal.component(.hour, from: $0.end) < 22 })
+    }
+
     func testKeyboardWritesKeepTheAppsOwnKeys() throws {
         let existing = try JSONSerialization.data(withJSONObject: [
             "signedInWith": "google", "privyAppId": "public-id", "tourStep": "semi:0", "haptics": true,

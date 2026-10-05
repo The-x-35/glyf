@@ -58,16 +58,22 @@ final class CalendarSurface: UIView {
     private let freeButton = UIButton(type: .system)
     private let dateButton = UIButton(type: .system)
 
-    init(hasFullAccess: Bool = false) {
+    /// The tour's practice day (the investor chat): sample events, and Add
+    /// puts the event in the message without writing to any calendar, the
+    /// iPhone's or Google's.
+    private let practice: Bool
+
+    init(hasFullAccess: Bool = false, practice: Bool = false) {
         let today = Calendar.current.startOfDay(for: Date())
         month = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: today)) ?? today
         selected = today
         self.hasFullAccess = hasFullAccess
+        self.practice = practice
         super.init(frame: .zero)
         backgroundColor = Glass.touchableGrid
         // Google connected: its last answer for THIS account at once, then
         // ask again; the iPhone's own calendars show from the start.
-        if GoogleAccess.hasCalendar {
+        if GoogleAccess.hasCalendar, !practice {
             let email = GoogleAccess.load()?.email
             googleFetched = GoogleCache.load(for: email)?.events
             googleNote = "Google Calendar\(email.map { " · \($0)" } ?? "") · syncing…"
@@ -88,6 +94,11 @@ final class CalendarSurface: UIView {
     /// or what Google refused (it used to fail in silence).
     private var googleNote: String?
     private func load() {
+        if practice {
+            connected = true
+            events = CalendarText.practiceDay(around: Date(), calendar: cal)
+            return
+        }
         var base: [CalendarText.Event]
         if CalendarWriter.access(hasFullAccess: hasFullAccess) == .ready, CalendarWriter.canRead {
             live = true
@@ -115,7 +126,7 @@ final class CalendarSurface: UIView {
     /// what iOS has synced (or nothing, when the Google account isn't on
     /// the phone); the list is what Google has NOW.
     private func refreshGoogle() {
-        guard GoogleAccess.hasCalendar else { return }
+        guard GoogleAccess.hasCalendar, !practice else { return }
         let from = cal.date(byAdding: .day, value: -7, to: month) ?? month
         let to = cal.date(byAdding: .day, value: 45, to: month) ?? month
         if let window = googleWindow, window.from <= from, window.to >= to { return }
@@ -188,8 +199,9 @@ final class CalendarSurface: UIView {
                           share: true)
         }
         // With Google Calendar connected the event goes to Google, so the
-        // iPhone's own calendar permission is not needed to add it.
-        let access: CalendarWriter.Access = GoogleAccess.hasCalendar && hasFullAccess
+        // iPhone's own calendar permission is not needed to add it. Practice
+        // writes nowhere, so it needs nothing.
+        let access: CalendarWriter.Access = practice || (GoogleAccess.hasCalendar && hasFullAccess)
             ? .ready : CalendarWriter.access(hasFullAccess: hasFullAccess)
         present(EventComposer(draft: draft, access: access)) {
             [weak self] d in self?.add(d)
@@ -286,6 +298,16 @@ final class CalendarSurface: UIView {
     /// calendar takes it. Either way Share in chat puts it in the message.
     private func add(_ d: EventComposer.Draft) {
         guard !adding else { return }
+        if practice {
+            // The tour: into the message as a real event would go, and
+            // nowhere else.
+            let event = CalendarText.Event(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
+                                           location: nil, color: nil)
+            closeComposer()
+            delegate?.connectorInsert(CalendarText.insert(event, calendar: cal))
+            delegate?.connectorToast("Practice only. Nothing was added to your calendar.")
+            return
+        }
         adding = true
         guard GoogleAccess.hasCalendar else { return saveHere(d, note: nil) }
         GoogleClient.shared.addEvent(title: d.title, start: d.start, end: d.end, allDay: d.allDay,
@@ -776,6 +798,7 @@ final class CalendarSurface: UIView {
 
     /// Why the event can't be changed from the keyboard, when it can't.
     private func refusal(_ e: CalendarText.Event) -> String? {
+        if practice { return "These are the tour’s practice events" }
         guard hasFullAccess else { return "Turn on Allow Full Access for Glyf in Settings" }
         // Google's own are changed at Google; the rest in the phone's calendar.
         if e.googleID != nil { return nil }

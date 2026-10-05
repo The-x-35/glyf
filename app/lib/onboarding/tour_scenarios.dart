@@ -166,6 +166,27 @@ final tourScenarios = <TourScenario>[
     ],
   ),
   TourScenario(
+    id: 'investor',
+    name: 'Daniel',
+    avatar: '📈',
+    tint: const Color(0xFFFF9F0A),
+    tag: 'Calendar',
+    headline: ('Check your day.', 'Book it mid-chat.'),
+    beats: [
+      // Hold C (the calendar's key) to see the day, close it, the keyboard
+      // types "investor meet at 10pm", the strip offers it as an event, and
+      // Add puts it in the message. A practice day: nothing reaches a real
+      // calendar (TourCoach investor:0 on both keyboards).
+      TourBeat(
+        them: ['loved the pitch today 🚀', "let's meet at 10 pm?"],
+        goal: (t, _) => t.contains('📅'),
+        reply: (_) => ['perfect, see you at 10 🤝'],
+        tapback: '👍',
+        nudge: 'does 10 pm work? 🙏',
+      ),
+    ],
+  ),
+  TourScenario(
     id: 'zoya',
     name: 'Zoya',
     avatar: '🍝',
@@ -175,7 +196,7 @@ final tourScenarios = <TourScenario>[
     beats: [
       TourBeat(
         them: ['dinner was so good 😭', 'bill was \$236 for 4 of us. how much do I send you?'],
-        autotype: (t) => t.isEmpty ? '236/4' : null,
+        autotype: (t) => t.isEmpty ? '\$236/4' : null,
         goal: (t, _) => t.contains('59'),
         reply: (_) => ['sending now 💸'],
         nudge: 'wait, how much though? 😅',

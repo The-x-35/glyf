@@ -29,6 +29,8 @@ object TourCoach {
         object Menu : Panel()
         data class Act(val working: Boolean, val options: Boolean) : Panel()
         data class Translate(val ready: Boolean, val target: String?) : Panel()
+        /** The calendar, and whether New Event is open over it. */
+        data class Calendar(val composing: Boolean) : Panel()
         /** Anything else that is open, and the control that closes it. */
         data class Other(val close: String) : Panel()
     }
@@ -41,9 +43,12 @@ object TourCoach {
         val chip: String? = null,
         val suggestions: List<String> = emptyList(),
         val fields: List<Smart.Field> = emptyList(),
-        /** Letters holding the vault and translate, if any. */
+        /** Letters holding the vault, translate and the calendar, if any. */
         val vaultKey: String? = null,
         val translateKey: String? = null,
+        val calendarKey: String? = null,
+        /** The calendar has been open during this step: the day was checked. */
+        val calendarSeen: Boolean = false,
         /** Tools showing on the strip right now (people can move them). */
         val stripTools: Set<String> = setOf("search", "vault", "translate"),
         /** The tour copied the address from the chat, so a paste chip holds it. */
@@ -57,8 +62,12 @@ object TourCoach {
         "semi:0" -> kind == "pay" || (kind == "paste" && copied)
         "zoya:0" -> kind == "calc"
         "zoya:1" -> kind == "vault:wallet"
+        "investor:0" -> kind == "event"
         else -> false
     }
+
+    /** What the keyboard types once the investor's day has been checked. */
+    const val INVESTOR_PLAN = "investor meet at 10pm"
 
     /** Opens a tool: from the strip when it is there, else through the g
      *  menu, which holds only what the strip doesn't (so a tool on the strip
@@ -90,8 +99,13 @@ object TourCoach {
     }
 
     /** What the keyboard types into the field for you, given what is open. */
-    fun autotype(s: State): String? =
-        if (s.step == "sofia:0" && s.panel is Panel.Translate && s.text.isEmpty()) "see you tomorrow" else null
+    fun autotype(s: State): String? = when {
+        s.step == "sofia:0" && s.panel is Panel.Translate && s.text.isEmpty() -> "see you tomorrow"
+        // The day is checked and the calendar closed: the plan gets typed,
+        // and the strip offers it as an event.
+        s.step == "investor:0" && s.panel == Panel.None && s.calendarSeen && s.text.isEmpty() -> INVESTOR_PLAN
+        else -> null
+    }
 
     /** The website's "absolutely / sure thing" check, for a real model's
      *  rewrite: anything that is no longer the messy draft. */
@@ -151,6 +165,25 @@ object TourCoach {
 
             "kabir:1" -> search(s, "web", "Google") { matches(it, "\\d{1,2}:\\d{2}") }
 
+            "investor:0" -> {
+                val p = s.panel
+                when {
+                    // The event is in the message: the chat points at Send.
+                    text.contains("📅") -> null
+                    // New Event from the plan: add it. Otherwise the day has
+                    // been seen (10 PM is free): close it, the plan is next.
+                    p is Panel.Calendar -> if (p.composing) Coach("event:add", "Add") else Coach("toolbar:glyf", "Close")
+                    p == Panel.Menu -> tool(s, "calendar", "Calendar")
+                    p != Panel.None -> closer(p)
+                    s.chip == "event" -> Coach("strip:smart", "Tap")
+                    !s.calendarSeen ->
+                        s.calendarKey?.let { Coach("key:$it", "Hold ${it.uppercase()}") } ?: tool(s, "calendar", "Calendar")
+                    // The keyboard is typing the plan; its chip is on the way.
+                    text.isBlank() || INVESTOR_PLAN.startsWith(text.trim().lowercase()) -> null
+                    else -> Coach("key:delete", "Delete")
+                }
+            }
+
             "sofia:0" -> {
                 val p = s.panel
                 when {
@@ -180,6 +213,8 @@ object TourCoach {
         Panel.Menu -> Coach("toolbar:glyf", "Close")
         is Panel.Act -> Coach(if (panel.working) "act:cancel" else "act:close", "Close")
         is Panel.Translate -> Coach("hud:close", "Close")
+        // The g key is the panel's ✕ (the calendar's strip has no ‹).
+        is Panel.Calendar -> Coach(if (panel.composing) "event:cancel" else "toolbar:glyf", "Close")
         is Panel.Other -> Coach(panel.close, "Close")
     }
 

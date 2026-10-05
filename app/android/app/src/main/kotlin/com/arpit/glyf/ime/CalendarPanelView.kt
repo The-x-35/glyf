@@ -41,10 +41,14 @@ class CalendarPanelView(
     private val backendURL: String = "",
     /** The person's own Cal.com or Calendly page, set in the app. */
     private val bookingLink: String? = null,
+    /** The tour's practice day (the investor chat): sample events, and Add
+     *  puts the event in the message without writing to any calendar, the
+     *  phone's or Google's. */
+    private val practice: Boolean = false,
 ) : FrameLayout(ctx) {
 
     private val accent = Color.rgb(0x7C, 0x5C, 0xFF)
-    private val connected = CalendarText.connected(ctx)
+    private val connected = practice || CalendarText.connected(ctx)
     /** New Event, while it is open. */
     var composer: EventComposerView? = null
         private set
@@ -107,7 +111,7 @@ class CalendarPanelView(
     init {
         // Google connected: its last answer for THIS account at once, then
         // ask again; the phone's own calendars show from the start.
-        if (com.arpit.glyf.store.GoogleAccess.hasCalendar(ctx)) {
+        if (!practice && com.arpit.glyf.store.GoogleAccess.hasCalendar(ctx)) {
             val email = primary()
             googleFetched = GoogleCache.load(ctx, email)
             googleNote = "Google Calendar" + (email?.let { " · $it" } ?: "") + " · syncing…"
@@ -226,7 +230,8 @@ class CalendarPanelView(
             // the chat is with: it goes into the message once added.
             EventComposerView.Draft("", start, start + 3_600_000L, false, share = true)
         }
-        present(draft, CalendarText.canAdd(context), edit = false) { add(it) }
+        // Practice writes nowhere, so it needs nothing.
+        present(draft, practice || CalendarText.canAdd(context), edit = false) { add(it) }
     }
 
     /** New Event or Edit Event over the calendar; [onSave] gets the event
@@ -325,6 +330,14 @@ class CalendarPanelView(
      *  calendar takes it. Either way Share in chat puts it in the message. */
     private fun add(d: EventComposerView.Draft) {
         if (adding) return
+        if (practice) {
+            // The tour: into the message as a real event would go, and
+            // nowhere else.
+            closeComposer()
+            deliver(CalendarText.insert(CalendarText.Event(d.title, d.start, d.end, d.allDay)))
+            toast("Practice only. Nothing was added to your calendar.")
+            return
+        }
         adding = true
         if (!com.arpit.glyf.store.GoogleAccess.hasCalendar(context)) return saveHere(d, null)
         GoogleClient.addEvent(context, d.title, d.start, d.end, d.allDay, d.invitees, d.videoCall) { added, failure ->
@@ -436,6 +449,10 @@ class CalendarPanelView(
 
 
     private fun loadEvents() {
+        if (practice) {
+            events = CalendarText.practiceDay()
+            return
+        }
         val from = (month.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -7) }.timeInMillis
         val to = (month.clone() as Calendar).apply { add(Calendar.MONTH, 1); add(Calendar.DAY_OF_MONTH, 7) }.timeInMillis
         // Google connected: that account's calendar, live from Google, over
@@ -451,7 +468,7 @@ class CalendarPanelView(
 
     /** Asks Google for the window: the phone only has what it synced. */
     private fun refreshGoogle(from: Long, to: Long) {
-        if (!com.arpit.glyf.store.GoogleAccess.hasCalendar(context)) return
+        if (practice || !com.arpit.glyf.store.GoogleAccess.hasCalendar(context)) return
         googleWindow?.let { if (it.first <= from && it.second >= to) return }
         GoogleClient.listEvents(context, from, to) { list, failure ->
             val email = primary()
@@ -635,6 +652,7 @@ class CalendarPanelView(
 
     /** Why the event can't be changed from the keyboard, when it can't. */
     private fun refusal(e: CalendarText.Event): String? = when {
+        practice -> "These are the tour’s practice events"
         // Google's own are changed at Google; the rest in the phone's calendar.
         e.googleId != null -> null
         !CalendarText.canAdd(context) -> "Allow Calendar for Glyf in Settings"

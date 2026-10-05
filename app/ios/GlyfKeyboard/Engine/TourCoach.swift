@@ -32,6 +32,8 @@ enum TourCoach {
         case act(working: Bool, options: Bool)
         case tones
         case translate(ready: Bool, target: String?)
+        /// The calendar, and whether New Event is open over it.
+        case calendar(composing: Bool)
         /// Anything else that is open, and the control that closes it.
         case other(close: String)
     }
@@ -43,9 +45,12 @@ enum TourCoach {
         var chip: Smart.Chip?
         var suggestions: [String] = []
         var fields: [VaultField] = []
-        /// Letters holding the vault and translate, if any.
+        /// Letters holding the vault, translate and the calendar, if any.
         var vaultKey: String?
         var translateKey: String?
+        var calendarKey: String?
+        /// The calendar has been open during this step: the day was checked.
+        var calendarSeen = false
         /// Tools showing on the strip right now (people can move them).
         var stripTools: Set<String> = ["search", "vault", "translate"]
         /// The tour copied the address from the chat, so a paste chip now
@@ -62,9 +67,13 @@ enum TourCoach {
         case "semi:0": return kind == "pay" || (kind == "paste" && copied)
         case "zoya:0": return kind == "calc"
         case "zoya:1": return kind == "vault:wallet"
+        case "investor:0": return kind == "event"
         default: return false
         }
     }
+
+    /// What the keyboard types once the investor's day has been checked.
+    static let investorPlan = "investor meet at 10pm"
 
     /// Opens a tool: from the strip when it is there, else through the g menu.
     /// A tool on the strip has no tile in the menu, and the strip stays up
@@ -107,6 +116,11 @@ enum TourCoach {
     static func autotype(_ s: State) -> String? {
         if s.step == "sofia:0", case .translate = s.panel, s.text.isEmpty {
             return "see you tomorrow"
+        }
+        // The day is checked and the calendar closed: the plan gets typed,
+        // and the strip offers it as an event.
+        if s.step == "investor:0", s.panel == .none, s.calendarSeen, s.text.isEmpty {
+            return investorPlan
         }
         return nil
     }
@@ -170,6 +184,31 @@ enum TourCoach {
         case "kabir:1":
             return search(s, tab: "search", label: "Google") { matches($0, #"\d{1,2}:\d{2}"#) }
 
+        case "investor:0":
+            // The event is in the message: the chat points at Send.
+            if text.contains("📅") { return nil }
+            switch s.panel {
+            case .calendar(let composing):
+                // New Event from the plan: add it. Otherwise the day has
+                // been seen (10 PM is free): close it, the plan comes next.
+                return composing ? Coach(target: "event:add", label: "Add")
+                    : Coach(target: "toolbar:close|connector:close", label: "Close")
+            case .none:
+                if case .event = s.chip { return Coach(target: "strip:smart", label: "Tap") }
+                if !s.calendarSeen {
+                    if let key = s.calendarKey { return Coach(target: "key:\(key)", label: "Hold \(key.uppercased())") }
+                    return tool(s, "calendar", "Calendar")
+                }
+                // The keyboard is typing the plan; its chip is on the way.
+                let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if t.isEmpty || investorPlan.hasPrefix(t.lowercased()) { return nil }
+                return Coach(target: "key:delete", label: "Delete")
+            case .menu:
+                return tool(s, "calendar", "Calendar")
+            default:
+                return closer(s.panel)
+            }
+
         case "sofia:0":
             if has(text, "mañana") { return nil }
             if case .translate(let ready, let target) = s.panel {
@@ -206,6 +245,8 @@ enum TourCoach {
         case .act(let working, _): return working ? nil : Coach(target: "toolbar:close", label: "Close")
         case .tones: return Coach(target: "tones:close", label: "Close")
         case .translate: return Coach(target: "hud:close", label: "Close")
+        case .calendar(let composing):
+            return Coach(target: composing ? "event:cancel" : "toolbar:close|connector:close", label: "Close")
         case .other(let close): return Coach(target: close, label: "Close")
         }
     }

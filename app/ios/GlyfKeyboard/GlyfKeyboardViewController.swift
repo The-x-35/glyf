@@ -1047,7 +1047,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
             clipboardPanel = c
             MemoryLogger.logSurface("clipboard")
         case .connector(let id) where id == "calendar" || id == "mockcal":
-            let c = CalendarSurface(hasFullAccess: hasFullAccess)
+            // The tour's investor chat plays on a practice day: nothing it
+            // adds reaches a real calendar.
+            let c = CalendarSurface(hasFullAccess: hasFullAccess,
+                                    practice: tourStep?.hasPrefix("investor:") == true)
             c.delegate = self
             content.addSubview(c)
             prepareEntrance(c, animated: animated)
@@ -1265,6 +1268,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var tourTyping = false
     /// What the keyboard already typed for the tour, so it types it once.
     private var tourTyped: String?
+    /// The step during which the calendar was open (the investor's day).
+    private var tourCalendarSeen: String?
 
     private var tourCopied: Bool {
         (SettingsStore.current.tourCopiedAt ?? 0) > (Date().timeIntervalSince1970 - 10 * 60) * 1000
@@ -1328,7 +1333,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
             clearTourCoach()
             return
         }
-        let state = tourState(step: step)
+        var state = tourState(step: step)
+        // The investor's day was looked at: the plan can be typed after.
+        if case .calendar = state.panel, tourCalendarSeen != step {
+            tourCalendarSeen = step
+            state.calendarSeen = true
+        }
         tourAutotype(state)
         guard let coach = TourCoach.coach(state), let rect = coachRect(coach.target) else {
             clearTourCoach()
@@ -1348,6 +1358,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let bindings = SettingsStore.current.bindings.sorted { $0.key < $1.key }
         state.vaultKey = bindings.first { $0.value == "surface:vault" }?.key
         state.translateKey = bindings.first { $0.value == "surface:translate-hud" }?.key
+        state.calendarKey = bindings.first { $0.value == "connector:calendar" }?.key
+        state.calendarSeen = tourCalendarSeen == step
         state.stripTools = Set(["search", "vault", "translate"].filter { findCoachView("toolbar:\($0)") != nil })
         state.copied = tourCopied
         return state
@@ -1378,6 +1390,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .emoji:
             return .other(close: emoji?.searchActive == true ? "emoji:close" : "emoji:abc|emoji:letters")
         case .connector:
+            if let c = calendarView { return .calendar(composing: c.composing) }
             return .other(close: "toolbar:close|connector:close")
         case .games:
             return .other(close: "toolbar:close")

@@ -361,6 +361,21 @@ object CalendarText {
         }.timeInMillis
     }
 
+    /** The tour's practice day (the investor chat, here and on tryglyf.com):
+     *  three plain events and an open evening, so 10 PM is free. Nothing is
+     *  read from the phone and nothing is ever written. */
+    fun practiceDay(now: Long = System.currentTimeMillis(), tz: TimeZone = TimeZone.getDefault()): List<Event> {
+        val day = startOfDay(now, tz)
+        fun at(h: Int, m: Int) = Calendar.getInstance(tz).apply {
+            timeInMillis = day; set(Calendar.HOUR_OF_DAY, h); set(Calendar.MINUTE, m)
+        }.timeInMillis
+        return listOf(
+            Event("Standup", at(10, 0), at(10, 15), false),
+            Event("Lunch with Sam", at(13, 0), at(14, 0), false),
+            Event("Gym", at(18, 30), at(19, 30), false),
+        )
+    }
+
     fun startOfDay(ms: Long, tz: TimeZone = TimeZone.getDefault()): Long =
         Calendar.getInstance(tz).apply {
             timeInMillis = ms

@@ -1613,6 +1613,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var tourTyping = false
     /** What the keyboard already typed for the tour, so it types it once. */
     private var tourTyped: String? = null
+    /** The step during which the calendar was open (the investor's day). */
+    private var tourCalendarSeen: String? = null
 
     /** The app moves the tour along without touching the text, so the
      *  keyboard looks again a few times a second while it is up. */
@@ -1654,7 +1656,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             updateSuggestions()
         }
         val step = tourStep() ?: return clearCoach()
-        val state = tourState(step)
+        var state = tourState(step)
+        // The investor's day was looked at: the plan can be typed after.
+        if (state.panel is TourCoach.Panel.Calendar && tourCalendarSeen != step) {
+            tourCalendarSeen = step
+            state = state.copy(calendarSeen = true)
+        }
         tourAutotype(state)
         val coach = TourCoach.coach(state) ?: return clearCoach()
         val rect = coachRect(coach.target) ?: return clearCoach()
@@ -1693,6 +1700,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             fields = vaultFields(),
             vaultKey = keyFor("surface:vault"),
             translateKey = keyFor("surface:translate-hud"),
+            calendarKey = keyFor("connector:calendar"),
+            calendarSeen = tourCalendarSeen == step,
             stripTools = setOf("search", "vault", "translate").filter { findQaView(it) != null }.toSet(),
             copied = tourCopied(),
         )
@@ -1723,6 +1732,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             panel.tag == "vault" -> if (vaultAddOpen) TourCoach.Panel.Other("vault:add") else TourCoach.Panel.Vault
             panel is ToolMenuView -> TourCoach.Panel.Menu
             panel is ClipboardPanelView -> TourCoach.Panel.Other("clip:back")
+            panel is CalendarPanelView -> TourCoach.Panel.Calendar(composing = panel.composer != null)
             else -> TourCoach.Panel.Other("panel:back|panel:abc")
         }
     }
@@ -4973,6 +4983,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val session = inputSession
         panel = CalendarPanelView(
             this, keyboard.palette(),
+            // The tour's investor chat plays on a practice day: nothing it
+            // adds reaches a real calendar.
+            practice = tourStep()?.startsWith("investor:") == true,
             backendURL = settings.optString("backendURL"),
             bookingLink = settings.optString("bookingLink").trim().takeIf { it.isNotEmpty() },
             onInsert = insert@{ text ->

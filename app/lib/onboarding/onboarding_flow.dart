@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import '../core/telemetry.dart';
 import '../core/theme.dart';
 import 'demo_chat.dart';
 import '../profile/brand_marks.dart';
+import 'setup_guide.dart';
 import 'setup_hero.dart';
 import 'talking_orb.dart';
 import 'tour_preview.dart';
@@ -38,6 +40,16 @@ class OnboardingFlow extends StatefulWidget {
   /// with their own settings, keeps `done` and the name, and closes at any
   /// step.
   final bool replay;
+
+  /// This launch is someone coming back from Settings in the middle of
+  /// setup: iOS ends the app the moment Full Access is allowed, so the next
+  /// launch is them returning (welcome back, no launch film), not a fresh
+  /// open. The trip is noted when Open is tapped.
+  static bool backFromSettings(Map<String, dynamic> state) {
+    if (state['step'] != 'setup') return false;
+    final at = DateTime.tryParse('${state['settingsTripAt'] ?? ''}');
+    return at != null && DateTime.now().toUtc().difference(at) < const Duration(minutes: 20);
+  }
 
   @override
   State<OnboardingFlow> createState() => _OnboardingFlowState();
@@ -86,12 +98,40 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   final Map<String, FocusNode> _detailFocus = {
     for (final f in _detailFields) f.$1: FocusNode(),
   };
+  static const _detailLabelStyle = TextStyle(fontSize: 14, fontWeight: FontWeight.w700);
+
+  /// The label column fits the longest label ("Wallet address") and a gap,
+  /// measured in the labels' own type at the phone's text size: a fixed
+  /// 108 let it run into its placeholder on both phones.
+  double _detailLabelWidth(BuildContext context) {
+    final style = DefaultTextStyle.of(context).style.merge(_detailLabelStyle);
+    final scaler = MediaQuery.textScalerOf(context);
+    var widest = 0.0;
+    for (final f in _detailFields) {
+      final p = TextPainter(
+        text: TextSpan(text: f.$3, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      widest = math.max(widest, p.width);
+      p.dispose();
+    }
+    return widest.ceilToDouble() + 14;
+  }
   String? _detailsError;
   /// Why the screenshots switch wouldn't stay on, when it wouldn't.
   String? _photosNote;
   /// When this run of the setup step began: only what the keyboard says
   /// after this counts as proof of Full Access.
   DateTime? _setupSince;
+  /// Relaunched by coming back from Settings (iOS ended the app when Full
+  /// Access was allowed): the setup step says why, rather than starting cold.
+  bool _welcomeBack = false;
+  /// Setup went from not done to done while on screen: the moment is said.
+  bool _celebrate = false;
+  /// Android: Glyf was picked from the box, so the box stays to try it in.
+  bool _glyfInBox = false;
   /// The box the keyboard is asked to turn up in.
   final _try = TextEditingController();
   final _tryFocus = FocusNode();
@@ -157,19 +197,27 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       if (resume == 'details') _prefillFromAccount();
       if (resume == 'setup') {
         _setupSince = DateTime.now().toUtc();
+        _welcomeBack = OnboardingFlow.backFromSettings(widget.resume);
         // Ask the keyboard to turn up and say whether it has Full Access
-        // now, instead of leaving the person to find the box.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && !_fullAccess) _tryFocus.requestFocus();
-        });
+        // now, instead of leaving the person to find the box. (Android has
+        // no such question; its guide stays in view instead.)
+        if (!Platform.isAndroid) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_fullAccess) _tryFocus.requestFocus();
+          });
+        }
       }
     }
     _launchStep = _step;
     for (final c in _details.values) {
       c.addListener(_detailsChanged);
     }
+    _tryFocus.addListener(_tryFocusChanged);
     Telemetry.log('onboarding_step_view', {'step': _steps[_step]});
     _poll = Timer.periodic(const Duration(seconds: 1), (_) => _checkStatus());
+    // At once too: a relaunch on the setup step shouldn't show a second of
+    // unticked rows (and the wrong guide) before the first tick.
+    unawaited(_checkStatus());
     _dropConnectIfUnavailable();
   }
 
@@ -200,7 +248,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   void _remember() {
     final name = _steps[_step];
     if (name == 'signin' || name == 'tour') return;
-    unawaited(_saveState({'step': name, if (_persona != null) 'persona': _persona}));
+    unawaited(_saveState({
+      'step': name,
+      if (_persona != null) 'persona': _persona,
+      // A Settings trip only explains a relaunch on the setup step.
+      if (name != 'setup') 'settingsTripAt': null,
+    }));
   }
 
   /// Onboarding's own keys written over what onboarding.json holds, never
@@ -257,6 +310,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   void _detailsChanged() {
     if (mounted && _steps[_step] == 'details') setState(() {});
+  }
+
+  /// The practice box stays while it has the cursor (Glyf may be up in it).
+  void _tryFocusChanged() {
+    if (mounted && _steps[_step] == 'setup') setState(() {});
   }
 
   int get _filledDetails =>
@@ -353,9 +411,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     Telemetry.log('onboarding_google_meet', {'granted': _meetOn});
   }
 
-  /// Where the keyboard gets to speak for itself: type one letter with Glyf
-  /// and it reports Full Access, which nothing else on the phone can tell us.
-  Widget _tryHere() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+  /// Where the keyboard gets to speak for itself: on iPhone, type one letter
+  /// with Glyf and it reports Full Access, which nothing else on the phone
+  /// can tell us; on Android the picker opens over it and Glyf appears in it.
+  Widget _tryHere() => Column(
+      key: const ValueKey('onb:setup:try-box'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         Semantics(
           identifier: 'onb:setup:try',
           child: TextField(
@@ -375,10 +437,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             ),
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.only(top: 8, left: 4),
-          child: Text('Tap 🌐 on the keyboard and pick Glyf',
-              style: TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
+        Padding(
+          padding: const EdgeInsets.only(top: 8, left: 4),
+          child: Text(
+              !Platform.isAndroid
+                  ? 'Tap 🌐 on the keyboard and pick Glyf'
+                  : !_keyboardSelected
+                      ? 'Pick Glyf Keyboard in the list'
+                      : _tryFocus.hasFocus
+                          ? 'This is Glyf. Type a few words.'
+                          : 'Tap the box to try Glyf',
+              style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
         ),
       ]);
 
@@ -386,11 +455,33 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   void _openSetup(String what) {
     Telemetry.log('onboarding_setup_open', {'what': what});
     if (what == 'picker') {
-      GlyfBridge.showImePicker();
-    } else {
-      GlyfBridge.openSettings();
+      unawaited(_choosePicker());
+      return;
     }
+    // iOS may end the app while they're in Settings (allowing Full Access
+    // does), so the trip is noted: the next launch is a welcome back.
+    if (!Platform.isAndroid) {
+      unawaited(_saveState({'step': 'setup', 'settingsTripAt': DateTime.now().toUtc().toIso8601String()}));
+    }
+    GlyfBridge.openSettings();
   }
+
+  /// Android shows its keyboard picker only to an app with a box being typed
+  /// in (Android 16 drops the request otherwise, which left "Choose" doing
+  /// nothing): the practice box takes the cursor first, and the picker opens
+  /// over the keyboard it brings up, where Glyf appears once it's picked.
+  Future<void> _choosePicker() async {
+    if (!_tryFocus.hasFocus) {
+      _tryFocus.requestFocus();
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+    }
+    if (mounted) await GlyfBridge.showImePicker();
+  }
+
+  /// iPhone: Glyf turned up with Full Access. Android: Glyf is picked.
+  bool get _setupDone => Platform.isAndroid
+      ? _keyboardEnabled && _keyboardSelected
+      : _keyboardEnabled && _fullAccess;
 
   Future<void> _checkStatus() async {
     final enabled = await GlyfBridge.keyboardEnabled();
@@ -405,14 +496,25 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     final said = DateTime.tryParse('${ping?['ts'] ?? ''}');
     final fresh = said != null && _setupSince != null && said.isAfter(_setupSince!);
     final hadAccess = _fullAccess;
+    final hadPicked = _keyboardSelected;
+    final wasDone = _setupDone;
     setState(() {
       _keyboardEnabled = enabled;
       _keyboardSelected = selected;
       _fullAccess = enabled && fresh && ping?['hasFullAccess'] == true;
+      if (!wasDone && _setupDone && _steps[_step] == 'setup') _celebrate = true;
     });
     // The keyboard came up to say so. Now that it has, it can go, and the
     // Continue it was covering comes back.
     if (!hadAccess && _fullAccess && _tryFocus.hasFocus) _tryFocus.unfocus();
+    // Android: Glyf was just picked. Picking a keyboard doesn't raise it, and
+    // Android won't raise it for the app either (only for a tap), so the box
+    // lets go and stays, asking for that tap: Glyf comes up in it, with
+    // Continue over it.
+    if (Platform.isAndroid && !hadPicked && selected && _tryFocus.hasFocus) {
+      setState(() => _glyfInBox = true);
+      _tryFocus.unfocus();
+    }
   }
 
   void _advance() {
@@ -899,6 +1001,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         // keyboard's Next walks the boxes, and the buttons come back after.
         final typing = MediaQuery.viewInsetsOf(context).bottom > 0;
         final filled = _filledDetails;
+        final labelWidth = _detailLabelWidth(context);
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
@@ -922,9 +1025,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                       onTap: () => _detailFocus[id]!.requestFocus(),
                       child: Row(children: [
                         SizedBox(
-                          width: 108,
-                          child: Text(label,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                          width: labelWidth,
+                          child: Text(label, maxLines: 1, softWrap: false, style: _detailLabelStyle),
                         ),
                         Expanded(
                           child: Semantics(
@@ -1048,20 +1150,29 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         // runs — so on iPhone it is never what stands in the way; the
         // keyboard says so itself where it matters (the bar, search, paste).
         final done = android ? (_keyboardEnabled && inUse) : _keyboardEnabled;
-        // While the keyboard is up the picture of a keyboard is the first
-        // thing that can go.
+        // While the keyboard is up the pictures are the first thing to go.
         final typing = MediaQuery.viewInsetsOf(context).bottom > 0;
+        // The phone's own screens, for whatever is left to do; once it's all
+        // done, iPhone shows how to switch to Glyf and keep it first.
+        final guide = android
+            ? (!_keyboardEnabled ? androidTurnOn : !inUse ? androidPick : const <GuideStep>[])
+            : (!_keyboardEnabled ? iosTurnOn : !_fullAccess ? iosAccess : iosUse);
         return _frame(children: [
-          const Spacer(flex: 2),
+          _setupBanner(),
           // Hidden, not removed: taking it out of the list would shuffle the
           // box below it and cost it the keyboard it just called up.
-          Offstage(
-            offstage: typing,
-            child: const Column(children: [AiKeyboard(), SizedBox(height: 32)]),
+          Expanded(
+            child: Offstage(
+              offstage: typing,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: guide.isEmpty ? const Center(child: AiKeyboard()) : SetupGuide(steps: guide),
+              ),
+            ),
           ),
           const GlyfText('Turn on {glyf}',
               style: TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           SetupChecklist(
             android: android,
             keyboardOn: _keyboardEnabled,
@@ -1069,16 +1180,19 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             onKeyboard: () => _openSetup('keyboard'),
             onInUse: () => _openSetup(android ? 'picker' : 'access'),
           ),
-          // Full Access is real only when the keyboard itself says so, and it
-          // says so by turning up: so once the keyboard is added, this is
-          // where it gets its first word in.
-          if (!android && _keyboardEnabled && !_fullAccess) ...[
+          // The practice box. iPhone: Full Access is real only when the
+          // keyboard itself says so, by turning up here. Android: the picker
+          // needs a box being typed in, and Glyf shows up in it. It stays
+          // while it has the cursor, so Glyf isn't snatched away mid-look.
+          if (_keyboardEnabled && (!inUse || _tryFocus.hasFocus || _glyfInBox)) ...[
             const SizedBox(height: 16),
             _tryHere(),
           ],
-          const Spacer(flex: 3),
+          const SizedBox(height: 18),
+          // Nothing to tap by mistake over the keyboard, until it's all done:
+          // then Continue sits over Glyf, free to be tried first.
           Offstage(
-            offstage: typing,
+            offstage: typing && !_setupDone,
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               _pill('Continue', onTap: done ? _advance : null),
               if (!done) _skip() else const SizedBox(height: 20),
@@ -1261,6 +1375,72 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   // ── pieces ──────────────────────────────────────────────────────────────
+
+  /// Over the setup step: why the app just restarted (iOS ends it when Full
+  /// Access is allowed), and the moment Glyf is on and working.
+  Widget _setupBanner() {
+    final android = Platform.isAndroid;
+    final Widget banner;
+    if (_celebrate || (_welcomeBack && _setupDone)) {
+      banner = _note(
+        key: const ValueKey('onb:setup:done'),
+        icon: Icons.check_circle_rounded,
+        color: Glass.success,
+        title: android ? 'Glyf is your keyboard' : 'Glyf is on',
+        body: android ? 'It’s on and in use. You’re ready to type.' : 'Full Access is on too. You’re ready to type.',
+      );
+    } else if (_welcomeBack) {
+      banner = _note(
+        key: const ValueKey('onb:setup:welcome-back'),
+        icon: Icons.waving_hand_rounded,
+        color: Glass.accent,
+        title: 'Welcome back',
+        body: 'Your iPhone restarts Glyf when you allow Full Access. You’re right where you left off.',
+      );
+    } else {
+      banner = const SizedBox(key: ValueKey('onb:setup:none'), width: double.infinity);
+    }
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(duration: const Duration(milliseconds: 260), child: banner),
+    );
+  }
+
+  Widget _note({
+    required Key key,
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String body,
+  }) =>
+      Semantics(
+        key: key,
+        identifier: key is ValueKey<String> ? key.value : null,
+        liveRegion: true,
+        child: Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(top: 6),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.09),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.22)),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Glass.ink)),
+                const SizedBox(height: 2),
+                Text(body, style: const TextStyle(fontSize: 13, height: 1.35, color: Glass.inkSoft)),
+              ]),
+            ),
+          ]),
+        ),
+      );
 
   Widget _frame({required List<Widget> children}) => Padding(
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),

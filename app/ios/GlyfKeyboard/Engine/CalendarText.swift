@@ -32,6 +32,22 @@ enum CalendarText {
         }
     }
 
+    /// The tour's practice day (the investor chat, here and on tryglyf.com):
+    /// three plain events and an open evening, so 10 PM is free. Nothing is
+    /// read from the phone and nothing is ever written.
+    static func practiceDay(around now: Date = Date(), calendar cal: Calendar = .current) -> [Event] {
+        let day = cal.startOfDay(for: now)
+        func at(_ h: Int, _ m: Int) -> Date { cal.date(bySettingHour: h, minute: m, second: 0, of: day) ?? day }
+        return [
+            Event(title: "Standup", start: at(10, 0), end: at(10, 15), allDay: false, location: nil, color: nil,
+                  id: "practice:standup"),
+            Event(title: "Lunch with Sam", start: at(13, 0), end: at(14, 0), allDay: false, location: nil, color: nil,
+                  id: "practice:lunch"),
+            Event(title: "Gym", start: at(18, 30), end: at(19, 30), allDay: false, location: nil, color: nil,
+                  id: "practice:gym"),
+        ]
+    }
+
     static func events(fromJSON json: [String: Any]?) -> [Event] {
         guard let rows = json?["events"] as? [[String: Any]] else { return [] }
         let iso = ISO8601DateFormatter()

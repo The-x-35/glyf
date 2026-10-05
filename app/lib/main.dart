@@ -16,6 +16,7 @@ import 'wallet/send_screen.dart';
 import 'wallet/wallet_screen.dart';
 import 'wallet/wallet_flow.dart';
 import 'onboarding/onboarding_flow.dart';
+import 'onboarding/tour_scenarios.dart';
 import 'profile/connected_tools_screen.dart';
 import 'profile/keyboard_screen.dart';
 import 'shell/app_shell.dart';
@@ -68,6 +69,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
 
   Future<void> _load() async {
     final state = await GlyfBridge.onboardingState();
+    // Back from Settings in the middle of setup (iOS ends the app when Full
+    // Access is allowed): they're returning, so no launch film.
+    if (OnboardingFlow.backFromSettings(state) && mounted) setState(() => _launching = false);
     // Nobody uses Glyf signed out: without a session, onboarding runs again.
     final signedIn = await Auth.restore();
     if (!mounted) return;
@@ -198,7 +202,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       }
     }
     if (uri.host == 'demo') {
-      _openDemo();
+      // glyf://demo?chat=investor opens that chat of the tour.
+      final chat = uri.queryParameters['chat'];
+      _openDemo(at: chat == null ? 0 : tourScenarios.indexWhere((s) => s.id == chat));
       return;
     }
     if (uri.host == 'connected') {
@@ -244,7 +250,8 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
   }
 
   /// glyf://demo — replay the guided tour any time, from Settings or a link.
-  void _openDemo() => _push('demo', (c) => DemoChat(onDone: () => Navigator.of(c).pop()),
+  void _openDemo({int at = 0}) => _push(
+      'demo', (c) => DemoChat(startAt: at < 0 ? 0 : at, onDone: () => Navigator.of(c).pop()),
       replace: false, fullscreenDialog: true);
 
   Future<void> _checkPendingDictation() async {

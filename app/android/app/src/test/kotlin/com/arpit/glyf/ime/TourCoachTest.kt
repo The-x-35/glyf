@@ -61,4 +61,27 @@ class TourCoachTest {
         assertEquals(TourCoach.Coach("hud:replace", "Replace"), TourCoach.coach(
             open.copy(text = "see you tomorrow", panel = TourCoach.Panel.Translate(ready = true, target = "Spanish"))))
     }
+
+    @Test fun investorChecksTheDayThenBooksIt() {
+        var s = TourCoach.State(step = "investor:0", text = "", calendarKey = "c")
+        // Hold c (the calendar's key), close the day, then the plan is typed.
+        assertEquals(TourCoach.Coach("key:c", "Hold C"), TourCoach.coach(s))
+        assertEquals(TourCoach.Coach("toolbar:glyf", "Tap g"), TourCoach.coach(s.copy(calendarKey = null)))
+        assertNull(TourCoach.autotype(s))
+        val day = s.copy(panel = TourCoach.Panel.Calendar(composing = false), calendarSeen = true)
+        assertEquals(TourCoach.Coach("toolbar:glyf", "Close"), TourCoach.coach(day))
+        s = s.copy(calendarSeen = true)
+        assertEquals(TourCoach.INVESTOR_PLAN, TourCoach.autotype(s))
+        assertNull(TourCoach.coach(s))
+        assertNull(TourCoach.coach(s.copy(text = "investor me")))
+        // Its chip becomes New Event, and Add puts it in the message.
+        assertEquals(TourCoach.Coach("strip:smart", "Tap"),
+            TourCoach.coach(s.copy(text = TourCoach.INVESTOR_PLAN, chip = "event")))
+        assertEquals(TourCoach.Coach("event:add", "Add"), TourCoach.coach(
+            s.copy(text = TourCoach.INVESTOR_PLAN, panel = TourCoach.Panel.Calendar(composing = true))))
+        assertNull(TourCoach.coach(s.copy(text = "investor meet at 10pm 📅 Investor meet · Today, 10:00 – 11:00 PM")))
+        assertEquals(TourCoach.Coach("key:delete", "Delete"), TourCoach.coach(s.copy(text = "hello")))
+        assertEquals(true, TourCoach.allowsChip("event", "investor:0"))
+        assertEquals(false, TourCoach.allowsChip("calc", "investor:0"))
+    }
 }

@@ -151,9 +151,14 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
                 result.success(selected)
             }
             "showImePicker" -> {
-                val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE)
+                // Android shows the picker only to the window being typed in
+                // (the app focuses its practice box first), so the request
+                // comes from the activity's own window, after its next frame.
+                val a = activity
+                val imm = (a ?: ctx).getSystemService(Context.INPUT_METHOD_SERVICE)
                     as android.view.inputmethod.InputMethodManager
-                imm.showInputMethodPicker()
+                val show = Runnable { imm.showInputMethodPicker() }
+                if (a != null) a.window.decorView.post(show) else show.run()
                 result.success(true)
             }
             "openURL" -> {

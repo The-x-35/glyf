@@ -62,6 +62,8 @@ flutter:
   assets:
     - assets/vocab/packs.json
     - assets/brand/glyf-symbol.png
+    # Real Settings screens for "Turn on Glyf" (tools/setup_guide).
+    - assets/setup/
 
   # One typeface on BOTH platforms (SF-metric Inter) — the app must look
   # identical on iOS and Android.
