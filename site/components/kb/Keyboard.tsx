@@ -3,15 +3,18 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useId, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import {
-  CLIP_AGE, CLIPS, EMOJI, HOLD_MS, LANGS, POS, ROWS_123, ROWS_ABC, SEARCH_SUGGEST, SKILLS, SPACE_HOLD_MS, SHORTHAND, TONES, VAULT, WEATHER,
+  CLIP_AGE, CLIPS, EMOJI, HOLD_MS, LANGS, OWN_WALLET, POS, ROWS_123, ROWS_ABC, SEARCH_SUGGEST, SKILLS, SPACE_HOLD_MS, SHORTHAND, TONES, VAULT, WEATHER,
   autocorrect, calc, classify, contextual, isLink, money as moneyChip, proofread, rewrite, rowOf, searchCards, short, shortAddr, solAddress, suggest, translate,
-  SWAP_RATE, type ActResult, type Card, type Lang, type Panel, type PayHint, type SearchTab,
+  SWAP_RATE, type ActResult, type Calc, type Card, type Lang, type Money, type Panel, type PayHint, type SearchTab, type VaultItem,
 } from "./data";
+import {
+  addDays, clock, dateText, dayLabel, eventsOn, freeTime, insertText, looksLikePlan, monthCells, monthLabel, sameDay, sampleEvents, startOfDay, summary,
+  type CalEvent, type Plan,
+} from "./calendar";
 import { hub } from "./hub";
 import { MagicBlockLogo, MagicBlockMark, SolIcon, UsdcIcon } from "./brands";
 import * as I from "./icons";
-// BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: GoogleG.
-import { ClockFace, /* GoogleG, */ SunArc, WeatherGlyph } from "./visuals";
+import { ClockFace, GoogleG, SunArc, WeatherGlyph } from "./visuals";
 
 export type SearchView = "suggest" | "type" | "results";
 
@@ -24,7 +27,9 @@ export type KbSnapshot = {
   results: number;
   mode: "abc" | "123";
   act: ActResult["kind"] | "thinking" | null;
+  /** The saved detail the strip is offering, if that is its chip. */
   mine: string | null;
+  /** The sum the strip is offering, if that is its chip. */
   calc: string | null;
   translation: string | null;
   lang: Lang;
@@ -32,6 +37,12 @@ export type KbSnapshot = {
   clip: string | null;
   addr: string | null;
   wallet: { tab: "send" | "swap"; stage: "form" | "sending" | "done" } | null;
+  /** The calendar has been opened since this chat began. */
+  calSeen: boolean;
+  /** New Event is open over the calendar. */
+  composing: boolean;
+  /** The plan chip's words, when the strip is offering one. */
+  event: string | null;
 };
 
 export type Coach = { target: string; label: string } | null;
@@ -65,7 +76,86 @@ type State = {
   auto: boolean;
   clip: { text: string; used: boolean } | null;
   wal: Wal;
+  cal: Cal;
+  /** The strip's chip was put away (its ✕); typing brings chips back. */
+  chipOff: boolean;
 };
+
+/** New Event, as the composer holds it. */
+type Draft = { title: string; start: Date; end: Date; allDay: boolean; share: boolean };
+
+type Cal = {
+  /** The day the list shows. */
+  day: Date;
+  /** The month grid, when it is open (its first day). */
+  month: Date | null;
+  compose: Draft | null;
+  /** Opened since this chat began. */
+  seen: boolean;
+  /** Events added here, kept from chat to chat. */
+  added: CalEvent[];
+  /** The row just added, lit for a moment. */
+  lit: string | null;
+};
+
+const CAL: Cal = { day: new Date(0), month: null, compose: null, seen: false, added: [], lit: null };
+
+/** What the strip offers, at most one thing (the app's smart chip). */
+type Chip =
+  | { kind: "pay"; to: string }
+  | { kind: "paste"; text: string }
+  | { kind: "calc"; math: Calc }
+  | { kind: "money"; cash: Money }
+  | { kind: "vault"; item: VaultItem }
+  | { kind: "event"; plan: Plan; words: string };
+
+/** What the strip offers right now, if it may: a chat that is being coached
+ *  only offers the chips its step is about (the app's TourCoach.allowsChip). */
+function chipFor(s: { text: string; panel: Panel; clip: State["clip"]; chipOff: boolean }, allow?: string[] | null): Chip | null {
+  const chip = anyChip(s);
+  return chip && (!allow || allow.includes(chip.kind)) ? chip : null;
+}
+
+/** A chip's words, the way the app puts them (Smart.Chip's value, label and verb). */
+function chipParts(chip: Chip, s: { text: string; wal: Wal }) {
+  switch (chip.kind) {
+    case "calc": {
+      const expr = s.text.slice(chip.math.start).replace(/\s*=\s*$/, "").trim();
+      const value = !expr || expr.length > 22 ? `= ${chip.math.value}` : `${expr} = ${chip.math.value}`;
+      return { pid: "strip:calc", lead: null, label: null, value, verb: "Insert" };
+    }
+    case "money":
+      return { pid: "strip:money", lead: null, label: null, value: chip.cash.value, verb: "Insert" };
+    case "vault":
+      return { pid: "strip:vault", lead: null, label: chip.item.label, value: short(chip.item), verb: "Insert" };
+    case "paste":
+      return { pid: "strip:paste", lead: <I.PasteIcon className="kb-smart-lead" />, label: null, value: chip.text.length > 24 ? shortAddr(chip.text) : chip.text, verb: "Paste" };
+    case "pay": {
+      const value = s.wal.hint ? `${s.wal.amount} ${s.wal.token} to ${shortAddr(chip.to)}` : shortAddr(chip.to);
+      return { pid: "strip:pay", lead: null, label: "Wallet", value, verb: "Send" };
+    }
+    case "event":
+      return { pid: "strip:event", lead: <I.CalendarIcon className="kb-smart-lead" />, label: null, value: chip.words, verb: "Add" };
+  }
+}
+
+function anyChip(s: { text: string; panel: Panel; clip: State["clip"]; chipOff: boolean }): Chip | null {
+  if (s.panel || s.chipOff) return null;
+  const to = solAddress(s.text);
+  // Your own wallet, just shared: nothing to pay.
+  if (to && to !== OWN_WALLET) return { kind: "pay", to };
+  // A copy is offered in an empty field, as the apps do.
+  if (s.clip && !s.clip.used && !s.text.trim()) return { kind: "paste", text: s.clip.text };
+  const math = calc(s.text);
+  if (math) return { kind: "calc", math };
+  const cash = moneyChip(s.text);
+  if (cash) return { kind: "money", cash };
+  const item = contextual(s.text);
+  if (item) return { kind: "vault", item };
+  const plan = looksLikePlan(s.text);
+  if (plan) return { kind: "event", plan, words: summary(plan) };
+  return null;
+}
 
 type Wal = {
   tab: "send" | "swap";
@@ -80,20 +170,34 @@ type Wal = {
   sol: number;
   flipped: boolean;
   swap: "form" | "swapping" | "done";
+  /** The chat asked for this amount (the pay chip names it). */
+  hint: boolean;
 };
 
 const WAL: Wal = {
   tab: "send", to: "", amount: "200", token: "USDC", private: true, stage: "form", step: 0,
-  usdc: 1240.18, sol: 8.42, flipped: false, swap: "form",
+  usdc: 1240.18, sol: 8.42, flipped: false, swap: "form", hint: false,
 };
 
 const SELL = 1.5;
 const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const HOUR_MS = 3_600_000;
+/** How a strip chip comes in. */
+const POP = {
+  initial: { opacity: 0, y: 10, scale: 0.94 },
+  animate: { opacity: 1, y: 0, scale: 1 },
+  transition: { type: "spring" as const, stiffness: 420, damping: 28 },
+};
+/** The calendar's call button: a Meet link for the chat, no event. */
+const MEET_LINK = "meet.google.com/xk2-pqr-7ty";
+/** Book a time: the person's own booking page, set in the app. */
+const BOOKING_LINK = "cal.com/arpitx35";
+const allEvents = (c: Cal) => [...sampleEvents(), ...c.added];
 
 const INITIAL: State = {
   text: "", mode: "abc", shift: false, panel: null, tab: "google", query: "", searchView: "suggest", results: null, searching: false,
-  act: null, lang: "hi", down: [], holding: null, fired: null, ripple: null, ai: false, fix: null, flash: null, toast: null, auto: false,
-  clip: null, wal: WAL,
+  act: null, lang: "es", down: [], holding: null, fired: null, ripple: null, ai: false, fix: null, flash: null, toast: null, auto: false,
+  clip: null, wal: WAL, cal: CAL, chipOff: false,
 };
 
 const TOOLS = [
@@ -116,12 +220,11 @@ const MENU = [
   { id: "act", label: "Ask Glyf", Icon: I.SparkIcon },
 ];
 
-const TABS: { id: SearchTab; label: string; Icon: (p: { className?: string }) => ReactNode }[] = [
-  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: label "Google". "Search" is what the app calls this tab.
-  { id: "google", label: "Search", Icon: I.SearchIcon },
-  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the YouTube and Maps tabs.
-  // { id: "youtube", label: "YouTube", Icon: I.PlayRectIcon },
-  // { id: "maps", label: "Maps", Icon: I.PinIcon },
+/** The first tab is "Search", as the apps call it (it searches Google). */
+const TABS: { id: SearchTab; label: string; ph: string; Icon: (p: { className?: string }) => ReactNode }[] = [
+  { id: "google", label: "Search", ph: "Search the web", Icon: I.SearchIcon },
+  { id: "youtube", label: "YouTube", ph: "Search YouTube", Icon: I.PlayRectIcon },
+  { id: "maps", label: "Maps", ph: "Search Maps", Icon: I.PinIcon },
 ];
 
 const TITLES: Partial<Record<Exclude<Panel, null>, [string, (p: { className?: string }) => ReactNode]>> = {
@@ -134,7 +237,11 @@ const TITLES: Partial<Record<Exclude<Panel, null>, [string, (p: { className?: st
   skills: ["Skills", I.BoltIcon],
   chips: ["Ask Glyf", I.SparkIcon],
   wallet: ["Wallet", I.WalletIcon],
+  calendar: ["Calendar", I.CalendarIcon],
 };
+
+/** The event's bar when it has no calendar colour: Glyf's accent, as in the app. */
+const ACCENT = "#7c5cff";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
@@ -166,18 +273,22 @@ type Props = {
   coach?: Coach;
   /** Text the keyboard types for the visitor, key by key, when `key` changes. */
   autotype?: { key: string; text: string } | null;
+  /** The chips the strip may offer (a coached step's own), or null for any. */
+  chips?: string[] | null;
   onSend?: (text: string, layoutId: string) => void;
   onSnapshot?: (snap: KbSnapshot) => void;
   apiRef?: Ref<KeyboardApi>;
 };
 
-export default function Keyboard({ seed, draftId, coach = null, autotype = null, copied = null, onSend, onSnapshot, apiRef }: Props) {
+export default function Keyboard({ seed, draftId, coach = null, autotype = null, chips = null, copied = null, onSend, onSnapshot, apiRef }: Props) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const [s, setS] = useState<State>(INITIAL);
   const st = useRef(s);
   const set = (p: Partial<State> | ((x: State) => Partial<State>)) => {
     const next = { ...st.current, ...(typeof p === "function" ? p(st.current) : p) };
+    // A chip put away stays away only while the text it was about stands.
+    if (next.chipOff && next.text !== st.current.text) next.chipOff = false;
     st.current = next;
     setS(next);
   };
@@ -309,6 +420,49 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
     set({ act: classify(src), ai: false });
   };
 
+  /* ── calendar ─────────────────────────────────────────── */
+
+  /** Hold C: the day's events, the way the keyboards open on today. */
+  const openCalendar = () => {
+    const x = st.current;
+    set({ panel: "calendar", act: null, cal: { ...x.cal, day: startOfDay(new Date()), month: null, compose: null, seen: true } });
+  };
+
+  /** New Event over the calendar: filled from a plan (the strip's chip), or
+   *  the day shown at the next hour, 9 AM on another day (the + button).
+   *  Either way it goes into the message once added (Share in chat). */
+  const compose = (plan?: Plan) => {
+    const x = st.current;
+    if (plan) {
+      const draft: Draft = { title: plan.title, start: plan.start, end: plan.end, allDay: plan.allDay, share: true };
+      return set({ panel: "calendar", act: null, cal: { ...x.cal, seen: true, day: startOfDay(plan.start), month: null, compose: draft } });
+    }
+    const now = new Date();
+    const day = x.cal.day;
+    // Local hours: a whole hour in UTC is a half hour in some zones.
+    let start = sameDay(day, now)
+      ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1)
+      : new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9);
+    if (!sameDay(start, day)) start = startOfDay(day);
+    set({ cal: { ...x.cal, month: null, compose: { title: "", start, end: new Date(+start + HOUR_MS), allDay: false, share: true } } });
+  };
+
+  const addEvent = () => {
+    const x = st.current;
+    const d = x.cal.compose;
+    if (!d) return;
+    const ev: CalEvent = { id: `added-${Date.now()}`, title: d.title.trim() || "New Event", start: d.start, end: d.end, allDay: d.allDay };
+    const added = [...x.cal.added, ev];
+    if (d.share) {
+      set({ cal: { ...x.cal, compose: null, added } });
+      drop(insertText(ev));
+      return toast("Added to Calendar");
+    }
+    set({ cal: { ...x.cal, compose: null, added, day: startOfDay(ev.start), month: null, lit: ev.id } });
+    toast("Added to Calendar");
+    window.setTimeout(() => set((y) => (y.cal.lit === ev.id ? { cal: { ...y.cal, lit: null } } : {})), 2500);
+  };
+
   /** The app's ignition: origin key goes solid accent, a tint wave rolls out. */
   const ignite = (key: string) => {
     const rid = Date.now();
@@ -331,6 +485,8 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
         return later(() => set({ panel: "tones" }));
       case "v":
         return later(() => set({ panel: "vault" }));
+      case "c":
+        return later(openCalendar);
       case "w": {
         const t = st.current.text;
         return stream(`${t}${t && !/\s$/.test(t) ? " " : ""}${WEATHER}`);
@@ -393,7 +549,45 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
       case "close":
         searchTok.current++;
         actTok.current++;
-        return set({ panel: null, act: null, results: null, searching: false, ai: false });
+        return set({ panel: null, act: null, results: null, searching: false, ai: false, cal: { ...x.cal, compose: null, month: null } });
+      case "cal": {
+        const c = x.cal;
+        if (arg === "prev" || arg === "next") {
+          const n = arg === "next" ? 1 : -1;
+          if (c.month) return set({ cal: { ...c, month: new Date(c.month.getFullYear(), c.month.getMonth() + n, 1) } });
+          return set({ cal: { ...c, day: addDays(c.day, n) } });
+        }
+        if (arg === "month") return set({ cal: { ...c, month: c.month ? null : new Date(c.day.getFullYear(), c.day.getMonth(), 1) } });
+        if (arg === "new") return compose();
+        if (arg === "call") return drop(`Join me on a call: ${MEET_LINK}`);
+        if (arg === "free") return drop(freeTime(c.day, allEvents(c)));
+        if (arg === "date") return drop(dateText(c.day));
+        if (arg === "book") return drop(`Pick a time that works for you: ${BOOKING_LINK}`);
+        if (arg.startsWith("day:")) {
+          const [y, m, d] = arg.slice(4).split("-").map(Number);
+          return set({ cal: { ...c, day: new Date(y, m - 1, d), month: null } });
+        }
+        if (arg.startsWith("ev:")) {
+          const e = allEvents(c).find((v) => v.id === arg.slice(3));
+          return e ? drop(insertText(e)) : undefined;
+        }
+        return;
+      }
+      case "event": {
+        const d = x.cal.compose;
+        if (!d) return;
+        if (arg === "add") return addEvent();
+        if (arg === "cancel") return set({ cal: { ...x.cal, compose: null } });
+        if (arg === "share") return set({ cal: { ...x.cal, compose: { ...d, share: !d.share } } });
+        if (arg === "allday") {
+          // As Calendar does: all-day is the whole day; off again, 9 AM for an hour.
+          const base = startOfDay(d.start);
+          const hour = (h: number) => new Date(base.getFullYear(), base.getMonth(), base.getDate(), h);
+          const next = d.allDay ? { allDay: false, start: hour(9), end: hour(10) } : { allDay: true, start: base, end: addDays(base, 1) };
+          return set({ cal: { ...x.cal, compose: { ...d, ...next } } });
+        }
+        return;
+      }
       case "tool":
       case "menu":
         if (arg === "search") return openSearch();
@@ -459,6 +653,18 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
         if (arg === "go") return void runSwap();
         return;
       case "strip": {
+        // The chip's ✕: a copy is forgotten (it isn't wanted); any other chip
+        // is put away until the text changes.
+        if (arg === "x") {
+          const ch = chipFor(x, chips);
+          if (ch?.kind === "paste" && x.clip) return set({ clip: { ...x.clip, used: true } });
+          return set({ chipOff: true });
+        }
+        if (arg === "event") {
+          // Nothing is typed: the plan becomes a New Event to check and add.
+          const ch = chipFor(x, chips);
+          return ch?.kind === "event" ? compose(ch.plan) : undefined;
+        }
         if (arg === "paste") {
           if (!x.clip) return;
           set({ clip: { ...x.clip, used: true } });
@@ -658,9 +864,10 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
     set({
       ...INITIAL,
       text: seed.text ?? "",
-      lang: seed.lang ?? "hi",
+      lang: seed.lang ?? "es",
       clip: keep.clip,
-      wal: { ...WAL, usdc: keep.wal.usdc, sol: keep.wal.sol, amount: seed.pay?.amount ?? WAL.amount, token: seed.pay?.token ?? WAL.token, name: seed.pay?.name },
+      wal: { ...WAL, usdc: keep.wal.usdc, sol: keep.wal.sol, amount: seed.pay?.amount ?? WAL.amount, token: seed.pay?.token ?? WAL.token, name: seed.pay?.name, hint: !!seed.pay },
+      cal: { ...CAL, added: keep.cal.added },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed.key]);
@@ -701,7 +908,9 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
   }, [copied?.key]);
 
   useEffect(() => {
-    const noPanel = !s.panel;
+    // What the strip is showing, so a coach only points at a chip that is there.
+    const chip = chipFor(s, chips);
+    const addr = solAddress(s.text);
     cbs.current.onSnapshot?.({
       text: s.text,
       panel: s.panel,
@@ -711,16 +920,21 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
       results: s.results?.length ?? 0,
       mode: s.mode,
       act: s.panel === "act" ? (s.act ? s.act.kind : "thinking") : null,
-      mine: noPanel ? contextual(s.text)?.id ?? null : null,
-      calc: noPanel ? calc(s.text)?.value ?? null : null,
+      mine: chip?.kind === "vault" ? chip.item.id : null,
+      calc: chip?.kind === "calc" ? chip.math.value : null,
       translation: s.panel === "translate" ? translate(s.text, s.lang) : null,
       lang: s.lang,
-      auto: s.auto,
+      // Busy while the keyboard types or AI writes: nothing to point at yet
+      // (a rewrite sent mid-stream went out cut off).
+      auto: s.auto || s.ai,
       clip: s.clip && !s.clip.used ? s.clip.text : null,
-      addr: solAddress(s.text),
+      addr: chip?.kind === "pay" ? addr : null,
       wallet: s.panel === "wallet" ? { tab: s.wal.tab, stage: s.wal.stage } : null,
+      calSeen: s.cal.seen,
+      composing: s.panel === "calendar" && !!s.cal.compose,
+      event: chip?.kind === "event" ? chip.words : null,
     });
-  }, [s]);
+  }, [s, chips]);
 
   /* ── render ───────────────────────────────────────────── */
 
@@ -786,8 +1000,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
       {c.kind === "answer" ? (
         <span className={cx("kb-ans", c.visual && `kb-ans--${c.visual}`)}>
           <span className="kb-ans-top">
-            {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: <span className="kb-ans-g"><GoogleG /></span> */}
-            <span className="kb-ans-g"><I.SparkIcon /></span>
+            <span className="kb-ans-g"><GoogleG /></span>
             <span className="kb-ans-meta">{c.meta}</span>
             <span className="kb-ans-when">Today</span>
           </span>
@@ -820,8 +1033,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
               <span className="kb-badge">{c.badge}</span>
             </span>
           )}
-          {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: {c.kind === "link" && <span className="kb-fav"><GoogleG /></span>} */}
-          {c.kind === "link" && <span className="kb-fav"><I.SearchIcon /></span>}
+          {c.kind === "link" && <span className="kb-fav"><GoogleG /></span>}
           <span className="kb-card-body">
             <span className="kb-card-title">{c.title}</span>
             <span className="kb-card-meta">{c.meta}</span>
@@ -848,7 +1060,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
             ))}
           </div>
           <button type="button" className={cx("kb-query", co("query"))} onClick={() => perform("query")}>
-            {s.query || <span className="ph">Search {tab.label}</span>}
+            {s.query || <span className="ph">{tab.ph}</span>}
             {s.searchView === "type" && <span className="kb-caret" />}
             {tip("query")}
           </button>
@@ -907,58 +1119,42 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
       );
     }
     if (s.panel) {
+      // A toast over the open calendar says what just happened in it.
+      if (s.toast && s.panel === "calendar") return <div className="kb-toast"><I.CheckIcon /> {s.toast}</div>;
       const [title, Icon] = TITLES[s.panel] ?? ["", I.SparkIcon];
       return <div className="kb-title"><Icon /> {title}</div>;
     }
-    const to = solAddress(s.text);
-    if (to) {
+    const chip = chipFor(s, chips);
+    if (chip) {
+      // The app's strip chip (Toolbar.showSmart): its ✕ first, then what it
+      // offers (a copy and a plan lead with their mark, on a pill), and the
+      // verb at the end. A tap anywhere but the ✕ does the verb.
+      const c = chipParts(chip, s);
       return (
-        <motion.button key={`pay-${to}`} type="button" className={cx("kb-smart", co("strip:pay"))} onClick={() => perform("strip:pay")} initial={{ opacity: 0, y: 10, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 28 }}>
-          <span className="kb-smart-k"><I.WalletIcon /> Pay</span>
-          <span className="kb-smart-v">Send crypto to {shortAddr(to)}</span>
-          {tip("strip:pay")}
-        </motion.button>
+        <motion.div key={chip.kind} role="button" aria-label={`${c.verb} ${c.value}`} className={cx("kb-smart", c.lead && "kb-smart--pill", co(c.pid))} onClick={() => perform(c.pid)} {...POP}>
+          <button
+            type="button"
+            className="kb-smart-x"
+            aria-label="Dismiss"
+            onClick={(e) => {
+              e.stopPropagation();
+              perform("strip:x");
+            }}
+          >
+            <I.CloseIcon />
+          </button>
+          <span className="kb-smart-rule" aria-hidden />
+          {c.lead}
+          <span className="kb-smart-v">
+            {c.label && <span className="kb-smart-label">{c.label}</span>}
+            {c.value}
+          </span>
+          <span className="kb-smart-verb">{c.verb}</span>
+          {tip(c.pid)}
+        </motion.div>
       );
     }
-    if (s.clip && !s.clip.used && !s.text.includes(s.clip.text)) {
-      return (
-        <motion.button key={`paste-${s.clip.text}`} type="button" className={cx("kb-smart", co("strip:paste"))} onClick={() => perform("strip:paste")} initial={{ opacity: 0, y: 10, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 28 }}>
-          <span className="kb-smart-k"><I.PasteIcon /> Paste</span>
-          <span className="kb-smart-v">{s.clip.text.length > 24 ? shortAddr(s.clip.text) : s.clip.text}</span>
-          {tip("strip:paste")}
-        </motion.button>
-      );
-    }
-    const math = calc(s.text);
-    if (math) {
-      return (
-        <motion.button key={`calc-${math.value}`} type="button" className={cx("kb-smart", co("strip:calc"))} onClick={() => perform("strip:calc")} initial={{ opacity: 0, y: 10, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 28 }}>
-          <span className="kb-smart-k">=</span>
-          <span className="kb-smart-v kb-num">{math.value}</span>
-          {tip("strip:calc")}
-        </motion.button>
-      );
-    }
-    const cash = moneyChip(s.text);
-    if (cash) {
-      return (
-        <motion.button key={`money-${cash.key}`} type="button" className={cx("kb-smart", co("strip:money"))} onClick={() => perform("strip:money")} initial={{ opacity: 0, y: 10, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 28 }}>
-          <span className="kb-smart-k">{cash.label}</span>
-          <span className="kb-smart-v kb-num">{cash.value}</span>
-          {tip("strip:money")}
-        </motion.button>
-      );
-    }
-    const mine = contextual(s.text);
-    if (mine) {
-      return (
-        <motion.button key={`you-${mine.id}`} type="button" className={cx("kb-smart", co("strip:vault"))} onClick={() => perform("strip:vault")} initial={{ opacity: 0, y: 10, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 28 }}>
-          <span className="kb-smart-k"><I.IdCardIcon /> {mine.label}</span>
-          <span className="kb-smart-v">{short(mine)}</span>
-          {tip("strip:vault")}
-        </motion.button>
-      );
-    }
+    if (s.toast) return <div className="kb-toast"><I.CheckIcon /> {s.toast}</div>;
     const w = s.text.startsWith("💸") ? "" : lastWord(s.text);
     if (w) {
       const sug = suggest(w, learned.current);
@@ -976,7 +1172,6 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
         </div>
       );
     }
-    if (s.toast) return <div className="kb-toast"><I.CheckIcon /> {s.toast}</div>;
     if (s.fix) {
       return (
         <motion.div className="kb-fix" key={`fix-${s.fix.at}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease }}>
@@ -1135,8 +1330,145 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
     );
   };
 
+  /** New Event, the way the app's composer has it (EventComposer): Cancel,
+   *  the name and Add along the top, then Title, Starts, Ends, Share in chat
+   *  and All-day. Nothing here needs typing: the plan filled it in. */
+  const renderComposer = (d: Draft) => {
+    const endsSameDay = d.allDay ? sameDay(d.start, new Date(+d.end - 1)) : sameDay(d.start, d.end);
+    const title = d.title.trim();
+    return (
+      <div className="ev">
+        <div className="ev-head">
+          <button type="button" className="ev-link" onClick={() => perform("event:cancel")}>Cancel</button>
+          <b className="ev-name">New Event</b>
+          <button type="button" className={cx("ev-link ev-add", co("event:add"))} onClick={() => perform("event:add")}>
+            Add
+            {tip("event:add")}
+          </button>
+        </div>
+        <div className="ev-card">
+          <div className="ev-row">
+            <span className="ev-k">Title</span>
+            <span className={cx("ev-v", !title && "is-ph")}>{title || "New Event"}</span>
+          </div>
+          <div className="ev-row">
+            <span className="ev-k">Starts</span>
+            <span className="ev-pills">
+              <span className="ev-pill">{dayLabel(d.start)}</span>
+              {!d.allDay && <span className="ev-pill">{clock(d.start)}</span>}
+            </span>
+          </div>
+          <div className="ev-row">
+            <span className="ev-k">Ends</span>
+            <span className="ev-pills">
+              {(d.allDay || !endsSameDay) && <span className="ev-pill">{dayLabel(d.allDay ? new Date(+d.end - 1) : d.end)}</span>}
+              {!d.allDay && <span className="ev-pill">{clock(d.end)}</span>}
+            </span>
+          </div>
+          <div className="ev-row">
+            <span className="ev-k">Share in chat</span>
+            <button type="button" role="switch" aria-checked={d.share} aria-label="Share in chat" className={cx("ev-switch", d.share && "on")} onClick={() => perform("event:share")} />
+          </div>
+          <div className="ev-row">
+            <span className="ev-k">All-day</span>
+            <button type="button" role="switch" aria-checked={d.allDay} aria-label="All-day" className={cx("ev-switch", d.allDay && "on")} onClick={() => perform("event:allday")} />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  /** The keyboard's calendar (CalendarSurface): the day's events full width,
+   *  tap one to put it in the message; Month for the grid; the call link and
+   *  + New Event up top; Insert date, Share free time and Book a time (the
+   *  person's own booking page) at the foot. */
+  const renderCalendar = () => {
+    const c = s.cal;
+    if (c.compose) return renderComposer(c.compose);
+    const events = allEvents(c);
+    const today = startOfDay(new Date());
+    const day = eventsOn(c.day, events);
+    return (
+      <div className="cal">
+        <div className="cal-head">
+          <b className="cal-title">{c.month ? monthLabel(c.month) : dayLabel(c.day)}</b>
+          <button type="button" className="cal-step" aria-label={c.month ? "Previous month" : "Previous day"} onClick={() => perform("cal:prev")}>
+            <I.ChevronLeftIcon />
+          </button>
+          <button type="button" className="cal-step" aria-label={c.month ? "Next month" : "Next day"} onClick={() => perform("cal:next")}>
+            <I.ChevronRightIcon />
+          </button>
+          <button type="button" className="cal-pill" onClick={() => perform("cal:month")}>{c.month ? "Done" : "Month"}</button>
+          <button type="button" className="cal-round" aria-label="Send a call link" onClick={() => perform("cal:call")}>
+            <I.VideoIcon />
+          </button>
+          <button type="button" className="cal-round" aria-label="New event" onClick={() => perform("cal:new")}>
+            <I.PlusIcon />
+          </button>
+        </div>
+        {c.month ? (
+          <div className="cal-month">
+            {["S", "M", "T", "W", "T", "F", "S"].map((w, i) => (
+              <span key={`w${i}`} className="cal-wd">{w}</span>
+            ))}
+            {monthCells(c.month).map((d, i) =>
+              d ? (
+                <button
+                  key={i}
+                  type="button"
+                  className={cx("cal-cell", sameDay(d, today) && "is-today", sameDay(d, c.day) && "is-on")}
+                  aria-label={dayLabel(d)}
+                  onClick={() => perform(`cal:day:${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`)}
+                >
+                  <span className="cal-num">{d.getDate()}</span>
+                  {eventsOn(d, events).length > 0 && <i className="cal-dot" />}
+                </button>
+              ) : (
+                <span key={i} />
+              ),
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="cal-list">
+              {day.length === 0 && <p className="cal-none">Nothing planned</p>}
+              {day.map((e) => (
+                <motion.button
+                  key={e.id}
+                  type="button"
+                  className={cx("cal-row", c.lit === e.id && "is-lit")}
+                  onClick={() => perform(`cal:ev:${e.id}`)}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, ease }}
+                >
+                  <i className="cal-bar" style={{ background: e.color ?? ACCENT }} />
+                  <span className="cal-when">
+                    <b>{e.allDay ? "All day" : clock(e.start)}</b>
+                    {!e.allDay && <small>{clock(e.end)}</small>}
+                  </span>
+                  <span className="cal-what">
+                    <b>{e.title}</b>
+                    {e.location && <small>{e.location}</small>}
+                  </span>
+                </motion.button>
+              ))}
+            </div>
+            <div className="cal-actions">
+              <button type="button" className="cal-act cal-act--soft" onClick={() => perform("cal:date")}>Insert date</button>
+              <button type="button" className="cal-act" onClick={() => perform("cal:free")}>Share free time</button>
+              <button type="button" className="cal-act cal-act--soft" onClick={() => perform("cal:book")}>Book a time</button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   const renderPanel = () => {
     switch (s.panel) {
+      case "calendar":
+        return renderCalendar();
       case "wallet":
         return renderWallet();
       case "menu":
@@ -1330,7 +1662,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
           <AnimatePresence>
             {covering && (
               <motion.div
-                key={`${s.panel}-${s.panel === "search" ? s.searchView : ""}`}
+                key={`${s.panel}-${s.panel === "search" ? s.searchView : s.panel === "calendar" && s.cal.compose ? "new" : ""}`}
                 className="kb-panel"
                 initial={{ opacity: 0, y: 26 }}
                 animate={{ opacity: 1, y: 0 }}

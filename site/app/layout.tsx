@@ -42,8 +42,7 @@ const ORGANIZATION = JSON.stringify({
   "@type": "Organization",
   name: "Glyf",
   url: SITE,
-  // BRAND-REVIEW (2026-09-30): the logo sent to Google for sign-in; was /brand/glyf-logo.png.
-  logo: `${SITE}/brand/tryglyf-logo-1024.png`,
+  logo: `${SITE}/brand/glyf-logo.png`,
 });
 
 /** Runs before first paint: a saved theme choice wins over the system one. */

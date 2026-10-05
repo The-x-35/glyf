@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { money, solAddress } from "../kb/data";
+import { solAddress } from "../kb/data";
 import Keyboard, { type KbSnapshot, type KeyboardApi } from "../kb/Keyboard";
 import { Arrow, Avatar, Bubble, type Msg } from "../chat/Experience";
 import type { Scenario } from "../chat/scenarios";
@@ -27,7 +27,8 @@ const MONEY_SHOT: Record<string, (k: KbSnapshot) => boolean> = {
   sakshi: (k) => k.panel === "search" && k.tab === "maps" && k.results > 0,
   kabir: (k) => k.panel === "search" && k.tab === "google" && k.results > 0,
   mom: (k) => k.panel === "vault",
-  zoya: (k) => money(k.text) !== null,
+  zoya: (k) => k.mine === "wallet",
+  investor: (k) => k.composing,
   sofia: (k) => k.panel === "translate" && k.translation === "hasta mañana",
   semi: (k) => k.wallet?.tab === "send" && k.wallet.stage === "form",
 };
@@ -354,7 +355,17 @@ function Run({ sc, capture, onTakeover, onLoop }: { sc: Scenario; capture: boole
           </div>
         </motion.div>
 
-        <Keyboard seed={seed} draftId={draftId} coach={coach} autotype={autotype} copied={copied} onSend={onSend} onSnapshot={setSnap} apiRef={kbApi} />
+        <Keyboard
+          seed={seed}
+          draftId={draftId}
+          coach={coach}
+          autotype={autotype}
+          chips={th.done ? null : beatNow.chips ?? null}
+          copied={copied}
+          onSend={onSend}
+          onSnapshot={setSnap}
+          apiRef={kbApi}
+        />
       </main>
 
       <motion.div

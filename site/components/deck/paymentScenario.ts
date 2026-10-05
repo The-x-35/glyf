@@ -22,6 +22,7 @@ const priced = (t: string) => /1 SOL = \$/i.test(t);
 const TOKEN_PRICE: Beat = {
   them: ["btw what's sol at right now? 👀"],
   autotype: (k) => (k.text === "" ? "$sol" : null),
+  chips: ["money"],
   goal: priced,
   coach: chipCoach(priced),
   reply: ["oh nice, up from yesterday 📈"],

@@ -31,7 +31,8 @@ export type Panel =
   | "skills"
   | "translate"
   | "chips"
-  | "wallet";
+  | "wallet"
+  | "calendar";
 
 export type SearchTab = "google" | "youtube" | "maps";
 export type Lang = "hi" | "es" | "fr";
@@ -99,6 +100,8 @@ export const SKILLS: Record<string, { name: string; hint: string }> = {
   p: { name: "Proofread", hint: "Fixes grammar, keeps your voice" },
   t: { name: "Translate", hint: "Live, as you type" },
   r: { name: "Rewrite", hint: "Pick a tone" },
+  // C holds the calendar, the keyboards' own default binding.
+  c: { name: "Calendar", hint: "Your day, and plans in a tap" },
   // V, the letter it is named for — the same key the keyboards bind it to.
   v: { name: "Vault", hint: "Everything about you" },
   w: { name: "Weather", hint: "Live conditions" },
@@ -155,6 +158,9 @@ export const short = (v: VaultItem) => (v.id === "wallet" ? `${v.value.slice(0, 
 
 const saved = (id: string) => VAULT.find((v) => v.id === id)?.value ?? "";
 
+/** Your own wallet: the strip never offers to pay it. */
+export const OWN_WALLET = saved("wallet");
+
 /** ";home" and friends: typed shorthand for what the Vault keeps. */
 export const SHORTHAND: Record<string, string> = {
   home: saved("home"),
@@ -166,8 +172,9 @@ export const SHORTHAND: Record<string, string> = {
 /** "my wallet address is " → your wallet address, ready on the strip. */
 const CONTEXT: [RegExp, string][] = [
   [/\b(my name is|name:|this is)\s*$/i, "name"],
-  [/\b(address|deliver(?: it)? to|send (?:it |the \w+ )?to|ship (?:it )?to|come to|pick me up (?:from|at))\s*(?:is\s*)?:?\s*$/i, "home"],
+  // Before home: "my wallet address is " also ends in "address is ".
   [/\b(wallet|sol|solana|phantom|usdc|crypto)(?:\s*(?:address|addy|wallet))?\s*(?:is\s*)?:?\s*$/i, "wallet"],
+  [/\b(address|deliver(?: it)? to|send (?:it |the \w+ )?to|ship (?:it )?to|come to|pick me up (?:from|at))\s*(?:is\s*)?:?\s*$/i, "home"],
   [/\b(insta|instagram|ig)(?:\s*(?:handle|id))?\s*(?:is\s*)?:?\s*$/i, "insta"],
   [/\b(twitter|on x|x handle)\s*(?:is\s*)?:?\s*$/i, "x"],
   [/\blinkedin\s*(?:is\s*)?:?\s*$/i, "linkedin"],
@@ -275,12 +282,10 @@ export function money(text: string): Money | null {
   return { key: `tok-${sym}`, label: `$${sym}`, value: line, insert: line, at, len: text.length - at };
 }
 
-export const WEATHER = "It's 24° and cloudy, rain after 6 PM ☔";
+export const WEATHER = "It's 75° and cloudy, rain after 6 PM ☔";
 
 /** Clipboard history. Links open in a new tab instead of pasting. */
-// BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: the YouTube and Meet links.
-// export const CLIPS = ["https://youtu.be/dQw4w9WgXcQ?si=ms6HzsvNvsPeLhH_", "meet.google.com/xk2-pqr-7ty", "Booking ref · QR7GH2", "the figma link from standup"];
-export const CLIPS = ["https://www.tryglyf.com", "Gate 22 · boards 6:40 PM", "Booking ref · QR7GH2", "the figma link from standup"];
+export const CLIPS = ["https://youtu.be/dQw4w9WgXcQ?si=ms6HzsvNvsPeLhH_", "meet.google.com/xk2-pqr-7ty", "Booking ref · QR7GH2", "the figma link from standup"];
 export const CLIP_AGE = ["Just now", "2 min", "1 hr", "Yesterday"];
 export const isLink = (text: string) => /^https?:\/\//.test(text);
 
@@ -414,9 +419,9 @@ const PHRASES: Phrase[] = [
 ];
 
 export const LANGS: { id: Lang; label: string }[] = [
-  { id: "hi", label: "Hindi" },
   { id: "es", label: "Spanish" },
   { id: "fr", label: "French" },
+  { id: "hi", label: "Hindi" },
 ];
 
 export function translate(text: string, lang: Lang): string | null {
@@ -436,12 +441,12 @@ const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >
 function placesFor(q: string): Card[] {
   const t = q.toLowerCase();
   const pick = (name: string, meta: string): Card => ({ kind: "place", title: name, meta, insert: `📍 ${name} · ${meta.split(" · ")[1]}`, hue: hash(name) % 360 });
-  if (/pizza/.test(t)) return [pick("Little Oven Pizzeria", "4.5 ★ · 900 m · Open"), pick("Slice Theory", "4.3 ★ · 1.4 km · Open")];
-  if (/dinner|lunch|restaurant|brunch|breakfast/.test(t)) return [pick("The Green Terrace", "4.5 ★ · 700 m · Open"), pick("Olive & Thyme", "4.4 ★ · 1.1 km · Open")];
-  if (/bar|pub|beer|drinks/.test(t)) return [pick("Hops & Barley", "4.3 ★ · 1.1 km · Open"), pick("The Rooftop Room", "4.1 ★ · 1.8 km · Open")];
-  if (/coffee|caf/.test(t)) return [pick("Bean & Byte Café", "4.6 ★ · 350 m · Open"), pick("Blue Door Coffee", "4.5 ★ · 600 m · Open")];
+  if (/pizza/.test(t)) return [pick("Little Oven Pizzeria", "4.5 ★ · 0.6 mi · Open"), pick("Slice Theory", "4.3 ★ · 0.9 mi · Open")];
+  if (/dinner|lunch|restaurant|brunch|breakfast/.test(t)) return [pick("The Green Terrace", "4.5 ★ · 0.4 mi · Open"), pick("Olive & Thyme", "4.4 ★ · 0.7 mi · Open")];
+  if (/bar|pub|beer|drinks/.test(t)) return [pick("Hops & Barley", "4.3 ★ · 0.7 mi · Open"), pick("The Rooftop Room", "4.1 ★ · 1.1 mi · Open")];
+  if (/coffee|caf/.test(t)) return [pick("Bean & Byte Café", "4.6 ★ · 0.2 mi · Open"), pick("Blue Door Coffee", "4.5 ★ · 0.4 mi · Open")];
   const what = cap(q.replace(/\b(near me|nearby|around here|where|find|a|the)\b/gi, "").trim() || "Places");
-  return [pick(`${what} spot`, "4.4 ★ · 800 m · Open"), pick(`${what} & Co.`, "4.2 ★ · 1.3 km · Open")];
+  return [pick(`${what} spot`, "4.4 ★ · 0.5 mi · Open"), pick(`${what} & Co.`, "4.2 ★ · 0.8 mi · Open")];
 }
 
 function videosFor(q: string): Card[] {
@@ -488,8 +493,8 @@ function answersFor(q: string): Card[] {
   if (/weather|rain|temperature/.test(t))
     return [
       {
-        kind: "answer", visual: "weather", title: "24°", meta: "Weather · near you", sub: "Cloudy · rain likely after 6 PM",
-        facts: [["High", "27°"], ["Low", "19°"], ["Rain", "70%"]], insert: WEATHER,
+        kind: "answer", visual: "weather", title: "75°", meta: "Weather · near you", sub: "Cloudy · rain likely after 6 PM",
+        facts: [["High", "81°"], ["Low", "66°"], ["Rain", "70%"]], insert: WEATHER,
       },
     ];
   const zone = Object.keys(ZONES).find((z) => t.includes(z));
@@ -500,20 +505,15 @@ function answersFor(q: string): Card[] {
     const hm: [number, number] = [Number(parts.find((p) => p.type === "hour")?.value ?? 0), Number(parts.find((p) => p.type === "minute")?.value ?? 0)];
     return [{ kind: "answer", visual: "clock", title: now, meta: `Time · ${cap(zone)}`, sub: "Right now", hm, insert: `It's ${now} in ${cap(zone)} right now` }];
   }
-  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: google.com links.
-  // return [
-  //   { kind: "link", title: cap(q), meta: "google.com · Search", insert: `🔎 google.com/search?q=${encodeURIComponent(q)}` },
-  //   { kind: "link", title: `Images of ${q}`, meta: "google.com · Images", insert: `🔎 google.com/search?tbm=isch&q=${encodeURIComponent(q)}` },
-  // ];
   return [
-    { kind: "link", title: cap(q), meta: "Web · Search", insert: `🔎 ${cap(q)}` },
-    { kind: "link", title: `Images of ${q}`, meta: "Web · Images", insert: `🔎 Images of ${q}` },
+    { kind: "link", title: cap(q), meta: "google.com · Search", insert: `🔎 google.com/search?q=${encodeURIComponent(q)}` },
+    { kind: "link", title: `Images of ${q}`, meta: "google.com · Images", insert: `🔎 google.com/search?tbm=isch&q=${encodeURIComponent(q)}` },
   ];
 }
 
 export const SEARCH_SUGGEST: Record<SearchTab, string[]> = {
   google: ["Sunset time today", "Weather today", "Time in London"],
-  youtube: ["Road trip songs", "Lofi to study", "Cricket highlights"],
+  youtube: ["Road trip songs", "Lofi to study", "NBA highlights"],
   maps: ["Cafés near me", "Pizza nearby", "Parks near me"],
 };
 
@@ -545,10 +545,9 @@ export function classify(raw: string): ActResult {
   const text = raw.trim();
   const t = text.toLowerCase();
   if (hasSecret(text)) return { kind: "refuse" };
-  // BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: places and videos.
-  // if (/(near me|nearby|coffee|caf[eé]|dinner|lunch|breakfast|brunch|restaurant|pizza|\bpub\b|\bbar\b|drinks)/.test(t))
-  //   return { kind: "cards", label: "Places", cards: placesFor(text) };
-  // if (/(video|watch|song|music|lofi|playlist|trailer|youtube|tutorial)/.test(t)) return { kind: "cards", label: "Videos", cards: videosFor(text) };
+  if (/(near me|nearby|coffee|caf[eé]|dinner|lunch|breakfast|brunch|restaurant|pizza|\bpub\b|\bbar\b|drinks)/.test(t))
+    return { kind: "cards", label: "Places", cards: placesFor(text) };
+  if (/(video|watch|song|music|lofi|playlist|trailer|youtube|tutorial)/.test(t)) return { kind: "cards", label: "Videos", cards: videosFor(text) };
   const items = listItems(text);
   if (/\b(list|groceries|grocery|to-?do|shopping|packing)\b/.test(t) && items.length >= 2)
     return { kind: "list", title: cap((t.match(/\b(groceries|grocery|to-?do|shopping|packing|list)\b/) ?? ["List"])[0]), items };
@@ -560,6 +559,4 @@ export function classify(raw: string): ActResult {
   };
 }
 
-// BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: "coffee near me" and "lofi to study".
-// export const TRY_CHIPS = ["coffee near me", "when is sunset?", "lofi to study", "groceries: milk, eggs and bread"];
-export const TRY_CHIPS = ["when is sunset?", "time in london", "cant make it tmrw sry", "groceries: milk, eggs and bread"];
+export const TRY_CHIPS = ["coffee near me", "when is sunset?", "lofi to study", "groceries: milk, eggs and bread"];

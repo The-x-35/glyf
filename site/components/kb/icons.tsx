@@ -300,6 +300,18 @@ export const GifIcon = (p: P) => (
   </S>
 );
 
+export const ChevronLeftIcon = (p: P) => (
+  <S {...p}>
+    <path d="M12.4 4.4 6.8 10l5.6 5.6" strokeWidth="2" />
+  </S>
+);
+
+export const ChevronRightIcon = (p: P) => (
+  <S {...p}>
+    <path d="M7.6 4.4 13.2 10l-5.6 5.6" strokeWidth="2" />
+  </S>
+);
+
 export const ArrowDownIcon = (p: P) => (
   <S {...p}>
     <path d="M10 4.4v10.8M5.4 10.8 10 15.4l4.6-4.6" strokeWidth="2" />

@@ -32,15 +32,15 @@ const N = SCENARIOS.length;
  *  (`floor(progress × chats)`), which is why it would leave for the next
  *  conversation in the middle of the one you were doing.
  *
- *  Run straight through, the seven chats take about forty-five steps (the
- *  eight took fifty, measured
- *  by scrolling the whole stage a notch at a time). The rest is slack for a
+ *  Run straight through, the eight chats take about fifty steps (Daniel's
+ *  calendar added six to the seven's forty-five, measured by scrolling the
+ *  whole stage a notch at a time). The rest is slack for a
  *  visitor who goes their own way: opening a panel they then close costs two,
  *  and an answer the friend nudges back costs a couple more. Each tick is
  *  nine hundredths of the viewport, near enough one notch of a wheel that a
  *  notch does one thing.
  */
-const TICKS = 71;
+const TICKS = 80;
 
 const ease = [0.22, 1, 0.36, 1] as const;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -135,8 +135,7 @@ function Rich({ text }: { text: string }) {
         <MiniMap seed={hash(name)} />
         <span className="rich-body">
           <b>{name}</b>
-          {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: <span>{dist ? `${dist} · Maps` : "Maps"}</span> */}
-          <span>{dist ? `${dist} away` : "Place"}</span>
+          <span>{dist ? `${dist} · Maps` : "Maps"}</span>
         </span>
       </span>
     );
@@ -150,7 +149,7 @@ function Rich({ text }: { text: string }) {
         </span>
         <span className="rich-body">
           <b>{title}</b>
-          {/* BRAND-REVIEW (2026-09-30): hidden while Google reviews Glyf's sign-in branding; restore after it passes: <span>youtube.com</span> */}
+          <span>youtube.com</span>
         </span>
       </span>
     );
@@ -747,7 +746,17 @@ export default function Experience() {
                 </AnimatePresence>
               </motion.div>
 
-              <Keyboard seed={seed} draftId={draftId} coach={coach} autotype={autotype} copied={copied} onSend={onSend} onSnapshot={setSnap} apiRef={kbApi} />
+              <Keyboard
+                seed={seed}
+                draftId={draftId}
+                coach={coach}
+                autotype={autotype}
+                chips={th.done ? null : beatNow.chips ?? null}
+                copied={copied}
+                onSend={onSend}
+                onSnapshot={setSnap}
+                apiRef={kbApi}
+              />
             </main>
           </div>
         </div>
