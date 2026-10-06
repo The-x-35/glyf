@@ -28,7 +28,6 @@ IOS = {
     "ios-back-to-glyf": ("raw-kb-both-on.png", 0, (10, 80, 190, 165)),
     "ios-globe-menu": ("raw-globe-menu.png", 1617, (36, 1750, 676, 1902)),
     "ios-default-order": ("raw-kb-list-glyf-top.png", 170, (52, 396, 1154, 594)),
-    "ios-paste": ("raw-glyf-page.png", 1150, (40, 1822, 1166, 1976)),
 }
 ANDROID = {
     "android-glyf-switch": ("raw-list-off.png", 160, (1050, 980, 1250, 1110)),

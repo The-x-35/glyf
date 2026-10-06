@@ -96,10 +96,6 @@ abstract final class GlyfBridge {
 
   static Future<void> openSettings() => _call<void>('openSettings');
 
-  /// iPhone: asks iOS's "Allow Paste?" once, so Settings lists "Paste from
-  /// Other Apps" for Glyf. False when nothing is copied to ask with.
-  static Future<bool> askPasteOnce() async => (await _call<bool>('askPasteOnce')) ?? false;
-
   /// Opens an https URL in the browser (OAuth consent).
   static Future<bool> openURL(String url) async =>
       await _call<bool>('openURL', {'url': url}) ?? false;

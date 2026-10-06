@@ -51,12 +51,6 @@ const iosTurnOn = <GuideStep>[
     'Tap ◀ Glyf to come back',
     note: 'You’ll land right here',
   ),
-  GuideStep(
-    'ios-paste',
-    Rect.fromLTRB(0.033, 0.669, 0.967, 0.822),
-    'Paste from Other Apps: Allow',
-    note: 'Settings › Apps › Glyf. No more "Allow Paste?"',
-  ),
 ];
 
 /// iPhone, keyboard added: switching to it, and keeping it first.
@@ -72,12 +66,6 @@ const iosUse = <GuideStep>[
     Rect.fromLTRB(0.043, 0.225, 0.957, 0.422),
     'Make Glyf your default',
     note: 'General › Keyboard › Keyboards › Edit, drag it to the top',
-  ),
-  GuideStep(
-    'ios-paste',
-    Rect.fromLTRB(0.033, 0.669, 0.967, 0.822),
-    'Paste from Other Apps: Allow',
-    note: 'Settings › Apps › Glyf. No more "Allow Paste?"',
   ),
 ];
 
@@ -107,12 +95,6 @@ const iosAccess = <GuideStep>[
     Rect.fromLTRB(0.008, 0.080, 0.158, 0.164),
     'Tap ◀ Glyf to come back',
     note: 'You’ll land right here',
-  ),
-  GuideStep(
-    'ios-paste',
-    Rect.fromLTRB(0.033, 0.669, 0.967, 0.822),
-    'Paste from Other Apps: Allow',
-    note: 'Settings › Apps › Glyf. No more "Allow Paste?"',
   ),
 ];
 

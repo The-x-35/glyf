@@ -441,15 +441,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       unawaited(_choosePicker());
       return;
     }
-    // iOS shows "Paste from Other Apps" only for an app that has asked to
-    // paste: Glyf asks once before Settings opens.
-    if (what == 'paste' && !await GlyfBridge.askPasteOnce()) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Copy anything first, then tap Open')));
-      }
-      return;
-    }
     // iOS may end the app while they're in Settings (allowing Full Access
     // does), so the trip is noted: the next launch is a welcome back.
     if (!Platform.isAndroid) {
@@ -1162,8 +1153,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             inUseOn: inUse,
             onKeyboard: () => _openSetup('keyboard'),
             onInUse: () => _openSetup(android ? 'picker' : 'access'),
-            // Android never asks to paste; the iPhone does until this is Allow.
-            onPaste: android ? null : () => _openSetup('paste'),
           ),
           // The practice box. iPhone: Full Access is real only when the
           // keyboard itself says so, by turning up here. Android: the picker

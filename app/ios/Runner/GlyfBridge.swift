@@ -79,23 +79,6 @@ final class GlyfBridge {
                 $0.value(forKey: "identifier") as? String == kbId
             }
             result(enabled)
-        case "askPasteOnce":
-            // iOS lists "Paste from Other Apps" on an app's Settings page only
-            // once the app has asked to paste (Arpit, 2026-10-06: "i cant see
-            // the allow paste from other apps option in settings"). Reading
-            // what another app copied asks ("Allow Paste?"); what's read is
-            // dropped. With nothing copied there is nothing to ask with.
-            let board = UIPasteboard.general
-            if board.hasStrings {
-                _ = board.string
-            } else if board.hasURLs {
-                _ = board.url
-            } else if board.hasImages {
-                _ = board.image
-            } else {
-                return result(false)
-            }
-            result(true)
         case "openSettings":
             // The only supported way in. iOS shows the app's own page when the
             // app has one — which is why this app ships a Settings bundle.

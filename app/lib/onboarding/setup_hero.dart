@@ -51,7 +51,6 @@ class SetupChecklist extends StatelessWidget {
     required this.inUseOn,
     required this.onKeyboard,
     required this.onInUse,
-    this.onPaste,
   });
 
   final bool android;
@@ -65,11 +64,6 @@ class SetupChecklist extends StatelessWidget {
   final VoidCallback onKeyboard;
   final VoidCallback onInUse;
 
-  /// iPhone: "Paste from Other Apps" set to Allow, so neither the app nor
-  /// the keyboard asks "Allow Paste?" again (Arpit, 2026-10-06: "we need
-  /// universal allow paste, have it done in setup too"). iOS doesn't say
-  /// what it's set to, so this row only ever opens Settings.
-  final VoidCallback? onPaste;
 
   @override
   Widget build(BuildContext context) {
@@ -115,18 +109,6 @@ class SetupChecklist extends StatelessWidget {
               // waits its turn rather than sending anyone to look for it.
               waiting: !keyboardOn,
             ),
-            if (onPaste != null) ...[
-              _divider(),
-              _row(
-                id: 'onb:setup:paste',
-                icon: const _SettingsIcon(Icons.content_paste_rounded, Color(0xFFFF9F0A)),
-                title: 'Allow Paste',
-                done: false,
-                action: 'Open',
-                onTap: onPaste!,
-                hint: 'Paste from Other Apps › Allow',
-              ),
-            ],
           ]),
         ),
       ],
