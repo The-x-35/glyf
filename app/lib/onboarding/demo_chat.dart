@@ -117,6 +117,7 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _closed = true;
     DemoChat.onPracticePay = null;
     _bannerTimer?.cancel();
     _keyboardWatch?.cancel();
@@ -161,7 +162,14 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
     return next;
   }
 
-  Future<void> _setStep(String? step) => _update((s) {
+  /// The chats are closed (Close, Done or the screen went away). A friend
+  /// still "typing" then finishes later and would hand the keyboard a step
+  /// after the tour has gone: it went on coaching in the app's own field
+  /// and anywhere else for 15 minutes (Arpit, 2026-10-06). Nothing but
+  /// clearing and restoring is written once this is set.
+  bool _closed = false;
+
+  Future<void> _setStep(String? step) => step != null && (_closed || _finished) ? Future.value() : _update((s) {
         s.remove('tourHint');
         if (step == null) {
           s.remove('tourStep');
@@ -179,8 +187,9 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
     _savedOther = s['translateOther'] as String?;
   }
 
-  Future<void> _setOtherLanguage(String? language) =>
-      _update((s) {
+  /// After closing, only the restore of the person's own language goes.
+  Future<void> _setOtherLanguage(String? language, {bool restoring = false}) =>
+      !restoring && (_closed || _finished) ? Future.value() : _update((s) {
         if (language == null) {
           s.remove('translateOther');
         } else {
@@ -189,7 +198,7 @@ class _DemoChatState extends State<DemoChat> with TickerProviderStateMixin {
         return s;
       });
 
-  void _restoreOtherLanguage() => _setOtherLanguage(_savedOther);
+  void _restoreOtherLanguage() => _setOtherLanguage(_savedOther, restoring: true);
 
   // MARK: the chat engine (the website's, beat for beat)
 
