@@ -1007,35 +1007,25 @@ final class GlyfToolbar: UIView {
             panelLabel.frame = CGRect(x: textX, y: row.y,
                                       width: bounds.width - textX - 10 - actionW - reportW, height: row.height)
         }
-        // One gap for the whole row, margins included.
-        //
-        // The grid and the tools are one set of controls, so the air between
-        // any two of them is the same, and the air at each end is that margin.
-        // Everything else falls out of it: the icons keep whatever widths SF
-        // Symbols gives them, the stack gets exactly the width that spaces
-        // them by `gap`, and the row lands on the right margin on its own.
-        //
-        //     width - 2 × (margin - itemPad) = every frame + n gaps
-        //
-        // The pad cancels: each target is padded the same on both sides, so
-        // the frames grow inward and the icons stay on the gap's rhythm.
-        // With the runs pill showing, the last tool keeps 13 points from it.
-        //
-        // The gap is never wider than five tools of these widths would get.
-        // Fewer keep that gap and gather on the strip's middle, though never
-        // nearer the key than one gap (Arpit, 2026-10-06: "they should be
-        // centered and equally spaced in case of less items"); five or more
-        // share the whole row as above.
+        // The g key (or the ✕) stays where it is, and the tools share what is
+        // left of the strip evenly: the same air before each of them and
+        // after the last (Arpit, 2026-10-06: "keep g on left as it is and
+        // then place the left over in space left over equally and just make
+        // sure they look good"). The stack spaces their frames, each padded
+        // by itemPad, so the gap between frames is the ink's gap less two
+        // pads. Too many for that, and they pack and scroll as before.
         let end = bounds.width - (runsChip.isHidden ? 0 : chipW + 13) - Self.margin + Self.itemPad
-        let x0 = glyfButton.frame.minX
         let count = itemsStack.arrangedSubviews.count
         let tools = itemsStack.arrangedSubviews.reduce(CGFloat(0)) {
             $0 + $1.intrinsicContentSize.width
         }
-        let room = end - x0 - glyfButton.frame.width
-        let gap = max(4, room / CGFloat(max(count, 5)) - tools / CGFloat(max(count, 1)))
-        let group = tools + gap * CGFloat(max(count - 1, 0))
-        let toolsLeft = max(x0 + glyfButton.frame.width + gap, bounds.width / 2 - group / 2)
+        let leadRight = glyfButton.frame.maxX - (panelOpen ? Self.itemPad : padX)
+        let rightEdge = runsChip.isHidden ? bounds.width : rightInk - chipW
+        let inks = tools - 2 * Self.itemPad * CGFloat(count)
+        let inkGap = (rightEdge - leadRight - inks) / CGFloat(count + 1)
+        let even = count > 0 && inkGap >= 2 * Self.itemPad
+        let toolsLeft = even ? leadRight + inkGap - Self.itemPad : glyfButton.frame.maxX
+        let group = even ? tools + (inkGap - 2 * Self.itemPad) * CGFloat(count - 1) : tools
         // Halfway between the grid and the first tool, when a look draws it.
         divider.frame = CGRect(x: ((markRight + toolsLeft) / 2).rounded(), y: 10,
                                width: Glass.hairlineWidth * 2, height: h - 20)

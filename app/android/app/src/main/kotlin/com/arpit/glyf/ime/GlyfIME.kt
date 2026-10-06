@@ -743,15 +743,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (!::toolIcons.isInitialized) return
         val row = toolIcons
         if (lead.parent !== toolbar || row.parent !== toolbar || row.visibility != View.VISIBLE) return
-        // In the row's own coordinates.
+        // In the row's own coordinates. The g key (or the ✕) stays where it
+        // is, and the tools share what is left of the strip evenly: the same
+        // air before each of them and after the last (Arpit, 2026-10-06:
+        // "keep g on left as it is and then place the left over in space left
+        // over equally and just make sure they look good"). iOS Toolbar twin.
         val start = lead.left + lead.inkRight - row.left
-        val end = toolbar.width - lead.left - lead.inkLeft - row.left
+        val end = toolbar.width - row.left
         val tools = (0 until row.childCount).map { row.getChildAt(it) }.filterIsInstance<ToolIcon>()
         if (tools.isEmpty()) return
         val inks = tools.map { it.inkWidth() }
-        val gap = maxOf(dp(4).toFloat(), (end - start) / maxOf(tools.size, 5) - inks.sum() / tools.size)
-        val group = inks.sum() + gap * (tools.size - 1)
-        var next = maxOf(start + gap, toolbar.width / 2f - row.left - group / 2f)
+        val gap = maxOf(dp(4).toFloat(), (end - start - inks.sum()) / (tools.size + 1))
+        var next = start + gap
         for (i in 0 until row.childCount) {
             val child = row.getChildAt(i)
             val at = tools.indexOf(child)
