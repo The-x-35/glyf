@@ -496,7 +496,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // clipboard or answer panel left open last time would greet the next
         // field with something it never asked for.
         if didBuild, surface != .none { setSurface(.none, animated: false) }
-        keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
+        keyboardView.context = fieldContext
         log.log("GLYF_KB ctx autocap=\(self.textDocumentProxy.autocapitalizationType?.rawValue ?? -1) kbType=\(self.textDocumentProxy.keyboardType?.rawValue ?? -1)")
         adoptFieldTraits(fresh: true)
         keyboardView.rebuild()
@@ -1010,6 +1010,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .games: games?.stop(); games?.removeFromSuperview(); games = nil
         case .pay:
             pay?.removeFromSuperview(); pay = nil
+            // Closed mid-amount: the field's own keys again, not the pad.
+            keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
             keyboardView.setMode(.letters)
         case .none: break
         }
@@ -1239,7 +1241,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             SettingsStore.reloadIfChanged() // settingsChanged() does the rest
         }
         // Field flavor can change per focus (email → number pad → text).
-        keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
+        keyboardView.context = fieldContext
         adoptFieldTraits(fresh: false)
         syncAutoShift()
         // Scheduled, not immediate: this fires after our own insert too, so
@@ -3653,8 +3655,19 @@ extension GlyfKeyboardViewController: PaySurfaceDelegate {
         let editor = pay?.activeEditor
         inlineTarget = editor
         pay?.amountEditor.isActive = editor != nil
-        keyboardView.setMode(editor != nil ? .symbols1 : .letters)
+        // An amount gets Apple's decimal pad, digits only (Arpit,
+        // 2026-10-06: "the amount enter should open numpad"), not the
+        // number-and-symbol layer.
+        keyboardView.context = fieldContext
+        keyboardView.setMode(.letters)
         applySurfaceLayout(animated: true)
+    }
+
+    /// The keys the field asks for, or the decimal pad while an amount is
+    /// typed into the pay panel.
+    private var fieldContext: KeyboardContext {
+        if surface == .pay, pay?.activeEditor != nil { return .decimalPad }
+        return KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
     }
 
     /// The one hop iOS forces: the app opens, builds the payment and opens

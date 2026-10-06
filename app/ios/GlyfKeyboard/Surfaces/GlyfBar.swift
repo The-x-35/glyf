@@ -228,7 +228,7 @@ final class GlyfBar: UIView {
         accessButton.frame = field
         accessButton.layer.cornerRadius = pillH / 2
 
-        // Under the whole strip, band included (iOS 17 and 18 add one above).
+        // Under the whole strip.
         chipsScroll.frame = CGRect(x: 0, y: Glass.toolbarHeight, width: w, height: GlyfBar.chipsRowHeight)
         let fit = chipsStack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
         chipsStack.frame = CGRect(x: 6, y: (GlyfBar.chipsRowHeight - 32) / 2 - 2,

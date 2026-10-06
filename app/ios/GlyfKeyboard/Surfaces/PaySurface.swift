@@ -112,8 +112,15 @@ final class PaySurface: UIView {
     private let getAmount = UILabel()
     private let getUSD = UILabel()
     private let getToken = UILabel()
-    /// The pay token list is open where "You get" was.
+    /// The pay token dropdown is open (Arpit, 2026-10-06: "the asset list
+    /// needs to be dropdown"): a card under the token pill, one row per held
+    /// token, over a dim that closes it.
     private var picking = false
+    private let tokenScrim = UIControl()
+    private let tokenMenu = UIView()
+    private let tokenList = ControlScrollView()
+    private var tokenRows: [UIControl] = []
+    private static let tokenRowHeight: CGFloat = 44
     /// Jupiter's answer for the typed amount, in whole tokens of what's
     /// bought; asking says so while it's on its way.
     private var quoteOut: Double?
@@ -356,11 +363,7 @@ final class PaySurface: UIView {
         payToken.layer.cornerCurve = .continuous
         payToken.contentEdgeInsets = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 10)
         payToken.accessibilityIdentifier = "pay:token"
-        payToken.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            self.picking.toggle()
-            self.render()
-        }, for: .touchUpInside)
+        payToken.addAction(UIAction { [weak self] _ in self?.openTokens() }, for: .touchUpInside)
         payCard.addSubview(payToken)
         getToken.font = .systemFont(ofSize: 14, weight: .semibold)
         getToken.textColor = Glass.textPrimary
@@ -370,6 +373,95 @@ final class PaySurface: UIView {
         getToken.layer.cornerCurve = .continuous
         getToken.clipsToBounds = true
         getCard.addSubview(getToken)
+
+        // Not clear: a keyboard drops touches on clear pixels, and a tap
+        // anywhere off the menu has to close it.
+        tokenScrim.backgroundColor = Glass.scrim
+        tokenScrim.isHidden = true
+        tokenScrim.accessibilityIdentifier = "pay:tokenscrim"
+        tokenScrim.addAction(UIAction { [weak self] _ in self?.closeTokens() }, for: .touchUpInside)
+        addSubview(tokenScrim)
+        tokenMenu.isHidden = true
+        tokenMenu.layer.shadowColor = UIColor.black.cgColor
+        tokenMenu.layer.shadowOpacity = 0.22
+        tokenMenu.layer.shadowRadius = 16
+        tokenMenu.layer.shadowOffset = CGSize(width: 0, height: 6)
+        addSubview(tokenMenu)
+        tokenList.backgroundColor = Glass.surfaceCard
+        tokenList.layer.cornerRadius = 14
+        tokenList.layer.cornerCurve = .continuous
+        tokenList.clipsToBounds = true
+        tokenList.alwaysBounceVertical = false
+        tokenList.accessibilityIdentifier = "pay:tokens"
+        tokenMenu.addSubview(tokenList)
+        renderTokenRows()
+    }
+
+    /// One row per held token: the token, what's held, a tick on the one
+    /// paying.
+    private func renderTokenRows() {
+        for r in tokenRows { r.removeFromSuperview() }
+        tokenRows = assets.enumerated().map { i, asset in
+            let row = UIControl()
+            row.accessibilityIdentifier = "pay:asset:\(asset.symbol)"
+            row.addAction(UIAction { [weak self] _ in self?.pick(asset) }, for: .touchUpInside)
+            let name = UILabel()
+            name.text = "\(Self.glyph(asset))\(asset.symbol)"
+            name.font = .systemFont(ofSize: 15, weight: .semibold)
+            name.textColor = Glass.textPrimary
+            name.tag = 1
+            let held = UILabel()
+            held.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+            held.textColor = Glass.textSecondary
+            held.textAlignment = .right
+            held.tag = 2
+            let tick = UIImageView(image: UIImage(systemName: "checkmark",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)))
+            tick.tintColor = Glass.imBlue
+            tick.contentMode = .center
+            tick.tag = 3
+            let line = UIView()
+            line.backgroundColor = Glass.strokeSeparator
+            line.isHidden = i == assets.count - 1
+            line.tag = 4
+            for v in [name, held, tick, line] {
+                v.isUserInteractionEnabled = false
+                row.addSubview(v)
+            }
+            tokenList.addSubview(row)
+            return row
+        }
+        styleTokenRows()
+        setNeedsLayout()
+    }
+
+    private func styleTokenRows() {
+        for (row, asset) in zip(tokenRows, assets) {
+            (row.viewWithTag(2) as? UILabel)?.text = balance == .known ? Self.compact(asset.amount) : ""
+            row.viewWithTag(3)?.isHidden = asset.mint != paying.mint
+        }
+    }
+
+    private func openTokens() {
+        guard !picking, !assets.isEmpty else { return }
+        picking = true
+        styleTokenRows()
+        render()
+        layoutIfNeeded()
+        tokenMenu.alpha = 0
+        tokenMenu.transform = CGAffineTransform(translationX: 0, y: -6)
+        tokenScrim.alpha = 0
+        UIView.animate(withDuration: 0.16, delay: 0, options: [.curveEaseOut]) {
+            self.tokenMenu.alpha = 1
+            self.tokenMenu.transform = .identity
+            self.tokenScrim.alpha = 1
+        }
+    }
+
+    private func closeTokens() {
+        guard picking else { return }
+        picking = false
+        render()
     }
 
     // MARK: state
@@ -758,6 +850,7 @@ final class PaySurface: UIView {
             assetsRow.addSubview(b)
         }
         styleAssets()
+        if isBuy { renderTokenRows() }
         setNeedsLayout()
     }
 
@@ -787,8 +880,10 @@ final class PaySurface: UIView {
 
         for v in [balanceKey, balanceValue, balanceTokens] { v.isHidden = !form || isBuy }
         amountRow.isHidden = !form || isBuy
-        // A buy shows its pay token list only when its pill is tapped.
-        assetsRow.isHidden = !form || (isBuy && !picking)
+        // A buy picks what pays from its dropdown, not this row.
+        assetsRow.isHidden = !form || isBuy
+        tokenScrim.isHidden = !(form && isBuy && picking)
+        tokenMenu.isHidden = tokenScrim.isHidden
         payCard.isHidden = !(form && isBuy)
         getCard.isHidden = payCard.isHidden
         privateRow.isHidden = !(form && !isBuy && paying.mint == Self.usdcMint)
@@ -857,14 +952,13 @@ final class PaySurface: UIView {
         let unit = Self.price(price)
         let paid = dollarsOf(paying, amount) ?? quoteOut.flatMap { out in unit.map { out * $0 } }
         payUSD.text = paid.map { "≈ \(Self.dollars($0))" } ?? (amount == nil && !editingAmount ? "Tap to type an amount" : "")
-        payToken.setTitle("\(Self.glyph(paying))\(paying.symbol) ▾", for: .normal)
+        payToken.setTitle("\(Self.glyph(paying))\(paying.symbol) \(picking ? "▴" : "▾")", for: .normal)
         switch balance {
         case .known: payHeld.text = "\(Self.glyph(paying))\(Self.compact(paying.amount))"
         case .loading: payHeld.text = "…"
         case .unavailable: payHeld.text = ""
         }
-        getKey.text = picking ? "Pay with" : "You get"
-        for v in [getAmount, getUSD, getToken] as [UIView] { v.isHidden = picking }
+        styleTokenRows()
         getToken.text = symbol
         if let out = quoteOut {
             getAmount.text = Self.compact(out)
@@ -895,7 +989,6 @@ final class PaySurface: UIView {
         super.layoutSubviews()
         let w = bounds.width
         if editingAmount {
-            editKey.frame = CGRect(x: 16, y: 8, width: 60, height: 15)
             let doneW: CGFloat = 70
             doneButton.frame = CGRect(x: w - 12 - doneW, y: 16, width: doneW, height: 32)
             var px = doneButton.frame.minX - 8
@@ -905,6 +998,7 @@ final class PaySurface: UIView {
                 px -= bw + 5
             }
             amountEditor.frame = CGRect(x: 12, y: 24, width: max(60, px - 20), height: 34)
+            editKey.frame = CGRect(x: 16, y: 6, width: max(60, px - 24), height: 16)
             return
         }
         if !ctaButton.isHidden {
@@ -1000,13 +1094,30 @@ final class PaySurface: UIView {
         getToken.frame = CGRect(x: cw - 10 - gw, y: 8 + 16 + (getH - 24 - 28) / 2, width: gw, height: 28)
         getAmount.frame = CGRect(x: 12, y: 24, width: getToken.frame.minX - 20, height: 28)
         getUSD.frame = CGRect(x: 12, y: getAmount.frame.maxY, width: cw - 24, height: 15)
-        assetsRow.frame = CGRect(x: x + 10, y: getCard.frame.minY + 28, width: cw - 20, height: 28)
-        var ax: CGFloat = 0
-        for b in assetButtons {
-            let bw = b.intrinsicContentSize.width + 8
-            b.frame = CGRect(x: ax, y: 1, width: bw, height: 26)
-            ax += bw + 6
+
+        // The dropdown hangs from the pill, right edges lined up, and
+        // scrolls when the wallet holds more than the panel can show.
+        tokenScrim.frame = bounds
+        let pill = payCard.convert(payToken.frame, to: self)
+        let menuW = min(250, cw)
+        let menuX = max(x, min(bounds.width - x - menuW, pill.maxX - menuW))
+        let menuY = pill.maxY + 6
+        let rowH = Self.tokenRowHeight
+        let contentH = CGFloat(tokenRows.count) * rowH
+        let menuH = max(rowH, min(contentH, bounds.height - menuY - 8))
+        tokenMenu.bounds = CGRect(x: 0, y: 0, width: menuW, height: menuH)
+        tokenMenu.center = CGPoint(x: menuX + menuW / 2, y: menuY + menuH / 2)
+        tokenMenu.layer.shadowPath = UIBezierPath(roundedRect: tokenMenu.bounds, cornerRadius: 14).cgPath
+        tokenList.frame = tokenMenu.bounds
+        tokenList.contentSize = CGSize(width: menuW, height: contentH)
+        for (i, row) in tokenRows.enumerated() {
+            row.frame = CGRect(x: 0, y: CGFloat(i) * rowH, width: menuW, height: rowH)
+            let tickX = menuW - 14 - 16
+            row.viewWithTag(3)?.frame = CGRect(x: tickX, y: 0, width: 16, height: rowH)
+            let nameW = min(menuW * 0.5, (row.viewWithTag(1) as? UILabel)?.intrinsicContentSize.width ?? 80)
+            row.viewWithTag(1)?.frame = CGRect(x: 14, y: 0, width: nameW, height: rowH)
+            row.viewWithTag(2)?.frame = CGRect(x: 14 + nameW + 8, y: 0, width: max(0, tickX - 8 - (14 + nameW + 8)), height: rowH)
+            row.viewWithTag(4)?.frame = CGRect(x: 14, y: rowH - 0.5, width: menuW - 14, height: 0.5)
         }
-        assetsRow.contentSize = CGSize(width: max(0, ax - 6), height: 28)
     }
 }

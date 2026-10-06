@@ -159,7 +159,17 @@ class PayPanelView(
     private val getAmount = TextView(ctx)
     private val getUsd = TextView(ctx)
     private val getToken = TextView(ctx)
-    private val shareButtons = mutableListOf<View>()
+    // The pay token dropdown (Arpit, 2026-10-06: "the asset list needs to be
+    // dropdown"): a card under the token pill over a wash that closes it.
+    private val tokenScrim = View(ctx)
+    private val tokenMenu = FrameLayout(ctx)
+    private val tokenRows = LinearLayout(ctx)
+    // While the amount is typed, as on iOS: a strip (Amount · the figure ·
+    // 25% 50% Max · Done) over a digit pad (Arpit: "the amount enter should
+    // open numpad").
+    private val editStrip = LinearLayout(ctx)
+    private val editKey = TextView(ctx)
+    private val editAmount = TextView(ctx)
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun soft(a: Int, c: Int) =
@@ -276,6 +286,7 @@ class PayPanelView(
         body.addView(meta, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(18)).apply { topMargin = dp(4) })
 
+        buildEditStrip()
         pad.orientation = LinearLayout.VERTICAL
         body.addView(pad, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = dp(4) })
@@ -306,6 +317,144 @@ class PayPanelView(
         go.setOnClickListener { goIfReady() }
         body.addView(go, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
+
+        if (isBuy) {
+            tokenScrim.setBackgroundColor(if (palette.darkChrome) Color.argb(140, 0, 0, 0)
+                else Color.argb(158, 255, 255, 255))
+            tokenScrim.setTag(com.arpit.glyf.R.id.qa_id, "pay:tokenscrim")
+            tokenScrim.setOnClickListener { closeTokens() }
+            tokenScrim.visibility = View.GONE
+            addView(tokenScrim, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            tokenMenu.background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat(); setColor(palette.key)
+            }
+            tokenMenu.elevation = dp(10).toFloat()
+            tokenMenu.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+            tokenMenu.clipToOutline = true
+            tokenMenu.visibility = View.GONE
+            tokenMenu.setTag(com.arpit.glyf.R.id.qa_id, "pay:tokens")
+            tokenRows.orientation = LinearLayout.VERTICAL
+            val scroll = android.widget.ScrollView(context)
+            scroll.isVerticalScrollBarEnabled = true
+            scroll.addView(tokenRows)
+            tokenMenu.addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            addView(tokenMenu, LayoutParams(dp(250), dp(44)))
+        }
+    }
+
+    /** Amount · the figure · 25% 50% Max · Done, over the pad. */
+    private fun buildEditStrip() {
+        editStrip.orientation = LinearLayout.HORIZONTAL
+        editStrip.gravity = Gravity.CENTER_VERTICAL
+        val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        editKey.textSize = 12.5f
+        editKey.typeface = Typeface.DEFAULT_BOLD
+        editKey.setTextColor(palette.inkSoft)
+        editKey.maxLines = 1
+        editKey.ellipsize = android.text.TextUtils.TruncateAt.END
+        col.addView(editKey)
+        editAmount.textSize = 19f
+        editAmount.typeface = Typeface.DEFAULT_BOLD
+        editAmount.maxLines = 1
+        editAmount.gravity = Gravity.CENTER_VERTICAL
+        editAmount.setPadding(dp(10), 0, dp(10), 0)
+        editAmount.background = GradientDrawable().apply {
+            cornerRadius = dp(10).toFloat(); setColor(palette.key)
+            setStroke(dp(2) / 2 + 1, Color.rgb(0x7C, 0x5C, 0xFF))
+        }
+        editAmount.setTag(com.arpit.glyf.R.id.qa_id, "pay:amount")
+        col.addView(editAmount, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(36)).apply { topMargin = dp(2) })
+        editStrip.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        for ((title, share) in listOf("25%" to 0.25, "50%" to 0.5, "Max" to 1.0)) {
+            editStrip.addView(label(title, 13f, true, palette.ink).apply {
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply { cornerRadius = dp(15).toFloat(); setColor(palette.key) }
+                setPadding(dp(10), 0, dp(10), 0)
+                setTag(com.arpit.glyf.R.id.qa_id, "pay:pct:$title")
+                setOnClickListener { takePercent(share); requote(); render() }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)).apply {
+                leftMargin = dp(6); topMargin = dp(16)
+            })
+        }
+        editStrip.addView(label("Done", 14f, true, palette.board).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(palette.ink) }
+            setPadding(dp(16), 0, dp(16), 0)
+            setTag(com.arpit.glyf.R.id.qa_id, "pay:done")
+            setOnClickListener { endAmount() }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply {
+            leftMargin = dp(8); topMargin = dp(16)
+        })
+        editStrip.setPadding(dp(4), 0, dp(2), 0)
+        body.addView(editStrip, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(58)).apply { topMargin = dp(2) })
+    }
+
+    /** One row per held token: the token, what's held, a tick on the one
+     *  paying. */
+    private fun renderTokenRows() {
+        tokenRows.removeAllViews()
+        assets.forEachIndexed { i, asset ->
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), 0, dp(12), 0)
+                setTag(com.arpit.glyf.R.id.qa_id, "pay:asset:${asset.symbol}")
+                setOnClickListener { pick(asset) }
+            }
+            row.addView(label("${glyph(asset)}${asset.symbol}", 15f, true, palette.ink).apply { maxLines = 1 },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(label(if (balanceKnown) compact(asset.amount) else "", 13f, false, palette.inkSoft))
+            row.addView(label(if (asset.mint == paying.mint) "✓" else "", 15f, true, blue).apply {
+                gravity = Gravity.END
+            }, LinearLayout.LayoutParams(dp(24), LinearLayout.LayoutParams.WRAP_CONTENT))
+            tokenRows.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)))
+            if (i < assets.size - 1) tokenRows.addView(View(context).apply { setBackgroundColor(soft(40, palette.ink)) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { leftMargin = dp(14) })
+        }
+    }
+
+    /** The dropdown hangs from the pill, right edges lined up, and scrolls
+     *  when the wallet holds more than the panel can show. */
+    private fun openTokens() {
+        if (picking || assets.isEmpty()) return
+        picking = true
+        renderTokenRows()
+        val me = IntArray(2).also { getLocationInWindow(it) }
+        val pill = IntArray(2).also { payToken.getLocationInWindow(it) }
+        val menuW = minOf(dp(250), width - dp(20))
+        val right = pill[0] - me[0] + payToken.width
+        val top = pill[1] - me[1] + payToken.height + dp(6)
+        val rowsH = assets.size * dp(44) + (assets.size - 1)
+        val h = maxOf(dp(44), minOf(rowsH, height - top - dp(8)))
+        // Worked out here: inside the params' apply, width means theirs.
+        val left = (right - menuW).coerceIn(dp(10), maxOf(dp(10), width - dp(10) - menuW))
+        tokenMenu.layoutParams = LayoutParams(menuW, h).apply {
+            gravity = Gravity.TOP or Gravity.START
+            leftMargin = left
+            topMargin = top
+        }
+        render()
+        tokenMenu.alpha = 0f
+        tokenMenu.translationY = -dp(6).toFloat()
+        tokenScrim.alpha = 0f
+        tokenMenu.animate().alpha(1f).translationY(0f).setDuration(160).start()
+        tokenScrim.animate().alpha(1f).setDuration(160).start()
+    }
+
+    private fun closeTokens() {
+        if (!picking) return
+        picking = false
+        render()
+    }
+
+    private fun pick(asset: Asset) {
+        paying = asset
+        picking = false
+        if (asset.mint != USDC) isPrivate = false
+        requote()
+        render()
     }
 
     private fun pill() = GradientDrawable().apply {
@@ -340,7 +489,6 @@ class PayPanelView(
                 background = pill()
                 setPadding(dp(8), dp(2), dp(8), dp(2))
                 setTag(com.arpit.glyf.R.id.qa_id, "pay:${title.lowercase()}")
-                shareButtons.add(this)
                 setOnClickListener { takePercent(share); requote(); render() }
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { leftMargin = dp(6) })
@@ -361,9 +509,7 @@ class PayPanelView(
         payToken.background = pill()
         payToken.setPadding(dp(12), dp(6), dp(10), dp(6))
         payToken.setTag(com.arpit.glyf.R.id.qa_id, "pay:token")
-        payToken.setOnClickListener {
-            if (editing) endAmount() else { picking = !picking; render() }
-        }
+        payToken.setOnClickListener { openTokens() }
         payRow.addView(payToken)
         payCard.addView(payRow)
         body.addView(payCard, 1, LinearLayout.LayoutParams(
@@ -422,12 +568,9 @@ class PayPanelView(
         // No dollar price for what's paid (SOL's is only fetched for a
         // $sol): the quote's worth stands in, which is the same money.
         val paid = dollarsOf(paying, value) ?: quoteOut?.let { out -> unit?.let { out * it } }
-        payUsd.text = paid?.let { "≈ ${dollars(it)}" }
-            ?: if (value == null && !editing) "Tap to type an amount" else ""
-        payToken.text = if (editing) "Done" else "${glyph(paying)}${paying.symbol} ▾"
-        payToken.setTextColor(if (editing) blue else palette.ink)
-        // The pad has its own 25%, 50% and Max: one set on screen.
-        for (b in shareButtons) b.visibility = if (editing) View.GONE else View.VISIBLE
+        payUsd.text = paid?.let { "≈ ${dollars(it)}" } ?: if (value == null) "Tap to type an amount" else ""
+        payToken.text = "${glyph(paying)}${paying.symbol} ${if (picking) "▴" else "▾"}"
+        payToken.setTextColor(palette.ink)
         payHeld.text = when {
             !connected -> ""
             balanceKnown -> "${glyph(paying)}${compact(paying.amount)}"
@@ -453,19 +596,20 @@ class PayPanelView(
 
     /** The panel's own digits, shown while the amount is typed. */
     private fun buildPad() {
-        val rows = listOf(listOf("1", "2", "3", "4", "5"), listOf("6", "7", "8", "9", "0"),
-                          listOf("25%", "50%", "Max", ".", "⌫"))
+        val rows = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"),
+                          listOf("7", "8", "9"), listOf(".", "0", "⌫"))
         for (row in rows) {
             val line = LinearLayout(context)
             line.orientation = LinearLayout.HORIZONTAL
             for (key in row) {
                 val b = TextView(context)
                 b.text = key
-                b.textSize = if (key.length > 1 && key != "⌫") 12.5f else 18f
+                b.textSize = if (key == "⌫") 20f else 23f
                 b.gravity = Gravity.CENTER
                 b.setTextColor(palette.ink)
-                b.background = GradientDrawable().apply {
-                    cornerRadius = dp(9).toFloat(); setColor(palette.key)
+                // The corner keys drawn bare, as Apple's decimal pad does.
+                if (key != "." && key != "⌫") b.background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat(); setColor(palette.key)
                 }
                 b.setTag(com.arpit.glyf.R.id.qa_id, "pay:key:$key")
                 b.setOnClickListener { padTap(key) }
@@ -483,9 +627,6 @@ class PayPanelView(
     private fun padTap(key: String) {
         when (key) {
             "⌫" -> if (amount.isNotEmpty()) amount = amount.dropLast(1)
-            "25%" -> takePercent(0.25)
-            "50%" -> takePercent(0.5)
-            "Max" -> takePercent(1.0)
             else -> amount = cleanAmount(amount + key)
         }
         requote()
@@ -685,9 +826,17 @@ class PayPanelView(
         val form = formReady() && !editing
         val needsConnect = !connected
 
-        header.visibility = View.VISIBLE
-        balance.visibility = if (form || editing) View.VISIBLE else View.GONE
-        amountRow.visibility = if (form || editing) View.VISIBLE else View.GONE
+        header.visibility = if (editing) View.GONE else View.VISIBLE
+        balance.visibility = if (form) View.VISIBLE else View.GONE
+        amountRow.visibility = if (form) View.VISIBLE else View.GONE
+        editStrip.visibility = if (editing) View.VISIBLE else View.GONE
+        editKey.text = if (isBuy) "Amount in ${paying.symbol}" else "Amount"
+        editAmount.text = when {
+            amount.isEmpty() -> "0"
+            paying.mint == USDC -> "$$amount"
+            else -> amount
+        }
+        editAmount.setTextColor(if (amount.isEmpty()) palette.inkSoft else palette.ink)
         assetsScroll.visibility = if (form) View.VISIBLE else View.GONE
         privateRow.visibility =
             if (form && !isBuy && paying.mint == USDC) View.VISIBLE else View.GONE
@@ -790,19 +939,13 @@ class PayPanelView(
             meta.visibility = if (form && tall) View.VISIBLE else View.GONE
             amountRow.visibility = View.GONE
             balance.visibility = View.GONE
-            payCard.visibility = if (form || editing) View.VISIBLE else View.GONE
-            getCard.visibility = if (form && !picking) View.VISIBLE else View.GONE
-            assetsScroll.visibility = if (form && picking) View.VISIBLE else View.GONE
-            if (picking) for (i in 0 until assetsRow.childCount) {
-                val b = assetsRow.getChildAt(i)
-                val asset = assets.getOrNull(i) ?: continue
-                b.setOnClickListener {
-                    paying = asset
-                    picking = false
-                    requote()
-                    render()
-                }
-            }
+            payCard.visibility = if (form) View.VISIBLE else View.GONE
+            getCard.visibility = payCard.visibility
+            assetsScroll.visibility = View.GONE
+            if (!form) picking = false
+            tokenScrim.visibility = if (picking) View.VISIBLE else View.GONE
+            tokenMenu.visibility = tokenScrim.visibility
+            if (picking) renderTokenRows()
             renderBuy()
         }
     }

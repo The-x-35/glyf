@@ -401,36 +401,27 @@ enum Glass {
     // MARK: Heights — the strip over the system keyboard's own key region,
     // whose size comes from KeyMetrics.
 
-    /// iOS 26 puts a 16pt band of its own sheet above every third-party
-    /// keyboard and clips anything drawn into it (tested: a view placed
-    /// above our top edge is cut off at the edge). So that band is the
-    /// strip's top padding, and the strip is only as tall as its chip needs:
-    /// 38pt with room for its glow (Arpit, 2026-09-30: "text seems too close
-    /// to border"), which is 8pt more than the 36 it was. 16 + 44 + the keys'
-    /// 6pt top gap lands the first row 66pt under the sheet's edge, against
-    /// Apple's 51. It is the same with a chip or without, so nothing jumps
-    /// when one comes or goes, and the keys are bottom-anchored, so none of
-    /// them move. The strip's own content box — the same on every iOS.
-    static let stripContent: CGFloat = 44
-    /// …but only iOS 26 draws that band. Older iOS puts our top edge right
-    /// against the keyboard's, so the strip reads as cut off (reported from
-    /// a phone on an older iOS). There we add the band ourselves; the
-    /// contents then sit exactly where iOS 26 puts them.
-    static let sheetBand: CGFloat = 16
-    static var stripBand: CGFloat {
-        if #available(iOS 26, *) { return 0 }
-        return sheetBand
-    }
+    /// The strip is Apple's predictive bar: 45pt, so with the keys' 6pt
+    /// top gap the first row sits 51pt under the keyboard's top edge, where
+    /// Apple's does. iOS 26 sometimes draws a 16pt band of its own sheet
+    /// above a third-party keyboard (Messages) and often doesn't (Safari's
+    /// forms, and no older iOS does), so nothing counts on it (Arpit,
+    /// 2026-10-06: "the top pannel feels cut in safari", "think like mostly
+    /// you wont have the 16 pt gap, i need you to keep it same to apple
+    /// keyboard"). The chip needs 38pt with room for its glow (2026-09-30:
+    /// "text seems too close to border"). The same with a chip or without,
+    /// so nothing jumps when one comes or goes, and the keys are
+    /// bottom-anchored, so none of them move.
+    static let stripContent: CGFloat = 45
+    /// Nothing of our own above the strip any more: the band is iOS's to
+    /// draw or not.
+    static let stripBand: CGFloat = 0
     static var toolbarHeight: CGFloat { stripContent + stripBand }
-    /// The band already pads the strip from above, so its contents sit this
-    /// far above centre to look centred between the sheet edge and the keys.
-    ///
-    /// Measured on iOS 26: the sheet's top edge at 531pt and the first row of
-    /// keys at 588.33 leave the strip 57.3pt to sit in, so its middle is
-    /// 559.67. At a lift of 3 the icons came out at 561.83 — two points low,
-    /// which is what made the row look like it had more air above it than
-    /// below. Five puts them on the middle.
-    static let stripLift: CGFloat = 5
+    /// The strip's contents sit where Apple's suggestions do: measured in a
+    /// Safari form on iOS 26.5 (2026-10-06), the sheet's edge at 540.0pt,
+    /// the suggestion text's middle at 563.7 and the first row at 591.0. So
+    /// 24pt under the top edge, 1.5pt under the middle of the strip's box.
+    static let stripLift: CGFloat = -1.5
 
     /// A control centred on the strip's lifted middle, kept inside the view.
     /// The lift puts a full-height control a few points ABOVE the keyboard's

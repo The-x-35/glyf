@@ -857,8 +857,8 @@ final class GlyfToolbar: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         // Website strip: the logo at the left, then the tools across the rest.
-        // Below the band we had to draw ourselves (nothing on iOS 26, which
-        // supplies its own): everything measures off the content box.
+        // No band of our own any more (Glass.stripBand is 0): everything
+        // measures off the content box, centred as Apple's bar is.
         let band = Glass.stripBand
         let h = bounds.height - band
         let mid = band + h / 2 - Glass.stripLift
