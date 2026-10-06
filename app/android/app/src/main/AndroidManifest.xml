@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
+    <!-- Voice typing in the keyboard: asked the first time its mic is tapped. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="Glyf"
         android:name="${applicationName}"
@@ -53,6 +55,14 @@
                 <data android:scheme="glyf"/>
             </intent-filter>
         </activity>
+        <!-- The keyboard's mic asks for the microphone here (a keyboard can't
+             show the dialog), over the app being typed in, then goes. -->
+        <activity
+            android:name=".MicPermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
         <service
             android:name=".ime.GlyfIME"
             android:label="@string/ime_name"
@@ -94,5 +104,9 @@
         </intent>
         <!-- The wallet opens Phantom to connect and to sign. -->
         <package android:name="app.phantom"/>
+        <!-- The keyboard's voice typing uses the phone's speech recognizer. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
     </queries>
 </manifest>

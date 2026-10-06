@@ -209,23 +209,20 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
           _toolCard(
             brand: 'calendar',
             title: 'Calendar',
-            useCase: 'Share an event, or when you’re free, straight into a chat.',
             trailing: _calendar ? _onBadge('tools:calendar') : _actionPill('Turn on', 'tools:calendar', _enableCalendar),
           ),
           const SizedBox(height: 12),
           _toolCard(
             brand: 'meet',
             title: 'Google Meet',
-            useCase: _google['meet'] == true
-                ? (_google['email'] as String? ?? 'Connected')
-                : 'Send a Meet link or a calendar invite from the keyboard.',
+            detail: _google['meet'] == true ? (_google['email'] as String? ?? 'Connected') : null,
             trailing: _switch(_google['meet'] == true, _toggleGoogle, 'tools:google'),
           ),
           const SizedBox(height: 12),
           _toolCard(
             brand: _booking == null ? 'booking' : (bookingProvider(_booking!) ?? 'booking'),
             title: 'Booking link',
-            useCase: _booking ?? 'Cal.com or Calendly: send times people can book, from the keyboard.',
+            detail: _booking,
             trailing: _actionPill(_booking == null ? 'Add' : 'Edit', 'tools:booking', _editBooking),
           ),
           if (_note != null)
@@ -239,13 +236,13 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
             child: Text('Coming soon',
                 style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Glass.inkSoft)),
           ),
-          for (final (brand, title, useCase) in const [
-            ('gmail', 'Gmail', 'Answer an email from whatever chat you’re in.'),
-            ('notion', 'Notion', 'Share a page or add a task while you type.'),
-            ('slack', 'Slack', 'Send a thread to a friend without switching apps.'),
-            ('spotify', 'Spotify', 'Send the song you’re playing right now.'),
+          for (final (brand, title) in const [
+            ('gmail', 'Gmail'),
+            ('notion', 'Notion'),
+            ('slack', 'Slack'),
+            ('spotify', 'Spotify'),
           ]) ...[
-            _toolCard(brand: brand, title: title, useCase: useCase, trailing: _soon()),
+            _toolCard(brand: brand, title: title, trailing: _soon()),
             const SizedBox(height: 10),
           ],
         ],
@@ -287,11 +284,6 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
           ),
         ]),
         const SizedBox(height: 14),
-        const Text(
-          'Someone drops a Solana address in a chat: tap Send on the keyboard and Phantom signs. Send privately, and nobody onchain can see who paid.',
-          style: TextStyle(color: Color(0xE6FFFFFF), fontSize: 14, height: 1.35),
-        ),
-        const SizedBox(height: 14),
         Semantics(
           identifier: 'tools:wallet',
           button: true,
@@ -309,7 +301,9 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
     );
   }
 
-  Widget _toolCard({required String brand, required String title, required String useCase, required Widget trailing}) {
+  /// [detail] is a value (the Google account, the booking link), never a line
+  /// saying what the tool does (Arpit, 2026-10-06: "noo explainer lines").
+  Widget _toolCard({required String brand, required String title, String? detail, required Widget trailing}) {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
       decoration: BoxDecoration(
@@ -323,8 +317,10 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: Glass.ink)),
-            const SizedBox(height: 2),
-            Text(useCase, style: const TextStyle(fontSize: 13, height: 1.3, color: Glass.inkSoft)),
+            if (detail != null) ...[
+              const SizedBox(height: 2),
+              Text(detail, style: const TextStyle(fontSize: 13, height: 1.3, color: Glass.inkSoft)),
+            ],
           ]),
         ),
         const SizedBox(width: 8),

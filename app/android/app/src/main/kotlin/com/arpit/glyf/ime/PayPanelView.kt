@@ -10,7 +10,6 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
@@ -136,8 +135,6 @@ class PayPanelView(
     private val toCol = LinearLayout(ctx)
     private val toName = TextView(ctx)
     private val toDetail = TextView(ctx)
-    private val assetsScroll = HorizontalScrollView(ctx)
-    private val assetsRow = LinearLayout(ctx)
     private val privateRow = LinearLayout(ctx)
     private val privateBy = TextView(ctx)
     private val privateSwitch = Switch(ctx)
@@ -191,11 +188,6 @@ class PayPanelView(
 
     // MARK: build
 
-    private fun chipBg(on: Boolean) = GradientDrawable().apply {
-        cornerRadius = dp(13).toFloat()
-        setColor(if (on) palette.ink else palette.card)
-    }
-
     private fun cardBg() = GradientDrawable().apply {
         cornerRadius = dp(12).toFloat()
         setColor(palette.card)
@@ -233,11 +225,20 @@ class PayPanelView(
         amountText.typeface = Typeface.DEFAULT_BOLD
         amountText.setTextColor(palette.ink)
         amountRow.addView(amountText)
-        unitText.textSize = 12.5f
+        // What's sent, and the dropdown to change it (Arpit, 2026-10-06: "i
+        // need send also to have dropdown assets").
+        unitText.textSize = 14f
         unitText.typeface = Typeface.DEFAULT_BOLD
-        unitText.setTextColor(palette.inkSoft)
-        unitText.setPadding(dp(6), 0, 0, 0)
-        amountRow.addView(unitText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        unitText.setTextColor(palette.ink)
+        unitText.gravity = Gravity.CENTER
+        unitText.maxLines = 1
+        unitText.background = pill()
+        unitText.setPadding(dp(12), 0, dp(10), 0)
+        unitText.setTag(com.arpit.glyf.R.id.qa_id, "pay:token")
+        unitText.setOnClickListener { openTokens() }
+        amountRow.addView(unitText, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply { leftMargin = dp(8) })
+        amountRow.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
         toCol.orientation = LinearLayout.VERTICAL
         toCol.gravity = Gravity.END
         toName.textSize = 13f
@@ -251,13 +252,7 @@ class PayPanelView(
         toCol.addView(toDetail)
         amountRow.addView(toCol)
         body.addView(amountRow, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(2) })
-
-        assetsRow.orientation = LinearLayout.HORIZONTAL
-        assetsScroll.isHorizontalScrollBarEnabled = false
-        assetsScroll.addView(assetsRow)
-        body.addView(assetsScroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(30)).apply { topMargin = dp(6) })
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50)).apply { topMargin = dp(2) })
 
         privateRow.orientation = LinearLayout.HORIZONTAL
         privateRow.gravity = Gravity.CENTER_VERTICAL
@@ -318,7 +313,7 @@ class PayPanelView(
         body.addView(go, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
 
-        if (isBuy) {
+        run {
             tokenScrim.setBackgroundColor(if (palette.darkChrome) Color.argb(140, 0, 0, 0)
                 else Color.argb(158, 255, 255, 255))
             tokenScrim.setTag(com.arpit.glyf.R.id.qa_id, "pay:tokenscrim")
@@ -422,10 +417,11 @@ class PayPanelView(
         picking = true
         renderTokenRows()
         val me = IntArray(2).also { getLocationInWindow(it) }
-        val pill = IntArray(2).also { payToken.getLocationInWindow(it) }
+        val anchor: View = if (isBuy) payToken else unitText
+        val pill = IntArray(2).also { anchor.getLocationInWindow(it) }
         val menuW = minOf(dp(250), width - dp(20))
-        val right = pill[0] - me[0] + payToken.width
-        val top = pill[1] - me[1] + payToken.height + dp(6)
+        val right = pill[0] - me[0] + anchor.width
+        val top = pill[1] - me[1] + anchor.height + dp(6)
         val rowsH = assets.size * dp(44) + (assets.size - 1)
         val h = maxOf(dp(44), minOf(rowsH, height - top - dp(8)))
         // Worked out here: inside the params' apply, width means theirs.
@@ -837,7 +833,10 @@ class PayPanelView(
             else -> amount
         }
         editAmount.setTextColor(if (amount.isEmpty()) palette.inkSoft else palette.ink)
-        assetsScroll.visibility = if (form) View.VISIBLE else View.GONE
+        if (!form) picking = false
+        tokenScrim.visibility = if (picking) View.VISIBLE else View.GONE
+        tokenMenu.visibility = tokenScrim.visibility
+        if (picking) renderTokenRows()
         privateRow.visibility =
             if (form && !isBuy && paying.mint == USDC) View.VISIBLE else View.GONE
         meta.visibility =
@@ -856,7 +855,7 @@ class PayPanelView(
 
         val shownAmount = if (amount.isEmpty()) "0" else amount
         amountText.text = if (paying.mint == USDC) "$$shownAmount" else shownAmount
-        unitText.text = if (isBuy) "of ${paying.symbol}" else paying.symbol
+        unitText.text = "${paying.symbol} ${if (picking) "▴" else "▾"}"
         when (intent) {
             is Intent.Send -> {
                 if (to != null) {
@@ -893,29 +892,6 @@ class PayPanelView(
         val solHeld = assets.firstOrNull { it.mint == WSOL }?.amount ?: 0.0
         balance.text = if (connected) "$${compact(usdcHeld)} USDC · ◎ ${compact(solHeld)}" else ""
 
-        assetsRow.removeAllViews()
-        if (form) for (asset in assets) {
-            val on = asset.mint == paying.mint
-            val b = TextView(context)
-            val held = if (asset.amount > 0) " ${compact(asset.amount)}" else ""
-            b.text = "${asset.symbol}$held"
-            b.textSize = 12f
-            b.typeface = Typeface.DEFAULT_BOLD
-            b.setTextColor(if (on) palette.board else palette.ink)
-            b.background = chipBg(on)
-            b.gravity = Gravity.CENTER
-            b.setPadding(dp(10), 0, dp(10), 0)
-            b.setTag(com.arpit.glyf.R.id.qa_id, "pay:asset:${asset.symbol}")
-            b.setOnClickListener {
-                paying = asset
-                if (asset.mint != USDC) isPrivate = false
-                requote()
-                render()
-            }
-            assetsRow.addView(b, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(26)).apply { rightMargin = dp(6) })
-        }
-
         // While typing, the amount row doubles as the display and the pad
         // fills the key area; Done is the row itself. Otherwise the
         // recipient slot is its own tap: paste (or re-paste) the address.
@@ -941,11 +917,6 @@ class PayPanelView(
             balance.visibility = View.GONE
             payCard.visibility = if (form) View.VISIBLE else View.GONE
             getCard.visibility = payCard.visibility
-            assetsScroll.visibility = View.GONE
-            if (!form) picking = false
-            tokenScrim.visibility = if (picking) View.VISIBLE else View.GONE
-            tokenMenu.visibility = tokenScrim.visibility
-            if (picking) renderTokenRows()
             renderBuy()
         }
     }

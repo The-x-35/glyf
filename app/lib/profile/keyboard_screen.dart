@@ -135,25 +135,13 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           _label('Money'),
           _card([_currencyRow()]),
           const SizedBox(height: 18),
-          _label('Emoji'),
-          _card([
-            _goToEmojiRow(),
-            _note('First in Frequently Used on the keyboard. A keyboard '
-                "can't read another keyboard's history, so add the ones you "
-                'used most there.'),
-          ]),
-          const SizedBox(height: 18),
           _label('Clipboard & AI'),
           _card([
             _switch('Keep what you copy', 'clipboardHistory', fallback: true),
             // The iPhone's paste prompt only; Android has nothing like it.
-            if (Platform.isIOS) ...[
+            if (Platform.isIOS)
               _switch('Capture everything you copy', 'clipboardCaptureAll',
                   fallback: true),
-              _note('Every copy lands in the clipboard by itself. iOS asks '
-                  'once per copy until you set Settings → Glyf → Paste from '
-                  'Other Apps → Allow; after that it never asks again.'),
-            ],
             _switch('Recent screenshots', 'clipboardScreenshots',
                 fallback: true,
                 onBeforeOn: GlyfBridge.screenshotAccess,
@@ -162,25 +150,13 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
                 denied: Platform.isIOS
                     ? 'Photos are off for Glyf. Allow them in Settings › Glyf › Photos'
                     : 'Photos are off for Glyf. Allow them in Settings › Apps › Glyf › Permissions'),
-            _note('Shots from the last two days, beside what you copied. Turning '
-                'this on is when Glyf asks for your photos.'),
             _switch('AI suggestions as you type', 'aiSuggest'),
-            _note('When you pause, the sentence you’re typing goes to Glyf’s AI '
-                'so the strip can offer an action. Off: AI only when you ask.'),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),
           ]),
         ],
       ),
     );
   }
-
-  /// A line of explanation under the switch it belongs to.
-  Widget _note(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        child: Text(text,
-            style: const TextStyle(
-                fontSize: 12.5, height: 1.35, color: Glass.inkSoft)),
-      );
 
   Widget _label(String text) => Padding(
         padding: const EdgeInsets.only(left: 4, bottom: 8),
@@ -245,98 +221,6 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
         ]),
       ),
     );
-  }
-
-  String get _goToEmoji => (_settings['favoriteEmoji'] as String?) ?? '';
-
-  /// The emoji someone uses most: first in the board's Frequently Used.
-  Widget _goToEmojiRow() {
-    final shown = _goToEmoji.characters.take(8).join(' ');
-    return Semantics(
-      identifier: 'kb-go-to-emoji',
-      button: true,
-      child: InkWell(
-        onTap: _editGoToEmoji,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-          child: Row(children: [
-            const Expanded(child: Text('Go-to emoji', style: TextStyle(fontSize: 15))),
-            Text(shown.isEmpty ? 'Add' : shown,
-                style: TextStyle(fontSize: shown.isEmpty ? 14 : 17, color: Glass.inkSoft)),
-            const Icon(Icons.chevron_right, size: 18, color: Glass.inkSoft),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  /// Only the emoji in what was typed or pasted, each once.
-  static String _emojiOnly(String text) {
-    bool emoji(String c) => c.runes.any((r) =>
-        r == 0xFE0F || r >= 0x1F000 || (r >= 0x2190 && r <= 0x2BFF) || r == 0x00A9 || r == 0x00AE);
-    final seen = <String>{};
-    return text.characters.where((c) => emoji(c) && seen.add(c)).join();
-  }
-
-  Future<void> _editGoToEmoji() async {
-    final ctl = TextEditingController(text: _goToEmoji);
-    final saved = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 18, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(children: [
-              const Expanded(
-                child: Text('Go-to emoji',
-                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-              ),
-              Semantics(
-                identifier: 'kb-go-to-emoji-save',
-                child: TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(_emojiOnly(ctl.text)),
-                  child: const Text('Save',
-                      style: TextStyle(color: Glass.accent, fontSize: 16, fontWeight: FontWeight.w700)),
-                ),
-              ),
-            ]),
-            const Padding(
-              padding: EdgeInsets.only(bottom: 12),
-              child: Text('Type or paste the emoji you use most. They come first in '
-                  'Frequently Used, in this order.',
-                  style: TextStyle(fontSize: 13.5, height: 1.35, color: Glass.inkSoft)),
-            ),
-            Semantics(
-              identifier: 'kb-go-to-emoji-field',
-              child: TextField(
-                controller: ctl,
-                autofocus: true,
-                maxLines: 3,
-                minLines: 1,
-                style: const TextStyle(fontSize: 24, color: Glass.ink),
-                decoration: InputDecoration(
-                  hintText: '🫶 😭 💕',
-                  hintStyle: const TextStyle(color: Color(0xFFB6BAC3), fontSize: 24),
-                  filled: true,
-                  fillColor: const Color(0xFFF2F3F7),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    ctl.dispose();
-    if (saved != null) await _set('favoriteEmoji', saved);
   }
 
   Future<void> _pickCurrency() async {

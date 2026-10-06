@@ -102,7 +102,7 @@ object GlyfMark {
 /** The strip's first key: a pill holding the app icon's mark, in the icon's
  *  colours: its black with the letter white on a light sheet, and on a dark
  *  sheet the icon itself, white with its black g. While the menu is open it
- *  is a plain ✕ in the strip's ink. */
+ *  is a plain ✕ in the strip's ink, starting where the key starts. */
 class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
     var closing = false
         set(value) {
@@ -110,7 +110,18 @@ class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
             // What TalkBack says follows what the key does.
             contentDescription = if (value) "Close" else "Glyf menu"
             invalidate()
+            // The strip spaces its tools from this ink (spaceStripTools).
+            requestLayout()
         }
+
+    /** Where its ink starts in this view: the key's left edge, which is
+     *  where the ✕ starts too (the strip's margin). */
+    val inkLeft: Float get() = (width - GlyfMark.keyWidth(minOf(keyHeight, height.toFloat()))) / 2f
+    /** And where it ends. */
+    val inkRight: Float get() {
+        val h = minOf(keyHeight, height.toFloat())
+        return inkLeft + if (closing) crossWidth(h, resources.displayMetrics.density) else GlyfMark.keyWidth(h)
+    }
     var dark = false
         set(value) { field = value; invalidate() }
     var ink = GlyfMark.INK
@@ -148,9 +159,13 @@ class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
             c.drawRect(x - d / 2f, height / 2f - 12f * d, x + d / 2f, height / 2f + 12f * d, rule)
         }
         if (closing) {
-            // iOS's xmark at 17 medium: 16pt of ink, a 2pt stroke.
+            // iOS's xmark at 17 medium: 16pt of ink, a 2pt stroke. Its ink
+            // starts where the key's does, so it stands in the tools' row as
+            // one of them (Arpit, 2026-10-06: "why the fuck doesnt it feel
+            // centered, why soo much space after cross").
             val r = h * 0.24f
-            val cx = width / 2f; val cy = height / 2f
+            val cx = left + crossWidth(h, resources.displayMetrics.density) / 2f
+            val cy = height / 2f
             cross.color = ink
             c.drawLine(cx - r, cy - r, cx + r, cy + r, cross)
             c.drawLine(cx - r, cy + r, cx + r, cy - r, cross)
@@ -163,6 +178,18 @@ class GlyfKeyView(ctx: Context, private val keyHeight: Float) : View(ctx) {
         c.drawRoundRect(key, h / 3f, h / 3f, face)
         if (dark) c.drawRoundRect(key, h / 3f, h / 3f, ring)
         GlyfMark.drawMark(c, key, h * 0.083f, letter, dot)
+    }
+
+    companion object {
+        /** The ✕'s ink, its stroke included. */
+        fun crossWidth(keyHeight: Float, density: Float) = keyHeight * 0.48f + 2f * density
+
+        /** Where a panel's name measures from, in a [viewWidth] wide key
+         *  showing the ✕: as far past the ✕'s middle as the key's ink reaches
+         *  past its own, so the name keeps its distance from the ✕ (iOS
+         *  Toolbar's markRight). */
+        fun markRight(viewWidth: Float, keyHeight: Float, density: Float) =
+            viewWidth / 2f + crossWidth(keyHeight, density) / 2f
     }
 }
 

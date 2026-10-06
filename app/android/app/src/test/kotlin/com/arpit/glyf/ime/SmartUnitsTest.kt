@@ -99,12 +99,6 @@ class SmartUnitsTest {
             val want = variants.getJSONArray(base).let { a -> (0 until a.length()).map { a.getString(it) } }
             if (EmojiData.variants(base) != want) failures += "tones of $base: ${EmojiData.variants(base)}"
         }
-        val within = root.getJSONArray("emojiIn")
-        for (i in 0 until within.length()) {
-            val c = within.getJSONObject(i)
-            val want = c.getJSONArray("emoji").let { a -> (0 until a.length()).map { a.getString(it) } }
-            if (EmojiData.emojiIn(c.getString("text")) != want) failures += "emoji in '${c.getString("text")}': ${EmojiData.emojiIn(c.getString("text"))}"
-        }
         val android = root.getJSONArray("android")
         for (i in 0 until android.length()) {
             val c = android.getJSONObject(i)

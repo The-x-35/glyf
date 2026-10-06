@@ -177,6 +177,26 @@ class SmartTest {
         }
     }
 
+    /** The first letters of a saved detail offer all of it (Arpit,
+     *  2026-10-06: "as soon person enters first 2-4 letters of any details in
+     *  vault show that"): GlyfEngineTests' testTheFirstLettersOfADetailOfferIt. */
+    @Test fun theFirstLettersOfADetailOfferIt() {
+        val mail = Smart.Field("email", "Email", "alex@example.com")
+        val name = Smart.Field("name", "Name", "Alex Kim")
+        val cell = Smart.Field("phone", "Mobile", "+1 (415) 555-0134")
+        val home = Smart.Field("address", "Home", "123 Market St, San Francisco, CA 94103")
+        val all = listOf(mail, name, cell, home)
+        assertEquals(Smart.Chip.Details(listOf(mail, name), temp = false, typed = "al"), Smart.chip("al", all))
+        assertEquals(Smart.Chip.Details(listOf(mail), temp = false, typed = "Alex@"), Smart.chip("write to Alex@", all))
+        assertEquals(Smart.Chip.Details(listOf(cell), temp = false, typed = "415"), Smart.chip("call 415", all))
+        assertEquals(Smart.Chip.Details(listOf(cell), temp = false, typed = "+1 (415"), Smart.chip("+1 (415", all))
+        assertEquals(Smart.Chip.Details(listOf(home), temp = false, typed = "123 Mar"), Smart.chip("ship to 123 Mar", all))
+        // One letter, two digits, a finished word, a whole detail: nothing.
+        for (text in listOf("a", "41", "al ", "alex@example.com", "hello")) {
+            assertEquals(text, null, Smart.chip(text, all))
+        }
+    }
+
     /** Two saved emails show both (Arpit, 2026-10-01: "if i added 2 mail ids
      *  i should see both"), in the vault's order; one shows the one chip it
      *  always did; a question for someone else shows none. */
@@ -376,7 +396,12 @@ class SmartTest {
         // Asking someone else, or already typed, or nothing saved of that kind.
         assertNull(Smart.chip("what's your address?", more))
         assertNull(Smart.chip("send me ur upi", more))
-        assertNull(Smart.chip("my number is 98765", more))
+        // A number being typed is finished from the vault; typed out, nothing.
+        val typing = Smart.chip("my number is 98765", more) as Smart.Chip.Details
+        assertEquals("98765", typing.typed)
+        assertEquals(listOf("+91 98765 43210"), typing.fields.map { it.value })
+        assertNull(Smart.completions("my number is 98765 43210", more))
+        assertNull(Smart.completions("my number is +91 98765 43210", more))
         assertNull(Smart.chip("my wallet address", more))
     }
 

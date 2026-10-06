@@ -638,6 +638,26 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
         }
     }
 
+    /** How wide the glyph's ink is, in px, drawn once off screen and
+     *  measured: the strip spaces its tools by the air between their inks,
+     *  as iOS spaces its symbols by their own widths. */
+    fun inkWidth(): Float {
+        val key = "$kind $scale $weight ${resources.displayMetrics.density}"
+        INK_WIDTHS[key]?.let { return it }
+        val side = dp(40f).toInt().coerceAtLeast(1)
+        val probe = ToolIcon(context, kind, Color.BLACK).also { it.scale = scale; it.weight = weight }
+        probe.layout(0, 0, side, side)
+        val bitmap = android.graphics.Bitmap.createBitmap(side, side, android.graphics.Bitmap.Config.ARGB_8888)
+        probe.draw(Canvas(bitmap))
+        val px = IntArray(side * side)
+        bitmap.getPixels(px, 0, side, 0, 0, side, side)
+        bitmap.recycle()
+        val inked = (0 until side).filter { x -> (0 until side).any { y -> Color.alpha(px[y * side + x]) > 60 } }
+        val width = if (inked.isEmpty()) dp(16f) else (inked.last() - inked.first() + 1).toFloat()
+        INK_WIDTHS[key] = width
+        return width
+    }
+
     /** The glyph as a drawable [size] px square, to lead a line of text (a
      *  TextView's start drawable), so the line stays one view. */
     fun asDrawable(size: Int): android.graphics.drawable.Drawable {
@@ -690,5 +710,7 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
         /** The tool a saved id stands for now: an order or a strip saved
          *  before still finds its tools. */
         fun canonical(id: String): String = RETIRED[id] ?: id
+
+        private val INK_WIDTHS = HashMap<String, Float>()
     }
 }

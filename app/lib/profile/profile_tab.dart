@@ -336,7 +336,6 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
           _navCard(
             icon: Icons.keyboard_alt_outlined,
             title: 'Keyboard',
-            trailingText: 'Look, typing, feel',
             onTap: () async {
               await Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const KeyboardScreen()));

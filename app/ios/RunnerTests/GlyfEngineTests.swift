@@ -190,18 +190,22 @@ final class GlyfEngineTests: XCTestCase {
 
     // MARK: Settings migration
 
-    /// Old files gain every new toolbar item, and the user's existing order
-    /// is preserved — except Search, which leads (Gboard parity).
+    /// A file from before v9 starts over once from the new default strip
+    /// (Arpit, 2026-10-06: "from top bar remove mic and translate and instead
+    /// add calendar and temp mail for default"), with no mic; after that the
+    /// person's own order is kept under Search, and new tools join the end.
     func testToolbarOrderMigrationAddsNewItemsAndLeadsWithSearch() {
-        var s = GlyfSettings()
-        s.toolbarOrder = ["dictation", "settings"] // an old file, in the user's order
-        s.schemaVersion = 1
-        s = SettingsStore.migrated(s)
-        XCTAssertEqual(Set(s.toolbarOrder), Set(GlyfSettings.Toolbar.defaultOrder),
-                       "the gear left the strip for the g menu")
-        XCTAssertEqual(s.toolbarOrder.first, "search")
-        XCTAssertEqual(s.toolbarOrder.dropFirst().first, "dictation",
-                       "the user's own order must survive under Search")
+        var old = GlyfSettings()
+        old.toolbarOrder = ["dictation", "settings"]
+        old.schemaVersion = 1
+        XCTAssertEqual(SettingsStore.migrated(old).toolbarOrder, GlyfSettings.Toolbar.defaultOrder)
+        var mine = GlyfSettings()
+        mine.toolbarOrder = ["vault", "translate"]
+        mine.schemaVersion = 9
+        let s = SettingsStore.migrated(mine)
+        XCTAssertEqual(Array(s.toolbarOrder.prefix(3)), ["search", "vault", "translate"],
+                       "the person's own order survives under Search")
+        XCTAssertTrue(Set(GlyfSettings.Toolbar.defaultOrder).isSubset(of: Set(s.toolbarOrder)))
     }
 
     /// An old file ends up current: T's one-shot translate upgrades to the
@@ -218,7 +222,7 @@ final class GlyfEngineTests: XCTestCase {
             "s": "surface:vault",        // old vault key → moves to V
         ]
         let s = SettingsStore.migrated(old)
-        XCTAssertEqual(s.schemaVersion, 8)
+        XCTAssertEqual(s.schemaVersion, 9)
         XCTAssertEqual(s.bindings["t"], "surface:translate-hud")
         XCTAssertEqual(s.bindings["n"], "user.abc")
         XCTAssertNil(s.bindings["p"])
@@ -738,7 +742,11 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(kind("you can email me at"), "email")
         XCTAssertNil(kind("what's your address?"), "a question for someone else")
         XCTAssertNil(kind("send me ur upi"))
-        XCTAssertNil(kind("my number is 98765"), "already typed")
+        // A number being typed is finished from the vault; typed out, nothing.
+        XCTAssertEqual(Smart.chip(for: "my number is 98765", fields: fields),
+                       .details(fields: [fields[2]], temp: false, typed: "98765"))
+        XCTAssertNil(Smart.completions("my number is 98765 43210", fields: fields), "already typed")
+        XCTAssertNil(Smart.completions("my number is +91 98765 43210", fields: fields), "already typed")
         XCTAssertNil(kind("my wallet address"), "the wallet was asked for, and none is saved")
     }
 
@@ -1245,6 +1253,28 @@ final class GlyfEngineTests: XCTestCase {
                        .details(fields: [home, work], temp: false))
     }
 
+    /// The first letters of a saved detail offer all of it (Arpit,
+    /// 2026-10-06: "as soon person enters first 2-4 letters of any details
+    /// in vault show that"): two letters, three digits of a number with or
+    /// without its country code, several words of an address. SmartTest's
+    /// theFirstLettersOfADetailOfferIt runs the same cases.
+    func testTheFirstLettersOfADetailOfferIt() {
+        let mail = VaultField(id: "e1", kind: "email", label: "Email", value: "alex@example.com")
+        let name = VaultField(id: "n1", kind: "name", label: "Name", value: "Alex Kim")
+        let cell = VaultField(id: "p1", kind: "phone", label: "Mobile", value: "+1 (415) 555-0134")
+        let home = VaultField(id: "a1", kind: "address", label: "Home", value: "123 Market St, San Francisco, CA 94103")
+        let all = [mail, name, cell, home]
+        XCTAssertEqual(Smart.chip(for: "al", fields: all), .details(fields: [mail, name], temp: false, typed: "al"))
+        XCTAssertEqual(Smart.chip(for: "write to Alex@", fields: all), .details(fields: [mail], temp: false, typed: "Alex@"))
+        XCTAssertEqual(Smart.chip(for: "call 415", fields: all), .details(fields: [cell], temp: false, typed: "415"))
+        XCTAssertEqual(Smart.chip(for: "+1 (415", fields: all), .details(fields: [cell], temp: false, typed: "+1 (415"))
+        XCTAssertEqual(Smart.chip(for: "ship to 123 Mar", fields: all), .details(fields: [home], temp: false, typed: "123 Mar"))
+        // One letter, two digits, a finished word, a whole detail: nothing.
+        for text in ["a", "41", "al ", "alex@example.com", "hello"] {
+            XCTAssertNil(Smart.chip(for: text, fields: all), text)
+        }
+    }
+
     /// shared/vault/cases.json: the same cases Android's SmartVaultTest runs
     /// (Arpit, 2026-10-02: "for all data in vault, it should be super fast
     /// using regex").
@@ -1423,10 +1453,6 @@ final class GlyfEngineTests: XCTestCase {
         }
         for (base, want) in root["variants"] as? [String: [String]] ?? [:] where EmojiData.variants(of: base) != want {
             failures.append("tones of \(base): \(EmojiData.variants(of: base))")
-        }
-        for c in root["emojiIn"] as? [[String: Any]] ?? [] {
-            let got = EmojiData.emoji(in: c["text"] as? String ?? "")
-            if got != c["emoji"] as? [String] ?? [] { failures.append("emoji in '\(c["text"] ?? "")': \(got)") }
         }
         for c in root["ios"] as? [[String: Any]] ?? [] {
             let v = c["version"] as? String ?? "", os = (c["os"] as? String ?? "").split(separator: ".").compactMap { Int($0) }

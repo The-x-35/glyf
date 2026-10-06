@@ -35,8 +35,10 @@ object Smart {
          *  an email with a temp address beside it ([temp]). One part of the
          *  chip for each, and a tap on a part types it (Arpit, 2026-10-01:
          *  "if i added 2 mail ids i should see both, and i should also see
-         *  a temp mail option"). Smart.swift's `.details`. */
-        data class Details(val fields: List<Field>, val temp: Boolean) : Chip()
+         *  a temp mail option"). Smart.swift's `.details`. [typed] is the
+         *  start of a detail already typed ("ar", "123 Mar"): a part's tap
+         *  puts the whole detail in its place (completions). */
+        data class Details(val fields: List<Field>, val temp: Boolean, val typed: String = "") : Chip()
         /** A measurement the message ends on, in the other system: one part
          *  for each result ("10 inch" → 25.4 cm, 0.254 m), and a tap on a part
          *  adds it in brackets (Smart.conversions). Smart.swift's `.convert`. */
@@ -157,7 +159,7 @@ object Smart {
      *  yours and Temp mail. Any other chip is left as it is. */
     fun withTempMail(chip: Chip?): Chip? = when {
         chip is Chip.Vault && chip.field.kind == "email" -> Chip.Details(listOf(chip.field), temp = true)
-        chip is Chip.Details && !chip.temp && chip.fields.firstOrNull()?.kind == "email" ->
+        chip is Chip.Details && !chip.temp && chip.typed.isEmpty() && chip.fields.firstOrNull()?.kind == "email" ->
             Chip.Details(chip.fields.take(2), temp = true)
         else -> chip
     }
@@ -244,6 +246,8 @@ object Smart {
         val matches = vaultMatches(text, fields)
         if (matches.size > 1) return Chip.Details(matches.take(3), temp = false)
         matches.firstOrNull()?.let { return Chip.Vault(it) }
+        // A detail being typed: its first letters offer the whole of it.
+        completions(text, fields)?.let { (typed, hits) -> return Chip.Details(hits, temp = false, typed = typed) }
         EventParse.looksLikePlan(text)?.let { return Chip.Event(it) }
         bookingLink(text, ownBooking)?.let { return Chip.Booking(it) }
         return null
@@ -673,6 +677,47 @@ object Smart {
             return m.value.trim().uppercase()
         }
         return null
+    }
+
+    /** The saved details the words being typed are the start of (Arpit,
+     *  2026-10-06: "as soon person enters first 2-4 letters of any details
+     *  in vault show that"): two letters or more ("ar" offers your email
+     *  and your name), three digits or more of a number, with or without the
+     *  country code it was saved with ("415"), across up to four words
+     *  ("123 Mar" offers the address). The first of the pair is what a tap
+     *  replaces; the longest run of words that starts something wins, and a
+     *  detail typed out in full offers nothing. Three at most, one per
+     *  value. Smart.swift's completions. */
+    fun completions(text: String, fields: List<Field>): Pair<String, List<Field>>? {
+        if (text.isEmpty() || text.last().isWhitespace() || fields.isEmpty()) return null
+        val starts = text.indices.filter { !text[it].isWhitespace() && (it == 0 || text[it - 1].isWhitespace()) }
+        if (starts.isEmpty()) return null
+        for (k in minOf(4, starts.size) downTo 1) {
+            val typed = text.substring(starts[starts.size - k])
+            val seen = mutableSetOf<String>()
+            val hits = fields.filter { startsDetail(typed, it.value) && seen.add(it.value.lowercase()) }
+            if (hits.isNotEmpty()) return typed to hits.take(3)
+        }
+        return null
+    }
+
+    /** Whether [typed] begins [value] without being all of it: by its
+     *  letters (two at least), or, with none, by its digits (three at least),
+     *  a saved "+1 (415) 555-0100" answering to "415" too. */
+    fun startsDetail(typed: String, value: String): Boolean {
+        val t = typed.lowercase()
+        val v = value.trim().lowercase()
+        if (v.isEmpty() || t == v || t.length >= v.length) return false
+        if (t.any { it.isLetter() }) return t.length >= 2 && v.startsWith(t)
+        val td = t.filter { it.isDigit() }
+        if (td.length < 3) return false
+        if (v.any { it.isLetter() }) return v.startsWith(t)
+        val vd = v.filter { it.isDigit() }
+        if (vd.startsWith(td)) return vd.length > td.length
+        // Saved with its country code, typed without it; all of it typed
+        // without the code is typed already.
+        if (!v.startsWith("+")) return false
+        return (1..3).any { n -> vd.drop(n).let { rest -> rest.length > td.length && rest.startsWith(td) } }
     }
 
     /** Every saved detail the sentence asks for: the one vaultMatch finds

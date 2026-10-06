@@ -35,6 +35,10 @@ object Bridge {
 object SettingsStore {
     const val FILE = "settings.json"
 
+    /** The strip's tools for anyone who hasn't moved them (iOS
+     *  GlyfSettings.Toolbar.defaultOrder). */
+    val DEFAULT_STRIP = listOf("search", "clipboard", "vault", "calendar", "tempmail")
+
     /** The deployed API. Changing the domain? This is the only place. */
     const val PRODUCTION_BACKEND = "https://api.tryglyf.com"
 
@@ -53,7 +57,7 @@ object SettingsStore {
     }
 
     fun defaults(): JSONObject = JSONObject().apply {
-        put("schemaVersion", 8)
+        put("schemaVersion", 9)
         put("haptics", true)
         put("keyClicks", true)
         put("numberRow", false)
@@ -62,8 +66,9 @@ object SettingsStore {
         put("periodShortcut", true)
         put("candidates", true)
         put("oneHanded", "off")
-        put("toolbarOrder", JSONArray(listOf(
-            "search", "clipboard", "vault", "dictation", "translate")))
+        // Arpit, 2026-10-06: "from top bar remove mic and translate and
+        // instead add calendar and temp mail for default".
+        put("toolbarOrder", JSONArray(DEFAULT_STRIP))
         put("toolbarHidden", JSONArray())
         // Two holds only: V shares your details, C opens the calendar. Every
         // other letter is the person's to bind; hold-space AI covers the rest.
@@ -172,6 +177,14 @@ object SettingsStore {
             current.put("schemaVersion", 8)
             changed = true
         }
+        // v8 → v9: every saved strip starts over once from the new default
+        // (Calendar and Temp mail where Voice and Translate were).
+        if (current.optInt("schemaVersion", 1) < 9) {
+            current.put("toolbarOrder", JSONArray(DEFAULT_STRIP))
+            current.put("toolbarHidden", JSONArray())
+            current.put("schemaVersion", 9)
+            changed = true
+        }
         // Every load, as on iOS: Search leads the strip and the default tools
         // are all present (anyone can hide one; losing one is a bug).
         run {
@@ -179,7 +192,7 @@ object SettingsStore {
             val ids = (0 until order.length()).map { order.optString(it) }.toMutableList()
             val before = ids.toList()
             if ("search" !in ids) ids.add(0, "search")
-            for (id in listOf("search", "clipboard", "vault", "dictation", "translate")) {
+            for (id in DEFAULT_STRIP) {
                 if (id !in ids) ids.add(id)
             }
             if (ids != before) {

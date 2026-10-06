@@ -31,8 +31,14 @@ abstract final class Billing {
   static const maxYearly = 'com.arpit.glyf.max.yearly';
   static const ids = [plusMonthly, plusYearly, maxMonthly, maxYearly];
 
+  /// Nothing is sold for now: TestFlight can only buy through Apple's
+  /// sandbox, which is free, so the plans stay greyed out until the App Store
+  /// release (Arpit, 2026-10-06: "i dont want ayone buying for free, have it
+  /// greyed out"). Gift codes still work.
+  static const onSale = false;
+
   /// The iPhone sells plans; Android waits for Google Play billing.
-  static bool get available => Platform.isIOS;
+  static bool get available => onSale && Platform.isIOS;
 
   static String productFor(String plan, {required bool yearly}) => plan == 'max'
       ? (yearly ? maxYearly : maxMonthly)

@@ -50,8 +50,10 @@ enum Smart {
         /// emails, a home and a work address), or an email with a temp
         /// address beside it: one part of the chip for each, and a tap on a
         /// part types it (Arpit, 2026-10-01: "if i added 2 mail ids i should
-        /// see both, and i should also see a temp mail option").
-        case details(fields: [VaultField], temp: Bool)
+        /// see both, and i should also see a temp mail option"). `typed` is
+        /// the start of a detail already typed ("ar", "123 Mar"): a part's
+        /// tap puts the whole detail in its place (Smart.completions).
+        case details(fields: [VaultField], temp: Bool, typed: String = "")
         /// A measurement the message ends on, in the other system: one part
         /// for each result ("10 inch" → 25.4 cm, 0.254 m), and a tap on a
         /// part adds it in brackets (Smart.conversions).
@@ -61,7 +63,7 @@ enum Smart {
         /// Temp), or a measurement's results.
         var choices: (values: [String], temp: Bool)? {
             switch self {
-            case .details(let fields, let temp): return (fields.map(\.value), temp)
+            case .details(let fields, let temp, _): return (fields.map(\.value), temp)
             case .convert(let c): return (c.results, false)
             default: return nil
             }
@@ -78,7 +80,7 @@ enum Smart {
             case .action: return "Glyf"
             case .tempMail: return "Mail"
             case .tempAddress(let live): return live == nil ? "Email" : "Temp email"
-            case .details(let fields, _): return fields.first?.title ?? "Email"
+            case .details(let fields, _, _): return fields.first?.title ?? "Email"
             }
         }
         /// The verb on the chip's right edge: what a tap does. Nil for the
@@ -147,7 +149,7 @@ enum Smart {
             case .tempMail(_, let from, let code):
                 return code.map { "\($0) · \(from)" } ?? "Mail from \(from)"
             case .tempAddress(let live): return live ?? "Temp email"
-            case .details(let fields, let temp):
+            case .details(let fields, let temp, _):
                 return (fields.map(\.value) + (temp ? ["Temp mail"] : [])).joined(separator: " · ")
             case .convert(let c):
                 return c.source.isEmpty ? c.results.joined(separator: " · ") : "\(c.source) = " + c.results.joined(separator: " · ")
@@ -306,6 +308,10 @@ enum Smart {
         let matches = vaultMatches(text, fields: fields)
         if matches.count > 1 { return .details(fields: Array(matches.prefix(3)), temp: false) }
         if let f = matches.first { return .vault(field: f) }
+        // A detail being typed: its first letters offer the whole of it.
+        if let c = completions(text, fields: fields) {
+            return .details(fields: c.fields, temp: false, typed: c.typed)
+        }
         if let plan = EventParse.looksLikePlan(text, dayFirst: EventParse.regionDayFirst) {
             return .event(plan: plan)
         }
@@ -807,6 +813,49 @@ enum Smart {
     /// Every saved detail the sentence asks for: the one vaultMatch finds
     /// first, then the others of its kind in the vault's order (a handle
     /// stays the platform's own).
+    /// The saved details the words being typed are the start of (Arpit,
+    /// 2026-10-06: "as soon person enters first 2-4 letters of any details
+    /// in vault show that"): two letters or more ("ar" offers your email and
+    /// your name), three digits or more of a number, with or without the
+    /// country code it was saved with ("415"), across up to four words
+    /// ("123 Mar" offers the address). `typed` is what a tap replaces; the
+    /// longest run of words that starts something wins, and a detail typed
+    /// out in full offers nothing. Three at most, one per value.
+    static func completions(_ text: String, fields: [VaultField]) -> (typed: String, fields: [VaultField])? {
+        guard let last = text.last, !last.isWhitespace, !fields.isEmpty else { return nil }
+        let words = text.split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return nil }
+        for k in stride(from: min(4, words.count), through: 1, by: -1) {
+            let typed = String(text[words[words.count - k].startIndex...])
+            var seen = Set<String>()
+            let hits = fields.filter { startsDetail(typed, $0.value) && seen.insert($0.value.lowercased()).inserted }
+            if !hits.isEmpty { return (typed, Array(hits.prefix(3))) }
+        }
+        return nil
+    }
+
+    /// Whether `typed` begins `value` without being all of it: by its
+    /// letters (two at least), or, with none, by its digits (three at
+    /// least), a saved "+1 (415) 555-0100" answering to "415" too.
+    static func startsDetail(_ typed: String, _ value: String) -> Bool {
+        let t = typed.lowercased()
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !v.isEmpty, t != v, t.count < v.count else { return false }
+        if t.contains(where: \.isLetter) { return t.count >= 2 && v.hasPrefix(t) }
+        let td = t.filter(\.isNumber)
+        guard td.count >= 3 else { return false }
+        if v.contains(where: \.isLetter) { return v.hasPrefix(t) }
+        let vd = v.filter(\.isNumber)
+        if vd.hasPrefix(td) { return vd.count > td.count }
+        // Saved with its country code, typed without it; all of it typed
+        // without the code is typed already.
+        guard v.hasPrefix("+") else { return false }
+        return (1...3).contains { n in
+            let rest = vd.dropFirst(n)
+            return rest.count > td.count && rest.hasPrefix(td)
+        }
+    }
+
     static func vaultMatches(_ text: String, fields: [VaultField]) -> [VaultField] {
         // The person's own name for a detail wins: "work email" is the work one.
         let named = labelMatches(text, fields: fields)

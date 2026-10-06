@@ -2230,9 +2230,14 @@ final class GlyfScenarioUITests: XCTestCase {
         row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
         guard let meet = wait("tools:google", 8) else { return XCTFail("no Google Meet in Connected tools") }
-        // Each card reads as one label: its title, then the account or the pitch.
+        // Each card reads as one label: its title, then the account once connected.
         func card(_ text: String) -> XCUIElement {
             app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        }
+        func meetOff(_ timeout: TimeInterval) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline, "\(el("tools:google").value ?? "")" != "0" { usleep(300_000) }
+            return "\(el("tools:google").value ?? "")" == "0"
         }
         XCTAssertTrue(card("sim@example.com").waitForExistence(timeout: 3),
                       "Google Meet doesn't show the connected account")
@@ -2259,10 +2264,8 @@ final class GlyfScenarioUITests: XCTestCase {
 
         // Off takes the grant back.
         meet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        let pitch = card("Send a Meet link")
-        XCTAssertTrue(pitch.waitForExistence(timeout: 5), "Google Meet didn't turn off")
+        XCTAssertTrue(meetOff(5), "Google Meet didn't turn off")
         XCTAssertFalse(card("sim@example.com").exists, "the account is still shown")
-        XCTAssertEqual("\(el("tools:google").value ?? "")", "0", "Google Meet's switch should be off")
         keepScreenshot("tools-meet-off")
 
         // On again opens Google's own page. The test stops at the phone's
@@ -2277,7 +2280,7 @@ final class GlyfScenarioUITests: XCTestCase {
             break
         }
         XCTAssertTrue(sheet.contains("google.com"), "Connect didn't open Google's sign-in (saw '\(sheet)')")
-        XCTAssertTrue(pitch.waitForExistence(timeout: 4), "a cancelled Connect should leave Google Meet off")
+        XCTAssertTrue(meetOff(4), "a cancelled Connect should leave Google Meet off")
         note("calendar asked '\(asked)'; connect asked '\(sheet)'")
     }
 

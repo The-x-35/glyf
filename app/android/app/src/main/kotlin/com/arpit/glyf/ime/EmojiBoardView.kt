@@ -48,8 +48,6 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
         val palette: GlyfKeyboardView.KeyPalette
         val dark: Boolean
         val online: Boolean
-        /** The person's go-to emoji, set in the app: first in Frequently Used. */
-        val favoriteEmoji: String
         /** Types text; `spaced` puts a space in front after a word. */
         fun commitText(text: String, spaced: Boolean)
         fun deleteBackward()
@@ -644,13 +642,12 @@ class EmojiBoardView(ctx: Context, private val host: Host) : LinearLayout(ctx) {
 
     // MARK: emoji
 
-    /** Frequently Used: the person's go-to emoji (set in the app) first,
-     *  then what they used last, each once; the world's most used before
-     *  anything has been (iOS twin). */
+    /** Frequently Used: what the person used last, each once; the world's
+     *  most used before anything has been (iOS twin). */
     // Topped up with the world's most used, as Apple's stays full: the first
     // emoji someone used was replacing all 30 of them.
     private fun frequentlyUsed(): List<String> =
-        (EmojiData.emojiIn(host.favoriteEmoji) + TextRecents.load(context, RECENT_EMOJI) + EmojiData.seed).distinct().take(40)
+        (TextRecents.load(context, RECENT_EMOJI) + EmojiData.seed).distinct().take(40)
 
     /** The tone last picked for each emoji: Apple's board shows it from then on. */
     private fun loadTones(): Map<String, String> = runCatching {

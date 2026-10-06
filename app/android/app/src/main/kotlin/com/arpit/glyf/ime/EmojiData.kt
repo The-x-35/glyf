@@ -180,22 +180,6 @@ object EmojiData {
         }
         return out
     }
-
-    /** Emoji in a string, one per character (a toned or joined one is one). */
-    fun emojiIn(text: String): List<String> {
-        val it = java.text.BreakIterator.getCharacterInstance(java.util.Locale.ROOT)
-        it.setText(text)
-        val out = mutableListOf<String>()
-        var start = it.first()
-        var end = it.next()
-        while (end != java.text.BreakIterator.DONE) {
-            val g = text.substring(start, end)
-            if (g.codePoints().anyMatch { cp -> cp == 0xFE0F || Character.getType(cp) == Character.OTHER_SYMBOL.toInt() && cp >= 0x2190 }) out += g
-            start = end
-            end = it.next()
-        }
-        return out
-    }
 }
 
 /** Text emoticons for the board's :-) page: plain text, typed as it is. */

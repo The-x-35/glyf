@@ -163,7 +163,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         ("search", "Search"), ("rewrite", "Rewrite"), ("style", "Style"), ("translate", "Translate"),
         ("vault", "Vault"), ("calendar", "Calendar"), ("tempmail", "Temp mail"),
         ("clipboard", "Clipboard"), ("gifs", "GIFs"),
-        ("ask", "Ask Glyf"), ("dictation", "Voice"), ("glyfs", "My glyfs"),
+        ("ask", "Ask Glyf"), ("glyfs", "My glyfs"),
         ("pay", "Pay"), ("games", "Games"), ("settings", "Settings"),
     ]
 
@@ -576,29 +576,98 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         return min(order.count - 1, r * cols + c)
     }
 
+    /// The slot a point is over, up to one past the last of `count` tiles.
+    private func slotIndex(at p: CGPoint, count: Int) -> Int {
+        let cols = Self.gridCols
+        let cellW = (grid.bounds.width - Self.gridSide * 2 - Self.gridGap * CGFloat(cols - 1))
+            / CGFloat(cols)
+        let c = min(cols - 1, max(0, Int((p.x - Self.gridSide) / (cellW + Self.gridGap))))
+        let r = max(0, Int(p.y / (tileHeight + Self.gridGap)))
+        return min(count, r * cols + c)
+    }
+
     /// Tiles in `order`, four to a row.
     private func layoutGrid() {
         let cols = Self.gridCols, gap = Self.gridGap, side = Self.gridSide
-        let cellW = (grid.bounds.width - side * 2 - gap * CGFloat(cols - 1)) / CGFloat(cols)
-        let cellH = tileHeight
         for (i, id) in order.enumerated() {
-            guard let cell = tileViews[id] else { continue }
-            let r = i / cols, c = i % cols
-            let frame = CGRect(x: side + CGFloat(c) * (cellW + gap),
-                               y: CGFloat(r) * (cellH + gap),
-                               width: cellW, height: cellH)
-            cell.frame = frame
-            cell.viewWithTag(1)?.frame = CGRect(origin: .zero, size: frame.size)
-            // Icon over caption, centred as a column with an 8pt gap.
-            let iconH: CGFloat = 26, capH: CGFloat = 15
-            let top = (cellH - iconH - 8 - capH) / 2
-            cell.viewWithTag(2)?.frame = CGRect(x: 0, y: top, width: cellW, height: iconH)
-            cell.viewWithTag(3)?.frame = CGRect(x: 2, y: top + iconH + 8,
-                                                width: cellW - 4, height: capH)
+            if let cell = tileViews[id] { layoutTile(cell, at: i) }
         }
         let rows = Int(ceil(Double(order.count) / Double(cols)))
         grid.contentSize = CGSize(width: grid.bounds.width,
-                                  height: CGFloat(rows) * (cellH + gap) - gap + side)
+                                  height: CGFloat(rows) * (tileHeight + gap) - gap + side)
+    }
+
+    private func layoutTile(_ cell: UIView, at i: Int) {
+        let cols = Self.gridCols, gap = Self.gridGap, side = Self.gridSide
+        let cellW = (grid.bounds.width - side * 2 - gap * CGFloat(cols - 1)) / CGFloat(cols)
+        let cellH = tileHeight
+        let r = i / cols, c = i % cols
+        let frame = CGRect(x: side + CGFloat(c) * (cellW + gap),
+                           y: CGFloat(r) * (cellH + gap),
+                           width: cellW, height: cellH)
+        cell.frame = frame
+        cell.viewWithTag(1)?.frame = CGRect(origin: .zero, size: frame.size)
+        // Icon over caption, centred as a column with an 8pt gap.
+        let iconH: CGFloat = 26, capH: CGFloat = 15
+        let top = (cellH - iconH - 8 - capH) / 2
+        cell.viewWithTag(2)?.frame = CGRect(x: 0, y: top, width: cellW, height: iconH)
+        cell.viewWithTag(3)?.frame = CGRect(x: 2, y: top + iconH + 8,
+                                            width: cellW - 4, height: capH)
+    }
+
+    // MARK: A tool dragged down from the strip
+
+    /// A tool held on the strip, over the grid (window coordinates; nil once
+    /// it left): its tile opens a slot where it would land, faint as a tile
+    /// being moved is, and the tiles around it slide to make room. Away from
+    /// the grid the slot closes again.
+    func stripToolHovered(_ id: String, at windowPoint: CGPoint?) {
+        guard screen.id == "root", draggingTile == nil, let cell = tileViews[id] else { return }
+        var next = order.filter { $0 != id }
+        if let windowPoint {
+            let p = grid.convert(windowPoint, from: nil)
+            if grid.bounds.contains(p) { next.insert(id, at: slotIndex(at: p, count: next.count)) }
+        }
+        guard next != order else { return }
+        let arriving = !order.contains(id)
+        order = next
+        if let i = order.firstIndex(of: id) {
+            if arriving {
+                // Straight into its slot: only the tiles around it move.
+                UIView.performWithoutAnimation {
+                    cell.isHidden = false
+                    cell.alpha = 0.3
+                    layoutTile(cell, at: i)
+                }
+            }
+        } else {
+            cell.isHidden = true
+            cell.alpha = 1
+        }
+        UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
+            self.layoutGrid()
+        }
+    }
+
+    /// The held strip tool let go over the grid: it keeps the slot it opened,
+    /// saved in `menuOrder` with the strip's tools holding their places
+    /// there. Where its tile is, in window coordinates; nil when it was not
+    /// over the grid.
+    func landStripTool(_ id: String, at windowPoint: CGPoint) -> CGRect? {
+        stripToolHovered(id, at: windowPoint)
+        guard order.contains(id), let cell = tileViews[id] else { return nil }
+        var strip = Set(GlyfToolbar.shownTools)
+        strip.remove(id)
+        var moved = order.makeIterator()
+        let saved = Self.menuOrder.map { strip.contains($0) ? $0 : (moved.next() ?? $0) }
+        SettingsStore.update { $0.menuOrder = saved }
+        return grid.convert(cell.frame, to: nil)
+    }
+
+    /// The landed tile at full strength, as the ghost settles into it.
+    func revealTile(_ id: String) {
+        guard let cell = tileViews[id] else { return }
+        UIView.animate(withDuration: 0.24) { cell.alpha = 1 }
     }
 
     // MARK: Vault grid (website 6.3)

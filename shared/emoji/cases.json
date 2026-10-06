@@ -1,5 +1,5 @@
 {
- "about": "The emoji board's table (shared/emoji/emoji.tsv) as both keyboards read it, everything drawable: tab sizes, search results (first ones, best first), skin tones a long press shows, emoji found in a go-to string, and which Emoji versions each OS draws.",
+ "about": "The emoji board's table (shared/emoji/emoji.tsv) as both keyboards read it, everything drawable: tab sizes, search results (first ones, best first), skin tones a long press shows, and which Emoji versions each OS draws.",
  "tabs": {
   "smileys": 482,
   "animals": 218,
@@ -146,18 +146,6 @@
    "🫶🏿"
   ]
  },
- "emojiIn": [
-  {
-   "text": "🫶 😭 hi 💕❤️ 👍🏽!",
-   "emoji": [
-    "🫶",
-    "😭",
-    "💕",
-    "❤️",
-    "👍🏽"
-   ]
-  }
- ],
  "ios": [
   {
    "version": "13.1",

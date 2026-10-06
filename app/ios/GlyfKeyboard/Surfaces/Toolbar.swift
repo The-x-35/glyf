@@ -110,7 +110,6 @@ final class GlyfToolbar: UIView {
         "ask": "sparkles",
         "tempmail": "envelope",
         "style": "bold.italic.underline",
-        "dictation": "mic",
         "glyfs": "square.grid.2x2",
         "pay": "creditcard",
         "calendar": "calendar",
@@ -162,6 +161,9 @@ final class GlyfToolbar: UIView {
         glyfButton.accessibilityIdentifier = "toolbar:glyf"
         glyfButton.accessibilityLabel = "Glyf"
         glyfButton.addTarget(self, action: #selector(glyfTapped), for: .touchUpInside)
+        // Padded as a tool is, for when it is the ✕ (layoutSubviews).
+        glyfButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: Self.itemPad,
+                                                    bottom: 0, right: Self.itemPad)
         addSubview(glyfButton)
 
         divider.backgroundColor = Glass.strokeHairline
@@ -441,8 +443,10 @@ final class GlyfToolbar: UIView {
         setNeedsLayout()
     }
 
-    /// Hold an icon and it lifts: slide sideways to reorder, or drag it off
-    /// the strip to put it away. (Gboard's gesture, on Glyf's strip.)
+    /// Hold an icon and it lifts: slide sideways to reorder, or down into the
+    /// g menu's grid to keep it there. (Gboard's gesture, on Glyf's strip.)
+    /// Its place stays faint until the delegate settles it: `settleItem`,
+    /// `removeItem` or `reloadItems`.
     @objc private func itemLong(_ g: UILongPressGestureRecognizer) {
         guard let b = g.view as? UIButton,
               let raw = b.accessibilityIdentifier?.split(separator: ":").last
@@ -457,11 +461,36 @@ final class GlyfToolbar: UIView {
         case .changed:
             delegate?.toolbarItemDragMoved(to: convert(point, to: window))
         case .ended, .cancelled, .failed:
-            b.alpha = 1
             draggingId = nil
             delegate?.toolbarItemDragEnded(id, at: convert(point, to: window))
         default:
             break
+        }
+    }
+
+    private func item(_ id: String) -> UIView? {
+        itemsStack.arrangedSubviews.first { $0.accessibilityIdentifier == "toolbar:\(id)" }
+    }
+
+    /// A tool's place on the strip, in window coordinates.
+    func itemFrame(_ id: String) -> CGRect? {
+        item(id).map { $0.convert($0.bounds, to: nil) }
+    }
+
+    /// The held tool back at full strength, as its ghost lands on it.
+    func settleItem(_ id: String) {
+        guard let b = item(id) else { return }
+        UIView.animate(withDuration: 0.24) { b.alpha = 1 }
+    }
+
+    /// A tool that went down into the g menu: the row closes over its place.
+    func removeItem(_ id: String) {
+        guard let b = item(id) else { return reloadItems() }
+        b.removeFromSuperview()
+        setNeedsLayout()
+        guard !Glass.reduceMotion else { return }
+        UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
+            self.layoutIfNeeded()
         }
     }
 
@@ -499,10 +528,11 @@ final class GlyfToolbar: UIView {
             applyCandidatesVisibility(toolsVisible: !showingCandidates || userPinnedTools)
         }
         if open {
-            // The ✕ stands in the key's slot with no ground of its own, drawn
-            // at the size the tools beside it are drawn. It used to sit on a soft fill, and because the
-            // slot is a tap target — wider than it is tall — that fill read
-            // as a squat pill parked at the end of an otherwise clean row.
+            // The ✕ has no ground of its own and is drawn at the size the
+            // tools beside it are drawn, as one of their row (layoutSubviews).
+            // It used to sit on a soft fill, and because the slot is a tap
+            // target — wider than it is tall — that fill read as a squat pill
+            // parked at the end of an otherwise clean row.
             glyfButton.setImage(UIImage(systemName: "xmark"), for: .normal)
             glyfButton.setPreferredSymbolConfiguration(
                 UIImage.SymbolConfiguration(pointSize: 21, weight: .regular), forImageIn: .normal)
@@ -511,6 +541,9 @@ final class GlyfToolbar: UIView {
             glyfButton.accessibilityIdentifier = "toolbar:close"
             glyfButton.accessibilityLabel = "Close"
             for layer in [keycap, keycapG, keycapDot] { layer.isHidden = true }
+            // Drawn where the key was first, so the surface's spring slides
+            // it into its place rather than growing it out of a corner.
+            UIView.performWithoutAnimation { glyfButton.layoutIfNeeded() }
         } else {
             glyfButton.setImage(nil, for: .normal)
             // Back to no ground of its own, but still painted: a clear
@@ -875,8 +908,20 @@ final class GlyfToolbar: UIView {
         // sits on the same rhythm they do.
         let padX = Self.itemPad + Self.gridSlack
         let inkX = Self.margin + Self.gridSlack
-        glyfButton.frame = CGRect(x: inkX - padX, y: target.y,
-                                  width: keyW + padX * 2, height: target.height)
+        if panelOpen {
+            // The ✕ is a 21pt symbol as the tools are, so it is one of their
+            // row: padded as they are, from the same margin, the same gap to
+            // the first of them as between any two. In the key's wider slot
+            // it stood 12pt in from the margin with 12pt more air after it
+            // (Arpit, 2026-10-06: "why the fuck doesnt it feel centered, why
+            // soo much space after cross").
+            glyfButton.frame = CGRect(x: Self.margin - Self.itemPad, y: target.y,
+                                      width: glyfButton.intrinsicContentSize.width,
+                                      height: target.height)
+        } else {
+            glyfButton.frame = CGRect(x: inkX - padX, y: target.y,
+                                      width: keyW + padX * 2, height: target.height)
+        }
         glyfButton.layer.cornerRadius = 9
         let cap = GlyfMark.Keycap(height: keyH, x: padX, midY: keyMid - target.y)
         CATransaction.begin()
@@ -886,7 +931,9 @@ final class GlyfToolbar: UIView {
         keycapG.path = GlyfMark.gPath(in: cap.letter)
         keycapDot.path = CGPath(ellipseIn: cap.dot, transform: nil)
         CATransaction.commit()
-        let markRight = inkX + keyW
+        // Where the key's ink ends; past the ✕, a panel's name keeps the
+        // distance from its middle that it had from the key's.
+        let markRight = glyfButton.frame.midX + keyW / 2
         // Whatever ends the row on the right ends as far in as the key starts
         // on the left, so the strip sits centred over the keys.
         let rightInk = bounds.width - inkX

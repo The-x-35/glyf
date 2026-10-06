@@ -1691,6 +1691,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         // The tour keeps the strip for the step it is coaching.
         if let step = tourStep {
+            // A detail's first letters offer nothing mid-tour: the chats type
+            // their own words.
+            if case .details(_, _, let typed)? = chip, !typed.isEmpty { chip = nil }
             if let c = chip, !TourCoach.allowsChip(Self.chipKind(c), step: step, copied: tourCopied) { chip = nil }
             toolbar.showSmart(chip)
             return chip != nil
@@ -1725,7 +1728,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         switch chip {
         case .vault(let f) where f.kind == "email":
             return .details(fields: [f], temp: true)
-        case .details(let fields, false) where fields.first?.kind == "email":
+        case .details(let fields, false, "") where fields.first?.kind == "email":
             return .details(fields: Array(fields.prefix(2)), temp: true)
         default:
             return chip
@@ -1737,7 +1740,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .calc: return "calc"
         case .money: return "money"
         case .vault(let f): return "vault:\(f.kind)"
-        case .details(let fields, _): return "vault:\(fields.first?.kind ?? "")"
+        case .details(let fields, _, _): return "vault:\(fields.first?.kind ?? "")"
         case .convert: return "convert"
         case .paste: return "paste"
         case .pay: return "pay"
@@ -2797,7 +2800,6 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             }
         case "translate": setSurface(.none); toggleTranslateHUD()
         case "ask": setSurface(.none); openBar(autoRun: nil)
-        case "dictation": setSurface(.none); startDictationHandoff()
         // Paying is signed in the app's wallet, never in the keyboard.
         // Paying stays in the keyboard; only the signature is Phantom's.
         case "pay":
@@ -2829,26 +2831,49 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         beginToolDrag(id: id, icon: GlyfToolbar.icons[id] ?? "square", at: windowPoint)
     }
 
-    func toolbarItemDragMoved(to windowPoint: CGPoint) { moveToolDrag(to: windowPoint) }
+    func toolbarItemDragMoved(to windowPoint: CGPoint) {
+        moveToolDrag(to: windowPoint)
+        // Over the g menu's grid, the tiles open a slot where it would land.
+        if let id = draggingToolId, shellAtMenu {
+            shell?.stripToolHovered(id, at: toolbarContains(windowPoint) ? nil : windowPoint)
+        }
+    }
 
     func toolbarItemDragEnded(_ id: String, at windowPoint: CGPoint) {
-        let inStrip = toolbarContains(windowPoint)
-        endToolDrag()
-        SettingsStore.update { s in
-            s.toolbarOrder.removeAll { $0 == id }
-            if inStrip {
+        if toolbarContains(windowPoint) {
+            shell?.stripToolHovered(id, at: nil)
+            endToolDrag()
+            SettingsStore.update { s in
+                s.toolbarOrder.removeAll { $0 == id }
                 let idx = min(max(0, toolbar.dropIndex(for: toolbar.convert(windowPoint, from: nil))),
                               s.toolbarOrder.count)
                 s.toolbarOrder.insert(id, at: idx)
                 s.toolbarHidden.removeAll { $0 == id }
-            } else {
-                // Dragged off the strip: put it away, findable in the g menu.
+            }
+            toolbar.reloadItems()
+            return
+        }
+        // Arpit, 2026-10-06: "when i drag the icon from top strip into below
+        // area, it should come in the below area not disaaper, it should move
+        // from up to down". Let go over the g menu's grid, it lands in the
+        // slot it opened there and the strip closes behind it; anywhere else
+        // it goes back to its place.
+        if shellAtMenu, let shell, let slot = shell.landStripTool(id, at: windowPoint) {
+            SettingsStore.update { s in
                 if !s.toolbarHidden.contains(id) { s.toolbarHidden.append(id) }
+                s.toolbarOrder.removeAll { $0 == id }
                 s.toolbarOrder.append(id)
             }
+            toolbar.removeItem(id)
+            shell.revealTile(id)
+            settleToolDrag(into: slot)
+        } else {
+            shell?.stripToolHovered(id, at: nil)
+            toolbar.settleItem(id)
+            settleToolDrag(into: toolbar.itemFrame(id).map {
+                CGRect(x: $0.midX - 22, y: $0.midY - 22, width: 44, height: 44)
+            })
         }
-        toolbar.reloadItems()
-        if !inStrip { KeyboardToast.show(in: content, text: "Removed from the strip") }
     }
 
     func shellTileDragBegan(_ id: String, icon: String, at windowPoint: CGPoint) {
@@ -2905,6 +2930,24 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         dragGhost = nil
         draggingToolId = nil
         toolbar.showDropMarker(at: nil)
+    }
+
+    /// The ghost settles on where the tool now lives (`target`, in window
+    /// coordinates), fading into it; with nowhere to go it just goes.
+    private func settleToolDrag(into target: CGRect?) {
+        let ghost = dragGhost
+        dragGhost = nil
+        endToolDrag()
+        guard let ghost else { return }
+        guard let target, !Glass.reduceMotion else { return ghost.removeFromSuperview() }
+        let to = content.convert(target, from: nil)
+        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseInOut]) {
+            ghost.bounds.size = to.size
+            ghost.center = CGPoint(x: to.midX, y: to.midY)
+            ghost.alpha = 0
+        } completion: { _ in
+            ghost.removeFromSuperview()
+        }
     }
 
     private func toolbarContains(_ windowPoint: CGPoint) -> Bool {
@@ -3145,8 +3188,14 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             updateCandidates()
             return
         }
-        guard case .details(let fields, let temp) = chip else { return }
-        if index < fields.count {
+        guard case .details(let fields, let temp, let typed) = chip else { return }
+        if index < fields.count, !typed.isEmpty {
+            // Its start is typed already: the whole detail takes its place.
+            for _ in typed { hostDelete() }
+            hostInsert(fields[index].value)
+            toolbar.showSmart(nil)
+            updateCandidates()
+        } else if index < fields.count {
             toolbarSmartTapped(.vault(field: fields[index]))
         } else if temp {
             toolbar.showSmart(nil)
@@ -3192,21 +3241,6 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     // MARK: Dictation (§6.6 path 1: in-app capture + handoff via §7 intents)
-
-    private func startDictationHandoff() {
-        guard !isSecureField else { return } // §11.9
-        guard let intent = IntentStore.shared.createIntent(
-            kind: "dictation", source: "glyf") else { return }
-        guard let url = URL(string: "glyf://intent?id=\(intent.id)") else { return }
-        HostAppOpener.open(url, from: self) { [weak self] strategy in
-            guard let self else { return }
-            if strategy == .none {
-                // M0 fallback UX: the intent is already in the App Group —
-                // manual app launch picks it up.
-                KeyboardToast.show(in: self.content, text: "Open the Glyf app to record")
-            }
-        }
-    }
 
     /// On return from the app: insert the finished dictation exactly once.
     /// The keyboard can appear against a DEAD placeholder session while the

@@ -73,13 +73,13 @@ final class PaySurface: UIView {
     private let balanceTokens = UILabel()
     private let amountRow = UIControl()
     private let amountLabel = UILabel()
-    private let unitLabel = UILabel()
+    /// What's sent, and the dropdown to change it (Arpit, 2026-10-06: "i
+    /// need send also to have dropdown assets").
+    private let unitButton = UIButton(type: .system)
     private let arrowLabel = UILabel()
     private let toZone = UIControl()
     private let toName = UILabel()
     private let toAddress = UILabel()
-    private let assetsRow = ControlScrollView()
-    private var assetButtons: [UIButton] = []
     private let privateRow = UIControl()
     private let privateIcon = UIImageView()
     private let privateTitle = UILabel()
@@ -189,9 +189,15 @@ final class PaySurface: UIView {
         amountLabel.font = .monospacedDigitSystemFont(ofSize: 22, weight: .bold)
         amountLabel.textColor = Glass.textPrimary
         amountRow.addSubview(amountLabel)
-        unitLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        unitLabel.textColor = Glass.textSecondary
-        amountRow.addSubview(unitLabel)
+        unitButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        unitButton.setTitleColor(Glass.textPrimary, for: .normal)
+        unitButton.backgroundColor = Self.pillFill
+        unitButton.layer.cornerRadius = 16
+        unitButton.layer.cornerCurve = .continuous
+        unitButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 10)
+        unitButton.accessibilityIdentifier = "pay:token"
+        unitButton.addAction(UIAction { [weak self] _ in self?.openTokens() }, for: .touchUpInside)
+        amountRow.addSubview(unitButton)
         arrowLabel.text = "→"
         arrowLabel.font = .systemFont(ofSize: 15)
         arrowLabel.textColor = Glass.textSecondary
@@ -214,9 +220,6 @@ final class PaySurface: UIView {
         toAddress.textAlignment = .right
         toAddress.isUserInteractionEnabled = false
         toZone.addSubview(toAddress)
-
-        assetsRow.showsHorizontalScrollIndicator = false
-        addSubview(assetsRow)
 
         privateRow.backgroundColor = Glass.surfaceCard
         privateRow.layer.cornerRadius = 12
@@ -306,6 +309,7 @@ final class PaySurface: UIView {
         doneButton.addAction(UIAction { [weak self] _ in self?.endAmount() }, for: .touchUpInside)
         addSubview(doneButton)
         if isBuy { buildBuy() }
+        buildTokenMenu()
     }
 
     private func buildBuy() {
@@ -313,7 +317,7 @@ final class PaySurface: UIView {
             card.backgroundColor = Glass.surfaceCard
             card.layer.cornerRadius = 14
             card.layer.cornerCurve = .continuous
-            insertSubview(card, belowSubview: assetsRow)
+            addSubview(card)
         }
         payCard.accessibilityIdentifier = "pay:paycard"
         payCard.addAction(UIAction { [weak self] _ in self?.beginAmount() }, for: .touchUpInside)
@@ -373,7 +377,11 @@ final class PaySurface: UIView {
         getToken.layer.cornerCurve = .continuous
         getToken.clipsToBounds = true
         getCard.addSubview(getToken)
+    }
 
+    /// The token dropdown, Send's and Buy's: built last, so it covers the
+    /// panel when open.
+    private func buildTokenMenu() {
         // Not clear: a keyboard drops touches on clear pixels, and a tap
         // anywhere off the menu has to close it.
         tokenScrim.backgroundColor = Glass.scrim
@@ -834,32 +842,8 @@ final class PaySurface: UIView {
     }
 
     private func renderAssets() {
-        for b in assetButtons { b.removeFromSuperview() }
-        assetButtons = []
-        for asset in assets {
-            let b = UIButton(type: .system)
-            let held = asset.amount > 0 ? " \(Self.compact(asset.amount))" : ""
-            b.setTitle("\(asset.symbol)\(held)", for: .normal)
-            b.titleLabel?.font = .systemFont(ofSize: 12.5, weight: .semibold)
-            b.layer.cornerRadius = 13
-            b.layer.cornerCurve = .continuous
-            b.contentEdgeInsets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
-            b.accessibilityIdentifier = "pay:asset:\(asset.symbol)"
-            b.addAction(UIAction { [weak self] _ in self?.pick(asset) }, for: .touchUpInside)
-            assetButtons.append(b)
-            assetsRow.addSubview(b)
-        }
-        styleAssets()
-        if isBuy { renderTokenRows() }
+        renderTokenRows()
         setNeedsLayout()
-    }
-
-    private func styleAssets() {
-        for (i, b) in assetButtons.enumerated() {
-            let on = assets.indices.contains(i) && assets[i].mint == paying.mint
-            b.backgroundColor = on ? Glass.controlOn : Glass.surfaceCard
-            b.setTitleColor(on ? Glass.controlOnText : Glass.textPrimary, for: .normal)
-        }
     }
 
     private func renderQuote() {
@@ -880,9 +864,8 @@ final class PaySurface: UIView {
 
         for v in [balanceKey, balanceValue, balanceTokens] { v.isHidden = !form || isBuy }
         amountRow.isHidden = !form || isBuy
-        // A buy picks what pays from its dropdown, not this row.
-        assetsRow.isHidden = !form || isBuy
-        tokenScrim.isHidden = !(form && isBuy && picking)
+        if !form { picking = false }
+        tokenScrim.isHidden = !(form && picking)
         tokenMenu.isHidden = tokenScrim.isHidden
         payCard.isHidden = !(form && isBuy)
         getCard.isHidden = payCard.isHidden
@@ -905,7 +888,7 @@ final class PaySurface: UIView {
         }
 
         amountLabel.text = amountText
-        unitLabel.text = isBuy ? "of \(paying.symbol)" : paying.symbol
+        unitButton.setTitle("\(paying.symbol) \(picking ? "▴" : "▾")", for: .normal)
         switch intent {
         case .send:
             if let to {
@@ -929,7 +912,7 @@ final class PaySurface: UIView {
         }
         privateIcon.tintColor = isPrivate ? Glass.textPrimary : Glass.textSecondary
         privateBy.text = isPrivate ? "≈0.002 SOL + 0.1% · off-chain" : "by MagicBlock"
-        styleAssets()
+        styleTokenRows()
         renderGo()
         setNeedsLayout()
     }
@@ -1018,27 +1001,19 @@ final class PaySurface: UIView {
         let toksX = balanceValue.frame.maxX + 8
         balanceTokens.frame = CGRect(x: toksX, y: 11, width: max(0, w - x - 4 - toksX), height: 18)
 
-        amountRow.frame = CGRect(x: x, y: 36, width: cw, height: 46)
+        amountRow.frame = CGRect(x: x, y: 36, width: cw, height: 50)
         let al = min(amountLabel.intrinsicContentSize.width, 120)
-        amountLabel.frame = CGRect(x: 12, y: 0, width: al, height: 46)
-        unitLabel.frame = CGRect(x: amountLabel.frame.maxX + 6, y: 0,
-                                 width: unitLabel.intrinsicContentSize.width, height: 46)
-        toZone.frame = CGRect(x: cw - 168, y: 0, width: 156, height: 46)
-        toName.frame = CGRect(x: 0, y: 8, width: 156, height: 16)
-        toAddress.frame = CGRect(x: 0, y: 24, width: 156, height: 14)
+        amountLabel.frame = CGRect(x: 12, y: 0, width: al, height: 50)
+        let uw = min(130, unitButton.intrinsicContentSize.width + 2)
+        unitButton.frame = CGRect(x: amountLabel.frame.maxX + 8, y: 9, width: uw, height: 32)
+        toZone.frame = CGRect(x: cw - 168, y: 0, width: 156, height: 50)
+        toName.frame = CGRect(x: 0, y: 10, width: 156, height: 16)
+        toAddress.frame = CGRect(x: 0, y: 26, width: 156, height: 14)
         arrowLabel.isHidden = isBuy
-        arrowLabel.frame = CGRect(x: toZone.frame.minX - 16, y: 0, width: 14, height: 46)
+        arrowLabel.frame = CGRect(x: toZone.frame.minX - 16, y: 0, width: 14, height: 50)
+        layoutTokenMenu(under: amountRow.convert(unitButton.frame, to: self))
 
-        assetsRow.frame = CGRect(x: x, y: 88, width: cw, height: 28)
-        var ax: CGFloat = 0
-        for b in assetButtons {
-            let bw = b.intrinsicContentSize.width + 8
-            b.frame = CGRect(x: ax, y: 1, width: bw, height: 26)
-            ax += bw + 6
-        }
-        assetsRow.contentSize = CGSize(width: max(0, ax - 6), height: 28)
-
-        var y: CGFloat = 122
+        var y: CGFloat = 94
         if !privateRow.isHidden {
             privateRow.frame = CGRect(x: x, y: y, width: cw, height: 36)
             privateIcon.frame = CGRect(x: 10, y: 8, width: 20, height: 20)
@@ -1095,10 +1070,15 @@ final class PaySurface: UIView {
         getAmount.frame = CGRect(x: 12, y: 24, width: getToken.frame.minX - 20, height: 28)
         getUSD.frame = CGRect(x: 12, y: getAmount.frame.maxY, width: cw - 24, height: 15)
 
-        // The dropdown hangs from the pill, right edges lined up, and
-        // scrolls when the wallet holds more than the panel can show.
+        layoutTokenMenu(under: payCard.convert(payToken.frame, to: self))
+    }
+
+    /// The dropdown hangs from its pill, right edges lined up, and scrolls
+    /// when the wallet holds more than the panel can show.
+    private func layoutTokenMenu(under pill: CGRect) {
+        let x: CGFloat = 10
+        let cw = bounds.width - 20
         tokenScrim.frame = bounds
-        let pill = payCard.convert(payToken.frame, to: self)
         let menuW = min(250, cw)
         let menuX = max(x, min(bounds.width - x - menuW, pill.maxX - menuW))
         let menuY = pill.maxY + 6

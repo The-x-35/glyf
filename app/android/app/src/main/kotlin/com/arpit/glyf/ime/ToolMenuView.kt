@@ -23,13 +23,14 @@ import kotlin.math.max
  * the third peeking in. A tool is in one place, the strip or the menu, never
  * both. Tap a tile to open it. Hold one to pick it up: move it around the
  * grid to reorder (saved as `menuOrder`), or up past the grid onto the strip
- * to keep it there.
+ * to keep it there. A tool held on the strip comes down into it the same way
+ * (hoverIncoming, landIncoming).
  */
 class ToolMenuView(
     context: Context,
     private val palette: GlyfKeyboardView.KeyPalette,
     /** The tools the strip shows right now; the menu leaves them out. */
-    private val onStrip: Set<String>,
+    private var onStrip: Set<String>,
     private val onOpen: (String) -> Unit,
     /** Finger over the strip while dragging (raw x), or null when it left. */
     private val onDragOverStrip: (Float?) -> Unit,
@@ -133,8 +134,8 @@ class ToolMenuView(
                 cell.getChildAt(1).translationY = top + iconH + dp(8f)
             }
             if (id == dragging) continue
-            val x = side + (i % cols) * (w + gap)
-            val y = (i / cols) * (h + gap)
+            val x = slotX(i)
+            val y = slotY(i)
             if (animated) cell.animate().x(x).y(y).setDuration(180).start()
             else { cell.x = x; cell.y = y }
         }
@@ -146,10 +147,73 @@ class ToolMenuView(
         }
     }
 
-    private fun indexAt(xInGrid: Float, yInGrid: Float): Int {
+    private fun indexAt(xInGrid: Float, yInGrid: Float): Int = slotAt(xInGrid, yInGrid, order.size - 1)
+
+    /** The slot at a point in the grid, up to [last]. */
+    private fun slotAt(xInGrid: Float, yInGrid: Float, last: Int): Int {
         val c = ((xInGrid - side) / (tileW + gap)).toInt().coerceIn(0, cols - 1)
         val r = (yInGrid / (tileH + gap)).toInt().coerceAtLeast(0)
-        return (r * cols + c).coerceIn(0, order.size - 1)
+        return (r * cols + c).coerceIn(0, maxOf(0, last))
+    }
+
+    private fun slotX(i: Int) = side + (i % cols) * (tileW + gap)
+    private fun slotY(i: Int) = (i / cols) * (tileH + gap)
+
+    /** A tool held on the strip, at raw [rawX], [rawY] (nulls once it left
+     *  the menu): over the grid its tile opens a slot where it would land,
+     *  faint as a held tile's place is on iOS (GlyfShell.stripToolHovered),
+     *  and the tiles around it slide to make room; away, the slot closes. */
+    fun hoverIncoming(id: String, rawX: Float?, rawY: Float?) {
+        if (dragging != null || width == 0) return
+        val next = order.filter { it != id }.toMutableList()
+        if (rawX != null && rawY != null) {
+            val view = IntArray(2).also { scroll.getLocationOnScreen(it) }
+            if (rawX >= view[0] && rawX < view[0] + scroll.width && rawY >= view[1] && rawY < view[1] + scroll.height) {
+                val at = IntArray(2).also { grid.getLocationOnScreen(it) }
+                next.add(slotAt(rawX - at[0], rawY - at[1], next.size), id)
+            }
+        }
+        if (next == order) return
+        val arriving = id !in order
+        order = next
+        val cell = tiles.getOrPut(id) {
+            tile(id, ToolIcon.TOOLS.firstOrNull { it.first == id }?.second ?: id).also { grid.addView(it) }
+        }
+        val i = order.indexOf(id)
+        if (i >= 0 && arriving) {
+            // Straight into its slot: only the tiles around it move.
+            cell.animate().cancel()
+            cell.visibility = VISIBLE
+            cell.alpha = 0.3f
+            cell.x = slotX(i)
+            cell.y = slotY(i)
+        } else if (i < 0) {
+            cell.visibility = GONE
+            cell.alpha = 1f
+        }
+        layoutTiles(animated = true)
+    }
+
+    /** The held strip tool let go at raw [rawX], [rawY]: over the grid it
+     *  keeps the slot it opened. Where that tile is on screen, and the
+     *  menu's whole order to save with the strip's tools holding their
+     *  places in it; null when it was not over the grid. */
+    fun landIncoming(id: String, rawX: Float, rawY: Float): Pair<android.graphics.Rect, List<String>>? {
+        hoverIncoming(id, rawX, rawY)
+        val i = order.indexOf(id)
+        if (i < 0) return null
+        onStrip = onStrip - id
+        val shown = order.iterator()
+        val merged = savedOrder(context).map { if (it in onStrip || !shown.hasNext()) it else shown.next() }
+        val at = IntArray(2).also { grid.getLocationOnScreen(it) }
+        val x = (at[0] + slotX(i)).toInt()
+        val y = (at[1] + slotY(i)).toInt()
+        return android.graphics.Rect(x, y, x + tileW.toInt(), y + tileH.toInt()) to merged
+    }
+
+    /** The landed tile at full strength, as the ghost settles into it. */
+    fun revealTile(id: String) {
+        tiles[id]?.animate()?.alpha(1f)?.setDuration(240)?.start()
     }
 
     private inner class TileTouch(private val id: String) : OnTouchListener {

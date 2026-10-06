@@ -170,6 +170,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     if (barActive) exitBar()
                     if (vaultEditActive) exitVaultEdit()
                     if (translateStrip != null) exitTranslate()
+                    endDictation(null)
                 }
                 "dump" -> writeQaState()
                 "seedvault" -> {
@@ -398,6 +399,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
             .removePrimaryClipChangedListener(clipListener)
         if (com.arpit.glyf.BuildConfig.DEBUG) runCatching { unregisterReceiver(debugTool) }
+        dictation?.cancel()
         super.onDestroy()
     }
 
@@ -431,7 +433,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             // A held top-row key's accents rise over the strip above it.
             clipChildren = false
         }
-        toolbar = LinearLayout(this).apply {
+        toolbar = object : LinearLayout(this) {
+            // The tools are spaced from the key's ink once both have a place.
+            override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+                super.onLayout(changed, l, t, r, b)
+                spaceStripTools()
+            }
+        }.apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(6), dp(10), dp(6))
@@ -507,7 +515,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         main.removeCallbacks(hideNotice)
         noticeView = null
         dropMarker = null
+        draggingTool = null; dragGhost = null
         gPill = null
+        dictation?.cancel(); dictation = null; dictationStrip = null
     }
 
     /** Screenshot runs only (the "cliphold" debug tool): the clipboard is
@@ -606,6 +616,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        endDictation(null)
         main.removeCallbacks(tourTick)
         // Temp mail is checked only while the keyboard is up.
         tempViewUp = false
@@ -689,6 +700,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         toolIcons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            // Spaced from the ✕, a first tool can sit nearer it than this
+            // row's edge (spaceStripTools).
+            clipChildren = false
         }
         toolbar.addView(toolIcons, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
         suggestionRow = LinearLayout(this).apply {
@@ -708,10 +722,52 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             v.setTag(com.arpit.glyf.R.id.qa_id, id)
             v.contentDescription = ToolIcon.TOOLS.firstOrNull { it.first == id }?.second ?: id
             v.setOnClickListener { openTool(id) }
+            v.setOnTouchListener(StripToolTouch(id))
             toolIcons.addView(v, LinearLayout.LayoutParams(0, dp(34), 1f))
         }
         stripShown = shown.toSet()
         gPill = g
+    }
+
+    /** iOS Toolbar.layoutSubviews' one gap (Arpit, 2026-10-06: "why the fuck
+     *  doesnt it feel centered, why soo much space after cross"): the same
+     *  air between any two inks, the key's or the ✕'s included, and the last
+     *  tool ending as far in as the key starts, so the row sits centred
+     *  however many tools it holds. Each tool's view reaches halfway into the
+     *  gaps beside it, so the row has no dead space; a drop marker stands in
+     *  the middle of its gap. */
+    private fun spaceStripTools() {
+        val lead = gPill ?: return
+        if (!::toolIcons.isInitialized) return
+        val row = toolIcons
+        if (lead.parent !== toolbar || row.parent !== toolbar || row.visibility != View.VISIBLE) return
+        // In the row's own coordinates.
+        val start = lead.left + lead.inkRight - row.left
+        val end = toolbar.width - lead.left - lead.inkLeft - row.left
+        val tools = (0 until row.childCount).map { row.getChildAt(it) }.filterIsInstance<ToolIcon>()
+        if (tools.isEmpty()) return
+        val inks = tools.map { it.inkWidth() }
+        val gap = maxOf(dp(4).toFloat(), (end - start - inks.sum()) / tools.size)
+        var next = start + gap
+        for (i in 0 until row.childCount) {
+            val child = row.getChildAt(i)
+            val at = tools.indexOf(child)
+            val l: Float
+            val w: Float
+            if (at >= 0) {
+                l = next - gap / 2f
+                w = inks[at] + gap
+                next += inks[at] + gap
+            } else {
+                w = child.measuredWidth.toFloat()
+                l = (next - gap / 2f - w / 2f).coerceIn(0f, maxOf(0f, row.width - w))
+            }
+            val left = Math.round(l)
+            val right = Math.round(l + w)
+            child.measure(View.MeasureSpec.makeMeasureSpec(right - left, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(child.measuredHeight, View.MeasureSpec.EXACTLY))
+            child.layout(left, child.top, right, child.top + child.measuredHeight)
+        }
     }
 
     private var gPill: GlyfKeyView? = null
@@ -724,7 +780,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val hidden = settings.optJSONArray("toolbarHidden")
         val hiddenSet = (0 until (hidden?.length() ?: 0)).map { hidden!!.optString(it) }.toSet()
         val ids = (0 until (order?.length() ?: 0)).map { order!!.optString(it) }
-            .ifEmpty { listOf("search", "clipboard", "vault", "dictation", "translate") }
+            .ifEmpty { com.arpit.glyf.store.SettingsStore.DEFAULT_STRIP }
         // Hidden as saved, then renamed: a hidden Shorthand must not hide the
         // Vault it became, while a pinned Emoji becomes a pinned GIFs.
         return ids.filter { it !in hiddenSet }.map { ToolIcon.canonical(it) }
@@ -754,11 +810,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             gravity = Gravity.CENTER_VERTICAL
             setTag(com.arpit.glyf.R.id.qa_id, "strip:title")
         }
-        // iOS starts the row 11pt past the key's ink; the key is drawn
-        // centred in its 52dp view.
-        val keyInkRight = (dp(52) + GlyfMark.keyWidth(dp(30).toFloat())) / 2f
+        // iOS starts the row 11pt past the key's ink, measured from the ✕'s
+        // middle as from the key's (GlyfKeyView.markRight).
+        val keyInkRight = GlyfKeyView.markRight(dp(52).toFloat(), dp(30).toFloat(), resources.displayMetrics.density)
         // The Glass look leaves room for its divider: 17 past the key, not 11.
-        val start = (keyInkRight + dp(if (glassLook) 17 else 11) - dp(52)).toInt()
+        val from = (keyInkRight + dp(if (glassLook) 17 else 11) - dp(52)).toInt()
+        // Starting nearer the ✕ than its view reaches, the row itself moves
+        // over that view, so the ‹ keeps its whole target.
+        val overlap = minOf(0, from - if (onBack != null) dp(4) else 0)
+        val start = from - overlap
         var back: View? = null
         if (onBack != null) {
             // SF chevron.left at 15pt semibold.
@@ -792,7 +852,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (back == null && icon == null) leftMargin = start
             else if (back != null && icon == null) leftMargin = -dp(2)
         })
-        toolbar.addView(row, 1, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+        toolbar.addView(row, 1, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            .apply { leftMargin = overlap })
         stripTitleRow = row
         applySuggestionVisibility()
         return back
@@ -826,7 +887,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             "translate" -> { dismissFeaturePanel(); runTranslateOnField() }
             "ask" -> { dismissFeaturePanel(); onSpaceHoldOpenBar() }
-            "dictation" -> { dismissFeaturePanel(); startVoiceTyping() }
+            "dictation" -> { dismissFeaturePanel(); startDictation() }
             // Shorthand is a section of the vault; Keys said what My glyfs says.
             "vault", "shorthand" -> showVaultPanel()
             "calendar" -> showCalendarPanel()
@@ -841,20 +902,80 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** Voice typing is the system's: hand over to the voice keyboard the
-     *  person already has (Google voice typing, usually), the way Gboard's
-     *  mic does, and come back to Glyf when they switch again. */
-    private fun startVoiceTyping() {
-        val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-        for (info in imm.enabledInputMethodList) {
-            for (sub in imm.getEnabledInputMethodSubtypeList(info, true)) {
-                if (sub.mode == "voice") {
-                    switchInputMethod(info.id, sub)
-                    return
-                }
-            }
+    // MARK: voice typing, in the keyboard (Dictation, DictationStripView)
+
+    private var dictation: Dictation? = null
+    private var dictationStrip: DictationStripView? = null
+    /** The keyboard's children when listening began: one more or less means
+     *  something else took the strip or the keys. */
+    private var dictationChildren = 0
+
+    /** The mic types from Glyf's own keyboard (Arpit, 2026-10-06: "the mic
+     *  should work inside keyboard for typing not open the app"): the strip
+     *  listens and shows the words as they come, and they go into the field
+     *  when the person stops talking or taps Done. Without the microphone
+     *  yet, the app asks for it once; the next tap listens. */
+    private fun startDictation() {
+        if (dictation != null || !::toolbar.isInitialized) return
+        if (!com.arpit.glyf.MicPermissionActivity.granted(this)) {
+            com.arpit.glyf.MicPermissionActivity.ask(this)
+            return
         }
-        notice("No voice typing on this phone")
+        lateinit var strip: DictationStripView
+        val d = Dictation(this,
+            onWords = { strip.words(it) },
+            onLevel = { strip.level(it) },
+            onStopping = { strip.stopping() },
+            onEnd = { heard, note -> endDictation(heard, note) })
+        strip = DictationStripView(this, keyboard.palette(),
+            onCancel = { endDictation(null) },
+            onDone = { d.stop() })
+        // In the strip's place, as translate is.
+        toolbar.visibility = View.GONE
+        root.addView(strip, root.indexOfChild(toolbar),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(stripDp)))
+        dictation = d
+        dictationStrip = strip
+        dictationChildren = root.childCount
+        root.viewTreeObserver.addOnGlobalLayoutListener(dictationGuard)
+        d.start()
+    }
+
+    /** The emoji board, a panel or the Glyf bar taking the strip or the keys
+     *  ends the listening, and what was heard goes in. */
+    private val dictationGuard = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+        val strip = dictationStrip ?: return@OnGlobalLayoutListener
+        if (toolbar.visibility == View.VISIBLE || keyboard.visibility != View.VISIBLE ||
+            root.childCount != dictationChildren) {
+            main.post { if (dictationStrip === strip) endDictation(dictation?.heard, taken = true) }
+        }
+    }
+
+    /** Listening is over: [heard] goes into the field, spaced from the word
+     *  before it; with nothing heard, [note] says why. [taken]: something
+     *  else has the strip now, so it stays as that left it. */
+    private fun endDictation(heard: String?, note: String? = null, taken: Boolean = false) {
+        val d = dictation ?: return
+        dictation = null
+        d.cancel()
+        runCatching { root.viewTreeObserver.removeOnGlobalLayoutListener(dictationGuard) }
+        dictationStrip?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        dictationStrip = null
+        if (!taken) toolbar.visibility = View.VISIBLE
+        if (!heard.isNullOrBlank()) insertHeard(heard.trim()) else note?.let { notice(it) }
+    }
+
+    /** Heard words as typed ones: a capital where the field starts a
+     *  sentence, never glued to the word before. */
+    private fun insertHeard(heard: String) {
+        val ic = currentInputConnection ?: return
+        val ei = currentInputEditorInfo
+        val capital = settings.optBoolean("autocapitalize", true) && ei != null &&
+            ei.inputType != InputType.TYPE_NULL && ic.getCursorCapsMode(ei.inputType) != 0
+        val text = if (capital) heard.replaceFirstChar { it.uppercaseChar() } else heard
+        ic.commitText(Smart.spaced(text, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+        updateSuggestions()
+        syncAutoShift()
     }
 
     /** glyf://open?path=… with the path and its query as ONE encoded value,
@@ -2318,7 +2439,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val step = tourStep()
         if (step != null) {
             // One tap on the chip is what the coach asks for: the first value.
-            if (chip is Smart.Chip.Details) chip = chip.fields.firstOrNull()?.let { Smart.Chip.Vault(it) }
+            // A detail's first letters offer nothing mid-tour: the chats type
+            // their own words.
+            if (chip is Smart.Chip.Details) chip = if (chip.typed.isNotEmpty()) null
+                else chip.fields.firstOrNull()?.let { Smart.Chip.Vault(it) }
             val kind = when (chip) {
                 is Smart.Chip.Calc -> "calc"
                 is Smart.Chip.Money -> "money"
@@ -2402,7 +2526,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 // mail types a temp address, as the email field's chip does.
                 return showDetailsChip("smart", chip, onValue = { field ->
                     val ic = currentInputConnection
-                    ic?.commitText(Smart.spaced(field.value, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                    if (chip.typed.isNotEmpty()) {
+                        // Its start is typed already: the whole detail takes its place.
+                        ic?.deleteSurroundingText(chip.typed.length, 0)
+                        ic?.commitText(field.value, 1)
+                    } else {
+                        ic?.commitText(Smart.spaced(field.value, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                    }
                     hideStripChip()
                     updateSuggestions()
                 }, onTemp = {
@@ -3223,7 +3353,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setOnClickListener { actClose() }
         }, LinearLayout.LayoutParams(dp(52), dp(38)))
         clipChildren = false
-        val keyInkRight = (dp(52) + GlyfMark.keyWidth(dp(30).toFloat())) / 2f
+        val keyInkRight = GlyfKeyView.markRight(dp(52).toFloat(), dp(30).toFloat(), resources.displayMetrics.density)
         val start = (keyInkRight + dp(if (glassLook) 17 else 11) - dp(52)).toInt()
         addView(ToolIcon(this@GlyfIME, "ask", Glass.textPrimary).apply {
             solid = true; weight = 1.8f
@@ -4035,7 +4165,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (vaultAddOpen) watchBack(false)
         showVaultAdd = null
         vaultAddOpen = false
-        gPill?.closing = false
+        slideStripTools { gPill?.closing = false }
         clearStripTitle()
         dropMarker?.let { if (::toolIcons.isInitialized) toolIcons.removeView(it) }
         dropMarker = null
@@ -4207,7 +4337,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         root.addView(menu, root.indexOfChild(keyboard) + 1,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, panelH))
         featurePanel = menu
-        gPill?.closing = true
+        slideStripTools { gPill?.closing = true }
     }
 
     private var dropMarker: View? = null
@@ -4256,6 +4386,222 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         dismissFeaturePanel()
         buildToolbar(keyboard.isDark || keyboard.themeBg.isNotEmpty())
         notice("Added to the strip")
+    }
+
+    // MARK: strip customising (hold a tool, drag it; iOS's twin)
+
+    /** The strip tool being dragged, and the copy of it under the finger
+     *  (iOS dragGhost), in the root's overlay so it can cross from the strip
+     *  into the g menu. */
+    private var draggingTool: String? = null
+    private var dragGhost: View? = null
+
+    /** Hold a strip tool and it lifts (iOS Toolbar.itemLong): slide it along
+     *  the strip to reorder, or down into the g menu's grid to keep it there.
+     *  A tap is still a tap. */
+    private inner class StripToolTouch(private val id: String) : View.OnTouchListener {
+        private val slop = android.view.ViewConfiguration.get(this@GlyfIME).scaledTouchSlop
+        private var downX = 0f
+        private var downY = 0f
+        private var held: View? = null
+        private val lift = Runnable { held?.let { beginToolDrag(id, it, downX, downY) } }
+
+        override fun onTouch(v: View, e: android.view.MotionEvent): Boolean {
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downX = e.rawX
+                    downY = e.rawY
+                    held = v
+                    main.postDelayed(lift, 320)
+                }
+                android.view.MotionEvent.ACTION_MOVE -> when {
+                    draggingTool == id -> moveToolDrag(e.rawX, e.rawY)
+                    // Moving first is not a pick-up.
+                    abs(e.rawX - downX) > slop || abs(e.rawY - downY) > slop -> main.removeCallbacks(lift)
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    main.removeCallbacks(lift)
+                    // Posted, as a view's own click is: a tool may rebuild
+                    // the strip this touch is still being handed through.
+                    if (draggingTool == id) stripToolDropped(id, v, e.rawX, e.rawY)
+                    else if (e.x >= -slop && e.y >= -slop && e.x <= v.width + slop && e.y <= v.height + slop) main.post { v.performClick() }
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    main.removeCallbacks(lift)
+                    if (draggingTool == id) stripToolDropped(id, v, null, null)
+                }
+            }
+            return true
+        }
+    }
+
+    private fun beginToolDrag(id: String, from: View, rawX: Float, rawY: Float) {
+        draggingTool = id
+        from.alpha = 0.25f
+        from.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        // iOS's ghost: the tool on a 44 card, 12 corners, a soft shadow.
+        val side = dp(44)
+        val ghost = FrameLayout(this).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(Glass.surfaceCard)
+            }
+            elevation = dp(6).toFloat()
+            addView(ToolIcon(this@GlyfIME, id, Glass.textPrimary).apply {
+                scale = 1.4f; weight = 1.25f; solid = true
+            }, FrameLayout.LayoutParams(side, side, Gravity.CENTER))
+        }
+        ghost.measure(View.MeasureSpec.makeMeasureSpec(side, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(side, View.MeasureSpec.EXACTLY))
+        ghost.layout(0, 0, side, side)
+        root.overlay.add(ghost)
+        dragGhost = ghost
+        moveToolDrag(rawX, rawY)
+    }
+
+    private fun moveToolDrag(rawX: Float, rawY: Float) {
+        val id = draggingTool ?: return
+        dragGhost?.let { g ->
+            val at = IntArray(2).also { root.getLocationOnScreen(it) }
+            val l = Math.round(rawX - at[0] - g.width / 2f)
+            val t = Math.round(rawY - at[1] - g.height / 2f)
+            g.layout(l, t, l + g.width, t + g.height)
+        }
+        val overStrip = stripContains(rawX, rawY)
+        showStripDropMarker(if (overStrip) rawX else null)
+        // Over the g menu's grid, the tiles open a slot where it would land.
+        (featurePanel as? ToolMenuView)?.hoverIncoming(id, if (overStrip) null else rawX, rawY)
+    }
+
+    /** Over the strip, with iOS's allowance round it (toolbarContains). */
+    private fun stripContains(rawX: Float, rawY: Float): Boolean {
+        val at = IntArray(2).also { toolbar.getLocationOnScreen(it) }
+        return rawX >= at[0] - dp(8) && rawX <= at[0] + toolbar.width + dp(8) &&
+            rawY >= at[1] - dp(10) && rawY <= at[1] + toolbar.height + dp(10)
+    }
+
+    /** A held strip tool let go (raw point; nulls when the touch was taken
+     *  away). Along the strip it takes its new place; over the g menu's grid
+     *  it lands in the slot it opened there and the strip closes behind it
+     *  (Arpit, 2026-10-06: "when i drag the icon from top strip into below
+     *  area, it should come in the below area not disaaper, it should move
+     *  from up to down"); anywhere else it goes back to its place. The strip
+     *  changes once this touch is through: the held view is its target. */
+    private fun stripToolDropped(id: String, view: View, rawX: Float?, rawY: Float?) {
+        val menu = featurePanel as? ToolMenuView
+        val at = if (rawX != null && rawY != null) rawX to rawY else null
+        if (at != null && stripContains(at.first, at.second)) {
+            menu?.hoverIncoming(id, null, null)
+            settleToolDrag(null)
+            view.alpha = 1f
+            moveStripTool(id, view, stripIndexAt(at.first))
+            return
+        }
+        val landed = at?.let { menu?.landIncoming(id, it.first, it.second) }
+        if (menu != null && landed != null) {
+            settleToolDrag(landed.first)
+            menu.revealTile(id)
+            val was = settings.optJSONArray("toolbarHidden")
+            val hidden = (0 until (was?.length() ?: 0)).map { was!!.optString(it) }.filter { it != id } + id
+            settings.put("toolbarOrder", org.json.JSONArray(stripTools().filter { it != id } + hidden))
+            settings.put("toolbarHidden", org.json.JSONArray(hidden))
+            settings.put("menuOrder", org.json.JSONArray(landed.second))
+            SettingsStore.save(this, settings.toString())
+            stripShown = stripShown - id
+            main.post { slideStripTools { toolIcons.removeView(view) } }
+            return
+        }
+        menu?.hoverIncoming(id, null, null)
+        val home = if (view.isAttachedToWindow) IntArray(2).also { view.getLocationOnScreen(it) } else null
+        settleToolDrag(home?.let {
+            val cx = it[0] + view.width / 2
+            val cy = it[1] + view.height / 2
+            android.graphics.Rect(cx - dp(22), cy - dp(22), cx + dp(22), cy + dp(22))
+        })
+        view.animate().alpha(1f).setDuration(240).start()
+    }
+
+    /** A strip tool moved along the strip to [index], counted with it still
+     *  in its old place. */
+    private fun moveStripTool(id: String, view: View, index: Int) {
+        val shown = stripTools().toMutableList()
+        val from = shown.indexOf(id)
+        if (from < 0) return
+        val to = (if (from < index) index - 1 else index).coerceIn(0, shown.size - 1)
+        if (to == from) return
+        shown.removeAt(from)
+        shown.add(to, id)
+        val was = settings.optJSONArray("toolbarHidden")
+        val hidden = (0 until (was?.length() ?: 0)).map { was!!.optString(it) }
+        settings.put("toolbarOrder", org.json.JSONArray(shown + hidden.filter { it !in shown }))
+        SettingsStore.save(this, settings.toString())
+        main.post {
+            if (view.parent !== toolIcons) return@post
+            slideStripTools {
+                toolIcons.removeView(view)
+                toolIcons.addView(view, to.coerceAtMost(toolIcons.childCount))
+            }
+        }
+    }
+
+    /** The strip's tools glide from where they were to where [change] puts
+     *  them, as iOS's row does (Toolbar.removeItem, and the surface spring
+     *  as the g turns into ✕ and back). */
+    private fun slideStripTools(change: () -> Unit) {
+        if (!::toolIcons.isInitialized || !toolIcons.isAttachedToWindow) return change()
+        val row = toolIcons
+        val was = HashMap<View, Float>()
+        for (i in 0 until row.childCount) row.getChildAt(i).let { if (it.width > 0) was[it] = it.x + it.width / 2f }
+        change()
+        val observer = row.viewTreeObserver
+        observer.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                (if (observer.isAlive) observer else row.viewTreeObserver).removeOnPreDrawListener(this)
+                for (i in 0 until row.childCount) {
+                    val v = row.getChildAt(i)
+                    val dx = (was[v] ?: continue) - (v.left + v.width / 2f)
+                    if (dx == 0f) continue
+                    v.translationX = dx
+                    v.animate().translationX(0f).setDuration(240).start()
+                }
+                return true
+            }
+        })
+    }
+
+    /** The ghost settles on where the tool now lives ([target], on screen),
+     *  taking its size as it fades into it; with nowhere to go it just goes. */
+    private fun settleToolDrag(target: android.graphics.Rect?) {
+        val ghost = dragGhost
+        dragGhost = null
+        draggingTool = null
+        showStripDropMarker(null)
+        if (ghost == null) return
+        if (target == null) {
+            root.overlay.remove(ghost)
+            return
+        }
+        val at = IntArray(2).also { root.getLocationOnScreen(it) }
+        val from = android.graphics.Rect(ghost.left, ghost.top, ghost.right, ghost.bottom)
+        val to = android.graphics.Rect(target).apply { offset(-at[0], -at[1]) }
+        android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 240
+            interpolator = android.view.animation.DecelerateInterpolator()
+            addUpdateListener {
+                val f = it.animatedFraction
+                ghost.layout(from.left + Math.round((to.left - from.left) * f),
+                    from.top + Math.round((to.top - from.top) * f),
+                    from.right + Math.round((to.right - from.right) * f),
+                    from.bottom + Math.round((to.bottom - from.bottom) * f))
+                ghost.alpha = 1f - f
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    root.overlay.remove(ghost)
+                }
+            })
+            start()
+        }
     }
 
     /** My glyfs: what each key holds first ("Hold V"), then the glyfs this
@@ -4419,7 +4765,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val rows = shellRows(body)
         val order = settings.optJSONArray("toolbarOrder")?.let { a -> (0 until a.length()).map { a.optString(it) } }
             ?.map { ToolIcon.canonical(it) }?.distinct()
-            ?.ifEmpty { null } ?: listOf("search", "clipboard", "vault", "dictation", "translate")
+            ?.ifEmpty { null } ?: com.arpit.glyf.store.SettingsStore.DEFAULT_STRIP
         val hidden = settings.optJSONArray("toolbarHidden")?.let { a -> (0 until a.length()).map { a.optString(it) } }
             ?.toSet() ?: emptySet()
         for ((position, id) in order.withIndex()) {
@@ -5755,7 +6101,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         override val backendURL: String get() = settings.optString("backendURL")
         override val palette: GlyfKeyboardView.KeyPalette get() = keyboard.palette()
         override val dark: Boolean get() = chromeDark
-        override val favoriteEmoji: String get() = settings.optString("favoriteEmoji")
         override val online: Boolean get() = runCatching {
             val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
             cm.activeNetwork != null
