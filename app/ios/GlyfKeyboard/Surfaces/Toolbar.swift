@@ -1020,14 +1020,22 @@ final class GlyfToolbar: UIView {
         // The pad cancels: each target is padded the same on both sides, so
         // the frames grow inward and the icons stay on the gap's rhythm.
         // With the runs pill showing, the last tool keeps 13 points from it.
+        //
+        // The gap is never wider than five tools of these widths would get.
+        // Fewer keep that gap and gather on the strip's middle, though never
+        // nearer the key than one gap (Arpit, 2026-10-06: "they should be
+        // centered and equally spaced in case of less items"); five or more
+        // share the whole row as above.
         let end = bounds.width - (runsChip.isHidden ? 0 : chipW + 13) - Self.margin + Self.itemPad
         let x0 = glyfButton.frame.minX
-        let n = CGFloat(max(itemsStack.arrangedSubviews.count, 1))
+        let count = itemsStack.arrangedSubviews.count
         let tools = itemsStack.arrangedSubviews.reduce(CGFloat(0)) {
             $0 + $1.intrinsicContentSize.width
         }
-        let gap = max(4, (end - x0 - glyfButton.frame.width - tools) / n)
-        let toolsLeft = x0 + glyfButton.frame.width + gap
+        let room = end - x0 - glyfButton.frame.width
+        let gap = max(4, room / CGFloat(max(count, 5)) - tools / CGFloat(max(count, 1)))
+        let group = tools + gap * CGFloat(max(count - 1, 0))
+        let toolsLeft = max(x0 + glyfButton.frame.width + gap, bounds.width / 2 - group / 2)
         // Halfway between the grid and the first tool, when a look draws it.
         divider.frame = CGRect(x: ((markRight + toolsLeft) / 2).rounded(), y: 10,
                                width: Glass.hairlineWidth * 2, height: h - 20)
@@ -1035,7 +1043,7 @@ final class GlyfToolbar: UIView {
         // band has to move the scroll itself — offsetting only the stack
         // pushes the icons out through its bottom edge (that is what ate the
         // magnifier's handle and the mic's stand on iOS 18).
-        let toolsW = max(0, end - toolsLeft)
+        let toolsW = max(0, min(group, end - toolsLeft))
         scroll.frame = CGRect(x: toolsLeft, y: band, width: toolsW, height: h)
         itemsStack.spacing = 0
         // …and inside it the stack is band-relative: the strip's own centring.

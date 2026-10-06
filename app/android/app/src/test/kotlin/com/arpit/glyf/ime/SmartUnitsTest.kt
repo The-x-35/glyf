@@ -222,7 +222,7 @@ class SmartUnitsTest {
     }
 
     @Test fun aMeasurementIsAChipAndATapAddsItInBrackets() {
-        assertEquals(Smart.Chip.Convert(Smart.Conversions("10 inch", listOf("25.4 cm", "0.254 m"))),
+        assertEquals(Smart.Chip.Convert(Smart.Conversions("10 inch", listOf("25.4 cm", "254 mm", "0.833 ft"))),
             Smart.chip("lets 10 inch", emptyList(), region = "US"))
         // A sum is still a sum.
         assertTrue(Smart.chip("12+30", emptyList(), region = "US") is Smart.Chip.Calc)

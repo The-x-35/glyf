@@ -1194,7 +1194,9 @@ object Smart {
         fun add(unit: String, vararg names: String) { for (n in names) put(n, unit) }
         add("mm", "mm", "millimeter", "millimeters", "millimetre", "millimetres")
         add("cm", "cm", "cms", "centimeter", "centimeters", "centimetre", "centimetres")
-        add("m", "meter", "meters", "metre", "metres", "mtr", "mtrs")
+        // A bare "m" too ("2m"), unless it reads as millions or minutes
+        // (conversions checks).
+        add("m", "m", "meter", "meters", "metre", "metres", "mtr", "mtrs")
         add("km", "km", "kms", "kilometer", "kilometers", "kilometre", "kilometres")
         add("inch", "inch", "inches")
         add("foot", "ft", "foot", "feet")
@@ -1222,6 +1224,7 @@ object Smart {
         add("knot", "knot", "knots")
         add("sq ft", "sq ft", "sqft", "square feet", "square foot", "ft2")
         add("sq m", "sq m", "sqm", "square meter", "square meters", "square metre", "square metres", "m2")
+        add("sq yd", "sq yd", "sqyd", "square yard", "square yards")
         add("acre", "acre", "acres")
         add("hectare", "hectare", "hectares")
     }
@@ -1278,7 +1281,7 @@ object Smart {
         "quart" -> if (uk) 1.1365225 else 0.946352946
         "gallon" -> if (uk) 4.54609 else 3.785411784
         "km/h" -> 1 / 3.6; "mph" -> 0.44704; "m/s" -> 1.0; "knot" -> 1852.0 / 3600
-        "sq ft" -> 0.09290304; "sq m" -> 1.0; "acre" -> 4046.8564224; "hectare" -> 10000.0
+        "sq ft" -> 0.09290304; "sq m" -> 1.0; "sq yd" -> 0.83612736; "acre" -> 4046.8564224; "hectare" -> 10000.0
         else -> null
     }
 
@@ -1356,6 +1359,12 @@ object Smart {
         // "4g", "5g": a network, not grams. "10 pounds" is money outside the US.
         if (unit == "g" && name == "g" && Regex("^[2-6]g", RegexOption.IGNORE_CASE).containsMatchIn(m.value)) return null
         if (name.startsWith("pound") && !us) return null
+        // "2m" is metres (Arpit, 2026-10-06: "writing 2m doesnt show in inches
+        // or other units"), but "$2m" is millions, "in 5m" minutes and "5M" money.
+        // Only touching its number: "1 m" stays a minute or a million.
+        if (name == "m" && (m.groupValues[2] != "m" ||
+                !Regex("""[\d½⅓⅔¼¾⅛]m\.?\s?$""").containsMatchIn(m.value) ||
+                Regex("""[$€£₹¥]\s*$|\bin\s*$|\d\s*(?:h|hrs?|hours?)\s*$""", RegexOption.IGNORE_CASE).containsMatchIn(t.substring(0, m.range.first)))) return null
         if (n < 0 && unit != "°C" && unit != "°F") return null
 
         val results: List<String> = when (unit) {
@@ -1369,31 +1378,43 @@ object Smart {
                 // Millilitres under a litre, grams under a kilo.
                 fun metricVolume() = if (base < 1) to("ml") else to("litre")
                 fun metricMass() = if (base < 1) to("g") else to("kg")
+                // Two or three units people would want, the other system
+                // first (Arpit, 2026-10-06: "i dont need only to 1 unit, need
+                // it to 2-3 diff relevant units"). Smart.swift's twin.
                 when (unit) {
-                    "mm" -> listOf(to("inch"))
-                    "cm" -> if (base >= 0.3 && base < 3) listOf(feetInches(base), to("inch")) else listOf(to("inch"))
-                    "m" -> if (base < 3) listOf(feetInches(base), to("foot")) else listOf(to("foot"), to("yard"))
-                    "km" -> listOf(to("mile"))
-                    "inch" -> listOf(to("cm"), to("m"))
-                    "foot" -> if (n < 10) listOf(to("m"), to("cm")) else listOf(to("m"))
-                    "yard" -> listOf(to("m"))
-                    "mile" -> listOf(to("km"))
-                    "g" -> listOf(to("oz"))
-                    "kg" -> listOf(to("lb"))
-                    "oz" -> listOf(metricMass())
-                    "lb" -> listOf(to("kg"))
+                    "mm" -> listOf(to("inch"), to("cm"))
+                    "cm" -> if (base < 0.3) listOf(to("inch"), to("mm"))
+                        else if (base < 3) listOf(feetInches(base), to("inch"), to("m")) else listOf(to("foot"), to("m"))
+                    "m" -> if (base < 3) listOf(feetInches(base), to("inch"), to("cm"))
+                        else if (base < 1000) listOf(to("foot"), to("yard")) else listOf(to("mile"), to("foot"), to("km"))
+                    "km" -> if (base < 10_000) listOf(to("mile"), to("foot"), to("m")) else listOf(to("mile"), to("m"))
+                    "inch" -> if (base < 0.3) listOf(to("cm"), to("mm"), to("foot")) else listOf(to("cm"), to("m"), to("foot"))
+                    "foot" -> if (n < 10) listOf(to("m"), to("cm"), to("inch")) else listOf(to("m"), to("yard"))
+                    "yard" -> listOf(to("m"), to("foot"), to("cm"))
+                    "mile" -> if (base < 2000) listOf(to("km"), to("m"), to("foot")) else listOf(to("km"), to("m"))
+                    "g" -> listOf(to("oz"), to("lb"), to("kg"))
+                    "kg" -> if (base < 10) listOf(to("lb"), to("oz"), to("g")) else listOf(to("lb"), to("stone"))
+                    "oz" -> listOf(metricMass(), to("lb"))
+                    "lb" -> if (base < 2.27) listOf(to("kg"), to("g"), to("oz"))
+                        else if (base < 6.35) listOf(to("kg"), to("g")) else listOf(to("kg"), to("stone"))
                     "stone" -> listOf(to("kg"), to("lb"))
-                    "ml" -> listOf(to("fl oz"))
-                    "litre" -> if (uk) listOf(to("pint"), to("gallon")) else listOf(to("gallon"), to("fl oz"))
-                    "tsp", "tbsp", "fl oz", "cup", "pint" -> listOf(metricVolume())
-                    "quart", "gallon" -> listOf(to("litre"))
-                    "km/h" -> listOf(to("mph"))
-                    "mph" -> listOf(to("km/h"))
+                    "ml" -> if (base < 0.00003) listOf(to("tsp"), to("tbsp"), to("fl oz")) else listOf(to("fl oz"), to("cup"), to("litre"))
+                    "litre" -> if (uk) listOf(to("pint"), to("gallon"), to("fl oz")) else listOf(to("gallon"), to("cup"), to("fl oz"))
+                    "tsp" -> listOf(to("ml"), to("tbsp"))
+                    "tbsp" -> listOf(to("ml"), to("tsp"))
+                    "fl oz" -> listOf(metricVolume(), to("cup"))
+                    "cup" -> listOf(metricVolume(), to("fl oz"), to("tbsp"))
+                    "pint" -> listOf(metricVolume(), to("cup"), to("fl oz"))
+                    "quart" -> listOf(to("litre"), to("pint"), to("cup"))
+                    "gallon" -> listOf(to("litre"), to("pint"), to("fl oz"))
+                    "km/h" -> listOf(to("mph"), to("m/s"))
+                    "mph" -> listOf(to("km/h"), to("m/s"))
                     "m/s", "knot" -> listOf(to("km/h"), to("mph"))
-                    "sq ft" -> listOf(to("sq m"))
-                    "sq m" -> listOf(to("sq ft"))
-                    "acre" -> listOf(to("hectare"))
-                    "hectare" -> listOf(to("acre"))
+                    "sq ft" -> listOf(to("sq m"), to("sq yd"))
+                    "sq m" -> listOf(to("sq ft"), to("sq yd"))
+                    "sq yd" -> listOf(to("sq m"), to("sq ft"))
+                    "acre" -> listOf(to("hectare"), to("sq m"), to("sq ft"))
+                    "hectare" -> listOf(to("acre"), to("sq m"))
                     else -> return null
                 }
             }

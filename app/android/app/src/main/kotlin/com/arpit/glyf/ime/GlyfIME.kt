@@ -731,11 +731,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** iOS Toolbar.layoutSubviews' one gap (Arpit, 2026-10-06: "why the fuck
      *  doesnt it feel centered, why soo much space after cross"): the same
-     *  air between any two inks, the key's or the ✕'s included, and the last
-     *  tool ending as far in as the key starts, so the row sits centred
-     *  however many tools it holds. Each tool's view reaches halfway into the
-     *  gaps beside it, so the row has no dead space; a drop marker stands in
-     *  the middle of its gap. */
+     *  air between any two inks, the key's or the ✕'s included, and five
+     *  tools or more end as far in as the key starts. The gap is never wider
+     *  than five tools of these widths would get: fewer keep it and gather on
+     *  the strip's middle, though never nearer the key than one gap (Arpit:
+     *  "they should be centered and equally spaced in case of less items").
+     *  Each tool's view reaches halfway into the gaps beside it; a drop
+     *  marker stands in the middle of its gap. */
     private fun spaceStripTools() {
         val lead = gPill ?: return
         if (!::toolIcons.isInitialized) return
@@ -747,8 +749,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val tools = (0 until row.childCount).map { row.getChildAt(it) }.filterIsInstance<ToolIcon>()
         if (tools.isEmpty()) return
         val inks = tools.map { it.inkWidth() }
-        val gap = maxOf(dp(4).toFloat(), (end - start - inks.sum()) / tools.size)
-        var next = start + gap
+        val gap = maxOf(dp(4).toFloat(), (end - start) / maxOf(tools.size, 5) - inks.sum() / tools.size)
+        val group = inks.sum() + gap * (tools.size - 1)
+        var next = maxOf(start + gap, toolbar.width / 2f - row.left - group / 2f)
         for (i in 0 until row.childCount) {
             val child = row.getChildAt(i)
             val at = tools.indexOf(child)

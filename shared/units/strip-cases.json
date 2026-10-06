@@ -1,12 +1,13 @@
 {
- "about": "A measurement the message ends on, in the other system, as chips in the strip (Smart.conversions on both keyboards). \"results\" in order; [] means no chip. \"region\" is the phone's region: pounds are weight only in the US, pints and gallons are imperial in Britain.",
+ "about": "A measurement the message ends on, in two or three units people would want (the other system first), as chips in the strip (Smart.conversions on both keyboards). \"2m\" is metres; \"1 m\", \"$2m\", \"in 5m\" and \"5M\" are not. \"results\" in order; [] means no chip. \"region\" is the phone's region: pounds are weight only in the US, pints and gallons are imperial in Britain.",
  "cases": [
   {
    "text": "lets 10 inch",
    "region": "US",
    "results": [
     "25.4 cm",
-    "0.254 m"
+    "254 mm",
+    "0.833 ft"
    ]
   },
   {
@@ -14,7 +15,8 @@
    "region": "US",
    "results": [
     "25.4 cm",
-    "0.254 m"
+    "254 mm",
+    "0.833 ft"
    ]
   },
   {
@@ -66,7 +68,8 @@
    "region": "DE",
    "results": [
     "5 ft 11 in",
-    "70.9 in"
+    "70.9 in",
+    "1.8 m"
    ]
   },
   {
@@ -74,7 +77,8 @@
    "region": "DE",
    "results": [
     "6 ft 7 in",
-    "6.56 ft"
+    "78.7 in",
+    "200 cm"
    ]
   },
   {
@@ -90,70 +94,83 @@
    "region": "US",
    "results": [
     "1.83 m",
-    "183 cm"
+    "183 cm",
+    "72 in"
    ]
   },
   {
    "text": "ran 10 km",
    "region": "DE",
    "results": [
-    "6.21 miles"
+    "6.21 miles",
+    "10,000 m"
    ]
   },
   {
    "text": "a 26.2 miles",
    "region": "US",
    "results": [
-    "42.2 km"
+    "42.2 km",
+    "42,165 m"
    ]
   },
   {
    "text": "only 1 mile",
    "region": "US",
    "results": [
-    "1.61 km"
+    "1.61 km",
+    "1,609 m",
+    "5,280 ft"
    ]
   },
   {
    "text": "lost 5 lbs",
    "region": "GB",
    "results": [
-    "2.27 kg"
+    "2.27 kg",
+    "2,268 g",
+    "80 oz"
    ]
   },
   {
    "text": "lost 10 pounds",
    "region": "US",
    "results": [
-    "4.54 kg"
+    "4.54 kg",
+    "4,536 g"
    ]
   },
   {
    "text": "i weigh 70 kg",
    "region": "IN",
    "results": [
-    "154 lb"
+    "154 lb",
+    "11 stone"
    ]
   },
   {
    "text": "100g",
    "region": "DE",
    "results": [
-    "3.53 oz"
+    "3.53 oz",
+    "0.22 lb",
+    "0.1 kg"
    ]
   },
   {
    "text": "8 oz",
    "region": "US",
    "results": [
-    "227 g"
+    "227 g",
+    "0.5 lb"
    ]
   },
   {
    "text": "40 oz",
    "region": "US",
    "results": [
-    "1.13 kg"
+    "1.13 kg",
+    "2.5 lb"
    ]
   },
   {
@@ -168,28 +185,35 @@
    "text": "add 2 tbsp",
    "region": "US",
    "results": [
-    "29.6 ml"
+    "29.6 ml",
+    "6 tsp"
    ]
   },
   {
    "text": "1/2 cup",
    "region": "US",
    "results": [
-    "118 ml"
+    "118 ml",
+    "4 fl oz",
+    "8 tbsp"
    ]
   },
   {
    "text": "1 1/2 cups",
    "region": "US",
    "results": [
-    "355 ml"
+    "355 ml",
+    "12 fl oz",
+    "24 tbsp"
    ]
   },
   {
    "text": "½ cup",
    "region": "US",
    "results": [
-    "118 ml"
+    "118 ml",
+    "4 fl oz",
+    "8 tbsp"
    ]
   },
   {
@@ -197,6 +221,7 @@
    "region": "US",
    "results": [
     "0.528 gal",
+    "8.45 cups",
     "67.6 fl oz"
    ]
   },
@@ -205,70 +230,85 @@
    "region": "GB",
    "results": [
     "3.52 pints",
-    "0.44 gal"
+    "0.44 gal",
+    "70.4 fl oz"
    ]
   },
   {
    "text": "2 pints",
    "region": "GB",
    "results": [
-    "1.14 L"
+    "1.14 L",
+    "4.8 cups",
+    "40 fl oz"
    ]
   },
   {
    "text": "2 pints",
    "region": "US",
    "results": [
-    "946 ml"
+    "946 ml",
+    "4 cups",
+    "32 fl oz"
    ]
   },
   {
    "text": "500 ml",
    "region": "DE",
    "results": [
-    "16.9 fl oz"
+    "16.9 fl oz",
+    "2.11 cups",
+    "0.5 L"
    ]
   },
   {
    "text": "5 gallons",
    "region": "US",
    "results": [
-    "18.9 L"
+    "18.9 L",
+    "40 pints",
+    "640 fl oz"
    ]
   },
   {
    "text": "doing 60 mph",
    "region": "US",
    "results": [
-    "96.6 km/h"
+    "96.6 km/h",
+    "26.8 m/s"
    ]
   },
   {
    "text": "100 km/h",
    "region": "DE",
    "results": [
-    "62.1 mph"
+    "62.1 mph",
+    "27.8 m/s"
    ]
   },
   {
    "text": "1500 sq ft",
    "region": "US",
    "results": [
-    "139 sq m"
+    "139 sq m",
+    "167 sq yd"
    ]
   },
   {
    "text": "2 acres",
    "region": "US",
    "results": [
-    "0.809 hectares"
+    "0.809 hectares",
+    "8,094 sq m",
+    "87,120 sq ft"
    ]
   },
   {
    "text": "1,500 km",
    "region": "IN",
    "results": [
-    "932 miles"
+    "932 miles",
+    "1,500,000 m"
    ]
   },
   {
@@ -341,6 +381,39 @@
   {
    "text": "turn 90 degrees",
    "region": "DE",
+   "results": []
+  },
+  {
+   "text": "2m",
+   "region": "US",
+   "results": [
+    "6 ft 7 in",
+    "78.7 in",
+    "200 cm"
+   ]
+  },
+  {
+   "text": "it's 2m",
+   "region": "IN",
+   "results": [
+    "6 ft 7 in",
+    "78.7 in",
+    "200 cm"
+   ]
+  },
+  {
+   "text": "$2m",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "be there in 5m",
+   "region": "US",
+   "results": []
+  },
+  {
+   "text": "5M",
+   "region": "US",
    "results": []
   }
  ]

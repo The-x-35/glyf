@@ -1431,7 +1431,9 @@ extension Smart {
         func add(_ unit: String, _ names: [String]) { for n in names { out[n] = unit } }
         add("mm", ["mm", "millimeter", "millimeters", "millimetre", "millimetres"])
         add("cm", ["cm", "cms", "centimeter", "centimeters", "centimetre", "centimetres"])
-        add("m", ["meter", "meters", "metre", "metres", "mtr", "mtrs"])
+        // A bare "m" too ("2m"), unless it reads as millions or minutes
+        // (conversions checks).
+        add("m", ["m", "meter", "meters", "metre", "metres", "mtr", "mtrs"])
         add("km", ["km", "kms", "kilometer", "kilometers", "kilometre", "kilometres"])
         add("inch", ["inch", "inches"])
         add("foot", ["ft", "foot", "feet"])
@@ -1459,6 +1461,7 @@ extension Smart {
         add("knot", ["knot", "knots"])
         add("sq ft", ["sq ft", "sqft", "square feet", "square foot", "ft2"])
         add("sq m", ["sq m", "sqm", "square meter", "square meters", "square metre", "square metres", "m2"])
+        add("sq yd", ["sq yd", "sqyd", "square yard", "square yards"])
         add("acre", ["acre", "acres"])
         add("hectare", ["hectare", "hectares"])
         return out
@@ -1530,6 +1533,7 @@ extension Smart {
         case "knot": return 1852.0 / 3600
         case "sq ft": return 0.09290304
         case "sq m": return 1
+        case "sq yd": return 0.83612736
         case "acre": return 4046.8564224
         case "hectare": return 10000
         default: return nil
@@ -1619,6 +1623,17 @@ extension Smart {
         // "4g", "5g": a network, not grams. "10 pounds" is money outside the US.
         if unit == "g", name == "g", ns.substring(with: m.range).range(of: #"^[2-6]g"#, options: [.regularExpression, .caseInsensitive]) != nil { return nil }
         if name.hasPrefix("pound"), !us { return nil }
+        // "2m" is metres (Arpit, 2026-10-06: "writing 2m doesnt show in inches
+        // or other units"), but "$2m" is millions, "in 5m" minutes and "5M" money.
+        if name == "m" {
+            let before = ns.substring(to: m.range.location)
+            // Only touching its number: "1 m" stays a minute or a million.
+            let touching = ns.substring(with: m.range).range(of: #"[\d½⅓⅔¼¾⅛]m\.?\s?$"#, options: .regularExpression) != nil
+            if group(m, 2) != "m" || !touching
+                || before.range(of: #"[$€£₹¥]\s*$|\bin\s*$|\d\s*(?:h|hrs?|hours?)\s*$"#, options: [.regularExpression, .caseInsensitive]) != nil {
+                return nil
+            }
+        }
         if n < 0, unit != "°C", unit != "°F" { return nil }
 
         var results: [String] = []
@@ -1632,31 +1647,43 @@ extension Smart {
             // Millilitres under a litre, grams under a kilo.
             func metricVolume() -> String { base < 1 ? to("ml") : to("litre") }
             func metricMass() -> String { base < 1 ? to("g") : to("kg") }
+            // Two or three units people would want, the other system first
+            // (Arpit, 2026-10-06: "i dont need only to 1 unit, need it to 2-3
+            // diff relevant units"). SmartUnits' Kotlin twin says the same.
             switch unit {
-            case "mm": results = [to("inch")]
-            case "cm": results = base >= 0.3 && base < 3 ? [feetInches(metres: base), to("inch")] : [to("inch")]
-            case "m": results = base < 3 ? [feetInches(metres: base), to("foot")] : [to("foot"), to("yard")]
-            case "km": results = [to("mile")]
-            case "inch": results = [to("cm"), to("m")]
-            case "foot": results = n < 10 ? [to("m"), to("cm")] : [to("m")]
-            case "yard": results = [to("m")]
-            case "mile": results = [to("km")]
-            case "g": results = [to("oz")]
-            case "kg": results = [to("lb")]
-            case "oz": results = [metricMass()]
-            case "lb": results = [to("kg")]
+            case "mm": results = [to("inch"), to("cm")]
+            case "cm": results = base < 0.3 ? [to("inch"), to("mm")]
+                : base < 3 ? [feetInches(metres: base), to("inch"), to("m")] : [to("foot"), to("m")]
+            case "m": results = base < 3 ? [feetInches(metres: base), to("inch"), to("cm")]
+                : base < 1000 ? [to("foot"), to("yard")] : [to("mile"), to("foot"), to("km")]
+            case "km": results = base < 10_000 ? [to("mile"), to("foot"), to("m")] : [to("mile"), to("m")]
+            case "inch": results = base < 0.3 ? [to("cm"), to("mm"), to("foot")] : [to("cm"), to("m"), to("foot")]
+            case "foot": results = n < 10 ? [to("m"), to("cm"), to("inch")] : [to("m"), to("yard")]
+            case "yard": results = [to("m"), to("foot"), to("cm")]
+            case "mile": results = base < 2000 ? [to("km"), to("m"), to("foot")] : [to("km"), to("m")]
+            case "g": results = [to("oz"), to("lb"), to("kg")]
+            case "kg": results = base < 10 ? [to("lb"), to("oz"), to("g")] : [to("lb"), to("stone")]
+            case "oz": results = [metricMass(), to("lb")]
+            case "lb": results = base < 2.27 ? [to("kg"), to("g"), to("oz")]
+                : base < 6.35 ? [to("kg"), to("g")] : [to("kg"), to("stone")]
             case "stone": results = [to("kg"), to("lb")]
-            case "ml": results = [to("fl oz")]
-            case "litre": results = uk ? [to("pint"), to("gallon")] : [to("gallon"), to("fl oz")]
-            case "tsp", "tbsp", "fl oz", "cup", "pint": results = [metricVolume()]
-            case "quart", "gallon": results = [to("litre")]
-            case "km/h": results = [to("mph")]
-            case "mph": results = [to("km/h")]
+            case "ml": results = base < 0.00003 ? [to("tsp"), to("tbsp"), to("fl oz")] : [to("fl oz"), to("cup"), to("litre")]
+            case "litre": results = uk ? [to("pint"), to("gallon"), to("fl oz")] : [to("gallon"), to("cup"), to("fl oz")]
+            case "tsp": results = [to("ml"), to("tbsp")]
+            case "tbsp": results = [to("ml"), to("tsp")]
+            case "fl oz": results = [metricVolume(), to("cup")]
+            case "cup": results = [metricVolume(), to("fl oz"), to("tbsp")]
+            case "pint": results = [metricVolume(), to("cup"), to("fl oz")]
+            case "quart": results = [to("litre"), to("pint"), to("cup")]
+            case "gallon": results = [to("litre"), to("pint"), to("fl oz")]
+            case "km/h": results = [to("mph"), to("m/s")]
+            case "mph": results = [to("km/h"), to("m/s")]
             case "m/s", "knot": results = [to("km/h"), to("mph")]
-            case "sq ft": results = [to("sq m")]
-            case "sq m": results = [to("sq ft")]
-            case "acre": results = [to("hectare")]
-            case "hectare": results = [to("acre")]
+            case "sq ft": results = [to("sq m"), to("sq yd")]
+            case "sq m": results = [to("sq ft"), to("sq yd")]
+            case "sq yd": results = [to("sq m"), to("sq ft")]
+            case "acre": results = [to("hectare"), to("sq m"), to("sq ft")]
+            case "hectare": results = [to("acre"), to("sq m")]
             default: return nil
             }
         }

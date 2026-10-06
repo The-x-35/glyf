@@ -888,10 +888,10 @@ final class GlyfEngineTests: XCTestCase {
         let usd = Smart.RatesSnapshot(fiat: ["USD": 1, "GBP": 0.75], local: "USD")
         XCTAssertEqual(Smart.chip(for: "it costs 5 pounds", fields: [], rates: usd, region: "US")?.value, "£5 = $6.67")
         XCTAssertEqual(Smart.chip(for: "I lost 5 pounds", fields: [], rates: usd, region: "US"),
-                       .convert(Smart.Conversions(source: "5 pounds", results: ["2.27 kg"])))
+                       .convert(Smart.Conversions(source: "5 pounds", results: ["2.27 kg", "2,268 g", "80 oz"])))
         XCTAssertNil(Smart.chip(for: "I lost 5 pounds", fields: [], rates: usd, region: "GB"))
         XCTAssertEqual(Smart.chip(for: "bench press 100 pounds", fields: [], rates: usd, region: "US"),
-                       .convert(Smart.Conversions(source: "100 pounds", results: ["45.4 kg"])))
+                       .convert(Smart.Conversions(source: "100 pounds", results: ["45.4 kg", "7.14 stone"])))
         let india = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 95.88], crypto: ["SOL": 111.77], local: "INR")
         XCTAssertNil(Smart.chip(for: "it costs $13 = ₹1,246.44", fields: [], rates: india))
         XCTAssertNil(Smart.chip(for: "buying $sol = $111.77", fields: [], rates: india))
@@ -1516,7 +1516,7 @@ final class GlyfEngineTests: XCTestCase {
     /// result in brackets after what was typed.
     func testAMeasurementIsAChipAndATapAddsItInBrackets() {
         XCTAssertEqual(Smart.chip(for: "lets 10 inch", fields: [], region: "US"),
-                       .convert(Smart.Conversions(source: "10 inch", results: ["25.4 cm", "0.254 m"])))
+                       .convert(Smart.Conversions(source: "10 inch", results: ["25.4 cm", "254 mm", "0.833 ft"])))
         // A sum is still a sum, and money still money.
         if case .convert? = Smart.chip(for: "12+30", fields: [], region: "US") { XCTFail("a sum became units") }
         XCTAssertEqual(Smart.conversionInsert("25.4 cm", before: "lets 10 inch"), " (25.4 cm)")

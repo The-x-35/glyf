@@ -279,10 +279,10 @@ class SmartTest {
         assertEquals("£5 = \$6.67", Smart.display(Smart.chip("it costs 5 pounds", emptyList(), rates = usd, region = "US")!!))
         // Weight, never money: kilograms where pounds are weight (the US),
         // nothing where they are money.
-        assertEquals(Smart.Chip.Convert(Smart.Conversions("5 pounds", listOf("2.27 kg"))),
+        assertEquals(Smart.Chip.Convert(Smart.Conversions("5 pounds", listOf("2.27 kg", "2,268 g", "80 oz"))),
             Smart.chip("I lost 5 pounds", emptyList(), rates = usd, region = "US"))
         assertNull(Smart.chip("I lost 5 pounds", emptyList(), rates = usd, region = "GB"))
-        assertEquals(Smart.Chip.Convert(Smart.Conversions("100 pounds", listOf("45.4 kg"))),
+        assertEquals(Smart.Chip.Convert(Smart.Conversions("100 pounds", listOf("45.4 kg", "7.14 stone"))),
             Smart.chip("bench press 100 pounds", emptyList(), rates = usd, region = "US"))
         val india = Smart.RatesSnapshot(fiat = mapOf("USD" to 1.0, "INR" to 95.88),
             crypto = mapOf("SOL" to 111.77), local = "INR")
