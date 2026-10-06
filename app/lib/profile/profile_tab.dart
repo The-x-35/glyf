@@ -13,7 +13,7 @@ import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/text_sheet.dart';
 import '../core/theme.dart';
-import '../onboarding/demo_chat.dart';
+import '../shell/app_tour.dart';
 import '../onboarding/onboarding_flow.dart';
 import '../wallet/phantom.dart' show PhantomLink;
 import '../wallet/solana.dart' show Sol;
@@ -522,10 +522,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     if (!mounted) return;
     switch (pick) {
       case 'tour':
-        await Navigator.of(context).push(MaterialPageRoute(
-          fullscreenDialog: true,
-          builder: (ctx) => DemoChat(onDone: () => Navigator.of(ctx).pop()),
-        ));
+        // The app tour on Home, then the chats (the shell runs it).
+        appTourRequests.value++;
       case 'onboarding':
         await _replayOnboarding();
     }

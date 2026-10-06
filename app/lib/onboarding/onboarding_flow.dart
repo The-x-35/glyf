@@ -12,21 +12,17 @@ import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
-import 'demo_chat.dart';
 import '../profile/brand_marks.dart';
 import 'setup_guide.dart';
 import 'setup_hero.dart';
 import 'talking_orb.dart';
-import 'tour_preview.dart';
-import 'tour_scenarios.dart';
 
 /// Onboarding: sign in with Apple or Google, meet the orb, tell it what to
-/// remember, make the keyboard yours, turn it on, nearby search, the
-/// calendar (the phone's, and Google Calendar and Meet when sign-in didn't
-/// bring them: these are asked here and nowhere else), then an offer to see
-/// the website's chats played on the real keyboard (or skip straight to home).
-/// One screen, steps slide through an AnimatedSwitcher (no PageView, so
-/// both humans and UI tests can address everything directly).
+/// remember, make the keyboard yours, turn it on (with "What Glyf sends" as
+/// a sheet on the first Open), then Maps, Calendar and Google Meet on one
+/// screen, and home, where a floating button offers the tour. One screen,
+/// steps slide through an AnimatedSwitcher (no PageView, so both humans and
+/// UI tests can address everything directly).
 class OnboardingFlow extends StatefulWidget {
   const OnboardingFlow({super.key, required this.onDone, this.resume = const {}, this.replay = false});
 
@@ -56,14 +52,12 @@ class OnboardingFlow extends StatefulWidget {
 }
 
 class _OnboardingFlowState extends State<OnboardingFlow> {
-  /// 'connect' only when this server can actually sign in with Google.
-  // 'connect' (Google calendar/mail) is out of the flow until the connector
-  // works end to end; it stays reachable from Profile › Connected tools.
-  // 'ai' (What Glyf sends) comes before the keyboard is turned on: Google
-  // Play wants that said, and agreed to, before anything goes.
-  List<String> _steps = const [
-    'signin', 'meet', 'details', 'feel', 'ai', 'setup', 'nearby', 'calendar', 'tour'
-  ];
+  /// Arpit's order (2026-10-06). "What Glyf sends" is no screen of its own:
+  /// it asks as a sheet the first time Turn on Glyf opens Settings or the
+  /// picker, still before anything can be sent. Maps, Calendar and Meet share
+  /// one screen ('tools'), and there is no tour offer at the end: Home has a
+  /// floating "Take a tour" button (the app, then the chats) instead.
+  static const _steps = <String>['signin', 'meet', 'details', 'feel', 'setup', 'tools'];
   int _step = 0;
 
   /// Which way the last step change went, for the slide.
@@ -71,9 +65,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   /// Steps already seen: coming back to one, its orb doesn't talk again.
   final Set<String> _heard = {};
-
-  /// Saving settings and "onboarding done" as the tour offer opens.
-  Future<void>? _completing;
 
   /// The tour was opened or skipped: a second tap does nothing.
   bool _leaving = false;
@@ -147,17 +138,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool _keyboardEnabled = false;
   bool _fullAccess = false;
   bool _keyboardSelected = false;
-  // Google consent choices — preset from the persona, the USER decides.
-  late final Set<String> _googleScopes = {};
-  String? _connectNote;
   bool _locationOn = false;
   String? _locationNote;
   /// The calendar step: the phone's calendar for the keyboard, and Google
   /// Meet (Google Calendar and Meet) when sign-in didn't bring it.
   bool _calendarOn = false;
-  bool _calendarAsked = false;
   bool _meetOn = false;
   String? _calendarNote;
+  String? _meetNote;
+  /// Wallet address, X and Telegram wait under More (Arpit, 2026-10-06).
+  bool _moreDetails = false;
+  static const _mainDetails = 4;
   Timer? _poll;
 
   // Sign-in
@@ -184,16 +175,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // …and where it was left, when that is known: granting Full Access ends
     // the app (tccd: "access to kTCCServiceKeyboardNetwork changed"), so
     // the setup step in particular must survive a relaunch.
-    final resume = widget.replay ? null : widget.resume['step'] as String?;
+    // Steps that have gone since (a state saved by an older build) reopen
+    // where their questions went.
+    final resume = switch (widget.replay ? null : widget.resume['step'] as String?) {
+      'ai' => 'setup',
+      'nearby' || 'calendar' => 'tools',
+      final step => step,
+    };
     final at = resume == null ? -1 : _steps.indexOf(resume);
-    if (Auth.signedIn && at > 1 && resume != 'tour') {
+    if (Auth.signedIn && at > 1) {
       _step = at;
       _heard.addAll(_steps.take(at));
       _persona ??= widget.resume['persona'] as String?;
       // Choices made on the way here were saved as they were made.
       if (at > _steps.indexOf('feel')) _feelLoad = _loadFeel();
-      if (resume == 'nearby') unawaited(_loadLocation());
-      if (resume == 'calendar') unawaited(_loadCalendarStep());
+      if (resume == 'tools') {
+        unawaited(_loadLocation());
+        unawaited(_loadCalendarStep());
+      }
       if (resume == 'details') _prefillFromAccount();
       if (resume == 'setup') {
         _setupSince = DateTime.now().toUtc();
@@ -218,36 +217,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // At once too: a relaunch on the setup step shouldn't show a second of
     // unticked rows (and the wrong guide) before the first tick.
     unawaited(_checkStatus());
-    _dropConnectIfUnavailable();
   }
 
-  /// A Google step that can only fail is worse than none: ask the server
-  /// whether sign-in is set up, and leave the step out when it is not.
-  Future<void> _dropConnectIfUnavailable() async {
-    bool configured = false;
-    try {
-      final status = await GlyfApi.connectorsStatus();
-      final providers = (status['providers'] as List?) ?? const [];
-      configured = providers.any((p) => p is Map && p['id'] == 'google' && p['configured'] == true);
-    } catch (_) {
-      configured = false;
-    }
-    if (!mounted || configured) return;
-    // Keep the step on screen by name: a resumed run may already be past
-    // the point where the list loses an entry.
-    final name = _steps[_step];
-    setState(() {
-      _steps = _steps.where((s) => s != 'connect').toList();
-      _step = _steps.indexOf(name == 'connect' ? 'tour' : name);
-    });
-    if (_steps[_step] == 'tour') _completing ??= _complete();
-  }
-
-  /// Where we are, for a relaunch. Sign-in has nothing to come back to and
-  /// the tour offer writes "done" itself.
+  /// Where we are, for a relaunch. Sign-in has nothing to come back to.
   void _remember() {
     final name = _steps[_step];
-    if (name == 'signin' || name == 'tour') return;
+    if (name == 'signin') return;
     unawaited(_saveState({
       'step': name,
       if (_persona != null) 'persona': _persona,
@@ -391,7 +366,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     final res = await GlyfBridge.calendarEnable();
     if (!mounted) return;
     setState(() {
-      _calendarAsked = true;
       _calendarOn = res['ok'] == true;
       _calendarNote = _calendarOn ? null : 'Calendar is off for Glyf. You can allow it in Settings.';
     });
@@ -406,7 +380,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     setState(() {
       _busy = false;
       _meetOn = google['meet'] == true;
-      _calendarNote = error;
+      _meetNote = error;
     });
     Telemetry.log('onboarding_google_meet', {'granted': _meetOn});
   }
@@ -452,8 +426,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       ]);
 
   /// Takes them where the thing they tapped is turned on.
-  void _openSetup(String what) {
+  Future<void> _openSetup(String what) async {
     Telemetry.log('onboarding_setup_open', {'what': what});
+    // "What Glyf sends" is asked here, once, before the keyboard can be
+    // turned on (Google Play and Apple want a yes before anything is sent),
+    // as a sheet rather than a screen of its own (Arpit, 2026-10-06: "can
+    // we remove what glyf sends screen that doesnt look good").
+    if (await AiConsent.needed()) {
+      if (!mounted) return;
+      await showAiConsentSheet(context);
+      if (!mounted) return;
+    }
     if (what == 'picker') {
       unawaited(_choosePicker());
       return;
@@ -519,8 +502,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   void _advance() {
     Telemetry.log('onboarding_step_complete', {'step': _steps[_step]});
-    // The tour offer is the end: its own buttons leave onboarding.
-    if (_step >= _steps.length - 1) return;
+    // The last step finishes onboarding: home, where the tour waits.
+    if (_step >= _steps.length - 1) {
+      unawaited(_finish());
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     final leaving = _steps[_step];
     _heard.add(leaving);
@@ -532,32 +518,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (leaving == 'feel') unawaited(_saveFeel());
     if (_steps[_step] == 'details') _prefillFromAccount();
     if (_steps[_step] == 'setup') _setupSince = DateTime.now().toUtc();
-    if (_steps[_step] == 'calendar') unawaited(_loadCalendarStep());
-    if (_steps[_step] == 'tour') _completing ??= _complete();
-    if (_steps[_step] == 'connect' && _googleScopes.isEmpty) {
-      // Persona decides the SUGGESTION; the checklist is the user's call.
-      _googleScopes.addAll(switch (_persona) {
-        'working' => {'calendar', 'gmail', 'meet'},
-        'student' => {'calendar'},
-        'creator' => {'calendar'},
-        _ => {'calendar'},
-      });
+    if (_steps[_step] == 'tools') {
+      unawaited(_loadLocation());
+      unawaited(_loadCalendarStep());
     }
     Telemetry.log('onboarding_step_view', {'step': _steps[_step]});
   }
 
-  /// "What Glyf sends": either answer is recorded, then on to the keyboard.
-  Future<void> _answerAi(bool agreed) async {
-    await AiConsent.answer(agreed);
-    if (mounted) _advance();
-  }
-
-  /// Back is there once signed in and past the orb's hello, up to the tour
-  /// offer (by then onboarding is saved as done).
-  bool get _canGoBack {
-    final name = _steps[_step];
-    return _step > _steps.indexOf('meet') && name != 'tour' && !_busy;
-  }
+  /// Back is there once signed in and past the orb's hello.
+  bool get _canGoBack => _step > _steps.indexOf('meet') && !_busy;
 
   void _back() {
     if (!_canGoBack) return;
@@ -750,8 +719,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
   }
 
-  /// Onboarding is done once the tour is offered: settings saved, state
-  /// written, so a phone closed on the offer opens to home next time.
+  /// Onboarding is done: settings saved and state written.
   Future<void> _complete() async {
     await _saveFeel();
     await _saveState({
@@ -764,27 +732,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     unawaited(Auth.syncPrefs());
   }
 
-  /// The website's chats on the real keyboard, from the one picked (or the
-  /// first); home when it closes.
-  Future<void> _startTour(int index) async {
+  /// The last step's Continue: saved as done, then home, where a floating
+  /// "Take a tour" button offers the app and then the chats.
+  Future<void> _finish() async {
     if (_leaving) return;
     _leaving = true;
-    await _completing;
-    if (!mounted) return;
-    Telemetry.log('tour_start', {'from': tourScenarios[index].id});
-    await Navigator.of(context).push(MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (ctx) => DemoChat(startAt: index, onDone: () => Navigator.of(ctx).pop()),
-    ));
-    widget.onDone();
-  }
-
-  Future<void> _skipTour() async {
-    if (_leaving) return;
-    _leaving = true;
-    await _completing;
-    Telemetry.log('tour_skipped', {});
-    widget.onDone();
+    await _complete();
+    if (mounted) widget.onDone();
   }
 
   /// A replay's Close: out at once, from any step.
@@ -1002,6 +956,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         final typing = MediaQuery.viewInsetsOf(context).bottom > 0;
         final filled = _filledDetails;
         final labelWidth = _detailLabelWidth(context);
+        // Name, Email, Phone and Home; the rest under More, unless one of
+        // them already holds something.
+        final more = _moreDetails ||
+            _detailFields.skip(_mainDetails).any((f) => _details[f.$1]!.text.trim().isNotEmpty);
+        final shown = more ? _detailFields : _detailFields.take(_mainDetails).toList();
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
@@ -1018,7 +977,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             const SizedBox(height: 16),
             Expanded(
               child: ListView(padding: EdgeInsets.zero, children: [
-                for (final (i, (id, kind, label, hint)) in _detailFields.indexed)
+                for (final (i, (id, kind, label, hint)) in shown.indexed)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: GlassCard(
@@ -1042,11 +1001,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                                 'social' => TextInputType.url,
                                 _ => TextInputType.text,
                               },
-                              textInputAction: i < _detailFields.length - 1
+                              textInputAction: i < shown.length - 1
                                   ? TextInputAction.next
                                   : TextInputAction.done,
-                              onSubmitted: (_) => i < _detailFields.length - 1
-                                  ? _detailFocus[_detailFields[i + 1].$1]!.requestFocus()
+                              onSubmitted: (_) => i < shown.length - 1
+                                  ? _detailFocus[shown[i + 1].$1]!.requestFocus()
                                   : FocusManager.instance.primaryFocus?.unfocus(),
                               textCapitalization: kind == 'name'
                                   ? TextCapitalization.words
@@ -1062,6 +1021,33 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                           ),
                         ),
                       ]),
+                    ),
+                  ),
+                if (!more)
+                  Semantics(
+                    identifier: 'onb:details:more',
+                    button: true,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _moreDetails = true),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+                        child: Row(children: [
+                          const Icon(Icons.add_circle_outline_rounded, size: 20, color: Glass.accent),
+                          const SizedBox(width: 8),
+                          const Text('More',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Glass.accent)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _detailFields.skip(_mainDetails).map((f) => f.$3).join(', '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13.5, color: Glass.inkSoft),
+                            ),
+                          ),
+                        ]),
+                      ),
                     ),
                   ),
                 if (_detailsError != null)
@@ -1128,18 +1114,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const SizedBox(height: 20),
         ]);
 
-      // What the keyboard sends and a real choice (core/ai_consent.dart).
-      case 'ai':
-        return _frame(children: [
-          const SizedBox(height: 30),
-          _headline('What Glyf sends'),
-          const SizedBox(height: 16),
-          const Expanded(child: SingleChildScrollView(child: AiConsentText())),
-          const SizedBox(height: 12),
-          _pill('Agree and turn on', onTap: () => _answerAi(true)),
-          _skip(label: 'Not now', id: 'onb:ai:notnow', onTap: () => _answerAi(false)),
-        ]);
-
       // Both things Glyf needs from the phone on one screen: each row opens
       // the place that turns it on.
       case 'setup':
@@ -1200,177 +1174,61 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           ),
         ]);
 
-      // "Coffee near me" is only a real answer if the keyboard knows roughly
-      // where you are. The APP asks — a keyboard extension cannot — and caches
-      // a coarse fix for the search suite to send.
-      case 'nearby':
+      // Maps, Calendar and Meet on one screen (Arpit, 2026-10-06: "i think we
+      // can combine maps, calendar and meet thing in one screen"). Each row
+      // asks for its own permission when tapped; Continue works whenever.
+      // Location: "coffee near me" is only a real answer if the keyboard knows
+      // roughly where you are, and the APP has to ask (a keyboard cannot).
+      case 'tools':
         return _frame(children: [
           const Spacer(flex: 2),
-          const Text('Search what\u2019s near you',
+          const Text('Connect your tools',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
-          const SizedBox(height: 22),
-          NearbyDemo(settled: _locationOn),
-          if (_locationOn)
-            const Padding(
-              padding: EdgeInsets.only(top: 16),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.check_circle_rounded, size: 17, color: Glass.success),
-                SizedBox(width: 7),
-                Text('Nearby search is on',
-                    style: TextStyle(color: Glass.ink, fontSize: 13.5, fontWeight: FontWeight.w600)),
-              ]),
-            ),
-
-          if (_locationNote != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(_locationNote!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
-            ),
-          const Spacer(flex: 3),
-          if (_locationOn)
-            _pill('Continue', onTap: _advance)
-          else
-            _pill('Turn on nearby search', onTap: _enableLocation),
-          if (!_locationOn) _skip(label: 'Not now'),
-          if (_locationOn) const SizedBox(height: 20),
-        ]);
-
-      case 'calendar':
-        final calendarDone = _calendarOn || _calendarAsked;
-        return _frame(children: [
-          const Spacer(flex: 2),
-          const Text('Plan it where you chat',
+          const SizedBox(height: 8),
+          const Text('Places near you, your day and Meet links, right where you type.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, color: Glass.ink, letterSpacing: -0.9)),
-          const SizedBox(height: 22),
-          _statusRow(const Text('📅', style: TextStyle(fontSize: 20)), 'Calendar', _calendarOn,
-              'onb:calendar:phone'),
+              style: TextStyle(fontSize: 15, height: 1.4, color: Glass.inkSoft)),
+          const SizedBox(height: 26),
+          _toolRow(
+            id: 'onb:tools:maps',
+            lead: const Text('📍', style: TextStyle(fontSize: 21)),
+            title: 'Maps',
+            detail: 'Find places near you, like coffee near me',
+            on: _locationOn,
+            action: 'Turn on',
+            onTap: _enableLocation,
+            note: _locationNote,
+          ),
           const SizedBox(height: 10),
-          _statusRow(const GoogleMeetMark(size: 24), 'Google Meet', _meetOn, 'onb:calendar:google'),
-          if (_calendarNote != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(_calendarNote!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
-            ),
+          _toolRow(
+            id: 'onb:tools:calendar',
+            lead: const Text('📅', style: TextStyle(fontSize: 21)),
+            title: 'Calendar',
+            detail: 'See your day and add plans from a chat',
+            on: _calendarOn,
+            action: 'Turn on',
+            onTap: _enableCalendar,
+            note: _calendarNote,
+          ),
+          const SizedBox(height: 10),
+          _toolRow(
+            id: 'onb:tools:meet',
+            lead: const GoogleMeetMark(size: 24),
+            title: 'Google Meet',
+            detail: 'Make Meet links for your plans',
+            on: _meetOn,
+            action: 'Connect',
+            onTap: _busy ? null : _connectMeet,
+            note: _meetNote,
+          ),
           const Spacer(flex: 3),
-          if (!calendarDone)
-            _pill('Turn on calendar', onTap: _enableCalendar)
-          else if (!_meetOn)
-            _pill('Connect Google Meet', onTap: _busy ? null : _connectMeet)
-          else
-            _pill('Continue', onTap: _advance),
-          if (!(calendarDone && _meetOn)) _skip(label: 'Not now'),
-          if (calendarDone && _meetOn) const SizedBox(height: 20),
-        ]);
-
-      case 'connect':
-        return _frame(children: [
-          const SizedBox(height: 30),
-          _headline('Connect your Google'),
+          _pill('Continue', onTap: _advance),
           const SizedBox(height: 20),
-          for (final (id, emoji, label, detail) in const [
-            ('youtube', '▶️', 'YouTube', 'Your liked videos in the search tab'),
-            ('calendar', '📅', 'Calendar', 'Drop events into your text'),
-            ('gmail', '✉️', 'Gmail', 'Draft replies where you type'),
-            ('meet', '🎥', 'Meet', 'Create meeting links inline'),
-          ])
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: GlassCard(
-                onTap: () => setState(() {
-                  if (!_googleScopes.remove(id)) _googleScopes.add(id);
-                }),
-                child: Row(children: [
-                  Text(emoji, style: const TextStyle(fontSize: 22)),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(label,
-                              style: const TextStyle(
-                                  color: Glass.ink,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700)),
-                          Text(detail,
-                              style: const TextStyle(
-                                  color: Glass.inkSoft, fontSize: 12)),
-                        ]),
-                  ),
-                  Icon(
-                      _googleScopes.contains(id)
-                          ? Icons.check_circle
-                          : Icons.circle_outlined,
-                      size: 22,
-                      color: _googleScopes.contains(id)
-                          ? Glass.accent
-                          : const Color(0xFFD3D6DD)),
-                ]),
-              ),
-            ),
-
-          if (_connectNote != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(_connectNote!,
-                  textAlign: TextAlign.center,
-                  style:
-                      const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
-            ),
-          const Spacer(),
-          _pill('Connect Google', onTap: _connectGoogle),
-          _skip(label: 'Not now'),
         ]);
-
-      case 'tour':
-        // The cards run edge to edge so the next one peeks in; the rest
-        // keeps the usual margins.
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const SizedBox(height: 6),
-          const Center(
-            child: TalkingOrb(
-              size: 84,
-              titleSize: 30,
-              lines: ['You’re all set', 'Try Glyf in a few real chats.'],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Expanded(child: TourPreview(onOpen: _startTour)),
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              _pill('See the tour', onTap: () => _startTour(0)),
-              _skip(label: 'Skip tour', onTap: _skipTour, id: 'onb:skip-tour'),
-            ]),
-          ),
-        ]);
-
       default:
         return const SizedBox.shrink();
-    }
-  }
-
-  /// Opens Google's consent screen with the chosen scopes; onboarding
-  /// finishes either way — the connection lands via the glyf:// deep link.
-  Future<void> _connectGoogle() async {
-    Telemetry.log('onboarding_google_start',
-        {'scopes': _googleScopes.join(',')});
-    try {
-      final url = await GlyfApi.googleStartUrl(_googleScopes.toList());
-      await GlyfBridge.openURL(url);
-      _advance(); // finish; the callback deep-links back into the app
-    } on GlyfApiException catch (e) {
-      setState(() => _connectNote = e.message);
-    } catch (_) {
-      setState(() => _connectNote = 'Engine offline. Connect later from Profile.');
     }
   }
 
@@ -1510,23 +1368,68 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ),
       );
 
-  /// One thing the step turns on, and whether it is on.
-  Widget _statusRow(Widget lead, String label, bool on, String id) => Semantics(
+  /// One tool on the Connect your tools step: what it's for, and either its
+  /// own Turn on (which asks the phone) or a tick once it's on. What went
+  /// wrong, if anything, says so under the row.
+  Widget _toolRow({
+    required String id,
+    required Widget lead,
+    required String title,
+    required String detail,
+    required bool on,
+    required String action,
+    required VoidCallback? onTap,
+    String? note,
+  }) =>
+      Semantics(
         identifier: id,
-        label: '$label, ${on ? 'on' : 'off'}',
-        child: GlassCard(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(children: [
-            SizedBox(width: 26, child: Center(child: lead)),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Text(label,
-                  style: const TextStyle(color: Glass.ink, fontSize: 15.5, fontWeight: FontWeight.w700)),
+        label: '$title, ${on ? 'on' : 'off'}',
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          GlassCard(
+            padding: const EdgeInsets.fromLTRB(16, 13, 12, 13),
+            onTap: on ? null : onTap,
+            child: Row(children: [
+              SizedBox(width: 28, child: Center(child: lead)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title,
+                      style: const TextStyle(color: Glass.ink, fontSize: 15.5, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 2),
+                  Text(detail, style: const TextStyle(color: Glass.inkSoft, fontSize: 13, height: 1.3)),
+                ]),
+              ),
+              const SizedBox(width: 10),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: on
+                    ? const Padding(
+                        key: ValueKey('on'),
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: Icon(Icons.check_circle_rounded, size: 24, color: Glass.success),
+                      )
+                    : Container(
+                        key: const ValueKey('off'),
+                        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Glass.accent.withValues(alpha: onTap == null ? 0.05 : 0.11),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(action,
+                            style: TextStyle(
+                                color: onTap == null ? Glass.inkSoft : Glass.accent,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700)),
+                      ),
+              ),
+            ]),
+          ),
+          if (note != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 0),
+              child: Text(note, style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
             ),
-            Icon(on ? Icons.check_circle_rounded : Icons.circle_outlined,
-                size: 22, color: on ? Glass.success : const Color(0xFFD3D6DD)),
-          ]),
-        ),
+        ]),
       );
 
   Widget _toggleCard(

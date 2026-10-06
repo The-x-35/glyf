@@ -31,46 +31,48 @@ class AiConsent {
   }
 }
 
-/// The words, shared by the onboarding step and the sheet existing users see.
+/// The words, in four rows that can be read at a glance (Arpit, 2026-10-06:
+/// the screen "doesnt look good"), saying all the same things: what stays on
+/// the phone, what goes and when, the saved details, and what never goes.
 class AiConsentText extends StatelessWidget {
   const AiConsentText({super.key});
 
-  static const _body = TextStyle(color: Glass.ink, fontSize: 15, height: 1.4);
-  static const _soft = TextStyle(color: Glass.inkSoft, fontSize: 13.5, height: 1.4);
-
-  Widget _point(String text) => Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('•  ', style: _body),
-          Expanded(child: Text(text, style: _body)),
-        ]),
-      );
+  static const _soft = TextStyle(color: Glass.inkSoft, fontSize: 13, height: 1.4);
 
   @override
   Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text(
-          'Glyf is a keyboard, so it sees what you type. Typing, autocorrect '
-          'and the words it learns stay on this phone.',
-          style: _body),
-      const SizedBox(height: 14),
-      const Text('Text goes to Glyf’s server, and from there to an AI provider, only:',
-          style: _body),
-      _point('when you use AI: hold space, Rewrite, Translate, Ask Glyf or one of your glyfs'),
-      _point('with AI suggestions on: the sentence you’re typing when you pause, '
-          'so the strip can offer an action'),
-      const SizedBox(height: 14),
-      const Text(
-          'With your details on, AI requests also carry what you saved (name, '
-          'email, phone, address, links) so answers can fill them in.',
-          style: _body),
-      const SizedBox(height: 14),
-      const Text(
-          'Nothing is sent from password fields. Card numbers, codes and keys '
-          'are masked first, and AI providers don’t keep it or train on it. '
-          'Searches go to Glyf’s search providers, GIF searches to KLIPY. '
-          'No ads, and your data is never sold.',
-          style: _soft),
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const _ConsentRow(
+        icon: Icons.lock_outline_rounded,
+        tint: Glass.success,
+        title: 'Stays on your phone',
+        body: 'What you type, autocorrect and the words Glyf learns.',
+      ),
+      const _ConsentRow(
+        icon: Icons.auto_awesome_rounded,
+        tint: Glass.accent,
+        title: 'Goes to Glyf’s server and an AI provider',
+        body: 'Only when you use AI: hold space, Rewrite, Translate, Ask Glyf or one of your glyfs. '
+            'With AI suggestions on, also the sentence you pause on, so the strip can offer an action.',
+      ),
+      const _ConsentRow(
+        icon: Icons.badge_outlined,
+        tint: Color(0xFF0A84FF),
+        title: 'Your saved details, when they help',
+        body: 'With your details on, AI requests also carry what you saved (name, email, phone, '
+            'address, links) so answers can fill them in.',
+      ),
+      const _ConsentRow(
+        icon: Icons.shield_outlined,
+        tint: Color(0xFFFF9F0A),
+        title: 'Never',
+        body: 'Nothing from password fields. Card numbers, codes and keys are masked first. '
+            'AI providers don’t keep it or train on it. No ads, and your data is never sold.',
+      ),
+      const Padding(
+        padding: EdgeInsets.only(top: 4),
+        child: Text('Searches go to Glyf’s search providers, GIF searches to KLIPY.', style: _soft),
+      ),
       Semantics(
         identifier: 'consent:privacy',
         button: true,
@@ -85,8 +87,43 @@ class AiConsentText extends StatelessWidget {
   }
 }
 
-/// For someone who set Glyf up before this was asked: once, on opening the
-/// app. A choice is the only way out; closing it is not a yes.
+class _ConsentRow extends StatelessWidget {
+  const _ConsentRow({required this.icon, required this.tint, required this.title, required this.body});
+
+  final IconData icon;
+  final Color tint;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 19, color: tint),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: const TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700, height: 1.3)),
+              const SizedBox(height: 2),
+              Text(body, style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, height: 1.4)),
+            ]),
+          ),
+        ]),
+      );
+}
+
+/// Asked once: on Turn on Glyf's first Open or Choose (before the keyboard
+/// can send anything), or on opening the app for anyone who hasn't answered.
+/// A choice is the only way out; closing it is not a yes.
 Future<void> showAiConsentSheet(BuildContext context) async {
   await showModalBottomSheet<void>(
     context: context,

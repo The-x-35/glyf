@@ -83,4 +83,39 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('a step saved by an older build reopens where its question went', (tester) async {
+    phone(tester);
+    await tester.runAsync(Auth.restore);
+    await tester.pumpWidget(MaterialApp(
+      home: OnboardingFlow(resume: const {'step': 'nearby'}, onDone: () {}),
+    ));
+    await settle(tester);
+
+    // Maps, Calendar and Meet share one screen now.
+    expect(find.text('Connect your tools'), findsOneWidget);
+    expect(find.text('Maps'), findsOneWidget);
+    expect(find.text('Calendar'), findsOneWidget);
+    expect(find.text('Google Meet'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('wallet, X and Telegram wait under More', (tester) async {
+    phone(tester);
+    await tester.runAsync(Auth.restore);
+    await tester.pumpWidget(MaterialApp(
+      home: OnboardingFlow(resume: const {'step': 'details'}, onDone: () {}),
+    ));
+    await settle(tester);
+
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Wallet address'), findsNothing);
+    await tester.tap(find.text('More'));
+    await settle(tester);
+    expect(find.text('Wallet address'), findsOneWidget);
+    expect(find.text('Telegram'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

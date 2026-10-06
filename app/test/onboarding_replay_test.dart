@@ -92,7 +92,7 @@ void main() {
     expect(onboarding['done'], isTrue);
     expect(onboarding['displayName'], 'Asha');
     expect(onboarding['persona'], 'student');
-    expect(onboarding['step'], 'ai');
+    expect(onboarding['step'], 'setup');
 
     await tester.tap(close());
     await tester.pump();

@@ -10,16 +10,25 @@ import '../build/builder_screen.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 import '../profile/brand_marks.dart';
+import '../shell/app_tour.dart';
 import 'keyboard_visual.dart';
 
 /// Home — your keyboard, drawn live. Bound keys glow on the visual; tap a
 /// free key for recommendations, a bound one to change it. The try field
 /// sits right underneath — nothing to scroll for.
 class HomeTab extends StatefulWidget {
-  const HomeTab({super.key, this.activeTab});
+  const HomeTab({super.key, this.activeTab, this.tourKeys, this.roomBelow = 0});
 
   /// The shell's selected tab: the poll rests while another one shows.
   final ValueListenable<int>? activeTab;
+
+  /// What the app tour rings on Home: the keyboard, the first bound key and
+  /// the try field.
+  final HomeTourKeys? tourKeys;
+
+  /// Extra space under the list while the floating "Take a tour" button
+  /// sits over its foot.
+  final double roomBelow;
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -28,6 +37,7 @@ class HomeTab extends StatefulWidget {
 class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   bool _keyboardEnabled = false;
   bool _keyboardSelected = false;
+
   /// The first look at the keyboard has come back. Until then the setup
   /// card and pill stay away: every launch (and every turn of the phone)
   /// flashed "Keyboard enabled" unticked on a phone that has it.
@@ -35,6 +45,7 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   Map<String, dynamic>? _ping;
   Map<String, dynamic> _settings = {};
   Timer? _poll;
+
   /// The try field's own, so what's typed and the focus outlive the setup
   /// card leaving the list above it.
   final _try = TextEditingController();
@@ -87,8 +98,9 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
   Future<void> _refresh() async {
     final enabled = await GlyfBridge.keyboardEnabled();
-    final selected =
-        Platform.isAndroid ? await GlyfBridge.keyboardSelected() : false;
+    final selected = Platform.isAndroid
+        ? await GlyfBridge.keyboardSelected()
+        : false;
     final ping = await GlyfBridge.keyboardPing();
     final settings = await GlyfBridge.sharedSettings();
     if (!mounted) return;
@@ -110,13 +122,15 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   bool get _needsSetup => _checked && !_ready;
 
   Map<String, String> get _bindings =>
-      ((_settings['bindings'] as Map<String, dynamic>?) ?? const {})
-          .map((k, v) => MapEntry(k, v.toString()));
+      ((_settings['bindings'] as Map<String, dynamic>?) ?? const {}).map(
+        (k, v) => MapEntry(k, v.toString()),
+      );
 
   Future<void> _setBinding(String key, String? glyfId) async {
     await GlyfBridge.updateSharedSettings((s) {
       final b = Map<String, dynamic>.from(
-          (s['bindings'] as Map<String, dynamic>?) ?? {});
+        (s['bindings'] as Map<String, dynamic>?) ?? {},
+      );
       if (glyfId == null) {
         b.remove(key);
       } else {
@@ -136,33 +150,40 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
 
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+        padding: EdgeInsets.fromLTRB(20, 14, 20, 24 + widget.roomBelow),
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         children: [
-          Row(children: [
-            const GlyfWordmark(size: 30),
-            const Spacer(),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: !_needsSetup
-                  ? const SizedBox.shrink(key: ValueKey('ready'))
-                  : Container(
-                      key: const ValueKey('setup'),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Glass.hairline),
-                      ),
-                      child: const Text('setup',
+          Row(
+            children: [
+              const GlyfWordmark(size: 30),
+              const Spacer(),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: !_needsSetup
+                    ? const SizedBox.shrink(key: ValueKey('ready'))
+                    : Container(
+                        key: const ValueKey('setup'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Glass.hairline),
+                        ),
+                        child: const Text(
+                          'setup',
                           style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Glass.inkSoft)),
-                    ),
-            ),
-          ]),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Glass.inkSoft,
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
           const SizedBox(height: 18),
 
           // Setup card ONLY while something is missing — it disappears the
@@ -174,23 +195,34 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
             Padding(
               padding: const EdgeInsets.only(bottom: 18),
               child: GlassCard(
-                child: Column(children: [
-                  _statusRow('Keyboard enabled', _keyboardEnabled,
-                      fix: GlyfBridge.openSettings),
-                  if (Platform.isAndroid)
-                    _statusRow('Switched to Glyf', _keyboardSelected,
-                        fix: GlyfBridge.showImePicker)
-                  else
-                    _statusRow('Full Access', _fullAccess,
-                        fix: GlyfBridge.openSettings),
-                ]),
+                child: Column(
+                  children: [
+                    _statusRow(
+                      'Keyboard enabled',
+                      _keyboardEnabled,
+                      fix: GlyfBridge.openSettings,
+                    ),
+                    if (Platform.isAndroid)
+                      _statusRow(
+                        'Switched to Glyf',
+                        _keyboardSelected,
+                        fix: GlyfBridge.showImePicker,
+                      )
+                    else
+                      _statusRow(
+                        'Full Access',
+                        _fullAccess,
+                        fix: GlyfBridge.openSettings,
+                      ),
+                  ],
+                ),
               ),
             ),
 
           // The keyboard itself, live.
-          KeyboardVisual(
-            bindings: _bindings,
-            onKeyTap: _keyTapped,
+          KeyedSubtree(
+            key: widget.tourKeys?.keyboard,
+            child: KeyboardVisual(bindings: _bindings, onKeyTap: _keyTapped),
           ),
           const SizedBox(height: 6),
           Center(
@@ -202,55 +234,72 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
           const SizedBox(height: 16),
 
           // Try field — right here, no scrolling.
-          GlassCard(
-            key: const ValueKey('home:try'),
-            padding: const EdgeInsets.all(6),
-            child: TextField(
-              controller: _try,
-              focusNode: _tryFocus,
-              maxLines: 3,
-              minLines: 1,
-              textCapitalization: TextCapitalization.sentences,
-              style: const TextStyle(color: Glass.ink, fontSize: 15),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.all(12),
-                hintText: 'Type something…',
-                hintStyle: TextStyle(
+          KeyedSubtree(
+            key: widget.tourKeys?.tryField,
+            child: GlassCard(
+              key: const ValueKey('home:try'),
+              padding: const EdgeInsets.all(6),
+              child: TextField(
+                controller: _try,
+                focusNode: _tryFocus,
+                maxLines: 3,
+                minLines: 1,
+                textCapitalization: TextCapitalization.sentences,
+                style: const TextStyle(color: Glass.ink, fontSize: 15),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.all(12),
+                  hintText: 'Type something…',
+                  hintStyle: TextStyle(
                     color: Glass.inkSoft.withValues(alpha: 0.7),
-                    fontSize: 14),
+                    fontSize: 14,
+                  ),
+                ),
               ),
             ),
           ),
           const SizedBox(height: 20),
 
           // Bound keys as full cards — tap to change.
-          for (final e in bound)
+          for (final (i, e) in bound.indexed)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: GlassCard(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                key: i == 0 ? widget.tourKeys?.firstKey : null,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 13,
+                ),
                 onTap: () => _keyTapped(e.key),
-                child: Row(children: [
-                  _keycap(e.key),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(Catalog.byId(e.value).title,
+                child: Row(
+                  children: [
+                    _keycap(e.key),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        Catalog.byId(e.value).title,
                         style: const TextStyle(
-                            color: Glass.ink,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600)),
-                  ),
-                  if (e.value == 'connector:meet')
-                    const GoogleMeetMark(size: 22)
-                  else
-                    Text(Catalog.byId(e.value).emoji,
-                        style: const TextStyle(fontSize: 20)),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.chevron_right,
-                      color: Color(0xFFB9BEC7), size: 20),
-                ]),
+                          color: Glass.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (e.value == 'connector:meet')
+                      const GoogleMeetMark(size: 22)
+                    else
+                      Text(
+                        Catalog.byId(e.value).emoji,
+                        style: const TextStyle(fontSize: 20),
+                      ),
+                    const SizedBox(width: 6),
+                    const Icon(
+                      Icons.chevron_right,
+                      color: Color(0xFFB9BEC7),
+                      size: 20,
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
@@ -270,45 +319,72 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         border: Border.all(color: Glass.hairline),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x10000000), blurRadius: 4, offset: Offset(0, 2)),
+            color: Color(0x10000000),
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
         ],
       ),
-      child: Stack(children: [
-        Center(
-          child: Text(letter.toUpperCase(),
+      child: Stack(
+        children: [
+          Center(
+            child: Text(
+              letter.toUpperCase(),
               style: const TextStyle(
-                  color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w700)),
-        ),
-        Positioned(
-          right: 6,
-          top: 6,
-          child: Container(
-            width: 5,
-            height: 5,
-            decoration: const BoxDecoration(
-                color: Glass.accent, shape: BoxShape.circle),
+                color: Glass.ink,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
-        ),
-      ]),
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              width: 5,
+              height: 5,
+              decoration: const BoxDecoration(
+                color: Glass.accent,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _statusRow(String label, bool ok, {required Future<void> Function() fix}) {
+  Widget _statusRow(
+    String label,
+    bool ok, {
+    required Future<void> Function() fix,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(children: [
-        Icon(ok ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: ok ? Glass.success : const Color(0xFFC5C9D1), size: 20),
-        const SizedBox(width: 12),
-        Expanded(
-            child: Text(label,
-                style: const TextStyle(color: Glass.ink, fontSize: 14.5))),
-        if (!ok)
-          TextButton(
+      child: Row(
+        children: [
+          Icon(
+            ok ? Icons.check_circle : Icons.radio_button_unchecked,
+            color: ok ? Glass.success : const Color(0xFFC5C9D1),
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Glass.ink, fontSize: 14.5),
+            ),
+          ),
+          if (!ok)
+            TextButton(
               onPressed: () => fix(),
-              child: const Text('Open Settings',
-                  style: TextStyle(color: Glass.ink, fontSize: 12.5))),
-      ]),
+              child: const Text(
+                'Open Settings',
+                style: TextStyle(color: Glass.ink, fontSize: 12.5),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -327,7 +403,8 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   /// this person built, or a new one made for this key.
   void _showKeySheet(String letter) {
     final current = _bindings[letter];
-    final mine = (_settings['customTitles'] as Map<String, dynamic>?) ?? const {};
+    final mine =
+        (_settings['customTitles'] as Map<String, dynamic>?) ?? const {};
     const holds = [
       ('surface:vault', '🗂️', 'Vault', null),
       ('connector:calendar', '📅', 'Calendar', null),
@@ -341,81 +418,125 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       backgroundColor: Colors.white,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(Glass.radiusSheet),
+        ),
+      ),
       builder: (ctx) {
-        Widget option(String id, String emoji, String title, String? subtitle) =>
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: GlassCard(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                borderColor: current == id ? Glass.accent : null,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _setBinding(letter, id);
-                },
-                child: Row(children: [
-                  if (id == 'connector:meet')
-                    const SizedBox(width: 26, child: Center(child: GoogleMeetMark(size: 24)))
-                  else
-                    Text(emoji, style: const TextStyle(fontSize: 22)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(title,
-                              style: const TextStyle(
-                                  color: Glass.ink,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700)),
-                          if (subtitle != null)
-                            Text(subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: Glass.inkSoft, fontSize: 12)),
-                        ]),
+        Widget option(
+          String id,
+          String emoji,
+          String title,
+          String? subtitle,
+        ) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: GlassCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            borderColor: current == id ? Glass.accent : null,
+            onTap: () {
+              Navigator.of(ctx).pop();
+              _setBinding(letter, id);
+            },
+            child: Row(
+              children: [
+                if (id == 'connector:meet')
+                  const SizedBox(
+                    width: 26,
+                    child: Center(child: GoogleMeetMark(size: 24)),
+                  )
+                else
+                  Text(emoji, style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: Glass.ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (subtitle != null)
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Glass.inkSoft,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
                   ),
-                  Icon(current == id ? Icons.check_circle : Icons.add_circle_outline,
-                      size: 20, color: current == id ? Glass.accent : Glass.ink),
-                ]),
-              ),
-            );
+                ),
+                Icon(
+                  current == id ? Icons.check_circle : Icons.add_circle_outline,
+                  size: 20,
+                  color: current == id ? Glass.accent : Glass.ink,
+                ),
+              ],
+            ),
+          ),
+        );
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text.rich(TextSpan(children: [
-                const TextSpan(text: 'Hold '),
-                TextSpan(
-                    text: '‘${letter.toUpperCase()}’',
-                    style: const TextStyle(color: Glass.accent)),
-                const TextSpan(text: ' to…'),
-              ]),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      const TextSpan(text: 'Hold '),
+                      TextSpan(
+                        text: '‘${letter.toUpperCase()}’',
+                        style: const TextStyle(color: Glass.accent),
+                      ),
+                      const TextSpan(text: ' to…'),
+                    ],
+                  ),
                   style: const TextStyle(
-                      color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 14),
-              Flexible(
-                child: ListView(shrinkWrap: true, children: [
-                  for (final (id, emoji, title, subtitle) in holds)
-                    option(id, emoji, title, subtitle),
-                  for (final e in mine.entries)
-                    option(e.key, '✨', e.value.toString(), null),
-                ]),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.of(ctx).pop();
-                  await Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => BuilderScreen(initialKey: letter)));
-                  _refresh();
-                },
-                child: const Text('Build your own',
+                    color: Glass.ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final (id, emoji, title, subtitle) in holds)
+                        option(id, emoji, title, subtitle),
+                      for (final e in mine.entries)
+                        option(e.key, '✨', e.value.toString(), null),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => BuilderScreen(initialKey: letter),
+                      ),
+                    );
+                    _refresh();
+                  },
+                  child: const Text(
+                    'Build your own',
                     style: TextStyle(
-                        color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w600)),
-              ),
-            ]),
+                      color: Glass.ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -428,44 +549,56 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(Glass.radiusSheet),
+        ),
+      ),
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(22, 20, 22, 12),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            if (glyfId == 'connector:meet')
-              const GoogleMeetMark(size: 38)
-            else
-              Text(g.emoji, style: const TextStyle(fontSize: 34)),
-            const SizedBox(height: 8),
-            Text(g.title,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (glyfId == 'connector:meet')
+                const GoogleMeetMark(size: 38)
+              else
+                Text(g.emoji, style: const TextStyle(fontSize: 34)),
+              const SizedBox(height: 8),
+              Text(
+                g.title,
                 style: const TextStyle(
-                    color: Glass.ink,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800)),
-            const SizedBox(height: 2),
-            Text('Hold ${letter.toUpperCase()} to fire',
-                style: const TextStyle(color: Glass.inkSoft, fontSize: 13)),
-            const SizedBox(height: 18),
-            PillButton(
+                  color: Glass.ink,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Hold ${letter.toUpperCase()} to fire',
+                style: const TextStyle(color: Glass.inkSoft, fontSize: 13),
+              ),
+              const SizedBox(height: 18),
+              PillButton(
                 label: 'Change',
                 onPressed: () {
                   Navigator.of(ctx).pop();
                   _showKeySheet(letter);
-                }),
-            TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _setBinding(letter, null);
-              },
-              child: const Text('Unbind',
-                  style: TextStyle(color: Glass.danger, fontSize: 14)),
-            ),
-          ]),
+                },
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _setBinding(letter, null);
+                },
+                child: const Text(
+                  'Unbind',
+                  style: TextStyle(color: Glass.danger, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
-
 }
