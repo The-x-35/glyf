@@ -441,6 +441,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       unawaited(_choosePicker());
       return;
     }
+    // iOS shows "Paste from Other Apps" only for an app that has asked to
+    // paste: Glyf asks once before Settings opens.
+    if (what == 'paste' && !await GlyfBridge.askPasteOnce()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Copy anything first, then tap Open')));
+      }
+      return;
+    }
     // iOS may end the app while they're in Settings (allowing Full Access
     // does), so the trip is noted: the next launch is a welcome back.
     if (!Platform.isAndroid) {
