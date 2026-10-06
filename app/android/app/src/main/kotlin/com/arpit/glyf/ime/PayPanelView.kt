@@ -107,6 +107,22 @@ class PayPanelView(
     private var quote: String? = null
     private var targetDecimals: Int? = null
     private var quoteToken = 0
+    /** Jupiter's answer in whole tokens of what's bought, and whether one is
+     *  on its way. */
+    private var quoteOut: Double? = null
+    private var quoting = false
+    /** The wallet answered: zeros are facts only then. */
+    private var balanceKnown = false
+    /** A buy's pay token list is open where "You get" was. */
+    private var picking = false
+    /** Room for the line under a buy's button (iOS: 236pt and up). */
+    private var tall = false
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        val now = h >= dp(236)
+        if (now != tall) { tall = now; post { render() } }
+    }
 
     private val blue = Color.rgb(0x0A, 0x84, 0xFF)
     private val green = Color.rgb(0x34, 0xC7, 0x59)
@@ -131,6 +147,19 @@ class PayPanelView(
     private val cta = TextView(ctx)
     private val pad = LinearLayout(ctx)
     private val body = LinearLayout(ctx)
+    // Buy, laid out the way jup.ag does it (Arpit, 2026-10-06: "we need to
+    // improve the buy ui a lot ... check jupiter jup.ag and make a proper ui
+    // for this"): what you pay, what you get, one button saying what's next.
+    private val payCard = LinearLayout(ctx)
+    private val payHeld = TextView(ctx)
+    private val payAmount = TextView(ctx)
+    private val payUsd = TextView(ctx)
+    private val payToken = TextView(ctx)
+    private val getCard = LinearLayout(ctx)
+    private val getAmount = TextView(ctx)
+    private val getUsd = TextView(ctx)
+    private val getToken = TextView(ctx)
+    private val shareButtons = mutableListOf<View>()
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun soft(a: Int, c: Int) =
@@ -182,6 +211,7 @@ class PayPanelView(
         header.addView(balance)
         body.addView(header, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(30)))
+        if (isBuy) buildBuy()
 
         amountRow.orientation = LinearLayout.HORIZONTAL
         amountRow.gravity = Gravity.CENTER_VERTICAL
@@ -278,6 +308,149 @@ class PayPanelView(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
     }
 
+    private fun pill() = GradientDrawable().apply {
+        cornerRadius = dp(16).toFloat()
+        setColor(soft(20, palette.ink))
+    }
+
+    private fun label(text: String, size: Float, bold: Boolean, color: Int) = TextView(context).apply {
+        this.text = text; textSize = size; setTextColor(color)
+        if (bold) typeface = Typeface.DEFAULT_BOLD
+    }
+
+    /** You pay (amount, its dollars, the token, the balance with Half and
+     *  Max) over You get (Jupiter's quote, its dollars, the rate). */
+    private fun buildBuy() {
+        fun card(view: LinearLayout, id: String) {
+            view.orientation = LinearLayout.VERTICAL
+            view.background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(palette.card) }
+            view.setPadding(dp(12), dp(7), dp(10), dp(8))
+            view.setTag(com.arpit.glyf.R.id.qa_id, id)
+        }
+        card(payCard, "pay:paycard")
+        payCard.setOnClickListener { if (editing) endAmount() else beginAmount() }
+        val top = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        top.addView(label("You pay", 12f, true, palette.inkSoft),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        payHeld.textSize = 11.5f
+        payHeld.setTextColor(palette.inkSoft)
+        top.addView(payHeld)
+        for ((title, share) in listOf("HALF" to 0.5, "MAX" to 1.0)) {
+            top.addView(label(title, 10.5f, true, palette.inkSoft).apply {
+                background = pill()
+                setPadding(dp(8), dp(2), dp(8), dp(2))
+                setTag(com.arpit.glyf.R.id.qa_id, "pay:${title.lowercase()}")
+                shareButtons.add(this)
+                setOnClickListener { takePercent(share); requote(); render() }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { leftMargin = dp(6) })
+        }
+        payCard.addView(top)
+        val payRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val payCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        payAmount.textSize = 22f
+        payAmount.typeface = Typeface.DEFAULT_BOLD
+        payAmount.maxLines = 1
+        payCol.addView(payAmount)
+        payUsd.textSize = 11.5f
+        payUsd.setTextColor(palette.inkSoft)
+        payCol.addView(payUsd)
+        payRow.addView(payCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        payToken.textSize = 14f
+        payToken.typeface = Typeface.DEFAULT_BOLD
+        payToken.background = pill()
+        payToken.setPadding(dp(12), dp(6), dp(10), dp(6))
+        payToken.setTag(com.arpit.glyf.R.id.qa_id, "pay:token")
+        payToken.setOnClickListener {
+            if (editing) endAmount() else { picking = !picking; render() }
+        }
+        payRow.addView(payToken)
+        payCard.addView(payRow)
+        body.addView(payCard, 1, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(2) })
+
+        card(getCard, "pay:getcard")
+        getCard.addView(label("You get", 12f, true, palette.inkSoft))
+        val getRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val getCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        getAmount.textSize = 22f
+        getAmount.typeface = Typeface.DEFAULT_BOLD
+        getAmount.maxLines = 1
+        getCol.addView(getAmount)
+        getUsd.textSize = 11.5f
+        getUsd.setTextColor(palette.inkSoft)
+        getUsd.maxLines = 1
+        getCol.addView(getUsd)
+        getRow.addView(getCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        getToken.textSize = 14f
+        getToken.typeface = Typeface.DEFAULT_BOLD
+        getToken.setTextColor(palette.ink)
+        getToken.background = pill()
+        getToken.setPadding(dp(12), dp(5), dp(12), dp(5))
+        getRow.addView(getToken)
+        getCard.addView(getRow)
+        body.addView(getCard, 2, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
+    }
+
+    private fun glyph(a: Asset) = when (a.mint) { WSOL -> "◎ "; USDC -> "$ "; else -> "" }
+
+    private fun dollars(v: Double): String {
+        val f = java.text.NumberFormat.getCurrencyInstance(java.util.Locale.US)
+        f.maximumFractionDigits = if (v >= 100) 0 else 2
+        return f.format(v)
+    }
+
+    private fun dollarsOf(a: Asset, v: Double?): Double? = when {
+        v == null -> null
+        a.mint == USDC -> v
+        a.mint == WSOL -> RatesStore.cryptoUsd("SOL")?.let { v * it }
+        else -> null
+    }
+
+    /** SOL keeps a sliver back for fees. */
+    private fun spendable() = if (paying.mint == WSOL) (paying.amount - 0.005).coerceAtLeast(0.0) else paying.amount
+
+    /** The two cards and the button: the button says what's missing before
+     *  it says Buy. */
+    private fun renderBuy() {
+        val buy = intent as? Intent.Buy ?: return
+        val value = amountValue
+        payAmount.text = if (amount.isEmpty()) "0" else amount
+        payAmount.setTextColor(if (value == null) palette.inkSoft else palette.ink)
+        val unit = buy.price?.filter { it.isDigit() || it == '.' }?.toDoubleOrNull()
+        // No dollar price for what's paid (SOL's is only fetched for a
+        // $sol): the quote's worth stands in, which is the same money.
+        val paid = dollarsOf(paying, value) ?: quoteOut?.let { out -> unit?.let { out * it } }
+        payUsd.text = paid?.let { "≈ ${dollars(it)}" }
+            ?: if (value == null && !editing) "Tap to type an amount" else ""
+        payToken.text = if (editing) "Done" else "${glyph(paying)}${paying.symbol} ▾"
+        payToken.setTextColor(if (editing) blue else palette.ink)
+        // The pad has its own 25%, 50% and Max: one set on screen.
+        for (b in shareButtons) b.visibility = if (editing) View.GONE else View.VISIBLE
+        payHeld.text = when {
+            !connected -> ""
+            balanceKnown -> "${glyph(paying)}${compact(paying.amount)}"
+            else -> "…"
+        }
+        getToken.text = buy.symbol
+        val out = quoteOut
+        getAmount.text = out?.let { compact(it) } ?: if (value != null && quoting) "…" else "0"
+        getAmount.setTextColor(if (out != null) palette.ink else palette.inkSoft)
+        val line = mutableListOf<String>()
+        if (value != null && out == null && !quoting) line.add("No price right now")
+        if (out != null && unit != null) line.add("≈ ${dollars(out * unit)}")
+        buy.price?.let { line.add("1 ${buy.symbol} = $it") }
+        getUsd.text = line.joinToString(" · ")
+        val short = value != null && balanceKnown && value > spendable() + 1e-9
+        go.text = when {
+            value == null -> "Enter an amount"
+            short -> "Not enough ${paying.symbol}"
+            else -> "Buy " + (paid?.let { "≈ ${dollars(it)} of " } ?: "") + buy.symbol
+        }
+        go.alpha = if (value == null || short) 0.45f else 1f
+    }
+
     /** The panel's own digits, shown while the amount is typed. */
     private fun buildPad() {
         val rows = listOf(listOf("1", "2", "3", "4", "5"), listOf("6", "7", "8", "9", "0"),
@@ -370,7 +543,11 @@ class PayPanelView(
             pasteAddress()
             if (to == null) return
         }
-        if (amountValue == null) { beginAmount(); return }
+        val value = amountValue ?: run { beginAmount(); return }
+        if (isBuy && balanceKnown && value > spendable() + 1e-9) {
+            onToast("Not enough ${paying.symbol}")
+            return
+        }
         val query = mutableMapOf<String, String>()
         when (intent) {
             is Intent.Send -> {
@@ -395,6 +572,7 @@ class PayPanelView(
         val address = walletAddress ?: return
         rpc("getBalance", JSONArray().put(address).put(JSONObject().put("commitment", "confirmed"))) { result ->
             val lamports = (result as? JSONObject)?.opt("value") as? Number ?: return@rpc
+            balanceKnown = true
             upsert(Asset(WSOL, "SOL", 9, lamports.toDouble() / 1e9))
         }
         rpc("getTokenAccountsByOwner", JSONArray().put(address)
@@ -452,7 +630,8 @@ class PayPanelView(
         if (intent !is Intent.Buy) return
         val token = ++quoteToken
         val value = amountValue
-        if (value == null) { quote = null; return }
+        if (value == null) { quote = null; quoteOut = null; quoting = false; return }
+        quoting = true
         main.postDelayed({
             if (token != quoteToken) return@postDelayed
             val units = (value * Math.pow(10.0, paying.decimals.toDouble())).toLong()
@@ -461,10 +640,11 @@ class PayPanelView(
                 "&outputMint=${URLEncoder.encode(intent.mint, "UTF-8")}&amount=$units"
             http("GET", url, null, raw = true) { obj ->
                 if (token != quoteToken) return@http
+                quoting = false
                 val out = obj?.optString("outAmount")?.toDoubleOrNull()
                 val decimals = targetDecimals
-                quote = if (out != null && decimals != null)
-                    "≈ ${compact(out / Math.pow(10.0, decimals.toDouble()))} ${intent.symbol}" else null
+                quoteOut = if (out != null && decimals != null) out / Math.pow(10.0, decimals.toDouble()) else null
+                quote = quoteOut?.let { "≈ ${compact(it)} ${intent.symbol}" }
                 render()
             }
         }, 400)
@@ -600,6 +780,30 @@ class PayPanelView(
             amountRow.setOnClickListener { beginAmount() }
             toCol.setTag(com.arpit.glyf.R.id.qa_id, "pay:to")
             toCol.setOnClickListener { if (isBuy) beginAmount() else pasteAddress() }
+        }
+
+        // A buy is its two cards: the token list only when its pill is
+        // tapped, and the header's balance moves into You pay.
+        if (isBuy) {
+            // The strip names the buy, as on iOS: no header in the panel.
+            header.visibility = View.GONE
+            meta.visibility = if (form && tall) View.VISIBLE else View.GONE
+            amountRow.visibility = View.GONE
+            balance.visibility = View.GONE
+            payCard.visibility = if (form || editing) View.VISIBLE else View.GONE
+            getCard.visibility = if (form && !picking) View.VISIBLE else View.GONE
+            assetsScroll.visibility = if (form && picking) View.VISIBLE else View.GONE
+            if (picking) for (i in 0 until assetsRow.childCount) {
+                val b = assetsRow.getChildAt(i)
+                val asset = assets.getOrNull(i) ?: continue
+                b.setOnClickListener {
+                    paying = asset
+                    picking = false
+                    requote()
+                    render()
+                }
+            }
+            renderBuy()
         }
     }
 }

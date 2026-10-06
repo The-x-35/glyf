@@ -4942,8 +4942,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT, keysH))
         featurePanel = panel
-        // iOS: the strip names it, "✕ [dollarsign.circle] Pay".
-        showStripTitle("Pay", onBack = null, icon = "pay")
+        // iOS: the strip names it, "✕ [dollarsign.circle] Pay"; a buy by
+        // what it buys ("Buy AAPL"), its panel then all cards.
+        showStripTitle(if (intent is PayPanelView.Intent.Buy) "Buy ${intent.symbol}" else "Pay",
+            onBack = null, icon = "pay")
     }
 
     /** A payment finished while the keyboard was away (the app wrote how it

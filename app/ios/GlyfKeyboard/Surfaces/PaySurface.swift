@@ -94,6 +94,34 @@ final class PaySurface: UIView {
     private let editKey = UILabel()
     private var percentButtons: [UIButton] = []
     private let doneButton = UIButton(type: .system)
+    // Buy, laid out the way jup.ag does it (Arpit, 2026-10-06: "we need to
+    // improve the buy ui a lot ... check jupiter jup.ag and make a proper ui
+    // for this"): what you pay (the amount, its dollars, the token, the
+    // balance with Half and Max), what you get (Jupiter's quote, its dollars,
+    // the rate), and one button that says what's next.
+    private let payCard = UIControl()
+    private let payKey = UILabel()
+    private let payHeld = UILabel()
+    private let halfButton = UIButton(type: .system)
+    private let maxButton = UIButton(type: .system)
+    private let payAmount = UILabel()
+    private let payUSD = UILabel()
+    private let payToken = UIButton(type: .system)
+    private let getCard = UIView()
+    private let getKey = UILabel()
+    private let getAmount = UILabel()
+    private let getUSD = UILabel()
+    private let getToken = UILabel()
+    /// The pay token list is open where "You get" was.
+    private var picking = false
+    /// Jupiter's answer for the typed amount, in whole tokens of what's
+    /// bought; asking says so while it's on its way.
+    private var quoteOut: Double?
+    private var quoting = false
+    /// Token pills and the Half/Max chips: a grey that reads on the card in
+    /// either appearance.
+    private static let pillFill = UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor.white.withAlphaComponent(0.12) : UIColor.black.withAlphaComponent(0.06) }
 
     init(intent: Intent) {
         self.intent = intent
@@ -270,6 +298,78 @@ final class PaySurface: UIView {
         doneButton.accessibilityIdentifier = "pay:done"
         doneButton.addAction(UIAction { [weak self] _ in self?.endAmount() }, for: .touchUpInside)
         addSubview(doneButton)
+        if isBuy { buildBuy() }
+    }
+
+    private func buildBuy() {
+        for card in [payCard, getCard] as [UIView] {
+            card.backgroundColor = Glass.surfaceCard
+            card.layer.cornerRadius = 14
+            card.layer.cornerCurve = .continuous
+            insertSubview(card, belowSubview: assetsRow)
+        }
+        payCard.accessibilityIdentifier = "pay:paycard"
+        payCard.addAction(UIAction { [weak self] _ in self?.beginAmount() }, for: .touchUpInside)
+        for (label, text) in [(payKey, "You pay"), (getKey, "You get")] {
+            label.text = text
+            label.font = .systemFont(ofSize: 12, weight: .semibold)
+            label.textColor = Glass.textSecondary
+            label.isUserInteractionEnabled = false
+        }
+        payCard.addSubview(payKey)
+        getCard.addSubview(getKey)
+        payHeld.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
+        payHeld.textColor = Glass.textSecondary
+        payHeld.textAlignment = .right
+        payHeld.isUserInteractionEnabled = false
+        payCard.addSubview(payHeld)
+        for (button, title, share, id) in [(halfButton, "HALF", 0.5, "pay:half"), (maxButton, "MAX", 1.0, "pay:max")] {
+            button.setTitle(title, for: .normal)
+            button.titleLabel?.font = .systemFont(ofSize: 10.5, weight: .bold)
+            button.setTitleColor(Glass.textSecondary, for: .normal)
+            button.backgroundColor = Self.pillFill
+            button.layer.cornerRadius = 9
+            button.layer.cornerCurve = .continuous
+            button.accessibilityIdentifier = id
+            button.addAction(UIAction { [weak self] _ in self?.takePercent(share) }, for: .touchUpInside)
+            payCard.addSubview(button)
+        }
+        for label in [payAmount, getAmount] {
+            label.font = .monospacedDigitSystemFont(ofSize: 24, weight: .bold)
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.55
+            label.isUserInteractionEnabled = false
+        }
+        payCard.addSubview(payAmount)
+        getCard.addSubview(getAmount)
+        for label in [payUSD, getUSD] {
+            label.font = .systemFont(ofSize: 12)
+            label.textColor = Glass.textSecondary
+            label.isUserInteractionEnabled = false
+        }
+        payCard.addSubview(payUSD)
+        getCard.addSubview(getUSD)
+        payToken.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        payToken.setTitleColor(Glass.textPrimary, for: .normal)
+        payToken.backgroundColor = Self.pillFill
+        payToken.layer.cornerRadius = 16
+        payToken.layer.cornerCurve = .continuous
+        payToken.contentEdgeInsets = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 10)
+        payToken.accessibilityIdentifier = "pay:token"
+        payToken.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.picking.toggle()
+            self.render()
+        }, for: .touchUpInside)
+        payCard.addSubview(payToken)
+        getToken.font = .systemFont(ofSize: 14, weight: .semibold)
+        getToken.textColor = Glass.textPrimary
+        getToken.backgroundColor = Self.pillFill
+        getToken.textAlignment = .center
+        getToken.layer.cornerRadius = 14
+        getToken.layer.cornerCurve = .continuous
+        getToken.clipsToBounds = true
+        getCard.addSubview(getToken)
     }
 
     // MARK: state
@@ -288,6 +388,38 @@ final class PaySurface: UIView {
 
     private var amountValue: Double? {
         Double(amountEditor.text).flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    /// What can be spent of the paying asset: SOL keeps a sliver for fees.
+    private var spendable: Double {
+        paying.mint == Self.wsol ? max(0, paying.amount - 0.005) : paying.amount
+    }
+
+    /// ◎ for SOL, $ for USDC, nothing for the rest.
+    static func glyph(_ asset: Asset) -> String {
+        asset.mint == wsol ? "◎ " : asset.mint == usdcMint ? "$ " : ""
+    }
+
+    /// "$5.98", "$1,240": a dollar figure.
+    static func dollars(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.locale = Locale(identifier: "en_US")
+        f.maximumFractionDigits = value >= 100 ? 0 : 2
+        return f.string(from: NSNumber(value: value)) ?? "$\(value)"
+    }
+
+    /// The chip's price ("$332.57") as a number.
+    static func price(_ text: String?) -> Double? {
+        text.flatMap { Double($0.filter { "0123456789.".contains($0) }) }
+    }
+
+    /// What an amount of an asset is worth in dollars, when that is known.
+    private func dollarsOf(_ asset: Asset, _ amount: Double?) -> Double? {
+        guard let amount else { return nil }
+        if asset.mint == Self.usdcMint { return amount }
+        if asset.mint == Self.wsol, let sol = RatesStore.shared.crypto["SOL"] { return amount * sol }
+        return nil
     }
 
     /// The big figure: dollars read with a $, everything else as itself.
@@ -334,11 +466,13 @@ final class PaySurface: UIView {
         while text.hasSuffix("0") { text.removeLast() }
         if text.hasSuffix(".") { text.removeLast() }
         amountEditor.setText(text)
+        requote()
         render()
     }
 
     private func pick(_ asset: Asset) {
         paying = asset
+        picking = false
         if asset.mint != Self.usdcMint { isPrivate = false; privateSwitch.setOn(false, animated: false) }
         requote()
         render()
@@ -385,7 +519,11 @@ final class PaySurface: UIView {
             pasteAddress()
             guard to != nil else { return }
         }
-        guard amountValue != nil else { beginAmount(); return }
+        guard let amount = amountValue else { beginAmount(); return }
+        if isBuy, balance == .known, amount > spendable + 1e-9 {
+            delegate?.payToast("Not enough \(paying.symbol)")
+            return
+        }
         var query: [String: String]
         switch intent {
         case .send:
@@ -514,9 +652,13 @@ final class PaySurface: UIView {
         let asked = quoteAsked
         guard let amount = amountValue, amount > 0 else {
             quote = nil
+            quoteOut = nil
+            quoting = false
             renderQuote()
             return
         }
+        quoting = true
+        renderQuote()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let units = Int(amount * pow(10, Double(self.paying.decimals)))
@@ -531,16 +673,19 @@ final class PaySurface: UIView {
             URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
                 DispatchQueue.main.async {
                     guard let self, asked == self.quoteAsked else { return }
+                    self.quoting = false
                     guard let data,
                           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let out = obj["outAmount"] as? String, let raw = Double(out),
                           let decimals = self.targetDecimals else {
                         self.quote = nil
+                        self.quoteOut = nil
                         self.renderQuote()
                         return
                     }
                     let whole = raw / pow(10, Double(decimals))
                     self.quote = "≈ \(Self.compact(whole)) \(symbol)"
+                    self.quoteOut = whole
                     self.renderQuote()
                 }
             }.resume()
@@ -626,6 +771,7 @@ final class PaySurface: UIView {
 
     private func renderQuote() {
         guard case .buy(_, let symbol, let price) = intent else { return }
+        renderBuy()
         if let quote {
             toName.text = quote
             toAddress.text = price.map { "1 \(symbol) = \($0)" } ?? ""
@@ -639,9 +785,12 @@ final class PaySurface: UIView {
         let editing = editingAmount
         let form = formReady && !editing
 
-        for v in [balanceKey, balanceValue, balanceTokens] { v.isHidden = !form }
-        amountRow.isHidden = !form
-        assetsRow.isHidden = !form
+        for v in [balanceKey, balanceValue, balanceTokens] { v.isHidden = !form || isBuy }
+        amountRow.isHidden = !form || isBuy
+        // A buy shows its pay token list only when its pill is tapped.
+        assetsRow.isHidden = !form || (isBuy && !picking)
+        payCard.isHidden = !(form && isBuy)
+        getCard.isHidden = payCard.isHidden
         privateRow.isHidden = !(form && !isBuy && paying.mint == Self.usdcMint)
         // The panel is one row too small for both: when Private shows, the
         // fee note rides on it and the meta line stays out.
@@ -650,6 +799,7 @@ final class PaySurface: UIView {
         leadLabel.isHidden = !needsConnect || editing
         ctaButton.isHidden = leadLabel.isHidden
         for v in [editKey, amountEditor, doneButton] { v.isHidden = !editing }
+        editKey.text = isBuy ? "Amount in \(paying.symbol)" : "Amount"
         for b in percentButtons { b.isHidden = !editing }
 
         if needsConnect {
@@ -679,9 +829,8 @@ final class PaySurface: UIView {
             goButton.setTitle(isPrivate && paying.mint == Self.usdcMint ? "Send privately" : "Send", for: .normal)
         case .buy:
             toName.textColor = Glass.textPrimary
-            renderQuote()
             metaLabel.text = "Best route via Jupiter · Phantom signs"
-            goButton.setTitle("Buy", for: .normal)
+            renderQuote()
         }
         privateIcon.tintColor = isPrivate ? Glass.textPrimary : Glass.textSecondary
         privateBy.text = isPrivate ? "≈0.002 SOL + 0.1% · off-chain" : "by MagicBlock"
@@ -691,8 +840,55 @@ final class PaySurface: UIView {
     }
 
     private func renderGo() {
+        if isBuy { renderBuy(); return }
         let ready = amountValue != nil && formReady && (isBuy || to != nil)
         goButton.alpha = ready ? 1 : 0.45
+    }
+
+    /// The two cards and the button, from the amount, the balance and the
+    /// quote: the button says what's missing before it says Buy.
+    private func renderBuy() {
+        guard case .buy(_, let symbol, let price) = intent else { return }
+        let amount = amountValue
+        payAmount.text = amountEditor.text.isEmpty ? "0" : amountEditor.text
+        payAmount.textColor = amount == nil ? Glass.textSecondary : Glass.textPrimary
+        // No dollar price for what's paid (SOL's is only fetched for a
+        // $sol): the quote's worth stands in, which is the same money.
+        let unit = Self.price(price)
+        let paid = dollarsOf(paying, amount) ?? quoteOut.flatMap { out in unit.map { out * $0 } }
+        payUSD.text = paid.map { "≈ \(Self.dollars($0))" } ?? (amount == nil && !editingAmount ? "Tap to type an amount" : "")
+        payToken.setTitle("\(Self.glyph(paying))\(paying.symbol) ▾", for: .normal)
+        switch balance {
+        case .known: payHeld.text = "\(Self.glyph(paying))\(Self.compact(paying.amount))"
+        case .loading: payHeld.text = "…"
+        case .unavailable: payHeld.text = ""
+        }
+        getKey.text = picking ? "Pay with" : "You get"
+        for v in [getAmount, getUSD, getToken] as [UIView] { v.isHidden = picking }
+        getToken.text = symbol
+        if let out = quoteOut {
+            getAmount.text = Self.compact(out)
+            getAmount.textColor = Glass.textPrimary
+        } else {
+            getAmount.text = amount != nil && quoting ? "…" : "0"
+            getAmount.textColor = Glass.textSecondary
+        }
+        var line: [String] = []
+        if let out = quoteOut, let unit { line.append("≈ \(Self.dollars(out * unit))") }
+        if let price { line.append("1 \(symbol) = \(price)") }
+        if amount != nil, quoteOut == nil, !quoting { line.insert("No price right now", at: 0) }
+        getUSD.text = line.joined(separator: " · ")
+
+        let short = amount != nil && balance == .known && (amount ?? 0) > spendable + 1e-9
+        if amount == nil {
+            goButton.setTitle("Enter an amount", for: .normal)
+        } else if short {
+            goButton.setTitle("Not enough \(paying.symbol)", for: .normal)
+        } else {
+            goButton.setTitle("Buy \(paid.map { "≈ \(Self.dollars($0)) of " } ?? "")\(symbol)", for: .normal)
+        }
+        goButton.alpha = amount == nil || short ? 0.45 : 1
+        setNeedsLayout()
     }
 
     override func layoutSubviews() {
@@ -714,6 +910,10 @@ final class PaySurface: UIView {
         if !ctaButton.isHidden {
             leadLabel.frame = CGRect(x: 24, y: 46, width: w - 48, height: 40)
             ctaButton.frame = CGRect(x: 60, y: 100, width: w - 120, height: 42)
+            return
+        }
+        if isBuy, !payCard.isHidden {
+            layoutBuy()
             return
         }
         let x: CGFloat = 10
@@ -760,5 +960,53 @@ final class PaySurface: UIView {
         let goH: CGFloat = 42
         let goY = min(max(y, bounds.height - goH - 10), bounds.height - goH - 6)
         goButton.frame = CGRect(x: x, y: goY, width: cw, height: goH)
+    }
+
+    /// You pay over You get over the button, filling the panel; the route
+    /// line under the button only when there's room for it.
+    private func layoutBuy() {
+        let x: CGFloat = 10
+        let cw = bounds.width - 20
+        let goH: CGFloat = 42
+        let showMeta = bounds.height >= 236
+        metaLabel.isHidden = !showMeta
+        let bottom = bounds.height - 8 - (showMeta ? 19 : 0)
+        goButton.frame = CGRect(x: x, y: bottom - goH, width: cw, height: goH)
+        if showMeta { metaLabel.frame = CGRect(x: x, y: goButton.frame.maxY + 4, width: cw, height: 15) }
+        let top: CGFloat = 6
+        let gap: CGFloat = 6
+        let room = goButton.frame.minY - 8 - top - gap
+        let payH = min(84, max(66, (room * 0.53).rounded()))
+        let getH = max(56, room - payH)
+        payCard.frame = CGRect(x: x, y: top, width: cw, height: payH)
+        getCard.frame = CGRect(x: x, y: payCard.frame.maxY + gap, width: cw, height: getH)
+
+        // You pay: the key and balance chips on top, the amount and its
+        // dollars down the left, the token pill on the right.
+        payKey.frame = CGRect(x: 12, y: 8, width: 70, height: 16)
+        maxButton.frame = CGRect(x: cw - 10 - 38, y: 7, width: 38, height: 18)
+        halfButton.frame = CGRect(x: maxButton.frame.minX - 5 - 40, y: 7, width: 40, height: 18)
+        payHeld.frame = CGRect(x: 80, y: 7, width: max(0, halfButton.frame.minX - 86), height: 18)
+        let pw = min(140, payToken.intrinsicContentSize.width + 2)
+        let tokenY = 8 + 16 + (payH - 24 - 32) / 2
+        payToken.frame = CGRect(x: cw - 10 - pw, y: tokenY, width: pw, height: 32)
+        payAmount.frame = CGRect(x: 12, y: 26, width: payToken.frame.minX - 20, height: 30)
+        payUSD.frame = CGRect(x: 12, y: payAmount.frame.maxY, width: payToken.frame.minX - 20, height: 15)
+
+        // You get: the quote, its dollars and the rate; the bought token's
+        // pill on the right. Or, while choosing, the wallet's tokens.
+        getKey.frame = CGRect(x: 12, y: 8, width: 120, height: 16)
+        let gw = getToken.intrinsicContentSize.width + 24
+        getToken.frame = CGRect(x: cw - 10 - gw, y: 8 + 16 + (getH - 24 - 28) / 2, width: gw, height: 28)
+        getAmount.frame = CGRect(x: 12, y: 24, width: getToken.frame.minX - 20, height: 28)
+        getUSD.frame = CGRect(x: 12, y: getAmount.frame.maxY, width: cw - 24, height: 15)
+        assetsRow.frame = CGRect(x: x + 10, y: getCard.frame.minY + 28, width: cw - 20, height: 28)
+        var ax: CGFloat = 0
+        for b in assetButtons {
+            let bw = b.intrinsicContentSize.width + 8
+            b.frame = CGRect(x: ax, y: 1, width: bw, height: 26)
+            ax += bw + 6
+        }
+        assetsRow.contentSize = CGSize(width: max(0, ax - 6), height: 28)
     }
 }

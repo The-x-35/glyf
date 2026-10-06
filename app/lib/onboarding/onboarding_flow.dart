@@ -1153,6 +1153,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             inUseOn: inUse,
             onKeyboard: () => _openSetup('keyboard'),
             onInUse: () => _openSetup(android ? 'picker' : 'access'),
+            // Android never asks to paste; the iPhone does until this is Allow.
+            onPaste: android ? null : () => _openSetup('paste'),
           ),
           // The practice box. iPhone: Full Access is real only when the
           // keyboard itself says so, by turning up here. Android: the picker

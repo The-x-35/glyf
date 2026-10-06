@@ -21,6 +21,9 @@ object RatesStore {
     @Volatile private var fiat: Map<String, Double> = emptyMap()
     @Volatile private var fiatAt = 0L
     private val crypto = ConcurrentHashMap<String, Double>()
+
+    /** A token's last dollar price ("SOL"), when one has been fetched. */
+    fun cryptoUsd(symbol: String): Double? = crypto[symbol]
     /** The token behind each cashtag, so Buy knows what to buy. */
     private val mints = ConcurrentHashMap<String, String>()
     /** The market's ticker for what was typed ("APPL" → "AAPL"). */
