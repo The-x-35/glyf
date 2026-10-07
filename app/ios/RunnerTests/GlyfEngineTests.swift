@@ -1275,6 +1275,116 @@ final class GlyfEngineTests: XCTestCase {
         }
     }
 
+    /// What a 2026-10-07 probe of 170 everyday messages found the strip
+    /// missing: both currencies named, an amount of a coin, sums said in
+    /// words, the time somewhere else, the wait till a clock time. iOS first;
+    /// Smart.kt catches up (docs/OPEN-ITEMS.md).
+    func testEverydayAnswersFromTheProbe() throws {
+        let rates = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 83.5, "EUR": 0.92], crypto: ["SOL": 120, "BTC": 65000],
+                                        local: "USD", mints: ["SOL": "So11111111111111111111111111111111111111112"])
+        func shown(_ text: String) -> String? {
+            if case .money(let shown, _, _)? = Smart.chip(for: text, fields: [], rates: rates, region: "US") { return shown }
+            return nil
+        }
+        XCTAssertEqual(shown("100 usd to inr"), "$100 = ₹8,350")
+        XCTAssertEqual(shown("50 dollars in rupees"), "$50 = ₹4,175")
+        XCTAssertEqual(shown("$20 in euros"), "$20 = €18.40")
+        XCTAssertEqual(shown("₹5000 to usd"), "₹5,000 = $59.88")
+        XCTAssertEqual(Smart.currencyPair(in: "100 usd to inr")?.to, "INR")
+        XCTAssertNil(Smart.currencyPair(in: "100 usd to"), "the second currency not written yet")
+        XCTAssertNil(Smart.currencyPair(in: "2 to 3"))
+        XCTAssertEqual(shown("1 sol"), "1 SOL = $120.00")
+        XCTAssertEqual(shown("0.5 btc"), "0.5 BTC = $32,500.00")
+        if case .money(_, _, let buy)? = Smart.chip(for: "2 sol", fields: [], rates: rates, region: "US") {
+            XCTAssertNotNil(buy, "a coin that can be bought offers Buy")
+        } else { XCTFail("2 sol") }
+        XCTAssertNil(Smart.coinAmount(in: "2 link"), "a word, not a coin")
+        XCTAssertNil(Smart.coinAmount(in: "$2 sol"))
+
+        XCTAssertEqual(Smart.calc("half of 350")?.value, "175")
+        XCTAssertEqual(Smart.calc("a third of 90")?.value, "30")
+        XCTAssertEqual(Smart.calc("quarter of 100")?.value, "25")
+        XCTAssertEqual(Smart.calc("double 25")?.value, "50")
+        XCTAssertEqual(Smart.calc("twice 40")?.value, "80")
+        XCTAssertEqual(Smart.calc("sqrt 81")?.value, "9")
+        XCTAssertEqual(Smart.calc("square root of 144")?.value, "12")
+        XCTAssertEqual(Smart.calc("half of 350")?.expression, "half of 350")
+        XCTAssertNil(Smart.calc("page 2 of 10"))
+
+        let noon = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-07T12:00:00Z"))
+        let newYork = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        XCTAssertEqual(Smart.cityTime(in: "what time is it in tokyo", now: noon, here: newYork, region: "US")?.results, ["9 PM Tokyo"])
+        XCTAssertEqual(Smart.cityTime(in: "tokyo time", now: noon, here: newYork, region: "US")?.results, ["9 PM Tokyo"])
+        XCTAssertEqual(Smart.cityTime(in: "time in london?", now: noon, here: newYork, region: "US")?.results, ["1 PM London"])
+        XCTAssertEqual(Smart.cityTime(in: "whats the time in ist", now: noon, here: newYork, region: "US")?.results, ["5:30 PM IST"])
+        XCTAssertNil(Smart.cityTime(in: "time in new york", now: noon, here: newYork, region: "US"), "the phone's own zone")
+        XCTAssertNil(Smart.cityTime(in: "dinner time", now: noon, here: newYork, region: "US"))
+        XCTAssertNil(Smart.cityTime(in: "what time", now: noon, here: newYork, region: "US"))
+
+        let afternoon = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-07T14:45:00Z"))
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        XCTAssertEqual(Smart.untilTime(in: "how long until 5pm", now: afternoon, here: utc)?.results, ["in 2h 15m"])
+        XCTAssertEqual(Smart.untilTime(in: "till 6:30pm", now: afternoon, here: utc)?.results, ["in 3h 45m"])
+        XCTAssertEqual(Smart.untilTime(in: "until 9am", now: afternoon, here: utc)?.results, ["in 18h 15m"])
+        XCTAssertEqual(Smart.untilTime(in: "until 15:45", now: afternoon, here: utc)?.results, ["in 1h"])
+        XCTAssertNil(Smart.untilTime(in: "until 5", now: afternoon, here: utc), "no am/pm: not a time")
+        XCTAssertEqual(Smart.quickAnswer(in: "how long until 5pm", now: afternoon, here: utc, region: "US")?.results, ["in 2h 15m"])
+
+        let list = Smart.quickAnswer(in: "need: milk, eggs, bread", region: "US")
+        XCTAssertEqual(list?.results, ["• List", "1. List"])
+        XCTAssertEqual(list?.inserts?.first, "need:\n• milk\n• eggs\n• bread")
+        XCTAssertEqual(list?.inserts?.last, "need:\n1. milk\n2. eggs\n3. bread")
+        XCTAssertEqual(Smart.listMaker(in: "todo: call bank, gym and book flight")?.inserts?.first,
+                       "todo:\n• call bank\n• gym\n• book flight")
+        XCTAssertEqual(Smart.listMaker(in: "get milk, eggs, bread")?.inserts?.first, "• milk\n• eggs\n• bread")
+        XCTAssertNil(Smart.listMaker(in: "need: milk, eggs"), "two things are not a list")
+        XCTAssertNil(Smart.listMaker(in: "lets meet at 7: pizza, drinks, games"))
+        XCTAssertNil(Smart.listMaker(in: "i love you, miss you, see you"))
+
+        let book = VaultField(id: "booking", kind: "link", label: "Book a time", value: "https://cal.com/alex/30min")
+        for text in ["when are you free?", "send me your calendar link", "can we book a time", "lets schedule a call",
+                     "what time works for you"] {
+            XCTAssertEqual(Smart.chip(for: text, fields: [], ownBooking: "https://cal.com/alex/30min"), .vault(field: book), text)
+        }
+        XCTAssertNil(Smart.chip(for: "when are you free?", fields: [], ownBooking: nil), "no page saved")
+        XCTAssertNil(Smart.chip(for: "free pizza", fields: [], ownBooking: "https://cal.com/alex/30min"))
+
+        let poll = Smart.pollMaker(in: "pizza, burgers or pasta?")
+        XCTAssertEqual(poll?.results, ["Make it a poll"])
+        XCTAssertEqual(poll?.inserts?.first, "pizza, burgers or pasta?\n1️⃣ pizza\n2️⃣ burgers\n3️⃣ pasta\nreply with a number")
+        XCTAssertEqual(Smart.pollMaker(in: "do you guys want coffee, tea or juice?")?.inserts?.first?.components(separatedBy: "\n")[1], "1️⃣ coffee")
+        XCTAssertEqual(Smart.pollMaker(in: "6, 7 or 8pm?")?.inserts?.first?.components(separatedBy: "\n")[3], "3️⃣ 8pm")
+        XCTAssertNil(Smart.pollMaker(in: "sat or sun?"), "two choices are a question")
+        XCTAssertNil(Smart.pollMaker(in: "are you coming or not?"))
+        XCTAssertNil(Smart.pollMaker(in: "pizza, burgers or pasta"), "not asked")
+        XCTAssertEqual(Smart.quickAnswer(in: "lunch at 1? pizza, burgers or pasta?", region: "US")?.results, ["Make it a poll"])
+
+        XCTAssertEqual(Smart.cityState(in: "123 Market St, San Francisco, CA 94103")?.city, "San Francisco")
+        XCTAssertEqual(Smart.cityState(in: "123 Market St, San Francisco, CA 94103")?.state, "CA")
+        XCTAssertEqual(Smart.cityState(in: "10 Downing St, London SW1A 2AA")?.city, "London")
+        XCTAssertNil(Smart.cityState(in: "10 Downing St, London SW1A 2AA")?.state)
+        XCTAssertEqual(Smart.cityState(in: "12 MG Road, Indiranagar, Bengaluru 560038")?.city, "Bengaluru")
+        XCTAssertEqual(Smart.cityState(in: "42 Glass Lane, Austin, TX, 78701")?.city, "Austin")
+        XCTAssertNil(Smart.cityState(in: "42 Glass Lane"))
+        let home = VaultField(id: "a", kind: "address", label: "Home", value: "123 Market St, San Francisco, CA 94103")
+        XCTAssertEqual(Smart.detailsFor(kind: "city", fields: [home]).map(\.value), ["San Francisco"])
+        XCTAssertEqual(Smart.detailsFor(kind: "state", fields: [home]).map(\.value), ["CA"])
+        XCTAssertEqual(Smart.detailsFor(kind: "cityState", fields: [home]).map(\.value), ["San Francisco, CA"])
+        XCTAssertEqual(Smart.chip(for: "", fields: [home], field: Smart.FieldHint(kind: "city", empty: true))?.value, "San Francisco")
+
+        for text in ["can we hop on a quick call?", "lets call", "send me the meet link", "free to talk?", "zoom?"] {
+            XCTAssertTrue(Smart.asksToCall(text), text)
+        }
+        for text in ["call me", "i called her", "the meeting is at 3"] {
+            XCTAssertFalse(Smart.asksToCall(text), text)
+        }
+
+        XCTAssertEqual(EmojiWords.emoji(for: "birthday"), "🎂")
+        XCTAssertEqual(EmojiWords.emoji(for: "Pizza!"), "🍕")
+        XCTAssertEqual(EmojiWords.emoji(for: "tacos"), "🌮")
+        XCTAssertNil(EmojiWords.emoji(for: "the"))
+    }
+
     /// shared/vault/cases.json: the same cases Android's SmartVaultTest runs
     /// (Arpit, 2026-10-02: "for all data in vault, it should be super fast
     /// using regex").

@@ -33,6 +33,30 @@ final class TypingEngineTests: XCTestCase {
         XCTAssert(failures.isEmpty, "\n" + failures.joined(separator: "\n"))
     }
 
+    /// A word typed in full offers only its completions and its own
+    /// apostrophe forms, never its neighbours (Arpit, 2026-10-07: suggestions
+    /// should be "crazy helpful"; "noon" offered moon, non, boon).
+    func testAKnownWordOffersCompletionsNotNeighbours() throws {
+        let repo = Self.sharedDir.deletingLastPathComponent().deletingLastPathComponent()
+        guard let trie = GlydTrie.mapped(path: repo.appendingPathComponent("app/dict/en.glyd").path) else {
+            throw XCTSkip("app/dict/en.glyd not built")
+        }
+        let engine = TypingEngine(base: trie)
+        let noon = engine.suggestions(typed: "noon", previous: "at", sentenceStart: false)
+        XCTAssertTrue(noon.known)
+        XCTAssertFalse(noon.alternatives.contains("moon"), "\(noon.alternatives)")
+        let the = engine.suggestions(typed: "the", previous: "at", sentenceStart: false)
+        XCTAssertTrue(the.alternatives.allSatisfy { $0.lowercased().hasPrefix("the") }, "\(the.alternatives)")
+        let its = engine.suggestions(typed: "its", previous: "think", sentenceStart: false)
+        XCTAssertTrue(its.alternatives.contains("it's"), "\(its.alternatives)")
+        let lol = engine.suggestions(typed: "lol", previous: nil, sentenceStart: true)
+        XCTAssertFalse(lol.alternatives.contains("lot"), "\(lol.alternatives)")
+        // A slip still gets its fix and the words near it.
+        let thier = engine.suggestions(typed: "thier", previous: "at", sentenceStart: false)
+        XCTAssertEqual(thier.autocorrect, "their")
+        XCTAssertFalse(thier.alternatives.isEmpty)
+    }
+
     /// Both engines on the same inputs, line for line (off unless asked for):
     /// TEST_RUNNER_GLYF_PARITY_DIR holds in.tsv (previous word, typed, "1" at
     /// a sentence start, the word before the previous); this writes swift.tsv and the JUnit TypingParity

@@ -25,6 +25,12 @@ protocol KeyboardViewDelegate: AnyObject {
     /// Whether a held key may run what it is bound to right now.
     func kbBindingsLive() -> Bool
     func kbTextInteraction()
+    /// Glide typing (Arpit, 2026-10-07: "implement glide typing, like glide
+    /// over keyboard to type"): whether a glide may start now, the word to
+    /// float over the finger as it moves, and the lift that types it.
+    func kbGlideAllowed() -> Bool
+    func kbGlideMoved(_ points: [GlidePoint], layout: GlideDecoder.Layout) -> String?
+    func kbGlideEnded(_ points: [GlidePoint], layout: GlideDecoder.Layout)
 }
 
 /// The key grid. Owns ALL touch handling (multi-touch typing, accent slides,
@@ -59,11 +65,12 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     // MARK: Per-touch state
 
-    private enum TouchMode { case pending, space, accentPopup, holdFired, slidAway, deleteRepeat }
+    private enum TouchMode { case pending, space, accentPopup, holdFired, slidAway, deleteRepeat, glide }
 
     private final class TouchState {
         let key: KeyView
         let start: CGPoint
+        let startTime: TimeInterval
         var mode: TouchMode = .pending
         var holdTimer: Timer?
         var repeatTimer: Timer?
@@ -72,7 +79,16 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         /// False when the glide started over an in-keyboard editor.
         var glides = true
         var popup: AccentPopup?
-        init(key: KeyView, start: CGPoint) { self.key = key; self.start = start }
+        /// Glide typing: the finger's path in key widths, the key lit under
+        /// it, and when the word over it was last worked out.
+        var path: [GlidePoint] = []
+        var lit: KeyView?
+        var decodedAt: TimeInterval = 0
+        init(key: KeyView, start: CGPoint, time: TimeInterval = 0) {
+            self.key = key
+            self.start = start
+            startTime = time
+        }
         func invalidate() {
             holdTimer?.invalidate()
             repeatTimer?.invalidate()
@@ -82,10 +98,19 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     private var touchStates: [ObjectIdentifier: TouchState] = [:]
 
+    /// The ribbon and floating word of a glide, above every key.
+    private let trail = GlideTrail()
+    /// The letters' centres in key widths, for the glide decoder; nil on a
+    /// symbol layer or a digit pad, where there is no glide typing.
+    private var glideLayout: GlideDecoder.Layout?
+    /// Travel from where the finger landed that makes a touch a glide.
+    static let glideStart: CGFloat = 0.7
+
     init() {
         super.init(frame: .zero)
         isMultipleTouchEnabled = true
         backgroundColor = Glass.touchableGrid
+        addSubview(trail)
         rebuild()
     }
 
@@ -135,6 +160,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 keys.append(kv)
             }
         }
+        bringSubviewToFront(trail)
         setNeedsLayout()
     }
 
@@ -162,6 +188,13 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         unitWidth = grid.unitWidth
         rowHeight = grid.rowHeight
         for (kv, frame) in zip(keys, grid.frames) { kv.frame = frame }
+        trail.frame = bounds
+        glideLayout = mode == .letters && !context.isPad
+            ? GlideDecoder.Layout(keys: keys.compactMap { kv in
+                guard let c = kv.spec.char, c.count == 1, let ch = c.first else { return nil }
+                return (ch, CGPoint(x: kv.frame.midX, y: kv.frame.midY))
+            }, pitch: keyPitch)
+            : nil
         layoutKeyGradient()
     }
 
@@ -306,7 +339,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             // The phone pad's greyed digits and the number pad's empty
             // corner take the touch and do nothing, as on Apple's.
             guard let kv = key(at: p), !kv.spec.disabled else { continue }
-            let st = TouchState(key: kv, start: p)
+            let st = TouchState(key: kv, start: p, time: touch.timestamp)
             touchStates[ObjectIdentifier(touch)] = st
             kv.setPressed(true)
             feedback(impactStyle: .light)
@@ -386,12 +419,21 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 st.space = gesture
                 perform(effects, for: st, event: event)
             case .pending:
-                if !slack(st, dx: 14, dy: 16).contains(p) {
+                if canGlide(st) {
+                    // A letter the finger leaves at speed is the start of a
+                    // word, not a slip off the key: nothing is cancelled, and
+                    // past the threshold the touch glides.
+                    if hypot(p.x - st.start.x, p.y - st.start.y) >= Self.glideStart * keyPitch {
+                        beginGlide(st, at: p, time: touch.timestamp)
+                    }
+                } else if !slack(st, dx: 14, dy: 16).contains(p) {
                     st.holdTimer?.invalidate()
                     st.key.cancelChargeRing()
                     st.key.setPressed(false)
                     st.mode = .slidAway
                 }
+            case .glide:
+                glideMoved(st, to: p, time: touch.timestamp)
             case .deleteRepeat:
                 if !slack(st, dx: 20, dy: 24).contains(p) {
                     st.repeatTimer?.invalidate()
@@ -426,6 +468,8 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                     insertFromKey(sel)
                 }
                 continue
+            case .glide:
+                glideEnded(st, at: touch.location(in: self), time: touch.timestamp)
             case .pending:
                 tapAction(st.key, event: event, at: st.start)
             }
@@ -443,7 +487,61 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 st.space = gesture
                 perform(effects, for: st, event: event)
             }
+            if st.mode == .glide {
+                st.lit?.updateFill(pressed: false)
+                trail.end()
+            }
         }
+    }
+
+    // MARK: Glide typing (Arpit, 2026-10-07: "its guesses needs to be perfect too")
+
+    /// A letter on the letter layer, with glide typing on and a field that
+    /// takes it. Space keeps its own gestures; pads and symbols have none.
+    private func canGlide(_ st: TouchState) -> Bool {
+        guard glideLayout != nil, mode == .letters, !st.key.spec.pad,
+              let c = st.key.spec.char, c.count == 1, let a = c.first?.asciiValue, a >= 97, a <= 122,
+              SettingsStore.current.glideTyping != false else { return false }
+        return delegate?.kbGlideAllowed() ?? false
+    }
+
+    private func glidePoint(_ p: CGPoint, time: TimeInterval) -> GlidePoint {
+        GlidePoint(x: Float(p.x / keyPitch), y: Float(p.y / keyPitch), t: time)
+    }
+
+    private func beginGlide(_ st: TouchState, at p: CGPoint, time: TimeInterval) {
+        st.holdTimer?.invalidate()
+        st.key.cancelChargeRing()
+        st.key.setPressed(false)
+        st.mode = .glide
+        st.path = [glidePoint(st.start, time: st.startTime)]
+        trail.begin(at: st.start, time: st.startTime)
+        glideMoved(st, to: p, time: time)
+    }
+
+    private func glideMoved(_ st: TouchState, to p: CGPoint, time: TimeInterval) {
+        st.path.append(glidePoint(p, time: time))
+        trail.extend(to: p, time: time)
+        // The key under the finger lights, lightly: the fill, no balloon.
+        let under = key(at: p)
+        if under !== st.lit {
+            st.lit?.updateFill(pressed: false)
+            if let under, under.spec.isChar { under.updateFill(pressed: true); st.lit = under } else { st.lit = nil }
+        }
+        // The word so far, worked out a few times a second, not per sample.
+        guard let layout = glideLayout, time - st.decodedAt >= 0.09 else { return }
+        st.decodedAt = time
+        trail.show(delegate?.kbGlideMoved(st.path, layout: layout), over: p)
+    }
+
+    private func glideEnded(_ st: TouchState, at p: CGPoint, time: TimeInterval) {
+        st.path.append(glidePoint(p, time: time))
+        st.lit?.updateFill(pressed: false)
+        trail.end()
+        guard let layout = glideLayout else { return }
+        delegate?.kbGlideEnded(st.path, layout: layout)
+        if shift == .on { setShift(.off, auto: false) } // shift releases after one word
+        delegate?.kbTextInteraction()
     }
 
     // MARK: Space bar outcomes (SpaceGesture decides, the view performs)

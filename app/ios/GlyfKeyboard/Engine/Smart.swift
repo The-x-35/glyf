@@ -186,6 +186,17 @@ enum Smart {
         return link
     }
 
+    /// The message asks for a time to talk, which the booking page answers.
+    static func asksToBook(_ text: String) -> Bool {
+        firstMatch(#"\b(?:calendar link|booking link|scheduling link|calendly(?:\s+link)?|cal\.com(?:\s+link)?|book (?:a |some )?(?:time|slot|call|meeting|session)|pick a (?:time|slot)|grab (?:a |some )?time|schedule (?:a |some )?(?:time|call|meeting|chat)|find a time|set up a (?:call|meeting|time)|when (?:are|r) (?:you|u) free|(?:are|r) (?:you|u) free (?:this|next) week|your availability|my availability|what times? works? for you|a time that works)\b[?.!]?\s?$"#, in: text) != nil
+    }
+
+    /// The message is about getting on a call, which a Meet link answers
+    /// ("hop on a quick call?", "can we talk", "send me the meet link").
+    static func asksToCall(_ text: String) -> Bool {
+        firstMatch(#"\b(?:(?:hop|jump|get) on a (?:quick |video )?call|quick call|video call|can we (?:talk|call|chat|hop on)|(?:lets|let's) (?:call|talk|hop on|jump on|do a call)|wanna call|want to call|free (?:to talk|for a call)|up for a call|call now|meet link|(?:send|share) (?:me )?(?:a|the|your) (?:meet|call|video) link|(?:zoom|meet|facetime|call)\?)[?.!]?\s?$"#, in: text) != nil
+    }
+
     /// "cal.com/sam/30min" without the scheme.
     static func shortLink(_ link: String) -> String {
         link.replacingOccurrences(of: #"^https?://(www\.)?"#, with: "", options: [.regularExpression, .caseInsensitive])
@@ -270,7 +281,8 @@ enum Smart {
                      field: FieldHint = .none, rates: RatesSnapshot = .empty,
                      ownWallet: String? = nil, indianGrouping: Bool = true,
                      region: String? = Locale.current.region?.identifier,
-                     linkContext: String? = nil) -> Chip? {
+                     linkContext: String? = nil,
+                     ownBooking: String? = SettingsStore.current.bookingLink) -> Chip? {
         // An address: Send to a wallet, Buy a token. Your own wallet is one
         // you are sharing, not paying. Until the lookup says which, nothing
         // (the keyboard asks, and the strip is arranged again).
@@ -311,6 +323,12 @@ enum Smart {
         // A detail being typed: its first letters offer the whole of it.
         if let c = completions(text, fields: fields) {
             return .details(fields: c.fields, temp: false, typed: c.typed)
+        }
+        // Asked for a time to talk ("when are you free", "send me your
+        // calendar link"): the person's own booking page, where it would be
+        // typed. The panel had it; the strip didn't offer it (2026-10-07).
+        if let own = ownBooking, !own.isEmpty, asksToBook(text) {
+            return .vault(field: VaultField(id: "booking", kind: "link", label: "Book a time", value: own))
         }
         if let plan = EventParse.looksLikePlan(text, dayFirst: EventParse.regionDayFirst) {
             return .event(plan: plan)
@@ -362,6 +380,20 @@ enum Smart {
     private static let notASum = #"^\s*(?:\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{4}|(?:\d{1,3}-)?\d{3}-\d{3}-\d{4}|\d{3}-\d{4}|\d{5}-\d{5})\s*$"#
 
     static func calc(_ text: String, indianGrouping: Bool = true) -> (value: String, hasEquals: Bool, expression: String)? {
+        // "half of 350", "a third of 90", "double 25", "twice 40", "sqrt 81":
+        // sums said in words (2026-10-07 probe: nothing showed).
+        if let g = firstMatch(#"\b((?:a\s+)?(?:half|third|quarter)\s+of|double|twice|triple|sqrt|square\s+root(?:\s+of)?)\s+(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\??\s?$"#, in: text),
+           let words = g[1]?.lowercased(), let n = g[2].flatMap({ Double($0.replacingOccurrences(of: ",", with: "")) }) {
+            let v: Double
+            if words.hasSuffix("half of") { v = n / 2 }
+            else if words.hasSuffix("third of") { v = n / 3 }
+            else if words.hasSuffix("quarter of") { v = n / 4 }
+            else if words == "double" || words == "twice" { v = n * 2 }
+            else if words == "triple" { v = n * 3 }
+            else { v = n.squareRoot() }
+            guard let value = calcNumber(v, indianGrouping: indianGrouping) else { return nil }
+            return (value, false, (g[0] ?? "").trimmingCharacters(in: .whitespaces))
+        }
         guard let re = calcPattern, !text.isEmpty else { return nil }
         let ns = text as NSString
         guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
@@ -394,13 +426,18 @@ enum Smart {
         }
         guard let v = evaluate(expr) else { return nil }
         let currency = expr.first(where: { "₹$€£".contains($0) }).map(String.init) ?? ""
+        guard let text = calcNumber(v, indianGrouping: indianGrouping) else { return nil }
+        return (currency + text, hasEquals, shown)
+    }
+
+    /// A sum's answer as written: lakh and crore grouping in India,
+    /// thousands everywhere else, two places at most.
+    private static func calcNumber(_ v: Double, indianGrouping: Bool) -> String? {
         let f = NumberFormatter()
         f.numberStyle = .decimal
-        // Lakh and crore grouping in India; thousands everywhere else.
         f.locale = Locale(identifier: indianGrouping ? "en_IN" : "en_US")
         f.maximumFractionDigits = 2
-        guard let text = f.string(from: NSNumber(value: v)) else { return nil }
-        return (currency + text, hasEquals, shown)
+        return f.string(from: NSNumber(value: v))
     }
 
     /// Recursive descent over a token list. Returns nil on anything it does
@@ -579,6 +616,23 @@ enum Smart {
             let name = rates.tickers[ticker] ?? ticker
             return .money(shown: "1 \(name) = \(quoted)", insert: " = \(quoted)", buy: rates.mints[ticker])
         }
+        // "100 usd to inr", "50 dollars in rupees", "$20 in euros": both
+        // currencies named, so neither the phone's region nor dollars decide
+        // (2026-10-07 probe: nothing showed).
+        if let pair = currencyPair(in: text) {
+            guard let fromRate = rates.fiat[pair.from], let toRate = rates.fiat[pair.to], fromRate > 0 else { return nil }
+            let converted = pair.amount / fromRate * toRate
+            let typed = "\(currencySymbol[pair.from] ?? "\(pair.from) ")\(formatNumber(pair.amount, code: pair.from))"
+            let result = format(converted, in: pair.to)
+            return .money(shown: "\(typed) = \(result)", insert: " = \(result)")
+        }
+        // "1 sol", "0.5 btc": an amount of a coin, in dollars, with Buy beside
+        // it when the coin can be bought (the cashtag's chip, for an amount).
+        if let coin = coinAmount(in: text) {
+            guard let usd = rates.crypto[coin.symbol] else { return nil }
+            let worth = price(usd * coin.amount)
+            return .money(shown: "\(coin.typed) \(coin.symbol) = \(worth)", insert: " = \(worth)", buy: rates.mints[coin.symbol])
+        }
         guard let re = amountPattern, !text.isEmpty else { return nil }
         let ns = text as NSString
         guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
@@ -613,6 +667,32 @@ enum Smart {
         let typed = "\(currencySymbol[from] ?? "\(from) ")\(formatNumber(amount, code: from))"
         let result = format(converted, in: to)
         return .money(shown: "\(typed) = \(result)", insert: " = \(result)")
+    }
+
+    /// An amount with both currencies named, the message ending on the
+    /// second: (100, "USD", "INR") for "100 usd to inr". The keyboard asks
+    /// for the rates off this too, before any are at hand.
+    static func currencyPair(in text: String) -> (amount: Double, from: String, to: String)? {
+        guard let g = firstMatch(#"(?:([₹$€£¥])\s*)?(\d[\d,]*(?:\.\d+)?)\s*([A-Za-z]{2,8})?\s+(?:to|in|into|as)\s+([A-Za-z]{2,8}|[₹$€£¥])\??\s?$"#, in: text),
+              let amount = g[2].flatMap({ Double($0.replacingOccurrences(of: ",", with: "")) }), amount > 0,
+              let from = g[1].flatMap({ $0.first }).flatMap({ symbolCurrency[$0] }) ?? g[3].flatMap({ wordCurrency[$0.lowercased()] }),
+              let to = g[4].flatMap({ word in word.count == 1 ? word.first.flatMap { symbolCurrency[$0] } : wordCurrency[word.lowercased()] }),
+              from != to else { return nil }
+        return (amount, from, to)
+    }
+
+    /// Coins people write amounts of ("2 eth"); no LINK or DOT, which are
+    /// words. Smart.kt's twin.
+    private static let coinWords: Set<String> = ["sol", "btc", "eth", "usdc", "usdt", "bnb", "xrp", "doge",
+                                                 "ada", "avax", "ltc", "trx", "shib", "pepe", "bonk", "jup", "wif"]
+
+    /// An amount of a coin the message ends on: ("0.5", 0.5, "BTC") for
+    /// "0.5 btc". The keyboard asks for the coin's rate off this too.
+    static func coinAmount(in text: String) -> (typed: String, amount: Double, symbol: String)? {
+        guard let g = firstMatch(#"(?<![\d.,$])(\d[\d,]*(?:\.\d+)?)\s*([A-Za-z]{3,4})\.?\s?$"#, in: text),
+              let typed = g[1], let word = g[2]?.lowercased(), coinWords.contains(word),
+              let amount = Double(typed.replacingOccurrences(of: ",", with: "")), amount > 0 else { return nil }
+        return (typed, amount, word.uppercased())
     }
 
     /// A token's dollar price: cents from a dollar up ("$112.40"), and
@@ -783,11 +863,51 @@ enum Smart {
                 $0.kind == "company" || $0.label.range(of: #"\b(?:company|organi[sz]ation|employer|workplace)\b"#,
                                                         options: [.regularExpression, .caseInsensitive]) != nil
             }
+        case "city", "state", "cityState":
+            found = fields.filter { $0.kind == "address" }.compactMap { a in
+                guard let place = cityState(in: a.value) else { return nil }
+                switch kind {
+                case "city": return VaultField(id: a.id + ":city", kind: kind, label: "City", value: place.city)
+                case "state": return place.state.map { VaultField(id: a.id + ":state", kind: kind, label: "State", value: $0) }
+                default: return VaultField(id: a.id + ":cityState", kind: kind, label: "City",
+                                           value: place.state.map { "\(place.city), \($0)" } ?? place.city)
+                }
+            }
         default:
             found = fields.filter { $0.kind == kind }
         }
         var seen: Set<String> = []
         return found.filter { seen.insert($0.value.trimmingCharacters(in: .whitespaces).lowercased()).inserted }
+    }
+
+    /// The city (and state, when one is written) in a saved address: "123
+    /// Market St, San Francisco, CA 94103" → San Francisco, CA; "10 Downing
+    /// St, London SW1A 2AA" → London; "12 MG Road, Indiranagar, Bengaluru
+    /// 560038" → Bengaluru. Nothing when the address is one line.
+    static func cityState(in address: String) -> (city: String, state: String?)? {
+        let parts = address.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard parts.count >= 2 else { return nil }
+        // The last part, less its postcode: "CA 94103" → "CA", "London SW1A 2AA" → "London".
+        func words(_ s: String) -> String {
+            s.replacingOccurrences(of: #"\b(?:\d[\d-]*|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: .punctuationCharacters)
+        }
+        var tail = words(parts[parts.count - 1])
+        var city = ""
+        var state: String?
+        if tail.count <= 3, tail == tail.uppercased(), !tail.isEmpty, parts.count >= 3 {
+            state = tail
+            city = words(parts[parts.count - 2])
+        } else if tail.isEmpty, parts.count >= 3 {
+            // "…, CA, 94103": the postcode on its own.
+            tail = words(parts[parts.count - 2])
+            if tail.count <= 3, tail == tail.uppercased(), parts.count >= 4 { state = tail; city = words(parts[parts.count - 3]) }
+            else { city = tail }
+        } else {
+            city = tail
+        }
+        guard !city.isEmpty, city.range(of: #"^[\p{L} .'-]+$"#, options: .regularExpression) != nil, city.count <= 40 else { return nil }
+        return (city, state)
     }
 
     /// The postcode in an address, the last one written: a UK or Canadian
@@ -1842,6 +1962,124 @@ extension Smart {
             options: [.caseInsensitive])
     }()
 
+    /// A list said in one breath: "need: milk, eggs, bread", "todo: call
+    /// bank, gym and book flight", "get milk, eggs, bread" → "• List" and
+    /// "1. List", each putting one item a line in place of the line
+    /// (Samsung and Apple do this with AI; this is instant). Three items at
+    /// least, each short, on the line being typed.
+    static func listMaker(in text: String) -> Conversions? {
+        let line = text.components(separatedBy: "\n").last ?? text
+        guard let g = firstMatch(#"^\s*((?:(?:need|needs|todo|to do|to-do|list|buy|get|pack|bring|grocer(?:y|ies)|shopping|tasks?|steps?|agenda|plan|order|ingredients|items|things|remember|checklist)\b[^:\n]{0,24}:\s*)|(?:need|buy|get|pack|bring|grab|remember)\s+)(.{5,200})$"#, in: line),
+              let lead = g[1], let rest = g[2] else { return nil }
+        let items = rest.replacingOccurrences(of: #"\s+and\s+"#, with: ",", options: [.regularExpression, .caseInsensitive])
+            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard items.count >= 3, items.allSatisfy({ $0.count <= 40 && !$0.contains(":") }) else { return nil }
+        let head = lead.contains(":") ? lead.trimmingCharacters(in: .whitespaces) + "\n" : ""
+        let bullets = head + items.map { "• \($0)" }.joined(separator: "\n")
+        let numbered = head + items.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        return Conversions(source: trimmed(g[0]), results: ["• List", "1. List"], inserts: [bullets, numbered],
+                           hows: [.replace, .replace])
+    }
+
+    /// Options in a question ("pizza, burgers or pasta?", "do you want
+    /// coffee, tea or juice?") → "Make it a poll": the question kept, the
+    /// options on numbered lines and "reply with a number" under it, since
+    /// a keyboard can't make an app's own poll. Three to six short options,
+    /// letters and digits; "ps5 or xbox?" is a question, not a poll.
+    static func pollMaker(in text: String) -> Conversions? {
+        let line = text.components(separatedBy: "\n").last ?? text
+        guard let g = firstMatch(#"([A-Za-z0-9][A-Za-z0-9 ']{0,28}(?:,\s*[A-Za-z0-9][A-Za-z0-9 ']{0,24}){0,4})\s*,?\s+or\s+([A-Za-z0-9][A-Za-z0-9 ']{0,24}?)\s*\?\s?$"#, in: line),
+              let head = g[1], let last = g[2] else { return nil }
+        var options = head.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        // "do you want pizza": the question's words before the first option.
+        let leads: Set<String> = ["do", "does", "did", "are", "is", "will", "would", "can", "could", "should", "shall",
+                                  "you", "u", "we", "i", "they", "it", "that", "this", "want", "wanna", "prefer", "like",
+                                  "rather", "going", "go", "for", "to", "get", "have", "eat", "order", "the", "a", "an",
+                                  "some", "which", "what", "where", "when", "who", "with", "at", "in", "on", "so", "and",
+                                  "guys", "ppl", "everyone", "tonight", "today", "tomorrow", "pick", "choose", "vote"]
+        if var first = options.first {
+            var words = first.split(separator: " ").map(String.init)
+            while words.count > 1, leads.contains(words[0].lowercased()) { words.removeFirst() }
+            first = words.joined(separator: " ")
+            options[0] = first
+        }
+        options.append(last.trimmingCharacters(in: .whitespaces))
+        let off: Set<String> = ["not", "no", "nah", "what", "something", "whatever", "anything", "nothing", "else", "so", "later"]
+        guard options.count >= 3, options.count <= 6,
+              options.allSatisfy({ !$0.isEmpty && $0.count <= 25 && !off.contains($0.lowercased()) && $0.contains(where: { $0.isLetter || $0.isNumber }) }),
+              Set(options.map { $0.lowercased() }).count == options.count else { return nil }
+        let keycaps = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"]
+        let question = trimmed(g[0])
+        let poll = question + "\n" + zip(keycaps, options).map { "\($0) \($1)" }.joined(separator: "\n") + "\nreply with a number"
+        return Conversions(source: question, results: ["Make it a poll"], inserts: [poll], hows: [.replace])
+    }
+
+    /// The time now somewhere else: "what time is it in tokyo", "time in
+    /// london?", "tokyo time" → "7:45 PM Tokyo" (the day too when it is not
+    /// today there). Nothing for the phone's own zone (2026-10-07 probe).
+    static func cityTime(in text: String, now: Date = Date(), here: TimeZone = .current,
+                         region: String? = Locale.current.region?.identifier) -> Conversions? {
+        let name: String
+        if let g = firstMatch(#"\btime\s+(?:is\s+it\s+|now\s+|is\s+)?in\s+([a-z][a-z .]{1,30}?)\??\s?$"#, in: text), let n = g[1] {
+            name = n
+        } else if let g = firstMatch(#"\b([a-z]{3,20}(?:\s+[a-z]{3,20})?)\s+time(?:\s+now)?\??\s?$"#, in: text), let n = g[1] {
+            name = n
+        } else { return nil }
+        let key = name.lowercased().trimmingCharacters(in: .whitespaces)
+        guard key != "the", key != "what", key != "same", key != "this", key != "that", key != "my", key != "your",
+              key != "our", key != "their", key != "his", key != "her", key != "free", key != "long", key != "next" else { return nil }
+        let r = region?.uppercased()
+        var id = zoneNames[key] ?? zoneNames[key + " time"] ?? ""
+        if key == "cst", r == "CN" { id = "Asia/Shanghai" }
+        if key == "ist", r == "IE" { id = "Europe/Dublin" }
+        if key == "ist", r == "IL" { id = "Asia/Jerusalem" }
+        guard let there = TimeZone(identifier: id),
+              there.secondsFromGMT(for: now) != here.secondsFromGMT(for: now) else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = there
+        var mine = Calendar(identifier: .gregorian)
+        mine.timeZone = here
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = there
+        f.dateFormat = cal.component(.minute, from: now) == 0 ? "h a" : "h:mm a"
+        var clock = f.string(from: now).replacingOccurrences(of: "\u{202F}", with: " ")
+        if cal.component(.day, from: now) != mine.component(.day, from: now) {
+            f.dateFormat = "EEE"
+            clock = f.string(from: now) + " " + clock
+        }
+        let label = key.count <= 4 && zoneNames[key] != nil && !key.contains(" ")
+            ? key.uppercased() : key.capitalized
+        return Conversions(source: trimmed(firstMatch(#"\S.*$"#, in: text)?[0] ?? text), results: ["\(clock) \(label)"])
+    }
+
+    /// The wait till a clock time: "how long until 5pm", "till 6:30pm" →
+    /// "in 2h 15m"; a time gone by today is tomorrow's (2026-10-07 probe).
+    static func untilTime(in text: String, now: Date = Date(), here: TimeZone = .current) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:until|till|til|'til)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\??\s?$"#, in: text),
+              var hour = g[1].flatMap({ Int($0) }) else { return nil }
+        let minute = g[2].flatMap { Int($0) } ?? 0
+        let half = g[3]?.lowercased().replacingOccurrences(of: ".", with: "")
+        if let half {
+            guard (1...12).contains(hour) else { return nil }
+            if half == "pm", hour < 12 { hour += 12 }
+            if half == "am", hour == 12 { hour = 0 }
+        } else {
+            guard g[2] != nil, (0...23).contains(hour), minute < 60 else { return nil }
+        }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = here
+        var day = cal.dateComponents([.year, .month, .day], from: now)
+        day.hour = hour
+        day.minute = minute
+        guard var when = cal.date(from: day) else { return nil }
+        if when <= now, let next = cal.date(byAdding: .day, value: 1, to: when) { when = next }
+        let minutes = Int((when.timeIntervalSince(now) / 60).rounded())
+        guard minutes > 0 else { return nil }
+        let wait = minutes >= 60 ? (minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m") : "\(minutes)m"
+        return Conversions(source: trimmed(g[0]), results: ["in \(wait)"])
+    }
+
     /// A time in someone else's zone the message ends on, in the phone's own
     /// (Raycast's "5pm PT in London", in the strip): "call at 3pm EST" →
     /// "Sun 12:30 AM IST" in India. A time needs am/pm or minutes ("3 est"
@@ -1924,11 +2162,15 @@ extension Smart {
             { shortcut(in: text, now: now, here: here, region: region) },
             { face(in: text) },
             { symbol(in: text) },
+            { listMaker(in: text) },
+            { pollMaker(in: text) },
             { unitPrice(in: text) },
             { conversions(in: text, region: region) },
             { cooking(in: text, region: region) },
             { fuel(in: text, region: region) },
             { zoneTimes(in: text, now: now, here: here, region: region) },
+            { cityTime(in: text, now: now, here: here, region: region) },
+            { untilTime(in: text, now: now, here: here) },
             { clockMaths(in: text) },
             { everyHours(in: text) },
             { pace(in: text) },

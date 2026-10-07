@@ -47,6 +47,9 @@ struct GlyfSettings: Codable, Equatable {
     /// third-party keyboard the underline Apple draws, so the honest version
     /// is to leave the word alone and let a tap take the fix.
     var autocorrectApply: Bool? = true
+    /// Glide typing: a finger sliding over the letters types the word
+    /// (Arpit, 2026-10-07). Off leaves every letter a tap.
+    var glideTyping: Bool? = true
     /// Keyboard appearance: "auto" follows the host app (Apple behavior);
     /// "light"/"dark" force it.
     var appearance: String? = "auto"

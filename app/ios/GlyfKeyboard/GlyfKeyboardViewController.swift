@@ -164,6 +164,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var wordTouches: [(Float, Float)?] = []
     private var wordTouchesFor = ""
     private var lastSpaceTap: Date = .distantPast
+    /// Glide typing (Arpit, 2026-10-07): the decoder over the base
+    /// dictionary, the word a glide just put in (one backspace takes it all
+    /// back, a tap swaps it), and the guesses the strip shows for it while
+    /// the caret stays put.
+    private var glideDecoder: GlideDecoder?
+    private var glide: GlideState?
+    private var glideStrip: (anchor: String, words: [String])?
 
     private var heightConstraint: NSLayoutConstraint?
     private var viewHeightConstraint: NSLayoutConstraint?
@@ -468,6 +475,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             hud = nil
         }
         VaultStore.shared.invalidate() // the app may have edited the vault
+        seedOwnNames()
         resolveAppearance() // BEFORE building — tokens feed every surface
         if !didBuild {
             didBuild = true
@@ -511,7 +519,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
         TypingStore.shared.prepare(
             hasFullAccess: hasFullAccess,
             lexicon: { [weak self] done in self?.requestSupplementaryLexicon(completion: done) },
-            ready: { [weak self] _ in self?.updateCandidates() })
+            ready: { [weak self] _ in
+                self?.updateCandidates()
+                self?.glideDecoderReady()?.warm()
+            })
     }
 
 #if DEBUG
@@ -777,6 +788,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.candidatesWork = nil
+            if self.showGlideStrip() { return }
             self.updateCandidates()
         }
         candidatesWork = work
@@ -1610,6 +1622,21 @@ final class GlyfKeyboardViewController: UIInputViewController {
         return policy
     }
 
+    /// The person's own names are words to the engine, whatever the
+    /// dictionary makes of them (2026-10-07 probe: "hi arpit" offered
+    /// armpit): each word of a saved name is kept, once per spelling.
+    private var seededNames: Set<String> = []
+    private func seedOwnNames() {
+        guard let engine = typing else { return }
+        let names = Set(VaultStore.shared.load().fields.filter { $0.kind == "name" }
+            .flatMap { $0.value.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "-" }).map(String.init) }
+            .filter { $0.count >= 2 })
+        guard names != seededNames else { return }
+        for name in names.subtracting(seededNames) { engine.keep(name) }
+        seededNames = names
+        TypingStore.shared.scheduleSave()
+    }
+
     /// The website's smart strip: a sum you just typed, or the saved detail
     /// the sentence is asking for, offered as one chip above the keys.
     private func updateSmartChip() -> Bool {
@@ -1685,9 +1712,16 @@ final class GlyfKeyboardViewController: UIInputViewController {
             if tail.contains("$"), let ticker = Smart.cashtag(in: tail) {
                 RatesStore.shared.ensureToken(ticker) { [weak self] in self?.updateCandidates() }
                 RatesStore.shared.ensureFiat { [weak self] in self?.updateCandidates() }
-            } else if tail.contains(where: \.isNumber), Smart.looksLikeMoney(tail) {
+            } else if let coin = Smart.coinAmount(in: tail) {
+                RatesStore.shared.ensureToken(coin.symbol) { [weak self] in self?.updateCandidates() }
+            } else if tail.contains(where: \.isNumber), Smart.looksLikeMoney(tail) || Smart.currencyPair(in: tail) != nil {
                 RatesStore.shared.ensureFiat { [weak self] in self?.updateCandidates() }
             }
+        }
+        // Talk of a call: a Google Meet link where it's wanted, the Meet key's
+        // behaviour surfaced (research 2026-10-07), only with Meet connected.
+        if chip == nil, hasFullAccess, GoogleAccess.hasMeet, Smart.asksToCall(tail) {
+            chip = .action(label: "Add a Meet link", query: "", intent: "meet")
         }
         // The tour keeps the strip for the step it is coaching.
         if let step = tourStep {
@@ -1771,6 +1805,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .telephoneNumber?: kind = "phone"
         case .fullStreetAddress?, .streetAddressLine1?: kind = "address"
         case .postalCode?: kind = "postcode"
+        // City and state come out of the saved address (research 2026-10-07:
+        // forms ask for them one box at a time).
+        case .addressCity?: kind = "city"
+        case .addressState?: kind = "state"
+        case .addressCityAndState?: kind = "cityState"
         case .name?, .nickname?: kind = "name"
         case .givenName?: kind = "givenName"
         case .familyName?: kind = "familyName"
@@ -1896,9 +1935,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 toolbar.showSuggestions([.init(text: corr.original, kind: .undo)])
             } else if let engine = typing, before?.hasSuffix(" ") == true,
                       let previous = WordTracker.previousWord(beforeContext: before) {
-                toolbar.showSuggestions(engine.predictions(
+                var items = engine.predictions(
                     previous: previous, beforePrevious: WordTracker.wordBeforePrevious(beforeContext: before),
-                    policy: policy).map { .init(text: $0, kind: .word) })
+                    policy: policy).map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
+                // The word just finished brings its emoji to the last slot.
+                if let e = EmojiWords.emoji(for: previous) { items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)] }
+                toolbar.showSuggestions(items)
             } else {
                 toolbar.showSuggestions([])
             }
@@ -1914,19 +1956,27 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         let tSt = Perf.mark()
         defer { tStrip = Perf.ms(tSt) }
+        // The word being typed is never one of the three (Arpit, 2026-10-07:
+        // "i dont like the typed word as first suggestion in quotes, feels
+        // like we are wasting a suggestion"): the fix in bold, then other
+        // words, all of them somewhere to go. Keeping a word the space bar
+        // would fix is a backspace right after it (the undo chip), which
+        // also teaches it.
         let others = s.alternatives.map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
+        var items: [GlyfToolbar.Suggestion]
         if let fix = s.autocorrect {
             // With "Correct automatically" off the space keeps the word, so
             // the fix is offered as a plain word rather than promised in bold.
             let fixKind: GlyfToolbar.Suggestion.Kind =
                 SettingsStore.current.autocorrectApply == false ? .word : .correction
-            toolbar.showSuggestions([.init(text: word, kind: .literal), .init(text: fix, kind: fixKind)]
-                                    + others.prefix(1))
-        } else if others.isEmpty {
-            toolbar.showSuggestions([])
+            items = [.init(text: fix, kind: fixKind)] + others.prefix(2)
         } else {
-            toolbar.showSuggestions([.init(text: word, kind: s.known ? .word : .literal)] + others.prefix(2))
+            items = Array(others.prefix(3))
+            // A word typed in full brings its emoji ("pizza" → 🍕) to the
+            // last slot, the way Gboard's and Apple's bars do.
+            if let e = EmojiWords.emoji(for: word) { items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)] }
         }
+        toolbar.showSuggestions(items)
     }
 
     private func suggestions(for word: String, before: String?, policy: TypingEngine.Policy) -> TypingEngine.Suggestions? {
@@ -2091,6 +2141,8 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             editor.deleteBackward()
             return
         }
+        // Right after a glide, one backspace takes the whole word (iOS's way).
+        if glideBackspace() { return }
         // Backspace right after a correction puts back what was typed (and
         // teaches the engine to leave that word alone).
         if let corr = undoableCorrection(before: beforeContext) {
@@ -2274,6 +2326,117 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
     private func currentCursorMirror() -> CursorMirror {
         CursorMirror(before: beforeContext ?? "",
                      after: textDocumentProxy.documentContextAfterInput ?? "")
+    }
+
+    // MARK: Glide typing (Arpit, 2026-10-07: "implement glide typing, like
+    // glide over keyboard to type; its guesses needs to be perfect too")
+
+    func kbGlideAllowed() -> Bool {
+        inlineTarget == nil && !isSecureField && typingPolicy.contains(.suggestions)
+    }
+
+    func kbGlideMoved(_ points: [GlidePoint], layout: GlideDecoder.Layout) -> String? {
+        glideDecode(points, layout: layout, limit: 1).first?.word
+    }
+
+    /// The lift: the best guess goes in with a space after it, as a tapped
+    /// suggestion does, and the other guesses wait in the strip. A word
+    /// being typed is finished first, the way the space bar would.
+    func kbGlideEnded(_ points: [GlidePoint], layout: GlideDecoder.Layout) {
+        let guesses = glideDecode(points, layout: layout, limit: 4).map(\.word)
+        guard let word = guesses.first else { return }
+        let before = beforeContext
+        let typing = WordTracker.currentWord(beforeContext: before)
+        if !typing.isEmpty {
+            commitCurrentWord()
+            hostInsert(" ")
+        }
+        let previous = typing.isEmpty ? WordTracker.previousWord(beforeContext: before) : typing
+        let capitalized = keyboardView.shift == .on
+        hostInsert(word + " ")
+        lastCorrection = nil
+        wordTouches = []
+        wordTouchesFor = ""
+        let anchor = beforeContext ?? ""
+        glide = GlideState(word: word, alternatives: Array(guesses.dropFirst()), anchor: anchor)
+        glideStrip = (anchor, Array(guesses.dropFirst()))
+        self.typing?.commit(word: word, previous: previous, autoCapitalized: capitalized, policy: typingPolicy)
+        TypingStore.shared.scheduleSave()
+        syncAutoShift(knownBefore: anchor)
+        scheduleCandidates()
+        notifyHUD()
+    }
+
+    /// The decoder over the base dictionary, once the engine has loaded it.
+    private func glideDecoderReady() -> GlideDecoder? {
+        if glideDecoder == nil, let base = typing?.base { glideDecoder = GlideDecoder(trie: base) }
+        return glideDecoder
+    }
+
+    /// The words before the caret, the capitals the board shows, and this
+    /// person's own words, for the decoder's language side.
+    private func glideDecode(_ points: [GlidePoint], layout: GlideDecoder.Layout, limit: Int) -> [GlideDecoder.Candidate] {
+        guard let engine = typing, let decoder = glideDecoderReady() else { return [] }
+        let before = beforeContext
+        let current = WordTracker.currentWord(beforeContext: before)
+        var context = GlideDecoder.Context()
+        if current.isEmpty {
+            context.previous = WordTracker.previousWord(beforeContext: before)
+            context.beforePrevious = WordTracker.wordBeforePrevious(beforeContext: before)
+        } else {
+            // The glide finishes that word first, so it becomes the previous one.
+            context.previous = current
+            context.beforePrevious = WordTracker.previousWord(beforeContext: before)
+        }
+        switch keyboardView.shift {
+        case .capsLock: context.capitals = .all
+        case .on: context.capitals = .first
+        case .off: break
+        }
+        context.personal = engine.personal
+        return decoder.decode(points, layout: layout, context: context, limit: limit)
+    }
+
+    /// The glide's other guesses, while the caret is still right after it;
+    /// false once anything else happened, and the usual strip takes over.
+    private func showGlideStrip() -> Bool {
+        guard let strip = glideStrip else { return false }
+        guard surface == .none, beforeContext == strip.anchor, !strip.words.isEmpty else {
+            glideStrip = nil
+            return false
+        }
+        toolbar.showSuggestions(strip.words.prefix(3).map { .init(text: $0, kind: .word) })
+        return true
+    }
+
+    /// One backspace right after a glide removes the word and its space and
+    /// offers it and the other guesses back; the next backspace is ordinary.
+    private func glideBackspace() -> Bool {
+        guard let g = glide else { return false }
+        glide = nil
+        guard g.isCurrent(before: beforeContext) else { return false }
+        for _ in 0..<g.deleteCount { hostDelete() }
+        let anchor = beforeContext ?? ""
+        glideStrip = (anchor, [g.word] + g.alternatives)
+        syncAutoShift(knownBefore: anchor)
+        scheduleCandidates()
+        return true
+    }
+
+    /// A tap on another guess swaps the glided word for it.
+    private func glideSwap(_ suggestion: GlyfToolbar.Suggestion) -> Bool {
+        guard suggestion.kind == .word, let g = glide, g.isCurrent(before: beforeContext) else { return false }
+        for _ in 0..<g.deleteCount { hostDelete() }
+        hostInsert(suggestion.text + " ")
+        let anchor = beforeContext ?? ""
+        let others = g.others(after: suggestion.text)
+        glide = GlideState(word: suggestion.text, alternatives: others, anchor: anchor)
+        glideStrip = (anchor, others)
+        typing?.commit(word: suggestion.text, previous: g.previousWord, autoCapitalized: false, policy: typingPolicy)
+        TypingStore.shared.scheduleSave()
+        syncAutoShift(knownBefore: anchor)
+        scheduleCandidates()
+        return true
     }
 
     func kbSpaceHoldIgnited(origin: KeyView) {
@@ -2474,17 +2637,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             showTonesPopup()
         case "connector:meet":
             setSurface(.none)
-            // A fresh Google Meet link, straight into the message.
-            CallLink.make { [weak self] url, note in
-                guard let self else { return }
-                if let url {
-                    self.hostInsert(Self.spaced("Join me on a call: \(url)", after: self.beforeContext))
-                    self.syncAutoShift()
-                    self.updateCandidates()
-                } else if let note {
-                    KeyboardToast.show(in: self.content, text: note)
-                }
-            }
+            insertMeetLink()
         case let id where id.hasPrefix("surface:"):
             // Other "surface:" bindings open shell screens (M4: S → vault);
             // from My glyfs the open menu goes there, with its way back.
@@ -2495,6 +2648,21 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             setSurface(.connector(String(id.dropFirst("connector:".count))))
         default:
             startSkill(glyfId: glyfId, letter: letter)
+        }
+    }
+
+    /// A fresh Google Meet link, straight into the message (the Meet key and
+    /// the "Add a Meet link" chip).
+    private func insertMeetLink() {
+        CallLink.make { [weak self] url, note in
+            guard let self else { return }
+            if let url {
+                self.hostInsert(Self.spaced("Join me on a call: \(url)", after: self.beforeContext))
+                self.syncAutoShift()
+                self.updateCandidates()
+            } else if let note {
+                KeyboardToast.show(in: self.content, text: note)
+            }
         }
     }
 
@@ -3020,6 +3188,11 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         default:
             break
         }
+        if case .action(_, _, "meet") = chip {
+            toolbar.showSmart(nil)
+            insertMeetLink()
+            return
+        }
         if case .action(_, _, let intent) = chip {
             suggestedChip = nil
             suggestedFor = ""
@@ -3093,6 +3266,8 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarSuggestionTapped(_ suggestion: GlyfToolbar.Suggestion) {
+        // Another guess for the word a glide just put in replaces it.
+        if glideSwap(suggestion) { return }
         let before = beforeContext
         let word = WordTracker.currentWord(beforeContext: before)
         let previous = WordTracker.previousWord(beforeContext: before)
@@ -3109,6 +3284,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             if !word.isEmpty { replaceCurrentWord(with: suggestion.text) }
             hostInsert(word.isEmpty ? suggestion.text + " " : " ")
             typing?.commit(word: suggestion.text, previous: previous, autoCapitalized: false, policy: policy)
+        case .emoji:
+            // After the word, with a space on each side: "happy birthday 🎂 ".
+            if !word.isEmpty { typing?.commit(word: word, previous: previous, autoCapitalized: false, policy: policy) }
+            hostInsert((word.isEmpty ? "" : " ") + suggestion.text + " ")
         }
         TypingStore.shared.scheduleSave()
         wordTouches = []

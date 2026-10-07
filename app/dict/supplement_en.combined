@@ -413,3 +413,15 @@ dictionary=supplement:en,locale=en,description=Glyf supplement to the AOSP Engli
   shortcut=environment,f=whitelist
  word=tomatoe,f=0,not_a_word=true
   shortcut=tomato,f=whitelist
+ word=Jan,f=140
+ word=Feb,f=140
+ word=Mar,f=130
+ word=Apr,f=140
+ word=Jun,f=130
+ word=Jul,f=130
+ word=Aug,f=140
+ word=Sep,f=135
+ word=Sept,f=135
+ word=Oct,f=140
+ word=Nov,f=140
+ word=Dec,f=140

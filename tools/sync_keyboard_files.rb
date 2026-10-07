@@ -22,6 +22,7 @@ TEST_SHARED = %w[
   Engine/Games.swift
   Engine/SpaceGesture.swift
   Engine/Smart.swift
+  Engine/EmojiWords.swift
   Engine/CalendarText.swift
   Engine/EventParse.swift
   Engine/GoogleEvent.swift
@@ -31,6 +32,8 @@ TEST_SHARED = %w[
   Engine/Typing/Decoder.swift
   Engine/Typing/PersonalLexicon.swift
   Engine/Typing/TypingEngine.swift
+  Engine/Typing/GlideDecoder.swift
+  Engine/Typing/GlideTyping.swift
   Bridge/AppGroupStore.swift
   Bridge/IntentStore.swift
   Bridge/Contracts.generated.swift

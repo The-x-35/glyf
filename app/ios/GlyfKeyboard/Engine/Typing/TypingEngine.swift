@@ -194,6 +194,12 @@ final class TypingEngine {
         for c in ranked where !c.offensive {
             // "United States" is no completion for "u".
             if c.form.contains(" ") && c.key != key { continue }
+            // A word the person has typed in full wants completions ("the" →
+            // "there") or its own apostrophe forms ("its" → "it's"), not its
+            // neighbours ("noon" → "moon"), which only fill the strip with
+            // noise (Arpit, 2026-10-07: suggestions should be "crazy
+            // helpful").
+            if known && c.key != key && !c.key.hasPrefix(key) { continue }
             // One letter is the start of a word, not a slip: "k" offers "know",
             // never "I" (2026-10-05).
             if keyScalars.count == 1 && TypingText.scalars(c.key).first != keyScalars[0] { continue }

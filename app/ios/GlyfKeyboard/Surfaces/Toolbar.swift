@@ -785,6 +785,8 @@ final class GlyfToolbar: UIView {
             case word
             /// Put back what was typed before the last correction.
             case undo
+            /// The emoji the word brings to mind; tapping adds it after.
+            case emoji
         }
         let text: String
         let kind: Kind
@@ -835,12 +837,13 @@ final class GlyfToolbar: UIView {
         switch item.kind {
         case .literal: title = "“\(item.text)”"
         case .undo: title = "↩ \(item.text)"
-        case .correction, .word: title = item.text
+        case .correction, .word, .emoji: title = item.text
         }
         b.setTitle(title, for: .normal)
         let emphasized = item.kind == .correction
         // 17pt: the system bar's "The" stands 12pt tall, which is this size.
-        b.titleLabel?.font = .systemFont(ofSize: 17, weight: emphasized ? .semibold : .regular)
+        // An emoji a little bigger, as Apple's bar draws one.
+        b.titleLabel?.font = .systemFont(ofSize: item.kind == .emoji ? 22 : 17, weight: emphasized ? .semibold : .regular)
         b.setTitleColor(item.kind == .literal ? Glass.textSecondary : Glass.textPrimary, for: .normal)
         // The website marks the best candidate by weight alone, no pill —
         // but never `.clear`. A keyboard extension throws away touches that

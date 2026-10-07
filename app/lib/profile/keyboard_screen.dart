@@ -124,6 +124,7 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
             _switch('Auto-capitalize', 'autocapitalize'),
             _switch('Double-space for period', 'periodShortcut'),
             _switch('Number row', 'numberRow'),
+            _switch('Glide typing', 'glideTyping', fallback: true),
           ]),
           const SizedBox(height: 18),
           _label('Feel'),
