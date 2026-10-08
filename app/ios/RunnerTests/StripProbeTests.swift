@@ -27,6 +27,13 @@ final class StripProbeTests: XCTestCase {
         ]
         let rates = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 83.5, "EUR": 0.92, "GBP": 0.79, "JPY": 150],
                                         crypto: ["SOL": 120, "BTC": 65000], local: "USD")
+        // A file of messages, one a line, in place of the list below.
+        if let file = ProcessInfo.processInfo.environment["GLYF_STRIP_PROBE_FILE"],
+           let lines = try? String(contentsOfFile: file, encoding: .utf8) {
+            probe(lines.components(separatedBy: "\n").filter { !$0.isEmpty }.map { $0.replacingOccurrences(of: "\\n", with: "\n") },
+                  engine: engine, fields: fields, rates: rates)
+            return
+        }
         let messages = [
             // plans and times
             "lets meet at 7", "dinner tomorrow at 8pm?", "call me in 20 mins", "see you in 2 hours", "flight lands 6:45am",
@@ -67,6 +74,10 @@ final class StripProbeTests: XCTestCase {
             // formatting / style
             "**bold**", "make this bold", "ALL CAPS please", "hello world",
         ]
+        probe(messages, engine: engine, fields: fields, rates: rates)
+    }
+
+    private func probe(_ messages: [String], engine: TypingEngine, fields: [VaultField], rates: Smart.RatesSnapshot) {
         print("PROBE|message|chip|typed→fix|alternatives|predictions")
         for text in messages {
             var row = text.replacingOccurrences(of: "|", with: "/")

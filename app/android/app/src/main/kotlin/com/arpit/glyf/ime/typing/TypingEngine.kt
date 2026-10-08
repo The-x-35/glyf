@@ -220,6 +220,10 @@ class TypingEngine(
             if (c.offensive) continue
             // "United States" is no completion for "u".
             if (c.form.contains(' ') && c.key != key) continue
+            // A word typed in full wants completions ("the" → "there") or its
+            // own apostrophe forms ("its" → "it's"), never neighbours ("noon"
+            // → "moon"): noise in the strip (iOS twin, 2026-10-07).
+            if (known && c.key != key && !c.key.startsWith(key)) continue
             // One letter is the start of a word, not a slip: "k" offers "know",
             // never "I" (2026-10-05).
             if (keyScalars.size == 1 && TypingText.scalars(c.key).firstOrNull() != keyScalars[0]) continue

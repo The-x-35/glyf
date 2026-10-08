@@ -26,8 +26,10 @@ object Autofill {
                 // A postcode field wants the postcode in the address, a first
                 // name field the first word of the name (Smart.detailsFor).
                 "postalCode" -> return "postcode"
-                "postalAddress", "postalAddressRegion", "postalAddressLocality",
-                "streetAddress" -> return "address"
+                // City and state come out of the saved address (iOS 10-07).
+                "postalAddressLocality", "addressLocality" -> return "city"
+                "postalAddressRegion", "addressRegion" -> return "state"
+                "postalAddress", "streetAddress" -> return "address"
                 "personGivenName" -> return "givenName"
                 "personFamilyName" -> return "familyName"
                 "name", "personName" -> return "name"
@@ -69,7 +71,10 @@ object Autofill {
             has("e-mail", "email", "mail id", "username", "user name", "login") -> "email"
             has("phone", "mobile", "contact number", "whatsapp") -> "phone"
             has("zip", "pincode", "pin code", "postcode", "post code", "postal code") -> "postcode"
-            has("address", "street", "flat", "house", "city", "postal", "delivery") -> "address"
+            has("street", "address line", "flat", "house") -> "address"
+            has("city", "town") -> "city"
+            has("state", "province") -> "state"
+            has("address", "postal", "delivery") -> "address"
             has("first name", "given name", "firstname", "givenname") -> "givenName"
             has("last name", "surname", "family name", "lastname", "familyname") -> "familyName"
             has("full name", "your name", "name") -> "name"

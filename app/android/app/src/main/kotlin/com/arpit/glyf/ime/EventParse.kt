@@ -316,9 +316,13 @@ object EventParse {
         if (re("\\bin\\s+(?:\\d+|an?|a few|few|couple of)\\s*(?:minutes?|mins?)\\b").containsMatchIn(text)) return null
         val p = parse(text, now, tz, dayFirst, firstDayOfWeek)
         if (!p.hasTime) return null
-        if (p.hasDay) return p
         val intent = "\\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|game|match|pick (?:me|you|us|him|her|them) up|pickup|milte|milenge)\\b"
-        return if (re(intent).containsMatchIn(text)) p else null
+        val planned = re(intent).containsMatchIn(text)
+        // "what are you doing tonight" asks about a plan; it isn't one
+        // (2026-10-08 probe). EventParse.swift's twin.
+        if (!planned && re("^\\s*(?:what|wat|wht|where|who|why|how|whats|what's)\\b").containsMatchIn(text)) return null
+        if (p.hasDay) return p
+        return if (planned) p else null
     }
 
     /** "Sam Lee sam@x.com, ria@y.com": a name and the email addresses on one

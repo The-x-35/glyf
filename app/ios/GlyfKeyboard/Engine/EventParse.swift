@@ -234,9 +234,14 @@ enum EventParse {
                       options: [.regularExpression, .caseInsensitive]) != nil { return nil }
         let p = parse(text, now: now, calendar: cal, dayFirst: dayFirst)
         guard p.hasTime else { return nil }
-        if p.hasDay { return p }
         let intent = #"\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|game|match|pick (?:me|you|us|him|her|them) up|pickup|milte|milenge)\b"#
-        return text.range(of: intent, options: [.regularExpression, .caseInsensitive]) != nil ? p : nil
+        let planned = text.range(of: intent, options: [.regularExpression, .caseInsensitive]) != nil
+        // "what are you doing tonight" asks about a plan; it isn't one
+        // (2026-10-08 probe). EventParse.kt's twin.
+        if !planned, text.range(of: #"^\s*(?:what|wat|wht|where|who|why|how|whats|what's)\b"#,
+                                options: [.regularExpression, .caseInsensitive]) != nil { return nil }
+        if p.hasDay { return p }
+        return planned ? p : nil
     }
 
     /// "Sam Lee sam@x.com, ria@y.com": a name and the email addresses on one

@@ -61,6 +61,8 @@ object SettingsStore {
         put("haptics", true)
         put("keyClicks", true)
         put("numberRow", false)
+        // Swipe-to-type over the letters (iOS GlyfSettings.glideTyping).
+        put("glideTyping", true)
         put("autocorrect", true)
         put("autocapitalize", true)
         put("periodShortcut", true)

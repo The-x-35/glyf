@@ -65,7 +65,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var suggestionsShown = emptyList<Suggestion>()
     private var toolsPinned = false
     private data class Suggestion(val text: String, val kind: Kind) {
-        enum class Kind { LITERAL, CORRECTION, WORD, UNDO, FILL }
+        enum class Kind { LITERAL, CORRECTION, WORD, UNDO, FILL, EMOJI }
     }
     /** [anchor] is the text before the cursor right after the correction and
      *  its space went in: undo works from exactly there (iOS twin). */
@@ -597,7 +597,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         wordTouches.clear()
         wordTouchesFor = ""
         toolsPinned = false
-        KeyboardTyping.prepare(this) { updateSuggestions() }
+        KeyboardTyping.prepare(this) { seedOwnNames(vaultFields()); glideDecoderReady()?.warm(); updateSuggestions() }
         // A temp address being watched: carry on here, with a look at once
         // (a mail may have come while the keyboard was away).
         tempViewUp = true
@@ -1588,6 +1588,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 scheduleSuggestions()
             }
             id == "delete" -> {
+                // Right after a glide, one backspace takes the whole word.
+                if (glideBackspace(ic)) return
                 val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
                 val corr = undoableCorrection(before)
                 if (corr == null) lastCorrection = null
@@ -1635,6 +1637,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     keyboard.rebuild()
                     syncAutoShift()
                 }
+            }
+            id == "newline" -> {
+                // Return held where it sends: a line break, nothing sent.
+                commitCurrentWord(ic)
+                ic.commitText("\n", 1)
+                syncAutoShift()
+                updateSuggestions()
             }
             id == "return" -> {
                 commitCurrentWord(ic)
@@ -2376,7 +2385,22 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             vaultFieldsCache = Smart.fields(VaultStore.load(this))
             vaultFieldsStamp = stamp
         }
+        seedOwnNames(vaultFieldsCache)
         return vaultFieldsCache
+    }
+
+    /** The person's own names are words to the engine, whatever the
+     *  dictionary makes of them ("hi arpit" offered armpit; iOS 10-07). */
+    private var seededNames: Set<String> = emptySet()
+    private fun seedOwnNames(fields: List<Smart.Field>) {
+        val engine = KeyboardTyping.engine ?: return
+        val names = fields.filter { it.kind == "name" }
+            .flatMap { f -> f.value.split(Regex("""[^\p{L}'-]+""")) }
+            .filter { it.length >= 2 }.toSet()
+        if (names == seededNames) return
+        for (name in names - seededNames) engine.keep(name)
+        seededNames = names
+        KeyboardTyping.scheduleSave(this)
     }
 
     private var suggestedChip: Smart.Chip.Action? = null
@@ -2429,7 +2453,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (ticker != null) {
                 RatesStore.ensureToken(backendURL, ticker) { updateSuggestions() }
                 RatesStore.ensureFiat(backendURL) { updateSuggestions() }
-            } else if (tail.any { it.isDigit() } && Smart.looksLikeMoney(tail)) {
+            } else if (Smart.coinAmount(tail) != null) {
+                RatesStore.ensureToken(backendURL, Smart.coinAmount(tail)!!.third) { updateSuggestions() }
+            } else if (tail.any { it.isDigit() } && (Smart.looksLikeMoney(tail) || Smart.currencyPair(tail) != null)) {
                 RatesStore.ensureFiat(backendURL) { updateSuggestions() }
             }
         }
@@ -2579,6 +2605,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 }
             }
             else -> {}
+        }
+        // Talk of a call: a Google Meet link where it's wanted, only with
+        // Meet connected (iOS 10-07).
+        if (Smart.asksToCall(tail) && com.arpit.glyf.store.GoogleAccess.hasMeet(this)) {
+            cancelSuggestion()
+            val shown = showStripChip("action", null, "Add a Meet link", "") {
+                hideStripChip()
+                insertMeetLink()
+            }
+            if (shown) return true
         }
         val trimmed = tail.trim()
         // A question for a fact shows "AI answer" as it is typed (Arpit,
@@ -3844,6 +3880,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun updateSuggestions() {
         // A scheduled pass is now redundant, whoever asked for this one.
         main.removeCallbacks(suggestionsTick)
+        if (showGlideStrip()) return
         if (searchActive || barActive || vaultEditActive || overlay != null) { showSuggestions(emptyList()); return }
         val policy = typingPolicy()
         val ic = currentInputConnection
@@ -3903,9 +3940,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             val previous = WordContext.previousWord(before)
             showSuggestions(when {
                 corr != null -> listOf(Suggestion(corr.original, Suggestion.Kind.UNDO))
-                engine != null && before.endsWith(" ") && previous != null ->
-                    engine.predictions(previous, policy, beforePrevious = WordContext.wordBeforePrevious(before))
+                engine != null && before.endsWith(" ") && previous != null -> {
+                    val next = engine.predictions(previous, policy, beforePrevious = WordContext.wordBeforePrevious(before))
                         .map { Suggestion(it, Suggestion.Kind.WORD) }
+                    // The word just written brings its emoji to the last slot (iOS 10-07).
+                    EmojiWords.emoji(previous)?.let { next.take(2) + Suggestion(it, Suggestion.Kind.EMOJI) } ?: next
+                }
                 else -> emptyList()
             })
             return
@@ -3917,11 +3957,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // fix is offered as a plain word rather than promised in bold (iOS).
         val fixKind = if (settings.optBoolean("autocorrectApply", true)) Suggestion.Kind.CORRECTION
                       else Suggestion.Kind.WORD
-        showSuggestions(when {
-            s.autocorrect != null -> listOf(Suggestion(word, Suggestion.Kind.LITERAL),
-                Suggestion(s.autocorrect, fixKind)) + others.take(1)
-            others.isEmpty() -> emptyList()
-            else -> listOf(Suggestion(word, if (s.known) Suggestion.Kind.WORD else Suggestion.Kind.LITERAL)) + others.take(2)
+        // The word being typed is never a chip (Arpit, 10-07: "feels like we
+        // are wasting a suggestion"): the fix plus two words, or three words,
+        // with the word's emoji in the last slot when there's no fix.
+        showSuggestions(if (s.autocorrect != null) {
+            listOf(Suggestion(s.autocorrect, fixKind)) + others.take(2)
+        } else {
+            val words = others.take(3)
+            EmojiWords.emoji(word)?.let { words.take(2) + Suggestion(it, Suggestion.Kind.EMOJI) } ?: words
         })
     }
 
@@ -3943,7 +3986,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 gravity = Gravity.CENTER
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                textSize = 17f   // the system bar's size (a 12dp cap height)
+                textSize = if (item.kind == Suggestion.Kind.EMOJI) 22f else 17f   // the system bar's size (a 12dp cap height)
                 typeface = if (item.kind == Suggestion.Kind.CORRECTION) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
                 setTextColor(if (item.kind == Suggestion.Kind.LITERAL) Color.argb(150, Color.red(ink), Color.green(ink), Color.blue(ink)) else ink)
                 if (item.kind == Suggestion.Kind.CORRECTION) {
@@ -3988,6 +4031,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private fun suggestionTapped(item: Suggestion) {
+        // Another guess for the word a glide just put in replaces it.
+        if (glideSwap(item)) return
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(96, 0)?.toString() ?: ""
         val word = WordContext.currentWord(before)
@@ -4008,6 +4053,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     if (corr.fromEngine) engine?.revert(corr.original, corr.replacement)
                 }
                 lastCorrection = null
+            }
+            Suggestion.Kind.EMOJI -> {
+                // After the word, a space each side; the word itself stays.
+                if (word.isNotEmpty()) engine?.commit(word, previous, false, policy)
+                ic.commitText((if (word.isEmpty()) "" else " ") + item.text + " ", 1)
             }
             Suggestion.Kind.LITERAL -> {
                 // Exactly what they typed, on purpose: keep it and never fix it.
@@ -4096,6 +4146,144 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             autoShifted = wants
             keyboard.invalidate()
         }
+    }
+
+    // Glide typing (Arpit, 2026-10-07: "implement glide typing, like glide
+    // over keyboard to type; its guesses needs to be perfect too"; 10-08:
+    // "do glide and other things u made for android as well"). The iOS
+    // twin is GlyfKeyboardViewController's "Glide typing" block: the lift
+    // puts the best guess and a space in, the other guesses wait in the
+    // strip while the caret stays after the word, a tap on one swaps it, and
+    // one backspace takes the word and its space and offers them back.
+
+    private var glideDecoder: com.arpit.glyf.ime.typing.GlideDecoder? = null
+    private var glide: com.arpit.glyf.ime.typing.GlideState? = null
+    /** The words the strip offers after a glide, while the text before the
+     *  caret is still [Pair.first]. */
+    private var glideStrip: Pair<String, List<String>>? = null
+
+    override fun glideAllowed(): Boolean =
+        settings.optBoolean("glideTyping", true) && bindingsLive() &&
+            typingPolicy() and TypingEngine.SUGGESTIONS != 0
+
+    override fun onGlideMoved(points: List<com.arpit.glyf.ime.typing.GlidePoint>,
+                              layout: com.arpit.glyf.ime.typing.GlideDecoder.Layout): String? =
+        glideDecode(points, layout, 1).firstOrNull()?.word
+
+    override fun onGlideEnded(points: List<com.arpit.glyf.ime.typing.GlidePoint>,
+                              layout: com.arpit.glyf.ime.typing.GlideDecoder.Layout) {
+        val guesses = glideDecode(points, layout, 4).map { it.word }
+        val word = guesses.firstOrNull() ?: return
+        val ic = currentInputConnection ?: return
+        val policy = typingPolicy()
+        val before = ic.getTextBeforeCursor(96, 0)?.toString() ?: ""
+        val typing = WordContext.currentWord(before)
+        if (typing.isNotEmpty()) {
+            // A word being typed is finished first, the way the space bar would.
+            commitCurrentWord(ic)
+            ic.commitText(" ", 1)
+        } else if (before.isNotEmpty() && before.last() in WordContext.CORRECTION_BOUNDARIES) {
+            // "hello," then a glide: the word gets its space, as Apple's does.
+            ic.commitText(" ", 1)
+        }
+        val previous = if (typing.isEmpty()) WordContext.previousWord(before) else typing
+        val capitalized = keyboard.shifted
+        ic.commitText("$word ", 1)
+        lastCorrection = null
+        wordTouches.clear()
+        wordTouchesFor = ""
+        val anchor = anchorHere(ic) ?: ""
+        glide = com.arpit.glyf.ime.typing.GlideState(word, guesses.drop(1), anchor)
+        glideStrip = anchor to guesses.drop(1)
+        KeyboardTyping.engine?.commit(word, previous, capitalized, policy)
+        KeyboardTyping.scheduleSave(this)
+        // Shift is one word's.
+        if (keyboard.shifted) {
+            keyboard.shifted = false
+            autoShifted = false
+            keyboard.invalidate()
+        }
+        syncAutoShift()
+        updateSuggestions()
+    }
+
+    /** The decoder over the base dictionary, once the engine has loaded it. */
+    private fun glideDecoderReady(): com.arpit.glyf.ime.typing.GlideDecoder? {
+        if (glideDecoder == null) {
+            KeyboardTyping.engine?.base?.let { glideDecoder = com.arpit.glyf.ime.typing.GlideDecoder(it) }
+        }
+        return glideDecoder
+    }
+
+    /** The words before the caret, the capitals the board shows, and this
+     *  person's own words, for the decoder's language side. */
+    private fun glideDecode(points: List<com.arpit.glyf.ime.typing.GlidePoint>,
+                            layout: com.arpit.glyf.ime.typing.GlideDecoder.Layout,
+                            limit: Int): List<com.arpit.glyf.ime.typing.GlideDecoder.Candidate> {
+        val engine = KeyboardTyping.engine ?: return emptyList()
+        val decoder = glideDecoderReady() ?: return emptyList()
+        val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString() ?: ""
+        val current = WordContext.currentWord(before)
+        // A word being typed is finished first, so it becomes the previous one.
+        val previous = if (current.isEmpty()) WordContext.previousWord(before) else current
+        val beforePrevious = if (current.isEmpty()) WordContext.wordBeforePrevious(before) else WordContext.previousWord(before)
+        val context = com.arpit.glyf.ime.typing.GlideDecoder.Context(
+            previous = previous, beforePrevious = beforePrevious,
+            capitals = if (keyboard.shifted) com.arpit.glyf.ime.typing.GlideDecoder.Capitals.FIRST
+                       else com.arpit.glyf.ime.typing.GlideDecoder.Capitals.NONE,
+            personal = engine.personal)
+        return decoder.decode(points, layout, context, limit)
+    }
+
+    /** The glide's other guesses, while the caret is still right after it;
+     *  false once anything else happened, and the usual strip takes over. */
+    private fun showGlideStrip(): Boolean {
+        val strip = glideStrip ?: return false
+        val ic = currentInputConnection
+        if (ic == null || searchActive || barActive || vaultEditActive || overlay != null ||
+            !settings.optBoolean("candidates", true) || strip.second.isEmpty() || anchorHere(ic) != strip.first) {
+            glideStrip = null
+            return false
+        }
+        if (stripChip != null) hideStripChip()
+        toolsPinned = false
+        showSuggestions(strip.second.take(3).map { Suggestion(it, Suggestion.Kind.WORD) })
+        return true
+    }
+
+    /** One backspace right after a glide removes the word and its space and
+     *  offers it and the other guesses back; the next backspace is ordinary. */
+    private fun glideBackspace(ic: android.view.inputmethod.InputConnection): Boolean {
+        val g = glide ?: return false
+        glide = null
+        if (!g.isCurrent(anchorHere(ic))) return false
+        ic.deleteSurroundingText(g.deleteCount, 0)
+        lastCorrection = null
+        glideStrip = (anchorHere(ic) ?: "") to (listOf(g.word) + g.alternatives)
+        syncAutoShift()
+        updateSuggestions()
+        return true
+    }
+
+    /** A tap on another guess swaps the glided word for it. */
+    private fun glideSwap(item: Suggestion): Boolean {
+        if (item.kind != Suggestion.Kind.WORD) return false
+        val g = glide ?: return false
+        val ic = currentInputConnection ?: return false
+        if (!g.isCurrent(anchorHere(ic))) return false
+        ic.beginBatchEdit()
+        ic.deleteSurroundingText(g.deleteCount, 0)
+        ic.commitText(item.text + " ", 1)
+        ic.endBatchEdit()
+        val anchor = anchorHere(ic) ?: ""
+        val others = g.others(item.text)
+        glide = com.arpit.glyf.ime.typing.GlideState(item.text, others, anchor)
+        glideStrip = anchor to others
+        KeyboardTyping.engine?.commit(item.text, g.previousWord, false, typingPolicy())
+        KeyboardTyping.scheduleSave(this)
+        syncAutoShift()
+        updateSuggestions()
+        return true
     }
 
     // MARK: bound keys → run → preview (the §6.4 loop, Android slice)
@@ -4748,6 +4936,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             keyboard.numberRow = on
             keyboard.rebuild()
         }
+        toggle("Glide typing", "glideTyping", true)
         rows.header("Feel")
         toggle("Sound on keypress", "keyClicks", true) { keyboard.clicksOn = it }
         toggle("Haptic feedback on keypress", "haptics", true) { keyboard.hapticsOn = it }

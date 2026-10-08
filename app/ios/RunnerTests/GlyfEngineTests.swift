@@ -1279,6 +1279,121 @@ final class GlyfEngineTests: XCTestCase {
     /// missing: both currencies named, an amount of a coin, sums said in
     /// words, the time somewhere else, the wait till a clock time. iOS first;
     /// Smart.kt catches up (docs/OPEN-ITEMS.md).
+    func testEverydayAnswersFromTheSecondProbe() throws {
+        let noon = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-07T12:00:00Z"))
+        let newYork = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        func q(_ text: String, region: String = "US") -> [String]? {
+            Smart.quickAnswer(in: text, now: noon, here: newYork, region: region)?.results
+        }
+        // bugs the probe found
+        XCTAssertNil(Smart.calc("my order number is 112-3456789-1234567"))
+        XCTAssertEqual(Smart.calc("10-2")?.value, "8")
+        let mail = VaultField(id: "e", kind: "email", label: "Email", value: "alex@example.com")
+        XCTAssertTrue(Smart.vaultMatches("per my last email", fields: [mail]).isEmpty)
+        XCTAssertEqual(Smart.vaultMatches("send it to my email", fields: [mail]).first?.value, "alex@example.com")
+        XCTAssertNil(EventParse.looksLikePlan("what are you doing tonight"))
+        XCTAssertNotNil(EventParse.looksLikePlan("dinner tonight at 8?"))
+        // new answers
+        XCTAssertEqual(q("whats the time difference with london"), ["London is 5h ahead"])
+        XCTAssertEqual(q("how far ahead is tokyo"), ["Tokyo is 13h ahead"])
+        XCTAssertEqual(q("100f in c"), ["37.8°C"])
+        XCTAssertEqual(q("30 c to f"), ["86°F"])
+        XCTAssertEqual(q("whats 5'10 in cm"), ["178 cm", "1.78 m"])
+        XCTAssertEqual(q("hes 6'2"), ["188 cm", "1.88 m"])
+        XCTAssertEqual(q("bmi 70kg 175cm"), ["BMI 22.9"])
+        XCTAssertEqual(q("my bmi at 180 lbs and 5'10"), ["BMI 25.8"])
+        XCTAssertEqual(q("ill be there in 15"), ["8:15 AM"])
+        XCTAssertEqual(q("call you back in 5"), ["8:05 AM"])
+        XCTAssertNil(q("chapter 3 in 15"))
+        XCTAssertEqual(q("was 80 now 60"), ["-25%", "save 60".replacingOccurrences(of: "60", with: "20")])
+        XCTAssertEqual(q("was $120, now $90"), ["-25%", "save $30"])
+        XCTAssertEqual(q("3 pack for 12.99"), ["4.33 each"])
+        XCTAssertEqual(q("1.5kg for 9"), ["6/kg"])
+        XCTAssertEqual(q("add 18% tip to 64"), ["11.52 tip", "75.52 total"])
+        XCTAssertEqual(q("monthly emi 500000 at 9% 5 years")?.count, 2)
+        XCTAssertEqual(q("what day is 25 december 2026"), ["Friday"])
+        XCTAssertEqual(q("what week is it"), ["Week 41"])
+        XCTAssertEqual(q("roman numeral 2026"), ["MMXXVI"])
+        XCTAssertEqual(q("MMXXVI in numbers"), ["2026"])
+        XCTAssertEqual(q("rgb 255 87 51")?.first, "#FF5733")
+        XCTAssertEqual(q("base64 hello"), ["aGVsbG8="])
+        XCTAssertEqual(q("base64 decode aGVsbG8="), ["hello"])
+        XCTAssertEqual(q("uuid")?.first?.count, 36)
+        XCTAssertEqual(q("uuid"), q("uuid"), "the same while the words stay")
+        XCTAssertEqual(q("tracking number 9400111899223344556677"), ["USPS tracking"])
+        XCTAssertEqual(q("emergency number uk"), ["999 · UK"])
+        XCTAssertEqual(q("emergency number in japan"), ["110 police · 119 ambulance · Japan"])
+        XCTAssertEqual(q("emergency number"), ["911"])
+        XCTAssertNil(q("emergency number in atlantis"))
+        XCTAssertEqual(q("what does ngl mean"), ["not gonna lie"])
+        XCTAssertEqual(q("iykyk meaning"), ["if you know, you know"])
+        XCTAssertNil(q("what does love mean"))
+        XCTAssertEqual(q("lets meet at starbucks on main st"), ["Add a map link"])
+        XCTAssertEqual(Smart.mapLink(in: "lets meet at starbucks on main st")?.inserts?.first,
+                       "https://www.google.com/maps/search/?api=1&query=starbucks%20on%20main%20st")
+        XCTAssertEqual(Smart.mapLink(in: "im at central park")?.source, "central park")
+        XCTAssertEqual(Smart.mapLink(in: "meet me at blue bottle at 5pm")?.source, "blue bottle")
+        XCTAssertEqual(Smart.mapLink(in: "meet me at starbucks")?.source, "starbucks")
+        XCTAssertNil(Smart.mapLink(in: "meet me at the airport"))
+        XCTAssertNil(Smart.mapLink(in: "lets meet at 7"))
+        XCTAssertNil(Smart.mapLink(in: "im at work"))
+        XCTAssertNil(Smart.mapLink(in: "im at peace"))
+        XCTAssertNil(Smart.mapLink(in: "im at my moms"))
+    }
+
+    func testAnswersFromTheResearchPass() throws {
+        let noon = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-07T12:00:00Z"))
+        let newYork = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        func q(_ text: String, region: String = "US") -> [String]? {
+            Smart.quickAnswer(in: text, now: noon, here: newYork, region: region)?.results
+        }
+        XCTAssertEqual(q("got 43/50 on the quiz"), ["86%"])
+        XCTAssertEqual(q("scored 18 out of 25"), ["72%"])
+        XCTAssertNil(q("3 out of 5"))
+        if case .convert(let c)? = Smart.chip(for: "scored 43/50", fields: [], region: "US") { XCTAssertEqual(c.results, ["86%"]) }
+        else { XCTFail("scored 43/50 should be a score") }
+        XCTAssertEqual(q("avg of 85, 92, 78"), ["85 avg", "median 85"])
+        XCTAssertEqual(q("average 12 15 9 22"), ["14.5 avg", "median 13.5"])
+        XCTAssertEqual(q("sum of 12, 30 and 8"), ["50"])
+        XCTAssertNil(q("total 1,250"))
+        XCTAssertEqual(q("extra 10% off 20% off $80"), ["$57.60", "28% off"])
+        XCTAssertEqual(q("20% + 10% off $80"), ["$57.60", "28% off"])
+        XCTAssertEqual(q("buy 2 get 1 free $12 each"), ["$8 each"])
+        XCTAssertEqual(q("bogo $10"), ["$5 each"])
+        XCTAssertEqual(q("save $500/mo for 10 yrs at 7%")?.first, "$86,542")
+        XCTAssertEqual(q("300 miles at 65 mph"), ["4 h 37 min"])
+        XCTAssertEqual(q("120 km at 80 km/h"), ["1 h 30 min"])
+        XCTAssertEqual(q("when do the clocks change"), ["Sun, Nov 1 · back 1 h"])
+        XCTAssertEqual(q("zone 2 heart rate age 34"), ["Zone 2: 112–130 bpm", "Max HR 186"])
+        XCTAssertEqual(q("max heart rate im 34")?.first, "Max HR 186 bpm")
+        XCTAssertNil(q("heart rate is up"))
+        XCTAssertEqual(q("x^2"), ["x²"])
+        XCTAssertEqual(q("\\alpha"), ["α"])
+        XCTAssertEqual(q("solve 2x+5=17"), ["x = 6"])
+        XCTAssertEqual(q("3x - 4 = 11"), ["x = 5"])
+        XCTAssertEqual(q("x^2-5x+6=0"), ["x = 2, 3"])
+        XCTAssertNil(q("x = 5"))
+        XCTAssertEqual(q("chicken internal temp"), ["165°F · 74°C"])
+        XCTAssertEqual(q("safe temp for ground beef"), ["160°F · 71°C"])
+        XCTAssertEqual(q("substitute for buttermilk"), ["1 cup milk + 1 tbsp lemon juice"])
+        XCTAssertNil(q("we're out of milk"))
+        XCTAssertEqual(q("ooo until monday"), ["OOO reply · Mon, Oct 12"])
+        XCTAssertEqual(Smart.outOfOffice(in: "ooo until 14 oct", now: noon, here: newYork, region: "GB")?.inserts?.first,
+                       "I'm out of the office until Wed 14 Oct and will reply when I'm back.")
+        let name = VaultField(id: "n", kind: "name", label: "Name", value: "Alex Kim")
+        if case .convert(let c)? = Smart.chip(for: "Hi Sam,\nSee you then.\nBest,", fields: [name], region: "US") {
+            XCTAssertEqual(c.results, ["Sign as Alex Kim"])
+            XCTAssertEqual(c.inserts, ["Best,\nAlex Kim"])
+        } else { XCTFail("sign-off") }
+        XCTAssertEqual(Smart.pieces(of: "Your verification code is 482913. Don't share it."), ["482913"])
+        XCTAssertEqual(q("how many calories in a banana"), ["~105 kcal (medium)"])
+        XCTAssertEqual(q("calories in 2 eggs"), ["~144 kcal (2 × large)"])
+        XCTAssertEqual(q("cals in a slice of pizza"), ["~285 kcal (cheese)"])
+        XCTAssertEqual(q("big mac calories"), ["~590 kcal (each)"])
+        XCTAssertNil(q("calories in a spaceship"))
+        XCTAssertNil(q("burned 300 calories"))
+    }
+
     func testEverydayAnswersFromTheProbe() throws {
         let rates = Smart.RatesSnapshot(fiat: ["USD": 1, "INR": 83.5, "EUR": 0.92], crypto: ["SOL": 120, "BTC": 65000],
                                         local: "USD", mints: ["SOL": "So11111111111111111111111111111111111111112"])

@@ -488,7 +488,11 @@ final class GlideDecoder {
                                          letters: letters, node: ix.node[w]))
                 }
             }
-        } else {
+        }
+        // A short glide between two keys with no one-letter word near them
+        // ("we" cut short) is still a word: search as for any glide
+        // (GlideDecoder.kt found it, 2026-10-08).
+        if g.length >= Self.stillLength || (scored.isEmpty && g.length > 0) {
             var startKeys: [Int] = [], endKeys: [Int] = []
             for k in 0..<26 {
                 if hypotf(g.kx[k] - g.x[0], g.ky[k] - g.y[0]) <= Self.endReach { startKeys.append(k) }

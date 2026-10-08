@@ -43,6 +43,24 @@ class TypingEngineTest {
         assertTrue("\n" + failures.joinToString("\n"), failures.isEmpty())
     }
 
+    /** A word typed in full offers its completions, not its neighbours (iOS twin). */
+    @Test fun aKnownWordOffersCompletionsNotNeighbours() {
+        val repo = sharedDir.parentFile.parentFile
+        val dict = File(repo, "app/dict/en.glyd")
+        org.junit.Assume.assumeTrue("app/dict/en.glyd not built", dict.exists())
+        val engine = TypingEngine(GlydTrie.mapped(dict)!!)
+        val noon = engine.suggestions("noon", previous = "at", sentenceStart = false)
+        assertTrue(noon.known)
+        assertTrue("${noon.alternatives}", "moon" !in noon.alternatives)
+        val the = engine.suggestions("the", previous = "at", sentenceStart = false)
+        assertTrue("${the.alternatives}", the.alternatives.all { it.lowercase().startsWith("the") })
+        val its = engine.suggestions("its", previous = "think", sentenceStart = false)
+        assertTrue("${its.alternatives}", "it's" in its.alternatives)
+        val thier = engine.suggestions("thier", previous = "at", sentenceStart = false)
+        assertEquals("their", thier.autocorrect)
+        assertTrue(thier.alternatives.isNotEmpty())
+    }
+
     /** Pack words and phrases by id, split the way the keyboards load them. */
     private fun packContent(packsFile: File?, ids: List<String>): Pair<List<String>, List<String>> {
         if (packsFile == null || ids.isEmpty()) return emptyList<String>() to emptyList()

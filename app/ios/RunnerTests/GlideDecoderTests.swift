@@ -170,6 +170,20 @@ final class GlideDecoderTests: XCTestCase {
         }
     }
 
+    /// A short glide between two keys with no one-letter word near its
+    /// start ("we" cut short) still gives words (GlideDecoder.kt, 10-08).
+    func testShortGlideStillGivesWords() throws {
+        let decoder = try decoder()
+        let lay = layout(width: 402)
+        let w = 22, e = 4
+        var points: [GlidePoint] = []
+        for i in 0..<12 {
+            let f = Float(i) / 11 * 0.7
+            points.append(GlidePoint(x: lay.x[w] + (lay.x[e] - lay.x[w]) * f, y: lay.y[w], t: Double(i) * 0.012))
+        }
+        XCTAssertFalse(decoder.decode(points, layout: lay).isEmpty)
+    }
+
     /// The field's capitals and the previous word shape the answer.
     func testContext() throws {
         let decoder = try decoder()

@@ -181,6 +181,17 @@ object Smart {
     /** "cal.com/sam/30min" without the scheme. */
     fun shortLink(link: String): String = link.replace(scheme, "")
 
+    /** The message asks for a time to talk, which the booking page answers. */
+    fun asksToBook(text: String): Boolean = firstMatch(
+        """\b(?:calendar link|booking link|scheduling link|calendly(?:\s+link)?|cal\.com(?:\s+link)?|book (?:a |some )?(?:time|slot|call|meeting|session)|pick a (?:time|slot)|grab (?:a |some )?time|schedule (?:a |some )?(?:time|call|meeting|chat)|find a time|set up a (?:call|meeting|time)|when (?:are|r) (?:you|u) free|(?:are|r) (?:you|u) free (?:this|next) week|your availability|my availability|what times? works? for you|a time that works)\b[?.!]?\s?$""",
+        text) != null
+
+    /** The message is about getting on a call, which a Meet link answers
+     *  ("hop on a quick call?", "can we talk", "send me the meet link"). */
+    fun asksToCall(text: String): Boolean = firstMatch(
+        """\b(?:(?:hop|jump|get) on a (?:quick |video )?call|quick call|video call|can we (?:talk|call|chat|hop on)|(?:lets|let's) (?:call|talk|hop on|jump on|do a call)|wanna call|want to call|free (?:to talk|for a call)|up for a call|call now|meet link|(?:send|share) (?:me )?(?:a|the|your) (?:meet|call|video) link|(?:zoom|meet|facetime|call)\?)[?.!]?\s?$""",
+        text) != null
+
     /** Vault fields out of the decrypted vault JSON. */
     fun fields(vault: org.json.JSONObject): List<Field> {
         val arr: JSONArray = vault.optJSONArray("fields") ?: return emptyList()
@@ -228,10 +239,13 @@ object Smart {
         if (linkContext != null && linkContext.length > text.length && endsInLink(text)) {
             cleanLink(linkContext)?.let { return Chip.Convert(it) }
         }
+        val quick = quickAnswer(text, region = region)
         calcMatch(text, indianGrouping)?.let { (value, hasEquals, expression) ->
+            // "scored 43/50" is a score, not a division: the answer that read
+            // more of the message wins.
+            if (quick != null && quick.source.length > expression.length + 2 && quick.source.endsWith(expression)) return Chip.Convert(quick)
             return Chip.Calc(value, hasEquals).also { it.expression = expression }
         }
-        val quick = quickAnswer(text, region = region)
         money(text, rates)?.let { m ->
             // "18% gst on ₹1,000", "3 for $10": the bill says more than the
             // amount it ends on.
@@ -248,6 +262,11 @@ object Smart {
         matches.firstOrNull()?.let { return Chip.Vault(it) }
         // A detail being typed: its first letters offer the whole of it.
         completions(text, fields)?.let { (typed, hits) -> return Chip.Details(hits, temp = false, typed = typed) }
+        // "Best," on a line of its own: sign with the saved name.
+        signOff(text, fields)?.let { return Chip.Convert(it) }
+        // Asked for a time to talk ("when are you free", "send me your
+        // calendar link"): the person's own booking page (iOS 10-07).
+        if (!ownBooking.isNullOrBlank() && asksToBook(text)) return Chip.Vault(Field("link", "Book a time", ownBooking))
         EventParse.looksLikePlan(text)?.let { return Chip.Event(it) }
         bookingLink(text, ownBooking)?.let { return Chip.Booking(it) }
         return null
@@ -309,6 +328,19 @@ object Smart {
             val name = rates.tickers[ticker] ?: ticker
             return Chip.Money("1 $name = $quoted", " = $quoted", rates.mints[ticker])
         }
+        // "100 usd to inr", "$20 in euros": both currencies named (iOS 10-07).
+        currencyPair(text)?.let { (amount, from, to) ->
+            val fromRate = rates.fiat[from]?.takeIf { it > 0 } ?: return null
+            val toRate = rates.fiat[to] ?: return null
+            val result = format(amount / fromRate * toRate, to)
+            return Chip.Money("${format(amount, from)} = $result", " = $result")
+        }
+        // "1 sol", "0.5 btc": an amount of a coin in dollars, Buy beside it.
+        coinAmount(text)?.let { (typed, amount, symbol) ->
+            val usd = rates.crypto[symbol] ?: return null
+            val worth = price(usd * amount)
+            return Chip.Money("$typed $symbol = $worth", " = $worth", rates.mints[symbol])
+        }
         val m = amountPattern.find(text) ?: return null
         // The right-hand side of a conversion the chip itself put in ("$13 =
         // ₹1,246"): converting that back would be a loop, not help.
@@ -325,6 +357,30 @@ object Smart {
         val toRate = rates.fiat[to] ?: return null
         val result = format(amount / fromRate * toRate, to)
         return Chip.Money("${format(amount, from)} = $result", " = $result")
+    }
+
+    /** An amount with both currencies named, the message ending on the
+     *  second: (100, "USD", "INR") for "100 usd to inr". */
+    fun currencyPair(text: String): Triple<Double, String, String>? {
+        val g = firstMatch("""(?:([₹$€£¥])\s*)?(\d[\d,]*(?:\.\d+)?)\s*([A-Za-z]{2,8})?\s+(?:to|in|into|as)\s+([A-Za-z]{2,8}|[₹$€£¥])\??\s?$""", text)
+            ?: return null
+        val amount = g[2]?.replace(",", "")?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val from = g[1]?.firstOrNull()?.let { symbolCurrency[it] } ?: g[3]?.let { wordCurrency[it.lowercase()] } ?: return null
+        val to = g[4]?.let { if (it.length == 1) symbolCurrency[it[0]] else wordCurrency[it.lowercase()] } ?: return null
+        return if (from == to) null else Triple(amount, from, to)
+    }
+
+    /** Coins people write amounts of ("2 eth"); no LINK or DOT, which are words. */
+    private val coinWords = setOf("sol", "btc", "eth", "usdc", "usdt", "bnb", "xrp", "doge",
+                                  "ada", "avax", "ltc", "trx", "shib", "pepe", "bonk", "jup", "wif")
+
+    /** An amount of a coin the message ends on: ("0.5", 0.5, "BTC") for "0.5 btc". */
+    fun coinAmount(text: String): Triple<String, Double, String>? {
+        val g = firstMatch("""(?<![\d.,$])(\d[\d,]*(?:\.\d+)?)\s*([A-Za-z]{3,4})\.?\s?$""", text) ?: return null
+        val typed = g[1] ?: return null
+        val word = g[2]?.lowercase()?.takeIf { it in coinWords } ?: return null
+        val amount = typed.replace(",", "").toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        return Triple(typed, amount, word.uppercase())
     }
 
     /** A token's dollar price: cents from a dollar up ("$112.40"), and
@@ -373,7 +429,7 @@ object Smart {
      *  "555-123-4567", "+1-555-123-4567", "98765-43210"). Two small numbers
      *  are a sum: "24/7" is divided, "2-3" is -1. */
     private val notASum = Regex(
-        """\s*(?:\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2}|""" +
+        """\s*(?:\d+(?:-\d+){2,}|\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2}|""" +
             """\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{4}|(?:\d{1,3}-)?\d{3}-\d{3}-\d{4}|\d{3}-\d{4}|\d{5}-\d{5})\s*""")
     private val comparison = Regex("""\s*(>=|<=|≥|≤|>|<)\s*""")
 
@@ -384,6 +440,21 @@ object Smart {
      *  the sum as typed. A comparison is "true" or "false". */
     fun calcMatch(text: String, indianGrouping: Boolean = true): Triple<String, Boolean, String>? {
         if (text.isEmpty()) return null
+        // "half of 350", "a third of 90", "double 25", "sqrt 81": sums said
+        // in words (iOS 10-07).
+        firstMatch("""\b((?:a\s+)?(?:half|third|quarter)\s+of|double|twice|triple|sqrt|square\s+root(?:\s+of)?)\s+(?:[₹$€£]\s*)?(\d[\d,]*(?:\.\d+)?)\??\s?$""", text)?.let { g ->
+            val words = g[1]?.lowercase()?.replace(Regex("""\s+"""), " ") ?: return@let
+            val n = g[2]?.replace(",", "")?.toDoubleOrNull() ?: return@let
+            val v = when {
+                words.endsWith("half of") -> n / 2
+                words.endsWith("third of") -> n / 3
+                words.endsWith("quarter of") -> n / 4
+                words == "double" || words == "twice" -> n * 2
+                words == "triple" -> n * 3
+                else -> kotlin.math.sqrt(n)
+            }
+            return Triple(format(v, indianGrouping), false, (g[0] ?: "").trim())
+        }
         val m = calcPattern.find(text) ?: return null
         val expr = m.groups[1]?.value ?: return null
         val hasEquals = m.groups[2] != null
@@ -578,7 +649,7 @@ object Smart {
         // i type email it should show my email id"): "email", "send it to my
         // email", "email id", "gmail". Never the verb ("can you email", "i'll
         // email", "please email"), and it goes as soon as the sentence moves on.
-        Triple("""(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna|the|this|that|a|an)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$""", listOf("email"), null),
+        Triple("""(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna|the|this|that|a|an|last|previous|prior|recent|earlier|next|new|old|first|same|your|his|her|their|its|whose|another|any|no|every|each|an?)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$""", listOf("email"), null),
         // An IP, web or website address is no place to deliver to.
         Triple("""(?:\b(?:my|our)\s+(?:(?:home|delivery|shipping|office|current|new)\s+)?(?:address|addy)|(?<!e-?mail\s)(?<!gmail\s)(?<!ip\s)(?<!web\s)(?<!website\s)(?<!mac\s)\b(?:(?:home|delivery|shipping|office)\s+)?address\s*:|\bdeliver(?:\s+it)?\s+to|\bsend\s+it\s+to|\bship\s+(?:it\s+)?to|\bcome\s+(?:over\s+)?to|\bpick\s+me\s+up\s+(?:from|at))\s*(?:is\s*)?:?\s*$""", listOf("address"), null),
         Triple("""\b(?:(?:my|our)\s+(?:upi|vpa|gpay|google\s+pay|phonepe|paytm)(?:\s+(?:id|number|handle))?|(?:upi|vpa|gpay|phonepe|paytm)(?:\s*id)?\s*:|(?:pay|gpay|phonepe|paytm)\s+me\s+(?:at|on))\s*(?:is\s*)?:?\s*$""", listOf("upi"), null),
@@ -657,9 +728,42 @@ object Smart {
                     Regex("""\b(?:company|organi[sz]ation|employer|workplace)\b""", RegexOption.IGNORE_CASE)
                         .containsMatchIn(it.label)
             }
+            "city", "state", "cityState" -> fields.filter { it.kind == "address" }.mapNotNull { a ->
+                val (city, state) = cityState(a.value) ?: return@mapNotNull null
+                when (kind) {
+                    "city" -> Field(kind, "City", city)
+                    "state" -> state?.let { Field(kind, "State", it) }
+                    else -> Field(kind, "City", state?.let { "$city, $it" } ?: city)
+                }
+            }
             else -> fields.filter { it.kind == kind }
         }
         return found.distinctBy { it.value.trim().lowercase() }
+    }
+
+    /** The city (and state, when one is written) in a saved address: "123
+     *  Market St, San Francisco, CA 94103" → San Francisco, CA; "10 Downing
+     *  St, London SW1A 2AA" → London. Nothing for a one-line address. */
+    fun cityState(address: String): Pair<String, String?>? {
+        val parts = address.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.size < 2) return null
+        val postcodes = Regex("""\b(?:\d[\d-]*|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b""")
+        fun words(s: String) = s.replace(postcodes, "").trim().trim { !it.isLetterOrDigit() }
+        fun isState(s: String) = s.isNotEmpty() && s.length <= 3 && s == s.uppercase()
+        var tail = words(parts[parts.size - 1])
+        var city: String
+        var state: String? = null
+        if (isState(tail) && parts.size >= 3) {
+            state = tail
+            city = words(parts[parts.size - 2])
+        } else if (tail.isEmpty() && parts.size >= 3) {
+            tail = words(parts[parts.size - 2])
+            if (isState(tail) && parts.size >= 4) { state = tail; city = words(parts[parts.size - 3]) } else city = tail
+        } else {
+            city = tail
+        }
+        if (city.isEmpty() || city.length > 40 || !Regex("""^[\p{L} .'-]+$""").matches(city)) return null
+        return city to state
     }
 
     /** The postcode in an address, the last one written: a UK or Canadian
@@ -1568,6 +1672,109 @@ object Smart {
             RegexOption.IGNORE_CASE)
     }
 
+    /** A list said in one breath: "need: milk, eggs, bread" → "• List" and
+     *  "1. List", one item a line in place of the line. Three items at
+     *  least, each short (iOS 10-07). */
+    fun listMaker(text: String): Conversions? {
+        val line = text.substringAfterLast('\n')
+        val g = firstMatch("""^\s*((?:(?:need|needs|todo|to do|to-do|list|buy|get|pack|bring|grocer(?:y|ies)|shopping|tasks?|steps?|agenda|plan|order|ingredients|items|things|remember|checklist)\b[^:\n]{0,24}:\s*)|(?:need|buy|get|pack|bring|grab|remember)\s+)(.{5,200})$""", line)
+            ?: return null
+        val lead = g[1] ?: return null
+        val rest = g[2] ?: return null
+        val items = rest.replace(Regex("""\s+and\s+""", RegexOption.IGNORE_CASE), ",")
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        if (items.size < 3 || items.any { it.length > 40 || it.contains(':') }) return null
+        val head = if (lead.contains(':')) lead.trim() + "\n" else ""
+        val bullets = head + items.joinToString("\n") { "• $it" }
+        val numbered = head + items.withIndex().joinToString("\n") { "${it.index + 1}. ${it.value}" }
+        return Conversions((g[0] ?: "").trim(), listOf("• List", "1. List"), listOf(bullets, numbered),
+                           listOf(Insertion.REPLACE, Insertion.REPLACE))
+    }
+
+    private val pollLeads = setOf("do", "does", "did", "are", "is", "will", "would", "can", "could", "should", "shall",
+        "you", "u", "we", "i", "they", "it", "that", "this", "want", "wanna", "prefer", "like",
+        "rather", "going", "go", "for", "to", "get", "have", "eat", "order", "the", "a", "an",
+        "some", "which", "what", "where", "when", "who", "with", "at", "in", "on", "so", "and",
+        "guys", "ppl", "everyone", "tonight", "today", "tomorrow", "pick", "choose", "vote")
+    private val pollOff = setOf("not", "no", "nah", "what", "something", "whatever", "anything", "nothing", "else", "so", "later")
+
+    /** Three to six options in a question ("pizza, burgers or pasta?") →
+     *  "Make it a poll": the question kept, the options on numbered lines,
+     *  "reply with a number" under it. Two options are a question. */
+    fun pollMaker(text: String): Conversions? {
+        val line = text.substringAfterLast('\n')
+        val g = firstMatch("""([A-Za-z0-9][A-Za-z0-9 ']{0,28}(?:,\s*[A-Za-z0-9][A-Za-z0-9 ']{0,24}){0,4})\s*,?\s+or\s+([A-Za-z0-9][A-Za-z0-9 ']{0,24}?)\s*\?\s?$""", line)
+            ?: return null
+        val options = (g[1] ?: return null).split(",").map { it.trim() }.toMutableList()
+        val last = g[2] ?: return null
+        val words = options[0].split(" ").filter { it.isNotEmpty() }.toMutableList()
+        while (words.size > 1 && words[0].lowercase() in pollLeads) words.removeAt(0)
+        options[0] = words.joinToString(" ")
+        options += last.trim()
+        if (options.size !in 3..6) return null
+        if (options.any { it.isEmpty() || it.length > 25 || it.lowercase() in pollOff || it.none { c -> c.isLetterOrDigit() } }) return null
+        if (options.map { it.lowercase() }.toSet().size != options.size) return null
+        val keycaps = listOf("1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣")
+        val question = (g[0] ?: "").trim()
+        val poll = question + "\n" + options.withIndex().joinToString("\n") { "${keycaps[it.index]} ${it.value}" } + "\nreply with a number"
+        return Conversions(question, listOf("Make it a poll"), listOf(poll), listOf(Insertion.REPLACE))
+    }
+
+    private val notAPlace = setOf("the", "what", "same", "this", "that", "my", "your", "our", "their", "his", "her", "free", "long", "next")
+
+    /** The time now somewhere else: "what time is it in tokyo", "tokyo
+     *  time" → "7:45 PM Tokyo" (the day too when it isn't today there).
+     *  Nothing for the phone's own zone (iOS 10-07). */
+    fun cityTime(text: String, now: java.time.Instant = java.time.Instant.now(),
+                 here: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+                 region: String? = java.util.Locale.getDefault().country): Conversions? {
+        val name = firstMatch("""\btime\s+(?:is\s+it\s+|now\s+|is\s+)?in\s+([a-z][a-z .]{1,30}?)\??\s?$""", text)?.get(1)
+            ?: firstMatch("""\b([a-z]{3,20}(?:\s+[a-z]{3,20})?)\s+time(?:\s+now)?\??\s?$""", text)?.get(1)
+            ?: return null
+        val key = name.lowercase().trim()
+        if (key in notAPlace) return null
+        val r = region?.uppercase()
+        var id = zoneNames[key] ?: zoneNames["$key time"] ?: ""
+        if (key == "cst" && r == "CN") id = "Asia/Shanghai"
+        if (key == "ist" && r == "IE") id = "Europe/Dublin"
+        if (key == "ist" && r == "IL") id = "Asia/Jerusalem"
+        val there = runCatching { java.time.ZoneId.of(id) }.getOrNull() ?: return null
+        if (there.rules.getOffset(now) == here.rules.getOffset(now)) return null
+        val at = now.atZone(there)
+        var clock = java.time.format.DateTimeFormatter.ofPattern(if (at.minute == 0) "h a" else "h:mm a", java.util.Locale.US)
+            .format(at).replace('\u202F', ' ')
+        if (at.dayOfMonth != now.atZone(here).dayOfMonth) {
+            clock = java.time.format.DateTimeFormatter.ofPattern("EEE", java.util.Locale.US).format(at) + " " + clock
+        }
+        val label = if (key.length <= 4 && zoneNames[key] != null && !key.contains(' ')) key.uppercase()
+            else key.split(" ").joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
+        val source = firstMatch("""\S.*$""", text)?.get(0)?.trim() ?: text.trim()
+        return Conversions(source, listOf("$clock $label"))
+    }
+
+    /** The wait till a clock time: "how long until 5pm" → "in 2h 15m"; a
+     *  time gone by today is tomorrow's (iOS 10-07). */
+    fun untilTime(text: String, now: java.time.Instant = java.time.Instant.now(),
+                  here: java.time.ZoneId = java.time.ZoneId.systemDefault()): Conversions? {
+        val g = firstMatch("""\b(?:until|till|til|'til)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\??\s?$""", text)
+            ?: return null
+        var hour = g[1]?.toIntOrNull() ?: return null
+        val minute = g[2]?.toIntOrNull() ?: 0
+        val half = g[3]?.lowercase()?.replace(".", "")
+        if (half != null) {
+            if (hour !in 1..12) return null
+            if (half == "pm" && hour < 12) hour += 12
+            if (half == "am" && hour == 12) hour = 0
+        } else if (g[2] == null || hour !in 0..23 || minute >= 60) return null
+        val today = now.atZone(here)
+        var whenAt = today.toLocalDate().atTime(hour, minute).atZone(here)
+        if (!whenAt.toInstant().isAfter(now)) whenAt = whenAt.plusDays(1)
+        val minutes = Math.round(java.time.Duration.between(now, whenAt.toInstant()).seconds / 60.0).toInt()
+        if (minutes <= 0) return null
+        val wait = if (minutes >= 60) (if (minutes % 60 == 0) "${minutes / 60}h" else "${minutes / 60}h ${minutes % 60}m") else "${minutes}m"
+        return Conversions((g[0] ?: "").trim(), listOf("in $wait"))
+    }
+
     /** A time in someone else's zone the message ends on, in the phone's own
      *  (Raycast's "5pm PT in London", in the strip): "call at 3pm EST" →
      *  "Sun 12:30 AM IST" in India. A time needs am/pm or minutes ("3 est"
@@ -1632,26 +1839,56 @@ object Smart {
         return shortcut(text, now, here, region)
             ?: face(text)
             ?: symbol(text)
+            ?: slangMeaning(text)
+            ?: mathsSymbol(text)
+            ?: solveEquation(text)
+            ?: cookingSafety(text)
+            ?: substitute(text)
+            ?: calories(text)
+            ?: clockChange(text, now, here, region)
+            ?: outOfOffice(text, now, here, region)
+            ?: emergencyNumber(text, region)
+            ?: uuid(text)
+            ?: base64(text)
+            ?: roman(text)
+            ?: listMaker(text)
+            ?: pollMaker(text)
             ?: unitPrice(text)
+            ?: degreesAsked(text)
+            ?: bmi(text)
+            ?: feetInches(text)
+            ?: driveTime(text)
             ?: conversions(text, region)
             ?: cooking(text, region)
             ?: fuel(text, region)
             ?: zoneTimes(text, now, here, region)
+            ?: cityTime(text, now, here, region)
+            ?: timeDifference(text, now, here, region)
+            ?: untilTime(text, now, here)
             ?: clockMaths(text)
             ?: everyHours(text)
             ?: pace(text)
+            ?: stackedDiscount(text)
+            ?: buyGetFree(text)
             ?: billMath(text)
             ?: taxInside(text, region)
             ?: change(text)
+            ?: wasNow(text)
+            ?: testScore(text, region)
+            ?: averageOf(text)
+            ?: monthlySavings(text)
+            ?: heartRate(text)
             ?: ratio(text)
             ?: payRate(text)
             ?: loan(text)
             ?: arrival(text, now, here)
+            ?: backIn(text, now, here)
             ?: holiday(text, now, here, region)
             ?: dateInWords(text, now, here, region)
             ?: workingDays(text, now, here, region)
             ?: weekNumber(text, now, here, region)
             ?: age(text, now, here, region)
+            ?: dayOfWeek(text, region)
             ?: bases(text)
             ?: colours(text)
             ?: tracking(text)
@@ -1660,6 +1897,7 @@ object Smart {
             ?: unixTime(text, here, region)
             ?: inWords(text, region)
             ?: download(text)
+            ?: mapLink(text)
             ?: luckAnswer(text)
             ?: bigNumber(text, region)
     }
@@ -1716,7 +1954,7 @@ object Smart {
             return if (p > 0 && p <= 100) Triple(p, s, a) else null
         }
         val tips = listOf(
-            """\b$PCT\s*tip\s*(?:on|for|of)?\s*$SYM\s*$AMT$END""" to true,
+            """\b$PCT\s*tip\s*(?:on|for|of|to)?\s*$SYM\s*$AMT$END""" to true,
             """\btip\s+(?:of\s+)?$PCT\s*(?:on|for)\s*$SYM\s*$AMT$END""" to true,
             """$SYM\s*$AMT\s*(?:\+|plus|with|and)\s*$PCT\s*tip$END""" to false,
         )
@@ -2003,7 +2241,9 @@ object Smart {
             val r = ((v shr 16) and 0xFF).toDouble(); val gg = ((v shr 8) and 0xFF).toDouble(); val b = (v and 0xFF).toDouble()
             return Conversions(g[0]!!.trim(), listOf("rgb(${r.toInt()}, ${gg.toInt()}, ${b.toInt()})", hsl(r, gg, b)))
         }
-        firstMatch("""\brgba?\(\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*(?:[,/]\s*[\d.]+%?\s*)?\)$END""", text)?.let { g ->
+        firstMatch("""\brgba?(?:\(\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*(?:[,/]\s*[\d.]+%?\s*)?\)|\s+(\d{1,3})\s*,?\s+(\d{1,3})\s*,?\s+(\d{1,3}))$END""", text)
+            // "rgb 255 87 51": the numbers without brackets (2026-10-08 probe).
+            ?.let { g -> if (g[1] != null) g else listOf(g[0], g[4], g[5], g[6]) }?.let { g ->
             val r = g[1]?.toIntOrNull() ?: return@let
             val gg = g[2]?.toIntOrNull() ?: return@let
             val b = g[3]?.toIntOrNull() ?: return@let
@@ -2061,7 +2301,7 @@ object Smart {
         }
         fun says(word: String) = Regex("""\b$word\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
         firstMatch("""(?<![\d])(9[2-5](?:\s?\d){18,20})$END""", text)?.let { g ->
-            if (says("usps")) return link("USPS tracking", "https://tools.usps.com/go/TrackConfirmAction?tLabels=${g[1]!!.filter { it.isDigit() }}", g)
+            if (says("usps") || says("tracking") || says("track")) return link("USPS tracking", "https://tools.usps.com/go/TrackConfirmAction?tLabels=${g[1]!!.filter { it.isDigit() }}", g)
         }
         firstMatch("""(?<![\d])(\d{12}|\d{15})$END""", text)?.let { g ->
             if (says("fedex")) return link("FedEx tracking", "https://www.fedex.com/fedextrack/?trknbr=${g[1]}", g)
@@ -2262,6 +2502,10 @@ object Smart {
             """(?<![\w+])\+?\(?\d[\d\s().-]{8,16}\d(?![\w])""",
         )
         val found = mutableListOf<Pair<IntRange, String>>()
+        // A code in a message ("Your verification code is 482913"): the code
+        // first, as Gboard's clipboard offers it (2026-10-08 research).
+        Regex("""\b(?:code|otp|pin|passcode|password|verification|one[- ]time)\b[^\d\n]{0,24}?(?<![\d-])(\d{4,8})(?![\d-])""",
+            RegexOption.IGNORE_CASE).find(t)?.groups?.get(1)?.let { found.add(it.range to it.value) }
         for ((i, p) in patterns.withIndex()) {
             for (m in Regex(p, RegexOption.IGNORE_CASE).findAll(t)) {
                 var s = m.value.trim(' ', '.', ',', ';', ':', ')', '!', '?', '\'', '"')
@@ -2769,7 +3013,12 @@ object Smart {
     /** "cw 42", "KW 42", "calendar week 42", "week no. 42" → 12–18 Oct: an
      *  ISO week, Monday to Sunday. "week 3" alone is a count, not a date. */
     fun weekNumber(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
-        val g = firstMatch("""\b(?:cw|kw|calendar\s+week|week\s+(?:no\.?|number|num|#))\s*#?\s*(\d{1,2})$END""", text) ?: return null
+        // "what week is it", "week number?": this week's ISO number.
+        firstMatch("""(?:^|\b(?:what|which)\s+)(?:week\s+(?:is\s+it|are\s+we\s+in|number\s+is\s+it)|(?:current\s+|this\s+)?week\s+(?:no\.?|number|num))\s*(?:today|now)?$END""", text)?.let { w ->
+            val week = now.atZone(here).toLocalDate().get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR)
+            return Conversions(w[0]!!.trim(), listOf("Week $week"))
+        }
+        val g =firstMatch("""\b(?:cw|kw|calendar\s+week|week\s+(?:no\.?|number|num|#))\s*#?\s*(\d{1,2})$END""", text) ?: return null
         val n = g[1]?.toIntOrNull()?.takeIf { it in 1..53 } ?: return null
         val today = now.atZone(here).toLocalDate()
         val thisYear = today.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR)
@@ -2931,7 +3180,7 @@ object Smart {
         val kinds = """(?:home\s+|car\s+|auto\s+|personal\s+|student\s+|education\s+)?(?:mortgage|loan|emi)"""
         val borrowing = Regex("""\b(?:mortgage|loan|emi|borrow\w*|owe|debt)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
         val patterns = listOf(
-            """\b$kinds\s+(?:of\s+|for\s+|on\s+)?$SCALED_AMOUNT\s*(?:at|@)\s*$rate\s*(?:for|over)\s*$term$END""" to true,
+            """\b$kinds\s+(?:of\s+|for\s+|on\s+)?$SCALED_AMOUNT\s*(?:at|@)\s*$rate\s*(?:for|over)?\s*$term$END""" to true,
             """(?<![\w.,])$SCALED_AMOUNT\s+$kinds\s*(?:at|@)?\s*$rate\s*(?:for|over)?\s*$term$END""" to true,
             """(?<![\w.,])$SCALED_AMOUNT\s*(?:at|@)\s*$rate\s*(?:for|over)\s*$term$END""" to false,
         )
@@ -3009,6 +3258,11 @@ object Smart {
         val b = if (a == null) firstMatch("""(?<![\w.,])(\d+(?:\.\d+)?)\s*$weights\s+for\s+([$€£₹¥])\s?$AMT$END""", text) else null
         val c = if (a == null && b == null) firstMatch("""([$€£₹¥])\s?$AMT\s+for\s+(?:a\s+)?(\d{1,4}|dozen|pair)\s*(?:pack|pk|pcs|pieces|count|ct|items|units|cans|bottles)?$END""", text) else null
         val d = if (a == null && b == null && c == null) firstMatch("""(?<![\w.,$€£₹¥])(\d{1,4})\s+for\s+([$€£₹¥])\s?$AMT$END""", text) else null
+        // "1.5kg for 9": a weight for a price, the sign left off (2026-10-08 probe).
+        val e = if (a == null && b == null && c == null && d == null) firstMatch("""(?<![\w.,])(\d+(?:\.\d+)?)\s*$weights\s+for\s+$AMT$END""", text) else null
+        // "3 pack for 12.99".
+        val f = if (a == null && b == null && c == null && d == null && e == null)
+            firstMatch("""(?<![\w.,$€£₹¥])(\d{1,3})\s*[- ]?(?:pack|pk|pcs|pieces|count|ct|cans|bottles)\s+(?:for|at|is|=)\s+([$€£₹¥])?\s?$AMT$END""", text) else null
         when {
             a != null -> { symbol = a[1] ?: ""; price = number(a[2]); quantity = a[3]?.toDoubleOrNull(); unit = a[4]; source = a[0]!!.trim() }
             b != null -> { symbol = b[3] ?: ""; price = number(b[4]); quantity = b[1]?.toDoubleOrNull(); unit = b[2]; source = b[0]!!.trim() }
@@ -3019,6 +3273,8 @@ object Smart {
                 source = c[0]!!.trim()
             }
             d != null -> { symbol = d[2] ?: ""; price = number(d[3]); quantity = d[1]?.toDoubleOrNull(); source = d[0]!!.trim() }
+            e != null -> { price = number(e[3]); quantity = e[1]?.toDoubleOrNull(); unit = e[2]; source = e[0]!!.trim() }
+            f != null -> { symbol = f[2] ?: ""; price = number(f[3]); quantity = f[1]?.toDoubleOrNull(); source = f[0]!!.trim() }
         }
         val p = price?.takeIf { it > 0 } ?: return null
         val q = quantity?.takeIf { it > 0 } ?: return null
@@ -3400,6 +3656,684 @@ object Smart {
             .split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         if (items.size < 2 || items.size > 8 || items.any { it.length > 40 || it.split(" ").size > 5 }) return null
         return said(g, "🎯 " + items[lucky(items.joinToString("|"), items.size)])
+    }
+
+    // MARK: more everyday answers (2026-10-08 probe of 150 messages; Smart.swift twins)
+
+    /** The zone a place or abbreviation names ("tokyo", "ist", "new york"). */
+    private fun namedZone(name: String, region: String?): java.time.ZoneId? {
+        val key = name.lowercase().trim()
+        val r = region?.uppercase()
+        var id = zoneNames[key] ?: zoneNames["$key time"] ?: ""
+        if (key == "cst" && r == "CN") id = "Asia/Shanghai"
+        if (key == "ist" && r == "IE") id = "Europe/Dublin"
+        if (key == "ist" && r == "IL") id = "Asia/Jerusalem"
+        return runCatching { java.time.ZoneId.of(id) }.getOrNull()
+    }
+
+    /** Swift's capitalized: each word's first letter up, the rest down. */
+    private fun capitalizedWords(s: String): String =
+        s.split(" ").joinToString(" ") { w -> w.lowercase().replaceFirstChar { it.uppercase() } }
+
+    private fun placeLabel(key: String): String =
+        if (key.length <= 4 && zoneNames[key] != null && !key.contains(' ')) key.uppercase() else capitalizedWords(key)
+
+    /** "time difference with london", "how far ahead is tokyo" → "Tokyo is
+     *  13h ahead" from where the phone is. */
+    fun timeDifference(text: String, now: java.time.Instant = java.time.Instant.now(),
+                       here: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+                       region: String? = java.util.Locale.getDefault().country): Conversions? {
+        val g = firstMatch("""\b(?:time\s+(?:difference|diff|gap)\s+(?:with|to|from|for|in|between\s+(?:us|here)\s+and)|how\s+(?:many\s+hours\s+|far\s+)?(?:ahead|behind)\s+is)\s+([a-z][a-z .]{1,30}?)\??\s?$""", text)
+            ?: return null
+        val name = g[1]?.lowercase()?.trim() ?: return null
+        val there = namedZone(name, region) ?: return null
+        val diff = there.rules.getOffset(now).totalSeconds - here.rules.getOffset(now).totalSeconds
+        val label = placeLabel(name)
+        if (diff == 0) return Conversions(g[0]!!.trim(), listOf("$label: same time"))
+        val mins = kotlin.math.abs(diff) / 60
+        val gap = if (mins % 60 == 0) "${mins / 60}h" else "${mins / 60}h ${mins % 60}m"
+        return Conversions(g[0]!!.trim(), listOf("$label is $gap ${if (diff > 0) "ahead" else "behind"}"))
+    }
+
+    /** "100f in c", "30 c to f", "-40 celsius in fahrenheit": a temperature
+     *  asked for in the other scale, without the degree sign. */
+    fun degreesAsked(text: String): Conversions? {
+        val g = firstMatch("""(?<![\w.])(-?\d{1,4}(?:\.\d+)?)\s*°?\s*(f|c|fahrenheit|celsius|centigrade)\s+(?:in|to|into|as)\s+°?(c|f|celsius|fahrenheit|centigrade)\??\s?$""", text)
+            ?: return null
+        val v = g[1]?.toDoubleOrNull() ?: return null
+        val fromF = g[2]?.lowercase()?.firstOrNull() == 'f'
+        val toF = g[3]?.lowercase()?.firstOrNull() == 'f'
+        if (fromF == toF) return null
+        val out = if (toF) v * 9 / 5 + 32 else (v - 32) * 5 / 9
+        return Conversions(g[0]!!.trim(), listOf(oneDecimal(out) + (if (toF) "°F" else "°C")))
+    }
+
+    /** "5'10", "6’2\"", "5'10 in cm": a height in feet and inches, in cm. */
+    fun feetInches(text: String): Conversions? {
+        val g = firstMatch("""(?<![\w.'’])([3-7])\s*['’]\s*(\d{1,2})\s*(?:"|”|''|’’|in(?:ch(?:es)?)?)?(?:\s+(?:in|to)\s+(?:cm|centimet(?:er|re)s?|m|met(?:er|re)s?))?\??\s?$""", text)
+            ?: return null
+        val ft = g[1]?.toIntOrNull() ?: return null
+        val inch = g[2]?.toIntOrNull()?.takeIf { it < 12 } ?: return null
+        val cm = (ft * 12 + inch) * 2.54
+        return Conversions(g[0]!!.trim(), listOf("${Math.round(cm)} cm", String.format(java.util.Locale.US, "%.2f m", cm / 100)))
+    }
+
+    /** "bmi 70kg 175cm", "my bmi at 160 lbs and 5'10": weight and height
+     *  after "bmi" → BMI 22.9. */
+    fun bmi(text: String): Conversions? {
+        val g = firstMatch("""\bbmi\b(.{3,60})$""", text) ?: return null
+        val rest = g[1] ?: return null
+        val w = firstMatch("""(\d{2,3}(?:\.\d)?)\s*(kg|kgs|kilos?|lbs?|pounds?)\b""", rest) ?: return null
+        val weight = w[1]?.toDoubleOrNull() ?: return null
+        val kg = if ((w[2] ?: "").lowercase().startsWith("k")) weight else weight * 0.45359237
+        val cm = firstMatch("""(\d{3}(?:\.\d)?)\s*cm\b""", rest)
+        val metric = if (cm == null) firstMatch("""(?<![\d.])([12]\.\d{1,2})\s*m\b""", rest) else null
+        val feet = if (cm == null && metric == null) firstMatch("""([3-7])\s*(?:['’]|ft|foot|feet)\s*(\d{1,2})?""", rest) else null
+        val metres = when {
+            cm != null -> cm[1]?.toDoubleOrNull()?.let { it / 100 }
+            metric != null -> metric[1]?.toDoubleOrNull()
+            feet != null -> feet[1]?.toDoubleOrNull()?.let { ft -> (ft * 12 + (feet[2]?.toDoubleOrNull() ?: 0.0)) * 0.0254 }
+            else -> null
+        } ?: return null
+        if (metres <= 1 || metres >= 2.5 || kg <= 20 || kg >= 300) return null
+        if (firstMatch("""\d\s*(?:cm|m|kg|kgs|kilos?|lbs?|pounds?|['’"”]|ft|feet|in)?\s*\??\s?$""", rest) == null) return null
+        return Conversions(g[0]!!.trim(), listOf("BMI " + oneDecimal(kg / (metres * metres))))
+    }
+
+    /** "be there in 15", "back in 5", "call you back in 10": minutes left
+     *  unsaid → the clock time then. */
+    fun backIn(text: String, now: java.time.Instant, here: java.time.ZoneId): Conversions? {
+        val g = firstMatch("""\b(?:be\s+(?:there|back|home|ready|down|out|free|done|over)|call\s+(?:you|u)\s+back|back|ready|leaving|home|there)\s+in\s+(\d{1,2})[.!]?\s?$""", text)
+            ?: return null
+        val n = g[1]?.toDoubleOrNull()?.takeIf { it >= 2 && it <= 60 } ?: return null
+        val start = now.atZone(here)
+        return Conversions(g[0]!!.trim(), listOf(clockAt(start.plusSeconds((n * 60).toLong()), start)))
+    }
+
+    /** "was 80 now 60", "was $120, now $90" → -25% · save $30. */
+    fun wasNow(text: String): Conversions? {
+        val g = firstMatch("""\bwas\s+([$€£₹¥])?\s?$AMT\s*,?\s*(?:now|is\s+now|now\s+(?:just|only)|but\s+now|reduced\s+to|down\s+to)\s+([$€£₹¥])?\s?$AMT$END""", text)
+            ?: return null
+        val a = number(g[2])?.takeIf { it > 0 } ?: return null
+        val b = number(g[4]) ?: return null
+        if (a == b) return null
+        val s = g[1] ?: g[3] ?: ""
+        return Conversions(g[0]!!.trim(),
+            listOf(percentChange((b - a) / a * 100), (if (b < a) "save " else "+") + billMoney(kotlin.math.abs(b - a), s)))
+    }
+
+    private val romanDigits = listOf(1000 to "M", 900 to "CM", 500 to "D", 400 to "CD", 100 to "C", 90 to "XC",
+        50 to "L", 40 to "XL", 10 to "X", 9 to "IX", 5 to "V", 4 to "IV", 1 to "I")
+
+    fun romanNumeral(n: Int): String {
+        var left = n
+        val out = StringBuilder()
+        for ((v, r) in romanDigits) while (left >= v) { out.append(r); left -= v }
+        return out.toString()
+    }
+
+    /** "roman numeral 2026", "2026 in roman" → MMXXVI in its place;
+     *  "MMXXVI in numbers" → 2026. */
+    fun roman(text: String): Conversions? {
+        val g = firstMatch("""\broman(?:\s+numerals?)?\s+(?:for\s+|of\s+)?(\d{1,4})$END""", text)
+            ?: firstMatch("""(?<![\w.,])(\d{1,4})\s+(?:in|as|to|into)\s+roman(?:\s+numerals?)?$END""", text)
+        val n = g?.get(1)?.toIntOrNull()
+        if (g != null && n != null && n in 1..3999) {
+            return Conversions(g[0]!!.trim(), listOf(romanNumeral(n)), hows = listOf(Insertion.REPLACE))
+        }
+        val r = firstMatch("""(?<![\w])([MDCLXVI]{2,15})\s+(?:in\s+(?:numbers|digits|arabic)|as\s+a\s+number|to\s+(?:numbers|digits))$END""", text)
+            ?: return null
+        val letters = r[1]?.uppercase() ?: return null
+        var total = 0
+        var i = 0
+        for ((v, sym) in romanDigits) while (letters.startsWith(sym, i)) { total += v; i += sym.length }
+        if (i != letters.length || total <= 0 || romanNumeral(total) != letters) return null
+        return Conversions(r[0]!!.trim(), listOf("$total"))
+    }
+
+    /** "base64 hello" → aGVsbG8= in its place; "base64 decode aGVsbG8=" → hello. */
+    fun base64(text: String): Conversions? {
+        firstMatch("""\bbase\s?64\s+decode\s*:?\s+([A-Za-z0-9+/_-]{4,}={0,2})\s?$""", text)?.let { g ->
+            var code = (g[1] ?: return@let).replace('-', '+').replace('_', '/')
+            while (code.length % 4 != 0) code += "="
+            val bytes = runCatching { java.util.Base64.getDecoder().decode(code) }.getOrNull() ?: return null
+            val plain = runCatching {
+                Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+            }.getOrNull() ?: return null
+            val control = plain.codePoints().anyMatch {
+                val type = Character.getType(it)
+                (type == Character.CONTROL.toInt() || type == Character.FORMAT.toInt()) && it != '\n'.code
+            }
+            if (plain.isEmpty() || control) return null
+            return Conversions(g[0]!!.trim(), listOf(plain), hows = listOf(Insertion.REPLACE))
+        }
+        val g = firstMatch("""\bbase\s?64(?:\s+encode)?\s*:?\s+(?!decode\b)(\S.{0,199}?)\s?$""", text) ?: return null
+        val plain = g[1] ?: return null
+        return Conversions(g[0]!!.trim(), listOf(java.util.Base64.getEncoder().encodeToString(plain.toByteArray(Charsets.UTF_8))),
+            hows = listOf(Insertion.REPLACE))
+    }
+
+    @Volatile private var lastUUID: Pair<String, String>? = null
+
+    /** "uuid", "new guid": a fresh one in its place, the same while the
+     *  words stay the same. */
+    fun uuid(text: String): Conversions? {
+        val g = firstMatch("""(?:^|[\s(])((?:new\s+|random\s+|generate\s+(?:a\s+)?|fresh\s+)?(?:uuid|guid)(?:\s*v4)?)\??\s?$""", text)
+            ?: return null
+        val source = g[1] ?: return null
+        val made = lastUUID?.takeIf { it.first == text }
+            ?: (text to java.util.UUID.randomUUID().toString().lowercase()).also { lastUUID = it }
+        return Conversions(source.trim(), listOf(made.second), hows = listOf(Insertion.REPLACE))
+    }
+
+    /** Emergency numbers by country: one number where it is one, police and
+     *  ambulance where they differ. Only numbers checked against each
+     *  country's own published lists; nothing for a country not in it. */
+    private val emergencyNumbers = mapOf(
+        "US" to "911", "CA" to "911", "MX" to "911", "AR" to "911", "PH" to "911",
+        "GB" to "999", "HK" to "999", "MY" to "999",
+        "IE" to "112", "FR" to "112", "DE" to "112", "ES" to "112", "IT" to "112", "NL" to "112", "BE" to "112", "PT" to "112",
+        "AT" to "112", "CH" to "112", "SE" to "112", "NO" to "112", "DK" to "112", "FI" to "112", "PL" to "112", "GR" to "112",
+        "CZ" to "112", "IN" to "112", "ID" to "112",
+        "AU" to "000", "NZ" to "111",
+        "JP" to "110 police · 119 ambulance", "CN" to "110 police · 120 ambulance", "KR" to "112 police · 119 ambulance",
+        "SG" to "999 police · 995 ambulance", "AE" to "999 police · 998 ambulance", "BR" to "190 police · 192 ambulance",
+        "IL" to "100 police · 101 ambulance", "TH" to "191 police · 1669 ambulance", "ZA" to "10111 police · 10177 ambulance",
+    )
+    private val countryWords = mapOf(
+        "us" to "US", "usa" to "US", "america" to "US", "united states" to "US", "the us" to "US", "canada" to "CA", "mexico" to "MX",
+        "argentina" to "AR", "philippines" to "PH", "uk" to "GB", "britain" to "GB", "great britain" to "GB", "england" to "GB",
+        "scotland" to "GB", "wales" to "GB", "united kingdom" to "GB", "the uk" to "GB", "hong kong" to "HK", "malaysia" to "MY",
+        "ireland" to "IE", "france" to "FR", "germany" to "DE", "spain" to "ES", "italy" to "IT", "netherlands" to "NL",
+        "holland" to "NL", "belgium" to "BE", "portugal" to "PT", "austria" to "AT", "switzerland" to "CH", "sweden" to "SE",
+        "norway" to "NO", "denmark" to "DK", "finland" to "FI", "poland" to "PL", "greece" to "GR", "czechia" to "CZ",
+        "czech republic" to "CZ", "europe" to "FR", "eu" to "FR", "india" to "IN", "indonesia" to "ID", "bali" to "ID",
+        "australia" to "AU", "new zealand" to "NZ", "nz" to "NZ", "japan" to "JP", "china" to "CN", "korea" to "KR",
+        "south korea" to "KR", "singapore" to "SG", "uae" to "AE", "dubai" to "AE", "abu dhabi" to "AE", "brazil" to "BR",
+        "israel" to "IL", "thailand" to "TH", "south africa" to "ZA",
+    )
+
+    fun emergencyNumber(text: String, region: String?): Conversions? {
+        val g = firstMatch("""\b(?:emergency|police|ambulance)\s+(?:number|no\.?|line|phone|services?|contact)(?:\s+(?:(?:in|for|of)\s+)?([a-z][a-z .]{1,25}?))?\??\s?$""", text)
+            ?: return null
+        val named = g[1]?.lowercase()?.trim()
+        // A country named and not known: nothing, not the phone's own.
+        val code = (if (named != null) countryWords[named] else region?.uppercase()) ?: return null
+        val number = emergencyNumbers[code] ?: return null
+        val place = named?.let { if (it == "europe" || it == "eu") "EU" else if (it.length <= 3) it.uppercase() else capitalizedWords(it) }
+        return Conversions(g[0]!!.trim(), listOf(if (place != null) "$number · $place" else number))
+    }
+
+    /** What chat shorthand stands for: "what does ngl mean" → not gonna lie. */
+    private val slang = mapOf(
+        "ngl" to "not gonna lie", "iykyk" to "if you know, you know", "tbh" to "to be honest", "imo" to "in my opinion",
+        "imho" to "in my humble opinion", "idk" to "I don't know", "idc" to "I don't care", "ikr" to "I know, right?",
+        "smh" to "shaking my head", "fr" to "for real", "nvm" to "never mind", "tbf" to "to be fair", "afaik" to "as far as I know",
+        "irl" to "in real life", "fyi" to "for your information", "btw" to "by the way", "brb" to "be right back",
+        "ttyl" to "talk to you later", "gtg" to "got to go", "g2g" to "got to go", "hmu" to "hit me up", "wyd" to "what (are) you doing",
+        "wbu" to "what about you", "hbu" to "how about you", "lmk" to "let me know", "ofc" to "of course", "rn" to "right now",
+        "np" to "no problem", "ty" to "thank you", "tysm" to "thank you so much", "yw" to "you're welcome", "omw" to "on my way",
+        "otw" to "on the way", "eta" to "estimated time of arrival", "asap" to "as soon as possible",
+        "rsvp" to "please reply (répondez s'il vous plaît)", "tldr" to "too long; didn't read", "tl;dr" to "too long; didn't read",
+        "dm" to "direct message", "pov" to "point of view", "goat" to "greatest of all time", "fomo" to "fear of missing out",
+        "yolo" to "you only live once", "bff" to "best friends forever", "jk" to "just kidding", "lol" to "laughing out loud",
+        "lmao" to "laughing my ass off", "rofl" to "rolling on the floor laughing", "istg" to "I swear to god",
+        "ily" to "I love you", "sus" to "suspicious", "ong" to "on god (I swear)", "nsfw" to "not safe for work",
+        "tmi" to "too much information", "ftw" to "for the win", "icymi" to "in case you missed it", "ootd" to "outfit of the day",
+        "wfh" to "work from home", "ooo" to "out of office", "eod" to "end of day", "eow" to "end of week",
+        "cob" to "close of business", "pto" to "paid time off", "tbd" to "to be decided", "tba" to "to be announced",
+        "wip" to "work in progress", "aka" to "also known as", "diy" to "do it yourself", "fwiw" to "for what it's worth",
+        "til" to "today I learned", "eli5" to "explain like I'm 5", "ama" to "ask me anything", "smth" to "something",
+        "ppl" to "people", "hbd" to "happy birthday", "nbd" to "no big deal", "wagmi" to "we're all gonna make it",
+        "ngmi" to "not gonna make it", "dyor" to "do your own research", "hodl" to "hold (don't sell)",
+        "fud" to "fear, uncertainty and doubt", "gg" to "good game", "glhf" to "good luck, have fun", "afk" to "away from keyboard",
+        "bet" to "okay, deal", "no cap" to "no lie", "cap" to "a lie", "lowkey" to "a little, quietly",
+        "highkey" to "very, openly", "rizz" to "charm", "delulu" to "delusional", "mid" to "mediocre", "slay" to "did great",
+        "ate" to "did great", "stan" to "a big fan", "simp" to "too eager to please someone", "salty" to "bitter, upset",
+        "ghosted" to "cut off contact without a word", "situationship" to "a relationship with no label",
+        "periodt" to "end of discussion", "bussin" to "really good", "finna" to "going to", "gonna" to "going to",
+        "wanna" to "want to", "tryna" to "trying to", "wdym" to "what do you mean", "wym" to "what do you mean",
+        "ik" to "I know", "ig" to "I guess", "icl" to "I can't lie", "mb" to "my bad", "nm" to "not much", "sry" to "sorry",
+        "pls" to "please", "thx" to "thanks", "gm" to "good morning", "gn" to "good night", "hru" to "how are you",
+        "wtv" to "whatever", "bc" to "because", "cuz" to "because", "b4" to "before", "l8r" to "later", "w/e" to "whatever",
+        "oomf" to "one of my followers", "pfp" to "profile picture", "ratio" to "a reply with more likes than the post",
+        "fyp" to "for you page", "op" to "original poster", "ic" to "I see", "ttys" to "talk to you soon", "rofr" to "right of first refusal",
+    )
+
+    fun slangMeaning(text: String): Conversions? {
+        val word = """["'“]?([a-z0-9;/ ]{2,14}?)["'”]?"""
+        val g = firstMatch("""\bwhat\s+(?:does|do|is|r|are)\s+(?:an?\s+|the\s+)?$word\s+(?:mean|stand\s+for|short\s+for)\??\s?$""", text)
+            ?: firstMatch("""\b(?:meaning\s+of|define|wdym\s+by)\s+$word\??\s?$""", text)
+            ?: firstMatch("""(?:^|\s)$word\s+meaning\??\s?$""", text)
+            ?: return null
+        val key = g[1]?.lowercase()?.trim() ?: return null
+        val meaning = slang[key] ?: return null
+        return Conversions(g[0]!!.trim(), listOf(meaning))
+    }
+
+    private val notAMeetingPlace = setOf("my", "your", "his", "her", "our", "their", "a", "an", "some", "this", "that", "it", "work",
+        "home", "school", "noon", "night", "midnight", "lunch", "dinner", "breakfast", "peace", "least", "most", "all", "once",
+        "last", "first")
+
+    /** A place as a URL query, the way iOS's urlQueryAllowed leaves it, with
+     *  "&" and "+" escaped too. */
+    private fun queryEncoded(s: String): String {
+        val allowed = "-._~!${'$'}&'()*+,;=:@/?"
+        val out = StringBuilder()
+        for (byte in s.toByteArray(Charsets.UTF_8)) {
+            val c = byte.toInt() and 0xFF
+            val ch = c.toChar()
+            if (c < 0x80 && (ch.isLetterOrDigit() || ch in allowed)) out.append(ch) else out.append("%%%02X".format(c))
+        }
+        return out.toString().replace("&", "%26").replace("+", "%2B")
+    }
+
+    private fun isPunctuation(c: Char): Boolean = when (Character.getType(c).toByte()) {
+        Character.CONNECTOR_PUNCTUATION, Character.DASH_PUNCTUATION, Character.START_PUNCTUATION,
+        Character.END_PUNCTUATION, Character.INITIAL_QUOTE_PUNCTUATION, Character.FINAL_QUOTE_PUNCTUATION,
+        Character.OTHER_PUNCTUATION -> true
+        else -> false
+    }
+
+    /** "lets meet at starbucks on main st", "im at central park", "address
+     *  is 1 infinite loop cupertino" → "Add a map link": a Google Maps
+     *  search for the place, after it. Not a time ("meet at 7"), nowhere in
+     *  general ("home", "the airport"), nothing that isn't a place ("im at
+     *  peace"). */
+    fun mapLink(text: String): Conversions? {
+        val lead = """\b(?:(meet\s+(?:me\s+|us\s+|you\s+|u\s+)?(?:at|outside|in\s+front\s+of)|let'?s\s+meet\s+(?:at|outside)|see\s+(?:you|u)\s+at|pick\s+(?:me|us)\s+up\s+(?:at|from)|drop\s+(?:me|us)\s+(?:at|off\s+at))|(?:i'?m|im|we'?re|i\s+am|we\s+are)\s+(?:at|outside)|address\s+is|located\s+at|come\s+to)\s+"""
+        val g = firstMatch(lead + """(.{3,60}?)[.!?]?\s?$""", text) ?: return null
+        // The time and day after the place: "starbucks at 5", "the mall tomorrow".
+        val place = Regex("""\s+(?:at|by|around|before|after)\s+\d.*$|\s+(?:tomorrow|today|tonight|tmrw|this\s+\w+|next\s+\w+|on\s+(?:mon|tue|wed|thu|fri|sat|sun)\w*|in\s+\d+.*)$""",
+            RegexOption.IGNORE_CASE).replace((g[2] ?: return null).trim(), "")
+            .trim { it == ' ' || it == '\t' || isPunctuation(it) }
+        val lower = place.lowercase()
+        val words = lower.split(" ").filter { it.isNotEmpty() }
+        val first = words.firstOrNull() ?: return null
+        if (place.length < 3) return null
+        if (Regex("""^\d{1,2}(?::\d{2})?\s*(?:am|pm)?$|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b""").containsMatchIn(lower)) return null
+        if (first in notAMeetingPlace || (first == "the" && words.size == 2)) return null
+        // "im at" needs a place's name: two words, a capital, or a number.
+        val meeting = g[1] != null
+        val named = words.size >= 2 || place.first().isUpperCase() || place.any { it.isDigit() }
+        if (!(named || (meeting && place.length >= 4))) return null
+        return Conversions(place, listOf("Add a map link"),
+            inserts = listOf("https://www.google.com/maps/search/?api=1&query=" + queryEncoded(place)), hows = listOf(Insertion.AFTER))
+    }
+
+    /** "what day is 25 december 2026", "day of the week for 3/14/1998" → Friday. */
+    fun dayOfWeek(text: String, region: String?): Conversions? {
+        val g = firstMatch("""\b(?:what\s+day\s+(?:of\s+the\s+week\s+)?(?:is|was|will\s+be|falls\s+on)|which\s+day\s+(?:is|was)|day\s+of\s+(?:the\s+)?week\s+(?:for|of|on|is))\s+(?:it\s+on\s+)?(?:the\s+)?$fullDatePattern$END""", text)
+            ?: return null
+        val (y, m, d) = fullDate(g, 1, region) ?: return null
+        val date = runCatching { java.time.LocalDate.of(y, m, d) }.getOrNull() ?: return null
+        return Conversions(g[0]!!.trim(), listOf(date.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.US)))
+    }
+
+    // MARK: answers from the 2026-10-08 research pass (Smart.swift twins)
+
+    /** "got 43/50 on the quiz", "scored 18 out of 25" → 86%. A score word
+     *  is needed: "3 out of 5" alone stays quiet. */
+    @Suppress("UNUSED_PARAMETER")
+    fun testScore(text: String, region: String?): Conversions? {
+        val g = firstMatch("""\b(?:got|get|getting|scored|score|marks?|mark|result)\s+(?:a\s+|of\s+|is\s+|was\s+)?(\d{1,3}(?:\.\d{1,2})?)\s*(?:/|out\s+of)\s*(\d{1,3})(?:\s+(?:on|in)\s+(?:the\s+|my\s+|a\s+|an\s+)?[a-z]{2,15})?$END""", text)
+            ?: return null
+        val a = g[1]?.toDoubleOrNull() ?: return null
+        val b = g[2]?.toDoubleOrNull() ?: return null
+        if (b <= 0 || a > b || b < 5) return null
+        return Conversions(g[0]!!.trim(), listOf(oneDecimal(a / b * 100) + "%"))
+    }
+
+    /** "avg of 85, 92, 78", "average 12 15 9 22" → 85 avg · median 85;
+     *  "sum of 12, 30, 8" → 50. */
+    fun averageOf(text: String): Conversions? {
+        val g = firstMatch("""\b(avg|average|mean|median|sum|total)\s+(?:of\s+)?((?:-?\d+(?:\.\d+)?\s*(?:,|and|\s)\s*){1,49}-?\d+(?:\.\d+)?)$END""", text)
+            ?: return null
+        val kind = g[1]?.lowercase() ?: return null
+        val list = g[2] ?: return null
+        // "total 1,250" is one number, not two.
+        if (Regex("""^\d{1,3}(?:,\d{3})+(?:\.\d+)?$""").containsMatchIn(list)) return null
+        val values = list.split(',', ' ').filter { it != "and" && it.isNotEmpty() }.mapNotNull { it.toDoubleOrNull() }
+        if (values.size < 2) return null
+        val sorted = values.sorted()
+        val median = if (sorted.size % 2 == 1) sorted[sorted.size / 2] else (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2
+        val sum = values.sum()
+        fun n(v: Double): String {
+            var t = billMoney(v, "")
+            if (t.contains('.')) t = t.trimEnd('0').removeSuffix(".")
+            return t
+        }
+        if (kind == "sum" || kind == "total") return Conversions(g[0]!!.trim(), listOf(n(sum)))
+        if (kind == "median") return Conversions(g[0]!!.trim(), listOf("median " + n(median)))
+        return Conversions(g[0]!!.trim(), listOf("${n(sum / values.size)} avg", "median " + n(median)))
+    }
+
+    /** "extra 10% off 20% off $80", "20% + 10% off $80" → $57.60 · 28% off. */
+    fun stackedDiscount(text: String): Conversions? {
+        val g = firstMatch("""\b(?:extra|additional|another)\s+$PCT\s*off\s+(?:the\s+)?$PCT\s*off\s*(?:of\s+)?$SYM\s*$AMT$END""", text)
+            ?: firstMatch("""\b$PCT\s*(?:off)?\s*(?:\+|and|then|plus|,)\s*(?:an?\s+)?(?:extra\s+|additional\s+)?$PCT\s*off\s*(?:of\s+)?$SYM\s*$AMT$END""", text)
+            ?: return null
+        val a = number(g[1]) ?: return null
+        val b = number(g[2]) ?: return null
+        val price = number(g[4]) ?: return null
+        if (a <= 0 || b <= 0 || a >= 100 || b >= 100) return null
+        val left = (1 - a / 100) * (1 - b / 100)
+        return Conversions(g[0]!!.trim(), listOf(billMoney(price * left, g[3] ?: ""), oneDecimal((1 - left) * 100) + "% off"))
+    }
+
+    /** "buy 2 get 1 free $12 each", "bogo $10" → $8 each. */
+    fun buyGetFree(text: String): Conversions? {
+        val words = mapOf("one" to 1.0, "two" to 2.0, "three" to 3.0, "four" to 4.0, "a" to 1.0)
+        fun count(s: String?): Double? = s?.let { it.toDoubleOrNull() ?: words[it.lowercase()] }
+        val g = firstMatch("""\bbuy\s+(\d|one|two|three|four)\s*,?\s*get\s+(\d|one|two|a)\s+free\s*(?:at\s+|@\s*|for\s+)?$SYM\s*$AMT\s*(?:each|ea|apiece)?$END""", text)
+        val h = if (g == null) firstMatch("""\bbogo\s*(?:at\s+|@\s*|for\s+)?$SYM\s*$AMT\s*(?:each|ea)?$END""", text) else null
+        val buy: Double?
+        val free: Double?
+        val price: Double?
+        val symbol: String
+        val source: String
+        when {
+            g != null -> { buy = count(g[1]); free = count(g[2]); symbol = g[3] ?: ""; price = number(g[4]); source = g[0]!!.trim() }
+            h != null -> { buy = 1.0; free = 1.0; symbol = h[1] ?: ""; price = number(h[2]); source = h[0]!!.trim() }
+            else -> return null
+        }
+        if (buy == null || free == null || price == null || buy <= 0 || free <= 0 || price <= 0) return null
+        return Conversions(source, listOf("${billMoney(price * buy / (buy + free), symbol)} each"))
+    }
+
+    /** "save $500/mo for 10 yrs at 7%" → $86,542 · +$26,542 growth. */
+    fun monthlySavings(text: String): Conversions? {
+        val each = """\s*(?:/|a|per|every|each)\s*(?:mo|mon|month|m)\b"""
+        val term = """(\d{1,2})\s*(?:years?|yrs?|y)\b"""
+        val rate = """(\d{1,2}(?:\.\d{1,2})?)\s*%"""
+        val lead = """\b(?:save|saving|invest|investing|put\s+(?:away|in)|deposit|sip\s+of|sip)?\s*$SYM\s*$AMT"""
+        val g = firstMatch(lead + each + """\s*(?:for|over)\s*""" + term + """\s*(?:at|@)\s*""" + rate + END, text)
+        val h = if (g == null) firstMatch(lead + each + """\s*(?:at|@)\s*""" + rate + """\s*(?:for|over)\s*""" + term + END, text) else null
+        val s: String
+        val p: Double?
+        val years: Double?
+        val r: Double?
+        val source: String
+        when {
+            g != null -> { s = g[1] ?: ""; p = number(g[2]); years = g[3]?.toDoubleOrNull(); r = g[4]?.toDoubleOrNull(); source = g[0]!!.trim() }
+            h != null -> { s = h[1] ?: ""; p = number(h[2]); r = h[3]?.toDoubleOrNull(); years = h[4]?.toDoubleOrNull(); source = h[0]!!.trim() }
+            else -> return null
+        }
+        if (p == null || years == null || r == null || p <= 0 || years <= 0 || years > 60 || r <= 0 || r > 30) return null
+        val i = r / 100 / 12
+        val n = years * 12
+        val total = p * ((1 + i).pow(n) - 1) / i
+        return Conversions(source, listOf(wholeMoney(total, s), "+" + wholeMoney(total - p * n, s) + " growth"))
+    }
+
+    /** "300 miles at 65 mph" → 4 h 37 min; "120 km at 80 km/h" → 1 h 30 min. */
+    fun driveTime(text: String): Conversions? {
+        val g = firstMatch("""(?<![\w.,])(\d{1,5}(?:\.\d+)?)\s*(?:miles?|mi|km|kms|kilomet(?:er|re)s?)\s+(?:at|@)\s*(\d{1,3})\s*(?:mph|km/?h|kmh|kph|kmph)$END""", text)
+            ?: return null
+        val d = g[1]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val v = g[2]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val minutes = Math.round(d / v * 60)
+        if (minutes <= 0 || minutes >= 100 * 60) return null
+        val h = minutes / 60
+        val m = minutes % 60
+        return Conversions(g[0]!!.trim(), listOf(if (h == 0L) "$m min" else if (m == 0L) "$h h" else "$h h $m min"))
+    }
+
+    /** "when do the clocks change", "daylight saving" → Sun 1 Nov · back 1 h,
+     *  where the phone is. */
+    fun clockChange(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
+        val g = firstMatch("""\b(?:when\s+(?:do|does|will)\s+(?:the\s+)?clocks?\s+(?:change|go\s+(?:back|forward)|spring\s+forward|fall\s+back)|(?:when\s+(?:is|does)\s+)?(?:daylight\s+sav(?:ing|ings)(?:\s+time)?|dst)(?:\s+(?:start|end|begin)s?)?)$END""", text)
+            ?: return null
+        val next = here.rules.nextTransition(now)?.instant
+            ?: return Conversions(g[0]!!.trim(), listOf("No clock changes here"))
+        val before = here.rules.getOffset(next.minusSeconds(60)).totalSeconds
+        val after = here.rules.getOffset(next.plusSeconds(60)).totalSeconds
+        val shift = (after - before) / 60
+        val day = java.time.format.DateTimeFormatter.ofPattern(
+            if (region?.uppercase() == "US") "EEE, MMM d" else "EEE d MMM", java.util.Locale.US).format(next.atZone(here))
+        val size = kotlin.math.abs(shift)
+        val amount = if (size % 60 == 0) "${size / 60} h" else "$size min"
+        return Conversions(g[0]!!.trim(), listOf("$day · ${if (shift > 0) "forward" else "back"} $amount"))
+    }
+
+    /** "zone 2 heart rate age 34", "max hr age 34", "im 34 whats my max heart
+     *  rate" → Zone 2: 113–132 bpm · Max HR 186 (the 220 − age rule). */
+    fun heartRate(text: String): Conversions? {
+        if (firstMatch("""\b(?:heart\s*rate|hr|bpm)\b""", text) == null) return null
+        val a = firstMatch("""(?:\bage\s*(?:is\s+|of\s+|:)?|\bi'?m\s+|\bim\s+|\bi\s+am\s+)(\d{2})(?:\s*(?:yo|y/o|years?\s+old))?\b""", text)
+            ?: firstMatch("""\b(\d{2})\s*(?:yo|y/o|years?\s+old)\b""", text)
+            ?: return null
+        val age = a[1]?.toDoubleOrNull()?.takeIf { it >= 10 && it <= 100 } ?: return null
+        if (firstMatch("""(?:rate|hr|bpm|\d|old|yo)\??\s?$""", text) == null) return null
+        val max = 220 - age
+        val source = firstMatch("""\S.*$""", text)?.get(0)?.trim() ?: text.trim()
+        firstMatch("""\bzone\s*([1-5])\b""", text)?.get(1)?.toDoubleOrNull()?.let { zone ->
+            val lo = Math.round(max * (0.4 + zone * 0.1))
+            val hi = Math.round(max * (0.5 + zone * 0.1))
+            return Conversions(source, listOf("Zone ${zone.toInt()}: $lo–$hi bpm", "Max HR ${max.toInt()}"))
+        }
+        return Conversions(source, listOf("Max HR ${max.toInt()} bpm", "Zone 2: ${Math.round(max * 0.6)}–${Math.round(max * 0.7)} bpm"))
+    }
+
+    /** "x^2" → x², "\\alpha" → α, "\\pi" → π: in place. */
+    private val greek = mapOf(
+        "alpha" to "α", "beta" to "β", "gamma" to "γ", "delta" to "δ", "epsilon" to "ε", "theta" to "θ", "lambda" to "λ", "mu" to "μ",
+        "pi" to "π", "rho" to "ρ", "sigma" to "σ", "tau" to "τ", "phi" to "φ", "omega" to "ω", "Delta" to "Δ", "Sigma" to "Σ", "Omega" to "Ω",
+        "infty" to "∞", "sqrt" to "√", "pm" to "±", "neq" to "≠", "leq" to "≤", "geq" to "≥", "approx" to "≈", "times" to "×", "div" to "÷",
+        "degree" to "°", "deg" to "°",
+    )
+    private val superscripts = mapOf(
+        '0' to '⁰', '1' to '¹', '2' to '²', '3' to '³', '4' to '⁴', '5' to '⁵', '6' to '⁶', '7' to '⁷', '8' to '⁸', '9' to '⁹',
+        'n' to 'ⁿ', '-' to '⁻', '+' to '⁺',
+    )
+
+    fun mathsSymbol(text: String): Conversions? {
+        firstMatch("""\\([A-Za-z]{2,7})\s?$""", text)?.let { g ->
+            val name = g[1] ?: return@let
+            val sym = greek[name] ?: greek[name.lowercase()] ?: return@let
+            return Conversions(g[0]!!.trim(), listOf(sym), hows = listOf(Insertion.REPLACE))
+        }
+        val g = firstMatch("""(?<![\w^])([a-z0-9)])\^(-?[0-9n]{1,3})\s?$""", text) ?: return null
+        val base = g[1] ?: return null
+        val power = g[2] ?: return null
+        if (!power.all { superscripts.containsKey(it) }) return null
+        // "2^10" is a sum, worked out already; a letter's power is notation.
+        if (!(base.first().isLetter() || base == ")")) return null
+        return Conversions(g[0]!!.trim(), listOf(base + power.map { superscripts[it] }.joinToString("")), hows = listOf(Insertion.REPLACE))
+    }
+
+    /** C's "%.3g", as Swift's String(format:) writes it: three significant
+     *  digits, trailing zeros dropped, an exponent below 1e-4 or from 1000. */
+    private fun threeSignificant(v: Double): String {
+        if (v == 0.0 || v.isNaN() || v.isInfinite()) return if (v == 0.0) "0" else v.toString()
+        val bd = java.math.BigDecimal(v).round(java.math.MathContext(3, java.math.RoundingMode.HALF_EVEN))
+        val exp = bd.precision() - bd.scale() - 1
+        if (exp < -4 || exp >= 3) {
+            val mantissa = bd.movePointLeft(exp).stripTrailingZeros().toPlainString()
+            return mantissa + "e" + (if (exp < 0) "-" else "+") + "%02d".format(kotlin.math.abs(exp))
+        }
+        return bd.stripTrailingZeros().toPlainString()
+    }
+
+    /** "solve 2x+5=17", "3x - 4 = 11" → x = 6; "x^2-5x+6=0" → x = 2, 3. */
+    fun solveEquation(text: String): Conversions? {
+        fun num(s: String?, empty: Double): Double? {
+            val t = s?.replace(" ", "") ?: return null
+            if (t.isEmpty() || t == "+") return empty
+            if (t == "-") return -empty
+            return t.toDoubleOrNull()
+        }
+        fun tidy(v: Double) = if (kotlin.math.abs(v - Math.round(v)) < 1e-9) Math.round(v).toString() else threeSignificant(v)
+        firstMatch("""(?:\bsolve\s*:?\s*)?(?<![\w.])([-+]?\s*\d*\.?\d*)\s*\*?\s*([a-z])\s*(?:\^2|²)\s*([-+]\s*\d*\.?\d*)\s*\*?\s*\2\s*([-+]\s*\d+(?:\.\d+)?)?\s*=\s*0\??\s?$""", text)?.let { g ->
+            val a = num(g[1], 1.0) ?: return@let
+            val b = num(g[3], 1.0) ?: return@let
+            val x = g[2] ?: return@let
+            val c = num(g[4], 0.0) ?: 0.0
+            if (a == 0.0) return null
+            val d = b * b - 4 * a * c
+            if (d < 0) return Conversions(g[0]!!.trim(), listOf("no real $x"))
+            val r1 = (-b + kotlin.math.sqrt(d)) / (2 * a)
+            val r2 = (-b - kotlin.math.sqrt(d)) / (2 * a)
+            val roots = setOf(tidy(r1), tidy(r2)).sortedBy { it.toDoubleOrNull() ?: 0.0 }
+            return Conversions(g[0]!!.trim(), listOf("$x = " + roots.joinToString(", ")))
+        }
+        val g = firstMatch("""(?:\bsolve\s*:?\s*)?(?<![\w.^])([-+]?\s*\d*\.?\d*)\s*\*?\s*([a-z])\s*([-+]\s*\d+(?:\.\d+)?)?\s*=\s*([-+]?\s*\d+(?:\.\d+)?)\??\s?$""", text)
+            ?: return null
+        val a = num(g[1], 1.0) ?: return null
+        val x = g[2] ?: return null
+        val c = num(g[4], 0.0) ?: return null
+        // A bare "x = 5" is already solved; there must be a sum to undo.
+        if (a == 0.0 || !(g[3] != null || (g[1] ?: "").any { it.isDigit() })) return null
+        val b = num(g[3], 0.0) ?: 0.0
+        return Conversions(g[0]!!.trim(), listOf("$x = " + tidy((c - b) / a)))
+    }
+
+    /** Safe inside temperatures (USDA FSIS's chart): "chicken internal
+     *  temp", "safe temp for pork" → 165°F · 74°C. */
+    private val safeTemps = listOf(
+        """chicken|turkey|poultry|duck|goose|leftovers?|casseroles?|stuffing""" to "165°F · 74°C",
+        """ground\s+(?:beef|pork|meat|lamb|veal)|burgers?|minced?\s+(?:beef|meat)|sausages?|meatloaf|egg\s+dish(?:es)?""" to "160°F · 71°C",
+        """ground\s+(?:chicken|turkey)""" to "165°F · 74°C",
+        """beef|steaks?|pork|lamb|veal|roast|chops?|ham""" to "145°F · 63°C, then rest 3 min",
+        """fish|salmon|tuna|cod|shellfish|shrimp|prawns?""" to "145°F · 63°C",
+    )
+
+    fun cookingSafety(text: String): Conversions? {
+        val g = firstMatch("""\b(?:(?:safe|internal|cooking|cook|done)\s+(?:temp|temperature)\s+(?:for|of)\s+(?:a\s+|the\s+)?([a-z ]{3,24}?)|([a-z ]{3,24}?)\s+(?:internal|safe|cooking|cooked|done)\s+(?:temp|temperature)|what\s+temp(?:erature)?\s+(?:is|should)\s+([a-z ]{3,24}?)\s+(?:done|cooked|safe))\??\s?$""", text)
+            ?: return null
+        val food = (g[1] ?: g[2] ?: g[3])?.lowercase() ?: return null
+        // The most particular first: "ground turkey" before "turkey".
+        val ordered = listOf(safeTemps[2], safeTemps[1], safeTemps[0], safeTemps[3], safeTemps[4])
+        for ((pattern, temp) in ordered) {
+            if (Regex("""\b(?:$pattern)\b""").containsMatchIn(food)) return Conversions(g[0]!!.trim(), listOf(temp))
+        }
+        return null
+    }
+
+    /** Kitchen swaps: "substitute for buttermilk" → 1 cup milk + 1 tbsp lemon juice. */
+    private val swaps = mapOf(
+        "buttermilk" to "1 cup milk + 1 tbsp lemon juice", "egg" to "1 tbsp ground flax + 3 tbsp water",
+        "eggs" to "1 tbsp ground flax + 3 tbsp water each", "baking powder" to "¼ tsp baking soda + ½ tsp cream of tartar",
+        "baking soda" to "3 tsp baking powder per 1 tsp", "brown sugar" to "1 cup sugar + 1 tbsp molasses",
+        "cake flour" to "1 cup flour less 2 tbsp + 2 tbsp cornstarch", "self raising flour" to "1 cup flour + 1½ tsp baking powder + ¼ tsp salt",
+        "self-raising flour" to "1 cup flour + 1½ tsp baking powder + ¼ tsp salt", "self rising flour" to "1 cup flour + 1½ tsp baking powder + ¼ tsp salt",
+        "heavy cream" to "¾ cup milk + ¼ cup melted butter", "sour cream" to "plain Greek yogurt, same amount",
+        "butter" to "same amount of oil × ¾", "honey" to "1¼ cups sugar + ¼ cup water per cup", "cornstarch" to "2 tbsp flour per 1 tbsp",
+        "corn starch" to "2 tbsp flour per 1 tbsp", "lemon juice" to "same amount of vinegar", "wine" to "same amount of stock + 1 tbsp vinegar",
+        "white wine" to "same amount of stock + 1 tbsp white wine vinegar", "red wine" to "same amount of stock + 1 tbsp red wine vinegar",
+        "garlic clove" to "⅛ tsp garlic powder", "fresh herbs" to "⅓ the amount of dried", "milk" to "same amount of oat or soy milk",
+        "mayonnaise" to "plain Greek yogurt, same amount", "sugar" to "¾ cup honey per cup, less 3 tbsp liquid",
+        "breadcrumbs" to "crushed crackers or rolled oats, same amount", "ricotta" to "cottage cheese, same amount",
+        "vanilla extract" to "maple syrup, same amount", "shallot" to "½ small onion + a pinch of garlic", "yeast" to "2¼ tsp instant per packet",
+    )
+
+    fun substitute(text: String): Conversions? {
+        val g = firstMatch("""\b(?:substitute|sub|replacement|swap|alternative)\s+(?:for|to)\s+(?:a\s+|an\s+)?([a-z -]{3,24}?)\??\s?$""", text)
+            ?: firstMatch("""\bwhat\s+(?:can|could|do)\s+i\s+use\s+instead\s+of\s+(?:a\s+|an\s+)?([a-z -]{3,24}?)\??\s?$""", text)
+            ?: return null
+        val food = g[1]?.lowercase()?.trim() ?: return null
+        val swap = swaps[food] ?: return null
+        return Conversions(g[0]!!.trim(), listOf(swap))
+    }
+
+    /** "ooo until monday", "out of office till 14 oct" → "OOO reply · Mon
+     *  12 Oct": a short reply in its place with the day worked out. */
+    fun outOfOffice(text: String, now: java.time.Instant, here: java.time.ZoneId, region: String?): Conversions? {
+        val g = firstMatch("""^\s*(?:i'?m\s+|im\s+)?(?:ooo|out\s+of\s+(?:the\s+)?office|on\s+(?:leave|vacation|holiday|pto))\s+(?:until|till|til|through|thru)\s+([a-z0-9 ]{3,20}?)[.!]?\s?$""", text)
+            ?: return null
+        val said = g[1]?.lowercase() ?: return null
+        val today = now.atZone(here).toLocalDate()
+        val weekday = weekdays.firstOrNull { it.first == said || said == "next " + it.first }
+        val dated = if (weekday == null && said != "tomorrow" && said != "tmrw")
+            firstMatch("""^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})$|^([a-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?$""", said) else null
+        val back: java.time.LocalDate = when {
+            weekday != null -> {
+                var next = today.plusDays(1)
+                while (next.dayOfWeek.value != weekday.second) next = next.plusDays(1)
+                next
+            }
+            said == "tomorrow" || said == "tmrw" -> today.plusDays(1)
+            dated != null -> {
+                val dayN = (dated[1] ?: dated[4])?.toIntOrNull() ?: return null
+                val monthName = dated[2] ?: dated[3] ?: ""
+                val month = datedMonths.firstOrNull { it.first == monthName }?.second ?: return null
+                val date = runCatching { java.time.LocalDate.of(today.year, month, dayN) }.getOrNull() ?: return null
+                if (date.isBefore(today)) date.plusYears(1) else date
+            }
+            else -> return null
+        }
+        val day = dayName(back, today, region)
+        val reply = "I'm out of the office until $day and will reply when I'm back."
+        return Conversions(g[0]!!.trim(), listOf("OOO reply · $day"), inserts = listOf(reply), hows = listOf(Insertion.REPLACE))
+    }
+
+    /** "Best," or "Thanks," on a line of its own at the end of an email:
+     *  "Sign as Alex Kim" puts the saved name under it. */
+    fun signOff(text: String, fields: List<Field>): Conversions? {
+        if (!text.contains('\n')) return null
+        val g = firstMatch("""\n\s*((?:best(?:\s+regards|\s+wishes)?|kind\s+regards|warm\s+regards|regards|thanks(?:\s+again|\s+so\s+much)?|thank\s+you|many\s+thanks|cheers|sincerely|yours(?:\s+sincerely|\s+truly)?|cordially|talk\s+soon|warmly|all\s+the\s+best),)\s*\n?$""", text)
+            ?: return null
+        val line = g[1] ?: return null
+        val name = fields.firstOrNull { it.kind == "name" }?.value?.takeIf { it.isNotEmpty() } ?: return null
+        return Conversions(line, listOf("Sign as $name"), inserts = listOf(line + "\n" + name), hows = listOf(Insertion.REPLACE))
+    }
+
+    // MARK: calories in everyday foods (Smart.swift twin)
+
+    /** kcal for one usual serving, and how that serving is said (USDA
+     *  FoodData Central figures, rounded). */
+    private val foodCalories: Map<String, Pair<Int, String>> = mapOf(
+        "banana" to (105 to "medium"), "apple" to (95 to "medium"), "orange" to (62 to "medium"), "pear" to (101 to "medium"),
+        "peach" to (59 to "medium"), "mango" to (202 to "whole"), "avocado" to (240 to "whole"), "kiwi" to (42 to "each"),
+        "grapes" to (104 to "1 cup"), "strawberries" to (49 to "1 cup"), "blueberries" to (84 to "1 cup"), "watermelon" to (46 to "1 cup"),
+        "pineapple" to (82 to "1 cup"), "cherries" to (97 to "1 cup"), "raspberries" to (64 to "1 cup"), "plum" to (30 to "each"),
+        "egg" to (72 to "large"), "boiled egg" to (78 to "large"), "fried egg" to (90 to "large"), "scrambled eggs" to (182 to "2 eggs"),
+        "slice of bread" to (80 to "slice"), "bread" to (80 to "slice"), "toast" to (80 to "slice"), "bagel" to (277 to "medium"),
+        "croissant" to (231 to "medium"), "muffin" to (377 to "large"), "donut" to (253 to "glazed"), "doughnut" to (253 to "glazed"),
+        "pancake" to (90 to "6-inch"), "waffle" to (218 to "7-inch"), "tortilla" to (138 to "flour, 8-inch"), "roti" to (120 to "each"),
+        "chapati" to (120 to "each"), "naan" to (262 to "each"), "rice" to (205 to "1 cup cooked"), "white rice" to (205 to "1 cup cooked"),
+        "brown rice" to (218 to "1 cup cooked"), "pasta" to (221 to "1 cup cooked"), "spaghetti" to (221 to "1 cup cooked"),
+        "noodles" to (219 to "1 cup cooked"), "oatmeal" to (166 to "1 cup cooked"), "oats" to (150 to "½ cup dry"), "quinoa" to (222 to "1 cup cooked"),
+        "potato" to (161 to "medium, baked"), "sweet potato" to (103 to "medium, baked"), "fries" to (365 to "medium serving"),
+        "french fries" to (365 to "medium serving"), "chips" to (152 to "1 oz"), "popcorn" to (31 to "1 cup popped"),
+        "chicken breast" to (165 to "100 g cooked"), "chicken" to (165 to "100 g breast, cooked"), "chicken thigh" to (209 to "100 g cooked"),
+        "salmon" to (206 to "100 g cooked"), "tuna" to (132 to "100 g canned"), "shrimp" to (99 to "100 g cooked"), "steak" to (271 to "100 g cooked"),
+        "beef" to (250 to "100 g cooked"), "pork chop" to (231 to "100 g cooked"), "bacon" to (43 to "slice"), "sausage" to (229 to "link"),
+        "ham" to (46 to "slice"), "turkey" to (135 to "100 g roasted"), "tofu" to (94 to "½ cup"), "paneer" to (265 to "100 g"),
+        "hamburger" to (354 to "single patty"), "burger" to (354 to "single patty"), "cheeseburger" to (303 to "single"),
+        "big mac" to (590 to "each"), "hot dog" to (290 to "with bun"), "pizza" to (285 to "slice, cheese"), "slice of pizza" to (285 to "cheese"),
+        "taco" to (170 to "each"), "burrito" to (430 to "each"), "sushi roll" to (255 to "6 pieces"), "sandwich" to (350 to "average"),
+        "salad" to (150 to "side, with dressing"), "soup" to (150 to "1 cup"), "samosa" to (262 to "each"), "dosa" to (168 to "plain"),
+        "idli" to (39 to "each"), "biryani" to (290 to "1 cup"),
+        "milk" to (103 to "1 cup, 2%"), "whole milk" to (149 to "1 cup"), "skim milk" to (83 to "1 cup"), "almond milk" to (39 to "1 cup"),
+        "oat milk" to (120 to "1 cup"), "yogurt" to (149 to "1 cup plain"), "greek yogurt" to (130 to "1 cup plain, nonfat"),
+        "cheese" to (113 to "1 oz cheddar"), "butter" to (102 to "1 tbsp"), "peanut butter" to (188 to "2 tbsp"), "almonds" to (164 to "1 oz"),
+        "peanuts" to (161 to "1 oz"), "cashews" to (157 to "1 oz"), "walnuts" to (185 to "1 oz"), "olive oil" to (119 to "1 tbsp"),
+        "honey" to (64 to "1 tbsp"), "sugar" to (16 to "1 tsp"), "chocolate" to (155 to "1 oz dark"), "ice cream" to (273 to "1 cup vanilla"),
+        "cookie" to (78 to "chocolate chip"), "cake" to (350 to "slice"), "brownie" to (227 to "each"),
+        "coffee" to (2 to "black, 1 cup"), "latte" to (190 to "16 oz, 2% milk"), "cappuccino" to (130 to "16 oz"), "tea" to (2 to "1 cup"),
+        "chai latte" to (240 to "16 oz"), "coke" to (140 to "12 oz can"), "soda" to (140 to "12 oz can"), "diet coke" to (0 to "can"),
+        "orange juice" to (112 to "1 cup"), "apple juice" to (114 to "1 cup"), "beer" to (153 to "12 oz"), "wine" to (125 to "5 oz glass"),
+        "red wine" to (125 to "5 oz glass"), "white wine" to (121 to "5 oz glass"), "vodka" to (97 to "1.5 oz shot"), "whiskey" to (105 to "1.5 oz shot"),
+        "smoothie" to (230 to "16 oz"), "protein shake" to (160 to "1 scoop in water"), "carrot" to (25 to "medium"), "broccoli" to (31 to "1 cup"),
+        "cucumber" to (45 to "whole"), "tomato" to (22 to "medium"), "corn" to (88 to "ear"), "peas" to (117 to "1 cup"),
+    )
+
+    /** "how many calories in a banana", "calories in 2 eggs", "cals in a
+     *  slice of pizza" → ~105 kcal (medium); a count multiplies. */
+    fun calories(text: String): Conversions? {
+        val g = firstMatch("""\b(?:how\s+many\s+)?(?:calories|cals?|kcals?)\s+(?:are\s+)?(?:in|for)\s+(?:a\s+|an\s+|one\s+|1\s+|(\d{1,2})\s+)?([a-z][a-z ']{1,24}?)\??\s?$""", text)
+            ?: firstMatch("""(?:^|\s)(?:a\s+|an\s+|one\s+|(\d{1,2})\s+)?([a-z][a-z ']{1,24}?)\s+(?:calories|cals?|kcals?)\??\s?$""", text)
+            ?: return null
+        var food = g[2]?.lowercase()?.trim() ?: return null
+        val count = g[1]?.toIntOrNull() ?: 1
+        var hit = foodCalories[food]
+        if (hit == null && food.endsWith("s")) { food = food.dropLast(1); hit = foodCalories[food] }
+        if (hit == null && food.endsWith("e")) hit = foodCalories[food.dropLast(1)]
+        val (kcal, serving) = hit ?: return null
+        if (count < 1 || count > 20) return null
+        val said = if (count > 1) "~${kcal * count} kcal ($count × $serving)" else "~$kcal kcal ($serving)"
+        return Conversions(g[0]!!.trim(), listOf(said))
     }
 
     // MARK: styled text, the g menu's Style (Smart.swift twin)

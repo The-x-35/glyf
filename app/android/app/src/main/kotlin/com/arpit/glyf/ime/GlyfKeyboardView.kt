@@ -11,6 +11,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
+import com.arpit.glyf.ime.typing.GlideDecoder
+import com.arpit.glyf.ime.typing.GlidePoint
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -57,6 +59,12 @@ class GlyfKeyboardView(
          *  the keys type into Glyf's own fields, or into a password, a hold
          *  is the letter's own (its accents). iOS: kbBindingsLive. */
         fun bindingsLive(): Boolean = true
+        /** Glide typing (Arpit, 2026-10-07: "implement glide typing, like
+         *  glide over keyboard to type"): whether a glide may start now, the
+         *  word to float over the finger, and the lift. iOS kbGlide*. */
+        fun glideAllowed(): Boolean = false
+        fun onGlideMoved(points: List<GlidePoint>, layout: GlideDecoder.Layout): String? = null
+        fun onGlideEnded(points: List<GlidePoint>, layout: GlideDecoder.Layout) {}
     }
 
     /** The key the app's tour is waiting for; drawn with a pulsing ring. */
@@ -247,6 +255,13 @@ class GlyfKeyboardView(
         const val DELETE_REPEAT_DELAY_MS = 400L
         /** Gboard's default key long-press delay. */
         const val DIGIT_HOLD_MS = 300L
+        /** Travel from where the finger landed, in key widths, that makes a
+         *  touch on a letter a glide (iOS KeyboardView.glideStart). */
+        const val GLIDE_START = 0.7f
+        /** The floating word is worked out this often while gliding. */
+        const val GLIDE_DECODE_MS = 90L
+        /** How long a point stays in the glide's ribbon. */
+        const val TRAIL_LIFE_MS = 450L
 
         /** A tablet's row height from its width (an iPad's 66 at 768 dp,
          *  88 at 1024), between AOSP's sw600 and sw768 keyboards. */
@@ -511,6 +526,13 @@ class GlyfKeyboardView(
                 x += units * pitch
             }
         }
+        // The letters' centres in key widths, for the glide decoder; null on
+        // a symbol layer or a digit pad, where there is no glide typing.
+        glideLayout = if (mode == Mode.LETTERS && !isPad) GlideDecoder.Layout.of(
+            keyRects.mapNotNull { (k, r) ->
+                val c = k.char?.singleOrNull()?.takeIf { it in 'a'..'z' } ?: return@mapNotNull null
+                Triple(c, r.centerX(), r.centerY())
+            }, pitch) else null
     }
 
     /** The key a touch belongs to. Gboard's and Apple's keyboards have no
@@ -552,7 +574,8 @@ class GlyfKeyboardView(
 
         for ((i, placedKey) in keys.withIndex()) {
             val (key, rect) = placedKey
-            val isPressed = pressed?.id == key.id && pressedRect == rect
+            // A glide lights the key under the finger: the fill, no balloon.
+            val isPressed = (pressed?.id == key.id && pressedRect == rect) || (glideLit != null && glideLit === rect)
             if (key.bare) {
                 // Apple's pad function keys have no cap; a press shows one.
                 if (isPressed && !key.disabled) {
@@ -698,6 +721,7 @@ class GlyfKeyboardView(
                 canvas.drawText(option, cell.centerX(), cell.centerY() + textPaint.textSize * 0.36f, textPaint)
             }
         }
+        drawGlideTrail(canvas)
     }
 
     private fun display(key: Key): String {
@@ -941,7 +965,7 @@ class GlyfKeyboardView(
             MotionEvent.ACTION_DOWN -> {
                 // A press whose lift never came (the keys were covered
                 // mid-press) is over once a new one starts.
-                if (pressed != null || spaceGesture != null || accentOptions != null) touchCancel()
+                if (pressed != null || spaceGesture != null || accentOptions != null || glideActive) touchCancel()
                 activePointer = event.getPointerId(0)
                 touchDown(event.x, event.y, event.eventTime)
             }
@@ -955,7 +979,16 @@ class GlyfKeyboardView(
             }
             MotionEvent.ACTION_MOVE -> {
                 val i = event.findPointerIndex(activePointer)
-                if (i >= 0) touchMove(event.getX(i), event.getY(i), event.eventTime)
+                if (i >= 0) {
+                    // A glide wants every sample the batch holds, not only
+                    // the last: the decoder reads the path's shape.
+                    if (glideActive || glideEligible()) {
+                        for (h in 0 until event.historySize) {
+                            touchMove(event.getHistoricalX(i, h), event.getHistoricalY(i, h), event.getHistoricalEventTime(h))
+                        }
+                    }
+                    touchMove(event.getX(i), event.getY(i), event.eventTime)
+                }
             }
             MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP -> {
                 // A finger that was never followed (it landed mid-glide)
@@ -981,7 +1014,7 @@ class GlyfKeyboardView(
     private fun handOver(event: MotionEvent): Boolean {
         val gliding = spaceGesture?.phase == SpaceGesture.Phase.GLIDING
         val deleting = pressed?.id == "delete" && (deleteWords > 0 || longPressFired)
-        if (accentOptions != null || gliding || deleting) return false
+        if (accentOptions != null || gliding || deleting || glideActive) return false
         val i = event.findPointerIndex(activePointer)
         activePointer = -1
         if (i >= 0) touchUp(event.getX(i), event.getY(i), event.eventTime)
@@ -1001,6 +1034,8 @@ class GlyfKeyboardView(
         lastX = x
         longPressFired = false
         spaceSlidAway = false
+        glideDownTime = time
+        glideOK = canGlide(key)
         pressFeedback() // click + haptic on DOWN, like Apple/Gboard
         if (key.id == "space") {
             val gesture = SpaceGesture(x / density, y / density, time)
@@ -1028,6 +1063,18 @@ class GlyfKeyboardView(
                     handler2.postDelayed(this, if (deleteRepeats > 12) 40L else 80L)
                 }
             }, DELETE_REPEAT_DELAY_MS)
+            invalidate()
+            return
+        }
+        if (key.id == "return" && returnAction == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
+            // Return sends here; held, it's a new line in the message
+            // (Gboard's hold-enter; 2026-10-08).
+            handler2.postDelayed({
+                longPressFired = true
+                pressFeedback()
+                invalidate()
+                listener.onKey("newline", null)
+            }, BOUND_HOLD_MS + 80)
             invalidate()
             return
         }
@@ -1063,6 +1110,17 @@ class GlyfKeyboardView(
 
     private fun touchMove(x: Float, y: Float, time: Long) {
         lastX = x
+        if (glideActive) {
+            glideMoved(x, y, time)
+            return
+        }
+        // A letter the finger leaves at speed is the start of a word, not a
+        // slip off the key: past the threshold the touch glides.
+        if (glideEligible() && keyPitchPx > 1f &&
+            Math.hypot((x - downX).toDouble(), (y - downY).toDouble()) >= GLIDE_START * keyPitchPx) {
+            beginGlide(x, y, time)
+            return
+        }
         if (accentOptions != null) {
             trackAccent(x)
             return
@@ -1105,6 +1163,12 @@ class GlyfKeyboardView(
     private fun touchUp(x: Float, y: Float, time: Long) {
         handler2.removeCallbacksAndMessages(null)
         stopCharge()
+        if (glideActive) {
+            pressed = null; pressedRect = null; spaceGesture = null
+            longPressFired = false; spaceSlidAway = false
+            glideEnded(x, y, time)
+            return
+        }
         val gesture = spaceGesture
         val key = pressed
         val rect = pressedRect
@@ -1153,9 +1217,185 @@ class GlyfKeyboardView(
         spaceGesture?.let { perform(it.cancelled()) }
         spaceGesture = null
         pressed = null; pressedRect = null; longPressFired = false; spaceSlidAway = false
+        if (glideActive) {
+            glideActive = false
+            glideLit = null
+            fadeGlideTrail()
+        }
         closeAccents()
         stopCharge()
         invalidate()
+    }
+
+    // MARK: glide typing (Arpit, 2026-10-07: "its guesses needs to be perfect too")
+
+    /** The letters' centres in key widths; null off the letter layer. */
+    private var glideLayout: GlideDecoder.Layout? = null
+    /** Whether the touch that just landed may become a glide. */
+    private var glideOK = false
+    private var glideActive = false
+    private var glideDownTime = 0L
+    private val glidePath = ArrayList<GlidePoint>()
+    private var glideDecodedAt = -GLIDE_DECODE_MS
+    /** The key under a gliding finger, lit without a balloon. */
+    private var glideLit: RectF? = null
+    /** The ribbon: the finger's last [TRAIL_LIFE_MS], newest last (x, y, ms). */
+    private val trailX = ArrayList<Float>()
+    private val trailY = ArrayList<Float>()
+    private val trailT = ArrayList<Long>()
+    private var trailAlpha = 1f
+    private var trailFade: android.animation.ValueAnimator? = null
+    /** The word floating over the finger, and where the finger was. */
+    private var glideWord: String? = null
+    private var glideWordX = 0f
+    private var glideWordY = 0f
+    private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val glideTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val trailPath = android.graphics.Path()
+
+    /** A letter on the letter layer, with glide typing on and a field that
+     *  takes it. Space keeps its own gestures; pads and symbols have none. */
+    private fun canGlide(key: Key): Boolean {
+        if (glideLayout == null || mode != Mode.LETTERS || kContext.isPad || key.pad) return false
+        val c = key.char?.singleOrNull() ?: return false
+        if (c !in 'a'..'z') return false
+        return listener.glideAllowed()
+    }
+
+    /** The finger is still on the letter it landed on, nothing fired yet. */
+    private fun glideEligible(): Boolean =
+        glideOK && pressed != null && !longPressFired && accentOptions == null && spaceGesture == null
+
+    private fun glidePoint(x: Float, y: Float, time: Long) =
+        GlidePoint(x / keyPitchPx, y / keyPitchPx, time / 1000.0)
+
+    private fun beginGlide(x: Float, y: Float, time: Long) {
+        // The hold, the accents and a bound key's run are off for this touch.
+        handler2.removeCallbacksAndMessages(null)
+        stopCharge()
+        pressed = null
+        pressedRect = null
+        glideActive = true
+        glidePath.clear()
+        glidePath.add(glidePoint(downX, downY, glideDownTime))
+        trailFade?.cancel()
+        trailFade = null
+        trailAlpha = 1f
+        trailX.clear(); trailY.clear(); trailT.clear()
+        trailX.add(downX); trailY.add(downY); trailT.add(glideDownTime)
+        glideWord = null
+        glideDecodedAt = -GLIDE_DECODE_MS
+        glideMoved(x, y, time)
+    }
+
+    private fun glideMoved(x: Float, y: Float, time: Long) {
+        glidePath.add(glidePoint(x, y, time))
+        // A point on top of the last one would bend the ribbon's edge.
+        val n = trailX.size
+        if (n > 0 && Math.hypot((x - trailX[n - 1]).toDouble(), (y - trailY[n - 1]).toDouble()) < dp(1.5f)) {
+            trailT[n - 1] = time
+        } else {
+            trailX.add(x); trailY.add(y); trailT.add(time)
+        }
+        while (trailT.size > 2 && time - trailT[0] > TRAIL_LIFE_MS) {
+            trailX.removeAt(0); trailY.removeAt(0); trailT.removeAt(0)
+        }
+        glideLit = keyAt(x, y)?.takeIf { it.first.char != null }?.second
+        glideWordX = x
+        glideWordY = y
+        // The word so far, worked out a few times a second, not per sample.
+        val layout = glideLayout
+        if (layout != null && time - glideDecodedAt >= GLIDE_DECODE_MS) {
+            glideDecodedAt = time
+            glideWord = listener.onGlideMoved(ArrayList(glidePath), layout)
+        }
+        invalidate()
+    }
+
+    private fun glideEnded(x: Float, y: Float, time: Long) {
+        glidePath.add(glidePoint(x, y, time))
+        glideActive = false
+        glideLit = null
+        fadeGlideTrail()
+        invalidate()
+        val layout = glideLayout ?: return
+        listener.onGlideEnded(ArrayList(glidePath), layout)
+    }
+
+    /** The finger lifted: the ribbon and the word fade together. */
+    private fun fadeGlideTrail() {
+        trailFade?.cancel()
+        trailFade = android.animation.ValueAnimator.ofFloat(1f, 0f).apply {
+            duration = 220
+            addUpdateListener {
+                trailAlpha = it.animatedValue as Float
+                invalidate()
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (glideActive || trailFade !== animation) return
+                    trailX.clear(); trailY.clear(); trailT.clear()
+                    glideWord = null
+                    trailFade = null
+                    invalidate()
+                }
+            })
+            start()
+        }
+    }
+
+    /** A tapering ribbon in the accent colour, 7 dp at the finger, and the
+     *  word the finger is spelling in a pill above it (iOS GlideTrail). */
+    private fun drawGlideTrail(canvas: Canvas) {
+        val n = trailX.size
+        if (n == 0 || trailAlpha <= 0f) return
+        val now = trailT[n - 1]
+        val head = dp(7f)
+        trailPaint.color = accent
+        trailPaint.alpha = (255 * 0.6f * trailAlpha).toInt()
+        if (n > 1) {
+            trailPath.reset()
+            val lx = FloatArray(n); val ly = FloatArray(n); val rx = FloatArray(n); val ry = FloatArray(n)
+            for (i in 0 until n) {
+                val pi = maxOf(i - 1, 0); val ni = minOf(i + 1, n - 1)
+                var dx = trailX[ni] - trailX[pi]; var dy = trailY[ni] - trailY[pi]
+                val len = Math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                if (len < 0.01f) { dx = 1f; dy = 0f } else { dx /= len; dy /= len }
+                val age = ((now - trailT[i]).toFloat() / TRAIL_LIFE_MS).coerceIn(0f, 1f)
+                val along = i.toFloat() / (n - 1)
+                val half = maxOf(dp(0.5f), head / 2f * minOf(along, 1f - age))
+                lx[i] = trailX[i] - dy * half; ly[i] = trailY[i] + dx * half
+                rx[i] = trailX[i] + dy * half; ry[i] = trailY[i] - dx * half
+            }
+            trailPath.moveTo(lx[0], ly[0])
+            for (i in 1 until n) trailPath.lineTo(lx[i], ly[i])
+            for (i in n - 1 downTo 0) trailPath.lineTo(rx[i], ry[i])
+            trailPath.close()
+            canvas.drawPath(trailPath, trailPaint)
+            canvas.drawCircle(trailX[n - 1], trailY[n - 1], head / 2f, trailPaint)
+        }
+        val word = glideWord
+        if (word.isNullOrEmpty()) return
+        glideTextPaint.typeface = Glass.font(context, Glass.SEMIBOLD)
+        glideTextPaint.textSize = dp(20f)
+        glideTextPaint.color = ink()
+        glideTextPaint.alpha = (255 * trailAlpha).toInt()
+        val w = maxOf(dp(44f), glideTextPaint.measureText(word) + dp(28f))
+        val h = dp(40f)
+        val bx = (glideWordX - w / 2f).coerceIn(dp(2f), maxOf(dp(2f), width - dp(2f) - w))
+        // 62 above the finger; under the strip's top edge for the top row.
+        val by = maxOf(-top.toFloat() + dp(2f), glideWordY - dp(62f) - h / 2f)
+        val pill = RectF(bx, by, bx + w, by + h)
+        shadowPaint.color = Color.argb((40 * trailAlpha).toInt(), 0, 0, 0)
+        canvas.drawRoundRect(RectF(bx - dp(1f), by + dp(1f), bx + w + dp(1f), by + h + dp(4f)), dp(13f), dp(13f), shadowPaint)
+        keyPaint.color = if (solidLook) palette().key else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
+        keyPaint.alpha = (255 * trailAlpha).toInt()
+        canvas.drawRoundRect(pill, dp(12f), dp(12f), keyPaint)
+        keyPaint.alpha = 255
+        strokePaint.color = hairline()
+        strokePaint.strokeWidth = 1f
+        canvas.drawRoundRect(pill, dp(12f), dp(12f), strokePaint)
+        canvas.drawText(word, pill.centerX(), pill.centerY() + glideTextPaint.textSize * 0.36f, glideTextPaint)
     }
 
     // MARK: accents (iOS AccentPopup: hold, slide to pick, lift to type)

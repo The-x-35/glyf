@@ -15,6 +15,43 @@ From a research pass on 7 Oct 2026 (Raycast, Apple's keyboard, Gboard, SwiftKey,
 | – | The person's own name(s) from the vault are words to the engine ("hi arpit" no longer offers armpit) | Done |
 | – | "100 usd to inr", "0.5 btc", "half of 350", "sqrt 81", "what time is it in tokyo", "how long until 5pm" → the answer (found by the message probe, not the research) | Done |
 
+## Done on 8 Oct (both keyboards)
+
+From a second probe of 150 everyday messages and a research pass (Raycast, Alfred, Espanso, Text Blaze, Gboard, Omni calculators):
+
+| Trigger → chip | Notes |
+|---|---|
+| "time difference with london", "how far ahead is tokyo" → London is 5h ahead | |
+| "100f in c", "30 c to f" → 37.8°C | no degree sign needed |
+| "5'10", "whats 5'10 in cm" → 178 cm · 1.78 m | |
+| "bmi 70kg 175cm", "my bmi at 180 lbs and 5'10" → BMI 22.9 | only with the word "bmi" |
+| "be there in 15", "call you back in 5" → the clock time then | minutes left unsaid |
+| "was $120, now $90" → -25% · save $30 | |
+| "3 pack for 12.99", "1.5kg for 9" → 4.33 each, 6/kg | no currency sign needed |
+| "add 18% tip to 64", "emi 500000 at 9% 5 years" | wider wording |
+| "what day is 25 december 2026" → Friday; "what week is it" → Week 41 | |
+| "roman numeral 2026" → MMXXVI; "MMXXVI in numbers" → 2026 | |
+| "rgb 255 87 51" → #FF5733; "base64 hello"; "uuid" | in place |
+| "tracking number 9400…" → USPS tracking | |
+| "emergency number uk" → 999 · UK; "emergency number" → where the phone is | checked table only |
+| "what does ngl mean", "iykyk meaning" → not gonna lie | ~130 chat abbreviations |
+| "lets meet at blue bottle on 3rd st", "im at central park" → Add a map link | Google Maps search link after the place; not times, "home", "the airport" |
+| "got 43/50 on the quiz" → 86% | needs a score word |
+| "avg of 85, 92, 78" → 85 avg · median 85; "sum of 12, 30 and 8" → 50 | |
+| "extra 10% off 20% off $80" → $57.60 · 28% off; "buy 2 get 1 free $12 each" → $8 each | |
+| "save $500/mo for 10 yrs at 7%" → $86,542 | |
+| "300 miles at 65 mph" → 4 h 37 min | |
+| "when do the clocks change" → Sun, Nov 1 · back 1 h | from the phone's zone |
+| "zone 2 heart rate age 34" → Zone 2: 112–130 bpm | 220 − age |
+| "x^2" → x², "\alpha" → α; "solve 2x+5=17" → x = 6; "x^2-5x+6=0" → x = 2, 3 | |
+| "chicken internal temp" → 165°F · 74°C; "substitute for buttermilk" | USDA chart; ~30 swaps |
+| "ooo until monday" → a one-line out-of-office reply with the date | in place |
+| "Best," on its own line → Sign as (saved name) | |
+| A copied message with a code → the code first in the paste chip | |
+| Fixes: Amazon order numbers aren't sums, "per my last email" offers nothing, "what are you doing tonight" isn't a plan, "3pm pst" keeps PST (est/ist/gmt/utc too) | |
+
+Still open from the research: calories per food (USDA table, ~100 KB), several zones for one meeting time, shoe and clothing sizes (brands differ; needs care), airport codes, sunset/golden hour, carry-on limits, inflation, exact fractions.
+
 ## Next, no server needed
 
 | # | Trigger → chip → tap | Effort |

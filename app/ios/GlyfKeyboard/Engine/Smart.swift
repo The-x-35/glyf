@@ -303,10 +303,13 @@ enum Smart {
         if let context = linkContext, context.count > text.count, endsInLink(text), let c = cleanLink(in: context) {
             return .convert(c)
         }
+        let quick = quickAnswer(in: text, region: region)
         if let c = calc(text, indianGrouping: indianGrouping) {
+            // "scored 43/50" is a score, not a division: the answer that read
+            // more of the message wins.
+            if let q = quick, q.source.count > c.expression.count + 2, q.source.hasSuffix(c.expression) { return .convert(q) }
             return .calc(value: c.value, hasEquals: c.hasEquals, expression: c.expression)
         }
-        let quick = quickAnswer(in: text, region: region)
         if let m = money(in: text, rates: rates) {
             // "18% gst on ₹1,000", "3 for $10": the bill says more than the
             // amount it ends on.
@@ -324,6 +327,8 @@ enum Smart {
         if let c = completions(text, fields: fields) {
             return .details(fields: c.fields, temp: false, typed: c.typed)
         }
+        // "Best," on a line of its own: sign with the saved name.
+        if let sign = signOff(in: text, fields: fields) { return .convert(sign) }
         // Asked for a time to talk ("when are you free", "send me your
         // calendar link"): the person's own booking page, where it would be
         // typed. The panel had it; the strip didn't offer it (2026-10-07).
@@ -377,7 +382,7 @@ enum Smart {
     /// "2024-09-29", "exp 09/2026") and phone numbers ("555-1234",
     /// "555-123-4567", "+1-555-123-4567", "98765-43210"). Two small numbers
     /// are a sum: "24/7" is divided, "2-3" is -1.
-    private static let notASum = #"^\s*(?:\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{4}|(?:\d{1,3}-)?\d{3}-\d{3}-\d{4}|\d{3}-\d{4}|\d{5}-\d{5})\s*$"#
+    private static let notASum = #"^\s*(?:\d+(?:-\d+){2,}|\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{2,4}|\d{4}\s*/\s*\d{1,2}\s*/\s*\d{1,2}|\d{1,2}\s*/\s*(?:19|20)\d{2}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{4}|(?:\d{1,3}-)?\d{3}-\d{3}-\d{4}|\d{3}-\d{4}|\d{5}-\d{5})\s*$"#
 
     static func calc(_ text: String, indianGrouping: Bool = true) -> (value: String, hasEquals: Bool, expression: String)? {
         // "half of 350", "a third of 90", "double 25", "twice 40", "sqrt 81":
@@ -792,7 +797,7 @@ enum Smart {
         // type email it should show my email id"): "email", "send it to my
         // email", "email id", "gmail". Not the verb: "can you email", "i'll
         // email", "please email" ask for one to be sent.
-        (#"(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna|the|this|that|a|an)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$"#, "email", nil),
+        (#"(?:^|[\s,(])(?<!\b(?:can|could|will|would|should|shall|must|i'll|ill|we'll|i|we|you|u|they|he|she|to|pls|please|gonna|wanna|the|this|that|a|an|last|previous|prior|recent|earlier|next|new|old|first|same|your|his|her|their|its|whose|another|any|no|every|each|an?)\s)(?:e-?mail|g-?mail|mail\s*id)(?:\s*(?:id|address|addy))?\s*(?:is\s*)?:?\s*$"#, "email", nil),
         // An IP, web or website address is no place to deliver to.
         (#"(?:\b(?:my|our)\s+(?:(?:home|delivery|shipping|office|current|new)\s+)?(?:address|addy)|(?<!e-?mail\s)(?<!gmail\s)(?<!ip\s)(?<!web\s)(?<!website\s)(?<!mac\s)\b(?:(?:home|delivery|shipping|office)\s+)?address\s*:|\bdeliver(?:\s+it)?\s+to|\bsend\s+it\s+to|\bship\s+(?:it\s+)?to|\bcome\s+(?:over\s+)?to|\bpick\s+me\s+up\s+(?:from|at))\s*(?:is\s*)?:?\s*$"#, "address", nil),
         (#"\b(?:(?:my|our)\s+(?:upi|vpa|gpay|google\s+pay|phonepe|paytm)(?:\s+(?:id|number|handle))?|(?:upi|vpa|gpay|phonepe|paytm)(?:\s*id)?\s*:|(?:pay|gpay|phonepe|paytm)\s+me\s+(?:at|on))\s*(?:is\s*)?:?\s*$"#, "upi", nil),
@@ -2162,30 +2167,56 @@ extension Smart {
             { shortcut(in: text, now: now, here: here, region: region) },
             { face(in: text) },
             { symbol(in: text) },
+            { slangMeaning(in: text) },
+            { mathsSymbol(in: text) },
+            { solveEquation(in: text) },
+            { cookingSafety(in: text) },
+            { substitute(in: text) },
+            { calories(in: text) },
+            { clockChange(in: text, now: now, here: here, region: region) },
+            { outOfOffice(in: text, now: now, here: here, region: region) },
+            { emergencyNumber(in: text, region: region) },
+            { uuid(in: text) },
+            { base64(in: text) },
+            { roman(in: text) },
             { listMaker(in: text) },
             { pollMaker(in: text) },
             { unitPrice(in: text) },
+            { degreesAsked(in: text) },
+            { bmi(in: text) },
+            { feetInches(in: text) },
+            { driveTime(in: text) },
             { conversions(in: text, region: region) },
             { cooking(in: text, region: region) },
             { fuel(in: text, region: region) },
             { zoneTimes(in: text, now: now, here: here, region: region) },
             { cityTime(in: text, now: now, here: here, region: region) },
+            { timeDifference(in: text, now: now, here: here, region: region) },
             { untilTime(in: text, now: now, here: here) },
             { clockMaths(in: text) },
             { everyHours(in: text) },
             { pace(in: text) },
+            { stackedDiscount(in: text) },
+            { buyGetFree(in: text) },
             { billMath(in: text) },
             { taxInside(in: text, region: region) },
             { change(in: text) },
+            { wasNow(in: text) },
+            { testScore(in: text, region: region) },
+            { averageOf(in: text) },
+            { monthlySavings(in: text) },
+            { heartRate(in: text) },
             { ratio(in: text) },
             { payRate(in: text) },
             { loan(in: text) },
             { arrival(in: text, now: now, here: here) },
+            { backIn(in: text, now: now, here: here) },
             { holiday(in: text, now: now, here: here, region: region) },
             { dateInWords(in: text, now: now, here: here, region: region) },
             { workingDays(in: text, now: now, here: here, region: region) },
             { weekNumber(in: text, now: now, here: here, region: region) },
             { age(in: text, now: now, here: here, region: region) },
+            { dayOfWeek(in: text, region: region) },
             { bases(in: text) },
             { colours(in: text) },
             { tracking(in: text) },
@@ -2194,6 +2225,7 @@ extension Smart {
             { unixTime(in: text, here: here, region: region) },
             { inWords(in: text, region: region) },
             { download(in: text) },
+            { mapLink(in: text) },
             { luckAnswer(in: text) },
             { bigNumber(in: text, region: region) },
         ]
@@ -2264,7 +2296,7 @@ extension Smart {
             return (p, s, a)
         }
         let tips: [(String, Bool)] = [
-            (#"\b"# + pct + #"\s*tip\s*(?:on|for|of)?\s*"# + sym + #"\s*"# + amt + end, true),
+            (#"\b"# + pct + #"\s*tip\s*(?:on|for|of|to)?\s*"# + sym + #"\s*"# + amt + end, true),
             (#"\btip\s+(?:of\s+)?"# + pct + #"\s*(?:on|for)\s*"# + sym + #"\s*"# + amt + end, true),
             (sym + #"\s*"# + amt + #"\s*(?:\+|plus|with|and)\s*"# + pct + #"\s*tip"# + end, false),
         ]
@@ -2592,7 +2624,8 @@ extension Smart {
             let r = Double((v >> 16) & 0xFF), gg = Double((v >> 8) & 0xFF), b = Double(v & 0xFF)
             return Conversions(source: trimmed(g[0]), results: ["rgb(\(Int(r)), \(Int(gg)), \(Int(b)))", hsl(r, gg, b)])
         }
-        if let g = firstMatch(#"\brgba?\(\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*(?:[,/]\s*[\d.]+%?\s*)?\)"# + end, in: text),
+        if let g = firstMatch(#"\brgba?(?:\(\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*(?:[,/]\s*[\d.]+%?\s*)?\)|\s+(\d{1,3})\s*,?\s+(\d{1,3})\s*,?\s+(\d{1,3}))"# + end, in: text).map({ g in
+               g[1] != nil ? g : [g[0], g[4], g[5], g[6]] }),
            let r = Int(g[1] ?? ""), let gg = Int(g[2] ?? ""), let b = Int(g[3] ?? ""), r <= 255, gg <= 255, b <= 255 {
             let hex = String(format: "#%02X%02X%02X", r, gg, b)
             return Conversions(source: trimmed(g[0]), results: [hex, hsl(Double(r), Double(gg), Double(b))])
@@ -2652,7 +2685,7 @@ extension Smart {
             }
         }
         let says = { (word: String) in text.range(of: "\\b\(word)\\b", options: [.regularExpression, .caseInsensitive]) != nil }
-        if let g = firstMatch(#"(?<![\d])(9[2-5](?:\s?\d){18,20})"# + end, in: text), says("usps") {
+        if let g = firstMatch(#"(?<![\d])(9[2-5](?:\s?\d){18,20})"# + end, in: text), says("usps") || says("tracking") || says("track") {
             let n = (g[1] ?? "").filter(\.isNumber)
             return link("USPS tracking", "https://tools.usps.com/go/TrackConfirmAction?tLabels=\(n)", g)
         }
@@ -2873,6 +2906,12 @@ extension Smart {
         ]
         var found: [(NSRange, String)] = []
         let ns = t as NSString
+        // A code in a message ("Your verification code is 482913"): the code
+        // first, as Gboard's clipboard offers it (2026-10-08 research).
+        if let re = try? NSRegularExpression(pattern: #"\b(?:code|otp|pin|passcode|password|verification|one[- ]time)\b[^\d\n]{0,24}?(?<![\d-])(\d{4,8})(?![\d-])"#, options: [.caseInsensitive]),
+           let m = re.firstMatch(in: t, range: NSRange(location: 0, length: ns.length)) {
+            found.append((m.range(at: 1), ns.substring(with: m.range(at: 1))))
+        }
         for p in patterns {
             guard let re = try? NSRegularExpression(pattern: p, options: [.caseInsensitive]) else { continue }
             for m in re.matches(in: t, range: NSRange(location: 0, length: ns.length)) {
@@ -3400,6 +3439,12 @@ extension Smart {
     /// "cw 42", "KW 42", "calendar week 42", "week no. 42" → 12–18 Oct: an
     /// ISO week, Monday to Sunday. "week 3" alone is a count, not a date.
     static func weekNumber(in text: String, now: Date, here: TimeZone, region: String?) -> Conversions? {
+        // "what week is it", "week number?": this week's ISO number.
+        if let g = firstMatch(#"(?:^|\b(?:what|which)\s+)(?:week\s+(?:is\s+it|are\s+we\s+in|number\s+is\s+it)|(?:current\s+|this\s+)?week\s+(?:no\.?|number|num))\s*(?:today|now)?"# + end, in: text) {
+            var cal = Calendar(identifier: .iso8601)
+            cal.timeZone = here
+            return Conversions(source: trimmed(g[0]), results: ["Week \(cal.component(.weekOfYear, from: now))"])
+        }
         guard let g = firstMatch(#"\b(?:cw|kw|calendar\s+week|week\s+(?:no\.?|number|num|#))\s*#?\s*(\d{1,2})"# + end, in: text),
               let n = Int(g[1] ?? ""), n >= 1, n <= 53 else { return nil }
         var cal = Calendar(identifier: .iso8601)
@@ -3549,7 +3594,7 @@ extension Smart {
         let kinds = #"(?:home\s+|car\s+|auto\s+|personal\s+|student\s+|education\s+)?(?:mortgage|loan|emi)"#
         let borrowing = text.range(of: #"\b(?:mortgage|loan|emi|borrow\w*|owe|debt)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
         let patterns: [(String, Bool)] = [
-            (#"\b"# + kinds + #"\s+(?:of\s+|for\s+|on\s+)?"# + scaledAmount + #"\s*(?:at|@)\s*"# + rate + #"\s*(?:for|over)\s*"# + term + end, true),
+            (#"\b"# + kinds + #"\s+(?:of\s+|for\s+|on\s+)?"# + scaledAmount + #"\s*(?:at|@)\s*"# + rate + #"\s*(?:for|over)?\s*"# + term + end, true),
             (#"(?<![\w.,])"# + scaledAmount + #"\s+"# + kinds + #"\s*(?:at|@)?\s*"# + rate + #"\s*(?:for|over)?\s*"# + term + end, true),
             (#"(?<![\w.,])"# + scaledAmount + #"\s*(?:at|@)\s*"# + rate + #"\s*(?:for|over)\s*"# + term + end, false),
         ]
@@ -3617,6 +3662,12 @@ extension Smart {
             let q = (g[3] ?? "").lowercased()
             (symbol, price, quantity, source) = (g[1] ?? "", number(g[2]), q == "dozen" ? 12 : q == "pair" ? 2 : Double(q), trimmed(g[0]))
         } else if let g = firstMatch(#"(?<![\w.,$€£₹¥])(\d{1,4})\s+for\s+([$€£₹¥])\s?"# + amt + end, in: text) {
+            (symbol, price, quantity, source) = (g[2] ?? "", number(g[3]), Double(g[1] ?? ""), trimmed(g[0]))
+        } else if let g = firstMatch(#"(?<![\w.,])(\d+(?:\.\d+)?)\s*"# + weights + #"\s+for\s+"# + amt + end, in: text) {
+            // "1.5kg for 9": a weight for a price, the sign left off (2026-10-08 probe).
+            (price, quantity, unit, source) = (number(g[3]), Double(g[1] ?? ""), g[2], trimmed(g[0]))
+        } else if let g = firstMatch(#"(?<![\w.,$€£₹¥])(\d{1,3})\s*[- ]?(?:pack|pk|pcs|pieces|count|ct|cans|bottles)\s+(?:for|at|is|=)\s+([$€£₹¥])?\s?"# + amt + end, in: text) {
+            // "3 pack for 12.99".
             (symbol, price, quantity, source) = (g[2] ?? "", number(g[3]), Double(g[1] ?? ""), trimmed(g[0]))
         }
         guard let price, let quantity, price > 0, quantity > 0 else { return nil }
@@ -4297,5 +4348,578 @@ extension Smart {
             "most", "less", "per", "vs", "via", "its", "no",
         ]
         private static func rx(_ p: String) -> NSRegularExpression? { try? NSRegularExpression(pattern: p) }
+    }
+}
+
+// MARK: - More everyday answers (2026-10-08 probe of 150 messages; Smart.kt twins)
+
+extension Smart {
+
+    /// The zone a place or abbreviation names ("tokyo", "ist", "new york").
+    private static func namedZone(_ name: String, region: String?) -> TimeZone? {
+        let key = name.lowercased().trimmingCharacters(in: .whitespaces)
+        let r = region?.uppercased()
+        var id = zoneNames[key] ?? zoneNames[key + " time"] ?? ""
+        if key == "cst", r == "CN" { id = "Asia/Shanghai" }
+        if key == "ist", r == "IE" { id = "Europe/Dublin" }
+        if key == "ist", r == "IL" { id = "Asia/Jerusalem" }
+        return TimeZone(identifier: id)
+    }
+
+    private static func placeLabel(_ key: String) -> String {
+        key.count <= 4 && zoneNames[key] != nil && !key.contains(" ") ? key.uppercased() : key.capitalized
+    }
+
+    /// "time difference with london", "how far ahead is tokyo" → "Tokyo is
+    /// 13h ahead" from where the phone is.
+    static func timeDifference(in text: String, now: Date = Date(), here: TimeZone = .current,
+                               region: String? = Locale.current.region?.identifier) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:time\s+(?:difference|diff|gap)\s+(?:with|to|from|for|in|between\s+(?:us|here)\s+and)|how\s+(?:many\s+hours\s+|far\s+)?(?:ahead|behind)\s+is)\s+([a-z][a-z .]{1,30}?)\??\s?$"#, in: text),
+              let name = g[1]?.lowercased().trimmingCharacters(in: .whitespaces),
+              let there = namedZone(name, region: region) else { return nil }
+        let diff = there.secondsFromGMT(for: now) - here.secondsFromGMT(for: now)
+        let label = placeLabel(name)
+        guard diff != 0 else { return Conversions(source: trimmed(g[0]), results: ["\(label): same time"]) }
+        let mins = abs(diff) / 60
+        let gap = mins % 60 == 0 ? "\(mins / 60)h" : "\(mins / 60)h \(mins % 60)m"
+        return Conversions(source: trimmed(g[0]), results: ["\(label) is \(gap) \(diff > 0 ? "ahead" : "behind")"])
+    }
+
+    /// "100f in c", "30 c to f", "-40 celsius in fahrenheit": a temperature
+    /// asked for in the other scale, without the degree sign.
+    static func degreesAsked(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"(?<![\w.])(-?\d{1,4}(?:\.\d+)?)\s*°?\s*(f|c|fahrenheit|celsius|centigrade)\s+(?:in|to|into|as)\s+°?(c|f|celsius|fahrenheit|centigrade)\??\s?$"#, in: text),
+              let v = Double(g[1] ?? ""), let from = g[2]?.lowercased().first, let to = g[3]?.lowercased().first else { return nil }
+        let fromF = from == "f", toF = to == "f"
+        guard fromF != toF else { return nil }
+        let out = toF ? v * 9 / 5 + 32 : (v - 32) * 5 / 9
+        return Conversions(source: trimmed(g[0]), results: [oneDecimal(out) + (toF ? "°F" : "°C")])
+    }
+
+    /// "5'10", "6’2\"", "5'10 in cm": a height in feet and inches, in cm.
+    static func feetInches(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"(?<![\w.'’])([3-7])\s*['’]\s*(\d{1,2})\s*(?:"|”|''|’’|in(?:ch(?:es)?)?)?(?:\s+(?:in|to)\s+(?:cm|centimet(?:er|re)s?|m|met(?:er|re)s?))?\??\s?$"#, in: text),
+              let ft = Int(g[1] ?? ""), let inch = Int(g[2] ?? ""), inch < 12 else { return nil }
+        let cm = Double(ft * 12 + inch) * 2.54
+        return Conversions(source: trimmed(g[0]), results: ["\(Int(cm.rounded())) cm", String(format: "%.2f m", cm / 100)])
+    }
+
+    /// "bmi 70kg 175cm", "my bmi at 160 lbs and 5'10": weight and height
+    /// after "bmi" → BMI 22.9.
+    static func bmi(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"\bbmi\b(.{3,60})$"#, in: text), let rest = g[1] else { return nil }
+        guard let w = firstMatch(#"(\d{2,3}(?:\.\d)?)\s*(kg|kgs|kilos?|lbs?|pounds?)\b"#, in: rest),
+              let weight = Double(w[1] ?? "") else { return nil }
+        let kg = (w[2] ?? "").lowercased().hasPrefix("k") ? weight : weight * 0.45359237
+        var metres: Double?
+        if let h = firstMatch(#"(\d{3}(?:\.\d)?)\s*cm\b"#, in: rest) { metres = Double(h[1] ?? "").map { $0 / 100 } }
+        else if let h = firstMatch(#"(?<![\d.])([12]\.\d{1,2})\s*m\b"#, in: rest) { metres = Double(h[1] ?? "") }
+        else if let h = firstMatch(#"([3-7])\s*(?:['’]|ft|foot|feet)\s*(\d{1,2})?"#, in: rest),
+                let ft = Double(h[1] ?? "") { metres = (ft * 12 + (Double(h[2] ?? "") ?? 0)) * 0.0254 }
+        guard let m = metres, m > 1, m < 2.5, kg > 20, kg < 300,
+              rest.range(of: #"\d\s*(?:cm|m|kg|kgs|kilos?|lbs?|pounds?|['’"”]|ft|feet|in)?\s*\??\s?$"#, options: [.regularExpression, .caseInsensitive]) != nil
+        else { return nil }
+        let value = kg / (m * m)
+        return Conversions(source: trimmed(g[0]), results: ["BMI " + oneDecimal(value)])
+    }
+
+    /// "be there in 15", "back in 5", "call you back in 10": minutes left
+    /// unsaid → the clock time then.
+    static func backIn(in text: String, now: Date, here: TimeZone) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:be\s+(?:there|back|home|ready|down|out|free|done|over)|call\s+(?:you|u)\s+back|back|ready|leaving|home|there)\s+in\s+(\d{1,2})[.!]?\s?$"#, in: text),
+              let n = Double(g[1] ?? ""), n >= 2, n <= 60 else { return nil }
+        return Conversions(source: trimmed(g[0]), results: [clock(now.addingTimeInterval(n * 60), from: now, here: here)])
+    }
+
+    /// "was 80 now 60", "was $120, now $90" → -25% · save $30.
+    static func wasNow(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"\bwas\s+([$€£₹¥])?\s?"# + amt + #"\s*,?\s*(?:now|is\s+now|now\s+(?:just|only)|but\s+now|reduced\s+to|down\s+to)\s+([$€£₹¥])?\s?"# + amt + end, in: text),
+              let a = number(g[2]), let b = number(g[4]), a > 0, a != b else { return nil }
+        let s = g[1] ?? g[3] ?? ""
+        return Conversions(source: trimmed(g[0]),
+                           results: [percentChange((b - a) / a * 100), (b < a ? "save " : "+") + billMoney(abs(b - a), s)])
+    }
+
+    private static let romanDigits: [(Int, String)] = [(1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+                                                       (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")]
+    static func romanNumeral(_ n: Int) -> String {
+        var n = n, out = ""
+        for (v, r) in romanDigits { while n >= v { out += r; n -= v } }
+        return out
+    }
+
+    /// "roman numeral 2026", "2026 in roman" → MMXXVI in its place;
+    /// "MMXXVI in numbers" → 2026.
+    static func roman(in text: String) -> Conversions? {
+        if let g = firstMatch(#"\broman(?:\s+numerals?)?\s+(?:for\s+|of\s+)?(\d{1,4})"# + end, in: text)
+            ?? firstMatch(#"(?<![\w.,])(\d{1,4})\s+(?:in|as|to|into)\s+roman(?:\s+numerals?)?"# + end, in: text),
+           let n = Int(g[1] ?? ""), n >= 1, n <= 3999 {
+            return Conversions(source: trimmed(g[0]), results: [romanNumeral(n)], hows: [.replace])
+        }
+        if let g = firstMatch(#"(?<![\w])([MDCLXVI]{2,15})\s+(?:in\s+(?:numbers|digits|arabic)|as\s+a\s+number|to\s+(?:numbers|digits))"# + end, in: text),
+           let r = g[1]?.uppercased() {
+            var total = 0, i = r.startIndex
+            for (v, sym) in romanDigits { while r[i...].hasPrefix(sym) { total += v; i = r.index(i, offsetBy: sym.count) } }
+            guard i == r.endIndex, total > 0, romanNumeral(total) == r else { return nil }
+            return Conversions(source: trimmed(g[0]), results: ["\(total)"])
+        }
+        return nil
+    }
+
+    /// "base64 hello" → aGVsbG8= in its place; "base64 decode aGVsbG8=" → hello.
+    static func base64(in text: String) -> Conversions? {
+        if let g = firstMatch(#"\bbase\s?64\s+decode\s*:?\s+([A-Za-z0-9+/_-]{4,}={0,2})\s?$"#, in: text), var code = g[1] {
+            code = code.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+            while code.count % 4 != 0 { code += "=" }
+            guard let data = Data(base64Encoded: code), let plain = String(data: data, encoding: .utf8),
+                  !plain.isEmpty, plain.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) || $0 == "\n" })
+            else { return nil }
+            return Conversions(source: trimmed(g[0]), results: [plain], hows: [.replace])
+        }
+        if let g = firstMatch(#"\bbase\s?64(?:\s+encode)?\s*:?\s+(?!decode\b)(\S.{0,199}?)\s?$"#, in: text), let plain = g[1] {
+            return Conversions(source: trimmed(g[0]), results: [Data(plain.utf8).base64EncodedString()], hows: [.replace])
+        }
+        return nil
+    }
+
+    private static var lastUUID: (for: String, id: String)?
+    /// "uuid", "new guid": a fresh one in its place, the same while the
+    /// words stay the same.
+    static func uuid(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"(?:^|[\s(])((?:new\s+|random\s+|generate\s+(?:a\s+)?|fresh\s+)?(?:uuid|guid)(?:\s*v4)?)\??\s?$"#, in: text),
+              let source = g[1] else { return nil }
+        if lastUUID?.for != text { lastUUID = (text, UUID().uuidString.lowercased()) }
+        return Conversions(source: trimmed(source), results: [lastUUID!.id], hows: [.replace])
+    }
+
+    /// Emergency numbers by country: one number where it is one, police and
+    /// ambulance where they differ. Only numbers checked against each
+    /// country's own published lists; nothing for a country not in it.
+    private static let emergencyNumbers: [String: String] = [
+        "US": "911", "CA": "911", "MX": "911", "AR": "911", "PH": "911",
+        "GB": "999", "HK": "999", "MY": "999",
+        "IE": "112", "FR": "112", "DE": "112", "ES": "112", "IT": "112", "NL": "112", "BE": "112", "PT": "112",
+        "AT": "112", "CH": "112", "SE": "112", "NO": "112", "DK": "112", "FI": "112", "PL": "112", "GR": "112",
+        "CZ": "112", "IN": "112", "ID": "112",
+        "AU": "000", "NZ": "111",
+        "JP": "110 police · 119 ambulance", "CN": "110 police · 120 ambulance", "KR": "112 police · 119 ambulance",
+        "SG": "999 police · 995 ambulance", "AE": "999 police · 998 ambulance", "BR": "190 police · 192 ambulance",
+        "IL": "100 police · 101 ambulance", "TH": "191 police · 1669 ambulance", "ZA": "10111 police · 10177 ambulance",
+    ]
+    private static let countryWords: [String: String] = [
+        "us": "US", "usa": "US", "america": "US", "united states": "US", "the us": "US", "canada": "CA", "mexico": "MX",
+        "argentina": "AR", "philippines": "PH", "uk": "GB", "britain": "GB", "great britain": "GB", "england": "GB",
+        "scotland": "GB", "wales": "GB", "united kingdom": "GB", "the uk": "GB", "hong kong": "HK", "malaysia": "MY",
+        "ireland": "IE", "france": "FR", "germany": "DE", "spain": "ES", "italy": "IT", "netherlands": "NL",
+        "holland": "NL", "belgium": "BE", "portugal": "PT", "austria": "AT", "switzerland": "CH", "sweden": "SE",
+        "norway": "NO", "denmark": "DK", "finland": "FI", "poland": "PL", "greece": "GR", "czechia": "CZ",
+        "czech republic": "CZ", "europe": "FR", "eu": "FR", "india": "IN", "indonesia": "ID", "bali": "ID",
+        "australia": "AU", "new zealand": "NZ", "nz": "NZ", "japan": "JP", "china": "CN", "korea": "KR",
+        "south korea": "KR", "singapore": "SG", "uae": "AE", "dubai": "AE", "abu dhabi": "AE", "brazil": "BR",
+        "israel": "IL", "thailand": "TH", "south africa": "ZA",
+    ]
+    static func emergencyNumber(in text: String, region: String?) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:emergency|police|ambulance)\s+(?:number|no\.?|line|phone|services?|contact)(?:\s+(?:(?:in|for|of)\s+)?([a-z][a-z .]{1,25}?))?\??\s?$"#, in: text)
+        else { return nil }
+        let named = g[1]?.lowercased().trimmingCharacters(in: .whitespaces)
+        guard let code = named.map({ countryWords[$0] }) ?? region?.uppercased(), let number = emergencyNumbers[code] else { return nil }
+        let place = named.map { $0 == "europe" || $0 == "eu" ? "EU" : ($0.count <= 3 ? $0.uppercased() : $0.capitalized) }
+        return Conversions(source: trimmed(g[0]), results: [place.map { "\(number) · \($0)" } ?? number])
+    }
+
+    /// What chat shorthand stands for: "what does ngl mean" → not gonna lie.
+    private static let slang: [String: String] = [
+        "ngl": "not gonna lie", "iykyk": "if you know, you know", "tbh": "to be honest", "imo": "in my opinion",
+        "imho": "in my humble opinion", "idk": "I don't know", "idc": "I don't care", "ikr": "I know, right?",
+        "smh": "shaking my head", "fr": "for real", "nvm": "never mind", "tbf": "to be fair", "afaik": "as far as I know",
+        "irl": "in real life", "fyi": "for your information", "btw": "by the way", "brb": "be right back",
+        "ttyl": "talk to you later", "gtg": "got to go", "g2g": "got to go", "hmu": "hit me up", "wyd": "what (are) you doing",
+        "wbu": "what about you", "hbu": "how about you", "lmk": "let me know", "ofc": "of course", "rn": "right now",
+        "np": "no problem", "ty": "thank you", "tysm": "thank you so much", "yw": "you're welcome", "omw": "on my way",
+        "otw": "on the way", "eta": "estimated time of arrival", "asap": "as soon as possible",
+        "rsvp": "please reply (répondez s'il vous plaît)", "tldr": "too long; didn't read", "tl;dr": "too long; didn't read",
+        "dm": "direct message", "pov": "point of view", "goat": "greatest of all time", "fomo": "fear of missing out",
+        "yolo": "you only live once", "bff": "best friends forever", "jk": "just kidding", "lol": "laughing out loud",
+        "lmao": "laughing my ass off", "rofl": "rolling on the floor laughing", "istg": "I swear to god",
+        "ily": "I love you", "sus": "suspicious", "ong": "on god (I swear)", "nsfw": "not safe for work",
+        "tmi": "too much information", "ftw": "for the win", "icymi": "in case you missed it", "ootd": "outfit of the day",
+        "wfh": "work from home", "ooo": "out of office", "eod": "end of day", "eow": "end of week",
+        "cob": "close of business", "pto": "paid time off", "tbd": "to be decided", "tba": "to be announced",
+        "wip": "work in progress", "aka": "also known as", "diy": "do it yourself", "fwiw": "for what it's worth",
+        "til": "today I learned", "eli5": "explain like I'm 5", "ama": "ask me anything", "smth": "something",
+        "ppl": "people", "hbd": "happy birthday", "nbd": "no big deal", "wagmi": "we're all gonna make it",
+        "ngmi": "not gonna make it", "dyor": "do your own research", "hodl": "hold (don't sell)",
+        "fud": "fear, uncertainty and doubt", "gg": "good game", "glhf": "good luck, have fun", "afk": "away from keyboard",
+        "bet": "okay, deal", "no cap": "no lie", "cap": "a lie", "lowkey": "a little, quietly",
+        "highkey": "very, openly", "rizz": "charm", "delulu": "delusional", "mid": "mediocre", "slay": "did great",
+        "ate": "did great", "stan": "a big fan", "simp": "too eager to please someone", "salty": "bitter, upset",
+        "ghosted": "cut off contact without a word", "situationship": "a relationship with no label",
+        "periodt": "end of discussion", "bussin": "really good", "finna": "going to", "gonna": "going to",
+        "wanna": "want to", "tryna": "trying to", "wdym": "what do you mean", "wym": "what do you mean",
+        "ik": "I know", "ig": "I guess", "icl": "I can't lie", "mb": "my bad", "nm": "not much", "sry": "sorry",
+        "pls": "please", "thx": "thanks", "gm": "good morning", "gn": "good night", "hru": "how are you",
+        "wtv": "whatever", "bc": "because", "cuz": "because", "b4": "before", "l8r": "later", "w/e": "whatever",
+        "oomf": "one of my followers", "pfp": "profile picture", "ratio": "a reply with more likes than the post",
+        "fyp": "for you page", "op": "original poster", "ic": "I see", "ttys": "talk to you soon", "rofr": "right of first refusal",
+    ]
+    static func slangMeaning(in text: String) -> Conversions? {
+        let word = #"["'“]?([a-z0-9;/ ]{2,14}?)["'”]?"#
+        let g = firstMatch(#"\bwhat\s+(?:does|do|is|r|are)\s+(?:an?\s+|the\s+)?"# + word + #"\s+(?:mean|stand\s+for|short\s+for)\??\s?$"#, in: text)
+            ?? firstMatch(#"\b(?:meaning\s+of|define|wdym\s+by)\s+"# + word + #"\??\s?$"#, in: text)
+            ?? firstMatch(#"(?:^|\s)"# + word + #"\s+meaning\??\s?$"#, in: text)
+        guard let g, let key = g[1]?.lowercased().trimmingCharacters(in: .whitespaces), let meaning = slang[key] else { return nil }
+        return Conversions(source: trimmed(g[0]), results: [meaning])
+    }
+
+    /// "lets meet at starbucks on main st", "im at central park", "address
+    /// is 1 infinite loop cupertino" → "Add a map link": a Google Maps
+    /// search for the place, after it. Not a time ("meet at 7"), nowhere in
+    /// general ("home", "the airport"), nothing that isn't a place ("im at
+    /// peace").
+    static func mapLink(in text: String) -> Conversions? {
+        let lead = #"\b(?:(meet\s+(?:me\s+|us\s+|you\s+|u\s+)?(?:at|outside|in\s+front\s+of)|let'?s\s+meet\s+(?:at|outside)|see\s+(?:you|u)\s+at|pick\s+(?:me|us)\s+up\s+(?:at|from)|drop\s+(?:me|us)\s+(?:at|off\s+at))|(?:i'?m|im|we'?re|i\s+am|we\s+are)\s+(?:at|outside)|address\s+is|located\s+at|come\s+to)\s+"#
+        guard let g = firstMatch(lead + #"(.{3,60}?)[.!?]?\s?$"#, in: text), var place = g[2]?.trimmingCharacters(in: .whitespaces)
+        else { return nil }
+        // The time and day after the place: "starbucks at 5", "the mall tomorrow".
+        place = place.replacingOccurrences(of: #"\s+(?:at|by|around|before|after)\s+\d.*$|\s+(?:tomorrow|today|tonight|tmrw|this\s+\w+|next\s+\w+|on\s+(?:mon|tue|wed|thu|fri|sat|sun)\w*|in\s+\d+.*)$"#,
+                                           with: "", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: CharacterSet.whitespaces.union(.punctuationCharacters))
+        let lower = place.lowercased()
+        let words = lower.split(separator: " ").map(String.init)
+        guard place.count >= 3, let first = words.first,
+              lower.range(of: #"^\d{1,2}(?::\d{2})?\s*(?:am|pm)?$|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"#, options: .regularExpression) == nil,
+              !["my", "your", "his", "her", "our", "their", "a", "an", "some", "this", "that", "it", "work", "home", "school",
+                "noon", "night", "midnight", "lunch", "dinner", "breakfast", "peace", "least", "most", "all", "once", "last", "first"].contains(first),
+              !(first == "the" && words.count == 2) else { return nil }
+        // "im at" needs a place's name: two words, a capital, or a number.
+        let meeting = g[1] != nil
+        let named = words.count >= 2 || place.first?.isUppercase == true || place.contains(where: \.isNumber)
+        guard named || (meeting && place.count >= 4) else { return nil }
+        let query = place.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)?
+            .replacingOccurrences(of: "&", with: "%26").replacingOccurrences(of: "+", with: "%2B") ?? place
+        return Conversions(source: place, results: ["Add a map link"],
+                           inserts: ["https://www.google.com/maps/search/?api=1&query=" + query], hows: [.after])
+    }
+
+    /// "what day is 25 december 2026", "day of the week for 3/14/1998" → Friday.
+    static func dayOfWeek(in text: String, region: String?) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:what\s+day\s+(?:of\s+the\s+week\s+)?(?:is|was|will\s+be|falls\s+on)|which\s+day\s+(?:is|was)|day\s+of\s+(?:the\s+)?week\s+(?:for|of|on|is))\s+(?:it\s+on\s+)?(?:the\s+)?"# + fullDatePattern + end, in: text),
+              let d = fullDate(g, from: 1, region: region) else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        guard let date = cal.date(from: DateComponents(year: d.y, month: d.m, day: d.d)) else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = cal.timeZone
+        f.dateFormat = "EEEE"
+        return Conversions(source: trimmed(g[0]), results: [f.string(from: date)])
+    }
+}
+
+// MARK: - Answers from the 2026-10-08 research pass (Smart.kt twins)
+
+extension Smart {
+
+    /// "got 43/50 on the quiz", "scored 18 out of 25" → 86%. A score word
+    /// is needed: "3 out of 5" alone stays quiet.
+    static func testScore(in text: String, region: String?) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:got|get|getting|scored|score|marks?|mark|result)\s+(?:a\s+|of\s+|is\s+|was\s+)?(\d{1,3}(?:\.\d{1,2})?)\s*(?:/|out\s+of)\s*(\d{1,3})(?:\s+(?:on|in)\s+(?:the\s+|my\s+|a\s+|an\s+)?[a-z]{2,15})?"# + end, in: text),
+              let a = Double(g[1] ?? ""), let b = Double(g[2] ?? ""), b > 0, a <= b, b >= 5 else { return nil }
+        return Conversions(source: trimmed(g[0]), results: [oneDecimal(a / b * 100) + "%"])
+    }
+
+    /// "avg of 85, 92, 78", "average 12 15 9 22" → 85 avg · median 85;
+    /// "sum of 12, 30, 8" → 50.
+    static func averageOf(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"\b(avg|average|mean|median|sum|total)\s+(?:of\s+)?((?:-?\d+(?:\.\d+)?\s*(?:,|and|\s)\s*){1,49}-?\d+(?:\.\d+)?)"# + end, in: text),
+              let kind = g[1]?.lowercased(), let list = g[2] else { return nil }
+        // "total 1,250" is one number, not two.
+        if list.range(of: #"^\d{1,3}(?:,\d{3})+(?:\.\d+)?$"#, options: .regularExpression) != nil { return nil }
+        let values = list.components(separatedBy: CharacterSet(charactersIn: ", ")).filter { $0 != "and" && !$0.isEmpty }.compactMap(Double.init)
+        guard values.count >= 2 else { return nil }
+        let sorted = values.sorted()
+        let median = sorted.count % 2 == 1 ? sorted[sorted.count / 2] : (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
+        let sum = values.reduce(0, +)
+        func n(_ v: Double) -> String {
+            var t = billMoney(v, "")
+            if t.contains(".") { while t.hasSuffix("0") { t.removeLast() }; if t.hasSuffix(".") { t.removeLast() } }
+            return t
+        }
+        if kind == "sum" || kind == "total" { return Conversions(source: trimmed(g[0]), results: [n(sum)]) }
+        if kind == "median" { return Conversions(source: trimmed(g[0]), results: ["median " + n(median)]) }
+        return Conversions(source: trimmed(g[0]), results: ["\(n(sum / Double(values.count))) avg", "median " + n(median)])
+    }
+
+    /// "extra 10% off 20% off $80", "20% + 10% off $80" → $57.60 · 28% off.
+    static func stackedDiscount(in text: String) -> Conversions? {
+        let g = firstMatch(#"\b(?:extra|additional|another)\s+"# + pct + #"\s*off\s+(?:the\s+)?"# + pct + #"\s*off\s*(?:of\s+)?"# + sym + #"\s*"# + amt + end, in: text)
+            ?? firstMatch(#"\b"# + pct + #"\s*(?:off)?\s*(?:\+|and|then|plus|,)\s*(?:an?\s+)?(?:extra\s+|additional\s+)?"# + pct + #"\s*off\s*(?:of\s+)?"# + sym + #"\s*"# + amt + end, in: text)
+        guard let g, let a = number(g[1]), let b = number(g[2]), let price = number(g[4]), a > 0, b > 0, a < 100, b < 100 else { return nil }
+        let left = (1 - a / 100) * (1 - b / 100)
+        return Conversions(source: trimmed(g[0]), results: [billMoney(price * left, g[3] ?? ""), oneDecimal((1 - left) * 100) + "% off"])
+    }
+
+    /// "buy 2 get 1 free $12 each", "bogo $10" → $8 each.
+    static func buyGetFree(in text: String) -> Conversions? {
+        let words: [String: Double] = ["one": 1, "two": 2, "three": 3, "four": 4, "a": 1]
+        func count(_ s: String?) -> Double? { s.flatMap { Double($0) ?? words[$0.lowercased()] } }
+        var buy: Double?, free: Double?, price: Double?, symbol = "", source = ""
+        if let g = firstMatch(#"\bbuy\s+(\d|one|two|three|four)\s*,?\s*get\s+(\d|one|two|a)\s+free\s*(?:at\s+|@\s*|for\s+)?"# + sym + #"\s*"# + amt + #"\s*(?:each|ea|apiece)?"# + end, in: text) {
+            (buy, free, symbol, price, source) = (count(g[1]), count(g[2]), g[3] ?? "", number(g[4]), trimmed(g[0]))
+        } else if let g = firstMatch(#"\bbogo\s*(?:at\s+|@\s*|for\s+)?"# + sym + #"\s*"# + amt + #"\s*(?:each|ea)?"# + end, in: text) {
+            (buy, free, symbol, price, source) = (1, 1, g[1] ?? "", number(g[2]), trimmed(g[0]))
+        }
+        guard let buy, let free, let price, buy > 0, free > 0, price > 0 else { return nil }
+        return Conversions(source: source, results: ["\(billMoney(price * buy / (buy + free), symbol)) each"])
+    }
+
+    /// "save $500/mo for 10 yrs at 7%" → $86,542 · +$26,542 growth.
+    static func monthlySavings(in text: String) -> Conversions? {
+        let each = #"\s*(?:/|a|per|every|each)\s*(?:mo|mon|month|m)\b"#
+        let term = #"(\d{1,2})\s*(?:years?|yrs?|y)\b"#
+        let rate = #"(\d{1,2}(?:\.\d{1,2})?)\s*%"#
+        var s = "", p: Double?, years: Double?, r: Double?, source = ""
+        if let g = firstMatch(#"\b(?:save|saving|invest|investing|put\s+(?:away|in)|deposit|sip\s+of|sip)?\s*"# + sym + #"\s*"# + amt + each + #"\s*(?:for|over)\s*"# + term + #"\s*(?:at|@)\s*"# + rate + end, in: text) {
+            (s, p, years, r, source) = (g[1] ?? "", number(g[2]), Double(g[3] ?? ""), Double(g[4] ?? ""), trimmed(g[0]))
+        } else if let g = firstMatch(#"\b(?:save|saving|invest|investing|put\s+(?:away|in)|deposit|sip\s+of|sip)?\s*"# + sym + #"\s*"# + amt + each + #"\s*(?:at|@)\s*"# + rate + #"\s*(?:for|over)\s*"# + term + end, in: text) {
+            (s, p, r, years, source) = (g[1] ?? "", number(g[2]), Double(g[3] ?? ""), Double(g[4] ?? ""), trimmed(g[0]))
+        }
+        guard let p, let years, let r, p > 0, years > 0, years <= 60, r > 0, r <= 30 else { return nil }
+        let i = r / 100 / 12, n = years * 12
+        let total = p * (pow(1 + i, n) - 1) / i
+        return Conversions(source: source, results: [wholeMoney(total, s), "+" + wholeMoney(total - p * n, s) + " growth"])
+    }
+
+    /// "300 miles at 65 mph" → 4 h 37 min; "120 km at 80 km/h" → 1 h 30 min.
+    static func driveTime(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"(?<![\w.,])(\d{1,5}(?:\.\d+)?)\s*(?:miles?|mi|km|kms|kilomet(?:er|re)s?)\s+(?:at|@)\s*(\d{1,3})\s*(?:mph|km/?h|kmh|kph|kmph)"# + end, in: text),
+              let d = Double(g[1] ?? ""), let v = Double(g[2] ?? ""), d > 0, v > 0 else { return nil }
+        let minutes = Int((d / v * 60).rounded())
+        guard minutes > 0, minutes < 100 * 60 else { return nil }
+        let h = minutes / 60, m = minutes % 60
+        return Conversions(source: trimmed(g[0]), results: [h == 0 ? "\(m) min" : (m == 0 ? "\(h) h" : "\(h) h \(m) min")])
+    }
+
+    /// "when do the clocks change", "daylight saving" → Sun 1 Nov · back 1 h,
+    /// where the phone is.
+    static func clockChange(in text: String, now: Date, here: TimeZone, region: String?) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:when\s+(?:do|does|will)\s+(?:the\s+)?clocks?\s+(?:change|go\s+(?:back|forward)|spring\s+forward|fall\s+back)|(?:when\s+(?:is|does)\s+)?(?:daylight\s+sav(?:ing|ings)(?:\s+time)?|dst)(?:\s+(?:start|end|begin)s?)?)"# + end, in: text) else { return nil }
+        guard let next = here.nextDaylightSavingTimeTransition(after: now) else {
+            return Conversions(source: trimmed(g[0]), results: ["No clock changes here"])
+        }
+        let before = here.secondsFromGMT(for: next.addingTimeInterval(-60)), after = here.secondsFromGMT(for: next.addingTimeInterval(60))
+        let shift = (after - before) / 60
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = here
+        f.dateFormat = region?.uppercased() == "US" ? "EEE, MMM d" : "EEE d MMM"
+        let amount = abs(shift) % 60 == 0 ? "\(abs(shift) / 60) h" : "\(abs(shift)) min"
+        return Conversions(source: trimmed(g[0]), results: ["\(f.string(from: next)) · \(shift > 0 ? "forward" : "back") \(amount)"])
+    }
+
+    /// "zone 2 heart rate age 34", "max hr age 34", "im 34 whats my max heart
+    /// rate" → Zone 2: 113–132 bpm · Max HR 186 (the 220 − age rule).
+    static func heartRate(in text: String) -> Conversions? {
+        guard text.range(of: #"\b(?:heart\s*rate|hr|bpm)\b"#, options: [.regularExpression, .caseInsensitive]) != nil,
+              let a = firstMatch(#"(?:\bage\s*(?:is\s+|of\s+|:)?|\bi'?m\s+|\bim\s+|\bi\s+am\s+)(\d{2})(?:\s*(?:yo|y/o|years?\s+old))?\b"#, in: text)
+                ?? firstMatch(#"\b(\d{2})\s*(?:yo|y/o|years?\s+old)\b"#, in: text),
+              let age = Double(a[1] ?? ""), age >= 10, age <= 100,
+              text.range(of: #"(?:rate|hr|bpm|\d|old|yo)\??\s?$"#, options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
+        let max = 220 - age
+        let source = trimmed(firstMatch(#"\S.*$"#, in: text)?[0] ?? text)
+        if let z = firstMatch(#"\bzone\s*([1-5])\b"#, in: text), let zone = Double(z[1] ?? "") {
+            let lo = Int((max * (0.4 + zone * 0.1)).rounded()), hi = Int((max * (0.5 + zone * 0.1)).rounded())
+            return Conversions(source: source, results: ["Zone \(Int(zone)): \(lo)–\(hi) bpm", "Max HR \(Int(max))"])
+        }
+        return Conversions(source: source, results: ["Max HR \(Int(max)) bpm", "Zone 2: \(Int((max * 0.6).rounded()))–\(Int((max * 0.7).rounded())) bpm"])
+    }
+
+    /// "x^2" → x², "\\alpha" → α, "\\pi" → π: in place.
+    private static let greek: [String: String] = [
+        "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε", "theta": "θ", "lambda": "λ", "mu": "μ",
+        "pi": "π", "rho": "ρ", "sigma": "σ", "tau": "τ", "phi": "φ", "omega": "ω", "Delta": "Δ", "Sigma": "Σ", "Omega": "Ω",
+        "infty": "∞", "sqrt": "√", "pm": "±", "neq": "≠", "leq": "≤", "geq": "≥", "approx": "≈", "times": "×", "div": "÷",
+        "degree": "°", "deg": "°",
+    ]
+    private static let superscripts: [Character: Character] = [
+        "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "n": "ⁿ", "-": "⁻", "+": "⁺",
+    ]
+    static func mathsSymbol(in text: String) -> Conversions? {
+        if let g = firstMatch(#"\\([A-Za-z]{2,7})\s?$"#, in: text), let name = g[1], let sym = greek[name] ?? greek[name.lowercased()] {
+            return Conversions(source: trimmed(g[0]), results: [sym], hows: [.replace])
+        }
+        if let g = firstMatch(#"(?<![\w^])([a-z0-9)])\^(-?[0-9n]{1,3})\s?$"#, in: text), let base = g[1], let power = g[2],
+           power.allSatisfy({ superscripts[$0] != nil }) {
+            // "2^10" is a sum, worked out already; a letter's power is notation.
+            guard base.first?.isLetter == true || base == ")" else { return nil }
+            return Conversions(source: trimmed(g[0]), results: [base + String(power.compactMap { superscripts[$0] })], hows: [.replace])
+        }
+        return nil
+    }
+
+    /// "solve 2x+5=17", "3x - 4 = 11" → x = 6; "x^2-5x+6=0" → x = 2, 3.
+    static func solveEquation(in text: String) -> Conversions? {
+        func num(_ s: String?, empty: Double) -> Double? {
+            guard let s = s?.replacingOccurrences(of: " ", with: "") else { return nil }
+            if s.isEmpty || s == "+" { return empty }
+            if s == "-" { return -empty }
+            return Double(s)
+        }
+        func tidy(_ v: Double) -> String { abs(v - v.rounded()) < 1e-9 ? String(Int(v.rounded())) : String(format: "%.3g", v) }
+        if let g = firstMatch(#"(?:\bsolve\s*:?\s*)?(?<![\w.])([-+]?\s*\d*\.?\d*)\s*\*?\s*([a-z])\s*(?:\^2|²)\s*([-+]\s*\d*\.?\d*)\s*\*?\s*\2\s*([-+]\s*\d+(?:\.\d+)?)?\s*=\s*0\??\s?$"#, in: text),
+           let a = num(g[1], empty: 1), let b = num(g[3], empty: 1), let x = g[2] {
+            let c = num(g[4], empty: 0) ?? 0
+            guard a != 0 else { return nil }
+            let d = b * b - 4 * a * c
+            guard d >= 0 else { return Conversions(source: trimmed(g[0]), results: ["no real \(x)"]) }
+            let r1 = (-b + d.squareRoot()) / (2 * a), r2 = (-b - d.squareRoot()) / (2 * a)
+            let roots = Set([tidy(r1), tidy(r2)]).sorted { (Double($0) ?? 0) < (Double($1) ?? 0) }
+            return Conversions(source: trimmed(g[0]), results: ["\(x) = " + roots.joined(separator: ", ")])
+        }
+        if let g = firstMatch(#"(?:\bsolve\s*:?\s*)?(?<![\w.^])([-+]?\s*\d*\.?\d*)\s*\*?\s*([a-z])\s*([-+]\s*\d+(?:\.\d+)?)?\s*=\s*([-+]?\s*\d+(?:\.\d+)?)\??\s?$"#, in: text),
+           let a = num(g[1], empty: 1), let x = g[2], let c = num(g[4], empty: 0) {
+            // A bare "x = 5" is already solved; there must be a sum to undo.
+            guard a != 0, g[3] != nil || (g[1] ?? "").filter(\.isNumber).count > 0 else { return nil }
+            let b = num(g[3], empty: 0) ?? 0
+            return Conversions(source: trimmed(g[0]), results: ["\(x) = " + tidy((c - b) / a)])
+        }
+        return nil
+    }
+
+    /// Safe inside temperatures (USDA FSIS's chart): "chicken internal
+    /// temp", "safe temp for pork" → 165°F · 74°C.
+    private static let safeTemps: [(String, String)] = [
+        (#"chicken|turkey|poultry|duck|goose|leftovers?|casseroles?|stuffing"#, "165°F · 74°C"),
+        (#"ground\s+(?:beef|pork|meat|lamb|veal)|burgers?|minced?\s+(?:beef|meat)|sausages?|meatloaf|egg\s+dish(?:es)?"#, "160°F · 71°C"),
+        (#"ground\s+(?:chicken|turkey)"#, "165°F · 74°C"),
+        (#"beef|steaks?|pork|lamb|veal|roast|chops?|ham"#, "145°F · 63°C, then rest 3 min"),
+        (#"fish|salmon|tuna|cod|shellfish|shrimp|prawns?"#, "145°F · 63°C"),
+    ]
+    static func cookingSafety(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:(?:safe|internal|cooking|cook|done)\s+(?:temp|temperature)\s+(?:for|of)\s+(?:a\s+|the\s+)?([a-z ]{3,24}?)|([a-z ]{3,24}?)\s+(?:internal|safe|cooking|cooked|done)\s+(?:temp|temperature)|what\s+temp(?:erature)?\s+(?:is|should)\s+([a-z ]{3,24}?)\s+(?:done|cooked|safe))\??\s?$"#, in: text),
+              let food = (g[1] ?? g[2] ?? g[3])?.lowercased() else { return nil }
+        // The most particular first: "ground turkey" before "turkey".
+        let ordered = [safeTemps[2], safeTemps[1], safeTemps[0], safeTemps[3], safeTemps[4]]
+        for (pattern, temp) in ordered where food.range(of: #"\b(?:"# + pattern + #")\b"#, options: .regularExpression) != nil {
+            return Conversions(source: trimmed(g[0]), results: [temp])
+        }
+        return nil
+    }
+
+    /// Kitchen swaps: "substitute for buttermilk" → 1 cup milk + 1 tbsp lemon juice.
+    private static let swaps: [String: String] = [
+        "buttermilk": "1 cup milk + 1 tbsp lemon juice", "egg": "1 tbsp ground flax + 3 tbsp water",
+        "eggs": "1 tbsp ground flax + 3 tbsp water each", "baking powder": "¼ tsp baking soda + ½ tsp cream of tartar",
+        "baking soda": "3 tsp baking powder per 1 tsp", "brown sugar": "1 cup sugar + 1 tbsp molasses",
+        "cake flour": "1 cup flour less 2 tbsp + 2 tbsp cornstarch", "self raising flour": "1 cup flour + 1½ tsp baking powder + ¼ tsp salt",
+        "self-raising flour": "1 cup flour + 1½ tsp baking powder + ¼ tsp salt", "self rising flour": "1 cup flour + 1½ tsp baking powder + ¼ tsp salt",
+        "heavy cream": "¾ cup milk + ¼ cup melted butter", "sour cream": "plain Greek yogurt, same amount",
+        "butter": "same amount of oil × ¾", "honey": "1¼ cups sugar + ¼ cup water per cup", "cornstarch": "2 tbsp flour per 1 tbsp",
+        "corn starch": "2 tbsp flour per 1 tbsp", "lemon juice": "same amount of vinegar", "wine": "same amount of stock + 1 tbsp vinegar",
+        "white wine": "same amount of stock + 1 tbsp white wine vinegar", "red wine": "same amount of stock + 1 tbsp red wine vinegar",
+        "garlic clove": "⅛ tsp garlic powder", "fresh herbs": "⅓ the amount of dried", "milk": "same amount of oat or soy milk",
+        "mayonnaise": "plain Greek yogurt, same amount", "sugar": "¾ cup honey per cup, less 3 tbsp liquid",
+        "breadcrumbs": "crushed crackers or rolled oats, same amount", "ricotta": "cottage cheese, same amount",
+        "vanilla extract": "maple syrup, same amount", "shallot": "½ small onion + a pinch of garlic", "yeast": "2¼ tsp instant per packet",
+    ]
+    static func substitute(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:substitute|sub|replacement|swap|alternative)\s+(?:for|to)\s+(?:a\s+|an\s+)?([a-z -]{3,24}?)\??\s?$"#, in: text)
+                ?? firstMatch(#"\bwhat\s+(?:can|could|do)\s+i\s+use\s+instead\s+of\s+(?:a\s+|an\s+)?([a-z -]{3,24}?)\??\s?$"#, in: text),
+              let food = g[1]?.lowercased().trimmingCharacters(in: .whitespaces), let swap = swaps[food] else { return nil }
+        return Conversions(source: trimmed(g[0]), results: [swap])
+    }
+
+    /// "ooo until monday", "out of office till 14 oct" → "OOO reply · back
+    /// Mon 12 Oct": a short reply in its place with the day worked out.
+    static func outOfOffice(in text: String, now: Date, here: TimeZone, region: String?) -> Conversions? {
+        guard let g = firstMatch(#"^\s*(?:i'?m\s+|im\s+)?(?:ooo|out\s+of\s+(?:the\s+)?office|on\s+(?:leave|vacation|holiday|pto))\s+(?:until|till|til|through|thru)\s+([a-z0-9 ]{3,20}?)[.!]?\s?$"#, in: text),
+              let when = g[1]?.lowercased() else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = here
+        let today = cal.startOfDay(for: now)
+        var day: Date?
+        if let w = weekdays.first(where: { $0.0 == when || when == "next " + $0.0 }) {
+            var next = cal.date(byAdding: .day, value: 1, to: today)!
+            while cal.component(.weekday, from: next) != w.1 { next = cal.date(byAdding: .day, value: 1, to: next)! }
+            day = next
+        } else if when == "tomorrow" || when == "tmrw" {
+            day = cal.date(byAdding: .day, value: 1, to: today)
+        } else if let d = firstMatch(#"^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})$|^([a-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?$"#, in: when) {
+            let dayN = Int(d[1] ?? d[4] ?? ""), monthName = (d[2] ?? d[3] ?? "")
+            if let dayN, let m = months.first(where: { $0.0 == monthName })?.1 {
+                var c = cal.dateComponents([.year], from: today)
+                c.month = m; c.day = dayN
+                if let date = cal.date(from: c) { day = date < today ? cal.date(byAdding: .year, value: 1, to: date) : date }
+            }
+        }
+        guard let back = day else { return nil }
+        let said = dayName(back, now: now, here: here, region: region)
+        let reply = "I'm out of the office until \(said) and will reply when I'm back."
+        return Conversions(source: trimmed(g[0]), results: ["OOO reply · \(said)"], inserts: [reply], hows: [.replace])
+    }
+
+    /// "Best," or "Thanks," on a line of its own at the end of an email:
+    /// "Sign as Alex Kim" puts the saved name under it.
+    static func signOff(in text: String, fields: [VaultField]) -> Conversions? {
+        guard text.contains("\n"), let g = firstMatch(#"\n\s*((?:best(?:\s+regards|\s+wishes)?|kind\s+regards|warm\s+regards|regards|thanks(?:\s+again|\s+so\s+much)?|thank\s+you|many\s+thanks|cheers|sincerely|yours(?:\s+sincerely|\s+truly)?|cordially|talk\s+soon|warmly|all\s+the\s+best),)\s*\n?$"#, in: text),
+              let line = g[1], let name = fields.first(where: { $0.kind == "name" })?.value, !name.isEmpty else { return nil }
+        return Conversions(source: line, results: ["Sign as \(name)"], inserts: [line + "\n" + name], hows: [.replace])
+    }
+}
+
+// MARK: - Calories in everyday foods (USDA FoodData Central figures, rounded)
+
+extension Smart {
+    /// kcal for one usual serving, and how that serving is said.
+    private static let foodCalories: [String: (Int, String)] = [
+        "banana": (105, "medium"), "apple": (95, "medium"), "orange": (62, "medium"), "pear": (101, "medium"),
+        "peach": (59, "medium"), "mango": (202, "whole"), "avocado": (240, "whole"), "kiwi": (42, "each"),
+        "grapes": (104, "1 cup"), "strawberries": (49, "1 cup"), "blueberries": (84, "1 cup"), "watermelon": (46, "1 cup"),
+        "pineapple": (82, "1 cup"), "cherries": (97, "1 cup"), "raspberries": (64, "1 cup"), "plum": (30, "each"),
+        "egg": (72, "large"), "boiled egg": (78, "large"), "fried egg": (90, "large"), "scrambled eggs": (182, "2 eggs"),
+        "slice of bread": (80, "slice"), "bread": (80, "slice"), "toast": (80, "slice"), "bagel": (277, "medium"),
+        "croissant": (231, "medium"), "muffin": (377, "large"), "donut": (253, "glazed"), "doughnut": (253, "glazed"),
+        "pancake": (90, "6-inch"), "waffle": (218, "7-inch"), "tortilla": (138, "flour, 8-inch"), "roti": (120, "each"),
+        "chapati": (120, "each"), "naan": (262, "each"), "rice": (205, "1 cup cooked"), "white rice": (205, "1 cup cooked"),
+        "brown rice": (218, "1 cup cooked"), "pasta": (221, "1 cup cooked"), "spaghetti": (221, "1 cup cooked"),
+        "noodles": (219, "1 cup cooked"), "oatmeal": (166, "1 cup cooked"), "oats": (150, "½ cup dry"), "quinoa": (222, "1 cup cooked"),
+        "potato": (161, "medium, baked"), "sweet potato": (103, "medium, baked"), "fries": (365, "medium serving"),
+        "french fries": (365, "medium serving"), "chips": (152, "1 oz"), "popcorn": (31, "1 cup popped"),
+        "chicken breast": (165, "100 g cooked"), "chicken": (165, "100 g breast, cooked"), "chicken thigh": (209, "100 g cooked"),
+        "salmon": (206, "100 g cooked"), "tuna": (132, "100 g canned"), "shrimp": (99, "100 g cooked"), "steak": (271, "100 g cooked"),
+        "beef": (250, "100 g cooked"), "pork chop": (231, "100 g cooked"), "bacon": (43, "slice"), "sausage": (229, "link"),
+        "ham": (46, "slice"), "turkey": (135, "100 g roasted"), "tofu": (94, "½ cup"), "paneer": (265, "100 g"),
+        "hamburger": (354, "single patty"), "burger": (354, "single patty"), "cheeseburger": (303, "single"),
+        "big mac": (590, "each"), "hot dog": (290, "with bun"), "pizza": (285, "slice, cheese"), "slice of pizza": (285, "cheese"),
+        "taco": (170, "each"), "burrito": (430, "each"), "sushi roll": (255, "6 pieces"), "sandwich": (350, "average"),
+        "salad": (150, "side, with dressing"), "soup": (150, "1 cup"), "samosa": (262, "each"), "dosa": (168, "plain"),
+        "idli": (39, "each"), "biryani": (290, "1 cup"),
+        "milk": (103, "1 cup, 2%"), "whole milk": (149, "1 cup"), "skim milk": (83, "1 cup"), "almond milk": (39, "1 cup"),
+        "oat milk": (120, "1 cup"), "yogurt": (149, "1 cup plain"), "greek yogurt": (130, "1 cup plain, nonfat"),
+        "cheese": (113, "1 oz cheddar"), "butter": (102, "1 tbsp"), "peanut butter": (188, "2 tbsp"), "almonds": (164, "1 oz"),
+        "peanuts": (161, "1 oz"), "cashews": (157, "1 oz"), "walnuts": (185, "1 oz"), "olive oil": (119, "1 tbsp"),
+        "honey": (64, "1 tbsp"), "sugar": (16, "1 tsp"), "chocolate": (155, "1 oz dark"), "ice cream": (273, "1 cup vanilla"),
+        "cookie": (78, "chocolate chip"), "cake": (350, "slice"), "brownie": (227, "each"),
+        "coffee": (2, "black, 1 cup"), "latte": (190, "16 oz, 2% milk"), "cappuccino": (130, "16 oz"), "tea": (2, "1 cup"),
+        "chai latte": (240, "16 oz"), "coke": (140, "12 oz can"), "soda": (140, "12 oz can"), "diet coke": (0, "can"),
+        "orange juice": (112, "1 cup"), "apple juice": (114, "1 cup"), "beer": (153, "12 oz"), "wine": (125, "5 oz glass"),
+        "red wine": (125, "5 oz glass"), "white wine": (121, "5 oz glass"), "vodka": (97, "1.5 oz shot"), "whiskey": (105, "1.5 oz shot"),
+        "smoothie": (230, "16 oz"), "protein shake": (160, "1 scoop in water"), "carrot": (25, "medium"), "broccoli": (31, "1 cup"),
+        "cucumber": (45, "whole"), "tomato": (22, "medium"), "corn": (88, "ear"), "peas": (117, "1 cup"),
+    ]
+
+    /// "how many calories in a banana", "calories in 2 eggs", "cals in a
+    /// slice of pizza" → ~105 kcal (medium); a count multiplies.
+    static func calories(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"\b(?:how\s+many\s+)?(?:calories|cals?|kcals?)\s+(?:are\s+)?(?:in|for)\s+(?:a\s+|an\s+|one\s+|1\s+|(\d{1,2})\s+)?([a-z][a-z ']{1,24}?)\??\s?$"#, in: text)
+                ?? firstMatch(#"(?:^|\s)(?:a\s+|an\s+|one\s+|(\d{1,2})\s+)?([a-z][a-z ']{1,24}?)\s+(?:calories|cals?|kcals?)\??\s?$"#, in: text),
+              var food = g[2]?.lowercased().trimmingCharacters(in: .whitespaces) else { return nil }
+        let count = Int(g[1] ?? "") ?? 1
+        var hit = foodCalories[food]
+        if hit == nil, food.hasSuffix("s") { food.removeLast(); hit = foodCalories[food] }
+        if hit == nil, food.hasSuffix("e") { hit = foodCalories[String(food.dropLast())] }
+        guard let (kcal, serving) = hit, count >= 1, count <= 20 else { return nil }
+        let said = count > 1 ? "~\(kcal * count) kcal (\(count) × \(serving))" : "~\(kcal) kcal (\(serving))"
+        return Conversions(source: trimmed(g[0]), results: [said])
     }
 }

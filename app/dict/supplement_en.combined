@@ -425,3 +425,56 @@ dictionary=supplement:en,locale=en,description=Glyf supplement to the AOSP Engli
  word=Oct,f=140
  word=Nov,f=140
  word=Dec,f=140
+ word=PST,f=125,flags=abbreviation
+ word=PDT,f=110,flags=abbreviation
+ word=EST,f=125,flags=abbreviation
+ word=EDT,f=110,flags=abbreviation
+ word=CST,f=115,flags=abbreviation
+ word=CDT,f=100,flags=abbreviation
+ word=MST,f=105,flags=abbreviation
+ word=MDT,f=95,flags=abbreviation
+ word=IST,f=120,flags=abbreviation
+ word=GMT,f=120,flags=abbreviation
+ word=UTC,f=115,flags=abbreviation
+ word=BST,f=105,flags=abbreviation
+ word=CET,f=105,flags=abbreviation
+ word=CEST,f=95,flags=abbreviation
+ word=JST,f=95,flags=abbreviation
+ word=AEST,f=95,flags=abbreviation
+ word=SGT,f=90,flags=abbreviation
+# Time zones typed in small letters after a time ("3pm pst") are the zone,
+# never "post" or "isn't" (2026-10-08 probe).
+ word=pst,f=0,not_a_word=true
+  shortcut=PST,f=whitelist
+ word=pdt,f=0,not_a_word=true
+  shortcut=PDT,f=whitelist
+ word=est,f=0,not_a_word=true
+  shortcut=EST,f=whitelist
+ word=edt,f=0,not_a_word=true
+  shortcut=EDT,f=whitelist
+ word=cst,f=0,not_a_word=true
+  shortcut=CST,f=whitelist
+ word=cdt,f=0,not_a_word=true
+  shortcut=CDT,f=whitelist
+ word=mst,f=0,not_a_word=true
+  shortcut=MST,f=whitelist
+ word=mdt,f=0,not_a_word=true
+  shortcut=MDT,f=whitelist
+ word=ist,f=0,not_a_word=true
+  shortcut=IST,f=whitelist
+ word=gmt,f=0,not_a_word=true
+  shortcut=GMT,f=whitelist
+ word=utc,f=0,not_a_word=true
+  shortcut=UTC,f=whitelist
+ word=bst,f=0,not_a_word=true
+  shortcut=BST,f=whitelist
+ word=cet,f=0,not_a_word=true
+  shortcut=CET,f=whitelist
+ word=cest,f=0,not_a_word=true
+  shortcut=CEST,f=whitelist
+ word=jst,f=0,not_a_word=true
+  shortcut=JST,f=whitelist
+ word=aest,f=0,not_a_word=true
+  shortcut=AEST,f=whitelist
+ word=sgt,f=0,not_a_word=true
+  shortcut=SGT,f=whitelist
