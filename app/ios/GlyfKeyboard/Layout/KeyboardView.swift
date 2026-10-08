@@ -5,6 +5,8 @@ protocol KeyboardViewDelegate: AnyObject {
     func kbDeleteBackward()
     func kbSpaceTapped()
     func kbReturnTapped()
+    /// Return held: a line break in the message, never its send.
+    func kbReturnHeld()
     func kbGlobe(event: UIEvent?, key: KeyView, longPress: Bool)
     func kbOpenEmoji()
     /// A space-bar glide started / moved / ended. Moves are in grapheme
@@ -379,6 +381,17 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
                 ) { [weak self, weak st] _ in
                     guard let self, let st, let effects = st.space?.holdElapsed() else { return }
                     self.perform(effects, for: st, event: nil)
+                }
+            case .ret:
+                // Held, return is a new line even where it sends (Arpit,
+                // 2026-10-08: "hold return i need in ios too").
+                st.holdTimer = Timer.scheduledTimer(
+                    withTimeInterval: Glass.Ripple.holdThreshold + 0.08, repeats: false
+                ) { [weak self, weak st] _ in
+                    guard let self, let st else { return }
+                    st.mode = .holdFired
+                    self.feedback(impactStyle: .light)
+                    self.delegate?.kbReturnHeld()
                 }
             case .globe:
                 st.holdTimer = Timer.scheduledTimer(

@@ -2274,6 +2274,17 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         updateCandidates()
     }
 
+    func kbReturnHeld() {
+        // In Glyf's own editors, a hold is a tap.
+        guard inlineTarget == nil else { return kbReturnTapped() }
+        commitCurrentWord()
+        // A "send" field sends on any "\n" it's given; a line separator
+        // still breaks the line and isn't caught as Return.
+        hostInsert(textDocumentProxy.returnKeyType == .send ? "\u{2028}" : "\n")
+        syncAutoShift()
+        updateCandidates()
+    }
+
     func kbGlobe(event: UIEvent?, key: KeyView, longPress: Bool) {
         if longPress, let event {
             handleInputModeList(from: key, with: event)
