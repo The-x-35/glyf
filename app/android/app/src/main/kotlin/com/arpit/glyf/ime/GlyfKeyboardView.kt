@@ -73,7 +73,25 @@ class GlyfKeyboardView(
 
     var mode = Mode.LETTERS
     var kContext = KContext.TEXT
+    /** Caps lock: shift tapped twice quickly (iOS and Gboard). While it is
+     *  on, typing never turns shift off; only shift itself does. */
+    var capsLock = false
+        set(value) { field = value; if (value) shifted = true; invalidate() }
     var shifted = false
+        set(value) { field = value || capsLock }
+    private var lastShiftTap = 0L
+
+    /** A tap on shift: a second tap within 350 ms locks capitals, a tap
+     *  while locked unlocks, otherwise shift toggles. */
+    fun shiftTapped(now: Long = android.os.SystemClock.uptimeMillis()) {
+        when {
+            capsLock -> { capsLock = false; shifted = false }
+            now - lastShiftTap < 350 -> capsLock = true
+            else -> shifted = !shifted
+        }
+        lastShiftTap = if (capsLock) 0L else now
+        invalidate()
+    }
     var numberRow = false
     var isDark = false
     var keyTheme = "site"
@@ -865,6 +883,11 @@ class GlyfKeyboardView(
         glyphPaint.strokeWidth = dp(1.3f)
         glyphPaint.style = if (shifted) Paint.Style.FILL_AND_STROKE else Paint.Style.STROKE
         canvas.drawPath(path, glyphPaint)
+        if (capsLock) {
+            // iOS's caps lock: the filled arrow with a bar under it.
+            glyphPaint.style = Paint.Style.FILL
+            canvas.drawRect(cx - stem, cy + dp(9.5f), cx + stem, cy + dp(11.5f), glyphPaint)
+        }
     }
 
     /** SF delete.left (light): a tag pointing left with a cross in it;

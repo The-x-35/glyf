@@ -539,6 +539,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Signed out and back in since the keyboard last ran? Take the new one.
         com.arpit.glyf.ime.BackendClient.bearer = com.arpit.glyf.SessionStore.token(this)
         android.util.Log.d("GlyfKB", "onStartInputView restarting=$restarting overlay=${overlay != null}")
+        // A new field starts without caps lock, as iOS's and Gboard's do.
+        if (!restarting && ::keyboard.isInitialized) { keyboard.capsLock = false; keyboard.shifted = false }
         settings = SettingsStore.load(this)
         settingsStamp = com.arpit.glyf.store.Bridge.file(this, SettingsStore.FILE).lastModified()
         showPayOutcomeIfFresh()
@@ -1656,9 +1658,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 translateDraftChanged()
             }
             id == "shift" -> {
-                keyboard.shifted = !keyboard.shifted
+                keyboard.shiftTapped()
                 autoShifted = false
-                keyboard.invalidate()
             }
             id == "emojikey" -> showEmojiPanel()
             id.startsWith("mode:") -> {
@@ -1709,9 +1710,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             id == "delete" -> update(text.dropLast(1))
             id == "return" -> onReturn()
             id == "shift" -> {
-                keyboard.shifted = !keyboard.shifted
+                keyboard.shiftTapped()
                 autoShifted = false
-                keyboard.invalidate()
             }
             id.startsWith("mode:") -> {
                 keyboard.mode = modeFor(id.removePrefix("mode:"))
@@ -4229,7 +4229,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val beforePrevious = if (current.isEmpty()) WordContext.wordBeforePrevious(before) else WordContext.previousWord(before)
         val context = com.arpit.glyf.ime.typing.GlideDecoder.Context(
             previous = previous, beforePrevious = beforePrevious,
-            capitals = if (keyboard.shifted) com.arpit.glyf.ime.typing.GlideDecoder.Capitals.FIRST
+            capitals = if (keyboard.capsLock) com.arpit.glyf.ime.typing.GlideDecoder.Capitals.ALL
+                       else if (keyboard.shifted) com.arpit.glyf.ime.typing.GlideDecoder.Capitals.FIRST
                        else com.arpit.glyf.ime.typing.GlideDecoder.Capitals.NONE,
             personal = engine.personal)
         return decoder.decode(points, layout, context, limit)
