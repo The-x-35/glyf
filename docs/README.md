@@ -19,6 +19,9 @@ Everything about Glyf, written down: what it is, every decision and why, what wa
 | [WEBSITE.md](WEBSITE.md) | tryglyf.com: the guided iMessage experience, all 8 chat scripts word for word, the demo keyboard, waitlist and Neon schema, mobile rules, share image, deploy steps, version history v1 to v8 |
 | [APPS.md](APPS.md) | The iOS and Android apps and keyboards: architecture, every feature, design history, milestones, build and release recipes, traps |
 | [BACKEND.md](BACKEND.md) | The server: every route, AI model routing, search suite, connectors and OAuth, env var names, tests, pending work |
+| [SERVER-INVENTORY.md](SERVER-INVENTORY.md) | What the Railway server does at runtime, route by route; what already runs on the phone, what could move there, what must stay, and the problems found (10 Oct 2026) |
+| [STRIP-BACKLOG.md](STRIP-BACKLOG.md) | Every instant answer the strip gives, with examples (7 and 8 Oct 2026), and the ideas still to build |
+| [PLAY-STORE.md](PLAY-STORE.md) | Google Play listing, graphics and what the Play Console needs |
 
 ## History
 

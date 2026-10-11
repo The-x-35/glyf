@@ -125,3 +125,23 @@ Live on the iPhone keyboard since 7 Oct 2026 (Arpit: "implement glide typing, li
 - **On lift** (`GlyfKeyboardViewController.swift` glide block, `Engine/Typing/GlideTyping.swift`): a word being typed is committed first (autocorrect + learning, as the space bar would) and a space added; then the best guess + " " goes in, is learned (`commit`), shift releases, and the other guesses show in the strip as plain word chips while the caret stays right after the word (`GlideState.anchor` = text before the caret). Tapping one swaps the word. One backspace right after a glide deletes the word and its space and offers the word and its alternatives back; the next backspace is ordinary. No punctuation swallow of the glide's space (the typed flow has none either).
 - **Setting**: `glideTyping` (Bool, default true) in the shared settings JSON; "Glide typing" switch under Typing in the keyboard's Settings panel and the app's Keyboard screen, title only.
 - **Android: done (8 Oct 2026).** `ime/typing/GlideDecoder.kt` + `GlideTyping.kt` (constant-for-constant ports), `GlyfKeyboardView.kt` glide touch mode + trail + floating word, a `// Glide typing` block in `GlyfIME.kt` (lift, strip alternatives, swap, one-backspace undo), "Glide typing" switch under Number row in the keyboard's Settings, `glideTyping` default in `SettingsStore`. `GlideDecoderTest` (same synthetic finger, 500 likeliest words): top-1 96.4% / 97.0% / 96.8% / 97.2% and top-3 99.8% / 100% / 100% / 100% at 393 / 411 / 427 / 360 dp; JVM decode median 0.8 ms, p95 3–4 ms. One change beyond Swift: a glide shorter than 0.9 key widths with no one-letter word near it ("we" cut short) now falls through to the full search instead of returning nothing; the Swift decoder still returns nothing there. One other difference: a glide right after "," "." etc. adds the space first ("hello, world"). Checked on the Avici_API_36 emulator: hello, thanks and tomorrow glide in, the trail, lit key and floating word draw, alternatives swap the word, and one backspace takes it back and re-offers it.
+
+## 9. Server: what can move to the phone, and what to fix (10 Oct 2026)
+
+Arpit asked what the Railway server does and what could run on the phone instead. The full map is SERVER-INVENTORY.md. Waiting on Arpit's go-ahead, in this order:
+
+1. **Security:** stop `url.unfurl` fetching private and internal addresses (SSRF), or run it on the phone. A server change: it takes effect when Arpit pushes main and Railway redeploys.
+2. Currency rates straight from Frankfurter on both keyboards (very small).
+3. The animated emoji sticker list bundled in the app (small).
+4. Cashtag and token prices straight from Jupiter on both keyboards (medium: port the name and ticker matching from `server/src/lib/rates.ts`).
+5. Cal.com booking from the phone (medium).
+6. Weather and sunrise/sunset as strip answers: Open-Meteo plus a port of `sun.ts` (small to medium).
+7. Keyless tools as strip answers: definitions, synonyms, Wikipedia, holidays, country facts (medium each).
+8. Housekeeping: skip Neon for public read-only routes; remove the dead routes; correct the two tool descriptions.
+
+**Arpit owes on Railway:** `SOLANA_RPC_URL` (wallet balance and sending) and `KLIPY_APP_KEY` (GIFs in release builds).
+
+**Builds:** 1.0.0 (20) went to TestFlight on 8 Oct; the Android bundle `glyf-1.0.0-20.aab` is for Arpit to upload to Play (with the RECORD_AUDIO declaration from build 19).
+
+**Still to try on a phone:** hold Return in a chat app whose Return sends (Slack or Telegram), to see U+2028 drawn as a line break.
+

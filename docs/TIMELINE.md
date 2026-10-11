@@ -161,3 +161,16 @@ The work ran in three chat sessions:
 - **13:05** **The site's stage becomes a timeline**: one scroll, one action, and a chat changes because it is done (D106).
 - **14:26 to 14:32** Equal air everywhere on the strip and the row on its middle: margins 19.0 and 19.3, gaps 46.7 to 47.3, and the contents lifted to the strip's true centre. The close button loses its fill, which was a 50 by 32 pill because the fill was the whole tap target.
 - **14:49 to 15:26** "i took a ss but it doesnt come in clipboard automatically and also its missing many things i copied". Two faults: the screenshot default disagreed between the app and the keyboard, and the app's note claimed links and numbers were kept when that had stopped being true. Then **the clipboard fills itself** (D107): both switches on, older installs migrated, and the panel names whichever permission is still missing.
+
+## Wed 7 Oct 2026
+
+Arpit: "use app on ios simulator across all diff scenarios and help improve app … i dont like the typed word as fist suggestion in "" feels like we are wasting a suggestion … also implement glide typing". The strip stopped showing the typed word as a quoted chip; a word typed in full offers only its completions; chat words bring an emoji to the last slot. A probe of 170 everyday messages (`RunnerTests/StripProbeTests.swift`) found gaps that became new answers: both currencies named, coin amounts, sums in words, city time, "until 5pm", lists, polls, the booking page, "Add a Meet link", city/state boxes. Glide typing on the iPhone (GlideDecoder: 96.8% of the 500 likeliest words right first time on synthetic fingers). Commit 653e158.
+
+## Thu 8 Oct 2026
+
+Arpit: "do glide and other things u made for android as well and research and implement more scenarios". Glide typing and the 7 Oct strip ported to Android. A second probe of 150 messages and a research pass (Raycast, Alfred, Espanso, Gboard, Omni calculators) added about forty answers on both keyboards and four fixes (STRIP-BACKLOG.md "Done on 8 Oct"); "3pm pst" stopped becoming "post". Caps lock on Android ("double tapping the shift key turns on caps lock like ios … but on our android its not doing like this"); hold Return for a new line on both ("hold return i need in ios too"). Build 1.0.0 (20) to TestFlight and the Android bundle, on request. Commits 1cb904d, 125a7a3, 924ac76, f839d01.
+
+## Sat 10 Oct 2026
+
+Arpit: "i need to know what all is happening from railway server, and out of it what all of it can we shift to local device". SERVER-INVENTORY.md maps every route, what already runs on the phone, what could move (currency rates, token prices, stickers, Cal.com booking, weather and sunrise, keyless tools) and what must stay (AI, keyed search providers, sign-in, plans, limits, the hub). It found an SSRF risk in the server's url.unfurl tool. Waiting on Arpit's go-ahead to start the moves.
+

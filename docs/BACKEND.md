@@ -7,6 +7,8 @@ The complete reference for the Glyf backend: what exists, how it works, every de
 - "Verified" in this doc means checked against the code while writing. Nothing was run while writing it (no server start, no tests). Where a fact comes only from chat history or notes, the text says so.
 - `server/.env` was deliberately not opened. This doc never contains secret values, only variable names.
 
+> **10 Oct 2026:** [SERVER-INVENTORY.md](SERVER-INVENTORY.md) maps every route to the client and feature that calls it, the outside services and keys it uses, whether it touches the database, and whether it could run on the phone instead. It also lists four problems found that day (an SSRF risk in url.unfurl, Neon on every request, dead routes, two wrong tool descriptions). The server is live on Railway at api.tryglyf.com since 18 Sep (section 13); parts of this doc written on 16 Sep predate that.
+
 ---
 
 ## Contents
@@ -1597,6 +1599,9 @@ Found by reading the code while writing this doc (2026-09-16). None were fixed, 
 
 | # | Severity | Issue | Where | Suggested fix |
 |---|---|---|---|---|
+| 0a | High (10 Oct) | `url.unfurl` fetches any `http(s)` link, private and internal addresses included (SSRF) | `server/src/lib/tools.ts` (~line 201) | Refuse private, loopback, link-local and metadata addresses after DNS and on each redirect, or run it on the phone (SERVER-INVENTORY.md) |
+| 0b | Medium (10 Oct) | Every request spends Neon minute counters and refreshes the KV mirror, /health and /rates included | `server/src/lib/protect.ts`, `server/src/index.ts` | Skip for public read-only routes; count in memory and flush |
+| 0c | Low (10 Oct) | quote.crypto's description says CoinGecko and stocks.quote's says Stooq; both use Jupiter. Unused routes: /waitlist, /connector/mockcal, /glyf/catalog, /tools/run, /me/plan, /hub/list, /hub/install, /telemetry/funnel | `server/src/registry/tools/`, routes | Correct the text; remove or mark the routes |
 | 1 | High | The CI secrets guard scans zero files: the quoted brace glob in `--include` is not expanded, so it always passes (tested with `/usr/bin/grep` on this Mac) | `ci/check_no_secrets.sh` | Use one `--include` per extension; add `app/android` and `site` to the targets |
 | 2 | Medium | Web search tries Serper before Brave, the reverse of the 2026-09-14 decision. With both keys set, Serper answers while `/search/status` reports `brave`. No effect today because neither key is set | `searchWeb()` in `lib/search.ts` | Call Brave first, Serper only when Brave returns nothing |
 | 3 | High | The `/glyf/run` cache key has no device id, and tool-backed outputs are cached too. A community glyf using `calendar.today` or `notion.search` could serve one device's calendar or Notion results to another device running the same glyf, version, input and vars within 24 h. Tool outputs such as weather can also be up to 24 h stale | `routes/glyf.ts` | Skip the cache for any definition with `tool` steps, or at least with OAuth tools, and add the device id to the key |
