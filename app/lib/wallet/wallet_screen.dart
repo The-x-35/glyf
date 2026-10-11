@@ -3,15 +3,18 @@ import 'package:flutter/services.dart';
 
 import '../core/theme.dart';
 import '../profile/brand_marks.dart' show PhantomMark;
+import 'mwa.dart';
 import 'buy_screen.dart';
-import 'phantom.dart';
 import 'send_screen.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
 import 'wallet_flow.dart';
 
-/// Profile → Wallet: connect Phantom, see what's in it, send or buy. Glyf
-/// never holds a key; Phantom signs every payment.
+/// Profile → Wallet: connect a wallet, see what's in it, send or buy. On a
+/// phone with a Mobile Wallet Adapter wallet (the Seeker's Seed Vault,
+/// Phantom on Android) the connection and every signature happen right
+/// here; elsewhere Phantom opens and answers by deeplink. Glyf never holds
+/// a key either way.
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
 
@@ -26,11 +29,18 @@ class _WalletScreenState extends State<WalletScreen> {
   bool _connecting = false;
   String? _error;
 
+  /// A Mobile Wallet Adapter wallet lives on this phone (Seed Vault on a
+  /// Seeker): connect and sign here, with no Phantom round trip.
+  bool _mwaHere = false;
+
   @override
   void initState() {
     super.initState();
     WalletFlow.link.addListener(_refresh);
     WalletFlow.load().then((_) => _refresh());
+    Mwa.isAvailable().then((here) {
+      if (mounted && here) setState(() => _mwaHere = true);
+    });
   }
 
   @override
@@ -89,7 +99,7 @@ class _WalletScreenState extends State<WalletScreen> {
         surfaceTintColor: Colors.transparent,
         title: const Text('Wallet', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
       ),
-      body: ValueListenableBuilder<PhantomLink?>(
+      body: ValueListenableBuilder<WalletLink?>(
         valueListenable: WalletFlow.link,
         builder: (context, link, _) => ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
@@ -114,20 +124,21 @@ class _WalletScreenState extends State<WalletScreen> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Row(
+        Row(
           children: [
-            PhantomMark(size: 46),
-            SizedBox(width: 14),
+            if (!_mwaHere) ...const [PhantomMark(size: 46), SizedBox(width: 14)],
             Text(
-              'Phantom',
-              style: TextStyle(color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800),
+              _mwaHere ? 'Your wallet' : 'Phantom',
+              style: const TextStyle(color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800),
             ),
           ],
         ),
         const SizedBox(height: 14),
-        const Text(
-          'Send and buy from your keyboard. Phantom signs every payment; Glyf never holds your keys.',
-          style: TextStyle(color: Glass.inkSoft, fontSize: 14.5, height: 1.4),
+        Text(
+          _mwaHere
+              ? 'Send and buy from your keyboard. Your own wallet signs every payment, right on this phone; Glyf never holds your keys.'
+              : 'Send and buy from your keyboard. Phantom signs every payment; Glyf never holds your keys.',
+          style: const TextStyle(color: Glass.inkSoft, fontSize: 14.5, height: 1.4),
         ),
         const SizedBox(height: 18),
         Semantics(
@@ -135,13 +146,13 @@ class _WalletScreenState extends State<WalletScreen> {
           button: true,
           child: _connecting
               ? const SizedBox(height: 52, child: Center(child: _Spinner()))
-              : PillButton(label: 'Connect Phantom', onPressed: _connect),
+              : PillButton(label: _mwaHere ? 'Connect wallet' : 'Connect Phantom', onPressed: _connect),
         ),
       ],
     ),
   );
 
-  Widget _walletCard(PhantomLink link) {
+  Widget _walletCard(WalletLink link) {
     String usd(BigInt? units, int decimals, double? price) {
       if (units == null || price == null) return '';
       final value = units.toDouble() / BigInt.from(10).pow(decimals).toDouble() * price;
@@ -158,15 +169,14 @@ class _WalletScreenState extends State<WalletScreen> {
             children: [
               Row(
                 children: [
-                  const PhantomMark(size: 44),
-                  const SizedBox(width: 12),
+                  if (!link.viaMwa) ...const [PhantomMark(size: 44), SizedBox(width: 12)],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Phantom',
-                          style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800),
+                        Text(
+                          link.viaMwa ? 'Your wallet' : 'Phantom',
+                          style: const TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 2),
                         Text(

@@ -10,9 +10,13 @@ import 'wallet_flow.dart';
 /// Where Phantom's reply lands: the payment is sent on from here, and the
 /// person sees how it went. Also the answer to Connect.
 class PayStatusScreen extends StatefulWidget {
-  const PayStatusScreen({super.key, required this.reply});
+  const PayStatusScreen({super.key, this.reply, this.progress}) : assert(reply != null || progress != null);
 
-  final Uri reply;
+  /// Phantom's deeplink reply, or…
+  final Uri? reply;
+
+  /// …a payment already underway on this phone (signing over MWA).
+  final Stream<PayOutcome>? progress;
 
   @override
   State<PayStatusScreen> createState() => _PayStatusScreenState();
@@ -25,7 +29,7 @@ class _PayStatusScreenState extends State<PayStatusScreen> {
   @override
   void initState() {
     super.initState();
-    _sub = WalletFlow.handleReply(widget.reply).listen(
+    _sub = (widget.progress ?? WalletFlow.handleReply(widget.reply!)).listen(
       _show,
       onError: (Object _) => _show(WalletFlow.unknownOutcome),
       // Every path ends in an outcome; one that doesn't still takes the

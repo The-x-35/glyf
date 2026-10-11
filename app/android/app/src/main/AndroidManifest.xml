@@ -104,6 +104,12 @@
         </intent>
         <!-- The wallet opens Phantom to connect and to sign. -->
         <package android:name="app.phantom"/>
+        <!-- Mobile Wallet Adapter: without this, package visibility on
+             Android 11+ hides Seed Vault and other MWA wallets. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="solana-wallet"/>
+        </intent>
         <!-- The keyboard's voice typing uses the phone's speech recognizer. -->
         <intent>
             <action android:name="android.speech.RecognitionService"/>

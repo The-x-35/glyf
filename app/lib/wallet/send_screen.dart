@@ -4,9 +4,9 @@ import 'package:flutter/services.dart';
 
 import '../core/theme.dart';
 import '../profile/brand_marks.dart' show PhantomMark;
-import 'phantom.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
+import 'pay_status_screen.dart';
 import 'wallet_flow.dart';
 
 /// Send SOL or USDC to an address, or USDC privately through MagicBlock.
@@ -84,12 +84,19 @@ class _SendScreenState extends State<SendScreen> {
       _busy = true;
       _error = null;
     });
-    final error = await WalletFlow.send(to: _to.text, amount: _amount.text, token: _token, private: _private);
+    final start = await WalletFlow.send(to: _to.text, amount: _amount.text, token: _token, private: _private);
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _error = error;
+      _error = start.error;
     });
+    final progress = start.progress;
+    if (progress != null) {
+      // Signed on this phone: the status screen rides along from here.
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => PayStatusScreen(progress: progress)),
+      );
+    }
   }
 
   Future<void> _connect() async {
@@ -112,7 +119,7 @@ class _SendScreenState extends State<SendScreen> {
         surfaceTintColor: Colors.transparent,
         title: const Text('Send', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
       ),
-      body: ValueListenableBuilder<PhantomLink?>(
+      body: ValueListenableBuilder<WalletLink?>(
         valueListenable: WalletFlow.link,
         builder: (context, link, _) => ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),

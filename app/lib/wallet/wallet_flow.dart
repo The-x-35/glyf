@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import 'base58.dart';
+import 'mwa.dart';
 import 'phantom.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
@@ -20,6 +21,31 @@ class BridgeSecrets implements SecretStore {
   Future<void> save(String name, String value) => GlyfBridge.walletSecretSave(name, value);
   @override
   Future<void> clear(String name) => GlyfBridge.walletSecretClear(name);
+}
+
+/// The connected wallet, however it signs.
+class WalletLink {
+  const WalletLink({required this.address, required this.viaMwa});
+
+  final String address;
+
+  /// Signing happens on this phone over Mobile Wallet Adapter (Seed Vault
+  /// on a Seeker, or any MWA wallet), not by a Phantom deeplink round trip.
+  final bool viaMwa;
+}
+
+/// How a payment began: an error to show, Phantom opened (its reply comes
+/// back as a deeplink), or signing right here over MWA, where [progress]
+/// carries the whole journey to an outcome.
+class PayStart {
+  const PayStart.opened()
+      : error = null,
+        progress = null;
+  const PayStart.error(String this.error) : progress = null;
+  const PayStart.progress(Stream<PayOutcome> this.progress) : error = null;
+
+  final String? error;
+  final Stream<PayOutcome>? progress;
 }
 
 enum PayKind { send, private, buy }
@@ -73,27 +99,50 @@ enum PayState { working, done, submitted, failed, cancelled }
 /// move money is ever in Glyf.
 abstract final class WalletFlow {
   static final phantom = Phantom(BridgeSecrets());
+  static final mwa = Mwa(BridgeSecrets());
 
   /// The connected wallet, or null.
-  static final link = ValueNotifier<PhantomLink?>(null);
+  static final link = ValueNotifier<WalletLink?>(null);
 
   static const _pendingName = 'phantom-pending-pay';
   static const phantomAppStore = 'https://apps.apple.com/app/phantom-crypto-wallet/id1598432977';
   static const phantomPlayStore = 'https://play.google.com/store/apps/details?id=app.phantom';
 
   static Future<void> load() async {
-    link.value = await phantom.link();
+    final seeded = await mwa.load();
+    if (seeded != null) {
+      link.value = WalletLink(address: seeded.address, viaMwa: true);
+      return;
+    }
+    final p = await phantom.link();
+    link.value = p == null ? null : WalletLink(address: p.address, viaMwa: false);
   }
 
-  /// Opens Phantom to connect. An error to show, or null.
+  /// Connects a wallet. The phone's own wallet layer is asked first (Seed
+  /// Vault on a Seeker, or any Mobile Wallet Adapter wallet) and finishes
+  /// right here; where there is none, Phantom opens and answers by
+  /// deeplink. An error to show, or null.
   static Future<String?> connect() async {
     Telemetry.log('wallet_connect_started', {});
+    if (await Mwa.isAvailable()) {
+      try {
+        final account = await mwa.connect();
+        if (account == null) return null; // backed out in the wallet
+        link.value = WalletLink(address: account.address, viaMwa: true);
+        await _shareAddress(account.address);
+        Telemetry.log('wallet_connected', {'mwa': true});
+        return null;
+      } catch (_) {
+        // The association failed; Phantom's deeplink path may still work.
+      }
+    }
     return _open(await phantom.connectUrl());
   }
 
   /// Forgets the wallet on this phone. Phantom lists Glyf under its
   /// connected apps until it's removed there too.
   static Future<void> disconnect() async {
+    await mwa.disconnect();
     await phantom.forget();
     await BridgeSecrets().clear(_pendingName);
     link.value = null;
@@ -101,20 +150,20 @@ abstract final class WalletFlow {
     Telemetry.log('wallet_disconnected', {});
   }
 
-  /// Builds a send and opens Phantom to sign it. An error to show, or null.
-  static Future<String?> send({
+  /// Builds a send and hands it to the wallet to sign.
+  static Future<PayStart> send({
     required String to,
     required String amount,
     required TokenInfo token,
     bool private = false,
   }) async {
-    final wallet = link.value ?? await phantom.link();
-    if (wallet == null) return 'Connect Phantom first';
+    final wallet = await _linked();
+    if (wallet == null) return const PayStart.error('Connect your wallet first');
     final recipient = to.trim();
-    if (!Sol.isAddress(recipient)) return 'That isn’t a Solana address';
-    if (recipient == wallet.address) return 'That’s your own wallet';
+    if (!Sol.isAddress(recipient)) return const PayStart.error('That isn’t a Solana address');
+    if (recipient == wallet.address) return const PayStart.error('That’s your own wallet');
     final units = Sol.units(amount, token.decimals);
-    if (units == null) return 'Enter an amount';
+    if (units == null) return const PayStart.error('Enter an amount');
     try {
       // Everything Solana is asked at once — the checks used to run one
       // after the other, and the trip to Phantom felt like a wait.
@@ -130,11 +179,13 @@ abstract final class WalletFlow {
       // Money sent to a token's or an app's address is gone for good: only
       // a wallet (the System Program's, or one never paid yet) is paid.
       final owner = await ownerF;
-      if (owner == Sol.tokenProgram || owner == Sol.token2022Program) return 'That’s a token’s address, not a wallet';
-      if (owner != null && owner != Sol.systemProgram) return 'That isn’t a wallet address';
-      // What Phantom would refuse anyway, said before the trip there.
+      if (owner == Sol.tokenProgram || owner == Sol.token2022Program) {
+        return const PayStart.error('That’s a token’s address, not a wallet');
+      }
+      if (owner != null && owner != Sol.systemProgram) return const PayStart.error('That isn’t a wallet address');
+      // What the wallet would refuse anyway, said before the trip there.
       final short = _shortfall(await solF, await haveF, units, token, private: private);
-      if (short != null) return short;
+      if (short != null) return PayStart.error(short);
       final Uint8List tx;
       if (private) {
         tx = await MagicBlock.privateTransfer(from: wallet.address, to: recipient, amount: units, mint: token.mint);
@@ -157,17 +208,25 @@ abstract final class WalletFlow {
             '${Sol.format(units, token.decimals, maxDecimals: token.decimals)} ${token.symbol} to ${Sol.short(recipient)}',
       );
       await BridgeSecrets().save(_pendingName, jsonEncode(pending.toJson()));
-      Telemetry.log('wallet_send_started', {'private': private, 'token': token.symbol});
-      return _open(await phantom.signUrl(tx, pending.id));
+      Telemetry.log('wallet_send_started', {'private': private, 'token': token.symbol, 'mwa': wallet.viaMwa});
+      if (wallet.viaMwa) return PayStart.progress(_payOverMwa(pending, tx));
+      final opened = await _open(await phantom.signUrl(tx, pending.id));
+      return opened == null ? const PayStart.opened() : PayStart.error(opened);
     } on WalletError catch (e) {
-      return e.message;
+      return PayStart.error(e.message);
     } on PhantomError catch (e) {
-      return e.message;
+      return PayStart.error(e.message);
     } catch (_) {
-      // A reply that wasn't JSON, TLS, a dropped connection: Phantom was
-      // never opened, so nothing moved.
-      return _unexpected;
+      // A reply that wasn't JSON, TLS, a dropped connection: no wallet was
+      // ever opened, so nothing moved.
+      return const PayStart.error(_unexpected);
     }
+  }
+
+  /// The connected wallet, loaded from disk when the notifier is cold.
+  static Future<WalletLink?> _linked() async {
+    if (link.value == null) await load();
+    return link.value;
   }
 
   static const _unexpected = 'Something went wrong. Try again';
@@ -179,11 +238,11 @@ abstract final class WalletFlow {
 
   /// Buys [token] with [amount] of [payWith] through Jupiter, signed in
   /// Phantom. An error to show, or null.
-  static Future<String?> buy({required TokenInfo token, required TokenInfo payWith, required String amount}) async {
-    final wallet = link.value ?? await phantom.link();
-    if (wallet == null) return 'Connect Phantom first';
+  static Future<PayStart> buy({required TokenInfo token, required TokenInfo payWith, required String amount}) async {
+    final wallet = await _linked();
+    if (wallet == null) return const PayStart.error('Connect your wallet first');
     final units = Sol.units(amount, payWith.decimals);
-    if (units == null) return 'Enter an amount';
+    if (units == null) return const PayStart.error('Enter an amount');
     try {
       final order = await Jupiter.order(
         inputMint: payWith.mint,
@@ -192,7 +251,7 @@ abstract final class WalletFlow {
         taker: wallet.address,
       );
       final tx = order.transaction;
-      if (tx == null) return 'Jupiter can’t make that swap right now';
+      if (tx == null) return const PayStart.error('Jupiter can’t make that swap right now');
       final pending = PendingPay(
         id: _newId(),
         kind: PayKind.buy,
@@ -200,14 +259,16 @@ abstract final class WalletFlow {
         requestId: order.requestId,
       );
       await BridgeSecrets().save(_pendingName, jsonEncode(pending.toJson()));
-      Telemetry.log('wallet_buy_started', {'token': token.symbol, 'payWith': payWith.symbol});
-      return _open(await phantom.signUrl(base64.decode(tx), pending.id));
+      Telemetry.log('wallet_buy_started', {'token': token.symbol, 'payWith': payWith.symbol, 'mwa': wallet.viaMwa});
+      if (wallet.viaMwa) return PayStart.progress(_payOverMwa(pending, base64.decode(tx)));
+      final opened = await _open(await phantom.signUrl(base64.decode(tx), pending.id));
+      return opened == null ? const PayStart.opened() : PayStart.error(opened);
     } on WalletError catch (e) {
-      return e.message;
+      return PayStart.error(e.message);
     } on PhantomError catch (e) {
-      return e.message;
+      return PayStart.error(e.message);
     } catch (_) {
-      return _unexpected;
+      return const PayStart.error(_unexpected);
     }
   }
 
@@ -219,7 +280,7 @@ abstract final class WalletFlow {
     if (step == 'connect') {
       try {
         final wallet = await phantom.finishConnect(reply);
-        link.value = wallet;
+        link.value = WalletLink(address: wallet.address, viaMwa: false);
         await _shareAddress(wallet.address);
         Telemetry.log('wallet_connected', {});
         yield await _told(PayOutcome(
@@ -256,12 +317,62 @@ abstract final class WalletFlow {
     }
     final verb = pending.kind == PayKind.buy ? 'Buying' : 'Sending';
     yield PayOutcome(state: PayState.working, title: '$verb…', detail: pending.summary, kind: pending.kind);
+    final Uint8List signed;
+    try {
+      signed = await phantom.finishSign(reply);
+    } on PhantomError catch (e) {
+      await BridgeSecrets().clear(_pendingName);
+      yield await _told(PayOutcome(
+        state: e.cancelled ? PayState.cancelled : PayState.failed,
+        title: e.cancelled ? 'Cancelled in Phantom' : 'Phantom couldn’t sign it',
+        detail: e.cancelled ? 'Nothing was sent' : e.message,
+        kind: pending.kind,
+      ));
+      return;
+    } catch (_) {
+      await BridgeSecrets().clear(_pendingName);
+      yield await _told(unknownOutcome);
+      return;
+    }
+    yield* _settle(pending, signed);
+  }
+
+  /// Signing over Mobile Wallet Adapter, right on this phone: the wallet
+  /// pops, signs, and the payment goes out — no deeplink reply to wait for.
+  static Stream<PayOutcome> _payOverMwa(PendingPay pending, Uint8List tx) async* {
+    final verb = pending.kind == PayKind.buy ? 'Buying' : 'Sending';
+    yield PayOutcome(
+        state: PayState.working, title: 'Confirm in your wallet…', detail: pending.summary, kind: pending.kind);
+    final Uint8List signed;
+    try {
+      signed = await mwa.sign(tx);
+    } on MwaException catch (e) {
+      await BridgeSecrets().clear(_pendingName);
+      yield await _told(PayOutcome(
+        state: e.cancelled ? PayState.cancelled : PayState.failed,
+        title: e.cancelled ? 'Cancelled in the wallet' : 'The wallet couldn’t sign it',
+        detail: e.cancelled ? 'Nothing was sent' : e.message,
+        kind: pending.kind,
+      ));
+      return;
+    } catch (_) {
+      await BridgeSecrets().clear(_pendingName);
+      yield await _told(PayOutcome(
+          state: PayState.failed, title: 'The wallet couldn’t sign it', detail: 'Nothing was sent', kind: pending.kind));
+      return;
+    }
+    yield PayOutcome(state: PayState.working, title: '$verb…', detail: pending.summary, kind: pending.kind);
+    yield* _settle(pending, signed);
+  }
+
+  /// A signed transaction, taken to its end: broadcast, confirm, and an
+  /// outcome whatever breaks on the way.
+  static Stream<PayOutcome> _settle(PendingPay pending, Uint8List signed) async* {
     // Set once the payment has left: from then on nothing may say it didn't.
     String? signature;
     // The transaction's own signature, known before it is sent.
     String? expected;
     try {
-      final signed = await phantom.finishSign(reply);
       expected = txSignature(signed);
       signature = switch (pending.kind) {
         PayKind.send => await SolanaRpc.send(signed),
@@ -290,13 +401,6 @@ abstract final class WalletFlow {
           kind: pending.kind,
         ));
       }
-    } on PhantomError catch (e) {
-      yield await _told(PayOutcome(
-        state: e.cancelled ? PayState.cancelled : PayState.failed,
-        title: e.cancelled ? 'Cancelled in Phantom' : 'Phantom couldn’t sign it',
-        detail: e.cancelled ? 'Nothing was sent' : e.message,
-        kind: pending.kind,
-      ));
     } catch (e) {
       // No answer to the send itself (a timeout, a gateway's error page): it
       // may still have reached Solana, so its own signature is what to look

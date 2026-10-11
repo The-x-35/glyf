@@ -15,9 +15,8 @@ import '../core/text_sheet.dart';
 import '../core/theme.dart';
 import '../shell/app_tour.dart';
 import '../onboarding/onboarding_flow.dart';
-import '../wallet/phantom.dart' show PhantomLink;
 import '../wallet/solana.dart' show Sol;
-import '../wallet/wallet_flow.dart' show WalletFlow;
+import '../wallet/wallet_flow.dart' show WalletFlow, WalletLink;
 import '../wallet/wallet_screen.dart';
 import '../vault/vault_screen.dart';
 import '../vocab/vocabulary_screen.dart';
@@ -381,7 +380,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
               _refresh();
             },
           ),
-          ValueListenableBuilder<PhantomLink?>(
+          ValueListenableBuilder<WalletLink?>(
             valueListenable: WalletFlow.link,
             builder: (context, link, _) => _navCard(
               icon: Icons.account_balance_wallet_outlined,

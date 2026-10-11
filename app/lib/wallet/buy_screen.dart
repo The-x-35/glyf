@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 import '../profile/brand_marks.dart' show PhantomMark;
-import 'phantom.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
+import 'pay_status_screen.dart';
 import 'wallet_flow.dart';
 
 /// Buy a token through Jupiter, paid in SOL or USDC and signed in Phantom.
@@ -152,12 +152,17 @@ class _BuyScreenState extends State<BuyScreen> {
       _busy = true;
       _error = null;
     });
-    final error = await WalletFlow.buy(token: token, payWith: _payWith, amount: amount);
-    if (mounted) {
-      setState(() {
-        _busy = false;
-        _error = error;
-      });
+    final start = await WalletFlow.buy(token: token, payWith: _payWith, amount: amount);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = start.error;
+    });
+    final progress = start.progress;
+    if (progress != null) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => PayStatusScreen(progress: progress)),
+      );
     }
   }
 
@@ -182,7 +187,7 @@ class _BuyScreenState extends State<BuyScreen> {
         surfaceTintColor: Colors.transparent,
         title: const Text('Buy', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
       ),
-      body: ValueListenableBuilder<PhantomLink?>(
+      body: ValueListenableBuilder<WalletLink?>(
         valueListenable: WalletFlow.link,
         builder: (context, link, _) => ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),

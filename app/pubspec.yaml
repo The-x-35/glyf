@@ -36,6 +36,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   pinenacl: ^0.6.0
   crypto: ^3.0.7
+  # Mobile Wallet Adapter: Seed Vault on the Seeker, or any MWA wallet.
+  solana_mobile_client: ^0.1.2
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -4,6 +4,7 @@ import '../core/theme.dart';
 import '../profile/brand_marks.dart' show PhantomMark;
 import 'solana.dart';
 import 'wallet_api.dart';
+import 'pay_status_screen.dart';
 import 'wallet_flow.dart';
 import 'wallet_screen.dart';
 
@@ -39,14 +40,16 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
     });
     final q = widget.query;
     String? error;
+    Stream<PayOutcome>? progress;
     try {
       await WalletFlow.load();
+      final PayStart start;
       if (q['kind'] == 'buy') {
-        error = await _buy(q);
+        start = await _buy(q);
       } else {
         final token =
             _asset(q, fallback: (q['token'] ?? 'USDC').toUpperCase() == 'SOL' ? TokenInfo.sol : TokenInfo.usdc);
-        error = await WalletFlow.send(
+        start = await WalletFlow.send(
           to: q['to'] ?? '',
           amount: q['amount'] ?? '',
           token: token,
@@ -54,11 +57,20 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
           private: q['private'] == '1' && token.mint == Sol.usdc,
         );
       }
+      error = start.error;
+      progress = start.progress;
     } catch (_) {
       // Never a spinner for good: whatever broke, it says so.
       error = 'Something went wrong. Try again';
     }
     if (!mounted) return;
+    if (progress != null) {
+      // Signing happens on this phone; the status screen takes over.
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(builder: (_) => PayStatusScreen(progress: progress)),
+      );
+      return;
+    }
     setState(() {
       _error = error;
       _opened = error == null;
@@ -67,15 +79,15 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
 
   /// The keyboard says what to sell and how much of it; Jupiter takes it
   /// from there.
-  Future<String?> _buy(Map<String, String> q) async {
+  Future<PayStart> _buy(Map<String, String> q) async {
     final amount = q['amount'] ?? '';
-    if ((double.tryParse(Sol.plainAmount(amount) ?? '') ?? 0) <= 0) return 'Pick an amount';
+    if ((double.tryParse(Sol.plainAmount(amount) ?? '') ?? 0) <= 0) return const PayStart.error('Pick an amount');
     try {
       final token = await Jupiter.token(q['mint'] ?? '');
-      if (token == null) return 'Jupiter doesn’t list that token';
+      if (token == null) return const PayStart.error('Jupiter doesn’t list that token');
       return await WalletFlow.buy(token: token, payWith: _asset(q, prefix: 'sell'), amount: amount);
     } on WalletError catch (e) {
-      return e.message;
+      return PayStart.error(e.message);
     }
   }
 
@@ -89,7 +101,7 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
     return TokenInfo(mint: mint, symbol: symbol, name: symbol, decimals: decimals, verified: true);
   }
 
-  bool get _needsConnect => _error == 'Connect Phantom first';
+  bool get _needsConnect => _error == 'Connect your wallet first';
 
   @override
   Widget build(BuildContext context) {
