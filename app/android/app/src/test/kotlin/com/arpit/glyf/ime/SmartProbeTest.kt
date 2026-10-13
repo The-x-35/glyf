@@ -231,6 +231,47 @@ class SmartProbeTest {
         assertNull(q("burned 300 calories"))
     }
 
+    /** iOS GlyfEngineTests.testThirdProbeFixesAndAnswers (2026-10-14). */
+    @Test fun thirdProbeFixesAndAnswers() {
+        // fixes
+        assertTrue("not the time now", q("3pm london time in new york")?.firstOrNull()?.startsWith("Wed") != true)
+        assertNull(EventParse.looksLikePlan("in 2 hours what time"))
+        assertEquals(listOf("10 AM"), q("in 2 hours what time"))
+        assertEquals(listOf("8:15 AM"), q("whats 15 min from now"))
+        assertNotNull(EventParse.looksLikePlan("reminder to take meds at 9pm"))
+        assertEquals("Call", EventParse.looksLikePlan("call at 9am est what time for me")?.title)
+        assertEquals("olive garden", EventParse.looksLikePlan("lets do 7pm at olive garden")?.title?.lowercase())
+        assertTrue("reminder first", Smart.chip("remind me to pay rent on the 1st", emptyList(), region = "US") is Smart.Chip.Event)
+        // answers
+        assertEquals("Thu, Nov 26", q("when is thanksgiving")?.firstOrNull())
+        assertEquals("Sun, Mar 28, 2027", q("when is easter 2027")?.firstOrNull())
+        assertEquals(listOf("176.7°C"), q("350f oven in c"))
+        assertEquals(listOf("9.50 tip", "57 total"), q("tip 20 on 47.50"))
+        assertEquals(listOf("8 each"), q("split the uber 32 between 4"))
+        assertEquals(true, q("salary 85k per year hourly")?.firstOrNull()?.endsWith("/hr"))
+        assertEquals(true, q("50 per hour annually")?.firstOrNull()?.endsWith("/yr"))
+        assertNotNull(q("compound 10000 7% 20 years"))
+        assertEquals(listOf("72.25"), q("85 minus 15%"))
+        assertEquals(listOf("1.5 h"), q("90 minutes in hours"))
+        assertEquals(listOf("165 min"), q("2 hours 45 minutes in minutes"))
+        assertEquals(listOf("473 ml"), q("16 oz in ml"))
+        assertEquals(listOf("237 ml"), q("a cup in ml"))
+        assertEquals(listOf("IST is 12h 30m ahead of PST"), q("pst to ist"))
+        assertEquals(true, q("is it affect or effect")?.firstOrNull()?.startsWith("affect:"))
+        assertEquals(true, q("their there or they're")?.firstOrNull()?.startsWith("their:"))
+        assertEquals(listOf("ran · run"), q("past tense of run"))
+        assertEquals(listOf("cacti (or cactuses)"), q("whats the plural of cactus"))
+        assertEquals("1,024", Smart.calc("2 to the power of 10", indianGrouping = false)?.first)
+        assertEquals("144", Smart.calc("square of 12", indianGrouping = false)?.first)
+        assertEquals("3", Smart.calc("cube root of 27", indianGrouping = false)?.first)
+        assertEquals("2", Smart.calc("log 100", indianGrouping = false)?.first)
+        assertEquals("3,628,800", Smart.calc("10 factorial", indianGrouping = false)?.first)
+        assertEquals("3.14159", Smart.calc("pi to 5 digits", indianGrouping = false)?.first)
+        assertEquals("BTC", Smart.coinAmount("1 btc in usd")?.third)
+        assertEquals("ETH", Smart.coinAmount("price of eth")?.third)
+        assertNull(Smart.coinAmount("price of milk"))
+    }
+
     @Test fun emojiWords() {
         assertEquals("🎂", EmojiWords.emoji("birthday"))
         assertEquals("🍕", EmojiWords.emoji("Pizzas"))

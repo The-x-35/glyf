@@ -46,8 +46,12 @@ object EventParse {
             var t = text.toString().replace(Regex("\\s+"), " ")
             val greeting = "^\\s*(?:hey|hi|so|ok|okay|yo|good morning|good evening|gm)[,!.]*\\s+"
             t = t.replace(re(greeting), "")
-            val lead = "^\\s*(?:(?:let[’']?s|lets|let us|shall we|should we|can we|could we|we should|how about|what about|maybe|pls|please|remind me to|reminder to|reminder:?)\\s+)+"
+            val lead = "^\\s*(?:(?:let[’']?s|lets|let us|shall we|should we|can we|could we|we should|how about|what about|maybe|pls|please|remind me to|reminder to|reminder:?)\\s+)+(?:(?:do|have|grab|get)\\s+)?"
             t = t.replace(re(lead), "")
+            // Zones said with the time ("9am est") aren't part of the title.
+            t = t.replace(re("\\b(?:est|edt|pst|pdt|cst|cdt|mst|mdt|ist|gmt|utc|bst|cet|cest|jst|aest|et|pt|ct|mt)\\b"), " ")
+                .replace(re("\\s+(?:what\\s+time\\s+for\\s+me|for\\s+me)\\s*\\??$"), "")
+                .replace(Regex("\\s+"), " ")
             val dangling = "(?:\\s+(?:at|on|for|from|by|around|in|this|next|the|and|,|-|–))+\\s*$"
             repeat(3) {
                 t = t.replace(re(dangling), "")
@@ -313,7 +317,7 @@ object EventParse {
         // calendar: an event ("📅 Lunch · Fri…") or free time ("I'm free…").
         if (text.contains("📅") || re("\\bI[’']?m (free|busy|booked|done)\\b").containsMatchIn(text)) return null
         // "Call me in 5 minutes" is a countdown, not something for the calendar.
-        if (re("\\bin\\s+(?:\\d+|an?|a few|few|couple of)\\s*(?:minutes?|mins?)\\b").containsMatchIn(text)) return null
+        if (re("\\bin\\s+(?:\\d+|an?|a few|few|couple of)\\s*(?:minutes?|mins?|hours?|hrs?)\\b|\\b\\d+\\s*(?:minutes?|mins?|hours?|hrs?)\\s+from\\s+now\\b").containsMatchIn(text)) return null
         val p = parse(text, now, tz, dayFirst, firstDayOfWeek)
         // "remind me to call mom tomorrow": 9 AM that day, half an hour (iOS twin).
         if (!p.hasTime && p.hasDay && !p.allDay &&
@@ -324,7 +328,7 @@ object EventParse {
             return p.copy(start = nine, end = nine + 30 * 60_000L, hasTime = true)
         }
         if (!p.hasTime) return null
-        val intent = "\\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|game|match|pick (?:me|you|us|him|her|them) up|pickup|milte|milenge)\\b"
+        val intent = "\\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|game|match|pick (?:me|you|us|him|her|them) up|pickup|milte|milenge|remind\\s+me|reminder)\\b"
         val planned = re(intent).containsMatchIn(text)
         // "what are you doing tonight" asks about a plan; it isn't one
         // (2026-10-08 probe). EventParse.swift's twin.

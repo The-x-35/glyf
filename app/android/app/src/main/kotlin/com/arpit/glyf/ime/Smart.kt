@@ -256,6 +256,10 @@ object Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if (cashtag(text) != null) return null
+        // "remind me to pay rent on the 1st": the reminder, before the date.
+        if (Regex("""^\s*(?:pls\s+|please\s+)?(?:remind\s+me|reminder)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+            EventParse.looksLikePlan(text)?.let { return Chip.Event(it) }
+        }
         quick?.let { return Chip.Convert(it) }
         // Every saved value the sentence asks for: two emails show both.
         val matches = vaultMatches(text, fields)
@@ -377,7 +381,12 @@ object Smart {
 
     /** An amount of a coin the message ends on: ("0.5", 0.5, "BTC") for "0.5 btc". */
     fun coinAmount(text: String): Triple<String, Double, String>? {
-        val g = firstMatch("""(?<![\d.,$])(\d[\d,]*(?:\.\d+)?)\s*([A-Za-z]{3,4})\.?\s?$""", text) ?: return null
+        // "price of eth", "how much is a btc" (iOS 10-14).
+        firstMatch("""\b(?:price\s+of|how\s+much\s+is)\s+(?:an?\s+|one\s+)?([A-Za-z]{3,4})\s*(?:right\s+now|now|today)?\??\s?$""", text)?.let { g ->
+            val word = g[1]?.lowercase()?.takeIf { it in coinWords } ?: return@let
+            return Triple("1", 1.0, word.uppercase())
+        }
+        val g = firstMatch("""(?<![\d.,$])(\d[\d,]*(?:\.\d+)?)\s*([A-Za-z]{3,4})\.?(?:\s+(?:in|to)\s+(?:usd|dollars?|\$))?\??\s?$""", text) ?: return null
         val typed = g[1] ?: return null
         val word = g[2]?.lowercase()?.takeIf { it in coinWords } ?: return null
         val amount = typed.replace(",", "").toDoubleOrNull()?.takeIf { it > 0 } ?: return null
@@ -456,11 +465,52 @@ object Smart {
             }
             return Triple(format(v, indianGrouping), false, (g[0] ?: "").trim())
         }
+        // "2 to the power of 10", "square of 12", "cube root of 27", "log 100",
+        // "10 factorial", "pi to 5 digits" (iOS 10-14 probe).
+        firstMatch("""(\d+(?:\.\d+)?)\s+(?:to\s+the\s+power\s+(?:of\s+)?|raised\s+to\s+(?:the\s+)?(?:power\s+(?:of\s+)?)?)(\d+(?:\.\d+)?)\??\s?$""", text)?.let { g ->
+            val a = g[1]?.toDoubleOrNull() ?: return@let
+            val b = g[2]?.toDoubleOrNull()?.takeIf { it <= 64 } ?: return@let
+            val v = calcNumber(Math.pow(a, b), indianGrouping) ?: return@let
+            return Triple(v, false, g[0]!!.trim())
+        }
+        firstMatch("""\b(square|cube)\s+of\s+(\d+(?:\.\d+)?)\??\s?$""", text)?.let { g ->
+            val n = g[2]?.toDoubleOrNull() ?: return@let
+            val v = calcNumber(if (g[1]?.lowercase() == "cube") n * n * n else n * n, indianGrouping) ?: return@let
+            return Triple(v, false, g[0]!!.trim())
+        }
+        firstMatch("""\bcube\s+root\s+(?:of\s+)?(\d+(?:\.\d+)?)\??\s?$""", text)?.let { g ->
+            val n = g[1]?.toDoubleOrNull() ?: return@let
+            val v = calcNumber(Math.cbrt(n), indianGrouping) ?: return@let
+            return Triple(v, false, g[0]!!.trim())
+        }
+        firstMatch("""\b(log|ln)\s*\(?\s*(\d+(?:\.\d+)?)\s*\)?\??\s?$""", text)?.let { g ->
+            val n = g[2]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return@let
+            val v = calcNumber(if (g[1]?.lowercase() == "ln") Math.log(n) else Math.log10(n), indianGrouping) ?: return@let
+            return Triple(v, false, g[0]!!.trim())
+        }
+        firstMatch("""(?<![\w.])(\d{1,2})\s*(?:factorial|!)\??\s?$""", text)?.let { g ->
+            val n = g[1]?.toIntOrNull()?.takeIf { it <= 20 } ?: return@let
+            val v = (1..maxOf(1, n)).fold(1.0) { acc, k -> acc * k }
+            calcNumber(v, indianGrouping)?.let { return Triple(it, false, g[0]!!.trim()) }
+        }
+        firstMatch("""\bpi\s+to\s+(\d{1,2})\s+(?:digits|decimal\s+places|places|decimals)\??\s?$""", text)?.let { g ->
+            val n = g[1]?.toIntOrNull()?.takeIf { it in 1..15 } ?: return@let
+            return Triple(String.format(java.util.Locale.US, "%.${n}f", Math.PI), false, g[0]!!.trim())
+        }
         val m = calcPattern.find(text) ?: return null
         val expr = m.groups[1]?.value ?: return null
         val hasEquals = m.groups[2] != null
         if (!hasEquals && !hasOperator.containsMatchIn(expr)) return null
         if (!hasEquals && notASum.matches(expr)) return null
+        // "the score was 3-1", "pick a number 1-10": two whole numbers and a
+        // bare hyphen at the end of a sentence are a score or a range
+        // (2026-10-14 probe: 2 and -9). Asked ("whats 10-3") or on its own
+        // ("10-2") it is still a sum.
+        if (!hasEquals && Regex("""^\s*\d+-\d+\s*$""").matches(expr)) {
+            val before = text.substring(0, m.groups[1]!!.range.first)
+            if (before.any { it.isLetter() } &&
+                !Regex("""(?:what'?s|what\s+is|calc(?:ulate)?|equals?|=)\s*$""", RegexOption.IGNORE_CASE).containsMatchIn(before)) return null
+        }
         // "miss you 2 <3": a heart, not a comparison.
         if (!hasEquals && Regex("""\s<3\s*$""").containsMatchIn(text)) return null
         val shown = expr.trim().replace(Regex("""\s+"""), " ")
@@ -479,6 +529,20 @@ object Smart {
         val v = evaluate(expr) ?: return null
         val currency = expr.firstOrNull { it in "₹$€£" }?.toString() ?: ""
         return Triple(currency + format(v, indianGrouping), hasEquals, shown)
+    }
+
+    /** [format] for the word sums, safe past a Long's reach ("20 factorial");
+     *  nothing for infinity or NaN (Swift's calcNumber). */
+    private fun calcNumber(v: Double, indian: Boolean): String? {
+        if (!v.isFinite()) return null
+        if (kotlin.math.abs(v) < 1e15) return format(v, indian)
+        val digits = java.math.BigDecimal(v).setScale(0, java.math.RoundingMode.HALF_EVEN).abs().toPlainString()
+        val grouped = if (indian) {
+            digits.dropLast(3).reversed().chunked(2).joinToString(",").reversed() + "," + digits.takeLast(3)
+        } else {
+            digits.reversed().chunked(3).joinToString(",").reversed()
+        }
+        return (if (v < 0) "-" else "") + grouped
     }
 
     /** Up to two decimals, grouped the way the phone's region writes numbers:
@@ -1770,6 +1834,8 @@ object Smart {
             ?: firstMatch("""\b([a-z]{3,20}(?:\s+[a-z]{3,20})?)\s+time(?:\s+now)?\??\s?$""", text)?.get(1)
             ?: return null
         val key = name.lowercase().trim()
+        // "3pm london time in new york" converts 3pm; it isn't asking the time now.
+        if (Regex("""\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)""", RegexOption.IGNORE_CASE).containsMatchIn(text)) return null
         if (key in notAPlace) return null
         val r = region?.uppercase()
         var id = zoneNames[key] ?: zoneNames["$key time"] ?: ""
@@ -1879,6 +1945,7 @@ object Smart {
             ?: symbol(text)
             ?: slangMeaning(text)
             ?: Phrases.phraseIn(text)
+            ?: writingHelp(text)
             ?: mathsSymbol(text)
             ?: solveEquation(text)
             ?: cookingSafety(text)
@@ -1894,6 +1961,8 @@ object Smart {
             ?: pollMaker(text)
             ?: unitPrice(text)
             ?: degreesAsked(text)
+            ?: duration(text)
+            ?: kitchenVolume(text)
             ?: bmi(text)
             ?: feetInches(text)
             ?: driveTime(text)
@@ -1975,7 +2044,7 @@ object Smart {
     fun billMath(text: String): Conversions? {
         val ways = """\s*(?:ways?|people|persons|of us|friends)?"""
         val splits = listOf(
-            """\bsplit\s+(?:the\s+)?(?:bill\s+(?:of\s+)?)?$SYM\s*$AMT\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+|with\s+)?(\d{1,2})$ways$END""",
+            """\bsplit\s+(?:the\s+)?(?:bill\s+(?:of\s+)?|[a-z]{2,12}\s+(?:of\s+)?)?$SYM\s*$AMT\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+|with\s+)?(\d{1,2})$ways$END""",
             """$SYM\s*$AMT\s+(?:split|divided)\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+)?(\d{1,2})$ways$END""",
             """$SYM\s*$AMT\s+(?:between|among)\s+(\d{1,2})\s+(?:people|persons|of us|friends)$END""",
         )
@@ -1996,6 +2065,7 @@ object Smart {
         val tips = listOf(
             """\b$PCT\s*tip\s*(?:on|for|of|to)?\s*$SYM\s*$AMT$END""" to true,
             """\btip\s+(?:of\s+)?$PCT\s*(?:on|for)\s*$SYM\s*$AMT$END""" to true,
+            """\btip\s+(?:of\s+)?(\d{1,2}(?:\.\d+)?)\s*(?:on|for)\s*$SYM\s*$AMT$END""" to true,
             """$SYM\s*$AMT\s*(?:\+|plus|with|and)\s*$PCT\s*tip$END""" to false,
         )
         for ((p, first) in tips) {
@@ -2003,6 +2073,14 @@ object Smart {
             val (percent, s, bill) = pick(g, first) ?: continue
             val tip = bill * percent / 100
             return Conversions(g[0]!!.trim(), listOf("${billMoney(tip, s)} tip", "${billMoney(bill + tip, s)} total"))
+        }
+        // "85 minus 15%", "120 plus 8%" (iOS 10-14).
+        firstMatch("""(?<![\w.,])$SYM\s*$AMT\s+(minus|less|plus)\s+$PCT$END""", text)?.let { g ->
+            val base = number(g[2]) ?: return@let
+            val p = number(g[4])?.takeIf { it > 0 && it < 1000 } ?: return@let
+            val minus = (g[3] ?: "").lowercase() != "plus"
+            val v = if (minus) base * (1 - p / 100) else base * (1 + p / 100)
+            return Conversions(g[0]!!.trim(), listOf(billMoney(v, g[1] ?: "")))
         }
         val offs = listOf(
             """\b$PCT\s*off\s*(?:of\s+)?$SYM\s*$AMT$END""" to true,
@@ -2049,6 +2127,16 @@ object Smart {
      *  145 mins" → 2 h 25 min (from 90 minutes up). */
     fun arrival(text: String, now: java.time.Instant, here: java.time.ZoneId): Conversions? {
         val unit = """(mins?|minutes?|hrs?|hours?)"""
+        // "15 min from now", "whats 2 hours from now", "in 2 hours what time" (iOS 10-14).
+        (firstMatch("""\b(?:what'?s\s+|whats\s+|what\s+time\s+is\s+it\s+)?(\d{1,3})\s*(mins?|minutes?|hrs?|hours?)\s+from\s+now\??$END""", text)
+            ?: firstMatch("""\bin\s+(\d{1,3})\s*(mins?|minutes?|hrs?|hours?)\s*,?\s*what\s+time(?:\s+(?:is\s+it|will\s+it\s+be))?\??$END""", text))?.let { g ->
+            val n = g[1]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return@let
+            val u = g[2] ?: return@let
+            val mins = if (u.lowercase().startsWith("h")) n * 60 else n
+            if (mins > 24 * 60) return null
+            val start = now.atZone(here)
+            return Conversions(g[0]!!.trim(), listOf(clockAt(start.plusSeconds(Math.round(mins * 60)), start)))
+        }
         val coming = Regex("""\b(?:eta|back|there|home|ready|leav(?:e|ing)|land(?:s|ing)?|reach(?:ing)?|arriv(?:e|ing)|be\s+(?:there|back|home|ready|free|done)|see\s+(?:you|u)|done|free|out|wait)\b""",
             RegexOption.IGNORE_CASE)
         firstMatch("""\b(?:in|within|eta)\s*:?\s*(?:about\s+|around\s+|like\s+|~\s*)?$COUNT_WORD\s*$unit$END""", text)?.let { g ->
@@ -2998,6 +3086,16 @@ object Smart {
             }
             return Conversions(g[0]!!.trim(), listOf(count, dayName(date, today, region)))
         }
+        // "when is thanksgiving", "what day is christmas this year", "countdown
+        // to new year", "when is easter 2027" (iOS 10-14 probe).
+        firstMatch("""\b(?:when\s+is|when'?s|whens|what\s+(?:day|date)\s+is|countdown\s+(?:to|till|until)|how\s+long\s+(?:until|till|to))\s+(?:the\s+)?($HOLIDAY_NAMES)(?:\s+(?:this\s+year|(20\d{2})))?\??$END""", t)?.let { g ->
+            val name = g[1] ?: return@let
+            val y = g[2]?.toIntOrNull()
+            val md = y?.let { holidayDay(name, it, region) }
+            val date = if (y != null && md != null) runCatching { java.time.LocalDate.of(y, md.first, md.second) }.getOrNull()
+                else nextDay({ holidayDay(name, it, region) }, today)
+            if (date != null) return Conversions(g[0]!!.trim(), listOf(dayName(date, today, region), countdown(date, today)))
+        }
         val lead = """\b(?:on|after|before|by|till|til|until|for|over|during|around|this|next|from|at)\s+(?:the\s+)?($HOLIDAY_NAMES)(?:\s+(?:day|weekend|break|holidays?|party|parties|trip|sale|sales|dinner|lunch|brunch|plans?|week|vacation))?$END"""
         val tail = """(?<!\blast\s)(?<!\bpast\s)\b($HOLIDAY_NAMES)\s+(?:weekend|break|party|parties|trip|sale|sales|dinner|lunch|brunch|plans?|holidays?|vacation|week)$END"""
         for (p in listOf(lead, tail)) {
@@ -3180,8 +3278,16 @@ object Smart {
     /** "$45/hr" → $93,600/yr · $7,800/mo (40 hours a week); "$120k a year"
      *  → $57.69/hr · $10,000/mo; "18 LPA" → ₹1,50,000/mo. Without a currency
      *  sign the message has to be about pay. */
-    fun payRate(text: String): Conversions? {
-        val about = payWords.containsMatchIn(text)
+    fun payRate(asked: String): Conversions? {
+        var about = payWords.containsMatchIn(asked)
+        // A trailing "hourly", "monthly", "annually" asks which way to say it.
+        var text = asked
+        val tailWord = firstMatch("""\s+(?:in\s+|as\s+)?(?:hourly|monthly|annually|yearly|per\s+month|a\s+month)\??\s?$""", asked)?.get(0)
+        if (tailWord != null &&
+            Regex("""(?:/\s*|per\s+|an?\s+)(?:hr|hour|h|yr|year|annum)\s+\S+\??\s?$""", RegexOption.IGNORE_CASE).containsMatchIn(asked)) {
+            text = asked.dropLast(tailWord.length)
+            about = true   // asking it "annually" is talking pay
+        }
         firstMatch("""(?<![\w.,])([$€£₹¥])?\s?(\d{1,4}(?:\.\d{1,2})?)\s*(?:/\s*(?:hr|hour|h)|an?\s+hour|per\s+hour|hourly)$END""", text)?.let { g ->
             val n = g[2]?.toDoubleOrNull()?.takeIf { it > 0 } ?: return@let
             if (g[1] == null && !about) return@let
@@ -3223,6 +3329,7 @@ object Smart {
             """\b$kinds\s+(?:of\s+|for\s+|on\s+)?$SCALED_AMOUNT\s*(?:at|@)\s*$rate\s*(?:for|over)?\s*$term$END""" to true,
             """(?<![\w.,])$SCALED_AMOUNT\s+$kinds\s*(?:at|@)?\s*$rate\s*(?:for|over)?\s*$term$END""" to true,
             """(?<![\w.,])$SCALED_AMOUNT\s*(?:at|@)\s*$rate\s*(?:for|over)\s*$term$END""" to false,
+            """\b(?:compound(?:ed)?|invest(?:ed)?|grow)\s+(?:of\s+)?$SCALED_AMOUNT\s*(?:at|@)?\s*$rate\s*(?:for|over)?\s*$term$END""" to false,
         )
         for ((p, borrowed) in patterns) {
             if (!borrowed && borrowing) continue
@@ -3723,6 +3830,20 @@ object Smart {
     fun timeDifference(text: String, now: java.time.Instant = java.time.Instant.now(),
                        here: java.time.ZoneId = java.time.ZoneId.systemDefault(),
                        region: String? = java.util.Locale.getDefault().country): Conversions? {
+        // "pst to ist", "est vs gmt": how far apart two zones are (iOS 10-14).
+        firstMatch("""^\s*(?:what'?s\s+|whats\s+)?([a-z]{2,4})\s+(?:to|vs\.?|versus|and)\s+([a-z]{2,4})(?:\s+(?:time\s+)?difference)?\??\s?$""", text)?.let { g ->
+            val a = g[1]?.lowercase() ?: return@let
+            val b = g[2]?.lowercase() ?: return@let
+            if (a == b) return@let
+            val za = namedZone(a, region) ?: return@let
+            val zb = namedZone(b, region) ?: return@let
+            val diff = zb.rules.getOffset(now).totalSeconds - za.rules.getOffset(now).totalSeconds
+            val mins = kotlin.math.abs(diff) / 60
+            val gap = if (mins % 60 == 0) "${mins / 60}h" else "${mins / 60}h ${mins % 60}m"
+            val said = if (diff == 0) "${b.uppercase()} = ${a.uppercase()}"
+                else "${b.uppercase()} is $gap ${if (diff > 0) "ahead of" else "behind"} ${a.uppercase()}"
+            return Conversions(g[0]!!.trim(), listOf(said))
+        }
         val g = firstMatch("""\b(?:time\s+(?:difference|diff|gap)\s+(?:with|to|from|for|in|between\s+(?:us|here)\s+and)|how\s+(?:many\s+hours\s+|far\s+)?(?:ahead|behind)\s+is)\s+([a-z][a-z .]{1,30}?)\??\s?$""", text)
             ?: return null
         val name = g[1]?.lowercase()?.trim() ?: return null
@@ -3738,7 +3859,7 @@ object Smart {
     /** "100f in c", "30 c to f", "-40 celsius in fahrenheit": a temperature
      *  asked for in the other scale, without the degree sign. */
     fun degreesAsked(text: String): Conversions? {
-        val g = firstMatch("""(?<![\w.])(-?\d{1,4}(?:\.\d+)?)\s*°?\s*(f|c|fahrenheit|celsius|centigrade)\s+(?:in|to|into|as)\s+°?(c|f|celsius|fahrenheit|centigrade)\??\s?$""", text)
+        val g = firstMatch("""(?<![\w.])(-?\d{1,4}(?:\.\d+)?)\s*°?\s*(f|c|fahrenheit|celsius|centigrade)(?:\s+oven)?\s+(?:in|to|into|as)\s+°?(c|f|celsius|fahrenheit|centigrade)\??\s?$""", text)
             ?: return null
         val v = g[1]?.toDoubleOrNull() ?: return null
         val fromF = g[2]?.lowercase()?.firstOrNull() == 'f'
@@ -3746,6 +3867,138 @@ object Smart {
         if (fromF == toF) return null
         val out = if (toF) v * 9 / 5 + 32 else (v - 32) * 5 / 9
         return Conversions(g[0]!!.trim(), listOf(oneDecimal(out) + (if (toF) "°F" else "°C")))
+    }
+
+    // MARK: durations, kitchen volumes and writing help (iOS 10-14 third probe; Smart.swift twins)
+
+    /** "90 minutes in hours" → 1.5 h; "2 hours 45 minutes in minutes" → 165 min;
+     *  "3.5 hours in minutes" → 210 min. */
+    fun duration(text: String): Conversions? {
+        val g = firstMatch("""(?<![\w.])(?:(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\s*(?:and\s+)?)?(?:(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m))?\s+(?:in|to|into|as)\s+(hours?|hrs?|minutes?|mins?|seconds?|secs?)\??\s?$""", text)
+            ?: return null
+        if (g[1] == null && g[2] == null) return null
+        val unit = g[3]?.lowercase() ?: return null
+        val minutes = (g[1]?.toDoubleOrNull() ?: 0.0) * 60 + (g[2]?.toDoubleOrNull() ?: 0.0)
+        if (minutes <= 0) return null
+        val said = when {
+            unit.startsWith("h") -> {
+                if (g[2] == null) return null   // "2 hours in hours" says nothing
+                oneDecimal(minutes / 60) + " h"
+            }
+            unit.startsWith("m") -> {
+                if (g[1] == null) return null
+                "${Math.round(minutes)} min"
+            }
+            else -> "${Math.round(minutes * 60)} s"
+        }
+        return Conversions(g[0]!!.trim(), listOf(said))
+    }
+
+    private val kitchenMl = mapOf(
+        "oz" to 29.5735, "fl oz" to 29.5735, "floz" to 29.5735, "cup" to 236.588, "cups" to 236.588,
+        "pint" to 473.176, "pints" to 473.176, "quart" to 946.353, "quarts" to 946.353,
+        "gallon" to 3785.41, "gallons" to 3785.41, "tbsp" to 14.7868, "tsp" to 4.92892,
+    )
+
+    /** US kitchen volumes asked in millilitres or litres: "16 oz in ml" (a
+     *  volume asked as one is fluid ounces), "a cup in ml", "2 pints in litres". */
+    fun kitchenVolume(text: String): Conversions? {
+        val g = firstMatch("""(?<![\w.])(\d+(?:\.\d+)?|an?|one|half\s+an?)\s*(fl\s*oz|floz|oz|cups?|pints?|quarts?|gallons?|tbsp|tsp)\s+(?:in|to|into|as)\s+(ml|millilit(?:er|re)s?|l|lit(?:er|re)s?)\??\s?$""", text)
+            ?: return null
+        val raw = g[1]?.lowercase() ?: return null
+        val unit = g[2]?.lowercase()?.replace(" ", "") ?: return null
+        val per = kitchenMl[unit] ?: kitchenMl[unit.replace("floz", "oz")] ?: return null
+        val count = raw.toDoubleOrNull() ?: if (raw.startsWith("half")) 0.5 else 1.0
+        val total = count * per
+        val toLitres = (g[3] ?: "").lowercase().startsWith("l")
+        val said = if (toLitres) String.format(java.util.Locale.US, "%.2f L", total / 1000).replace(".00", "")
+            else "${Math.round(total)} ml"
+        return Conversions(g[0]!!.trim(), listOf(said))
+    }
+
+    /** Words people mix up: "is it affect or effect", "their there or they're". */
+    private val confusions: List<Pair<Set<String>, String>> = listOf(
+        setOf("affect", "effect") to "affect: to change (it affects me) · effect: the result (the effect)",
+        setOf("their", "there", "they're") to "their: belongs to them · there: a place · they're: they are",
+        setOf("your", "you're") to "your: belongs to you · you're: you are",
+        setOf("its", "it's") to "its: belongs to it · it's: it is",
+        setOf("then", "than") to "then: next, at that time · than: comparing (bigger than)",
+        setOf("lose", "loose") to "lose: to misplace or not win · loose: not tight",
+        setOf("fewer", "less") to "fewer: things you count · less: amounts you don't",
+        setOf("who", "whom") to "who: does it (who called?) · whom: has it done to them (to whom)",
+        setOf("lie", "lay") to "lie: to recline (I lie down) · lay: to put something (lay it down)",
+        setOf("ie", "eg", "i.e.", "e.g.") to "i.e.: that is (exactly) · e.g.: for example",
+        setOf("to", "too", "two") to "to: direction · too: also, very · two: 2",
+        setOf("accept", "except") to "accept: to receive · except: apart from",
+        setOf("advice", "advise") to "advice: the noun · advise: the verb",
+        setOf("principal", "principle") to "principal: main, or a school head · principle: a rule or belief",
+        setOf("stationary", "stationery") to "stationary: not moving · stationery: paper and pens",
+        setOf("compliment", "complement") to "compliment: praise · complement: complete, go well with",
+        setOf("weather", "whether") to "weather: rain or sun · whether: if",
+        setOf("loose", "lose") to "lose: to misplace or not win · loose: not tight",
+    )
+
+    /** Irregular past tenses: "past tense of run" → ran, run. */
+    private val pastTenses = mapOf(
+        "be" to "was / were · been", "begin" to "began · begun", "break" to "broke · broken", "bring" to "brought · brought",
+        "buy" to "bought · bought", "catch" to "caught · caught", "choose" to "chose · chosen", "come" to "came · come",
+        "cost" to "cost · cost", "cut" to "cut · cut", "do" to "did · done", "draw" to "drew · drawn", "drink" to "drank · drunk",
+        "drive" to "drove · driven", "eat" to "ate · eaten", "fall" to "fell · fallen", "feel" to "felt · felt", "fight" to "fought · fought",
+        "find" to "found · found", "fly" to "flew · flown", "forget" to "forgot · forgotten", "forgive" to "forgave · forgiven",
+        "freeze" to "froze · frozen", "get" to "got · got / gotten", "give" to "gave · given", "go" to "went · gone", "grow" to "grew · grown",
+        "hang" to "hung · hung", "have" to "had · had", "hear" to "heard · heard", "hide" to "hid · hidden", "hit" to "hit · hit",
+        "hold" to "held · held", "hurt" to "hurt · hurt", "keep" to "kept · kept", "know" to "knew · known", "lay" to "laid · laid",
+        "lead" to "led · led", "leave" to "left · left", "lend" to "lent · lent", "let" to "let · let", "lie" to "lay · lain",
+        "lose" to "lost · lost", "make" to "made · made", "mean" to "meant · meant", "meet" to "met · met", "pay" to "paid · paid",
+        "put" to "put · put", "quit" to "quit · quit", "read" to "read · read", "ride" to "rode · ridden", "ring" to "rang · rung",
+        "rise" to "rose · risen", "run" to "ran · run", "say" to "said · said", "see" to "saw · seen", "sell" to "sold · sold",
+        "send" to "sent · sent", "set" to "set · set", "shake" to "shook · shaken", "shine" to "shone · shone", "shoot" to "shot · shot",
+        "show" to "showed · shown", "shut" to "shut · shut", "sing" to "sang · sung", "sink" to "sank · sunk", "sit" to "sat · sat",
+        "sleep" to "slept · slept", "speak" to "spoke · spoken", "spend" to "spent · spent", "stand" to "stood · stood",
+        "steal" to "stole · stolen", "stick" to "stuck · stuck", "sting" to "stung · stung", "strike" to "struck · struck",
+        "swear" to "swore · sworn", "swim" to "swam · swum", "take" to "took · taken", "teach" to "taught · taught",
+        "tear" to "tore · torn", "tell" to "told · told", "think" to "thought · thought", "throw" to "threw · thrown",
+        "understand" to "understood · understood", "wake" to "woke · woken", "wear" to "wore · worn", "win" to "won · won",
+        "write" to "wrote · written", "dive" to "dove / dived · dived", "lit" to "lit · lit", "light" to "lit · lit",
+        "seek" to "sought · sought", "bite" to "bit · bitten", "blow" to "blew · blown", "build" to "built · built",
+        "burn" to "burned / burnt · burned / burnt", "dream" to "dreamed / dreamt · dreamed / dreamt", "spell" to "spelled / spelt · spelled / spelt",
+    )
+
+    /** Irregular plurals: "plural of cactus" → cacti (or cactuses). */
+    private val plurals = mapOf(
+        "cactus" to "cacti (or cactuses)", "child" to "children", "person" to "people", "man" to "men", "woman" to "women",
+        "mouse" to "mice", "goose" to "geese", "tooth" to "teeth", "foot" to "feet", "ox" to "oxen", "fish" to "fish",
+        "sheep" to "sheep", "deer" to "deer", "moose" to "moose", "series" to "series", "species" to "species",
+        "criterion" to "criteria", "phenomenon" to "phenomena", "datum" to "data", "medium" to "media (or mediums)",
+        "analysis" to "analyses", "crisis" to "crises", "thesis" to "theses", "hypothesis" to "hypotheses",
+        "basis" to "bases", "diagnosis" to "diagnoses", "fungus" to "fungi", "nucleus" to "nuclei", "radius" to "radii",
+        "stimulus" to "stimuli", "syllabus" to "syllabi (or syllabuses)", "octopus" to "octopuses", "virus" to "viruses",
+        "alumnus" to "alumni", "index" to "indexes (or indices)", "appendix" to "appendices (or appendixes)",
+        "matrix" to "matrices", "vertex" to "vertices", "knife" to "knives", "life" to "lives", "wife" to "wives",
+        "leaf" to "leaves", "half" to "halves", "wolf" to "wolves", "loaf" to "loaves", "shelf" to "shelves",
+        "potato" to "potatoes", "tomato" to "tomatoes", "hero" to "heroes", "echo" to "echoes", "piano" to "pianos",
+        "photo" to "photos", "die" to "dice", "louse" to "lice", "quiz" to "quizzes", "bus" to "buses", "box" to "boxes",
+        "mother-in-law" to "mothers-in-law", "passerby" to "passersby", "aircraft" to "aircraft", "salmon" to "salmon",
+    )
+
+    /** "is it affect or effect", "past tense of run", "plural of cactus". */
+    fun writingHelp(text: String): Conversions? {
+        firstMatch("""\b(?:is\s+it\s+|which\s+is\s+(?:right|correct)[:,]?\s+|when\s+to\s+use\s+)?([a-z'.]{2,12})(?:\s*,\s*|\s+or\s+|\s+vs\.?\s+|\s+and\s+)([a-z'.]{2,12})(?:(?:\s*,\s*|\s+or\s+)([a-z'.]{2,12}))?\??\s?$""", text)?.let { g ->
+            val a = g[1]?.lowercase() ?: return@let
+            val b = g[2]?.lowercase() ?: return@let
+            val asked = setOfNotNull(a, b, g[3]?.lowercase())
+            val hit = confusions.firstOrNull { it.first.containsAll(asked) && asked.size >= 2 } ?: return@let
+            return Conversions(g[0]!!.trim(), listOf(hit.second))
+        }
+        firstMatch("""\b(?:what(?:'s|s|\s+is)\s+the\s+)?past\s+(?:tense|form)\s+(?:of\s+)?["']?([a-z]{2,12})["']?\??\s?$""", text)?.let { g ->
+            val past = g[1]?.lowercase()?.let { pastTenses[it] } ?: return@let
+            return Conversions(g[0]!!.trim(), listOf(past))
+        }
+        firstMatch("""\b(?:what(?:'s|s|\s+is)\s+the\s+)?plural\s+(?:of\s+|for\s+)?(?:an?\s+)?["']?([a-z-]{2,16})["']?\??\s?$""", text)?.let { g ->
+            val many = g[1]?.lowercase()?.let { plurals[it] } ?: return@let
+            return Conversions(g[0]!!.trim(), listOf(many))
+        }
+        return null
     }
 
     /** "5'10", "6’2\"", "5'10 in cm": a height in feet and inches, in cm. */
