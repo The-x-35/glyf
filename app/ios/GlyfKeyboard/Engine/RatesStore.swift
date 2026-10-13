@@ -59,14 +59,43 @@ final class RatesStore {
     /// the main queue once something new is in hand.
     func ensureFiat(then: @escaping () -> Void) {
         if let at = fiatAt, Date().timeIntervalSince(at) < Self.fiatTTL, !fiat.isEmpty { return }
-        fetch(path: "/rates/fiat", key: "fiat") { [weak self] obj in
-            guard let self, let rates = obj["rates"] as? [String: Double], !rates.isEmpty else { return }
+        let keep: ([String: Double]) -> Void = { [weak self] rates in
+            guard let self, !rates.isEmpty else { return }
             self.fiat = rates
             self.fiatAt = Date()
             _ = AppGroupStore.writeJSON(["fiat": rates, "fiatAt": Date().timeIntervalSince1970],
                                         name: Self.file)
             then()
         }
+        // Straight from Frankfurter (the ECB's daily rates, free and keyless,
+        // the server's own source); the server only when that fails
+        // (SERVER-INVENTORY.md, 2026-10-14).
+        fetchDirectFiat { [weak self] rates in
+            if let rates { return keep(rates) }
+            self?.fetch(path: "/rates/fiat", key: "fiat") { obj in
+                keep(obj["rates"] as? [String: Double] ?? [:])
+            }
+        }
+    }
+
+    static let frankfurter = URL(string: "https://api.frankfurter.dev/v1/latest?base=USD")!
+
+    /// The dollar table from Frankfurter, USD included as 1; nil on failure.
+    private func fetchDirectFiat(done: @escaping ([String: Double]?) -> Void) {
+        guard !inFlight.contains("fiat-direct") else { return }
+        inFlight.insert("fiat-direct")
+        var req = URLRequest(url: Self.frankfurter)
+        req.timeoutInterval = 6
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            let obj = ok ? data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } : nil
+            var rates = (obj?["rates"] as? [String: Any])?.compactMapValues { ($0 as? NSNumber)?.doubleValue }.filter { $0.value > 0 } ?? [:]
+            if !rates.isEmpty { rates["USD"] = 1 }
+            DispatchQueue.main.async {
+                self?.inFlight.remove("fiat-direct")
+                done(rates.isEmpty ? nil : rates)
+            }
+        }.resume()
     }
 
     /// The dollar price of one token, refreshed after a minute.

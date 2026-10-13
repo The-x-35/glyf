@@ -87,16 +87,35 @@ object RatesStore {
      *  main thread once something new is in hand. */
     fun ensureFiat(backendURL: String, then: () -> Unit) {
         if (fiat.isNotEmpty() && System.currentTimeMillis() - fiatAt < FIAT_TTL) return
-        fetch(backendURL, "/rates/fiat", "fiat") { obj ->
-            val r = obj.optJSONObject("rates") ?: return@fetch
+        fun keep(r: JSONObject?) {
+            r ?: return
             val table = r.keys().asSequence().associateWith { r.optDouble(it) }.filterValues { it > 0 }
-            if (table.isEmpty()) return@fetch
-            fiat = table
+            if (table.isEmpty()) return
+            fiat = table + ("USD" to 1.0)
             fiatAt = System.currentTimeMillis()
             save()
             main.post(then)
         }
+        // Straight from Frankfurter (the ECB's daily rates, free and keyless,
+        // the server's own source); the server only when that fails
+        // (SERVER-INVENTORY.md, 2026-10-14).
+        if (!inFlight.add("fiat-direct")) return
+        pool.execute {
+            val direct = try {
+                val conn = (URL(FRANKFURTER).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"; connectTimeout = 5000; readTimeout = 6000
+                }
+                try {
+                    if (conn.responseCode == 200) JSONObject(conn.inputStream.bufferedReader().readText()).optJSONObject("rates") else null
+                } finally { conn.disconnect() }
+            } catch (e: Exception) { null }
+            inFlight.remove("fiat-direct")
+            if (direct != null && direct.length() > 0) keep(direct)
+            else fetch(backendURL, "/rates/fiat", "fiat") { obj -> keep(obj.optJSONObject("rates")) }
+        }
     }
+
+    private const val FRANKFURTER = "https://api.frankfurter.dev/v1/latest?base=USD"
 
     /** The dollar price of one token, refreshed after a minute. A miss is
      *  remembered too, so a made-up ticker is one request. */
