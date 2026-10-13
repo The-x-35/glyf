@@ -620,6 +620,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // Setup milestones, counts only (Funnel).
+        Funnel.mark("keyboard_opened")
+        if hasFullAccess { Funnel.mark("full_access") }
         // On screen now: the host's trait can be read, and it may overrule
         // the guess made before the view had a superview.
         resolveAppearance()
@@ -1732,6 +1735,16 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 RatesStore.shared.ensureFiat { [weak self] in self?.updateCandidates() }
             }
         }
+        // The weather where the phone is (Open-Meteo, keyless): "is it going
+        // to rain", "weather tomorrow". Asked for when the question shows;
+        // the strip is arranged again when it lands.
+        if chip == nil, hasFullAccess, Smart.weatherAsk(in: tail) != nil,
+           let lat = SettingsStore.current.lastLat, let lon = SettingsStore.current.lastLon {
+            let region = (SettingsStore.current.region ?? Locale.current.region?.identifier ?? "").uppercased()
+            let fahrenheit = ["US", "LR", "MM", "BS", "BZ", "KY", "PW"].contains(region)
+            WeatherStore.shared.ensure(lat: lat, lon: lon, fahrenheit: fahrenheit) { [weak self] in self?.updateCandidates() }
+            if let w = Smart.weather, w.fahrenheit == fahrenheit, let a = Smart.weatherAnswer(in: tail, snapshot: w) { chip = .convert(a) }
+        }
         // A sentence the person keeps sending: its first words offer the rest.
         if chip == nil, typingPolicy.contains(.learning),
            let rest = PhraseMemoryStore.shared.memory.completion(after: tail, today: TypingText.day()) {
@@ -2535,6 +2548,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
     }
 
     private func startAct(clipboard text: String) {
+        Funnel.mark("first_ai")
         actSkill = nil
         actSkillTitle = nil
         actVars = [:]
@@ -2548,6 +2562,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
     }
 
     private func startAct(before: String, after: String, intent: String? = nil) {
+        Funnel.mark("first_ai")
         actSkill = nil
         actSkillTitle = nil
         actVars = [:]
@@ -2563,6 +2578,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
     /// A bound letter held → its skill runs as a HUD: the skill's name over
     /// the letter's keycap while it works, then the answer with ↻ Copy Insert.
     private func startSkill(glyfId: String, letter: String) {
+        Funnel.mark("first_ai")
         guard !isSecureField else { return } // §11.9: no AI in secure fields
         guard hasFullAccess else { openBar(autoRun: glyfId); return } // the bar explains Full Access
         let input = collectBarInput()
@@ -3220,6 +3236,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarSmartTapped(_ chip: Smart.Chip) {
+        Funnel.mark("first_answer")
         switch chip {
         case .tempMail(let id, _, let code):
             mailChip = nil
@@ -3393,6 +3410,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// One part of a details chip: a saved detail types itself, as its own
     /// chip would; Temp mail types a temp address.
     func toolbarSmartChoiceTapped(_ chip: Smart.Chip, index: Int) {
+        Funnel.mark("first_answer")
         if case .convert(let c) = chip {
             guard index < c.results.count else { return }
             let text = c.insert(index)

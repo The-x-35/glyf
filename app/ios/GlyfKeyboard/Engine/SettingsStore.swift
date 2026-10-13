@@ -151,6 +151,9 @@ struct GlyfSettings: Codable, Equatable {
     /// Where temp mail asks: unset is mail.tm itself. Scenarios name the
     /// stand-in here (qa/fake-mailtm.mjs).
     var tempMailBase: String? = nil
+    /// Where Book a time asks: unset is Cal.com's API itself. Scenarios name
+    /// the stand-in here (qa/fake-scheduling.mjs, its /v2).
+    var calcomBase: String? = nil
 
     /// The deployed API. Changing the domain? This is the only place.
     static let productionBackend = "https://api.tryglyf.com"

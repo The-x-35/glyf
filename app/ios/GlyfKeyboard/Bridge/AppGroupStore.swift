@@ -88,3 +88,20 @@ enum AppGroupStore {
         ], name: "spikea-attempt.json")
     }
 }
+
+/// Setup milestones for the app's counts-only funnel (GO-TO-MARKET.md, "Do
+/// this first" 1): keyboard_opened, full_access, first_answer, first_ai.
+/// Each is written once, as a time, to bridge/funnel.json; the app sends each
+/// as an event name and nothing else. FunnelStore in Stores.kt is Android's.
+enum Funnel {
+    private static var done: Set<String>?
+
+    static func mark(_ step: String) {
+        if done == nil { done = Set((AppGroupStore.readJSON(name: "funnel.json") ?? [:]).keys) }
+        guard done?.contains(step) == false else { return }
+        done?.insert(step)
+        var f = AppGroupStore.readJSON(name: "funnel.json") ?? [:]
+        f[step] = Date().timeIntervalSince1970
+        _ = AppGroupStore.writeJSON(f, name: "funnel.json")
+    }
+}

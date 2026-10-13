@@ -4,6 +4,7 @@ import 'core/auth.dart';
 import 'core/billing.dart';
 import 'core/bridge.dart';
 import 'core/catalog.dart';
+import 'core/funnel.dart';
 import 'core/telemetry.dart';
 import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
@@ -94,6 +95,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     Catalog.rememberCustomTitles(
         settings['customTitles'] as Map<String, dynamic>?);
     Telemetry.log('app_open');
+    Funnel.report();
     // A tour that ended with the app killed never cleared its hint.
     GlyfBridge.updateSharedSettings((s) {
       s.remove('tourHint');
@@ -115,6 +117,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      Funnel.report();
       _checkPendingDictation();
       if (_onboarded) Billing.sync();
     }

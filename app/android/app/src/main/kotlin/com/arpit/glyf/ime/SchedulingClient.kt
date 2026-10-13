@@ -11,10 +11,10 @@ import java.util.TimeZone
 import java.util.concurrent.Executors
 
 /**
- * Call links and booking links, the twin of the Swift BackendClient's
- * scheduling calls: POST /meetings/new, GET /scheduling/slots, POST
- * /scheduling/book. Answers come back on the main thread; an error is the
- * server's own words when it has them.
+ * Booking links, the twin of the Swift BackendClient's scheduling calls:
+ * straight with Cal.com (CalBooking.kt), with GET /scheduling/slots and POST
+ * /scheduling/book as the fallback. Answers come back on the main thread; an
+ * error is the server's own words when it has them.
  */
 object SchedulingClient {
 
@@ -50,8 +50,53 @@ object SchedulingClient {
 
     private fun parseTime(s: String): Long? = runCatching { java.time.OffsetDateTime.parse(s).toInstant().toEpochMilli() }.getOrNull()
 
-    /** Open times on a Cal.com link (Calendly gives only its link) from a day. */
-    fun slots(backendURL: String, link: String, date: String, done: (Slots?, String?) -> Unit) {
+    /** Cal.com's API, or the stand-in a test names in settings
+     *  (`calcomBase`, qa/fake-scheduling.mjs). */
+    private fun api(calcomBase: String?): String =
+        calcomBase?.trim()?.removeSuffix("/")?.takeIf { it.isNotEmpty() } ?: CalBooking.DEFAULT_API
+
+    /** Cal.com over HTTP, blocking. A request that never went out (no
+     *  connection, no name, no TLS) throws NotSent, so a booking can be
+     *  handed to the server without booking twice. */
+    private val calHttp = CalBooking.Http { method, url, headers, body ->
+        val c = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 5000
+            readTimeout = if (method == "POST") 12000 else 8000
+            headers.forEach { (k, v) -> setRequestProperty(k, v) }
+            if (body != null) doOutput = true
+        }
+        try {
+            try { c.connect() } catch (e: java.io.IOException) { throw CalBooking.NotSent(e.toString()) }
+            if (body != null) c.outputStream.use { it.write(body.toByteArray()) }
+            val status = c.responseCode
+            val stream = if (status in 200..299) c.inputStream else c.errorStream
+            CalBooking.Response(status, stream?.bufferedReader()?.readText().orEmpty())
+        } finally { c.disconnect() }
+    }
+
+    /** Open times on a Cal.com link (Calendly gives only its link) from a
+     *  day. Straight from Cal.com's keyless API (CalBooking.kt); the server
+     *  only when Cal.com can't be reached (SERVER-INVENTORY.md, 2026-10-14). */
+    fun slots(backendURL: String, link: String, date: String, calcomBase: String? = null,
+              done: (Slots?, String?) -> Unit) {
+        pool.execute {
+            when (val r = CalBooking.slots(link, date, 1, TimeZone.getDefault().id, api(calcomBase), calHttp)) {
+                is CalBooking.Outcome.Ok -> {
+                    val s = r.value
+                    val days = s.days.map { d ->
+                        Day(d.date, d.slots.mapNotNull { at -> parseTime(at.start)?.let { Slot(it, at.url) } })
+                    }
+                    main.post { done(Slots(s.provider, s.bookingUrl, days), null) }
+                }
+                is CalBooking.Outcome.Refused -> main.post { done(null, r.words) }
+                CalBooking.Outcome.Unreachable -> slotsFromServer(backendURL, link, date, done)
+            }
+        }
+    }
+
+    /** GET /scheduling/slots: the fallback when Cal.com can't be reached. */
+    private fun slotsFromServer(backendURL: String, link: String, date: String, done: (Slots?, String?) -> Unit) {
         pool.execute {
             var result: Slots? = null
             var error: String? = null
@@ -78,9 +123,30 @@ object SchedulingClient {
     }
 
     /** Books a time on a Cal.com page with the attendee and guests; Cal.com
-     *  emails everyone the invite. */
+     *  emails everyone the invite. Straight with Cal.com (CalBooking.kt); the
+     *  server only when the request never reached Cal.com, so nothing is
+     *  booked twice. */
     fun book(backendURL: String, link: String, start: Long, name: String, email: String,
-             guests: List<String>, done: (Booked?, String?) -> Unit) {
+             guests: List<String>, calcomBase: String? = null, done: (Booked?, String?) -> Unit) {
+        pool.execute {
+            when (val r = CalBooking.book(link, start, name, email, guests, TimeZone.getDefault().id,
+                api = api(calcomBase), http = calHttp)) {
+                is CalBooking.Outcome.Ok -> {
+                    val b = r.value
+                    main.post {
+                        done(Booked(b.start?.let { parseTime(it) }, b.meetingUrl?.takeIf { it.startsWith("http") },
+                            b.invited), null)
+                    }
+                }
+                is CalBooking.Outcome.Refused -> main.post { done(null, r.words) }
+                CalBooking.Outcome.Unreachable -> bookOnServer(backendURL, link, start, name, email, guests, done)
+            }
+        }
+    }
+
+    /** POST /scheduling/book: the fallback when Cal.com can't be reached. */
+    private fun bookOnServer(backendURL: String, link: String, start: Long, name: String, email: String,
+                             guests: List<String>, done: (Booked?, String?) -> Unit) {
         pool.execute {
             var booked: Booked? = null
             var error: String? = null

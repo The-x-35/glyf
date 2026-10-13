@@ -52,6 +52,18 @@ From a second probe of 150 everyday messages and a research pass (Raycast, Alfre
 
 Still open from the research: calories per food (USDA table, ~100 KB), several zones for one meeting time, shoe and clothing sizes (brands differ; needs care), airport codes, sunset/golden hour, carry-on limits, inflation, exact fractions.
 
+## Done on 14 Oct (both keyboards)
+
+| Trigger → chip | Notes |
+|---|---|
+| "thank you in spanish", "how do you say good night in japanese" → gracias, おやすみなさい | 27 everyday phrases in 13 languages, in place, no AI run; gendered ones stay quiet |
+| "lunch friday 1pm?" → "Lunch · Fri 1 PM · busy: Dentist" | the plan chip says when the calendar already has something then |
+| Typing the first words of a sentence sent three times → the rest | phone only, never passwords, codes, links or long numbers; forgotten after 60 days |
+| "remind me to call mom tomorrow" → a 9 AM event | a reminder with a day and no time |
+| "sunset", "sunrise tomorrow", "golden hour" → Sunset 8:35 PM | computed on the phone (NOAA) where it last was |
+| "is it going to rain", "weather tomorrow" → No rain expected tomorrow (1%) | Open-Meteo, keyless, from the phone; needs the shared location |
+| Currency rates | straight from Frankfurter; the server only as a fallback |
+
 ## Next, no server needed
 
 | # | Trigger → chip → tap | Effort |

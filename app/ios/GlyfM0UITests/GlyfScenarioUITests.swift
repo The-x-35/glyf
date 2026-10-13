@@ -2060,9 +2060,27 @@ final class GlyfScenarioUITests: XCTestCase {
     }
 
     /// Clears what the stand-in booked and mailed, so a run can book again.
+    /// Since 2026-10-14 the keyboard calls Cal.com itself (CalBooking.swift),
+    /// so the stand-in is named in the setting `calcomBase` for the
+    /// scenario, and taken out after.
     private func resetFake() {
         guard let url = URL(string: "http://127.0.0.1:8796/_reset") else { return }
         _ = try? Data(contentsOf: url)
+        guard let file = bridgeDir?.appendingPathComponent("settings.json") else { return }
+        func edit(_ change: (inout [String: Any]) -> Void) {
+            guard let data = try? Data(contentsOf: file),
+                  var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            change(&json)
+            if let out = try? JSONSerialization.data(withJSONObject: json) { try? out.write(to: file, options: .atomic) }
+        }
+        let before = (try? Data(contentsOf: file))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["calcomBase"]
+        edit { $0["calcomBase"] = "http://127.0.0.1:8796/v2" }
+        addTeardownBlock {
+            edit { json in
+                if let before { json["calcomBase"] = before } else { json.removeValue(forKey: "calcomBase") }
+            }
+        }
     }
 
     /// What the stand-in Cal.com and Resend (qa/fake-scheduling.mjs) recorded.

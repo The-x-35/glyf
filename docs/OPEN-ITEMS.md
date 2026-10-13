@@ -145,3 +145,10 @@ Arpit asked what the Railway server does and what could run on the phone instead
 
 **Still to try on a phone:** hold Return in a chat app whose Return sends (Slack or Telegram), to see U+2028 drawn as a line break.
 
+## 10. 14 Oct 2026: security audit, bug hunt, features, distribution
+
+- **Security audit:** docs/SECURITY-AUDIT.md. The fixes that change nothing people see are committed (be0bf43); **server fixes are live only after Arpit pushes main.** Needs Arpit, from that doc: pay deep links (one-time nonce or a "Review and pay" step), tie deviceId data to accounts, encrypt OAuth tokens at rest (a new Railway variable), revocable sessions, check Railway's X-Forwarded-For handling, vitest 2 → 5, wallet secrets out of the keyboard's shared keychain group, backup choices.
+- **Android empty band under the keys:** the room under the keys now starts from the phone's own navigation bar height and keeps what the window reported (3bd6048). On the emulator it matches Gboard. **Arpit:** a screenshot of Glyf and of Gboard on the long phone would show whether that phone's band was the guessed 48dp.
+- **New:** phrases in 13 languages, the busy note on plan chips, repeated sentences offered back, 9 AM reminders, sunrise/sunset, weather (STRIP-BACKLOG.md "Done on 14 Oct").
+- **Moved to the phone:** currency rates (0a1a245); stickers, token prices and Cal.com booking in progress.
+

@@ -44,7 +44,7 @@ enum MediaSource {
     /// KLIPY: GIFs and stickers, called from this phone (its terms ask for
     /// that; our server only hands out the key).
     case klipy
-    /// Google's Noto Animated Emoji (CC BY 4.0), listed by our server.
+    /// Google's Noto Animated Emoji (CC BY 4.0), listed on this phone.
     case noto
 }
 
@@ -54,7 +54,7 @@ enum MediaSource {
 /// terms want API calls and file loads to come from the person's device, not
 /// a proxy, so the keyboard calls it directly with the app key our server
 /// hands a signed-in phone (`/media/config`) — the key is never in the app.
-/// Stickers also come from Noto Animated Emoji, listed by our server, which
+/// Stickers also come from Noto Animated Emoji, listed on the phone, which
 /// needs no key at all. Kept small on purpose: a keyboard extension lives on
 /// a fraction of an app's memory.
 final class MediaClient {
@@ -239,33 +239,21 @@ final class MediaClient {
                          attribution: "Powered by KLIPY")
     }
 
+    /// Noto stickers, listed and searched on this phone (NotoStickers.swift,
+    /// the server's catalogue and search ported, 2026-10-14): the same pages
+    /// GET /media/emoji-stickers gives, with no request. Completion on the
+    /// main queue, after this call returns, as a fetch's would be.
     private func notoPage(query: String, page: String?,
                           completion: @escaping (Result<MediaPage, Failure>) -> Void) -> URLSessionDataTask? {
-        let s = SettingsStore.current
-        guard var comps = URLComponents(string: "\(s.backendURL)/media/emoji-stickers") else {
-            completion(.failure(.offline)); return nil
+        let found = NotoStickers.page(query: query, page: page)
+        let items = found.items.map {
+            MediaItem(id: $0.id, title: $0.title, preview: $0.preview, pw: $0.pw, ph: $0.ph,
+                      url: $0.url, w: $0.w, h: $0.h, slug: nil)
         }
-        comps.queryItems = [URLQueryItem(name: "page", value: page ?? "1")]
-            + (query.isEmpty ? [] : [URLQueryItem(name: "q", value: String(query.prefix(60)))])
-        guard let url = comps.url else { completion(.failure(.offline)); return nil }
-        var req = URLRequest(url: url)
-        req.glyfSession()
-        req.timeoutInterval = 10
-        let task = URLSession.shared.dataTask(with: req) { data, response, err in
-            DispatchQueue.main.async {
-                if let err = err as NSError?, err.code == NSURLErrorCancelled { return }
-                guard (response as? HTTPURLResponse)?.statusCode == 200, let data,
-                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let list = obj["items"] as? [[String: Any]],
-                      let json = try? JSONSerialization.data(withJSONObject: list),
-                      let items = try? JSONDecoder().decode([MediaItem].self, from: json)
-                else { completion(.failure(.offline)); return }
-                completion(.success(MediaPage(items: items, next: obj["next"] as? String,
-                                              attribution: obj["attribution"] as? String)))
-            }
+        DispatchQueue.main.async {
+            completion(.success(MediaPage(items: items, next: found.next, attribution: found.attribution)))
         }
-        task.resume()
-        return task
+        return nil
     }
 
     /// Search terms that complete what has been typed ("ca" → cat, cats…),

@@ -324,3 +324,21 @@ object ToneProfile {
         return "The user tends to prefer writing that is $phrase."
     }
 }
+
+/** Setup milestones for the app's counts-only funnel (GO-TO-MARKET.md):
+ *  keyboard_opened, full_access, first_answer, first_ai, each written once
+ *  as a time to bridge/funnel.json; the app sends each as an event name and
+ *  nothing else. The twin of Funnel in AppGroupStore.swift. */
+object Funnel {
+    @Volatile private var done: MutableSet<String>? = null
+
+    fun mark(ctx: Context, step: String) {
+        val seen = done ?: (Bridge.readJson(ctx, "funnel.json")?.keys()?.asSequence()?.toMutableSet() ?: mutableSetOf())
+            .also { done = it }
+        if (!seen.add(step)) return
+        val f = Bridge.readJson(ctx, "funnel.json") ?: JSONObject()
+        f.put(step, System.currentTimeMillis() / 1000.0)
+        runCatching { Bridge.file(ctx, "funnel.json").writeText(f.toString()) }
+    }
+}
+

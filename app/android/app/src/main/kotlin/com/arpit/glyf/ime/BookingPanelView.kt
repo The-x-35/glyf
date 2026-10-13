@@ -42,6 +42,10 @@ class BookingPanelView(
     private val onEditWho: (Boolean) -> Unit,
 ) : FrameLayout(ctx), StripField {
 
+    /** Cal.com's stand-in when a test names one (`calcomBase`); unset is Cal.com. */
+    private val calcomBase: String? =
+        runCatching { com.arpit.glyf.store.SettingsStore.load(ctx).optString("calcomBase") }.getOrNull()
+
     private var day = CalendarText.startOfDay(startDay)
     private var pageURL: String? = null
     private var request = 0
@@ -213,7 +217,7 @@ class BookingPanelView(
         // A later day's answer wins over an earlier one still on its way.
         val ticket = ++request
         render()
-        SchedulingClient.slots(backendURL, link, iso(day)) { result, error ->
+        SchedulingClient.slots(backendURL, link, iso(day), calcomBase) { result, error ->
             if (ticket != request) return@slots
             spinner.visibility = GONE
             if (result == null) {
@@ -305,7 +309,7 @@ class BookingPanelView(
         val name = name0.ifEmpty { email.substringBefore("@") }
         bookButton.isEnabled = false
         bookButton.text = "Booking…"
-        SchedulingClient.book(backendURL, link, p.start, name, email, emails.drop(1)) { booked, error ->
+        SchedulingClient.book(backendURL, link, p.start, name, email, emails.drop(1), calcomBase) { booked, error ->
             // Closed while Cal.com answered (or the field changed): the line
             // must not land in whatever is focused now.
             if (!isAttachedToWindow) return@book

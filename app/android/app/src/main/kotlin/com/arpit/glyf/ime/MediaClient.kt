@@ -67,7 +67,7 @@ enum class MediaSource { KLIPY, NOTO }
  * KLIPY replaced Tenor's closed API; its terms want calls and file loads to
  * come from the device, so the keyboard calls it with the key our server
  * hands a signed-in phone (`/media/config`). Noto Animated Emoji (CC BY 4.0)
- * are stickers with no key, listed by our server. Callbacks run on the main
+ * are stickers with no key, listed on the phone. Callbacks run on the main
  * thread.
  */
 object MediaClient {
@@ -204,22 +204,14 @@ object MediaClient {
         return MediaPage(items, if (hasNext) (current + 1).toString() else null, "Powered by KLIPY")
     }
 
+    /** Noto stickers, listed and searched on this phone (NotoStickers.kt,
+     *  the server's catalogue and search ported, 2026-10-14): the same pages
+     *  GET /media/emoji-stickers gives, with no request. Off the main thread
+     *  (a search scores the whole catalogue), answered on it. */
+    @Suppress("UNUSED_PARAMETER")
     private fun notoPage(backendURL: String, query: String, page: String?, done: (MediaPage?) -> Unit) {
-        val q = StringBuilder("page=${page ?: "1"}")
-        if (query.isNotEmpty()) q.append("&q=").append(URLEncoder.encode(query.take(60), "UTF-8"))
         pool.execute {
-            var result: MediaPage? = null
-            try {
-                val c = open("$backendURL/media/emoji-stickers?$q", BackendClient.bearer)
-                if (c.responseCode == 200) {
-                    val o = JSONObject(c.inputStream.bufferedReader().readText())
-                    val arr = o.optJSONArray("items") ?: JSONArray()
-                    val items = (0 until arr.length()).mapNotNull { MediaItem.from(arr.getJSONObject(it)) }
-                    result = MediaPage(items, o.optString("next").ifEmpty { null }.takeIf { !o.isNull("next") },
-                        o.optString("attribution").ifEmpty { null })
-                }
-                c.disconnect()
-            } catch (_: Exception) { }
+            val result = runCatching { NotoStickers.page(query, page) }.getOrNull()
             main.post { done(result) }
         }
     }

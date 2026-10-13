@@ -1355,6 +1355,65 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.mapLink(in: "im at my moms"))
     }
 
+    func testThirdProbeFixesAndAnswers() throws {
+        let noon = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-07T12:00:00Z"))
+        let ny = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        func q(_ t: String) -> [String]? { Smart.quickAnswer(in: t, now: noon, here: ny, region: "US")?.results }
+        // fixes
+        XCTAssertNotEqual(q("3pm london time in new york")?.first?.hasPrefix("Wed"), true, "not the time now")
+        XCTAssertNil(EventParse.looksLikePlan("in 2 hours what time"))
+        XCTAssertEqual(q("in 2 hours what time"), ["10 AM"])
+        XCTAssertEqual(q("whats 15 min from now"), ["8:15 AM"])
+        XCTAssertNotNil(EventParse.looksLikePlan("reminder to take meds at 9pm"))
+        XCTAssertEqual(EventParse.looksLikePlan("call at 9am est what time for me")?.title, "Call")
+        XCTAssertEqual(EventParse.looksLikePlan("lets do 7pm at olive garden")?.title.lowercased(), "olive garden")
+        if case .event? = Smart.chip(for: "remind me to pay rent on the 1st", fields: [], region: "US") {} else { XCTFail("reminder first") }
+        // answers
+        XCTAssertEqual(q("when is thanksgiving")?.first, "Thu, Nov 26")
+        XCTAssertEqual(q("when is easter 2027")?.first, "Sun, Mar 28, 2027")
+        XCTAssertEqual(q("350f oven in c"), ["176.7°C"])
+        XCTAssertEqual(q("tip 20 on 47.50"), ["9.50 tip", "57 total"])
+        XCTAssertEqual(q("split the uber 32 between 4"), ["8 each"])
+        XCTAssertEqual(q("salary 85k per year hourly")?.first?.hasSuffix("/hr"), true)
+        XCTAssertEqual(q("50 per hour annually")?.first?.hasSuffix("/yr"), true)
+        XCTAssertNotNil(q("compound 10000 7% 20 years"))
+        XCTAssertEqual(q("85 minus 15%"), ["72.25"])
+        XCTAssertEqual(q("90 minutes in hours"), ["1.5 h"])
+        XCTAssertEqual(q("2 hours 45 minutes in minutes"), ["165 min"])
+        XCTAssertEqual(q("16 oz in ml"), ["473 ml"])
+        XCTAssertEqual(q("a cup in ml"), ["237 ml"])
+        XCTAssertEqual(q("pst to ist"), ["IST is 12h 30m ahead of PST"])
+        XCTAssertEqual(q("is it affect or effect")?.first?.hasPrefix("affect:"), true)
+        XCTAssertEqual(q("their there or they're")?.first?.hasPrefix("their:"), true)
+        XCTAssertEqual(q("past tense of run"), ["ran · run"])
+        XCTAssertEqual(q("whats the plural of cactus"), ["cacti (or cactuses)"])
+        XCTAssertEqual(Smart.calc("2 to the power of 10", indianGrouping: false)?.value, "1,024")
+        XCTAssertEqual(Smart.calc("square of 12", indianGrouping: false)?.value, "144")
+        XCTAssertEqual(Smart.calc("cube root of 27", indianGrouping: false)?.value, "3")
+        XCTAssertEqual(Smart.calc("log 100", indianGrouping: false)?.value, "2")
+        XCTAssertEqual(Smart.calc("10 factorial", indianGrouping: false)?.value, "3,628,800")
+        XCTAssertEqual(Smart.calc("pi to 5 digits", indianGrouping: false)?.value, "3.14159")
+        XCTAssertEqual(Smart.coinAmount(in: "1 btc in usd")?.symbol, "BTC")
+        XCTAssertEqual(Smart.coinAmount(in: "price of eth")?.symbol, "ETH")
+        XCTAssertNil(Smart.coinAmount(in: "price of milk"))
+    }
+
+    func testWeatherAnswersFromAnOpenMeteoReply() throws {
+        let reply: [String: Any] = [
+            "current": ["temperature_2m": 18.4, "weather_code": 2, "precipitation": 0],
+            "daily": ["temperature_2m_max": [21.2, 19.0], "temperature_2m_min": [12.1, 11.4],
+                      "precipitation_probability_max": [10, 80], "weather_code": [2, 61]],
+        ]
+        let w = try XCTUnwrap(WeatherStore.parse(reply, fahrenheit: false))
+        XCTAssertEqual(Smart.weatherAnswer(in: "whats the weather", snapshot: w)?.results, ["18°, partly cloudy · H 21° L 12°"])
+        XCTAssertEqual(Smart.weatherAnswer(in: "weather tomorrow?", snapshot: w)?.results, ["Tomorrow: rain 80% · H 19° L 11°"])
+        XCTAssertEqual(Smart.weatherAnswer(in: "is it going to rain", snapshot: w)?.results, ["No rain expected today (10%)"])
+        XCTAssertEqual(Smart.weatherAnswer(in: "will it rain tomorrow", snapshot: w)?.results, ["Rain likely tomorrow (80%)"])
+        XCTAssertEqual(Smart.weatherAnswer(in: "is it raining", snapshot: w)?.results, ["Not now · partly cloudy, 18°"])
+        XCTAssertNil(Smart.weatherAsk(in: "the weather was great"))
+        XCTAssertNil(Smart.weatherAnswer(in: "weather?", snapshot: nil))
+    }
+
     func testSunriseAndSunsetOnThePhone() throws {
         let sf = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
         let morning = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-06-21T15:00:00Z"))

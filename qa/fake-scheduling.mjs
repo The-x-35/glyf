@@ -5,6 +5,11 @@
 //   PORT=8796 node qa/fake-scheduling.mjs
 //   CALCOM_API_BASE=http://127.0.0.1:8796/v2 npm run dev
 //
+// Since 2026-10-14 the keyboards call Cal.com themselves, so they are pointed
+// here with the setting calcomBase (iOS http://127.0.0.1:8796/v2, Android
+// http://10.0.2.2:8796/v2); the scenario runners set it and take it out after.
+// The server's CALCOM_API_BASE still matters for its fallback route.
+//
 // Every page has open times each day at 10:00, 11:30, 15:00 and 17:30 in the
 // zone asked for. GET /_log lists what was booked. Never deploy this; it
 // exists only so a phone can exercise the real code.

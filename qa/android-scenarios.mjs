@@ -586,6 +586,7 @@ const scenarios = [
   } },
   { id: "S118", title: "Book a time on your own page for someone, with a guest", run: async () => {
     await fetch(`${FAKE}/_reset`);
+    await useFakeCalcom();
     tool("bookinglink", "--es text cal.com/fake-host/30min");
     try {
       await calendarOn();
@@ -621,6 +622,7 @@ const scenarios = [
   } },
   { id: "S120", title: "Someone's booking page in a message offers Book", run: async () => {
     await fetch(`${FAKE}/_reset`);
+    await useFakeCalcom();
     await calendarOn();
     await fresh();
     // Committed straight into the field (autocorrect would split a link
@@ -1343,6 +1345,24 @@ async function useFakeMailTm() {
     writeSettings(JSON.stringify(now));
   });
   fakeMailTmOn = true;
+  await sleep(900);   // the keyboard looks at its settings every 0.4 s
+}
+
+// Since 2026-10-14 the keyboard calls Cal.com itself (CalBooking.kt), so the
+// stand-in Cal.com is named in the setting calcomBase for the run, and put
+// back after, the way tempMailBase is.
+let fakeCalcomOn = false;
+async function useFakeCalcom() {
+  if (fakeCalcomOn) return;
+  const before = readSettings();
+  writeSettings(JSON.stringify({ ...JSON.parse(before), calcomBase: "http://10.0.2.2:8796/v2" }));
+  atEnd.push(() => {
+    const now = JSON.parse(readSettings());
+    const had = JSON.parse(before);
+    if (had.calcomBase === undefined) delete now.calcomBase; else now.calcomBase = had.calcomBase;
+    writeSettings(JSON.stringify(now));
+  });
+  fakeCalcomOn = true;
   await sleep(900);   // the keyboard looks at its settings every 0.4 s
 }
 

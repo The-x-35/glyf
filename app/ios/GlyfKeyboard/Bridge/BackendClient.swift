@@ -309,8 +309,67 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
 
     /// Open times on a Cal.com link (Calendly gives only its link), from the
     /// chosen day. The error is the server's own words when it has them.
+    /// Straight from Cal.com's keyless API (CalBooking.swift); the server
+    /// only when Cal.com can't be reached (SERVER-INVENTORY.md, 2026-10-14).
     func bookingSlots(link: String, date: String, days: Int = 1,
                       done: @escaping (BookingSlots?, String?) -> Void) {
+        let api = Self.calcomAPI
+        let tz = TimeZone.current.identifier
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            switch CalBooking.slots(link: link, date: date, days: days, tz: tz, api: api, http: Self.calHTTP) {
+            case .ok(let s):
+                let rows = s.days.map { d in
+                    BookingDay(date: d.date, slots: d.slots.compactMap { slot in
+                        CalBooking.parseTime(slot.start).map { ($0, slot.url) }
+                    })
+                }
+                DispatchQueue.main.async { done(BookingSlots(provider: s.provider, bookingUrl: s.bookingUrl, days: rows), nil) }
+            case .refused(let words):
+                DispatchQueue.main.async { done(nil, words) }
+            case .unreachable:
+                DispatchQueue.main.async { self?.bookingSlotsFromServer(link: link, date: date, days: days, done: done) }
+            }
+        }
+    }
+
+    /// Cal.com's API, or the stand-in a test names in settings (`calcomBase`,
+    /// qa/fake-scheduling.mjs).
+    private static var calcomAPI: String {
+        let base = SettingsStore.current.calcomBase?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return base.isEmpty ? CalBooking.defaultAPI : (base.hasSuffix("/") ? String(base.dropLast()) : base)
+    }
+
+    /// Cal.com over HTTP, blocking (CalBooking runs off the main queue).
+    /// A request that never went out throws `NotSent`, so a booking can be
+    /// handed to the server without booking twice.
+    private static let calHTTP: CalBooking.HTTP = { method, url, headers, body in
+        guard let u = URL(string: url) else { throw CalBooking.NotSent() }
+        var req = URLRequest(url: u)
+        req.httpMethod = method
+        req.timeoutInterval = method == "POST" ? 12 : 8
+        headers.forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        req.httpBody = body
+        let done = DispatchSemaphore(value: 0)
+        var answer: (Data?, URLResponse?, Error?)
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            answer = (data, response, error)
+            done.signal()
+        }.resume()
+        if done.wait(timeout: .now() + req.timeoutInterval + 2) == .timedOut { throw URLError(.timedOut) }
+        if let http = answer.1 as? HTTPURLResponse { return CalBooking.Response(status: http.statusCode, body: answer.0 ?? Data()) }
+        let notSent: Set<URLError.Code> = [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost,
+                                           .dnsLookupFailed, .secureConnectionFailed, .serverCertificateUntrusted,
+                                           .serverCertificateHasBadDate, .serverCertificateNotYetValid,
+                                           .serverCertificateHasUnknownRoot, .clientCertificateRejected,
+                                           .appTransportSecurityRequiresSecureConnection, .internationalRoamingOff,
+                                           .dataNotAllowed, .badURL, .unsupportedURL]
+        if let e = answer.2 as? URLError, notSent.contains(e.code) { throw CalBooking.NotSent() }
+        throw answer.2 ?? URLError(.badServerResponse)
+    }
+
+    /// GET /scheduling/slots: the fallback when Cal.com can't be reached.
+    private func bookingSlotsFromServer(link: String, date: String, days: Int,
+                                        done: @escaping (BookingSlots?, String?) -> Void) {
         var comps = URLComponents(string: "\(SettingsStore.current.backendURL)/scheduling/slots")
         comps?.queryItems = [
             URLQueryItem(name: "link", value: link), URLQueryItem(name: "date", value: date),
@@ -348,8 +407,32 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
 
     /// Books a time on a Cal.com page with the attendee and guests; Cal.com
     /// emails everyone the invite. The error is the server's own words.
+    /// Straight with Cal.com (CalBooking.swift); the server only when the
+    /// request never reached Cal.com, so nothing is booked twice.
     func bookSlot(link: String, start: Date, name: String, email: String, guests: [String],
                   done: @escaping (Booked?, String?) -> Void) {
+        let api = Self.calcomAPI
+        let tz = TimeZone.current.identifier
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            switch CalBooking.book(link: link, start: start, name: name, email: email, guests: guests,
+                                   tz: tz, api: api, http: Self.calHTTP) {
+            case .ok(let b):
+                let booked = Booked(start: b.start.flatMap(CalBooking.parseTime), meetingUrl: b.meetingUrl,
+                                    invited: b.invited)
+                DispatchQueue.main.async { done(booked, nil) }
+            case .refused(let words):
+                DispatchQueue.main.async { done(nil, words) }
+            case .unreachable:
+                DispatchQueue.main.async {
+                    self?.bookSlotOnServer(link: link, start: start, name: name, email: email, guests: guests, done: done)
+                }
+            }
+        }
+    }
+
+    /// POST /scheduling/book: the fallback when Cal.com can't be reached.
+    private func bookSlotOnServer(link: String, start: Date, name: String, email: String, guests: [String],
+                                  done: @escaping (Booked?, String?) -> Void) {
         guard let url = URL(string: "\(SettingsStore.current.backendURL)/scheduling/book") else { return done(nil, nil) }
         var req = URLRequest(url: url)
         req.glyfSession()

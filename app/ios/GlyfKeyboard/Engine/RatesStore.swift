@@ -1,7 +1,8 @@
 import Foundation
 
-/// The rates behind the money chip, fetched from the server (which caches
-/// the ECB and Jupiter for everyone) and kept in the App Group so a fresh
+/// The rates behind the money chip, fetched straight from the ECB's daily
+/// rates (Frankfurter) and Jupiter, with the server (which caches both for
+/// everyone) as the fallback, and kept in the App Group so a fresh
 /// keyboard process has yesterday's table before its first request lands.
 /// Fiat is asked for once an hour; a token once a minute, and only for the
 /// ticker on screen.
@@ -101,22 +102,34 @@ final class RatesStore {
     /// The dollar price of one token, refreshed after a minute.
     func ensureToken(_ symbol: String, then: @escaping () -> Void) {
         if let at = cryptoAt[symbol], Date().timeIntervalSince(at) < Self.tokenTTL { return }
-        fetch(path: "/rates/crypto?symbols=\(symbol)", key: "token:\(symbol)") { [weak self] obj in
+        // A miss is remembered too, so a made-up ticker is one request.
+        let keep: (Double?, String?, String?) -> Void = { [weak self] usd, mint, ticker in
             guard let self else { return }
-            // A miss is remembered too, so a made-up ticker is one request.
             self.cryptoAt[symbol] = Date()
-            if let quotes = obj["quotes"] as? [String: Any],
-               let quote = quotes[symbol] as? [String: Any],
-               let usd = quote["usd"] as? Double {
+            if let usd {
                 self.crypto[symbol] = usd
-                self.mints[symbol] = quote["mint"] as? String
-                self.tickers[symbol] = quote["ticker"] as? String
+                self.mints[symbol] = mint
+                self.tickers[symbol] = ticker
             } else {
                 self.crypto.removeValue(forKey: symbol)
                 self.mints.removeValue(forKey: symbol)
                 self.tickers.removeValue(forKey: symbol)
             }
             then()
+        }
+        // Straight from Jupiter (keyless, the server's own source, with the
+        // server's picking ported: TokenLookup.swift); the server only when
+        // Jupiter can't be asked (SERVER-INVENTORY.md, 2026-10-14).
+        direct(key: "token-direct:\(symbol)", { try $0.quote(symbol) }) { [weak self] result in
+            switch result {
+            case .success(let q):
+                keep(q?.usd, q?.mint, q.map { $0.ticker ?? TokenLookup.tickerOf(symbol) ?? symbol })
+            case .failure:
+                self?.fetch(path: "/rates/crypto?symbols=\(symbol)", key: "token:\(symbol)") { obj in
+                    let quote = (obj["quotes"] as? [String: Any])?[symbol] as? [String: Any]
+                    keep(quote?["usd"] as? Double, quote?["mint"] as? String, quote?["ticker"] as? String)
+                }
+            }
         }
     }
 
@@ -125,14 +138,41 @@ final class RatesStore {
     /// wallet, and the app checks again before any money moves.
     func ensureAddress(_ address: String, then: @escaping () -> Void) {
         guard addresses[address] == nil else { return }
-        fetch(path: "/rates/token?mint=\(address)", key: "address:\(address)", always: true) { [weak self] obj in
+        let keep: (String?, Double?) -> Void = { [weak self] symbol, usd in
             guard let self else { return }
-            if let token = obj?["token"] as? [String: Any], let symbol = token["symbol"] as? String {
-                self.addresses[address] = .token(symbol: symbol, usd: token["usd"] as? Double)
-            } else {
-                self.addresses[address] = .wallet
-            }
+            self.addresses[address] = symbol.map { .token(symbol: $0, usd: usd) } ?? .wallet
             then()
+        }
+        // Jupiter first, as for a ticker; the server when it can't be asked.
+        direct(key: "address-direct:\(address)", { try $0.token(at: address) }) { [weak self] result in
+            switch result {
+            case .success(let token):
+                keep(token?.symbol, token?.usd)
+            case .failure:
+                self?.fetch(path: "/rates/token?mint=\(address)", key: "address:\(address)", always: true) { obj in
+                    let token = obj?["token"] as? [String: Any]
+                    keep(token?["symbol"] as? String, token?["usd"] as? Double)
+                }
+            }
+        }
+    }
+
+    /// Jupiter's lookups, one at a time on a queue of their own (each one
+    /// blocks on its request); `done` runs on the main queue.
+    private let lookup = TokenLookup()
+    private let lookupQueue = DispatchQueue(label: "glyf.rates.jupiter", qos: .userInitiated)
+
+    private func direct<T>(key: String, _ ask: @escaping (TokenLookup) throws -> T,
+                           done: @escaping (Result<T, Error>) -> Void) {
+        guard !inFlight.contains(key) else { return }
+        inFlight.insert(key)
+        let lookup = self.lookup
+        lookupQueue.async { [weak self] in
+            let result = Result { try ask(lookup) }
+            DispatchQueue.main.async {
+                self?.inFlight.remove(key)
+                done(result)
+            }
         }
     }
 

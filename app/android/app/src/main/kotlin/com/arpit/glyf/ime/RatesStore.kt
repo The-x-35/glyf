@@ -11,8 +11,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /**
- * The rates behind the money chip (twin of RatesStore.swift): fetched from
- * the server, which caches the ECB and Jupiter for everyone. The dollar table
+ * The rates behind the money chip (twin of RatesStore.swift): fetched
+ * straight from the ECB's daily rates (Frankfurter) and Jupiter, with the
+ * server (which caches both for everyone) as the fallback. The dollar table
  * is kept on disk so a cold keyboard has yesterday's before its first request
  * lands. Fiat is asked for once an hour; a token once a minute, and only the
  * ticker on screen.
@@ -122,15 +123,11 @@ object RatesStore {
     fun ensureToken(backendURL: String, symbol: String, then: () -> Unit) {
         val at = cryptoAt[symbol]
         if (at != null && System.currentTimeMillis() - at < TOKEN_TTL) return
-        fetch(backendURL, "/rates/crypto?symbols=$symbol", "token:$symbol") { obj ->
+        fun keep(usd: Double, mint: String, ticker: String) {
             cryptoAt[symbol] = System.currentTimeMillis()
-            val quote = obj.optJSONObject("quotes")?.optJSONObject(symbol)
-            val usd = quote?.optDouble("usd") ?: Double.NaN
             if (!usd.isNaN() && usd > 0) {
                 crypto[symbol] = usd
-                val mint = quote?.optString("mint").orEmpty()
                 if (mint.isNotEmpty()) mints[symbol] = mint else mints.remove(symbol)
-                val ticker = quote?.optString("ticker").orEmpty()
                 if (ticker.isNotEmpty()) tickers[symbol] = ticker else tickers.remove(symbol)
             } else {
                 crypto.remove(symbol)
@@ -139,6 +136,37 @@ object RatesStore {
             }
             main.post(then)
         }
+        // Straight from Jupiter (keyless, the server's own source, with the
+        // server's picking ported: TokenLookup.kt); the server only when
+        // Jupiter can't be asked (SERVER-INVENTORY.md, 2026-10-14).
+        direct("token-direct:$symbol", { it.quote(symbol) }) { result ->
+            result.onSuccess { q ->
+                keep(q?.usd ?: Double.NaN, q?.mint.orEmpty(),
+                    q?.let { it.ticker ?: TokenLookup.tickerOf(symbol) ?: symbol }.orEmpty())
+            }.onFailure {
+                fetch(backendURL, "/rates/crypto?symbols=$symbol", "token:$symbol") { obj ->
+                    val quote = obj.optJSONObject("quotes")?.optJSONObject(symbol)
+                    keep(quote?.optDouble("usd") ?: Double.NaN, quote?.optString("mint").orEmpty(),
+                        quote?.optString("ticker").orEmpty())
+                }
+            }
+        }
+    }
+
+    /** Jupiter's lookups, one at a time on this store's own thread (each
+     *  blocks on its request). */
+    private val lookup = TokenLookup()
+
+    private fun <T> direct(key: String, ask: (TokenLookup) -> T, done: (Result<T>) -> Unit) {
+        if (!inFlight.add(key)) return
+        pool.execute {
+            val result = try { Result.success(ask(lookup)) } catch (e: Exception) {
+                android.util.Log.w("GlyfKB", "jupiter $key: $e")
+                Result.failure(e)
+            }
+            inFlight.remove(key)
+            done(result)
+        }
     }
 
     /** Whether an address is a token's (and which) or someone's wallet.
@@ -146,6 +174,17 @@ object RatesStore {
      *  wallet, and the app checks again before any money moves. */
     fun ensureAddress(backendURL: String, address: String, then: () -> Unit) {
         if (addresses.containsKey(address)) return
+        // Jupiter first, as for a ticker; the server when it can't be asked.
+        direct("address-direct:$address", { it.tokenAt(address) }) { result ->
+            result.onSuccess { token ->
+                addresses[address] = if (token == null) Smart.AddressKind.Wallet
+                    else Smart.AddressKind.Token(token.symbol, token.usd)
+                main.post(then)
+            }.onFailure { askServerAboutAddress(backendURL, address, then) }
+        }
+    }
+
+    private fun askServerAboutAddress(backendURL: String, address: String, then: () -> Unit) {
         fetch(backendURL, "/rates/token?mint=$address", "address:$address", failed = {
             addresses[address] = Smart.AddressKind.Wallet
             main.post(then)

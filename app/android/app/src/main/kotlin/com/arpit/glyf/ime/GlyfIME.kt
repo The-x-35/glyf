@@ -581,6 +581,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Signed out and back in since the keyboard last ran? Take the new one.
         com.arpit.glyf.ime.BackendClient.bearer = com.arpit.glyf.SessionStore.token(this)
         android.util.Log.d("GlyfKB", "onStartInputView restarting=$restarting overlay=${overlay != null}")
+        // Setup milestones, counts only (Funnel). Android has no Full Access
+        // switch: a keyboard that runs has the network.
+        com.arpit.glyf.store.Funnel.mark(this, "keyboard_opened")
+        com.arpit.glyf.store.Funnel.mark(this, "full_access")
         // A new field starts without caps lock, as iOS's and Gboard's do.
         if (!restarting && ::keyboard.isInitialized) { keyboard.capsLock = false; keyboard.shifted = false }
         settings = SettingsStore.load(this)
@@ -2516,6 +2520,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Android has no Full Access to wait for, as the email field's own
         // temp address chip never did.
         chip = Smart.withTempMail(chip)
+        // The weather where the phone is (Open-Meteo, keyless): "is it going
+        // to rain", "weather tomorrow"; asked for when the question shows.
+        if (chip == null && Weather.ask(tail) != null && settings.has("lastLat") && settings.has("lastLon")) {
+            val fahrenheit = region.uppercase() in setOf("US", "LR", "MM", "BS", "BZ", "KY", "PW")
+            Weather.ensure(settings.optDouble("lastLat"), settings.optDouble("lastLon"), fahrenheit) { main.post { updateSuggestions() } }
+            Weather.snapshot?.takeIf { it.fahrenheit == fahrenheit }?.let { w -> Weather.answer(tail, w)?.let { chip = Smart.Chip.Convert(it) } }
+        }
         // A sentence the person keeps sending: its first words offer the rest.
         if (chip == null && typingPolicy() and TypingEngine.LEARNING != 0) {
             com.arpit.glyf.ime.typing.PhraseMemoryStore.get(this)
@@ -2907,7 +2918,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         val chip = chipCard(kind, endPad, onClose) ?: return false
         // A tap anywhere but the ✕ does the verb.
-        chip.setOnClickListener { onTap() }
+        chip.setOnClickListener { com.arpit.glyf.store.Funnel.mark(this, "first_answer"); onTap() }
         // A lead glyph's ink sits 1.6dp inside its box; words start on their edge.
         val lead0 = px(10f - 1.6f)
         val text0 = px(10f)
@@ -3010,7 +3021,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setOnClickListener { onTap() }
         }
         for ((i, value) in values.take(3).withIndex()) {
-            val chip = card("strip:smart:choice:$i", value) { onIndex(i) }
+            val chip = card("strip:smart:choice:$i", value) { com.arpit.glyf.store.Funnel.mark(this, "first_answer"); onIndex(i) }
             // An address is known by its start ("alex.s219@exa…"): cut in the
             // middle, two emails read the same ("alex….com").
             val words = TextView(this).apply {
@@ -3168,6 +3179,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var actIntent: String? = null
 
     private fun startAct(before: String, after: String, intent: String? = null) {
+        com.arpit.glyf.store.Funnel.mark(this, "first_ai")
         // A password never goes to the AI, whichever button asked.
         if (isSecureField()) return
         actSkill = null
@@ -3184,6 +3196,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  the letter's keycap, the answer streaming in, then ↻ Copy Insert. */
     private fun startSkill(letter: String, glyfId: String, vars: Map<String, String> = emptyMap(),
                            title: String? = null) {
+        com.arpit.glyf.store.Funnel.mark(this, "first_ai")
         if (isSecureField()) return
         val ic = currentInputConnection
         val before = ic?.getTextBeforeCursor(2000, 0)?.toString() ?: ""
@@ -4199,8 +4212,17 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  honors the editor's cap flags — Apple-parity for free. */
     private fun syncAutoShift() {
         if (searchActive || barActive || vaultEditActive) return
-        if (!settings.optBoolean("autocapitalize", true)) return
         if (keyboard.mode != Mode.LETTERS) return
+        if (!settings.optBoolean("autocapitalize", true)) {
+            // Turned off: a shift the board put on by itself is let go too
+            // (iOS's first letter came out capital anyway, 2026-10-14).
+            if (keyboard.shifted && autoShifted) {
+                keyboard.shifted = false
+                autoShifted = false
+                keyboard.invalidate()
+            }
+            return
+        }
         val ei = currentInputEditorInfo ?: return
         val ic = currentInputConnection ?: return
         val caps = if (ei.inputType != InputType.TYPE_NULL)

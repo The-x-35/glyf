@@ -320,6 +320,11 @@ enum Smart {
         // A cashtag waits for its price: "$sol" is SOL's price, never your
         // Solana wallet, even before the price has come.
         if cashtag(in: text) != nil { return nil }
+        // "remind me to pay rent on the 1st": the reminder, before the date.
+        if text.range(of: #"^\s*(?:pls\s+|please\s+)?(?:remind\s+me|reminder)\b"#, options: [.regularExpression, .caseInsensitive]) != nil,
+           let plan = EventParse.looksLikePlan(text, dayFirst: EventParse.regionDayFirst) {
+            return .event(plan: plan)
+        }
         if let c = quick { return .convert(c) }
         let matches = vaultMatches(text, fields: fields)
         if matches.count > 1 { return .details(fields: Array(matches.prefix(3)), temp: false) }
@@ -399,6 +404,31 @@ enum Smart {
             else { v = n.squareRoot() }
             guard let value = calcNumber(v, indianGrouping: indianGrouping) else { return nil }
             return (value, false, (g[0] ?? "").trimmingCharacters(in: .whitespaces))
+        }
+        // "2 to the power of 10", "square of 12", "cube root of 27", "log 100",
+        // "10 factorial", "pi to 5 digits" (2026-10-14 probe).
+        if let g = firstMatch(#"(\d+(?:\.\d+)?)\s+(?:to\s+the\s+power\s+(?:of\s+)?|raised\s+to\s+(?:the\s+)?(?:power\s+(?:of\s+)?)?)(\d+(?:\.\d+)?)\??\s?$"#, in: text),
+           let a = Double(g[1] ?? ""), let b = Double(g[2] ?? ""), b <= 64, let v = calcNumber(pow(a, b), indianGrouping: indianGrouping) {
+            return (v, false, trimmed(g[0]))
+        }
+        if let g = firstMatch(#"\b(square|cube)\s+of\s+(\d+(?:\.\d+)?)\??\s?$"#, in: text), let n = Double(g[2] ?? ""),
+           let v = calcNumber(g[1]?.lowercased() == "cube" ? n * n * n : n * n, indianGrouping: indianGrouping) {
+            return (v, false, trimmed(g[0]))
+        }
+        if let g = firstMatch(#"\bcube\s+root\s+(?:of\s+)?(\d+(?:\.\d+)?)\??\s?$"#, in: text), let n = Double(g[1] ?? ""),
+           let v = calcNumber(cbrt(n), indianGrouping: indianGrouping) {
+            return (v, false, trimmed(g[0]))
+        }
+        if let g = firstMatch(#"\b(log|ln)\s*\(?\s*(\d+(?:\.\d+)?)\s*\)?\??\s?$"#, in: text), let n = Double(g[2] ?? ""), n > 0,
+           let v = calcNumber(g[1]?.lowercased() == "ln" ? log(n) : log10(n), indianGrouping: indianGrouping) {
+            return (v, false, trimmed(g[0]))
+        }
+        if let g = firstMatch(#"(?<![\w.])(\d{1,2})\s*(?:factorial|!)\??\s?$"#, in: text), let n = Int(g[1] ?? ""), n <= 20 {
+            let v = (1...max(1, n)).reduce(1.0) { $0 * Double($1) }
+            if let t = calcNumber(v, indianGrouping: indianGrouping) { return (t, false, trimmed(g[0])) }
+        }
+        if let g = firstMatch(#"\bpi\s+to\s+(\d{1,2})\s+(?:digits|decimal\s+places|places|decimals)\??\s?$"#, in: text), let n = Int(g[1] ?? ""), n >= 1, n <= 15 {
+            return (String(format: "%.\(n)f", Double.pi), false, trimmed(g[0]))
         }
         guard let re = calcPattern, !text.isEmpty else { return nil }
         let ns = text as NSString
@@ -695,7 +725,11 @@ enum Smart {
     /// An amount of a coin the message ends on: ("0.5", 0.5, "BTC") for
     /// "0.5 btc". The keyboard asks for the coin's rate off this too.
     static func coinAmount(in text: String) -> (typed: String, amount: Double, symbol: String)? {
-        guard let g = firstMatch(#"(?<![\d.,$])(\d[\d,]*(?:\.\d+)?)\s*([A-Za-z]{3,4})\.?\s?$"#, in: text),
+        if let g = firstMatch(#"\b(?:price\s+of|how\s+much\s+is)\s+(?:an?\s+|one\s+)?([A-Za-z]{3,4})\s*(?:right\s+now|now|today)?\??\s?$"#, in: text),
+           let word = g[1]?.lowercased(), coinWords.contains(word) {
+            return ("1", 1, word.uppercased())
+        }
+        guard let g = firstMatch(#"(?<![\d.,$])(\d[\d,]*(?:\.\d+)?)\s*([A-Za-z]{3,4})\.?(?:\s+(?:in|to)\s+(?:usd|dollars?|\$))?\??\s?$"#, in: text),
               let typed = g[1], let word = g[2]?.lowercased(), coinWords.contains(word),
               let amount = Double(typed.replacingOccurrences(of: ",", with: "")), amount > 0 else { return nil }
         return (typed, amount, word.uppercased())
@@ -2073,6 +2107,8 @@ extension Smart {
             name = n
         } else { return nil }
         let key = name.lowercased().trimmingCharacters(in: .whitespaces)
+        // "3pm london time in new york" converts 3pm; it isn't asking the time now.
+        if text.range(of: #"\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)"#, options: [.regularExpression, .caseInsensitive]) != nil { return nil }
         guard key != "the", key != "what", key != "same", key != "this", key != "that", key != "my", key != "your",
               key != "our", key != "their", key != "his", key != "her", key != "free", key != "long", key != "next" else { return nil }
         let r = region?.uppercased()
@@ -2211,6 +2247,7 @@ extension Smart {
             { symbol(in: text) },
             { slangMeaning(in: text) },
             { phraseIn(in: text) },
+            { writingHelp(in: text) },
             { mathsSymbol(in: text) },
             { solveEquation(in: text) },
             { cookingSafety(in: text) },
@@ -2226,6 +2263,8 @@ extension Smart {
             { pollMaker(in: text) },
             { unitPrice(in: text) },
             { degreesAsked(in: text) },
+            { duration(in: text) },
+            { kitchenVolume(in: text) },
             { bmi(in: text) },
             { feetInches(in: text) },
             { driveTime(in: text) },
@@ -2324,7 +2363,7 @@ extension Smart {
     static func billMath(in text: String) -> Conversions? {
         let ways = #"\s*(?:ways?|people|persons|of us|friends)?"#
         let splits = [
-            #"\bsplit\s+(?:the\s+)?(?:bill\s+(?:of\s+)?)?"# + sym + #"\s*"# + amt + #"\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+|with\s+)?(\d{1,2})"# + ways + end,
+            #"\bsplit\s+(?:the\s+)?(?:bill\s+(?:of\s+)?|[a-z]{2,12}\s+(?:of\s+)?)?"# + sym + #"\s*"# + amt + #"\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+|with\s+)?(\d{1,2})"# + ways + end,
             sym + #"\s*"# + amt + #"\s+(?:split|divided)\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+)?(\d{1,2})"# + ways + end,
             sym + #"\s*"# + amt + #"\s+(?:between|among)\s+(\d{1,2})\s+(?:people|persons|of us|friends)"# + end,
         ]
@@ -2342,6 +2381,7 @@ extension Smart {
         let tips: [(String, Bool)] = [
             (#"\b"# + pct + #"\s*tip\s*(?:on|for|of|to)?\s*"# + sym + #"\s*"# + amt + end, true),
             (#"\btip\s+(?:of\s+)?"# + pct + #"\s*(?:on|for)\s*"# + sym + #"\s*"# + amt + end, true),
+            (#"\btip\s+(?:of\s+)?(\d{1,2}(?:\.\d+)?)\s*(?:on|for)\s*"# + sym + #"\s*"# + amt + end, true),
             (sym + #"\s*"# + amt + #"\s*(?:\+|plus|with|and)\s*"# + pct + #"\s*tip"# + end, false),
         ]
         for (p, first) in tips {
@@ -2350,6 +2390,12 @@ extension Smart {
             let tip = bill * percent / 100
             return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces),
                                results: ["\(billMoney(tip, s)) tip", "\(billMoney(bill + tip, s)) total"])
+        }
+        if let g = firstMatch(#"(?<![\w.,])"# + sym + #"\s*"# + amt + #"\s+(minus|less|plus)\s+"# + pct + end, in: text),
+           let base = number(g[2]), let p = number(g[4]), p > 0, p < 1000 {
+            let minus = (g[3] ?? "").lowercased() != "plus"
+            let v = minus ? base * (1 - p / 100) : base * (1 + p / 100)
+            return Conversions(source: trimmed(g[0]), results: [billMoney(v, g[1] ?? "")])
         }
         let offs: [(String, Bool)] = [
             (#"\b"# + pct + #"\s*off\s*(?:of\s+)?"# + sym + #"\s*"# + amt + end, true),
@@ -2405,6 +2451,14 @@ extension Smart {
     /// coming. "movie is 145 mins" → 2 h 25 min (from 90 minutes up).
     static func arrival(in text: String, now: Date, here: TimeZone) -> Conversions? {
         let unit = #"(mins?|minutes?|hrs?|hours?)"#
+        // "15 min from now", "whats 2 hours from now", "in 2 hours what time" (2026-10-14 probe).
+        if let g = firstMatch(#"\b(?:what'?s\s+|whats\s+|what\s+time\s+is\s+it\s+)?(\d{1,3})\s*(mins?|minutes?|hrs?|hours?)\s+from\s+now\??"# + end, in: text)
+            ?? firstMatch(#"\bin\s+(\d{1,3})\s*(mins?|minutes?|hrs?|hours?)\s*,?\s*what\s+time(?:\s+(?:is\s+it|will\s+it\s+be))?\??"# + end, in: text),
+           let n = Double(g[1] ?? ""), let u = g[2], n > 0 {
+            let mins = u.lowercased().hasPrefix("h") ? n * 60 : n
+            guard mins <= 24 * 60 else { return nil }
+            return Conversions(source: trimmed(g[0]), results: [clock(now.addingTimeInterval(mins * 60), from: now, here: here)])
+        }
         let coming = #"\b(?:eta|back|there|home|ready|leav(?:e|ing)|land(?:s|ing)?|reach(?:ing)?|arriv(?:e|ing)|be\s+(?:there|back|home|ready|free|done)|see\s+(?:you|u)|done|free|out|wait)\b"#
         func minutes(_ count: String?, _ u: String?) -> Double? {
             guard let count, let u else { return nil }
@@ -3423,6 +3477,23 @@ extension Smart {
             }
             return Conversions(source: trimmed(g[0]), results: [count, dayName(when, now: now, here: here, region: region)])
         }
+        // "when is thanksgiving", "what day is christmas this year", "countdown
+        // to new year", "when is easter 2027" (2026-10-14 probe).
+        if let g = firstMatch(#"\b(?:when\s+is|when'?s|whens|what\s+(?:day|date)\s+is|countdown\s+(?:to|till|until)|how\s+long\s+(?:until|till|to))\s+(?:the\s+)?("# + holidayNames + #")(?:\s+(?:this\s+year|(20\d{2})))?\??"# + end, in: t),
+           let name = g[1] {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = here
+            let when: Date?
+            if let y = g[2].flatMap({ Int($0) }), let md = holidayDay(name, year: y, region: region) {
+                when = cal.date(from: DateComponents(year: y, month: md.0, day: md.1))
+            } else {
+                when = nextDay({ holidayDay(name, year: $0, region: region) }, now: now, here: here)
+            }
+            if let when {
+                return Conversions(source: trimmed(g[0]), results: [dayName(when, now: now, here: here, region: region),
+                                                                    countdown(to: when, from: now, here: here)])
+            }
+        }
         let lead = #"\b(?:on|after|before|by|till|til|until|for|over|during|around|this|next|from|at)\s+(?:the\s+)?("# + holidayNames + #")(?:\s+(?:day|weekend|break|holidays?|party|parties|trip|sale|sales|dinner|lunch|brunch|plans?|week|vacation))?"# + end
         let tail = #"(?<!\blast\s)(?<!\bpast\s)\b("# + holidayNames + #")\s+(?:weekend|break|party|parties|trip|sale|sales|dinner|lunch|brunch|plans?|holidays?|vacation|week)"# + end
         for p in [lead, tail] {
@@ -3600,7 +3671,14 @@ extension Smart {
     /// sign the message has to be about pay ("earning 50k a month" is not a
     /// rate the strip needs to restate).
     static func payRate(in text: String) -> Conversions? {
-        let about = text.range(of: payWords, options: [.regularExpression, .caseInsensitive]) != nil
+        var about = text.range(of: payWords, options: [.regularExpression, .caseInsensitive]) != nil
+        // A trailing "hourly", "monthly", "annually" asks which way to say it.
+        var text = text
+        if let w = firstMatch(#"\s+(?:in\s+|as\s+)?(?:hourly|monthly|annually|yearly|per\s+month|a\s+month)\??\s?$"#, in: text), let tailWord = w[0],
+           text.range(of: #"(?:/\s*|per\s+|an?\s+)(?:hr|hour|h|yr|year|annum)\s+\S+\??\s?$"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            text = String(text.dropLast(tailWord.count))
+            about = true   // asking it "annually" is talking pay
+        }
         if let g = firstMatch(#"(?<![\w.,])([$€£₹¥])?\s?(\d{1,4}(?:\.\d{1,2})?)\s*(?:/\s*(?:hr|hour|h)|an?\s+hour|per\s+hour|hourly)"# + end, in: text),
            let n = Double(g[2] ?? ""), n > 0, g[1] != nil || about {
             let s = g[1] ?? "", year = n * 2080
@@ -3641,6 +3719,7 @@ extension Smart {
             (#"\b"# + kinds + #"\s+(?:of\s+|for\s+|on\s+)?"# + scaledAmount + #"\s*(?:at|@)\s*"# + rate + #"\s*(?:for|over)?\s*"# + term + end, true),
             (#"(?<![\w.,])"# + scaledAmount + #"\s+"# + kinds + #"\s*(?:at|@)?\s*"# + rate + #"\s*(?:for|over)?\s*"# + term + end, true),
             (#"(?<![\w.,])"# + scaledAmount + #"\s*(?:at|@)\s*"# + rate + #"\s*(?:for|over)\s*"# + term + end, false),
+            (#"\b(?:compound(?:ed)?|invest(?:ed)?|grow)\s+(?:of\s+)?"# + scaledAmount + #"\s*(?:at|@)?\s*"# + rate + #"\s*(?:for|over)?\s*"# + term + end, false),
         ]
         for (p, borrowed) in patterns {
             guard borrowed || !borrowing, let g = firstMatch(p, in: text), let base = number(g[2]) else { continue }
@@ -4422,6 +4501,16 @@ extension Smart {
     /// 13h ahead" from where the phone is.
     static func timeDifference(in text: String, now: Date = Date(), here: TimeZone = .current,
                                region: String? = Locale.current.region?.identifier) -> Conversions? {
+        // "pst to ist", "est vs gmt": how far apart two zones are.
+        if let g = firstMatch(#"^\s*(?:what'?s\s+|whats\s+)?([a-z]{2,4})\s+(?:to|vs\.?|versus|and)\s+([a-z]{2,4})(?:\s+(?:time\s+)?difference)?\??\s?$"#, in: text),
+           let a = g[1]?.lowercased(), let b = g[2]?.lowercased(), a != b,
+           let za = namedZone(a, region: region), let zb = namedZone(b, region: region) {
+            let diff = zb.secondsFromGMT(for: now) - za.secondsFromGMT(for: now)
+            let mins = abs(diff) / 60
+            let gap = mins % 60 == 0 ? "\(mins / 60)h" : "\(mins / 60)h \(mins % 60)m"
+            let said = diff == 0 ? "\(b.uppercased()) = \(a.uppercased())" : "\(b.uppercased()) is \(gap) \(diff > 0 ? "ahead of" : "behind") \(a.uppercased())"
+            return Conversions(source: trimmed(g[0]), results: [said])
+        }
         guard let g = firstMatch(#"\b(?:time\s+(?:difference|diff|gap)\s+(?:with|to|from|for|in|between\s+(?:us|here)\s+and)|how\s+(?:many\s+hours\s+|far\s+)?(?:ahead|behind)\s+is)\s+([a-z][a-z .]{1,30}?)\??\s?$"#, in: text),
               let name = g[1]?.lowercased().trimmingCharacters(in: .whitespaces),
               let there = namedZone(name, region: region) else { return nil }
@@ -4436,7 +4525,7 @@ extension Smart {
     /// "100f in c", "30 c to f", "-40 celsius in fahrenheit": a temperature
     /// asked for in the other scale, without the degree sign.
     static func degreesAsked(in text: String) -> Conversions? {
-        guard let g = firstMatch(#"(?<![\w.])(-?\d{1,4}(?:\.\d+)?)\s*°?\s*(f|c|fahrenheit|celsius|centigrade)\s+(?:in|to|into|as)\s+°?(c|f|celsius|fahrenheit|centigrade)\??\s?$"#, in: text),
+        guard let g = firstMatch(#"(?<![\w.])(-?\d{1,4}(?:\.\d+)?)\s*°?\s*(f|c|fahrenheit|celsius|centigrade)(?:\s+oven)?\s+(?:in|to|into|as)\s+°?(c|f|celsius|fahrenheit|centigrade)\??\s?$"#, in: text),
               let v = Double(g[1] ?? ""), let from = g[2]?.lowercased().first, let to = g[3]?.lowercased().first else { return nil }
         let fromF = from == "f", toF = to == "f"
         guard fromF != toF else { return nil }
@@ -5109,5 +5198,211 @@ extension Smart {
         f.dateFormat = "h:mm a"
         let said = "\(label) \(f.string(from: when))" + (tomorrow ? " tomorrow" : "")
         return Conversions(source: trimmed(g[0]), results: [said])
+    }
+}
+
+// MARK: - Weather where the phone is, from Open-Meteo (keyless; 2026-10-14)
+
+extension Smart {
+    /// Today's and tomorrow's weather where the phone last was, as Open-Meteo
+    /// gave it (WeatherStore fetches; nothing here touches the network).
+    struct WeatherSnapshot: Equatable {
+        var at: Date
+        var fahrenheit: Bool
+        var nowTemp: Double
+        var nowCode: Int
+        var nowRain: Double
+        /// [today, tomorrow]
+        var high: [Double]
+        var low: [Double]
+        var rainChance: [Int]
+        var code: [Int]
+    }
+    static var weather: WeatherSnapshot?
+
+    /// What a message asks of the weather: "weather today", "whats the
+    /// weather", "is it going to rain", "will it rain tomorrow", "is it
+    /// raining". The whole sentence, so "weather was great" stays quiet.
+    static func weatherAsk(in text: String) -> (day: Int, rain: Bool, now: Bool, source: String)? {
+        let sentence = text.components(separatedBy: CharacterSet(charactersIn: ".!\n")).last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? text
+        let s = sentence.trimmingCharacters(in: .whitespaces)
+        if let g = firstMatch(#"^(?:hows|how's|how\s+is|whats|what's|what\s+is)?\s*(?:the\s+)?(?:weather|forecast)(?:\s+like)?(?:\s+(today|tonight|now|tomorrow|tmrw))?\s*\??$"#, in: s) {
+            let tomorrow = ["tomorrow", "tmrw"].contains(g[1]?.lowercased() ?? "")
+            return (tomorrow ? 1 : 0, false, false, trimmed(g[0]))
+        }
+        if let g = firstMatch(#"^(?:is\s+it|will\s+it|is\s+it\s+going\s+to|gonna|does\s+it\s+look\s+like\s+it'?s?\s+going\s+to)\s+(rain|raining|snow|snowing)(?:\s+(today|tonight|tomorrow|tmrw|later))?\s*\??$"#, in: s),
+           let verb = g[1]?.lowercased() {
+            let tomorrow = ["tomorrow", "tmrw"].contains(g[2]?.lowercased() ?? "")
+            let now = verb.hasSuffix("ing") && g[2] == nil && s.lowercased().hasPrefix("is it raining") || s.lowercased().hasPrefix("is it snowing")
+            return (tomorrow ? 1 : 0, true, now, trimmed(g[0]))
+        }
+        return nil
+    }
+
+    static func weatherWords(_ code: Int) -> String {
+        switch code {
+        case 0: return "clear"
+        case 1: return "mostly clear"
+        case 2: return "partly cloudy"
+        case 3: return "cloudy"
+        case 45, 48: return "fog"
+        case 51...57: return "drizzle"
+        case 61...67: return "rain"
+        case 71...77: return "snow"
+        case 80...82: return "showers"
+        case 85, 86: return "snow showers"
+        case 95...99: return "thunderstorms"
+        default: return "mixed"
+        }
+    }
+
+    /// The answer, once the snapshot is in hand: "18°, partly cloudy · H 21 L 12",
+    /// "Tomorrow: rain 80% · H 19 L 11", "No rain expected today (10%)".
+    static func weatherAnswer(in text: String, snapshot w: WeatherSnapshot?) -> Conversions? {
+        guard let ask = weatherAsk(in: text), let w, w.high.count > ask.day, w.low.count > ask.day,
+              w.rainChance.count > ask.day, w.code.count > ask.day else { return nil }
+        func deg(_ v: Double) -> String { "\(Int(v.rounded()))°" }
+        let d = ask.day
+        let range = "H \(deg(w.high[d])) L \(deg(w.low[d]))"
+        let said: String
+        if ask.now {
+            said = w.nowRain > 0 || (51...99).contains(w.nowCode) ? "Yes, \(weatherWords(w.nowCode)) now · \(deg(w.nowTemp))"
+                : "Not now · \(weatherWords(w.nowCode)), \(deg(w.nowTemp))"
+        } else if ask.rain {
+            let when = d == 1 ? "tomorrow" : "today"
+            said = w.rainChance[d] >= 40 ? "Rain likely \(when) (\(w.rainChance[d])%)"
+                : w.rainChance[d] >= 20 ? "Some chance of rain \(when) (\(w.rainChance[d])%)"
+                : "No rain expected \(when) (\(w.rainChance[d])%)"
+        } else if d == 1 {
+            said = "Tomorrow: \(weatherWords(w.code[1]))\(w.rainChance[1] >= 30 ? " \(w.rainChance[1])%" : "") · \(range)"
+        } else {
+            said = "\(deg(w.nowTemp)), \(weatherWords(w.nowCode)) · \(range)"
+        }
+        return Conversions(source: ask.source, results: [said])
+    }
+}
+
+// MARK: - Durations, kitchen volumes and writing help (2026-10-14 third probe)
+
+extension Smart {
+    /// "90 minutes in hours" → 1.5 h; "2 hours 45 minutes in minutes" → 165 min;
+    /// "3.5 hours in minutes" → 210 min.
+    static func duration(in text: String) -> Conversions? {
+        guard let g = firstMatch(#"(?<![\w.])(?:(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\s*(?:and\s+)?)?(?:(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m))?\s+(?:in|to|into|as)\s+(hours?|hrs?|minutes?|mins?|seconds?|secs?)\??\s?$"#, in: text),
+              g[1] != nil || g[2] != nil, let unit = g[3]?.lowercased() else { return nil }
+        let minutes = (Double(g[1] ?? "") ?? 0) * 60 + (Double(g[2] ?? "") ?? 0)
+        guard minutes > 0 else { return nil }
+        let said: String
+        if unit.hasPrefix("h") {
+            guard g[2] != nil else { return nil }   // "2 hours in hours" says nothing
+            said = oneDecimal(minutes / 60) + " h"
+        } else if unit.hasPrefix("m") {
+            guard g[1] != nil else { return nil }
+            said = "\(Int(minutes.rounded())) min"
+        } else {
+            said = "\(Int((minutes * 60).rounded())) s"
+        }
+        return Conversions(source: trimmed(g[0]), results: [said])
+    }
+
+    /// US kitchen volumes asked in millilitres or litres: "16 oz in ml" (a
+    /// volume asked as one is fluid ounces), "a cup in ml", "2 pints in litres".
+    static func kitchenVolume(in text: String) -> Conversions? {
+        let ml: [String: Double] = ["oz": 29.5735, "fl oz": 29.5735, "floz": 29.5735, "cup": 236.588, "cups": 236.588,
+                                    "pint": 473.176, "pints": 473.176, "quart": 946.353, "quarts": 946.353,
+                                    "gallon": 3785.41, "gallons": 3785.41, "tbsp": 14.7868, "tsp": 4.92892]
+        guard let g = firstMatch(#"(?<![\w.])(\d+(?:\.\d+)?|an?|one|half\s+an?)\s*(fl\s*oz|floz|oz|cups?|pints?|quarts?|gallons?|tbsp|tsp)\s+(?:in|to|into|as)\s+(ml|millilit(?:er|re)s?|l|lit(?:er|re)s?)\??\s?$"#, in: text),
+              let raw = g[1]?.lowercased(), let unit = g[2]?.lowercased().replacingOccurrences(of: " ", with: ""),
+              let per = ml[unit] ?? ml[unit.replacingOccurrences(of: "floz", with: "oz")] else { return nil }
+        let count = Double(raw) ?? (raw.hasPrefix("half") ? 0.5 : 1)
+        let total = count * per
+        let toLitres = (g[3] ?? "").lowercased().hasPrefix("l")
+        let said = toLitres ? String(format: "%.2f L", total / 1000).replacingOccurrences(of: ".00", with: "") : "\(Int(total.rounded())) ml"
+        return Conversions(source: trimmed(g[0]), results: [said])
+    }
+
+    /// Words people mix up: "is it affect or effect", "their there or they're".
+    private static let confusions: [(Set<String>, String)] = [
+        (["affect", "effect"], "affect: to change (it affects me) · effect: the result (the effect)"),
+        (["their", "there", "they're"], "their: belongs to them · there: a place · they're: they are"),
+        (["your", "you're"], "your: belongs to you · you're: you are"),
+        (["its", "it's"], "its: belongs to it · it's: it is"),
+        (["then", "than"], "then: next, at that time · than: comparing (bigger than)"),
+        (["lose", "loose"], "lose: to misplace or not win · loose: not tight"),
+        (["fewer", "less"], "fewer: things you count · less: amounts you don't"),
+        (["who", "whom"], "who: does it (who called?) · whom: has it done to them (to whom)"),
+        (["lie", "lay"], "lie: to recline (I lie down) · lay: to put something (lay it down)"),
+        (["ie", "eg", "i.e.", "e.g."], "i.e.: that is (exactly) · e.g.: for example"),
+        (["to", "too", "two"], "to: direction · too: also, very · two: 2"),
+        (["accept", "except"], "accept: to receive · except: apart from"),
+        (["advice", "advise"], "advice: the noun · advise: the verb"),
+        (["principal", "principle"], "principal: main, or a school head · principle: a rule or belief"),
+        (["stationary", "stationery"], "stationary: not moving · stationery: paper and pens"),
+        (["compliment", "complement"], "compliment: praise · complement: complete, go well with"),
+        (["weather", "whether"], "weather: rain or sun · whether: if"),
+        (["loose", "lose"], "lose: to misplace or not win · loose: not tight"),
+    ]
+
+    /// Irregular past tenses: "past tense of run" → ran, run.
+    private static let pastTenses: [String: String] = [
+        "be": "was / were · been", "begin": "began · begun", "break": "broke · broken", "bring": "brought · brought",
+        "buy": "bought · bought", "catch": "caught · caught", "choose": "chose · chosen", "come": "came · come",
+        "cost": "cost · cost", "cut": "cut · cut", "do": "did · done", "draw": "drew · drawn", "drink": "drank · drunk",
+        "drive": "drove · driven", "eat": "ate · eaten", "fall": "fell · fallen", "feel": "felt · felt", "fight": "fought · fought",
+        "find": "found · found", "fly": "flew · flown", "forget": "forgot · forgotten", "forgive": "forgave · forgiven",
+        "freeze": "froze · frozen", "get": "got · got / gotten", "give": "gave · given", "go": "went · gone", "grow": "grew · grown",
+        "hang": "hung · hung", "have": "had · had", "hear": "heard · heard", "hide": "hid · hidden", "hit": "hit · hit",
+        "hold": "held · held", "hurt": "hurt · hurt", "keep": "kept · kept", "know": "knew · known", "lay": "laid · laid",
+        "lead": "led · led", "leave": "left · left", "lend": "lent · lent", "let": "let · let", "lie": "lay · lain",
+        "lose": "lost · lost", "make": "made · made", "mean": "meant · meant", "meet": "met · met", "pay": "paid · paid",
+        "put": "put · put", "quit": "quit · quit", "read": "read · read", "ride": "rode · ridden", "ring": "rang · rung",
+        "rise": "rose · risen", "run": "ran · run", "say": "said · said", "see": "saw · seen", "sell": "sold · sold",
+        "send": "sent · sent", "set": "set · set", "shake": "shook · shaken", "shine": "shone · shone", "shoot": "shot · shot",
+        "show": "showed · shown", "shut": "shut · shut", "sing": "sang · sung", "sink": "sank · sunk", "sit": "sat · sat",
+        "sleep": "slept · slept", "speak": "spoke · spoken", "spend": "spent · spent", "stand": "stood · stood",
+        "steal": "stole · stolen", "stick": "stuck · stuck", "sting": "stung · stung", "strike": "struck · struck",
+        "swear": "swore · sworn", "swim": "swam · swum", "take": "took · taken", "teach": "taught · taught",
+        "tear": "tore · torn", "tell": "told · told", "think": "thought · thought", "throw": "threw · thrown",
+        "understand": "understood · understood", "wake": "woke · woken", "wear": "wore · worn", "win": "won · won",
+        "write": "wrote · written", "dive": "dove / dived · dived", "lit": "lit · lit", "light": "lit · lit",
+        "seek": "sought · sought", "bite": "bit · bitten", "blow": "blew · blown", "build": "built · built",
+        "burn": "burned / burnt · burned / burnt", "dream": "dreamed / dreamt · dreamed / dreamt", "spell": "spelled / spelt · spelled / spelt",
+    ]
+
+    /// Irregular plurals: "plural of cactus" → cacti (or cactuses).
+    private static let plurals: [String: String] = [
+        "cactus": "cacti (or cactuses)", "child": "children", "person": "people", "man": "men", "woman": "women",
+        "mouse": "mice", "goose": "geese", "tooth": "teeth", "foot": "feet", "ox": "oxen", "fish": "fish",
+        "sheep": "sheep", "deer": "deer", "moose": "moose", "series": "series", "species": "species",
+        "criterion": "criteria", "phenomenon": "phenomena", "datum": "data", "medium": "media (or mediums)",
+        "analysis": "analyses", "crisis": "crises", "thesis": "theses", "hypothesis": "hypotheses",
+        "basis": "bases", "diagnosis": "diagnoses", "fungus": "fungi", "nucleus": "nuclei", "radius": "radii",
+        "stimulus": "stimuli", "syllabus": "syllabi (or syllabuses)", "octopus": "octopuses", "virus": "viruses",
+        "alumnus": "alumni", "index": "indexes (or indices)", "appendix": "appendices (or appendixes)",
+        "matrix": "matrices", "vertex": "vertices", "knife": "knives", "life": "lives", "wife": "wives",
+        "leaf": "leaves", "half": "halves", "wolf": "wolves", "loaf": "loaves", "shelf": "shelves",
+        "potato": "potatoes", "tomato": "tomatoes", "hero": "heroes", "echo": "echoes", "piano": "pianos",
+        "photo": "photos", "die": "dice", "louse": "lice", "quiz": "quizzes", "bus": "buses", "box": "boxes",
+        "mother-in-law": "mothers-in-law", "passerby": "passersby", "aircraft": "aircraft", "salmon": "salmon",
+    ]
+
+    /// "is it affect or effect", "past tense of run", "plural of cactus".
+    static func writingHelp(in text: String) -> Conversions? {
+        if let g = firstMatch(#"\b(?:is\s+it\s+|which\s+is\s+(?:right|correct)[:,]?\s+|when\s+to\s+use\s+)?([a-z'.]{2,12})(?:\s*,\s*|\s+or\s+|\s+vs\.?\s+|\s+and\s+)([a-z'.]{2,12})(?:(?:\s*,\s*|\s+or\s+)([a-z'.]{2,12}))?\??\s?$"#, in: text),
+           let a = g[1]?.lowercased(), let b = g[2]?.lowercased() {
+            let asked = Set([a, b] + (g[3].map { [$0.lowercased()] } ?? []))
+            if let hit = confusions.first(where: { asked.isSubset(of: $0.0) && asked.count >= 2 }) {
+                return Conversions(source: trimmed(g[0]), results: [hit.1])
+            }
+        }
+        if let g = firstMatch(#"\b(?:what(?:'s|s|\s+is)\s+the\s+)?past\s+(?:tense|form)\s+(?:of\s+)?["']?([a-z]{2,12})["']?\??\s?$"#, in: text),
+           let verb = g[1]?.lowercased(), let past = pastTenses[verb] {
+            return Conversions(source: trimmed(g[0]), results: [past])
+        }
+        if let g = firstMatch(#"\b(?:what(?:'s|s|\s+is)\s+the\s+)?plural\s+(?:of\s+|for\s+)?(?:an?\s+)?["']?([a-z-]{2,16})["']?\??\s?$"#, in: text),
+           let noun = g[1]?.lowercased(), let many = plurals[noun] {
+            return Conversions(source: trimmed(g[0]), results: [many])
+        }
+        return nil
     }
 }

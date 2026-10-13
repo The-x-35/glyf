@@ -24,10 +24,15 @@ TEST_SHARED = %w[
   Engine/Smart.swift
   Engine/EmojiWords.swift
   Engine/PhraseMemory.swift
+  Engine/WeatherStore.swift
   Engine/CalendarText.swift
   Engine/EventParse.swift
   Engine/GoogleEvent.swift
   Engine/TempMail.swift
+  Engine/NotoStickers.swift
+  Engine/NotoCatalogue.generated.swift
+  Engine/TokenLookup.swift
+  Engine/CalBooking.swift
   Engine/Typing/TypingText.swift
   Engine/Typing/GlydTrie.swift
   Engine/Typing/Decoder.swift
