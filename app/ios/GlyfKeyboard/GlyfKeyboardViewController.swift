@@ -248,6 +248,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // A plan chip says when the calendar already has something then.
+        EventParse.busyNote = { plan in
+            guard CalendarWriter.canRead else { return nil }
+            return EventParse.busyNote(for: plan, events: CalendarWriter.events(from: plan.start, to: plan.end))
+        }
         log.log("GLYF_KB viewDidLoad")
         // The settings file changed under us (the app's Keyboard screen, the
         // tour, our own shell): whichever check noticed, the keyboard that is
@@ -1607,7 +1612,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         let quiet: [UITextContentType] = [.URL, .emailAddress, .username, .password, .newPassword, .oneTimeCode,
                                           .creditCardNumber, .telephoneNumber]
-        let contentType = proxy.textContentType ?? nil
+        // The type kept for this field: iOS can answer nil on a later read.
+        let contentType = fieldContentType
         if let type = contentType, quiet.contains(type) { return [] }
         let s = SettingsStore.current
         var policy: TypingEngine.Policy = .all
@@ -1626,6 +1632,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// dictionary makes of them (2026-10-07 probe: "hi arpit" offered
     /// armpit): each word of a saved name is kept, once per spelling.
     private var seededNames: Set<String> = []
+    /// The text before the caret at the last strip update (PhraseMemory).
+    private var phraseSeen = ""
     private func seedOwnNames() {
         guard let engine = typing else { return }
         let names = Set(VaultStore.shared.load().fields.filter { $0.kind == "name" }
@@ -1656,6 +1664,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         let before = beforeContext ?? ""
         let tail = String(before.suffix(120))
+        notePhrases(before)
         if let gone = dismissedTail {
             if gone == tail.trimmingCharacters(in: .whitespacesAndNewlines) {
                 cancelSuggestion()
@@ -1717,6 +1726,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
             } else if tail.contains(where: \.isNumber), Smart.looksLikeMoney(tail) || Smart.currencyPair(in: tail) != nil {
                 RatesStore.shared.ensureFiat { [weak self] in self?.updateCandidates() }
             }
+        }
+        // A sentence the person keeps sending: its first words offer the rest.
+        if chip == nil, typingPolicy.contains(.learning),
+           let rest = PhraseMemoryStore.shared.memory.completion(after: tail, today: TypingText.day()) {
+            chip = .convert(Smart.Conversions(source: "", results: [rest], inserts: [rest], hows: [.after]))
         }
         // Talk of a call: a Google Meet link where it's wanted, the Meet key's
         // behaviour surfaced (research 2026-10-07), only with Meet connected.
@@ -1868,7 +1882,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private func askForSuggestion(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Only once the person agreed to it ("What Glyf sends" in the app).
+        // Never a password, a code or a card number, whether the field says
+        // so or the text looks like one.
+        let secretTypes: [UITextContentType] = [.password, .newPassword, .oneTimeCode, .creditCardNumber]
         guard hasFullAccess, !isSecureField, surface == .none,
+              !(fieldContentType.map { secretTypes.contains($0) } ?? false),
+              SecretScanner.scan(trimmed) == .clean,
               SettingsStore.current.candidates, SettingsStore.current.aiSuggest == true,
               trimmed.count >= 12, trimmed.split(separator: " ").count >= 3,
               trimmed != suggestedFor,
@@ -2269,6 +2288,9 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             return
         }
         commitCurrentWord()
+        // Return may send the message: what it said is the sentence to
+        // remember, whatever the strip last saw (PhraseMemory).
+        if let said = beforeContext, !said.isEmpty { phraseSeen = said }
         hostInsert("\n")
         syncAutoShift()
         updateCandidates()
@@ -2674,6 +2696,21 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
             } else if let note {
                 KeyboardToast.show(in: self.content, text: note)
             }
+        }
+    }
+
+    /// Remembers each sentence the person finishes or sends, for
+    /// PhraseMemory: a sentence ending in . ! ? and a space, or the field
+    /// emptied after a message (sent). Never where learning is off.
+    private func notePhrases(_ before: String) {
+        defer { phraseSeen = before }
+        guard before != phraseSeen, typingPolicy.contains(.learning) else { return }
+        if let ended = PhraseMemory.endedSentence(in: before), !phraseSeen.hasSuffix(ended + " "), before.count > phraseSeen.count {
+            PhraseMemoryStore.shared.record(ended)
+        } else if before.isEmpty, phraseSeen.count >= 15,
+                  (textDocumentProxy.documentContextAfterInput ?? "").isEmpty,
+                  !phraseSeen.hasSuffix(" ") || PhraseMemory.endedSentence(in: phraseSeen) == nil {
+            PhraseMemoryStore.shared.record(PhraseMemory.lastSentence(of: phraseSeen))
         }
     }
 

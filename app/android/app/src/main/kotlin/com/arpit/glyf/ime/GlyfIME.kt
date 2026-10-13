@@ -123,6 +123,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     // MARK: lifecycle
 
     override fun onCreate() {
+        // A plan chip says when the phone's calendar already has something then.
+        EventParse.busyNote = { plan ->
+            if (!CalendarText.connected(this)) null
+            else EventParse.busyNote(plan, CalendarText.load(this, plan.start, plan.end))
+        }
         super.onCreate()
         // The server turns away anyone without a session; the keyboard reads
         // the app's and sends it with every call.
@@ -136,11 +141,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             //   adb shell am broadcast -a com.arpit.glyf.DEBUG_TOOL --es id menu
             //   adb shell am broadcast -a com.arpit.glyf.DEBUG_TOOL --es id dump
             val filter = android.content.IntentFilter("com.arpit.glyf.DEBUG_TOOL")
+            // Only a sender holding DUMP (adb shell has it, apps don't) gets in.
             if (android.os.Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(debugTool, filter, RECEIVER_EXPORTED)
+                registerReceiver(debugTool, filter, "android.permission.DUMP", null, RECEIVER_EXPORTED)
             } else {
                 @Suppress("UnspecifiedRegisterReceiverFlag")
-                registerReceiver(debugTool, filter)
+                registerReceiver(debugTool, filter, "android.permission.DUMP", null)
             }
         }
     }
@@ -461,12 +467,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Start at the usual answer (a 48dp strip) so the first show is laid
         // out right; the insets below correct it where a phone differs.
         val centre = tabletSide()
-        root.setPadding(centre, 0, centre, dp(48) + dp(6))
+        root.setPadding(centre, 0, centre, startingBottomPad())
         root.setOnApplyWindowInsetsListener { v, insets ->
             val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 maxOf(insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom,
                       insets.getInsets(android.view.WindowInsets.Type.tappableElement()).bottom)
             } else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
+            lastBottomInset = bottom
             // Sides: a camera cutout or a navigation bar beside a phone held
             // sideways keeps the keys clear of it; a tablet's are centred.
             val side = if (android.os.Build.VERSION.SDK_INT >= 30)
@@ -480,6 +487,41 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             insets
         }
         return root
+    }
+
+    /** The text before the caret at the last strip update (PhraseMemory). */
+    private var phraseSeen = ""
+
+    /** Remembers each sentence the person finishes or sends: one ending in
+     *  . ! ? and a space, or the field emptied after a message (sent).
+     *  Never where learning is off (passwords, incognito). iOS twin. */
+    private fun notePhrases(before: String) {
+        val seen = phraseSeen
+        phraseSeen = before
+        if (before == seen || typingPolicy() and TypingEngine.LEARNING == 0) return
+        val ended = com.arpit.glyf.ime.typing.PhraseMemory.endedSentence(before)
+        if (ended != null && !seen.endsWith("$ended ") && before.length > seen.length) {
+            com.arpit.glyf.ime.typing.PhraseMemoryStore.record(this, ended)
+        } else if (before.isEmpty() && seen.length >= 15 &&
+            currentInputConnection?.getTextAfterCursor(1, 0).isNullOrEmpty() &&
+            (!seen.endsWith(" ") || com.arpit.glyf.ime.typing.PhraseMemory.endedSentence(seen) == null)) {
+            com.arpit.glyf.ime.typing.PhraseMemoryStore.record(this, com.arpit.glyf.ime.typing.PhraseMemory.lastSentence(seen))
+        }
+    }
+
+    /** The bottom inset the window last reported; -1 until it has. */
+    private var lastBottomInset = -1
+
+    /** Room under the keys before the window has said how much it needs:
+     *  what it said last time, else the phone's own navigation bar height
+     *  (a guessed 48dp left a blank band on phones whose Android draws no
+     *  hide and switch buttons under a keyboard; Arpit, 2026-10-14: "on long
+     *  android phones the bottom part of keyboard is just empty"). */
+    private fun startingBottomPad(): Int {
+        if (lastBottomInset >= 0) return lastBottomInset + dp(6)
+        val id = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        val bar = if (id > 0) resources.getDimensionPixelSize(id) else dp(48)
+        return bar + dp(6)
     }
 
     /** A view built again (a new configuration) starts clean: every strip,
@@ -1003,7 +1045,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     private fun pasteClipboard() {
-        com.arpit.glyf.store.ClipboardStore.clipText(this)?.let { insertSpaced(it) }
+        com.arpit.glyf.store.ClipboardStore.clipText(this, allowSensitive = true)?.let { insertSpaced(it) }
     }
 
     /** A pasted copy is its own piece of text: never glued onto the word
@@ -1601,7 +1643,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     ic.deleteSurroundingText(corr.replacement.length + 1, 0)
                     ic.commitText(corr.original, 1)
                     lastCorrection = null
-                    if (corr.fromEngine) {
+                    if (corr.fromEngine && typingPolicy() and TypingEngine.LEARNING != 0) {
                         KeyboardTyping.engine?.revert(corr.original, corr.replacement)
                         KeyboardTyping.scheduleSave(this)
                     }
@@ -1649,6 +1691,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             id == "return" -> {
                 commitCurrentWord(ic)
+                // Return may send the message: what it said is the sentence
+                // to remember, whatever the strip last saw (PhraseMemory).
+                ic.getTextBeforeCursor(400, 0)?.toString()?.takeIf { it.isNotEmpty() }?.let { phraseSeen = it }
                 // The field's own action where it has one (go, search, send,
                 // done, next), as the key now shows; a new line otherwise.
                 val action = returnActionOf(currentInputEditorInfo)
@@ -2425,6 +2470,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             return false
         }
         val tail = before.takeLast(120)
+        notePhrases(before)
         val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
         val rates = RatesStore.snapshot(region, settings.optString("moneyCurrency"))
         val ownWallet = settings.optString("walletAddress").ifEmpty { null }
@@ -2467,6 +2513,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Android has no Full Access to wait for, as the email field's own
         // temp address chip never did.
         chip = Smart.withTempMail(chip)
+        // A sentence the person keeps sending: its first words offer the rest.
+        if (chip == null && typingPolicy() and TypingEngine.LEARNING != 0) {
+            com.arpit.glyf.ime.typing.PhraseMemoryStore.get(this)
+                .completion(tail, com.arpit.glyf.ime.typing.TypingText.day())?.let { rest ->
+                    chip = Smart.Chip.Convert(Smart.Conversions("", listOf(rest), listOf(rest), listOf(Smart.Insertion.AFTER)))
+                }
+        }
         // The tour keeps the strip for the step it is coaching.
         val step = tourStep()
         if (step != null) {
@@ -3112,6 +3165,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private var actIntent: String? = null
 
     private fun startAct(before: String, after: String, intent: String? = null) {
+        // A password never goes to the AI, whichever button asked.
+        if (isSecureField()) return
         actSkill = null
         actSkillTitle = null
         actVars = emptyMap()
@@ -3126,6 +3181,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  the letter's keycap, the answer streaming in, then ↻ Copy Insert. */
     private fun startSkill(letter: String, glyfId: String, vars: Map<String, String> = emptyMap(),
                            title: String? = null) {
+        if (isSecureField()) return
         val ic = currentInputConnection
         val before = ic?.getTextBeforeCursor(2000, 0)?.toString() ?: ""
         val after = ic?.getTextAfterCursor(2000, 0)?.toString() ?: ""
@@ -4050,7 +4106,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 if (undoableCorrection(before) != null) {
                     ic.deleteSurroundingText(corr.replacement.length + 1, 0)
                     ic.commitText(corr.original + " ", 1)
-                    if (corr.fromEngine) engine?.revert(corr.original, corr.replacement)
+                    if (corr.fromEngine && policy and TypingEngine.LEARNING != 0) {
+                        engine?.revert(corr.original, corr.replacement)
+                    }
                 }
                 lastCorrection = null
             }
@@ -4060,8 +4118,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 ic.commitText((if (word.isEmpty()) "" else " ") + item.text + " ", 1)
             }
             Suggestion.Kind.LITERAL -> {
-                // Exactly what they typed, on purpose: keep it and never fix it.
-                engine?.keep(word)
+                // Exactly what they typed, on purpose: keep it and never fix it
+                // (remembered only where the field allows learning).
+                if (policy and TypingEngine.LEARNING != 0) engine?.keep(word)
                 engine?.commit(word, previous, false, policy)
                 ic.commitText(" ", 1)
             }
@@ -5826,7 +5885,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     /** mail.tm, or the stand-in a test run points the keyboard at. */
-    private fun tempBase() = settings.optString("tempMailBase").ifBlank { TempMailRules.DEFAULT_BASE }
+    // The stand-in mail server is for debug builds only; a shipped build
+    // sends the inbox login nowhere but mail.tm.
+    private fun tempBase() = if (!com.arpit.glyf.BuildConfig.DEBUG) TempMailRules.DEFAULT_BASE
+        else settings.optString("tempMailBase").ifBlank { TempMailRules.DEFAULT_BASE }
 
     private fun tempPanelShowing() = featurePanel?.tag == "tempmail" || featurePanel?.tag == "tempmail:mail"
 
@@ -6423,6 +6485,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** Translate takes the strip's place, the way it does on iOS. */
     private fun runTranslateOnField() {
         if (translateStrip != null) { exitTranslate(); return }
+        if (isSecureField()) return
         dismissFeaturePanel()
         val strip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -6509,7 +6572,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     /** Called on word commits: translate what is typed so far. */
     private fun translateDraftChanged() {
-        if (translateStrip == null) return
+        if (translateStrip == null || isSecureField()) return
         val ic = currentInputConnection ?: return
         val before = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
         val window = translateWindow(before)

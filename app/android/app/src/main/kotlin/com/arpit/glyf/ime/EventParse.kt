@@ -341,6 +341,19 @@ object EventParse {
         get() = Locale.getDefault().country !in setOf("US", "PH", "CA", "FM", "MH", "PW")
 
     /** "Dinner · Fri 8:00 PM", "Call · Today 5:00 PM": the strip chip's words. */
+    /** What the person already has when a plan falls ("busy: Dentist"), set
+     *  by the keyboard where the calendar can be read (iOS twin). */
+    @Volatile var busyNote: ((Plan) -> String?)? = null
+
+    /** The first timed event overlapping the plan, said short. All-day
+     *  events (birthdays, holidays) don't make anyone busy. */
+    fun busyNote(p: Plan, events: List<CalendarText.Event>): String? {
+        if (p.allDay || !p.hasTime) return null
+        val hit = events.firstOrNull { !it.allDay && it.start < p.end && it.end > p.start } ?: return null
+        val title = if (hit.title.length > 18) hit.title.take(17) + "…" else hit.title
+        return "busy: $title"
+    }
+
     fun summary(p: Plan, now: Long = System.currentTimeMillis()): String {
         val day = when {
             CalendarText.startOfDay(p.start) == CalendarText.startOfDay(now) -> "Today"

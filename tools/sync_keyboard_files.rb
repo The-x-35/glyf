@@ -23,6 +23,7 @@ TEST_SHARED = %w[
   Engine/SpaceGesture.swift
   Engine/Smart.swift
   Engine/EmojiWords.swift
+  Engine/PhraseMemory.swift
   Engine/CalendarText.swift
   Engine/EventParse.swift
   Engine/GoogleEvent.swift

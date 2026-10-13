@@ -130,6 +130,20 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertTrue(WordTracker.wantsCapital(beforeContext: "newline\n"))
     }
 
+    /// Hold Return puts U+2028 in where Return sends: it ends the word and
+    /// the sentence like a new line ("Hi\u{2028}there" was learned as one
+    /// word, 2026-10-14).
+    func testLineSeparatorsEndWords() {
+        XCTAssertEqual(WordTracker.currentWord(beforeContext: "Hi\u{2028}ther"), "ther")
+        XCTAssertEqual(WordTracker.currentWord(beforeContext: "Hi\u{2029}ther"), "ther")
+        XCTAssertEqual(WordTracker.currentWord(beforeContext: "Hi\r\nther"), "ther")
+        XCTAssertEqual(WordTracker.currentWord(beforeContext: "see\u{00A0}you"), "you")
+        XCTAssertTrue(WordTracker.wantsCapital(beforeContext: "Hi\u{2028}"))
+        XCTAssertNil(WordTracker.previousWord(beforeContext: "Hi\u{2028}ther"))
+        XCTAssertEqual(WordTracker.previousWord(beforeContext: "see\u{00A0}yo"), "see")
+        XCTAssertFalse(WordTracker.insideLinkOrAddress(beforeContext: "a@b.co\u{2028}hel"))
+    }
+
     func testPeriodShortcutGate() {
         XCTAssertTrue(WordTracker.canPeriodShortcut(beforeContext: "word "))
         XCTAssertFalse(WordTracker.canPeriodShortcut(beforeContext: "word. "))
@@ -1339,6 +1353,59 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.mapLink(in: "im at work"))
         XCTAssertNil(Smart.mapLink(in: "im at peace"))
         XCTAssertNil(Smart.mapLink(in: "im at my moms"))
+    }
+
+    func testAPlanSaysWhenTheCalendarIsBusy() throws {
+        let f = ISO8601DateFormatter()
+        let start = try XCTUnwrap(f.date(from: "2026-10-16T13:00:00Z")), end = start.addingTimeInterval(3600)
+        let plan = EventParse.Plan(title: "Lunch", start: start, end: end, allDay: false, hasDay: true, hasTime: true)
+        let dentist = CalendarText.Event(title: "Dentist", start: start.addingTimeInterval(1800), end: start.addingTimeInterval(5400),
+                                         allDay: false, location: nil, color: nil)
+        let birthday = CalendarText.Event(title: "Sam's birthday", start: start.addingTimeInterval(-13 * 3600),
+                                          end: start.addingTimeInterval(11 * 3600), allDay: true, location: nil, color: nil)
+        let later = CalendarText.Event(title: "Gym", start: end, end: end.addingTimeInterval(3600), allDay: false, location: nil, color: nil)
+        XCTAssertEqual(EventParse.busyNote(for: plan, events: [birthday, dentist]), "busy: Dentist")
+        XCTAssertNil(EventParse.busyNote(for: plan, events: [birthday, later]), "back to back is free")
+        var allDay = plan; allDay.allDay = true
+        XCTAssertNil(EventParse.busyNote(for: allDay, events: [dentist]))
+    }
+
+    func testRepeatedSentencesAreOfferedBack() {
+        var m = PhraseMemory()
+        let day = 20_000
+        for _ in 0..<2 { m.record("On my way, be there in 10!", today: day) }
+        XCTAssertNil(m.completion(after: "on my ", today: day), "twice is not yet a habit")
+        m.record("on my way, be there in 10", today: day)
+        XCTAssertEqual(m.completion(after: "On my ", today: day), "way, be there in 10")
+        XCTAssertEqual(m.completion(after: "ok. On my way, ", today: day), "be there in 10")
+        XCTAssertNil(m.completion(after: "On my wa", today: day), "only at a word's end")
+        XCTAssertNil(m.completion(after: "On ", today: day), "two words first")
+        XCTAssertNil(m.completion(after: "On my ", today: day + 61), "forgotten after 60 days")
+        // Never kept: codes, links, short lines.
+        var n = PhraseMemory()
+        for _ in 0..<3 {
+            n.record("your code is 482913 for login", today: day)
+            n.record("see https://tryglyf.com for more", today: day)
+            n.record("ok cool", today: day)
+        }
+        XCTAssertTrue(n.entries.isEmpty)
+        XCTAssertEqual(PhraseMemory.endedSentence(in: "Hi. On my way, be there soon! "), "On my way, be there soon!")
+        XCTAssertNil(PhraseMemory.endedSentence(in: "On my way"))
+        XCTAssertEqual(PhraseMemory.lastSentence(of: "Hi! Running late today"), "Running late today")
+    }
+
+    func testEverydayPhrasesInOtherLanguages() {
+        func q(_ t: String) -> [String]? { Smart.quickAnswer(in: t, region: "US")?.results }
+        XCTAssertEqual(q("thank you in spanish"), ["gracias"])
+        XCTAssertEqual(q("how do you say good night in japanese"), ["おやすみなさい"])
+        XCTAssertEqual(q("whats cheers in german"), ["prost!"])
+        XCTAssertEqual(q("thanks in french"), ["merci"])
+        XCTAssertEqual(q("ok thank you in spanish"), ["gracias"])
+        XCTAssertEqual(Smart.phraseIn(in: "ok thank you in spanish")?.source, "thank you in spanish")
+        XCTAssertEqual(Smart.phraseIn(in: "thank you in spanish")?.how(0), .replace)
+        XCTAssertNil(q("i love you in hindi"), "gendered in Hindi: quiet")
+        XCTAssertNil(q("the meeting in spanish"))
+        XCTAssertNil(q("i live in spain"))
     }
 
     func testAnswersFromTheResearchPass() throws {

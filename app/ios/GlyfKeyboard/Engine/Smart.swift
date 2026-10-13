@@ -139,7 +139,8 @@ enum Smart {
             case .paste(let t): return t.replacingOccurrences(of: "\n", with: " ")
             case .action(let label, _, _): return label
             case .money(let shown, _, _): return shown
-            case .event(let plan): return EventParse.summary(plan)
+            // A plan that clashes says so, before the tap adds it (2026-10-14).
+            case .event(let plan): return EventParse.summary(plan) + (EventParse.busyNote?(plan).map { " · \($0)" } ?? "")
             case .booking(let link): return "A time on \(Smart.shortLink(link))"
             case .pay(let address, let amount, let token, _):
                 let short = Smart.shortAddress(address)
@@ -1600,6 +1601,27 @@ extension Smart {
         return try? NSRegularExpression(pattern: #"(?<![\p{L}\d.,/])"# + stripAmount + #"\s*(?:degrees?\s+)?("# + names + #")\.?\s?$"#,
                                         options: [.caseInsensitive])
     }()
+    /// A measure and the unit asked for: "10 km to miles", "5 lbs in kg?".
+    private static let stripAsked: NSRegularExpression? = {
+        let names = stripNames.keys.sorted { $0.count > $1.count }
+            .map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+        return try? NSRegularExpression(pattern: #"(?<![\p{L}\d.,/])"# + stripAmount + #"\s*(?:degrees?\s+)?("# + names
+                                        + #")\.?\s+(?:to|in|into|as)\s+("# + names + #")\??\s?$"#,
+                                        options: [.caseInsensitive])
+    }()
+
+    /// What a unit measures: only a length goes into a length.
+    private static func stripDimension(_ unit: String) -> String {
+        switch unit {
+        case "mm", "cm", "m", "km", "inch", "foot", "yard", "mile": return "length"
+        case "g", "kg", "oz", "lb", "stone": return "mass"
+        case "km/h", "mph", "m/s", "knot": return "speed"
+        case "sq ft", "sq m", "sq yd", "acre", "hectare": return "area"
+        case "°C", "°F": return "temperature"
+        default: return "volume"
+        }
+    }
+
     /// A height: 5'11, 5'11", 5 ft 11 in, 5 feet 11 inches, 5ft11.
     private static let stripHeight = try? NSRegularExpression(pattern:
         #"(?<![\p{L}\d.])([1-8])\s*(?:'|′|ft|feet|foot)\s*(\d{1,2}(?:\.\d+)?)\s*(?:"|″|''|in|inch|inches)?\.?\s?$"#,
@@ -1741,6 +1763,26 @@ extension Smart {
             let fahrenheit = ["US", "BS", "BZ", "KY", "PR", "PW"].contains(region?.uppercased() ?? "")
             let result = fahrenheit ? stripNamed((n - 32) * 5 / 9, "°C") : stripNamed(n * 9 / 5 + 32, "°F")
             return Conversions(source: (g[0] ?? "").trimmingCharacters(in: .whitespaces), results: [result])
+        }
+        // Asked for one unit ("10 km to miles", "5 lbs in kg"): that one.
+        // Only the bare measure showed anything (2026-10-14).
+        if let m = stripAsked?.firstMatch(in: t, range: all), !partOfMore(m),
+           let n = group(m, 1).flatMap(amount), n.isFinite,
+           let from = group(m, 2).flatMap({ stripNames[$0.lowercased()] }),
+           let into = group(m, 3).flatMap({ stripNames[$0.lowercased()] }), from != into {
+            let answer: String?
+            switch (from, into) {
+            case ("°C", "°F"): answer = stripNamed(n * 9 / 5 + 32, "°F")
+            case ("°F", "°C"): answer = stripNamed((n - 32) * 5 / 9, "°C")
+            default:
+                if n > 0, let a = stripSize(from, uk: uk), let b = stripSize(into, uk: uk),
+                   stripDimension(from) == stripDimension(into) {
+                    answer = into == "foot" && n * a < 3 ? feetInches(metres: n * a) : stripNamed(n * a / b, into)
+                } else {
+                    answer = nil
+                }
+            }
+            if let answer { return Conversions(source: source(m), results: [answer]) }
         }
         guard let m = stripMeasure?.firstMatch(in: t, range: all), !partOfMore(m),
               let typed = group(m, 1), let n = amount(typed), n.isFinite,
@@ -2168,6 +2210,7 @@ extension Smart {
             { face(in: text) },
             { symbol(in: text) },
             { slangMeaning(in: text) },
+            { phraseIn(in: text) },
             { mathsSymbol(in: text) },
             { solveEquation(in: text) },
             { cookingSafety(in: text) },
@@ -4293,6 +4336,10 @@ extension Smart {
         if let end = body.range(of: #"^.*[.!?]\s+"#, options: .regularExpression) {
             body = String(body[end.upperBound...])
         }
+        // Already answered: the strip's own answer went in after it ("whats
+        // 15% of 240 = 36", "10 km to miles (6.21 miles)" offered AI answer
+        // again, 2026-10-14).
+        if body.contains("=") || body.hasSuffix(")") { return nil }
         let lower = body.lowercased()
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
@@ -4921,5 +4968,88 @@ extension Smart {
         guard let (kcal, serving) = hit, count >= 1, count <= 20 else { return nil }
         let said = count > 1 ? "~\(kcal * count) kcal (\(count) × \(serving))" : "~\(kcal) kcal (\(serving))"
         return Conversions(source: trimmed(g[0]), results: [said])
+    }
+}
+
+// MARK: - Everyday phrases in other languages, on the phone (2026-10-14)
+
+extension Smart {
+    /// Languages in the order of each row of `phrases`.
+    private static let phraseLanguages: [(names: [String], label: String)] = [
+        (["spanish", "español", "espanol"], "Spanish"), (["french", "français", "francais"], "French"),
+        (["german", "deutsch"], "German"), (["italian", "italiano"], "Italian"),
+        (["portuguese", "brazilian", "português"], "Portuguese"), (["hindi"], "Hindi"),
+        (["japanese"], "Japanese"), (["korean"], "Korean"), (["chinese", "mandarin"], "Chinese"),
+        (["arabic"], "Arabic"), (["russian"], "Russian"), (["dutch"], "Dutch"), (["turkish"], "Turkish"),
+    ]
+    /// Everyday phrases, checked by hand; an empty entry is one with no
+    /// neutral form (Hindi's "I love you" is gendered), which stays quiet.
+    private static let phrases: [String: [String]] = [
+        "hello": ["hola", "bonjour", "hallo", "ciao", "olá", "नमस्ते", "こんにちは", "안녕하세요", "你好", "مرحبا", "привет", "hallo", "merhaba"],
+        "thank you": ["gracias", "merci", "danke", "grazie", "obrigado", "धन्यवाद", "ありがとう", "감사합니다", "谢谢", "شكرا", "спасибо", "dank je", "teşekkürler"],
+        "thank you so much": ["muchas gracias", "merci beaucoup", "vielen Dank", "grazie mille", "muito obrigado", "बहुत धन्यवाद", "本当にありがとう", "정말 감사합니다", "非常感谢", "شكرا جزيلا", "большое спасибо", "heel erg bedankt", "çok teşekkürler"],
+        "please": ["por favor", "s'il vous plaît", "bitte", "per favore", "por favor", "कृपया", "お願いします", "부탁합니다", "请", "من فضلك", "пожалуйста", "alsjeblieft", "lütfen"],
+        "sorry": ["lo siento", "désolé", "Entschuldigung", "scusa", "desculpa", "माफ़ कीजिए", "ごめんなさい", "미안해요", "对不起", "آسف", "извините", "sorry", "özür dilerim"],
+        "excuse me": ["disculpe", "excusez-moi", "Entschuldigung", "mi scusi", "com licença", "सुनिए", "すみません", "실례합니다", "打扰一下", "عفوا", "извините", "pardon", "affedersiniz"],
+        "good morning": ["buenos días", "bonjour", "guten Morgen", "buongiorno", "bom dia", "सुप्रभात", "おはようございます", "좋은 아침이에요", "早上好", "صباح الخير", "доброе утро", "goedemorgen", "günaydın"],
+        "good evening": ["buenas tardes", "bonsoir", "guten Abend", "buonasera", "boa noite", "शुभ संध्या", "こんばんは", "좋은 저녁이에요", "晚上好", "مساء الخير", "добрый вечер", "goedenavond", "iyi akşamlar"],
+        "good night": ["buenas noches", "bonne nuit", "gute Nacht", "buonanotte", "boa noite", "शुभ रात्रि", "おやすみなさい", "안녕히 주무세요", "晚安", "تصبح على خير", "спокойной ночи", "welterusten", "iyi geceler"],
+        "how are you": ["¿cómo estás?", "comment ça va ?", "wie geht's?", "come stai?", "como vai?", "आप कैसे हैं?", "お元気ですか？", "잘 지내세요?", "你好吗？", "كيف حالك؟", "как дела?", "hoe gaat het?", "nasılsın?"],
+        "i love you": ["te quiero", "je t'aime", "ich liebe dich", "ti amo", "eu te amo", "", "愛してる", "사랑해요", "我爱你", "أحبك", "я тебя люблю", "ik hou van je", "seni seviyorum"],
+        "goodbye": ["adiós", "au revoir", "auf Wiedersehen", "arrivederci", "adeus", "अलविदा", "さようなら", "안녕히 가세요", "再见", "مع السلامة", "до свидания", "tot ziens", "hoşça kal"],
+        "see you later": ["hasta luego", "à plus tard", "bis später", "a dopo", "até logo", "फिर मिलेंगे", "またね", "나중에 봐요", "回头见", "أراك لاحقا", "до встречи", "tot later", "sonra görüşürüz"],
+        "yes": ["sí", "oui", "ja", "sì", "sim", "हाँ", "はい", "네", "是的", "نعم", "да", "ja", "evet"],
+        "no": ["no", "non", "nein", "no", "não", "नहीं", "いいえ", "아니요", "不是", "لا", "нет", "nee", "hayır"],
+        "you're welcome": ["de nada", "de rien", "gern geschehen", "prego", "de nada", "कोई बात नहीं", "どういたしまして", "천만에요", "不客气", "عفوا", "пожалуйста", "graag gedaan", "rica ederim"],
+        "cheers": ["¡salud!", "santé !", "prost!", "salute!", "saúde!", "चीयर्स", "乾杯", "건배", "干杯", "في صحتك", "за здоровье!", "proost!", "şerefe!"],
+        "happy birthday": ["feliz cumpleaños", "joyeux anniversaire", "alles Gute zum Geburtstag", "buon compleanno", "feliz aniversário", "जन्मदिन मुबारक", "お誕生日おめでとう", "생일 축하해요", "生日快乐", "عيد ميلاد سعيد", "с днём рождения", "gefeliciteerd met je verjaardag", "doğum günün kutlu olsun"],
+        "congratulations": ["felicidades", "félicitations", "herzlichen Glückwunsch", "congratulazioni", "parabéns", "बधाई हो", "おめでとう", "축하해요", "恭喜", "مبروك", "поздравляю", "gefeliciteerd", "tebrikler"],
+        "good luck": ["buena suerte", "bonne chance", "viel Glück", "buona fortuna", "boa sorte", "शुभकामनाएँ", "頑張って", "행운을 빌어요", "祝你好运", "حظا سعيدا", "удачи", "succes", "iyi şanslar"],
+        "nice to meet you": ["mucho gusto", "enchanté", "freut mich", "piacere", "prazer", "आपसे मिलकर खुशी हुई", "はじめまして", "만나서 반가워요", "很高兴认识你", "تشرفت بمعرفتك", "приятно познакомиться", "leuk je te ontmoeten", "tanıştığıma memnun oldum"],
+        "i miss you": ["te extraño", "tu me manques", "ich vermisse dich", "mi manchi", "sinto sua falta", "", "会いたい", "보고 싶어요", "我想你", "اشتقت إليك", "я скучаю по тебе", "ik mis je", "seni özledim"],
+        "where is the bathroom": ["¿dónde está el baño?", "où sont les toilettes ?", "wo ist die Toilette?", "dov'è il bagno?", "onde fica o banheiro?", "बाथरूम कहाँ है?", "トイレはどこですか？", "화장실이 어디예요?", "洗手间在哪里？", "أين الحمام؟", "где туалет?", "waar is het toilet?", "tuvalet nerede?"],
+        "how much is this": ["¿cuánto cuesta?", "combien ça coûte ?", "wie viel kostet das?", "quanto costa?", "quanto custa?", "यह कितने का है?", "いくらですか？", "이거 얼마예요?", "这个多少钱？", "بكم هذا؟", "сколько это стоит?", "hoeveel kost dit?", "bu ne kadar?"],
+        "the bill please": ["la cuenta, por favor", "l'addition, s'il vous plaît", "die Rechnung, bitte", "il conto, per favore", "a conta, por favor", "बिल दीजिए", "お会計をお願いします", "계산서 주세요", "请结账", "الحساب من فضلك", "счёт, пожалуйста", "de rekening, alstublieft", "hesap lütfen"],
+        "i don't understand": ["no entiendo", "je ne comprends pas", "ich verstehe nicht", "non capisco", "não entendo", "मुझे समझ नहीं आया", "わかりません", "이해가 안 돼요", "我不明白", "لا أفهم", "я не понимаю", "ik begrijp het niet", "anlamıyorum"],
+        "do you speak english": ["¿hablas inglés?", "parlez-vous anglais ?", "sprechen Sie Englisch?", "parli inglese?", "você fala inglês?", "क्या आप अंग्रेज़ी बोलते हैं?", "英語を話せますか？", "영어 하세요?", "你会说英语吗？", "هل تتكلم الإنجليزية؟", "вы говорите по-английски?", "spreekt u Engels?", "İngilizce biliyor musunuz?"]
+    ]
+    private static let phraseAliases: [String: String] = [
+        "hi": "hello", "hey": "hello", "thanks": "thank you", "thx": "thank you", "ty": "thank you",
+        "thanks so much": "thank you so much", "thank you very much": "thank you so much", "thanks a lot": "thank you so much",
+        "bye": "goodbye", "good bye": "goodbye", "goodnight": "good night", "gn": "good night", "gm": "good morning",
+        "how are u": "how are you", "how r u": "how are you", "ily": "i love you", "love you": "i love you",
+        "see you": "see you later", "see ya": "see you later", "cya": "see you later", "sorry!": "sorry",
+        "your welcome": "you're welcome", "youre welcome": "you're welcome", "no problem": "you're welcome",
+        "happy bday": "happy birthday", "hbd": "happy birthday", "congrats": "congratulations",
+        "where's the bathroom": "where is the bathroom", "where is the toilet": "where is the bathroom",
+        "the check please": "the bill please", "check please": "the bill please", "bill please": "the bill please",
+        "miss you": "i miss you", "i dont understand": "i don't understand", "do you speak english?": "do you speak english",
+    ]
+
+    /// "thank you in spanish", "how do you say good night in japanese",
+    /// "what's cheers in german" → gracias / おやすみなさい / prost!, in place,
+    /// with no AI run spent. Only the phrases in the table; anything else is
+    /// the translate bar's.
+    static func phraseIn(in text: String) -> Conversions? {
+        let langs = phraseLanguages.flatMap(\.names).joined(separator: "|")
+        let say = #"(?:how\s+(?:do|would)\s+(?:you|u|i)\s+say\s+|what(?:'s|s|\s+is)\s+|translate\s+|say\s+)?"#
+        guard let g = firstMatch(#"(?<![\w'])"# + say + #"["“']?([a-z' ?!]{2,30}?)["”']?\s+(?:in|to|into)\s+("# + langs + #")\??\s?$"#, in: text),
+              let phrase = g[1]?.lowercased().trimmingCharacters(in: .whitespaces),
+              let lang = g[2]?.lowercased(),
+              let index = phraseLanguages.firstIndex(where: { $0.names.contains(lang) }) else { return nil }
+        // "ok thank you in spanish": the phrase is the longest known tail.
+        let words = phrase.split(separator: " ").map(String.init)
+        for start in 0..<words.count {
+            let tail = words[start...].joined(separator: " ")
+            let key = phrases[tail] != nil ? tail : (phraseAliases[tail] ?? "")
+            guard let row = phrases[key] else { continue }
+            guard index < row.count, !row[index].isEmpty else { return nil }
+            let said = trimmed(g[0])
+            // In place of the phrase and its language, not the words before it.
+            let from = said.range(of: tail, options: .caseInsensitive)?.lowerBound ?? said.startIndex
+            let source = start == 0 ? said : String(said[from...])
+            return Conversions(source: source, results: [row[index]], hows: [.replace])
+        }
+        return nil
     }
 }

@@ -269,6 +269,19 @@ enum EventParse {
     }
 
     /// "Dinner · Fri 8:00 PM", "Call · Today 5:00 PM": the strip chip's words.
+    /// What the person already has when a plan falls ("busy: Dentist"), set
+    /// by the keyboard where the calendar can be read (CalendarWriter).
+    static var busyNote: ((Plan) -> String?)?
+
+    /// The first timed event that overlaps the plan, said short: "busy:
+    /// Dentist". All-day events (birthdays, holidays) don't make anyone busy.
+    static func busyNote(for p: Plan, events: [CalendarText.Event]) -> String? {
+        guard !p.allDay, p.hasTime else { return nil }
+        guard let hit = events.first(where: { !$0.allDay && $0.start < p.end && $0.end > p.start }) else { return nil }
+        let title = hit.title.count > 18 ? String(hit.title.prefix(17)) + "…" : hit.title
+        return "busy: \(title)"
+    }
+
     static func summary(_ p: Plan, now: Date = Date(), calendar cal: Calendar = .current,
                         locale: Locale = .current) -> String {
         let day: String

@@ -26,6 +26,7 @@
 		22D65AB7F68DF03931D9BEA4 /* GlyfSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */; };
 		2540EDA655A54D9E4E7583E6 /* EmojiWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BBF672C0FE55E8909037167 /* EmojiWords.swift */; };
 		264770223DD8226DB4B988F0 /* ActSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */; };
+		2B349CFEA18C8406D3283AFA /* PhraseMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98D66DB9F3AD86E0BE0734CB /* PhraseMemory.swift */; };
 		301F473B5F209817B6C95E96 /* AccentPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603D199225C0A5A5986ECBD5 /* AccentPopup.swift */; };
 		3030BB09C6837BD7E0B85F68 /* TempMailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5892699230017F64EAF27C9F /* TempMailView.swift */; };
 		31A5DBAC5940AE8D66750E8C /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
@@ -141,6 +142,7 @@
 		D26EE5F01C8B4F264AE6FCFF /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60BFE26B50FE956967CF026 /* SettingsStore.swift */; };
 		D347769C9985CCBFECBE4EE8 /* Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */; };
 		D6DE1FAF1136DF33AD4EF4AE /* GlyfShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF6DB2DF0F83FB95AAE78ADA /* GlyfShell.swift */; };
+		D750FA10CFFF8ECA4F44C742 /* PhraseMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98D66DB9F3AD86E0BE0734CB /* PhraseMemory.swift */; };
 		D94ED266C32F80F11D11432B /* SearchSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B3144CD598A0B2C3FC5AC6 /* SearchSurface.swift */; };
 		D98CD97CD6A126A663A97E32 /* GlyfBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4FA32D8AB8A81BFE76AF575 /* GlyfBar.swift */; };
 		D9BF5D7CFA97FB6F3174DF4D /* KeyTouchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28614EBB79A828A460549683 /* KeyTouchTests.swift */; };
@@ -299,6 +301,7 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9823C973E80D9F41CEE741BA /* GlideDecoder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlideDecoder.swift; sourceTree = "<group>"; };
+		98D66DB9F3AD86E0BE0734CB /* PhraseMemory.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhraseMemory.swift; sourceTree = "<group>"; };
 		9F09C0ACA1F1B45C6AC46AA4 /* TourCoach.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TourCoach.swift; sourceTree = "<group>"; };
 		9FD7C3A22F17A9CEEDF8122E /* WalletSecrets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WalletSecrets.swift; sourceTree = "<group>"; };
 		9FDE3921B98C38CD61A63DE1 /* GlyfM0UITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfM0UITests.swift; sourceTree = "<group>"; };
@@ -513,6 +516,7 @@
 				E222BB8A869057CCA4BE3324 /* TempMailWatcher.swift */,
 				7720920DD18FF5AFF744AD53 /* MailTM.swift */,
 				8BBF672C0FE55E8909037167 /* EmojiWords.swift */,
+				98D66DB9F3AD86E0BE0734CB /* PhraseMemory.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -1012,6 +1016,7 @@
 				815A06A4815B329A58BB907C /* EmojiWords.swift in Sources */,
 				C58B4451A19BFF9A7B5BAC23 /* GlideTyping.swift in Sources */,
 				03167E4E72EEB61C37D7AC8C /* GlideTrail.swift in Sources */,
+				D750FA10CFFF8ECA4F44C742 /* PhraseMemory.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1064,6 +1069,7 @@
 				3D7432CBBF1E17A72F50C443 /* GlideDecoderTests.swift in Sources */,
 				2540EDA655A54D9E4E7583E6 /* EmojiWords.swift in Sources */,
 				F3D4F6BB40657FF3C6CBF829 /* GlideTyping.swift in Sources */,
+				2B349CFEA18C8406D3283AFA /* PhraseMemory.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

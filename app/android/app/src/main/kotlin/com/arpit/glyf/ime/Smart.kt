@@ -127,7 +127,8 @@ object Smart {
             else "${chip.answer.source} = " + chip.answer.results.joinToString(" · ")
         is Chip.Action -> chip.label
         is Chip.Money -> chip.shown
-        is Chip.Event -> EventParse.summary(chip.plan)
+        // A plan that clashes says so, before the tap adds it (2026-10-14).
+        is Chip.Event -> EventParse.summary(chip.plan) + (EventParse.busyNote?.invoke(chip.plan)?.let { " · $it" } ?: "")
         is Chip.Booking -> "A time on ${shortLink(chip.link)}"
         is Chip.Pay -> {
             val short = shortAddress(chip.address)
@@ -1340,6 +1341,23 @@ object Smart {
         Regex("""(?<![\p{L}\d.,/])""" + STRIP_AMOUNT + """\s*(?:degrees?\s+)?(""" + names + """)\.?\s?$""",
             RegexOption.IGNORE_CASE)
     }
+    /** A measure and the unit asked for: "10 km to miles", "5 lbs in kg?". */
+    private val stripAsked: Regex by lazy {
+        val names = stripNames.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
+        Regex("""(?<![\p{L}\d.,/])""" + STRIP_AMOUNT + """\s*(?:degrees?\s+)?(""" + names +
+            """)\.?\s+(?:to|in|into|as)\s+(""" + names + """)\??\s?$""", RegexOption.IGNORE_CASE)
+    }
+
+    /** What a unit measures: only a length goes into a length. */
+    private fun stripDimension(unit: String): String = when (unit) {
+        "mm", "cm", "m", "km", "inch", "foot", "yard", "mile" -> "length"
+        "g", "kg", "oz", "lb", "stone" -> "mass"
+        "km/h", "mph", "m/s", "knot" -> "speed"
+        "sq ft", "sq m", "sq yd", "acre", "hectare" -> "area"
+        "°C", "°F" -> "temperature"
+        else -> "volume"
+    }
+
     /** A height: 5'11, 5'11", 5 ft 11 in, 5 feet 11 inches, 5ft11. */
     private val stripHeight = Regex(
         """(?<![\p{L}\d.])([1-8])\s*(?:'|′|ft|feet|foot)\s*(\d{1,2}(?:\.\d+)?)\s*(?:"|″|''|in|inch|inches)?\.?\s?$""",
@@ -1455,6 +1473,26 @@ object Smart {
             val fahrenheit = (region ?: "").uppercase() in setOf("US", "BS", "BZ", "KY", "PR", "PW")
             val result = if (fahrenheit) stripNamed((n - 32) * 5 / 9, "°C") else stripNamed(n * 9 / 5 + 32, "°F")
             return Conversions((g[0] ?: "").trim(), listOf(result))
+        }
+        // Asked for one unit ("10 km to miles", "5 lbs in kg"): that one.
+        // Only the bare measure showed anything (2026-10-14).
+        stripAsked.find(t)?.takeIf { !partOfMore(it) }?.let { a ->
+            val n = amount(a.groupValues[1])?.takeIf { it.isFinite() } ?: return@let
+            val from = stripNames[a.groupValues[2].lowercase()] ?: return@let
+            val into = stripNames[a.groupValues[3].lowercase()] ?: return@let
+            if (from == into) return@let
+            val answer = when {
+                from == "°C" && into == "°F" -> stripNamed(n * 9 / 5 + 32, "°F")
+                from == "°F" && into == "°C" -> stripNamed((n - 32) * 5 / 9, "°C")
+                else -> {
+                    val sa = stripSize(from, uk)
+                    val sb = stripSize(into, uk)
+                    if (n > 0 && sa != null && sb != null && stripDimension(from) == stripDimension(into)) {
+                        if (into == "foot" && n * sa < 3) feetInches(n * sa) else stripNamed(n * sa / sb, into)
+                    } else null
+                }
+            }
+            if (answer != null) return Conversions(a.value.trim(), listOf(answer))
         }
         val m = stripMeasure.find(t)?.takeIf { !partOfMore(it) } ?: return null
         val n = amount(m.groupValues[1])?.takeIf { it.isFinite() } ?: return null
@@ -1840,6 +1878,7 @@ object Smart {
             ?: face(text)
             ?: symbol(text)
             ?: slangMeaning(text)
+            ?: Phrases.phraseIn(text)
             ?: mathsSymbol(text)
             ?: solveEquation(text)
             ?: cookingSafety(text)
@@ -4543,6 +4582,10 @@ object Smart {
         val asked = t.endsWith("?")
         var body = t.replace(QuestionRules.trailing, "")
         QuestionRules.lastSentence.find(body)?.let { body = body.substring(it.range.last + 1) }
+        // Already answered: the strip's own answer went in after it ("whats
+        // 15% of 240 = 36", "10 km to miles (6.21 miles)" offered AI answer
+        // again, 2026-10-14).
+        if ('=' in body || body.endsWith(")")) return null
         val lower = body.lowercase().replace(QuestionRules.spaces, " ").trim()
         val words = lower.split(' ').filter { it.isNotEmpty() }
         if (words.size < 3 || words.size > 12) return null
