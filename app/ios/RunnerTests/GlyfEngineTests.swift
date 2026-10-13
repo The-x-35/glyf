@@ -1355,6 +1355,22 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.mapLink(in: "im at my moms"))
     }
 
+    func testSunriseAndSunsetOnThePhone() throws {
+        let sf = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let morning = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-06-21T15:00:00Z"))
+        Smart.lastLocation = (37.7749, -122.4194)
+        defer { Smart.lastLocation = nil }
+        // San Francisco, 21 June 2026: sunrise 5:48 AM, sunset 8:35 PM (NOAA).
+        let set = try XCTUnwrap(Smart.sunAnswer(in: "what time is sunset", now: morning, here: sf)?.results.first)
+        XCTAssertTrue(["Sunset 8:34 PM", "Sunset 8:35 PM", "Sunset 8:36 PM"].contains(set), set)
+        let rise = try XCTUnwrap(Smart.sunAnswer(in: "sunrise?", now: morning, here: sf)?.results.first)
+        XCTAssertTrue(["Sunrise 5:47 AM", "Sunrise 5:48 AM", "Sunrise 5:49 AM"].contains(rise), rise)
+        XCTAssertNotNil(Smart.sunAnswer(in: "ok. golden hour tomorrow", now: morning, here: sf))
+        XCTAssertNil(Smart.sunAnswer(in: "caption for my sunset photo", now: morning, here: sf))
+        Smart.lastLocation = nil
+        XCTAssertNil(Smart.sunAnswer(in: "sunset", now: morning, here: sf), "no location, no answer")
+    }
+
     func testARemindMeWithADayIsNineAM() throws {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))

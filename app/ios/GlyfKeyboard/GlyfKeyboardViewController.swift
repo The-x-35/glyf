@@ -1019,6 +1019,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .noteEdit:
             // A phone number was typed on the digits: the letters come back.
             if noteEdit?.wantsDigits == true { keyboardView.setMode(.letters) }
+            // An email or a link had its own keys: the field's come back.
+            if noteEdit?.keysContext != nil { keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType) }
             noteEdit?.removeFromSuperview(); noteEdit = nil
         case .act:
             actTask?.cancel(); actTask = nil
@@ -1101,6 +1103,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             prepareEntrance(n, animated: animated)
             noteEdit = n
             if n.wantsDigits { keyboardView.setMode(.symbols1) }
+            if let keys = n.keysContext { keyboardView.context = keys }
             n.activate(n.activeEditor)
         case .act:
             let a = ActSurface()
@@ -1686,6 +1689,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         let rates = RatesStore.shared.snapshot()
         let ownWallet = SettingsStore.current.walletAddress
+        // Where the phone last was, for sunrise and sunset (the app shares it).
+        if let lat = SettingsStore.current.lastLat, let lon = SettingsStore.current.lastLon { Smart.lastLocation = (lat, lon) }
         let vault = VaultStore.shared.load()
         var chip = Smart.chip(for: tail, fields: vault.fields,
                               paste: paste, field: fieldHint(emptyField: before.isEmpty),
@@ -1966,6 +1971,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return
         }
         lastCorrection = nil
+        // Inside a link, an email or a handle the letters are no word: "com"
+        // of alex@example.com offered come, company (2026-10-14).
+        if WordTracker.insideLinkOrAddress(beforeContext: before) {
+            toolbar.showSuggestions([])
+            return
+        }
         let tE = Perf.mark()
         let sMaybe = suggestions(for: word, before: before, policy: policy)
         tEngine = Perf.ms(tE)
@@ -3928,6 +3939,7 @@ extension GlyfKeyboardViewController: PaySurfaceDelegate {
     /// typed into the pay panel.
     private var fieldContext: KeyboardContext {
         if surface == .pay, pay?.activeEditor != nil { return .decimalPad }
+        if surface == .noteEdit, let keys = noteEdit?.keysContext { return keys }
         return KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
     }
 

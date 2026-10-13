@@ -2234,6 +2234,7 @@ extension Smart {
             { fuel(in: text, region: region) },
             { zoneTimes(in: text, now: now, here: here, region: region) },
             { cityTime(in: text, now: now, here: here, region: region) },
+            { sunAnswer(in: text, now: now, here: here) },
             { timeDifference(in: text, now: now, here: here, region: region) },
             { untilTime(in: text, now: now, here: here) },
             { clockMaths(in: text) },
@@ -5051,5 +5052,62 @@ extension Smart {
             return Conversions(source: source, results: [row[index]], hows: [.replace])
         }
         return nil
+    }
+}
+
+// MARK: - Sunrise, sunset and golden hour, worked out on the phone (2026-10-14)
+
+extension Smart {
+    /// Where the phone was last seen (the app shares it; nil until then).
+    /// The keyboard sets it; nothing here asks for location.
+    static var lastLocation: (lat: Double, lon: Double)?
+
+    /// The standard sunrise equation (NOAA), as the server's sun.ts: within a
+    /// minute. `lon` is east-positive. nil times inside a polar day or night.
+    static func sunTimes(lat: Double, lon: Double, date: Date) -> (rise: Date?, set: Date?, golden: Date?) {
+        let rad = Double.pi / 180, j2000 = 2451545.0
+        func julian(_ d: Date) -> Double { d.timeIntervalSince1970 / 86400 + 2440587.5 }
+        func fromJulian(_ j: Double) -> Date { Date(timeIntervalSince1970: (j - 2440587.5) * 86400) }
+        let n = (julian(date) - j2000 - 0.0009 + lon / 360).rounded()
+        let noon = n + 0.0009 - lon / 360
+        let m = (357.5291 + 0.98560028 * noon).truncatingRemainder(dividingBy: 360)
+        let c = 1.9148 * sin(m * rad) + 0.02 * sin(2 * m * rad) + 0.0003 * sin(3 * m * rad)
+        let lambda = (m + c + 180 + 102.9372).truncatingRemainder(dividingBy: 360)
+        let transit = j2000 + noon + 0.0053 * sin(m * rad) - 0.0069 * sin(2 * lambda * rad)
+        let decl = asin(sin(lambda * rad) * sin(23.4397 * rad))
+        func hourAngle(_ altitude: Double) -> Double? {
+            let cosO = (sin(altitude * rad) - sin(lat * rad) * sin(decl)) / (cos(lat * rad) * cos(decl))
+            guard cosO >= -1, cosO <= 1 else { return nil }
+            return acos(cosO) / rad
+        }
+        guard let o = hourAngle(-0.833) else { return (nil, nil, nil) }
+        let golden = hourAngle(6).map { fromJulian(transit + $0 / 360) }
+        return (fromJulian(transit - o / 360), fromJulian(transit + o / 360), golden)
+    }
+
+    /// "sunset", "what time is sunset", "sunrise tomorrow", "golden hour"
+    /// (the whole sentence, so "my sunset photo" stays quiet) → Sunset 6:42 PM,
+    /// where the phone last was.
+    static func sunAnswer(in text: String, now: Date = Date(), here: TimeZone = .current) -> Conversions? {
+        guard let place = lastLocation else { return nil }
+        let sentence = text.components(separatedBy: CharacterSet(charactersIn: ".!?\n")).last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? text
+        guard let g = firstMatch(#"^\s*(?:(?:what\s+time\s+is|when\s+is|when'?s|whens|what'?s|whats|what\s+is)\s+)?(?:the\s+)?(sunset|sunrise|golden\s+hour)(?:\s+time)?(?:\s+(today|tonight|tomorrow|tmrw))?\s*\??\s*$"#, in: sentence),
+              let kind = g[1]?.lowercased() else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = here
+        let tomorrow = ["tomorrow", "tmrw"].contains(g[2]?.lowercased() ?? "")
+        let day = tomorrow ? (cal.date(byAdding: .day, value: 1, to: now) ?? now) : now
+        // Noon that day, so the sun's day is the one asked about.
+        let noon = cal.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
+        let t = sunTimes(lat: place.lat, lon: place.lon, date: noon)
+        let (label, when): (String, Date?) = kind.hasPrefix("sunrise") ? ("Sunrise", t.rise)
+            : kind.hasPrefix("sunset") ? ("Sunset", t.set) : ("Golden hour", t.golden)
+        guard let when else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.timeZone = here
+        f.dateFormat = "h:mm a"
+        let said = "\(label) \(f.string(from: when))" + (tomorrow ? " tomorrow" : "")
+        return Conversions(source: trimmed(g[0]), results: [said])
     }
 }

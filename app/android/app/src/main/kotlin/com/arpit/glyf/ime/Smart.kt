@@ -1902,6 +1902,7 @@ object Smart {
             ?: fuel(text, region)
             ?: zoneTimes(text, now, here, region)
             ?: cityTime(text, now, here, region)
+            ?: SunAnswer.answer(text, now, here)
             ?: timeDifference(text, now, here, region)
             ?: untilTime(text, now, here)
             ?: clockMaths(text)

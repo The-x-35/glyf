@@ -2471,6 +2471,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         val tail = before.takeLast(120)
         notePhrases(before)
+        // Where the phone last was, for sunrise and sunset (the app shares it).
+        if (settings.has("lastLat") && settings.has("lastLon"))
+            SunAnswer.lastLocation = settings.optDouble("lastLat") to settings.optDouble("lastLon")
         val region = settings.optString("region").ifEmpty { java.util.Locale.getDefault().country }
         val rates = RatesStore.snapshot(region, settings.optString("moneyCurrency"))
         val ownWallet = settings.optString("walletAddress").ifEmpty { null }
@@ -4007,6 +4010,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             return
         }
         lastCorrection = null
+        // Inside a link, an email or a handle the letters are no word: "com"
+        // of alex@example.com offered come, company (2026-10-14).
+        if (WordContext.insideLinkOrAddress(before)) { showSuggestions(emptyList()); return }
         val s = engineSuggestions(word, before, policy) ?: run { showSuggestions(emptyList()); return }
         val others = s.alternatives.map { Suggestion(it, Suggestion.Kind.WORD) }
         // With "Correct automatically" off the space keeps the word, so the
