@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/privacy" },
 };
 
-const UPDATED = "3 October 2026";
+const UPDATED = "14 October 2026";
 const EMAIL = "arpit@tryglyf.com";
 
 export default function Privacy() {
@@ -117,7 +117,8 @@ export default function Privacy() {
             your name if you share it, how you signed in, your phone&rsquo;s platform, app version, language, region
             and time zone, and when you joined and were last seen. We also keep your plan, the keyboard settings that
             aren&rsquo;t private, the kinds of details in your vault and how many notes and shortcuts you have (never
-            their contents), and app activity such as which screens you open, as names and counts, never text. We
+            their contents), and app activity such as which screens you open and which setup steps are done (the
+            keyboard added, opened, given Full Access, first used), as names and counts, never text. We
             use this only to run your account, keep daily limits fair, and improve Glyf&rsquo;s features.
           </p>
           <p>
@@ -164,7 +165,14 @@ export default function Privacy() {
             <li>
               <strong>Prices.</strong> A cashtag such as $SOL, or a wallet address you copy, is looked up for its price
               through our server, which asks Jupiter. Exchange rates for money in the strip are the European Central
-              Bank&rsquo;s, which our server fetches from Frankfurter with nothing of yours attached.
+              Bank&rsquo;s, which your phone fetches from Frankfurter (our server only if that fails), with nothing of
+              yours attached.
+            </li>
+            <li>
+              <strong>Weather.</strong> When you ask the strip about the weather (&ldquo;will it rain tomorrow&rdquo;),
+              your phone sends your approximate location, rounded to about a kilometre, straight to Open-Meteo for the
+              forecast. Nothing else goes with it, and it doesn&rsquo;t pass through our server. Sunrise and sunset are
+              worked out on your phone.
             </li>
             <li>
               <strong>Wallet.</strong> If you use Glyf&rsquo;s wallet, signing is handled by the wallet app you choose, such as
