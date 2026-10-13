@@ -315,6 +315,14 @@ object EventParse {
         // "Call me in 5 minutes" is a countdown, not something for the calendar.
         if (re("\\bin\\s+(?:\\d+|an?|a few|few|couple of)\\s*(?:minutes?|mins?)\\b").containsMatchIn(text)) return null
         val p = parse(text, now, tz, dayFirst, firstDayOfWeek)
+        // "remind me to call mom tomorrow": 9 AM that day, half an hour (iOS twin).
+        if (!p.hasTime && p.hasDay && !p.allDay &&
+            Regex("""^\s*(?:pls\s+|please\s+)?(?:remind\s+me|reminder)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+            val zone = tz.toZoneId()
+            val day = java.time.Instant.ofEpochMilli(p.start).atZone(zone).toLocalDate()
+            val nine = day.atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+            return p.copy(start = nine, end = nine + 30 * 60_000L, hasTime = true)
+        }
         if (!p.hasTime) return null
         val intent = "\\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|game|match|pick (?:me|you|us|him|her|them) up|pickup|milte|milenge)\\b"
         val planned = re(intent).containsMatchIn(text)

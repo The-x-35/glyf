@@ -1355,6 +1355,18 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(Smart.mapLink(in: "im at my moms"))
     }
 
+    func testARemindMeWithADayIsNineAM() throws {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-14T15:00:00Z"))
+        let p = try XCTUnwrap(EventParse.looksLikePlan("remind me to call mom tomorrow", now: now, calendar: cal))
+        XCTAssertEqual(p.title, "Call mom")
+        XCTAssertEqual(cal.component(.hour, from: p.start), 9)
+        XCTAssertEqual(cal.component(.day, from: p.start), 15)
+        XCTAssertEqual(p.end.timeIntervalSince(p.start), 1800)
+        XCTAssertNil(EventParse.looksLikePlan("call mom tomorrow", now: now, calendar: cal), "not a reminder: no time, no plan")
+    }
+
     func testAPlanSaysWhenTheCalendarIsBusy() throws {
         let f = ISO8601DateFormatter()
         let start = try XCTUnwrap(f.date(from: "2026-10-16T13:00:00Z")), end = start.addingTimeInterval(3600)

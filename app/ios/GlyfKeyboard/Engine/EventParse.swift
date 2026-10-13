@@ -233,6 +233,17 @@ enum EventParse {
         if text.range(of: #"\bin\s+(?:\d+|an?|a few|few|couple of)\s*(?:minutes?|mins?)\b"#,
                       options: [.regularExpression, .caseInsensitive]) != nil { return nil }
         let p = parse(text, now: now, calendar: cal, dayFirst: dayFirst)
+        // "remind me to call mom tomorrow": a reminder with a day and no
+        // time is 9 AM that day, for half an hour (2026-10-14).
+        if !p.hasTime, p.hasDay, !p.allDay,
+           text.range(of: #"^\s*(?:pls\s+|please\s+)?(?:remind\s+me|reminder)\b"#, options: [.regularExpression, .caseInsensitive]) != nil,
+           let nine = cal.date(bySettingHour: 9, minute: 0, second: 0, of: p.start) {
+            var r = p
+            r.start = nine
+            r.end = nine.addingTimeInterval(30 * 60)
+            r.hasTime = true
+            return r
+        }
         guard p.hasTime else { return nil }
         let intent = #"\b(let[’']?s|lets|shall we|should we|can we|could we|meet|meeting|call|catch up|see you|see u|dinner|lunch|breakfast|brunch|coffee|drinks|party|appointment|interview|standup|sync|review|demo|class|session|gym|workout|yoga|movie|movies|film|concert|flight|dentist|doctor|haircut|game|match|pick (?:me|you|us|him|her|them) up|pickup|milte|milenge)\b"#
         let planned = text.range(of: intent, options: [.regularExpression, .caseInsensitive]) != nil
