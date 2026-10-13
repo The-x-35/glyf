@@ -124,6 +124,12 @@ enum TypingText {
 
     static func hasUppercase(_ s: String) -> Bool { capitalCount(s) > 0 }
 
+    /// Typed in capitals throughout ("YES", "OMG"): two letters or more and
+    /// no small one. TypingText.kt's twin.
+    static func isShouting(_ s: String) -> Bool {
+        capitalCount(s) >= 2 && !s.unicodeScalars.contains { $0.properties.isLowercase }
+    }
+
     /// "Delhi", not "HSA" or "iPhone": one capital, and it's the first letter.
     static func isTitleCase(_ s: String) -> Bool { isCapitalized(s) && capitalCount(s) == 1 }
 

@@ -210,6 +210,40 @@ class TypingEngineTest {
         assertFalse(com.arpit.glyf.ime.typing.WordContext.insideLinkOrAddress("https://x.com great"))
     }
 
+    /** "I" at the start of sentences never teaches a lone "i"; a lexicon that
+     *  already learned "i" that way, or a word with a line separator in it,
+     *  heals on load (2026-10-14: "and i" was never fixed again). */
+    @Test fun sentenceStartIDoesNotTeachLowercaseI() {
+        val engine = TypingEngine(goldenTrie())
+        repeat(4) { engine.commit("I", null, autoCapitalized = true, policy = TypingEngine.ALL, today = today) }
+        assertEquals("I", engine.suggestions("i", previous = null, sentenceStart = false, today = today).autocorrect)
+
+        val json = JSONObject().put("words", JSONArray()
+            .put(JSONObject().put("k", "i").put("f", "i").put("c", 8.0).put("t", 8).put("d", today))
+            .put(JSONObject().put("k", "hi there").put("f", "Hi there").put("c", 1.0).put("t", 1).put("d", today)))
+        val healed = PersonalLexicon.fromJson(json)
+        assertEquals("I", healed.word("i")?.form)
+        assertNull(healed.word("hi there"))
+        assertFalse(TypingEngine.isLearnable("Hi there"))
+        val fresh = TypingEngine(goldenTrie())
+        fresh.replacePersonal(healed)
+        assertEquals("I", fresh.suggestions("i", previous = null, sentenceStart = false, today = today).autocorrect)
+    }
+
+    /** Line separators (iOS's hold Return where Return sends) end the word and
+     *  the sentence like a new line; a no-break space is a space (2026-10-14). */
+    @Test fun lineSeparatorsEndWords() {
+        val wc = com.arpit.glyf.ime.typing.WordContext
+        assertEquals("ther", wc.currentWord("Hi ther"))
+        assertEquals("ther", wc.currentWord("Hi ther"))
+        assertEquals("ther", wc.currentWord("Hi\r\nther"))
+        assertEquals("you", wc.currentWord("see you"))
+        assertTrue(wc.wantsCapital("Hi "))
+        assertNull(wc.previousWord("Hi ther"))
+        assertEquals("see", wc.previousWord("see yo"))
+        assertFalse(wc.insideLinkOrAddress("a@b.co hel"))
+    }
+
     @Test fun editDistanceAndKeys() {
         assertEquals(1, TypingText.editDistance(TypingText.scalars("teh"), TypingText.scalars("the")))
         assertEquals(1, TypingText.editDistance(TypingText.scalars("arpit"), TypingText.scalars("armpit")))

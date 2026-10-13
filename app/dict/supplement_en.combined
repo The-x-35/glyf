@@ -478,3 +478,35 @@ dictionary=supplement:en,locale=en,description=Glyf supplement to the AOSP Engli
   shortcut=AEST,f=whitelist
  word=sgt,f=0,not_a_word=true
   shortcut=SGT,f=whitelist
+# Currency codes typed in small letters ("50 gbp to usd") are the currency,
+# never "use" (2026-10-14: "usd" became "use"; AOSP has USD at f=1).
+ word=USD,f=110,flags=abbreviation
+ word=EUR,f=100,flags=abbreviation
+ word=GBP,f=100,flags=abbreviation
+ word=INR,f=100,flags=abbreviation
+ word=JPY,f=90,flags=abbreviation
+ word=AUD,f=90,flags=abbreviation
+ word=SGD,f=85,flags=abbreviation
+ word=AED,f=85,flags=abbreviation
+ word=CHF,f=85,flags=abbreviation
+ word=BTC,f=95,flags=abbreviation
+ word=usd,f=0,not_a_word=true
+  shortcut=USD,f=whitelist
+ word=eur,f=0,not_a_word=true
+  shortcut=EUR,f=whitelist
+ word=gbp,f=0,not_a_word=true
+  shortcut=GBP,f=whitelist
+ word=inr,f=0,not_a_word=true
+  shortcut=INR,f=whitelist
+ word=jpy,f=0,not_a_word=true
+  shortcut=JPY,f=whitelist
+ word=aud,f=0,not_a_word=true
+  shortcut=AUD,f=whitelist
+ word=sgd,f=0,not_a_word=true
+  shortcut=SGD,f=whitelist
+ word=aed,f=0,not_a_word=true
+  shortcut=AED,f=whitelist
+ word=chf,f=0,not_a_word=true
+  shortcut=CHF,f=whitelist
+ word=btc,f=0,not_a_word=true
+  shortcut=BTC,f=whitelist

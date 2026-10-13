@@ -36,6 +36,29 @@ final class TypingEngineTests: XCTestCase {
     /// A word typed in full offers only its completions and its own
     /// apostrophe forms, never its neighbours (Arpit, 2026-10-07: suggestions
     /// should be "crazy helpful"; "noon" offered moon, non, boon).
+    /// "I" at the start of sentences, again and again, never teaches a lone
+    /// "i" (2026-10-14: the third sentence-start "I" was learned as "i", and
+    /// "and i" was never fixed again). A lexicon that already learned "i"
+    /// that way, or a word with a line separator in it, heals on load.
+    func testSentenceStartIDoesNotTeachLowercaseI() throws {
+        let engine = TypingEngine(base: try goldenTrie())
+        for _ in 0..<4 {
+            _ = engine.commit(word: "I", previous: nil, autoCapitalized: true, policy: .all, today: today)
+        }
+        XCTAssertEqual(engine.suggestions(typed: "i", previous: nil, sentenceStart: false, today: today).autocorrect, "I")
+
+        let healed = PersonalLexicon(json: ["words": [
+            ["k": "i", "f": "i", "c": 8.0, "t": 8, "d": today],
+            ["k": "hi\u{2028}there", "f": "Hi\u{2028}there", "c": 1.0, "t": 1, "d": today],
+        ]])
+        XCTAssertEqual(healed.word("i")?.form, "I")
+        XCTAssertNil(healed.word("hi\u{2028}there"))
+        XCTAssertFalse(TypingEngine.isLearnable("Hi\u{2028}there"))
+        let fresh = TypingEngine(base: try goldenTrie())
+        fresh.replacePersonal(healed)
+        XCTAssertEqual(fresh.suggestions(typed: "i", previous: nil, sentenceStart: false, today: today).autocorrect, "I")
+    }
+
     func testAKnownWordOffersCompletionsNotNeighbours() throws {
         let repo = Self.sharedDir.deletingLastPathComponent().deletingLastPathComponent()
         guard let trie = GlydTrie.mapped(path: repo.appendingPathComponent("app/dict/en.glyd").path) else {

@@ -4,7 +4,12 @@ import UIKit
 /// the double-space period. Pure logic, unit-tested. Suggestions and
 /// autocorrect themselves live in Engine/Typing (TypingEngine).
 enum WordTracker {
-    static let boundaries = Set(" \n\t.,!?;:()[]{}\"'“”‘’—–/")
+    /// Line breaks of every kind end a word: hold Return puts in U+2028
+    /// where Return sends, and "Hi\u{2028}there" was one word to fix and
+    /// learn (2026-10-14). A no-break space is a space.
+    static let lineBreaks: Set<Character> = ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"]
+    static let spaces: Set<Character> = [" ", "\u{00A0}"]
+    static let boundaries = Set(" \n\t.,!?;:()[]{}\"'“”‘’—–/").union(lineBreaks).union(spaces)
 
     /// Recomputes the in-progress word from the proxy's before-context.
     static func currentWord(beforeContext: String?) -> String {
@@ -32,7 +37,8 @@ enum WordTracker {
     /// became "youth").
     static func insideLinkOrAddress(beforeContext: String?) -> Bool {
         guard let ctx = beforeContext, !ctx.isEmpty else { return false }
-        let run = ctx.split(omittingEmptySubsequences: false, whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
+        let run = ctx.split(omittingEmptySubsequences: false,
+                            whereSeparator: { spaces.contains($0) || lineBreaks.contains($0) || $0 == "\t" })
             .last.map { $0.lowercased() } ?? ""
         return run.contains("://") || run.contains("@") || run.hasPrefix("www.")
     }
@@ -47,8 +53,8 @@ enum WordTracker {
         while i > ctx.startIndex {
             i = ctx.index(before: i)
             let ch = ctx[i]
-            if ch == "\n" { return true }
-            if ch == " " { sawSpace = true; continue }
+            if lineBreaks.contains(ch) { return true }
+            if spaces.contains(ch) { sawSpace = true; continue }
             if ".!?".contains(ch) { return sawSpace }
             return false
         }
@@ -61,8 +67,8 @@ enum WordTracker {
         guard let ctx = beforeContext, !ctx.isEmpty else { return nil }
         let current = currentWord(beforeContext: ctx)
         var rest = ctx.dropLast(current.count)
-        while let last = rest.last, last == " " { rest = rest.dropLast() }
-        guard let last = rest.last, !".!?\n".contains(last) else { return nil }
+        while let last = rest.last, spaces.contains(last) { rest = rest.dropLast() }
+        guard let last = rest.last, !".!?".contains(last), !lineBreaks.contains(last) else { return nil }
         let word = currentWord(beforeContext: String(rest))
         return word.isEmpty ? nil : word
     }
@@ -72,7 +78,7 @@ enum WordTracker {
     static func wordBeforePrevious(beforeContext: String?) -> String? {
         guard let ctx = beforeContext, previousWord(beforeContext: ctx) != nil else { return nil }
         var rest = ctx.dropLast(currentWord(beforeContext: ctx).count)
-        while let last = rest.last, last == " " { rest = rest.dropLast() }
+        while let last = rest.last, spaces.contains(last) { rest = rest.dropLast() }
         return previousWord(beforeContext: String(rest))
     }
 

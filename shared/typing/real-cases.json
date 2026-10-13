@@ -21,6 +21,14 @@
    }
   },
   {
+   "name": "a currency code is the currency, never use",
+   "typed": "usd",
+   "previous": "to",
+   "expect": {
+    "autocorrect": "USD"
+   }
+  },
+  {
    "name": "fixes recieve",
    "typed": "recieve",
    "previous": "the",

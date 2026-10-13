@@ -758,9 +758,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
         lastClipProbe = now
         // History only knows a copy once it has been read; a newer one shows
         // as an offer instead of the older text.
-        if ClipboardStore.pasteboardHasNewContent() { nameTheCopy() }
+        // Until the new copy is in history, history's first is the copy
+        // before it: offering that pasted stale text ("Your code is…" when
+        // "See you at noon." was on the clipboard, 2026-10-14).
+        let unread = ClipboardStore.pasteboardHasNewContent()
+        if unread { nameTheCopy() }
         cachedPaste = ClipContext.isFresh()
-            ? (ClipboardStore.load().first?.text ?? "Tap to paste what you copied")
+            ? ((unread ? nil : ClipboardStore.load().first?.text) ?? "Tap to paste what you copied")
             : nil
         return cachedPaste
     }
@@ -3325,6 +3329,9 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
                     self.remember(copied: read)
                     self.hostInsert(Self.spaced(read, after: self.beforeContext))
                     self.toolbar.showSmart(nil)
+                    // The shift the empty field had is not the one after
+                    // "…share it." (it stayed on, 2026-10-14).
+                    self.syncAutoShift()
                     self.updateCandidates()
                 }
                 return
@@ -3338,6 +3345,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             hostInsert(chip.insert)
         }
         toolbar.showSmart(nil)
+        syncAutoShift()
         updateCandidates()
     }
 

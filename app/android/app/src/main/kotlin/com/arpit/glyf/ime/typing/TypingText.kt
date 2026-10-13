@@ -112,6 +112,11 @@ object TypingText {
 
     fun hasUppercase(s: String): Boolean = capitalCount(s) > 0
 
+    /** Typed in capitals throughout ("YES", "OMG"): two letters or more and
+     *  no small one. TypingText.swift's twin. */
+    fun isShouting(s: String): Boolean =
+        capitalCount(s) >= 2 && s.codePoints().noneMatch { Character.isLowerCase(it) }
+
     /** "Delhi", not "HSA" or "iPhone": one capital, and it's the first letter. */
     fun isTitleCase(s: String): Boolean = isCapitalized(s) && capitalCount(s) == 1
 

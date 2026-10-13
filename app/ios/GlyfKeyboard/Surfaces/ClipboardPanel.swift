@@ -473,8 +473,9 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
     private func askForPhotosIfNeeded() {
         guard SettingsStore.current.clipboardScreenshots == true,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == .notDetermined else { return }
+        // Either answer redraws: the screenshots, or the tip for a "no".
         PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
-            guard status == .authorized || status == .limited else { return }
+            guard status != .notDetermined else { return } // never ask in a loop
             DispatchQueue.main.async { self?.reload() }
         }
     }
@@ -662,8 +663,11 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
                         "iOS asks before a keyboard may read a copy. To stop it "
                             + "asking: Settings → Glyf → Paste from Other Apps → Allow."))
         }
+        // Not while iOS is asking: opening the panel raises the prompt
+        // (askForPhotosIfNeeded), and the tip under it said to go and turn
+        // it on in the app (2026-10-14).
         if filter.showsShots, SettingsStore.current.clipboardScreenshots == true,
-           !Self.photosAllowed() {
+           !Self.photosAllowed(), PHPhotoLibrary.authorizationStatus(for: .readWrite) != .notDetermined {
             out.append(("photo",
                         "Screenshots need your photo library. Glyf app → Keyboard "
                             + "→ Recent screenshots turns it on and asks."))

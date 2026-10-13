@@ -2499,6 +2499,76 @@
    "here": "America/New_York",
    "region": "US",
    "results": []
+  },
+  {
+   "text": "10 km to miles",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "6.21 miles"
+   ]
+  },
+  {
+   "text": "5 lbs in kg?",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "2.27 kg"
+   ]
+  },
+  {
+   "text": "180 cm to feet",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "5 ft 11 in"
+   ]
+  },
+  {
+   "text": "2 cups to ml",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "473 ml"
+   ]
+  },
+  {
+   "text": "60 mph to km/h",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "96.6 km/h"
+   ]
+  },
+  {
+   "text": "100 kg in lbs",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": [
+    "220 lb"
+   ]
+  },
+  {
+   "text": "10 pounds to kg",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "Europe/London",
+   "region": "GB",
+   "results": [
+    "4.54 kg"
+   ]
+  },
+  {
+   "text": "10 km to kg",
+   "now": "2026-10-03T12:00:00Z",
+   "here": "America/New_York",
+   "region": "US",
+   "results": []
   }
  ]
 }

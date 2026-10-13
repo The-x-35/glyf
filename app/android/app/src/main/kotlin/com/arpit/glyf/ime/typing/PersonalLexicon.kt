@@ -32,8 +32,14 @@ class PersonalLexicon {
             json.optJSONArray("words")?.let { arr ->
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
-                    l.words[o.getString("k")] = Word(o.getString("f"), o.optDouble("c", 0.0), o.optInt("t", 0),
-                        o.optInt("d", 0), o.optInt("kept", 0), o.optBoolean("added", false))
+                    val k = o.getString("k")
+                    if (k.any { it.isWhitespace() }) continue // "Hi\u2028there", 2026-10-14
+                    val kept = o.optInt("kept", 0)
+                    val added = o.optBoolean("added", false)
+                    // A lone "i" learned only because it slipped past the fix is
+                    // the pronoun (2026-10-14: once learned, "i" was never "I" again).
+                    val f = o.getString("f").let { if (k == "i" && it == "i" && kept == 0 && !added) "I" else it }
+                    l.words[k] = Word(f, o.optDouble("c", 0.0), o.optInt("t", 0), o.optInt("d", 0), kept, added)
                 }
             }
             json.optJSONArray("pairs")?.let { arr ->

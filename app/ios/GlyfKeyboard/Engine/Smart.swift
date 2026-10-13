@@ -442,6 +442,16 @@ enum Smart {
             if expr.range(of: #"\*\*|>=|<=|[-−+*/×÷^≥≤><%√x]|\bmod\b"#,
                           options: [.regularExpression, .caseInsensitive]) == nil { return nil }
             if expr.range(of: notASum, options: .regularExpression) != nil { return nil }
+            // "the score was 3-1", "pick a number 1-10": two whole numbers
+            // and a bare hyphen at the end of a sentence are a score or a
+            // range (2026-10-14 probe: 2 and -9). Asked ("whats 10-3") or on
+            // its own ("10-2") it is still a sum.
+            if expr.range(of: #"^\s*\d+-\d+\s*$"#, options: .regularExpression) != nil {
+                let before = ns.substring(to: m.range(at: 1).location)
+                if before.contains(where: \.isLetter),
+                   before.range(of: #"(?:what'?s|what\s+is|calc(?:ulate)?|equals?|=)\s*$"#,
+                                options: [.regularExpression, .caseInsensitive]) == nil { return nil }
+            }
             // "miss you 2 <3": a heart, not a comparison.
             if text.range(of: #"\s<3\s*$"#, options: .regularExpression) != nil { return nil }
         }

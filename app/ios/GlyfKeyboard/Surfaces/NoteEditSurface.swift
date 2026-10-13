@@ -113,6 +113,18 @@ final class NoteEditSurface: UIView {
         return false
     }
 
+    /// An email or a link gets the keys its field would (@ and . on the
+    /// space row, or / and .com), as the address in a form does (2026-10-14:
+    /// a new email detail opened on plain letters, "@" two layers away).
+    var keysContext: KeyboardContext? {
+        guard case .detail(let kind) = edit else { return nil }
+        switch kind.kind {
+        case "email": return .email
+        case "link": return .url
+        default: return nil
+        }
+    }
+
     /// Whether the field being typed starts with a capital: a note, a name,
     /// an address or what a shorthand types out do; a shortcut, an email, a
     /// link or a wallet never do (";Sig" would never expand from ";sig").

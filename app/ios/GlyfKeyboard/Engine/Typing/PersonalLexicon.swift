@@ -43,9 +43,14 @@ struct PersonalLexicon: Equatable {
     init(json: [String: Any]) {
         commitsTotal = json["total"] as? Double ?? 0
         for o in json["words"] as? [[String: Any]] ?? [] {
-            guard let k = o["k"] as? String, let f = o["f"] as? String else { continue }
+            guard let k = o["k"] as? String, var f = o["f"] as? String,
+                  !k.contains(where: \.isWhitespace) else { continue } // "Hi\u{2028}there", 2026-10-14
+            let kept = o["kept"] as? Int ?? 0, added = o["added"] as? Bool ?? false
+            // A lone "i" learned only because it slipped past the fix is the
+            // pronoun (2026-10-14: once learned, "i" was never "I" again).
+            if k == "i", f == "i", kept == 0, !added { f = "I" }
             words[k] = Word(form: f, commits: o["c"] as? Double ?? 0, total: o["t"] as? Int ?? 0,
-                            day: o["d"] as? Int ?? 0, kept: o["kept"] as? Int ?? 0, added: o["added"] as? Bool ?? false)
+                            day: o["d"] as? Int ?? 0, kept: kept, added: added)
         }
         for o in json["pairs"] as? [[String: Any]] ?? [] {
             guard let p = o["p"] as? String, let k = o["k"] as? String else { continue }

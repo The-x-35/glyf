@@ -253,10 +253,14 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     /// Called by the VC when the text context changes (autocapitalize).
     func syncAutoShift(wantsCapital: Bool) {
-        guard mode == .letters, SettingsStore.current.autocapitalize else { return }
-        if wantsCapital, shift == .off {
+        guard mode == .letters else { return }
+        // With Auto-capitalize off, the shift the board starts with (a
+        // sentence start) is let go too: the first letter of a field came
+        // out capital anyway (2026-10-14).
+        let wants = wantsCapital && SettingsStore.current.autocapitalize
+        if wants, shift == .off {
             setShift(.on, auto: true)
-        } else if !wantsCapital, shift == .on, autoShifted {
+        } else if !wants, shift == .on, autoShifted {
             setShift(.off, auto: false)
         }
     }

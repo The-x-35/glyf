@@ -3,7 +3,12 @@ package com.arpit.glyf.ime.typing
 /** Where the word being typed starts and ends — Kotlin mirror of iOS
  *  WordTracker (Engine/Autocorrect.swift); same boundaries, same answers. */
 object WordContext {
-    private const val BOUNDARIES = " \n\t.,!?;:()[]{}\"'“”‘’—–/"
+    /** Line breaks of every kind end a word (U+2028 is what iOS's hold
+     *  Return puts in where Return sends; pasted text carries it too). A
+     *  no-break space is a space. */
+    private const val LINE_BREAKS = "\n\r\u2028\u2029"
+    private const val SPACES = " \u00A0"
+    private const val BOUNDARIES = " \n\t.,!?;:()[]{}\"'“”‘’—–/\r\u2028\u2029\u00A0"
     /** Characters that end a word and trigger autocorrect before they land. */
     const val CORRECTION_BOUNDARIES = ".,!?;:"
 
@@ -33,7 +38,7 @@ object WordContext {
      *  became "youth"). */
     fun insideLinkOrAddress(before: String?): Boolean {
         if (before.isNullOrEmpty()) return false
-        val run = before.split(' ', '\n', '\t').last().lowercase()
+        val run = before.split(' ', '\n', '\t', '\r', '\u2028', '\u2029', '\u00A0').last().lowercase()
         return "://" in run || '@' in run || run.startsWith("www.")
     }
 
@@ -42,8 +47,8 @@ object WordContext {
         if (before.isNullOrEmpty()) return null
         val current = currentWord(before)
         var rest = before.substring(0, before.length - current.length)
-        rest = rest.trimEnd(' ')
-        if (rest.isEmpty() || rest.last() in ".!?\n") return null
+        rest = rest.trimEnd { it in SPACES }
+        if (rest.isEmpty() || rest.last() in ".!?" || rest.last() in LINE_BREAKS) return null
         return currentWord(rest).ifEmpty { null }
     }
 
@@ -52,7 +57,7 @@ object WordContext {
     fun wordBeforePrevious(before: String?): String? {
         if (before.isNullOrEmpty() || previousWord(before) == null) return null
         val current = currentWord(before)
-        return previousWord(before.substring(0, before.length - current.length).trimEnd(' '))
+        return previousWord(before.substring(0, before.length - current.length).trimEnd { it in SPACES })
     }
 
     /** Sentence start: text start, or sentence punctuation then space(s). */
@@ -62,8 +67,8 @@ object WordContext {
         var sawSpace = false
         for (i in ctx.indices.reversed()) {
             val ch = ctx[i]
-            if (ch == '\n') return true
-            if (ch == ' ') { sawSpace = true; continue }
+            if (ch in LINE_BREAKS) return true
+            if (ch in SPACES) { sawSpace = true; continue }
             if (ch in ".!?") return sawSpace
             return false
         }

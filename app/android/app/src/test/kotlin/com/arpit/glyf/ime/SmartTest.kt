@@ -130,6 +130,11 @@ class SmartTest {
      *  taken off is a share of the left side (Smart.swift twin). */
     @Test fun datesAreNotSumsAndPercentagesAreShares() {
         assertNull(Smart.calc("see you 29/09/2024"))
+        // A score or a range at the end of a sentence is no sum (2026-10-14).
+        assertNull(Smart.calc("the score was 3-1"))
+        assertNull(Smart.calc("pick a number 1-10"))
+        assertEquals("7" to false, Smart.calc("whats 10-3"))
+        assertEquals("8" to false, Smart.calc("10-2"))
         assertNull(Smart.calc("due 2026/09/28"))
         assertNull(Smart.chip("card expires 09/2026", vault) as? Smart.Chip.Calc)
         // Asked for with "=", or with bigger numbers, it is still a sum.

@@ -144,6 +144,19 @@ final class TypingEngine {
                      beforePrevious: String? = nil, sentenceStart: Bool, policy: Policy = .all,
                      today: Int = TypingText.day()) -> Suggestions {
         guard policy.contains(.suggestions), !typed.isEmpty, !TypingText.isWebish(typed) else { return .empty(typed) }
+        // Caps lock ("YES"): the words its letters make, in capitals, and
+        // never a fix (caps are deliberate). Read as they stood, "YES" was
+        // no word and offered He's and Yesterday (2026-10-14).
+        if TypingText.isShouting(typed) {
+            let lower = suggestions(typed: typed.lowercased(), touches: touches, previous: previous,
+                                    beforePrevious: beforePrevious, sentenceStart: false,
+                                    policy: policy.subtracting(.autocorrect), today: today)
+            var seen: Set<String> = [typed]
+            let shouted = lower.alternatives.map { $0.uppercased() }.filter { seen.insert($0).inserted }
+            lastHeldBack = "digit-or-caps"
+            return Suggestions(typed: typed, known: lower.known || isWord(typed), autocorrect: nil,
+                               alternatives: shouted)
+        }
         let key = TypingText.key(typed)
         let typedScalars = Array(typed.unicodeScalars)
         guard !key.isEmpty, typedScalars.count <= 48 else { return .empty(typed) }
@@ -178,7 +191,13 @@ final class TypingEngine {
         // A whitelist target spelled differently ("his" under "hid") is not a
         // form of the typed word; everything else under this key is.
         let realForms = exact.filter { !$0.whitelistOnly && !($0.whitelist && $0.key != key) }
-        let known = personalForm.map { $0.lowercased() == typed.lowercased() } ?? false
+        // A learned spelling makes its letters known only where it tells the
+        // dictionary something new: having typed "I" (the dictionary's own
+        // form) never makes a lone "i" a word (2026-10-14, "and i" stayed).
+        let known = personalForm.map { p in
+            TypingText.sameWord(typed: typed, form: p)
+                || (p.lowercased() == typed.lowercased() && baseEntry(forKey: key, form: p) == nil)
+        } ?? false
             || realForms.contains { TypingText.sameWord(typed: typed, form: $0.form) }
 
         var result = Suggestions(typed: typed, known: known, autocorrect: nil, alternatives: [])
@@ -726,6 +745,7 @@ final class TypingEngine {
     static func isLearnable(_ word: String) -> Bool {
         let count = word.unicodeScalars.count
         return count > 0 && count <= 32
+            && !word.contains(where: \.isWhitespace)
             && !TypingText.hasDigit(word)
             && !TypingText.isWebish(word)
             && word.unicodeScalars.contains { $0.properties.isAlphabetic }
@@ -734,7 +754,11 @@ final class TypingEngine {
 
     private func isWord(_ form: String) -> Bool {
         let key = TypingText.key(form)
-        if personal.isKnown(key) || packForms[key] != nil { return true }
+        // This spelling, not just these letters: a learned "I" never makes
+        // "i" a word, or a sentence-start "I" would be learned as "i" (and a
+        // lone "i" never fixed again, 2026-10-14).
+        if personal.isKnown(key), personal.word(key)?.form == form { return true }
+        if packForms[key] == form { return true }
         guard let base, let node = base.node(forKey: key) else { return false }
         let first = base.firstEntry(node)
         return (first..<(first + base.entryCount(node))).contains {

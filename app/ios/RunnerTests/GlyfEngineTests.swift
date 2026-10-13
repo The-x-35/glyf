@@ -1302,6 +1302,11 @@ final class GlyfEngineTests: XCTestCase {
         // bugs the probe found
         XCTAssertNil(Smart.calc("my order number is 112-3456789-1234567"))
         XCTAssertEqual(Smart.calc("10-2")?.value, "8")
+        // A score or a range at the end of a sentence is no sum (2026-10-14).
+        XCTAssertNil(Smart.calc("the score was 3-1"))
+        XCTAssertNil(Smart.calc("pick a number 1-10"))
+        XCTAssertEqual(Smart.calc("whats 10-3")?.value, "7")
+        XCTAssertEqual(Smart.calc("the score was 3 - 1")?.value, "2")
         let mail = VaultField(id: "e", kind: "email", label: "Email", value: "alex@example.com")
         XCTAssertTrue(Smart.vaultMatches("per my last email", fields: [mail]).isEmpty)
         XCTAssertEqual(Smart.vaultMatches("send it to my email", fields: [mail]).first?.value, "alex@example.com")

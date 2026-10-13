@@ -76,7 +76,8 @@ class TypingEngine(
         /** Words, not codes: no digits, no addresses, no secrets. */
         fun isLearnable(word: String): Boolean {
             val count = word.codePointCount(0, word.length)
-            return count in 1..32 && !TypingText.hasDigit(word) && !TypingText.isWebish(word) &&
+            return count in 1..32 && word.none { it.isWhitespace() } &&
+                !TypingText.hasDigit(word) && !TypingText.isWebish(word) &&
                 TypingText.isAlphabetic(word) && SecretScanner.scan(word) == null
         }
     }
@@ -173,6 +174,15 @@ class TypingEngine(
                     sentenceStart: Boolean, policy: Int = ALL, today: Int = TypingText.day(),
                     beforePrevious: String? = null): Suggestions {
         if (policy and SUGGESTIONS == 0 || typed.isEmpty() || TypingText.isWebish(typed)) return Suggestions.empty(typed)
+        // Caps lock ("YES"): the words its letters make, in capitals, and
+        // never a fix (caps are deliberate). Read as they stood, "YES" was
+        // no word and offered He's and Yesterday (2026-10-14).
+        if (TypingText.isShouting(typed)) {
+            val lower = suggestions(typed.lowercase(), touches, previous, false, policy and AUTOCORRECT.inv(), today, beforePrevious)
+            val shouted = lower.alternatives.map { it.uppercase() }.filter { it != typed }.distinct()
+            lastHeldBack = "digit-or-caps"
+            return Suggestions(typed, lower.known || isWord(typed), null, shouted)
+        }
         val key = TypingText.key(typed)
         val typedScalars = TypingText.scalars(typed)
         if (key.isEmpty() || typedScalars.size > 48) return Suggestions.empty(typed)
@@ -205,7 +215,11 @@ class TypingEngine(
         // A whitelist target spelled differently ("his" under "hid") is not a
         // form of the typed word; everything else under this key is.
         val realForms = exact.filter { !it.whitelistOnly && !(it.whitelist && it.key != key) }
-        val known = (personalForm?.lowercase() == typed.lowercase()) ||
+        // A learned spelling makes its letters known only where it tells the
+        // dictionary something new: having typed "I" (the dictionary's own
+        // form) never makes a lone "i" a word (2026-10-14, "and i" stayed).
+        val known = (personalForm != null && (TypingText.sameWord(typed, personalForm) ||
+            (personalForm.lowercase() == typed.lowercase() && baseEntry(key, personalForm) == null))) ||
             realForms.any { TypingText.sameWord(typed, it.form) }
 
         lastHeldBack = null
@@ -673,7 +687,11 @@ class TypingEngine(
 
     private fun isWord(form: String): Boolean {
         val key = TypingText.key(form)
-        if (personal.isKnown(key) || packForms.containsKey(key)) return true
+        // This spelling, not just these letters: a learned "I" never makes
+        // "i" a word, or a sentence-start "I" would be learned as "i" (and a
+        // lone "i" never fixed again, 2026-10-14).
+        if (personal.isKnown(key) && personal.word(key)?.form == form) return true
+        if (packForms[key] == form) return true
         val b = base ?: return false
         val node = b.node(key)
         if (node == GlydTrie.NONE) return false

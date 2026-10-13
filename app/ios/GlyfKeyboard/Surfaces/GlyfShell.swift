@@ -462,7 +462,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
             let card = UIView()
             card.tag = 1
-            card.backgroundColor = Glass.surfaceCard
+            card.backgroundColor = Glass.surfaceTile
             card.layer.cornerRadius = 14
             card.layer.cornerCurve = .continuous
             if !Glass.solidLook {
@@ -712,7 +712,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
             let card = UIView()
             card.tag = 1
-            card.backgroundColor = Glass.surfaceCard
+            card.backgroundColor = Glass.surfaceTile
             card.layer.cornerRadius = 12
             card.layer.cornerCurve = .continuous
             card.layer.shadowColor = Glass.keyShadowColor.cgColor
@@ -1453,7 +1453,7 @@ private final class ShellCell: UITableViewCell {
     override func setHighlighted(_ highlighted: Bool, animated: Bool) {
         super.setHighlighted(highlighted, animated: animated)
         guard kind == .cell else { return }
-        let base = Glass.surfaceCard
+        let base = Glass.surfaceTile
         card.backgroundColor = highlighted ? base.blend(Glass.textPrimary, 0.08) : base
     }
 
@@ -1461,7 +1461,7 @@ private final class ShellCell: UITableViewCell {
         kind = .cell
         place = Place()
         detailRight = false
-        card.backgroundColor = Glass.surfaceCard
+        card.backgroundColor = Glass.surfaceTile
         card.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
                                     .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         separator.backgroundColor = Glass.strokeSeparator

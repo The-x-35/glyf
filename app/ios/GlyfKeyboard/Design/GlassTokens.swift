@@ -239,14 +239,23 @@ enum Glass {
             return isDark ? UIColor.white.withAlphaComponent(0.14)
                           : UIColor.white.withAlphaComponent(0.58)
         }
+        if isDark, boardSeed == nil { return appleKeyDarkWash }
         return keyColor
     }
+    /// Apple's dark keys are white laid over the sheet, not a grey of their
+    /// own: #404041 on the usual dark sheet (27), a step above it wherever
+    /// iOS draws the sheet lighter. Safari with a light page in dark mode
+    /// draws it at 66, where Apple's keys read 96 and an opaque #404041 sank
+    /// into it, the keys gone (measured on the iOS 26.5 sim, 2026-10-14).
+    private static let appleKeyDarkWash = UIColor.white.withAlphaComponent(0.159)
     static var fillKeyPressed: UIColor {
         if keyGradient != nil { return UIColor.white.withAlphaComponent(0.28) }
         if glassKeys {
             return isDark ? UIColor.white.withAlphaComponent(0.40)
                           : UIColor.white.withAlphaComponent(0.92)
         }
+        // The same step as below (64 → 91 on the usual sheet), as a wash.
+        if isDark, boardSeed == nil { return UIColor.white.withAlphaComponent(0.28) }
         if let seed = boardSeed {
             return boardIsLight ? keyColor.blend(seed, 0.55) : keyColor.blend(.white, 0.11)
         }
@@ -304,6 +313,14 @@ enum Glass {
     static var surfaceCard: UIColor {
         if themedBgActive { return keyColor }
         return isDark ? appleKeyDark : appleKeyLight
+    }
+    /// A tile or a row laid straight on the sheet (the menu's tools, the
+    /// vault's details): in dark, the keys' wash, so it stands off the sheet
+    /// wherever iOS draws it (opaque #404041 vanished on Safari's lighter
+    /// sheet, 2026-10-14). Popups and overlays keep the opaque card.
+    static var surfaceTile: UIColor {
+        if isDark, !themedBgActive { return appleKeyDarkWash }
+        return surfaceCard
     }
     /// Soft chip/field fill over the sheet (the web's --kb-soft).
     static var fillSoft: UIColor {
