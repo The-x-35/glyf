@@ -36,11 +36,13 @@ export function reportRoutes(app: FastifyInstance, deps: ReportDeps = {}): void 
     if (!parsed.success) return reply.code(400).send({ ok: false, error: "Bad request" });
     const { deviceId, feature, result, reason, platform } = parsed.data;
     const t = now();
-    const times = (sent.get(deviceId) ?? []).filter(at => t - at < HOUR);
+    // Counted per account when signed in: a new deviceId is free to make.
+    const sender = req.glyfUser ? `user:${req.glyfUser}` : deviceId;
+    const times = (sent.get(sender) ?? []).filter(at => t - at < HOUR);
     if (times.length >= PER_HOUR) {
       return reply.code(429).send({ ok: false, error: "That's a lot of reports. Try again later." });
     }
-    sent.set(deviceId, [...times, t]);
+    sent.set(sender, [...times, t]);
     if (!reports.enabled) {
       // A local server without a database: say so in its log, not to the phone.
       req.log.warn({ feature, platform }, "report_not_stored_no_database");

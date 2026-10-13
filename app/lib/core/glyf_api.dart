@@ -19,10 +19,14 @@ abstract final class GlyfApi {
   static String get _fallbackBase =>
       kReleaseMode ? productionBackend : 'http://127.0.0.1:8787';
 
-  static Future<String> _baseUrl() async {
-    final s = await GlyfBridge.sharedSettings();
-    return (s['backendURL'] as String?) ?? _fallbackBase;
-  }
+  /// Where calls go. A shipped app talks to production only: the session
+  /// token rides on every call, so no saved setting may point it elsewhere.
+  static String baseFrom(Map<String, dynamic> s) => kReleaseMode
+      ? productionBackend
+      : (s['backendURL'] as String?) ?? _fallbackBase;
+
+  static Future<String> _baseUrl() async =>
+      baseFrom(await GlyfBridge.sharedSettings());
 
   static Future<String> _deviceId() async {
     final s = await GlyfBridge.sharedSettings();
@@ -38,8 +42,7 @@ abstract final class GlyfApi {
     Duration timeout = const Duration(seconds: 30),
   }) async {
     final settings = await GlyfBridge.sharedSettings();
-    final base =
-        (settings['backendURL'] as String?) ?? _fallbackBase;
+    final base = baseFrom(settings);
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
     try {
       final req = await client.postUrl(Uri.parse('$base/glyf/run'));

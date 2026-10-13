@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID, createHash } from "node:crypto";
 import { env } from "../env.js";
 import { KV } from "../lib/store.js";
+import { verifySession } from "../lib/identity.js";
 
 /** §6.11 OAuth broker + §6.12 ConnectorSurface data.
  *
@@ -158,7 +159,11 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
 
   app.get<{ Querystring: { deviceId?: string } }>(
     "/connectors/status", async req => {
-      const deviceId = req.query.deviceId ?? "";
+      // The path is open (onboarding asks before sign-in), but what a phone
+      // has connected, and the address it connected, is only for its owner.
+      const header = req.headers.authorization ?? "";
+      const signedIn = header.startsWith("Bearer ") && Boolean(verifySession(header.slice(7).trim()));
+      const deviceId = signedIn ? req.query.deviceId ?? "" : "";
       const row = (id: string, label: string, envId: string, envSecret?: string) => {
         const conn = deviceId
           ? kv.get<Connection>("connections", connKey(deviceId, id))
@@ -307,7 +312,7 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
       const auth = state ? pending.get(state) : undefined;
       if (state) pending.delete(state);
       if (!p || error || !code || !auth || auth.provider !== name) {
-        return reply.redirect(`glyf://connected?provider=${name}&ok=false`);
+        return reply.redirect(`glyf://connected?provider=${encodeURIComponent(name)}&ok=false`);
       }
       const body = new URLSearchParams({
         grant_type: "authorization_code",
@@ -330,7 +335,7 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
       });
       if (!tokenRes.ok) {
         req.log.warn({ provider: name, status: tokenRes.status }, "token_exchange_failed");
-        return reply.redirect(`glyf://connected?provider=${name}&ok=false`);
+        return reply.redirect(`glyf://connected?provider=${encodeURIComponent(name)}&ok=false`);
       }
       const json = await tokenRes.json() as Record<string, unknown> & {
         access_token?: string; refresh_token?: string; expires_in?: number;
@@ -340,7 +345,7 @@ export function connectorRoutes(app: FastifyInstance, kv: KV): void {
       // Slack user tokens ride in authed_user; everyone else is top-level.
       const accessToken = json.authed_user?.access_token ?? json.access_token;
       if (!accessToken) {
-        return reply.redirect(`glyf://connected?provider=${name}&ok=false`);
+        return reply.redirect(`glyf://connected?provider=${encodeURIComponent(name)}&ok=false`);
       }
       kv.put("connections", connKey(auth.deviceId, name), {
         provider: name,

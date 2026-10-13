@@ -52,8 +52,9 @@ object SettingsStore {
         // A debug build must not inherit a production URL persisted by a
         // release install — dev work would silently leave the dev server.
         if (isDebug) return if (url == PRODUCTION_BACKEND) defaultBackendURL() else url
-        val dev = listOf("127.0.0.1", "localhost", "10.0.2.2", "0.0.0.0")
-        return if (dev.any { url.contains(it) }) PRODUCTION_BACKEND else url
+        // A shipped build talks to production only: the session token rides
+        // on every call, so no saved setting may send it anywhere else.
+        return PRODUCTION_BACKEND
     }
 
     fun defaults(): JSONObject = JSONObject().apply {

@@ -2,7 +2,17 @@ import { config } from "dotenv";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-config({ path: join(dirname(fileURLToPath(import.meta.url)), "..", ".env") });
+// server/.env on a laptop holds the production database. A test run must
+// never reach it, so under vitest that one line of the file is skipped (a
+// DATABASE_URL already in the real environment is left alone, as dotenv
+// always does).
+const fromFile: Record<string, string> = {};
+config({ path: join(dirname(fileURLToPath(import.meta.url)), "..", ".env"), processEnv: fromFile });
+for (const [key, value] of Object.entries(fromFile)) {
+  if (key in process.env) continue;
+  if (process.env.VITEST && key === "DATABASE_URL") continue;
+  process.env[key] = value;
+}
 
 function num(name: string, fallback: number): number {
   const v = Number(process.env[name]);

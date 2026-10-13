@@ -44,7 +44,7 @@ export function searchRoutes(app: FastifyInstance, kv: KV, guard: Guard): void {
     if (!parsed.success) {
       // The issues say which FIELD was wrong; the body would carry the user's
       // query, which has no business in a log file.
-      req.log.warn({ issues: parsed.error.issues }, "search bad request");
+      req.log.warn({ issues: parsed.error.issues.map(i => ({ path: i.path, code: i.code })) }, "search bad request");
       return reply.code(400).send({ error: "bad request" });
     }
     const { vertical, query, deviceId, lat, lon, country, tz, dark } = parsed.data;

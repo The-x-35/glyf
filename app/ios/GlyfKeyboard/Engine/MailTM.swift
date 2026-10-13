@@ -36,7 +36,12 @@ struct MailTM {
     /// `base` is the setting `tempMailBase` (a stand-in, in tests), else
     /// mail.tm itself.
     init(base: String?) {
+        #if DEBUG
         let given = (base ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        #else
+        // A shipped build sends the inbox login to mail.tm only.
+        let given = ""
+        #endif
         var b = given.isEmpty ? Self.defaultBase : given
         while b.hasSuffix("/") { b.removeLast() }
         self.base = b

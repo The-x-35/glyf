@@ -41,6 +41,11 @@ export function actRoutes(app: FastifyInstance, guard: Guard, kv: KV): void {
     const page = getPage(kv, (req.params as { id: string }).id);
     if (!page) return reply.code(404).type("text/html").send("<h1>Not found</h1>");
     reply.header("cache-control", "public, max-age=300");
+    // The page is static: no script may run on it, nothing may frame it.
+    reply.header("content-security-policy",
+      "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("referrer-policy", "no-referrer");
     return reply.type("text/html").send(renderPage(page));
   });
 
@@ -48,7 +53,8 @@ export function actRoutes(app: FastifyInstance, guard: Guard, kv: KV): void {
     const parsed = ActSchema.safeParse(req.body);
     if (!parsed.success) {
       // Issues name the bad FIELD; the body is the user's text and stays out of logs.
-      req.log.warn({ issues: parsed.error.issues }, "act bad request");
+      // Where the body was wrong, never what it said (it is what they typed).
+      req.log.warn({ issues: parsed.error.issues.map(i => ({ path: i.path, code: i.code })) }, "act bad request");
       return reply.code(400).send({ ok: false, error: "Bad request" });
     }
     const { text, deviceId, plan, lat, lon, country, tz, profile, intent, stream } = parsed.data;

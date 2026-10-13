@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint, kReleaseMode;
 
 import 'bridge.dart';
+import 'glyf_api.dart';
 
 /// Signing in, once, for the whole app: Sign in with Apple on the iPhone,
 /// Google on both phones.
@@ -352,7 +353,7 @@ abstract final class Auth {
       {Map<String, Object?>? body, String? token}) async {
     try {
       final s = await GlyfBridge.sharedSettings();
-      final base = (s['backendURL'] as String?) ?? 'http://127.0.0.1:8787';
+      final base = GlyfApi.baseFrom(s);
       final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
       try {
         final req = await client.openUrl(method, Uri.parse('$base$path'));

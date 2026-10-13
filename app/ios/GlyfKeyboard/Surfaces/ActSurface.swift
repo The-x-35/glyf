@@ -589,7 +589,9 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         }
         let card = cards[indexPath.row]
         if card.kind == "query" {
-            if let url = URL(string: card.url) { delegate?.actOpen(url) }
+            // A link from the server opens only as a web page: never tel:,
+            // sms:, another app's scheme or a glyf:// action.
+            if let url = URL(string: card.url), url.scheme?.lowercased() == "https" { delegate?.actOpen(url) }
             return
         }
         delegate?.actInsert(card.insertText(style: SettingsStore.current.pasteStyle ?? "titleAndLink"))

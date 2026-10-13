@@ -38,7 +38,12 @@ export function billingRoutes(app: FastifyInstance, deps: BillingDeps = {}): voi
   const users = deps.users ?? new Users();
   const session = deps.verifySessionToken ?? (async (t: string) => verifySession(t));
   // StoreKit testing in Xcode signs locally; only a development server takes it.
-  const opts: VerifyOptions = { allowXcode: process.env.NODE_ENV !== "production" };
+  // Xcode's local StoreKit signatures prove nothing (anyone can make one),
+  // so they count only on a developer's machine: never in production and
+  // never on Railway, whatever NODE_ENV says there.
+  const onRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_ENVIRONMENT_NAME
+    || process.env.RAILWAY_PROJECT_ID);
+  const opts: VerifyOptions = { allowXcode: process.env.NODE_ENV !== "production" && !onRailway };
   const verifySigned = deps.verifySigned ?? ((jws: string) => verifyAppleJws(jws, opts));
   const check = (jws: string) => verifySigned(jws) as AppleTransaction;
   // Every id in the list sells, not only the first: the order is whatever

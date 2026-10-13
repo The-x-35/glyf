@@ -91,7 +91,7 @@ enum ClipboardStore {
     /// So this sits behind the same switch as the full read.
     static func captureDetected(_ done: @escaping (Bool) -> Void) {
         guard !reading, fullAccessHint, pasteboardHasNewContent(),
-              SettingsStore.current.clipboardHistory != false
+              SettingsStore.current.clipboardHistory != false, !copyIsConcealed
         else { return done(false) }
         // Only the three iOS 14 patterns are plain `DetectionPattern`s; the
         // later ones (email, phone, address…) are refined onto a different
@@ -159,7 +159,7 @@ enum ClipboardStore {
         guard !reading, fullAccessHint, pasteboardHasNewContent(),
               SettingsStore.current.clipboardHistory != false,
               SettingsStore.current.clipboardCaptureAll == true,
-              UIPasteboard.general.hasStrings
+              UIPasteboard.general.hasStrings, !copyIsConcealed
         else { return done(false, false) }
         // Reading `.string` can raise "Allow Paste?", and the read waits for
         // the answer. On the main thread that froze the whole keyboard (no
@@ -190,6 +190,14 @@ enum ClipboardStore {
     /// A read is waiting on iOS (and maybe on the person): no second one.
     /// Main thread only.
     private static var reading = false
+
+    /// A password manager marks what it copies (the nspasteboard.org types,
+    /// 1Password's own): never kept. Reading the types asks nothing of iOS.
+    private static var copyIsConcealed: Bool {
+        let marked: Set<String> = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType",
+                                   "com.agilebits.onepassword"]
+        return !marked.isDisjoint(with: UIPasteboard.general.types)
+    }
 
     /// A link first: it is what people copy most and what iOS is surest of.
     private static func firstText(in values: [UIPasteboard.DetectionPattern: Any]) -> String? {

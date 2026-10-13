@@ -35,6 +35,7 @@ import UIKit
       try? FileManager.default.removeItem(
         at: dir.appendingPathComponent("onboarding.json"))
     }
+    #if DEBUG
     if args.contains("--glyf-dump-vault"), let dir = AppGroupStore.bridgeDir {
       // DEBUG ONLY (test forensics): decrypted vault snapshot.
       let v = VaultStore.shared.load()
@@ -42,6 +43,12 @@ import UIKit
         try? data.write(to: dir.appendingPathComponent("vault-debug.json"))
       }
     }
+    #else
+    // A shipped build never leaves a decrypted vault lying in the App Group.
+    if let dir = AppGroupStore.bridgeDir {
+      try? FileManager.default.removeItem(at: dir.appendingPathComponent("vault-debug.json"))
+    }
+    #endif
     if args.contains("--glyf-seed-vault") {
       let store = VaultStore.shared
       if store.load().fields.isEmpty {

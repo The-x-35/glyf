@@ -70,9 +70,16 @@ object ClipboardStore {
      *  coerceToText opens it and reads its bytes as if they were words: a
      *  200 KB screenshot became the strip's "text", read on the main thread.
      *  A web link copied as a link is text. */
-    fun clipText(ctx: Context): String? {
+    fun clipText(ctx: Context, allowSensitive: Boolean = false): String? {
         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager ?: return null
+        // A password manager marks what it copies as sensitive: never kept,
+        // shown on a chip or sent anywhere. Only the paste key may still
+        // put it in the field (allowSensitive).
+        if (!allowSensitive) {
+            val extras = try { cm.primaryClipDescription?.extras } catch (_: Exception) { null }
+            if (extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return null
+        }
         val item = try {
             cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
         } catch (_: Exception) { null } ?: return null

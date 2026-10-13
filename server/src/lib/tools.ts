@@ -5,6 +5,7 @@ import { registryDir } from "./paths.js";
 import { priceAsked } from "./act.js";
 import { geocodePlace } from "./answers.js";
 import { Rates } from "./rates.js";
+import { BlockedUrlError, safeFetchText, type SafeResponse } from "./safefetch.js";
 
 /** §6.11 — the tool registry. Keyless tools ship now (no user auth, no API
  *  keys); OAuth tools activate in M6 when provider credentials exist. Every
@@ -192,7 +193,7 @@ export async function runTool(
       const from = (args.from || "USD").toUpperCase();
       const to = (args.to || "INR").toUpperCase();
       const data = await fetchJSON(
-        `https://api.frankfurter.dev/v1/latest?base=${from}&symbols=${to}`,
+        `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(from)}&symbols=${encodeURIComponent(to)}`,
         meta.timeoutMs) as { rates: Record<string, number> };
       const rate = data.rates[to];
       if (!rate) throw refuse(`no rate ${from}→${to}`);
@@ -201,12 +202,20 @@ export async function runTool(
     case "url.unfurl": {
       const url = args.url;
       if (!/^https?:\/\//.test(url ?? "")) throw refuse("needs a full URL");
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(meta.timeoutMs),
-        headers: { "User-Agent": "glyf-dev/0.5 (unfurl)" },
-        redirect: "follow",
-      });
-      const html = (await res.text()).slice(0, 60_000);
+      // A pasted link is someone else's choice of address: lib/safefetch.ts
+      // keeps it off the server's own network on every hop.
+      let res: SafeResponse;
+      try {
+        res = await safeFetchText(url, {
+          timeoutMs: meta.timeoutMs,
+          headers: { "User-Agent": "glyf-dev/0.5 (unfurl)" },
+          maxBytes: 60_000,
+        });
+      } catch (err) {
+        if (err instanceof BlockedUrlError) throw refuse("can't preview that link");
+        throw err;
+      }
+      const html = res.text.slice(0, 60_000);
       const pick = (re: RegExp) => html.match(re)?.[1]?.trim();
       const title = pick(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)
         ?? pick(/<title[^>]*>([^<]+)<\/title>/i) ?? url;

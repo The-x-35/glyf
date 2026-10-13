@@ -28,7 +28,9 @@ export const OPEN_PATHS: readonly (string | RegExp)[] = [
   // App Review's door: its own password IS the credential (routes/auth.ts).
   "/auth/review",
   /^\/p\//,            // a page someone shared; the link is the permission
-  /^\/oauth\//,        // providers redirect here; they carry their own state
+  // Providers redirect here; they carry their own state. Starting a
+  // connection is not open: it needs the session, like everything else.
+  /^\/oauth\/[^/]+\/callback$/,
   /^\/connector\/[^/]+\/callback/,
   "/waitlist",
   // Only says whether Google sign-in is set up on this server; onboarding

@@ -47,6 +47,15 @@ export function buildApp(kv: KV = defaultKV()) {
     // before a handler ever sees them.
     bodyLimit: 512 * 1024,
   });
+  // A crash's own words (a database error, a stack-shaped message) are for
+  // the log; the phone gets the same "Internal Server Error" without them.
+  // Client mistakes (bad JSON, a body too big) keep Fastify's answer.
+  app.setErrorHandler((err: { statusCode?: number; message?: string }, req, reply) => {
+    const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
+    if (status < 500) return reply.code(status).send(err);
+    req.log.error({ err: err.message ?? String(err) }, "unhandled_error");
+    return reply.code(status).send({ ok: false, statusCode: status, error: "Internal Server Error" });
+  });
   const limits = buildLimiter();
   const guard = new Guard({ limits, freePerDay: env.freeRunsPerDay,
     freeSuggestionsPerDay: env.freeSuggestionsPerDay,

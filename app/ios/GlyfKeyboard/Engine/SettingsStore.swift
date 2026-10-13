@@ -174,8 +174,9 @@ struct GlyfSettings: Codable, Equatable {
         #if DEBUG
         return url == productionBackend ? defaultBackendURL : url
         #else
-        let dev = ["127.0.0.1", "localhost", "10.0.2.2", "0.0.0.0"]
-        return dev.contains(where: url.contains) ? productionBackend : url
+        // The session token rides on every call, so a shipped build talks to
+        // production only, whatever a saved setting says.
+        return productionBackend
         #endif
     }
 

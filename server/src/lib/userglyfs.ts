@@ -37,6 +37,13 @@ export function validateUserDef(def: GlyfDef): string | null {
     if (step.type === "tool" && !toolExists(step.tool)) {
       return `Unknown tool '${step.tool}' — only registry tools are allowed`;
     }
+    // A link preview fetches whatever address it is given, so a glyf could
+    // otherwise build one out of a calendar, a profile or earlier steps and
+    // send it to a site its author runs. It may only open what was typed.
+    if (step.type === "tool" && step.tool === "url.unfurl"
+        && String((step.args as Record<string, unknown>)?.url ?? "").trim() !== "{{input}}") {
+      return "Link previews can only open the link you type";
+    }
     // OAuth-backed tools are allowed in defs; at RUN time the executor
     // asks the user to connect the provider when no token exists.
   }

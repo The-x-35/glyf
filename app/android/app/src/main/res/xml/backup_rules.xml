@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older. What stays off Google's backup: copied text
+     (passwords slip past any scanner), the temp-mail login and the
+     calendar copy (Google already holds it). The vault,
+     session and wallet keys live in the Keystore and noBackupFilesDir. -->
+<full-backup-content>
+    <exclude domain="file" path="bridge/clipboard.json"/>
+    <exclude domain="file" path="google-calendar.json"/>
+    <exclude domain="sharedpref" path="glyf_tempmail.xml"/>
+</full-backup-content>

@@ -193,9 +193,14 @@ describe("tool errors on the phone", () => {
     process.env.MOCK_AI = "false";
     try {
       const broke = await app.inject({ method: "POST", url: "/tools/run",
-        payload: { id: "url.unfurl", args: { url: "http://127.0.0.1:9/" }, deviceId: "t-err-1" } });
+        payload: { id: "url.unfurl", args: { url: "http://glyf-test.invalid/" }, deviceId: "t-err-1" } });
       expect(broke.statusCode).toBe(502);
       expect(broke.json().error).toBe("Couldn't get that right now. Try again.");
+      // The server's own network is never fetched (lib/safefetch.ts).
+      const inside = await app.inject({ method: "POST", url: "/tools/run",
+        payload: { id: "url.unfurl", args: { url: "http://169.254.169.254/latest/meta-data/" }, deviceId: "t-err-1" } });
+      expect(inside.statusCode).toBe(502);
+      expect(inside.json().error).toBe("Can't preview that link");
       const refused = await app.inject({ method: "POST", url: "/tools/run",
         payload: { id: "url.unfurl", args: { url: "not a url" }, deviceId: "t-err-1" } });
       expect(refused.json().error).toBe("Needs a full URL");

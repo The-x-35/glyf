@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and newer: the same files stay off cloud backup and
+     device-to-device transfer (see backup_rules.xml). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="bridge/clipboard.json"/>
+        <exclude domain="file" path="google-calendar.json"/>
+        <exclude domain="sharedpref" path="glyf_tempmail.xml"/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="bridge/clipboard.json"/>
+        <exclude domain="file" path="google-calendar.json"/>
+        <exclude domain="sharedpref" path="glyf_tempmail.xml"/>
+    </device-transfer>
+</data-extraction-rules>
