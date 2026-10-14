@@ -17,7 +17,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import java.util.concurrent.Executors
 
 /**
@@ -109,6 +108,8 @@ class PayPanelView(
     /** Jupiter's answer in whole tokens of what's bought, and whether one is
      *  on its way. */
     private var quoteOut: Double? = null
+    /** Glyf's fee in that quote, when Jupiter applied it (SwapFee). */
+    private var quoteFeeBps: Int? = null
     private var quoting = false
     /** The wallet answered: zeros are facts only then. */
     private var balanceKnown = false
@@ -579,6 +580,7 @@ class PayPanelView(
         val line = mutableListOf<String>()
         if (value != null && out == null && !quoting) line.add("No price right now")
         if (out != null && unit != null) line.add("≈ ${dollars(out * unit)}")
+        if (out != null) quoteFeeBps?.let { line.add(SwapFee.label(it)) }
         buy.price?.let { line.add("1 ${buy.symbol} = $it") }
         getUsd.text = line.joinToString(" · ")
         val short = value != null && balanceKnown && value > spendable() + 1e-9
@@ -773,18 +775,28 @@ class PayPanelView(
             if (token != quoteToken) return@postDelayed
             val units = (value * Math.pow(10.0, paying.decimals.toDouble())).toLong()
             if (units <= 0) return@postDelayed
-            val url = "https://api.jup.ag/swap/v2/order?inputMint=${paying.mint}" +
-                "&outputMint=${URLEncoder.encode(intent.mint, "UTF-8")}&amount=$units"
-            http("GET", url, null, raw = true) { obj ->
-                if (token != quoteToken) return@http
-                quoting = false
-                val out = obj?.optString("outAmount")?.toDoubleOrNull()
-                val decimals = targetDecimals
-                quoteOut = if (out != null && decimals != null) out / Math.pow(10.0, decimals.toDouble()) else null
-                quote = quoteOut?.let { "≈ ${compact(it)} ${intent.symbol}" }
-                render()
-            }
+            fetchQuote(token, intent, units, SwapFee.REFERRAL_ACCOUNT)
         }, 400)
+    }
+
+    /** One /order quote, net of Glyf's fee (Jupiter takes it before it
+     *  quotes). No answer with the referral costs Glyf its fee, never the
+     *  person their price: asked again without it. */
+    private fun fetchQuote(token: Int, buy: Intent.Buy, units: Long, referral: String) {
+        http("GET", SwapFee.orderUrl(paying.mint, buy.mint, units, referral), null, raw = true) { obj ->
+            if (token != quoteToken) return@http
+            val out = obj?.optString("outAmount")?.toDoubleOrNull()
+            if (out == null && referral.isNotEmpty()) {
+                fetchQuote(token, buy, units, "")
+                return@http
+            }
+            quoting = false
+            val decimals = targetDecimals
+            quoteOut = if (out != null && decimals != null) out / Math.pow(10.0, decimals.toDouble()) else null
+            quoteFeeBps = if (quoteOut != null && obj != null) SwapFee.applied(obj) else null
+            quote = quoteOut?.let { "≈ ${compact(it)} ${buy.symbol}" }
+            render()
+        }
     }
 
     /** `raw` skips the `ok` envelope (Jupiter's own API). */

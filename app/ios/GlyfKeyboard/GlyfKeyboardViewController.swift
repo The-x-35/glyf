@@ -1707,6 +1707,16 @@ final class GlyfKeyboardViewController: UIInputViewController {
                               indianGrouping: (SettingsStore.current.region ?? "IN") == "IN",
                               region: SettingsStore.current.region ?? Locale.current.region?.identifier,
                               linkContext: String(before.suffix(2048)))
+        // Without the wallet on, nothing to send or buy: a price is only a price.
+        if !GlyfToolbar.walletOn {
+            switch chip {
+            // A copied address still pastes; it just isn't paid.
+            case .pay(_, _, _, let copied?)?, .buy(_, _, _, let copied?)?: chip = .paste(text: copied)
+            case .pay?, .buy?: chip = nil
+            case .money(let shown, let insert, _)?: chip = .money(shown: shown, insert: insert, buy: nil)
+            default: break
+            }
+        }
         // The person's own shorthand of the same name wins over ";date".
         if case .convert(let c)? = chip, Smart.builtInShortcuts.contains(c.source),
            Shorthand.expansion(for: c.source, in: vault) != nil {
@@ -1723,7 +1733,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         if hasFullAccess, let c = chip { chip = Self.withTempMail(c) }
         // An address on screen or copied: a wallet (Send) or a token (Buy)?
         // Only a lookup can tell; the strip is arranged again when it lands.
-        if chip == nil, hasFullAccess,
+        if chip == nil, hasFullAccess, GlyfToolbar.walletOn,
            let address = Smart.addressToCheck(in: tail, paste: paste, rates: rates, ownWallet: ownWallet) {
             RatesStore.shared.ensureAddress(address) { [weak self] in self?.updateCandidates() }
         }

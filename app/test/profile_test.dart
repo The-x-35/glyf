@@ -146,7 +146,9 @@ void main() {
     // Got a code? is part of the account card, not a row of its own.
     expect(find.descendant(of: find.byType(GlassCard).first, matching: find.text('Got a code?')),
         findsOneWidget);
-    for (final row in ['Keyboard', 'Vocabulary', 'Vault', 'Search', 'Connected tools', 'Wallet', 'Tour']) {
+    // The Wallet row shows only with the wallet turned on (14 Oct 2026).
+    expect(find.text('Wallet'), findsNothing);
+    for (final row in ['Keyboard', 'Vocabulary', 'Vault', 'Search', 'Connected tools', 'Tour']) {
       expect(find.text(row), findsOneWidget, reason: row);
     }
     // Folded into Search, Vocabulary and Tour.

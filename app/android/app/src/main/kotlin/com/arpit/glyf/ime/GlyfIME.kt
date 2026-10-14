@@ -509,6 +509,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
+    /** The wallet turned on in the app (Profile › Keyboard › Wallet,
+     *  2026-10-14): off, no Pay tool, no Send or Buy, no Buy beside a price. */
+    private val walletOn: Boolean get() = settings.optBoolean("walletEnabled", false)
+
     /** The bottom inset the window last reported; -1 until it has. */
     private var lastBottomInset = -1
 
@@ -838,7 +842,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // Hidden as saved, then renamed: a hidden Shorthand must not hide the
         // Vault it became, while a pinned Emoji becomes a pinned GIFs.
         return ids.filter { it !in hiddenSet }.map { ToolIcon.canonical(it) }
-            .filter { it in known }.distinct()
+            .filter { it in known && (it != "pay" || walletOn) }.distinct()
     }
 
     // MARK: a panel's name in the strip (iOS Toolbar.showPanelHeader)
@@ -2489,7 +2493,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         // An address on screen: a wallet (Send) or a token (Buy)? Only a
         // lookup can tell; the strip is arranged again when it lands.
-        if (chip == null) Smart.addressToCheck(tail, rates, ownWallet)?.let {
+        // Without the wallet on, nothing to send or buy: a price is only a price.
+        if (!walletOn) chip = when (val c = chip) {
+            is Smart.Chip.Pay, is Smart.Chip.Buy -> null
+            is Smart.Chip.Money -> c.copy(buy = null)
+            else -> c
+        }
+        if (chip == null && walletOn) Smart.addressToCheck(tail, rates, ownWallet)?.let {
             RatesStore.ensureAddress(settings.optString("backendURL"), it) { updateSuggestions() }
         }
         // An amount or a ticker with no rate yet: ask for one; the strip is
@@ -2790,7 +2800,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val dismiss = { used(); hideStripChip() }
         // A copied address is still pasted by a tap; Send (a wallet) or Buy
         // (a token) sits beside it. Nothing until the lookup says which.
-        val address = Smart.payment(text)?.first?.takeIf { it != settings.optString("walletAddress") }
+        val address = Smart.payment(text)?.first?.takeIf { walletOn && it != settings.optString("walletAddress") }
         if (address != null) {
             val paste = {
                 used()

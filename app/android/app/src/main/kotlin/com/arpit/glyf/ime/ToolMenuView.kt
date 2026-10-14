@@ -330,6 +330,8 @@ class ToolMenuView(
                 if (id in known && id !in out) out.add(id)
             }
             known.filter { it !in out }.forEach { out.add(it) }
+            // The Pay tool only with the wallet on (2026-10-14).
+            if (!SettingsStore.load(ctx).optBoolean("walletEnabled", false)) out.remove("pay")
             return out
         }
     }

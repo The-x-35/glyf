@@ -68,7 +68,7 @@ describe("routes", () => {
     await run();
     await run();
     const third = await run();
-    expect(third.payload).toContain("Daily free runs used up");
+    expect(third.payload).toContain("free runs are used up");
     const meter = await app.inject({ method: "GET", url: "/meter/meter-dev-01" });
     expect(meter.json().remaining).toBe(0);
     env.freeRunsPerDay = 40;

@@ -138,7 +138,8 @@ describe("hard limits", () => {
       expect((await send()).statusCode).toBe(200);
       const blocked = await send();
       expect(blocked.statusCode).toBe(429);
-      expect(blocked.json().error).toContain("tomorrow");
+      // Free runs come back with the week (14 Oct 2026: 50 a week).
+      expect(blocked.json().error).toContain("Monday");
     } finally {
       env.freeRunsPerDay = before.runs;
       env.mockAI = before.mockAI;
@@ -238,4 +239,19 @@ describe("asking for something to be written", () => {
     expect(body.text.length).toBeGreaterThan(0);
     expect(body.insert).toBe(body.text);
   }, 20_000);
+});
+
+describe("free runs count over a week (14 Oct 2026)", () => {
+  it("free is a week's 50; a paid plan keeps its day", async () => {
+    const { capsFor, windowStart } = await import("../src/lib/limits.js");
+    expect(capsFor("free", 50)).toMatchObject({ runsPerDay: 50, window: "week" });
+    expect(capsFor("plus", 50).window).toBeUndefined();
+    expect(capsFor("plus", 50).runsPerDay).toBe(150);
+    // Thursday 15 Oct 2026 → Monday 12 Oct, 00:00 UTC; a Monday is its own
+    // start and Sunday night still belongs to it.
+    expect(windowStart("week", new Date("2026-10-15T18:30:00Z"))).toBe("2026-10-12T00:00:00.000Z");
+    expect(windowStart("week", new Date("2026-10-12T00:00:01Z"))).toBe("2026-10-12T00:00:00.000Z");
+    expect(windowStart("week", new Date("2026-10-18T23:59:59Z"))).toBe("2026-10-12T00:00:00.000Z");
+    expect(windowStart("week", new Date("2026-10-19T00:00:00Z"))).toBe("2026-10-19T00:00:00.000Z");
+  });
 });

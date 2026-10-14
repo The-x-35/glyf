@@ -94,10 +94,12 @@ export class Guard {
   /** What is left today and on which plan, so the app's plan card and the
    *  keyboard's runs chip read the same numbers. */
   async status(req: FastifyRequest, deviceId: string, now = new Date()):
-    Promise<{ remaining: number; plan: Plan; perDay: number }> {
+    Promise<{ remaining: number; plan: Plan; perDay: number; period: "day" | "week" }> {
     const { key, plan } = await this.who(req, deviceId);
     const caps = capsFor(plan, this.deps.freePerDay);
-    const remaining = await this.deps.limits.left(key, "day", caps.runsPerDay, now);
-    return { remaining, plan, perDay: caps.runsPerDay };
+    const period = caps.window ?? "day";
+    const remaining = await this.deps.limits.left(key, period, caps.runsPerDay, now);
+    // perDay is the period's cap (old apps read it as a day's).
+    return { remaining, plan, perDay: caps.runsPerDay, period };
   }
 }

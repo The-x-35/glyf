@@ -5,6 +5,7 @@ import '../core/auth.dart';
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
+import '../wallet/wallet_flow.dart';
 import '../wallet/wallet_screen.dart';
 import 'brand_marks.dart';
 
@@ -204,7 +205,11 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 6, 20, 40),
         children: [
-          _magicBlock(),
+          // Private payments are part of the wallet: shown with it on.
+          ValueListenableBuilder<bool>(
+            valueListenable: WalletFlow.enabled,
+            builder: (context, on, _) => on ? _magicBlock() : const SizedBox.shrink(),
+          ),
           const SizedBox(height: 12),
           _toolCard(
             brand: 'calendar',

@@ -283,6 +283,20 @@ abstract final class GlyfApi {
   static Future<Map<String, dynamic>> appleBilling(List<String> transactions) =>
       _postJson('/billing/apple', {'transactions': transactions});
 
+  /// Plans in USDC (wallet/crypto_pay.dart): whether the server takes them.
+  static Future<Map<String, dynamic>> cryptoConfig() => _getJson('/billing/crypto');
+
+  /// A Solana Pay request for [plan] ('plus' or 'max') and [period]
+  /// ('month' or 'year').
+  static Future<Map<String, dynamic>> cryptoRequest(String plan, String period) =>
+      _postJson('/billing/crypto/request', {'plan': plan, 'period': period},
+          timeout: const Duration(seconds: 15));
+
+  /// `pending: true` until the transfer lands; then the plan on the account.
+  static Future<Map<String, dynamic>> cryptoVerify(String reference) =>
+      _postJson('/billing/crypto/verify', {'reference': reference},
+          timeout: const Duration(seconds: 20));
+
   /// A gift code (six letters and numbers from Arpit): the server checks it,
   /// uses it up, and answers with the plan now on the account.
   static Future<CodeRedeemed> redeemCode(String code) async {
@@ -302,7 +316,7 @@ abstract final class GlyfApi {
 
   /// What the server is enforcing: runs left today, on which plan, out of
   /// how many. The plan card shows this, never the phone's own claim.
-  static Future<({int remaining, String plan, int perDay})?> meterStatus() async {
+  static Future<({int remaining, String plan, int perDay, String period})?> meterStatus() async {
     try {
       final obj = await _getJson('/meter/${await _deviceId()}');
       final remaining = obj['remaining'] as int?;
@@ -311,6 +325,8 @@ abstract final class GlyfApi {
         remaining: remaining,
         plan: (obj['plan'] as String?) ?? 'free',
         perDay: (obj['perDay'] as int?) ?? 40,
+        // Free counts over a week since 14 Oct 2026; paid plans over a day.
+        period: (obj['period'] as String?) ?? 'day',
       );
     } catch (_) {
       return null;

@@ -271,3 +271,46 @@ final class TokenLookup {
                      ticker: shareTicker(t["symbol"] as? String, name))
     }
 }
+
+/// Glyf's fee on a buy: Jupiter's referral fee on Swap V2 /order
+/// (docs/SWAP-FEE.md). Off while `referralAccount` is empty, and then the
+/// Buy quote is asked exactly as before. Twins: SwapFee in
+/// lib/wallet/wallet_api.dart (which builds the real order) and
+/// ime/SwapFee.kt. The keyboard only prices; the fee must match the app's.
+enum SwapFee {
+    /// The referral account made at referral.jup.ag under Jupiter's Ultra
+    /// referral project. Public, not a secret.
+    static let referralAccount = ""
+
+    /// 0.5%. Jupiter takes 50 to 255 and keeps a fifth of it.
+    static let bps = 50
+
+    /// The /order quote link for the Buy panel: keyless, no taker.
+    static func orderURL(inputMint: String, outputMint: String, units: Int,
+                         referral: String = referralAccount) -> URL? {
+        var comps = URLComponents(string: "https://api.jup.ag/swap/v2/order")
+        var items: [URLQueryItem] = [.init(name: "inputMint", value: inputMint),
+                                     .init(name: "outputMint", value: outputMint),
+                                     .init(name: "amount", value: String(units))]
+        if !referral.isEmpty {
+            items.append(.init(name: "referralAccount", value: referral))
+            items.append(.init(name: "referralFee", value: String(bps)))
+        }
+        comps?.queryItems = items
+        return comps?.url
+    }
+
+    /// The fee Jupiter says it applied for Glyf, from an /order answer.
+    static func applied(_ json: [String: Any]) -> Int? {
+        guard let account = json["referralAccount"] as? String, !account.isEmpty else { return nil }
+        return (json["feeBps"] as? NSNumber)?.intValue ?? bps
+    }
+
+    /// "Fee 0.5%".
+    static func label(_ bps: Int) -> String {
+        var pct = String(format: "%.2f", Double(bps) / 100)
+        while pct.hasSuffix("0") { pct.removeLast() }
+        if pct.hasSuffix(".") { pct.removeLast() }
+        return "Fee \(pct)%"
+    }
+}

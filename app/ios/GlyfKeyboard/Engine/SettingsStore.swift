@@ -50,6 +50,9 @@ struct GlyfSettings: Codable, Equatable {
     /// Glide typing: a finger sliding over the letters types the word
     /// (Arpit, 2026-10-07). Off leaves every letter a tap.
     var glideTyping: Bool? = true
+    /// The wallet is a feature people turn on in the app (2026-10-14): off,
+    /// no Pay tool, no Send or Buy chips, no Buy beside a price.
+    var walletEnabled: Bool? = nil
     /// Keyboard appearance: "auto" follows the host app (Apple behavior);
     /// "light"/"dark" force it.
     var appearance: String? = "auto"

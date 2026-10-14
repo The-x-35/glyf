@@ -77,11 +77,19 @@ class JupiterOrder {
     this.priceImpact,
     this.inUsd,
     this.outUsd,
+    this.glyfFeeBps,
   });
 
   final String requestId;
   final BigInt inAmount;
+
+  /// Net of every fee, Glyf's included: Jupiter takes the fee before it
+  /// quotes (measured 2026-10-14, docs/SWAP-FEE.md).
   final BigInt outAmount;
+
+  /// Glyf's fee on this swap, when Jupiter applied the referral; null
+  /// without one.
+  final int? glyfFeeBps;
 
   /// Base64, unsigned; null for a price-only quote.
   final String? transaction;
@@ -119,6 +127,37 @@ Future<Object?> _http(String method, Uri url, {Object? body, Duration timeout = 
   }
 }
 
+/// Glyf's fee on a buy: Jupiter's referral fee on Swap V2 /order
+/// (docs/SWAP-FEE.md). Off while [referralAccount] is empty, and then a buy
+/// is exactly what it was without it. Twins: SwapFee in
+/// GlyfKeyboard/Engine/TokenLookup.swift and ime/SwapFee.kt.
+abstract final class SwapFee {
+  /// The referral account made at referral.jup.ag under Jupiter's Ultra
+  /// referral project. Public, not a secret.
+  static const referralAccount = '';
+
+  /// 0.5%. Jupiter takes 50 to 255 and keeps a fifth of it.
+  static const bps = 50;
+
+  /// What /order is given on top of the swap itself.
+  static Map<String, String> params([String account = referralAccount]) =>
+      account.isEmpty ? const {} : {'referralAccount': account, 'referralFee': '$bps'};
+
+  /// "Fee 0.5%".
+  static String label(int bps) {
+    var pct = (bps / 100).toStringAsFixed(2);
+    pct = pct.replaceFirst(RegExp(r'\.?0+$'), '');
+    return 'Fee $pct%';
+  }
+
+  /// The fee Jupiter says it applied for Glyf, from an /order answer.
+  static int? applied(Map<String, dynamic> json) {
+    final account = json['referralAccount'];
+    if (account is! String || account.isEmpty) return null;
+    return (json['feeBps'] as num?)?.toInt() ?? bps;
+  }
+}
+
 /// Jupiter, straight from the phone and without a key (about 30 calls a
 /// minute per phone, plenty for one person): tokens, prices and swaps
 /// (Swap API V2: /order builds the transaction, /execute lands it).
@@ -146,25 +185,46 @@ abstract final class Jupiter {
     return exact.isNotEmpty ? exact.first : null;
   }
 
+  /// The /order link: the swap, the taker when building, Glyf's fee when
+  /// a referral account is set.
+  static Uri orderUri({
+    required String inputMint,
+    required String outputMint,
+    required BigInt amount,
+    String? taker,
+    String referral = SwapFee.referralAccount,
+  }) => Uri.parse('$_base/swap/v2/order').replace(
+    queryParameters: {
+      'inputMint': inputMint,
+      'outputMint': outputMint,
+      'amount': amount.toString(),
+      'taker': ?taker,
+      ...SwapFee.params(referral),
+    },
+  );
+
   static Future<JupiterOrder> order({
     required String inputMint,
     required String outputMint,
     required BigInt amount,
     String? taker,
   }) async {
-    final json =
-        await _http(
-              'GET',
-              Uri.parse('$_base/swap/v2/order').replace(
-                queryParameters: {
-                  'inputMint': inputMint,
-                  'outputMint': outputMint,
-                  'amount': amount.toString(),
-                  'taker': ?taker,
-                },
-              ),
-            )
-            as Map<String, dynamic>;
+    Map<String, dynamic> json;
+    try {
+      json =
+          await _http('GET', orderUri(inputMint: inputMint, outputMint: outputMint, amount: amount, taker: taker))
+              as Map<String, dynamic>;
+    } on WalletError catch (e) {
+      // A referral account Jupiter refuses (not made yet, wrong project)
+      // must cost Glyf its fee, never the person their buy.
+      if (SwapFee.referralAccount.isEmpty || !e.message.toLowerCase().contains('referral')) rethrow;
+      json =
+          await _http(
+                'GET',
+                orderUri(inputMint: inputMint, outputMint: outputMint, amount: amount, taker: taker, referral: ''),
+              )
+              as Map<String, dynamic>;
+    }
     final code = json['errorCode'];
     if (code != null && (json['transaction'] as String? ?? '').isEmpty && taker != null) {
       throw WalletError(switch (code) {
@@ -187,6 +247,7 @@ abstract final class Jupiter {
       priceImpact: double.tryParse('${json['priceImpact']}'),
       inUsd: (json['inUsdValue'] as num?)?.toDouble(),
       outUsd: (json['outUsdValue'] as num?)?.toDouble(),
+      glyfFeeBps: SwapFee.applied(json),
     );
   }
 

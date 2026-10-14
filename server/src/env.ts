@@ -35,8 +35,10 @@ export const env = {
   /** The models and each plan's day are set here in code, never by the
    *  environment: a stale Railway variable once kept production on a slow
    *  chain with the old caps. Tests may still change them in-process. */
-  /** A free plan's day. Plus and Max are in lib/limits.ts (PAID_PER_DAY). */
-  freeRunsPerDay: 20,
+  /** A free plan's runs, counted over a week since 14 Oct 2026 (Arpit:
+   *  "free to 50 runs per week"; lib/limits.ts capsFor). Plus and Max keep a
+   *  day's (PAID_PER_DAY). The name stays for the tests that change it. */
+  freeRunsPerDay: 50,
   /** The strip's suggestions have their own allowance and never spend a run. */
   freeSuggestionsPerDay: 100,
   /** So do the translate bar's translations. */

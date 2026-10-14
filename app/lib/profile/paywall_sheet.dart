@@ -9,7 +9,7 @@ import '../core/theme.dart';
 /// Apple's standard licence, which Glyf's subscriptions are sold under.
 const _termsURL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
-/// §6.16 — two plans over free, in whole dollars. Free: 20 runs a day ·
+/// §6.16 — two plans over free, in whole dollars. Free: 50 runs a week ·
 /// Plus $2 a month or $20 a year: 150 a day · Max $5 a month or $50 a year:
 /// 400 a day (yearly is two months free).
 /// Suggestions and translations have their own daily counts; the server

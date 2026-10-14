@@ -185,7 +185,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// it back here.
     static var menuTools: [String] {
         let strip = Set(GlyfToolbar.shownTools)
-        return menuOrder.filter { !strip.contains($0) }
+        return menuOrder.filter { !strip.contains($0) && ($0 != "pay" || GlyfToolbar.walletOn) }
     }
 
     private var order: [String] = []

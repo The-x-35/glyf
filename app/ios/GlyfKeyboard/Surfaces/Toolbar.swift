@@ -120,8 +120,11 @@ final class GlyfToolbar: UIView {
     /// The tools the strip shows, in its order. The g menu offers the rest:
     /// a tool lives in one place, never both.
     static var shownTools: [String] {
-        SettingsStore.current.stripTools.filter { icons[$0] != nil }
+        SettingsStore.current.stripTools.filter { icons[$0] != nil && ($0 != "pay" || walletOn) }
     }
+
+    /// The wallet turned on in the app (Profile › Keyboard › Wallet).
+    static var walletOn: Bool { SettingsStore.current.walletEnabled == true }
 
     private(set) var showingCandidates = false
     /// User tapped Glyf to restore tools while candidates were up.

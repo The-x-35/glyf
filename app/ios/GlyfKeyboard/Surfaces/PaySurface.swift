@@ -124,6 +124,8 @@ final class PaySurface: UIView {
     /// Jupiter's answer for the typed amount, in whole tokens of what's
     /// bought; asking says so while it's on its way.
     private var quoteOut: Double?
+    /// Glyf's fee in that quote, when Jupiter applied it (SwapFee).
+    private var quoteFeeBps: Int?
     private var quoting = false
     /// Token pills and the Half/Max chips: a grey that reads on the card in
     /// either appearance.
@@ -753,6 +755,7 @@ final class PaySurface: UIView {
         guard let amount = amountValue, amount > 0 else {
             quote = nil
             quoteOut = nil
+            quoteFeeBps = nil
             quoting = false
             renderQuote()
             return
@@ -762,36 +765,48 @@ final class PaySurface: UIView {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let units = Int(amount * pow(10, Double(self.paying.decimals)))
-            guard units > 0,
-                  var comps = URLComponents(string: "https://api.jup.ag/swap/v2/order") else { return }
-            comps.queryItems = [.init(name: "inputMint", value: self.paying.mint),
-                                .init(name: "outputMint", value: mint),
-                                .init(name: "amount", value: String(units))]
-            guard let url = comps.url else { return }
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 8
-            URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
-                DispatchQueue.main.async {
-                    guard let self, asked == self.quoteAsked else { return }
-                    self.quoting = false
-                    guard let data,
-                          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let out = obj["outAmount"] as? String, let raw = Double(out),
-                          let decimals = self.targetDecimals else {
-                        self.quote = nil
-                        self.quoteOut = nil
-                        self.renderQuote()
-                        return
-                    }
-                    let whole = raw / pow(10, Double(decimals))
-                    self.quote = "≈ \(Self.compact(whole)) \(symbol)"
-                    self.quoteOut = whole
-                    self.renderQuote()
-                }
-            }.resume()
+            guard units > 0 else { return }
+            self.fetchQuote(asked: asked, symbol: symbol, mint: mint, units: units,
+                            referral: SwapFee.referralAccount)
         }
         quoteWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    /// One /order quote. A referral account Jupiter refuses costs Glyf its
+    /// fee, never the person their price: asked again without it.
+    private func fetchQuote(asked: Int, symbol: String, mint: String, units: Int, referral: String) {
+        guard let url = SwapFee.orderURL(inputMint: paying.mint, outputMint: mint, units: units,
+                                         referral: referral) else { return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 8
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            DispatchQueue.main.async {
+                guard let self, asked == self.quoteAsked else { return }
+                let obj = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                if !referral.isEmpty, let error = obj?["error"] as? String,
+                   error.lowercased().contains("referral") {
+                    self.fetchQuote(asked: asked, symbol: symbol, mint: mint, units: units, referral: "")
+                    return
+                }
+                self.quoting = false
+                guard let obj,
+                      let out = obj["outAmount"] as? String, let raw = Double(out),
+                      let decimals = self.targetDecimals else {
+                    self.quote = nil
+                    self.quoteOut = nil
+                    self.quoteFeeBps = nil
+                    self.renderQuote()
+                    return
+                }
+                // Net of the fee: Jupiter takes it before it quotes.
+                let whole = raw / pow(10, Double(decimals))
+                self.quote = "≈ \(Self.compact(whole)) \(symbol)"
+                self.quoteOut = whole
+                self.quoteFeeBps = SwapFee.applied(obj)
+                self.renderQuote()
+            }
+        }.resume()
     }
 
     /// "2,741,737", "13.5T", "0.0821": a figure a strip can hold.
@@ -952,6 +967,7 @@ final class PaySurface: UIView {
         }
         var line: [String] = []
         if let out = quoteOut, let unit { line.append("≈ \(Self.dollars(out * unit))") }
+        if quoteOut != nil, let fee = quoteFeeBps { line.append(SwapFee.label(fee)) }
         if let price { line.append("1 \(symbol) = \(price)") }
         if amount != nil, quoteOut == nil, !quoting { line.insert("No price right now", at: 0) }
         getUSD.text = line.joined(separator: " · ")

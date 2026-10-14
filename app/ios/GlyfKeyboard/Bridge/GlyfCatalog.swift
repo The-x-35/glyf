@@ -69,9 +69,21 @@ enum GlyfCatalog {
 
     private static let runsFile = "runs-remaining.json"
 
+    /// "week" on the free plan (50 a week), "day" on Plus and Max.
+    static var runsPeriod: String {
+        get { (AppGroupStore.readJSON(name: runsFile)?["period"] as? String) ?? "day" }
+        set {
+            var d = AppGroupStore.readJSON(name: runsFile) ?? [:]
+            d["period"] = newValue
+            AppGroupStore.writeJSON(d, name: runsFile)
+        }
+    }
+
     static func cacheRunsRemaining(_ n: Int) {
-        AppGroupStore.writeJSON(["remaining": n, "ts": Date().timeIntervalSince1970],
-                                name: runsFile)
+        var d = AppGroupStore.readJSON(name: runsFile) ?? [:]
+        d["remaining"] = n
+        d["ts"] = Date().timeIntervalSince1970
+        AppGroupStore.writeJSON(d, name: runsFile)
     }
 
     static func cachedRunsRemaining() -> Int? {
@@ -81,7 +93,7 @@ enum GlyfCatalog {
     }
 
     static func runsRemainingText() -> String {
-        if let n = cachedRunsRemaining() { return "\(n) runs left today" }
+        if let n = cachedRunsRemaining() { return "\(n) runs left \(runsPeriod == "week" ? "this week" : "today")" }
         return "Run a Glyf to see your quota"
     }
 }

@@ -104,6 +104,14 @@ abstract final class WalletFlow {
   /// The connected wallet, or null.
   static final link = ValueNotifier<WalletLink?>(null);
 
+  /// Whether the wallet is turned on (Profile › Keyboard › Wallet); off,
+  /// the Wallet card, Send, Buy and pay links stay hidden (2026-10-14).
+  static final enabled = ValueNotifier<bool>(false);
+
+  static Future<void> loadEnabled() async {
+    enabled.value = (await GlyfBridge.sharedSettings())['walletEnabled'] == true;
+  }
+
   static const _pendingName = 'phantom-pending-pay';
   static const phantomAppStore = 'https://apps.apple.com/app/phantom-crypto-wallet/id1598432977';
   static const phantomPlayStore = 'https://play.google.com/store/apps/details?id=app.phantom';

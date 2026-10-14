@@ -453,6 +453,15 @@ class _BuyScreenState extends State<BuyScreen> {
           textAlign: TextAlign.center,
           style: const TextStyle(color: Glass.ink, fontSize: 16, fontWeight: FontWeight.w700),
         ),
+        if (quote?.glyfFeeBps case final fee?)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              SwapFee.label(fee),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Glass.inkSoft, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
         if (impact != null && impact >= 3)
           Padding(
             padding: const EdgeInsets.only(top: 6),

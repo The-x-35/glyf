@@ -19,9 +19,16 @@ export type Plan = "free" | "plus" | "max";
 
 /** Nobody gets "unlimited": the top plan is a big number, not infinity. */
 export interface Caps {
+  /** Runs per window: a day's on a paid plan, a week's on free. */
   runsPerDay: number;
   burstPerMinute: number;
+  /** The window the runs count over; a day unless said. */
+  window?: "day" | "week";
 }
+
+/** Free's runs count over a week (env.freeRunsPerDay, 50), used whenever
+ *  (Arpit, 2026-10-14: "free to 50 runs per week"); paid plans keep their
+ *  day. The week starts Monday, 00:00 UTC. */
 
 /** A paid plan's day, per kind. Sized so that a month of every cap spent,
  *  every day, still costs under half of what the cheapest way to buy the
@@ -42,6 +49,8 @@ export function capsFor(plan: Plan, freePerDay: number): Caps {
   // A person types; they don't fire. Even the top plan gets a minute's worth
   // that a human could plausibly use, so a stolen session can't drain a day.
   const burstPerMinute = plan === "max" ? 15 : plan === "plus" ? 12 : 8;
+  // freePerDay is free's allowance for its window, which is a week.
+  if (plan === "free") return { runsPerDay: freePerDay, burstPerMinute, window: "week" };
   return { runsPerDay: perDay("runs", plan, freePerDay), burstPerMinute };
 }
 
@@ -59,9 +68,15 @@ export function translateCapsFor(plan: Plan, freePerDay: number): Caps {
   return { runsPerDay: perDay("translations", plan, freePerDay), burstPerMinute: 40 };
 }
 
-export type Window = "day" | "minute";
+export type Window = "day" | "minute" | "week";
 
 export function windowStart(kind: Window, now: Date): string {
+  if (kind === "week") {
+    // Monday 00:00 UTC of this week.
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    return d.toISOString();
+  }
   const iso = now.toISOString();
   // A day bucket to the date, a minute bucket to the minute.
   return kind === "day" ? `${iso.slice(0, 10)}T00:00:00.000Z` : `${iso.slice(0, 16)}:00.000Z`;
@@ -154,7 +169,9 @@ export class PostgresLimiter implements Limiter {
   /** Yesterday's rows are of no use to anyone. */
   private async sweep(): Promise<void> {
     try {
-      await this.sql(`delete from glyf_usage where window_start < now() - interval '2 days'`);
+      // A week's count lives a week; everything else two days.
+      await this.sql(`delete from glyf_usage where window_start < now() - interval '2 days'
+                      and (kind <> 'week' or window_start < now() - interval '8 days')`);
     } catch {
       // Sweeping is housekeeping; never fail a request over it.
     }
@@ -174,10 +191,11 @@ export async function allow(
   limits: Limiter, key: string, caps: Caps, now = new Date(),
 ): Promise<Allowance> {
   const burst = await limits.spend(key, "minute", caps.burstPerMinute, now);
+  const window = caps.window ?? "day";
   if (burst < 0) {
-    return { ok: false, remaining: await limits.left(key, "day", caps.runsPerDay, now), reason: "burst" };
+    return { ok: false, remaining: await limits.left(key, window, caps.runsPerDay, now), reason: "burst" };
   }
-  const day = await limits.spend(key, "day", caps.runsPerDay, now);
+  const day = await limits.spend(key, window, caps.runsPerDay, now);
   if (day < 0) return { ok: false, remaining: 0, reason: "day" };
   return { ok: true, remaining: day };
 }
@@ -185,6 +203,6 @@ export async function allow(
 export function refusal(reason: "day" | "burst" | undefined, plan: Plan): string {
   if (reason === "burst") return "Too fast. Wait a moment and try again";
   return plan === "free"
-    ? "Daily free runs used up. They come back tomorrow"
+    ? "This week's free runs are used up. They come back Monday"
     : "Daily runs used up. They come back tomorrow";
 }

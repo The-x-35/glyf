@@ -446,4 +446,33 @@ final class PhoneLookupsTests: XCTestCase {
                                                guests: [], tz: "UTC", http: lost.http)),
                        "Cal.com didn't answer. Try again")
     }
+
+    // MARK: Glyf's swap fee (docs/SWAP-FEE.md)
+
+    func testSwapFeeShipsOffSoTheBuyQuoteIsAskedAsBefore() throws {
+        XCTAssertEqual(SwapFee.referralAccount, "")
+        let url = try XCTUnwrap(SwapFee.orderURL(inputMint: "So11111111111111111111111111111111111111112",
+                                                 outputMint: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+                                                 units: 100_000_000))
+        XCTAssertEqual(url.absoluteString, "https://api.jup.ag/swap/v2/order?inputMint=So11111111111111111111111111111111111111112"
+                       + "&outputMint=DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263&amount=100000000")
+    }
+
+    func testSwapFeeAddsTheReferralAccountAndFiftyBps() throws {
+        let url = try XCTUnwrap(SwapFee.orderURL(inputMint: "A", outputMint: "B", units: 5,
+                                                 referral: "18LeLp3B8yGctKtWKAXXqdB6Lf1GxmEa2fRL5xxa1ta"))
+        let items = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(items.first { $0.name == "referralAccount" }?.value, "18LeLp3B8yGctKtWKAXXqdB6Lf1GxmEa2fRL5xxa1ta")
+        XCTAssertEqual(items.first { $0.name == "referralFee" }?.value, "50")
+        XCTAssert((50...255).contains(SwapFee.bps))
+    }
+
+    func testSwapFeeShowsOnlyWhenJupiterAppliedIt() {
+        // Recorded from /swap/v2/order, 2026-10-14.
+        XCTAssertNil(SwapFee.applied(["feeBps": 10, "feeMint": "So11111111111111111111111111111111111111112"]))
+        XCTAssertEqual(SwapFee.applied(["feeBps": 50, "referralAccount": "18LeLp3B8yGctKtWKAXXqdB6Lf1GxmEa2fRL5xxa1ta"]), 50)
+        XCTAssertEqual(SwapFee.label(50), "Fee 0.5%")
+        XCTAssertEqual(SwapFee.label(100), "Fee 1%")
+        XCTAssertEqual(SwapFee.label(255), "Fee 2.55%")
+    }
 }

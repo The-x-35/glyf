@@ -90,6 +90,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     }
     Billing.listen();
     WalletFlow.load();
+    WalletFlow.loadEnabled();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(
@@ -123,7 +124,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     }
   }
 
-  void _handleLink(String link) {
+  Future<void> _handleLink(String link) async {
     final uri = Uri.tryParse(link);
     if (uri == null) return;
     if (uri.host == 'intent') {
@@ -146,6 +147,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
         practice(q['to'], q['amount'] ?? q['usd']);
         return;
       }
+      // With the wallet off, a pay link does nothing (2026-10-14).
+      await WalletFlow.loadEnabled();
+      if (!WalletFlow.enabled.value) return;
       _push('pay', (_) => PayLaunchScreen(query: q), link: link);
       return;
     }
@@ -155,6 +159,8 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       final path = Uri.parse(uri.queryParameters['path']!);
       final to = path.queryParameters['to'];
       // The strip's Pay tool, with nobody to pay yet: the wallet itself.
+      await WalletFlow.loadEnabled();
+      if (!WalletFlow.enabled.value) return;
       if (to == null) {
         _push('wallet', (_) => const WalletScreen(), replace: false);
         return;

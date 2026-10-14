@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
+import '../wallet/wallet_flow.dart';
 
 /// Everything about the keyboard on one page: how it looks, then how it types.
 ///
@@ -134,7 +135,10 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           ]),
           const SizedBox(height: 18),
           _label('Money'),
-          _card([_currencyRow()]),
+          // The wallet is a feature people turn on (Arpit, 2026-10-14: "have
+          // wallet as feature which we can enable from settings and not for
+          // everyone"): Send, Buy and the Wallet screen appear with it.
+          _card([_currencyRow(), _switch('Wallet', 'walletEnabled')]),
           const SizedBox(height: 18),
           _label('Clipboard & AI'),
           _card([
@@ -199,6 +203,7 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
               return;
             }
             _set(key, v);
+            if (key == 'walletEnabled') WalletFlow.enabled.value = v;
           },
         ),
       ]),

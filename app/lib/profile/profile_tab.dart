@@ -152,7 +152,9 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
 
   /// A day's runs on each plan, for when the server hasn't said (it sends
   /// the real number with what is left).
-  int get _planRuns => switch (_plan) { 'max' => 400, 'plus' => 150, _ => 20 };
+  int get _planRuns => switch (_plan) { 'max' => 400, 'plus' => 150, _ => 50 };
+  /// Free counts its runs over a week; Plus and Max over a day.
+  String get _period => _plan == 'plus' || _plan == 'max' ? 'today' : 'this week';
 
   /// Who you are, how you signed in and your plan, in one card: the name
   /// with Edit, the account under it, the plan, then Got a code? (a code is
@@ -248,8 +250,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                             color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
                     Text(
                         _remaining != null
-                            ? '$_remaining of ${_perDay ?? _planRuns} runs left today'
-                            : '$_planRuns runs a day',
+                            ? '$_remaining of ${_perDay ?? _planRuns} runs left $_period'
+                            : '$_planRuns runs ${_period == 'today' ? 'a day' : 'a week'}',
                         style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
                   ]),
                 ),
@@ -380,7 +382,9 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
               _refresh();
             },
           ),
-          ValueListenableBuilder<WalletLink?>(
+          ValueListenableBuilder<bool>(
+            valueListenable: WalletFlow.enabled,
+            builder: (context, on, _) => !on ? const SizedBox.shrink() : ValueListenableBuilder<WalletLink?>(
             valueListenable: WalletFlow.link,
             builder: (context, link, _) => _navCard(
               icon: Icons.account_balance_wallet_outlined,
@@ -390,6 +394,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                 builder: (ctx) => const WalletScreen(),
               )),
             ),
+          ),
           ),
           Semantics(
             identifier: 'profile:tour',

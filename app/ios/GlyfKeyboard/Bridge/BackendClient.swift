@@ -699,6 +699,8 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
             if let data,
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 n = obj["remaining"] as? Int
+                // Free counts over a week since 14 Oct 2026.
+                if let period = obj["period"] as? String { GlyfCatalog.runsPeriod = period }
             }
             DispatchQueue.main.async {
                 if let n { GlyfCatalog.cacheRunsRemaining(n) }
