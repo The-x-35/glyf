@@ -51,9 +51,9 @@ export default function Privacy() {
           <h2>What stays on your phone</h2>
           <p>These are kept on your device and never sent to us:</p>
           <ul>
-            <li>Your vault: the details you save, such as your address or payment ID, encrypted on the device.</li>
+            <li>Your vault: the details you save, such as your address, a card or a password, encrypted on the device.</li>
             <li>Notes, shorthand, and the words the keyboard learns from your typing.</li>
-            <li>Clipboard history, and the screenshots from the last two days it shows (with the photo permission).</li>
+            <li>Clipboard history, and the screenshots from the last two days it shows (with the photo permission). A copied password or card number is kept to paste, shown as dots, and never sent anywhere.</li>
             <li>Contacts, when you let the keyboard search them.</li>
             <li>Your calendar, when you let the keyboard show it and add events to it.</li>
             <li>Dictation, which is turned into text on the device.</li>
@@ -81,10 +81,10 @@ export default function Privacy() {
               Profile, Keyboard, AI suggestions as you type.
             </li>
             <li>
-              <strong>Your saved details, only if you agree.</strong> With &ldquo;Let AI use your saved
-              details&rdquo; on, each AI request you start carries the details you saved (your name, email, phone
-              number, address, payment ID, links, social handles, company and bio) so an answer like &ldquo;send them
-              my address&rdquo; can fill them in. Turn it off under Profile, Keyboard.
+              <strong>The names of your saved details, only if you agree.</strong> With &ldquo;Let AI use your
+              saved details&rdquo; on, each AI request you start carries only the names of the details you saved,
+              like &ldquo;home address&rdquo; or &ldquo;work email&rdquo;, never what they say. The AI writes the
+              name where the detail belongs, and your phone puts the detail in. Turn it off under Profile, Keyboard.
             </li>
             <li>
               <strong>Search.</strong> What you search in the keyboard&rsquo;s Search, YouTube and Maps tabs goes to

@@ -6,6 +6,18 @@ struct ClipItem: Codable, Equatable {
     var text: String
     var ts: Date
     var pinned: Bool
+    /// A password, a card number or a password manager's copy: kept so it can
+    /// be pasted, shown as dots, never sent to the AI (Arpit, 2026-10-14: "i
+    /// need to be able to copy passwords").
+    var sensitive: Bool? = nil
+
+    /// How the clipboard shows it: dots for a sensitive copy.
+    var shown: String {
+        guard sensitive == true else { return text }
+        let digits = text.filter(\.isNumber)
+        if SecretScanner.scan(text) == .cardNumber, digits.count >= 4 { return "Card •••• \(digits.suffix(4))" }
+        return String(repeating: "•", count: min(max(text.count, 6), 12))
+    }
 }
 
 enum ClipboardStore {
@@ -37,13 +49,13 @@ enum ClipboardStore {
     }
 
     /// Pure: returns the new list, or nil when the text is refused/duplicate.
-    static func inserting(_ text: String, into items: [ClipItem], now: Date) -> [ClipItem]? {
-        guard SecretScanner.scan(text) == .clean else { return nil }
+    static func inserting(_ text: String, into items: [ClipItem], now: Date, sensitive: Bool = false) -> [ClipItem]? {
+        let secret = sensitive || SecretScanner.scan(text) != .clean
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 4000 else { return nil }
         if items.first?.text == trimmed { return nil }
         var next = items.filter { $0.text != trimmed || $0.pinned }
-        next.insert(ClipItem(text: trimmed, ts: now, pinned: false), at: 0)
+        next.insert(ClipItem(text: trimmed, ts: now, pinned: false, sensitive: secret ? true : nil), at: 0)
         // Never evict pinned items; trim oldest unpinned beyond the cap.
         while next.count > maxItems, let idx = next.lastIndex(where: { !$0.pinned }) {
             next.remove(at: idx)
@@ -91,8 +103,9 @@ enum ClipboardStore {
     /// So this sits behind the same switch as the full read.
     static func captureDetected(_ done: @escaping (Bool) -> Void) {
         guard !reading, fullAccessHint, pasteboardHasNewContent(),
-              SettingsStore.current.clipboardHistory != false, !copyIsConcealed
+              SettingsStore.current.clipboardHistory != false
         else { return done(false) }
+        let concealed = copyIsConcealed
         // Only the three iOS 14 patterns are plain `DetectionPattern`s; the
         // later ones (email, phone, address…) are refined onto a different
         // Swift type and are not reachable through this call.
@@ -107,7 +120,7 @@ enum ClipboardStore {
             DispatchQueue.main.async {
                 guard let text, !text.isEmpty else { return done(false) }
                 markPasteboardSeen()
-                guard let next = inserting(text, into: load(), now: Date()) else {
+                guard let next = inserting(text, into: load(), now: Date(), sensitive: concealed) else {
                     return done(false)
                 }
                 save(next)
@@ -159,8 +172,9 @@ enum ClipboardStore {
         guard !reading, fullAccessHint, pasteboardHasNewContent(),
               SettingsStore.current.clipboardHistory != false,
               SettingsStore.current.clipboardCaptureAll == true,
-              UIPasteboard.general.hasStrings, !copyIsConcealed
+              UIPasteboard.general.hasStrings
         else { return done(false, false) }
+        let concealed = copyIsConcealed
         // Reading `.string` can raise "Allow Paste?", and the read waits for
         // the answer. On the main thread that froze the whole keyboard (no
         // keys, no strip) until the person answered; off it, the keyboard
@@ -178,7 +192,7 @@ enum ClipboardStore {
                 let seen = max(changeCount, UIPasteboard.general.changeCount)
                 AppGroupStore.writeJSON(["cc": seen], name: "clip-cc.json")
                 guard let text, !text.isEmpty,
-                      let next = inserting(text, into: load(), now: Date()) else {
+                      let next = inserting(text, into: load(), now: Date(), sensitive: concealed) else {
                     return done(false, true)
                 }
                 save(next)
@@ -192,7 +206,7 @@ enum ClipboardStore {
     private static var reading = false
 
     /// A password manager marks what it copies (the nspasteboard.org types,
-    /// 1Password's own): never kept. Reading the types asks nothing of iOS.
+    /// 1Password's own): kept as sensitive. Reading the types asks nothing of iOS.
     private static var copyIsConcealed: Bool {
         let marked: Set<String> = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType",
                                    "com.agilebits.onepassword"]

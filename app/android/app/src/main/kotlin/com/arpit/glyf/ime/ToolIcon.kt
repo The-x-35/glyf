@@ -612,6 +612,19 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 c.drawRoundRect(cx + dp(1.6f), cy - dp(2.2f), cx + dp(8f), cy + dp(2.8f), dp(1.6f), dp(1.6f), p)
                 c.drawCircle(cx + dp(4.6f), cy + dp(0.3f), dp(0.9f), fill)
             }
+            // SF creditcard: a card with its stripe.
+            "card" -> {
+                c.drawRoundRect(cx - dp(8.4f), cy - dp(6f), cx + dp(8.4f), cy + dp(6f), dp(2f), dp(2f), p)
+                c.drawLine(cx - dp(8.4f), cy - dp(2.4f), cx + dp(8.4f), cy - dp(2.4f), p)
+                c.drawLine(cx - dp(5.6f), cy + dp(2.6f), cx - dp(1.6f), cy + dp(2.6f), p)
+            }
+            // SF key: a ring and a stem with two teeth.
+            "key" -> {
+                c.drawCircle(cx - dp(4.2f), cy, dp(3.6f), p)
+                c.drawLine(cx - dp(0.6f), cy, cx + dp(8f), cy, p)
+                c.drawLine(cx + dp(5.2f), cy, cx + dp(5.2f), cy + dp(3.2f), p)
+                c.drawLine(cx + dp(7.8f), cy, cx + dp(7.8f), cy + dp(2.4f), p)
+            }
             "tag" -> {
                 val body = Path().apply {
                     moveTo(cx - dp(7.6f), cy - dp(7.6f)); lineTo(cx - dp(0.6f), cy - dp(7.6f))

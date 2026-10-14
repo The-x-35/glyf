@@ -411,7 +411,8 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
                              colW: CGFloat) -> CGFloat {
         let font = UIFont.systemFont(ofSize: M.textSize)
         do {
-            let flat = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // A password or a card shows as dots; a tap still pastes it.
+            let flat = item.shown.trimmingCharacters(in: .whitespacesAndNewlines)
             let textW = colW - M.cardPad * 2
             let lineH = font.lineHeight
             let bounding = (flat as NSString).boundingRect(
@@ -722,7 +723,12 @@ final class ClipboardPanel: UIView, UIGestureRecognizerDelegate {
                 self?.delegate?.clipboardPanelPaste(item.text)
             }),
             ("person.text.rectangle", "Save to vault", { [weak self] in
-                let refusal = NotesStore.shared.upsert(id: nil, text: item.text)
+                // A password or a card goes into the encrypted vault as one,
+                // never into notes (plain text on the phone).
+                let card = SecretScanner.scan(item.text) == .cardNumber
+                let refusal = item.sensitive == true || SecretScanner.scan(item.text) != .clean
+                    ? VaultStore.shared.addField(kind: card ? "card" : "password", label: card ? "Card" : "Password", value: item.text)
+                    : NotesStore.shared.upsert(id: nil, text: item.text)
                 self?.dismissMenu()
                 self?.delegate?.clipboardPanelSavedToVault(refusal: refusal)
             }),

@@ -95,14 +95,17 @@ object VaultStore {
      *  saved), so a detail saved on one phone is savable on the other. */
     private val allowedKinds = setOf(
         "name", "email", "phone", "address", "upi", "gst", "wallet",
-        "link", "social", "bio", "reply", "custom", "handle")
+        "link", "social", "bio", "reply", "custom", "handle", "card", "password", "company")
 
     fun upsertField(ctx: Context, id: String?, kind: String,
                     label: String, value: String): String? {
         if (label.isBlank()) return "Give it a label"
         if (value.isBlank()) return "Add the value"
-        if (kind !in allowedKinds) return "That kind of info can't be stored"
-        SecretScanner.scan(value)?.let { return it }
+        // Anything goes in the vault, encrypted on the phone; the AI only ever
+        // sees a detail's name (Arpit, 2026-10-14: "i need to be able to
+        // store any data"). A kind this version doesn't know is kept as is.
+        if (kind.isBlank() || kind.length > 24) return "That kind of info can't be stored"
+        if (value.length > 5000) return "Too long. Vault entries hold up to 5000 characters"
         val vault = read(ctx) ?: return "Couldn't save"
         val fields = vault.getJSONArray("fields")
         var found = false
@@ -173,7 +176,6 @@ object VaultStore {
     fun upsertSnippet(ctx: Context, trigger: String, text: String): String? {
         triggerRefusal(trigger)?.let { return it }
         if (text.isBlank()) return "Add the expansion"
-        SecretScanner.scan(text)?.let { return it }
         val vault = read(ctx) ?: return "Couldn't save"
         val snippets = vault.getJSONArray("snippets")
         var found = false

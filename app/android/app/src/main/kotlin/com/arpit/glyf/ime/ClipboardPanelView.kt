@@ -338,7 +338,8 @@ class ClipboardPanelView(
             val c = heights.indices.minByOrNull { heights[it] } ?: 0
             when (entry) {
                 is Entry.Text -> {
-                    val flat = entry.item.text.trim()
+                    // A password or a card shows as dots; a tap still pastes it.
+                    val flat = entry.item.shown.trim()
                     val textW = (colW - dp(cardPad) * 2).toInt().coerceAtLeast(1)
                     val layout = StaticLayout.Builder.obtain(flat, 0, flat.length, paint, textW)
                         .setAlignment(Layout.Alignment.ALIGN_NORMAL).setMaxLines(clipMaxLines)
@@ -449,7 +450,14 @@ class ClipboardPanelView(
         popMenu(anchor, listOf(
             Triple("clipboard", "Paste") { dismissMenu(); onPaste(item.text) },
             Triple("vault", "Save to vault") {
-                val refusal = com.arpit.glyf.store.NotesStore.upsert(context, null, item.text)
+                // A password or a card goes into the encrypted vault as one,
+                // never into notes (plain text on the phone).
+                val card = com.arpit.glyf.store.SecretScanner.scan(item.text) != null &&
+                    item.text.count { it.isDigit() } in 13..19
+                val refusal = if (item.sensitive || com.arpit.glyf.store.SecretScanner.scan(item.text) != null)
+                    com.arpit.glyf.store.VaultStore.upsertField(context, null, if (card) "card" else "password",
+                        if (card) "Card" else "Password", item.text)
+                else com.arpit.glyf.store.NotesStore.upsert(context, null, item.text)
                 dismissMenu()
                 (context as? GlyfIME)?.notice(refusal ?: "Saved to vault")
             },

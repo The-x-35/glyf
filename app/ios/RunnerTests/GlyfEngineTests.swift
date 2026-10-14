@@ -105,9 +105,16 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertFalse(ClipboardStore.isLink("   "))
     }
 
-    func testClipboardRefusesSecretsAndDuplicates() {
+    func testClipboardKeepsSecretsMaskedAndRefusesDuplicates() {
         let items = [ClipItem(text: "hello", ts: Date(), pinned: false)]
-        XCTAssertNil(ClipboardStore.inserting("4242 4242 4242 4242", into: items, now: Date()))
+        // A copied card or password is kept to paste, flagged and shown as dots
+        // (Arpit, 2026-10-14: "i need to be able to copy passwords").
+        let card = ClipboardStore.inserting("4242 4242 4242 4242", into: items, now: Date())?.first
+        XCTAssertEqual(card?.sensitive, true)
+        XCTAssertEqual(card?.shown, "Card •••• 4242")
+        let concealed = ClipboardStore.inserting("hunter2pass", into: items, now: Date(), sensitive: true)?.first
+        XCTAssertEqual(concealed?.shown, "•••••••••••")
+        XCTAssertNil(ClipboardStore.inserting("world", into: items, now: Date())?.first?.sensitive)
         XCTAssertNil(ClipboardStore.inserting("hello", into: items, now: Date()))
         XCTAssertNotNil(ClipboardStore.inserting("world", into: items, now: Date()))
     }

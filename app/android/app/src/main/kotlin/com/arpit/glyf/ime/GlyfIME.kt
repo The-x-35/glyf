@@ -2410,18 +2410,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  sends" in the app. Anything secret-shaped never reaches the vault. */
     private fun shareableProfile(): Map<String, String>? {
         if (!settings.optBoolean("aiUsesVault", true) || !settings.has("aiConsent")) return null
-        val kinds = setOf("name", "email", "phone", "address", "upi", "link", "social",
-            "handle", "company", "bio")
-        val out = LinkedHashMap<String, String>()
-        for (f in vaultFields()) {
-            if (f.kind !in kinds) continue
-            val key = if (f.kind == "social" || f.kind == "handle") "social:${f.label.lowercase()}" else f.kind
-            // The server turns the whole request away past these lengths.
-            if (key.length > 40 || f.value.length > 400) continue
-            out.putIfAbsent(key, f.value)
-        }
-        return out.ifEmpty { null }
+        // Since 14 Oct 2026 each saved detail goes as a stand-in ("work email":
+        // "{work email}"), never its value; StandIns.fill puts the value back
+        // into what the AI wrote, on the phone (iOS twin).
+        return StandIns.table(vaultFields()).keys.take(40).associateWith { "{$it}" }.ifEmpty { null }
     }
+
+    /** What the AI wrote, with saved details in place of their stand-ins. */
+    private fun withDetails(text: String): String = StandIns.fill(text, StandIns.table(vaultFields()))
 
     private var vaultFieldsStamp = -1L
     private var vaultFieldsCache: List<Smart.Field> = emptyList()
@@ -2982,7 +2978,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun showDetailsChip(kind: String, details: Smart.Chip.Details,
                                 onValue: (Smart.Field) -> Unit, onTemp: () -> Unit): Boolean {
         val fields = details.fields.take(3)
-        return showChoiceRow(kind, fields.map { it.value }, details.temp,
+        return showChoiceRow(kind, fields.map { StandIns.shown(it) }, details.temp,
             onIndex = { i -> onValue(fields[i]) }, onTemp = onTemp)
     }
 
@@ -3492,7 +3488,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** The answer's box: the key colour, 15 corners, a hairline, 15.5 text
      *  (iOS's text view and its insets). */
     private fun actTextBox(body: String): TextView = TextView(this).apply {
-        text = body
+        // Saved details go in on the phone, in place of their stand-ins.
+        text = withDetails(body)
         Glass.style(this, 15.5f)
         setLineSpacing(dp(1).toFloat(), 1f)
         setPadding(dp(15), dp(11), dp(15), dp(11))
@@ -3597,7 +3594,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** The skill's answer arriving token by token; actions come with the end. */
     @Suppress("UNUSED_PARAMETER")
     private fun showActStreaming(panel: FrameLayout, title: String, text: String) {
-        actStreamView?.let { it.text = text; return }
+        actStreamView?.let { it.text = withDetails(text); return }
         actOptionList = null
         panel.removeAllViews()
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -3627,7 +3624,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
             setTag(com.arpit.glyf.R.id.qa_id, "act:option:${o.id}")
-            contentDescription = "${o.label}: ${o.text}"
+            contentDescription = "${o.label}: ${withDetails(o.text)}"
             background = Glass.card(this@GlyfIME, Glass.surfaceCard, radius = 14f)
             setOnClickListener { actInsert(o.text) }
             setOnLongClickListener { actCopy(o.text); true }
@@ -3639,7 +3636,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setPadding(0, dp(1), 0, 0)
         }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(12) })
         row.addView(TextView(this).apply {
-            text = o.text
+            text = withDetails(o.text)
             Glass.style(this, 15f)
             setLineSpacing(dp(1).toFloat(), 1f)
             maxLines = 3
@@ -3689,7 +3686,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     /** Swaps exactly what the run read — both sides of the cursor. */
-    private fun actInsert(text: String) {
+    private fun actInsert(raw: String) {
+        val text = withDetails(raw)
         currentInputConnection?.let { ic ->
             ic.beginBatchEdit()
             ic.deleteSurroundingText(actBefore.length, actAfter.length)
@@ -3700,7 +3698,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         actClose()
     }
 
-    private fun actCopy(text: String) {
+    private fun actCopy(raw: String) {
+        val text = withDetails(raw)
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         cm.setPrimaryClip(android.content.ClipData.newPlainText("Glyf", text))
         notice("Copied")
@@ -3986,7 +3985,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             } else if (fill is Smart.Chip.Vault) {
                 // Same chip as iOS: the saved detail, Insert on the right.
                 val value = fill.field.value
-                if (showStripChip("fill", null, value, "Insert") {
+                if (showStripChip("fill", null, StandIns.shown(fill.field), "Insert") {
                     currentInputConnection?.commitText(value, 1)
                     hideStripChip()
                 }) return
@@ -5211,7 +5210,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val rows = shellRows(body)
         fun oneLine(t: String) = t.split('\n').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
         for ((i, f) in vaultFields().withIndex()) rows.row(ShellRows.Row(f.title, glyph = "vault",
-            subtitle = oneLine(f.value), chevron = false, qaId = "vault:card:$i") {
+            subtitle = oneLine(StandIns.masked(f)), chevron = false, qaId = "vault:card:$i") {
             currentInputConnection?.commitText(f.value, 1)
             dismissFeaturePanel()
         })
@@ -5467,6 +5466,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (inIndia) add(DetailKindInfo("upi", "UPI", "UPI", "rupee"))
         add(DetailKindInfo("wallet", "Wallet address", "Wallet address", "wallet"))
         add(DetailKindInfo("link", "Link", "Link", "link"))
+        // Anything goes in the vault, encrypted on the phone (2026-10-14).
+        add(DetailKindInfo("card", "Card", "Card", "card"))
+        add(DetailKindInfo("password", "Password", "Password", "key"))
         add(DetailKindInfo("custom", "Other", "Other", "tag"))
     }
 

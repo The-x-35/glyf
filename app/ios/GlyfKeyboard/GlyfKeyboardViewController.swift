@@ -764,7 +764,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let unread = ClipboardStore.pasteboardHasNewContent()
         if unread { nameTheCopy() }
         cachedPaste = ClipContext.isFresh()
-            ? ((unread ? nil : ClipboardStore.load().first?.text) ?? "Tap to paste what you copied")
+            // A sensitive copy isn't shown in the strip: the placeholder pastes it.
+            ? ((unread ? nil : ClipboardStore.load().first.flatMap { $0.sensitive == true ? nil : $0.text })
+                ?? "Tap to paste what you copied")
             : nil
         return cachedPaste
     }
@@ -1839,6 +1841,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         switch fieldContentType {
         case .emailAddress?, .username?: kind = "email"
         case .telephoneNumber?: kind = "phone"
+        // A card box offers the saved card (shown as its last four).
+        case .creditCardNumber?: kind = "card"
         case .fullStreetAddress?, .streetAddressLine1?: kind = "address"
         case .postalCode?: kind = "postcode"
         // City and state come out of the saved address (research 2026-10-07:
@@ -2813,6 +2817,8 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
                 hostDelete()
             }
         }
+        // Saved details go in on the phone, in place of their stand-ins.
+        let text = StandIns.fill(text)
         hostInsert(text)
         glyfWrote = text.trimmingCharacters(in: .whitespacesAndNewlines)
         actInput = nil
@@ -2824,6 +2830,7 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
     func actCopy(_ text: String) {
         guard hasFullAccess else { return }
         recordSkillOutcome(accepted: true)
+        let text = StandIns.fill(text)
         UIPasteboard.general.string = text
         _ = ClipboardStore.inserting(text, into: ClipboardStore.load(), now: Date())
             .map(ClipboardStore.save)
@@ -2998,6 +3005,8 @@ extension GlyfKeyboardViewController: ClipContextStripDelegate {
     }
 
     func clipStripAct(_ text: String) {
+        // A password or a card number never goes to the AI.
+        if SecretScanner.scan(text) != .clean || ClipboardStore.load().first(where: { $0.text == text })?.sensitive == true { return }
         ClipContext.markDone()
         clipStrip?.removeFromSuperview()
         clipStrip = nil

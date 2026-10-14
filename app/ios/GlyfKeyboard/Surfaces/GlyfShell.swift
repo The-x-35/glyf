@@ -682,7 +682,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         } else {
             let vault = VaultStore.shared.load()
             vaultCards = vault.fields.map {
-                .text(label: $0.title.uppercased(), value: $0.value, insert: $0.value)
+                .text(label: $0.title.uppercased(), value: $0.masked, insert: $0.value)
             }
             vaultCards += vault.snippets.map { .snippet($0) }
             vaultCards += NotesStore.shared.load().map { .note($0) }
@@ -1657,7 +1657,7 @@ private final class ShellCell: UITableViewCell {
             setIcon("person.text.rectangle")
             title.text = field.title
             value.isHidden = false
-            value.text = preview(field.value)
+            value.text = preview(field.masked)
             accessibilityIdentifier = "vault:\(field.label)"
         case .vaultCombo(let combo):
             setIcon("square.stack")

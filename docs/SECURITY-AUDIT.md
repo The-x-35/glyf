@@ -137,3 +137,11 @@ Severity: **High** is reachable now and exposes data or money. **Medium** needs 
    - stripping `Log` calls in release;
    - moving `deviceId` and location out of the `/search/suggest` URL.
 10. **Deploy:** none of the server fixes are live until main is pushed. The `npm audit fix` lockfile change ships with them.
+
+## Changed by Arpit's decision, 14 Oct 2026
+
+Arpit: "i need to be able to copy passwords and even store credit card detail or any detail on vault, we are encrypting it. we can do like not send the exact data to ai but its heading, like {name} to ai so it knows vault has name but not know exact".
+
+- **A1 / I2 (clipboard and passwords):** copied passwords and cards are kept in clipboard history again, flagged sensitive: shown as dots, never on a paste chip, never sent to the AI; "Save to vault" puts them in the encrypted vault, never in notes (plain text).
+- **Vault:** stores anything (cards, passwords, ID numbers, any kind); Card and Password are kinds on both keyboards and in the app; cards and passwords show masked everywhere; a card box on a form offers the saved card.
+- **AI and saved details:** AI requests carry only each detail's name as a stand-in ("home address": "{home address}"), never the value; the server tells the model to write the stand-in where the detail belongs; the phone fills the value into the answer it shows, copies or inserts (StandIns in VaultStore.swift / Smart.kt). Before this, the values themselves went with every AI request while "Let AI use your saved details" was on.

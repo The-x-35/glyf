@@ -35,8 +35,20 @@ class _VaultScreenState extends State<VaultScreen> {
     ('link', 'Link', Icons.link),
     ('social', 'Social', Icons.alternate_email),
     ('bio', 'Bio', Icons.short_text),
+    ('card', 'Card', Icons.credit_card),
+    ('password', 'Password', Icons.key_outlined),
     ('custom', 'Other', Icons.label_outline),
   ];
+
+  /// How a saved detail shows in the list: a password as dots, a card as its
+  /// last four (the keyboard shows them the same way).
+  static String _shownValue(Map f) {
+    final value = (f['value'] as String?) ?? '';
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    if (f['kind'] == 'password') return '••••••';
+    if (f['kind'] == 'card') return digits.length >= 4 ? '•••• ${digits.substring(digits.length - 4)}' : '••••';
+    return value;
+  }
 
   static IconData _iconFor(String? kind) =>
       kinds.firstWhere((k) => k.$1 == kind, orElse: () => kinds.last).$3;
@@ -138,7 +150,7 @@ class _VaultScreenState extends State<VaultScreen> {
               for (final f in _fields)
                 _row(
                   title: _titleFor(f as Map),
-                  subtitle: f['value'] as String? ?? '',
+                  subtitle: _shownValue(f),
                   icon: _iconFor(f['kind'] as String?),
                   onTap: () => _editField(f as Map<String, dynamic>),
                   onDelete: () async {
@@ -335,7 +347,7 @@ class _VaultScreenState extends State<VaultScreen> {
           items: [
             for (final k in offered) DropdownMenuItem(value: k.$1, child: Text(k.$2)),
           ],
-          onChanged: (v) => kind = v ?? 'custom',
+          onChanged: (v) => setSheetState(() => kind = v ?? 'custom'),
         ),
         const SizedBox(height: 10),
         Semantics(
@@ -350,7 +362,9 @@ class _VaultScreenState extends State<VaultScreen> {
           identifier: 'vault-value-field',
           child: TextField(
               controller: valueCtl,
-              maxLines: 3,
+              // A password is typed out of sight; everything else can wrap.
+              obscureText: kind == 'password',
+              maxLines: kind == 'password' ? 1 : 3,
               minLines: 1,
               style: const TextStyle(color: Glass.ink),
               decoration: _dec('Value')),

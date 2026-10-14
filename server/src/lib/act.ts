@@ -260,8 +260,15 @@ export function profileBlock(profile?: Record<string, string>): string {
   const entries = Object.entries(profile ?? {}).filter(([, v]) => v?.trim());
   if (entries.length === 0) return "";
   const lines = entries.map(([k, v]) => `${k}: ${v}`).join("\n");
+  // Since 14 Oct 2026 the keyboards send each detail as a stand-in like
+  // {work email}, never the value, and fill the real one in on the phone:
+  // the model only learns that the detail exists (Arpit: "not send the exact
+  // data to ai but its heading").
+  const standIns = entries.some(([, v]) => /^\{[^{}]{1,40}\}$/.test(v.trim()));
   return `\n\nDetails about the writer, to use ONLY where the message asks ` +
-    `for them (never volunteer them):\n${lines}`;
+    `for them (never volunteer them):\n${lines}` +
+    (standIns ? `\nEach value in braces stands in for the real detail: where one belongs, write it ` +
+      `exactly as shown, braces included (for example {address}), and never guess what it holds.` : "");
 }
 
 /** Where people go: with "best" or "any" in front, a search for places. */

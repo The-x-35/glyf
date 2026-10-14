@@ -56,6 +56,11 @@ struct DetailKind: Equatable {
         kinds.append(DetailKind(kind: "wallet", title: "Wallet address", label: "Wallet address",
                                 symbol: "wallet.bifold"))
         kinds.append(DetailKind(kind: "link", title: "Link", label: "Link", symbol: "link"))
+        // Anything goes in the vault, encrypted on the phone; the AI only
+        // ever sees a detail's name (Arpit, 2026-10-14: "i need to be able to
+        // store any data").
+        kinds.append(DetailKind(kind: "card", title: "Card", label: "Card", symbol: "creditcard"))
+        kinds.append(DetailKind(kind: "password", title: "Password", label: "Password", symbol: "key"))
         kinds.append(DetailKind(kind: "custom", title: "Other", label: "Other", symbol: "tag"))
         return kinds
     }
@@ -121,39 +126,21 @@ struct Vault: Codable, Equatable {
 enum VaultRules {
     static let allowedKinds: Set<String> = [
         "name", "email", "phone", "address", "upi", "gst", "wallet",
-        "link", "social", "bio", "reply", "custom",
+        "link", "social", "bio", "reply", "custom", "card", "password", "handle", "company",
     ]
 
     /// Returns a human refusal reason, or nil when the value is storable.
+    /// Since 14 Oct 2026 the vault keeps anything (cards, passwords, ID
+    /// numbers): it is encrypted on the phone, and the AI only ever gets a
+    /// detail's name as a stand-in, never its value (StandIns).
     static func refusalReason(kind: String, label: String, value: String) -> String? {
-        guard allowedKinds.contains(kind) else {
-            return "That field type isn't supported"
-        }
-        let lowerLabel = label.lowercased()
-        if ["password", "passcode", "pin", "otp", "cvv", "seed", "private key",
-            "recovery"].contains(where: lowerLabel.contains) {
-            return "Glyf never stores passwords, PINs or recovery secrets. Use your password manager"
-        }
-        switch SecretScanner.scan(value) {
-        case .cardNumber:
-            return "Card numbers can't be stored in the vault"
-        case .seedPhrase:
-            return "That looks like a seed phrase. Glyf never stores one"
-        case .privateKeyOrToken:
-            return "Private keys and API tokens can't be stored in the vault"
-        case .otpCode:
-            return "One-time codes aren't worth saving"
-        case .clean:
-            break
-        }
-        if looksLikeGovernmentId(value) {
-            return "Government ID numbers can't be stored in the vault"
-        }
+        // A kind this version doesn't know yet is kept as Other's.
+        guard !kind.isEmpty, kind.count <= 24 else { return "That field type isn't supported" }
         if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "Nothing to save"
         }
-        if value.count > 2000 {
-            return "Too long. Vault entries hold up to 2000 characters"
+        if value.count > 5000 {
+            return "Too long. Vault entries hold up to 5000 characters"
         }
         return nil
     }
@@ -486,3 +473,74 @@ enum Shorthand {
         vault.snippets.first { $0.trigger == token }?.text
     }
 }
+
+/// Saved details as stand-ins: an AI request names them ("{work email}") and
+/// the phone fills the value back into what the AI wrote, so no value ever
+/// leaves the phone for a model.
+enum StandIns {
+    private static let kindWords: [String: String] = [
+        "name": "name", "email": "email", "phone": "phone", "address": "address", "upi": "upi",
+        "link": "link", "social": "handle", "handle": "handle", "company": "company", "bio": "bio",
+        "card": "card", "password": "password", "wallet": "wallet address", "gst": "gst number",
+    ]
+
+    /// What the model sees for a detail: its own label, with the kind's word
+    /// where the label doesn't say it ("Home" → "home address").
+    static func key(for f: VaultField) -> String {
+        let label = f.label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let word = kindWords[f.kind] ?? ""
+        var k = label.isEmpty ? (word.isEmpty ? f.kind : word) : label
+        if !word.isEmpty, let head = word.split(separator: " ").first, !k.contains(head) { k += " " + word }
+        k = k.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: "")
+        return String(k.prefix(38)).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Stand-in name → the saved value; the first saved wins a shared name.
+    static func table(_ fields: [VaultField] = VaultStore.shared.load().fields) -> [String: String] {
+        var out: [String: String] = [:]
+        for f in fields where !f.value.isEmpty {
+            let k = key(for: f)
+            if !k.isEmpty, out[k] == nil { out[k] = f.value }
+        }
+        return out
+    }
+
+    /// "Send it to {home address}" → the saved address. Braces the model
+    /// wrote around a name it was given, in any capitals; anything else stays.
+    static func fill(_ text: String, table: [String: String]? = nil) -> String {
+        guard text.contains("{") else { return text }
+        let t = table ?? Self.table()
+        guard !t.isEmpty, let re = try? NSRegularExpression(pattern: #"\{([^{}\n]{1,40})\}"#) else { return text }
+        let ns = text as NSString
+        var out = ""
+        var last = 0
+        for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let name = ns.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces).lowercased()
+            guard let value = t[name] else { continue }
+            out += ns.substring(with: NSRange(location: last, length: m.range.location - last)) + value
+            last = m.range.location + m.range.length
+        }
+        return out + ns.substring(from: last)
+    }
+}
+
+extension VaultField {
+    /// How the strip shows a detail: a password as dots, a card as its last
+    /// four; tapping still types the whole value. Everything else as saved.
+    var shown: String {
+        masked == value ? value : "\(label) \(masked)"
+    }
+
+    /// The value as a list shows it: dots for a password, the last four of
+    /// a card, anything else as saved.
+    var masked: String {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let digits = v.filter(\.isNumber)
+        if kind == "password" { return "••••••" }
+        if kind == "card" || (digits.count >= 13 && digits.count <= 19 && SecretScanner.scan(v) == .cardNumber) {
+            return digits.count >= 4 ? "•••• \(digits.suffix(4))" : "••••"
+        }
+        return value
+    }
+}
+

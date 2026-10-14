@@ -19,7 +19,18 @@ object ClipboardStore {
      *  permanent (prune never drops a pinned item, whatever its age). */
     const val EXPIRY_MS = 48 * 60 * 60 * 1000L
 
-    data class Item(val text: String, val ts: Long, val pinned: Boolean)
+    /** [sensitive]: a password, a card number or a password manager's copy,
+     *  kept so it can be pasted, shown as dots, never sent to the AI (Arpit,
+     *  2026-10-14: "i need to be able to copy passwords"). iOS ClipItem twin. */
+    data class Item(val text: String, val ts: Long, val pinned: Boolean, val sensitive: Boolean = false) {
+        /** How the clipboard shows it: dots for a sensitive copy. */
+        val shown: String get() {
+            if (!sensitive) return text
+            val digits = text.filter { it.isDigit() }
+            if (SecretScanner.scan(text) != null && digits.length in 13..19) return "Card •••• ${digits.takeLast(4)}"
+            return "•".repeat(text.length.coerceIn(6, 12))
+        }
+    }
 
     fun load(ctx: Context, now: Long = System.currentTimeMillis()): List<Item> {
         val raw = try {
@@ -29,7 +40,7 @@ object ClipboardStore {
         val out = mutableListOf<Item>()
         for (i in 0 until raw.length()) {
             val o = raw.optJSONObject(i) ?: continue
-            val item = Item(o.optString("text"), o.optLong("ts"), o.optBoolean("pinned"))
+            val item = Item(o.optString("text"), o.optLong("ts"), o.optBoolean("pinned"), o.optBoolean("sensitive"))
             if (item.text.isBlank()) continue
             if (item.pinned || now - item.ts < EXPIRY_MS) out.add(item)
         }
@@ -43,18 +54,19 @@ object ClipboardStore {
                 put("text", item.text)
                 put("ts", item.ts)
                 put("pinned", item.pinned)
+                if (item.sensitive) put("sensitive", true)
             })
         }
         Bridge.write(ctx, FILE, arr.toString())
     }
 
     /** Pure so it can be tested: the new list, or null when refused. */
-    fun inserting(text: String, into: List<Item>, now: Long): List<Item>? {
-        if (SecretScanner.scan(text) != null) return null   // secret-shaped: never stored
+    fun inserting(text: String, into: List<Item>, now: Long, sensitive: Boolean = false): List<Item>? {
+        val secret = sensitive || SecretScanner.scan(text) != null
         val trimmed = text.trim()
         if (trimmed.isEmpty() || trimmed.length > 4000) return null
         if (into.firstOrNull()?.text == trimmed) return null
-        val next = mutableListOf(Item(trimmed, now, false))
+        val next = mutableListOf(Item(trimmed, now, false, secret))
         next.addAll(into.filter { it.text != trimmed || it.pinned })
         // Never evict a pinned item; drop the oldest unpinned past the cap.
         while (next.size > MAX_ITEMS) {
@@ -73,13 +85,10 @@ object ClipboardStore {
     fun clipText(ctx: Context, allowSensitive: Boolean = false): String? {
         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager ?: return null
-        // A password manager marks what it copies as sensitive: never kept,
-        // shown on a chip or sent anywhere. Only the paste key may still
-        // put it in the field (allowSensitive).
-        if (!allowSensitive) {
-            val extras = try { cm.primaryClipDescription?.extras } catch (_: Exception) { null }
-            if (extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return null
-        }
+        // A password manager marks what it copies as sensitive: never shown
+        // on a chip or sent anywhere; history keeps it as dots, and the paste
+        // key and history put it in the field (allowSensitive).
+        if (!allowSensitive && copyIsSensitive(cm)) return null
         val item = try {
             cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
         } catch (_: Exception) { null } ?: return null
@@ -93,10 +102,16 @@ object ClipboardStore {
      *  checks the same setting before every capture). */
     fun captureNow(ctx: Context, settings: JSONObject = SettingsStore.load(ctx)): Boolean {
         if (!settings.optBoolean("clipboardHistory", true)) return false
-        val text = clipText(ctx) ?: return false
-        val next = inserting(text, load(ctx), System.currentTimeMillis()) ?: return false
+        val text = clipText(ctx, allowSensitive = true) ?: return false
+        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        val next = inserting(text, load(ctx), System.currentTimeMillis(), cm?.let { copyIsSensitive(it) } == true) ?: return false
         save(ctx, next)
         return true
+    }
+
+    private fun copyIsSensitive(cm: android.content.ClipboardManager): Boolean {
+        val extras = try { cm.primaryClipDescription?.extras } catch (_: Exception) { null }
+        return extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true
     }
 
     fun togglePin(ctx: Context, text: String) {

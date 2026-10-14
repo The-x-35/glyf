@@ -16,20 +16,18 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
     ]
 
     /// nil when the setting is off, before the person has answered "What
-    /// Glyf sends" in the app, or when there is nothing worth sending.
+    /// Glyf sends" in the app, or when there is nothing saved. Since 14 Oct
+    /// 2026 every saved detail goes as a stand-in ("work email": "{work
+    /// email}"), never its value: the model only learns the detail exists and
+    /// writes the stand-in where it belongs; StandIns.fill puts the value in
+    /// on the phone (Arpit: "not send the exact data to ai but its heading").
     static func shareableProfile() -> [String: String]? {
         guard SettingsStore.current.aiUsesVault != false, SettingsStore.current.aiConsent != nil
         else { return nil }
         var out: [String: String] = [:]
-        for field in VaultStore.shared.load().fields
-        where shareableKinds.contains(field.kind) {
-            // One per kind, labelled so socials stay distinguishable.
-            let key = field.kind == "social" ? "social:\(field.label.lowercased())" : field.kind
-            if out[key] == nil { out[key] = field.value }
-        }
+        for key in StandIns.table().keys where out.count < 40 { out[key] = "{\(key)}" }
         return out.isEmpty ? nil : out
     }
-
 
     static let shared = BackendClient()
     private let log = Logger(subsystem: "so.glyf.keyboard", category: "backend")
@@ -720,3 +718,4 @@ extension URLRequest {
         }
     }
 }
+

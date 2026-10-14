@@ -58,9 +58,9 @@ class AiConsentText extends StatelessWidget {
       const _ConsentRow(
         icon: Icons.badge_outlined,
         tint: Color(0xFF0A84FF),
-        title: 'Your saved details, when they help',
-        body: 'With your details on, AI requests also carry what you saved (name, email, phone, '
-            'address, links) so answers can fill them in.',
+        title: 'Your saved details stay on your phone',
+        body: 'With your details on, the AI only learns what you saved is there, like {home address}, '
+            'never what it says. Your phone fills it into the answer.',
       ),
       const _ConsentRow(
         icon: Icons.shield_outlined,

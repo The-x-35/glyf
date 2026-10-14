@@ -63,7 +63,7 @@ enum Smart {
         /// Temp), or a measurement's results.
         var choices: (values: [String], temp: Bool)? {
             switch self {
-            case .details(let fields, let temp, _): return (fields.map(\.value), temp)
+            case .details(let fields, let temp, _): return (fields.map(\.shown), temp)
             case .convert(let c): return (c.results, false)
             default: return nil
             }
@@ -135,7 +135,7 @@ enum Smart {
             // was easy to miss (user, 2026-09-29: "show result in recommendation strip").
             case .calc(let v, _, let expression):
                 return expression.isEmpty || expression.count > 22 ? "= \(v)" : "\(expression) = \(v)"
-            case .vault(let f): return f.value
+            case .vault(let f): return f.shown
             case .paste(let t): return t.replacingOccurrences(of: "\n", with: " ")
             case .action(let label, _, _): return label
             case .money(let shown, _, _): return shown
@@ -151,7 +151,7 @@ enum Smart {
                 return code.map { "\($0) · \(from)" } ?? "Mail from \(from)"
             case .tempAddress(let live): return live ?? "Temp email"
             case .details(let fields, let temp, _):
-                return (fields.map(\.value) + (temp ? ["Temp mail"] : [])).joined(separator: " · ")
+                return (fields.map(\.shown) + (temp ? ["Temp mail"] : [])).joined(separator: " · ")
             case .convert(let c):
                 return c.source.isEmpty ? c.results.joined(separator: " · ") : "\(c.source) = " + c.results.joined(separator: " · ")
             }

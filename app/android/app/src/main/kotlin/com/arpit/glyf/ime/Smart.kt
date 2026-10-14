@@ -120,8 +120,8 @@ object Smart {
         // was easy to miss (user, 2026-09-29: "show result in recommendation strip").
         is Chip.Calc -> if (chip.expression.isEmpty() || chip.expression.length > 22) "= ${chip.result}"
             else "${chip.expression} = ${chip.result}"
-        is Chip.Vault -> chip.field.value
-        is Chip.Details -> (chip.fields.map { it.value } + if (chip.temp) listOf("Temp mail") else emptyList())
+        is Chip.Vault -> StandIns.shown(chip.field)
+        is Chip.Details -> (chip.fields.map { StandIns.shown(it) } + if (chip.temp) listOf("Temp mail") else emptyList())
             .joinToString(" · ")
         is Chip.Convert -> if (chip.answer.source.isEmpty()) chip.answer.results.joinToString(" · ")
             else "${chip.answer.source} = " + chip.answer.results.joinToString(" · ")
@@ -4893,5 +4893,54 @@ object Smart {
             "can", "could", "will", "would", "should", "shall", "may", "might", "must", "very", "more",
             "most", "less", "per", "vs", "via", "its", "no",
         )
+    }
+}
+
+/** Saved details as stand-ins: an AI request names them ("{work email}")
+ *  and the phone fills the value back into what the AI wrote, so no value
+ *  ever leaves the phone for a model (Arpit, 2026-10-14). iOS StandIns twin. */
+object StandIns {
+    private val kindWords = mapOf(
+        "name" to "name", "email" to "email", "phone" to "phone", "address" to "address", "upi" to "upi",
+        "link" to "link", "social" to "handle", "handle" to "handle", "company" to "company", "bio" to "bio",
+        "card" to "card", "password" to "password", "wallet" to "wallet address", "gst" to "gst number",
+    )
+
+    fun key(f: Smart.Field): String {
+        val label = f.label.trim().lowercase()
+        val word = kindWords[f.kind] ?: ""
+        var k = if (label.isEmpty()) word.ifEmpty { f.kind } else label
+        val head = word.split(" ").firstOrNull().orEmpty()
+        if (word.isNotEmpty() && !k.contains(head)) k += " $word"
+        return k.replace("{", "").replace("}", "").take(38).trim()
+    }
+
+    fun table(fields: List<Smart.Field>): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        for (f in fields) {
+            if (f.value.isEmpty()) continue
+            val k = key(f)
+            if (k.isNotEmpty() && !out.containsKey(k)) out[k] = f.value
+        }
+        return out
+    }
+
+    private val token = Regex("""\{([^{}\n]{1,40})\}""")
+
+    fun fill(text: String, table: Map<String, String>): String {
+        if (!text.contains('{') || table.isEmpty()) return text
+        return token.replace(text) { m -> table[m.groupValues[1].trim().lowercase()] ?: m.value }
+    }
+
+    /** How the strip shows a detail: a password as dots, a card as its last four. */
+    fun shown(f: Smart.Field): String = masked(f).let { if (it == f.value) it else "${f.label} $it" }
+
+    /** The value as a list shows it: dots for a password, a card's last four. */
+    fun masked(f: Smart.Field): String {
+        val digits = f.value.filter { it.isDigit() }
+        if (f.kind == "password") return "••••••"
+        if (f.kind == "card" || (digits.length in 13..19 && com.arpit.glyf.store.SecretScanner.scan(f.value) != null))
+            return if (digits.length >= 4) "•••• ${digits.takeLast(4)}" else "••••"
+        return f.value
     }
 }

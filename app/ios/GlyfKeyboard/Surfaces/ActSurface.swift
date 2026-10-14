@@ -270,7 +270,8 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         if phase != .result || !cards.isEmpty || mapPlace != nil {
             showResult(title: title, cards: [], text: text, insert: "")
         } else {
-            textView.text = text
+            // Saved details go in on the phone, in place of their stand-ins.
+            textView.text = StandIns.fill(text)
             setNeedsLayout()
         }
         for b in [retryButton, copyButton, insertButton, reportButton] { b.isHidden = true }
@@ -339,8 +340,8 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         titleLabel.text = title
         options = []
         self.cards = cards
-        insertText = insert
-        textView.text = text ?? ""
+        insertText = StandIns.fill(insert)
+        textView.text = StandIns.fill(text ?? "")
         textView.isHidden = (text ?? "").isEmpty
         table.reloadData()
         mapPlace = cards.count == 1 && cards[0].kind == "place"
@@ -584,7 +585,7 @@ final class ActSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     /// Tapping one card drops just that one — a single place out of a list.
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         if !options.isEmpty {
-            delegate?.actInsert(options[indexPath.row].text)
+            delegate?.actInsert(StandIns.fill(options[indexPath.row].text))
             return
         }
         let card = cards[indexPath.row]
@@ -640,8 +641,8 @@ final class OptionCell: UITableViewCell {
 
     func fill(_ option: BackendClient.RewriteOption) {
         label.text = option.label
-        body.text = option.text
-        accessibilityLabel = "\(option.label): \(option.text)"
+        body.text = StandIns.fill(option.text)
+        accessibilityLabel = "\(option.label): \(body.text ?? "")"
         accessibilityIdentifier = "act:option:\(option.id)"
         isAccessibilityElement = true
         accessibilityTraits = .button

@@ -82,24 +82,42 @@ final class VaultTests: XCTestCase {
         XCTAssertEqual(aside.count, 1, "the old file is kept, only moved")
     }
 
-    // MARK: Blocked types are BLOCKED (§6.7, §11.3)
+    // MARK: The vault keeps anything (Arpit, 2026-10-14: "i need to be able to store any data")
 
-    func testBlockedFieldTypes() {
-        XCTAssertNotNil(VaultRules.refusalReason(
-            kind: "custom", label: "My password", value: "hunter2"))
-        XCTAssertNotNil(VaultRules.refusalReason(
-            kind: "custom", label: "Visa", value: "4242 4242 4242 4242"))
-        XCTAssertNotNil(VaultRules.refusalReason(
-            kind: "custom", label: "backup",
-            value: "legal winner thank year wave sausage worth useful legal winner thank yellow"))
-        XCTAssertNotNil(VaultRules.refusalReason(
-            kind: "custom", label: "aadhaar", value: "2345 6789 0123"))
-        XCTAssertNotNil(VaultRules.refusalReason(
-            kind: "custom", label: "pan", value: "ABCDE1234F"))
-        XCTAssertNotNil(VaultRules.refusalReason(
-            kind: "custom", label: "ssn", value: "123-45-6789"))
-        XCTAssertNotNil(VaultRules.refusalReason(
-            kind: "custom", label: "api", value: "sk-or-v1-aaaaaaaaaaaaaaaaaaaa"))
+    func testAnyDetailCanBeStored() {
+        for (label, value) in [("My password", "hunter2"), ("Visa", "4242 4242 4242 4242"),
+                               ("aadhaar", "2345 6789 0123"), ("ssn", "123-45-6789"),
+                               ("api", "sk-or-v1-aaaaaaaaaaaaaaaaaaaa")] {
+            XCTAssertNil(VaultRules.refusalReason(kind: "custom", label: label, value: value), label)
+        }
+        XCTAssertNil(VaultRules.refusalReason(kind: "card", label: "Visa", value: "4242 4242 4242 4242"))
+        XCTAssertNil(VaultRules.refusalReason(kind: "password", label: "Wi-Fi", value: "hunter2"))
+        XCTAssertNotNil(VaultRules.refusalReason(kind: "custom", label: "Empty", value: "   "))
+        XCTAssertNotNil(VaultRules.refusalReason(kind: "custom", label: "Long", value: String(repeating: "a", count: 5001)))
+    }
+
+    func testCardsAndPasswordsShowMasked() {
+        let card = VaultField(id: "c", kind: "card", label: "Visa", value: "4242 4242 4242 4242")
+        let pass = VaultField(id: "p", kind: "password", label: "Wi-Fi", value: "hunter2")
+        let mail = VaultField(id: "e", kind: "email", label: "Email", value: "sam@example.com")
+        XCTAssertEqual(card.shown, "Visa •••• 4242")
+        XCTAssertEqual(pass.shown, "Wi-Fi ••••••")
+        XCTAssertEqual(mail.shown, "sam@example.com")
+        XCTAssertEqual(card.masked, "•••• 4242")
+    }
+
+    /// The AI sees a detail's name, never its value; the phone fills it back.
+    func testDetailsGoToTheAIAsStandIns() {
+        let fields = [
+            VaultField(id: "a", kind: "address", label: "Home", value: "123 Market St"),
+            VaultField(id: "e", kind: "email", label: "Work email", value: "sam@work.com"),
+            VaultField(id: "c", kind: "card", label: "Visa", value: "4242 4242 4242 4242"),
+        ]
+        let table = StandIns.table(fields)
+        XCTAssertEqual(Set(table.keys), ["home address", "work email", "visa card"])
+        XCTAssertEqual(StandIns.fill("Send it to {home address}. Mail me at {Work Email}, card {visa card}.", table: table),
+                       "Send it to 123 Market St. Mail me at sam@work.com, card 4242 4242 4242 4242.")
+        XCTAssertEqual(StandIns.fill("keep {this} and {unknown}", table: table), "keep {this} and {unknown}")
     }
 
     func testAllowedFields() {
@@ -173,15 +191,15 @@ final class VaultTests: XCTestCase {
         XCTAssertEqual(s.load().fields.first?.value, "sam@example.com", "saved trimmed")
         XCTAssertNil(s.addField(kind: "email", label: "Email", value: "ria@example.com"))
         XCTAssertEqual(s.load().fields.count, 2)
-        XCTAssertNotNil(s.addField(kind: "custom", label: "Other", value: "4242 4242 4242 4242"),
-                        "the keyboard's add is refused what the app's is")
+        XCTAssertNil(s.addField(kind: "card", label: "Visa", value: "4242 4242 4242 4242"),
+                        "a card saves, encrypted, like anything else")
     }
 
     /// The kinds a detail is added as, by the app's names. An address is
     /// saved as Home; UPI only shows on a phone set to India.
     func testDetailKindsAreTheAppsAndUPIIsIndiasOnly() {
         let us = DetailKind.addable(region: "US")
-        XCTAssertEqual(us.map(\.title), ["Name", "Email", "Phone", "Address", "Wallet address", "Link", "Other"])
+        XCTAssertEqual(us.map(\.title), ["Name", "Email", "Phone", "Address", "Wallet address", "Link", "Card", "Password", "Other"])
         XCTAssertEqual(us.first { $0.kind == "address" }?.label, "Home")
         XCTAssertFalse(DetailKind.addable(region: nil).contains { $0.kind == "upi" })
         XCTAssertTrue(DetailKind.addable(region: "IN").contains { $0.kind == "upi" })
@@ -211,7 +229,7 @@ final class VaultTests: XCTestCase {
         XCTAssertNotNil(VaultRules.snippetRefusal(trigger: "sig", text: "x"))
         XCTAssertNotNil(VaultRules.snippetRefusal(trigger: ";", text: "x"))
         XCTAssertNotNil(VaultRules.snippetRefusal(trigger: ";two words", text: "x"))
-        XCTAssertNotNil(VaultRules.snippetRefusal(
-            trigger: ";card", text: "4242 4242 4242 4242"))
+        XCTAssertNil(VaultRules.snippetRefusal(
+            trigger: ";card", text: "4242 4242 4242 4242"), "shorthand may hold anything too")
     }
 }
