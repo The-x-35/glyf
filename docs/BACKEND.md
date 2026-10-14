@@ -855,6 +855,7 @@ Not in these numbers: map and YouTube searches run on free quotas shared by ever
 - `POST /billing/apple/notifications` is an open path (Apple's server calls it; the signature is the check): App Store Server Notifications v2, whose `signedTransactionInfo` updates the owner's subscription (renewals, plan changes, refunds, lapses). Apple retries a 503. Set as both the Production and the Sandbox URL in App Store Connect (App Information).
 - `POST /me/plan` (with `PLAN_SELF_SERVE=true`, never on Railway) still sets a plan by hand for development; it clears any expiry.
 - **Gift codes** (since 2026-09-27; `lib/codes.ts`, `routes/codes.ts`, table `glyf_codes`: code, plan, days, note, created_at, redeemed_by, redeemed_at). Six characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no 0/O, 1/I/L; about 890 million codes). `POST /codes/redeem` (signed in) `{code}`: lower case, spaces and dashes are forgiven; the code is claimed with one `update ... where redeemed_by is null`, so it works once for anyone; its plan goes on the account as a purchase named `code:ABC123` with its days, starting where the same plan already ends, so it stacks, runs out and is outranked like an App Store subscription (Max over Plus). Answers `{plan, codePlan, days, expiresAt}`, or 404 "That code doesn't exist", 409 "That code has already been used", 400 for anything that isn't 6 letters and numbers, 429 after 10 misses in an hour per account; if the plan can't be saved the code is given back. Codes are made with `npx tsx scripts/make-codes.ts --plan max --days 30 --count 100 --note "..."` against the database in `server/.env` (the one Railway uses), which prints them as CSV; nothing about them is committed. Tests: `test/codes.test.ts`.
+- **USDC payments** (since 2026-10-14; `lib/cryptopay.ts`, `routes/cryptopay.ts`, table `glyf_crypto_payments`; the whole story, store policy included, is in [CRYPTO-PAYMENTS.md](CRYPTO-PAYMENTS.md)). `GET /billing/crypto`, `POST /billing/crypto/request {plan, period}` (a Solana Pay request with a fresh `reference`), `POST /billing/crypto/verify {reference}` (finds the transfer on `SOLANA_RPC_URL`, checks the treasury's USDC gain, then a purchase `sol:<signature>` stacked like a gift code). Off unless `GLYF_TREASURY` and `SOLANA_RPC_URL` are set; only the dApp Store build (`GLYF_CRYPTO_PAY`) shows it. Tests: `test/cryptopay.test.ts`.
 - Tests: `test/billing.test.ts` builds a throwaway root, intermediate and leaf with openssl, with Apple's marker extensions, and checks a good signature, a forged payload, a broken chain, the pin, the Xcode rule, ownership, Max over Plus, lapsing, renewal and refund notices.
 
 ### 5.10 Model choices over time, research and costs
@@ -1393,7 +1394,9 @@ Names only. Values live in `server/.env` (never committed). "Example" says wheth
 
 | Variable | Purpose | Required | Default | Example | Read in |
 |---|---|---|---|---|---|
-| `SOLANA_RPC_URL` | The Solana node the wallet's relay calls (Helius, key in the URL). Never sent to a client | For the wallet | unset (`/wallet/rpc` answers 503) | Yes (placeholder) | `routes/wallet.ts` |
+| `SOLANA_RPC_URL` | The Solana node the wallet's relay calls (Helius, key in the URL). Never sent to a client | For the wallet | unset (`/wallet/rpc` answers 503) | Yes (placeholder) | `routes/wallet.ts`, `routes/cryptopay.ts` |
+| `GLYF_TREASURY` | Public Solana address that receives USDC plan payments | For USDC plans | unset (USDC plans off) | No | `routes/cryptopay.ts` |
+| `GLYF_USDC_MINT` | Another USDC mint, for devnet tests only | No | mainnet USDC | No | `routes/cryptopay.ts` |
 
 ### 11.3c App Review
 

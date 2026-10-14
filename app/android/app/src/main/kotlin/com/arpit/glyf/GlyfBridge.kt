@@ -167,6 +167,16 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
                     ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     result.success(true)
+                } else if (url != null && url.startsWith("solana:")) {
+                    // A Solana Pay request (wallet/crypto_pay.dart), for
+                    // whichever wallet takes it; false when none does.
+                    try {
+                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        result.success(true)
+                    } catch (e: android.content.ActivityNotFoundException) {
+                        result.success(false)
+                    }
                 } else result.success(false)
             }
             // Phantom's links go to the Phantom app itself (phantom.app's own

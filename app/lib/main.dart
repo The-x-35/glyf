@@ -11,6 +11,7 @@ import 'dictation/recording_sheet.dart';
 import 'launch/launch_overlay.dart';
 import 'onboarding/demo_chat.dart';
 import 'wallet/buy_screen.dart';
+import 'wallet/crypto_pay.dart';
 import 'wallet/pay_launch_screen.dart';
 import 'wallet/pay_status_screen.dart';
 import 'wallet/send_screen.dart';
@@ -87,6 +88,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       Auth.syncProfile();
       Auth.syncPrefs();
       Billing.sync();
+      CryptoPay.resume();
     }
     Billing.listen();
     WalletFlow.load();
@@ -120,7 +122,10 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       Funnel.report();
       _checkPendingDictation();
-      if (_onboarded) Billing.sync();
+      if (_onboarded) {
+        Billing.sync();
+        CryptoPay.resume();
+      }
     }
   }
 

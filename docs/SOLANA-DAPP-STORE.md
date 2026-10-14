@@ -169,7 +169,7 @@ It shows only in a build made with `--dart-define=GLYF_CRYPTO_PAY=true`, only on
    It then sets the plan with an end date: 30 or 365 days, **prepaid**. Crypto can't auto-renew without asking the user to approve a token delegation, which is best avoided. Remind people before the end date.
 5. Needs:
    - a treasury wallet Arpit controls, with its key never on the server
-   - a `glyf_crypto_purchases` table
+   - a `glyf_crypto_payments` table
    - a privacy-policy line (the paying wallet address and the transaction are tied to the account)
    - a refund line in the Terms
    - tax handling as seller of record [S15]

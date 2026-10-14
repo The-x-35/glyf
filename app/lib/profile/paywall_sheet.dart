@@ -5,6 +5,7 @@ import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
+import '../wallet/crypto_pay.dart';
 
 /// Apple's standard licence, which Glyf's subscriptions are sold under.
 const _termsURL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
@@ -57,9 +58,21 @@ class _PaywallSheetState extends State<_PaywallSheet> {
   /// Store Connect, every tap on a buy button failed.
   bool get _onSale => _store.isNotEmpty;
 
+  /// Plans in USDC: only the Solana dApp Store build, and only while the
+  /// server takes them (wallet/crypto_pay.dart).
+  bool _crypto = false;
+
+  /// A plan can be picked: the App Store sells it, or USDC does.
+  bool get _selectable => _onSale || _crypto;
+
   @override
   void initState() {
     super.initState();
+    if (CryptoPay.allowed) {
+      CryptoPay.available().then((on) {
+        if (mounted && on) setState(() => _crypto = true);
+      });
+    }
     if (!_asked) {
       Billing.products().then((found) {
         if (mounted) {
@@ -105,6 +118,59 @@ class _PaywallSheetState extends State<_PaywallSheet> {
     });
   }
 
+  /// The price in whole USDC, the same dollars as the App Store's US price.
+  static String _usdc(String plan, {required bool yearly}) => switch ((plan, yearly)) {
+        ('plus', false) => '2',
+        ('plus', true) => '20',
+        ('max', false) => '5',
+        _ => '50',
+      };
+
+  Future<void> _payCrypto() async {
+    final plan = _selected, yearly = _yearly;
+    setState(() {
+      _busy = true;
+      _note = null;
+    });
+    Telemetry.log('crypto_pay_started', {'plan': plan, 'yearly': yearly, 'reason': widget.reason ?? 'profile'});
+    try {
+      final request = await CryptoPay.request(plan, yearly: yearly);
+      final problem = await CryptoPay.pay(request);
+      if (!mounted) return;
+      if (problem != null) {
+        setState(() {
+          _busy = false;
+          _note = problem.isEmpty ? null : problem;
+        });
+        return;
+      }
+      setState(() => _note = 'Waiting for Solana');
+      final got = await CryptoPay.waitForPlan(request.reference);
+      if (!mounted) return;
+      if (got != null && got != 'free') {
+        Telemetry.log('crypto_pay_done', {'plan': got});
+        Navigator.of(context).pop(true);
+        return;
+      }
+      setState(() {
+        _busy = false;
+        _note = 'Not on Solana yet. Your plan starts when it lands';
+      });
+    } on GlyfApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _note = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _note = "Couldn't reach Glyf. Try again";
+      });
+    }
+  }
+
   Future<void> _restore() async {
     setState(() {
       _busy = true;
@@ -140,7 +206,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                 style: TextStyle(color: Glass.inkSoft, fontSize: 14)),
           ],
           const SizedBox(height: 16),
-          if (_onSale) ...[
+          if (_selectable) ...[
             _periodSwitch(),
             const SizedBox(height: 12),
           ],
@@ -163,7 +229,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
               child: _planCard(
                 id: 'max',
                 name: 'Max',
-                badge: _onSale ? 'Best' : null,
+                badge: _selectable ? 'Best' : null,
                 features: const [
                   '400 runs a day',
                   '6x the suggestions',
@@ -182,7 +248,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
           const SizedBox(height: 14),
           Semantics(
             identifier: 'paywall:unlock',
-            button: _onSale,
+            button: _selectable,
             child: _busy || !_asked
                 ? const SizedBox(
                     height: 48,
@@ -195,14 +261,29 @@ class _PaywallSheetState extends State<_PaywallSheet> {
                     ? PillButton(
                         label: _selected == 'max' ? 'Get Max' : 'Get Plus',
                         onPressed: _store.containsKey(Billing.productFor(_selected, yearly: _yearly)) ? _buy : null)
-                    : const SizedBox(
-                        height: 48,
-                        child: Center(
-                          child: Text('Plans open soon',
-                              style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w700)),
-                        ),
-                      ),
+                    : _crypto
+                        ? PillButton(
+                            label: 'Pay ${_usdc(_selected, yearly: _yearly)} USDC',
+                            onPressed: _payCrypto)
+                        : const SizedBox(
+                            height: 48,
+                            child: Center(
+                              child: Text('Plans open soon',
+                                  style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w700)),
+                            ),
+                          ),
           ),
+          // Both on sale: USDC as the second way to pay.
+          if (_onSale && _crypto && !_busy)
+            Semantics(
+              identifier: 'paywall:usdc',
+              button: true,
+              child: TextButton(
+                onPressed: _payCrypto,
+                child: Text('Pay ${_usdc(_selected, yearly: _yearly)} USDC',
+                    style: const TextStyle(color: Glass.ink, fontSize: 14, fontWeight: FontWeight.w700)),
+              ),
+            ),
           // The sheet closes with a swipe down or a tap above it, so it needs
           // no Not now. Restore stays on the iPhone, plans on sale or not: it
           // brings back a plan this Apple ID already paid for, and App Review
@@ -305,10 +386,10 @@ class _PaywallSheetState extends State<_PaywallSheet> {
     String? badge,
     required List<String> features,
   }) {
-    final selected = _onSale && _selected == id;
+    final selected = _selectable && _selected == id;
     final card = GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: _onSale && !_busy ? () => setState(() => _selected = id) : null,
+      onTap: _selectable && !_busy ? () => setState(() => _selected = id) : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(14),
@@ -382,7 +463,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
       ),
     );
     // Plus and Max both pick by tap, and by name for VoiceOver.
-    if (_onSale) return Semantics(identifier: 'paywall:$id', button: true, selected: selected, child: card);
+    if (_selectable) return Semantics(identifier: 'paywall:$id', button: true, selected: selected, child: card);
     // Not for sale yet: shown so people see what is coming, greyed so
     // nobody mistakes it for something to buy.
     return Semantics(
