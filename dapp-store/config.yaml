@@ -1,0 +1,159 @@
+# Glyf on the Solana dApp Store: the listing, in one place.
+#
+# READ FIRST (2026-10-14):
+# - The current CLI (@solana-mobile/dapp-store-cli 1.0.x, Sep 2026) reads NO
+#   config file. It only uploads a new APK version for an app that already
+#   exists in the Publisher Portal:
+#     DAPP_STORE_API_KEY=... dapp-store --apk-file <apk> --keypair <publisher keypair> --whats-new "..."
+#   The legacy config-driven commands (init / create / validate /
+#   publish submit|update) were removed from the CLI.
+# - This file therefore follows the LAST config.yaml format (CLI 0.16.x,
+#   publishing spec v0.4.0) so every field the portal asks for has a value
+#   here. Copy the values into the portal's "Add a dApp" and "New Version"
+#   forms. docs/SOLANA-DAPP-STORE.md has the steps.
+# - Paths are relative to this folder (dapp-store/).
+# - Never put a keypair, keystore, password or API key in this file or
+#   anywhere in the repo. Placeholders look like <<LIKE_THIS>>.
+#
+# Limits checked: short_description 30 characters (listing guidelines and the
+# legacy validator), app name 32 (NFT spec), icons 512x512, banner 1200x600,
+# feature graphic 1200x1200, screenshots at least 1080 px on both sides with
+# one orientation and aspect ratio, videos .mp4 at least 720 px on both sides,
+# at least 4 screenshots + videos in total.
+
+publisher:
+  # As on the KYC/KYB check: Arpit's legal name for an individual account,
+  # or the company's name for KYB.
+  name: <<PUBLISHER_NAME_AS_VERIFIED>>
+  website: https://www.tryglyf.com
+  email: arpit@tryglyf.com
+  support_email: arpit@tryglyf.com
+
+# Not read by any tool; kept so the wallet and keypair are never guessed.
+# The CLI's --keypair must be the PUBLISHER wallet (the portal checks the
+# signer against the publisher address), so if the CLI will be used for
+# updates, create the publisher wallet as a keypair file and import that
+# same key into the browser wallet used for the portal.
+publisher_wallet:
+  address: <<PUBLISHER_WALLET_PUBKEY>>
+  keypair_path: <<ABSOLUTE_PATH_OUTSIDE_THE_REPO, e.g. ~/.config/solana/glyf-dapp-store-publisher.json>>
+
+app:
+  name: "Glyf: AI Keyboard"
+  address: ""            # App NFT mint; the portal fills it in when the app is created
+  android_package: com.arpit.glyf
+  urls:
+    # No Terms page exists on the site yet: make /terms before submitting
+    # (the template says "Don't put placeholder urls").
+    license_url: <<https://www.tryglyf.com/terms (PAGE NOT BUILT YET)>>
+    copyright_url: <<https://www.tryglyf.com/terms (PAGE NOT BUILT YET)>>
+    privacy_policy_url: https://www.tryglyf.com/privacy
+    website: https://www.tryglyf.com
+  media:
+    - purpose: icon
+      uri: ../marketing/play/icon-512.png             # 512 x 512, exists
+
+release:
+  address: ""            # Release NFT mint; minted per version at submission
+  media:
+    - purpose: icon
+      uri: ../marketing/play/icon-512.png             # 512 x 512, exists
+    - purpose: banner
+      uri: ./media/banner-1200x600.png                # MISSING: make it (see docs)
+    - purpose: featureGraphic
+      uri: ./media/feature-graphic-1200x1200.png      # MISSING (optional in the template)
+    - purpose: screenshot
+      uri: ../marketing/play/phone/01-rewrite.png     # 1080 x 1920, exists
+    - purpose: screenshot
+      uri: ../marketing/play/phone/02-answers.png
+    - purpose: screenshot
+      uri: ../marketing/play/phone/03-translate.png
+    - purpose: screenshot
+      uri: ../marketing/play/phone/04-details.png
+    - purpose: screenshot
+      uri: ../marketing/play/phone/05-emoji.png
+    - purpose: screenshot
+      uri: ../marketing/play/phone/06-style.png
+    - purpose: screenshot
+      uri: ./media/07-wallet.png                      # MISSING, recommended: Send from the chat, 1080 x 1920
+    - purpose: video
+      uri: ./media/demo-android.mp4                   # MISSING, optional: record on Android, 1920 x 1080 recommended
+  files:
+    - purpose: install
+      # Signed with the dApp Store key (NOT the Play upload key), release, not debuggable.
+      uri: ../app/build/app/outputs/flutter-apk/app-dappstore-release.apk
+  catalog:
+    en-US:
+      name: "Glyf: AI Keyboard"
+      short_description: AI keyboard that does the rest   # 30 of 30; alternative: "Type less. Glyf more." (21)
+      long_description: |-
+        Glyf is an Android keyboard with AI on the space bar. Type the way you always do. When you want more, hold space and Glyf works on what you wrote, right where you are typing.
+
+        HOLD SPACE, AND GLYF DOES THE REST
+        • Rewrite a message five ways: fixed up, professional, polite, shorter or with emoji. Pick one and it replaces your text.
+        • Ask a question and the answer goes into your message.
+        • Translate what you typed.
+        • Find a place with a map, or a video, and paste it in one tap.
+        • On an empty field, hold space to ask Glyf anything.
+        • Put an action on a letter key and hold the letter to run it. Describe a new action in plain words and Glyf builds it.
+
+        ANSWERS IN THE STRIP, WORKED OUT ON YOUR PHONE
+        As you type, the strip above the keys offers what you need. No AI is involved, so it is instant:
+        • Bills and tips: "$90 between 4 people" gives $22.50 each
+        • Units: "10 inches" is 25.4 cm, "72°F" is 22.2°C
+        • Money at today's rate: "50 euros in dollars"
+        • Time zones: "8:30pm in Tokyo" in your own time
+        • Dates: "days until Christmas", "10 working days from today"
+        • Pay and tax: "$45/hr" is $93,600 a year, "£120 inc VAT" is £100 + £20 VAT
+        • Cooking: "2 cups flour" is 240 g, "bake at 350" is 180°C
+        • Weather: "will it rain tomorrow"
+        • Links without their trackers, tracking numbers that open the carrier's page, faces like /shrug, a coin flip or a dice roll
+
+        A KEYBOARD FIRST
+        • Autocorrect and next-word suggestions run on your phone and learn the words you use.
+        • Swipe to type, and glide along the space bar to move the cursor.
+        • Clipboard with your last 20 copies, and pins for the ones you keep. Copied passwords and card numbers show as dots and never go to the AI.
+        • Every emoji, found by what you mean, plus GIFs and stickers (search KLIPY), animated emoji and emoticons.
+        • Style your text: bold, italic, strikethrough, script, bubble letters and more, or UPPERCASE and Title Case, with a word count.
+        • Two looks, Glyf and Glass, in light or dark.
+
+        YOUR DETAILS, ONE TAP AWAY
+        Save your email, phone number, address, links, cards and passwords in the Vault, encrypted on your phone. When a form field or a sentence asks for one ("my email is"), it waits in the strip. The AI only ever sees the name of a saved detail, never what it holds. Shorthand turns ;sig into your signature, with blanks for the date or time.
+
+        WALLET
+        Send SOL or USDC, or buy a token, from the chat. A copied wallet address offers Send, and a cashtag like $SOL shows its price. On Seeker, Seed Vault Wallet signs through Mobile Wallet Adapter right on the phone; elsewhere, Phantom signs. Glyf never holds your keys.
+
+        MORE INSIDE THE KEYBOARD
+        • Search YouTube, places nearby and your contacts, and paste a result.
+        • Calendar: see your day, add an event, invite people through Google Calendar, make a Google Meet link or book a time on a Cal.com page.
+        • Temp mail: a throwaway address from mail.tm, with verification codes in the strip.
+        • Games: Snake and Chomp, for when you are waiting.
+
+        PRIVACY
+        • Typing, the words Glyf learns, notes, clipboard history and contacts stay on your phone. The Vault is encrypted on your phone.
+        • Text goes to Glyf's server only for features that need it: AI actions you start, searches and translations, and, if you agree when you set up, the sentence you are typing when you pause, so the strip can suggest an action.
+        • Nothing is sent from password fields. Card numbers, one-time codes, passwords and keys are masked before text reaches an AI model, and AI providers don't keep or train on it.
+        • Report any AI result with the flag beside it.
+        • Approximate location is used for nearby search and weather only if you turn it on.
+        • No ads, and your data is never sold.
+
+        GETTING STARTED
+        Open Glyf, sign in with Google and follow the steps to turn the keyboard on. Android shows its usual notice for any new keyboard. Glyf is free, with a daily allowance of AI actions. The keyboard types in English.
+      new_in_version: First release on the Solana dApp Store.
+      saga_features: |-
+        On Seeker, Glyf's wallet connects to Seed Vault Wallet through Mobile Wallet Adapter: send SOL or USDC, or buy a token, from the chat and approve it on the phone, with no switch to another app. Phantom works too.
+  android_details:
+    locales:
+      - en-US
+
+solana_mobile_dapp_publisher_portal:
+  google_store_package: com.arpit.glyf
+  testing_instructions: |-
+    Sign in: on the sign-in screen tap "App Review sign-in" and use review@tryglyf.com with the password <<REVIEW_PASSWORD: type it into the portal only, never here>>. (The button shows while Glyf's server runs with REVIEW_MODE=true; keep it on during review.)
+    Turn the keyboard on: follow the in-app steps, or Settings > System > Keyboard > On-screen keyboard > Manage keyboards > Glyf Keyboard. Android shows its standard notice that any keyboard can see what you type; Glyf's privacy policy explains what is sent and when.
+    Try it: in any chat app, type "$90 between 4 people" and tap the answer in the strip; type a sentence, then hold the space bar for rewrites; tap the emoji key for emoji, GIFs and stickers.
+    Wallet (optional): open Glyf > Wallet and connect Seed Vault Wallet or Phantom (Mobile Wallet Adapter). Type "$SOL" in a chat to see the price and Buy; copy a wallet address to see Send. A small SOL balance is needed to send.
+  # Up to 10 Seeker Genesis Token wallets that may install before approval.
+  alpha_testers:
+    - address: <<OPTIONAL_GENESIS_TOKEN_WALLET_ADDRESS>>
+      comment: <<OPTIONAL_INTERNAL_NOTE>>

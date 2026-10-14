@@ -1,0 +1,9 @@
+# Never commit a Solana keypair, a keystore or a built APK from this folder.
+*.json
+*.jks
+*.keystore
+*.apk
+*.aab
+.env
+.env.*
+.asset-manifest.json
