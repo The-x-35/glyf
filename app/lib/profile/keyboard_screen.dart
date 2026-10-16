@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
+import '../core/themes.dart';
 import '../wallet/wallet_flow.dart';
 
 /// Everything about the keyboard on one page: how it looks, then how it types.
@@ -69,17 +71,52 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
     if (((s['themeBg'] as String?) ?? '').isNotEmpty) await _set('themeBg', '');
   }
 
-  Future<void> _set(String key, Object value) async {
+  /// The last settings write: each waits for the one before, so two taps in
+  /// a row can't read the same file and lose one of the changes.
+  Future<void> _writes = Future.value();
+
+  Future<void> _set(String key, Object value) {
     setState(() => _settings = Map.of(_settings)..[key] = value);
-    await GlyfBridge.updateSharedSettings((s) => s..[key] = value);
+    final write = _writes.then(
+        (_) => GlyfBridge.updateSharedSettings((s) => s..[key] = value));
+    _writes = write.catchError((_) {});
     Telemetry.log('kb_setting_changed', {'setting': key});
+    return write;
   }
 
   String get _themeBg => (_settings['themeBg'] as String?) ?? '';
   String get _keyTheme => (_settings['keyTheme'] as String?) ?? 'site';
 
+  /// The picked keyboard theme ("skin"), or null for Glyf or Glass.
+  KbTheme? get _skin => KbTheme.byId(_settings['skin'] as String?);
+
+  /// The side of a theme the keyboard shows: Android's Appearance setting,
+  /// else the phone's light or dark (the iPhone keyboard follows the app it
+  /// types into, which mostly follows the phone).
+  bool _previewDark(BuildContext context) {
+    final appearance = Platform.isIOS ? 'auto' : (_settings['appearance'] as String?) ?? 'auto';
+    if (appearance == 'dark') return true;
+    if (appearance == 'light') return false;
+    return MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+  }
+
+  /// The picker's groups: the themes' categories in the order themes.json
+  /// first uses them, each under its plural.
+  static final _groups = <String, String>{
+    for (final t in kbThemes) t.category: _plural(t.category),
+  };
+
+  static String _plural(String category) => switch (category) {
+        'material' => 'Materials',
+        'story' => 'Stories',
+        'archetype' => 'Archetypes',
+        _ => '${category[0].toUpperCase()}${category.substring(1)}s',
+      };
+
   @override
   Widget build(BuildContext context) {
+    final skin = _skin;
+    final dark = _previewDark(context);
     return Scaffold(
       backgroundColor: Glass.bg,
       appBar: AppBar(
@@ -93,18 +130,30 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
         children: [
           _label('Look'),
           _grid([
-            _tile('Glyf', selected: _keyTheme == 'site' && _themeBg.isEmpty,
+            _tile('Glyf',
+                selected: skin == null && _keyTheme == 'site' && _themeBg.isEmpty,
                 onTap: () async {
                   await _set('keyTheme', 'site');
                   await _set('themeBg', '');
+                  await _set('skin', '');
                 }),
             _tile('Glass', board: const Color(0xFFD5D8DE), translucent: true,
-                selected: _keyTheme == 'glass' && _themeBg.isEmpty,
+                selected: skin == null && _keyTheme == 'glass' && _themeBg.isEmpty,
                 onTap: () async {
                   await _set('keyTheme', 'glass');
                   await _set('themeBg', '');
+                  await _set('skin', '');
                 }),
           ]),
+          // The keyboard themes (docs/THEMES.md), in the spec's groups.
+          for (final group in _groups.entries) ...[
+            const SizedBox(height: 16),
+            _label(group.value),
+            _grid([
+              for (final t in kbThemes.where((t) => t.category == group.key))
+                _themeTile(t, dark: dark, selected: skin?.id == t.id),
+            ]),
+          ],
           const SizedBox(height: 18),
           _card([
             // The iPhone keyboard follows the app it types into, like
@@ -112,7 +161,9 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
             // that app's colour, so a forced light or dark looked cut off.
             if (!Platform.isIOS)
               _segmented('Appearance', 'appearance', const ['auto', 'light', 'dark']),
-            _switch('Borders around keys', 'keyBorders'),
+            // A theme with its own border always draws it (THEMES.md §5.1).
+            if (skin?.variant(dark).border == null)
+              _switch('Borders around keys', 'keyBorders'),
           ]),
           const SizedBox(height: 18),
           _label('Typing'),
@@ -131,6 +182,8 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           _label('Feel'),
           _card([
             _switch('Sound on keypress', 'keyClicks'),
+            if (skin != null && skin.sound != 'system')
+              _switch('Theme sound', 'skinSound', fallback: true),
             _switch('Haptic feedback on keypress', 'haptics'),
           ]),
           const SizedBox(height: 18),
@@ -367,6 +420,150 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
       ),
     );
   }
+}
+
+extension on _KeyboardScreenState {
+  /// A theme's tile: its keyboard in miniature in the side the keyboard
+  /// would show, on its own board on Android and on the system sheet on the
+  /// iPhone (which paints no board, THEMES.md §0.3), and its name in its
+  /// key-face font.
+  Widget _themeTile(KbTheme t, {required bool dark, required bool selected}) {
+    final v = t.variant(dark);
+    final ios = Platform.isIOS;
+    final sheet = dark ? const Color(0xFF1B1B1D) : const Color(0xFFE2E4E8);
+    return GestureDetector(
+      key: ValueKey('theme:${t.id}'),
+      onTap: () => _set('skin', t.id),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: selected ? Glass.accent : Glass.hairline,
+              width: selected ? 1.8 : 1),
+        ),
+        child: Column(children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: ios || v.board.length < 2 ? (ios ? sheet : v.board.first) : null,
+                  gradient: ios || v.board.length < 2
+                      ? null
+                      : LinearGradient(
+                          begin: _cssBegin(v.boardAngle ?? 180),
+                          end: _cssEnd(v.boardAngle ?? 180),
+                          colors: v.board),
+                ),
+                padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
+                child: CustomPaint(
+                  painter: _ThemeKeyboard(v),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              if (selected) ...[
+                const Icon(Icons.check_circle, size: 13, color: Glass.accent),
+                const SizedBox(width: 4),
+              ],
+              Flexible(
+                child: Text(t.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontFamily: t.fontFamily,
+                        fontWeight: t.fontFamily == null ? FontWeight.w600 : null,
+                        fontVariations: t.variableFont
+                            ? [FontVariation('wght', t.fontWeight.toDouble())]
+                            : null)),
+              ),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  /// A CSS gradient angle (0 points up, clockwise) as Flutter's ends.
+  Alignment _cssBegin(double deg) => -_cssEnd(deg);
+  Alignment _cssEnd(double deg) {
+    final r = deg * math.pi / 180;
+    return Alignment(math.sin(r), -math.cos(r));
+  }
+}
+
+/// A theme's keyboard in miniature, the same rows as [_MiniKeyboard]: its
+/// letters, function keys, space and return in their colours, each letter
+/// with a dot of its ink, under them the theme's 1pt edge, and its border.
+class _ThemeKeyboard extends CustomPainter {
+  _ThemeKeyboard(this.v);
+
+  final KbVariant v;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const gap = 2.2;
+    final unit = (size.width - gap * 9) / 10;
+    var keyH = unit * 1.32;
+    final rowsH = keyH * 4 + gap * 3 * 1.6;
+    if (rowsH > size.height) keyH *= size.height / rowsH;
+    final rowGap = gap * 1.6;
+    final top = (size.height - (keyH * 4 + rowGap * 3)) / 2;
+    final r = Radius.circular(unit * 0.22);
+    final s = v.shadow;
+    final edge = s.radius == 0 && s.offsetY > 0 && s.alpha > 0
+        ? (Paint()..color = s.color.withValues(alpha: s.alpha))
+        : null;
+    final border = v.border;
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+    final ink = Paint()..color = v.keyText;
+
+    void key(double x, double y, double w, String cls, Color fill) {
+      final rect = RRect.fromLTRBR(x, y, x + w, y + keyH, r);
+      if (edge != null) canvas.drawRRect(rect.shift(const Offset(0, 0.8)), edge);
+      canvas.drawRRect(rect, Paint()..color = fill);
+      if (border != null && border.appliesTo.contains(cls)) {
+        canvas.drawRRect(rect.deflate(0.4), stroke..color = border.color);
+      }
+      if (cls == 'letter') {
+        canvas.drawCircle(Offset(x + w / 2, y + keyH / 2), unit * 0.11, ink);
+      }
+    }
+
+    var y = top;
+    for (var i = 0; i < 10; i++) {
+      key(i * (unit + gap), y, unit, 'letter', v.letter.fill);
+    }
+    y += keyH + rowGap;
+    final inset = (unit + gap) / 2;
+    for (var i = 0; i < 9; i++) {
+      key(inset + i * (unit + gap), y, unit, 'letter', v.letter.fill);
+    }
+    y += keyH + rowGap;
+    final side = unit * 1.4;
+    key(0, y, side, 'function', (v.shift ?? v.function).fill);
+    final lettersX = (size.width - (unit * 7 + gap * 6)) / 2;
+    for (var i = 0; i < 7; i++) {
+      key(lettersX + i * (unit + gap), y, unit, 'letter', v.letter.fill);
+    }
+    key(size.width - side, y, side, 'function', (v.delete ?? v.function).fill);
+    y += keyH + rowGap;
+    final mode = unit * 2.2;
+    key(0, y, mode, 'function', v.function.fill);
+    key(size.width - mode, y, mode, 'return', v.returnPrimary.fill);
+    key(mode + gap, y, size.width - mode * 2 - gap * 2, 'space', v.space.fill);
+  }
+
+  @override
+  bool shouldRepaint(_ThemeKeyboard old) => old.v != v;
 }
 
 /// A keyboard in miniature, drawn to a real keyboard's proportions: ten keys

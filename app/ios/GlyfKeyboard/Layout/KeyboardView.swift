@@ -348,7 +348,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             let st = TouchState(key: kv, start: p, time: touch.timestamp)
             touchStates[ObjectIdentifier(touch)] = st
             kv.setPressed(true)
-            feedback(impactStyle: .light)
+            feedback(impactStyle: .light, key: kv)
 
             switch kv.spec.kind {
             case .delete:
@@ -602,7 +602,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     }
 
     private func tapAction(_ kv: KeyView, event: UIEvent?, at point: CGPoint? = nil) {
-        UIDevice.current.playInputClick()
+        // A theme's sample already sounded on the way down; only the system
+        // click is asked for again on the lift.
+        if ThemeSound.shared.sample(for: Self.soundRole(kv)) == nil { UIDevice.current.playInputClick() }
         switch kv.spec.kind {
         case .char(let c):
             lastTapOffset = point.map { p in
@@ -686,7 +688,10 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
             guard let self, let st else { return }
             self.tickDeleteRepeat(st)
         }
-        if st.repeatCount % 4 == 0 { UIDevice.current.playInputClick() }
+        // Every 4th repeat, and only a short key sound, never a long one.
+        if st.repeatCount % 4 == 0, !(SettingsStore.current.keyClicks && ThemeSound.shared.play(.delete)) {
+            UIDevice.current.playInputClick()
+        }
     }
 
     // MARK: Ripple (§5.3 — staggered per-key tint, LUT, no offscreen passes)
@@ -727,9 +732,16 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
     private let lightImpact = UIImpactFeedbackGenerator(style: .light)
     private let mediumImpact = UIImpactFeedbackGenerator(style: .medium)
 
-    private func feedback(impactStyle: UIImpactFeedbackGenerator.FeedbackStyle, click: Bool = true) {
+    private func feedback(impactStyle: UIImpactFeedbackGenerator.FeedbackStyle, click: Bool = true,
+                          key: KeyView? = nil) {
         let s = SettingsStore.current
-        if click, s.keyClicks { UIDevice.current.playInputClick() }
+        if click, s.keyClicks {
+            // A theme's own sound on key down (docs/THEMES.md §4.3), else the
+            // system click.
+            if !(key.map { ThemeSound.shared.play(Self.soundRole($0)) } ?? false) {
+                UIDevice.current.playInputClick()
+            }
+        }
         guard s.haptics else { return }
         switch impactStyle {
         case .medium: mediumImpact.impactOccurred()
@@ -739,6 +751,16 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         // late — which reads as the key itself being late. Warming it for the
         // next keystroke is what keeps fast typing feeling immediate.
         warmHaptics()
+    }
+
+    /// Which of a sound pack's samples a key plays.
+    private static func soundRole(_ kv: KeyView) -> ThemeSoundRole {
+        switch kv.spec.kind {
+        case .space: return .space
+        case .delete: return .delete
+        case .ret: return .ret
+        default: return .letter
+        }
     }
 
     /// Keep the engine ready while someone is typing. Cheap, and iOS drops

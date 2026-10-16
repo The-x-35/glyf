@@ -1,0 +1,3690 @@
+[
+ {
+  "id": "typewriter",
+  "name": "Typewriter",
+  "category": "Objects",
+  "mood": "An Italian portable: ivory keys, warm grey shift, a Valentine-red return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "Courier Prime",
+   "weight": 400,
+   "file": "CourierPrime-Regular.ttf",
+   "rfn": false,
+   "bytes": 71188,
+   "license": "OFL-1.1",
+   "source": "https://github.com/google/fonts/tree/main/ofl/courierprime",
+   "ship": "subset to Latin + Latin-1 + the currency signs, instanced to the one weight"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "typewriter",
+   "license": "CC0-1.0",
+   "samples": {
+    "letter": "https://freesound.org/people/BMacZero/sounds/160678/",
+    "space": "https://freesound.org/people/BMacZero/sounds/160678/ (pitched -2 semitones, 70% gain)",
+    "delete": "https://freesound.org/people/Nox_Sound/sounds/550340/ (one keystroke cut from the take)",
+    "return": "https://freesound.org/people/eZZin/sounds/623435/ (bell) then the return from https://freesound.org/people/Nox_Sound/sounds/550340/"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E3E0DA"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FBF8F1",
+     "pressed": "#DDDAD4"
+    },
+    "functionKey": {
+     "fill": "#D6CFC2",
+     "pressed": "#BCB6AB"
+    },
+    "spaceKey": {
+     "fill": "#FBF8F1",
+     "pressed": "#DDDAD4"
+    },
+    "keyText": "#1D1B18",
+    "functionGlyph": "#2A2723",
+    "returnPrimary": {
+     "fill": "#C8322B",
+     "text": "#FFF8EE",
+     "pressed": "#B02C26"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FBF8F1",
+     "text": "#1D1B18"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1D1B18",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FBF8F1",
+     "accent": "#C8322B"
+    },
+    "boundDot": "#C8322B",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#191816"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#413E3A",
+     "pressed": "#585552"
+    },
+    "functionKey": {
+     "fill": "#32312E",
+     "pressed": "#4B4A47"
+    },
+    "spaceKey": {
+     "fill": "#413E3A",
+     "pressed": "#585552"
+    },
+    "keyText": "#EFE8DA",
+    "functionGlyph": "#D9D1C2",
+    "returnPrimary": {
+     "fill": "#C8322B",
+     "text": "#FFF3E6",
+     "pressed": "#CF4B44"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#413E3A",
+     "text": "#EFE8DA"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#EFE8DA",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#413E3A",
+     "accent": "#EFE8DA"
+    },
+    "boundDot": "#EFE8DA",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "beigebox",
+  "name": "Beige Box",
+  "category": "Objects",
+  "mood": "A 1984 desktop computer: putty letters, khaki function keys, a rose return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "mech",
+   "license": "CC0-1.0",
+   "samples": {
+    "letter": "https://freesound.org/people/EricsSoundschmiede/sounds/382057/ (one keystroke cut from the take)",
+    "space": "same take, the space-bar stroke"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#D7D3C8"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#EEE9DD",
+     "pressed": "#D1CDC2"
+    },
+    "functionKey": {
+     "fill": "#B9B3A2",
+     "pressed": "#A39E8F"
+    },
+    "spaceKey": {
+     "fill": "#EEE9DD",
+     "pressed": "#D1CDC2"
+    },
+    "keyText": "#171718",
+    "functionGlyph": "#171718",
+    "returnPrimary": {
+     "fill": "#C87E74",
+     "text": "#171718",
+     "pressed": "#B06F66"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#EEE9DD",
+     "text": "#171718"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#171718",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#EEE9DD",
+     "accent": "#171718"
+    },
+    "boundDot": "#171718",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#181815"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#403E38",
+     "pressed": "#575550"
+    },
+    "functionKey": {
+     "fill": "#33322D",
+     "pressed": "#4B4B46"
+    },
+    "spaceKey": {
+     "fill": "#403E38",
+     "pressed": "#575550"
+    },
+    "keyText": "#E8E1CF",
+    "functionGlyph": "#C9C1AD",
+    "returnPrimary": {
+     "fill": "#C87E74",
+     "text": "#1A1716",
+     "pressed": "#CF8D85"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#403E38",
+     "text": "#E8E1CF"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#E8E1CF",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#403E38",
+     "accent": "#E8E1CF"
+    },
+    "boundDot": "#C87E74",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "rangefinder",
+  "name": "Rangefinder",
+  "category": "Objects",
+  "mood": "A film camera: satin chrome keys, a black leatherette return with a yellow legend.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "shutter",
+   "license": "CC0-1.0",
+   "samples": {
+    "letter": "https://freesound.org/people/jgrzinich/sounds/155385/ (first 25 ms transient only: a focus-ring detent)",
+    "return": "https://freesound.org/people/jgrzinich/sounds/155385/ (one full shutter, the second camera)"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DDDDDA"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F4F4F1",
+     "pressed": "#D7D7D4"
+    },
+    "functionKey": {
+     "fill": "#C3C3BE",
+     "pressed": "#ACACA7"
+    },
+    "spaceKey": {
+     "fill": "#F4F4F1",
+     "pressed": "#D7D7D4"
+    },
+    "keyText": "#1A1A1A",
+    "functionGlyph": "#1A1A1A",
+    "returnPrimary": {
+     "fill": "#1F1F1F",
+     "text": "#F2C230",
+     "pressed": "#1B1B1B"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F4F4F1",
+     "text": "#1A1A1A"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1A1A1A",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F4F4F1",
+     "accent": "#1F1F1F"
+    },
+    "boundDot": "#1F1F1F",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#181818"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3E3E3E",
+     "pressed": "#555555"
+    },
+    "functionKey": {
+     "fill": "#313131",
+     "pressed": "#4A4A4A"
+    },
+    "spaceKey": {
+     "fill": "#3E3E3E",
+     "pressed": "#555555"
+    },
+    "keyText": "#EDEDE8",
+    "functionGlyph": "#C3C3BE",
+    "returnPrimary": {
+     "fill": "#D8D8D3",
+     "text": "#1A1A1A",
+     "pressed": "#DDDDD8"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#3E3E3E",
+     "text": "#EDEDE8"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#EDEDE8",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3E3E3E",
+     "accent": "#D8D8D3"
+    },
+    "boundDot": "#D8D8D3",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "walnut",
+  "name": "Walnut",
+  "category": "Objects",
+  "mood": "A writing desk: walnut function keys, brass on the return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "wood",
+   "license": "CC0-1.0",
+   "samples": {
+    "letter": "https://freesound.org/people/husamalhomsi/sounds/500926/",
+    "return": "https://freesound.org/people/husamalhomsi/sounds/500926/ (pitched -5 semitones: a hyoshigi clap)"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E0DBD3"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F8F2E9",
+     "pressed": "#DAD5CD"
+    },
+    "functionKey": {
+     "fill": "#B98C65",
+     "pressed": "#A37B59"
+    },
+    "spaceKey": {
+     "fill": "#F8F2E9",
+     "pressed": "#DAD5CD"
+    },
+    "keyText": "#3B2A1F",
+    "functionGlyph": "#2A1C12",
+    "returnPrimary": {
+     "fill": "#3B2A1F",
+     "text": "#E3C17A",
+     "pressed": "#34251B"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F8F2E9",
+     "text": "#3B2A1F"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#3B2A1F",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F8F2E9",
+     "accent": "#3B2A1F"
+    },
+    "boundDot": "#3B2A1F",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#1C1714"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#4B3D34",
+     "pressed": "#61544C"
+    },
+    "functionKey": {
+     "fill": "#392F28",
+     "pressed": "#514842"
+    },
+    "spaceKey": {
+     "fill": "#4B3D34",
+     "pressed": "#61544C"
+    },
+    "keyText": "#EBD9BC",
+    "functionGlyph": "#C9A46A",
+    "returnPrimary": {
+     "fill": "#B8924A",
+     "text": "#21170F",
+     "pressed": "#C19F60"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#4B3D34",
+     "text": "#EBD9BC"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#EBD9BC",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#4B3D34",
+     "accent": "#EBD9BC"
+    },
+    "boundDot": "#B8924A",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "carrara",
+  "name": "Carrara",
+  "category": "Objects",
+  "mood": "Polished marble and a brass inlay.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E5E4E2"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FDFCFA",
+     "pressed": "#DFDEDC"
+    },
+    "functionKey": {
+     "fill": "#E2DED7",
+     "pressed": "#C7C3BD"
+    },
+    "spaceKey": {
+     "fill": "#FDFCFA",
+     "pressed": "#DFDEDC"
+    },
+    "keyText": "#3A3835",
+    "functionGlyph": "#3A3835",
+    "returnPrimary": {
+     "fill": "#B49A6A",
+     "text": "#221C12",
+     "pressed": "#9E885D"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FDFCFA",
+     "text": "#3A3835"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#3A3835",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FDFCFA",
+     "accent": "#3A3835"
+    },
+    "boundDot": "#3A3835",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#181817"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#403E3C",
+     "pressed": "#575553"
+    },
+    "functionKey": {
+     "fill": "#32312F",
+     "pressed": "#4B4A48"
+    },
+    "spaceKey": {
+     "fill": "#403E3C",
+     "pressed": "#575553"
+    },
+    "keyText": "#F1EEE8",
+    "functionGlyph": "#D8D3CA",
+    "returnPrimary": {
+     "fill": "#C9AE7C",
+     "text": "#221D14",
+     "pressed": "#CFB88C"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#403E3C",
+     "text": "#F1EEE8"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F1EEE8",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#403E3C",
+     "accent": "#C9AE7C"
+    },
+    "boundDot": "#C9AE7C",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "graphite",
+  "name": "Graphite",
+  "category": "Objects",
+  "mood": "Machined aluminium and anodised black.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DEDEDF"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F5F5F7",
+     "pressed": "#D8D8D9"
+    },
+    "functionKey": {
+     "fill": "#48484A",
+     "pressed": "#3F3F41"
+    },
+    "spaceKey": {
+     "fill": "#F5F5F7",
+     "pressed": "#D8D8D9"
+    },
+    "keyText": "#1C1C1E",
+    "functionGlyph": "#F5F5F7",
+    "returnPrimary": {
+     "fill": "#1C1C1E",
+     "text": "#FFFFFF",
+     "pressed": "#19191A"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F5F5F7",
+     "text": "#1C1C1E"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1C1C1E",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F5F5F7",
+     "accent": "#1C1C1E"
+    },
+    "boundDot": "#1C1C1E",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#181819"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3F3F41",
+     "pressed": "#565658"
+    },
+    "functionKey": {
+     "fill": "#303032",
+     "pressed": "#49494B"
+    },
+    "spaceKey": {
+     "fill": "#3F3F41",
+     "pressed": "#565658"
+    },
+    "keyText": "#F2F2F7",
+    "functionGlyph": "#AEAEB2",
+    "returnPrimary": {
+     "fill": "#F2F2F7",
+     "text": "#1C1C1E",
+     "pressed": "#F4F4F8"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#3F3F41",
+     "text": "#F2F2F7"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F2F2F7",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3F3F41",
+     "accent": "#F2F2F7"
+    },
+    "boundDot": "#F2F2F7",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "terminal",
+  "name": "Terminal",
+  "category": "Objects",
+  "mood": "A green-screen terminal: phosphor letters, monospaced.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "JetBrains Mono",
+   "weight": 400,
+   "file": "JetBrainsMono[wght].ttf",
+   "rfn": false,
+   "bytes": 187208,
+   "license": "OFL-1.1",
+   "source": "https://github.com/google/fonts/tree/main/ofl/jetbrainsmono",
+   "ship": "subset to Latin + Latin-1 + the currency signs, instanced to the one weight"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "mech",
+   "license": "CC0-1.0",
+   "samples": {
+    "letter": "https://freesound.org/people/EricsSoundschmiede/sounds/382057/ (one keystroke cut from the take)",
+    "space": "same take, the space-bar stroke"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DCDEDA"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F3F6F1",
+     "pressed": "#D6D8D4"
+    },
+    "functionKey": {
+     "fill": "#D2DDCE",
+     "pressed": "#B9C2B5"
+    },
+    "spaceKey": {
+     "fill": "#F3F6F1",
+     "pressed": "#D6D8D4"
+    },
+    "keyText": "#1F3B26",
+    "functionGlyph": "#1F3B26",
+    "returnPrimary": {
+     "fill": "#2E7D46",
+     "text": "#F3F6F1",
+     "pressed": "#286E3E"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F3F6F1",
+     "text": "#1F3B26"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1F3B26",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F3F6F1",
+     "accent": "#2E7D46"
+    },
+    "boundDot": "#2E7D46",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#171917"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3C413D",
+     "pressed": "#535854"
+    },
+    "functionKey": {
+     "fill": "#2E332F",
+     "pressed": "#474B48"
+    },
+    "spaceKey": {
+     "fill": "#3C413D",
+     "pressed": "#535854"
+    },
+    "keyText": "#86EFA0",
+    "functionGlyph": "#5CC77A",
+    "returnPrimary": {
+     "fill": "#35C46A",
+     "text": "#08110B",
+     "pressed": "#4DCB7C"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#3C413D",
+     "text": "#86EFA0"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#86EFA0",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3C413D",
+     "accent": "#35C46A"
+    },
+    "boundDot": "#35C46A",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "primary",
+  "name": "Primary",
+  "category": "Objects",
+  "mood": "A Bauhaus poster: cream keys, a red shift, a blue delete, a yellow return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DFDCD4"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F7F3EA",
+     "pressed": "#D9D6CE"
+    },
+    "functionKey": {
+     "fill": "#E2DACB",
+     "pressed": "#C7C0B3"
+    },
+    "spaceKey": {
+     "fill": "#F7F3EA",
+     "pressed": "#D9D6CE"
+    },
+    "keyText": "#1F1F1F",
+    "functionGlyph": "#1F1F1F",
+    "returnPrimary": {
+     "fill": "#F2C230",
+     "text": "#1F1F1F",
+     "pressed": "#D5AB2A"
+    },
+    "keyOverrides": {
+     "shift": {
+      "fill": "#D63A2B",
+      "glyph": "#FFFFFF",
+      "pressed": "#BC3326"
+     },
+     "delete": {
+      "fill": "#2B5BA8",
+      "glyph": "#FFFFFF",
+      "pressed": "#265094"
+     }
+    },
+    "popup": {
+     "fill": "#F7F3EA",
+     "text": "#1F1F1F"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1F1F1F",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F7F3EA",
+     "accent": "#1F1F1F"
+    },
+    "boundDot": "#1F1F1F",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#181818"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3F3F3F",
+     "pressed": "#565656"
+    },
+    "functionKey": {
+     "fill": "#303030",
+     "pressed": "#494949"
+    },
+    "spaceKey": {
+     "fill": "#3F3F3F",
+     "pressed": "#565656"
+    },
+    "keyText": "#F5F1E8",
+    "functionGlyph": "#E2DACB",
+    "returnPrimary": {
+     "fill": "#F2C230",
+     "text": "#1F1F1F",
+     "pressed": "#F4C949"
+    },
+    "keyOverrides": {
+     "shift": {
+      "fill": "#C8392B",
+      "glyph": "#FFFFFF",
+      "pressed": "#CF5144"
+     },
+     "delete": {
+      "fill": "#3A6BC0",
+      "glyph": "#FFFFFF",
+      "pressed": "#527DC8"
+     }
+    },
+    "popup": {
+     "fill": "#3F3F3F",
+     "text": "#F5F1E8"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F5F1E8",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3F3F3F",
+     "accent": "#F2C230"
+    },
+    "boundDot": "#F2C230",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "greenhouse",
+  "name": "Greenhouse",
+  "category": "Nature",
+  "mood": "Sage leaves and a deep fern return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DBDDD6"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F2F4ED",
+     "pressed": "#D5D7D1"
+    },
+    "functionKey": {
+     "fill": "#AFC4A9",
+     "pressed": "#9AAC95"
+    },
+    "spaceKey": {
+     "fill": "#F2F4ED",
+     "pressed": "#D5D7D1"
+    },
+    "keyText": "#2F3B2F",
+    "functionGlyph": "#22301F",
+    "returnPrimary": {
+     "fill": "#3F6B4A",
+     "text": "#F2F4ED",
+     "pressed": "#375E41"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F2F4ED",
+     "text": "#2F3B2F"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#2F3B2F",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F2F4ED",
+     "accent": "#3F6B4A"
+    },
+    "boundDot": "#3F6B4A",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#151916"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#364239",
+     "pressed": "#4E5951"
+    },
+    "functionKey": {
+     "fill": "#29332C",
+     "pressed": "#434B45"
+    },
+    "spaceKey": {
+     "fill": "#364239",
+     "pressed": "#4E5951"
+    },
+    "keyText": "#DDE7D5",
+    "functionGlyph": "#A8BFA3",
+    "returnPrimary": {
+     "fill": "#9CC096",
+     "text": "#16201A",
+     "pressed": "#A8C8A3"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#364239",
+     "text": "#DDE7D5"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#DDE7D5",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#364239",
+     "accent": "#9CC096"
+    },
+    "boundDot": "#9CC096",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "sakura",
+  "name": "Sakura",
+  "category": "Nature",
+  "mood": "Blossom paper and plum ink.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E6E0E0"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FFF8F8",
+     "pressed": "#E0DADA"
+    },
+    "functionKey": {
+     "fill": "#F2D5DA",
+     "pressed": "#D5BBC0"
+    },
+    "spaceKey": {
+     "fill": "#FFF8F8",
+     "pressed": "#E0DADA"
+    },
+    "keyText": "#4A2E35",
+    "functionGlyph": "#4A2E35",
+    "returnPrimary": {
+     "fill": "#B85571",
+     "text": "#FFFFFF",
+     "pressed": "#A24B63"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FFF8F8",
+     "text": "#4A2E35"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#4A2E35",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FFF8F8",
+     "accent": "#4A2E35"
+    },
+    "boundDot": "#B85571",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#1C1619"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#4A3B41",
+     "pressed": "#605358"
+    },
+    "functionKey": {
+     "fill": "#392E33",
+     "pressed": "#51474B"
+    },
+    "spaceKey": {
+     "fill": "#4A3B41",
+     "pressed": "#605358"
+    },
+    "keyText": "#F7CDD7",
+    "functionGlyph": "#E9A3B7",
+    "returnPrimary": {
+     "fill": "#E58AA3",
+     "text": "#2A1A20",
+     "pressed": "#E898AE"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#4A3B41",
+     "text": "#F7CDD7"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F7CDD7",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#4A3B41",
+     "accent": "#F7CDD7"
+    },
+    "boundDot": "#E58AA3",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "tide",
+  "name": "Tide",
+  "category": "Nature",
+  "mood": "Sea glass and deep water.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DEE2E4"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F5FAFC",
+     "pressed": "#D8DCDE"
+    },
+    "functionKey": {
+     "fill": "#C8DEE9",
+     "pressed": "#B0C3CD"
+    },
+    "spaceKey": {
+     "fill": "#F5FAFC",
+     "pressed": "#D8DCDE"
+    },
+    "keyText": "#1D3B4F",
+    "functionGlyph": "#1D3B4F",
+    "returnPrimary": {
+     "fill": "#246FA3",
+     "text": "#FFFFFF",
+     "pressed": "#20628F"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F5FAFC",
+     "text": "#1D3B4F"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1D3B4F",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F5FAFC",
+     "accent": "#246FA3"
+    },
+    "boundDot": "#246FA3",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#12191F"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#2F4151",
+     "pressed": "#485866"
+    },
+    "functionKey": {
+     "fill": "#24323E",
+     "pressed": "#3E4B55"
+    },
+    "spaceKey": {
+     "fill": "#2F4151",
+     "pressed": "#485866"
+    },
+    "keyText": "#C4E4F5",
+    "functionGlyph": "#7FB8DA",
+    "returnPrimary": {
+     "fill": "#4BA3DD",
+     "text": "#0D1A24",
+     "pressed": "#61AEE1"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#2F4151",
+     "text": "#C4E4F5"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#C4E4F5",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#2F4151",
+     "accent": "#C4E4F5"
+    },
+    "boundDot": "#4BA3DD",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "sahara",
+  "name": "Sahara",
+  "category": "Nature",
+  "mood": "Warm sand and a terracotta return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E3DED5"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FBF5EC",
+     "pressed": "#DDD8D0"
+    },
+    "functionKey": {
+     "fill": "#E3CFB3",
+     "pressed": "#C8B69E"
+    },
+    "spaceKey": {
+     "fill": "#FBF5EC",
+     "pressed": "#DDD8D0"
+    },
+    "keyText": "#4A3524",
+    "functionGlyph": "#4A3524",
+    "returnPrimary": {
+     "fill": "#B0532D",
+     "text": "#FFFFFF",
+     "pressed": "#9B4928"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FBF5EC",
+     "text": "#4A3524"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#4A3524",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FBF5EC",
+     "accent": "#B0532D"
+    },
+    "boundDot": "#B0532D",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#1B1714"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#463C34",
+     "pressed": "#5C534C"
+    },
+    "functionKey": {
+     "fill": "#372F2A",
+     "pressed": "#4F4844"
+    },
+    "spaceKey": {
+     "fill": "#463C34",
+     "pressed": "#5C534C"
+    },
+    "keyText": "#F1E2CC",
+    "functionGlyph": "#D9BE98",
+    "returnPrimary": {
+     "fill": "#D9774C",
+     "text": "#1F140D",
+     "pressed": "#DE8761"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#463C34",
+     "text": "#F1E2CC"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F1E2CC",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#463C34",
+     "accent": "#F1E2CC"
+    },
+    "boundDot": "#D9774C",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "moss",
+  "name": "Moss",
+  "category": "Nature",
+  "mood": "Lichen and old gold.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "wood",
+   "license": "CC0-1.0",
+   "samples": {
+    "letter": "https://freesound.org/people/husamalhomsi/sounds/500926/",
+    "return": "https://freesound.org/people/husamalhomsi/sounds/500926/ (pitched -5 semitones: a hyoshigi clap)"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DDDED7"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F4F5EE",
+     "pressed": "#D7D8D1"
+    },
+    "functionKey": {
+     "fill": "#BAC3A3",
+     "pressed": "#A4AC8F"
+    },
+    "spaceKey": {
+     "fill": "#F4F5EE",
+     "pressed": "#D7D8D1"
+    },
+    "keyText": "#2D3626",
+    "functionGlyph": "#2D3626",
+    "returnPrimary": {
+     "fill": "#A8862F",
+     "text": "#1F1A0A",
+     "pressed": "#947629"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F4F5EE",
+     "text": "#2D3626"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#2D3626",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F4F5EE",
+     "accent": "#2D3626"
+    },
+    "boundDot": "#A8862F",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#161915"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3B4137",
+     "pressed": "#53584F"
+    },
+    "functionKey": {
+     "fill": "#2F332C",
+     "pressed": "#484B45"
+    },
+    "spaceKey": {
+     "fill": "#3B4137",
+     "pressed": "#53584F"
+    },
+    "keyText": "#DCE5CF",
+    "functionGlyph": "#B6C59E",
+    "returnPrimary": {
+     "fill": "#C9A646",
+     "text": "#1D1708",
+     "pressed": "#CFB15C"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#3B4137",
+     "text": "#DCE5CF"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#DCE5CF",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3B4137",
+     "accent": "#C9A646"
+    },
+    "boundDot": "#C9A646",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "arctic",
+  "name": "Arctic",
+  "category": "Nature",
+  "mood": "Snow, frost and polar night.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E2E3E4"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FAFBFC",
+     "pressed": "#DCDDDE"
+    },
+    "functionKey": {
+     "fill": "#D8DEE9",
+     "pressed": "#BEC3CD"
+    },
+    "spaceKey": {
+     "fill": "#FAFBFC",
+     "pressed": "#DCDDDE"
+    },
+    "keyText": "#2E3440",
+    "functionGlyph": "#3B4252",
+    "returnPrimary": {
+     "fill": "#4C6E99",
+     "text": "#FFFFFF",
+     "pressed": "#436187"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FAFBFC",
+     "text": "#2E3440"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#2E3440",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FAFBFC",
+     "accent": "#4C6E99"
+    },
+    "boundDot": "#4C6E99",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#16191F"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3B4252",
+     "pressed": "#535967"
+    },
+    "functionKey": {
+     "fill": "#2E3440",
+     "pressed": "#474C57"
+    },
+    "spaceKey": {
+     "fill": "#3B4252",
+     "pressed": "#535967"
+    },
+    "keyText": "#ECEFF4",
+    "functionGlyph": "#D8DEE9",
+    "returnPrimary": {
+     "fill": "#88C0D0",
+     "text": "#2E3440",
+     "pressed": "#96C8D6"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#3B4252",
+     "text": "#ECEFF4"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#ECEFF4",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3B4252",
+     "accent": "#88C0D0"
+    },
+    "boundDot": "#88C0D0",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "lunar",
+  "name": "Lunar",
+  "category": "Nature",
+  "mood": "A 1969 cockpit: cream switches, powder-blue panels, an orange abort.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DED8CC"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F5EFE2",
+     "pressed": "#D8D2C7"
+    },
+    "functionKey": {
+     "fill": "#AFC7DB",
+     "pressed": "#9AAFC1"
+    },
+    "spaceKey": {
+     "fill": "#F5EFE2",
+     "pressed": "#D8D2C7"
+    },
+    "keyText": "#2B2B2B",
+    "functionGlyph": "#1F2A36",
+    "returnPrimary": {
+     "fill": "#E8833A",
+     "text": "#1E140C",
+     "pressed": "#CC7333"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F5EFE2",
+     "text": "#2B2B2B"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#2B2B2B",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F5EFE2",
+     "accent": "#2B2B2B"
+    },
+    "boundDot": "#2B2B2B",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#16181B"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3B3F46",
+     "pressed": "#53565C"
+    },
+    "functionKey": {
+     "fill": "#2C3137",
+     "pressed": "#454A4F"
+    },
+    "spaceKey": {
+     "fill": "#3B3F46",
+     "pressed": "#53565C"
+    },
+    "keyText": "#EDE6D6",
+    "functionGlyph": "#AFC7DB",
+    "returnPrimary": {
+     "fill": "#E8833A",
+     "text": "#1E140C",
+     "pressed": "#EB9252"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#3B3F46",
+     "text": "#EDE6D6"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#EDE6D6",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3B3F46",
+     "accent": "#EDE6D6"
+    },
+    "boundDot": "#E8833A",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "blush",
+  "name": "Blush",
+  "category": "Moods",
+  "mood": "Ivory and rose; black keys with rose legends at night.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E4E0DF"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FCF8F7",
+     "pressed": "#DEDAD9"
+    },
+    "functionKey": {
+     "fill": "#ECC6C3",
+     "pressed": "#D0AEAC"
+    },
+    "spaceKey": {
+     "fill": "#FCF8F7",
+     "pressed": "#DEDAD9"
+    },
+    "keyText": "#2A2A2A",
+    "functionGlyph": "#3A2A2A",
+    "returnPrimary": {
+     "fill": "#2A2A2A",
+     "text": "#ECC6C3",
+     "pressed": "#252525"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FCF8F7",
+     "text": "#2A2A2A"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#2A2A2A",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FCF8F7",
+     "accent": "#2A2A2A"
+    },
+    "boundDot": "#2A2A2A",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#181718"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#403D3E",
+     "pressed": "#575455"
+    },
+    "functionKey": {
+     "fill": "#313031",
+     "pressed": "#4A494A"
+    },
+    "spaceKey": {
+     "fill": "#403D3E",
+     "pressed": "#575455"
+    },
+    "keyText": "#ECC6C3",
+    "functionGlyph": "#ECC6C3",
+    "returnPrimary": {
+     "fill": "#ECC6C3",
+     "text": "#2A2A2A",
+     "pressed": "#EECDCA"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#403D3E",
+     "text": "#ECC6C3"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#ECC6C3",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#403D3E",
+     "accent": "#ECC6C3"
+    },
+    "boundDot": "#ECC6C3",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "champagne",
+  "name": "Champagne",
+  "category": "Moods",
+  "mood": "Porcelain and rose gold.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E6E2DF"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FFFAF7",
+     "pressed": "#E0DCD9"
+    },
+    "functionKey": {
+     "fill": "#EBD3C7",
+     "pressed": "#CFBAAF"
+    },
+    "spaceKey": {
+     "fill": "#FFFAF7",
+     "pressed": "#E0DCD9"
+    },
+    "keyText": "#4E3830",
+    "functionGlyph": "#4E3830",
+    "returnPrimary": {
+     "fill": "#9E6A55",
+     "text": "#FFFFFF",
+     "pressed": "#8B5D4B"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FFFAF7",
+     "text": "#4E3830"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#4E3830",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FFFAF7",
+     "accent": "#4E3830"
+    },
+    "boundDot": "#9E6A55",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#1B1816"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#483E3B",
+     "pressed": "#5E5553"
+    },
+    "functionKey": {
+     "fill": "#372F2D",
+     "pressed": "#4F4846"
+    },
+    "spaceKey": {
+     "fill": "#483E3B",
+     "pressed": "#5E5553"
+    },
+    "keyText": "#F2D0C2",
+    "functionGlyph": "#E2B09C",
+    "returnPrimary": {
+     "fill": "#D49A82",
+     "text": "#2A1A14",
+     "pressed": "#D9A691"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#483E3B",
+     "text": "#F2D0C2"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F2D0C2",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#483E3B",
+     "accent": "#F2D0C2"
+    },
+    "boundDot": "#D49A82",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "midnight",
+  "name": "Midnight Drive",
+  "category": "Moods",
+  "mood": "A coastal road at 2am: violet keys, cyan letters, a magenta return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "synth",
+   "license": "none needed (generated)",
+   "samples": {
+    "letter": "procedural: 2.4 kHz square, 18 ms, 3 ms attack, exponential decay, -18 dBFS",
+    "return": "procedural: two notes 1.6 kHz then 2.4 kHz, 30 ms each"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DEDBE3"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F6F2FB",
+     "pressed": "#D8D5DD"
+    },
+    "functionKey": {
+     "fill": "#D9CCEE",
+     "pressed": "#BFB4D1"
+    },
+    "spaceKey": {
+     "fill": "#F6F2FB",
+     "pressed": "#D8D5DD"
+    },
+    "keyText": "#2B2342",
+    "functionGlyph": "#2B2342",
+    "returnPrimary": {
+     "fill": "#C2347E",
+     "text": "#FFFFFF",
+     "pressed": "#AB2E6F"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F6F2FB",
+     "text": "#2B2342"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#2B2342",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F6F2FB",
+     "accent": "#C2347E"
+    },
+    "boundDot": "#C2347E",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#191621"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#423B58",
+     "pressed": "#59536C"
+    },
+    "functionKey": {
+     "fill": "#332E44",
+     "pressed": "#4B475A"
+    },
+    "spaceKey": {
+     "fill": "#423B58",
+     "pressed": "#59536C"
+    },
+    "keyText": "#8CE8F2",
+    "functionGlyph": "#E58BCB",
+    "returnPrimary": {
+     "fill": "#C42F80",
+     "text": "#FFFFFF",
+     "pressed": "#CB488F"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#423B58",
+     "text": "#8CE8F2"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#8CE8F2",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#423B58",
+     "accent": "#8CE8F2"
+    },
+    "boundDot": "#8CE8F2",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "noir",
+  "name": "Noir",
+  "category": "Moods",
+  "mood": "Black and white, and one red.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "typewriter",
+   "license": "CC0-1.0",
+   "samples": {
+    "letter": "https://freesound.org/people/BMacZero/sounds/160678/",
+    "space": "https://freesound.org/people/BMacZero/sounds/160678/ (pitched -2 semitones, 70% gain)",
+    "delete": "https://freesound.org/people/Nox_Sound/sounds/550340/ (one keystroke cut from the take)",
+    "return": "https://freesound.org/people/eZZin/sounds/623435/ (bell) then the return from https://freesound.org/people/Nox_Sound/sounds/550340/"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E6E6E6"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FFFFFF",
+     "pressed": "#E0E0E0"
+    },
+    "functionKey": {
+     "fill": "#D9D9D9",
+     "pressed": "#BFBFBF"
+    },
+    "spaceKey": {
+     "fill": "#FFFFFF",
+     "pressed": "#E0E0E0"
+    },
+    "keyText": "#111111",
+    "functionGlyph": "#111111",
+    "returnPrimary": {
+     "fill": "#B3141E",
+     "text": "#FFFFFF",
+     "pressed": "#9E121A"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FFFFFF",
+     "text": "#111111"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#111111",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FFFFFF",
+     "accent": "#B3141E"
+    },
+    "boundDot": "#B3141E",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#181818"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3E3E3E",
+     "pressed": "#555555"
+    },
+    "functionKey": {
+     "fill": "#303030",
+     "pressed": "#494949"
+    },
+    "spaceKey": {
+     "fill": "#3E3E3E",
+     "pressed": "#555555"
+    },
+    "keyText": "#F5F5F5",
+    "functionGlyph": "#CFCFCF",
+    "returnPrimary": {
+     "fill": "#C21A24",
+     "text": "#FFFFFF",
+     "pressed": "#C9353E"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#3E3E3E",
+     "text": "#F5F5F5"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F5F5F5",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3E3E3E",
+     "accent": "#F5F5F5"
+    },
+    "boundDot": "#F5F5F5",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "rooftop",
+  "name": "Rooftop",
+  "category": "Moods",
+  "mood": "A city roof at night, under a sodium streetlight.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E6E6E6"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FFFFFF",
+     "pressed": "#E0E0E0"
+    },
+    "functionKey": {
+     "fill": "#CBD2DC",
+     "pressed": "#B3B9C2"
+    },
+    "spaceKey": {
+     "fill": "#FFFFFF",
+     "pressed": "#E0E0E0"
+    },
+    "keyText": "#222831",
+    "functionGlyph": "#222831",
+    "returnPrimary": {
+     "fill": "#E9A23B",
+     "text": "#1F1608",
+     "pressed": "#CD8F34"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FFFFFF",
+     "text": "#222831"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#222831",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FFFFFF",
+     "accent": "#222831"
+    },
+    "boundDot": "#222831",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#16181B"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3A3F47",
+     "pressed": "#52565D"
+    },
+    "functionKey": {
+     "fill": "#2C3137",
+     "pressed": "#454A4F"
+    },
+    "spaceKey": {
+     "fill": "#3A3F47",
+     "pressed": "#52565D"
+    },
+    "keyText": "#F1E6D0",
+    "functionGlyph": "#D9B27A",
+    "returnPrimary": {
+     "fill": "#F2B04C",
+     "text": "#1A1206",
+     "pressed": "#F4B961"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#3A3F47",
+     "text": "#F1E6D0"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F1E6D0",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3A3F47",
+     "accent": "#F2B04C"
+    },
+    "boundDot": "#F2B04C",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "overclock",
+  "name": "Overclock",
+  "category": "Moods",
+  "mood": "Acid yellow function keys and a hot-pink return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "synth",
+   "license": "none needed (generated)",
+   "samples": {
+    "letter": "procedural: 2.4 kHz square, 18 ms, 3 ms attack, exponential decay, -18 dBFS",
+    "return": "procedural: two notes 1.6 kHz then 2.4 kHz, 30 ms each"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E6E6E6"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FFFFFF",
+     "pressed": "#E0E0E0"
+    },
+    "functionKey": {
+     "fill": "#F2E33A",
+     "pressed": "#D5C833"
+    },
+    "spaceKey": {
+     "fill": "#FFFFFF",
+     "pressed": "#E0E0E0"
+    },
+    "keyText": "#121212",
+    "functionGlyph": "#121212",
+    "returnPrimary": {
+     "fill": "#FF2D87",
+     "text": "#120010",
+     "pressed": "#E02877"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FFFFFF",
+     "text": "#121212"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#121212",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FFFFFF",
+     "accent": "#121212"
+    },
+    "boundDot": "#FF2D87",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#181818"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#404040",
+     "pressed": "#575757"
+    },
+    "functionKey": {
+     "fill": "#F2E33A",
+     "pressed": "#F4E652"
+    },
+    "spaceKey": {
+     "fill": "#404040",
+     "pressed": "#575757"
+    },
+    "keyText": "#F2F2F2",
+    "functionGlyph": "#121212",
+    "returnPrimary": {
+     "fill": "#FF2D87",
+     "text": "#120010",
+     "pressed": "#FF4695"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#404040",
+     "text": "#F2F2F2"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F2F2F2",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#404040",
+     "accent": "#F2F2F2"
+    },
+    "boundDot": "#F2F2F2",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "orbit",
+  "name": "Orbit",
+  "category": "Moods",
+  "mood": "A white hull and a mission-orange return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "sonar",
+   "license": "none needed (generated)",
+   "samples": {
+    "letter": "system click",
+    "return": "procedural: 1.2 kHz sine, 5 ms attack, 280 ms exponential decay, -20 dBFS"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E6E6E6"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FFFFFF",
+     "pressed": "#E0E0E0"
+    },
+    "functionKey": {
+     "fill": "#D3D9E4",
+     "pressed": "#BABFC9"
+    },
+    "spaceKey": {
+     "fill": "#FFFFFF",
+     "pressed": "#E0E0E0"
+    },
+    "keyText": "#1E2433",
+    "functionGlyph": "#1E2433",
+    "returnPrimary": {
+     "fill": "#EE6A33",
+     "text": "#1A0E07",
+     "pressed": "#D15D2D"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FFFFFF",
+     "text": "#1E2433"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1E2433",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FFFFFF",
+     "accent": "#1E2433"
+    },
+    "boundDot": "#EE6A33",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#15181F"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#363E51",
+     "pressed": "#4E5566"
+    },
+    "functionKey": {
+     "fill": "#2B303E",
+     "pressed": "#444955"
+    },
+    "spaceKey": {
+     "fill": "#363E51",
+     "pressed": "#4E5566"
+    },
+    "keyText": "#E8ECF4",
+    "functionGlyph": "#F29A6B",
+    "returnPrimary": {
+     "fill": "#F07A3F",
+     "text": "#160C05",
+     "pressed": "#F28A56"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#363E51",
+     "text": "#E8ECF4"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#E8ECF4",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#363E51",
+     "accent": "#E8ECF4"
+    },
+    "boundDot": "#F07A3F",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "samurai",
+  "name": "Samurai",
+  "category": "Moods",
+  "mood": "Washi paper, a vermilion seal, gold leaf; red lacquer keys at night.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Original",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "wood",
+   "license": "CC0-1.0",
+   "samples": {
+    "letter": "https://freesound.org/people/husamalhomsi/sounds/500926/",
+    "return": "https://freesound.org/people/husamalhomsi/sounds/500926/ (pitched -5 semitones: a hyoshigi clap)"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E0DBD2"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F8F2E8",
+     "pressed": "#DAD5CC"
+    },
+    "functionKey": {
+     "fill": "#B3262B",
+     "pressed": "#9E2126"
+    },
+    "spaceKey": {
+     "fill": "#F8F2E8",
+     "pressed": "#DAD5CC"
+    },
+    "keyText": "#1F1B1A",
+    "functionGlyph": "#F3D9A4",
+    "returnPrimary": {
+     "fill": "#1F1B1A",
+     "text": "#E1BE72",
+     "pressed": "#1B1817"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F8F2E8",
+     "text": "#1F1B1A"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1F1B1A",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F8F2E8",
+     "accent": "#1F1B1A"
+    },
+    "boundDot": "#1F1B1A",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#360D0E"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#8E2126",
+     "pressed": "#9C3C40"
+    },
+    "functionKey": {
+     "fill": "#353130",
+     "pressed": "#4D4A49"
+    },
+    "spaceKey": {
+     "fill": "#8E2126",
+     "pressed": "#9C3C40"
+    },
+    "keyText": "#EFD18E",
+    "functionGlyph": "#D9B570",
+    "returnPrimary": {
+     "fill": "#D9B570",
+     "text": "#211D1C",
+     "pressed": "#DEBE81"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#8E2126",
+     "text": "#EFD18E"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#EFD18E",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#8E2126",
+     "accent": "#D9B570"
+    },
+    "boundDot": "#D9B570",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "baker",
+  "name": "221B",
+  "category": "Stories",
+  "mood": "A Victorian study by gaslight: tweed, Caslon type, an oxblood return.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Public-domain book, original design",
+  "font": {
+   "family": "Libre Caslon Text",
+   "weight": 400,
+   "file": "LibreCaslonText[wght].ttf",
+   "rfn": false,
+   "bytes": 126876,
+   "license": "OFL-1.1",
+   "source": "https://github.com/google/fonts/tree/main/ofl/librecaslontext",
+   "ship": "subset to Latin + Latin-1 + the currency signs, instanced to the one weight"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DEDAD0"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F6F1E6",
+     "pressed": "#D8D4CA"
+    },
+    "functionKey": {
+     "fill": "#CFC2A8",
+     "pressed": "#B6AB94"
+    },
+    "spaceKey": {
+     "fill": "#F6F1E6",
+     "pressed": "#D8D4CA"
+    },
+    "keyText": "#2B2520",
+    "functionGlyph": "#2B2520",
+    "returnPrimary": {
+     "fill": "#6E1E22",
+     "text": "#F6F1E6",
+     "pressed": "#611A1E"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F6F1E6",
+     "text": "#2B2520"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#2B2520",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F6F1E6",
+     "accent": "#6E1E22"
+    },
+    "boundDot": "#6E1E22",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#191816"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#433E39",
+     "pressed": "#5A5551"
+    },
+    "functionKey": {
+     "fill": "#35312E",
+     "pressed": "#4D4A47"
+    },
+    "spaceKey": {
+     "fill": "#433E39",
+     "pressed": "#5A5551"
+    },
+    "keyText": "#EADFC8",
+    "functionGlyph": "#CDBF9F",
+    "returnPrimary": {
+     "fill": "#8E2A2E",
+     "text": "#F6EBDD",
+     "pressed": "#9C4447"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#433E39",
+     "text": "#EADFC8"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#EADFC8",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#433E39",
+     "accent": "#EADFC8"
+    },
+    "boundDot": "#EADFC8",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "wonderland",
+  "name": "Wonderland",
+  "category": "Stories",
+  "mood": "An 1865 engraving: cream paper, black ink, a playing-card red.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Public-domain book, original design",
+  "font": {
+   "family": "IM Fell English",
+   "weight": 400,
+   "file": "IMFeENrm28P.ttf",
+   "rfn": false,
+   "bytes": 194992,
+   "license": "OFL-1.1",
+   "source": "https://github.com/google/fonts/tree/main/ofl/imfellenglish",
+   "ship": "subset to Latin + Latin-1 + the currency signs, instanced to the one weight"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E4E0D8"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FCF8EF",
+     "pressed": "#DEDAD2"
+    },
+    "functionKey": {
+     "fill": "#E4DAC6",
+     "pressed": "#C9C0AE"
+    },
+    "spaceKey": {
+     "fill": "#FCF8EF",
+     "pressed": "#DEDAD2"
+    },
+    "keyText": "#1A1917",
+    "functionGlyph": "#1A1917",
+    "returnPrimary": {
+     "fill": "#A82A2A",
+     "text": "#FCF8EF",
+     "pressed": "#942525"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FCF8EF",
+     "text": "#1A1917"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1A1917",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FCF8EF",
+     "accent": "#A82A2A"
+    },
+    "boundDot": "#A82A2A",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#191817"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#423F3C",
+     "pressed": "#595653"
+    },
+    "functionKey": {
+     "fill": "#33312F",
+     "pressed": "#4B4A48"
+    },
+    "spaceKey": {
+     "fill": "#423F3C",
+     "pressed": "#595653"
+    },
+    "keyText": "#F1E8D6",
+    "functionGlyph": "#D8CCB4",
+    "returnPrimary": {
+     "fill": "#B83232",
+     "text": "#FCF4E6",
+     "pressed": "#C14B4B"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#423F3C",
+     "text": "#F1E8D6"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#F1E8D6",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#423F3C",
+     "accent": "#F1E8D6"
+    },
+    "boundDot": "#F1E8D6",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "emerald",
+  "name": "Emerald City",
+  "category": "Stories",
+  "mood": "Jewel green and gold, as the 1900 book drew it.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Public-domain book, original design",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DCDFDC"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F3F7F3",
+     "pressed": "#D6D9D6"
+    },
+    "functionKey": {
+     "fill": "#BCD6C6",
+     "pressed": "#A5BCAE"
+    },
+    "spaceKey": {
+     "fill": "#F3F7F3",
+     "pressed": "#D6D9D6"
+    },
+    "keyText": "#123B2E",
+    "functionGlyph": "#123B2E",
+    "returnPrimary": {
+     "fill": "#1D6B4D",
+     "text": "#F2E3B3",
+     "pressed": "#1A5E44"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F3F7F3",
+     "text": "#123B2E"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#123B2E",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F3F7F3",
+     "accent": "#1D6B4D"
+    },
+    "boundDot": "#1D6B4D",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#0B1B14"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#1E4635",
+     "pressed": "#395C4D"
+    },
+    "functionKey": {
+     "fill": "#1B372C",
+     "pressed": "#364F45"
+    },
+    "spaceKey": {
+     "fill": "#1E4635",
+     "pressed": "#395C4D"
+    },
+    "keyText": "#EAD9A2",
+    "functionGlyph": "#C9B47A",
+    "returnPrimary": {
+     "fill": "#C9A44C",
+     "text": "#0F2C21",
+     "pressed": "#CFAF61"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#1E4635",
+     "text": "#EAD9A2"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#EAD9A2",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#1E4635",
+     "accent": "#EAD9A2"
+    },
+    "boundDot": "#C9A44C",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "nautilus",
+  "name": "Nautilus",
+  "category": "Stories",
+  "mood": "Brass and verdigris, twenty thousand leagues down.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Public-domain book, original design",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "sonar",
+   "license": "none needed (generated)",
+   "samples": {
+    "letter": "system click",
+    "return": "procedural: 1.2 kHz sine, 5 ms attack, 280 ms exponential decay, -20 dBFS"
+   }
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DEDAD0"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F5F1E6",
+     "pressed": "#D8D4CA"
+    },
+    "functionKey": {
+     "fill": "#A9C2B8",
+     "pressed": "#95ABA2"
+    },
+    "spaceKey": {
+     "fill": "#F5F1E6",
+     "pressed": "#D8D4CA"
+    },
+    "keyText": "#23393A",
+    "functionGlyph": "#1E3132",
+    "returnPrimary": {
+     "fill": "#A87A34",
+     "text": "#1B1306",
+     "pressed": "#946B2E"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F5F1E6",
+     "text": "#23393A"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#23393A",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F5F1E6",
+     "accent": "#23393A"
+    },
+    "boundDot": "#A87A34",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#12191A"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#2F4245",
+     "pressed": "#48595B"
+    },
+    "functionKey": {
+     "fill": "#243436",
+     "pressed": "#3E4C4E"
+    },
+    "spaceKey": {
+     "fill": "#2F4245",
+     "pressed": "#48595B"
+    },
+    "keyText": "#E6D3A3",
+    "functionGlyph": "#9EC1B6",
+    "returnPrimary": {
+     "fill": "#C29848",
+     "text": "#142527",
+     "pressed": "#C9A45E"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#2F4245",
+     "text": "#E6D3A3"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#E6D3A3",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#2F4245",
+     "accent": "#E6D3A3"
+    },
+    "boundDot": "#C29848",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "gatsby",
+  "name": "Gatsby",
+  "category": "Stories",
+  "mood": "West Egg, 1925: ivory and champagne by day, black lacquer and gold by night.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Public-domain book, original design",
+  "font": {
+   "family": "Marcellus",
+   "weight": 400,
+   "file": "Marcellus-Regular.ttf",
+   "rfn": true,
+   "bytes": 46004,
+   "license": "OFL-1.1",
+   "source": "https://github.com/google/fonts/tree/main/ofl/marcellus",
+   "ship": "unmodified file (Reserved Font Name: do not subset or instance)"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#E3E0D9"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#FBF8F0",
+     "pressed": "#DDDAD3"
+    },
+    "functionKey": {
+     "fill": "#E6D7AE",
+     "pressed": "#CABD99"
+    },
+    "spaceKey": {
+     "fill": "#FBF8F0",
+     "pressed": "#DDDAD3"
+    },
+    "keyText": "#1E1C19",
+    "functionGlyph": "#1E1C19",
+    "returnPrimary": {
+     "fill": "#1E1C19",
+     "text": "#E3C276",
+     "pressed": "#1A1916"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#FBF8F0",
+     "text": "#1E1C19"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#1E1C19",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#FBF8F0",
+     "accent": "#1E1C19"
+    },
+    "boundDot": "#1E1C19",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#181817"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#3F3E3D",
+     "pressed": "#565554"
+    },
+    "functionKey": {
+     "fill": "#323130",
+     "pressed": "#4B4A49"
+    },
+    "spaceKey": {
+     "fill": "#3F3E3D",
+     "pressed": "#565554"
+    },
+    "keyText": "#E6C77A",
+    "functionGlyph": "#C9A85A",
+    "returnPrimary": {
+     "fill": "#D4B062",
+     "text": "#161514",
+     "pressed": "#D9B975"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#3F3E3D",
+     "text": "#E6C77A"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#E6C77A",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#3F3E3D",
+     "accent": "#D4B062"
+    },
+    "boundDot": "#D4B062",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ },
+ {
+  "id": "dracula",
+  "name": "Dracula",
+  "category": "Stories",
+  "mood": "Candlelight, bone and oxblood.",
+  "heroMode": "light",
+  "modes": [
+   "light",
+   "dark"
+  ],
+  "source": "Public-domain book, original design",
+  "font": {
+   "family": "system"
+  },
+  "glyphStyle": "standard",
+  "sound": {
+   "pack": "system"
+  },
+  "texture": null,
+  "tier": "free",
+  "variants": {
+   "light": {
+    "board": {
+     "colors": [
+      "#DFDBD8"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#F7F2EF",
+     "pressed": "#D9D5D2"
+    },
+    "functionKey": {
+     "fill": "#D8CCCB",
+     "pressed": "#BEB4B3"
+    },
+    "spaceKey": {
+     "fill": "#F7F2EF",
+     "pressed": "#D9D5D2"
+    },
+    "keyText": "#2A1F24",
+    "functionGlyph": "#2A1F24",
+    "returnPrimary": {
+     "fill": "#7D1A28",
+     "text": "#F7EDEA",
+     "pressed": "#6E1723"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#F7F2EF",
+     "text": "#2A1F24"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#2A1F24",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#F7F2EF",
+     "accent": "#7D1A28"
+    },
+    "boundDot": "#7D1A28",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.28,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   },
+   "dark": {
+    "board": {
+     "colors": [
+      "#1B1719"
+     ],
+     "angle": null,
+     "paintedOn": "android"
+    },
+    "letterKey": {
+     "fill": "#473D42",
+     "pressed": "#5D5459"
+    },
+    "functionKey": {
+     "fill": "#383034",
+     "pressed": "#50494C"
+    },
+    "spaceKey": {
+     "fill": "#473D42",
+     "pressed": "#5D5459"
+    },
+    "keyText": "#EADCCB",
+    "functionGlyph": "#C9A27A",
+    "returnPrimary": {
+     "fill": "#8E1C2C",
+     "text": "#F4E6DC",
+     "pressed": "#9C3745"
+    },
+    "keyOverrides": {},
+    "popup": {
+     "fill": "#473D42",
+     "text": "#EADCCB"
+    },
+    "strip": {
+     "background": "board",
+     "text": "#EADCCB",
+     "ios": "clear (system sheet)"
+    },
+    "chip": {
+     "face": "#473D42",
+     "accent": "#EADCCB"
+    },
+    "boundDot": "#EADCCB",
+    "shadow": {
+     "color": "#000000",
+     "alpha": 0.55,
+     "offsetY": 1,
+     "radius": 0
+    },
+    "border": null
+   }
+  }
+ }
+]

@@ -34,7 +34,7 @@ final class GlideTrail: UIView {
         bubble.layer.shadowRadius = 7
         bubble.isHidden = true
         word.font = .systemFont(ofSize: 20, weight: .semibold)
-        word.textColor = Glass.keyInk
+        word.textColor = Glass.popupInk
         word.textAlignment = .center
         bubble.addSubview(word)
         addSubview(bubble)
@@ -48,7 +48,7 @@ final class GlideTrail: UIView {
         points = [(p, time)]
         ribbon.fillColor = Glass.accentPrimary.withAlphaComponent(0.6).cgColor
         bubble.backgroundColor = Glass.fillKeySolid
-        word.textColor = Glass.keyInk
+        word.textColor = Glass.popupInk
         redraw(now: time)
     }
 

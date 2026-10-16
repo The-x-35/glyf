@@ -54,7 +54,9 @@ class MagicChip(ctx: Context, dark: Boolean) : LinearLayout(ctx) {
      *  of a pane. The colours inside run in a band, not round the middle as
      *  the border's do: turned round a point, they pinched to a spot. */
     private val face = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Glass.white(if (dark) 0.10f else 0.55f)
+        // A keyboard theme tints the glass with its chip face (THEMES.md §3).
+        color = Glass.skinChipFace?.let { Glass.withAlpha(it, 0.88f) }
+            ?: Glass.white(if (dark) 0.10f else 0.55f)
     }
     private val facePath = Path()
     private val wash = Paint(Paint.ANTI_ALIAS_FLAG).apply {

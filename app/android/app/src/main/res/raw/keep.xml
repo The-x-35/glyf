@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The keyboard themes' sounds are looked up by name (ThemeSound), so the
+     resource shrinker can't see them used: keep them. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/theme_*" />

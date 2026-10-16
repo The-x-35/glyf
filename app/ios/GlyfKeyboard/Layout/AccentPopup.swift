@@ -20,8 +20,9 @@ final class AccentPopup: UIView {
         let baseShown = caps(base)
         options = [baseShown] + accents.map(caps)
 
-        // Apple's accent bubble: a card on the sheet, whatever the keys wear.
-        backgroundColor = Glass.surfaceCard
+        // Apple's accent bubble: a card on the sheet, or a theme's press
+        // popup colour.
+        backgroundColor = Self.fill
         layer.cornerRadius = Glass.radiusKey + 2
         layer.cornerCurve = .continuous
         layer.borderWidth = Glass.hairlineWidth
@@ -34,9 +35,9 @@ final class AccentPopup: UIView {
         for (i, opt) in options.enumerated() {
             let l = UILabel()
             l.text = opt
-            l.font = .systemFont(ofSize: 22)
+            l.font = Glass.keyFont(ofSize: 22)
             l.textAlignment = .center
-            l.textColor = Glass.textPrimary
+            l.textColor = Self.ink
             l.layer.cornerRadius = 7
             l.layer.cornerCurve = .continuous
             l.layer.masksToBounds = true
@@ -75,8 +76,24 @@ final class AccentPopup: UIView {
     private func highlight(_ idx: Int) {
         selectedIndex = idx
         for (i, l) in labels.enumerated() {
-            l.backgroundColor = i == idx ? Glass.accentPrimary : .clear
-            l.textColor = i == idx ? .white : Glass.textPrimary
+            l.backgroundColor = i == idx ? Self.pick : .clear
+            l.textColor = i == idx ? Self.pickInk : Self.ink
         }
+    }
+
+    /// Today: the sheet's card, its text, the brand purple under the pick.
+    /// A theme: its popup, its popup ink, and its return colour under the
+    /// pick (each pair checked at 4.5:1 in docs/THEMES.md §7).
+    private static var fill: UIColor {
+        Glass.skin != nil ? Glass.fillKeySolid : Glass.surfaceCard
+    }
+    private static var ink: UIColor {
+        Glass.skin != nil ? Glass.popupInk : Glass.textPrimary
+    }
+    private static var pick: UIColor {
+        Glass.skin != nil ? Glass.returnBlue : Glass.accentPrimary
+    }
+    private static var pickInk: UIColor {
+        Glass.skin != nil ? Glass.returnInk : .white
     }
 }

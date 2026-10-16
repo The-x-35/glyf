@@ -98,6 +98,25 @@ class GlyfKeyboardView(
     var themeBg = ""          // "" | color:#RRGGBB | grad:<id>
     var keyBorders = false
     var themeDim = 0f
+    /** The picked keyboard theme (the "skin" setting, docs/THEMES.md), or
+     *  null for today's look. It recolours the keys, paints the board, sets
+     *  the key-face font and the key sounds; it never moves a size (§0.1). */
+    var skin: KeyboardThemes.Theme? = null
+        set(value) {
+            if (field !== value) {
+                field = value
+                paletteCache = null
+                skinFaceFor = null
+                veinFor = null
+                themeSound.use(value?.soundPack ?: "system")
+            }
+            invalidate()
+        }
+    /** Theme sounds may play (the "skinSound" setting); off, a theme keeps
+     *  today's click. */
+    var skinSound = true
+    /** The theme's light or dark half, as Appearance picks. */
+    private val sv: KeyboardThemes.Variant? get() = skin?.variant(isDark)
     var bindings: Map<String, String> = emptyMap()
     /** The field's return action (EditorInfo IME_ACTION_*), or 0 for a plain
      *  return: go, search, send and done draw iOS's blue key. */
@@ -110,7 +129,7 @@ class GlyfKeyboardView(
     private val solidLook get() = keyTheme == "site" || themeBg.isNotEmpty()
 
     /** Chrome darkness follows the ink the palette chose. */
-    private val chromeDark get() = if (solidLook) palette().darkChrome else isDark
+    private val chromeDark get() = if (skin != null) isDark else if (solidLook) palette().darkChrome else isDark
 
     /**
      * One board colour builds the whole keyboard, the way Gboard derives a
@@ -131,6 +150,24 @@ class GlyfKeyboardView(
         val darkChrome: Boolean,
     ) {
         companion object {
+            /**
+             * A theme's palette for what surrounds the keys (the strip's
+             * suggestions, the panels, the emoji board): its board, the
+             * strip's ink (checked against every board stop, §5.3) and cards
+             * a shade off the board, so text reads on either. The keys draw
+             * from the theme itself.
+             */
+            fun fromSkin(v: KeyboardThemes.Variant, dark: Boolean): KeyPalette {
+                val board = v.board[0]
+                val card = if (dark) blend(board, Color.WHITE, 0.08f) else blend(board, Color.WHITE, 0.72f)
+                val ink = v.stripText
+                val pressed = blend(card, ink, 0.14f)
+                return KeyPalette(board = board, key = card, keyPressed = pressed,
+                    fn = card, fnPressed = pressed, ink = ink,
+                    inkSoft = blend(ink, board, if (dark) 0.40f else 0.42f),
+                    edge = Color.TRANSPARENT, card = card, darkChrome = dark)
+            }
+
             /** Every colour from one board colour: colour themes. */
             fun fromBoard(board: Int): KeyPalette {
                 val light = luminance(board) > 0.34f
@@ -238,8 +275,11 @@ class GlyfKeyboardView(
     private var paletteCache: Pair<String, KeyPalette>? = null
 
     fun palette(): KeyPalette {
-        val cacheKey = "$themeBg|$isDark|$keyTheme|$themeDim"
+        val cacheKey = "$themeBg|$isDark|$keyTheme|$themeDim|${skin?.id}"
         paletteCache?.let { if (it.first == cacheKey) return it.second }
+        sv?.let { v ->
+            return KeyPalette.fromSkin(v, isDark).also { paletteCache = cacheKey to it }
+        }
         // The default look is iOS's keyboard (it was Gboard's, the phone's
         // own colours, until 2026-09-30). Picked colour themes are still
         // built from their seed.
@@ -313,8 +353,17 @@ class GlyfKeyboardView(
         }
     }
 
+    private var backdropCache: Pair<String, ThemeBackdrop>? = null
+
     /** Backdrop drawable for the whole IME when a theme is painted. */
     fun themedBackdrop(): android.graphics.drawable.Drawable? {
+        skin?.let { t ->
+            // The board, its gradient and its texture (Android only, §0.3),
+            // behind the strip, the keys and the navigation inset.
+            val key = "${t.id}|$isDark"
+            backdropCache?.let { if (it.first == key) return it.second }
+            return ThemeBackdrop(t, isDark, density).also { backdropCache = key to it }
+        }
         if (themeBg.startsWith("color:#") && themeBg.length >= 13) {
             return try {
                 android.graphics.drawable.ColorDrawable(
@@ -346,6 +395,9 @@ class GlyfKeyboardView(
 
     /** A key's rectangle in this view, for the tour's coach. */
     fun keyRect(id: String): RectF? = placed().firstOrNull { it.first.id == id }?.second?.let { RectF(it) }
+
+    /** Each key's id and its rectangle in this view, for the debug dump. */
+    fun keyBounds(): List<Pair<String, RectF>> = placed().map { (k, r) -> k.id to RectF(r) }
 
     /** Each key's id and its centre on screen, for the debug state dump. */
     fun keyCenters(): List<Pair<String, IntArray>> {
@@ -445,7 +497,7 @@ class GlyfKeyboardView(
     /** The board. The Glass look's translucent keys sit on the sheet iOS
      *  draws under every keyboard, #E2E4E8 / #1B1B1D, as they do there. */
     fun backdrop(): Int =
-        if (solidLook) palette().board
+        sv?.board?.get(0) ?: if (solidLook) palette().board
         else if (isDark) Color.rgb(0x1B, 0x1B, 0x1D) else Color.rgb(0xE2, 0xE4, 0xE8)
 
     // MARK: measurement + drawing
@@ -589,6 +641,11 @@ class GlyfKeyboardView(
         val keys = placed()
         // iOS's keys: 9.5 corners on every key (Glass.radiusKey).
         val radius = dp(9.5f)
+        val v = sv
+        dotPaint.color = v?.boundDot ?: accent
+        // A theme's glows only while animations are on (Reduce Motion, §4.1).
+        val glows = v != null && v.shadow.radius > 0 && android.provider.Settings.Global.getFloat(
+            context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
 
         for ((i, placedKey) in keys.withIndex()) {
             val (key, rect) = placedKey
@@ -597,7 +654,7 @@ class GlyfKeyboardView(
             if (key.bare) {
                 // Apple's pad function keys have no cap; a press shows one.
                 if (isPressed && !key.disabled) {
-                    keyPaint.color = keyFill(false)
+                    keyPaint.color = v?.function?.fill ?: keyFill(false)
                     canvas.drawRoundRect(rect, radius, radius, keyPaint)
                 }
                 if (!trackpadLook) drawFace(canvas, key, rect)
@@ -609,7 +666,11 @@ class GlyfKeyboardView(
             // GPU-painted shadow: offset round-rect (the crisp 1dp iOS
             // drop). Glow keys get a soft accent halo from two stacked
             // translucent rects — no blur layers, no CPU rendering.
-            if (glowKey) {
+            if (v != null) {
+                // A theme: its edge or glow under the key, its fill per class.
+                drawSkinShadow(canvas, rect, radius, v.shadow, glows)
+                keyPaint.color = skinFill(key, v, isPressed)
+            } else if (glowKey) {
                 shadowPaint.color = Color.argb(34, 124, 92, 255)
                 val halo2 = RectF(rect.left - dp(2f), rect.top,
                     rect.right + dp(2f), rect.bottom + dp(4.5f))
@@ -644,6 +705,7 @@ class GlyfKeyboardView(
                 keyPaint.color = keyFill(isPressed, fn)
             }
             canvas.drawRoundRect(rect, radius, radius, keyPaint)
+            if (v != null) drawSkinFace(canvas, key, rect, radius, v)
             if (tourKey != null && key.id == tourKey) {
                 // One second per pulse, redrawn a frame at a time while
                 // the tour waits on this key.
@@ -655,7 +717,7 @@ class GlyfKeyboardView(
                 canvas.drawRoundRect(ring, radius + dp(3f), radius + dp(3f), strokePaint)
                 postInvalidateDelayed(32)
             }
-            if (keyBorders || !solidLook) {
+            if (v == null && (keyBorders || !solidLook)) {
                 strokePaint.color = hairline()
                 strokePaint.strokeWidth = if (keyBorders) dp(1.1f) else 1f
                 canvas.drawRoundRect(rect, radius, radius, strokePaint)
@@ -706,18 +768,20 @@ class GlyfKeyboardView(
             shadowPaint.color = Color.argb(46, 0, 0, 0)
             canvas.drawRoundRect(RectF(box.left, box.top + dp(2f), box.right, box.bottom + dp(3f)),
                 dp(9f), dp(9f), shadowPaint)
-            keyPaint.color = if (solidLook) palette().card
+            keyPaint.color = v?.popupFill ?: if (solidLook) palette().card
                              else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
             canvas.drawRoundRect(box, dp(8f), dp(8f), keyPaint)
             textPaint.textSize = dp(22f)
+            textPaint.typeface = keyFace()
             for ((i, option) in options.withIndex()) {
                 val left = box.left + dp(4f) + accentSlot(i) * accentCell
                 val cell = RectF(left, box.top + dp(6f), left + accentCell, box.bottom - dp(6f))
                 if (i == accentIndex) {
-                    keyPaint.color = accent
+                    keyPaint.color = v?.returnPrimary?.fill ?: accent
                     canvas.drawRoundRect(cell, dp(7f), dp(7f), keyPaint)
                 }
-                textPaint.color = if (i == accentIndex) Color.WHITE else ink()
+                textPaint.color = if (i == accentIndex) (v?.returnPrimary?.glyph ?: Color.WHITE)
+                                  else (v?.popupText ?: ink())
                 canvas.drawText(option, cell.centerX(), cell.centerY() + textPaint.textSize * 0.36f, textPaint)
             }
         }
@@ -808,7 +872,8 @@ class GlyfKeyboardView(
         path.lineTo(k.left + r, k.bottom)
         path.arcTo(RectF(k.left, k.bottom - 2 * r, k.left + 2 * r, k.bottom), 90f, 90f)
         path.close()
-        keyPaint.color = if (solidLook) palette().key
+        // A theme recolours it (its popup fill and text); the shape stays.
+        keyPaint.color = sv?.popupFill ?: if (solidLook) palette().key
                          else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
         canvas.drawPath(path, keyPaint)
 
@@ -817,7 +882,8 @@ class GlyfKeyboardView(
         val letter = (0.51f * k.height() / density).coerceIn(20f, 30f)
         val keySize = dp(if (shifted) letter * 20f / 22f else letter)
         val fit = min(1f, (neckTop - bulbTop) / (fullRise - dp(15f) * s))
-        textPaint.color = ink()
+        textPaint.color = sv?.popupText ?: ink()
+        textPaint.typeface = keyFace()
         textPaint.letterSpacing = 0f
         textPaint.textSize = keySize * 1.5f * maxOf(0.82f, fit)
         canvas.drawText(display(key), (bx0 + bx1) / 2, bulbTop + (fullRise - baselineRise) * fit, textPaint)
@@ -825,8 +891,11 @@ class GlyfKeyboardView(
 
     private fun drawFace(canvas: Canvas, key: Key, rect: RectF) {
         // Greyed: the phone pad's digits behind +*#, as Apple draws them.
-        val ink = if (key.disabled) withAlpha(ink(), 0.35f) else ink()
+        val base = sv?.let { skinInk(key, it) } ?: ink()
+        val ink = if (key.disabled) withAlpha(base, 0.35f) else base
+        faceInk = ink
         textPaint.color = ink
+        textPaint.typeface = keyFace()
         textPaint.letterSpacing = 0f
         when (key.id) {
             "shift" -> { drawShift(canvas, rect); return }
@@ -852,9 +921,11 @@ class GlyfKeyboardView(
                 display(key)
             }
             key.id == "space" -> {
-                // The "glyf" watermark: the key's glyph colour at 40%.
+                // The "glyf" watermark: the key's glyph colour at 40%, in
+                // Inter whatever the theme (the brand, §0.5).
                 textPaint.textSize = dp(13.5f)
-                textPaint.color = withAlpha(ink(), 0.40f)
+                textPaint.color = withAlpha(ink, 0.40f)
+                textPaint.typeface = interFace(context)
                 "glyf"
             }
             key.id.startsWith("mode:") -> {
@@ -897,7 +968,7 @@ class GlyfKeyboardView(
                     textPaint.letterSpacing = 0.22f
                     canvas.drawText(sub, rect.centerX(), rect.centerY() + dp(16f), textPaint)
                     textPaint.letterSpacing = 0f
-                    textPaint.typeface = interFace(context)
+                    textPaint.typeface = keyFace()
                 }
             }
             c != null && c.isNotEmpty() -> {
@@ -923,12 +994,12 @@ class GlyfKeyboardView(
 
     /** SF face.smiling at iOS's size, outline, in the glyph colour. */
     private fun drawSmiley(canvas: Canvas, rect: RectF) {
-        glyphPaint.color = ink()
+        glyphPaint.color = faceInk
         glyphPaint.style = Paint.Style.STROKE
-        glyphPaint.strokeWidth = dp(1.35f)
+        glyphPaint.strokeWidth = glyphK * dp(1.35f)
         val cx = rect.centerX(); val cy = rect.centerY()
         canvas.drawCircle(cx, cy, dp(8.6f), glyphPaint)
-        val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ink() }
+        val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = faceInk }
         canvas.drawOval(RectF(cx - dp(3.9f), cy - dp(3.6f), cx - dp(2.3f), cy - dp(0.9f)), dot)
         canvas.drawOval(RectF(cx + dp(2.3f), cy - dp(3.6f), cx + dp(3.9f), cy - dp(0.9f)), dot)
         canvas.drawArc(cx - dp(4.4f), cy - dp(1.6f), cx + dp(4.4f), cy + dp(5f),
@@ -949,8 +1020,8 @@ class GlyfKeyboardView(
             lineTo(cx - w, cy + dp(1f))
             close()
         }
-        glyphPaint.color = ink()
-        glyphPaint.strokeWidth = dp(1.3f)
+        glyphPaint.color = faceInk
+        glyphPaint.strokeWidth = glyphK * dp(1.3f)
         glyphPaint.style = if (shifted) Paint.Style.FILL_AND_STROKE else Paint.Style.STROKE
         canvas.drawPath(path, glyphPaint)
         if (capsLock) {
@@ -975,9 +1046,9 @@ class GlyfKeyboardView(
             lineTo(cx - dp(5f) * k, cy + dp(7.5f) * k)
             close()
         }
-        glyphPaint.color = ink()
+        glyphPaint.color = faceInk
         glyphPaint.style = Paint.Style.STROKE
-        glyphPaint.strokeWidth = dp(1.3f)
+        glyphPaint.strokeWidth = glyphK * dp(1.3f)
         canvas.drawPath(path, glyphPaint)
         val x0 = cx + dp(0.4f) * k; val r = dp(3.1f) * k
         canvas.drawLine(x0 - r, cy - r, x0 + r, cy + r, glyphPaint)
@@ -990,27 +1061,27 @@ class GlyfKeyboardView(
     private fun drawReturn(canvas: Canvas, rect: RectF) {
         val cx = rect.centerX(); val cy = rect.centerY()
         glyphPaint.style = Paint.Style.STROKE
-        glyphPaint.color = if (primaryReturn) Color.WHITE else ink()
+        glyphPaint.color = if (primaryReturn && sv == null) Color.WHITE else faceInk
         when (returnAction) {
             android.view.inputmethod.EditorInfo.IME_ACTION_GO -> {
-                glyphPaint.strokeWidth = dp(1.9f)
+                glyphPaint.strokeWidth = glyphK * dp(1.9f)
                 canvas.drawLine(cx - dp(7.5f), cy, cx + dp(7.5f), cy, glyphPaint)
                 canvas.drawLine(cx + dp(7.5f), cy, cx + dp(1.8f), cy - dp(5.8f), glyphPaint)
                 canvas.drawLine(cx + dp(7.5f), cy, cx + dp(1.8f), cy + dp(5.8f), glyphPaint)
             }
             android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH -> {
-                glyphPaint.strokeWidth = dp(1.6f)
+                glyphPaint.strokeWidth = glyphK * dp(1.6f)
                 canvas.drawCircle(cx - dp(1.5f), cy - dp(1.5f), dp(6f), glyphPaint)
                 canvas.drawLine(cx + dp(3f), cy + dp(3f), cx + dp(7.8f), cy + dp(7.8f), glyphPaint)
             }
             android.view.inputmethod.EditorInfo.IME_ACTION_SEND -> {
-                glyphPaint.strokeWidth = dp(1.9f)
+                glyphPaint.strokeWidth = glyphK * dp(1.9f)
                 canvas.drawLine(cx, cy + dp(7.5f), cx, cy - dp(7.5f), glyphPaint)
                 canvas.drawLine(cx, cy - dp(7.5f), cx - dp(5.8f), cy - dp(1.8f), glyphPaint)
                 canvas.drawLine(cx, cy - dp(7.5f), cx + dp(5.8f), cy - dp(1.8f), glyphPaint)
             }
             android.view.inputmethod.EditorInfo.IME_ACTION_DONE -> {
-                glyphPaint.strokeWidth = dp(1.9f)
+                glyphPaint.strokeWidth = glyphK * dp(1.9f)
                 val tick = android.graphics.Path().apply {
                     moveTo(cx - dp(6.8f), cy + dp(0.4f))
                     lineTo(cx - dp(2.2f), cy + dp(5.2f))
@@ -1019,13 +1090,13 @@ class GlyfKeyboardView(
                 canvas.drawPath(tick, glyphPaint)
             }
             android.view.inputmethod.EditorInfo.IME_ACTION_NEXT -> {
-                glyphPaint.strokeWidth = dp(1.4f)
+                glyphPaint.strokeWidth = glyphK * dp(1.4f)
                 canvas.drawLine(cx - dp(2.8f), cy - dp(7.5f), cx + dp(3.6f), cy, glyphPaint)
                 canvas.drawLine(cx + dp(3.6f), cy, cx - dp(2.8f), cy + dp(7.5f), glyphPaint)
             }
             else -> {
                 // SF return (light): down from the top right, then left to an arrowhead.
-                glyphPaint.strokeWidth = dp(1.3f)
+                glyphPaint.strokeWidth = glyphK * dp(1.3f)
                 val path = android.graphics.Path().apply {
                     moveTo(cx + dp(8f), cy - dp(6.5f))
                     lineTo(cx + dp(8f), cy + dp(1.5f))
@@ -1129,7 +1200,9 @@ class GlyfKeyboardView(
         spaceSlidAway = false
         glideDownTime = time
         glideOK = canGlide(key)
-        pressFeedback() // click + haptic on DOWN, like Apple/Gboard
+        // Click + haptic on DOWN, like Apple/Gboard; a theme's pack has a
+        // sound for the space bar, delete and return.
+        pressFeedback(when (key.id) { "space", "delete", "return" -> key.id; else -> "letter" })
         if (key.id == "space") {
             val gesture = SpaceGesture(x / density, y / density, time)
             spaceGesture = gesture
@@ -1471,7 +1544,7 @@ class GlyfKeyboardView(
         if (word.isNullOrEmpty()) return
         glideTextPaint.typeface = Glass.font(context, Glass.SEMIBOLD)
         glideTextPaint.textSize = dp(20f)
-        glideTextPaint.color = ink()
+        glideTextPaint.color = sv?.popupText ?: ink()
         glideTextPaint.alpha = (255 * trailAlpha).toInt()
         val w = maxOf(dp(44f), glideTextPaint.measureText(word) + dp(28f))
         val h = dp(40f)
@@ -1481,7 +1554,7 @@ class GlyfKeyboardView(
         val pill = RectF(bx, by, bx + w, by + h)
         shadowPaint.color = Color.argb((40 * trailAlpha).toInt(), 0, 0, 0)
         canvas.drawRoundRect(RectF(bx - dp(1f), by + dp(1f), bx + w + dp(1f), by + h + dp(4f)), dp(13f), dp(13f), shadowPaint)
-        keyPaint.color = if (solidLook) palette().key else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
+        keyPaint.color = sv?.popupFill ?: if (solidLook) palette().key else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
         keyPaint.alpha = (255 * trailAlpha).toInt()
         canvas.drawRoundRect(pill, dp(12f), dp(12f), keyPaint)
         keyPaint.alpha = 255
@@ -1643,13 +1716,138 @@ class GlyfKeyboardView(
 
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    fun pressFeedback() {
+    private val themeSound by lazy { ThemeSound(context.applicationContext) }
+
+    fun pressFeedback(role: String = "letter") {
         if (hapticsOn) {
             performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
         }
         if (clicksOn) {
-            (context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager)
-                ?.playSoundEffect(android.media.AudioManager.FX_KEYPRESS_STANDARD, 0.6f)
+            val audio = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+            // A theme's own sound (§4.2): with the ringer on and theme sounds
+            // allowed; otherwise, or while its samples load, today's click.
+            val pack = skin?.soundPack ?: "system"
+            val themed = skinSound && pack != "system" &&
+                audio?.ringerMode == android.media.AudioManager.RINGER_MODE_NORMAL &&
+                themeSound.let { it.use(pack); it.play(role) }
+            if (!themed) audio?.playSoundEffect(android.media.AudioManager.FX_KEYPRESS_STANDARD, 0.6f)
         }
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        themeSound.release()
+    }
+
+    // MARK: themes (docs/THEMES.md): colours per key class, never a size
+
+    /** The glyph colour the face being drawn uses (drawShift and the rest). */
+    private var faceInk = Color.BLACK
+
+    /** Stroke weight for shift, delete, return and emoji (§5.4). */
+    private val glyphK get() = when (skin?.glyphStyle) { "light" -> 0.8f; "bold" -> 1.25f; else -> 1f }
+
+    private var skinFaceFor: String? = null
+    private var skinFace: android.graphics.Typeface? = null
+
+    /** The key-face font: the theme's, at today's sizes, else Inter. */
+    private fun keyFace(): android.graphics.Typeface? {
+        val t = skin ?: return interFace(context)
+        if (skinFaceFor != t.id) {
+            skinFace = ThemeFonts.face(context, t.font)
+            skinFaceFor = t.id
+        }
+        return skinFace ?: interFace(context)
+    }
+
+    /** letter, function, space or return (§5.1). A theme's one accent is
+     *  its return, so every return wears it (iOS KeyView.isPrimaryReturn). */
+    private fun skinClass(key: Key): String = when {
+        key.id == "return" -> "return"
+        key.id == "space" -> "space"
+        key.bare -> "function"
+        key.char != null -> "letter"
+        else -> "function"
+    }
+
+    private fun skinOverride(key: Key, v: KeyboardThemes.Variant) = when (key.id) {
+        "shift" -> v.shift
+        "delete" -> v.delete
+        else -> null
+    }
+
+    private fun skinFill(key: Key, v: KeyboardThemes.Variant, pressed: Boolean): Int {
+        skinOverride(key, v)?.let { return if (pressed) it.pressed else it.fill }
+        val f = when (skinClass(key)) {
+            "letter" -> v.letter
+            "space" -> v.space
+            "return" -> return if (pressed) v.returnPrimary.pressed else v.returnPrimary.fill
+            else -> v.function
+        }
+        return if (pressed) f.pressed else f.fill
+    }
+
+    private fun skinInk(key: Key, v: KeyboardThemes.Variant): Int {
+        // A pad's capless keys sit on the board: the strip's ink reads there.
+        if (key.bare) return v.stripText
+        skinOverride(key, v)?.let { return it.glyph }
+        return when (skinClass(key)) {
+            "letter", "space" -> v.keyText
+            "return" -> v.returnPrimary.glyph
+            else -> v.functionGlyph
+        }
+    }
+
+    private val skinRect = RectF()
+
+    /** The theme's edge (1dp down, radius 0) or glow (soft, round the key):
+     *  both in the gaps, neither moves the key. */
+    private fun drawSkinShadow(canvas: Canvas, rect: RectF, radius: Float, s: KeyboardThemes.Shadow, glows: Boolean) {
+        if (s.alpha <= 0f) return
+        val dy = dp(s.offsetY.toFloat())
+        if (s.radius == 0) {
+            if (s.offsetY == 0) return
+            shadowPaint.color = withAlpha(s.color, s.alpha)
+            skinRect.set(rect.left, rect.top + dy, rect.right, rect.bottom + dy)
+            canvas.drawRoundRect(skinRect, radius, radius, shadowPaint)
+            return
+        }
+        if (!glows) return
+        for (i in s.radius downTo 1) {
+            val grow = dp(i.toFloat())
+            shadowPaint.color = withAlpha(s.color, s.alpha * 0.45f * (1f - (i - 1f) / s.radius))
+            skinRect.set(rect.left - grow, rect.top - grow + dy, rect.right + grow, rect.bottom + grow + dy)
+            canvas.drawRoundRect(skinRect, radius + grow, radius + grow, shadowPaint)
+        }
+    }
+
+    private var veinFor: String? = null
+    private val veinPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /** Over a themed key's fill: Marble's veins on the letters, then the
+     *  theme's 1dp border (or, when it has none, the Borders switch's),
+     *  stroked inside the key's bounds. */
+    private fun drawSkinFace(canvas: Canvas, key: Key, rect: RectF, radius: Float, v: KeyboardThemes.Variant) {
+        val t = skin ?: return
+        val cls = skinClass(key)
+        if (cls == "letter" && t.texture?.android?.contains("keys") == true) {
+            val id = "${t.id}|$isDark"
+            if (veinFor != id) {
+                veinPaint.shader = android.graphics.BitmapShader(ThemeTextures.keyVeins(v.keyText),
+                    android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
+                veinFor = id
+            }
+            canvas.drawRoundRect(rect, radius, radius, veinPaint)
+        }
+        val b = v.border
+        strokePaint.color = when {
+            b != null -> if (cls in b.appliesTo) b.color else return
+            keyBorders -> hairline()
+            else -> return
+        }
+        strokePaint.strokeWidth = dp((b?.width ?: 1).toFloat())
+        val half = strokePaint.strokeWidth / 2f
+        skinRect.set(rect.left + half, rect.top + half, rect.right - half, rect.bottom - half)
+        canvas.drawRoundRect(skinRect, radius - half, radius - half, strokePaint)
     }
 }

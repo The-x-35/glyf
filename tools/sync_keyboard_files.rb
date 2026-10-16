@@ -17,6 +17,8 @@ TEST_SHARED = %w[
   Engine/NotesStore.swift
   Layout/KeyboardLayout.swift
   Design/GlassTokens.swift
+  Design/KeyboardTheme.swift
+  Design/KeyboardThemes.swift
   Design/GlyfMark.swift
   Design/EmojiData.swift
   Engine/Games.swift
@@ -96,8 +98,10 @@ end
 
 # Brand artwork travels in the appex's own bundle — an extension cannot read
 # the host app's asset catalogue, so the keyboard needs its own copy of the
-# mark. These are resources, not sources, so they go on the copy phase.
-Dir.glob(File.join(KB_DIR, '**/*.png')).sort.each do |abs|
+# mark. These are resources, not sources, so they go on the copy phase. So do
+# the keyboard themes' fonts with their licences (Fonts/) and their key
+# sounds (Sounds/): docs/THEMES.md §4.
+Dir.glob(File.join(KB_DIR, '**/*.{png,ttf,caf}')).concat(Dir.glob(File.join(KB_DIR, 'Fonts/*.txt'))).sort.each do |abs|
   rel = abs.sub("#{KB_DIR}/", '')
   parts = rel.split('/')
   group = kb_group

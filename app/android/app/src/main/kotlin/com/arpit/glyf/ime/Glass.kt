@@ -56,7 +56,12 @@ object Glass {
 
     val accentPrimary = Color.rgb(0x7C, 0x5C, 0xFF)
     /** Purple words on a strip chip, lighter than the accent. */
-    val chipAccent get() = if (dark) Color.rgb(0xC3, 0xB4, 0xFF) else Color.rgb(0x8A, 0x6C, 0xFF)
+    val chipAccent get() = skinChipAccent
+        ?: if (dark) Color.rgb(0xC3, 0xB4, 0xFF) else Color.rgb(0x8A, 0x6C, 0xFF)
+    /** A keyboard theme's chip face and accent (docs/THEMES.md §3), set
+     *  with the theme; null keeps today's glass and violet. */
+    var skinChipFace: Int? = null
+    var skinChipAccent: Int? = null
     val accentSuccess = Color.rgb(0x32, 0xD5, 0x83)
     val accentWarning = Color.rgb(0xB7, 0x79, 0x09)
     val accentDanger = Color.rgb(0xF0, 0x44, 0x38)

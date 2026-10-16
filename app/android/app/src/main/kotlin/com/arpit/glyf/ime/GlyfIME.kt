@@ -179,6 +179,17 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     endDictation(null)
                 }
                 "dump" -> writeQaState()
+                // "typewriter:dark" wears a theme in light or dark (":auto"
+                // follows the phone); "" goes back to today's look. Applied
+                // to the next field, as a setting from the app is.
+                "skin" -> {
+                    val pair = intent.getStringExtra("text").orEmpty().split(":", limit = 2)
+                    val s = SettingsStore.load(this@GlyfIME)
+                    s.put("skin", pair[0])
+                    if (pair.size == 2) s.put("appearance", pair[1])
+                    com.arpit.glyf.store.Bridge.write(this@GlyfIME, SettingsStore.FILE, s.toString())
+                    settings = s
+                }
                 "seedvault" -> {
                     // The scenarios ask for an address and a wallet address:
                     // add whichever the vault doesn't have, and touch nothing else.
@@ -354,6 +365,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             for ((id, xy) in keyboard.keyCenters()) keys.put(id, org.json.JSONArray(listOf(xy[0], xy[1])))
         }
         out.put("keys", keys)
+        // Each key's rectangle in the view, so a run can check that a theme
+        // moved none of them (THEMES.md §8.3).
+        val rects = org.json.JSONObject()
+        if (keyboard.isShown) for ((id, r) in keyboard.keyBounds())
+            rects.put(id, org.json.JSONArray(listOf(r.left, r.top, r.right, r.bottom)))
+        out.put("keyRects", rects)
         out.put("shifted", keyboard.shifted)
         out.put("mode", keyboard.mode.name)
         val views = org.json.JSONArray()
@@ -608,6 +625,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // The colour and gradient themes are retired for now (user,
         // 2026-09-27); one picked before is ignored, like on the iPhone.
         keyboard.themeBg = ""
+        // A keyboard theme (docs/THEMES.md): "" or an unknown id is today's look.
+        keyboard.skin = KeyboardThemes.byId(settings.optString("skin", ""))
+        keyboard.skinSound = settings.optBoolean("skinSound", true)
+        applySkinChrome()
         keyboard.keyBorders = settings.optBoolean("keyBorders", false)
         keyboard.themeDim = settings.optDouble("themeBrightness", 0.0).toFloat()
         keyboard.numberRow = settings.optBoolean("numberRow", false)
@@ -720,10 +741,27 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     // MARK: toolbar (g keycap + essentials)
 
+    /** What a theme changes around the keys: the strip's own background
+     *  when it has one (else the board shows through), and the chip's face
+     *  and accent. The chip takes them only where its face sits on the
+     *  side of the mode the chip's words are set for (a dark face in light
+     *  mode keeps today's glass), so its words always read. */
+    private fun applySkinChrome() {
+        val v = keyboard.skin?.variant(keyboard.isDark)
+        toolbar.setBackgroundColor(v?.stripBackground ?: Color.TRANSPARENT)
+        val faceDark = v != null &&
+            GlyfKeyboardView.KeyPalette.luminance(v.chipFace) < 0.5f
+        val fits = v != null && faceDark == keyboard.isDark
+        Glass.skinChipFace = if (fits) v!!.chipFace else null
+        Glass.skinChipAccent = if (fits) v!!.chipAccent else null
+    }
+
     private fun buildToolbar(dark: Boolean) {
         toolbar.removeAllViews()
         stripTitleRow = null
-        val ink = if (dark) Color.WHITE else Color.rgb(18, 18, 20)
+        // A theme's strip text (checked on each of its board's stops).
+        val ink = keyboard.skin?.variant(keyboard.isDark)?.stripText
+            ?: if (dark) Color.WHITE else Color.rgb(18, 18, 20)
 
         // Glyf's own key, the same as iOS's: the app icon as a 41 by 30 pill
         // with its violet dot (GlyfMark), white with a black g on a light
@@ -6387,7 +6425,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     /** The strip chip's lighter purple, for words that act. */
-    private fun stripAccent() = if (chromeDark) Color.rgb(0xC3, 0xB4, 0xFF) else Color.rgb(0x8A, 0x6C, 0xFF)
+    private fun stripAccent() = Glass.skinChipAccent
+        ?: if (chromeDark) Color.rgb(0xC3, 0xB4, 0xFF) else Color.rgb(0x8A, 0x6C, 0xFF)
 
     // MARK: emoji board (EmojiBoard.swift twin: Emoji, Stickers, GIFs, Emoticons)
 

@@ -361,7 +361,7 @@ final class GlyfToolbar: UIView {
         panelLabel.textColor = Glass.textPrimary
         panelBack.tintColor = Glass.textPrimary
         paintCardFace()
-        smartValue.textColor = Glass.textPrimary
+        smartValue.textColor = Glass.chipText
         paintChip()
         for chip in choiceChips { chip.magic.paint() }
         choiceClose.backgroundColor = Glass.touchableGrid
@@ -588,8 +588,10 @@ final class GlyfToolbar: UIView {
         smartLead.tintColor = accent
         smartExtra.setTitleColor(accent, for: .normal)
         smartExtra.backgroundColor = accent.withAlphaComponent(0.14)
-        smartClose.tintColor = Glass.textSecondary
-        smartRule.backgroundColor = Glass.textSecondary.withAlphaComponent(0.35)
+        // Read against the chip's face: a theme's may be dark on a light
+        // sheet (docs/THEMES.md §5.1).
+        smartClose.tintColor = Glass.chipTextSecondary
+        smartRule.backgroundColor = Glass.chipTextSecondary.withAlphaComponent(0.35)
         paintChoices()
     }
 
@@ -636,15 +638,15 @@ final class GlyfToolbar: UIView {
             smartExtra.setTitle(second, for: .normal)
             if let label = chip.label {
                 let line = NSMutableAttributedString(string: label + "  ", attributes: [
-                    .foregroundColor: Glass.textSecondary,
+                    .foregroundColor: Glass.chipTextSecondary,
                     .font: UIFont.systemFont(ofSize: 13, weight: .medium)])
                 line.append(NSAttributedString(string: chip.value, attributes: [
-                    .foregroundColor: Glass.textPrimary, .font: UIFont.systemFont(ofSize: 15)]))
+                    .foregroundColor: Glass.chipText, .font: UIFont.systemFont(ofSize: 15)]))
                 smartValue.attributedText = line
             } else {
                 smartValue.attributedText = nil
                 smartValue.font = .systemFont(ofSize: 15)
-                smartValue.textColor = Glass.textPrimary
+                smartValue.textColor = Glass.chipText
                 smartValue.text = chip.value
             }
             paintCardFace()
@@ -757,7 +759,7 @@ final class GlyfToolbar: UIView {
             let isTemp = temp && i == choiceCount - 1
             let size: CGFloat = choiceTight && !isTemp ? 14 : 15
             c.label.font = isTemp ? .systemFont(ofSize: 15, weight: .semibold) : .systemFont(ofSize: size)
-            c.label.textColor = isTemp ? Glass.chipAccent : Glass.textPrimary
+            c.label.textColor = isTemp ? Glass.chipAccent : Glass.chipText
             c.icon.tintColor = Glass.chipAccent
         }
     }
@@ -1191,11 +1193,14 @@ final class ChipMagic {
     /// The face for the sheet of the moment (a layer's CGColor does not
     /// follow dark mode by itself).
     func paint() {
-        let dark = Glass.chromeDark
+        // A theme's face is its own colour, opaque, and the glass over it is
+        // the one for a face that light or dark (§0.5: only the face and the
+        // accent change; the border, glow and layout stay).
+        let dark = Glass.chipFaceDark
         let white = { (a: CGFloat) in UIColor.white.withAlphaComponent(a).cgColor }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        cardFill.fillColor = white(dark ? 0.10 : 0.55)
+        cardFill.fillColor = Glass.chipFace?.cgColor ?? white(dark ? 0.10 : 0.55)
         glassWash.opacity = dark ? 0.14 : 0.10
         glassSheen.colors = [white(dark ? 0.12 : 0.6), white(0)]
         glassRim.colors = [white(dark ? 0.32 : 0.95), white(dark ? 0.05 : 0.3)]

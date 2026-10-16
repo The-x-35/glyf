@@ -73,6 +73,26 @@ flutter:
     - family: Inter
       fonts:
         - asset: assets/fonts/Inter-Variable.ttf
+    # BEGIN theme fonts (written by tools/gen_themes_dart.py)
+    # The keyboard themes' key faces (docs/THEMES.md §4.4, tools/gen_theme_fonts.py):
+    # the picker's previews, and the Android keyboard reads the same files
+    # from flutter_assets.
+    - family: Courier Prime
+      fonts:
+        - asset: assets/fonts/themes/CourierPrime-Regular.ttf
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/themes/JetBrainsMono-Regular.ttf
+    - family: Libre Caslon Text
+      fonts:
+        - asset: assets/fonts/themes/LibreCaslonText-Regular.ttf
+    - family: IM Fell English
+      fonts:
+        - asset: assets/fonts/themes/IMFeENrm28P.ttf
+    - family: Marcellus
+      fonts:
+        - asset: assets/fonts/themes/Marcellus-Regular.ttf
+    # END theme fonts
 
   # To add assets to your application, add an assets section, like this:
   # assets:

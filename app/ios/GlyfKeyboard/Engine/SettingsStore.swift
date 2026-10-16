@@ -59,6 +59,13 @@ struct GlyfSettings: Codable, Equatable {
     /// Key style: "site" (the tryglyf.com look, default) | "glass"
     /// (liquid-glass) | "classic" | "glow".
     var keyTheme: String? = "site"
+    /// A keyboard theme's id from shared/themes/themes.json ("typewriter",
+    /// "baker", …), picked in the app's Look grid; "" or missing is today's
+    /// look, and so is an id this build doesn't know (docs/THEMES.md).
+    var skin: String? = ""
+    /// Whether a theme with a sound pack plays it (nil reads as on); off,
+    /// keys click as they do today.
+    var skinSound: Bool? = true
     /// Let a Glyf run see the shareable half of your vault (name, email,
     /// phone, address, UPI, links), so "write my address" and form filling
     /// work. Off means runs never carry your details.

@@ -382,6 +382,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let bg = ""
         let borders = SettingsStore.current.keyBorders ?? false
         let dim = SettingsStore.current.themeBrightness ?? 0
+        // A keyboard theme (docs/THEMES.md): keys, glyphs, popup, chip, dot,
+        // shadows, borders, face and sound; never a board, never a size.
+        // Its font and sounds load only while it is the one picked.
+        let skin = KeyboardTheme.named(SettingsStore.current.skin)
+        ThemeSound.shared.allowed = (SettingsStore.current.skinSound ?? true) && hasFullAccess
         overrideUserInterfaceStyle =
             pref == "light" ? .light : pref == "dark" ? .dark : .unspecified
         // iOS draws the sheet for the HOST's appearance whatever we say, so a
@@ -391,12 +396,18 @@ final class GlyfKeyboardViewController: UIInputViewController {
         backdrop?.backgroundColor = forcedSheet ?? .clear
         if Glass.isDark != dark || Glass.keyTheme != theme
             || Glass.themeBg != bg || Glass.keyBorders != borders
-            || Glass.themeDim != dim {
+            || Glass.themeDim != dim || Glass.skin?.id != skin?.id {
             Glass.isDark = dark
             Glass.keyTheme = theme
             Glass.themeBg = bg
             Glass.keyBorders = borders
             Glass.themeDim = dim
+            if Glass.skin?.id != skin?.id {
+                Glass.skin = skin
+                ThemeFonts.activate(skin?.font)
+                ThemeSound.shared.load(skin?.sound.roles.isEmpty == false ? skin?.sound : nil)
+                if skin?.keyTexture == nil { ThemeTextures.release() }
+            }
             refreshPalette()
         }
     }

@@ -91,6 +91,10 @@ object SettingsStore {
         put("themeBg", "")          // "" | color:#RRGGBB | grad:<id>
         put("keyBorders", false)
         put("themeBrightness", 0.0)
+        // A keyboard theme's id (shared/themes/themes.json); "" is the look
+        // above. Theme sounds can be muted on their own.
+        put("skin", "")
+        put("skinSound", true)
     // Search paste style: "titleAndLink" (Gboard default) | "linkOnly".
     put("pasteStyle", "titleAndLink")
         put("backendURL", defaultBackendURL())

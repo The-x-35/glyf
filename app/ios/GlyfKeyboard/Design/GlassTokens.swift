@@ -67,12 +67,21 @@ enum Glass {
     /// installs may still carry "classic" or "glow".
     static var keyTheme = "site"
 
+    /// The keyboard theme picked in the app (settings `skin`, one of the 24
+    /// in docs/THEMES.md), or nil for today's look. A theme colours the keys,
+    /// glyphs, press popup, chip, dot, shadows and borders, and sets the key
+    /// face and sound; it never paints a board and never changes a size
+    /// (§0). Its variant follows the host's appearance, as `isDark` does.
+    static var skin: KeyboardTheme?
+    /// The skin's variant for the sheet of the moment.
+    static var skinVariant: ThemeVariant? { skin?.variant(dark: isDark) }
+
     /// True while the keyboard wears the default look (no theme picked).
-    static var siteLook: Bool { keyTheme == "site" && !themedBgActive }
+    static var siteLook: Bool { keyTheme == "site" && !themedBgActive && skin == nil }
 
     /// The website's structure (flat cards, no surface headers): the default
     /// look and every colour theme.
-    static var solidLook: Bool { keyTheme == "site" || themedBgActive }
+    static var solidLook: Bool { keyTheme == "site" || themedBgActive || skin != nil }
 
     // MARK: Keys on the system sheet
 
@@ -143,18 +152,28 @@ enum Glass {
         return c
     }
 
-    /// The glass look keeps its translucent keys over the sheet.
-    private static var glassKeys: Bool { keyTheme == "glass" && !themedBgActive }
+    /// The glass look keeps its translucent keys over the sheet; a theme
+    /// brings its own opaque keys.
+    private static var glassKeys: Bool { keyTheme == "glass" && !themedBgActive && skin == nil }
 
     /// Glyphs on keys: whichever of black and white the key can carry.
     static var keyInk: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.keyText) }
         if glassKeys { return textPrimary }
         return keyColor.glyfLuminance > 0.5 ? .black : .white
+    }
+
+    /// Glyphs on function keys (shift, delete, 123, emoji, globe, a plain
+    /// return): the theme's function glyph, else the keys' ink.
+    static var fnInk: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.functionGlyph) }
+        return keyInk
     }
 
     /// The dot on a bound key is the brand purple, unless the key is a
     /// colour purple disappears into; then it takes the glyph ink.
     static var boundDot: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.boundDot) }
         guard themedBgActive else { return accentPrimary }
         let apart = abs(keyColor.glyfLuminance - accentPrimary.glyfLuminance)
         return apart < 0.25 ? keyInk : accentPrimary
@@ -234,6 +253,7 @@ enum Glass {
     /// Every key is the same surface (Apple's iOS 26 uniform look).
     /// Glass theme: translucent over the system sheet.
     static var fillKey: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.letter.fill) }
         if keyGradient != nil { return .clear }   // KeyboardView paints the slice
         if glassKeys {
             return isDark ? UIColor.white.withAlphaComponent(0.14)
@@ -249,6 +269,7 @@ enum Glass {
     /// into it, the keys gone (measured on the iOS 26.5 sim, 2026-10-14).
     private static let appleKeyDarkWash = UIColor.white.withAlphaComponent(0.159)
     static var fillKeyPressed: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.letter.pressed) }
         if keyGradient != nil { return UIColor.white.withAlphaComponent(0.28) }
         if glassKeys {
             return isDark ? UIColor.white.withAlphaComponent(0.40)
@@ -261,18 +282,45 @@ enum Glass {
         }
         return keyColor.blend(keyInk, 0.14)
     }
-    /// Solid version regardless of theme (press balloons).
-    static var fillKeySolid: UIColor { keyColor }
+    /// Solid version regardless of theme (press balloons): a theme's press
+    /// popup colour.
+    static var fillKeySolid: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.popupFill) }
+        return keyColor
+    }
+    /// The letter in the press balloon and the glide's floating word: a
+    /// theme's popup ink, else the keys' ink.
+    static var popupInk: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.popupText) }
+        return keyInk
+    }
+    /// The space bar: the letter colour today; a theme may give it its own.
+    static var fillKeySpace: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.space.fill) }
+        return fillKey
+    }
+    static var fillKeySpacePressed: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.space.pressed) }
+        return fillKeyPressed
+    }
     /// Function keys (shift, delete, 123, emoji, return) wear the letter
     /// colour, as they do on iOS 26; on a painted board they take the tile's
     /// darker (or lighter) function-key shade. On a dark board that shade
     /// is lifted 12%, which puts it where Apple's own dark keys sit against
     /// their sheet: a step below the letters, never sunk into the board.
     static var fillKeyFn: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.function.fill) }
         guard let seed = boardSeed else { return fillKey }
         return boardIsLight ? seed.blend(.black, 0.14) : seed.blend(.white, 0.12)
     }
-    static var fillKeyFnPressed: UIColor { fillKeyPressed }
+    static var fillKeyFnPressed: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.function.pressed) }
+        return fillKeyPressed
+    }
+    /// A theme's own colours for shift or delete (Primary's), or nil.
+    static func keyOverride(shift: Bool) -> ThemeOverride? {
+        shift ? skinVariant?.shift : skinVariant?.delete
+    }
     /// The on state of the keyboard's own switches and segments: ink in
     /// light, as in the app; in dark, a light track the white thumb still
     /// stands out on.
@@ -287,11 +335,21 @@ enum Glass {
 
     /// Apple's blue return key for go, search, send and done: #007AFF,
     /// measured on the iOS 26.5 simulator; the dark twin is iOS's dark blue.
+    /// A theme's return colour replaces the blue only while the theme is on.
     static var returnBlue: UIColor {
-        isDark ? UIColor(red: 10 / 255, green: 132 / 255, blue: 1, alpha: 1)
-               : UIColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
+        if let v = skinVariant { return UIColor(rgb: v.returnFill) }
+        return isDark ? UIColor(red: 10 / 255, green: 132 / 255, blue: 1, alpha: 1)
+                      : UIColor(red: 0, green: 122 / 255, blue: 1, alpha: 1)
     }
-    static var returnBluePressed: UIColor { returnBlue.blend(.black, 0.18) }
+    static var returnBluePressed: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.returnPressed) }
+        return returnBlue.blend(.black, 0.18)
+    }
+    /// The glyph or word on the blue (or the theme's) return.
+    static var returnInk: UIColor {
+        if let v = skinVariant { return UIColor(rgb: v.returnText) }
+        return .white
+    }
     static var fillKeySpecial: UIColor { fillKeyFn }
     static var fillKeyGlyf: UIColor { fillKey }
     /// Bound key wash — barely-there accent over the key surface.
@@ -359,8 +417,23 @@ enum Glass {
     /// there (Arpit, 2026-09-30). Semibold, each is over 3:1 on its chip:
     /// 3.7 on white, 5.6 on the dark key colour.
     static var chipAccent: UIColor {
-        chromeDark ? UIColor(red: 0xC3 / 255, green: 0xB4 / 255, blue: 0xFF / 255, alpha: 1)
-                   : UIColor(red: 0x8A / 255, green: 0x6C / 255, blue: 0xFF / 255, alpha: 1)
+        if let v = skinVariant { return UIColor(rgb: v.chipAccent) }
+        return chromeDark ? UIColor(red: 0xC3 / 255, green: 0xB4 / 255, blue: 0xFF / 255, alpha: 1)
+                          : UIColor(red: 0x8A / 255, green: 0x6C / 255, blue: 0xFF / 255, alpha: 1)
+    }
+    /// A theme's chip face (opaque), or nil for the glass face over the sheet.
+    static var chipFace: UIColor? { skinVariant.map { UIColor(rgb: $0.chipFace) } }
+    /// Whether the chip's face is dark: the sheet's, or a theme face's own
+    /// (Rangefinder's light variant puts a black chip on the light sheet).
+    static var chipFaceDark: Bool { chipFace.map { $0.glyfLuminance < 0.5 } ?? chromeDark }
+    /// Words on the chip, read against its face.
+    static var chipText: UIColor {
+        guard skin != nil else { return textPrimary }
+        return chipFaceDark ? .white : UIColor(white: 0.07, alpha: 1)
+    }
+    static var chipTextSecondary: UIColor {
+        guard skin != nil else { return textSecondary }
+        return chipFaceDark ? UIColor(white: 0.63, alpha: 1) : UIColor(white: 0.42, alpha: 1)
     }
     /// iMessage blue — the website's send/Replace colour.
     static let imBlue = UIColor(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255, alpha: 1)
@@ -400,6 +473,46 @@ enum Glass {
     static var keyShadowColor: UIColor { .black }
     static var keyShadowOffset: CGSize { CGSize(width: 0, height: 1) }
     static let keyShadowRadius: CGFloat = 0
+
+    /// The shadow under a KEY (the cards and tiles in panels keep the plain
+    /// keyShadow* above): a theme's 1pt edge or its glow, else today's. A
+    /// glow is drawn only with Reduce Transparency and Reduce Motion both
+    /// off (§4.1); the edge always.
+    static var keyFaceShadow: (color: UIColor, opacity: Float, offset: CGSize, radius: CGFloat) {
+        guard let s = skinVariant?.shadow else {
+            return (keyShadowColor, keyShadowOpacity, keyShadowOffset, keyShadowRadius)
+        }
+        let glow = s.radius > 0
+        let opacity: Float = glow && (reduceTransparency || reduceMotion) ? 0 : Float(s.alpha)
+        return (UIColor(rgb: s.color), opacity, CGSize(width: 0, height: s.offsetY), CGFloat(s.radius))
+    }
+
+    /// A theme's border for a key class: always drawn when the theme has
+    /// one (the "borders around keys" switch then has no say), nil
+    /// otherwise.
+    static func skinBorder(for cls: ThemeKeyClass) -> (color: UIColor, width: CGFloat)? {
+        guard let b = skinVariant?.border else { return nil }
+        return b.appliesTo.contains(cls) ? (UIColor(rgb: b.color), CGFloat(b.width)) : (.clear, 0)
+    }
+
+    // MARK: Key face type and symbols
+
+    /// The key-face font at TODAY's point size: a theme's face, else the
+    /// system's. Never a different size (§0.2).
+    static func keyFont(ofSize size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
+        if skin?.font != nil, let f = ThemeFonts.font(size: size) { return f }
+        return .systemFont(ofSize: size, weight: weight)
+    }
+
+    /// A symbol's weight on a key: today's, or the theme's glyph style
+    /// (light, or semibold for bold). The point size never changes (§5.4).
+    static func glyphWeight(_ today: UIImage.SymbolWeight) -> UIImage.SymbolWeight {
+        switch skin?.glyphStyle ?? .standard {
+        case .standard: return today
+        case .light: return .light
+        case .bold: return .semibold
+        }
+    }
 
     // MARK: Motion (§5.2/§5.3 — nothing bounces)
 

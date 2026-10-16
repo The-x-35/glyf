@@ -25,6 +25,10 @@ final class KeyView: UIControl {
     private let subtitle = UILabel()
     private let icon = UIImageView()
     private let accentDot = CALayer()
+    /// A theme's key texture, between the fill and the glyphs: Marble's
+    /// veins (one shared pattern tile) or Rose Gold's satin on its function
+    /// keys. Hidden on every other look.
+    private let textureLayer = CAGradientLayer()
     let tintLayer = CALayer()          // ripple overlay, opacity 0 at rest
     private var chargeRing: CAShapeLayer?
 
@@ -43,10 +47,16 @@ final class KeyView: UIControl {
         layer.cornerRadius = Glass.radiusKey
         layer.cornerCurve = .continuous
         layer.borderWidth = Glass.hairlineWidth
-        layer.shadowOpacity = Glass.keyShadowOpacity
-        layer.shadowOffset = Glass.keyShadowOffset
-        layer.shadowRadius = Glass.keyShadowRadius
-        layer.shadowColor = UIColor.black.cgColor
+        let shadow = Glass.keyFaceShadow
+        layer.shadowOpacity = shadow.opacity
+        layer.shadowOffset = shadow.offset
+        layer.shadowRadius = shadow.radius
+        layer.shadowColor = shadow.color.cgColor
+
+        textureLayer.cornerRadius = Glass.radiusKey
+        textureLayer.cornerCurve = .continuous
+        textureLayer.isHidden = true
+        layer.insertSublayer(textureLayer, at: 0)
 
         label.textAlignment = .center
         label.adjustsFontSizeToFitWidth = true
@@ -58,7 +68,8 @@ final class KeyView: UIControl {
         icon.contentMode = .center
         // Measured against iOS: shift and delete draw ~19.7 x 17pt, which is
         // this symbol size. Ours used to come out a tenth small.
-        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 19.5, weight: .light)
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: 19.5, weight: Glass.glyphWeight(.light))
         icon.tintColor = Glass.keyInk
         addSubview(icon)
 
@@ -103,6 +114,7 @@ final class KeyView: UIControl {
             label.frame = spec.isChar && shifted && !spec.pad ? bounds.offsetBy(dx: 0, dy: 1) : bounds
         }
         icon.frame = bounds
+        textureLayer.frame = bounds
         tintLayer.frame = bounds
         accentDot.frame = CGRect(x: bounds.width - 10.5, y: 5.5, width: 5, height: 5)
         accentDot.cornerRadius = 2.5
@@ -129,9 +141,30 @@ final class KeyView: UIControl {
     }
 
     /// Blue: the field named go, search, send or done, and it may be sent.
+    /// A theme's one accent is its return, so with a theme return always
+    /// wears it (keycap sets colour the enter key on every board).
     private var isPrimaryReturn: Bool {
-        if case .ret = spec.kind { return returnFace.primary && returnEnabled }
+        if case .ret = spec.kind { return (returnFace.primary || Glass.skin != nil) && returnEnabled }
         return false
+    }
+
+    /// Which of a theme's key classes this key is (§5.1).
+    private var themeClass: ThemeKeyClass {
+        if isPrimaryReturn { return .ret }
+        switch spec.kind {
+        case .char: return .letter
+        case .space: return .space
+        default: return .function
+        }
+    }
+
+    /// A theme's own shift or delete colours (Primary), or nil.
+    private var keyOverride: ThemeOverride? {
+        switch spec.kind {
+        case .shift: return Glass.keyOverride(shift: true)
+        case .delete: return Glass.keyOverride(shift: false)
+        default: return nil
+        }
     }
 
     /// Where a pad label's baseline sits below the key's middle; nil for
@@ -169,16 +202,16 @@ final class KeyView: UIControl {
             // 30pt, "pause" and "wait" 16.5pt.
             text = spec.title ?? c
             if spec.title != nil {
-                label.font = .systemFont(ofSize: 16.5, weight: .regular)
+                label.font = Glass.keyFont(ofSize: 16.5)
             } else if c.count == 1, "*#+".contains(c) {
-                label.font = .systemFont(ofSize: 30, weight: .regular)
+                label.font = Glass.keyFont(ofSize: 30)
             } else {
-                label.font = .systemFont(ofSize: 22, weight: .regular)
+                label.font = Glass.keyFont(ofSize: 22)
             }
         case .char(let c) where c.count > 1:
             // ".com": Apple sets it at 19pt, like a word, never in capitals.
             text = c
-            label.font = .systemFont(ofSize: 19, weight: .regular)
+            label.font = Glass.keyFont(ofSize: 19)
         case .char(let c):
             text = shifted ? c.uppercased() : c
             // Measured against the system keyboard on the same simulator, by
@@ -187,7 +220,8 @@ final class KeyView: UIControl {
             // matches 22pt with its 46 px cap height. Apple draws capitals
             // smaller so both cases read as one size; one 25pt face made
             // ours shout.
-            label.font = .systemFont(ofSize: shifted ? 22 : 24.5, weight: .regular)
+            // A theme's face keeps these sizes (docs/THEMES.md §0.2).
+            label.font = Glass.keyFont(ofSize: shifted ? 22 : 24.5)
         case .space:
             // Watermark, not a label (Acti-style restraint).
             text = "glyf"
@@ -195,17 +229,18 @@ final class KeyView: UIControl {
         case .ret:
             if let word = returnFace.text {
                 text = word
-                label.font = .systemFont(ofSize: 16, weight: .regular)
+                label.font = Glass.keyFont(ofSize: 16)
             } else {
                 image = UIImage(systemName: returnFace.symbol ?? "return")
                 icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
-                    pointSize: returnFace.pointSize, weight: returnFace.weight)
+                    pointSize: returnFace.pointSize, weight: Glass.glyphWeight(returnFace.weight))
             }
         case .delete:
             image = UIImage(systemName: "delete.left")
             if spec.pad {
                 // Apple's pad draws a bigger one: 24.7 x 20.3pt of light ink.
-                icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 23.5, weight: .light)
+                icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+                    pointSize: 23.5, weight: Glass.glyphWeight(.light))
             }
         case .shift:
             image = UIImage(systemName: "shift")
@@ -216,7 +251,7 @@ final class KeyView: UIControl {
             // Apple, by ink: "123" and "ABC" 18pt, "#+=" 13pt; on the phone
             // pad "+*#" 23pt, letter-spaced, and "123" 21pt.
             let size: CGFloat = spec.pad ? (m == "+*#" ? 23 : 21) : (m == "#+=" ? 13 : 18)
-            label.font = .systemFont(ofSize: size, weight: .regular)
+            label.font = Glass.keyFont(ofSize: size)
         case .emoji:
             image = UIImage(systemName: "face.smiling")
         }
@@ -224,12 +259,16 @@ final class KeyView: UIControl {
         label.isHidden = text == nil
         icon.image = image
         icon.isHidden = image == nil
-        var ink = Glass.keyInk
-        if isPrimaryReturn { ink = .white }
+        // Letters take the keys' ink; function keys a theme's function glyph
+        // (the same ink on every other look).
+        let base = isFunctionKey ? Glass.fnInk : Glass.keyInk
+        var ink = base
+        if let o = keyOverride { ink = UIColor(rgb: o.glyph) }
+        if isPrimaryReturn { ink = Glass.returnInk }
         // Greyed: the phone pad's digits behind +*#, and a return key the
         // field won't take yet. #A6A6A6 on white, as Apple draws them.
-        if spec.disabled { ink = Glass.keyInk.withAlphaComponent(0.35) }
-        if case .ret = spec.kind, !returnEnabled { ink = Glass.keyInk.withAlphaComponent(0.35) }
+        if spec.disabled { ink = base.withAlphaComponent(0.35) }
+        if case .ret = spec.kind, !returnEnabled { ink = base.withAlphaComponent(0.35) }
         label.textColor = ink
         icon.tintColor = ink
         if case .space = spec.kind {
@@ -287,13 +326,17 @@ final class KeyView: UIControl {
             layer.shadowOpacity = 0
             return
         }
+        let shadow = Glass.keyFaceShadow
         if isPrimaryReturn {
             backgroundColor = pressed ? Glass.returnBluePressed : Glass.returnBlue
-            layer.borderWidth = 0
-            layer.shadowColor = Glass.keyShadowColor.cgColor
-            layer.shadowOpacity = Glass.keyShadowOpacity
-            layer.shadowRadius = Glass.keyShadowRadius
-            layer.shadowOffset = Glass.keyShadowOffset
+            let border = Glass.skinBorder(for: .ret)
+            layer.borderWidth = border?.width ?? 0
+            layer.borderColor = border?.color.cgColor
+            layer.shadowColor = shadow.color.cgColor
+            layer.shadowOpacity = shadow.opacity
+            layer.shadowRadius = shadow.radius
+            layer.shadowOffset = shadow.offset
+            textureLayer.isHidden = true
             return
         }
         if isBound && !pressed && Glass.keyTheme == "glow" {
@@ -312,18 +355,58 @@ final class KeyView: UIControl {
         // bindings — simple like Apple, just with purple dots. The Gboard
         // "borders" toggle firms the outline; NEVER an accent border. The site
         // look draws no outline at all, only the hard bottom edge.
-        let borderless = Glass.solidLook && !Glass.keyBorders
-        layer.borderWidth = Glass.keyBorders ? 1 : (borderless ? 0 : Glass.hairlineWidth)
-        layer.borderColor = (Glass.keyBorders ? Glass.strokeKeyBorder
-                                              : Glass.strokeHairline).cgColor
-        layer.shadowColor = Glass.keyShadowColor.cgColor
-        layer.shadowOpacity = Glass.keyShadowOpacity
-        layer.shadowRadius = Glass.keyShadowRadius
-        layer.shadowOffset = Glass.keyShadowOffset
-        if isFunctionKey {
+        // A theme with a border of its own always draws it, inside the
+        // key's bounds, so no key grows (§0.1, §5.1).
+        if let border = Glass.skinBorder(for: themeClass) {
+            layer.borderWidth = border.width
+            layer.borderColor = border.color.cgColor
+        } else {
+            let borderless = Glass.solidLook && !Glass.keyBorders
+            layer.borderWidth = Glass.keyBorders ? 1 : (borderless ? 0 : Glass.hairlineWidth)
+            layer.borderColor = (Glass.keyBorders ? Glass.strokeKeyBorder
+                                                  : Glass.strokeHairline).cgColor
+        }
+        layer.shadowColor = shadow.color.cgColor
+        layer.shadowOpacity = shadow.opacity
+        layer.shadowRadius = shadow.radius
+        layer.shadowOffset = shadow.offset
+        if let o = keyOverride {
+            backgroundColor = UIColor(rgb: pressed ? o.pressed : o.fill)
+        } else if isFunctionKey {
             backgroundColor = pressed ? Glass.fillKeyFnPressed : Glass.fillKeyFn
+        } else if case .space = spec.kind {
+            backgroundColor = pressed ? Glass.fillKeySpacePressed : Glass.fillKeySpace
         } else {
             backgroundColor = pressed ? Glass.fillKeyPressed : Glass.fillKey
+        }
+        updateTexture(pressed: pressed)
+    }
+
+    /// Marble's veins on every key cap, at the tile's 3%; Rose Gold's satin
+    /// on its function keys at rest (a press shows the plain pressed fill).
+    private func updateTexture(pressed: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        guard let texture = Glass.skin?.keyTexture, let v = Glass.skinVariant else {
+            textureLayer.isHidden = true
+            return
+        }
+        switch texture.kind {
+        case .veins:
+            textureLayer.colors = nil
+            textureLayer.backgroundColor = ThemeTextures.veins(ink: v.keyText, alpha: texture.amplitude).cgColor
+            textureLayer.isHidden = false
+        case .satin:
+            guard isFunctionKey, keyOverride == nil, !pressed else {
+                textureLayer.isHidden = true
+                return
+            }
+            textureLayer.backgroundColor = nil
+            textureLayer.colors = ThemeTextures.satin(v.function.fill, glyph: v.functionGlyph)
+            textureLayer.startPoint = CGPoint(x: 0.5, y: 0)
+            textureLayer.endPoint = CGPoint(x: 0.5, y: 1)
+            textureLayer.isHidden = false
         }
     }
 
@@ -437,6 +520,7 @@ final class KeyView: UIControl {
         let shape = CAShapeLayer()
         path.apply(CGAffineTransform(translationX: -box.minX, y: -box.minY))
         shape.path = path.cgPath
+        // A theme's press popup colour (the key's own colour otherwise).
         shape.fillColor = Glass.fillKeySolid.cgColor
         balloon.layer.addSublayer(shape)
 
@@ -444,13 +528,13 @@ final class KeyView: UIControl {
         // A shortened bulb takes a smaller letter.
         let fullBulb = fullRise - 15 * s
         let fit = min(1, (neckTop - bulbTop) / fullBulb)
-        let font = UIFont.systemFont(ofSize: keySize * 1.5 * max(0.82, fit), weight: .regular)
+        let font = Glass.keyFont(ofSize: keySize * 1.5 * max(0.82, fit))
         let baseline = bulbTop + (fullRise - baselineRise) * fit
         let big = UILabel(frame: CGRect(x: bx0 - box.minX, y: baseline - font.ascender - box.minY,
                                         width: bx1 - bx0, height: font.lineHeight))
         big.textAlignment = .center
         big.font = font
-        big.textColor = label.textColor ?? Glass.keyInk
+        big.textColor = Glass.skin != nil ? Glass.popupInk : (label.textColor ?? Glass.keyInk)
         big.text = label.text
         balloon.addSubview(big)
         host.addSubview(balloon)
