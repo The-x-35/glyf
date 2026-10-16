@@ -343,45 +343,124 @@ final class KeyView: UIControl {
 
     private var previewView: UIView?
 
+    /// Apple's key callout, measured on its own keyboard on the iOS 26.5
+    /// Pro Max simulator (Arpit, 2026-10-17: "why is the feel of key coming
+    /// up on touch not same in iphone keyboard and ours, make them same"):
+    /// one shape grown out of the key, never a box floating above it. The
+    /// bulb is the key's width plus 12pt a side with 12pt top corners, its
+    /// top 69pt above the key's top; the sides fall straight to 15pt above
+    /// the key, then an S-curve meets the key's own sides 5pt below its top
+    /// and runs down to the key's bottom corners. The key's own fill, no
+    /// border, no shadow. The letter is 1.5 times the key's (a 24.5pt "f"
+    /// shows at 36.75), its baseline 20.7pt above the key's top. A key at
+    /// the screen's edge keeps that edge straight and leans the bulb inward
+    /// (21.5pt wider than the key). Measured on 45pt keys (Pro Max) and 43pt
+    /// ones (17e: bulb 66.7 above, baseline 20 above). Where the keyboard's top edge leaves too
+    /// little room (the top row: an extension can't draw above its window,
+    /// Apple's own callout can), the neck then the bulb get shorter.
     private func showPreview() {
         guard previewView == nil, let host = superview, bounds.width > 10 else { return }
-        let w = bounds.width * 1.55
-        let h = bounds.height * 1.35
-        let balloon = UIView(frame: CGRect(
-            x: frame.midX - w / 2,
-            y: frame.minY - h - 4,
-            width: w, height: h))
-        balloon.backgroundColor = Glass.fillKeySolid // readable over anything
-        balloon.layer.cornerRadius = 12
-        balloon.layer.cornerCurve = .continuous
-        balloon.layer.borderWidth = Glass.hairlineWidth
-        balloon.layer.borderColor = Glass.strokeHairline.cgColor
-        balloon.layer.shadowColor = UIColor.black.cgColor
-        balloon.layer.shadowOpacity = 0.22
-        balloon.layer.shadowOffset = CGSize(width: 0, height: 3)
-        balloon.layer.shadowRadius = 7
+        let k = frame
+        let s = k.height / 45
+        let r = Glass.radiusKey
+        let corner: CGFloat = 12
+        // How far above the key the window lets us draw (1pt kept clear).
+        let topInWindow = window.map { host.convert(k.origin, to: $0).y } ?? k.minY
+        let room = max(0, topInWindow - 1)
+        let fullRise = 69 - (45 - k.height) * 1.15
+        let baselineRise = 20.7 - (45 - k.height) * 0.35
+        var bulbRise = fullRise, neckTopRise = 15 * s
+        let neckDrop = 5 * s
+        if bulbRise > room {
+            let short = bulbRise - room
+            // The neck gives up to 6pt, the bulb the rest.
+            let neckGive = min(short, 6 * s)
+            neckTopRise -= neckGive
+            bulbRise = room
+        }
+        let bulbTop = k.minY - bulbRise
+        let neckTop = k.minY - neckTopRise
+        let neckBottom = k.minY + neckDrop
+
+        let edgeGap: CGFloat = 1
+        var bx0 = k.midX - (k.width + 24) / 2
+        var bx1 = k.midX + (k.width + 24) / 2
+        var straightLeft = false, straightRight = false
+        if bx0 < edgeGap {
+            straightLeft = true
+            bx0 = k.minX
+            bx1 = k.maxX + 21.5
+        } else if bx1 > host.bounds.width - edgeGap {
+            straightRight = true
+            bx1 = k.maxX
+            bx0 = k.minX - 21.5
+        }
+
+        let path = UIBezierPath()
+        let half = (neckBottom - neckTop) / 2
+        // Up the left side.
+        path.move(to: CGPoint(x: k.minX, y: k.maxY - r))
+        if straightLeft {
+            path.addLine(to: CGPoint(x: bx0, y: bulbTop + corner))
+        } else {
+            path.addLine(to: CGPoint(x: k.minX, y: neckBottom))
+            path.addCurve(to: CGPoint(x: bx0, y: neckTop),
+                          controlPoint1: CGPoint(x: k.minX, y: neckBottom - half),
+                          controlPoint2: CGPoint(x: bx0, y: neckTop + half))
+            path.addLine(to: CGPoint(x: bx0, y: bulbTop + corner))
+        }
+        path.addArc(withCenter: CGPoint(x: bx0 + corner, y: bulbTop + corner), radius: corner,
+                    startAngle: .pi, endAngle: -.pi / 2, clockwise: true)
+        path.addLine(to: CGPoint(x: bx1 - corner, y: bulbTop))
+        path.addArc(withCenter: CGPoint(x: bx1 - corner, y: bulbTop + corner), radius: corner,
+                    startAngle: -.pi / 2, endAngle: 0, clockwise: true)
+        // Down the right side.
+        if straightRight {
+            path.addLine(to: CGPoint(x: bx1, y: k.maxY - r))
+        } else {
+            path.addLine(to: CGPoint(x: bx1, y: neckTop))
+            path.addCurve(to: CGPoint(x: k.maxX, y: neckBottom),
+                          controlPoint1: CGPoint(x: bx1, y: neckTop + half),
+                          controlPoint2: CGPoint(x: k.maxX, y: neckBottom - half))
+            path.addLine(to: CGPoint(x: k.maxX, y: k.maxY - r))
+        }
+        path.addArc(withCenter: CGPoint(x: k.maxX - r, y: k.maxY - r), radius: r,
+                    startAngle: 0, endAngle: .pi / 2, clockwise: true)
+        path.addLine(to: CGPoint(x: k.minX + r, y: k.maxY))
+        path.addArc(withCenter: CGPoint(x: k.minX + r, y: k.maxY - r), radius: r,
+                    startAngle: .pi / 2, endAngle: .pi, clockwise: true)
+        path.close()
+
+        let box = path.bounds
+        let balloon = UIView(frame: box)
         balloon.isUserInteractionEnabled = false
-        let big = UILabel(frame: balloon.bounds)
+        let shape = CAShapeLayer()
+        path.apply(CGAffineTransform(translationX: -box.minX, y: -box.minY))
+        shape.path = path.cgPath
+        shape.fillColor = Glass.fillKeySolid.cgColor
+        balloon.layer.addSublayer(shape)
+
+        let keySize = label.font?.pointSize ?? 24.5
+        // A shortened bulb takes a smaller letter.
+        let fullBulb = fullRise - 15 * s
+        let fit = min(1, (neckTop - bulbTop) / fullBulb)
+        let font = UIFont.systemFont(ofSize: keySize * 1.5 * max(0.82, fit), weight: .regular)
+        let baseline = bulbTop + (fullRise - baselineRise) * fit
+        let big = UILabel(frame: CGRect(x: bx0 - box.minX, y: baseline - font.ascender - box.minY,
+                                        width: bx1 - bx0, height: font.lineHeight))
         big.textAlignment = .center
-        big.font = .systemFont(ofSize: 34, weight: .regular)
-        big.textColor = Glass.keyInk
+        big.font = font
+        big.textColor = label.textColor ?? Glass.keyInk
         big.text = label.text
         balloon.addSubview(big)
-        // Keep the balloon on-screen at the edges.
-        if balloon.frame.minX < 2 { balloon.frame.origin.x = 2 }
-        if balloon.frame.maxX > host.bounds.width - 2 {
-            balloon.frame.origin.x = host.bounds.width - 2 - w
-        }
         host.addSubview(balloon)
         previewView = balloon
     }
 
     private func hidePreview() {
-        guard let balloon = previewView else { return }
+        // Gone the moment the finger lifts, like Apple's.
+        previewView?.removeFromSuperview()
         previewView = nil
-        UIView.animate(withDuration: 0.06, animations: { balloon.alpha = 0 }) { _ in
-            balloon.removeFromSuperview()
-        }
     }
 
     // MARK: Charge ring (§5.3: 2pt accent stroke contracting 1.18× → key edge)

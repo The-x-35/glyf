@@ -687,30 +687,12 @@ class GlyfKeyboardView(
                 radius * sx, radius * sy, ringPaint)
         }
 
-        // Press preview balloon (chars only).
+        // Press preview: Apple's key callout, the twin of iOS
+        // KeyView.showPreview (measured on Apple's keyboard, 2026-10-17).
         val p = pressed
         val pr = pressedRect
         if (p?.char != null && p.char.length == 1 && !p.pad && pr != null && !longPressFired && !trackpadLook) {
-            val bw = pr.width() * 1.55f
-            val bh = pr.height() * 1.3f
-            var bx = pr.centerX() - bw / 2
-            bx = bx.coerceIn(dp(2f), width - bw - dp(2f))
-            val by = (pr.top - bh - dp(4f)).coerceAtLeast(-dp(20f))
-            val balloon = RectF(bx, by, bx + bw, by + bh)
-            // Painted two-layer drop (GPU) instead of a blur shadow layer.
-            shadowPaint.color = Color.argb(28, 0, 0, 0)
-            canvas.drawRoundRect(RectF(bx - dp(2f), by, bx + bw + dp(2f), by + bh + dp(5f)),
-                dp(14f), dp(14f), shadowPaint)
-            shadowPaint.color = Color.argb(46, 0, 0, 0)
-            canvas.drawRoundRect(RectF(bx, by + dp(2f), bx + bw, by + bh + dp(3f)),
-                dp(12f), dp(12f), shadowPaint)
-            keyPaint.color = if (solidLook) palette().key
-                             else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
-            canvas.drawRoundRect(balloon, dp(12f), dp(12f), keyPaint)
-            textPaint.color = ink()
-            textPaint.textSize = dp(30f)
-            canvas.drawText(display(p), balloon.centerX(),
-                balloon.centerY() + dp(10f), textPaint)
+            drawCallout(canvas, p, pr, radius)
         }
 
         // The accent popup (iOS AccentPopup): a card over the held key with
@@ -751,6 +733,94 @@ class GlyfKeyboardView(
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
+    }
+
+    private val calloutPath = android.graphics.Path()
+
+    /** How far above its own top this view may draw: down through every
+     *  parent that lets children overflow (the root lets a top-row key's
+     *  callout rise over the strip), stopping at the first that clips. */
+    private fun roomAbove(): Float {
+        var room = 0f
+        var v: View = this
+        while (true) {
+            room += v.top - v.scrollY
+            val parent = v.parent as? android.view.ViewGroup ?: break
+            if (parent.clipChildren) break
+            v = parent
+        }
+        return room
+    }
+
+    /** Apple's key callout: one shape grown out of the key, never a box
+     *  floating over it. The bulb is the key's width plus 12 a side with 12
+     *  top corners, its top 69 above the key's top; the sides fall straight
+     *  to 15 above the key, then an S-curve meets the key's sides 5 below
+     *  its top. The key's own fill, no border, no shadow; the letter 1.5
+     *  times the key's, its baseline 20.7 above the key. An edge key keeps
+     *  that edge straight and leans the bulb inward. Measured on 45-tall
+     *  keys and 43-tall ones (bulb 66.7 above, baseline 20); where the top edge leaves
+     *  too little room the neck then the bulb get shorter. */
+    private fun drawCallout(canvas: Canvas, key: Key, k: RectF, r: Float) {
+        val s = k.height() / dp(45f)
+        val corner = dp(12f)
+        val room = maxOf(0f, k.top + roomAbove() - dp(1f))
+        val h = k.height() / density
+        val fullRise = dp(69f - (45f - h) * 1.15f)
+        val baselineRise = dp(20.7f - (45f - h) * 0.35f)
+        var bulbRise = fullRise
+        var neckTopRise = dp(15f) * s
+        val neckDrop = dp(5f) * s
+        if (bulbRise > room) {
+            neckTopRise -= min(bulbRise - room, dp(6f) * s)
+            bulbRise = room
+        }
+        val bulbTop = k.top - bulbRise
+        val neckTop = k.top - neckTopRise
+        val neckBottom = k.top + neckDrop
+        var bx0 = k.centerX() - (k.width() + dp(24f)) / 2
+        var bx1 = k.centerX() + (k.width() + dp(24f)) / 2
+        var straightLeft = false
+        var straightRight = false
+        if (bx0 < dp(1f)) {
+            straightLeft = true; bx0 = k.left; bx1 = k.right + dp(21.5f)
+        } else if (bx1 > width - dp(1f)) {
+            straightRight = true; bx1 = k.right; bx0 = k.left - dp(21.5f)
+        }
+        val half = (neckBottom - neckTop) / 2
+        val path = calloutPath
+        path.reset()
+        path.moveTo(k.left, k.bottom - r)
+        if (!straightLeft) {
+            path.lineTo(k.left, neckBottom)
+            path.cubicTo(k.left, neckBottom - half, bx0, neckTop + half, bx0, neckTop)
+        }
+        path.lineTo(bx0, bulbTop + corner)
+        path.arcTo(RectF(bx0, bulbTop, bx0 + 2 * corner, bulbTop + 2 * corner), 180f, 90f)
+        path.lineTo(bx1 - corner, bulbTop)
+        path.arcTo(RectF(bx1 - 2 * corner, bulbTop, bx1, bulbTop + 2 * corner), 270f, 90f)
+        if (!straightRight) {
+            path.lineTo(bx1, neckTop)
+            path.cubicTo(bx1, neckTop + half, k.right, neckBottom - half, k.right, neckBottom)
+        }
+        path.lineTo(k.right, k.bottom - r)
+        path.arcTo(RectF(k.right - 2 * r, k.bottom - 2 * r, k.right, k.bottom), 0f, 90f)
+        path.lineTo(k.left + r, k.bottom)
+        path.arcTo(RectF(k.left, k.bottom - 2 * r, k.left + 2 * r, k.bottom), 90f, 90f)
+        path.close()
+        keyPaint.color = if (solidLook) palette().key
+                         else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
+        canvas.drawPath(path, keyPaint)
+
+        // The key's own letter size (drawFace), half again; a shortened
+        // bulb takes a smaller one.
+        val letter = (0.51f * k.height() / density).coerceIn(20f, 30f)
+        val keySize = dp(if (shifted) letter * 20f / 22f else letter)
+        val fit = min(1f, (neckTop - bulbTop) / (fullRise - dp(15f) * s))
+        textPaint.color = ink()
+        textPaint.letterSpacing = 0f
+        textPaint.textSize = keySize * 1.5f * maxOf(0.82f, fit)
+        canvas.drawText(display(key), (bx0 + bx1) / 2, bulbTop + (fullRise - baselineRise) * fit, textPaint)
     }
 
     private fun drawFace(canvas: Canvas, key: Key, rect: RectF) {
