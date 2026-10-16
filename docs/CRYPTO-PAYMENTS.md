@@ -43,7 +43,7 @@ Plus ($2 a month, $20 a year) and Max ($5 a month, $50 a year) can be paid in US
 
 ### So
 
-- **Built**: USDC checkout in the **dApp Store build** (Android, `GLYF_CRYPTO_PAY=true`). A plan paid this way works on every Glyf app the person signs in to, iPhone included.
+- **Built**: USDC checkout in the **dApp Store build** (Android, `--flavor dappStore`). A plan paid this way works on every Glyf app the person signs in to, iPhone included.
 - **Allowed, not built**: a **tryglyf.com** checkout. The site has no Glyf sign-in yet, and the plan has to land on an account. The server routes are ready for it once the site can sign people in.
 - **Allowed, not built (a choice for Arpit)**: an iOS **US-storefront-only** "Pay with USDC on the web" link. It needs the storefront check (StoreKit `Storefront.current?.countryCode == "USA"`) and the web checkout above. Apple may later charge a commission on it.
 - **Not allowed without a Google program**: anything in the Google Play build.
@@ -90,7 +90,7 @@ Plus ($2 a month, $20 a year) and Max ($5 a month, $50 a year) can be paid in US
 **App** (Flutter):
 
 - `app/lib/wallet/crypto_pay.dart`:
-  - `CryptoPay.allowed` is `bool.fromEnvironment('GLYF_CRYPTO_PAY') && Platform.isAndroid`. Store builds compile it out of sight.
+  - `CryptoPay.allowed` is true on Android in the `dappStore` flavor, or with `--dart-define=GLYF_CRYPTO_PAY=true` in any flavor but `play`. The Play and iPhone builds never show it.
   - The paywall also asks `GET /billing/crypto`, so the server can switch it off.
   - Paying:
     - With a Mobile Wallet Adapter wallet on the phone (Seed Vault, Phantom, Solflare), the app builds the USDC transfer itself: CreateIdempotent for the treasury's account, then TransferChecked with the reference as a read-only account, the way Solana Pay does it. The wallet signs it, and it is sent through the existing `/wallet/rpc` relay.
@@ -122,12 +122,12 @@ On **Railway** (the API service):
 The **dApp Store build** is built with:
 
 ```
-flutter build apk --release --dart-define=GLYF_CRYPTO_PAY=true
+flutter build apk --release --flavor dappStore
 ```
 
-Once the `dappStore` flavor from [SOLANA-DAPP-STORE.md](SOLANA-DAPP-STORE.md) lands, add `--flavor dappStore` to the same command. The flavor picks the signing key; the define is what turns USDC on.
+The `dappStore` flavor (since 2026-10-17, [SOLANA-DAPP-STORE.md](SOLANA-DAPP-STORE.md)) picks the signing key and turns USDC on by itself (`CryptoPay.allowed` reads `appFlavor`); no define is needed. The server's `GLYF_TREASURY` remains the switch that actually opens it.
 
-The App Store and Google Play builds are built without it, as now. Don't upload a Play build with the flag on.
+The Google Play build (`--flavor play`) never shows it, even with `--dart-define=GLYF_CRYPTO_PAY=true`, and the iPhone build never shows it. To test on Android, build `flutter build apk --debug --flavor dappStore` (debug builds sign with the debug key).
 
 ## 4. Testing
 
@@ -143,7 +143,7 @@ The App Store and Google Play builds are built without it, as now. Don't upload 
    MOCK_AI=true npm run dev
    ```
    `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` is Circle's devnet USDC. Get some at faucet.circle.com, and devnet SOL for fees at faucet.solana.com.
-2. Point a debug Android build at that server, built with `--dart-define=GLYF_CRYPTO_PAY=true`. Switch Phantom or Solflare to devnet, open Upgrade, pick Plus monthly, and tap **Pay 2 USDC**.
+2. Point a debug Android build at that server, built with `--flavor dappStore`. Switch Phantom or Solflare to devnet, open Upgrade, pick Plus monthly, and tap **Pay 2 USDC**.
 3. Or without the app:
    - `POST /billing/crypto/request` with a session token, which gives the `url`.
    - Open that `solana:` URL as a QR code in a devnet wallet.

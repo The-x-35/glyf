@@ -77,7 +77,7 @@ export default function DeleteAccount() {
       <footer className="footer">
         <div className="wrap footer-inner">
           <Wordmark href="/" label="Glyf home" />
-          <p className="footer-legal">© 2026 Glyf · iPhone and Android</p>
+          <p className="footer-legal">© 2026 Glyf · iPhone and Android · <a href="/terms">Terms</a></p>
         </div>
       </footer>
     </>

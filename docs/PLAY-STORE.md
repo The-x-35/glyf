@@ -163,10 +163,10 @@ keyAlias=upload
 keyPassword=…
 ```
 
-`app/android/app/build.gradle.kts` signs release builds with it, or with the debug key when the file is missing (which Play refuses). Build the bundle:
+`app/android/app/build.gradle.kts` signs the `play` flavor's release builds with it, or with the debug key when the file is missing (which Play refuses). The same file also names the Solana dApp Store key (`dappStore*` entries, SOLANA-DAPP-STORE.md); never upload a `dappStore` build to Play. Build the bundle:
 
 ```bash
-cd app && flutter build appbundle --release
+cd app && flutter build appbundle --release --flavor play
 ```
 
-The bundle is `app/build/app/outputs/bundle/release/app-release.aab`; its version code is the `+N` in `pubspec.yaml`, and each upload needs a higher one. Turn on Play App Signing, then give the SHA-1 Play shows for the app signing key, and the upload key's (`keytool -printcert -jarfile` on a built bundle reads it without the password), an Android OAuth client each in Google Cloud. Target API 36 is already met.
+Never add `--dart-define=GLYF_CRYPTO_PAY=true` to it (the `play` flavor ignores it anyway). The bundle is `app/build/app/outputs/bundle/playRelease/app-play-release.aab` (Flutter's "Built …" line can name an older file left in `bundle/release/`, so take the one in `playRelease/`); its version code is the `+N` in `pubspec.yaml`, and each upload needs a higher one. Turn on Play App Signing, then give the SHA-1 Play shows for the app signing key, and the upload key's (`keytool -printcert -jarfile` on a built bundle reads it without the password), an Android OAuth client each in Google Cloud. Target API 36 is already met.

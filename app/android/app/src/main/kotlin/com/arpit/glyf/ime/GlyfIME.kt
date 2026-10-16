@@ -2815,7 +2815,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 is Smart.AddressKind.Token -> {
                     stripSmartDetail = "buy"
                     showStripChip("paste", kind.symbol, kind.usd?.let { Smart.price(it) } ?: Smart.shortAddress(address),
-                        "Paste", extra = "Buy", onExtra = {
+                        "Paste", extra = if (kind.buy) "Buy" else null, onExtra = {
                             used()
                             hideStripChip()
                             showPayPanel(PayPanelView.Intent.Buy(address, kind.symbol, kind.usd?.let { Smart.price(it) }))

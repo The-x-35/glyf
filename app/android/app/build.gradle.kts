@@ -6,9 +6,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// The Play upload key, from android/key.properties (never committed; see
-// docs/PLAY-STORE.md): storeFile, storePassword, keyAlias, keyPassword. Without
-// it a release build signs with the debug key, which Play refuses.
+// Both release keys, from android/key.properties (never committed):
+// - the Play upload key: storeFile, storePassword, keyAlias, keyPassword
+//   (docs/PLAY-STORE.md);
+// - the Solana dApp Store key, which must not be Play's: dappStoreStoreFile,
+//   dappStoreStorePassword, dappStoreKeyAlias, dappStoreKeyPassword
+//   (docs/SOLANA-DAPP-STORE.md).
+// Without one, that flavor's release build signs with the debug key, which
+// both stores refuse.
 val uploadKey = Properties().apply {
     val f = rootProject.file("key.properties")
     if (f.exists()) f.inputStream().use { load(it) }
@@ -50,13 +55,43 @@ android {
                 keyPassword = uploadKey.getProperty("keyPassword")
             }
         }
+        if (uploadKey.getProperty("dappStoreStoreFile") != null) {
+            create("dappStore") {
+                storeFile = rootProject.file(uploadKey.getProperty("dappStoreStoreFile"))
+                storePassword = uploadKey.getProperty("dappStoreStorePassword")
+                keyAlias = uploadKey.getProperty("dappStoreKeyAlias")
+                keyPassword = uploadKey.getProperty("dappStoreKeyPassword")
+            }
+        }
+    }
+
+    // Two stores, one app (com.arpit.glyf on both): Google Play, and the
+    // Solana dApp Store (docs/SOLANA-DAPP-STORE.md). Every Android build
+    // names one: `flutter build appbundle --release --flavor play`,
+    // `flutter build apk --release --flavor dappStore`, and
+    // `flutter build apk --debug --flavor play` for day-to-day work. Dart
+    // reads it as `appFlavor`, Kotlin as BuildConfig.FLAVOR.
+    flavorDimensions += "store"
+    productFlavors {
+        create("play") {
+            dimension = "store"
+            isDefault = true
+            // The upload key when android/key.properties names one; the debug
+            // key otherwise, so `flutter run --release` still works.
+            signingConfig = signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
+        }
+        create("dappStore") {
+            dimension = "store"
+            // Its own key: the dApp Store refuses Play's, and every update
+            // must carry this same one.
+            signingConfig = signingConfigs.findByName("dappStore") ?: signingConfigs.getByName("debug")
+        }
     }
 
     buildTypes {
         release {
-            // The upload key when android/key.properties names one; the debug
-            // key otherwise, so `flutter run --release` still works.
-            signingConfig = signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
+            // No signingConfig here: a build type's beats a flavor's, and each
+            // flavor brings its own key above.
         }
     }
 }
@@ -84,8 +119,9 @@ dependencies {
     // Google Play Billing, for Plus and Max on Android. In the bundle before the
     // paywall uses it: Play lets subscriptions be created only for an app with a
     // billing library, and read a bare BILLING permission as the retired AIDL
-    // billing (it asked for 8.0.0 or newer).
-    implementation("com.android.billingclient:billing-ktx:9.1.0")
+    // billing (it asked for 8.0.0 or newer). The Play flavor only: the dApp
+    // Store build has no Play Billing (nor its BILLING permission).
+    "playImplementation"("com.android.billingclient:billing-ktx:9.1.0")
     // JVM unit tests for the IME's pure logic (gestures, typing engine) —
     // the same cases RunnerTests covers on iOS.
     testImplementation("junit:junit:4.13.2")

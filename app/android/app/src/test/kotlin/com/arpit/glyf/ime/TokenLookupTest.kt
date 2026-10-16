@@ -164,4 +164,17 @@ class TokenLookupTest {
         assertTrue(TokenLookup.isAddress(wallet))
         assertTrue(!TokenLookup.isAddress("0OIl"))
     }
+
+    /** A copied xStock's address is marked a stock, so the dApp Store
+     *  build (RatesStore.stockBuys) shows its price without Buy. */
+    @Test fun marksATokenizedStockFoundByItsAddress() {
+        val aapl = apple[0].put("decimals", 8)
+        val ondo = apple[1].put("decimals", 9)
+        val bonk = j("id" to "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", "symbol" to "Bonk", "name" to "Bonk",
+            "decimals" to 5, "usdPrice" to 0.0000036, "isVerified" to true, "tags" to tags("verified", "community"))
+        val rates = TokenLookup(Fake { q -> listOf(aapl, ondo, bonk).filter { q.contains(it.getString("id")) } }::search) { 0L }
+        assertTrue(rates.tokenAt(aapl.getString("id"))!!.stock)
+        assertTrue(rates.tokenAt(ondo.getString("id"))!!.stock)
+        assertTrue(!rates.tokenAt(bonk.getString("id"))!!.stock)
+    }
 }

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../core/billing.dart';
@@ -7,8 +9,9 @@ import '../core/telemetry.dart';
 import '../core/theme.dart';
 import '../wallet/crypto_pay.dart';
 
-/// Apple's standard licence, which Glyf's subscriptions are sold under.
-const _termsURL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+/// Apple's standard licence, which Glyf's subscriptions are sold under on
+/// the iPhone; Glyf's own Terms everywhere else.
+const _appleEulaURL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
 /// §6.16 — two plans over free, in whole dollars. Free: 50 runs a week ·
 /// Plus $2 a month or $20 a year: 150 a day · Max $5 a month or $50 a year:
@@ -373,7 +376,7 @@ class _PaywallSheetState extends State<_PaywallSheet> {
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         const Text('Cancel anytime', style: style),
         const Text('  ·  ', style: style),
-        link('Terms', _termsURL),
+        link('Terms', Platform.isIOS ? _appleEulaURL : termsURL),
         const Text('  ·  ', style: style),
         link('Privacy', privacyPolicyURL),
       ]),

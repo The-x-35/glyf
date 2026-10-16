@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../core/bridge.dart';
+import '../core/flavor.dart';
 import '../core/telemetry.dart';
 import 'base58.dart';
 import 'mwa.dart';
@@ -239,6 +240,9 @@ abstract final class WalletFlow {
 
   static const _unexpected = 'Something went wrong. Try again';
 
+  /// The dApp Store build sells no tokenized stocks (Flavor.stockBuys).
+  static const noStockBuys = 'Stocks can’t be bought in this version of Glyf';
+
   /// For a break nobody planned for once Phantom has signed: whether money
   /// moved isn't known, so nobody should simply try again.
   static const unknownOutcome =
@@ -247,6 +251,7 @@ abstract final class WalletFlow {
   /// Buys [token] with [amount] of [payWith] through Jupiter, signed in
   /// Phantom. An error to show, or null.
   static Future<PayStart> buy({required TokenInfo token, required TokenInfo payWith, required String amount}) async {
+    if (token.stock && !Flavor.stockBuys) return const PayStart.error(noStockBuys);
     final wallet = await _linked();
     if (wallet == null) return const PayStart.error('Connect your wallet first');
     final units = Sol.units(amount, payWith.decimals);

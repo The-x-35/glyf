@@ -912,14 +912,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                   style: const TextStyle(fontSize: 13.5, color: Glass.danger)),
             ),
           const SizedBox(height: 6),
-          Center(
-            child: TextButton(
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            TextButton(
               key: const Key('onb:privacy'),
               onPressed: () => GlyfBridge.openURL(privacyPolicyURL),
               child: const Text('Privacy policy',
                   style: TextStyle(fontSize: 13, color: Glass.inkSoft, fontWeight: FontWeight.w500)),
             ),
-          ),
+            TextButton(
+              key: const Key('onb:terms'),
+              onPressed: () => GlyfBridge.openURL(termsURL),
+              child: const Text('Terms',
+                  style: TextStyle(fontSize: 13, color: Glass.inkSoft, fontWeight: FontWeight.w500)),
+            ),
+          ]),
           const SizedBox(height: 4),
         ]);
 

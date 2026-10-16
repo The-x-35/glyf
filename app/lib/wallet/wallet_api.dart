@@ -24,6 +24,7 @@ class TokenInfo {
     this.usdPrice,
     this.icon,
     this.verified = false,
+    this.stock = false,
   });
 
   final String mint;
@@ -33,6 +34,9 @@ class TokenInfo {
   final double? usdPrice;
   final String? icon;
   final bool verified;
+
+  /// A tokenized stock (xStocks, Ondo), by Jupiter's tags.
+  final bool stock;
 
   static TokenInfo? fromJson(Object? json) {
     if (json is! Map) return null;
@@ -47,6 +51,8 @@ class TokenInfo {
       usdPrice: (json['usdPrice'] as num?)?.toDouble(),
       icon: json['icon'] as String?,
       verified: json['isVerified'] == true,
+      stock: json['tags'] is List &&
+          (json['tags'] as List).any((t) => t == 'stocks' || t == 'equities' || t == 'xstocks'),
     );
   }
 

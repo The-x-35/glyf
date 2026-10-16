@@ -27,6 +27,12 @@ object RatesStore {
     fun cryptoUsd(symbol: String): Double? = crypto[symbol]
     /** The token behind each cashtag, so Buy knows what to buy. */
     private val mints = ConcurrentHashMap<String, String>()
+
+    /** Whether a tokenized stock (xStocks, Ondo) may be bought. Not in the
+     *  Solana dApp Store build: its policy counts stocks as regulated
+     *  financial services (docs/SOLANA-DAPP-STORE.md). The price still
+     *  shows; only Buy goes. */
+    val stockBuys = com.arpit.glyf.BuildConfig.FLAVOR != "dappStore"
     /** The market's ticker for what was typed ("APPL" → "AAPL"). */
     private val tickers = ConcurrentHashMap<String, String>()
     private val cryptoAt = ConcurrentHashMap<String, Long>()
@@ -123,11 +129,12 @@ object RatesStore {
     fun ensureToken(backendURL: String, symbol: String, then: () -> Unit) {
         val at = cryptoAt[symbol]
         if (at != null && System.currentTimeMillis() - at < TOKEN_TTL) return
-        fun keep(usd: Double, mint: String, ticker: String) {
+        fun keep(usd: Double, mint: String, ticker: String, stock: Boolean) {
             cryptoAt[symbol] = System.currentTimeMillis()
             if (!usd.isNaN() && usd > 0) {
                 crypto[symbol] = usd
-                if (mint.isNotEmpty()) mints[symbol] = mint else mints.remove(symbol)
+                // No mint, no Buy: a stock where stocks can't be bought.
+                if (mint.isNotEmpty() && (stockBuys || !stock)) mints[symbol] = mint else mints.remove(symbol)
                 if (ticker.isNotEmpty()) tickers[symbol] = ticker else tickers.remove(symbol)
             } else {
                 crypto.remove(symbol)
@@ -142,12 +149,12 @@ object RatesStore {
         direct("token-direct:$symbol", { it.quote(symbol) }) { result ->
             result.onSuccess { q ->
                 keep(q?.usd ?: Double.NaN, q?.mint.orEmpty(),
-                    q?.let { it.ticker ?: TokenLookup.tickerOf(symbol) ?: symbol }.orEmpty())
+                    q?.let { it.ticker ?: TokenLookup.tickerOf(symbol) ?: symbol }.orEmpty(), q?.stock == true)
             }.onFailure {
                 fetch(backendURL, "/rates/crypto?symbols=$symbol", "token:$symbol") { obj ->
                     val quote = obj.optJSONObject("quotes")?.optJSONObject(symbol)
                     keep(quote?.optDouble("usd") ?: Double.NaN, quote?.optString("mint").orEmpty(),
-                        quote?.optString("ticker").orEmpty())
+                        quote?.optString("ticker").orEmpty(), quote?.optBoolean("stock") == true)
                 }
             }
         }
@@ -178,7 +185,7 @@ object RatesStore {
         direct("address-direct:$address", { it.tokenAt(address) }) { result ->
             result.onSuccess { token ->
                 addresses[address] = if (token == null) Smart.AddressKind.Wallet
-                    else Smart.AddressKind.Token(token.symbol, token.usd)
+                    else Smart.AddressKind.Token(token.symbol, token.usd, buy = stockBuys || !token.stock)
                 main.post(then)
             }.onFailure { askServerAboutAddress(backendURL, address, then) }
         }

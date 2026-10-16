@@ -43,10 +43,9 @@ app:
   address: ""            # App NFT mint; the portal fills it in when the app is created
   android_package: com.arpit.glyf
   urls:
-    # No Terms page exists on the site yet: make /terms before submitting
-    # (the template says "Don't put placeholder urls").
-    license_url: <<https://www.tryglyf.com/terms (PAGE NOT BUILT YET)>>
-    copyright_url: <<https://www.tryglyf.com/terms (PAGE NOT BUILT YET)>>
+    # site/app/terms/page.tsx (17 Oct 2026); live once the site deploys.
+    license_url: https://www.tryglyf.com/terms
+    copyright_url: https://www.tryglyf.com/terms
     privacy_policy_url: https://www.tryglyf.com/privacy
     website: https://www.tryglyf.com
   media:

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/flavor.dart';
 import '../core/theme.dart';
 import '../profile/brand_marks.dart' show PhantomMark;
 import 'solana.dart';
@@ -76,12 +77,18 @@ class _BuyScreenState extends State<BuyScreen> {
       _quote = null;
     });
     try {
-      final token = await Jupiter.token(q);
+      final found = await Jupiter.token(q);
       if (!mounted) return;
+      // No stock buys in the dApp Store build: say so, show no Buy.
+      final token = found != null && found.stock && !Flavor.stockBuys ? null : found;
       setState(() {
         _looking = false;
         _token = token;
-        _lookError = token == null ? 'Jupiter doesn’t list that token' : null;
+        _lookError = token != null
+            ? null
+            : found != null
+                ? WalletFlow.noStockBuys
+                : 'Jupiter doesn’t list that token';
         // SOL is bought with USDC; everything else defaults to SOL.
         if (token?.mint == Sol.wsol) _payWith = TokenInfo.usdc;
         if (token?.mint == Sol.usdc) _payWith = TokenInfo.sol;

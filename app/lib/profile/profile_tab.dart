@@ -421,14 +421,20 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
               ),
             ),
           ),
-          Center(
-            child: TextButton(
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            TextButton(
               key: const Key('profile:privacy'),
               onPressed: () => GlyfBridge.openURL(privacyPolicyURL),
               child: const Text('Privacy policy',
                   style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w500)),
             ),
-          ),
+            TextButton(
+              key: const Key('profile:terms'),
+              onPressed: () => GlyfBridge.openURL(termsURL),
+              child: const Text('Terms',
+                  style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w500)),
+            ),
+          ]),
           const SizedBox(height: 14),
 
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [

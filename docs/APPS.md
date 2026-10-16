@@ -1508,8 +1508,8 @@ ADB=/opt/homebrew/share/android-commandlinetools/platform-tools/adb
 # terminal 1, repo root (the emulator reaches the Mac at 10.0.2.2:8787)
 cd server && npm run dev
 # terminal 2, repo root
-cd app && flutter build apk --debug
-$ADB install -r build/app/outputs/flutter-apk/app-debug.apk
+cd app && flutter build apk --debug --flavor play
+$ADB install -r build/app/outputs/flutter-apk/app-play-debug.apk
 $ADB shell am start -n com.arpit.glyf/.MainActivity
 # ALWAYS after a reinstall: reinstalling over the active keyboard wedges it
 $ADB shell ime reset
@@ -1520,7 +1520,9 @@ $ADB shell ime set com.arpit.glyf/.ime.GlyfIME
 - Run `ime set` **after** launching the app (after an install and force-stop the system falls back to Gboard), then tap a text field. After the keyboard hides, a focused Flutter field needs a second tap to bring it back.
 - The wedge looks like the keyboard is selected but never shows, or like an AI run "stuck at Running...". It is not a code bug; the reset, enable, set triple fixes it.
 - On a phone: Settings → On-screen keyboard (or Keyboard list) → enable Glyf, then choose it with the keyboard picker. The onboarding's "Switch to Glyf" button opens the picker.
-- Unit tests: the JVM tests in `app/android/app/src/test/` (the exact Gradle command used was not recorded; the standard one would be `./gradlew :app:testDebugUnitTest` from `app/android`).
+- **Every Android build names a store flavor** (since 2026-10-17): `play` (Google Play, the upload key, Play Billing) or `dappStore` (the Solana dApp Store, its own key, no Play Billing, USDC plans, no stock buys). Without `--flavor`, `flutter build apk` and `flutter run` fail to find the APK. Day to day use `--flavor play`; the APK is `app-play-debug.apk`. Dart reads the flavor as `appFlavor` (`lib/core/flavor.dart`), Kotlin as `BuildConfig.FLAVOR`.
+- Release builds: `flutter build appbundle --release --flavor play` for Google Play (`build/app/outputs/bundle/playRelease/app-play-release.aab`), and `flutter build apk --release --flavor dappStore` for the Solana dApp Store (`build/app/outputs/flutter-apk/app-dappstore-release.apk`). Both keys are named in `app/android/key.properties` (PLAY-STORE.md, SOLANA-DAPP-STORE.md).
+- Unit tests: the JVM tests in `app/android/app/src/test/`, from `app/android`: `./gradlew :app:testPlayDebugUnitTest` (or `testDappStoreDebugUnitTest`).
 
 **Emulator recipes** (from the space-gesture and typing work):
 

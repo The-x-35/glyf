@@ -97,7 +97,7 @@ export default function Page() {
       <footer className="footer">
         <div className="wrap footer-inner">
           <Wordmark href="#top" label="Glyf home" />
-          <p className="footer-legal">© 2026 Glyf · iPhone and Android · <a href="/privacy">Privacy</a></p>
+          <p className="footer-legal">© 2026 Glyf · iPhone and Android · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
         </div>
       </footer>
     </>

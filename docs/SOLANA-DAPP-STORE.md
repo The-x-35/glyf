@@ -8,7 +8,7 @@ How to get the Android app onto the Solana dApp Store (Seeker and Saga, and any 
 - **How it works now:** sign up in the **Publisher Portal** (publish.solanamobile.com), pass KYC/KYB, connect a browser wallet as the publisher wallet, add the app (this mints the **App NFT**), then upload a signed release **APK** (this uploads the files to Arweave and mints a **Release NFT**) [S1]. Review takes **3–5 business days** [S1][S13].
 - **The CLI only does updates.** `@solana-mobile/dapp-store-cli` 1.0.x (Sep 2026) uploads a new APK for an app that already exists in the portal. The old `config.yaml` commands (`init`, `create`, `validate`, `publish submit|update`) are gone [S2][S3]. `dapp-store/config.yaml` keeps the last config format as the source for the portal's forms.
 - **APK only, no AAB; release build, not debuggable; a new signing key**, separate from Play's [S8][S9][S10]. Every update needs a higher `versionCode` and the same key [S9][S11].
-- **Crypto subscriptions: yes.** On the dApp Store, Glyf can sell Plus and Max for USDC or SOL paid from Phantom or Seed Vault Wallet. There is no Google Play Billing requirement and no store fee. Glyf has to run its own checkout, because the dApp Store has no payment system. A USDC checkout is being built in the working tree, not yet committed. It must stay out of the Play and iPhone builds. See [Crypto subscriptions](#crypto-subscriptions-the-pro-plan-paid-from-phantom).
+- **Crypto subscriptions: yes.** On the dApp Store, Glyf can sell Plus and Max for USDC or SOL paid from Phantom or Seed Vault Wallet. There is no Google Play Billing requirement and no store fee. Glyf has to run its own checkout, because the dApp Store has no payment system. The USDC checkout is built and on in the `dappStore` flavor whenever the server has `GLYF_TREASURY` set; the Play and iPhone builds never show it. See [Crypto subscriptions](#crypto-subscriptions-the-pro-plan-paid-from-phantom).
 
 ## Checklist
 
@@ -16,24 +16,22 @@ How to get the Android app onto the Solana dApp Store (Seeker and Saga, and any 
 
 1. **Decide two things first.**
    - **Package name.** The recommendation is to keep `com.arpit.glyf`: Google sign-in, the `glyf://` link Phantom returns to, the MWA identity and the server all already work with it. The cost: a phone that has the Play build can't install the dApp Store build over it, and vice versa (different signing keys). Switching means uninstalling, which deletes the on-phone vault and learned words. The alternative is `com.arpit.glyf.dapp`, which needs its own OAuth client and would show two "Glyf" keyboards on a phone that has both. See [Risks](#risks).
-   - **What v1 contains.** The recommendation is to ship v1 free (daily allowance and gift codes, "Plans open soon" as today), with the wallet but **without Buy on tokenized stocks**. Add USDC plans in v1.1, after the server side is built (each update is reviewed again).
+   - **What v1 contains.** The recommendation is to ship v1 free (daily allowance and gift codes, "Plans open soon" as today), with the wallet but **without Buy on tokenized stocks**. Add USDC plans in v1.1, after the server side is built (each update is reviewed again). Since 2026-10-17 the `dappStore` build already hides stock buys, and its USDC plans open only once `GLYF_TREASURY` is set on Railway, so leaving it unset ships v1 free.
 2. **Make the publisher wallet** and back up its seed phrase offline. Losing it means no more submissions for the app [S1]. Use Phantom, Solflare or Backpack as a browser extension [S1]. To publish updates from the CLI later, the CLI's `--keypair` must be this same wallet (the portal checks the signer against the publisher address [S7]). So create it as a keypair file yourself (`solana-keygen new -o ~/.config/solana/glyf-dapp-store-publisher.json`, outside the repo) and import that key into the browser wallet. Write the address into `publisher_wallet.address` in the config; it is public.
 3. **Fund it with about 0.25 SOL.** The portal asks for about 0.2 SOL for fees and the ArDrive upload [S1]. The release APK is about 62 MB, and the portal's storage cost tool gives the exact figure. Keep at least 0.02 SOL for each later release [S6].
 4. **Publisher Portal:** create the account at https://publish.solanamobile.com, fill in the publisher profile, finish **KYC/KYB** (18+; access can be held until it's done [S15]), and accept the Developer Agreement and Publisher Policy [S1][S14][S15]. Choose **ArDrive** storage and top up its balance when asked [S1].
-5. **Create the dApp Store signing key** (never the Play upload key [S9][S10]). Store it, and its passwords, in the password manager next to the Play key:
-   ```bash
-   keytool -genkeypair -v -keystore ~/glyf-dapp-store.jks -keyalg RSA -keysize 2048 -validity 10000 -alias dappstore
-   ```
-   Add it to the existing, gitignored `app/android/key.properties` under new names, so no new secret file is needed: `dappStoreFile`, `dappStorePassword`, `dappStoreKeyAlias`, `dappStoreKeyPassword`.
-6. **Google sign-in for the new key.** Add an Android OAuth client in Google Cloud project glyf-508610 for `com.arpit.glyf` with the new key's SHA-1 (`keytool -list -v -keystore ~/glyf-dapp-store.jks -alias dappstore`). Without it, Google turns sign-in down with "[16] Account reauth failed", the same failure PLAY-STORE.md recorded on 2026-10-05.
+5. **Back up the dApp Store signing key. Done 2026-10-17, except the backup.** The key exists: `app/android/dappstore.jks` (PKCS12, RSA 4096, alias `dappstore`, valid to 2054, gitignored by `**/*.jks`). Its password is in the gitignored `app/android/key.properties` as `dappStoreStoreFile`, `dappStoreStorePassword`, `dappStoreKeyAlias`, `dappStoreKeyPassword` (one password for store and key, as PKCS12 wants). It is not the Play upload key [S9][S10]. **Copy the `.jks` and its password into the password manager and a second place off this Mac now.** Losing either ends dApp Store updates for good: every update must be signed with this exact key [S9][S11].
+   - SHA-1 `94:C3:42:F1:4D:30:5F:A8:A3:B7:9A:36:5B:41:AB:12:AC:6D:89:9A`
+   - SHA-256 `0A:78:0E:62:CA:08:65:40:46:95:6D:E4:17:10:A3:C0:CA:CB:1F:4A:36:12:AC:62:AF:AE:B7:6E:A8:B1:32:20`
+6. **Google sign-in for the new key.** Add an Android OAuth client in Google Cloud project glyf-508610 for `com.arpit.glyf` with the SHA-1 above. Without it, Google turns sign-in down with "[16] Account reauth failed", the same failure PLAY-STORE.md recorded on 2026-10-05.
 7. **Android developer verification.** Since 2026-09-30, certified Android phones in Brazil, Indonesia, Singapore and Thailand block installs from developers who haven't registered with Google, store installs included. This goes global in 2027 [S20]. In Play Console's developer verification, register `com.arpit.glyf` with the dApp Store key as well. Play registers only what it signs [S20].
-8. **Site:** publish a Terms page (`/terms`). The listing needs a license URL and a copyright URL, and the template says no placeholder URLs [S5]. Today the site has only `/privacy` and `/delete-account`.
+8. **Site: deploy the Terms page.** `site/app/terms/page.tsx` (effective 17 October 2026) is built and linked from the site's footer and the app; it goes live at https://www.tryglyf.com/terms on the next push to main. The listing's license and copyright URLs in `dapp-store/config.yaml` point there [S5].
 9. **Server, before and during review:**
    - `REVIEW_MODE=true` (the "App Review sign-in" button) and the review password, which goes in the portal's testing field and never in the repo.
    - `SOLANA_RPC_URL` on Railway, still owed. Reviewers are told to test wallet connect and signing [S8].
    - `KLIPY_APP_KEY`, or cut "(search KLIPY)" from the description.
 10. **Graphics:** make the banner (1200 × 600) and the feature graphic (1200 × 1200). Optionally add a wallet screenshot and an Android video. See the [asset plan](#asset-plan).
-11. **Build** (after the [flavor change](#build-change-a-dappstore-flavor) lands):
+11. **Build** (the [flavors](#build-change-a-dappstore-flavor) are in since 2026-10-17):
     ```bash
     cd app && flutter build apk --release --flavor dappStore
     apksigner verify --print-certs build/app/outputs/flutter-apk/app-dappstore-release.apk   # must show the dApp Store key, not the Play upload key
@@ -144,13 +142,7 @@ Put new files in `dapp-store/media/`; the paths in `config.yaml` already point t
 
 **The answer: yes, on the dApp Store, with no Play Billing and no store fee** [S13][S15][S19]. It must not appear in the Play build (Play forbids in-app links or wording that steers people to other payments for digital goods [S19]) or the iPhone build (Apple's 3.1.1 [S23]). A plan bought with crypto is held on the Glyf account, so it can still work when the same person signs in on another platform. Before showing that anywhere on iOS, check it against Apple's multiplatform rule, 3.1.3(b) [S23].
 
-**State on 2026-10-14:** another session has this in progress, uncommitted in the working tree:
-
-- `app/lib/wallet/crypto_pay.dart` and the paywall changes
-- `server/src/routes/cryptopay.ts`
-- a planned `docs/CRYPTO-PAYMENTS.md`
-
-It shows only in a build made with `--dart-define=GLYF_CRYPTO_PAY=true`, only on Android, and only while the server has `GLYF_TREASURY` set. That define is what keeps it out of the Play build, so **never pass it to the Play bundle**. Once that work lands, `docs/CRYPTO-PAYMENTS.md` is the reference. The outline below gives the dApp Store's requirements it has to meet:
+**State on 2026-10-17:** built (commit 3967e16); [CRYPTO-PAYMENTS.md](CRYPTO-PAYMENTS.md) is the reference. It shows only in the `dappStore` flavor, only on Android, and only while the server has `GLYF_TREASURY` set. The `play` flavor never shows it, even with `--dart-define=GLYF_CRYPTO_PAY=true`. The outline below gives the dApp Store's requirements it meets:
 
 1. **dApp Store build only:** the paywall offers "Pay with USDC" at the store prices: Plus $2 a month or $20 a year, Max $5 a month or $50 a year.
 2. `POST /billing/solana/quote` (signed-in) returns:
@@ -178,7 +170,7 @@ It shows only in a build made with `--dart-define=GLYF_CRYPTO_PAY=true`, only on
 
 ## Build change: a `dappStore` flavor
 
-Described here, not made. This follows Solana Mobile's recipe of two flavors, each with its own key [S10], in `app/android/app/build.gradle.kts`:
+**Made 2026-10-17.** The sketch below is close to what `app/android/app/build.gradle.kts` now holds; the real file differs in the names (`dappStoreStoreFile` etc.), sets each flavor's `signingConfig` inside `productFlavors`, and marks `play` `isDefault` (that only picks Android Studio's variant: `flutter` still needs `--flavor`). It follows Solana Mobile's recipe of two flavors, each with its own key [S10]:
 
 ```kotlin
 android {
@@ -189,10 +181,10 @@ android {
     }
     signingConfigs {
         // existing "upload" stays; add:
-        if (uploadKey.getProperty("dappStoreFile") != null) {
+        if (uploadKey.getProperty("dappStoreStoreFile") != null) {
             create("dappStore") {
-                storeFile = rootProject.file(uploadKey.getProperty("dappStoreFile"))
-                storePassword = uploadKey.getProperty("dappStorePassword")
+                storeFile = rootProject.file(uploadKey.getProperty("dappStoreStoreFile"))
+                storePassword = uploadKey.getProperty("dappStoreStorePassword")
                 keyAlias = uploadKey.getProperty("dappStoreKeyAlias")
                 keyPassword = uploadKey.getProperty("dappStoreKeyPassword")
             }
@@ -211,13 +203,13 @@ dependencies {
 }
 ```
 
-Then:
+What it does:
 
-- **Builds:** `flutter build appbundle --release --flavor play` for Play (update the command in PLAY-STORE.md), and `flutter build apk --release --flavor dappStore` for the dApp Store. Once flavors exist, every Android `flutter run` and `flutter build` needs `--flavor`.
-- **Dart:** `appFlavor` (from `package:flutter/services.dart`) is `'dappStore'` in that build. Use it to hide Buy on tokenized stocks. The USDC paywall currently keys off `--dart-define=GLYF_CRYPTO_PAY=true` (see above); checking `appFlavor == 'dappStore'` as well means a Play build can never show it by mistake. The v1.1 build is `flutter build apk --release --flavor dappStore --dart-define=GLYF_CRYPTO_PAY=true`.
-- **Kotlin:** the IME reads `BuildConfig.FLAVOR` for the same switches (the Buy panel in `PayPanelView.kt`; stock quotes come from `TokenLookup.kt`).
-- **Nothing else changes:** the iPhone build, the server's bundle ids and the `glyf://` scheme stay as they are.
-- **Stopgap without flavors:** point `key.properties` at the dApp Store key for one `flutter build apk --release`, then put it back. The APK then carries the unused billing library, which is harmless. It's easy to get wrong, so use it only once if at all.
+- **Builds:** `flutter build appbundle --release --flavor play` for Play (`bundle/playRelease/app-play-release.aab`), and `flutter build apk --release --flavor dappStore` for the dApp Store (`flutter-apk/app-dappstore-release.apk`). Every Android `flutter run` and `flutter build` needs `--flavor`; day-to-day debug builds use `flutter build apk --debug --flavor play` (`app-play-debug.apk`). Debug builds of both flavors sign with the debug key.
+- **Play Billing:** the Gradle dependency is `playImplementation`, so the dApp Store APK has neither the library nor its BILLING permission. No Flutter plugin brings billing; the Android paywall doesn't sell through Play yet (`Billing.available` is iPhone-only).
+- **Dart:** `lib/core/flavor.dart` reads `appFlavor`. `CryptoPay.allowed` is on in the `dappStore` flavor by itself (no define needed) and never in `play`. `Flavor.stockBuys` is false in `dappStore`: `WalletFlow.buy` refuses a token Jupiter tags `stocks`, `equities` or `xstocks`, and the Buy screen says "Stocks can't be bought in this version of Glyf".
+- **Kotlin:** `RatesStore.stockBuys` reads `BuildConfig.FLAVOR`. In `dappStore` a cashtag priced through a tokenized stock (`$aapl`) keeps its price chip but loses Buy, and a copied xStock address shows Paste without Buy (`TokenLookup.MintQuote.stock`, `Smart.AddressKind.Token.buy`). The server fallback (`/rates/crypto`, `/rates/token`) doesn't say which tokens are stocks yet, so a quote that came from the server keeps Buy in the keyboard; the app still refuses the buy.
+- **Nothing else changes:** `com.arpit.glyf` on both, the iPhone build, the server's bundle ids and the `glyf://` scheme stay as they are.
 
 ## Risks
 

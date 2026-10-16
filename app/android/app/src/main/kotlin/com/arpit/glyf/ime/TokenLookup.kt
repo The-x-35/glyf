@@ -39,7 +39,9 @@ class TokenLookup(
 
     /** A token found by its address. `usd` is null for one too new to have a price. */
     data class MintQuote(val mint: String, val symbol: String, val name: String, val decimals: Int,
-                         val usd: Double?, val verified: Boolean)
+                         val usd: Double?, val verified: Boolean,
+                         /** A tokenized stock (xStocks, Ondo), by Jupiter's tags. */
+                         val stock: Boolean = false)
 
     class Unavailable(why: String) : Exception(why)
 
@@ -88,7 +90,7 @@ class TokenLookup(
         val decimals = t?.let { num(it, "decimals") }
         val token = if (t != null && symbol != null && decimals != null) MintQuote(
             address, symbol, str(t, "name") ?: symbol, decimals.toInt(),
-            num(t, "usdPrice")?.takeIf { it > 0 }, t.opt("isVerified") == true,
+            num(t, "usdPrice")?.takeIf { it > 0 }, t.opt("isVerified") == true, stockTagged(t),
         ) else null
         mints[address] = Hit(token, now())
         return token

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../core/bridge.dart';
+import '../core/flavor.dart';
 import '../core/glyf_api.dart';
 import 'mwa.dart';
 import 'solana.dart';
@@ -39,11 +40,12 @@ class CryptoRequest {
 
 /// Plus and Max paid in USDC (docs/CRYPTO-PAYMENTS.md).
 ///
-/// Only the Solana dApp Store build offers it: built with
-/// `--dart-define=GLYF_CRYPTO_PAY=true`, on Android, and only while the
-/// server says it's on (GLYF_TREASURY set there). The App Store and Google
-/// Play builds never show it: both stores require their own billing for
-/// subscriptions bought inside the app.
+/// Only the Solana dApp Store build offers it: Android, `--flavor dappStore`
+/// (or `--dart-define=GLYF_CRYPTO_PAY=true` on any Android build but Play's,
+/// for testing), and only while the server says it's on (GLYF_TREASURY set
+/// there). The App Store and Google Play builds never show it: both stores
+/// require their own billing for subscriptions bought inside the app, so
+/// the Play flavor ignores the define.
 ///
 /// The phone signs over Mobile Wallet Adapter when it has a wallet (Seed
 /// Vault on a Seeker, Phantom, Solflare), and otherwise opens the Solana
@@ -52,7 +54,7 @@ class CryptoRequest {
 abstract final class CryptoPay {
   static const buildFlag = bool.fromEnvironment('GLYF_CRYPTO_PAY');
 
-  static bool get allowed => buildFlag && Platform.isAndroid;
+  static bool get allowed => Platform.isAndroid && (Flavor.dappStore || (buildFlag && !Flavor.play));
 
   /// Whether to offer it: this build may, and the server takes it.
   static Future<bool> available() async {

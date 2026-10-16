@@ -10,6 +10,9 @@ import 'bridge.dart';
 /// The privacy policy, on the website (App Store 5.1.1 wants it in the app too).
 const privacyPolicyURL = 'https://www.tryglyf.com/privacy';
 
+/// Glyf's Terms of Service, on the website.
+const termsURL = 'https://www.tryglyf.com/terms';
+
 /// The app's own client for POST /glyf/run (SSE). The APP may talk to the
 /// backend freely; the keyboard has its own Swift client behind Full Access.
 abstract final class GlyfApi {

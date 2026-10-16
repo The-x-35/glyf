@@ -84,7 +84,9 @@ object Smart {
      *  tell (both are base58 of the same length). */
     sealed class AddressKind {
         object Wallet : AddressKind()
-        data class Token(val symbol: String, val usd: Double?) : AddressKind()
+        /** [buy] is false for a tokenized stock in the dApp Store build
+         *  (RatesStore.stockBuys): its price, no Buy. */
+        data class Token(val symbol: String, val usd: Double?, val buy: Boolean = true) : AddressKind()
     }
 
     /** "7dHb…7ARj". */
@@ -228,7 +230,7 @@ object Smart {
         // (the keyboard asks, and the strip is arranged again).
         payment(text)?.takeIf { it.first != ownWallet }?.let { (address, amount) ->
             return when (val kind = rates.addresses[address]) {
-                is AddressKind.Token -> Chip.Buy(address, kind.symbol, kind.usd?.let { price(it) })
+                is AddressKind.Token -> if (kind.buy) Chip.Buy(address, kind.symbol, kind.usd?.let { price(it) }) else null
                 AddressKind.Wallet -> {
                     val asked = amount ?: amountAsked(text)
                     Chip.Pay(address, asked?.first, asked?.second)
