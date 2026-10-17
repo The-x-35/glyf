@@ -41,6 +41,103 @@ struct ThemeVariant {
     let boundDot: UInt32
     let shadow: ThemeShadow
     let border: ThemeBorder?
+    /// The finish: faces, legends and ornaments (shared/themes/styles.py).
+    let style: ThemeStyle
+}
+
+// MARK: - The finish (shared/themes/styles.py; reference: tools/theme_mock.py)
+
+/// A key class's material, drawn over its fill and clipped to the key.
+struct ThemeFace: Equatable {
+    /// A tile in GlyfKeyboard/Textures (<name>.png, grey + alpha), laid over
+    /// the fill at `textureAlpha`, one image pixel to one screen pixel.
+    let texture: String?
+    let textureAlpha: Double
+    /// White at the top at `sheenTop`, fading out by the middle; black at
+    /// the bottom at `sheenBottom`, fading in from the middle.
+    let sheenTop: Double
+    let sheenBottom: Double
+    /// A one-pixel white line along the inside top edge, at this alpha.
+    let highlight: Double
+    /// Lacquer: white over the top 48% fading to clear.
+    let gloss: Double
+    /// Brushed metal: three soft horizontal light bands.
+    let metal: Double
+    /// A second fill: the face runs fill -> fill2 diagonally.
+    let fill2: UInt32?
+    /// A typewriter's round keycap, its diameter the key's width, centred in
+    /// the key's own cell (which never changes), in a chrome `ring`.
+    let round: Bool
+    let ring: UInt32?
+}
+
+struct ThemeFaces {
+    let letter: ThemeFace
+    let function: ThemeFace
+    let space: ThemeFace
+    let ret: ThemeFace
+}
+
+enum ThemeLegendStyle { case ink, engraved, letterpress, foil, glow }
+
+/// How the letters and glyphs sit on the key. `foil` is top, middle and
+/// bottom of the leaf's gradient (empty for every other style).
+struct ThemeLegend {
+    let style: ThemeLegendStyle
+    let foil: [UInt32]
+}
+
+/// The keys an ornament goes on. `function` is every function key but
+/// return (shift and delete included).
+enum ThemeOrnamentTarget: String { case letter, function, space, ret, shift, delete }
+
+/// Where an ornament's x = 0 sits: the key's left edge, centre or right edge.
+enum ThemeAnchor { case left, center, right }
+
+/// An ornament's colour: one of the variant's own, the key's fill, or a hex.
+enum ThemeColorRole: Equatable { case ink, fnInk, accent, accentInk, fill, hex(UInt32) }
+
+enum ThemeOrnamentFont { case system, mono, theme }
+
+/// One vector primitive, every number in units of the key's height,
+/// x from the anchor and y from the key's top. A colour of its own wins
+/// over the ornament's.
+enum ThemeOrnamentOp {
+    case line(Double, Double, Double, Double, w: Double, color: ThemeColorRole? = nil)
+    /// A closed, filled polygon: x0, y0, x1, y1, ...
+    case poly([Double], color: ThemeColorRole? = nil)
+    /// cx, cy, r: filled, or stroked `w` wide.
+    case circle(Double, Double, Double, w: Double? = nil, color: ThemeColorRole? = nil)
+    /// x, y, width, height, corner radius: filled, or stroked `w` wide.
+    case rect(Double, Double, Double, Double, Double, w: Double? = nil, color: ThemeColorRole? = nil)
+    /// A string centred on (x, y).
+    case text(String, Double, Double, size: Double, font: ThemeOrnamentFont, weight: Int, tracking: Double,
+              color: ThemeColorRole? = nil)
+
+    var color: ThemeColorRole? {
+        switch self {
+        case .line(_, _, _, _, _, let c), .poly(_, let c), .circle(_, _, _, _, let c),
+             .rect(_, _, _, _, _, _, let c), .text(_, _, _, _, _, _, _, let c): return c
+        }
+    }
+}
+
+/// A theme's signature detail on the keys it names.
+struct ThemeOrnament {
+    let on: ThemeOrnamentTarget
+    let anchor: ThemeAnchor
+    let color: ThemeColorRole
+    let alpha: Double
+    let ops: [ThemeOrnamentOp]
+}
+
+struct ThemeStyle {
+    let faces: ThemeFaces
+    let legend: ThemeLegend
+    /// Return's own: engraved ink, never the theme's foil or glow (gold on
+    /// a gold return lost the arrow).
+    let returnLegend: ThemeLegend
+    let ornaments: [ThemeOrnament]
 }
 
 /// A key-face font shipped in the keyboard's bundle (GlyfKeyboard/Fonts).

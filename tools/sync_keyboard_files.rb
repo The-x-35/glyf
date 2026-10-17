@@ -19,6 +19,7 @@ TEST_SHARED = %w[
   Design/GlassTokens.swift
   Design/KeyboardTheme.swift
   Design/KeyboardThemes.swift
+  Design/KeyFaces.swift
   Design/GlyfMark.swift
   Design/EmojiData.swift
   Engine/Games.swift
@@ -100,7 +101,7 @@ end
 # the host app's asset catalogue, so the keyboard needs its own copy of the
 # mark. These are resources, not sources, so they go on the copy phase. So do
 # the keyboard themes' fonts with their licences (Fonts/) and their key
-# sounds (Sounds/): docs/THEMES.md §4.
+# sounds (Sounds/) and their key textures (Textures/): docs/THEMES.md §4.
 Dir.glob(File.join(KB_DIR, '**/*.{png,ttf,caf}')).concat(Dir.glob(File.join(KB_DIR, 'Fonts/*.txt'))).sort.each do |abs|
   rel = abs.sub("#{KB_DIR}/", '')
   parts = rel.split('/')

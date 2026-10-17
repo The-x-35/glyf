@@ -9,6 +9,7 @@ import '../core/telemetry.dart';
 import '../core/theme.dart';
 import '../core/themes.dart';
 import '../wallet/wallet_flow.dart';
+import 'theme_preview.dart';
 
 /// Everything about the keyboard on one page: how it looks, then how it types.
 ///
@@ -60,6 +61,10 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
   void initState() {
     super.initState();
     _load();
+    // The themes' textures for the tiles; they draw without grain until then.
+    KbTextures.load().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _load() async {
@@ -110,7 +115,9 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
         'material' => 'Materials',
         'story' => 'Stories',
         'archetype' => 'Archetypes',
-        _ => '${category[0].toUpperCase()}${category.substring(1)}s',
+        'Nature' => 'Nature',
+        // themes.json names some groups in the plural already (Objects).
+        _ => '${category[0].toUpperCase()}${category.substring(1)}${category.endsWith('s') ? '' : 's'}',
       };
 
   @override
@@ -458,7 +465,13 @@ extension on _KeyboardScreenState {
                 ),
                 padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
                 child: CustomPaint(
-                  painter: _ThemeKeyboard(v),
+                  painter: ThemeKeyboardPainter(v,
+                      dark: dark,
+                      fontFamily: t.fontFamily,
+                      fontWeight: t.fontWeight,
+                      variableFont: t.variableFont,
+                      textures: Map.of(KbTextures.images),
+                      dpr: MediaQuery.devicePixelRatioOf(context)),
                   child: const SizedBox.expand(),
                 ),
               ),
@@ -496,74 +509,6 @@ extension on _KeyboardScreenState {
     final r = deg * math.pi / 180;
     return Alignment(math.sin(r), -math.cos(r));
   }
-}
-
-/// A theme's keyboard in miniature, the same rows as [_MiniKeyboard]: its
-/// letters, function keys, space and return in their colours, each letter
-/// with a dot of its ink, under them the theme's 1pt edge, and its border.
-class _ThemeKeyboard extends CustomPainter {
-  _ThemeKeyboard(this.v);
-
-  final KbVariant v;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const gap = 2.2;
-    final unit = (size.width - gap * 9) / 10;
-    var keyH = unit * 1.32;
-    final rowsH = keyH * 4 + gap * 3 * 1.6;
-    if (rowsH > size.height) keyH *= size.height / rowsH;
-    final rowGap = gap * 1.6;
-    final top = (size.height - (keyH * 4 + rowGap * 3)) / 2;
-    final r = Radius.circular(unit * 0.22);
-    final s = v.shadow;
-    final edge = s.radius == 0 && s.offsetY > 0 && s.alpha > 0
-        ? (Paint()..color = s.color.withValues(alpha: s.alpha))
-        : null;
-    final border = v.border;
-    final stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    final ink = Paint()..color = v.keyText;
-
-    void key(double x, double y, double w, String cls, Color fill) {
-      final rect = RRect.fromLTRBR(x, y, x + w, y + keyH, r);
-      if (edge != null) canvas.drawRRect(rect.shift(const Offset(0, 0.8)), edge);
-      canvas.drawRRect(rect, Paint()..color = fill);
-      if (border != null && border.appliesTo.contains(cls)) {
-        canvas.drawRRect(rect.deflate(0.4), stroke..color = border.color);
-      }
-      if (cls == 'letter') {
-        canvas.drawCircle(Offset(x + w / 2, y + keyH / 2), unit * 0.11, ink);
-      }
-    }
-
-    var y = top;
-    for (var i = 0; i < 10; i++) {
-      key(i * (unit + gap), y, unit, 'letter', v.letter.fill);
-    }
-    y += keyH + rowGap;
-    final inset = (unit + gap) / 2;
-    for (var i = 0; i < 9; i++) {
-      key(inset + i * (unit + gap), y, unit, 'letter', v.letter.fill);
-    }
-    y += keyH + rowGap;
-    final side = unit * 1.4;
-    key(0, y, side, 'function', (v.shift ?? v.function).fill);
-    final lettersX = (size.width - (unit * 7 + gap * 6)) / 2;
-    for (var i = 0; i < 7; i++) {
-      key(lettersX + i * (unit + gap), y, unit, 'letter', v.letter.fill);
-    }
-    key(size.width - side, y, side, 'function', (v.delete ?? v.function).fill);
-    y += keyH + rowGap;
-    final mode = unit * 2.2;
-    key(0, y, mode, 'function', v.function.fill);
-    key(size.width - mode, y, mode, 'return', v.returnPrimary.fill);
-    key(mode + gap, y, size.width - mode * 2 - gap * 2, 'space', v.space.fill);
-  }
-
-  @override
-  bool shouldRepaint(_ThemeKeyboard old) => old.v != v;
 }
 
 /// A keyboard in miniature, drawn to a real keyboard's proportions: ten keys

@@ -5,7 +5,7 @@
 import UIKit
 
 extension KeyboardTheme {
-    /// The 24 themes in the picker's order: materials, stories, archetypes.
+    /// The 29 themes in the picker's order: materials, stories, archetypes.
     static let all: [KeyboardTheme] = [
         KeyboardTheme(
             id: "typewriter", name: "Typewriter",
@@ -25,7 +25,16 @@ extension KeyboardTheme {
                 chipFace: 0xFBF8F1, chipAccent: 0xC8322B,
                 boundDot: 0xC8322B,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.08, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0, gloss: 0.1, metal: 0, fill2: nil, round: true, ring: 0xA9A9A4),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.07, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.08, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0.1, highlight: 0.3, gloss: 0.28, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .letterpress, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_typewriter)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x413E3A, pressed: 0x585552),
                 function: ThemeFill(fill: 0x32312E, pressed: 0x4B4A47),
@@ -38,7 +47,16 @@ extension KeyboardTheme {
                 chipFace: 0x413E3A, chipAccent: 0xEFE8DA,
                 boundDot: 0xEFE8DA,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.08, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0, gloss: 0.1, metal: 0, fill2: nil, round: true, ring: 0x9A9A94),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.07, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.08, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0.1, highlight: 0.3, gloss: 0.28, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .letterpress, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_typewriter))),
         KeyboardTheme(
             id: "beigebox", name: "Beige Box",
             font: nil,
@@ -57,7 +75,16 @@ extension KeyboardTheme {
                 chipFace: 0xEEE9DD, chipAccent: 0x171718,
                 boundDot: 0x171718,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.12, highlight: 0.45, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.12, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.12, highlight: 0.45, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.12, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_beigebox)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x403E38, pressed: 0x575550),
                 function: ThemeFill(fill: 0x33322D, pressed: 0x4B4B46),
@@ -70,7 +97,16 @@ extension KeyboardTheme {
                 chipFace: 0x403E38, chipAccent: 0xE8E1CF,
                 boundDot: 0xC87E74,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.12, highlight: 0.45, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.12, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.12, highlight: 0.45, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.12, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_beigebox))),
         KeyboardTheme(
             id: "rangefinder", name: "Rangefinder",
             font: nil,
@@ -79,30 +115,48 @@ extension KeyboardTheme {
             keyTexture: nil,
             light: ThemeVariant(
                 letter: ThemeFill(fill: 0xF4F4F1, pressed: 0xD7D7D4),
-                function: ThemeFill(fill: 0xC3C3BE, pressed: 0xACACA7),
+                function: ThemeFill(fill: 0x2B2B2B, pressed: 0x262626),
                 space: ThemeFill(fill: 0xF4F4F1, pressed: 0xD7D7D4),
-                keyText: 0x1A1A1A, functionGlyph: 0x1A1A1A,
-                returnFill: 0x1F1F1F, returnText: 0xF2C230, returnPressed: 0x1B1B1B,
+                keyText: 0x1A1A1A, functionGlyph: 0xE9E9E4,
+                returnFill: 0x2B2B2B, returnText: 0xF2C230, returnPressed: 0x262626,
                 shift: nil,
                 delete: nil,
                 popupFill: 0xF4F4F1, popupText: 0x1A1A1A,
-                chipFace: 0xF4F4F1, chipAccent: 0x1F1F1F,
-                boundDot: 0x1F1F1F,
+                chipFace: 0xF4F4F1, chipAccent: 0x2B2B2B,
+                boundDot: 0x2B2B2B,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "brushed", textureAlpha: 0.07, sheenTop: 0.1, sheenBottom: 0.08, highlight: 0.6, gloss: 0, metal: 0.06, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "leather", textureAlpha: 0.22, sheenTop: 0.04, sheenBottom: 0.1, highlight: 0.12, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "brushed", textureAlpha: 0.07, sheenTop: 0.1, sheenBottom: 0.08, highlight: 0.6, gloss: 0, metal: 0.06, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "leather", textureAlpha: 0.22, sheenTop: 0.04, sheenBottom: 0.1, highlight: 0.12, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_rangefinder)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3E3E3E, pressed: 0x555555),
                 function: ThemeFill(fill: 0x313131, pressed: 0x4A4A4A),
                 space: ThemeFill(fill: 0x3E3E3E, pressed: 0x555555),
                 keyText: 0xEDEDE8, functionGlyph: 0xC3C3BE,
-                returnFill: 0xD8D8D3, returnText: 0x1A1A1A, returnPressed: 0xDDDDD8,
+                returnFill: 0x2B2B2B, returnText: 0xF2C230, returnPressed: 0x444444,
                 shift: nil,
                 delete: nil,
                 popupFill: 0x3E3E3E, popupText: 0xEDEDE8,
-                chipFace: 0x3E3E3E, chipAccent: 0xD8D8D3,
-                boundDot: 0xD8D8D3,
+                chipFace: 0x3E3E3E, chipAccent: 0xEDEDE8,
+                boundDot: 0xEDEDE8,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "brushed", textureAlpha: 0.07, sheenTop: 0.1, sheenBottom: 0.08, highlight: 0.6, gloss: 0, metal: 0.06, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "leather", textureAlpha: 0.22, sheenTop: 0.04, sheenBottom: 0.1, highlight: 0.12, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "brushed", textureAlpha: 0.07, sheenTop: 0.1, sheenBottom: 0.08, highlight: 0.6, gloss: 0, metal: 0.06, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "leather", textureAlpha: 0.22, sheenTop: 0.04, sheenBottom: 0.1, highlight: 0.12, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_rangefinder))),
         KeyboardTheme(
             id: "walnut", name: "Walnut",
             font: nil,
@@ -121,7 +175,16 @@ extension KeyboardTheme {
                 chipFace: 0xF8F2E9, chipAccent: 0x3B2A1F,
                 boundDot: 0x3B2A1F,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "linen", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "wood", textureAlpha: 0.3, sheenTop: 0.06, sheenBottom: 0.12, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "linen", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.14, sheenBottom: 0.12, highlight: 0.5, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_walnut)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x4B3D34, pressed: 0x61544C),
                 function: ThemeFill(fill: 0x392F28, pressed: 0x514842),
@@ -134,7 +197,16 @@ extension KeyboardTheme {
                 chipFace: 0x4B3D34, chipAccent: 0xEBD9BC,
                 boundDot: 0xB8924A,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "linen", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "wood", textureAlpha: 0.3, sheenTop: 0.06, sheenBottom: 0.12, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "linen", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.14, sheenBottom: 0.12, highlight: 0.5, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_walnut))),
         KeyboardTheme(
             id: "carrara", name: "Carrara",
             font: nil,
@@ -153,7 +225,16 @@ extension KeyboardTheme {
                 chipFace: 0xFDFCFA, chipAccent: 0x3A3835,
                 boundDot: 0x3A3835,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "marble", textureAlpha: 0.09, sheenTop: 0.06, sheenBottom: 0.05, highlight: 0.5, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "marble", textureAlpha: 0.1, sheenTop: 0.04, sheenBottom: 0.06, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "marble", textureAlpha: 0.09, sheenTop: 0.06, sheenBottom: 0.05, highlight: 0.5, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.16, sheenBottom: 0.12, highlight: 0.5, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_carrara)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x403E3C, pressed: 0x575553),
                 function: ThemeFill(fill: 0x32312F, pressed: 0x4B4A48),
@@ -166,7 +247,16 @@ extension KeyboardTheme {
                 chipFace: 0x403E3C, chipAccent: 0xC9AE7C,
                 boundDot: 0xC9AE7C,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "marble", textureAlpha: 0.09, sheenTop: 0.06, sheenBottom: 0.05, highlight: 0.5, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "marble", textureAlpha: 0.1, sheenTop: 0.04, sheenBottom: 0.06, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "marble", textureAlpha: 0.09, sheenTop: 0.06, sheenBottom: 0.05, highlight: 0.5, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.16, sheenBottom: 0.12, highlight: 0.5, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_carrara))),
         KeyboardTheme(
             id: "graphite", name: "Graphite",
             font: nil,
@@ -185,7 +275,16 @@ extension KeyboardTheme {
                 chipFace: 0xF5F5F7, chipAccent: 0x1C1C1E,
                 boundDot: 0x1C1C1E,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.05, sheenBottom: 0.06, highlight: 0.7, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.1, highlight: 0.35, gloss: 0, metal: 0.06, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.05, sheenBottom: 0.06, highlight: 0.7, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.1, highlight: 0.3, gloss: 0.22, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_graphite)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3F3F41, pressed: 0x565658),
                 function: ThemeFill(fill: 0x303032, pressed: 0x49494B),
@@ -198,7 +297,16 @@ extension KeyboardTheme {
                 chipFace: 0x3F3F41, chipAccent: 0xF2F2F7,
                 boundDot: 0xF2F2F7,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.05, sheenBottom: 0.06, highlight: 0.7, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.1, highlight: 0.35, gloss: 0, metal: 0.06, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.05, sheenBottom: 0.06, highlight: 0.7, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.1, highlight: 0.3, gloss: 0.22, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_graphite))),
         KeyboardTheme(
             id: "terminal", name: "Terminal",
             font: ThemeFont(family: "JetBrains Mono", file: "JetBrainsMono-Regular", ext: "ttf", weight: 400, variable: false),
@@ -217,7 +325,16 @@ extension KeyboardTheme {
                 chipFace: 0xF3F6F1, chipAccent: 0x2E7D46,
                 boundDot: 0x2E7D46,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "scanlines", textureAlpha: 0.06, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "scanlines", textureAlpha: 0.06, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "scanlines", textureAlpha: 0.06, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.1, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_terminal)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3C413D, pressed: 0x535854),
                 function: ThemeFill(fill: 0x2E332F, pressed: 0x474B48),
@@ -230,7 +347,16 @@ extension KeyboardTheme {
                 chipFace: 0x3C413D, chipAccent: 0x35C46A,
                 boundDot: 0x35C46A,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "scanlines", textureAlpha: 0.06, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "scanlines", textureAlpha: 0.06, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "scanlines", textureAlpha: 0.06, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.1, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .glow, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_terminal))),
         KeyboardTheme(
             id: "primary", name: "Primary",
             font: nil,
@@ -249,7 +375,16 @@ extension KeyboardTheme {
                 chipFace: 0xF7F3EA, chipAccent: 0x1F1F1F,
                 boundDot: 0x1F1F1F,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_primary)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3F3F3F, pressed: 0x565656),
                 function: ThemeFill(fill: 0x303030, pressed: 0x494949),
@@ -262,7 +397,16 @@ extension KeyboardTheme {
                 chipFace: 0x3F3F3F, chipAccent: 0xF2C230,
                 boundDot: 0xF2C230,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_primary))),
         KeyboardTheme(
             id: "greenhouse", name: "Greenhouse",
             font: nil,
@@ -281,7 +425,16 @@ extension KeyboardTheme {
                 chipFace: 0xF2F4ED, chipAccent: 0x3F6B4A,
                 boundDot: 0x3F6B4A,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "washi", textureAlpha: 0.07, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "linen", textureAlpha: 0.1, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "washi", textureAlpha: 0.07, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.1, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_greenhouse)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x364239, pressed: 0x4E5951),
                 function: ThemeFill(fill: 0x29332C, pressed: 0x434B45),
@@ -294,7 +447,16 @@ extension KeyboardTheme {
                 chipFace: 0x364239, chipAccent: 0x9CC096,
                 boundDot: 0x9CC096,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "washi", textureAlpha: 0.07, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "linen", textureAlpha: 0.1, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "washi", textureAlpha: 0.07, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.1, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_greenhouse))),
         KeyboardTheme(
             id: "sakura", name: "Sakura",
             font: nil,
@@ -313,7 +475,16 @@ extension KeyboardTheme {
                 chipFace: 0xFFF8F8, chipAccent: 0x4A2E35,
                 boundDot: 0xB85571,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.04, sheenBottom: 0.08, highlight: 0.3, gloss: 0.18, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_sakura)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x4A3B41, pressed: 0x605358),
                 function: ThemeFill(fill: 0x392E33, pressed: 0x51474B),
@@ -326,7 +497,16 @@ extension KeyboardTheme {
                 chipFace: 0x4A3B41, chipAccent: 0xF7CDD7,
                 boundDot: 0xE58AA3,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.04, sheenBottom: 0.08, highlight: 0.3, gloss: 0.18, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_sakura))),
         KeyboardTheme(
             id: "tide", name: "Tide",
             font: nil,
@@ -345,7 +525,16 @@ extension KeyboardTheme {
                 chipFace: 0xF5FAFC, chipAccent: 0x246FA3,
                 boundDot: 0x246FA3,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.04, highlight: 0.6, gloss: 0.14, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0.5, gloss: 0.12, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.04, highlight: 0.6, gloss: 0.14, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.04, sheenBottom: 0.1, highlight: 0.4, gloss: 0.22, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_tide)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x2F4151, pressed: 0x485866),
                 function: ThemeFill(fill: 0x24323E, pressed: 0x3E4B55),
@@ -358,7 +547,16 @@ extension KeyboardTheme {
                 chipFace: 0x2F4151, chipAccent: 0xC4E4F5,
                 boundDot: 0x4BA3DD,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.04, highlight: 0.6, gloss: 0.14, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0.5, gloss: 0.12, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.04, highlight: 0.6, gloss: 0.14, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.04, sheenBottom: 0.1, highlight: 0.4, gloss: 0.22, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_tide))),
         KeyboardTheme(
             id: "sahara", name: "Sahara",
             font: nil,
@@ -377,7 +575,16 @@ extension KeyboardTheme {
                 chipFace: 0xFBF5EC, chipAccent: 0xB0532D,
                 boundDot: 0xB0532D,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "sand", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "sand", textureAlpha: 0.12, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "sand", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "sand", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.12, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_sahara)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x463C34, pressed: 0x5C534C),
                 function: ThemeFill(fill: 0x372F2A, pressed: 0x4F4844),
@@ -390,7 +597,16 @@ extension KeyboardTheme {
                 chipFace: 0x463C34, chipAccent: 0xF1E2CC,
                 boundDot: 0xD9774C,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "sand", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "sand", textureAlpha: 0.12, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "sand", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "sand", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.12, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_sahara))),
         KeyboardTheme(
             id: "moss", name: "Moss",
             font: nil,
@@ -409,7 +625,16 @@ extension KeyboardTheme {
                 chipFace: 0xF4F5EE, chipAccent: 0x2D3626,
                 boundDot: 0xA8862F,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "linen", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "velvet", textureAlpha: 0.14, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "linen", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.14, sheenBottom: 0.12, highlight: 0.5, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_moss)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3B4137, pressed: 0x53584F),
                 function: ThemeFill(fill: 0x2F332C, pressed: 0x484B45),
@@ -422,7 +647,16 @@ extension KeyboardTheme {
                 chipFace: 0x3B4137, chipAccent: 0xC9A646,
                 boundDot: 0xC9A646,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "linen", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "velvet", textureAlpha: 0.14, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "linen", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.14, sheenBottom: 0.12, highlight: 0.5, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_moss))),
         KeyboardTheme(
             id: "arctic", name: "Arctic",
             font: nil,
@@ -441,7 +675,16 @@ extension KeyboardTheme {
                 chipFace: 0xFAFBFC, chipAccent: 0x4C6E99,
                 boundDot: 0x4C6E99,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "frost", textureAlpha: 0.08, sheenTop: 0.08, sheenBottom: 0.04, highlight: 0.6, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "frost", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "frost", textureAlpha: 0.08, sheenTop: 0.08, sheenBottom: 0.04, highlight: 0.6, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0, highlight: 0.4, gloss: 0.2, metal: 0, fill2: 0x4F9A9E, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_arctic)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3B4252, pressed: 0x535967),
                 function: ThemeFill(fill: 0x2E3440, pressed: 0x474C57),
@@ -454,7 +697,16 @@ extension KeyboardTheme {
                 chipFace: 0x3B4252, chipAccent: 0x88C0D0,
                 boundDot: 0x88C0D0,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "frost", textureAlpha: 0.08, sheenTop: 0.08, sheenBottom: 0.04, highlight: 0.6, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "frost", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "frost", textureAlpha: 0.08, sheenTop: 0.08, sheenBottom: 0.04, highlight: 0.6, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0, highlight: 0.4, gloss: 0.2, metal: 0, fill2: 0xA3D9C9, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_arctic))),
         KeyboardTheme(
             id: "lunar", name: "Lunar",
             font: nil,
@@ -473,7 +725,16 @@ extension KeyboardTheme {
                 chipFace: 0xF5EFE2, chipAccent: 0x2B2B2B,
                 boundDot: 0x2B2B2B,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.08, sheenBottom: 0.12, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_lunar)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3B3F46, pressed: 0x53565C),
                 function: ThemeFill(fill: 0x2C3137, pressed: 0x454A4F),
@@ -486,7 +747,16 @@ extension KeyboardTheme {
                 chipFace: 0x3B3F46, chipAccent: 0xEDE6D6,
                 boundDot: 0xE8833A,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.08, sheenBottom: 0.12, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_lunar))),
         KeyboardTheme(
             id: "blush", name: "Blush",
             font: nil,
@@ -505,7 +775,16 @@ extension KeyboardTheme {
                 chipFace: 0xFCF8F7, chipAccent: 0x2A2A2A,
                 boundDot: 0x2A2A2A,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "velvet", textureAlpha: 0.05, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "velvet", textureAlpha: 0.06, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "velvet", textureAlpha: 0.05, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.1, highlight: 0.3, gloss: 0.24, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_blush)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x403D3E, pressed: 0x575455),
                 function: ThemeFill(fill: 0x313031, pressed: 0x4A494A),
@@ -518,7 +797,16 @@ extension KeyboardTheme {
                 chipFace: 0x403D3E, chipAccent: 0xECC6C3,
                 boundDot: 0xECC6C3,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "velvet", textureAlpha: 0.05, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "velvet", textureAlpha: 0.06, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "velvet", textureAlpha: 0.05, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.1, highlight: 0.3, gloss: 0.24, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_blush))),
         KeyboardTheme(
             id: "champagne", name: "Champagne",
             font: nil,
@@ -537,7 +825,16 @@ extension KeyboardTheme {
                 chipFace: 0xFFFAF7, chipAccent: 0x4E3830,
                 boundDot: 0x9E6A55,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "linen", textureAlpha: 0.04, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.12, sheenBottom: 0.08, highlight: 0.5, gloss: 0, metal: 0.07, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "linen", textureAlpha: 0.04, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.16, sheenBottom: 0.12, highlight: 0.55, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_champagne)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x483E3B, pressed: 0x5E5553),
                 function: ThemeFill(fill: 0x372F2D, pressed: 0x4F4846),
@@ -550,7 +847,16 @@ extension KeyboardTheme {
                 chipFace: 0x483E3B, chipAccent: 0xF2D0C2,
                 boundDot: 0xD49A82,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "linen", textureAlpha: 0.04, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.12, sheenBottom: 0.08, highlight: 0.5, gloss: 0, metal: 0.07, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "linen", textureAlpha: 0.04, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.16, sheenBottom: 0.12, highlight: 0.55, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_champagne))),
         KeyboardTheme(
             id: "midnight", name: "Midnight Drive",
             font: nil,
@@ -569,7 +875,16 @@ extension KeyboardTheme {
                 chipFace: 0xF6F2FB, chipAccent: 0xC2347E,
                 boundDot: 0xC2347E,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0, highlight: 0.35, gloss: 0.14, metal: 0, fill2: 0x7A3FC2, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_midnight)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x423B58, pressed: 0x59536C),
                 function: ThemeFill(fill: 0x332E44, pressed: 0x4B475A),
@@ -582,7 +897,16 @@ extension KeyboardTheme {
                 chipFace: 0x423B58, chipAccent: 0x8CE8F2,
                 boundDot: 0x8CE8F2,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.3, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0, highlight: 0.35, gloss: 0.14, metal: 0, fill2: 0x7B4BE0, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .glow, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_midnight))),
         KeyboardTheme(
             id: "noir", name: "Noir",
             font: nil,
@@ -601,7 +925,16 @@ extension KeyboardTheme {
                 chipFace: 0xFFFFFF, chipAccent: 0xB3141E,
                 boundDot: 0xB3141E,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.1, sheenBottom: 0.1, highlight: 0.5, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.1, sheenBottom: 0.1, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.1, sheenBottom: 0.1, highlight: 0.5, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0.12, highlight: 0.3, gloss: 0.3, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_noir)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3E3E3E, pressed: 0x555555),
                 function: ThemeFill(fill: 0x303030, pressed: 0x494949),
@@ -614,7 +947,16 @@ extension KeyboardTheme {
                 chipFace: 0x3E3E3E, chipAccent: 0xF5F5F5,
                 boundDot: 0xF5F5F5,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.1, sheenBottom: 0.1, highlight: 0.5, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.1, sheenBottom: 0.1, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.1, sheenBottom: 0.1, highlight: 0.5, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0.12, highlight: 0.3, gloss: 0.3, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_noir))),
         KeyboardTheme(
             id: "rooftop", name: "Rooftop",
             font: nil,
@@ -633,7 +975,16 @@ extension KeyboardTheme {
                 chipFace: 0xFFFFFF, chipAccent: 0x222831,
                 boundDot: 0x222831,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0.45, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.08, sheenBottom: 0.08, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0.45, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.1, highlight: 0.35, gloss: 0.16, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_rooftop)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3A3F47, pressed: 0x52565D),
                 function: ThemeFill(fill: 0x2C3137, pressed: 0x454A4F),
@@ -646,7 +997,16 @@ extension KeyboardTheme {
                 chipFace: 0x3A3F47, chipAccent: 0xF2B04C,
                 boundDot: 0xF2B04C,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0.45, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.08, sheenBottom: 0.08, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.1, sheenBottom: 0.06, highlight: 0.45, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.1, highlight: 0.35, gloss: 0.16, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_rooftop))),
         KeyboardTheme(
             id: "overclock", name: "Overclock",
             font: nil,
@@ -665,7 +1025,16 @@ extension KeyboardTheme {
                 chipFace: 0xFFFFFF, chipAccent: 0x121212,
                 boundDot: 0xFF2D87,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.05, sheenBottom: 0.06, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.1, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.05, sheenBottom: 0.06, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.04, sheenBottom: 0.1, highlight: 0.35, gloss: 0.16, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_overclock)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x404040, pressed: 0x575757),
                 function: ThemeFill(fill: 0xF2E33A, pressed: 0xF4E652),
@@ -678,7 +1047,16 @@ extension KeyboardTheme {
                 chipFace: 0x404040, chipAccent: 0xF2F2F2,
                 boundDot: 0xF2F2F2,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.05, sheenBottom: 0.06, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.1, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.05, sheenBottom: 0.06, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.04, sheenBottom: 0.1, highlight: 0.35, gloss: 0.16, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_overclock))),
         KeyboardTheme(
             id: "orbit", name: "Orbit",
             font: nil,
@@ -697,7 +1075,16 @@ extension KeyboardTheme {
                 chipFace: 0xFFFFFF, chipAccent: 0x1E2433,
                 boundDot: 0xEE6A33,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.55, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "brushed", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.55, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.12, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_orbit)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x363E51, pressed: 0x4E5566),
                 function: ThemeFill(fill: 0x2B303E, pressed: 0x444955),
@@ -710,7 +1097,16 @@ extension KeyboardTheme {
                 chipFace: 0x363E51, chipAccent: 0xE8ECF4,
                 boundDot: 0xF07A3F,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.55, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "brushed", textureAlpha: 0.06, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.4, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.55, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.12, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_orbit))),
         KeyboardTheme(
             id: "samurai", name: "Samurai",
             font: nil,
@@ -729,7 +1125,16 @@ extension KeyboardTheme {
                 chipFace: 0xF8F2E8, chipAccent: 0x1F1B1A,
                 boundDot: 0x1F1B1A,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.14, highlight: 0.3, gloss: 0.26, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.14, highlight: 0.3, gloss: 0.24, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .letterpress, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_samurai)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x8E2126, pressed: 0x9C3C40),
                 function: ThemeFill(fill: 0x353130, pressed: 0x4D4A49),
@@ -742,7 +1147,16 @@ extension KeyboardTheme {
                 chipFace: 0x8E2126, chipAccent: 0xD9B570,
                 boundDot: 0xD9B570,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.14, highlight: 0.3, gloss: 0.26, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "washi", textureAlpha: 0.08, sheenTop: 0.06, sheenBottom: 0.08, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.14, highlight: 0.3, gloss: 0.24, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .foil, foil: [0xF6E2A8, 0xD4AE5A, 0x9C7430]),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_samurai))),
         KeyboardTheme(
             id: "baker", name: "221B",
             font: ThemeFont(family: "Libre Caslon Text", file: "LibreCaslonText-Regular", ext: "ttf", weight: 400, variable: false),
@@ -761,7 +1175,16 @@ extension KeyboardTheme {
                 chipFace: 0xF6F1E6, chipAccent: 0x6E1E22,
                 boundDot: 0x6E1E22,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.09, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "herringbone", textureAlpha: 0.16, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.09, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "leather", textureAlpha: 0.14, sheenTop: 0.06, sheenBottom: 0.14, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .letterpress, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_baker)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x433E39, pressed: 0x5A5551),
                 function: ThemeFill(fill: 0x35312E, pressed: 0x4D4A47),
@@ -774,7 +1197,16 @@ extension KeyboardTheme {
                 chipFace: 0x433E39, chipAccent: 0xEADFC8,
                 boundDot: 0xEADFC8,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.09, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "herringbone", textureAlpha: 0.16, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.09, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "leather", textureAlpha: 0.14, sheenTop: 0.06, sheenBottom: 0.14, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .letterpress, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_baker))),
         KeyboardTheme(
             id: "wonderland", name: "Wonderland",
             font: ThemeFont(family: "IM Fell English", file: "IMFeENrm28P", ext: "ttf", weight: 400, variable: false),
@@ -793,7 +1225,16 @@ extension KeyboardTheme {
                 chipFace: 0xFCF8EF, chipAccent: 0xA82A2A,
                 boundDot: 0xA82A2A,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.1, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "crosshatch", textureAlpha: 0.16, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.1, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.1, highlight: 0.3, gloss: 0.2, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .letterpress, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_wonderland)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x423F3C, pressed: 0x595653),
                 function: ThemeFill(fill: 0x33312F, pressed: 0x4B4A48),
@@ -806,7 +1247,16 @@ extension KeyboardTheme {
                 chipFace: 0x423F3C, chipAccent: 0xF1E8D6,
                 boundDot: 0xF1E8D6,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.1, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "crosshatch", textureAlpha: 0.16, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.1, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.1, highlight: 0.3, gloss: 0.2, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .letterpress, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_wonderland))),
         KeyboardTheme(
             id: "emerald", name: "Emerald City",
             font: nil,
@@ -825,7 +1275,16 @@ extension KeyboardTheme {
                 chipFace: 0xF3F7F3, chipAccent: 0x1D6B4D,
                 boundDot: 0x1D6B4D,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.08, sheenBottom: 0.08, highlight: 0.5, gloss: 0.08, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "velvet", textureAlpha: 0.08, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "bricks", textureAlpha: 0.1, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0, highlight: 0.45, gloss: 0.26, metal: 0, fill2: 0x2E9A6E, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_emerald)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x1E4635, pressed: 0x395C4D),
                 function: ThemeFill(fill: 0x1B372C, pressed: 0x364F45),
@@ -838,7 +1297,16 @@ extension KeyboardTheme {
                 chipFace: 0x1E4635, chipAccent: 0xEAD9A2,
                 boundDot: 0xC9A44C,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.08, sheenBottom: 0.08, highlight: 0.5, gloss: 0.08, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "velvet", textureAlpha: 0.08, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "bricks", textureAlpha: 0.1, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0, sheenBottom: 0, highlight: 0.45, gloss: 0.26, metal: 0, fill2: 0xF0D27A, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .ink, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_emerald))),
         KeyboardTheme(
             id: "nautilus", name: "Nautilus",
             font: nil,
@@ -857,7 +1325,16 @@ extension KeyboardTheme {
                 chipFace: 0xF5F1E6, chipAccent: 0x23393A,
                 boundDot: 0xA87A34,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "patina", textureAlpha: 0.16, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.14, sheenBottom: 0.12, highlight: 0.5, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_nautilus)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x2F4245, pressed: 0x48595B),
                 function: ThemeFill(fill: 0x243436, pressed: 0x3E4C4E),
@@ -870,7 +1347,16 @@ extension KeyboardTheme {
                 chipFace: 0x2F4245, chipAccent: 0xE6D3A3,
                 boundDot: 0xC29848,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "patina", textureAlpha: 0.16, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "paper", textureAlpha: 0.05, sheenTop: 0.06, sheenBottom: 0.07, highlight: 0.35, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.14, sheenBottom: 0.12, highlight: 0.5, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_nautilus))),
         KeyboardTheme(
             id: "gatsby", name: "Gatsby",
             font: ThemeFont(family: "Marcellus", file: "Marcellus-Regular", ext: "ttf", weight: 400, variable: false),
@@ -889,7 +1375,16 @@ extension KeyboardTheme {
                 chipFace: 0xFBF8F0, chipAccent: 0x1E1C19,
                 boundDot: 0x1E1C19,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.45, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.08, highlight: 0.4, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.45, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.04, sheenBottom: 0.12, highlight: 0.4, gloss: 0.24, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_gatsby)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x3F3E3D, pressed: 0x565554),
                 function: ThemeFill(fill: 0x323130, pressed: 0x4B4A49),
@@ -902,7 +1397,16 @@ extension KeyboardTheme {
                 chipFace: 0x3F3E3D, chipAccent: 0xD4B062,
                 boundDot: 0xD4B062,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.45, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "brushed", textureAlpha: 0.05, sheenTop: 0.08, sheenBottom: 0.08, highlight: 0.4, gloss: 0, metal: 0.08, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.06, sheenBottom: 0.06, highlight: 0.45, gloss: 0.1, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.04, sheenBottom: 0.12, highlight: 0.4, gloss: 0.24, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .foil, foil: [0xF6E2A8, 0xD4AE5A, 0x9C7430]),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_gatsby))),
         KeyboardTheme(
             id: "dracula", name: "Dracula",
             font: nil,
@@ -921,7 +1425,16 @@ extension KeyboardTheme {
                 chipFace: 0xF7F2EF, chipAccent: 0x7D1A28,
                 boundDot: 0x7D1A28,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.28, offsetY: 1.0, radius: 0.0),
-                border: nil),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "velvet", textureAlpha: 0.08, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "velvet", textureAlpha: 0.1, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "velvet", textureAlpha: 0.08, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.14, highlight: 0.3, gloss: 0.26, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_dracula)),
             dark: ThemeVariant(
                 letter: ThemeFill(fill: 0x473D42, pressed: 0x5D5459),
                 function: ThemeFill(fill: 0x383034, pressed: 0x50494C),
@@ -934,6 +1447,633 @@ extension KeyboardTheme {
                 chipFace: 0x473D42, chipAccent: 0xEADCCB,
                 boundDot: 0xEADCCB,
                 shadow: ThemeShadow(color: 0x000000, alpha: 0.55, offsetY: 1.0, radius: 0.0),
-                border: nil)),
+                border: nil,
+                style: ThemeStyle(
+                    faces: ThemeFaces(
+                        letter: ThemeFace(texture: "velvet", textureAlpha: 0.08, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        function: ThemeFace(texture: "velvet", textureAlpha: 0.1, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        space: ThemeFace(texture: "velvet", textureAlpha: 0.08, sheenTop: 0.04, sheenBottom: 0.05, highlight: 0.25, gloss: 0, metal: 0, fill2: nil, round: false, ring: nil),
+                        ret: ThemeFace(texture: nil, textureAlpha: 0, sheenTop: 0.02, sheenBottom: 0.14, highlight: 0.3, gloss: 0.26, metal: 0, fill2: nil, round: false, ring: nil)),
+                    legend: ThemeLegend(style: .engraved, foil: []),
+                    returnLegend: ThemeLegend(style: .engraved, foil: []),
+                    ornaments: KeyboardTheme.ornaments_dracula))),
     ]
+
+    // MARK: Ornaments (shared/themes/styles.py), in units of the key's height
+
+    static let ornaments_typewriter: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .center, color: .ink, alpha: 0.38, ops: [
+            .line(-1.9, 0.86, 1.9, 0.86, w: 0.018),
+            .line(-1.89, 0.86, -1.89, 0.8, w: 0.016),
+            .line(-1.8, 0.86, -1.8, 0.74, w: 0.016),
+            .line(-1.71, 0.86, -1.71, 0.8, w: 0.016),
+            .line(-1.62, 0.86, -1.62, 0.8, w: 0.016),
+            .line(-1.53, 0.86, -1.53, 0.8, w: 0.016),
+            .line(-1.44, 0.86, -1.44, 0.8, w: 0.016),
+            .line(-1.35, 0.86, -1.35, 0.74, w: 0.016),
+            .line(-1.26, 0.86, -1.26, 0.8, w: 0.016),
+            .line(-1.17, 0.86, -1.17, 0.8, w: 0.016),
+            .line(-1.08, 0.86, -1.08, 0.8, w: 0.016),
+            .line(-0.99, 0.86, -0.99, 0.8, w: 0.016),
+            .line(-0.9, 0.86, -0.9, 0.74, w: 0.016),
+            .line(-0.81, 0.86, -0.81, 0.8, w: 0.016),
+            .line(-0.72, 0.86, -0.72, 0.8, w: 0.016),
+            .line(-0.63, 0.86, -0.63, 0.8, w: 0.016),
+            .line(-0.54, 0.86, -0.54, 0.8, w: 0.016),
+            .line(-0.45, 0.86, -0.45, 0.74, w: 0.016),
+            .line(-0.36, 0.86, -0.36, 0.8, w: 0.016),
+            .line(-0.27, 0.86, -0.27, 0.8, w: 0.016),
+            .line(-0.18, 0.86, -0.18, 0.8, w: 0.016),
+            .line(-0.09, 0.86, -0.09, 0.8, w: 0.016),
+            .line(0, 0.86, 0, 0.74, w: 0.016),
+            .line(0.09, 0.86, 0.09, 0.8, w: 0.016),
+            .line(0.18, 0.86, 0.18, 0.8, w: 0.016),
+            .line(0.27, 0.86, 0.27, 0.8, w: 0.016),
+            .line(0.36, 0.86, 0.36, 0.8, w: 0.016),
+            .line(0.45, 0.86, 0.45, 0.74, w: 0.016),
+            .line(0.54, 0.86, 0.54, 0.8, w: 0.016),
+            .line(0.63, 0.86, 0.63, 0.8, w: 0.016),
+            .line(0.72, 0.86, 0.72, 0.8, w: 0.016),
+            .line(0.81, 0.86, 0.81, 0.8, w: 0.016),
+            .line(0.9, 0.86, 0.9, 0.74, w: 0.016),
+            .line(0.99, 0.86, 0.99, 0.8, w: 0.016),
+            .line(1.08, 0.86, 1.08, 0.8, w: 0.016),
+            .line(1.17, 0.86, 1.17, 0.8, w: 0.016),
+            .line(1.26, 0.86, 1.26, 0.8, w: 0.016),
+            .line(1.35, 0.86, 1.35, 0.74, w: 0.016),
+            .line(1.44, 0.86, 1.44, 0.8, w: 0.016),
+            .line(1.53, 0.86, 1.53, 0.8, w: 0.016),
+            .line(1.62, 0.86, 1.62, 0.8, w: 0.016),
+            .line(1.71, 0.86, 1.71, 0.8, w: 0.016),
+            .line(1.8, 0.86, 1.8, 0.74, w: 0.016),
+            .line(1.89, 0.86, 1.89, 0.8, w: 0.016),
+            .text("30", -1.8, 0.64, size: 0.13, font: .mono, weight: 500, tracking: 0),
+            .text("40", -0.9, 0.64, size: 0.13, font: .mono, weight: 500, tracking: 0),
+            .text("60", 0.9, 0.64, size: 0.13, font: .mono, weight: 500, tracking: 0),
+            .text("70", 1.8, 0.64, size: 0.13, font: .mono, weight: 500, tracking: 0),
+        ]),
+    ]
+
+    static let ornaments_beigebox: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .right, color: .fnInk, alpha: 0.22, ops: [
+            .rect(-1.02, 0.36, 0.06, 0.28, 0.03),
+            .rect(-0.89, 0.36, 0.06, 0.28, 0.03),
+            .rect(-0.76, 0.36, 0.06, 0.28, 0.03),
+            .rect(-0.63, 0.36, 0.06, 0.28, 0.03),
+            .rect(-0.5, 0.36, 0.06, 0.28, 0.03),
+        ]),
+    ]
+
+    static let ornaments_rangefinder: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .center, color: .ink, alpha: 0.45, ops: [
+            .text("∞", -1.7, 0.8, size: 0.12, font: .system, weight: 500, tracking: 0.02),
+            .line(-1.7, 0.885, -1.7, 0.94, w: 0.018),
+            .text("10", -1.214286, 0.8, size: 0.12, font: .system, weight: 500, tracking: 0.02),
+            .line(-1.214286, 0.885, -1.214286, 0.94, w: 0.018),
+            .text("5", -0.728571, 0.8, size: 0.12, font: .system, weight: 500, tracking: 0.02),
+            .line(-0.728571, 0.885, -0.728571, 0.94, w: 0.018),
+            .text("3", -0.242857, 0.8, size: 0.12, font: .system, weight: 500, tracking: 0.02),
+            .line(-0.242857, 0.885, -0.242857, 0.94, w: 0.018),
+            .text("2", 0.242857, 0.8, size: 0.12, font: .system, weight: 500, tracking: 0.02),
+            .line(0.242857, 0.885, 0.242857, 0.94, w: 0.018),
+            .text("1.5", 0.728571, 0.8, size: 0.12, font: .system, weight: 500, tracking: 0.02),
+            .line(0.728571, 0.885, 0.728571, 0.94, w: 0.018),
+            .text("1", 1.214286, 0.8, size: 0.12, font: .system, weight: 500, tracking: 0.02),
+            .line(1.214286, 0.885, 1.214286, 0.94, w: 0.018),
+            .text(".7", 1.7, 0.8, size: 0.12, font: .system, weight: 500, tracking: 0.02),
+            .line(1.7, 0.885, 1.7, 0.94, w: 0.018),
+            .line(-1.8, 0.94, 1.8, 0.94, w: 0.014),
+        ]),
+    ]
+
+    static let ornaments_walnut: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .center, color: .hex(0xB8924A), alpha: 0.55, ops: [
+            .line(-1.95, 0.16, 1.95, 0.16, w: 0.022),
+            .line(-1.95, 0.84, 1.95, 0.84, w: 0.022),
+        ]),
+    ]
+
+    static let ornaments_carrara: [ThemeOrnament] = []
+
+    static let ornaments_graphite: [ThemeOrnament] = []
+
+    static let ornaments_terminal: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .left, color: .ink, alpha: 0.55, ops: [
+            .text(">_", 0.42, 0.5, size: 0.3, font: .mono, weight: 500, tracking: 0.02),
+        ]),
+    ]
+
+    static let ornaments_primary: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .right, color: .ink, alpha: 1, ops: [
+            .circle(-1.02, 0.5, 0.13, color: .hex(0xD63A2B)),
+            .rect(-0.8, 0.37, 0.26, 0.26, 0, color: .hex(0x2B5BA8)),
+            .poly([-0.4, 0.63, -0.25, 0.37, -0.1, 0.63], color: .hex(0xF2C230)),
+        ]),
+    ]
+
+    static let ornaments_greenhouse: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .left, color: .fnInk, alpha: 0.3, ops: [
+            .line(0.3, 0.82, 1.1, 0.3, w: 0.02),
+            .line(0.4, 0.755, 0.3704, 0.607, w: 0.016),
+            .line(0.4, 0.755, 0.548, 0.7772, w: 0.016),
+            .line(0.5, 0.69, 0.4728, 0.554, w: 0.016),
+            .line(0.5, 0.69, 0.636, 0.7104, w: 0.016),
+            .line(0.6, 0.625, 0.5752, 0.501, w: 0.016),
+            .line(0.6, 0.625, 0.724, 0.6436, w: 0.016),
+            .line(0.7, 0.56, 0.6776, 0.448, w: 0.016),
+            .line(0.7, 0.56, 0.812, 0.5768, w: 0.016),
+            .line(0.8, 0.495, 0.78, 0.395, w: 0.016),
+            .line(0.8, 0.495, 0.9, 0.51, w: 0.016),
+            .line(0.9, 0.43, 0.8824, 0.342, w: 0.016),
+            .line(0.9, 0.43, 0.988, 0.4432, w: 0.016),
+            .line(1, 0.365, 0.9848, 0.289, w: 0.016),
+            .line(1, 0.365, 1.076, 0.3764, w: 0.016),
+        ]),
+    ]
+
+    static let ornaments_sakura: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .right, color: .accent, alpha: 0.55, ops: [
+            .circle(-0.55, 0.301, 0.0682),
+            .circle(-0.455845, 0.369407, 0.0682),
+            .circle(-0.491809, 0.480093, 0.0682),
+            .circle(-0.608191, 0.480093, 0.0682),
+            .circle(-0.644155, 0.369407, 0.0682),
+            .circle(-0.55, 0.4, 0.0385, color: .fill),
+            .circle(-0.88, 0.5925, 0.0465),
+            .circle(-0.815804, 0.639141, 0.0465),
+            .circle(-0.840324, 0.714609, 0.0465),
+            .circle(-0.919676, 0.714609, 0.0465),
+            .circle(-0.944196, 0.639141, 0.0465),
+            .circle(-0.88, 0.66, 0.02625, color: .fill),
+            .circle(-0.3, 0.6505, 0.0341),
+            .circle(-0.252923, 0.684704, 0.0341),
+            .circle(-0.270905, 0.740046, 0.0341),
+            .circle(-0.329095, 0.740046, 0.0341),
+            .circle(-0.347077, 0.684704, 0.0341),
+            .circle(-0.3, 0.7, 0.01925, color: .fill),
+        ]),
+    ]
+
+    static let ornaments_tide: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .center, color: .accent, alpha: 0.35, ops: [
+            .line(-1.8, 0.796763, -1.74, 0.781604, w: 0.02),
+            .line(-1.74, 0.781604, -1.68, 0.76822, w: 0.02),
+            .line(-1.68, 0.76822, -1.62, 0.757905, w: 0.02),
+            .line(-1.62, 0.757905, -1.56, 0.751655, w: 0.02),
+            .line(-1.56, 0.751655, -1.5, 0.750073, w: 0.02),
+            .line(-1.5, 0.750073, -1.44, 0.753311, w: 0.02),
+            .line(-1.44, 0.753311, -1.38, 0.761058, w: 0.02),
+            .line(-1.38, 0.761058, -1.32, 0.772565, w: 0.02),
+            .line(-1.32, 0.772565, -1.26, 0.786721, w: 0.02),
+            .line(-1.26, 0.786721, -1.2, 0.802159, w: 0.02),
+            .line(-1.2, 0.802159, -1.14, 0.817388, w: 0.02),
+            .line(-1.14, 0.817388, -1.08, 0.830939, w: 0.02),
+            .line(-1.08, 0.830939, -1.02, 0.841502, w: 0.02),
+            .line(-1.02, 0.841502, -0.96, 0.848058, w: 0.02),
+            .line(-0.96, 0.848058, -0.9, 0.849974, w: 0.02),
+            .line(-0.9, 0.849974, -0.84, 0.847064, w: 0.02),
+            .line(-0.84, 0.847064, -0.78, 0.83961, w: 0.02),
+            .line(-0.78, 0.83961, -0.72, 0.828331, w: 0.02),
+            .line(-0.72, 0.828331, -0.66, 0.814317, w: 0.02),
+            .line(-0.66, 0.814317, -0.6, 0.79892, w: 0.02),
+            .line(-0.6, 0.79892, -0.54, 0.783628, w: 0.02),
+            .line(-0.54, 0.783628, -0.48, 0.769916, w: 0.02),
+            .line(-0.48, 0.769916, -0.42, 0.75911, w: 0.02),
+            .line(-0.42, 0.75911, -0.36, 0.752251, w: 0.02),
+            .line(-0.36, 0.752251, -0.3, 0.750003, w: 0.02),
+            .line(-0.3, 0.750003, -0.24, 0.752582, w: 0.02),
+            .line(-0.24, 0.752582, -0.18, 0.75974, w: 0.02),
+            .line(-0.18, 0.75974, -0.12, 0.770786, w: 0.02),
+            .line(-0.12, 0.770786, -0.06, 0.784652, w: 0.02),
+            .line(-0.06, 0.784652, 0, 0.8, w: 0.02),
+            .line(0, 0.8, 0.06, 0.815348, w: 0.02),
+            .line(0.06, 0.815348, 0.12, 0.829214, w: 0.02),
+            .line(0.12, 0.829214, 0.18, 0.84026, w: 0.02),
+            .line(0.18, 0.84026, 0.24, 0.847418, w: 0.02),
+            .line(0.24, 0.847418, 0.3, 0.849997, w: 0.02),
+            .line(0.3, 0.849997, 0.36, 0.847749, w: 0.02),
+            .line(0.36, 0.847749, 0.42, 0.84089, w: 0.02),
+            .line(0.42, 0.84089, 0.48, 0.830084, w: 0.02),
+            .line(0.48, 0.830084, 0.54, 0.816372, w: 0.02),
+            .line(0.54, 0.816372, 0.6, 0.80108, w: 0.02),
+            .line(0.6, 0.80108, 0.66, 0.785683, w: 0.02),
+            .line(0.66, 0.785683, 0.72, 0.771669, w: 0.02),
+            .line(0.72, 0.771669, 0.78, 0.76039, w: 0.02),
+            .line(0.78, 0.76039, 0.84, 0.752936, w: 0.02),
+            .line(0.84, 0.752936, 0.9, 0.750026, w: 0.02),
+            .line(0.9, 0.750026, 0.96, 0.751942, w: 0.02),
+            .line(0.96, 0.751942, 1.02, 0.758498, w: 0.02),
+            .line(1.02, 0.758498, 1.08, 0.769061, w: 0.02),
+            .line(1.08, 0.769061, 1.14, 0.782612, w: 0.02),
+            .line(1.14, 0.782612, 1.2, 0.797841, w: 0.02),
+            .line(1.2, 0.797841, 1.26, 0.813279, w: 0.02),
+            .line(1.26, 0.813279, 1.32, 0.827435, w: 0.02),
+            .line(1.32, 0.827435, 1.38, 0.838942, w: 0.02),
+            .line(1.38, 0.838942, 1.44, 0.846689, w: 0.02),
+            .line(1.44, 0.846689, 1.5, 0.849927, w: 0.02),
+            .line(1.5, 0.849927, 1.56, 0.848345, w: 0.02),
+            .line(1.56, 0.848345, 1.62, 0.842095, w: 0.02),
+            .line(1.62, 0.842095, 1.68, 0.83178, w: 0.02),
+            .line(1.68, 0.83178, 1.74, 0.818396, w: 0.02),
+            .line(1.74, 0.818396, 1.8, 0.803237, w: 0.02),
+        ]),
+    ]
+
+    static let ornaments_sahara: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .center, color: .fnInk, alpha: 0.28, ops: [
+            .line(-1.7, 0.879766, -1.632, 0.87995, w: 0.02),
+            .line(-1.632, 0.87995, -1.564, 0.879135, w: 0.02),
+            .line(-1.564, 0.879135, -1.496, 0.877334, w: 0.02),
+            .line(-1.496, 0.877334, -1.428, 0.874578, w: 0.02),
+            .line(-1.428, 0.874578, -1.36, 0.870912, w: 0.02),
+            .line(-1.36, 0.870912, -1.292, 0.866397, w: 0.02),
+            .line(-1.292, 0.866397, -1.224, 0.861109, w: 0.02),
+            .line(-1.224, 0.861109, -1.156, 0.855135, w: 0.02),
+            .line(-1.156, 0.855135, -1.088, 0.848576, w: 0.02),
+            .line(-1.088, 0.848576, -1.02, 0.84154, w: 0.02),
+            .line(-1.02, 0.84154, -0.952, 0.834146, w: 0.02),
+            .line(-0.952, 0.834146, -0.884, 0.826515, w: 0.02),
+            .line(-0.884, 0.826515, -0.816, 0.818776, w: 0.02),
+            .line(-0.816, 0.818776, -0.748, 0.811058, w: 0.02),
+            .line(-0.748, 0.811058, -0.68, 0.803488, w: 0.02),
+            .line(-0.68, 0.803488, -0.612, 0.796194, w: 0.02),
+            .line(-0.612, 0.796194, -0.544, 0.789296, w: 0.02),
+            .line(-0.544, 0.789296, -0.476, 0.782911, w: 0.02),
+            .line(-0.476, 0.782911, -0.408, 0.777143, w: 0.02),
+            .line(-0.408, 0.777143, -0.34, 0.77209, w: 0.02),
+            .line(-0.34, 0.77209, -0.272, 0.767836, w: 0.02),
+            .line(-0.272, 0.767836, -0.204, 0.764451, w: 0.02),
+            .line(-0.204, 0.764451, -0.136, 0.761992, w: 0.02),
+            .line(-0.136, 0.761992, -0.068, 0.7605, w: 0.02),
+            .line(-0.068, 0.7605, 0, 0.76, w: 0.02),
+            .line(0, 0.76, 0.068, 0.7605, w: 0.02),
+            .line(0.068, 0.7605, 0.136, 0.761992, w: 0.02),
+            .line(0.136, 0.761992, 0.204, 0.764451, w: 0.02),
+            .line(0.204, 0.764451, 0.272, 0.767836, w: 0.02),
+            .line(0.272, 0.767836, 0.34, 0.77209, w: 0.02),
+            .line(0.34, 0.77209, 0.408, 0.777143, w: 0.02),
+            .line(0.408, 0.777143, 0.476, 0.782911, w: 0.02),
+            .line(0.476, 0.782911, 0.544, 0.789296, w: 0.02),
+            .line(0.544, 0.789296, 0.612, 0.796194, w: 0.02),
+            .line(0.612, 0.796194, 0.68, 0.803488, w: 0.02),
+            .line(0.68, 0.803488, 0.748, 0.811058, w: 0.02),
+            .line(0.748, 0.811058, 0.816, 0.818776, w: 0.02),
+            .line(0.816, 0.818776, 0.884, 0.826515, w: 0.02),
+            .line(0.884, 0.826515, 0.952, 0.834146, w: 0.02),
+            .line(0.952, 0.834146, 1.02, 0.84154, w: 0.02),
+            .line(1.02, 0.84154, 1.088, 0.848576, w: 0.02),
+            .line(1.088, 0.848576, 1.156, 0.855135, w: 0.02),
+            .line(1.156, 0.855135, 1.224, 0.861109, w: 0.02),
+            .line(1.224, 0.861109, 1.292, 0.866397, w: 0.02),
+            .line(1.292, 0.866397, 1.36, 0.870912, w: 0.02),
+            .line(1.36, 0.870912, 1.428, 0.874578, w: 0.02),
+            .line(1.428, 0.874578, 1.496, 0.877334, w: 0.02),
+            .line(1.496, 0.877334, 1.564, 0.879135, w: 0.02),
+            .line(1.564, 0.879135, 1.632, 0.87995, w: 0.02),
+            .line(1.632, 0.87995, 1.7, 0.879766, w: 0.02),
+            .line(-1.7, 0.7445, -1.632, 0.740221, w: 0.02),
+            .line(-1.632, 0.740221, -1.564, 0.735606, w: 0.02),
+            .line(-1.564, 0.735606, -1.496, 0.730731, w: 0.02),
+            .line(-1.496, 0.730731, -1.428, 0.725677, w: 0.02),
+            .line(-1.428, 0.725677, -1.36, 0.720528, w: 0.02),
+            .line(-1.36, 0.720528, -1.292, 0.715371, w: 0.02),
+            .line(-1.292, 0.715371, -1.224, 0.71029, w: 0.02),
+            .line(-1.224, 0.71029, -1.156, 0.705372, w: 0.02),
+            .line(-1.156, 0.705372, -1.088, 0.700697, w: 0.02),
+            .line(-1.088, 0.700697, -1.02, 0.696344, w: 0.02),
+            .line(-1.02, 0.696344, -0.952, 0.692385, w: 0.02),
+            .line(-0.952, 0.692385, -0.884, 0.688887, w: 0.02),
+            .line(-0.884, 0.688887, -0.816, 0.685907, w: 0.02),
+            .line(-0.816, 0.685907, -0.748, 0.683496, w: 0.02),
+            .line(-0.748, 0.683496, -0.68, 0.681693, w: 0.02),
+            .line(-0.68, 0.681693, -0.612, 0.680529, w: 0.02),
+            .line(-0.612, 0.680529, -0.544, 0.680023, w: 0.02),
+            .line(-0.544, 0.680023, -0.476, 0.680183, w: 0.02),
+            .line(-0.476, 0.680183, -0.408, 0.681006, w: 0.02),
+            .line(-0.408, 0.681006, -0.34, 0.68248, w: 0.02),
+            .line(-0.34, 0.68248, -0.272, 0.684579, w: 0.02),
+            .line(-0.272, 0.684579, -0.204, 0.687269, w: 0.02),
+            .line(-0.204, 0.687269, -0.136, 0.690504, w: 0.02),
+            .line(-0.136, 0.690504, -0.068, 0.694231, w: 0.02),
+            .line(-0.068, 0.694231, 0, 0.698388, w: 0.02),
+            .line(0, 0.698388, 0.068, 0.702905, w: 0.02),
+            .line(0.068, 0.702905, 0.136, 0.707706, w: 0.02),
+            .line(0.136, 0.707706, 0.204, 0.712713, w: 0.02),
+            .line(0.204, 0.712713, 0.272, 0.717841, w: 0.02),
+            .line(0.272, 0.717841, 0.34, 0.723005, w: 0.02),
+            .line(0.34, 0.723005, 0.408, 0.728119, w: 0.02),
+            .line(0.408, 0.728119, 0.476, 0.733098, w: 0.02),
+            .line(0.476, 0.733098, 0.544, 0.737858, w: 0.02),
+            .line(0.544, 0.737858, 0.612, 0.742321, w: 0.02),
+            .line(0.612, 0.742321, 0.68, 0.746412, w: 0.02),
+            .line(0.68, 0.746412, 0.748, 0.750062, w: 0.02),
+            .line(0.748, 0.750062, 0.816, 0.753211, w: 0.02),
+            .line(0.816, 0.753211, 0.884, 0.755807, w: 0.02),
+            .line(0.884, 0.755807, 0.952, 0.757805, w: 0.02),
+            .line(0.952, 0.757805, 1.02, 0.759174, w: 0.02),
+            .line(1.02, 0.759174, 1.088, 0.759889, w: 0.02),
+            .line(1.088, 0.759889, 1.156, 0.75994, w: 0.02),
+            .line(1.156, 0.75994, 1.224, 0.759325, w: 0.02),
+            .line(1.224, 0.759325, 1.292, 0.758054, w: 0.02),
+            .line(1.292, 0.758054, 1.36, 0.756149, w: 0.02),
+            .line(1.36, 0.756149, 1.428, 0.753641, w: 0.02),
+            .line(1.428, 0.753641, 1.496, 0.750573, w: 0.02),
+            .line(1.496, 0.750573, 1.564, 0.746995, w: 0.02),
+            .line(1.564, 0.746995, 1.632, 0.742967, w: 0.02),
+            .line(1.632, 0.742967, 1.7, 0.738556, w: 0.02),
+        ]),
+    ]
+
+    static let ornaments_moss: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .left, color: .accent, alpha: 0.4, ops: [
+            .line(0.3, 0.82, 1.1, 0.3, w: 0.02),
+            .line(0.4, 0.755, 0.3704, 0.607, w: 0.016),
+            .line(0.4, 0.755, 0.548, 0.7772, w: 0.016),
+            .line(0.5, 0.69, 0.4728, 0.554, w: 0.016),
+            .line(0.5, 0.69, 0.636, 0.7104, w: 0.016),
+            .line(0.6, 0.625, 0.5752, 0.501, w: 0.016),
+            .line(0.6, 0.625, 0.724, 0.6436, w: 0.016),
+            .line(0.7, 0.56, 0.6776, 0.448, w: 0.016),
+            .line(0.7, 0.56, 0.812, 0.5768, w: 0.016),
+            .line(0.8, 0.495, 0.78, 0.395, w: 0.016),
+            .line(0.8, 0.495, 0.9, 0.51, w: 0.016),
+            .line(0.9, 0.43, 0.8824, 0.342, w: 0.016),
+            .line(0.9, 0.43, 0.988, 0.4432, w: 0.016),
+            .line(1, 0.365, 0.9848, 0.289, w: 0.016),
+            .line(1, 0.365, 1.076, 0.3764, w: 0.016),
+        ]),
+    ]
+
+    static let ornaments_arctic: [ThemeOrnament] = []
+
+    static let ornaments_lunar: [ThemeOrnament] = [
+        ThemeOrnament(on: .function, anchor: .left, color: .fnInk, alpha: 0.35, ops: [
+            .circle(0.12, 0.12, 0.028),
+            .circle(0.12, 0.88, 0.028),
+        ]),
+        ThemeOrnament(on: .function, anchor: .right, color: .fnInk, alpha: 0.35, ops: [
+            .circle(-0.12, 0.12, 0.028),
+            .circle(-0.12, 0.88, 0.028),
+        ]),
+        ThemeOrnament(on: .space, anchor: .center, color: .fnInk, alpha: 0.35, ops: [
+            .circle(-1.98, 0.22, 0.035, w: 0.014),
+            .line(-2.002, 0.22, -1.958, 0.22, w: 0.012),
+            .circle(-1.98, 0.78, 0.035, w: 0.014),
+            .line(-2.002, 0.78, -1.958, 0.78, w: 0.012),
+            .circle(1.98, 0.22, 0.035, w: 0.014),
+            .line(1.958, 0.22, 2.002, 0.22, w: 0.012),
+            .circle(1.98, 0.78, 0.035, w: 0.014),
+            .line(1.958, 0.78, 2.002, 0.78, w: 0.012),
+        ]),
+    ]
+
+    static let ornaments_blush: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .center, color: .hex(0xFFFFFF), alpha: 0.55, ops: [
+            .circle(-1.75, 0.872, 0.026),
+            .circle(-1.625, 0.867459, 0.026),
+            .circle(-1.5, 0.857274, 0.026),
+            .circle(-1.375, 0.849151, 0.026),
+            .circle(-1.25, 0.849239, 0.026),
+            .circle(-1.125, 0.85747, 0.026),
+            .circle(-1, 0.867616, 0.026),
+            .circle(-0.875, 0.871998, 0.026),
+            .circle(-0.75, 0.8673, 0.026),
+            .circle(-0.625, 0.857077, 0.026),
+            .circle(-0.5, 0.849066, 0.026),
+            .circle(-0.375, 0.84933, 0.026),
+            .circle(-0.25, 0.857668, 0.026),
+            .circle(-0.125, 0.867771, 0.026),
+            .circle(0, 0.871993, 0.026),
+            .circle(0.125, 0.867139, 0.026),
+            .circle(0.25, 0.856882, 0.026),
+            .circle(0.375, 0.848985, 0.026),
+            .circle(0.5, 0.849424, 0.026),
+            .circle(0.625, 0.857866, 0.026),
+            .circle(0.75, 0.867924, 0.026),
+            .circle(0.875, 0.871985, 0.026),
+            .circle(1, 0.866976, 0.026),
+            .circle(1.125, 0.856688, 0.026),
+            .circle(1.25, 0.848906, 0.026),
+            .circle(1.375, 0.84952, 0.026),
+            .circle(1.5, 0.858065, 0.026),
+            .circle(1.625, 0.868074, 0.026),
+            .circle(1.75, 0.871973, 0.026),
+        ]),
+    ]
+
+    static let ornaments_champagne: [ThemeOrnament] = []
+
+    static let ornaments_midnight: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .right, color: .accent, alpha: 0.85, ops: [
+            .circle(-0.62, 0.5, 0.3, color: .hex(0xF7A33B)),
+            .rect(-0.94, 0.52, 0.64, 0.022, 0, color: .fill),
+            .rect(-0.94, 0.6, 0.64, 0.034, 0, color: .fill),
+            .rect(-0.94, 0.67, 0.64, 0.046, 0, color: .fill),
+            .rect(-0.94, 0.73, 0.64, 0.058, 0, color: .fill),
+            .rect(-0.94, 0.78, 0.64, 0.1, 0, color: .fill),
+        ]),
+    ]
+
+    static let ornaments_noir: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .right, color: .accent, alpha: 0.7, ops: [
+            .line(-0.9, 0.38, -0.8, 0.5, w: 0.03),
+            .line(-0.76, 0.38, -0.66, 0.5, w: 0.03),
+            .line(-0.62, 0.38, -0.52, 0.5, w: 0.03),
+            .line(-0.8, 0.5, -0.9, 0.62, w: 0.03),
+            .line(-0.66, 0.5, -0.76, 0.62, w: 0.03),
+            .line(-0.52, 0.5, -0.62, 0.62, w: 0.03),
+        ]),
+    ]
+
+    static let ornaments_rooftop: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .right, color: .fnInk, alpha: 0.22, ops: [
+            .poly([0, 1, 0, 0.78, -0.18, 0.78, -0.18, 0.62, -0.3, 0.62, -0.3, 0.7, -0.42, 0.7, -0.42, 0.5, -0.47, 0.5, -0.47, 0.44, -0.52, 0.44, -0.52, 0.5, -0.58, 0.5, -0.58, 0.72, -0.74, 0.72, -0.74, 0.58, -0.86, 0.58, -0.86, 0.66, -0.96, 0.66, -0.96, 0.54, -1.02, 0.5, -1.08, 0.54, -1.08, 0.8, -1.24, 0.8, -1.24, 0.66, -1.36, 0.66, -1.36, 0.76, -1.5, 0.76, -1.5, 1]),
+        ]),
+    ]
+
+    static let ornaments_overclock: [ThemeOrnament] = [
+        ThemeOrnament(on: .shift, anchor: .left, color: .hex(0x121212), alpha: 0.12, ops: [
+            .poly([-0.86, 1, -0.72, 1, -0.36, 0, -0.5, 0]),
+            .poly([-0.64, 1, -0.5, 1, -0.14, 0, -0.28, 0]),
+            .poly([-0.42, 1, -0.28, 1, 0.08, 0, -0.06, 0]),
+            .poly([-0.2, 1, -0.06, 1, 0.3, 0, 0.16, 0]),
+            .poly([0.02, 1, 0.16, 1, 0.52, 0, 0.38, 0]),
+            .poly([0.24, 1, 0.38, 1, 0.74, 0, 0.6, 0]),
+            .poly([0.46, 1, 0.6, 1, 0.96, 0, 0.82, 0]),
+        ]),
+        ThemeOrnament(on: .delete, anchor: .left, color: .hex(0x121212), alpha: 0.12, ops: [
+            .poly([-0.86, 1, -0.72, 1, -0.36, 0, -0.5, 0]),
+            .poly([-0.64, 1, -0.5, 1, -0.14, 0, -0.28, 0]),
+            .poly([-0.42, 1, -0.28, 1, 0.08, 0, -0.06, 0]),
+            .poly([-0.2, 1, -0.06, 1, 0.3, 0, 0.16, 0]),
+            .poly([0.02, 1, 0.16, 1, 0.52, 0, 0.38, 0]),
+            .poly([0.24, 1, 0.38, 1, 0.74, 0, 0.6, 0]),
+            .poly([0.46, 1, 0.6, 1, 0.96, 0, 0.82, 0]),
+        ]),
+    ]
+
+    static let ornaments_orbit: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .right, color: .fnInk, alpha: 0.4, ops: [
+            .line(-0.2, 0.5, -0.205171, 0.520336, w: 0.018),
+            .line(-0.205171, 0.520336, -0.220556, 0.540172, w: 0.018),
+            .line(-0.220556, 0.540172, -0.245777, 0.559019, w: 0.018),
+            .line(-0.245777, 0.559019, -0.280213, 0.576412, w: 0.018),
+            .line(-0.280213, 0.576412, -0.323015, 0.591924, w: 0.018),
+            .line(-0.323015, 0.591924, -0.37313, 0.605172, w: 0.018),
+            .line(-0.37313, 0.605172, -0.429324, 0.615831, w: 0.018),
+            .line(-0.429324, 0.615831, -0.490213, 0.623637, w: 0.018),
+            .line(-0.490213, 0.623637, -0.554298, 0.628399, w: 0.018),
+            .line(-0.554298, 0.628399, -0.62, 0.63, w: 0.018),
+            .line(-0.62, 0.63, -0.685702, 0.628399, w: 0.018),
+            .line(-0.685702, 0.628399, -0.749787, 0.623637, w: 0.018),
+            .line(-0.749787, 0.623637, -0.810676, 0.615831, w: 0.018),
+            .line(-0.810676, 0.615831, -0.86687, 0.605172, w: 0.018),
+            .line(-0.86687, 0.605172, -0.916985, 0.591924, w: 0.018),
+            .line(-0.916985, 0.591924, -0.959787, 0.576412, w: 0.018),
+            .line(-0.959787, 0.576412, -0.994223, 0.559019, w: 0.018),
+            .line(-0.994223, 0.559019, -1.019444, 0.540172, w: 0.018),
+            .line(-1.019444, 0.540172, -1.034829, 0.520336, w: 0.018),
+            .line(-1.034829, 0.520336, -1.04, 0.5, w: 0.018),
+            .line(-1.04, 0.5, -1.034829, 0.479664, w: 0.018),
+            .line(-1.034829, 0.479664, -1.019444, 0.459828, w: 0.018),
+            .line(-1.019444, 0.459828, -0.994223, 0.440981, w: 0.018),
+            .line(-0.994223, 0.440981, -0.959787, 0.423588, w: 0.018),
+            .line(-0.959787, 0.423588, -0.916985, 0.408076, w: 0.018),
+            .line(-0.916985, 0.408076, -0.86687, 0.394828, w: 0.018),
+            .line(-0.86687, 0.394828, -0.810676, 0.384169, w: 0.018),
+            .line(-0.810676, 0.384169, -0.749787, 0.376363, w: 0.018),
+            .line(-0.749787, 0.376363, -0.685702, 0.371601, w: 0.018),
+            .line(-0.685702, 0.371601, -0.62, 0.37, w: 0.018),
+            .line(-0.62, 0.37, -0.554298, 0.371601, w: 0.018),
+            .line(-0.554298, 0.371601, -0.490213, 0.376363, w: 0.018),
+            .line(-0.490213, 0.376363, -0.429324, 0.384169, w: 0.018),
+            .line(-0.429324, 0.384169, -0.37313, 0.394828, w: 0.018),
+            .line(-0.37313, 0.394828, -0.323015, 0.408076, w: 0.018),
+            .line(-0.323015, 0.408076, -0.280213, 0.423588, w: 0.018),
+            .line(-0.280213, 0.423588, -0.245777, 0.440981, w: 0.018),
+            .line(-0.245777, 0.440981, -0.220556, 0.459828, w: 0.018),
+            .line(-0.220556, 0.459828, -0.205171, 0.479664, w: 0.018),
+            .line(-0.205171, 0.479664, -0.2, 0.5, w: 0.018),
+            .circle(-0.62, 0.5, 0.09),
+            .circle(-0.25, 0.42, 0.035, color: .accent),
+        ]),
+    ]
+
+    static let ornaments_samurai: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .right, color: .ink, alpha: 0.92, ops: [
+            .rect(-0.62, 0.3, 0.4, 0.4, 0.05, color: .hex(0xB3262B)),
+            .rect(-0.56, 0.36, 0.28, 0.28, 0.02, w: 0.03, color: .hex(0xF8F2E8)),
+            .line(-0.5, 0.44, -0.34, 0.44, w: 0.035, color: .hex(0xF8F2E8)),
+            .line(-0.42, 0.4, -0.42, 0.62, w: 0.035, color: .hex(0xF8F2E8)),
+            .line(-0.5, 0.56, -0.34, 0.6, w: 0.035, color: .hex(0xF8F2E8)),
+        ]),
+        ThemeOrnament(on: .ret, anchor: .center, color: .hex(0xD9B570), alpha: 0.75, ops: [
+            .circle(-0.387568, 0.234645, 0.022415),
+            .circle(-0.94064, 0.52727, 0.017851),
+            .circle(-0.972402, 0.505651, 0.0126),
+            .circle(-0.145979, 0.17309, 0.013451),
+            .circle(-0.166058, 0.748408, 0.013981),
+            .circle(-0.608874, 0.596849, 0.027163),
+            .circle(0.169626, 0.421477, 0.02762),
+            .circle(-0.997518, 0.772436, 0.016634),
+            .circle(-0.782639, 0.209522, 0.016936),
+            .circle(0.695478, 0.257352, 0.021306),
+            .circle(0.30561, 0.403022, 0.020764),
+            .circle(-0.961864, 0.165297, 0.015295),
+            .circle(0.39688, 0.44497, 0.017026),
+            .circle(0.188236, 0.46442, 0.016796),
+            .circle(0.647635, 0.651236, 0.015906),
+            .circle(0.163732, 0.519149, 0.026002),
+        ]),
+    ]
+
+    static let ornaments_baker: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .right, color: .hex(0xC9A14E), alpha: 0.95, ops: [
+            .rect(-0.88, 0.3, 0.66, 0.4, 0.06),
+            .text("221B", -0.55, 0.505, size: 0.22, font: .theme, weight: 600, tracking: 0.08, color: .hex(0x3A2A12)),
+        ]),
+    ]
+
+    static let ornaments_wonderland: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .left, color: .ink, alpha: 0.55, ops: [
+            .text("♠︎", 0.42, 0.52, size: 0.3, font: .system, weight: 400, tracking: 0, color: .ink),
+            .text("♥︎", 0.78, 0.52, size: 0.3, font: .system, weight: 400, tracking: 0, color: .accent),
+        ]),
+        ThemeOrnament(on: .space, anchor: .right, color: .ink, alpha: 0.55, ops: [
+            .text("♣︎", -0.78, 0.52, size: 0.3, font: .system, weight: 400, tracking: 0, color: .ink),
+            .text("♦︎", -0.42, 0.52, size: 0.3, font: .system, weight: 400, tracking: 0, color: .accent),
+        ]),
+    ]
+
+    static let ornaments_emerald: [ThemeOrnament] = [
+        ThemeOrnament(on: .ret, anchor: .left, color: .accentInk, alpha: 0.22, ops: [
+            .line(0, 0, 0.5, 0.5, w: 0.014),
+            .line(0.5, 0.5, 0, 1, w: 0.014),
+            .line(0.5, 0.5, 1.4, 0.5, w: 0.014),
+        ]),
+    ]
+
+    static let ornaments_nautilus: [ThemeOrnament] = [
+        ThemeOrnament(on: .ret, anchor: .left, color: .accentInk, alpha: 0.4, ops: [
+            .circle(0.12, 0.12, 0.028),
+            .circle(0.12, 0.88, 0.028),
+        ]),
+        ThemeOrnament(on: .ret, anchor: .right, color: .accentInk, alpha: 0.4, ops: [
+            .circle(-0.12, 0.12, 0.028),
+            .circle(-0.12, 0.88, 0.028),
+        ]),
+        ThemeOrnament(on: .space, anchor: .right, color: .fnInk, alpha: 0.32, ops: [
+            .circle(-0.62, 0.5, 0.3, w: 0.03),
+            .circle(-0.62, 0.5, 0.22, w: 0.015),
+            .line(-0.4, 0.5, -0.35, 0.5, w: 0.012),
+            .line(-0.429474, 0.61, -0.386173, 0.635, w: 0.012),
+            .line(-0.51, 0.690526, -0.485, 0.733827, w: 0.012),
+            .line(-0.62, 0.72, -0.62, 0.77, w: 0.012),
+            .line(-0.73, 0.690526, -0.755, 0.733827, w: 0.012),
+            .line(-0.810526, 0.61, -0.853827, 0.635, w: 0.012),
+            .line(-0.84, 0.5, -0.89, 0.5, w: 0.012),
+            .line(-0.810526, 0.39, -0.853827, 0.365, w: 0.012),
+            .line(-0.73, 0.309474, -0.755, 0.266173, w: 0.012),
+            .line(-0.62, 0.28, -0.62, 0.23, w: 0.012),
+            .line(-0.51, 0.309474, -0.485, 0.266173, w: 0.012),
+            .line(-0.429474, 0.39, -0.386173, 0.365, w: 0.012),
+            .line(-0.62, 0.5, -0.44, 0.4, w: 0.02),
+        ]),
+    ]
+
+    static let ornaments_gatsby: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .center, color: .accent, alpha: 0.65, ops: [
+            .line(-1.7, 0.16, 1.7, 0.16, w: 0.016),
+            .line(-1.55, 0.21, 1.55, 0.21, w: 0.01),
+            .poly([-1.89, 0.16, -1.82, 0.11, -1.75, 0.16, -1.82, 0.21]),
+            .poly([1.75, 0.16, 1.82, 0.11, 1.89, 0.16, 1.82, 0.21]),
+            .line(-1.7, 0.84, 1.7, 0.84, w: 0.016),
+            .line(-1.55, 0.79, 1.55, 0.79, w: 0.01),
+            .poly([-1.89, 0.84, -1.82, 0.79, -1.75, 0.84, -1.82, 0.89]),
+            .poly([1.75, 0.84, 1.82, 0.79, 1.89, 0.84, 1.82, 0.89]),
+        ]),
+        ThemeOrnament(on: .ret, anchor: .center, color: .accentInk, alpha: 0.3, ops: [
+            .line(0, 1.02, -0.892708, 0.695081, w: 0.018),
+            .line(0, 1.02, -0.787586, 0.488767, w: 0.018),
+            .line(0, 1.02, -0.635674, 0.314012, w: 0.018),
+            .line(0, 1.02, -0.445998, 0.1812, w: 0.018),
+            .line(0, 1.02, -0.229826, 0.098219, w: 0.018),
+            .line(0, 1.02, 0, 0.07, w: 0.018),
+            .line(0, 1.02, 0.229826, 0.098219, w: 0.018),
+            .line(0, 1.02, 0.445998, 0.1812, w: 0.018),
+            .line(0, 1.02, 0.635674, 0.314012, w: 0.018),
+            .line(0, 1.02, 0.787586, 0.488767, w: 0.018),
+            .line(0, 1.02, 0.892708, 0.695081, w: 0.018),
+        ]),
+    ]
+
+    static let ornaments_dracula: [ThemeOrnament] = [
+        ThemeOrnament(on: .space, anchor: .left, color: .fnInk, alpha: 0.45, ops: [
+            .circle(0.62, 0.48, 0.2),
+            .circle(0.7, 0.43, 0.18, color: .fill),
+            .circle(0.98, 0.34, 0.018),
+            .circle(1.12, 0.58, 0.012),
+        ]),
+    ]
+
 }

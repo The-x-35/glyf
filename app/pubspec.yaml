@@ -66,6 +66,10 @@ flutter:
     - assets/brand/glyf-symbol.png
     # Real Settings screens for "Turn on Glyf" (tools/setup_guide).
     - assets/setup/
+    # The keyboard themes' finish textures (shared/themes/textures, copied by
+    # tools/gen_themes_dart.py): the picker's previews, and the Android
+    # keyboard reads the same files from flutter_assets.
+    - assets/themes/textures/
 
   # One typeface on BOTH platforms (SF-metric Inter) — the app must look
   # identical on iOS and Android.

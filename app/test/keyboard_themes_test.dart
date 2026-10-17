@@ -91,6 +91,73 @@ void main() {
     }
   });
 
+  test('every variant carries its style, as the JSON has it, naming only what the keyboards draw', () {
+    final json = jsonDecode(File('../shared/themes/themes.json').readAsStringSync()) as List;
+    final shared = Directory('../shared/themes/textures')
+        .listSync()
+        .map((f) => f.uri.pathSegments.last.replaceAll('.png', ''))
+        .toSet();
+    const roles = {'ink', 'fnInk', 'accent', 'accentInk', 'fill'};
+    const counts = {'line': 4, 'circle': 3, 'rect': 5, 'text': 2};
+    final hex = RegExp(r'^#[0-9A-Fa-f]{6}$');
+    for (var i = 0; i < json.length; i++) {
+      final t = kbThemes[i];
+      for (final mode in ['light', 'dark']) {
+        final where = '${t.id} $mode';
+        final st = t.variant(mode == 'dark').style;
+        final js = json[i]['variants'][mode]['style'] as Map<String, dynamic>;
+        for (final cls in ['letter', 'function', 'space', 'return']) {
+          final f = st.face(cls);
+          final jf = js['faces'][cls] as Map<String, dynamic>;
+          expect(f.texture, jf['texture'], reason: '$where $cls');
+          if (f.texture != null) expect(shared, contains(f.texture), reason: where);
+          expect(f.textureAlpha, closeTo((jf['textureAlpha'] as num).toDouble(), 1e-4));
+          expect(f.sheenTop, closeTo((jf['sheen'][0] as num).toDouble(), 1e-4));
+          expect(f.sheenBottom, closeTo((jf['sheen'][1] as num).toDouble(), 1e-4));
+          expect(f.gloss, closeTo((jf['gloss'] as num).toDouble(), 1e-4));
+          expect(f.highlight, closeTo((jf['highlight'] as num).toDouble(), 1e-4));
+          expect(f.metal, closeTo((jf['metal'] as num).toDouble(), 1e-4));
+          expect(f.fill2 == null, jf['fill2'] == null, reason: '$where $cls');
+          expect(f.round, jf['shape'] == 'round', reason: '$where $cls');
+          if (f.round) expect(f.ring, isNotNull, reason: where);
+        }
+        expect(st.legend.style, js['legend']['style']);
+        // The return's glyph is never foil or glow (gold on gold vanished).
+        expect(st.returnLegend.style, (js['returnLegend'] ?? {'style': 'engraved'})['style'], reason: where);
+        expect({'ink', 'engraved', 'letterpress'}, contains(st.returnLegend.style), reason: where);
+        expect({'ink', 'engraved', 'letterpress', 'foil', 'glow'}, contains(st.legend.style));
+        if (st.legend.style == 'foil') expect(st.legend.foil, hasLength(3), reason: where);
+        expect(st.ornaments, hasLength((js['ornaments'] as List).length), reason: where);
+        for (final o in st.ornaments) {
+          expect({'space', 'return', 'shift', 'delete', 'letter', 'function'}, contains(o.on), reason: where);
+          expect({'left', 'center', 'right'}, contains(o.anchor), reason: where);
+          for (final c in [o.color, for (final op in o.ops) ?op.color]) {
+            expect(roles.contains(c) || hex.hasMatch(c), isTrue, reason: '$where colour $c');
+          }
+          for (final op in o.ops) {
+            expect({'line', 'poly', 'circle', 'rect', 'text'}, contains(op.t), reason: where);
+            if (counts[op.t] != null) {
+              expect(op.p, hasLength(counts[op.t]!), reason: '$where ${op.t}');
+            } else {
+              expect(op.p.length >= 6 && op.p.length.isEven, isTrue, reason: '$where poly');
+            }
+            if (op.t == 'text') expect({'system', 'mono', 'theme'}, contains(op.font), reason: where);
+          }
+        }
+      }
+    }
+  });
+
+  test('every texture a theme names ships in the app\'s assets, as shared/themes has it', () {
+    expect(kbTextureNames, isNotEmpty);
+    for (final n in kbTextureNames) {
+      final app = File('assets/themes/textures/$n.png');
+      expect(app.existsSync(), isTrue, reason: n);
+      expect(app.readAsBytesSync(), File('../shared/themes/textures/$n.png').readAsBytesSync(), reason: n);
+    }
+    expect(File('pubspec.yaml').readAsStringSync(), contains('- assets/themes/textures/'));
+  });
+
   testWidgets('every theme has a tile, in the spec groups, and none is picked at first',
       (tester) async {
     await open(tester);
@@ -105,7 +172,8 @@ void main() {
           'material' => 'Materials',
           'story' => 'Stories',
           'archetype' => 'Archetypes',
-          _ => '${c[0].toUpperCase()}${c.substring(1)}s',
+          'Nature' => 'Nature',
+          _ => '${c[0].toUpperCase()}${c.substring(1)}${c.endsWith('s') ? '' : 's'}',
         };
     for (final label in [...groups.reversed.map(plural), 'Look']) {
       await reveal(tester, find.text(label), up: true);

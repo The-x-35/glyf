@@ -47,7 +47,69 @@ def override(o):
     return 'KeyOverride(%s, %s, %s)' % (c(o['fill']), c(o['glyph']), c(o['pressed']))
 
 
-def variant(v, ind):
+def f(x):
+    """A Float literal, rounded so 1.7999999999999998 reads 1.8f."""
+    r = round(float(x), 5)
+    return ('%r' % r).replace('e', 'E') + 'f' if r != int(r) else '%d.0f' % int(r)
+
+
+def per_mode(x, mode):
+    """A colour the JSON gives once or per mode ({light, dark})."""
+    return x[mode] if isinstance(x, dict) else x
+
+
+def face(o, mode):
+    fill2 = per_mode(o['fill2'], mode) if o.get('fill2') else None
+    ring = per_mode(o['ring'], mode) if o.get('ring') else None
+    return 'Face(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)' % (
+        'null' if not o.get('texture') else s(o['texture']), f(o['textureAlpha']),
+        f(o['sheen'][0]), f(o['sheen'][1]), f(o['highlight']), f(o['gloss']), f(o['metal']),
+        'null' if fill2 is None else c(fill2), 'true' if o['shape'] == 'round' else 'false',
+        'null' if ring is None else c(ring))
+
+
+def legend(o, mode):
+    foil = 'null' if not o.get('foil') else 'intArrayOf(%s)' % ', '.join(c(x) for x in o['foil'])
+    glow = 'null' if not o.get('glow') else s(per_mode(o['glow'], mode))
+    return 'Legend(%s, %s, %s)' % (s(o['style']), foil, glow)
+
+
+def op(o, mode):
+    args = ['%s' % s(o['t']), 'floatArrayOf(%s)' % ', '.join(f(x) for x in o['p'])]
+    if 'w' in o:
+        args.append('w = %s' % f(o['w']))
+    if o.get('color'):
+        args.append('color = %s' % s(per_mode(o['color'], mode)))
+    if o['t'] == 'text':
+        args += ['s = %s' % s(o['s']), 'size = %s' % f(o['size']), 'font = %s' % s(o.get('font', 'system')),
+                 'weight = %d' % o.get('weight', 400), 'tracking = %s' % f(o.get('tracking', 0))]
+    return 'Op(%s)' % ', '.join(args)
+
+
+def ornaments(orns, mode, ind):
+    if not orns:
+        return 'emptyList()'
+    pad = ' ' * ind
+    out = []
+    for o in orns:
+        ops = ''.join('%s        %s,\n' % (pad, op(x, mode)) for x in o['ops'])
+        out.append('%s    Ornament(%s, %s, %s, %s, listOf(\n%s%s    )),\n' % (
+            pad, s(o['on']), s(o['anchor']), s(per_mode(o['color'], mode)), f(o['alpha']), ops, pad))
+    return 'listOf(\n' + ''.join(out) + pad + ')'
+
+
+def style(st, mode, ind):
+    fa = st['faces']
+    pad = ' ' * ind
+    return ('Style(\n%s    letter = %s,\n%s    function = %s,\n%s    space = %s,\n%s    ret = %s,\n'
+            '%s    legend = %s,\n%s    returnLegend = %s,\n%s    ornaments = %s,\n%s)') % (
+        pad, face(fa['letter'], mode), pad, face(fa['function'], mode), pad, face(fa['space'], mode),
+        pad, face(fa['return'], mode), pad, legend(st['legend'], mode), pad,
+        legend(st.get('returnLegend') or {'style': 'engraved'}, mode), pad,
+        ornaments(st['ornaments'], mode, ind + 4), pad)
+
+
+def variant(v, ind, mode):
     b = v['board']
     sh = v['shadow']
     bo = v['border']
@@ -74,9 +136,16 @@ def variant(v, ind):
         'shadow = Shadow(%s, %sf, %d, %d)' % (c(sh['color']), sh['alpha'], sh['offsetY'], sh['radius']),
         'border = %s' % ('null' if bo is None else 'Border(%s, %d, setOf(%s))' % (
             c(bo['color']), bo['width'], ', '.join(s(x) for x in bo['appliesTo']))),
+        'style = %s' % style(v['style'], mode, ind + 4),
     ]
     pad = ' ' * ind
     return 'Variant(\n' + ''.join('%s    %s,\n' % (pad, l) for l in lines) + pad + ')'
+
+
+def fn_name(t):
+    """Each theme is built in its own function: one initializer holding
+    every ornament would pass the JVM's 64KB method limit."""
+    return 'theme' + ''.join(p[:1].upper() + p[1:] for p in t['id'].replace('-', '_').split('_'))
 
 
 def theme(t):
@@ -95,7 +164,7 @@ def theme(t):
     texture = 'null' if not tex else 'Texture(%s, %s, %s, %sf)' % (
         s(tex.get('kind', t['id'])), s(tex['targetAndroid']), s(tex['targetIos']), tex['amplitude'])
     sound = (t.get('sound') or {}).get('pack', 'system')
-    return '''        Theme(
+    return '''    private fun %s() = Theme(
             id = %s,
             name = %s,
             category = %s,
@@ -107,10 +176,11 @@ def theme(t):
             texture = %s,
             light = %s,
             dark = %s,
-        ),
-''' % (s(t['id']), s(t['name']), s(t['category']), s(t.get('tier', 'free')), s(t['heroMode']),
+        )
+
+''' % (fn_name(t), s(t['id']), s(t['name']), s(t['category']), s(t.get('tier', 'free')), s(t['heroMode']),
        font, s(t['glyphStyle']), s(sound), texture,
-       variant(t['variants']['light'], 12), variant(t['variants']['dark'], 12))
+       variant(t['variants']['light'], 12, 'light'), variant(t['variants']['dark'], 12, 'dark'))
 
 
 HEADER = '''package com.arpit.glyf.ime
@@ -139,6 +209,86 @@ object KeyboardThemes {
      *  it goes there (board, board+keys or none). */
     class Texture(val kind: String, val android: String, val ios: String, val amplitude: Float)
 
+    /**
+     * A key class's finish (shared/themes/styles.py; tools/theme_mock.py is
+     * the reference drawing). [texture] names shared/themes/textures/<name>.png,
+     * tiled at one image pixel per device pixel over the fill at
+     * [textureAlpha]; [sheenTop] white fading in from the top and
+     * [sheenBottom] black from the bottom; [highlight] a 1px white line along
+     * the inside top; [gloss] white over the top 48%; [metal] three soft
+     * light bands; [fill2] this mode's second fill (diagonal fill to fill2).
+     * [round]: a typewriter's round keycap, its diameter the key's width,
+     * centred in the key's own cell, in a chrome bezel of [ring].
+     */
+    class Face(
+        val texture: String?,
+        val textureAlpha: Float,
+        val sheenTop: Float,
+        val sheenBottom: Float,
+        val highlight: Float,
+        val gloss: Float,
+        val metal: Float,
+        val fill2: Int?,
+        val round: Boolean,
+        val ring: Int?,
+    )
+
+    /** How the letters and glyphs are inked: ink, engraved, letterpress,
+     *  foil (three [foil] stops, top to bottom) or glow ([glow] "self" is the
+     *  ink's own colour, else a hex). */
+    class Legend(val style: String, val foil: IntArray?, val glow: String?)
+
+    /** One vector primitive in key-height units from the ornament's anchor
+     *  (x) and the key's top (y): line [x0 y0 x1 y1], poly [x y ...] filled,
+     *  circle [cx cy r] and rect [x y w h radius], filled or stroked at
+     *  [w] (0: filled), text [s] centred at [x y]. [color] overrides the
+     *  ornament's. */
+    class Op(
+        val t: String,
+        val p: FloatArray,
+        val w: Float = 0f,
+        val color: String? = null,
+        val s: String? = null,
+        val size: Float = 0f,
+        val font: String = "system",
+        val weight: Int = 400,
+        val tracking: Float = 0f,
+    )
+
+    /** A theme's detail drawn on the keys [on] names (space, return, shift,
+     *  delete, letter, or function: every function key but return), from
+     *  its [anchor] (left, center or right edge). [color] is a role (ink,
+     *  fnInk, accent, accentInk, fill) or a hex, times [alpha]. */
+    class Ornament(val on: String, val anchor: String, val color: String, val alpha: Float, val ops: List<Op>)
+
+    class Style(
+        val letter: Face,
+        val function: Face,
+        val space: Face,
+        val ret: Face,
+        val legend: Legend,
+        /** The return key's glyph: always its own (engraved), never the
+         *  theme's foil or glow, which vanish on a gold return. */
+        val returnLegend: Legend,
+        val ornaments: List<Ornament>,
+    ) {
+        /** letter, function, space or return. */
+        fun face(cls: String) = when (cls) {
+            "letter" -> letter
+            "space" -> space
+            "return" -> ret
+            else -> function
+        }
+    }
+
+    /** What the style's fields may name (the tests hold the JSON to them). */
+    val LEGENDS = setOf("ink", "engraved", "letterpress", "foil", "glow")
+    val ANCHORS = setOf("left", "center", "right")
+    val ORNAMENT_KEYS = setOf("space", "return", "shift", "delete", "letter", "function")
+    val COLOR_ROLES = setOf("ink", "fnInk", "accent", "accentInk", "fill")
+    val OPS = setOf("line", "poly", "circle", "rect", "text")
+    val OP_FONTS = setOf("system", "mono", "theme")
+
     class Variant(
         /** One colour, or a two-stop gradient at [boardAngle] (CSS degrees). */
         val board: IntArray,
@@ -161,6 +311,8 @@ object KeyboardThemes {
         val boundDot: Int,
         val shadow: Shadow,
         val border: Border?,
+        /** The faces, legend and ornaments (shared/themes/styles.py). */
+        val style: Style,
     )
 
     class Theme(
@@ -188,14 +340,14 @@ object KeyboardThemes {
      *  a theme removed later falls back the same way). */
     fun byId(id: String?): Theme? = if (id.isNullOrEmpty()) null else ALL.firstOrNull { it.id == id }
 
-    /** In the picker's order: materials, stories, archetypes. */
-    val ALL: List<Theme> = listOf(
 '''
 
 
 def main():
     themes = json.load(open(SRC))
-    body = HEADER + ''.join(theme(t) for t in themes) + '    )\n}\n'
+    body = (HEADER + '    /** In the picker\'s order: materials, stories, archetypes. */\n'
+            '    val ALL: List<Theme> = listOf(\n' + ''.join('        %s(),\n' % fn_name(t) for t in themes) +
+            '    )\n\n' + ''.join(theme(t) for t in themes) + '}\n')
     with open(OUT, 'w') as fh:
         fh.write(body)
     print('wrote %s (%d themes)' % (os.path.relpath(OUT, ROOT), len(themes)))

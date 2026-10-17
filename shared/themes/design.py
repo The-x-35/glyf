@@ -24,7 +24,9 @@ Red Samurai; GMK's own plastic codes where a set uses them):
 Every value below is a choice; nothing here is computed except the pressed
 shades, the Android board and the chip, which follow the palette.
 """
-import json, os
+import json, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import styles
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'themes.json')
@@ -81,8 +83,8 @@ T = [
     ('rangefinder', 'Rangefinder', 'Objects',
      'A film camera: satin chrome keys, a black leatherette return with a yellow legend.',
      'system', 'shutter',
-     ('#F4F4F1', '#1A1A1A', '#C3C3BE', '#1A1A1A', '#1F1F1F', '#F2C230'),
-     ('#2F2F2F', '#EDEDE8', '#1F1F1F', '#C3C3BE', '#D8D8D3', '#1A1A1A'), {}),
+     ('#F4F4F1', '#1A1A1A', '#2B2B2B', '#E9E9E4', '#2B2B2B', '#F2C230'),
+     ('#3A3A3A', '#EDEDE8', '#1F1F1F', '#C3C3BE', '#2B2B2B', '#F2C230'), {}),
     ('walnut', 'Walnut', 'Objects',
      'A writing desk: walnut function keys, brass on the return.',
      'system', 'wood',
@@ -243,7 +245,7 @@ def lift(c, lo):
     return c if t == 0 else mix(c, '#FFFFFF', t)
 
 
-def variant(mode, pal, overrides):
+def variant(mode, pal, overrides, tid=None):
     a, al, m, ml, r, rl = pal
     dark = mode == 'dark'
     if dark:
@@ -275,6 +277,7 @@ def variant(mode, pal, overrides):
         'shadow': {'color': '#000000', 'alpha': 0.55 if dark else 0.28, 'offsetY': 1, 'radius': 0},
         'border': None,
     }
+    v['style'] = styles.style_for(tid, mode)
     # The strip text sits on the Android board.
     v['strip']['text'] = al if _readable(al, v['board']['colors'][0]) else ml
     return v
@@ -304,8 +307,8 @@ def main():
             'sound': sound,
             'texture': None,
             'tier': 'free',
-            'variants': {'light': variant('light', light, ov.get('light')),
-                         'dark': variant('dark', dark, ov.get('dark'))},
+            'variants': {'light': variant('light', light, ov.get('light'), tid),
+                         'dark': variant('dark', dark, ov.get('dark'), tid)},
         })
     json.dump(out, open(OUT, 'w'), indent=1, ensure_ascii=False)
     open(OUT, 'a').write('\n')

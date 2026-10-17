@@ -12,7 +12,9 @@ import kotlin.math.pow
  * The generated theme table (tools/gen_themes_kotlin.py) against the spec,
  * docs/THEMES.md: all 24 load with both variants, every contrast rule of
  * §5.3 holds (the same sums as shared/themes/check_contrast.py), and the
- * fonts and sounds they name ship.
+ * fonts, sounds and textures they name ship, and every variant's style
+ * (faces, legend, ornaments) is the JSON's and names only what the
+ * keyboards draw.
  */
 class KeyboardThemesTest {
 
@@ -172,6 +174,92 @@ class KeyboardThemesTest {
             if (t.soundPack != "sonar") assertTrue(File(raw, "theme_${t.soundPack}_letter.wav").isFile)
             files.forEach { assertTrue("$it", it.length() < 30_000) }
         }
+    }
+
+    @Test fun everyVariantsStyleIsTheJsonsAndValid() {
+        // The faces, legend and ornaments as shared/themes/themes.json has
+        // them (tools/gen_themes_kotlin.py), and every name they use known.
+        val json = org.json.JSONArray(File(repo, "shared/themes/themes.json").readText())
+        val textures = File(repo, "shared/themes/textures").list()!!.map { it.removeSuffix(".png") }.toSet()
+        for (i in 0 until json.length()) {
+            val j = json.getJSONObject(i)
+            val t = KeyboardThemes.ALL[i]
+            for (mode in listOf("light", "dark")) {
+                val where = "${t.id} $mode"
+                val st = t.variant(mode == "dark").style
+                val js = j.getJSONObject("variants").getJSONObject(mode).getJSONObject("style")
+                val faces = js.getJSONObject("faces")
+                for (cls in listOf("letter", "function", "space", "return")) {
+                    val f = st.face(cls)
+                    val jf = faces.getJSONObject(cls)
+                    val tex = if (jf.isNull("texture")) null else jf.getString("texture")
+                    assertEquals("$where $cls texture", tex, f.texture)
+                    if (tex != null) assertTrue("$where $cls: no texture $tex", tex in textures)
+                    assertEquals("$where $cls alpha", jf.getDouble("textureAlpha"), f.textureAlpha.toDouble(), 1e-4)
+                    assertEquals(jf.getJSONArray("sheen").getDouble(0), f.sheenTop.toDouble(), 1e-4)
+                    assertEquals(jf.getJSONArray("sheen").getDouble(1), f.sheenBottom.toDouble(), 1e-4)
+                    assertEquals(jf.getDouble("highlight"), f.highlight.toDouble(), 1e-4)
+                    assertEquals(jf.getDouble("gloss"), f.gloss.toDouble(), 1e-4)
+                    assertEquals(jf.getDouble("metal"), f.metal.toDouble(), 1e-4)
+                    assertEquals("$where $cls fill2", jf.isNull("fill2"), f.fill2 == null)
+                    assertEquals("$where $cls shape", jf.getString("shape") == "round", f.round)
+                    assertTrue("$where $cls shape", jf.getString("shape") in setOf("key", "round"))
+                    if (f.round) assertNotNull("$where: a round cap needs its ring", f.ring)
+                    for (a in listOf(f.textureAlpha, f.sheenTop, f.sheenBottom, f.highlight, f.gloss, f.metal))
+                        assertTrue("$where $cls: $a", a in 0f..1f)
+                }
+                val lg = js.getJSONObject("legend")
+                assertEquals(lg.getString("style"), st.legend.style)
+                // The return's glyph is never foil or glow (gold on gold vanished).
+                assertEquals("$where return legend", js.optJSONObject("returnLegend")?.getString("style") ?: "engraved",
+                    st.returnLegend.style)
+                assertTrue("$where return legend", st.returnLegend.style in setOf("ink", "engraved", "letterpress"))
+                assertTrue("$where legend ${st.legend.style}", st.legend.style in KeyboardThemes.LEGENDS)
+                if (st.legend.style == "foil") assertEquals("$where foil stops", 3, st.legend.foil?.size)
+                if (st.legend.style == "glow") assertNotNull("$where glow", st.legend.glow)
+                val orns = js.getJSONArray("ornaments")
+                assertEquals("$where ornaments", orns.length(), st.ornaments.size)
+                for ((k, o) in st.ornaments.withIndex()) {
+                    val jo = orns.getJSONObject(k)
+                    assertEquals(jo.getString("on"), o.on)
+                    assertEquals(jo.getJSONArray("ops").length(), o.ops.size)
+                    assertTrue("$where on ${o.on}", o.on in KeyboardThemes.ORNAMENT_KEYS)
+                    assertTrue("$where anchor ${o.anchor}", o.anchor in KeyboardThemes.ANCHORS)
+                    assertTrue("$where alpha ${o.alpha}", o.alpha in 0f..1f)
+                    for (c in listOfNotNull(o.color) + o.ops.mapNotNull { it.color })
+                        assertTrue("$where colour $c", c in KeyboardThemes.COLOR_ROLES || Regex("#[0-9A-Fa-f]{6}").matches(c))
+                    for (op in o.ops) {
+                        assertTrue("$where op ${op.t}", op.t in KeyboardThemes.OPS)
+                        val n = when (op.t) { "line" -> 4; "circle" -> 3; "rect" -> 5; "text" -> 2; else -> -1 }
+                        if (n > 0) assertEquals("$where ${op.t} points", n, op.p.size)
+                        else assertTrue("$where poly", op.p.size >= 6 && op.p.size % 2 == 0)
+                        if (op.t == "line") assertTrue("$where line width", op.w > 0f)
+                        if (op.t == "text") {
+                            assertTrue("$where text", !op.s.isNullOrEmpty() && op.size > 0f)
+                            assertTrue("$where font ${op.font}", op.font in KeyboardThemes.OP_FONTS)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun everyTextureShipsInTheAppsAssets() {
+        // The IME reads them from flutter_assets/assets/themes/textures (and
+        // the picker from the same files): each the shared copy, byte for byte.
+        val shared = File(repo, "shared/themes/textures")
+        val app = File(appRoot, "assets/themes/textures")
+        val names = KeyboardThemes.ALL.flatMap { t -> listOf(t.light, t.dark) }
+            .flatMap { v -> listOf("letter", "function", "space", "return").mapNotNull { v.style.face(it).texture } }
+            .toSet()
+        assertTrue(names.isNotEmpty())
+        for (n in names) {
+            val a = File(app, "$n.png")
+            assertTrue("missing $a", a.isFile)
+            assertTrue("$a differs from shared/themes/textures", a.readBytes().contentEquals(File(shared, "$n.png").readBytes()))
+        }
+        assertTrue(File(appRoot, "pubspec.yaml").readText().contains("- assets/themes/textures/"))
+        assertEquals("flutter_assets/assets/themes/textures/", ThemeTextureTiles.DIR)
     }
 
     private fun assertNotSame(a: Any, b: Any) = assertTrue(a !== b)

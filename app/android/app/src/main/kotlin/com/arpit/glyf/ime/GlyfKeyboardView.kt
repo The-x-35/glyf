@@ -107,7 +107,6 @@ class GlyfKeyboardView(
                 field = value
                 paletteCache = null
                 skinFaceFor = null
-                veinFor = null
                 themeSound.use(value?.soundPack ?: "system")
             }
             invalidate()
@@ -643,6 +642,7 @@ class GlyfKeyboardView(
         val radius = dp(9.5f)
         val v = sv
         dotPaint.color = v?.boundDot ?: accent
+        if (v != null) themeFaces.use(skin, isDark)
         // A theme's glows only while animations are on (Reduce Motion, §4.1).
         val glows = v != null && v.shadow.radius > 0 && android.provider.Settings.Global.getFloat(
             context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
@@ -663,13 +663,20 @@ class GlyfKeyboardView(
             val bound = key.char != null && bindings.containsKey(key.char)
             val glowKey = keyTheme == "glow" && bound && !isPressed && themeBg.isEmpty()
             val blue = key.id == "return" && primaryReturn
+            var roundCap = false
             // GPU-painted shadow: offset round-rect (the crisp 1dp iOS
             // drop). Glow keys get a soft accent halo from two stacked
             // translucent rects — no blur layers, no CPU rendering.
             if (v != null) {
-                // A theme: its edge or glow under the key, its fill per class.
-                drawSkinShadow(canvas, rect, radius, v.shadow, glows)
-                keyPaint.color = skinFill(key, v, isPressed)
+                // A theme: its edge or glow under the key, then the class's
+                // face (shared/themes/styles.py): fill, texture, light and
+                // the theme's ornament. A round cap brings its own shadow.
+                val cls = skinClass(key)
+                val face = v.style.face(cls)
+                roundCap = face.round
+                faceFill = skinFill(key, v, isPressed)
+                if (!roundCap) drawSkinShadow(canvas, rect, radius, v.shadow, glows)
+                themeFaces.drawKey(canvas, rect, radius, face, faceFill, v, cls, ornamentOn(key, cls), keyFace())
             } else if (glowKey) {
                 shadowPaint.color = Color.argb(34, 124, 92, 255)
                 val halo2 = RectF(rect.left - dp(2f), rect.top,
@@ -704,8 +711,8 @@ class GlyfKeyboardView(
                 }
                 keyPaint.color = keyFill(isPressed, fn)
             }
-            canvas.drawRoundRect(rect, radius, radius, keyPaint)
-            if (v != null) drawSkinFace(canvas, key, rect, radius, v)
+            if (v == null) canvas.drawRoundRect(rect, radius, radius, keyPaint)
+            else if (!roundCap) drawSkinFace(canvas, key, rect, radius, v)
             if (tourKey != null && key.id == tourKey) {
                 // One second per pulse, redrawn a frame at a time while
                 // the tour waits on this key.
@@ -872,21 +879,28 @@ class GlyfKeyboardView(
         path.lineTo(k.left + r, k.bottom)
         path.arcTo(RectF(k.left, k.bottom - 2 * r, k.left + 2 * r, k.bottom), 90f, 90f)
         path.close()
-        // A theme recolours it (its popup fill and text); the shape stays.
-        keyPaint.color = sv?.popupFill ?: if (solidLook) palette().key
-                         else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
-        canvas.drawPath(path, keyPaint)
+        // A theme draws it in the letter face's fill and texture (never
+        // round); the shape stays.
+        val v = sv
+        if (v != null) {
+            themeFaces.drawCallout(canvas, path, v.style.letter, v.letter.fill)
+            setLegend(v.style.legend, v.letter.fill)
+        } else {
+            keyPaint.color = if (solidLook) palette().key else if (isDark) Color.rgb(107, 107, 112) else Color.WHITE
+            canvas.drawPath(path, keyPaint)
+            legendOn = null
+        }
 
         // The key's own letter size (drawFace), half again; a shortened
         // bulb takes a smaller one.
         val letter = (0.51f * k.height() / density).coerceIn(20f, 30f)
         val keySize = dp(if (shifted) letter * 20f / 22f else letter)
         val fit = min(1f, (neckTop - bulbTop) / (fullRise - dp(15f) * s))
-        textPaint.color = sv?.popupText ?: ink()
+        textPaint.color = v?.keyText ?: ink()
         textPaint.typeface = keyFace()
         textPaint.letterSpacing = 0f
         textPaint.textSize = keySize * 1.5f * maxOf(0.82f, fit)
-        canvas.drawText(display(key), (bx0 + bx1) / 2, bulbTop + (fullRise - baselineRise) * fit, textPaint)
+        legendText(canvas, display(key), (bx0 + bx1) / 2, bulbTop + (fullRise - baselineRise) * fit)
     }
 
     private fun drawFace(canvas: Canvas, key: Key, rect: RectF) {
@@ -897,11 +911,17 @@ class GlyfKeyboardView(
         textPaint.color = ink
         textPaint.typeface = keyFace()
         textPaint.letterSpacing = 0f
+        // The theme's legend (engraved, letterpress, foil, glow) on the
+        // keys it draws a face for; a pad's and a capless key's stay ink.
+        val v = sv
+        if (v != null && !key.bare && !key.pad && !key.disabled)
+            setLegend(if (key.id == "return") v.style.returnLegend else v.style.legend, faceFill)
+        else legendOn = null
         when (key.id) {
-            "shift" -> { drawShift(canvas, rect); return }
-            "return" -> { drawReturn(canvas, rect); return }
-            "delete" -> { drawDelete(canvas, rect, big = key.pad); return }
-            "emojikey" -> { drawSmiley(canvas, rect); return }
+            "shift" -> { glyphLegend(canvas, rect) { drawShift(canvas, rect) }; return }
+            "return" -> { glyphLegend(canvas, rect) { drawReturn(canvas, rect) }; return }
+            "delete" -> { glyphLegend(canvas, rect) { drawDelete(canvas, rect, big = key.pad) }; return }
+            "emojikey" -> { glyphLegend(canvas, rect) { drawSmiley(canvas, rect) }; return }
         }
         if (key.pad) { drawPadFace(canvas, key, rect, ink); return }
         val label: String = when {
@@ -936,8 +956,10 @@ class GlyfKeyboardView(
             }
             else -> ""
         }
-        canvas.drawText(label, rect.centerX(),
-            rect.centerY() + textPaint.textSize * 0.36f, textPaint)
+        val y = rect.centerY() + textPaint.textSize * 0.36f
+        // The space bar's "glyf" stays plain, centred and readable.
+        if (key.id == "space") canvas.drawText(label, rect.centerX(), y, textPaint)
+        else legendText(canvas, label, rect.centerX(), y)
     }
 
     /** Apple's pad faces: digits with their letters under them, the
@@ -999,9 +1021,11 @@ class GlyfKeyboardView(
         glyphPaint.strokeWidth = glyphK * dp(1.35f)
         val cx = rect.centerX(); val cy = rect.centerY()
         canvas.drawCircle(cx, cy, dp(8.6f), glyphPaint)
-        val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = faceInk }
-        canvas.drawOval(RectF(cx - dp(3.9f), cy - dp(3.6f), cx - dp(2.3f), cy - dp(0.9f)), dot)
-        canvas.drawOval(RectF(cx + dp(2.3f), cy - dp(3.6f), cx + dp(3.9f), cy - dp(0.9f)), dot)
+        // The eyes in the same paint, so a theme's legend inks them too.
+        glyphPaint.style = Paint.Style.FILL
+        canvas.drawOval(cx - dp(3.9f), cy - dp(3.6f), cx - dp(2.3f), cy - dp(0.9f), glyphPaint)
+        canvas.drawOval(cx + dp(2.3f), cy - dp(3.6f), cx + dp(3.9f), cy - dp(0.9f), glyphPaint)
+        glyphPaint.style = Paint.Style.STROKE
         canvas.drawArc(cx - dp(4.4f), cy - dp(1.6f), cx + dp(4.4f), cy + dp(5f),
             20f, 140f, false, glyphPaint)
     }
@@ -1821,24 +1845,10 @@ class GlyfKeyboardView(
         }
     }
 
-    private var veinFor: String? = null
-    private val veinPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    /** Over a themed key's fill: Marble's veins on the letters, then the
-     *  theme's 1dp border (or, when it has none, the Borders switch's),
-     *  stroked inside the key's bounds. */
+    /** Over a themed key's face: the theme's 1dp border (or, when it has
+     *  none, the Borders switch's), stroked inside the key's bounds. */
     private fun drawSkinFace(canvas: Canvas, key: Key, rect: RectF, radius: Float, v: KeyboardThemes.Variant) {
-        val t = skin ?: return
         val cls = skinClass(key)
-        if (cls == "letter" && t.texture?.android?.contains("keys") == true) {
-            val id = "${t.id}|$isDark"
-            if (veinFor != id) {
-                veinPaint.shader = android.graphics.BitmapShader(ThemeTextures.keyVeins(v.keyText),
-                    android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
-                veinFor = id
-            }
-            canvas.drawRoundRect(rect, radius, radius, veinPaint)
-        }
         val b = v.border
         strokePaint.color = when {
             b != null -> if (cls in b.appliesTo) b.color else return
@@ -1849,5 +1859,100 @@ class GlyfKeyboardView(
         val half = strokePaint.strokeWidth / 2f
         skinRect.set(rect.left + half, rect.top + half, rect.right - half, rect.bottom - half)
         canvas.drawRoundRect(skinRect, radius - half, radius - half, strokePaint)
+    }
+
+    // MARK: theme legends (shared/themes/styles.py; tools/theme_mock.py's legendText)
+
+    private val themeFaces by lazy { ThemeFaces(context, density) }
+    /** The fill of the face being drawn (its light or dark decides the
+     *  hairline of an engraved legend). */
+    private var faceFill = Color.WHITE
+    /** The legend style for the face being drawn; null is plain ink. */
+    private var legendOn: KeyboardThemes.Legend? = null
+    private var legendLight = false
+    private val legendBounds = android.graphics.Rect()
+
+    private fun setLegend(lg: KeyboardThemes.Legend, fill: Int) {
+        legendOn = if (lg.style == "ink") null else lg
+        legendLight = ThemeFaces.luminance(fill) > 0.45
+    }
+
+    /** What letters and glyphs are ornaments named by: letter, space,
+     *  return, shift, delete, or function for the other function keys. */
+    private fun ornamentOn(key: Key, cls: String) = when {
+        cls == "letter" -> "letter"
+        key.id == "space" || key.id == "return" || key.id == "shift" || key.id == "delete" -> key.id
+        else -> "function"
+    }
+
+    /** The hairline an engraved, letterpress or foil legend sits on: light
+     *  under it on a light key, dark over it on a dark one (foil: always
+     *  dark, over). 0 when the style has none. */
+    private fun hairColor(lg: KeyboardThemes.Legend): Int = when (lg.style) {
+        "engraved", "letterpress" -> if (legendLight) Color.argb(191, 255, 255, 255) else Color.argb(153, 0, 0, 0)
+        "foil" -> Color.argb(115, 0, 0, 0)
+        else -> 0
+    }
+
+    private fun hairOffset(lg: KeyboardThemes.Legend): Float =
+        if (lg.style != "foil" && legendLight) dp(0.7f) else -dp(0.6f)
+
+    private fun glowColor(lg: KeyboardThemes.Legend, ink: Int): Int {
+        val g = lg.glow
+        val c = if (g == null || g == "self") ink else try { Color.parseColor(g) } catch (_: Exception) { ink }
+        return withAlpha(c, 0.9f)
+    }
+
+    /** A legend's text in the theme's style, at today's size and place. */
+    private fun legendText(canvas: Canvas, s: String, x: Float, y: Float) {
+        val lg = legendOn
+        if (lg == null) { canvas.drawText(s, x, y, textPaint); return }
+        val ink = textPaint.color
+        val hair = hairColor(lg)
+        if (hair != 0) {
+            textPaint.color = hair
+            canvas.drawText(s, x, y + hairOffset(lg), textPaint)
+            textPaint.color = ink
+        }
+        when (lg.style) {
+            "letterpress" -> textPaint.setShadowLayer(ThemeFaces.shadowRadius(dp(0.6f)), 0f, 0f, withAlpha(ink, 0.55f))
+            "glow" -> textPaint.setShadowLayer(ThemeFaces.shadowRadius(dp(6f)), 0f, 0f, glowColor(lg, ink))
+            "foil" -> lg.foil?.let {
+                textPaint.getTextBounds(s, 0, s.length, legendBounds)
+                textPaint.shader = themeFaces.foil(y + legendBounds.top, y + legendBounds.bottom, it)
+            }
+        }
+        canvas.drawText(s, x, y, textPaint)
+        if (lg.style == "glow") canvas.drawText(s, x, y, textPaint)
+        textPaint.clearShadowLayer()
+        textPaint.shader = null
+    }
+
+    /** Shift, delete, return and the smiley in the theme's legend: [draw]
+     *  strokes in [faceInk] with [glyphPaint]. */
+    private inline fun glyphLegend(canvas: Canvas, rect: RectF, draw: () -> Unit) {
+        val lg = legendOn
+        if (lg == null) { draw(); return }
+        val ink = faceInk
+        val hair = hairColor(lg)
+        if (hair != 0) {
+            faceInk = hair
+            canvas.save()
+            canvas.translate(0f, hairOffset(lg))
+            draw()
+            canvas.restore()
+            faceInk = ink
+        }
+        when (lg.style) {
+            "letterpress" -> glyphPaint.setShadowLayer(ThemeFaces.shadowRadius(dp(0.6f)), 0f, 0f, withAlpha(ink, 0.55f))
+            "glow" -> glyphPaint.setShadowLayer(ThemeFaces.shadowRadius(dp(6f)), 0f, 0f, glowColor(lg, ink))
+            "foil" -> lg.foil?.let {
+                glyphPaint.shader = themeFaces.foil(rect.centerY() - dp(8f), rect.centerY() + dp(8f), it)
+            }
+        }
+        draw()
+        if (lg.style == "glow") draw()
+        glyphPaint.clearShadowLayer()
+        glyphPaint.shader = null
     }
 }

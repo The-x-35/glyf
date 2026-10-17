@@ -29,6 +29,17 @@ final class KeyView: UIControl {
     /// veins (one shared pattern tile) or Rose Gold's satin on its function
     /// keys. Hidden on every other look.
     private let textureLayer = CAGradientLayer()
+    /// A theme's finish (shared/themes/styles.py): the key's face drawn
+    /// once per class and size by KeyFaces and shared by every key like it.
+    /// Under the glyphs; empty without a theme.
+    private let faceLayer = CALayer()
+    private var facePressed = false
+    private var faceSize = CGSize.zero
+    /// A theme's legend style: hairline copies, a glow's second pass and a
+    /// foil's gradient, around the label or the symbol.
+    private struct LegendExtra { let view: UIView; let dy: CGFloat; let onIcon: Bool }
+    private var legendExtras: [LegendExtra] = []
+    private var foilView: GradientView?
     let tintLayer = CALayer()          // ripple overlay, opacity 0 at rest
     private var chargeRing: CAShapeLayer?
 
@@ -57,6 +68,8 @@ final class KeyView: UIControl {
         textureLayer.cornerCurve = .continuous
         textureLayer.isHidden = true
         layer.insertSublayer(textureLayer, at: 0)
+        faceLayer.isHidden = true
+        layer.insertSublayer(faceLayer, at: 0)
 
         label.textAlignment = .center
         label.adjustsFontSizeToFitWidth = true
@@ -114,6 +127,12 @@ final class KeyView: UIControl {
             label.frame = spec.isChar && shifted && !spec.pad ? bounds.offsetBy(dx: 0, dy: 1) : bounds
         }
         icon.frame = bounds
+        layoutLegend()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        faceLayer.frame = bounds
+        CATransaction.commit()
+        if bounds.size != faceSize { applyFace(pressed: facePressed) }
         textureLayer.frame = bounds
         tintLayer.frame = bounds
         accentDot.frame = CGRect(x: bounds.width - 10.5, y: 5.5, width: 5, height: 5)
@@ -287,6 +306,7 @@ final class KeyView: UIControl {
         }
         // XCUITest addressing: letters by face, specials by stable id.
         accessibilityLabel = spec.isChar ? text : spec.id
+        applyLegend()
         setNeedsLayout()
     }
 
@@ -297,6 +317,8 @@ final class KeyView: UIControl {
         UIView.animate(withDuration: hidden ? 0.12 : 0.18) {
             self.label.alpha = alpha
             self.icon.alpha = alpha
+            for e in self.legendExtras { e.view.alpha = alpha }
+            self.foilView?.alpha = alpha
         }
         accentDot.opacity = Float(alpha)
     }
@@ -310,6 +332,8 @@ final class KeyView: UIControl {
         case .capsLock: name = "capslock.fill"
         }
         icon.image = UIImage(systemName: name)
+        applyLegend()
+        setNeedsLayout()
     }
 
     private func updateBinding() {
@@ -319,6 +343,8 @@ final class KeyView: UIControl {
     }
 
     func updateFill(pressed: Bool) {
+        // A theme's face goes over whatever the branch below sets.
+        defer { applyFace(pressed: pressed) }
         if spec.bare {
             // Apple's pad function keys have no cap; a press shows one.
             backgroundColor = pressed && !spec.disabled ? Glass.fillKey : .clear
@@ -408,6 +434,212 @@ final class KeyView: UIControl {
             textureLayer.endPoint = CGPoint(x: 0.5, y: 1)
             textureLayer.isHidden = false
         }
+    }
+
+    // MARK: A theme's finish (shared/themes/styles.py, tools/theme_mock.py)
+
+    /// The face class a theme draws on this key; nil for no theme and for
+    /// the pads' capless keys.
+    private var faceClass: KeyFaces.FaceClass? {
+        guard Glass.skin != nil, !spec.bare else { return nil }
+        switch themeClass {
+        case .letter: return .letter
+        case .function: return .function
+        case .space: return .space
+        case .ret: return .ret
+        }
+    }
+
+    /// The key's name for ornaments; a return that isn't wearing the accent
+    /// (greyed for an empty field) takes none.
+    private var ornamentTarget: ThemeOrnamentTarget? {
+        switch spec.kind {
+        case .char: return .letter
+        case .space: return .space
+        case .shift: return .shift
+        case .delete: return .delete
+        case .ret: return isPrimaryReturn ? .ret : nil
+        default: return .function
+        }
+    }
+
+    /// Round keycaps go on single letters only, never a pad key or ".com".
+    private var allowRound: Bool { spec.isChar && !spec.pad && (spec.char?.count ?? 0) == 1 }
+
+    /// The theme's fill for this key, at rest or pressed.
+    private func themeFill(_ v: ThemeVariant, pressed: Bool) -> UInt32 {
+        if isPrimaryReturn { return pressed ? v.returnPressed : v.returnFill }
+        if let o = keyOverride { return pressed ? o.pressed : o.fill }
+        if isFunctionKey { return pressed ? v.function.pressed : v.function.fill }
+        if case .space = spec.kind { return pressed ? v.space.pressed : v.space.fill }
+        return pressed ? v.letter.pressed : v.letter.fill
+    }
+
+    private var displayScale: CGFloat {
+        let s = window?.screen.scale ?? traitCollection.displayScale
+        return s > 0 ? s : 3
+    }
+
+    /// The cached face image for this key's class, fill and size: the key's
+    /// own background goes clear under it, the 1pt edge stays (a round
+    /// keycap draws its own shadow inside the cell instead).
+    private func applyFace(pressed: Bool) {
+        facePressed = pressed
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        guard let cls = faceClass, let skin = Glass.skin, let v = Glass.skinVariant,
+              bounds.width >= 1, bounds.height >= 1 else {
+            faceLayer.contents = nil
+            faceLayer.isHidden = true
+            faceSize = bounds.size
+            return
+        }
+        faceSize = bounds.size
+        let face = KeyFaces.face(cls, in: v.style)
+        let round = KeyFaces.isRound(face, size: bounds.size, allowed: allowRound)
+        let scale = displayScale
+        let request = KeyFaces.Request(size: bounds.size, scale: scale, faceClass: cls, target: ornamentTarget,
+                                       fill: themeFill(v, pressed: pressed), pressed: pressed, allowRound: allowRound)
+        guard let image = KeyFaces.image(theme: skin, dark: Glass.isDark, request: request) else {
+            faceLayer.isHidden = true
+            return
+        }
+        faceLayer.contents = image.cgImage
+        faceLayer.contentsScale = scale
+        faceLayer.isHidden = false
+        backgroundColor = .clear
+        if round {
+            layer.shadowOpacity = 0
+            layer.borderWidth = 0
+        }
+    }
+
+    /// The legend styles of the reference's legendText: engraved and
+    /// letterpress hairlines, letterpress's bleed, foil's leaf and glow's
+    /// phosphor, on the label or the symbol (SF Symbols take the style
+    /// through tinted copies; foil there is its middle colour).
+    private func applyLegend() {
+        for e in legendExtras { e.view.removeFromSuperview() }
+        legendExtras = []
+        foilView?.removeFromSuperview()
+        foilView = nil
+        for l in [label.layer, icon.layer] {
+            l.shadowOpacity = 0
+            l.shouldRasterize = false
+        }
+        guard faceClass != nil, let v = Glass.skinVariant else { return }
+        if case .space = spec.kind { return }   // the watermark stays plain
+        let lg = faceClass == .ret ? v.style.returnLegend : v.style.legend
+        guard lg.style != .ink else { return }
+        let onIcon: Bool
+        if !label.isHidden, label.text?.isEmpty == false {
+            onIcon = false
+        } else if !icon.isHidden, icon.image != nil {
+            onIcon = true
+        } else {
+            return
+        }
+        let ink = (onIcon ? icon.tintColor : label.textColor) ?? Glass.keyInk
+        let light = KeyFaces.luminance(themeFill(v, pressed: false)) > 0.45
+        let src: UIView = onIcon ? icon : label
+        switch lg.style {
+        case .ink:
+            return
+        case .engraved, .letterpress:
+            if light {
+                addLegendCopy(onIcon: onIcon, color: UIColor(white: 1, alpha: 0.75), dy: 0.7)
+            } else {
+                addLegendCopy(onIcon: onIcon, color: UIColor(white: 0, alpha: 0.6), dy: -0.6)
+            }
+            if lg.style == .letterpress { setGlow(src, ink, opacity: 0.55, radius: 0.3) }
+        case .foil:
+            addLegendCopy(onIcon: onIcon, color: UIColor(white: 0, alpha: 0.45), dy: -0.6)
+            guard lg.foil.count == 3 else { return }
+            if onIcon {
+                icon.tintColor = UIColor(rgb: lg.foil[1])
+            } else {
+                let fv = GradientView()
+                fv.isUserInteractionEnabled = false
+                fv.gradient.colors = lg.foil.map { UIColor(rgb: $0).cgColor }
+                fv.gradient.locations = [0, 0.55, 1]
+                fv.mask = legendLabelCopy(color: .black)
+                insertSubview(fv, aboveSubview: label)
+                foilView = fv
+                label.textColor = .clear
+            }
+        case .glow:
+            // The canvas fills the glyph twice under its shadow: a second
+            // pass behind doubles the bleed the same way.
+            let back = addLegendCopy(onIcon: onIcon, color: ink, dy: 0)
+            setGlow(back, ink, opacity: 0.9, radius: 2.8)
+            setGlow(src, ink, opacity: 0.9, radius: 2.8)
+        }
+        layoutLegend()
+    }
+
+    /// The canvas's shadowBlur b (points) as a layer's shadowRadius: about
+    /// 0.47 b, fitted to the mock's glow on the simulator (b = 6 spreads
+    /// like a radius of 2.8; 6 itself spread twice as wide and half as
+    /// bright).
+    private func setGlow(_ view: UIView, _ ink: UIColor, opacity: Float, radius: CGFloat) {
+        view.layer.shadowColor = ink.withAlphaComponent(1).cgColor
+        view.layer.shadowOpacity = opacity * Float(ink.cgColor.alpha)
+        view.layer.shadowRadius = radius
+        view.layer.shadowOffset = .zero
+        view.layer.shouldRasterize = true
+        view.layer.rasterizationScale = displayScale
+    }
+
+    private func legendLabelCopy(color: UIColor) -> UILabel {
+        let l = UILabel()
+        l.isUserInteractionEnabled = false
+        l.font = label.font
+        l.textAlignment = label.textAlignment
+        l.adjustsFontSizeToFitWidth = label.adjustsFontSizeToFitWidth
+        l.minimumScaleFactor = label.minimumScaleFactor
+        let text = NSMutableAttributedString(attributedString: label.attributedText
+                                             ?? NSAttributedString(string: label.text ?? ""))
+        text.addAttribute(.foregroundColor, value: color, range: NSRange(location: 0, length: text.length))
+        l.attributedText = text
+        return l
+    }
+
+    @discardableResult
+    private func addLegendCopy(onIcon: Bool, color: UIColor, dy: CGFloat) -> UIView {
+        let view: UIView
+        if onIcon {
+            let iv = UIImageView(image: icon.image)
+            iv.contentMode = icon.contentMode
+            iv.preferredSymbolConfiguration = icon.preferredSymbolConfiguration
+            iv.tintColor = color
+            view = iv
+        } else {
+            view = legendLabelCopy(color: color)
+        }
+        view.isUserInteractionEnabled = false
+        insertSubview(view, belowSubview: onIcon ? icon : label)
+        legendExtras.append(LegendExtra(view: view, dy: dy, onIcon: onIcon))
+        return view
+    }
+
+    private func layoutLegend() {
+        for e in legendExtras {
+            e.view.frame = (e.onIcon ? icon.frame : label.frame).offsetBy(dx: 0, dy: e.dy)
+        }
+        guard let fv = foilView else { return }
+        fv.frame = label.frame
+        fv.mask?.frame = fv.bounds
+        // The leaf runs over the glyphs' ink, top to bottom, as the
+        // canvas's gradient over the text's bounding box.
+        let font = label.font ?? .systemFont(ofSize: 24.5)
+        let h = max(fv.bounds.height, 1)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: label.text ?? "", attributes: [.font: font]))
+        let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+        let baseline = (fv.bounds.height - font.lineHeight) / 2 + font.ascender
+        let top = baseline - ink.maxY, bottom = baseline - ink.minY
+        fv.gradient.startPoint = CGPoint(x: 0.5, y: top / h)
+        fv.gradient.endPoint = CGPoint(x: 0.5, y: max(bottom, top + 1) / h)
     }
 
     func setPressed(_ pressed: Bool) {
@@ -523,6 +755,20 @@ final class KeyView: UIControl {
         // A theme's press popup colour (the key's own colour otherwise).
         shape.fillColor = Glass.fillKeySolid.cgColor
         balloon.layer.addSublayer(shape)
+        // A theme's letter texture at the face's own alpha, in the
+        // callout's shape (never round, never the sheen: the key's fill).
+        if let skin = Glass.skin, let v = Glass.skinVariant,
+           let tex = KeyFaces.textureOverlay(theme: skin, dark: Glass.isDark, face: v.style.faces.letter,
+                                             size: box.size, scale: displayScale) {
+            let texture = CALayer()
+            texture.frame = CGRect(origin: .zero, size: box.size)
+            texture.contents = tex.cgImage
+            texture.contentsScale = displayScale
+            let mask = CAShapeLayer()
+            mask.path = path.cgPath
+            texture.mask = mask
+            balloon.layer.addSublayer(texture)
+        }
 
         let keySize = label.font?.pointSize ?? 24.5
         // A shortened bulb takes a smaller letter.

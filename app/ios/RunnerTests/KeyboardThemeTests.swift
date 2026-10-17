@@ -225,6 +225,164 @@ final class KeyboardThemeTests: XCTestCase {
         XCTAssertEqual(tooWide, [], "letters too wide for a 33.5pt key: \(tooWide)")
     }
 
+    // MARK: The finish (shared/themes/styles.py)
+
+    private let texturesDir = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("GlyfKeyboard/Textures")
+    private let themesJSON = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("shared/themes/themes.json")
+    private let pbxproj = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Runner.xcodeproj/project.pbxproj")
+
+    private func faces(_ s: ThemeStyle) -> [(String, ThemeFace)] {
+        [("letter", s.faces.letter), ("function", s.faces.function), ("space", s.faces.space), ("return", s.faces.ret)]
+    }
+
+    /// Every variant carries its style, the table matches themes.json key
+    /// for key, and every face draws at the sizes a board uses.
+    func testEveryVariantsStyleLoads() throws {
+        let data = try Data(contentsOf: themesJSON)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        XCTAssertEqual(json.count, KeyboardTheme.all.count)
+        KeyFaces.textureDirectory = texturesDir
+        defer { KeyFaces.textureDirectory = nil; KeyFaces.release() }
+        for t in KeyboardTheme.all {
+            let src = try XCTUnwrap(json.first { $0["id"] as? String == t.id }, t.id)
+            let variants = try XCTUnwrap(src["variants"] as? [String: [String: Any]])
+            for dark in [false, true] {
+                let mode = dark ? "dark" : "light"
+                let st = t.variant(dark: dark).style
+                let js = try XCTUnwrap(variants[mode]?["style"] as? [String: Any], "\(t.id) \(mode) style")
+                let jf = try XCTUnwrap(js["faces"] as? [String: [String: Any]])
+                for (name, f) in faces(st) {
+                    let j = try XCTUnwrap(jf[name], "\(t.id) \(mode) \(name)")
+                    XCTAssertEqual(f.texture, j["texture"] as? String, "\(t.id) \(mode) \(name) texture")
+                    XCTAssertEqual(f.textureAlpha, j["textureAlpha"] as? Double ?? -1, accuracy: 1e-6)
+                    XCTAssertEqual(f.round, (j["shape"] as? String) == "round", "\(t.id) \(name) shape")
+                    XCTAssertEqual(f.round, f.ring != nil, "\(t.id) \(name): a round cap has its ring")
+                    for v in [f.textureAlpha, f.sheenTop, f.sheenBottom, f.highlight, f.gloss, f.metal] {
+                        XCTAssertTrue((0...1).contains(v), "\(t.id) \(name) finish in 0...1")
+                    }
+                    XCTAssertTrue(f.texture == nil || f.textureAlpha > 0, "\(t.id) \(name): a texture shows")
+                }
+                XCTAssertFalse(st.faces.function.round || st.faces.space.round || st.faces.ret.round,
+                               "\(t.id): only letters are round")
+                let jl = try XCTUnwrap(js["legend"] as? [String: Any])
+                XCTAssertEqual("\(st.legend.style)", jl["style"] as? String, "\(t.id) \(mode) legend")
+                XCTAssertEqual(st.legend.foil.count, st.legend.style == .foil ? 3 : 0, "\(t.id) foil colours")
+                let jo = try XCTUnwrap(js["ornaments"] as? [[String: Any]])
+                XCTAssertEqual(st.ornaments.count, jo.count, "\(t.id) \(mode) ornaments")
+                for (o, j) in zip(st.ornaments, jo) {
+                    XCTAssertEqual(o.ops.count, (j["ops"] as? [Any])?.count, "\(t.id) ops")
+                    XCTAssertEqual("\(o.anchor)", j["anchor"] as? String, "\(t.id) anchor")
+                    let on = j["on"] as? String ?? ""
+                    XCTAssertEqual(o.on.rawValue, on == "return" ? "ret" : on, "\(t.id) target")
+                }
+                // Each class draws, at a letter's cell and a wide key's, at
+                // exactly the size asked (never bigger than the key).
+                for cls in [KeyFaces.FaceClass.letter, .function, .space, .ret] {
+                    for size in [CGSize(width: 37.3, height: 45), CGSize(width: 96.9, height: 45),
+                                 CGSize(width: 33.5, height: 42), CGSize(width: 180, height: 45)] {
+                        let target: ThemeOrnamentTarget = cls == .letter ? .letter : cls == .space ? .space
+                            : cls == .ret ? .ret : .shift
+                        let req = KeyFaces.Request(size: size, scale: 3, faceClass: cls, target: target,
+                                                   fill: t.variant(dark: dark).letter.fill, pressed: false,
+                                                   allowRound: cls == .letter)
+                        let img = try XCTUnwrap(KeyFaces.image(theme: t, dark: dark, request: req))
+                        // The bitmap rounds up to whole pixels (37.3pt is
+                        // 111.9 px); the layer shows it at the key's size.
+                        XCTAssertEqual(img.size.width, size.width, accuracy: 1.0 / 3, "\(t.id) \(cls) face is the key's size")
+                        XCTAssertEqual(img.size.height, size.height, accuracy: 1.0 / 3, "\(t.id) \(cls) face is the key's size")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Every texture a face names is in the source folder, is a 256 x 256
+    /// tile, and is on the keyboard target's resources.
+    func testEveryReferencedTextureIsBundled() throws {
+        let project = try String(contentsOf: pbxproj, encoding: .utf8)
+        var names = Set<String>()
+        for t in KeyboardTheme.all {
+            for dark in [false, true] {
+                for (_, f) in faces(t.variant(dark: dark).style) { if let n = f.texture { names.insert(n) } }
+            }
+        }
+        XCTAssertFalse(names.isEmpty)
+        for n in names.sorted() {
+            let url = texturesDir.appendingPathComponent(n + ".png")
+            let img = UIImage(contentsOfFile: url.path)
+            XCTAssertNotNil(img, "Textures/\(n).png")
+            XCTAssertEqual(img?.cgImage?.width, 256, n)
+            XCTAssertEqual(img?.cgImage?.height, 256, n)
+            XCTAssertTrue(project.contains("\(n).png in Resources"), "\(n).png on the keyboard's resources")
+        }
+    }
+
+    /// Ornaments: a known key and anchor, colours that resolve in both
+    /// modes, finite geometry in key heights, readable text, and an alpha
+    /// that shows.
+    func testOrnamentsAreValid() {
+        for t in KeyboardTheme.all {
+            for dark in [false, true] {
+                let v = t.variant(dark: dark)
+                for o in v.style.ornaments {
+                    XCTAssertTrue(o.alpha > 0 && o.alpha <= 1, "\(t.id) alpha")
+                    XCTAssertFalse(o.ops.isEmpty, "\(t.id) has ops")
+                    let cls: KeyFaces.FaceClass = o.on == .letter ? .letter : o.on == .space ? .space
+                        : o.on == .ret ? .ret : .function
+                    XCTAssertTrue(KeyFaces.hits(o, target: o.on, cls: cls), "\(t.id) \(o.on) is drawn on its key")
+                    if o.on == .function {
+                        XCTAssertFalse(KeyFaces.hits(o, target: .ret, cls: .function), "\(t.id): never on return")
+                        XCTAssertTrue(KeyFaces.hits(o, target: .shift, cls: .function), "\(t.id): shift is a function key")
+                    }
+                    for op in o.ops {
+                        let role = op.color ?? o.color
+                        _ = KeyFaces.color(role, v: v, cls: cls, fill: v.letter.fill)
+                        var nums: [Double] = []
+                        switch op {
+                        case let .line(a, b, c, d, w, _): nums = [a, b, c, d, w]; XCTAssertGreaterThan(w, 0)
+                        case let .poly(p, _): nums = p; XCTAssertEqual(p.count % 2, 0); XCTAssertGreaterThanOrEqual(p.count, 6)
+                        case let .circle(a, b, r, w, _): nums = [a, b, r] + (w.map { [$0] } ?? []); XCTAssertGreaterThan(r, 0)
+                        case let .rect(a, b, c, d, r, w, _): nums = [a, b, c, d, r] + (w.map { [$0] } ?? [])
+                        case let .text(s, a, b, size, _, weight, _, _):
+                            nums = [a, b, size]
+                            XCTAssertFalse(s.isEmpty)
+                            XCTAssertTrue((0.05...0.5).contains(size), "\(t.id) text size in key heights")
+                            XCTAssertTrue([400, 500, 600, 700].contains(weight))
+                        }
+                        XCTAssertTrue(nums.allSatisfy { $0.isFinite && abs($0) < 3 }, "\(t.id) geometry in key heights")
+                    }
+                }
+            }
+        }
+    }
+
+    /// A round keycap draws inside its key's own cell: the cell (and so the
+    /// touch area and layout) is the one KeyMetrics gives, with every skin.
+    func testRoundKeycapsStayInTheirCell() {
+        KeyFaces.textureDirectory = texturesDir
+        defer { KeyFaces.textureDirectory = nil; KeyFaces.release() }
+        for t in KeyboardTheme.all where t.light.style.faces.letter.round || t.dark.style.faces.letter.round {
+            for w: CGFloat in [390, 402, 420, 440] {
+                let cell = CGSize(width: KeyMetrics.keyWidth(width: w), height: KeyMetrics.rowPitch(width: w) - KeyMetrics.vGap)
+                XCTAssertTrue(KeyFaces.isRound(t.light.style.faces.letter, size: cell, allowed: true), "\(t.id) \(w)")
+                XCTAssertFalse(KeyFaces.isRound(t.light.style.faces.letter, size: cell, allowed: false), "pads stay keys")
+                XCTAssertFalse(KeyFaces.isRound(t.light.style.faces.letter, size: CGSize(width: 60, height: 45), allowed: true),
+                               "a key wider than tall keeps its shape")
+                let req = KeyFaces.Request(size: cell, scale: 3, faceClass: .letter, target: .letter,
+                                           fill: t.light.letter.fill, pressed: true, allowRound: true)
+                let size = KeyFaces.image(theme: t, dark: false, request: req)?.size ?? .zero
+                XCTAssertEqual(size.width, cell.width, accuracy: 1.0 / 3, "\(t.id) \(w)")
+                XCTAssertEqual(size.height, cell.height, accuracy: 1.0 / 3, "\(t.id) \(w)")
+            }
+        }
+    }
+
     // MARK: Helpers (WCAG 2.x, as check_contrast.py)
 
     private func rgb(_ c: UIColor) -> UInt32 {

@@ -24,6 +24,16 @@ What the best keycap sets do (GMK 9009, Olivia, Godspeed, Botanical, Laser, Red 
 
 Checked by screenshots of the real keyboards, every theme in light and dark, on the iPhone 17 Pro Max simulator and the Android emulator; key rectangles unchanged.
 
+## Third pass: materials, lettering and one detail per theme
+
+Arpit, 17 Oct 2026, on the second pass: "these look sooo low effort and cheap just colours, fucking add some class in themes". Colour alone is what cheap theme apps sell; class comes from materials and details. Every variant now carries a `style` (shared/themes/styles.py, its docstring is the spec; tools/theme_mock.py is the reference renderer both keyboards were matched against):
+
+- **Faces** per key class: a texture tile (shared/themes/textures, drawn by tools/gen_theme_textures.py from seeded noise and geometry: paper, washi, brushed metal, walnut, marble, tweed herringbone, pebbled leather, scanlines, sand, cross-hatch, velvet, patina, knurl, bricks, linen, frost), a sculpted sheen, a top highlight, lacquer gloss, brushed-metal bands, two-colour faces (aurora, gem, sunset), and Typewriter's round chrome-ringed keycaps drawn inside the unchanged key cell.
+- **Lettering:** ink, engraved, letterpress, gold or rose-gold foil, phosphor glow. Return always takes engraved ink (`returnLegend`): foil on a gold return lost the arrow.
+- **One signature detail per theme**, vector primitives in key-height units: the typewriter's paper scale, a lens focus scale, a walnut desk's brass inlay, a terminal prompt, Bauhaus shapes, a fern, blossoms, a wave, dunes, cockpit fasteners, pearls, a synthwave sun, Noir's chevrons, a skyline, hazard stripes, an orbit, a vermilion seal and gold flecks, the 221B brass plate, card suits, yellow bricks and a cut gem, a depth gauge and rivets, a Deco frame and sunburst, a crescent moon.
+
+Nothing changes a key's size, gap, radius, row or type size; KeyMetrics tests pass unchanged.
+
 ### The 29 themes
 
 | Theme | Group | Face | Mood |

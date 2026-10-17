@@ -60,10 +60,32 @@ final class AccentPopup: UIView {
         x = max(container.minX + 4, min(x, container.maxX - width - 4))
         let y = max(container.minY + 2, keyFrame.minY - Self.height - 6)
         frame = CGRect(x: x, y: y, width: width, height: Self.height)
+        applyTexture()
         for (i, l) in labels.enumerated() {
             l.frame = CGRect(x: 4 + CGFloat(i) * Self.optionWidth, y: 6,
                              width: Self.optionWidth, height: Self.height - 12)
         }
+    }
+
+    private var textureLayer: CALayer?
+
+    /// A theme's letter texture over the popup's fill, at the face's alpha.
+    private func applyTexture() {
+        textureLayer?.removeFromSuperlayer()
+        textureLayer = nil
+        let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : 3
+        guard let skin = Glass.skin, let v = Glass.skinVariant,
+              let tex = KeyFaces.textureOverlay(theme: skin, dark: Glass.isDark, face: v.style.faces.letter,
+                                                size: bounds.size, scale: scale) else { return }
+        let t = CALayer()
+        t.frame = bounds
+        t.contents = tex.cgImage
+        t.contentsScale = scale
+        t.cornerRadius = layer.cornerRadius
+        t.cornerCurve = .continuous
+        t.masksToBounds = true
+        layer.insertSublayer(t, at: 0)
+        textureLayer = t
     }
 
     /// Update selection from a touch location in the popup's superview space.

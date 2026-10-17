@@ -407,6 +407,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 ThemeFonts.activate(skin?.font)
                 ThemeSound.shared.load(skin?.sound.roles.isEmpty == false ? skin?.sound : nil)
                 if skin?.keyTexture == nil { ThemeTextures.release() }
+                // The last theme's faces and texture tiles go with it.
+                KeyFaces.release()
             }
             refreshPalette()
         }
