@@ -374,6 +374,18 @@ export async function runTool(
     case "places.search": {
       const q = (args.query || "").trim();
       if (!q) throw refuse("needs a search");
+      // Geoapify first (the Maps tab's search): it knows businesses and
+      // reads "pizza in Brooklyn" as a kind of place in an area. Nominatim
+      // only geocodes names, so it found nothing there and sent "pizza" to
+      // a village in Nigeria (prod check, 21 Oct 2026).
+      if (process.env.GEOAPIFY_KEY) {
+        const { geoapifyPlaces } = await import("./search.js");
+        const found = await geoapifyPlaces(q, {}).catch(() => []);
+        if (found.length) {
+          return found.slice(0, 3).map(p =>
+            `${p.title}${p.address ? `, ${p.address}` : ""} (maps: ${p.url})`).join("\n");
+        }
+      }
       const data = await fetchJSON(
         `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=3&q=${encodeURIComponent(q)}`,
         meta.timeoutMs) as { display_name: string; lat: string; lon: string }[];

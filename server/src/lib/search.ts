@@ -553,7 +553,7 @@ export function mapThumb(lat?: number, lon?: number): string | undefined {
   return `/search/staticmap?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}&w=300&h=300`;
 }
 
-async function geoapifyPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[]> {
+export async function geoapifyPlaces(q: string, ctx: SearchContext): Promise<PlaceCard[]> {
   const key = process.env.GEOAPIFY_KEY;
   if (!key) return [];
   const here = ctx.lat !== undefined && ctx.lon !== undefined;
