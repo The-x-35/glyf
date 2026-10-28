@@ -180,6 +180,7 @@ abstract final class WalletFlow {
       final solF = SolanaRpc.solBalance(wallet.address);
       final haveF = token.mint == Sol.wsol ? solF : SolanaRpc.tokenBalance(wallet.address, token.mint);
       final hashF = private ? null : SolanaRpc.blockhash();
+      final feeF = private ? PrivateFee.config() : null;
       // An early refusal below leaves the others running; their failures
       // are nobody's news then.
       solF.ignore();
@@ -193,11 +194,27 @@ abstract final class WalletFlow {
       }
       if (owner != null && owner != Sol.systemProgram) return const PayStart.error('That isn’t a wallet address');
       // What the wallet would refuse anyway, said before the trip there.
-      final short = _shortfall(await solF, await haveF, units, token, private: private);
+      // Glyf's 0.1% on a private payment, paid with it in the same token.
+      final fee = feeF == null ? null : await feeF;
+      final feeUnits = fee?.wallet == null ? BigInt.zero : PrivateFee.amountFor(units, fee!.bps);
+      final short = _shortfall(await solF, await haveF, units + feeUnits, token, private: private);
       if (short != null) return PayStart.error(short);
       final Uint8List tx;
       if (private) {
-        tx = await MagicBlock.privateTransfer(from: wallet.address, to: recipient, amount: units, mint: token.mint);
+        final built = await MagicBlock.privateTransfer(from: wallet.address, to: recipient, amount: units, mint: token.mint);
+        // The fee goes first, as MagicBlock puts its own relay fee; a
+        // transaction it can't take (too big, already signed) is sent as
+        // MagicBlock built it rather than not at all.
+        tx = feeUnits > BigInt.zero
+            ? Sol.prepend(built, Sol.feeInstructions(
+                    from: wallet.address,
+                    feeWallet: fee!.wallet!,
+                    mint: token.mint,
+                    amount: feeUnits,
+                    decimals: token.decimals,
+                  )) ??
+                built
+            : built;
       } else if (token.mint == Sol.wsol) {
         tx = Sol.transferSol(from: wallet.address, to: recipient, lamports: units, blockhash: await hashF!);
       } else {

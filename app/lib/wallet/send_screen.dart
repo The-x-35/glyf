@@ -30,6 +30,8 @@ class _SendScreenState extends State<SendScreen> {
   late final _amount = TextEditingController(text: widget.amount ?? '');
   late TokenInfo _token = widget.token?.toUpperCase() == 'SOL' ? TokenInfo.sol : TokenInfo.usdc;
   bool _private = false;
+  /// Glyf's fee on a private send, in basis points (0 when there is none).
+  int _feeBps = 0;
   bool _busy = false;
   String? _error;
   BigInt? _balance;
@@ -41,6 +43,9 @@ class _SendScreenState extends State<SendScreen> {
     _amount.addListener(() => setState(() => _error = null));
     WalletFlow.link.addListener(_loadBalance);
     WalletFlow.load().then((_) => _loadBalance());
+    PrivateFee.config().then((f) {
+      if (mounted) setState(() => _feeBps = f.bps);
+    });
   }
 
   @override
@@ -197,17 +202,19 @@ class _SendScreenState extends State<SendScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
                 child: Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'Send privately',
                             style: TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700),
                           ),
-                          SizedBox(height: 3),
+                          const SizedBox(height: 3),
                           Text(
-                            'Through MagicBlock, so it isn’t linked to you on chain. About 0.002 SOL + 0.1%.',
+                            _feeBps > 0
+                                ? 'Through MagicBlock, so it isn’t linked to you on chain. About 0.002 SOL + 0.1%, and Glyf’s ${PrivateFee.percent(_feeBps)}%.'
+                                : 'Through MagicBlock, so it isn’t linked to you on chain. About 0.002 SOL + 0.1%.',
                             style: TextStyle(color: Glass.inkSoft, fontSize: 13, height: 1.35),
                           ),
                         ],

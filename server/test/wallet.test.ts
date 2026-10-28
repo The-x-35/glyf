@@ -49,3 +49,37 @@ describe("POST /wallet/rpc", () => {
     expect((await rpc("getLatestBlockhash")).statusCode).toBe(503);
   });
 });
+
+describe("GET /wallet/fees", () => {
+  async function fees(env: Record<string, string | undefined>) {
+    const saved = { ...process.env };
+    Object.assign(process.env, { GLYF_FEE_WALLET: undefined, GLYF_TREASURY: undefined, GLYF_PRIVATE_FEE_BPS: undefined });
+    for (const [k, v] of Object.entries(env)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+    for (const k of ["GLYF_FEE_WALLET", "GLYF_TREASURY", "GLYF_PRIVATE_FEE_BPS"]) if (!(k in env)) delete process.env[k];
+    try {
+      const app = Fastify();
+      walletRoutes(app, {});
+      return (await app.inject({ method: "GET", url: "/wallet/fees" })).json();
+    } finally {
+      process.env = saved;
+    }
+  }
+  const wallet = "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1";
+
+  it("is 0.1% to the fee wallet when one is set", async () => {
+    expect(await fees({ GLYF_FEE_WALLET: wallet })).toEqual({ ok: true, privateFeeBps: 10, feeWallet: wallet });
+  });
+  it("falls back to the treasury", async () => {
+    expect((await fees({ GLYF_TREASURY: wallet })).feeWallet).toBe(wallet);
+  });
+  it("is off with no wallet or a bad one", async () => {
+    expect(await fees({})).toEqual({ ok: true, privateFeeBps: 0, feeWallet: null });
+    expect((await fees({ GLYF_FEE_WALLET: "not-an-address" })).privateFeeBps).toBe(0);
+  });
+  it("takes a rate, never above 1%", async () => {
+    expect((await fees({ GLYF_FEE_WALLET: wallet, GLYF_PRIVATE_FEE_BPS: "20" })).privateFeeBps).toBe(20);
+    expect((await fees({ GLYF_FEE_WALLET: wallet, GLYF_PRIVATE_FEE_BPS: "500" })).privateFeeBps).toBe(10);
+  });
+});

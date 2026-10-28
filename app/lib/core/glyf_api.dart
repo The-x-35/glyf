@@ -350,6 +350,10 @@ abstract final class GlyfApi {
     }
   }
 
+  /// GET /wallet/fees — Glyf's fee on private payments: the wallet that
+  /// receives it and the rate in basis points (0 when there is none).
+  static Future<Map<String, dynamic>> walletFees() => _getJson('/wallet/fees');
+
   /// POST /wallet/rpc — one Solana RPC call through Glyf's server, which
   /// adds the node's key (it never ships in the app). The `result`, or a
   /// GlyfApiException with the node's own words.

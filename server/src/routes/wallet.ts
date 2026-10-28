@@ -36,6 +36,21 @@ export interface WalletDeps {
 export function walletRoutes(app: FastifyInstance, deps: WalletDeps = {}): void {
   const fetchImpl = deps.fetchImpl ?? fetch;
 
+  /** GET /wallet/fees — Glyf's fee on private payments (MagicBlock): the
+   *  wallet that receives it (GLYF_FEE_WALLET, falling back to the USDC
+   *  plans' GLYF_TREASURY) and the rate in basis points (GLYF_PRIVATE_FEE_BPS,
+   *  default 10 = 0.1%). The phone adds the transfer to the transaction the
+   *  person signs, so every Glyf private payment carries this one address:
+   *  how MagicBlock counts Glyf's usage (Arpit, 2026-10-28). No wallet set,
+   *  no fee. */
+  app.get("/wallet/fees", async () => {
+    const raw = (process.env.GLYF_FEE_WALLET || process.env.GLYF_TREASURY || "").trim();
+    const wallet = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw) ? raw : null;
+    const parsed = Number.parseInt(process.env.GLYF_PRIVATE_FEE_BPS ?? "10", 10);
+    const bps = Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 10;
+    return { ok: true, privateFeeBps: wallet ? bps : 0, feeWallet: wallet };
+  });
+
   app.post("/wallet/rpc", async (req, reply) => {
     const url = deps.rpcUrl ?? process.env.SOLANA_RPC_URL;
     if (!url) return reply.code(503).send({ ok: false, error: "The wallet isn't set up on this server" });

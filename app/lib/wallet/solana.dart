@@ -259,6 +259,117 @@ abstract final class Sol {
     return Uint8List.fromList([..._compactU16(signers), ...List.filled(64 * signers, 0), ...message.toBytes()]);
   }
 
+  /// Solana's limit on one serialized transaction.
+  static const maxTransactionBytes = 1232;
+
+  /// A legacy transaction taken apart: its fee payer, blockhash and
+  /// instructions (each account's signer and writable flags read back from
+  /// the message header). Null when [tx] isn't an unsigned-or-signed legacy
+  /// transaction this can read.
+  static ({String feePayer, String blockhash, List<Instruction> instructions})? decodeLegacy(Uint8List tx) {
+    try {
+      var i = 0;
+      int compact() {
+        var value = 0, shift = 0;
+        while (true) {
+          final byte = tx[i++];
+          value |= (byte & 0x7f) << shift;
+          shift += 7;
+          if (byte < 0x80) return value;
+        }
+      }
+
+      final sigs = compact();
+      i += 64 * sigs;
+      if (tx[i] & 0x80 != 0) return null; // a v0 message
+      final signers = tx[i], readonlySigned = tx[i + 1], readonlyUnsigned = tx[i + 2];
+      i += 3;
+      final count = compact();
+      final keys = [for (var k = 0; k < count; k++) Base58.encode(tx.sublist(i + 32 * k, i + 32 * k + 32))];
+      i += 32 * count;
+      final blockhash = Base58.encode(tx.sublist(i, i + 32));
+      i += 32;
+      bool isSigner(int k) => k < signers;
+      bool isWritable(int k) =>
+          k < signers ? k < signers - readonlySigned : k < count - readonlyUnsigned;
+      final instructions = <Instruction>[];
+      final n = compact();
+      for (var x = 0; x < n; x++) {
+        final program = keys[tx[i++]];
+        final accounts = [for (var a = 0, m = compact(); a < m; a++) tx[i++]];
+        final len = compact();
+        final data = tx.sublist(i, i + len);
+        i += len;
+        instructions.add(Instruction(program, [
+          for (final k in accounts) AccountMeta(keys[k], signer: isSigner(k), writable: isWritable(k)),
+        ], data));
+      }
+      if (i != tx.length) return null;
+      return (feePayer: keys.first, blockhash: blockhash, instructions: instructions);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// [tx] with [first] run before its own instructions, re-serialized
+  /// unsigned. Null when [tx] can't be read, already carries a signature, or
+  /// the result would be over Solana's size limit; the caller then keeps
+  /// [tx] as it was.
+  static Uint8List? prepend(Uint8List tx, List<Instruction> first) {
+    if (tx.isEmpty || tx[0] == 0 || tx.length < 65) return null;
+    // Any slot already filled is a signature this would invalidate.
+    final sigs = tx[0];
+    for (var b = 1; b < 1 + 64 * sigs; b++) {
+      if (tx[b] != 0) return null;
+    }
+    final decoded = decodeLegacy(tx);
+    if (decoded == null) return null;
+    final out = compileLegacy(
+      feePayer: decoded.feePayer,
+      blockhash: decoded.blockhash,
+      instructions: [...first, ...decoded.instructions],
+    );
+    return out.length <= maxTransactionBytes ? out : null;
+  }
+
+  /// Glyf's fee on a token payment, paid by [from] to [feeWallet]: opens the
+  /// fee wallet's token account if it has none (CreateIdempotent, nothing
+  /// when it exists), then TransferChecked.
+  static List<Instruction> feeInstructions({
+    required String from,
+    required String feeWallet,
+    required String mint,
+    required BigInt amount,
+    required int decimals,
+  }) {
+    final source = tokenAccount(from, mint);
+    final destination = tokenAccount(feeWallet, mint);
+    return [
+      Instruction(
+        ataProgram,
+        [
+          AccountMeta(from, signer: true, writable: true),
+          AccountMeta(destination, writable: true),
+          AccountMeta(feeWallet),
+          AccountMeta(mint),
+          const AccountMeta(systemProgram),
+          const AccountMeta(tokenProgram),
+        ],
+        const [1],
+      ),
+      Instruction(
+        tokenProgram,
+        [
+          AccountMeta(source, writable: true),
+          AccountMeta(mint),
+          AccountMeta(destination, writable: true),
+          AccountMeta(from, signer: true),
+        ],
+        [12, ..._u64(amount), decimals],
+      ),
+    ];
+  }
+
   static List<int> _u64(BigInt value) {
     final out = List<int>.filled(8, 0);
     var v = value;

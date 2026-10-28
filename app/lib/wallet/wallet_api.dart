@@ -277,6 +277,41 @@ abstract final class Jupiter {
   }
 }
 
+/// Glyf's fee on a private payment (Arpit, 2026-10-28: "take 0.1% fees").
+/// The server names the wallet that receives it (GET /wallet/fees), the
+/// phone adds the transfer in front of MagicBlock's own instructions, and
+/// the person signs both at once. Every Glyf private payment then carries
+/// that one Glyf address, which is how MagicBlock counts Glyf's usage. No
+/// wallet configured, or the server unreachable: no fee, the payment goes
+/// through exactly as before.
+abstract final class PrivateFee {
+  static ({String? wallet, int bps})? _cached;
+
+  /// The fee wallet and rate, asked once per launch.
+  static Future<({String? wallet, int bps})> config() async {
+    final hit = _cached;
+    if (hit != null) return hit;
+    try {
+      final json = await GlyfApi.walletFees();
+      final wallet = json['feeWallet'];
+      final bps = (json['privateFeeBps'] as num?)?.toInt() ?? 0;
+      final ok = wallet is String && Sol.isAddress(wallet) && bps > 0 && bps <= 100;
+      return _cached = (wallet: ok ? wallet : null, bps: ok ? bps : 0);
+    } catch (_) {
+      return (wallet: null, bps: 0);
+    }
+  }
+
+  /// [units] times [bps] / 10 000, rounded down (nothing on dust).
+  static BigInt amountFor(BigInt units, int bps) => units * BigInt.from(bps) ~/ BigInt.from(10000);
+
+  /// "0.1%".
+  static String percent(int bps) {
+    var pct = (bps / 100).toStringAsFixed(2);
+    return pct.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+}
+
 /// MagicBlock's private payments (docs.magicblock.gg, ephemeral SPL token):
 /// one transaction the sender signs, paid out to the recipient's normal
 /// account through the hardware-secured (TEE) validator, so the link
