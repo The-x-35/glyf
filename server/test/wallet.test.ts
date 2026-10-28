@@ -74,8 +74,8 @@ describe("GET /wallet/fees", () => {
   it("falls back to the treasury", async () => {
     expect((await fees({ GLYF_TREASURY: wallet })).feeWallet).toBe(wallet);
   });
-  it("is off with no wallet or a bad one", async () => {
-    expect(await fees({})).toEqual({ ok: true, privateFeeBps: 0, feeWallet: null });
+  it("is Arpit's wallet when none is set, and off for a bad one", async () => {
+    expect(await fees({})).toEqual({ ok: true, privateFeeBps: 10, feeWallet: "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA" });
     expect((await fees({ GLYF_FEE_WALLET: "not-an-address" })).privateFeeBps).toBe(0);
   });
   it("takes a rate, never above 1%", async () => {

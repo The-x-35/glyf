@@ -27,6 +27,10 @@ const RpcSchema = z.object({
   params: z.array(z.unknown()).max(4).default([]),
 });
 
+/** Arpit's wallet, the fee vault until GLYF_FEE_WALLET names another
+ *  (2026-10-28: "use this for now to take fees"). Public, not a secret. */
+export const DEFAULT_FEE_WALLET = "4j8FqYuNix7RfFgKmiRZnCE1acNnTarqm1SbZYdQZmFA";
+
 export interface WalletDeps {
   /** SOLANA_RPC_URL (with the provider's key) unless a test passes one. */
   rpcUrl?: string;
@@ -44,7 +48,7 @@ export function walletRoutes(app: FastifyInstance, deps: WalletDeps = {}): void 
    *  how MagicBlock counts Glyf's usage (Arpit, 2026-10-28). No wallet set,
    *  no fee. */
   app.get("/wallet/fees", async () => {
-    const raw = (process.env.GLYF_FEE_WALLET || process.env.GLYF_TREASURY || "").trim();
+    const raw = (process.env.GLYF_FEE_WALLET || process.env.GLYF_TREASURY || DEFAULT_FEE_WALLET).trim();
     const wallet = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw) ? raw : null;
     const parsed = Number.parseInt(process.env.GLYF_PRIVATE_FEE_BPS ?? "10", 10);
     const bps = Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : 10;
