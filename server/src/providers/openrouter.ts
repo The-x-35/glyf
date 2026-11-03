@@ -111,6 +111,9 @@ export function resetCooldowns(): void {
  *  A suggestion that comes late comes after the message has gone. */
 export const FIRST_BYTE_MS: Record<Tier, number> = { fast: 4000, smart: 20000, suggest: 2500, answer: 4000 };
 
+/** The last model in a chain gets this long to start (and between chunks). */
+export const LAST_FIRST_BYTE_MS = 15000;
+
 export interface StreamHandlers {
   onToken: (t: string) => void;
   signal?: AbortSignal;
@@ -184,7 +187,11 @@ async function completeMasked(
     if (spoke) handlers.onRestart?.();
     spoke = false;
   };
-  for (const model of models) {
+  for (const [index, model] of models.entries()) {
+    // The last model has nobody to hand over to: it gets time to answer
+    // rather than a quick give-up (Gemini straight from Google can take
+    // 10 s or more to start when busy).
+    const last = index === models.length - 1;
     const ep = endpointFor(model);
     if (!ep) {
       attempts.push({ model, status: "no-key" });
@@ -195,7 +202,7 @@ async function completeMasked(
     // on to the next one rather than wait it out.
     const attempt = new AbortController();
     let stallTimer: ReturnType<typeof setTimeout> | undefined;
-    const stuck = setTimeout(() => attempt.abort(), FIRST_BYTE_MS[tier]);
+    const stuck = setTimeout(() => attempt.abort(), last ? Math.max(FIRST_BYTE_MS[tier], LAST_FIRST_BYTE_MS) : FIRST_BYTE_MS[tier]);
     const onAbort = () => attempt.abort();
     handlers.signal?.addEventListener("abort", onAbort);
     try {
@@ -213,7 +220,7 @@ async function completeMasked(
       clearTimeout(stuck);
       if (handlers.stallMs) {
         // Re-armed on every chunk below; fires only if the stream goes quiet.
-        stallTimer = setTimeout(() => attempt.abort(), handlers.stallMs);
+        stallTimer = setTimeout(() => attempt.abort(), last ? Math.max(handlers.stallMs, LAST_FIRST_BYTE_MS) : handlers.stallMs);
       }
       if (!res.ok || !res.body) {
         if (res.status === 429) noteRateLimited(model, res.headers.get("retry-after"));
@@ -227,7 +234,7 @@ async function completeMasked(
       const text = await drainSSE(res.body, { ...handlers, onToken: t => gate.push(t) }, () => {
         if (!handlers.stallMs) return;
         clearTimeout(stallTimer);
-        stallTimer = setTimeout(() => attempt.abort(), handlers.stallMs);
+        stallTimer = setTimeout(() => attempt.abort(), last ? Math.max(handlers.stallMs, LAST_FIRST_BYTE_MS) : handlers.stallMs);
       });
       if (text.trim().length === 0) {
         attempts.push({ model, status: "empty" });
