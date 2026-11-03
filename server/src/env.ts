@@ -51,10 +51,10 @@ export const env = {
    *  one :free id. Hold space and chip taps: Qwen 3.7 Flash writes all six
    *  rewrite versions for about $0.03 a thousand; Gemini 2.5 Flash-Lite
    *  stands behind it. */
-  fastModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro", "google/gemini-2.5-flash-lite"],
+  fastModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro", "google/gemini-2.5-flash-lite", "gemini:gemini-3.5-flash-lite"],
   /** The Builder: Ling 3.0 Flash made a valid glyf six times out of six in
    *  about 2 s for $0.03 a thousand; Gemini 2.5 Flash-Lite (1.4 s) next. */
-  smartModels: ["inclusionai/ling-3.0-flash", "google/gemini-2.5-flash-lite:nitro", "google/gemini-2.5-flash-lite"],
+  smartModels: ["inclusionai/ling-3.0-flash", "google/gemini-2.5-flash-lite:nitro", "google/gemini-2.5-flash-lite", "gemini:gemini-3.5-flash-lite"],
   /** A question answered from what a model knows (hold space, the strip's
    *  "AI answer", the web tab), there being no search for now. Measured
    *  2026-09-29 on 18 facts twice at temperature 0: Gemini 3.1 Flash-Lite
@@ -62,11 +62,16 @@ export const env = {
    *  "France won the 2022 FIFA World Cup" every time and a made-up Super
    *  Bowl LX; Gemini 2.5 Flash-Lite thought the 2024 election was still to
    *  come. */
-  answerModels: ["google/gemini-3.1-flash-lite", "qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro"],
+  answerModels: ["google/gemini-3.1-flash-lite", "qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite:nitro", "gemini:gemini-3.5-flash-lite"],
   /** What reads a pause in typing for the strip's chip: small, paid, cheap
    *  (about $8 a million reads on Qwen 3.7 Flash) and never a free tier
    *  that keeps what it is sent. */
-  suggestModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite", "inclusionai/ling-3.0-flash"],
+  /* Every chain ends in Gemini 3.5 Flash-Lite straight from Google
+   * (GEMINI_API_KEY): OpenRouter's key answered 401 "User not found" in
+   * Nov 2026 and every AI call failed (Arpit: "make the AI working, maybe use
+   * a free plan"). A refused key is skipped for ten minutes, so the backup
+   * answers at its own speed (about 1.6 s for a rewrite). */
+  suggestModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite", "inclusionai/ling-3.0-flash", "gemini:gemini-3.5-flash-lite"],
   /** How long a glyf run's text is replayed (routes/glyf.ts): ten minutes
    *  at most, so nothing a person reads is ever much older than that. */
   cacheTtlMs: Math.min(num("CACHE_TTL_MS", 10 * 60 * 1000), 10 * 60 * 1000),

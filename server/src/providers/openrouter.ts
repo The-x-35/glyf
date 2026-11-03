@@ -217,6 +217,9 @@ async function completeMasked(
       }
       if (!res.ok || !res.body) {
         if (res.status === 429) noteRateLimited(model, res.headers.get("retry-after"));
+        // A key the provider refuses won't work on the next request either:
+        // skip that model for ten minutes rather than pay a round trip each time.
+        if (res.status === 401 || res.status === 402 || res.status === 403) noteRateLimited(model, "600");
         attempts.push({ model, status: res.status });
         continue;
       }

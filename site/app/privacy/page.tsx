@@ -44,7 +44,7 @@ export default function Privacy() {
               Google data (from Sign in with Google, Google Calendar and Google Meet) is used only for those features,
               is never sent to an AI model, and is never used to train one.
             </li>
-            <li>AI requests go only to providers that don&rsquo;t keep or train on what they are sent.</li>
+            <li>AI requests go through OpenRouter to providers that don&rsquo;t keep or train on them, with Google&rsquo;s Gemini API as the backup.</li>
             <li>You can have your account and its data deleted at any time.</li>
           </ul>
 
@@ -137,8 +137,9 @@ export default function Privacy() {
               <strong>AI providers.</strong> The text you choose to run an AI feature on, and with Suggestions on the
               sentence you are typing, is sent through OpenRouter to the model that answers: Qwen, Ling or Gemini,
               served by providers such as Alibaba Cloud, Novita and Google. Every request tells OpenRouter to use only
-              providers that don&rsquo;t keep or train on what they are sent, and Glyf uses no free AI tiers. They
-              process it only to return the result to you. No Google user data is ever sent to an AI provider.
+              providers that don&rsquo;t keep or train on what they are sent. When OpenRouter can&rsquo;t answer, the
+              request goes directly to Google&rsquo;s Gemini API instead, under Google&rsquo;s Gemini API terms. Either
+              way it is processed to return the result to you. No Google user data is ever sent to an AI provider.
             </li>
             <li>
               <strong>Search and maps.</strong> Your search goes to providers such as Google (Places and YouTube),

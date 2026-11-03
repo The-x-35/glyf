@@ -116,11 +116,16 @@ describe("requestOptions", () => {
     for (const tier of ["fast", "smart", "answer", "suggest"] as const) {
       expect(requestOptions(or("qwen/qwen3.7-flash"), tier), tier).toMatchObject({ provider: { data_collection: "deny" } });
     }
-    // Paid OpenRouter models only: no free tier and no direct free API in any chain.
+    // OpenRouter's paid models first, never a :free id; the one direct
+    // provider is Google's Gemini API, last in every chain (the backup since
+    // OpenRouter refused Glyf's key in Nov 2026).
     const { env } = await import("../src/env.js");
-    for (const id of [...env.fastModels, ...env.smartModels, ...env.answerModels, ...env.suggestModels]) {
-      expect(id.includes(":") && !id.endsWith(":nitro"), id).toBe(false);
-      expect(id.startsWith("openrouter/") || id.endsWith(":free"), id).toBe(false);
+    for (const chain of [env.fastModels, env.smartModels, env.answerModels, env.suggestModels]) {
+      expect(chain.at(-1)).toBe("gemini:gemini-3.5-flash-lite");
+      for (const id of chain.slice(0, -1)) {
+        expect(id.includes(":") && !id.endsWith(":nitro"), id).toBe(false);
+        expect(id.startsWith("openrouter/") || id.endsWith(":free"), id).toBe(false);
+      }
     }
   });
 
