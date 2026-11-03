@@ -347,6 +347,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     onDeleteWordsPreview(n)
                     main.postDelayed({ onDeleteWordsCommit(n) }, 600)
                 }
+                // Voice typing with stand-in words, for an emulator with no
+                // speech service: the strip listens, the words stream in, they
+                // go into the field and Polish is offered. "" hears nothing.
+                //   am broadcast -a com.arpit.glyf.DEBUG_TOOL --es id voicefake --es text "see you at 5 period"
+                "voicefake" -> { dismissFeaturePanel(); startDictation(intent.getStringExtra("text").orEmpty()) }
+                // Done, as tapped.
+                "voicestop" -> dictation?.stop()
                 else -> openTool(id)
             }
         }
@@ -654,6 +661,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         actGeneration++ // a late act result must not land in a new field
         recentFixes.clear()  // another field: its corrections are not these
         dismissedChip = null // and a chip waved off there may come here
+        voiceSpan = null; voiceRaw = null; voicePolishing++ // words said in the last field
         dismissOverlay()
         if (searchActive) exitSearch()
         if (barActive) exitBar()
@@ -676,6 +684,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         tempViewUp = true
         main.removeCallbacks(tempTick)
         if (TempMailStore.load(this)?.let { tempWatching(it) } == true) main.postDelayed(tempTick, 1500)
+        // The microphone was allowed a moment ago from the mic: listen now, as
+        // that tap meant to, without a second tap.
+        if (com.arpit.glyf.MicPermissionActivity.takeFreshGrant())
+            main.postDelayed({ if (currentInputConnection != null && root.isShown) startDictation() }, 350)
 
         // M0 ping — proof the keyboard ran (Android IMEs have network by
         // permission, so the FA flag is simply true here).
@@ -1010,19 +1022,30 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  should work inside keyboard for typing not open the app"): the strip
      *  listens and shows the words as they come, and they go into the field
      *  when the person stops talking or taps Done. Without the microphone
-     *  yet, the app asks for it once; the next tap listens. */
-    private fun startDictation() {
+     *  yet, the app asks for it once over the app being typed in, and the
+     *  keyboard starts listening as soon as it is back. [script]: debug
+     *  builds' stand-in words (DEBUG_TOOL "voicefake"). */
+    private fun startDictation(script: String? = null) {
         if (dictation != null || !::toolbar.isInitialized) return
-        if (!com.arpit.glyf.MicPermissionActivity.granted(this)) {
+        // Gboard keeps its mic off a password field too.
+        if (isSecureField()) { notice("No voice typing in a password field"); return }
+        if (script == null && !com.arpit.glyf.MicPermissionActivity.granted(this)) {
             com.arpit.glyf.MicPermissionActivity.ask(this)
             return
         }
+        hideVoiceChip()
+        // A half-typed word stays as typed: the words go after it, not over it.
+        currentInputConnection?.finishComposingText()
         lateinit var strip: DictationStripView
+        // Said marks show as marks while the words come ("hi comma" → "hi,").
+        val english = java.util.Locale.getDefault().language == "en"
         val d = Dictation(this,
-            onWords = { strip.words(it) },
+            onWords = { strip.words(VoiceText.spokenPunctuation(it, english)) },
             onLevel = { strip.level(it) },
+            onReady = { strip.ready() },
             onStopping = { strip.stopping() },
-            onEnd = { heard, note -> endDictation(heard, note) })
+            onEnd = { heard, note -> endDictation(heard, note) },
+            script = script)
         strip = DictationStripView(this, keyboard.palette(),
             onCancel = { endDictation(null) },
             onDone = { d.stop() })
@@ -1047,9 +1070,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** Listening is over: [heard] goes into the field, spaced from the word
-     *  before it; with nothing heard, [note] says why. [taken]: something
-     *  else has the strip now, so it stays as that left it. */
+    /** Listening is over: [heard] goes into the field (VoiceText.commit);
+     *  with nothing heard, [note] says why. [taken]: something else has the
+     *  strip now, so it stays as that left it. */
     private fun endDictation(heard: String?, note: String? = null, taken: Boolean = false) {
         val d = dictation ?: return
         dictation = null
@@ -1058,18 +1081,133 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         dictationStrip?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
         dictationStrip = null
         if (!taken) toolbar.visibility = View.VISIBLE
-        if (!heard.isNullOrBlank()) insertHeard(heard.trim()) else note?.let { notice(it) }
+        if (!heard.isNullOrBlank()) insertHeard(heard.trim(), offerPolish = !taken)
+        else note?.let { notice(it) }
     }
 
-    /** Heard words as typed ones: a capital where the field starts a
-     *  sentence, never glued to the word before. */
-    private fun insertHeard(heard: String) {
+    /** Heard words as typed ones (VoiceText.commit): spaced from the words
+     *  either side, a capital where a sentence starts and none mid-sentence,
+     *  Gboard's spoken punctuation. Then, for a few words or more, the strip
+     *  offers Polish. */
+    private fun insertHeard(heard: String, offerPolish: Boolean = true) {
         val ic = currentInputConnection ?: return
         val ei = currentInputEditorInfo
-        val capital = settings.optBoolean("autocapitalize", true) && ei != null &&
-            ei.inputType != InputType.TYPE_NULL && ic.getCursorCapsMode(ei.inputType) != 0
-        val text = if (capital) heard.replaceFirstChar { it.uppercaseChar() } else heard
-        ic.commitText(Smart.spaced(text, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+        val capFlags = InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_CAP_WORDS or
+            InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        val capitals = settings.optBoolean("autocapitalize", true) && ei != null &&
+            ei.inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_CLASS_TEXT &&
+            ei.inputType and capFlags != 0
+        val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
+        val after = ic.getTextAfterCursor(8, 0)?.toString() ?: ""
+        val english = java.util.Locale.getDefault().language == "en"
+        val commit = VoiceText.commit(heard, before, after, capitals, english)
+        if (commit.text.isEmpty()) return
+        ic.beginBatchEdit()
+        if (commit.deleteBefore > 0) ic.deleteSurroundingText(commit.deleteBefore, 0)
+        ic.commitText(commit.text, 1)
+        ic.endBatchEdit()
+        val core = commit.text.trim(' ')
+        voiceSpan = if (offerPolish && core.split(Regex("\\s+")).size >= 3) commit.text else null
+        voiceRaw = null
+        updateSuggestions()
+        syncAutoShift()
+    }
+
+    // MARK: Polish, after voice typing (the server's dictation.clean glyf)
+
+    /** What voice typing just put in, as committed (spaces included), while
+     *  it is still right before the cursor: Polish is offered for it. */
+    private var voiceSpan: String? = null
+    /** The words before a polish, while the polished ones are still there:
+     *  the chip offers them back (Undo). */
+    private var voiceRaw: String? = null
+    private var voicePolishing = 0
+
+    /** The voice chip owns the strip while what it is about sits right
+     *  before the cursor; a key, a move of the cursor or another field ends it. */
+    private fun voiceChipHolds(before: String): Boolean {
+        val span = voiceSpan ?: return false
+        return before.endsWith(span)
+    }
+
+    private fun hideVoiceChip() {
+        voiceSpan = null
+        voiceRaw = null
+        voicePolishing++
+        if (stripChipKind == "voice") hideStripChip()
+    }
+
+    /** The chip for [voiceSpan]: Polish (or Undo after one). True when shown. */
+    private fun showVoiceChip(): Boolean {
+        val span = voiceSpan ?: return false
+        if (stripChipKind == "voice" && stripChip?.tag == span) return true
+        val raw = voiceRaw
+        val shown = if (raw != null) showStripChip("voice", null, span.trim(), "Undo", lead = "dictation",
+                onClose = { hideVoiceChip() }) { undoPolish(raw) }
+            else showStripChip("voice", null, span.trim(), "Polish", lead = "dictation",
+                onClose = { hideVoiceChip() }) { polishVoice() }
+        if (shown) stripChip?.tag = span
+        return shown
+    }
+
+    /** Polish: the words just said, cleaned up by the server's
+     *  dictation.clean glyf (fillers out, punctuation and casing fixed, the
+     *  wording kept), in place of what was said. One run, as any glyf's. */
+    private fun polishVoice() {
+        val span = voiceSpan ?: return
+        if (isSecureField()) return
+        val core = span.trim(' ')
+        val lead = span.substring(0, span.length - span.trimStart(' ').length)
+        val tail = span.substring(span.trimEnd(' ').length)
+        val run = ++voicePolishing
+        com.arpit.glyf.store.Funnel.mark(this, "first_ai")
+        showStripChip("voice", null, "Polishing…", "", lead = "dictation", onClose = { hideVoiceChip() }) {}
+        stripChip?.tag = "polishing"
+        val session = inputSession
+        BackendClient.run(
+            settings.optString("backendURL"), "dictation.clean", core, emptyMap(),
+            settings.optString("deviceId"), settings.optString("plan", "free"),
+            onToken = {},
+            onDone = { text, _ -> main.post {
+                if (run != voicePolishing || session != inputSession) return@post
+                val ic = currentInputConnection
+                val before = ic?.getTextBeforeCursor(span.length + 8, 0)?.toString() ?: ""
+                if (ic == null || !before.endsWith(span)) { hideVoiceChip(); return@post }
+                // An empty answer is the server giving up, not a verdict.
+                if (text.isBlank()) { hideVoiceChip(); notice("Couldn't polish that"); return@post }
+                val polished = lead + VoiceText.polished(core, text) + tail
+                if (polished == span) { hideVoiceChip(); notice("Already reads well"); return@post }
+                ic.beginBatchEdit()
+                ic.deleteSurroundingText(span.length, 0)
+                ic.commitText(polished, 1)
+                ic.endBatchEdit()
+                // Glyf wrote it: no chip offering to tidy up its own work.
+                glyfWrote = polished.trim()
+                voiceSpan = polished
+                voiceRaw = span
+                hideStripChip()
+                updateSuggestions()
+                syncAutoShift()
+            } },
+            onError = { message -> main.post {
+                if (run != voicePolishing) return@post
+                hideVoiceChip()
+                notice(message.substringBefore(". Tap to retry").substringBefore(" Tap to retry"))
+            } },
+        )
+    }
+
+    /** Undo: the words as they were said, back in place of the polished ones. */
+    private fun undoPolish(raw: String) {
+        val span = voiceSpan ?: return
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(span.length + 8, 0)?.toString() ?: ""
+        if (!before.endsWith(span)) { hideVoiceChip(); return }
+        ic.beginBatchEdit()
+        ic.deleteSurroundingText(span.length, 0)
+        ic.commitText(raw, 1)
+        ic.endBatchEdit()
+        hideVoiceChip()
         updateSuggestions()
         syncAutoShift()
     }
@@ -3999,6 +4137,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun updateSuggestions() {
         // A scheduled pass is now redundant, whoever asked for this one.
         main.removeCallbacks(suggestionsTick)
+        // Words just said: their Polish (or Undo) chip holds the strip while
+        // they sit right before the cursor.
+        voiceSpan?.let { span ->
+            val b = currentInputConnection?.getTextBeforeCursor(span.length + 8, 0)?.toString() ?: ""
+            if (!searchActive && !barActive && !vaultEditActive && overlay == null && featurePanel == null &&
+                !isSecureField() && voiceChipHolds(b)) {
+                if (stripChipKind == "voice" && stripChip?.tag == "polishing") return
+                if (showVoiceChip()) return
+            } else hideVoiceChip()
+        }
         if (showGlideStrip()) return
         if (searchActive || barActive || vaultEditActive || overlay != null) { showSuggestions(emptyList()); return }
         val policy = typingPolicy()
