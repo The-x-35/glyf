@@ -294,12 +294,46 @@ export class Users {
     return { plan, expiresAt };
   }
 
-  async remove(id: string): Promise<void> {
+  /** Everything the database keeps about this account (Delete account), and
+   *  about the phones named in [deviceIds]. Safe to run again: a second run
+   *  finds nothing and succeeds. A failure other than a table that was never
+   *  made rejects, so the caller can say so and the person can try again.
+   *
+   *  - glyf_users, with glyf_user_prefs and glyf_events (on delete cascade);
+   *  - glyf_purchases: the App Store subscriptions tied to it. The
+   *    subscription itself carries on with Apple until it is cancelled
+   *    there; a later sign-in can restore it to a new account;
+   *  - glyf_crypto_payments: its USDC plan payments;
+   *  - glyf_usage: its run, suggestion, translation and request counts, and
+   *    the phone's signed-out ones;
+   *  - glyf_reports: AI results it, or the phone, reported;
+   *  - glyf_codes: a gift code it redeemed stays used, without the account. */
+  async remove(id: string, deviceIds: readonly string[] = []): Promise<void> {
     await this.ensureSchema();
     const sql = await this.sql();
+    const tolerant = (p: Promise<unknown>) => p.catch(err => {
+      if (!missingTable(err)) throw err;
+    });
+    const owners = [`user:${id}`, ...deviceIds.map(d => `device:${d}`)];
+    // guard.ts counts runs under the owner, suggestions and translations
+    // under `suggest:` / `translate:` in front of it, and protect.ts each
+    // signed-in request under `user:<id>|req`.
+    const usageKeys = owners.flatMap(o => [o, `${o}|req`, `suggest:${o}`, `translate:${o}`]);
+    await tolerant(sql(`delete from glyf_usage where key = any($1::text[])`, [usageKeys]));
+    await tolerant(sql(`delete from glyf_reports where user_id = $1 or device_id = any($2::text[])`,
+      [id, [...deviceIds]]));
+    await tolerant(sql(`delete from glyf_crypto_payments where user_id = $1`, [id]));
+    await tolerant(sql(`update glyf_codes set redeemed_by = 'deleted' where redeemed_by = $1`, [id]));
+    await sql(`delete from glyf_purchases where user_id = $1`, [id]);
+    // Last, so a run cut short leaves the account there to delete again.
     await sql(`delete from glyf_users where user_id = $1`, [id]);
-    // Reports of AI results carry the account, so they go with it
-    // (lib/reports.ts; the table exists only once someone has reported).
-    await sql(`delete from glyf_reports where user_id = $1`, [id]).catch(() => {});
   }
+}
+
+/** Postgres' "relation does not exist": that table was never made, so it
+ *  holds nothing to delete. */
+function missingTable(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code === "42P01") return true;
+  return /relation .* does not exist/i.test(err instanceof Error ? err.message : String(err));
 }

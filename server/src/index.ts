@@ -108,7 +108,7 @@ export function buildApp(kv: KV = defaultKV()) {
   translateRoutes(app, guard);
   vocabRoutes(app, guard);
   authRoutes(app);
-  meRoutes(app);
+  meRoutes(app, { kv });
   billingRoutes(app);
   codeRoutes(app);
   cryptoPayRoutes(app);

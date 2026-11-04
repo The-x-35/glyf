@@ -336,6 +336,11 @@ object ToneProfile {
 object Funnel {
     @Volatile private var done: MutableSet<String>? = null
 
+    /** Delete account: funnel.json is gone, so the next mark reads afresh. */
+    fun forget() {
+        done = null
+    }
+
     fun mark(ctx: Context, step: String) {
         val seen = done ?: (Bridge.readJson(ctx, "funnel.json")?.keys()?.asSequence()?.toMutableSet() ?: mutableSetOf())
             .also { done = it }

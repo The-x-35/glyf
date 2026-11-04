@@ -9,6 +9,7 @@ import '../core/auth.dart';
 import '../core/billing.dart';
 import 'connected_tools_screen.dart';
 import '../core/bridge.dart';
+import '../core/catalog.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/text_sheet.dart';
@@ -22,6 +23,7 @@ import '../vault/vault_screen.dart';
 import '../vocab/vocabulary_screen.dart';
 import 'brand_marks.dart' show GoogleG;
 import 'code_screen.dart';
+import 'delete_account_sheet.dart';
 import 'keyboard_screen.dart';
 import 'paywall_sheet.dart';
 import 'search_sheet.dart';
@@ -326,6 +328,19 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     widget.onRerunOnboarding();
   }
 
+  /// Delete account: the sheet says what goes and does it; once it is
+  /// done the app holds nothing of theirs and goes back to sign-in.
+  Future<void> _deleteAccount() async {
+    if (!await showDeleteAccountSheet(context)) return;
+    // What the app still holds in memory goes with the phone's files.
+    Telemetry.forget();
+    Catalog.forgetCustomTitles();
+    await WalletFlow.load();
+    await WalletFlow.loadEnabled();
+    if (!mounted) return;
+    widget.onRerunOnboarding();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -407,8 +422,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 8),
 
-          // Sign out and the privacy policy, plain text at the foot. Delete
-          // account is not on the page: it is at the foot of Edit's sheet.
+          // Sign out, the privacy policy and terms, then Delete account,
+          // plain text at the foot.
           Center(
             child: Semantics(
               identifier: 'profile:sign-out',
@@ -435,7 +450,20 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                   style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w500)),
             ),
           ]),
-          const SizedBox(height: 14),
+          Center(
+            child: Semantics(
+              identifier: 'profile:delete-account',
+              button: true,
+              child: TextButton(
+                key: const Key('profile:delete-account'),
+                onPressed: _deleteAccount,
+                child: const Text('Delete account',
+                    style: TextStyle(
+                        color: Glass.danger, fontSize: 13.5, fontWeight: FontWeight.w500)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
 
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             Container(
@@ -570,10 +598,8 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
     _refresh();
   }
 
-  /// The account card's Edit: the name. There is no Delete account in the
-  /// app (Arpit, 2026-09-29: "remove delete account option, we dont want
-  /// users to go idiot"); `Auth.deleteAccount` and the server's endpoint stay
-  /// for when it comes back.
+  /// The account card's Edit: the name. Delete account is at the page's
+  /// foot (App Store 5.1.1(v) and Google Play require it in the app).
   Future<void> _editName() async {
     final name = (await showTextSheet(
       context,

@@ -154,6 +154,9 @@ final class GlyfBridge {
         case "sessionClear":
             SessionKeychain.clear()
             result(true)
+        // Delete account, on the phone (below).
+        case "eraseLocalData":
+            result(eraseLocalData())
         // Shared keyboard settings (App Group settings.json).
         // Served through SettingsStore.load() so the app always sees the
         // MIGRATED view — §6.13 defaults appear even before the keyboard's
@@ -491,6 +494,78 @@ final class GlyfBridge {
               let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
         else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+}
+
+// MARK: - Delete account: nothing of theirs left on the phone
+
+extension GlyfBridge {
+    /// Delete account's last step, after the server has deleted the account:
+    ///
+    /// - every Keychain item the app can reach, in its own group and the one
+    ///   it shares with the keyboard: the Glyf session, the vault key (so a
+    ///   vault file could never be opened again anyway), the Google grant,
+    ///   the wallet's Phantom keys;
+    /// - the App Group: settings.json, onboarding, the vault, notes,
+    ///   clipboard history, learned words and phrases, the contacts index,
+    ///   the calendar copy, voice and funnel files, and its defaults;
+    /// - the app's own Documents, Application Support, tmp and defaults
+    ///   (telemetry log, funnel marks);
+    /// - in-memory copies here, and a "reset" edit for the learned words a
+    ///   keyboard still running holds in memory: it replays the edit log
+    ///   each time it opens (TypingStore.applyAppEdits).
+    ///
+    /// The keyboard extension's own defaults (game best scores) live in its
+    /// sandbox, out of the app's reach. False when something could not be
+    /// removed.
+    func eraseLocalData() -> Bool {
+        var ok = true
+        for secClass in [kSecClassGenericPassword, kSecClassInternetPassword, kSecClassKey,
+                         kSecClassCertificate, kSecClassIdentity] {
+            // No access group named: every group this app is entitled to.
+            let query: [String: Any] = [
+                kSecClass as String: secClass,
+                kSecAttrSynchronizable as String: kSecAttrSynchronizableAny,
+            ]
+            let status = SecItemDelete(query as CFDictionary)
+            if status != errSecSuccess && status != errSecItemNotFound { ok = false }
+        }
+
+        let fm = FileManager.default
+        func empty(_ dir: URL?, keeping keep: Set<String> = []) {
+            guard let dir,
+                  let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            else { return }
+            for item in items {
+                let name = item.lastPathComponent
+                // The system's own marker for the container stays.
+                if keep.contains(name) || name.hasPrefix(".com.apple") { continue }
+                do { try fm.removeItem(at: item) } catch { ok = false }
+            }
+        }
+        if let group = AppGroupStore.containerURL {
+            // bridge/ itself stays: AppGroupStore made it once for this run.
+            empty(group, keeping: ["bridge", "Library"])
+            empty(AppGroupStore.bridgeDir)
+            empty(group.appendingPathComponent("Library/Caches"))
+            empty(group.appendingPathComponent("Library/Application Support"))
+        }
+        UserDefaults(suiteName: AppGroupStore.groupID)?.removePersistentDomain(forName: AppGroupStore.groupID)
+        for place in [FileManager.SearchPathDirectory.documentDirectory, .applicationSupportDirectory] {
+            empty(fm.urls(for: place, in: .userDomainMask).first)
+        }
+        empty(fm.temporaryDirectory)
+        if let id = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: id)
+        }
+        URLCache.shared.removeAllCachedResponses()
+        HTTPCookieStorage.shared.removeCookies(since: .distantPast)
+
+        SettingsStore.invalidate()
+        VaultStore.shared.invalidate()
+        NotesStore.shared.invalidate()
+        if !appendTypingEdit(op: "reset", word: "") { ok = false }
+        return ok
     }
 }
 

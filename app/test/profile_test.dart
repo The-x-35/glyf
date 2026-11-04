@@ -155,18 +155,22 @@ void main() {
     for (final gone in ['Contacts search', 'Nearby search', 'Tone profile', 'Take the tour', 'Replay onboarding']) {
       expect(find.text(gone), findsNothing, reason: gone);
     }
-    for (final action in ['Sign out', 'Privacy policy']) {
+    for (final action in ['Sign out', 'Privacy policy', 'Delete account']) {
       await tester.scrollUntilVisible(find.text(action), 200);
       expect(find.text(action), findsOneWidget, reason: action);
     }
-    // No Delete account anywhere (2026-09-29).
-    expect(find.text('Delete account', skipOffstage: false), findsNothing);
-    expect(find.byKey(const Key('profile:delete-account'), skipOffstage: false), findsNothing);
+    // Delete account is the page's last action, in the danger colour.
+    final signOutY = tester.getTopLeft(find.text('Sign out')).dy;
+    final privacyY = tester.getTopLeft(find.text('Privacy policy')).dy;
+    final deleteY = tester.getTopLeft(find.text('Delete account')).dy;
+    expect(deleteY, greaterThan(privacyY));
+    expect(privacyY, greaterThan(signOutY));
+    expect(tester.widget<Text>(find.text('Delete account')).style?.color, Glass.danger);
 
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Edit holds only the name: no Delete account anywhere', (tester) async {
+  testWidgets('Edit holds only the name: Delete account is on the page, not in the sheet', (tester) async {
     phone(tester);
     await tester.runAsync(Auth.restore);
     await tester.pumpWidget(MaterialApp(
@@ -177,8 +181,8 @@ void main() {
     await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();
     expect(find.text('Your name'), findsOneWidget);
-    expect(find.text('Delete account'), findsNothing);
-    expect(find.byKey(const Key('profile:delete-account')), findsNothing);
+    expect(find.descendant(of: find.byType(BottomSheet), matching: find.text('Delete account')),
+        findsNothing);
 
     await tester.pumpWidget(const SizedBox());
   });

@@ -170,6 +170,43 @@ export function issueSession(userId: string, opts: { secret?: string; now?: numb
   return `${h}.${p}.${sig}`;
 }
 
+// ── Confirmations ───────────────────────────────────────────────────────────
+
+/** How long a confirmation stays good: long enough to read a sheet and tap,
+ *  too short to be kept around and replayed later. */
+const CONFIRM_SECONDS = 300;
+
+function confirmSig(secret: string, purpose: string, userId: string, exp: number): string {
+  return createHmac("sha256", secret).update(`confirm|${purpose}|${userId}|${exp}`).digest("base64url");
+}
+
+/** A short-lived token that says this person just asked for [purpose] (for
+ *  now only "delete-account"). A session lives for months, so an action
+ *  that can't be undone asks for one of these as well, minted moments
+ *  before. Null without a session secret. */
+export function issueConfirmation(userId: string, purpose: string,
+  opts: { secret?: string; now?: number; seconds?: number } = {}): string | null {
+  const secret = sessionSecret(opts.secret);
+  if (!secret || !userId) return null;
+  const exp = Math.floor((opts.now ?? Date.now()) / 1000) + (opts.seconds ?? CONFIRM_SECONDS);
+  return `${exp}.${confirmSig(secret, purpose, userId, exp)}`;
+}
+
+/** Whether [token] is a confirmation of [purpose] by this user that has not
+ *  run out. */
+export function checkConfirmation(token: string, userId: string, purpose: string,
+  opts: { secret?: string; now?: number } = {}): boolean {
+  const secret = sessionSecret(opts.secret);
+  if (!secret || !userId || typeof token !== "string") return false;
+  const dot = token.indexOf(".");
+  if (dot <= 0) return false;
+  const exp = Number(token.slice(0, dot));
+  if (!Number.isInteger(exp) || exp < (opts.now ?? Date.now()) / 1000) return false;
+  const given = Buffer.from(token.slice(dot + 1), "base64url");
+  const expected = Buffer.from(confirmSig(secret, purpose, userId, exp), "base64url");
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
 /** The user id a Glyf session belongs to, or null. */
 export function verifySession(token: string, opts: { secret?: string; now?: number } = {}): string | null {
   const secret = sessionSecret(opts.secret);

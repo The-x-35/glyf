@@ -1,10 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { env } from "../env.js";
+import { aiHealth } from "../lib/aihealth.js";
 import type { KV } from "../lib/store.js";
 import { PROVIDERS } from "./connector.js";
 
 /** GET /health is how a deploy gets checked, so it answers the question the
- *  checker actually has: which providers are configured here?
+ *  checker actually has: which providers are configured here? GET
+ *  /health?deep=1 adds whether a model actually answers.
  *
  *  Presence booleans and public origins only, never a key or any part of one
  *  (§1.6). Existing fields keep their names and meanings; new ones are added
@@ -12,7 +14,18 @@ import { PROVIDERS } from "./connector.js";
 export function healthRoutes(app: FastifyInstance, kv?: KV): void {
   const has = (name: string) => Boolean(process.env[name]?.trim());
 
-  app.get("/health", async () => {
+  app.get<{ Querystring: { deep?: string } }>("/health", async (req, reply) => {
+    const report = summary();
+    // ?deep=1 also asks a model for one word (lib/aihealth.ts: cached for a
+    // minute) and answers 503 when none replies, for an uptime monitor.
+    // Plain /health never calls out, so it stays instant.
+    const deep = req.query?.deep;
+    if (deep !== "1" && deep !== "true") return report;
+    const ai = await aiHealth();
+    return reply.code(ai.ok ? 200 : 503).send({ ...report, ok: ai.ok, ai });
+  });
+
+  function summary() {
     const models = {
       openrouter: env.openrouterKey.length > 0,
       gemini: env.geminiKey.length > 0,
@@ -59,5 +72,5 @@ export function healthRoutes(app: FastifyInstance, kv?: KV): void {
         hasDatabaseUrl: has("DATABASE_URL"),
       },
     };
-  });
+  }
 }

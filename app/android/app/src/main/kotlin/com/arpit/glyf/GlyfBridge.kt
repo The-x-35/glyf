@@ -242,6 +242,8 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
                 SessionStore.clear(ctx)
                 result.success(true)
             }
+            // Delete account, on the phone (below).
+            "eraseLocalData" -> result.success(eraseLocalData())
 
             "readSharedSettings" -> result.success(SettingsStore.load(ctx).toString())
             "writeSharedSettings" -> {
@@ -327,17 +329,8 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
             }
             "typingEdit" -> {
                 val op = call.argument<String>("op")
-                if (op !in setOf("add", "forget", "reset")) { result.success(false); return }
-                val now = System.currentTimeMillis().toDouble()
-                val edits = Bridge.readJson(ctx, "typing-edits.json")?.optJSONArray("edits") ?: org.json.JSONArray()
-                val kept = org.json.JSONArray()
-                val recent = (0 until edits.length()).mapNotNull { edits.optJSONObject(it) }
-                    .filter { now - it.optDouble("at", 0.0) < 30 * 86_400_000.0 }.takeLast(400)
-                recent.forEach { kept.put(it) }
-                kept.put(JSONObject(mapOf("op" to op, "word" to (call.argument<String>("word") ?: ""), "at" to now)))
-                val ok = Bridge.write(ctx, "typing-edits.json", JSONObject(mapOf("edits" to kept)).toString())
-                com.arpit.glyf.ime.typing.KeyboardTyping.applyAppEdits(ctx)
-                result.success(ok)
+                if (op == null || op !in setOf("add", "forget", "reset")) { result.success(false); return }
+                result.success(appendTypingEdit(op, call.argument<String>("word") ?: ""))
             }
             "vocabCustomRead" -> result.success(Bridge.readJson(ctx, "vocab-custom.json")?.toString())
             "vocabCustomWrite" -> {
@@ -488,5 +481,62 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
 
             else -> result.notImplemented()
         }
+    }
+
+    /** Adds to the edit log the keyboard replays (KeyboardTyping.applyAppEdits)
+     *  and applies it now: the keyboard runs in this process. Entries older
+     *  than a month, or past the last 400, are dropped. */
+    private fun appendTypingEdit(op: String, word: String): Boolean {
+        val now = System.currentTimeMillis().toDouble()
+        val edits = Bridge.readJson(ctx, "typing-edits.json")?.optJSONArray("edits") ?: JSONArray()
+        val kept = JSONArray()
+        val recent = (0 until edits.length()).mapNotNull { edits.optJSONObject(it) }
+            .filter { now - it.optDouble("at", 0.0) < 30 * 86_400_000.0 }.takeLast(400)
+        recent.forEach { kept.put(it) }
+        kept.put(JSONObject(mapOf("op" to op, "word" to word, "at" to now)))
+        val ok = Bridge.write(ctx, "typing-edits.json", JSONObject(mapOf("edits" to kept)).toString())
+        com.arpit.glyf.ime.typing.KeyboardTyping.applyAppEdits(ctx)
+        return ok
+    }
+
+    /** Delete account's last step, after the server has deleted the account
+     *  (the twin of eraseLocalData in GlyfBridge.swift). App and keyboard are
+     *  one package here, so this reaches both:
+     *
+     *  - files/ (bridge/: settings, onboarding, vault, notes, learned words,
+     *    phrases, contacts index, voice and funnel files; the telemetry
+     *    log), no_backup/ (the sealed session) and the cache;
+     *  - every SharedPreferences file (clipboard history, temp mail, the
+     *    keyboard's own), cleared through the API so the copies this process
+     *    holds in memory forget too;
+     *  - every Android Keystore key the app made (session, vault, wallet);
+     *  - the learned words a running keyboard holds in memory, by the same
+     *    "reset" edit Vocabulary's Reset uses.
+     *
+     *  False when something could not be removed. */
+    private fun eraseLocalData(): Boolean {
+        var ok = true
+        fun empty(dir: java.io.File?) {
+            dir?.listFiles()?.forEach { if (!it.deleteRecursively()) ok = false }
+        }
+        empty(ctx.filesDir)
+        empty(ctx.noBackupFilesDir)
+        empty(ctx.cacheDir)
+        ctx.databaseList().forEach { ctx.deleteDatabase(it) }
+        java.io.File(ctx.applicationInfo.dataDir, "shared_prefs").listFiles()?.forEach { f ->
+            if (f.name.endsWith(".xml")) {
+                val name = f.name.removeSuffix(".xml")
+                if (!ctx.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()) ok = false
+            }
+        }
+        try {
+            val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            ks.aliases().toList().forEach { ks.deleteEntry(it) }
+        } catch (_: Exception) {
+            ok = false
+        }
+        com.arpit.glyf.store.Funnel.forget()
+        if (!appendTypingEdit("reset", "")) ok = false
+        return ok
     }
 }

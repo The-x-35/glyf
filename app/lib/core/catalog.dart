@@ -67,6 +67,10 @@ abstract final class Catalog {
   /// (`customTitles`) by whoever loads settings — keeps byId() sync.
   static final Map<String, String> _customTitles = {};
 
+  /// Delete account: the names someone gave their glyfs go with the phone's
+  /// erase.
+  static void forgetCustomTitles() => _customTitles.clear();
+
   static void rememberCustomTitles(Map<String, dynamic>? titles) {
     if (titles == null) return;
     titles.forEach((k, v) {

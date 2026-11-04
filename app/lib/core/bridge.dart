@@ -163,6 +163,15 @@ abstract final class GlyfBridge {
 
   static Future<void> sessionClear() => _call<bool>('sessionClear');
 
+  /// Delete account, on the phone: every Keychain item (iOS) or Keystore
+  /// key (Android) the app holds, the shared settings and the keyboard's
+  /// bridge files (vault, notes, clipboard history, learned words, contacts
+  /// index, calendar copy), and the app's own files. The keyboard is told to
+  /// forget the words it has in memory. False when something could not be
+  /// removed.
+  static Future<bool> eraseLocalData() async =>
+      await _call<bool>('eraseLocalData') ?? false;
+
   static Future<void> writeAppPong(String message) =>
       _call<void>('writeAppPong', {'message': message});
 

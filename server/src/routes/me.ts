@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { verifySession } from "../lib/identity.js";
+import { forgetDevices } from "../lib/forget.js";
+import { checkConfirmation, issueConfirmation, verifySession } from "../lib/identity.js";
+import type { KV } from "../lib/store.js";
 import { Users } from "../lib/users.js";
 
 /**
@@ -9,7 +11,8 @@ import { Users } from "../lib/users.js";
  * POST   /me         who I am and the phone I'm on (after every sign-in)
  * POST   /me/prefs   my keyboard settings (the non-private ones)
  * POST   /me/events  what I did in the app (names and counts, never text)
- * DELETE /me         forget me
+ * POST   /me/delete  "I mean it": a confirmation good for five minutes
+ * DELETE /me         forget me (with that confirmation)
  *
  * Every call carries the Glyf session from POST /auth/session (after Sign in
  * with Apple or Google); email and name were taken from the provider's
@@ -36,9 +39,22 @@ const EventsSchema = z.object({
   })).max(100),
 });
 
+const DeleteSchema = z.object({
+  confirm: z.string().min(1).max(200),
+  /** The phone's device ids (shared settings `deviceId`): what is filed
+   *  under the phone rather than the account goes too (lib/forget.ts). */
+  deviceIds: z.array(z.string().min(8).max(80)).max(4).optional(),
+});
+
+const DELETE_PURPOSE = "delete-account";
+
 export interface MeDeps {
   users?: Users;
   verify?: (token: string) => Promise<string | null>;
+  /** Where device-keyed data lives (glyfs, installs, connections). */
+  kv?: KV;
+  /** Signs confirmations; SESSION_SECRET when not given. */
+  confirmSecret?: string;
 }
 
 export function meRoutes(app: FastifyInstance, deps: MeDeps = {}): void {
@@ -125,17 +141,41 @@ export function meRoutes(app: FastifyInstance, deps: MeDeps = {}): void {
     }
   });
 
+  /** Step one of Delete account: the app asks once the person has confirmed
+   *  on the phone, and sends what comes back with DELETE /me. A session
+   *  lasts months; this lasts five minutes, so a token kept somewhere can't
+   *  delete an account on its own. */
+  app.post("/me/delete", async (req, reply) => {
+    const id = await who(req, reply);
+    if (!id) return reply;
+    const confirm = issueConfirmation(id, DELETE_PURPOSE, { secret: deps.confirmSecret });
+    if (!confirm) return reply.code(503).send({ ok: false, error: "Could not delete your account right now" });
+    return { ok: true, confirm, expiresIn: 300 };
+  });
+
+  /** Deletes the account and everything kept for it (Users.remove) and for
+   *  the phones it names (forgetDevices). Asking again is fine: there is
+   *  nothing left and it says ok. */
   app.delete("/me", async (req, reply) => {
     const id = await who(req, reply);
     if (!id) return reply;
+    const parsed = DeleteSchema.safeParse(req.body ?? {});
+    if (!parsed.success || !checkConfirmation(parsed.data.confirm, id, DELETE_PURPOSE,
+      { secret: deps.confirmSecret })) {
+      return reply.code(428).send({ ok: false, error: "Confirm again to delete your account", confirm: "required" });
+    }
+    const deviceIds = [...new Set(parsed.data.deviceIds ?? [])];
     if (users.enabled) {
       try {
-        await users.remove(id);
+        await users.remove(id, deviceIds);
       } catch (err) {
         req.log.error({ err: err instanceof Error ? err.message : String(err) }, "me_delete_failed");
         return reply.code(503).send({ ok: false, error: "Could not delete your account right now" });
       }
     }
-    return { ok: true };
+    const rows = deps.kv ? forgetDevices(deps.kv, deviceIds) : 0;
+    // Counts only: the account is gone, its id doesn't go in the log either.
+    req.log.info({ devices: deviceIds.length, kvRows: rows }, "account_deleted");
+    return { ok: true, stored: users.enabled };
   });
 }

@@ -41,6 +41,13 @@ abstract final class Telemetry {
     await flush();
   }
 
+  /// Delete account: events not yet written or sent are dropped (the file
+  /// itself goes with the phone's erase).
+  static void forget() {
+    _pending.clear();
+    _unflushed.clear();
+  }
+
   /// Throttled server flush — at most one batch per 15s, fire-and-forget.
   static Future<void> flush({bool force = false}) async {
     if (_unflushed.isEmpty) return;

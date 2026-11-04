@@ -127,10 +127,17 @@ export interface StreamHandlers {
   /** A fact asked for is answered the same way every time: 0 kept "France
    *  won the 2022 World Cup" from coming back one run in several. */
   temperature?: number;
+  /** Caps the reply below the tier's own max_tokens (the health check's
+   *  one-word probe). */
+  maxTokens?: number;
 }
 
+/** One model in the chain that did not answer, and why: an HTTP status, or
+ *  "no-key", "slow", "empty", "classifier", an error name. */
+export type Attempt = { model: string; status: number | string };
+
 export class ModelExhaustedError extends Error {
-  constructor(public attempts: { model: string; status: number | string }[]) {
+  constructor(public attempts: Attempt[]) {
     super(`all models failed: ${attempts.map(a => `${a.model}(${a.status})`).join(", ")}`);
   }
 }
@@ -147,7 +154,7 @@ export async function completeStreaming(
   tier: Tier,
   messages: { role: string; content: string }[],
   handlers: StreamHandlers,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; attempts: Attempt[] }> {
   const vault = new SecretVault();
   const safe = messages.map(m => ({ role: m.role, content: vault.mask(m.content) }));
   if (vault.count > 0) {
@@ -158,7 +165,7 @@ export async function completeStreaming(
   const res = await completeMasked(tier, safe, { ...handlers, onToken: stream.push,
     onRestart: () => { stream.reset(); handlers.onRestart?.(); } });
   stream.flush();
-  return { text: vault.restore(res.text), model: res.model };
+  return { text: vault.restore(res.text), model: res.model, attempts: res.attempts ?? [] };
 }
 
 /** What a model is actually sent: messages with nothing private left in them. */
@@ -168,13 +175,13 @@ async function completeMasked(
   tier: Tier,
   messages: { role: string; content: string }[],
   handlers: StreamHandlers,
-): Promise<{ text: string; model: string }> {
+): Promise<{ text: string; model: string; attempts?: Attempt[] }> {
   if (process.env.VITEST) lastOutboundForTests = messages;
   if (env.mockAI) {
     return mockStream(messages, handlers);
   }
   const models = readyModels(chainFor(tier));
-  const attempts: { model: string; status: number | string }[] = [];
+  const attempts: Attempt[] = [];
 
   // Whether the model being tried has put anything in front of the person:
   // if it then fails, they are told to discard it before the next one starts.
@@ -214,7 +221,8 @@ async function completeMasked(
           ...(ep.openrouter ? { "HTTP-Referer": "https://tryglyf.com", "X-Title": "Glyf" } : {}),
         },
         body: JSON.stringify({ model: ep.model, messages, stream: true, ...requestOptions(ep, tier),
-          ...(handlers.temperature !== undefined ? { temperature: handlers.temperature } : {}) }),
+          ...(handlers.temperature !== undefined ? { temperature: handlers.temperature } : {}),
+          ...(handlers.maxTokens !== undefined ? { max_tokens: handlers.maxTokens } : {}) }),
         signal: attempt.signal,
       });
       clearTimeout(stuck);
@@ -248,7 +256,7 @@ async function completeMasked(
         dropped();
         continue;
       }
-      return { text, model };
+      return { text, model, attempts };
     } catch (err) {
       if (handlers.signal?.aborted) throw err;
       attempts.push({ model, status: attempt.signal.aborted ? "slow" : (err as Error).name || "error" });

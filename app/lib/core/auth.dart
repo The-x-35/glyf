@@ -245,20 +245,43 @@ abstract final class Auth {
     _testAccount = null;
   }
 
-  /// Deletes the account and everything the server keeps for it (DELETE
-  /// /me: the account, its synced settings and its app events), then signs
-  /// out. False when the server couldn't be reached or refused: nothing is
-  /// signed out then, so it can be tried again. A session the server no
-  /// longer knows (401) has nothing left to delete.
-  static Future<bool> deleteAccount() async {
+  /// Delete account (App Store 5.1.1(v), Google Play): the server deletes
+  /// the account and everything kept with it, then this phone is erased
+  /// and signed out. Null once done; otherwise what to tell them, and then
+  /// nothing on the phone has been touched, so it can be tried again.
+  ///
+  /// Two calls: POST /me/delete hands back a confirmation good for five
+  /// minutes, and DELETE /me carries it with the phone's device id, so what
+  /// is filed under the phone (glyfs, installs, connections) goes too.
+  static Future<String?> deleteAccount() async {
     final token = _account?.token;
     if (token != null) {
-      final reply = await _send('DELETE', '/me', token: token);
-      if (reply == null || (reply.status >= 400 && reply.status != 401)) return false;
+      final step = await _send('POST', '/me/delete', token: token);
+      if (step == null) return _offline;
+      if (step.status == 401) return _sessionEnded;
+      final confirm = step.body?['confirm'];
+      if (step.status >= 400 || confirm is! String) return _deleteFailed;
+      final deviceId = (await GlyfBridge.sharedSettings())['deviceId'];
+      final reply = await _send('DELETE', '/me', token: token, body: {
+        'confirm': confirm,
+        if (deviceId is String && deviceId.length >= 8) 'deviceIds': [deviceId],
+      });
+      if (reply == null) return _offline;
+      if (reply.status == 401) return _sessionEnded;
+      if (reply.status >= 400 || reply.body?['ok'] != true) return _deleteFailed;
     }
-    await signOut();
-    return true;
+    // The Google grant and the keyboard's calendar copy first (that needs
+    // the Keychain entry the erase then removes), then everything else.
+    await GlyfBridge.signOutProviders();
+    await GlyfBridge.eraseLocalData();
+    _account = null;
+    _testSignedIn = false;
+    _testAccount = null;
+    return null;
   }
+
+  static const _deleteFailed = "Couldn't delete your account right now. Try again.";
+  static const _sessionEnded = 'Sign in again, then delete your account.';
 
   // ── what the server learns ──────────────────────────────────────────────
 
