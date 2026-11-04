@@ -112,6 +112,27 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var pendingEdit: NoteEditSurface.Edit?
     /// §6.13 T — persistent strip above the toolbar while enabled.
     private var hud: TranslationHUD?
+    /// Voice typing's strip, while an utterance is open (VoiceLink).
+    private var voiceStrip: VoiceStrip?
+    /// The utterance the strip shows.
+    private var voiceUtterance: String?
+    /// While the strip is up: reads the app's state between its notes, and
+    /// notices a heartbeat that stopped.
+    private var voicePoll: Timer?
+    private var voiceObserving = false
+    private var voiceOpenedAt: Double = 0
+    /// True while voice typing itself writes to the field.
+    private var voiceWriting = false
+    /// The heartbeat of the app's last error line already shown.
+    private static var voiceErrorShown: Double = 0
+    /// Between viewDidAppear and viewWillDisappear.
+    private var voiceVisible = false
+    /// What voice typing just put in, as inserted (spaces included), while it
+    /// still sits right before the cursor: the strip offers Polish for it.
+    private var voiceSpan: String?
+    /// The words as said, while their polished version is in the field.
+    private var voiceRaw: String?
+    private var voicePolishing = 0
     /// §6.13 R — transient overlay over the keys, not a Surface.
     private var tonesPopup: TonesPopup?
     /// §6.15: did the user act on the bar's result (Replace/Insert/Copy)?
@@ -625,6 +646,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
 #endif
         appearanceFlipped = false
         stopTourWatch()
+        voiceVisible = false
+        voiceKeyboardLeaving()
         // A chip's colours stop turning with the keyboard away.
         toolbar.setMagicRunning(false)
         TempMailWatcher.shared.setVisible(false)
@@ -636,6 +659,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // Setup milestones, counts only (Funnel).
         Funnel.mark("keyboard_opened")
         if hasFullAccess { Funnel.mark("full_access") }
+        // Back from the app the mic opened: pick up what it is hearing.
+        voiceVisible = true
+        voiceResume()
         // On screen now: the host's trait can be read, and it may overrule
         // the guess made before the view had a superview.
         resolveAppearance()
@@ -860,15 +886,20 @@ final class GlyfKeyboardViewController: UIInputViewController {
                                     canGoBack: shell?.canGoBack == true,
                                     keepTools: shellAtMenu)
         }
-        let showHUD = surface == .none && hudActive
+        let showVoice = surface == .none && voiceStrip != nil
+        let showHUD = surface == .none && hudActive && !showVoice
         hud?.isHidden = !showHUD
+        voiceStrip?.isHidden = !showVoice
         switch surface {
         case .none:
             let y: CGFloat = 0
             if showHUD {
                 ensureHUD().frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             }
-            toolbar.isHidden = showHUD
+            if showVoice {
+                voiceStrip?.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            }
+            toolbar.isHidden = showHUD || showVoice
             toolbar.frame = CGRect(x: 0, y: y, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = false
             keyboardView.alpha = 1
@@ -1248,11 +1279,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
     func hostInsert(_ text: String) {
         textDocumentProxy.insertText(text)
         forgetBefore()
+        voiceTypedOver()
     }
 
     func hostDelete() {
         textDocumentProxy.deleteBackward()
         forgetBefore()
+        voiceTypedOver()
     }
 
     func hostAdjust(byCharacterOffset offset: Int) {
@@ -3078,6 +3111,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
                 startAct(before: before, after: after, intent: "rewrite")
             }
         case "translate": setSurface(.none); toggleTranslateHUD()
+        case "dictation": setSurface(.none); voiceTapped()
         case "ask": setSurface(.none); openBar(autoRun: nil)
         // Paying is signed in the app's wallet, never in the keyboard.
         // Paying stays in the keyboard; only the signature is Phantom's.
@@ -3569,6 +3603,268 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             self?.deliveryInFlight = false
         }
+    }
+
+    // MARK: Voice typing (VoiceLink: the app listens, the keyboard types)
+
+    private var voiceNow: Double { Date().timeIntervalSince1970 }
+
+    /// The mic: start, stop, or open Glyf to turn listening on.
+    func voiceTapped() {
+        if isSecureField {
+            KeyboardToast.show(in: content, text: "No voice typing in a password field")
+            return
+        }
+        observeVoice()
+        // Saying more: Polish and Undo were about the words before.
+        voiceSpan = nil
+        voiceRaw = nil
+        voicePolishing += 1
+        let state = VoiceLink.readState()
+        switch VoiceLink.tapAction(state: state, now: voiceNow, fullAccess: hasFullAccess) {
+        case .needsFullAccess:
+            KeyboardToast.show(in: content, text: "Voice typing needs Full Access")
+        case .openApp:
+            let u = UUID().uuidString
+            voiceOpenedAt = voiceNow
+            showVoiceStrip(u, .opening)
+            log.log("GLYF_VOICE open app")
+            HostAppOpener.open(VoiceLink.openURL(utterance: u), from: self) { [weak self] strategy in
+                guard let self, strategy == .none else { return }
+                self.closeVoiceStrip()
+                KeyboardToast.show(in: self.content, text: "Open Glyf to turn on voice typing")
+            }
+        case .start:
+            let u = UUID().uuidString
+            showVoiceStrip(u, .listening(""))
+            VoiceLink.send(.init(id: u, verb: .start, at: voiceNow, utterance: u))
+        case .stop:
+            voiceDone()
+        }
+    }
+
+    private func voiceDone() {
+        let s = VoiceLink.readState()
+        let u = voiceUtterance ?? s?.utterance
+        VoiceLink.send(.init(id: UUID().uuidString, verb: .stop, at: voiceNow, utterance: u))
+        voiceStrip?.show(.finishing(s?.partial ?? ""))
+    }
+
+    private func voiceCancel() {
+        if voiceStrip?.isAfterwords == true {
+            voiceSpan = nil
+            voiceRaw = nil
+            voicePolishing += 1
+            closeVoiceStrip()
+            return
+        }
+        VoiceLink.send(.init(id: UUID().uuidString, verb: .cancel, at: voiceNow, utterance: voiceUtterance))
+        if let u = voiceUtterance { VoiceLink.markTaken(u) }
+        closeVoiceStrip()
+    }
+
+    /// Any key after the words went in: Polish no longer applies to them.
+    private func voiceTypedOver() {
+        guard !voiceWriting, voiceStrip?.isAfterwords == true else { return }
+        voiceSpan = nil
+        voiceRaw = nil
+        voicePolishing += 1
+        closeVoiceStrip()
+    }
+
+    /// Off screen mid-utterance (sent, dismissed, another app): the words
+    /// are thrown away rather than typed later into some other field. On the
+    /// way into Glyf (the strip says Opening) the app is about to listen.
+    private func voiceKeyboardLeaving() {
+        guard let mode = voiceStrip?.mode else { return }
+        switch mode {
+        case .listening, .finishing:
+            voiceCancel()
+        case .typed, .polishing, .polished:
+            voiceSpan = nil
+            voiceRaw = nil
+            voicePolishing += 1
+            closeVoiceStrip()
+        case .opening:
+            break
+        }
+    }
+
+    /// Polish: the words just said, cleaned up by the server's
+    /// dictation.clean glyf (fillers out, punctuation and casing fixed, the
+    /// wording kept), in place of what was said.
+    private func voicePolish() {
+        guard let span = voiceSpan, !isSecureField else { return }
+        let core = span.trimmingCharacters(in: .whitespaces)
+        let lead = String(span.prefix(while: { $0 == " " }))
+        let tail = String(span.reversed().prefix(while: { $0 == " " }))
+        voicePolishing += 1
+        let run = voicePolishing
+        Funnel.mark("first_ai")
+        voiceStrip?.show(.polishing(core))
+        BackendClient.shared.run(glyfId: "dictation.clean", input: core, onToken: { _ in },
+            onDone: { [weak self] text, _ in
+                guard let self, run == self.voicePolishing else { return }
+                let polished = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard (self.beforeContext ?? "").hasSuffix(span), !polished.isEmpty else {
+                    self.voiceCancel(); return
+                }
+                if polished == core {
+                    self.voiceCancel()
+                    KeyboardToast.show(in: self.content, text: "Already reads well")
+                    return
+                }
+                let replaced = lead + polished + tail
+                self.voiceReplace(span, with: replaced)
+                self.voiceRaw = span
+                self.voiceSpan = replaced
+                self.voiceStrip?.show(.polished(polished))
+            },
+            onError: { [weak self] message in
+                guard let self, run == self.voicePolishing else { return }
+                self.voiceStrip?.show(.typed(core))
+                // The strip's Polish is the retry.
+                KeyboardToast.show(in: self.content, text: message
+                    .replacingOccurrences(of: " Tap to retry.", with: "")
+                    .replacingOccurrences(of: ". Tap to retry", with: ""))
+            })
+    }
+
+    /// Undo: the words as they were said, back in place of the polished ones.
+    private func voiceUndo() {
+        guard let span = voiceSpan, let raw = voiceRaw, (beforeContext ?? "").hasSuffix(span) else {
+            voiceCancel(); return
+        }
+        voiceReplace(span, with: raw)
+        voiceSpan = nil
+        voiceRaw = nil
+        closeVoiceStrip()
+    }
+
+    private func voiceReplace(_ span: String, with text: String) {
+        voiceWriting = true
+        for _ in 0..<span.count { hostDelete() }
+        hostInsert(text)
+        voiceWriting = false
+        syncAutoShift()
+        updateCandidates()
+    }
+
+    private func observeVoice() {
+        guard !voiceObserving else { return }
+        voiceObserving = true
+        DarwinBus.shared.observe(VoiceLink.stateNote) { [weak self] in self?.voiceStateChanged() }
+    }
+
+    /// On every appearance: an utterance the app is hearing (the one the mic
+    /// opened it for) takes the strip; finished words not yet typed go in.
+    private func voiceResume() {
+        guard hasFullAccess, let s = VoiceLink.readState() else { return }
+        // The app couldn't listen (no microphone permission, say): its one
+        // line, once, when the person is back — this keyboard may be a new
+        // one that never saw the mic tapped.
+        if s.phase == .off, let why = s.error, voiceNow - s.heartbeat < 60,
+           Self.voiceErrorShown != s.heartbeat {
+            Self.voiceErrorShown = s.heartbeat
+            closeVoiceStrip()
+            log.log("GLYF_VOICE error shown")
+            KeyboardToast.show(in: content, text: why)
+            return
+        }
+        guard s.phase != .off || s.final != nil || voiceStrip != nil else { return }
+        observeVoice()
+        voiceStateChanged()
+    }
+
+    private func showVoiceStrip(_ utterance: String, _ mode: VoiceStrip.Mode) {
+        voiceUtterance = utterance
+        if voiceStrip == nil {
+            let v = VoiceStrip()
+            v.onCancel = { [weak self] in self?.voiceCancel() }
+            v.onDone = { [weak self] in self?.voiceDone() }
+            v.onPolish = { [weak self] in self?.voicePolish() }
+            v.onUndo = { [weak self] in self?.voiceUndo() }
+            v.onAgain = { [weak self] in self?.voiceTapped() }
+            content.addSubview(v)
+            voiceStrip = v
+        }
+        voiceStrip?.show(mode)
+        if voiceStrip?.isAfterwords == true {
+            voicePoll?.invalidate()
+            voicePoll = nil
+        } else if voicePoll == nil {
+            let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.voiceStateChanged() }
+            RunLoop.main.add(t, forMode: .common)
+            voicePoll = t
+        }
+        applySurfaceLayout(animated: false)
+    }
+
+    private func closeVoiceStrip() {
+        voicePoll?.invalidate()
+        voicePoll = nil
+        voiceUtterance = nil
+        voiceStrip?.removeFromSuperview()
+        voiceStrip = nil
+        applySurfaceLayout(animated: false)
+    }
+
+    private func voiceStateChanged() {
+        // Off screen (on the way into Glyf, say): nothing is typed and no
+        // line is shown where nobody sees it; the next appearance catches up.
+        guard voiceVisible else { return }
+        let s = VoiceLink.readState()
+        let now = voiceNow
+        if let d = VoiceLink.deliverable(s, taken: VoiceLink.readTaken(), now: now) {
+            VoiceLink.markTaken(d.utterance)
+            closeVoiceStrip()
+            guard !isSecureField else { return }
+            let before = beforeContext ?? ""
+            let after = textDocumentProxy.documentContextAfterInput ?? ""
+            let text = VoiceLink.fitted(d.text, before: before, after: after)
+            voiceSpan = nil
+            voiceWriting = true
+            hostInsert(text)
+            voiceWriting = false
+            log.log("GLYF_VOICE inserted chars=\(text.count)")
+            syncAutoShift()
+            updateCandidates()
+            // A few words or more: the strip offers Polish while they are
+            // still right before the cursor.
+            if hasFullAccess, text.split(whereSeparator: \.isWhitespace).count >= 3 {
+                voiceSpan = text
+                voiceRaw = nil
+                showVoiceStrip(d.utterance, .typed(text.trimmingCharacters(in: .whitespaces)))
+            }
+            return
+        }
+        guard let s else { return }
+        if voiceStrip?.isAfterwords == true { return }
+        switch s.phase {
+        case .listening, .finishing:
+            guard VoiceLink.alive(s, now: now), let u = s.utterance, u != VoiceLink.readTaken() else { break }
+            showVoiceStrip(u, s.phase == .listening ? .listening(s.partial) : .finishing(s.partial))
+            return
+        case .ready, .off:
+            break
+        }
+        guard voiceStrip != nil else { return }
+        // Opening the app takes a moment: the strip waits for it, whatever an
+        // old session left in the file, until the app says something new.
+        if voiceStrip?.mode == .opening, s.heartbeat < voiceOpenedAt {
+            // Nothing from the app half a minute on: it never came up.
+            if now - voiceOpenedAt > 30 { closeVoiceStrip() }
+            return
+        }
+        if case .listening = voiceStrip?.mode, s.phase == .ready, s.utterance != voiceUtterance,
+           VoiceLink.alive(s, now: now) {
+            return // the start is on its way to the app
+        }
+        let why = s.error ?? (s.phase == .off ? "Voice typing is off"
+            : VoiceLink.alive(s, now: now) ? "Didn't catch that" : "Voice typing stopped")
+        Self.voiceErrorShown = s.heartbeat
+        closeVoiceStrip()
+        KeyboardToast.show(in: content, text: why)
     }
 }
 

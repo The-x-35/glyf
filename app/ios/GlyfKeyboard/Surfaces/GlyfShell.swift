@@ -163,7 +163,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         ("search", "Search"), ("rewrite", "Rewrite"), ("style", "Style"), ("translate", "Translate"),
         ("vault", "Vault"), ("calendar", "Calendar"), ("tempmail", "Temp mail"),
         ("clipboard", "Clipboard"), ("gifs", "GIFs"),
-        ("ask", "Ask Glyf"), ("glyfs", "My glyfs"),
+        ("ask", "Ask Glyf"), ("dictation", "Voice"), ("glyfs", "My glyfs"),
         ("pay", "Pay"), ("games", "Games"), ("settings", "Settings"),
     ]
 

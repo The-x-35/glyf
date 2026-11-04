@@ -22,8 +22,6 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
-	<key>FlutterDeepLinkingEnabled</key>
-	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -37,6 +35,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
@@ -49,12 +49,12 @@
 	<string>Glyf keeps names, numbers and emails on this iPhone so the keyboard can find them when you search. Nothing leaves your device.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Glyf uses your approximate location only to answer “near me” searches and local weather from the keyboard. It is kept on your device and never stored on our servers.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Glyf listens only while voice typing is on, so the Glyf keyboard can type what you say. Speech is turned into text on your iPhone.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Glyf shows your screenshots from the last two days in the keyboard's clipboard so you can paste them. They stay on your phone.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Glyf records only when you start dictation. Audio is transcribed on-device and never uploaded.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Glyf turns your dictation into text on-device. Only the text you choose to insert is processed further.</string>
+	<string>Glyf turns what you say into text for the Glyf keyboard, on your iPhone.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -78,6 +78,10 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

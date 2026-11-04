@@ -337,11 +337,9 @@ enum SettingsStore {
             s.toolbarHidden = []
             s.schemaVersion = 9
         }
-        // No mic on iOS: no keyboard may use the microphone, and iOS puts its
-        // own dictation at the foot of every keyboard.
-        s.toolbarOrder.removeAll { $0 == "dictation" }
-        s.toolbarHidden.removeAll { $0 == "dictation" }
-        s.menuOrder?.removeAll { $0 == "dictation" }
+        // Voice (id "dictation") is back on iOS since 2026-11-04: the app
+        // listens for the keyboard (VoiceLink), so it lives in the g menu
+        // like Android's, and can be dragged onto the strip.
         // Emoji, Keys and Shorthand left the g menu for the tools that took
         // them in. A saved strip and order move with them, whatever version
         // wrote the file, so nothing is lost and nothing shows twice.

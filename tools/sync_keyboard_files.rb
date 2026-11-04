@@ -45,6 +45,7 @@ TEST_SHARED = %w[
   Engine/Typing/GlideTyping.swift
   Bridge/AppGroupStore.swift
   Bridge/IntentStore.swift
+  Bridge/VoiceLink.swift
   Bridge/Contracts.generated.swift
 ].freeze
 
@@ -53,6 +54,7 @@ RUNNER_SHARED = %w[
   Bridge/AppGroupStore.swift
   Bridge/GoogleAccess.swift
   Bridge/IntentStore.swift
+  Bridge/VoiceLink.swift
   Engine/SecretScanner.swift
   Engine/VaultStore.swift
   Engine/SettingsStore.swift

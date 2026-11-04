@@ -156,6 +156,8 @@ import UIKit
         }
       }
     }
+    // Voice typing: hears the keyboard's mic from the first moment the app runs.
+    VoiceHost.shared.boot()
     // The keyboard's calendar is only as fresh as the last time the app ran.
     CalendarSync.shared.refreshIfEnabled()
     NotificationCenter.default.addObserver(

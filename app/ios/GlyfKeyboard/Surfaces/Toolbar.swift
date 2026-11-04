@@ -108,6 +108,7 @@ final class GlyfToolbar: UIView {
         // A stack of moving pictures: the board's GIFs, with Stickers beside.
         "gifs": "play.square.stack",
         "ask": "sparkles",
+        "dictation": "mic",
         "tempmail": "envelope",
         "style": "bold.italic.underline",
         "glyfs": "square.grid.2x2",
