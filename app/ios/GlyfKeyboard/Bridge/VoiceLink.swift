@@ -24,28 +24,16 @@ enum VoiceLink {
     /// The last utterance the keyboard put in a field (insert once).
     static let takenFile = "voice-taken.json"
 
-    /// How long a session lives with nothing said before the app lets the
-    /// microphone go: nil, no limit (Arpit, 2026-11-04: "session that lasts
-    /// forever"). It ends when the person taps Turn off in Glyf, force-quits
-    /// Glyf, the phone restarts, or iOS ends it; the heartbeat below still
-    /// tells the keyboard when the app is gone. Earlier: 5 minutes (Wispr
-    /// Flow's default), then an hour ("why is it opening the Glyf app every
-    /// time I click on the mic"). Apple lets a recording started in the
-    /// foreground run on in the background.
-    static let idleLifetime: TimeInterval? = nil
+    /// How long the microphone stays open after an utterance ends (or is
+    /// cancelled) before the app lets it go: the orange dot goes with it
+    /// (Arpit, 2026-11-04: "having it open in the background is a very bad
+    /// way ... just open it only when the user asks for voice typing"). The
+    /// next mic tap opens Glyf again for a moment. Earlier: forever, an
+    /// hour, 5 minutes.
+    static let idleLifetime: TimeInterval? = 2
     /// `State.expiresAt` of a session with no idle end (2100-01-01): kept a
     /// plain number so the file reads the same for every app version.
     static let never: Double = 4_102_444_800
-
-    /// The session length a person picked (`SettingsStore.voiceReady`):
-    /// "always" (the default, also nil or anything unknown), "1h" or "15m".
-    static func lifetime(setting: String?) -> TimeInterval? {
-        switch setting {
-        case "1h": return 60 * 60
-        case "15m": return 15 * 60
-        default: return idleLifetime
-        }
-    }
 
     /// One utterance stops by itself after this long.
     static let maxUtterance: TimeInterval = 5 * 60
@@ -534,7 +522,8 @@ struct VoiceMachine {
     private(set) var state: VoiceLink.State
     /// Commands already acted on (a note can arrive twice for one file).
     private var handled: [String] = []
-    /// nil: the session never ends by itself (`VoiceLink.idleLifetime`).
+    /// How long the microphone stays open with nothing being heard
+    /// (`VoiceLink.idleLifetime`); nil: until Turn off.
     var idleLifetime: TimeInterval?
     let maxUtterance: TimeInterval
 
@@ -669,9 +658,16 @@ struct VoiceMachine {
     /// The person (or the app) ends the session.
     mutating func shutDown(now: Double) -> [Effect] {
         guard state.phase != .off else { return [] }
-        let session = state.session
+        let last = state
         state = .off(now: now)
-        state.session = session
+        state.session = last.session
+        // The words just heard are still the keyboard's to type.
+        if last.final != nil {
+            state.utterance = last.utterance
+            state.final = last.final
+            state.partial = last.partial
+            state.finishedAt = last.finishedAt
+        }
         return [.abortCapture, .shutDown, .publish]
     }
 
@@ -683,7 +679,7 @@ struct VoiceMachine {
         state.final = nil
         state.finishedAt = nil
         state.error = nil
-        state.expiresAt = expiry(now)
+        state.expiresAt = VoiceLink.never   // a voice being heard keeps it
         return [.beginCapture(u)]
     }
 

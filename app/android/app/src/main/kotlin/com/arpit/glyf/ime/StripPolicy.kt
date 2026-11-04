@@ -1,16 +1,13 @@
 package com.arpit.glyf.ime
 
-import org.json.JSONArray
-import org.json.JSONObject
-
 /** When the strip shows a chip instead of its three word slots, and what a ✕
  *  (or typing past a chip) does to the chips after it. docs/STRIP-POLICY.md
  *  is the decision table; iOS's StripPolicy.swift is the twin, with the same
  *  numbers and the same tests.
  *
- *  Pure: the caller hands in the time (seconds), the field and the app, and
- *  stores [json] (glyf_ime prefs, "stripPolicy"). */
-class StripPolicy() {
+ *  Pure: the caller hands in the time (seconds) and the field. Nothing is
+ *  stored: a ✕ is a short cooldown, not a rule (Arpit, 2026-11-04). */
+class StripPolicy {
 
     companion object {
         /** A new chip waits for the fingers to stop this long at a word
@@ -19,33 +16,25 @@ class StripPolicy() {
         /** Mid-word the word slots keep the strip; a chip may take over only
          *  after a longer pause, and never over a pending fix. */
         const val MID_WORD_PAUSE = 1.0
-        /** After a ✕ or a chip typed past, no other new chip for this long. */
-        const val GAP = 8.0
+        /** After a ✕, no chip at all for this long; then the strip works as
+         *  before, and the crossed chip can come again once the text changes
+         *  (Arpit, 2026-11-04: "a cooldown of 10 seconds or 5 seconds maybe
+         *  to show the strip again"). No longer rests per app or per day. */
+        const val CROSS_QUIET = 10.0
+        /** Typed past (a softer no than a ✕): no new chip for this long. */
+        const val IGNORE_QUIET = 5.0
         /** Typed past = this many new words after the chip came, unused... */
         const val WORDS_PAST = 2
         /** ...and the chip was up at least this long. */
         const val SEEN_FOR = 1.0
-        /** Typed past this many times counts as one ✕ for that kind in that app. */
-        const val IGNORES_PER_DISMISSAL = 2
-        /** A ✕ mutes that kind of chip in that app for this long. */
-        const val APP_MUTE = 10 * 60.0
-        /** This many ✕ of one kind within [BACKOFF_WINDOW], anywhere... */
-        const val BACKOFF_AFTER = 3
-        const val BACKOFF_WINDOW = 24 * 60 * 60.0
-        /** ...mute that kind everywhere for this long. */
-        const val BACKOFF = 24 * 60 * 60.0
         /** A copy is offered in the strip this long after it was made. */
         const val PASTE_FRESH = 3 * 60.0
-        /** Stored entries kept at most (newest first). */
-        const val MAX_ENTRIES = 48
 
         fun allowed(kind: Kind, field: Field): Boolean = when (field) {
             Field.NORMAL -> true
             Field.CODE -> kind == Kind.FILL || kind == Kind.PASTE || kind == Kind.MAIL
             Field.SECRET -> false
         }
-
-        fun key(scope: String, kind: Kind) = "$scope|${kind.id}"
 
         /** The end of the text a chip came for: its last 40 characters. */
         fun anchor(before: String): String = before.trimEnd().takeLast(40)
@@ -85,7 +74,7 @@ class StripPolicy() {
         PLAN("plan"),
         /** Send or Buy. */
         PAY("pay"),
-        /** A mail at the temp address (its code): asked for, never muted. */
+        /** A mail at the temp address (its code): asked for, no cooldown. */
         MAIL("mail"),
     }
 
@@ -113,18 +102,11 @@ class StripPolicy() {
 
     data class Shown(val id: String, val kind: Kind, val tail: String, val at: Double)
 
-    /** "scope|kind" → until (seconds since 1970). */
-    val mutes = mutableMapOf<String, Double>()
-    /** kind → until. */
-    val backoffs = mutableMapOf<String, Double>()
-    /** kind → when each ✕ was (the last day's). */
-    val refusals = mutableMapOf<String, MutableList<Double>>()
-    /** "scope|kind" → (typed-past count, when last). */
-    val softs = mutableMapOf<String, Pair<Int, Double>>()
-
-    /** The field's own memory, never stored. */
+    /** This field only, never stored. */
     var field = ""; private set
-    val gone = mutableSetOf<String>()
+    /** Crossed chips → the text they were crossed on: each stays away until
+     *  that text changes. */
+    val crossed = mutableMapOf<String, String>()
     var quietUntil = 0.0; private set
     var onScreen: Shown? = null; private set
 
@@ -132,17 +114,15 @@ class StripPolicy() {
     fun enter(field: String) {
         if (field == this.field) return
         this.field = field
-        gone.clear()
+        crossed.clear()
         quietUntil = 0.0
         onScreen = null
     }
 
     /** May this chip come at all (whatever the timing)? */
-    fun allows(kind: Kind, id: String, scope: String, now: Double): Boolean {
-        if (id in gone) return false
+    fun allows(kind: Kind, id: String, now: Double): Boolean {
+        if (id in crossed) return false
         if (kind == Kind.MAIL) return true
-        if ((backoffs[kind.id] ?: 0.0) > now) return false
-        if (kind != Kind.PASTE && (mutes[key(scope, kind)] ?: 0.0) > now) return false
         if (quietUntil > now && onScreen?.id != id) return false
         return true
     }
@@ -164,8 +144,11 @@ class StripPolicy() {
         onScreen = Shown(id, kind, anchor(before), now)
     }
 
-    /** Each pass, before chips: has the chip that was up been typed past? */
-    fun observe(before: String, scope: String, now: Double): Seen {
+    /** Each pass, before chips: has the text moved on from a crossed chip,
+     *  and has the chip that was up been typed past? */
+    fun observe(before: String, now: Double): Seen {
+        val tail = anchor(before)
+        crossed.entries.removeAll { it.value != tail }
         val shown = onScreen ?: return Seen.Nothing
         if (shown.kind == Kind.PASTE) {
             if (before.isEmpty()) return Seen.Nothing
@@ -180,98 +163,21 @@ class StripPolicy() {
         if (past < WORDS_PAST) return Seen.Nothing
         onScreen = null
         if (now - shown.at < SEEN_FOR || shown.kind == Kind.MAIL) return Seen.Nothing
-        gone += shown.id
-        quietUntil = now + GAP
-        val k = key(scope, shown.kind)
-        val count = (softs[k]?.first ?: 0) + 1
-        if (count >= IGNORES_PER_DISMISSAL) {
-            softs.remove(k)
-            refuse(shown.kind, scope, now)
-        } else {
-            softs[k] = count to now
-        }
+        quietUntil = maxOf(quietUntil, now + IGNORE_QUIET)
         return Seen.Ignored(shown.kind)
     }
 
-    /** The ✕. */
-    fun dismissed(kind: Kind, id: String, scope: String, now: Double) {
-        gone += id
+    /** The ✕: that chip goes until the text changes, and nothing else shows
+     *  for [CROSS_QUIET]. */
+    fun dismissed(kind: Kind, id: String, now: Double) {
+        crossed[id] = onScreen?.takeIf { it.id == id }?.tail ?: ""
         if (onScreen?.id == id) onScreen = null
         if (kind == Kind.MAIL) return
-        quietUntil = now + GAP
-        refuse(kind, scope, now)
+        quietUntil = now + CROSS_QUIET
     }
 
-    /** Tapped: wanted. Typed-past counts for that kind start over. */
-    fun used(kind: Kind, scope: String) {
+    /** Tapped: wanted. */
+    fun used() {
         onScreen = null
-        softs.remove(key(scope, kind))
-    }
-
-    private fun refuse(kind: Kind, scope: String, now: Double) {
-        // Each copy is news: a ✕ on one says nothing about the next in this app.
-        if (kind != Kind.PASTE) mutes[key(scope, kind)] = now + APP_MUTE
-        val times = (refusals[kind.id] ?: mutableListOf()).filter { now - it < BACKOFF_WINDOW }.toMutableList()
-        times += now
-        if (times.size >= BACKOFF_AFTER) {
-            backoffs[kind.id] = now + BACKOFF
-            refusals.remove(kind.id)
-        } else {
-            refusals[kind.id] = times
-        }
-        prune(now)
-    }
-
-    /** Expired entries go; past [MAX_ENTRIES] the oldest go. */
-    fun prune(now: Double) {
-        mutes.entries.removeAll { it.value <= now }
-        backoffs.entries.removeAll { it.value <= now }
-        for (k in refusals.keys.toList()) {
-            val kept = refusals[k]!!.filter { now - it < BACKOFF_WINDOW }
-            if (kept.isEmpty()) refusals.remove(k) else refusals[k] = kept.toMutableList()
-        }
-        softs.entries.removeAll { now - it.value.second >= BACKOFF_WINDOW }
-        if (mutes.size > MAX_ENTRIES) {
-            val keep = mutes.entries.sortedByDescending { it.value }.take(MAX_ENTRIES).map { it.key }.toSet()
-            mutes.keys.retainAll(keep)
-        }
-        if (softs.size > MAX_ENTRIES) {
-            val keep = softs.entries.sortedByDescending { it.value.second }.take(MAX_ENTRIES).map { it.key }.toSet()
-            softs.keys.retainAll(keep)
-        }
-    }
-
-    fun json(): JSONObject = JSONObject().apply {
-        put("v", 1)
-        put("mutes", JSONObject(mutes as Map<*, *>))
-        put("backoffs", JSONObject(backoffs as Map<*, *>))
-        put("refusals", JSONObject().also { o -> refusals.forEach { (k, v) -> o.put(k, JSONArray(v)) } })
-        put("softs", JSONObject().also { o ->
-            softs.forEach { (k, v) -> o.put(k, JSONArray().put(v.first.toDouble()).put(v.second)) }
-        })
-    }
-
-    constructor(json: JSONObject?) : this() {
-        restore(json)
-    }
-
-    /** The stored part again (a scenario's reset); the field's own memory stays. */
-    fun restore(json: JSONObject?) {
-        mutes.clear(); backoffs.clear(); refusals.clear(); softs.clear()
-        if (json == null) return
-        json.optJSONObject("mutes")?.let { o -> o.keys().forEach { mutes[it] = o.getDouble(it) } }
-        json.optJSONObject("backoffs")?.let { o -> o.keys().forEach { backoffs[it] = o.getDouble(it) } }
-        json.optJSONObject("refusals")?.let { o ->
-            o.keys().forEach { k ->
-                val a = o.getJSONArray(k)
-                refusals[k] = MutableList(a.length()) { a.getDouble(it) }
-            }
-        }
-        json.optJSONObject("softs")?.let { o ->
-            o.keys().forEach { k ->
-                val a = o.getJSONArray(k)
-                if (a.length() == 2) softs[k] = a.getDouble(0).toInt() to a.getDouble(1)
-            }
-        }
     }
 }

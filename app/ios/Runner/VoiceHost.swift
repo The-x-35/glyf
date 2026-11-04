@@ -4,16 +4,14 @@ import UIKit
 import os.log
 
 /// The app's half of voice typing (VoiceLink has the protocol). The keyboard
-/// can't use the microphone, so Glyf listens for it: glyf://voice starts a
-/// session that keeps AVAudioEngine's input running in the background
-/// (UIBackgroundModes audio, the orange dot), throws the sound away while
-/// idle, and feeds Apple's on-device recognizer between the keyboard's start
-/// and stop. The session has no idle end (VoiceLink.idleLifetime): Turn off,
-/// a force-quit, a restart or iOS ends it. It also starts by itself, with no
-/// screen, whenever Glyf comes to the front with the microphone and speech
-/// already allowed (autoStart), and from Start Glyf Voice (Control Center,
-/// the Action button, Siri: VoiceIntents.swift). Calls, Siri and other apps
-/// taking the microphone pause it; it picks up again when they are done.
+/// can't use the microphone, so Glyf listens for it: glyf://voice (the
+/// keyboard's mic, and only that) starts a session that keeps AVAudioEngine's
+/// input running in the background (UIBackgroundModes audio, the orange dot)
+/// for that one utterance, and feeds Apple's on-device recognizer until the
+/// keyboard's stop. Two seconds after it ends the microphone goes
+/// (VoiceLink.idleLifetime); the next mic tap opens Glyf again for a moment.
+/// Opening Glyf never starts it. Calls, Siri and other apps taking the
+/// microphone pause it; it picks up again when they are done.
 final class VoiceHost {
     static let shared = VoiceHost()
     private let log = Logger(subsystem: "so.glyf.app", category: "voice")
@@ -58,9 +56,6 @@ final class VoiceHost {
     /// The utterance the keyboard's link asked to hear, for the start in
     /// progress.
     private var queuedListen: String?
-    /// Turn off was tapped while Glyf is in front: coming back from Control
-    /// Center (which makes the app active again) must not undo it.
-    private var turnedOffThisVisit = false
     private var resumeTry = 0
     private var sessionObservers: [NSObjectProtocol] = []
 
@@ -72,17 +67,10 @@ final class VoiceHost {
 
     private init() {
         DarwinBus.shared.observe(VoiceLink.commandNote) { [weak self] in self?.commandArrived() }
-        // Back in their chat: the screen goes, the session stays.
+        // Back in their chat: the screen goes, the utterance goes on.
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.overlay?.dismiss()
-            self?.turnedOffThisVisit = false
-        }
-        // Every time Glyf comes to the front: the session, silently.
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.autoStart() }
+        ) { [weak self] _ in self?.overlay?.dismiss() }
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "--glyf-voice-file"), i + 1 < args.count {
@@ -100,41 +88,15 @@ final class VoiceHost {
         VoiceActivityHost.shared.end()
     }
 
-    /// Wakes the host up so it hears the keyboard's commands and starts the
-    /// session each time Glyf comes to the front.
+    /// Wakes the host up so it hears the keyboard's commands.
     func boot() {}
 
     // MARK: Opening
-
-    /// The session, with no screen, whenever Glyf is opened (Arpit,
-    /// 2026-11-04: "start the session whenever [the user] opens the app"),
-    /// so the keyboard's Voice works with no trip through Glyf. Only when
-    /// the microphone and Speech Recognition are already allowed and the
-    /// keyboard has said it has Full Access: a plain open never asks for a
-    /// permission; only the keyboard's Voice does.
-    func autoStart() {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--glyf-no-voice-autostart") { return }
-        #endif
-        // Not as RunnerTests' host app: unit tests keep the microphone off.
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
-        guard !turnedOffThisVisit else { return }
-        guard Self.permissionsGranted, Self.keyboardHasFullAccess else { return }
-        if machine.isOn && engine.isRunning { return }
-        log.log("GLYF_VOICE autostart")
-        start(listenNow: nil, silent: true)
-    }
 
     /// Both prompts answered yes before (nothing is asked here).
     static var permissionsGranted: Bool {
         AVAudioApplication.shared.recordPermission == .granted
             && SFSpeechRecognizer.authorizationStatus() == .authorized
-    }
-
-    /// The keyboard's last ping (it writes one on every appearance, and can
-    /// only write to the App Group with Full Access) says it has Full Access.
-    static var keyboardHasFullAccess: Bool {
-        AppGroupStore.readKeyboardPing()?["hasFullAccess"] as? Bool == true
     }
 
     /// glyf://voice[?u=<utterance>&h=<host bundle id>] from the keyboard's
@@ -143,7 +105,6 @@ final class VoiceHost {
     /// one line says to go back.
     func open(_ url: URL, scene: UIWindowScene?) {
         let link = VoiceLink.parseOpenURL(url)
-        turnedOffThisVisit = false
         showOverlay(in: scene)
         overlay?.show(.starting)
         log.log("GLYF_VOICE open host=\(link.host ?? "-", privacy: .public)")
@@ -160,7 +121,6 @@ final class VoiceHost {
     @MainActor
     func startFromIntent() async -> Bool {
         guard Self.permissionsGranted else { return false }
-        turnedOffThisVisit = false
         VoiceActivityHost.shared.begin()
         let ok = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
             start(listenNow: nil, silent: true) { c.resume(returning: $0) }
@@ -223,7 +183,6 @@ final class VoiceHost {
                 let engineName = self.debugFile != nil ? "file"
                     : self.analyzerFormat != nil ? "dictation" : "speech"
                 #endif
-                self.machine.idleLifetime = VoiceLink.lifetime(setting: SettingsStore.current.voiceReady)
                 let listen = self.queuedListen
                 self.queuedListen = nil
                 self.resumeTry = 0
@@ -545,7 +504,6 @@ final class VoiceHost {
 
     /// The person ended it (the overlay's Turn off).
     func end() {
-        turnedOffThisVisit = UIApplication.shared.applicationState == .active
         run(machine.shutDown(now: Self.now))
         overlay?.dismiss()
     }

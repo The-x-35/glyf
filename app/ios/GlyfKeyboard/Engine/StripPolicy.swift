@@ -5,8 +5,8 @@ import Foundation
 /// is the decision table; Android's StripPolicy.kt is the twin, with the same
 /// numbers and the same tests.
 ///
-/// Pure: the caller hands in the time, the field and the app, and stores
-/// `json` (iOS: strip-policy.json in the App Group; Android: glyf_ime prefs).
+/// Pure: the caller hands in the time and the field. Nothing is stored: a ✕
+/// is a short cooldown, not a rule (Arpit, 2026-11-04).
 struct StripPolicy {
 
     // MARK: The numbers (the same on both keyboards)
@@ -17,25 +17,19 @@ struct StripPolicy {
     /// Mid-word, the word slots keep the strip while typing; a chip may take
     /// over only after a longer pause, and never over a pending fix.
     static let midWordPause: TimeInterval = 1.0
-    /// After a ✕ or a chip typed past, no other new chip for this long.
-    static let gap: TimeInterval = 8
+    /// After a ✕, no chip at all for this long; then the strip works as
+    /// before, and the chip that was crossed can come again once the text
+    /// changes (Arpit, 2026-11-04: "a cooldown of 10 seconds or 5 seconds
+    /// maybe to show the strip again"). No longer rests per app or per day.
+    static let crossQuiet: TimeInterval = 10
+    /// Typed past (a softer no than a ✕): no new chip for this long.
+    static let ignoreQuiet: TimeInterval = 5
     /// Typed past = this many new words after the chip came, unused.
     static let wordsPast = 2
     /// ...and the chip was up at least this long (a glimpse is not a no).
     static let seenFor: TimeInterval = 1.0
-    /// Typed past this many times counts as one ✕ for that kind in that app.
-    static let ignoresPerDismissal = 2
-    /// A ✕ mutes that kind of chip in that app for this long.
-    static let appMute: TimeInterval = 10 * 60
-    /// This many ✕ of one kind within `backoffWindow`, anywhere...
-    static let backoffAfter = 3
-    static let backoffWindow: TimeInterval = 24 * 60 * 60
-    /// ...mute that kind everywhere for this long.
-    static let backoff: TimeInterval = 24 * 60 * 60
     /// A copy is offered in the strip this long after it was made.
     static let pasteFresh: TimeInterval = 3 * 60
-    /// Stored entries kept at most (newest first): the file stays small.
-    static let maxEntries = 48
 
     // MARK: Kinds and fields
 
@@ -52,7 +46,7 @@ struct StripPolicy {
         case plan
         /// Send or Buy.
         case pay
-        /// A mail at the temp address (its code): asked for, never muted.
+        /// A mail at the temp address (its code): asked for, no cooldown.
         case mail
     }
 
@@ -95,7 +89,7 @@ struct StripPolicy {
 
     enum Seen: Equatable {
         case nothing
-        /// The chip on screen was typed past: stored state changed.
+        /// The chip on screen was typed past: a short quiet began.
         case ignored(Kind)
         /// The copy on offer was typed past: that copy is done.
         case pasteIgnored
@@ -108,20 +102,12 @@ struct StripPolicy {
         let at: Double
     }
 
-    // MARK: State
+    // MARK: State (this field only, never stored)
 
-    /// "scope|kind" → until (seconds since 1970).
-    private(set) var mutes: [String: Double] = [:]
-    /// kind → until.
-    private(set) var backoffs: [String: Double] = [:]
-    /// kind → when each ✕ was (the last day's).
-    private(set) var refusals: [String: [Double]] = [:]
-    /// "scope|kind" → (typed-past count, when last).
-    private(set) var softs: [String: (count: Int, at: Double)] = [:]
-
-    /// The field's own memory, never stored.
     private(set) var field = ""
-    private(set) var gone: Set<String> = []
+    /// Crossed chips → the text they were crossed on: each stays away until
+    /// that text changes.
+    private(set) var crossed: [String: String] = [:]
     private(set) var quietUntil: Double = 0
     private(set) var onScreen: Shown?
 
@@ -133,17 +119,15 @@ struct StripPolicy {
     mutating func enter(field id: String) {
         guard id != field else { return }
         field = id
-        gone = []
+        crossed = [:]
         quietUntil = 0
         onScreen = nil
     }
 
     /// May this chip come at all (whatever the timing)?
-    func allows(_ kind: Kind, id: String, scope: String, now: Double) -> Bool {
-        if gone.contains(id) { return false }
+    func allows(_ kind: Kind, id: String, now: Double) -> Bool {
+        if crossed[id] != nil { return false }
         if kind == .mail { return true }
-        if (backoffs[kind.rawValue] ?? 0) > now { return false }
-        if kind != .paste, (mutes[Self.key(scope, kind)] ?? 0) > now { return false }
         if quietUntil > now, onScreen?.id != id { return false }
         return true
     }
@@ -169,8 +153,11 @@ struct StripPolicy {
         onScreen = Shown(id: id, kind: kind, tail: Self.anchor(before), at: now)
     }
 
-    /// Each pass, before chips: has the chip that was up been typed past?
-    mutating func observe(before: String, scope: String, now: Double) -> Seen {
+    /// Each pass, before chips: has the text moved on from a crossed chip,
+    /// and has the chip that was up been typed past?
+    mutating func observe(before: String, now: Double) -> Seen {
+        let tail = Self.anchor(before)
+        crossed = crossed.filter { $0.value == tail }
         guard let shown = onScreen else { return .nothing }
         if shown.kind == .paste {
             // The copy rides an empty field: typing anything there passes it.
@@ -185,68 +172,25 @@ struct StripPolicy {
         guard past >= Self.wordsPast else { return .nothing }
         onScreen = nil
         guard now - shown.at >= Self.seenFor, shown.kind != .mail else { return .nothing }
-        gone.insert(shown.id)
-        quietUntil = now + Self.gap
-        let k = Self.key(scope, shown.kind)
-        let count = (softs[k]?.count ?? 0) + 1
-        if count >= Self.ignoresPerDismissal {
-            softs[k] = nil
-            refuse(shown.kind, scope: scope, now: now)
-        } else {
-            softs[k] = (count, now)
-        }
+        quietUntil = max(quietUntil, now + Self.ignoreQuiet)
         return .ignored(shown.kind)
     }
 
-    /// The ✕.
-    mutating func dismissed(_ kind: Kind, id: String, scope: String, now: Double) {
-        gone.insert(id)
+    /// The ✕: that chip goes until the text changes, and nothing else shows
+    /// for `crossQuiet`.
+    mutating func dismissed(_ kind: Kind, id: String, now: Double) {
+        crossed[id] = onScreen?.id == id ? onScreen?.tail ?? "" : ""
         if onScreen?.id == id { onScreen = nil }
         guard kind != .mail else { return }
-        quietUntil = now + Self.gap
-        refuse(kind, scope: scope, now: now)
+        quietUntil = now + Self.crossQuiet
     }
 
-    /// Tapped: wanted. Typed-past counts for that kind start over.
-    mutating func used(_ kind: Kind, scope: String) {
+    /// Tapped: wanted.
+    mutating func used() {
         onScreen = nil
-        softs[Self.key(scope, kind)] = nil
-    }
-
-    private mutating func refuse(_ kind: Kind, scope: String, now: Double) {
-        // Each copy is news: a ✕ on one says nothing about the next in this app.
-        if kind != .paste { mutes[Self.key(scope, kind)] = now + Self.appMute }
-        var times = (refusals[kind.rawValue] ?? []).filter { now - $0 < Self.backoffWindow }
-        times.append(now)
-        if times.count >= Self.backoffAfter {
-            backoffs[kind.rawValue] = now + Self.backoff
-            refusals[kind.rawValue] = nil
-        } else {
-            refusals[kind.rawValue] = times
-        }
-        prune(now: now)
-    }
-
-    /// Expired entries go; past `maxEntries` the oldest go.
-    mutating func prune(now: Double) {
-        mutes = mutes.filter { $0.value > now }
-        backoffs = backoffs.filter { $0.value > now }
-        refusals = refusals.compactMapValues { times in
-            let kept = times.filter { now - $0 < Self.backoffWindow }
-            return kept.isEmpty ? nil : kept
-        }
-        softs = softs.filter { now - $0.value.at < Self.backoffWindow }
-        if mutes.count > Self.maxEntries {
-            mutes = Dictionary(uniqueKeysWithValues: mutes.sorted { $0.value > $1.value }.prefix(Self.maxEntries).map { ($0.key, $0.value) })
-        }
-        if softs.count > Self.maxEntries {
-            softs = Dictionary(uniqueKeysWithValues: softs.sorted { $0.value.at > $1.value.at }.prefix(Self.maxEntries).map { ($0.key, $0.value) })
-        }
     }
 
     // MARK: Helpers
-
-    static func key(_ scope: String, _ kind: Kind) -> String { "\(scope)|\(kind.rawValue)" }
 
     /// The end of the text a chip came for: where "typed past" is counted
     /// from. Its last 40 characters, so a long message whose start scrolls
@@ -279,33 +223,5 @@ struct StripPolicy {
             }
         }
         return count
-    }
-
-    // MARK: Storage
-
-    var json: [String: Any] {
-        [
-            "v": 1,
-            "mutes": mutes,
-            "backoffs": backoffs,
-            "refusals": refusals,
-            "softs": softs.mapValues { [Double($0.count), $0.at] },
-        ]
-    }
-
-    init(json: [String: Any]?) {
-        restore(json: json)
-    }
-
-    /// The stored part again (another process may have written it: the app,
-    /// a scenario's reset); the field's own memory stays.
-    mutating func restore(json: [String: Any]?) {
-        mutes = [:]; backoffs = [:]; refusals = [:]; softs = [:]
-        guard let json else { return }
-        mutes = (json["mutes"] as? [String: Double]) ?? [:]
-        backoffs = (json["backoffs"] as? [String: Double]) ?? [:]
-        refusals = (json["refusals"] as? [String: [Double]]) ?? [:]
-        let raw = (json["softs"] as? [String: [Double]]) ?? [:]
-        softs = raw.compactMapValues { pair in pair.count == 2 ? (Int(pair[0]), pair[1]) : nil }
     }
 }

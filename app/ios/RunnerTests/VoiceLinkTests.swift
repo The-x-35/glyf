@@ -17,7 +17,7 @@ final class VoiceLinkTests: XCTestCase {
         XCTAssertEqual(fx, [.beginCapture("u1"), .publish])
         XCTAssertEqual(m.state.phase, .listening)
         XCTAssertEqual(m.state.utterance, "u1")
-        XCTAssertEqual(m.state.expiresAt, VoiceLink.never, "a session has no idle end")
+        XCTAssertEqual(m.state.expiresAt, VoiceLink.never, "a voice being heard keeps the microphone")
     }
 
     func testOpenWithoutAnUtteranceWaitsReady() {
@@ -39,7 +39,7 @@ final class VoiceLinkTests: XCTestCase {
         XCTAssertEqual(m.state.phase, .ready)
         XCTAssertEqual(m.state.final, "Hello there.")
         XCTAssertEqual(m.state.finishedAt, 13)
-        XCTAssertEqual(m.state.expiresAt, VoiceLink.never)
+        XCTAssertEqual(m.state.expiresAt, 13 + 2)
     }
 
     func testTheSameCommandTwiceActsOnce() {
@@ -81,37 +81,46 @@ final class VoiceLinkTests: XCTestCase {
         XCTAssertEqual(m.handle(cmd(.start, at: 302), now: 302), [], "commands need a session")
     }
 
-    func testTheSessionLastsForever() {
-        XCTAssertNil(VoiceLink.idleLifetime)
+    func testTheMicrophoneGoesTwoSecondsAfterTheWords() {
+        // Arpit, 2026-11-04: "open it only when the user asks for voice typing".
+        XCTAssertEqual(VoiceLink.idleLifetime, 2)
         var m = VoiceMachine(now: 0)
-        _ = m.open(session: "s", now: 0, listenNow: nil, engine: nil)
-        let tenYears = 10 * 365 * 86_400.0
-        XCTAssertEqual(m.tick(now: tenYears), [.publish], "still beating, ten idle years on")
-        XCTAssertEqual(m.state.phase, .ready)
-        XCTAssertTrue(VoiceLink.alive(m.state, now: tenYears + 1))
-        XCTAssertFalse(VoiceLink.alive(m.state, now: tenYears + VoiceLink.staleAfter),
-                       "a dead app is still caught by its heartbeat")
-        XCTAssertEqual(m.handle(cmd(.end, at: tenYears + 2), now: tenYears + 2),
-                       [.abortCapture, .shutDown, .publish], "Turn off still ends it")
+        _ = m.open(session: "s", now: 0, listenNow: "u1", engine: nil)
+        XCTAssertEqual(m.tick(now: 100), [.publish], "a long utterance keeps it open")
+        XCTAssertTrue(VoiceLink.alive(m.state, now: 100))
+        _ = m.handle(cmd(.stop, at: 101, utterance: "u1"), now: 101)
+        _ = m.finished("Hello there.", utterance: "u1", now: 102)
+        XCTAssertEqual(m.tick(now: 103), [.publish])
+        XCTAssertEqual(m.tick(now: 104), [.abortCapture, .shutDown, .publish])
+        XCTAssertEqual(m.state.phase, .off)
+        // The words are still there for the keyboard to type, once.
+        XCTAssertEqual(VoiceLink.deliverable(m.state, taken: nil, now: 104.5)?.text, "Hello there.")
+        XCTAssertNil(VoiceLink.deliverable(m.state, taken: "u1", now: 104.5))
+        // The next mic tap opens Glyf again.
+        XCTAssertEqual(VoiceLink.tapAction(state: m.state, now: 105, fullAccess: true), .openApp)
     }
 
-    func testSessionLengthSetting() {
-        XCTAssertNil(VoiceLink.lifetime(setting: nil))
-        XCTAssertNil(VoiceLink.lifetime(setting: "always"))
-        XCTAssertNil(VoiceLink.lifetime(setting: "garbage"))
-        XCTAssertEqual(VoiceLink.lifetime(setting: "1h"), 3600)
-        XCTAssertEqual(VoiceLink.lifetime(setting: "15m"), 900)
-        var m = VoiceMachine(now: 0, idleLifetime: VoiceLink.lifetime(setting: "15m"))
+    func testACancelLetsTheMicrophoneGoToo() {
+        var m = VoiceMachine(now: 0)
+        _ = m.open(session: "s", now: 0, listenNow: "u1", engine: nil)
+        _ = m.handle(cmd(.cancel, at: 5, utterance: "u1"), now: 5)
+        XCTAssertEqual(m.tick(now: 7), [.abortCapture, .shutDown, .publish])
+        XCTAssertNil(m.state.final)
+    }
+
+    func testTurnOffStillEndsASessionWithNoIdleEnd() {
+        var m = VoiceMachine(now: 0, idleLifetime: nil)
         _ = m.open(session: "s", now: 0, listenNow: nil, engine: nil)
-        XCTAssertEqual(m.state.expiresAt, 900)
-        XCTAssertEqual(m.tick(now: 900), [.abortCapture, .shutDown, .publish])
+        XCTAssertEqual(m.tick(now: 86_400), [.publish])
+        XCTAssertEqual(m.handle(cmd(.end, at: 86_401), now: 86_401),
+                       [.abortCapture, .shutDown, .publish])
     }
 
     func testAQuietMicrophoneAfterAnInterruptionKeepsTheSession() {
         // A call took the microphone: no heartbeat, the keyboard sees the app
         // as gone, but the session itself is still on and beats again once
         // audio comes back.
-        var m = VoiceMachine(now: 0)
+        var m = VoiceMachine(now: 0, idleLifetime: nil)
         _ = m.open(session: "s", now: 0, listenNow: nil, engine: nil)
         XCTAssertEqual(m.tick(now: 60, audioFlowing: false), [])
         XCTAssertTrue(m.isOn)
@@ -142,7 +151,7 @@ final class VoiceLinkTests: XCTestCase {
 
     func testQuietMicrophoneStopsTheHeartbeat() {
         var m = VoiceMachine(now: 0)
-        _ = m.open(session: "s", now: 0, listenNow: nil, engine: nil)
+        _ = m.open(session: "s", now: 0, listenNow: "u1", engine: nil)
         XCTAssertEqual(m.tick(now: 5, audioFlowing: false), [])
         XCTAssertEqual(m.state.heartbeat, 0, "no audio, no heartbeat: the keyboard sees the app as gone")
         XCTAssertFalse(VoiceLink.alive(m.state, now: 5))

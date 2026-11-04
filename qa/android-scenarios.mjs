@@ -1293,7 +1293,7 @@ scenarios.push(
 
 // --- 2026-09-30: a ✕ on every strip chip ---
 scenarios.push(
-  { id: "S215", title: "A chip's ✕ keeps it away: the same sum typed again and a new sum bring none (docs/STRIP-POLICY.md)", run: async () => {
+  { id: "S215", title: "A chip's ✕ is a 10 s cooldown: nothing inside it, a chip again after it (docs/STRIP-POLICY.md)", run: async () => {
     // "we should add some button to dismiss it, like a cross on left or something, figure out" (2026-09-30).
     await fresh();
     await type("2+5");
@@ -1304,6 +1304,7 @@ scenarios.push(
     if (!close) return { pass: false, note: `the chip '${chipLabel(s, chip)}' has no ✕` };
     const target = `${close.w}x${close.h}`;
     await screenshot("S215-chip");
+    const crossedAt = Date.now();
     await tapXY(close.x, close.y);
     await sleep(1200);   // past a pass of the strip, which must not bring it back
     s = await state();
@@ -1311,14 +1312,16 @@ scenarios.push(
     // Back to what the strip shows without a chip: the tools, or words.
     const strip = TOOL_IDS.some(id => find(s, byId(id))) ? "tools" : s.views.some(idStarts("suggest:")) ? "words" : "nothing";
     const kept = s.text;
-    // 2026-11-04 (docs/STRIP-POLICY.md): the same sum typed again stays away,
-    // and so does a new one: the kind rests in this app for ten minutes.
+    // 2026-11-04 (docs/STRIP-POLICY.md): a ✕ is a 10 s cooldown ("a cooldown
+    // of 10 seconds or 5 seconds maybe to show the strip again").
     await type("0");
     await sleep(1500);
-    const again = find(await state(), byId("strip:smart"));
-    const label = again ? chipLabel(await state(), again) : "none";
-    return { pass: gone && strip !== "nothing" && kept === "2+5" && !again,
-      note: `✕ ${target}px; after it: chip gone ${gone}, strip shows ${strip}, text '${kept}'; typed 0 → chip '${label}'` };
+    const inside = find(await state(), byId("strip:smart"));
+    await sleep(Math.max(0, 10500 - (Date.now() - crossedAt)));
+    await type("0");
+    const after = await waitFor(byId("strip:smart"), 4000);
+    return { pass: gone && strip !== "nothing" && kept === "2+5" && !inside && !!after,
+      note: `✕ ${target}px; after it: chip gone ${gone}, strip shows ${strip}, text '${kept}'; 2+50 inside 10 s → chip ${!!inside}; 2+500 after → chip ${!!after}` };
   } },
 );
 

@@ -731,36 +731,38 @@ final class GlyfScenarioUITests: XCTestCase {
         note("inserted: '\(value)'")
     }
 
-    /// S215: every chip has a ✕, and a chip put away stays away
-    /// (docs/STRIP-POLICY.md; Arpit, 2026-11-04: "when the user crosses it,
-    /// it comes again and again"): the same chip never comes back in the
-    /// field, even for the text typed again, and its kind rests in this app
-    /// for ten minutes, so a new sum brings none either. The words keep the
-    /// strip, and the ✕ never touches the text.
-    func testS215_AChipsCrossKeepsItAway() throws {
+    /// S215: every chip has a ✕, and a ✕ is a short cooldown
+    /// (docs/STRIP-POLICY.md; Arpit, 2026-11-04: "a cooldown of 10 seconds
+    /// or 5 seconds maybe to show the strip again"): the chip doesn't come
+    /// back on the same text, nothing shows for 10 s even as the text
+    /// changes, and after that a chip shows again. The ✕ never touches the
+    /// text.
+    func testS215_AChipsCrossIsACooldown() throws {
         open()
         clear()
         type("2+5")
         guard wait("strip:smart", 3) != nil else { return XCTFail("no chip for 2+5") }
         keepScreenshot("S215-chip-before-cross")
         guard let close = wait("strip:smart:close", 2) else { return XCTFail("the chip has no ✕") }
+        let crossedAt = Date()
         close.tap()
         XCTAssertTrue(gone("strip:smart", 3), "the chip stayed after its ✕")
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertFalse(el("strip:smart").exists, "the dismissed chip came back for the same text")
         XCTAssertTrue(value.hasPrefix("2+5") && !value.contains("="), "dismiss changed the text: '\(value)'")
-        // The same sum typed again: still away.
-        tap("key:delete")
-        type("5")
-        Thread.sleep(forTimeInterval: 1.5)
-        XCTAssertFalse(el("strip:smart").exists, "the dismissed chip came back for the sum typed again")
-        // A new sum: its kind rests in this app.
+        // A new sum inside the cooldown: nothing yet.
         type("0")
         Thread.sleep(forTimeInterval: 1.5)
-        XCTAssertFalse(el("strip:smart").exists, "a sum chip came back right after a ✕ on one")
-        keepScreenshot("S215-no-chip-after-cross")
-        XCTAssertTrue(value.hasPrefix("2+50") && !value.contains("="), "the text is '\(value)'")
-        note("dismissed 2+5; retyped 2+5 and then 2+50: no chip, text '\(value)'")
+        XCTAssertFalse(el("strip:smart").exists, "a chip came back inside the 10 s cooldown")
+        keepScreenshot("S215-no-chip-in-cooldown")
+        // After it, the strip works again.
+        let left = 10.5 - Date().timeIntervalSince(crossedAt)
+        if left > 0 { Thread.sleep(forTimeInterval: left) }
+        tap("key:delete")
+        XCTAssertNotNil(wait("strip:smart", 4), "no chip after the cooldown")
+        keepScreenshot("S215-chip-after-cooldown")
+        XCTAssertTrue(value.hasPrefix("2+5") && !value.contains("="), "the text is '\(value)'")
+        note("crossed 2+5; 2+50 inside 10 s: no chip; back to 2+5 after: chip, text '\(value)'")
     }
 
     /// S219: typing "email" offers every saved email and a temp address;
