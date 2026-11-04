@@ -138,6 +138,23 @@ Dictionary fixes (AOSP whitelist shortcuts):
   `were`, not `we're`), by 40 otherwise.
 - A fix held back is never put in by the search either.
 
+Names are never changed (2026-11-04). The names the keyboard holds are the
+words of contact names (iOS: the supplementary lexicon and the
+`contacts.json` the app syncs for Contacts search; Android:
+`contacts.json`) and of the details saved in the vault that are names: the
+name (first and last), company, city and state ("own names", the same
+standing as a contact). Spelled as the name is (`Sumit`, at a sentence start
+too) the word is known and stays. Typed in other capitals (`sumit`), it takes
+only a fix into its own letters (`pune` → `Pune`, `mike` → `Mike`) or into
+one of the commonest words, base `f ≥ 200` (a contact `Teh` still lets `teh`
+be `the`, 222); `sumit` is never `summit`, `anoop` never `snoop`.
+
+A word typed with its own capital mid-sentence that autocorrect changed into
+other letters anyway (`Wierd` → `Weird`, a dictionary fix) counts as a commit
+of what was typed. Typed so twice it is learned, so it is never changed
+again. A sentence start's capital proves nothing, and neither does a fix of
+the same letters (`Im` → `I'm`).
+
 A known word that is far more often a name becomes the name: a Title-case
 form at least 40 above the typed spelling (`mike` 57 → `Mike` 122, `john` →
 `John`; `bill` and `will` stay), unless the person uses the lowercase word.
@@ -212,12 +229,34 @@ India start with `local.hinglish`.
 ## Learning
 
 Committed words only, never in fields that disallow learning, never tokens
-the gates above reject, never `SecretScanner` hits. An unknown word counts as
+the gates above reject, never `SecretScanner` hits. A field that turns
+autocorrect off teaches nothing (iOS `autocorrectionType = .no` and
+`.webSearch` keyboards; Android has no policy at all in `NO_SUGGESTIONS`,
+password, URI, email and filter fields): "teh" typed twice into a search bar
+was never fixed anywhere again. Where autocorrect is off but learning goes
+on (the Autocorrect setting off; iOS's X composer) a word autocorrect would
+have fixed is not learned, and neither is a fix shown but left standing
+with "Correct automatically" off. Name and address fields learn what they
+are given. An unknown word counts as
 learned after 2 commits, or after 1 revert or literal tap (kept). A sentence's
 auto-capitalized first word is learned lowercase when the lowercase form is a
 word. Counts halve every 90 days; entries unused for 300 days are dropped.
 Caps: 10,000 words, 30,000 word pairs. Reverting a correction blocks that
 pair forever and un-learns one commit of the wrong word.
+
+## Undo and reverts
+
+Right after an autocorrect, while the caret is where the fix left it, the
+strip's first slot is what was typed, in quotes (`“teh”`, Apple's way), and
+the next-word predictions fill the other two once a space is in. What came
+after the fixed word rides along: its space (`the `), or the punctuation that
+made the fix and then one space (`the, `, `the!? `; three characters at
+most, marks only before the space). Tapping the chip puts back the typed
+word with that tail and is a revert (Learning: the pair is blocked, the typed word kept). Backspace straight after a fix
+and its space is one too and leaves the typed word with the caret after it
+(`teh|`); after punctuation backspace deletes as usual. Anything else typed,
+deleted or moved to leaves the correction behind. Both keyboards:
+`WordTracker.undoTail`/`undo` (iOS) and `WordContext.undoTail`/`undo`.
 
 A revert is not only the backspace straight after a correction: going back
 into a word the engine corrected in the last five minutes (backspacing

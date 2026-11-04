@@ -1268,6 +1268,132 @@
    "expect": {
     "autocorrect": "were"
    }
+  },
+  {
+   "name": "without the contact, sumit is summit (the cases below need the contact)",
+   "typed": "sumit",
+   "previous": "with",
+   "expect": {
+    "autocorrect": "summit"
+   }
+  },
+  {
+   "name": "a contact's name typed in lowercase stays as typed",
+   "typed": "sumit",
+   "previous": "with",
+   "state": {
+    "contacts": [
+     "Sumit"
+    ]
+   },
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "a contact's name starting a sentence stays",
+   "typed": "Sumit",
+   "sentenceStart": true,
+   "state": {
+    "contacts": [
+     "Sumit"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
+  },
+  {
+   "name": "a contact's name never becomes a rarer word: anoop is not snoop",
+   "typed": "anoop",
+   "previous": "call",
+   "state": {
+    "contacts": [
+     "Anoop",
+     "Jaya"
+    ]
+   },
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "a contact's name at a sentence start is not jays",
+   "typed": "Jaya",
+   "sentenceStart": true,
+   "state": {
+    "contacts": [
+     "Anoop",
+     "Jaya"
+    ]
+   },
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "a contact named Teh still lets teh be the (one of the commonest words)",
+   "typed": "teh",
+   "previous": "in",
+   "state": {
+    "contacts": [
+     "Teh"
+    ]
+   },
+   "expect": {
+    "autocorrect": "the"
+   }
+  },
+  {
+   "name": "a contact's same letters still take their capital: pune is Pune",
+   "typed": "pune",
+   "previous": "in",
+   "state": {
+    "contacts": [
+     "Pune"
+    ]
+   },
+   "expect": {
+    "autocorrect": "Pune"
+   }
+  },
+  {
+   "name": "a first name saved in the vault stays as typed",
+   "typed": "tanay",
+   "previous": "with",
+   "state": {
+    "ownNames": [
+     "Tanay",
+     "Mehta"
+    ]
+   },
+   "expect": {
+    "autocorrect": null
+   }
+  },
+  {
+   "name": "without it, tanay is tansy",
+   "typed": "tanay",
+   "previous": "with",
+   "expect": {
+    "autocorrect": "tansy"
+   }
+  },
+  {
+   "name": "a name saved in the vault starting a sentence stays",
+   "typed": "Tanay",
+   "sentenceStart": true,
+   "state": {
+    "ownNames": [
+     "Tanay",
+     "Mehta"
+    ]
+   },
+   "expect": {
+    "autocorrect": null,
+    "known": true
+   }
   }
  ]
 }

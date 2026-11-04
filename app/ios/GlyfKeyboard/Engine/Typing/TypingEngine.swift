@@ -53,6 +53,12 @@ final class TypingEngine {
     ]
     static let packProbability: Float = 160
     static let contactProbability: Float = 40
+    /// A name (Contacts, or a detail saved in the vault) typed in other
+    /// capitals is never changed into another word, unless that word is one
+    /// of the commonest there are: a contact "Teh" still lets "teh" be "the"
+    /// (222), while "arpit" never becomes "armpit" (Arpit, 2026-11-04:
+    /// "never correct names").
+    static let nameFixFloor: Float = 200
     static let packPhraseProbability: Float = 180
     /// A name (capitalized, not one of I's forms) ranks as if this much rarer
     /// when it isn't what was typed and the typing was lowercase: "I hsven" is
@@ -129,7 +135,25 @@ final class TypingEngine {
     }
 
     func setContacts(_ forms: [String]) {
-        contactForms = Dictionary(forms.map { (TypingText.key($0), $0) }, uniquingKeysWith: { first, _ in first })
+        contactList = forms
+        mergeNames()
+    }
+
+    /// The person's own details from the vault (name, first and last name,
+    /// company, city, state): names to the engine, like contacts.
+    func setOwnNames(_ forms: [String]) {
+        guard forms != ownNameList else { return }
+        ownNameList = forms
+        mergeNames()
+    }
+
+    private var contactList: [String] = []
+    private var ownNameList: [String] = []
+
+    private func mergeNames() {
+        contactForms = Dictionary((contactList + ownNameList).map { (TypingText.key($0), $0) },
+                                  uniquingKeysWith: { first, _ in first })
+        contactForms[""] = nil
         rebuildExtra()
     }
 
@@ -206,6 +230,12 @@ final class TypingEngine {
             result.autocorrect = decide(typed: typed, key: key, known: known, sentenceStart: sentenceStart,
                                         exactForms: exact, realForms: realForms, ranked: ranked,
                                         previous: prevKey)
+            // A name in Contacts or the vault stays a name, whatever the
+            // capitals: "arpit" never becomes "armpit".
+            if let fix = result.autocorrect, contactForms[key] != nil, !nameMayBecome(fix, key: key) {
+                result.autocorrect = nil
+                lastHeldBack = "name"
+            }
         }
         var seen: Set<String> = [typed.lowercased()]
         if let ac = result.autocorrect { seen.insert(ac.lowercased()) }
@@ -499,6 +529,17 @@ final class TypingEngine {
         return (first..<(first + base.entryCount(node))).first { base.form($0) == form }
     }
 
+    /// A name's own letters ("mike" → "Mike") or one of the commonest words
+    /// (`nameFixFloor`): the only fixes a name typed in other capitals takes.
+    private func nameMayBecome(_ fix: String, key: String) -> Bool {
+        let fixKey = TypingText.key(fix)
+        if fixKey == key { return true }
+        guard let base else { return false }
+        let p = [fix, TypingText.lowercaseFirst(fix)].compactMap { baseEntry(forKey: fixKey, form: $0) }
+            .map { Float(base.probability($0)) }.max() ?? 0
+        return p >= Self.nameFixFloor
+    }
+
     /// Tests only: the rule that kept the last suggestions() call from autocorrecting.
     private(set) var lastHeldBack: String?
 
@@ -716,6 +757,39 @@ final class TypingEngine {
             return true
         }
         return false
+    }
+
+    /// Autocorrect changed a word typed with its own capital mid-sentence
+    /// ("Thier" → "Their"). That capital was deliberate, so the typed word
+    /// counts as written: typed like that twice, it is a name the person
+    /// uses and is never changed again. A sentence start's capital proves
+    /// nothing (the shift key put it there), and neither does a fix of the
+    /// same letters ("Im" → "I'm" is punctuation, not a name). Returns true
+    /// when the searchable word set changed.
+    @discardableResult
+    func noteCorrected(typed: String, fix: String, sentenceStart: Bool, policy: Policy,
+                       today: Int = TypingText.day()) -> Bool {
+        let key = TypingText.key(typed)
+        guard policy.contains(.learning), !sentenceStart, TypingText.isTitleCase(typed),
+              TypingText.key(fix) != key, Self.isLearnable(typed) else { return false }
+        let wasKnown = personal.isKnown(key)
+        personal.commit(typed, previous: nil, today: today)
+        if !wasKnown && personal.isKnown(key) {
+            rebuildExtra()
+            return true
+        }
+        return false
+    }
+
+    /// The fix autocorrect would make here, were it on: what a field without
+    /// autocorrect must not learn ("teh" typed twice in a search bar was
+    /// never corrected anywhere again, RESEARCH-IMPROVEMENTS-APP 12).
+    func wouldFix(_ typed: String, previous: String?, beforePrevious: String? = nil,
+                  sentenceStart: Bool, today: Int = TypingText.day()) -> Bool {
+        guard let fix = suggestions(typed: typed, previous: previous, beforePrevious: beforePrevious,
+                                    sentenceStart: sentenceStart, policy: .all, today: today).autocorrect
+        else { return false }
+        return fix != typed
     }
 
     func revert(typed: String, correction: String, today: Int = TypingText.day()) {

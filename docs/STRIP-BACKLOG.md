@@ -64,6 +64,14 @@ Still open from the research: calories per food (USDA table, ~100 KB), several z
 | "is it going to rain", "weather tomorrow" → No rain expected tomorrow (1%) | Open-Meteo, keyless, from the phone; needs the shared location |
 | Currency rates | straight from Frankfurter; the server only as a fallback |
 
+## Done on 4 Nov (both keyboards)
+
+| # | Trigger → chip | Notes |
+|---|---|---|
+| 15 | After an autocorrect ("teh " → "the "), the strip's first slot is “teh” in quotes, the next words in the other two → a tap puts it back and teaches the engine | Apple's way; also after a fix made by punctuation ("teh," → "the,", then its space); backspace straight after a fix and its space reverts too (shared/typing/FORMAT.md "Undo and reverts") |
+| – | Names are never autocorrected: contacts (iOS lexicon + the Contacts search sync, Android's sync), the vault's name, company, city and state, and a capital typed mid-sentence twice | "sumit" stays (was summit), "anoop" stays (was snoop) |
+| – | Fields with autocorrect off (search bars) teach nothing; with the Autocorrect setting off a would-be typo isn't learned | RESEARCH-IMPROVEMENTS-APP 12 |
+
 ## Next, no server needed
 
 | # | Trigger → chip → tap | Effort |
@@ -75,7 +83,6 @@ Still open from the research: calories per food (USDA table, ~100 KB), several z
 | 11 | "remind me to call the bank tomorrow", "call me in 5 minutes" → "Remind · Tomorrow 9 AM" → a Reminder (EventKit, needs the permission) | M |
 | 12 | The same 15+ character phrase committed three times in a month → "Save ';omw' for this" → the shorthand editor, prefilled | M |
 | 14 | A sentence ends and the engine knows of words it would have fixed → "2 typos · Fix" → spelling fixes only, instant | M |
-| 15 | After an autocorrect, for a few seconds → "Changed 'ket' to 'key' · Undo" | S |
 | 17 | X/Threads fields (keyboardType .twitter) → a quiet "212/280" count, red past the limit | S |
 | 18 | "you owe me $20", "send me 20 usdc" → "Request $20 · Solana Pay link" → a solana: URL Phantom opens | M |
 | 13 | Shorthand with arguments: ";meet {who} at {time}" asks for each when expanded; {clipboard}, {date format=…}, {calculator} | M |

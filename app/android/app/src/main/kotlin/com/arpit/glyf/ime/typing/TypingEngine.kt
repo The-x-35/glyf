@@ -44,6 +44,12 @@ class TypingEngine(
         const val WHITELIST_GAP = 40f
         const val PACK_PROBABILITY = 160f
         const val CONTACT_PROBABILITY = 40f
+        /** A name (Contacts, or a detail saved in the vault) typed in other
+         *  capitals is never changed into another word, unless that word is
+         *  one of the commonest there are: a contact "Teh" still lets "teh"
+         *  be "the" (222), while "arpit" never becomes "armpit" (Arpit,
+         *  2026-11-04: "never correct names"). iOS twin. */
+        const val NAME_FIX_FLOOR = 200f
         const val PACK_PHRASE_PROBABILITY = 180f
         /** A name (capitalized, not one of I's forms) ranks as if this much
          *  rarer when it isn't what was typed and the typing was lowercase:
@@ -141,8 +147,25 @@ class TypingEngine(
     }
 
     fun setContacts(forms: List<String>) {
+        contactList = forms
+        mergeNames()
+    }
+
+    /** The person's own details from the vault (name, first and last name,
+     *  company, city, state): names to the engine, like contacts. */
+    fun setOwnNames(forms: List<String>) {
+        if (forms == ownNameList) return
+        ownNameList = forms
+        mergeNames()
+    }
+
+    private var contactList: List<String> = emptyList()
+    private var ownNameList: List<String> = emptyList()
+
+    private fun mergeNames() {
         val out = LinkedHashMap<String, String>()
-        for (f in forms) out.putIfAbsent(TypingText.key(f), f)
+        for (f in contactList + ownNameList) out.putIfAbsent(TypingText.key(f), f)
+        out.remove("")
         contactForms = out
         rebuildExtra()
     }
@@ -223,8 +246,14 @@ class TypingEngine(
             realForms.any { TypingText.sameWord(typed, it.form) }
 
         lastHeldBack = null
-        val autocorrect = if (policy and AUTOCORRECT != 0)
+        var autocorrect = if (policy and AUTOCORRECT != 0)
             decide(typed, key, known, sentenceStart, exact, realForms, ranked, prevKey) else null
+        // A name in Contacts or the vault stays a name, whatever the
+        // capitals: "arpit" never becomes "armpit".
+        if (autocorrect != null && contactForms.containsKey(key) && !nameMayBecome(autocorrect, key)) {
+            autocorrect = null
+            lastHeldBack = "name"
+        }
         val seen = HashSet<String>()
         seen.add(typed.lowercase())
         autocorrect?.let { seen.add(it.lowercase()) }
@@ -457,6 +486,17 @@ class TypingEngine(
         return (first until first + b.entryCount(node)).firstOrNull { b.form(it) == form }
     }
 
+    /** A name's own letters ("mike" → "Mike") or one of the commonest words
+     *  ([NAME_FIX_FLOOR]): the only fixes a name typed in other capitals takes. */
+    private fun nameMayBecome(fix: String, key: String): Boolean {
+        val fixKey = TypingText.key(fix)
+        if (fixKey == key) return true
+        val b = base ?: return false
+        val p = listOf(fix, TypingText.lowercaseFirst(fix)).mapNotNull { baseEntry(fixKey, it) }
+            .maxOfOrNull { b.probability(it) } ?: 0
+        return p >= NAME_FIX_FLOOR
+    }
+
     /** Tests only: the rule that kept the last suggestions() call from autocorrecting. */
     internal var lastHeldBack: String? = null
 
@@ -666,6 +706,36 @@ class TypingEngine(
             return true
         }
         return false
+    }
+
+    /** Autocorrect changed a word typed with its own capital mid-sentence
+     *  ("Thier" → "Their"). That capital was deliberate, so the typed word
+     *  counts as written: typed like that twice, it is a name the person
+     *  uses and is never changed again. A sentence start's capital proves
+     *  nothing, and neither does a fix of the same letters ("Im" → "I'm").
+     *  True when the searchable word set changed. iOS twin. */
+    fun noteCorrected(typed: String, fix: String, sentenceStart: Boolean, policy: Int,
+                      today: Int = TypingText.day()): Boolean {
+        val key = TypingText.key(typed)
+        if (policy and LEARNING == 0 || sentenceStart || !TypingText.isTitleCase(typed) ||
+            TypingText.key(fix) == key || !isLearnable(typed)) return false
+        val wasKnown = personal.isKnown(key)
+        personal.commit(typed, null, today)
+        if (!wasKnown && personal.isKnown(key)) {
+            rebuildExtra()
+            return true
+        }
+        return false
+    }
+
+    /** The fix autocorrect would make here, were it on: what a field without
+     *  autocorrect must not learn ("teh" typed twice where autocorrect was
+     *  off was never corrected anywhere again, RESEARCH-IMPROVEMENTS-APP 12). */
+    fun wouldFix(typed: String, previous: String?, sentenceStart: Boolean,
+                 beforePrevious: String? = null, today: Int = TypingText.day()): Boolean {
+        val fix = suggestions(typed, null, previous, sentenceStart, ALL, today, beforePrevious).autocorrect
+            ?: return false
+        return fix != typed
     }
 
     fun revert(typed: String, correction: String, today: Int = TypingText.day()) {

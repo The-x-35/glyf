@@ -158,6 +158,8 @@ final class TypingEngineTests: XCTestCase {
             engine.replacePersonal(lexicon)
             engine.setPackWords(state["packWords"] as? [String] ?? [])
             engine.setContacts(state["contacts"] as? [String] ?? [])
+            // Details saved in the vault that are names (the controller's seedOwnNames).
+            engine.setOwnNames(state["ownNames"] as? [String] ?? [])
             engine.setPackPhrases(state["packPhrases"] as? [String] ?? [])
             if let ids = state["packs"] as? [String] {
                 let content = try packContent(packs, ids: ids)
@@ -316,6 +318,67 @@ final class TypingEngineTests: XCTestCase {
         for _ in 0..<3 { engine.commit(word: "Zomato", previous: nil, autoCapitalized: false, policy: .all, today: today) }
         let s = engine.suggestions(typed: "zomat", previous: nil, sentenceStart: false, today: today)
         XCTAssertTrue((s.alternatives + [s.autocorrect].compactMap { $0 }).contains("Zomato"), "\(s)")
+    }
+
+    private func realEngine() throws -> TypingEngine {
+        let repo = Self.sharedDir.deletingLastPathComponent().deletingLastPathComponent()
+        guard let trie = GlydTrie.mapped(path: repo.appendingPathComponent("app/dict/en.glyd").path) else {
+            throw XCTSkip("app/dict/en.glyd not built")
+        }
+        return TypingEngine(base: trie)
+    }
+
+    /// A capital typed mid-sentence that autocorrect changed anyway, typed so
+    /// twice, is the person's word: never changed again (2026-11-04). A
+    /// sentence start's capital and a same-letters fix ("Im" → "I'm") teach
+    /// nothing. TypingEngineTest.kt's twin: aCapitalTypedTwiceMidSentenceIsKept.
+    func testACapitalTypedTwiceMidSentenceIsKept() throws {
+        let engine = try realEngine()
+        func fix(_ w: String, start: Bool = false) -> String? {
+            engine.suggestions(typed: w, previous: start ? nil : "so", sentenceStart: start, today: today).autocorrect
+        }
+        XCTAssertEqual(fix("Wierd"), "Weird")
+        XCTAssertFalse(engine.noteCorrected(typed: "Wierd", fix: "Weird", sentenceStart: false, policy: .all, today: today))
+        XCTAssertEqual(fix("Wierd"), "Weird", "one time is not twice")
+        XCTAssertTrue(engine.noteCorrected(typed: "Wierd", fix: "Weird", sentenceStart: false, policy: .all, today: today))
+        XCTAssertNil(fix("Wierd"))
+        XCTAssertNil(fix("Wierd", start: true))
+
+        let other = try realEngine()
+        for _ in 0..<3 {
+            other.noteCorrected(typed: "Wierd", fix: "Weird", sentenceStart: true, policy: .all, today: today)
+            other.noteCorrected(typed: "Im", fix: "I'm", sentenceStart: false, policy: .all, today: today)
+            other.noteCorrected(typed: "Wierd", fix: "Weird", sentenceStart: false,
+                                policy: [.suggestions, .autocorrect], today: today)
+        }
+        XCTAssertTrue(other.personal.words.isEmpty)
+        XCTAssertEqual(other.suggestions(typed: "im", previous: "so", sentenceStart: false, today: today).autocorrect, "I'm")
+    }
+
+    /// What a field without autocorrect may learn: only what autocorrect
+    /// would leave alone (RESEARCH-IMPROVEMENTS-APP 12).
+    func testWouldFixTellsATypoFromAWord() throws {
+        let engine = try realEngine()
+        XCTAssertTrue(engine.wouldFix("teh", previous: "in", sentenceStart: false, today: today))
+        XCTAssertFalse(engine.wouldFix("the", previous: "in", sentenceStart: false, today: today))
+        XCTAssertFalse(engine.wouldFix("Zomato", previous: "on", sentenceStart: false, today: today))
+    }
+
+    /// The undo of an autocorrect carries what came after the fix.
+    func testUndoCarriesTheTail() {
+        XCTAssertEqual(WordTracker.undoTail("", adding: " "), " ")
+        XCTAssertEqual(WordTracker.undoTail(",", adding: " "), ", ")
+        XCTAssertEqual(WordTracker.undoTail("!", adding: "?"), "!?")
+        XCTAssertNil(WordTracker.undoTail(" ", adding: ","), "nothing after the space")
+        XCTAssertNil(WordTracker.undoTail(",", adding: "a"), "a letter ends it")
+        XCTAssertNil(WordTracker.undoTail("!!!", adding: " "), "three at most")
+        let spaced = WordTracker.undo(before: "in the ", original: "teh", replacement: "the", tail: " ")
+        XCTAssertEqual(spaced?.delete, 4)
+        XCTAssertEqual(spaced?.insert, "teh ")
+        let comma = WordTracker.undo(before: "in the, ", original: "teh", replacement: "the", tail: ", ")
+        XCTAssertEqual(comma?.delete, 5)
+        XCTAssertEqual(comma?.insert, "teh, ")
+        XCTAssertNil(WordTracker.undo(before: "in the, a", original: "teh", replacement: "the", tail: ", "))
     }
 
     func testDecodeIsFastEnough() throws {

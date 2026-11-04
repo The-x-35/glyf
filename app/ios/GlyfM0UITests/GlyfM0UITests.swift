@@ -295,6 +295,43 @@ final class GlyfGateUITests: XCTestCase {
         XCTAssertEqual(fieldValue(field).lowercased(), "thank you ")
     }
 
+    /// The Undo chip, Apple's way: after an autocorrect the first slot is
+    /// what was typed, in quotes; a tap puts it back with its space and the
+    /// fix never comes back (shared/typing/FORMAT.md "Undo and reverts").
+    func test01c_UndoChipShowsTheTypedWordAndTeaches() throws {
+        // Home (and its typing card) sits behind sign-in now.
+        let field = launchToTypingField(extraArgs: ["--glyf-reset-typing", "--glyf-test-signed-in"])
+        clearField(field)
+        typeOnGlyf("teh ")
+        XCTAssertEqual(fieldValue(field).lowercased(), "the ")
+        guard let chip = kbWait("suggest:0", timeout: 3) else { return XCTFail("no undo chip") }
+        XCTAssertEqual(chip.label.lowercased(), "teh", "the first slot is what was typed")
+        let shot = XCUIScreen.main.screenshot()
+        let keep = XCTAttachment(screenshot: shot)
+        keep.name = "undo-chip"
+        keep.lifetime = .keepAlways
+        add(keep)
+        if let path = ProcessInfo.processInfo.environment["GLYF_SHOT_PATH"] {
+            try? shot.pngRepresentation.write(to: URL(fileURLWithPath: path))
+        }
+        chip.tap()
+        XCTAssertEqual(fieldValue(field).lowercased(), "teh ", "the chip puts back the typed word and its space")
+        typeOnGlyf("teh ")
+        XCTAssertEqual(fieldValue(field).lowercased(), "teh teh ", "an undone fix never comes back")
+
+        // A fix made by a comma is undoable too, comma and space included.
+        clearField(field)
+        typeOnGlyf("thw")
+        kb(",")?.tap()
+        if fieldValue(field).lowercased() == "the," {
+            typeOnGlyf(" ")
+            guard let comma = kbWait("suggest:0", timeout: 3) else { return XCTFail("no undo chip after a comma") }
+            XCTAssertEqual(comma.label.lowercased(), "thw")
+            comma.tap()
+            XCTAssertEqual(fieldValue(field).lowercased(), "thw, ")
+        }
+    }
+
     func test02_ShellNavigationAndSettings() throws {
         _ = launchToTypingField()
         kb("toolbar:glyf")?.tap()

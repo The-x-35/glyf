@@ -60,6 +60,25 @@ object WordContext {
         return previousWord(before.substring(0, before.length - current.length).trimEnd { it in SPACES })
     }
 
+    // Undo of an autocorrect (shared/typing/FORMAT.md "Undo"): what follows
+    // the fixed word rides along with it, its space ("the ") or the
+    // punctuation that made the fix and then one space ("the, ").
+
+    /** The tail after one more character, or null when that character leaves
+     *  the correction behind: punctuation only before the space, one space,
+     *  three characters at most. iOS WordTracker.undoTail's twin. */
+    fun undoTail(tail: String, adding: Char): String? {
+        if (tail.length >= 3 || tail.endsWith(" ")) return null
+        return if (adding == ' ' || adding in CORRECTION_BOUNDARIES) tail + adding else null
+    }
+
+    /** UTF-16 units to delete and the text to put back for an undo, while
+     *  the text before the cursor still ends with the fix and its tail. */
+    fun undo(before: String, original: String, replacement: String, tail: String): Pair<Int, String>? {
+        if (replacement.isEmpty() || !before.endsWith(replacement + tail)) return null
+        return (replacement.length + tail.length) to (original + tail)
+    }
+
     /** Sentence start: text start, or sentence punctuation then space(s). */
     fun wantsCapital(before: String?): Boolean {
         val ctx = before?.replace("￼", "") ?: return true

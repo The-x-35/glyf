@@ -254,6 +254,7 @@ Effort is S (a day or less), M (2 to 5 days) or L (more than a week). Impact is 
   - Or require one deliberate keep (an undo of a correction, or tapping the typed word).
   - Prune known words that are one edit from a much more common word and were never kept.
 - **Effort:** S. **Impact:** retention.
+- **Done 4 Nov (both keyboards):** iOS fields with `autocorrectionType = .no` or a `.webSearch` keyboard learn nothing; with the Autocorrect setting off (and in X's composer) a word the engine would have fixed is not learned, nor is a fix left standing with "Correct automatically" off (Android the same; its NO_SUGGESTIONS, password, URI and email fields already had no policy). Pruning learned misspellings already on phones is still open.
 
 ### 13. Server time per request and cold starts on Vercel
 

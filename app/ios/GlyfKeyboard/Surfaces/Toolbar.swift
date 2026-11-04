@@ -842,7 +842,9 @@ final class GlyfToolbar: UIView {
         let title: String
         switch item.kind {
         case .literal: title = "“\(item.text)”"
-        case .undo: title = "↩ \(item.text)"
+        // What was typed before the last autocorrect, in quotes, as Apple's
+        // bar offers it back.
+        case .undo: title = "“\(item.text)”"
         case .correction, .word, .emoji: title = item.text
         }
         b.setTitle(title, for: .normal)

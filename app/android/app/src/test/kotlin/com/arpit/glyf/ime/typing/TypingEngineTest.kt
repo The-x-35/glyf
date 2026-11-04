@@ -119,6 +119,8 @@ class TypingEngineTest {
             engine.replacePersonal(lexicon)
             engine.setPackWords(state.optJSONArray("packWords")?.strings() ?: emptyList())
             engine.setContacts(state.optJSONArray("contacts")?.strings() ?: emptyList())
+            // Details saved in the vault that are names (GlyfIME.seedOwnNames).
+            engine.setOwnNames(state.optJSONArray("ownNames")?.strings() ?: emptyList())
             engine.setPackPhrases(state.optJSONArray("packPhrases")?.strings() ?: emptyList())
             state.optJSONArray("packs")?.strings()?.let { ids ->
                 val (words, phrases) = packContent(packsFile, ids)
@@ -318,5 +320,58 @@ class TypingEngineTest {
         repeat(3) { engine.commit("Zomato", null, false, TypingEngine.ALL, today) }
         val s = engine.suggestions("zomat", null, null, false, TypingEngine.ALL, today)
         assertTrue(s.toString(), "Zomato" in s.alternatives + listOfNotNull(s.autocorrect))
+    }
+
+    private fun realEngine(): TypingEngine? {
+        val dict = File(sharedDir.parentFile.parentFile, "app/dict/en.glyd")
+        if (!dict.exists()) return null
+        return TypingEngine(GlydTrie.mapped(dict)!!)
+    }
+
+    /** A capital typed mid-sentence that autocorrect changed anyway, typed so
+     *  twice, is the person's word: never changed again (2026-11-04). A
+     *  sentence start's capital and a same-letters fix ("Im" → "I'm") teach
+     *  nothing. iOS twin: testACapitalTypedTwiceMidSentenceIsKept. */
+    @Test fun aCapitalTypedTwiceMidSentenceIsKept() {
+        val engine = realEngine()
+        org.junit.Assume.assumeTrue("app/dict/en.glyd not built", engine != null)
+        engine!!
+        fun fix(w: String, start: Boolean = false) = engine.suggestions(w, null, if (start) null else "so", start, TypingEngine.ALL, today).autocorrect
+        assertEquals("Weird", fix("Wierd"))
+        assertFalse(engine.noteCorrected("Wierd", "Weird", sentenceStart = false, policy = TypingEngine.ALL, today = today))
+        assertEquals("one time is not twice", "Weird", fix("Wierd"))
+        assertTrue(engine.noteCorrected("Wierd", "Weird", sentenceStart = false, policy = TypingEngine.ALL, today = today))
+        assertNull(fix("Wierd"))
+        assertNull(fix("Wierd", start = true))
+
+        val other = realEngine()!!
+        repeat(3) { other.noteCorrected("Wierd", "Weird", sentenceStart = true, policy = TypingEngine.ALL, today = today) }
+        repeat(3) { other.noteCorrected("Im", "I'm", sentenceStart = false, policy = TypingEngine.ALL, today = today) }
+        repeat(3) { other.noteCorrected("Wierd", "Weird", sentenceStart = false, policy = TypingEngine.SUGGESTIONS or TypingEngine.AUTOCORRECT, today = today) }
+        assertTrue(other.personal.words.isEmpty())
+        assertEquals("I'm", other.suggestions("im", null, "so", false, TypingEngine.ALL, today).autocorrect)
+    }
+
+    /** What a field without autocorrect may learn: only what autocorrect
+     *  would leave alone (RESEARCH-IMPROVEMENTS-APP 12). */
+    @Test fun wouldFixTellsATypoFromAWord() {
+        val engine = realEngine()
+        org.junit.Assume.assumeTrue("app/dict/en.glyd not built", engine != null)
+        assertTrue(engine!!.wouldFix("teh", "in", false))
+        assertFalse(engine.wouldFix("the", "in", false))
+        assertFalse(engine.wouldFix("Zomato", "on", false))
+    }
+
+    /** The undo of an autocorrect carries what came after the fix. */
+    @Test fun undoCarriesTheTail() {
+        assertEquals(" ", WordContext.undoTail("", ' '))
+        assertEquals(", ", WordContext.undoTail(",", ' '))
+        assertEquals("!?", WordContext.undoTail("!", '?'))
+        assertNull("nothing after the space", WordContext.undoTail(" ", ','))
+        assertNull("a letter ends it", WordContext.undoTail(",", 'a'))
+        assertNull("three at most", WordContext.undoTail("!!!", ' '))
+        assertEquals(4 to "teh ", WordContext.undo("in the ", "teh", "the", " "))
+        assertEquals(5 to "teh, ", WordContext.undo("in the, ", "teh", "the", ", "))
+        assertNull("written past it", WordContext.undo("in the, a", "teh", "the", ", "))
     }
 }

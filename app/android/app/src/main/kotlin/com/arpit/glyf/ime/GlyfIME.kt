@@ -68,9 +68,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         enum class Kind { LITERAL, CORRECTION, WORD, UNDO, FILL, EMOJI }
     }
     /** [anchor] is the text before the cursor right after the correction and
-     *  its space went in: undo works from exactly there (iOS twin). */
+     *  its space went in: undo works from exactly there (iOS twin). [tail] is
+     *  what came after the fix there: its space, or the punctuation that made
+     *  the fix and then a space (WordContext.undoTail). */
     private data class Correction(val original: String, val replacement: String, val fromEngine: Boolean,
-                                  var anchor: String? = null)
+                                  var anchor: String? = null, var tail: String = "")
     private var lastCorrection: Correction? = null
 
     /** Engine corrections of the last few minutes. Going back into one and
@@ -89,7 +91,34 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val anchor = corr.anchor ?: return null
         // Callers read different lengths before the cursor; compare the
         // stretch the anchor holds.
-        return corr.takeIf { before.takeLast(ANCHOR_CHARS) == anchor && before.endsWith(corr.replacement + " ") }
+        return corr.takeIf {
+            before.takeLast(ANCHOR_CHARS) == anchor && corr.tail.isNotEmpty() && before.endsWith(corr.replacement + corr.tail)
+        }
+    }
+
+    /** [c] just went in after a word: a correction it made is undoable from
+     *  here, and one it follows ([extending], undoable just before it) moves
+     *  its anchor here while what came after the fix is only marks and one
+     *  space (iOS anchorCorrection). */
+    private fun anchorCorrection(ic: android.view.inputmethod.InputConnection, c: Char, extending: Correction?) {
+        val corr = lastCorrection ?: return
+        if (corr.anchor == null) {
+            corr.anchor = anchorHere(ic)
+            corr.tail = c.toString()
+        } else if (extending === corr) {
+            WordContext.undoTail(corr.tail, c)?.let { tail ->
+                corr.anchor = anchorHere(ic)
+                corr.tail = tail
+            }
+        }
+    }
+
+    /** An undone engine correction is never offered for that word again, and
+     *  the word is kept (the "retype teaches" logic, PersonalLexicon.revert). */
+    private fun teachUndo(corr: Correction) {
+        if (!corr.fromEngine || typingPolicy() and TypingEngine.LEARNING == 0) return
+        KeyboardTyping.engine?.revert(corr.original, corr.replacement)
+        KeyboardTyping.scheduleSave(this)
     }
     private fun anchorHere(ic: android.view.inputmethod.InputConnection): String? =
         ic.getTextBeforeCursor(ANCHOR_CHARS, 0)?.toString()
@@ -1791,9 +1820,17 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val ic = currentInputConnection ?: return
         when {
             char != null -> {
+                // A fix this punctuation makes, or one whose punctuation it
+                // follows ("teh!?"), stays undoable with the marks after it.
+                var punctuation: Char? = null
+                var extending: Correction? = null
                 if (char.length == 1) {
                     val c = char[0]
                     if (c in WordContext.CORRECTION_BOUNDARIES) {
+                        punctuation = c
+                        if (lastCorrection?.anchor != null) {
+                            extending = undoableCorrection(ic.getTextBeforeCursor(ANCHOR_CHARS, 0)?.toString() ?: "")
+                        }
                         // Punctuation ends the word: correct it before the mark lands.
                         commitCurrentWord(ic)
                     } else if (!WordContext.isBoundary(c) || c == '\'' || c == '’') {
@@ -1807,6 +1844,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     }
                 }
                 ic.commitText(char, 1)
+                punctuation?.let { anchorCorrection(ic, it, extending) }
                 if (autoShifted && keyboard.shifted) {
                     keyboard.shifted = false
                     autoShifted = false
@@ -1818,19 +1856,20 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             id == "delete" -> {
                 // Right after a glide, one backspace takes the whole word.
                 if (glideBackspace(ic)) return
-                val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
-                val corr = undoableCorrection(before)
+                val before = ic.getTextBeforeCursor(ANCHOR_CHARS, 0)?.toString() ?: ""
+                // After a fix made by punctuation ("the,") backspace deletes as usual.
+                val corr = undoableCorrection(before)?.takeIf { it.tail == " " }
                 if (corr == null) lastCorrection = null
                 if (corr != null) {
                     // Backspace right after a correction puts back what was typed
-                    // (and teaches the engine to leave that word alone).
+                    // (and teaches the engine to leave that word alone), the
+                    // way Apple's keyboard and the iOS twin do.
+                    ic.beginBatchEdit()
                     ic.deleteSurroundingText(corr.replacement.length + 1, 0)
                     ic.commitText(corr.original, 1)
+                    ic.endBatchEdit()
                     lastCorrection = null
-                    if (corr.fromEngine && typingPolicy() and TypingEngine.LEARNING != 0) {
-                        KeyboardTyping.engine?.revert(corr.original, corr.replacement)
-                        KeyboardTyping.scheduleSave(this)
-                    }
+                    teachUndo(corr)
                 } else if (selEnd > selStart && selStart >= 0) {
                     ic.commitText("", 1)   // a selection goes as one piece
                 } else {
@@ -2615,13 +2654,23 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     }
 
     /** The person's own names are words to the engine, whatever the
-     *  dictionary makes of them ("hi arpit" offered armpit; iOS 10-07). */
+     *  dictionary makes of them ("hi arpit" offered armpit; iOS 10-07). The
+     *  vault's details that are names too (first and last name, company,
+     *  city, state) are never autocorrected (2026-11-04, iOS twin). */
     private var seededNames: Set<String> = emptySet()
+    /** The vault read last seeded (vaultFields runs on every keystroke). */
+    private var seededFrom: List<Smart.Field>? = null
     private fun seedOwnNames(fields: List<Smart.Field>) {
         val engine = KeyboardTyping.engine ?: return
-        val names = fields.filter { it.kind == "name" }
-            .flatMap { f -> f.value.split(Regex("""[^\p{L}'-]+""")) }
+        if (fields === seededFrom) return
+        seededFrom = fields
+        fun words(values: List<String>): Set<String> = values
+            .flatMap { it.split(Regex("""[^\p{L}'-]+""")) }
             .filter { it.length >= 2 }.toSet()
+        val names = words(fields.filter { it.kind == "name" }.map { it.value })
+        val details = words(listOf("givenName", "familyName", "company", "city", "state")
+            .flatMap { kind -> Smart.detailsFor(kind, fields).map { it.value } })
+        engine.setOwnNames((names + details).sorted())
         if (names == seededNames) return
         for (name in names - seededNames) engine.keep(name)
         seededNames = names
@@ -4058,7 +4107,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                             cursorBack(ic, back)
                         } else {
                             ic.commitText("$text ", 1)
-                            lastCorrection = Correction(token, text, fromEngine = false, anchor = anchorHere(ic))
+                            lastCorrection = Correction(token, text, fromEngine = false, anchor = anchorHere(ic), tail = " ")
                         }
                         syncAutoShift()
                         updateSuggestions()
@@ -4069,10 +4118,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         // Autocorrect + learning on commit (ime/typing) — the policy keeps
         // password and address fields untouched.
+        // "teh," then space: the fix stays undoable with its comma and space.
+        val extending = if (lastCorrection?.anchor != null)
+            undoableCorrection(ic.getTextBeforeCursor(ANCHOR_CHARS, 0)?.toString() ?: "") else null
         commitCurrentWord(ic)
         ic.commitText(" ", 1)
         // A correction this space just made is undoable from here only.
-        lastCorrection?.let { if (it.anchor == null) it.anchor = anchorHere(ic) }
+        anchorCorrection(ic, ' ', extending)
         syncAutoShift()
         updateSuggestions()
     }
@@ -4206,7 +4258,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             val corr = undoableCorrection(before)
             val previous = WordContext.previousWord(before)
             showSuggestions(when {
-                corr != null -> listOf(Suggestion(corr.original, Suggestion.Kind.UNDO))
+                // Apple's way: what was typed, in quotes, in the first slot; a
+                // tap puts it back and teaches the engine. The next words keep
+                // the other two slots once the space is in (iOS twin).
+                corr != null -> listOf(Suggestion(corr.original, Suggestion.Kind.UNDO)) +
+                    (if (engine != null && corr.tail == " " && previous != null)
+                        engine.predictions(previous, policy, beforePrevious = WordContext.wordBeforePrevious(before))
+                            .take(2).map { Suggestion(it, Suggestion.Kind.WORD) }
+                    else emptyList())
                 engine != null && before.endsWith(" ") && previous != null -> {
                     val next = engine.predictions(previous, policy, beforePrevious = WordContext.wordBeforePrevious(before))
                         .map { Suggestion(it, Suggestion.Kind.WORD) }
@@ -4250,7 +4309,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             slots += TextView(this).apply {
                 text = when (item.kind) {
                     Suggestion.Kind.LITERAL -> "“${item.text}”"
-                    Suggestion.Kind.UNDO -> "↩ ${item.text}"
+                    // What was typed before the last autocorrect, in quotes,
+                    // as Apple's bar offers it back.
+                    Suggestion.Kind.UNDO -> "“${item.text}”"
                     else -> item.text
                 }
                 gravity = Gravity.CENTER
@@ -4317,12 +4378,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
             Suggestion.Kind.UNDO -> {
                 val corr = lastCorrection ?: return
-                if (undoableCorrection(before) != null) {
-                    ic.deleteSurroundingText(corr.replacement.length + 1, 0)
-                    ic.commitText(corr.original + " ", 1)
-                    if (corr.fromEngine && policy and TypingEngine.LEARNING != 0) {
-                        engine?.revert(corr.original, corr.replacement)
-                    }
+                val now = ic.getTextBeforeCursor(ANCHOR_CHARS, 0)?.toString() ?: ""
+                val undo = undoableCorrection(now)?.let { WordContext.undo(now, it.original, it.replacement, it.tail) }
+                if (undo != null) {
+                    ic.beginBatchEdit()
+                    ic.deleteSurroundingText(undo.first, 0)
+                    ic.commitText(undo.second, 1)
+                    ic.endBatchEdit()
+                    teachUndo(corr)
                 }
                 lastCorrection = null
             }
@@ -4368,18 +4431,26 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             val policy = typingPolicy()
             val previous = WordContext.previousWord(before)
             val head = before.substring(0, before.length - word.length)
+            val sentenceStart = WordContext.wantsCapital(head)
             var kept = word
+            // What this word may teach: a typo left standing teaches nothing.
+            var learn = policy
             val nowMs = System.currentTimeMillis()
             recentFixes.removeAll { nowMs - it.at > 300_000 }
             val refused = recentFixes.firstOrNull { it.touched && it.original.equals(word, ignoreCase = true) }
             if (refused != null) {
                 // Corrected, gone back into, and typed the same again: keep it.
                 recentFixes.remove(refused)
-                engine.revert(word, refused.replacement)
+                if (policy and TypingEngine.LEARNING != 0) engine.revert(word, refused.replacement)
             } else if (policy and TypingEngine.AUTOCORRECT != 0) {
                 val fix = engineSuggestions(word, before, policy)?.autocorrect
                 // "Correct automatically" off: the word stands exactly as
                 // typed and the fix waits in the strip for a tap (iOS twin).
+                // Left standing but not chosen, it is not learned: typed
+                // twice it would never be fixed again (RESEARCH-IMPROVEMENTS-APP 12).
+                if (fix != null && fix != word && !settings.optBoolean("autocorrectApply", true)) {
+                    learn = learn and TypingEngine.LEARNING.inv()
+                }
                 if (fix != null && fix != word && settings.optBoolean("autocorrectApply", true)) {
                     ic.beginBatchEdit()
                     ic.deleteSurroundingText(word.length, 0)
@@ -4392,10 +4463,19 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     recentFixes.add(RecentFix(word, fix, nowMs))
                     while (recentFixes.size > 8) recentFixes.removeAt(0)
                     kept = fix
+                    // A capital typed mid-sentence was meant: twice, and it's a name.
+                    engine.noteCorrected(word, fix, sentenceStart, policy)
                 }
+            } else if (policy and TypingEngine.LEARNING != 0 && !settings.optBoolean("autocorrect", true) &&
+                engine.wouldFix(word, previous, sentenceStart, WordContext.wordBeforePrevious(before))) {
+                // Autocorrect switched off: what it would have fixed is a
+                // typo, not a word to learn. (Fields that turn suggestions
+                // off — NO_SUGGESTIONS, passwords, URI, email — have no
+                // policy at all, so nothing is learned there.)
+                learn = learn and TypingEngine.LEARNING.inv()
             }
-            val autoCapitalized = WordContext.wantsCapital(head) && settings.optBoolean("autocapitalize", true)
-            engine.commit(kept, previous, autoCapitalized, policy)
+            val autoCapitalized = sentenceStart && settings.optBoolean("autocapitalize", true)
+            engine.commit(kept, previous, autoCapitalized, learn)
             KeyboardTyping.scheduleSave(this)
         } finally {
             wordTouches.clear()

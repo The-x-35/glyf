@@ -85,6 +85,28 @@ enum WordTracker {
     /// Characters that end a word and trigger autocorrect before they land.
     static let correctionBoundaries = Set(".,!?;:")
 
+    // MARK: Undo of an autocorrect (shared/typing/FORMAT.md "Undo")
+    //
+    // What follows the fixed word rides along with it: its space ("the "),
+    // or the punctuation that made the fix and then one space ("the, ").
+
+    /// The tail after one more character, or nil when that character leaves
+    /// the correction behind: punctuation only before the space, one space,
+    /// three characters at most. WordContext.kt's twin.
+    static func undoTail(_ tail: String, adding ch: Character) -> String? {
+        guard tail.count < 3, !tail.hasSuffix(" ") else { return nil }
+        if ch == " " || correctionBoundaries.contains(ch) { return tail + String(ch) }
+        return nil
+    }
+
+    /// The characters to delete and the text to put back for an undo, while
+    /// the text before the caret still ends with the fix and its tail.
+    static func undo(before: String, original: String, replacement: String,
+                     tail: String) -> (delete: Int, insert: String)? {
+        guard !replacement.isEmpty, before.hasSuffix(replacement + tail) else { return nil }
+        return (replacement.count + tail.count, original + tail)
+    }
+
     /// Double-space → ". " applies only after a real word character.
     static func canPeriodShortcut(beforeContext: String?) -> Bool {
         guard let ctx = beforeContext, ctx.hasSuffix(" "), ctx.count >= 2 else { return false }

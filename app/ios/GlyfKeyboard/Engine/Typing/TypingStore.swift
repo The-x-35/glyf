@@ -117,6 +117,9 @@ final class TypingStore {
             }
         }
         replacements = shortcuts
+        // The contacts the app already synced for Contacts search (Profile;
+        // no new permission) are names too, never to be autocorrected.
+        names += AppGroupStore.readContacts().map(\.name)
         engine?.setContacts(names.flatMap { $0.split(separator: " ").map(String.init) })
     }
 
