@@ -155,17 +155,15 @@ void main() {
     for (final gone in ['Contacts search', 'Nearby search', 'Tone profile', 'Take the tour', 'Replay onboarding']) {
       expect(find.text(gone), findsNothing, reason: gone);
     }
-    for (final action in ['Sign out', 'Privacy policy', 'Delete account']) {
+    for (final action in ['Sign out', 'Privacy policy']) {
       await tester.scrollUntilVisible(find.text(action), 200);
       expect(find.text(action), findsOneWidget, reason: action);
     }
-    // Delete account is the page's last action, in the danger colour.
+    // Delete account is hidden for now (showDeleteAccount).
     final signOutY = tester.getTopLeft(find.text('Sign out')).dy;
     final privacyY = tester.getTopLeft(find.text('Privacy policy')).dy;
-    final deleteY = tester.getTopLeft(find.text('Delete account')).dy;
-    expect(deleteY, greaterThan(privacyY));
     expect(privacyY, greaterThan(signOutY));
-    expect(tester.widget<Text>(find.text('Delete account')).style?.color, Glass.danger);
+    expect(find.text('Delete account'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
   });

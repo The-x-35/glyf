@@ -18,7 +18,6 @@
 		05E7F2BF7420976501F5ECE8 /* ClipboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 707C5A7E74F5BA1712F4091F /* ClipboardStore.swift */; };
 		05E9C774CC53F7080542FA54 /* TempMailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416376F36170FAEDC38BA98E /* TempMailTests.swift */; };
 		0800EC9C0F83865A7252B720 /* ToneProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F870C03E48C1149F7284D509 /* ToneProfile.swift */; };
-		0863612302184B353D326395 /* GlyfVoiceWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7DA7727A8B67C7FC63CDA577 /* GlyfVoiceWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		0B545E6619BFA8152F0DD00A /* TypingText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2800A99C3DD59CFC155C03C /* TypingText.swift */; };
 		0D666D392169B026A5E282FD /* theme-synth-return.caf in Resources */ = {isa = PBXBuildFile; fileRef = 22CD5F590810CE59D1E2A77B /* theme-synth-return.caf */; };
 		0E08430B71036E4ED4D917CB /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ED172FBD98BD64B321D6F03F /* Foundation.framework */; };
@@ -288,13 +287,6 @@
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
 		};
-		FCE320EC044A67B59C7D5BF4 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = CD0838CFAC7135C61F54F743;
-			remoteInfo = GlyfVoiceWidget;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -305,7 +297,6 @@
 			dstSubfolderSpec = 13;
 			files = (
 				04E24537E6F15DE5A79B88B7 /* GlyfKeyboard.appex in Embed Foundation Extensions */,
-				0863612302184B353D326395 /* GlyfVoiceWidget.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1040,7 +1031,6 @@
 			);
 			dependencies = (
 				DF088BFC89B7D75D35B8D74F /* PBXTargetDependency */,
-				1D63C6EC0411747D18739008 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
@@ -1566,12 +1556,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		1D63C6EC0411747D18739008 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = GlyfVoiceWidget;
-			target = CD0838CFAC7135C61F54F743 /* GlyfVoiceWidget */;
-			targetProxy = FCE320EC044A67B59C7D5BF4 /* PBXContainerItemProxy */;
-		};
 		331C8086294A63A400263BE5 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;

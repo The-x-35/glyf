@@ -24,6 +24,7 @@ void main() {
   }
 
   setUp(() {
+    showDeleteAccount = true;
     calls = [];
     args = ['--glyf-test-signed-in', '--glyf-test-account=google:asha@example.com'];
     settings = {'deviceId': 'phone-0000-aaaa', 'backendURL': 'http://127.0.0.1:9'};

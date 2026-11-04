@@ -32,6 +32,12 @@ import 'search_sheet.dart';
 /// account's own actions at the foot. It had grown a row per switch; now a
 /// row that only holds a switch or two (Search) or a choice (Tour) opens a
 /// sheet, and Tone profile lives with the words in Vocabulary.
+/// Delete account is hidden (Arpit, 2026-11-04: "remove the option to
+/// delete the account ... so that they cannot spam us"). The sheet, the
+/// erase and the server's DELETE /me stay: Apple 5.1.1(v) and Google Play
+/// ask for in-app deletion, so App Review may want it back. Flip to show.
+bool showDeleteAccount = false;
+
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key, required this.onRerunOnboarding, this.activeTab});
   final VoidCallback onRerunOnboarding;
@@ -450,6 +456,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                   style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w500)),
             ),
           ]),
+          if (showDeleteAccount)
           Center(
             child: Semantics(
               identifier: 'profile:delete-account',
