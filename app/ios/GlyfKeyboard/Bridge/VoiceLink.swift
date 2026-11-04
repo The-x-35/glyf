@@ -25,8 +25,12 @@ enum VoiceLink {
     static let takenFile = "voice-taken.json"
 
     /// How long a session lives with nothing said before the app lets the
-    /// microphone go (Wispr Flow's default is also 5 minutes).
-    static let idleLifetime: TimeInterval = 5 * 60
+    /// microphone go. Each use restarts it. An hour, not Wispr Flow's 5
+    /// minutes: after 5 a pause sent every next tap back through the Glyf
+    /// app (Arpit, 2026-11-04: "why is it opening the Glyf app every time I
+    /// click on the mic"). Apple lets a recording started in the foreground
+    /// run on in the background; Turn off in Glyf ends it at once.
+    static let idleLifetime: TimeInterval = 60 * 60
     /// One utterance stops by itself after this long.
     static let maxUtterance: TimeInterval = 5 * 60
     /// The app writes its heartbeat this often while the microphone runs.
