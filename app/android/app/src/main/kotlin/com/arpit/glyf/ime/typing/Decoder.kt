@@ -4,17 +4,22 @@ import java.util.PriorityQueue
 import kotlin.math.abs
 import kotlin.math.max
 
-/** The QWERTY letter grid in key widths (FORMAT.md "Scoring"). Mirror of
- *  KeyGeometry in Engine/Typing/Decoder.swift. */
-class KeyGeometry(val rowPitch: Float = 1.44f) {
+/** The letter grid in key widths (FORMAT.md "Scoring"). Mirror of
+ *  KeyGeometry in Engine/Typing/Decoder.swift: QWERTY unless the person
+ *  picked another layout (LetterLayout). Each row is centred in the ten
+ *  columns, so the offsets are QWERTY's 0, 0.5 and 1.5 there and follow the
+ *  keys on the others. Non-letters keep their slot. */
+class KeyGeometry(val rowPitch: Float = 1.44f, rows: List<String> = ROWS) {
     private val xs = FloatArray(26) { Float.NaN }
     private val ys = FloatArray(26) { Float.NaN }
 
     init {
-        ROWS.forEachIndexed { r, row ->
+        rows.forEachIndexed { r, row ->
+            val offset = (10 - row.length) / 2f
             row.forEachIndexed { k, ch ->
+                if (ch !in 'a'..'z') return@forEachIndexed
                 val i = ch.code - 97
-                xs[i] = k + 0.5f + OFFSETS[r]
+                xs[i] = k + 0.5f + offset
                 ys[i] = (r + 0.5f) * rowPitch
             }
         }
@@ -41,7 +46,6 @@ class KeyGeometry(val rowPitch: Float = 1.44f) {
 
     companion object {
         val ROWS = listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
-        val OFFSETS = floatArrayOf(0f, 0.5f, 1.5f)
     }
 }
 

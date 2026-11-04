@@ -57,6 +57,15 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
     'TRY': '₺  Turkish lira',
   };
 
+  /// The letter layouts both keyboards draw (iOS LetterLayout, Android
+  /// LetterLayout): QWERTY is today's keyboard and the default.
+  static const _layouts = <String, String>{
+    'qwerty': 'QWERTY',
+    'qwertz': 'QWERTZ',
+    'azerty': 'AZERTY',
+    'colemak': 'Colemak',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -173,6 +182,14 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
               _switch('Borders around keys', 'keyBorders'),
           ]),
           const SizedBox(height: 18),
+          _label('Layout'),
+          _card([
+            _choiceRow('Letters', 'keyLayout', _layouts),
+            _switch('Number row', 'numberRow'),
+            _switch('Comma beside space', 'commaKey'),
+            _switch('Period beside space', 'periodKey'),
+          ]),
+          const SizedBox(height: 18),
           _label('Typing'),
           _card([
             _switch('Autocorrect', 'autocorrect'),
@@ -182,7 +199,6 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
             _switch('Suggestions', 'candidates'),
             _switch('Auto-capitalize', 'autocapitalize'),
             _switch('Double-space for period', 'periodShortcut'),
-            _switch('Number row', 'numberRow'),
             _switch('Glide typing', 'glideTyping', fallback: true),
           ]),
           const SizedBox(height: 18),
@@ -272,16 +288,21 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
 
   /// Type "$13" and the strip offers it in this currency. Token prices stay
   /// in dollars, which is how the market quotes them.
-  Widget _currencyRow() {
-    final value = (_settings['moneyCurrency'] as String?) ?? 'auto';
+  Widget _currencyRow() => _choiceRow('Convert money to', 'moneyCurrency', _currencies);
+
+  /// A setting with one value out of [options] (id → label): the row shows
+  /// the picked one and opens a sheet of them. The first option is the
+  /// default.
+  Widget _choiceRow(String title, String key, Map<String, String> options) {
+    final value = (_settings[key] as String?) ?? options.keys.first;
     return InkWell(
-      onTap: _pickCurrency,
+      key: ValueKey('choice:$key'),
+      onTap: () => _pick(title, key, options),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
         child: Row(children: [
-          const Expanded(
-              child: Text('Convert money to', style: TextStyle(fontSize: 15))),
-          Text(_currencies[value] ?? value,
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 15))),
+          Text(options[value] ?? options.values.first,
               style: const TextStyle(fontSize: 14, color: Glass.inkSoft)),
           const Icon(Icons.chevron_right, size: 18, color: Glass.inkSoft),
         ]),
@@ -289,8 +310,8 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
     );
   }
 
-  Future<void> _pickCurrency() async {
-    final current = (_settings['moneyCurrency'] as String?) ?? 'auto';
+  Future<void> _pick(String title, String key, Map<String, String> options) async {
+    final current = (_settings[key] as String?) ?? options.keys.first;
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
@@ -307,12 +328,12 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
           children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 4, bottom: 10),
-              child: Text('Convert money to',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 10),
+              child: Text(title,
+                  style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
             ),
-            for (final e in _currencies.entries)
+            for (final e in options.entries)
               ListTile(
                 title: Text(e.value, style: const TextStyle(fontSize: 15)),
                 trailing: e.key == current
@@ -324,7 +345,7 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
         ),
       ),
     );
-    if (picked != null) await _set('moneyCurrency', picked);
+    if (picked != null && picked != current) await _set(key, picked);
   }
 
   Widget _segmented(String title, String key, List<String> options) {

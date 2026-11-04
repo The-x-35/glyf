@@ -145,7 +145,9 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
         keys = []
         let s = SettingsStore.current
         rows = KeyboardLayout.rows(mode: mode, numberRow: s.numberRow && mode == .letters,
-                                   globe: needsGlobe, context: context)
+                                   globe: needsGlobe, context: context,
+                                   letters: LetterLayout(id: s.keyLayout),
+                                   comma: s.commaKey == true, period: s.periodKey == true)
         for row in rows {
             for spec in row {
                 let kv = KeyView(spec: spec)

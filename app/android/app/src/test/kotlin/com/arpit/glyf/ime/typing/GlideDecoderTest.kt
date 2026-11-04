@@ -46,15 +46,17 @@ class GlideDecoderTest {
          * as GlyfKeyboardView.rowPitchDp makes them (54, easing to 56 from
          * 402 dp). In key widths.
          */
-        fun layout(widthDp: Float): GlideDecoder.Layout {
+        fun layout(widthDp: Float, rows: List<String> = KeyGeometry.ROWS): GlideDecoder.Layout {
             val margin = 6.5f
             val gap = 6f
             val pitch = (widthDp - 2 * margin + gap) / 10f
             val rowH = 54f + 2f * ((widthDp - 402f) / 12f).coerceIn(0f, 1f)
             val keys = ArrayList<Triple<Char, Float, Float>>()
-            val starts = floatArrayOf(0f, 0.5f, 1.5f)
-            listOf("qwertyuiop", "asdfghjkl", "zxcvbnm").forEachIndexed { r, row ->
+            // Each row centred in the ten columns (QWERTY: 0, 0.5, 1.5).
+            val starts = rows.map { (10 - it.length) / 2f }
+            rows.forEachIndexed { r, row ->
                 row.forEachIndexed { c, ch ->
+                    if (ch !in 'a'..'z') return@forEachIndexed
                     val x = margin + (starts[r] + c) * pitch + (pitch - gap) / 2f
                     keys.add(Triple(ch, x, (r + 0.5f) * rowH))
                 }
@@ -182,6 +184,29 @@ class GlideDecoderTest {
             assertTrue("top-1 below 93%: $report", top1 >= 465)
             assertTrue("top-3 below 98%: $report", top3 >= 490)
             assertTrue("decode too slow: $report", median < 30)
+        }
+    }
+
+    /** Glide reads the keys where they are drawn, so the other letter
+     *  layouts (Keyboard › Layout › Letters) glide as well as QWERTY: the
+     *  same 500 words at 411 dp, top-1 ≥ 90%, top-3 ≥ 97%. */
+    @Test fun otherLetterLayoutsGlide() {
+        val decoder = decoder()
+        val words = decoder.mostFrequent(500)
+        for (letters in listOf(com.arpit.glyf.ime.LetterLayout.QWERTZ,
+                com.arpit.glyf.ime.LetterLayout.AZERTY, com.arpit.glyf.ime.LetterLayout.COLEMAK)) {
+            val lay = layout(411f, letters.rows)
+            val rng = SplitMix64(7)
+            var top1 = 0; var top3 = 0
+            for (w in words) {
+                val keys = decoder.decode(gesture(w, lay, rng), lay).map { TypingText.key(it.word) }
+                if (keys.firstOrNull() == w) top1++
+                if (w in keys.take(3)) top3++
+            }
+            val report = "glide ${letters.id}: top-1 ${top1 / 5.0}% top-3 ${top3 / 5.0}%"
+            println(report)
+            assertTrue(report, top1 >= 450)
+            assertTrue(report, top3 >= 485)
         }
     }
 

@@ -30,6 +30,23 @@ data class Key(
 
 enum class Mode { LETTERS, SYMBOLS1, SYMBOLS2 }
 
+/** The letter layouts the app's Layout picker offers (iOS LetterLayout, the
+ *  same ids and rows): QWERTY, QWERTZ, AZERTY and Colemak, each fitting
+ *  today's grid key for key so no key changes size. Dvorak is left out: its
+ *  bottom row only fits with narrower keys. AZERTY ends its bottom row with
+ *  the apostrophe, and Colemak's semicolon slot carries it too. */
+enum class LetterLayout(val id: String, val rows: List<String>) {
+    QWERTY("qwerty", listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")),
+    QWERTZ("qwertz", listOf("qwertzuiop", "asdfghjkl", "yxcvbnm")),
+    AZERTY("azerty", listOf("azertyuiop", "qsdfghjklm", "wxcvbn'")),
+    COLEMAK("colemak", listOf("qwfpgjluy'", "arstdhneio", "zxcvbkm"));
+
+    companion object {
+        /** A saved id, or QWERTY for null and for an id this build doesn't know. */
+        fun of(id: String?): LetterLayout = entries.firstOrNull { it.id == id } ?: QWERTY
+    }
+}
+
 /** What the focused field asked for (iOS KeyboardContext): plain text, the
  *  keys an email, web address or search field needs on the space row, or a
  *  digit pad for number, decimal and phone fields. */
@@ -105,18 +122,24 @@ object KeyboardLayout {
     private fun side(id: String, leading: Boolean = false) =
         Key(id, units = SIDE_UNITS, sideKey = true, gapLeading = leading)
 
-    fun rows(mode: Mode, numberRow: Boolean, context: KContext): List<List<Key>> {
+    /** [letters] is the picked letter layout; [comma] and [period] put those
+     *  keys either side of the space bar on the letters (Gboard's "Comma
+     *  key" and "Period key"), each a bottom-row key wide, taken from the
+     *  space bar. The defaults are today's keyboard exactly. */
+    fun rows(mode: Mode, numberRow: Boolean, context: KContext,
+             letters: LetterLayout = LetterLayout.QWERTY,
+             comma: Boolean = false, period: Boolean = false): List<List<Key>> {
         if (context.isPad) return padRows(context, mode)
         val out = mutableListOf<List<Key>>()
         when (mode) {
             Mode.LETTERS -> {
                 if (numberRow) out.add("1234567890".map { ch(it.toString()) })
-                out.add("qwertyuiop".map { ch(it.toString()) })
-                out.add("asdfghjkl".map { ch(it.toString()) })
+                out.add(letters.rows[0].map { ch(it.toString()) })
+                out.add(letters.rows[1].map { ch(it.toString()) })
                 out.add(listOf(side("shift")) +
-                        "zxcvbnm".map { ch(it.toString()) } +
+                        letters.rows[2].map { ch(it.toString()) } +
                         listOf(side("delete", leading = true)))
-                out.add(bottomRow("123", context))
+                out.add(bottomRow("123", context, comma, period))
             }
             Mode.SYMBOLS1 -> {
                 out.add("1234567890".map { ch(it.toString()) })
@@ -145,8 +168,11 @@ object KeyboardLayout {
      *      email       123 · emoji · space · @ · . · return
      *      web address 123 · emoji · . · / · .com (sharing what is left) · return
      *      search bar  123 · emoji · space · . (1) · return (1.75)
-     */
-    private fun bottomRow(modeLabel: String, context: KContext): List<Key> {
+     *
+     *  With the comma or period key on, a text field's row becomes
+     *  123 · emoji · , · space · . · return (Gboard's and Samsung's order). */
+    private fun bottomRow(modeLabel: String, context: KContext,
+                          comma: Boolean = false, period: Boolean = false): List<Key> {
         val row = mutableListOf(Key("mode:$modeLabel", units = 1.25f), Key("emojikey", units = 1.25f))
         val dot = Key(".", ".", units = 1.25f)
         when (context) {
@@ -167,7 +193,11 @@ object KeyboardLayout {
                 row.add(Key("return", units = 1.75f))
                 return row
             }
-            else -> row.add(Key("space", units = -1f))
+            else -> {
+                if (comma) row.add(Key(",", ",", units = 1.25f))
+                row.add(Key("space", units = -1f))
+                if (period) row.add(dot)
+            }
         }
         row.add(Key("return", units = 2.5f))
         return row

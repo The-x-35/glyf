@@ -37,7 +37,7 @@ final class KeyTouchTests: XCTestCase {
         let rows = KeyboardLayout.rows(mode: mode, numberRow: numberRow,
                                        globe: globe, context: context)
         let height = KeyMetrics.keysHeight(width: width)
-            + (numberRow && !context.isPad ? Glass.numberRowExtra : 0)
+            + (numberRow && !context.isPad ? Glass.numberRowExtra(width: width) : 0)
         let size = CGSize(width: width, height: height)
         let grid = KeyboardLayout.frames(rows: rows, size: size, context: context)
         return (grid.frames, grid.pitch, size)
@@ -244,5 +244,170 @@ final class KeyTouchTests: XCTestCase {
         let start = CGPoint(x: key.midX, y: key.midY)
         let give = KeyHit.slack(frame: key, start: start, dx: 14, dy: 16)
         XCTAssertFalse(give.contains(CGPoint(x: key.midX + 200, y: key.midY)))
+    }
+}
+
+/// The Layout settings (Keyboard › Layout): the letter layouts, the number
+/// row, and the comma and period keys beside the space bar. The defaults
+/// must be today's keyboard exactly, and no choice may change a key's size.
+final class KeyboardLayoutChoiceTests: XCTestCase {
+
+    private let widths: [CGFloat] = [390, 402, 420, 440]
+
+    private func grid(width: CGFloat, mode: KeyboardMode = .letters, numberRow: Bool = false,
+                      context: KeyboardContext = .text, globe: Bool = false,
+                      letters: LetterLayout = .qwerty, comma: Bool = false, period: Bool = false)
+        -> (rows: [[KeySpec]], frames: [CGRect], pitch: CGFloat) {
+        let rows = KeyboardLayout.rows(mode: mode, numberRow: numberRow, globe: globe, context: context,
+                                       letters: letters, comma: comma, period: period)
+        let height = KeyMetrics.keysHeight(width: width)
+            + (numberRow && !context.isPad ? Glass.numberRowExtra(width: width) : 0)
+        let g = KeyboardLayout.frames(rows: rows, size: CGSize(width: width, height: height), context: context)
+        return (rows, g.frames, g.pitch)
+    }
+
+    func testDefaultsAreTodaysKeyboard() {
+        let fresh = GlyfSettings()
+        XCTAssertNil(fresh.keyLayout)
+        XCTAssertNil(fresh.commaKey)
+        XCTAssertNil(fresh.periodKey)
+        XCTAssertFalse(fresh.numberRow)
+        XCTAssertEqual(LetterLayout(id: nil), .qwerty)
+        XCTAssertEqual(LetterLayout(id: "dvorak"), .qwerty, "an unknown id is QWERTY")
+        XCTAssertEqual(LetterLayout(id: "azerty"), .azerty)
+        // A settings file from before these keys decodes, and reads as today's.
+        let old = #"{"haptics":true,"keyClicks":true,"numberRow":false,"autocorrect":true,"autocapitalize":true,"periodShortcut":true,"candidates":true,"oneHanded":"off","toolbarOrder":["search"],"toolbarHidden":[],"bindings":{},"backendURL":"http://127.0.0.1:8787","deviceId":"x","translateTarget":"English"}"#
+        let decoded = try? JSONDecoder().decode(GlyfSettings.self, from: Data(old.utf8))
+        XCTAssertNotNil(decoded)
+        XCTAssertNil(decoded?.keyLayout)
+        XCTAssertNil(decoded?.commaKey)
+        for context in [KeyboardContext.text, .email, .url, .webSearch, .twitter, .numbers] {
+            for mode in [KeyboardMode.letters, .symbols1, .symbols2] {
+                for globe in [false, true] {
+                    XCTAssertEqual(
+                        KeyboardLayout.rows(mode: mode, numberRow: false, globe: globe, context: context),
+                        KeyboardLayout.rows(mode: mode, numberRow: false, globe: globe, context: context,
+                                            letters: LetterLayout(id: nil), comma: false, period: false))
+                }
+            }
+        }
+        // The QWERTY rows are the ones the keyboard always had.
+        let ids: [[String]] = KeyboardLayout.rows(mode: .letters, numberRow: false, globe: false)
+            .map { $0.map(\.id) }
+        let top: [String] = "qwertyuiop".map(String.init)
+        let middle: [String] = "asdfghjkl".map(String.init)
+        let bottomLetters: [String] = "zxcvbnm".map(String.init)
+        let third: [String] = ["shift"] + bottomLetters + ["delete"]
+        let spaceRow: [String] = ["mode:123", "emojikey", "space", "return"]
+        XCTAssertEqual(ids, [top, middle, third, spaceRow])
+    }
+
+    /// Every layout has the 26 letters once each, and every key lands at
+    /// exactly QWERTY's size: the same key width and the same key height.
+    func testLetterLayoutsKeepEveryKeySize() {
+        for width in widths {
+            let qwerty = grid(width: width)
+            let keyW = qwerty.frames[0].width, keyH = qwerty.frames[0].height
+            for letters in LetterLayout.allCases {
+                let g = grid(width: width, letters: letters)
+                let specs = g.rows.flatMap { $0 }
+                let letterIds: [String] = specs.compactMap(\.char).filter { $0.count == 1 && $0 >= "a" && $0 <= "z" }
+                let alphabet: [String] = "abcdefghijklmnopqrstuvwxyz".map(String.init)
+                XCTAssertEqual(letterIds.sorted(), alphabet, "\(letters)")
+                var counts: [Int] = qwerty.rows.map(\.count)
+                counts[1] = letters.rows[1].count
+                XCTAssertEqual(g.rows.map(\.count), counts, "\(letters) row counts")
+                for (spec, f) in zip(specs, g.frames) {
+                    XCTAssertEqual(f.height, keyH, accuracy: 0.001, "\(letters) \(spec.id) height")
+                    if spec.isChar, spec.char?.count == 1, g.rows.last?.contains(spec) != true {
+                        XCTAssertEqual(f.width, keyW, accuracy: 0.001, "\(letters) \(spec.id) width")
+                    }
+                }
+                // shift, delete and the bottom row are QWERTY's to the point.
+                let tail = qwerty.frames.count - qwerty.rows.last!.count - 1
+                XCTAssertEqual(Array(g.frames.suffix(qwerty.rows.last!.count)),
+                               Array(qwerty.frames.suffix(qwerty.rows.last!.count)), "\(letters) bottom row")
+                XCTAssertEqual(g.frames[g.frames.count - qwerty.rows.last!.count - 1], qwerty.frames[tail],
+                               "\(letters) delete")
+            }
+        }
+    }
+
+    /// The corrector's grid (KeyGeometry) puts every letter where the
+    /// keyboard draws it, in key widths, for every layout.
+    func testKeyGeometryMatchesTheDrawnKeys() {
+        for letters in LetterLayout.allCases {
+            let g = grid(width: 402, letters: letters)
+            let geo = KeyGeometry(rows: letters.rows)
+            let left = KeyMetrics.sideMargin - KeyMetrics.hGap / 2
+            var rowOf: [String: Int] = [:]
+            for (r, row) in g.rows.enumerated() { for s in row { if let c = s.char { rowOf[c] = r } } }
+            for (spec, f) in zip(g.rows.flatMap { $0 }, g.frames) {
+                guard let c = spec.char, c.count == 1, let u = c.unicodeScalars.first,
+                      u.value >= 97, u.value <= 122 else { continue }
+                let center = geo.center(u.value)!
+                XCTAssertEqual(CGFloat(center.x), (f.midX - left) / g.pitch, accuracy: 0.001, "\(letters) \(c)")
+                XCTAssertEqual(center.y, (Float(rowOf[c]!) + 0.5) * geo.rowPitch, accuracy: 0.001)
+            }
+        }
+        // QWERTY's grid is the one the typing tests were tuned on.
+        let q = KeyGeometry(), r = KeyGeometry(rows: LetterLayout.qwerty.rows)
+        for u in UInt32(97)...122 {
+            let a = q.center(u)!, b = r.center(u)!
+            XCTAssertEqual(a.x, b.x)
+            XCTAssertEqual(a.y, b.y)
+        }
+        // On AZERTY, a and z touch; on QWERTY they don't.
+        let az = KeyGeometry(rows: LetterLayout.azerty.rows)
+        let a = az.center(97)!
+        XCTAssertTrue(az.isNear(x: a.x, y: a.y, to: 122))
+        XCTAssertFalse(q.isNear(x: q.center(97)!.x, y: q.center(97)!.y, to: 105))
+    }
+
+    /// The comma and period keys: a text field's letters only, beside the
+    /// space bar, each as wide as the emoji key, taken from the space bar.
+    func testCommaAndPeriodBesideSpace() {
+        for width in widths {
+            let plain = grid(width: width)
+            let both = grid(width: width, comma: true, period: true)
+            XCTAssertEqual(both.rows.last!.map(\.id), ["mode:123", "emojikey", ",", "space", ".", "return"])
+            XCTAssertEqual(grid(width: width, comma: true).rows.last!.map(\.id),
+                           ["mode:123", "emojikey", ",", "space", "return"])
+            XCTAssertEqual(grid(width: width, period: true).rows.last!.map(\.id),
+                           ["mode:123", "emojikey", "space", ".", "return"])
+            let n = both.rows.last!.count
+            let row = Array(both.frames.suffix(n)), before = Array(plain.frames.suffix(4))
+            XCTAssertEqual(row[2].width, row[1].width, accuracy: 0.001, "comma = emoji key")
+            XCTAssertEqual(row[4].width, row[1].width, accuracy: 0.001, "period = emoji key")
+            let shorter: CGFloat = before[2].width - 2.5 * both.pitch
+            XCTAssertEqual(row[3].width, shorter, accuracy: 0.001)
+            XCTAssertEqual(row[0], before[0]); XCTAssertEqual(row[1], before[1]); XCTAssertEqual(row[5], before[3])
+            for f in row { XCTAssertEqual(f.height, before[0].height, accuracy: 0.001) }
+            // Every other row is untouched.
+            XCTAssertEqual(Array(both.frames.prefix(both.frames.count - n)),
+                           Array(plain.frames.prefix(plain.frames.count - 4)))
+            // Never on the symbols pages, which carry , and . already, nor
+            // in fields with rows of their own.
+            for mode in [KeyboardMode.symbols1, .symbols2] {
+                XCTAssertEqual(KeyboardLayout.rows(mode: mode, numberRow: false, globe: false, comma: true, period: true),
+                               KeyboardLayout.rows(mode: mode, numberRow: false, globe: false))
+            }
+            for context in [KeyboardContext.email, .url, .webSearch, .twitter, .numbers, .numberPad, .phonePad] {
+                XCTAssertEqual(KeyboardLayout.rows(mode: .letters, numberRow: false, globe: false, context: context,
+                                                   comma: true, period: true),
+                               KeyboardLayout.rows(mode: .letters, numberRow: false, globe: false, context: context))
+            }
+        }
+    }
+
+    /// The number row is one more row of the same pitch: no key shrinks.
+    func testNumberRowKeepsKeyHeight() {
+        for width in widths {
+            XCTAssertEqual(Glass.numberRowExtra(width: width), KeyMetrics.rowPitch(width: width))
+            let plain = grid(width: width), numbers = grid(width: width, numberRow: true)
+            XCTAssertEqual(numbers.rows.count, 5)
+            for f in numbers.frames { XCTAssertEqual(f.height, plain.frames[0].height, accuracy: 0.001) }
+            XCTAssertEqual(numbers.frames[0].width, plain.frames[0].width, accuracy: 0.001)
+        }
     }
 }

@@ -62,6 +62,11 @@ object SettingsStore {
         put("haptics", true)
         put("keyClicks", true)
         put("numberRow", false)
+        // The Layout settings (iOS GlyfSettings.keyLayout/commaKey/periodKey):
+        // QWERTY and today's bottom row unless the person picks otherwise.
+        put("keyLayout", "qwerty")
+        put("commaKey", false)
+        put("periodKey", false)
         // Swipe-to-type over the letters (iOS GlyfSettings.glideTyping).
         put("glideTyping", true)
         put("autocorrect", true)

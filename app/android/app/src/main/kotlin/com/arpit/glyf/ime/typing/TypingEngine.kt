@@ -10,7 +10,8 @@ import com.arpit.glyf.store.SecretScanner
 class TypingEngine(
     base: GlydTrie?,
     personal: PersonalLexicon = PersonalLexicon(),
-    val geometry: KeyGeometry = KeyGeometry(),
+    /** Where the letters sit: follows the picked layout (KeyboardTyping.letterRows). */
+    var geometry: KeyGeometry = KeyGeometry(),
 ) {
     companion object {
         const val SUGGESTIONS = 1

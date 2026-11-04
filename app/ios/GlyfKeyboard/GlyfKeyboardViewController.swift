@@ -217,7 +217,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let base = Glass.keysHeight(width: w)
         // A digit pad is Apple's four rows whatever the number-row setting.
         let numberRow = SettingsStore.current.numberRow && !keyboardView.context.isPad
-        return numberRow ? base + Glass.numberRowExtra : base
+        return numberRow ? base + Glass.numberRowExtra(width: w) : base
     }
 
     /// §6.13 T: the Translation HUD adds a 44pt strip while enabled — never
@@ -509,8 +509,6 @@ final class GlyfKeyboardViewController: UIInputViewController {
         super.viewWillAppear(animated)
         SettingsStore.invalidate()
         recentFixes = []   // another field: its corrections are not these
-        hostScopeRead = false   // maybe another app: read it again when asked
-        stripPolicy.restore(json: AppGroupStore.readJSON(name: Self.stripPolicyFile))
         // The translate strip belongs to the session it was opened in. Left
         // persisted it greets the next app as an unexplained empty band.
         if SettingsStore.current.translationHUD == true {
@@ -560,6 +558,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         syncAutoShift()
         wordTouches = []
         wordTouchesFor = ""
+        TypingStore.shared.letterRows = LetterLayout(id: SettingsStore.current.keyLayout).rows
         TypingStore.shared.prepare(
             hasFullAccess: hasFullAccess,
             lexicon: { [weak self] done in self?.requestSupplementaryLexicon(completion: done) },
@@ -864,16 +863,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// for the next (docs/STRIP-POLICY.md; Arpit, 2026-11-04: "when the user
     /// crosses it, it comes again and again ... it should not be irritating
     /// and it should be useful at the same time").
-    private lazy var stripPolicy = StripPolicy(json: AppGroupStore.readJSON(name: Self.stripPolicyFile))
-    private static let stripPolicyFile = "strip-policy.json"
+    private var stripPolicy = StripPolicy()
     /// When the text last changed (a key, a commit, the host).
     private var lastEditAt: CFTimeInterval = 0
     /// A chip waiting for the fingers to stop.
     private var chipRecheck: DispatchWorkItem?
-    /// The app being typed in, read once per appearance (HostAppID; nil on
-    /// iOS 26.4+, then the field stands in for the app).
-    private var hostScope: String?
-    private var hostScopeRead = false
     /// A mail that landed at the temp address, and when: offered in the
     /// strip until it is used, put away or five minutes old (a code goes
     /// stale), and never again (each mail's chip shows once).
@@ -1759,9 +1753,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let before = beforeContext ?? ""
         // The chip that was up: typed past it? (docs/STRIP-POLICY.md)
         if let doc = documentID { stripPolicy.enter(field: doc.uuidString) }
-        switch stripPolicy.observe(before: before, scope: policyScope, now: Date().timeIntervalSince1970) {
-        case .nothing: break
-        case .ignored: saveStripPolicy()
+        switch stripPolicy.observe(before: before, now: Date().timeIntervalSince1970) {
+        case .nothing, .ignored: break
         case .pasteIgnored:
             // A copy shows once: typed past, it is done.
             ClipContext.markDone()
@@ -1911,7 +1904,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let id = Self.policyID(chip)
         let now = Date().timeIntervalSince1970
         guard StripPolicy.allowed(kind, in: policyField),
-              stripPolicy.allows(kind, id: id, scope: policyScope, now: now) else {
+              stripPolicy.allows(kind, id: id, now: now) else {
             toolbar.showSmart(nil)
             return false
         }
@@ -1953,24 +1946,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.02, execute: work)
     }
 
-    /// A chip tapped: wanted, so typing past that kind starts counting over.
+    /// A chip tapped: wanted.
     private func noteChipUsed(_ chip: Smart.Chip) {
-        stripPolicy.used(Self.policyKind(chip), scope: policyScope)
-        saveStripPolicy()
-    }
-
-    private func saveStripPolicy() {
-        AppGroupStore.writeJSON(stripPolicy.json, name: Self.stripPolicyFile)
-    }
-
-    /// The app (HostAppID, unless voiceReturn is off), else this field.
-    private var policyScope: String {
-        if !hostScopeRead {
-            hostScopeRead = true
-            hostScope = SettingsStore.current.voiceReturn == false ? nil : HostAppID.read(from: self)
-        }
-        if let hostScope { return hostScope }
-        return "doc:" + (documentID?.uuidString ?? "none")
+        stripPolicy.used()
     }
 
     /// Passwords get nothing; codes, cards and digit pads only what they
@@ -3491,13 +3469,11 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// marked done and never offered again — it is still in the clipboard
     /// panel if it turns out it was wanted after all.
     func toolbarSmartDismissed() {
-        // This chip never comes back in this field, its kind rests in this
-        // app for a while, and three in a day rest it everywhere
+        // A 10 s cooldown; this chip comes again once the text changes
         // (docs/STRIP-POLICY.md).
         if let chip = toolbar.smartChip {
             stripPolicy.dismissed(Self.policyKind(chip), id: Self.policyID(chip),
-                                  scope: policyScope, now: Date().timeIntervalSince1970)
-            saveStripPolicy()
+                                  now: Date().timeIntervalSince1970)
         }
         if case .tempMail? = toolbar.smartChip {
             // Each mail's chip shows once: put away, it is gone.

@@ -374,7 +374,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 // The strip policy's memory (docs/STRIP-POLICY.md) wiped, so
                 // one scenario's ✕ never rests a chip the next one checks.
                 "policyreset" -> {
-                    stripPolicy.restore(null)
                     stripPolicy.enter("")
                     imePrefs.edit().remove("stripPolicy").apply()
                 }
@@ -675,6 +674,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         keyboard.keyBorders = settings.optBoolean("keyBorders", false)
         keyboard.themeDim = settings.optDouble("themeBrightness", 0.0).toFloat()
         keyboard.numberRow = settings.optBoolean("numberRow", false)
+        keyboard.letterLayout = LetterLayout.of(settings.optString("keyLayout", "qwerty"))
+        keyboard.commaKey = settings.optBoolean("commaKey", false)
+        keyboard.periodKey = settings.optBoolean("periodKey", false)
+        com.arpit.glyf.ime.typing.KeyboardTyping.letterRows = keyboard.letterLayout.rows
         keyboard.hapticsOn = settings.optBoolean("haptics", true)
         keyboard.clicksOn = settings.optBoolean("keyClicks", true)
         keyboard.kContext = KContext.from(info)
@@ -3389,18 +3392,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  for the next (Arpit, 2026-11-04: "when the user crosses it, it comes
      *  again and again ... it should not be irritating and it should be
      *  useful at the same time"). */
-    private val stripPolicy by lazy {
-        StripPolicy(imePrefs.getString("stripPolicy", null)?.let { runCatching { JSONObject(it) }.getOrNull() })
-    }
+    private val stripPolicy = StripPolicy()
     /** When the text last changed (a key, a commit, the app). */
     private var lastEditAt = 0L
     /** The chip on screen, as the policy knows it. */
     private var shownPolicy: Pair<StripPolicy.Kind, String>? = null
 
     private fun nowSeconds() = System.currentTimeMillis() / 1000.0
-    private fun policyScope() = currentInputEditorInfo?.packageName ?: "app"
     private fun policyFieldId() = currentInputEditorInfo?.let { "${it.packageName}/${it.fieldId}" } ?: ""
-    private fun saveStripPolicy() = imePrefs.edit().putString("stripPolicy", stripPolicy.json().toString()).apply()
 
     /** Passwords get nothing; digit, phone and date boxes only what they are
      *  for (a saved detail, a copy, a mail's code). */
@@ -3437,7 +3436,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (stripChip != null && stripChipKind != "voice") hideStripChip()
             return false
         }
-        if (!StripPolicy.allowed(kind, policyField()) || !stripPolicy.allows(kind, id, policyScope(), now)) return no()
+        if (!StripPolicy.allowed(kind, policyField()) || !stripPolicy.allows(kind, id, now)) return no()
         val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString().orEmpty()
         val word = WordContext.currentWord(before)
         val policy = typingPolicy()
@@ -3463,21 +3462,18 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
     }
 
-    /** The ✕: this chip never comes back in this field, its kind rests in
-     *  this app for a while, and three in a day rest it everywhere. */
+    /** The ✕: a 10 s cooldown; this chip comes again once the text changes. */
     private fun policyDismissed() {
         val (kind, id) = shownPolicy ?: return
         shownPolicy = null
-        stripPolicy.dismissed(kind, id, policyScope(), nowSeconds())
-        saveStripPolicy()
+        stripPolicy.dismissed(kind, id, nowSeconds())
     }
 
-    /** Tapped: wanted, so typing past that kind starts counting over. */
+    /** Tapped: wanted. */
     private fun policyUsed() {
-        val (kind, _) = shownPolicy ?: return
+        shownPolicy ?: return
         shownPolicy = null
-        stripPolicy.used(kind, policyScope())
-        saveStripPolicy()
+        stripPolicy.used()
     }
 
     /** The copy now on the clipboard is done: used, waved off or typed past. */
@@ -4325,8 +4321,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val before = ic.getTextBeforeCursor(96, 0)?.toString() ?: ""
         // The chip that was up: typed past it? (docs/STRIP-POLICY.md)
         stripPolicy.enter(policyFieldId())
-        when (stripPolicy.observe(before, policyScope(), nowSeconds())) {
-            is StripPolicy.Seen.Ignored -> saveStripPolicy()
+        when (stripPolicy.observe(before, nowSeconds())) {
             // A copy shows once: typed past, it is done.
             StripPolicy.Seen.PasteIgnored -> markClipDone()
             else -> {}

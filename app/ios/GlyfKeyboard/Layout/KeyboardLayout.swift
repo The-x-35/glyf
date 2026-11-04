@@ -60,6 +60,33 @@ struct KeySpec: Equatable {
 
 enum KeyboardMode { case letters, symbols1, symbols2 }
 
+/// The letter layouts the app's Layout picker offers (Keyboard › Layout ›
+/// Letters), the set iOS itself offers for English plus Colemak, which
+/// Gboard and SwiftKey carry. Every one fits today's grid key for key: ten
+/// keys on the top row, nine or ten on the middle one, seven between shift
+/// and delete, so no key changes size. Dvorak is left out on purpose: its
+/// bottom row has nine letters plus a semicolon, which only fits by making
+/// the keys narrower, and that is a rule (never change key dimensions).
+enum LetterLayout: String, CaseIterable {
+    case qwerty, qwertz, azerty, colemak
+
+    /// A saved id, or QWERTY for nil and for an id this build doesn't know.
+    init(id: String?) { self = LetterLayout(rawValue: id ?? "") ?? .qwerty }
+
+    /// The three letter rows, top first. Not only letters: AZERTY ends its
+    /// bottom row with the apostrophe (as Apple's and Gboard's French
+    /// AZERTY do), and Colemak's semicolon slot carries it too, being the
+    /// punctuation English types most inside words.
+    var rows: [String] {
+        switch self {
+        case .qwerty: return ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
+        case .qwertz: return ["qwertzuiop", "asdfghjkl", "yxcvbnm"]
+        case .azerty: return ["azertyuiop", "qsdfghjklm", "wxcvbn'"]
+        case .colemak: return ["qwfpgjluy'", "arstdhneio", "zxcvbkm"]
+        }
+    }
+}
+
 /// What the focused field asked for (§6.1 "behave like the system keyboard
 /// everywhere"): plain text, the keys an email, web address, search or
 /// Twitter field needs on the space row, WebKit's number fields, or a
@@ -114,8 +141,14 @@ enum KeyboardLayout {
         ".": ["…"],
     ]
 
+    /// `letters` is the picked letter layout; `comma` and `period` put those
+    /// keys either side of the space bar on the letters (Gboard's "Comma
+    /// key" and "Period key"), each a bottom-row key wide, taken from the
+    /// space bar. All three only ever change the letters page of a text
+    /// field: the defaults are today's keyboard exactly.
     static func rows(mode: KeyboardMode, numberRow: Bool, globe: Bool,
-                     context: KeyboardContext = .text) -> [[KeySpec]] {
+                     context: KeyboardContext = .text, letters: LetterLayout = .qwerty,
+                     comma: Bool = false, period: Bool = false) -> [[KeySpec]] {
         if context.isPad { return padRows(context: context, mode: mode) }
         var result: [[KeySpec]] = []
         switch mode {
@@ -123,12 +156,14 @@ enum KeyboardLayout {
             if numberRow {
                 result.append("1234567890".map { key(String($0)) })
             }
-            result.append("qwertyuiop".map { key(String($0)) })
-            result.append("asdfghjkl".map { key(String($0)) })
+            let r = letters.rows
+            result.append(r[0].map { key(String($0)) })
+            result.append(r[1].map { key(String($0)) })
             result.append([side(.shift)]
-                + "zxcvbnm".map { key(String($0)) }
+                + r[2].map { key(String($0)) }
                 + [side(.delete, leading: true)])
-            result.append(bottomRow(modeLabel: "123", globe: globe, context: context))
+            result.append(bottomRow(modeLabel: "123", globe: globe, context: context,
+                                    comma: comma, period: period))
         case .symbols1:
             result.append("1234567890".map { key(String($0)) })
             result.append(["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""].map { key($0) })
@@ -182,8 +217,12 @@ enum KeyboardLayout {
     ///
     /// Safari's address bar is the search bar: it takes searches, so it keeps
     /// the space bar and has no slash.
+    ///
+    /// With the comma or period key on, a text field's row becomes
+    /// 123 · emoji · , · space · . · return (Gboard's and Samsung's order).
     private static func bottomRow(modeLabel: String, globe: Bool,
-                                  context: KeyboardContext = .text) -> [KeySpec] {
+                                  context: KeyboardContext = .text,
+                                  comma: Bool = false, period: Bool = false) -> [KeySpec] {
         if context == .numbers {
             return [KeySpec(kind: .mode(modeLabel), units: 2.5),
                     KeySpec(kind: .space, units: -1),
@@ -216,7 +255,9 @@ enum KeyboardLayout {
             row.append(KeySpec(kind: .char("@"), units: 1.25))
             row.append(KeySpec(kind: .char("#"), units: 1.25))
         default:
+            if comma { row.append(KeySpec(kind: .char(","), units: 1.25)) }
             row.append(KeySpec(kind: .space, units: -1))
+            if period { row.append(dot) }
         }
         row.append(KeySpec(kind: .ret, units: 2.5))
         return row

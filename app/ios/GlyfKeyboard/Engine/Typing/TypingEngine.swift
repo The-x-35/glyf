@@ -87,7 +87,8 @@ final class TypingEngine {
     /// any other word, not first: "wats" offers "was", not "wat's".
     static let exactFloor: Float = 60
 
-    let geometry: KeyGeometry
+    /// Where the letters sit: follows the picked layout (TypingStore.letterRows).
+    var geometry: KeyGeometry
     private(set) var base: GlydTrie?
     private(set) var personal: PersonalLexicon
     /// Pack, added, learned and contact words, searchable like the base.

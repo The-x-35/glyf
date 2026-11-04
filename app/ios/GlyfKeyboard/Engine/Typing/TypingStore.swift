@@ -14,6 +14,15 @@ final class TypingStore {
 
     static let shared = TypingStore()
 
+    /// The letter rows on screen (LetterLayout.rows), so the corrector's key
+    /// distances are the keys the person actually sees.
+    var letterRows: [String] = KeyGeometry.rows {
+        didSet {
+            guard letterRows != oldValue else { return }
+            engine?.geometry = KeyGeometry(rows: letterRows)
+        }
+    }
+
     private(set) var engine: TypingEngine?
     /// iOS Text Replacements: shortcut (lowercased) → phrase.
     private(set) var replacements: [String: String] = [:]
@@ -49,7 +58,8 @@ final class TypingStore {
             var personal = Self.readLexicon(hasFullAccess: full)
             personal.expire(today: TypingText.day())
             DispatchQueue.main.async {
-                let engine = TypingEngine(base: base, personal: personal)
+                let engine = TypingEngine(base: base, personal: personal,
+                                          geometry: KeyGeometry(rows: self.letterRows))
                 self.engine = engine
                 self.loading = false
                 self.refreshPacks()

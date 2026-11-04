@@ -93,6 +93,11 @@ class GlyfKeyboardView(
         invalidate()
     }
     var numberRow = false
+    /** The Layout settings (iOS LetterLayout): the letters' layout, and a
+     *  comma and a period key beside the space bar. Defaults = today's. */
+    var letterLayout = LetterLayout.QWERTY
+    var commaKey = false
+    var periodKey = false
     var isDark = false
     var keyTheme = "site"
     var themeBg = ""          // "" | color:#RRGGBB | grad:<id>
@@ -454,7 +459,7 @@ class GlyfKeyboardView(
     private fun dp(v: Float) = v * density
 
     fun rebuild() {
-        rows = KeyboardLayout.rows(mode, numberRow && mode == Mode.LETTERS, kContext)
+        rows = KeyboardLayout.rows(mode, numberRow && mode == Mode.LETTERS, kContext, letterLayout, commaKey, periodKey)
         keysDirty = true
         requestLayout()
         invalidate()
@@ -504,14 +509,14 @@ class GlyfKeyboardView(
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         val w = MeasureSpec.getSize(widthSpec)
         // iOS's key region (KeyMetrics): four rows of 54, or 56 on a phone
-        // 414 wide or more, and 0.78 of a row more with the number row (every
-        // page shares it, so 123 and ABC never change the height). A phone on
+        // 414 wide or more, and one more row of the same pitch with the
+        // number row, so no key shrinks (every page shares it, so 123 and
+        // ABC never change the height). A phone on
         // its side, a tablet and a small screen size their rows by the screen
         // (rowPitchDp). A digit pad keeps its four rows.
         val numbers = numberRow && !kContext.isPad
         val pitch = rowPitchDp(w)
-        val rowsH = if (sideways) pitch * 4 + (if (numbers) 32f else 0f)
-                    else pitch * 4 + (if (numbers) pitch * 0.78f else 0f)
+        val rowsH = pitch * 4 + (if (numbers) pitch else 0f)
         setMeasuredDimension(w, dp(rowsH).toInt())
     }
 
@@ -542,7 +547,7 @@ class GlyfKeyboardView(
             else -> 54f + 2f * ((w / density - 402f) / 12f).coerceIn(0f, 1f)
         }
         if (sideways) return pitch
-        val rows = 4f + (if (numberRow && !kContext.isPad) 0.78f else 0f)
+        val rows = 4f + (if (numberRow && !kContext.isPad) 1f else 0f)
         val room = 0.5f * hDp - 50f - 54f
         return minOf(pitch, maxOf(44f, room / rows))
     }
@@ -550,7 +555,7 @@ class GlyfKeyboardView(
     private fun layoutKeys() {
         keyRects.clear()
         keyRowOf.clear()
-        if (rows.isEmpty()) rows = KeyboardLayout.rows(mode, numberRow && mode == Mode.LETTERS, kContext)
+        if (rows.isEmpty()) rows = KeyboardLayout.rows(mode, numberRow && mode == Mode.LETTERS, kContext, letterLayout, commaKey, periodKey)
         if (rows.isEmpty() || width == 0 || height == 0) return
         keysDirty = false
         // iOS's grid (KeyboardLayout.frames): Apple's constant margins and
@@ -1010,7 +1015,8 @@ class GlyfKeyboardView(
         if (mode != Mode.LETTERS || numberRow) return null
         val c = key.char ?: return null
         if (bindings.containsKey(c)) return null
-        val i = "qwertyuiop".indexOf(c)
+        if (c.singleOrNull() !in 'a'..'z') return null
+        val i = letterLayout.rows[0].indexOf(c)
         return if (i < 0) null else ((i + 1) % 10).toString()
     }
 

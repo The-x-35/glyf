@@ -27,6 +27,15 @@ object KeyboardTyping {
 
     @Volatile var engine: TypingEngine? = null
         private set
+
+    /** The letter rows on screen (LetterLayout.rows), so the corrector's key
+     *  distances are the keys the person actually sees. */
+    var letterRows: List<String> = KeyGeometry.ROWS
+        set(value) {
+            if (value == field) return
+            field = value
+            engine?.geometry = KeyGeometry(rows = value)
+        }
     private var loading = false
     private val waiting = ArrayList<(TypingEngine) -> Unit>()
     private val io = Executors.newSingleThreadExecutor()
@@ -57,7 +66,7 @@ object KeyboardTyping {
             } catch (_: Exception) { PersonalLexicon() }
             personal.expire(TypingText.day())
             main.post {
-                val e = TypingEngine(base, personal)
+                val e = TypingEngine(base, personal, KeyGeometry(rows = letterRows))
                 engine = e
                 loading = false
                 refreshPacks(app)

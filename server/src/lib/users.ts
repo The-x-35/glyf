@@ -95,7 +95,7 @@ export interface Profile {
  *  private setting can never slip in by default. */
 const PREF_KEYS = new Set([
   "appearance", "keyTheme", "themeBg", "keyBorders", "themeBrightness", "haptics", "keyClicks",
-  "numberRow", "autocorrect", "autocapitalize", "periodShortcut", "candidates",
+  "numberRow", "keyLayout", "commaKey", "periodKey", "autocorrect", "autocapitalize", "periodShortcut", "candidates",
   "clipboardHistory", "clipboardScreenshots", "aiUsesVault", "pasteStyle", "vocabPacks",
   "vocabLearning", "toolbarOrder", "toolbarHidden", "menuOrder", "translateOther", "plan",
   "bindings", "customTitles", "vaultKinds", "noteCount", "shorthandCount",

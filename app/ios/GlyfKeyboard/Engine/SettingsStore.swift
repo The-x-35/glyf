@@ -9,6 +9,14 @@ struct GlyfSettings: Codable, Equatable {
     var haptics: Bool = true
     var keyClicks: Bool = true
     var numberRow: Bool = false
+    /// The letters' layout (LetterLayout): "qwerty", "qwertz", "azerty" or
+    /// "colemak"; nil, or an id this build doesn't know, is QWERTY.
+    var keyLayout: String? = nil
+    /// A comma key left of the space bar, and a period key right of it, on
+    /// the letters of a text field (Gboard's "Comma key" and "Period key").
+    /// Nil reads as off: today's bottom row.
+    var commaKey: Bool? = nil
+    var periodKey: Bool? = nil
     var autocorrect: Bool = true
     var autocapitalize: Bool = true
     var periodShortcut: Bool = true
@@ -151,9 +159,6 @@ struct GlyfSettings: Codable, Equatable {
     /// Voice typing's style pill, as last picked (VoiceLink.Style raw value;
     /// nil = As spoken, nothing sent).
     var voiceStyle: String? = nil
-    /// How long voice typing stays ready with nothing said: nil or "always"
-    /// (no limit, the default), "1h" or "15m" (VoiceLink.lifetime).
-    var voiceReady: String? = nil
     /// false turns off going back to the app the keyboard was in after
     /// Glyf opened for voice (the keyboard stops reading the host app's id,
     /// which uses private API: HostAppID). nil = on.

@@ -655,11 +655,13 @@ enum Glass {
     static func keyboardBaseHeight(width: CGFloat) -> CGFloat {
         toolbarHeight + keysHeight(width: width)
     }
-    static let numberRowExtra: CGFloat = 42
+    /// The number row is one more row of the same pitch (Gboard's and
+    /// Apple's own number rows), so turning it on never shrinks a key.
+    static func numberRowExtra(width: CGFloat) -> CGFloat { KeyMetrics.rowPitch(width: width) }
     /// An iPhone on its side (compact height): four 40pt rows, as Apple's
     /// keyboard has there, and the number row as one more of them.
     static let sidewaysKeysHeight: CGFloat = 160
-    static let sidewaysNumberRowExtra: CGFloat = 32
+    static let sidewaysNumberRowExtra: CGFloat = 40
     static let barExtra: CGFloat = 96      // §5.2
     static let shellExtra: CGFloat = 140   // §6.3
 

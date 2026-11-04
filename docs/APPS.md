@@ -211,7 +211,9 @@ One schema, defined in `app/ios/GlyfKeyboard/Engine/SettingsStore.swift` (`GlyfS
 |---|---|---|
 | `schemaVersion` | 3 | Drives additive migrations |
 | `haptics`, `keyClicks` | true, true | Key haptics and key sounds |
-| `numberRow` | false | Extra number row (+42pt) |
+| `numberRow` | false | Extra number row, one more row of the same pitch (54pt, 56 on the wide class) |
+| `keyLayout` | `"qwerty"` (nil on iOS) | Letter layout: `qwerty`, `qwertz`, `azerty`, `colemak` (Keyboard › Layout › Letters). An unknown id is QWERTY |
+| `commaKey`, `periodKey` | false, false | A comma key left of the space bar and a period key right of it, letters page of a text field only, 1.25 columns each taken from the space bar |
 | `autocorrect`, `autocapitalize`, `periodShortcut`, `candidates` | all true | Typing behaviors; `candidates` is the suggestion strip |
 | `vocabPacks` | nil | Enabled vocabulary pack ids. Nil means "not chosen": phones set to India behave as `["local.hinglish"]` |
 | `vocabLearning` | true | Learn words from typing |

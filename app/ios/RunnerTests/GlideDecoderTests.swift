@@ -24,8 +24,9 @@ final class GlideDecoderTests: XCTestCase {
     }
 
     /// The letters as KeyboardView lays them out at this width.
-    private func layout(width: CGFloat) -> GlideDecoder.Layout {
-        let rows = KeyboardLayout.rows(mode: .letters, numberRow: false, globe: false, context: .text)
+    private func layout(width: CGFloat, letters: LetterLayout = .qwerty) -> GlideDecoder.Layout {
+        let rows = KeyboardLayout.rows(mode: .letters, numberRow: false, globe: false, context: .text,
+                                       letters: letters)
         let size = CGSize(width: width, height: KeyMetrics.keysHeight(width: width))
         let grid = KeyboardLayout.frames(rows: rows, size: size, context: .text)
         var keys: [(letter: Character, center: CGPoint)] = []
@@ -149,6 +150,29 @@ final class GlideDecoderTests: XCTestCase {
             // A debug build under a busy Mac: 19 ms alone, 34 ms with two other
             // simulators building (2026-10-07). Release decodes in 0.3 ms.
             XCTAssertLessThan(median, 60, "decode too slow: " + report)
+        }
+    }
+
+    /// Glide typing reads the keys where they are drawn, so the other letter
+    /// layouts (Keyboard › Layout › Letters) glide as well as QWERTY: the
+    /// same 500 words on the standard phone, top-1 ≥ 90%, top-3 ≥ 97%.
+    func testOtherLetterLayoutsGlide() throws {
+        let decoder = try decoder()
+        let words = decoder.mostFrequent(500)
+        for letters in [LetterLayout.qwertz, .azerty, .colemak] {
+            let lay = layout(width: 402, letters: letters)
+            var rng = SplitMix64(state: 7)
+            var top1 = 0, top3 = 0
+            for w in words {
+                let keys = decoder.decode(Self.gesture(word: w, layout: lay, rng: &rng), layout: lay)
+                    .map { TypingText.key($0.word) }
+                if keys.first == w { top1 += 1 }
+                if keys.prefix(3).contains(w) { top3 += 1 }
+            }
+            let report = "glide \(letters): top-1 \(Double(top1) / 5)% top-3 \(Double(top3) / 5)%"
+            print(report)
+            XCTAssertGreaterThanOrEqual(top1, 450, report)
+            XCTAssertGreaterThanOrEqual(top3, 485, report)
         }
     }
 

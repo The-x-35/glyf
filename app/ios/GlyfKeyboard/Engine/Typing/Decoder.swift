@@ -1,21 +1,24 @@
 import Foundation
 
-/// The QWERTY letter grid in key widths (shared/typing/FORMAT.md "Scoring"):
+/// The letter grid in key widths (shared/typing/FORMAT.md "Scoring"):
 /// row `r`, column `k` → center `(k + 0.5 + offset[r], (r + 0.5) · rowPitch)`.
+/// QWERTY unless the person picked another layout (LetterLayout): a row is
+/// centred in the ten columns, so the offsets are QWERTY's 0, 0.5 and 1.5
+/// there and follow the keys on the others. Non-letters keep their slot.
 struct KeyGeometry {
     static let rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-    static let offsets: [Float] = [0, 0.5, 1.5]
 
     let rowPitch: Float
     private var xs = [Float](repeating: .nan, count: 26)
     private var ys = [Float](repeating: .nan, count: 26)
 
-    init(rowPitch: Float = 1.44) {
+    init(rowPitch: Float = 1.44, rows: [String] = KeyGeometry.rows) {
         self.rowPitch = rowPitch
-        for (r, row) in Self.rows.enumerated() {
-            for (k, u) in row.unicodeScalars.enumerated() {
+        for (r, row) in rows.enumerated() {
+            let offset = (10 - Float(row.unicodeScalars.count)) / 2
+            for (k, u) in row.unicodeScalars.enumerated() where u.value >= 97 && u.value <= 122 {
                 let i = Int(u.value - 97)
-                xs[i] = Float(k) + 0.5 + Self.offsets[r]
+                xs[i] = Float(k) + 0.5 + offset
                 ys[i] = (Float(r) + 0.5) * rowPitch
             }
         }
