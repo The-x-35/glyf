@@ -17,7 +17,7 @@ final class VoiceLinkTests: XCTestCase {
         XCTAssertEqual(fx, [.beginCapture("u1"), .publish])
         XCTAssertEqual(m.state.phase, .listening)
         XCTAssertEqual(m.state.utterance, "u1")
-        XCTAssertEqual(m.state.expiresAt, VoiceLink.idleLifetime)
+        XCTAssertEqual(m.state.expiresAt, VoiceLink.never, "a session has no idle end")
     }
 
     func testOpenWithoutAnUtteranceWaitsReady() {
@@ -39,7 +39,7 @@ final class VoiceLinkTests: XCTestCase {
         XCTAssertEqual(m.state.phase, .ready)
         XCTAssertEqual(m.state.final, "Hello there.")
         XCTAssertEqual(m.state.finishedAt, 13)
-        XCTAssertEqual(m.state.expiresAt, 13 + VoiceLink.idleLifetime, "speaking resets the idle clock")
+        XCTAssertEqual(m.state.expiresAt, VoiceLink.never)
     }
 
     func testTheSameCommandTwiceActsOnce() {
@@ -79,6 +79,45 @@ final class VoiceLinkTests: XCTestCase {
         XCTAssertEqual(m.state.phase, .off)
         XCTAssertEqual(m.tick(now: 301), [], "an ended session is quiet")
         XCTAssertEqual(m.handle(cmd(.start, at: 302), now: 302), [], "commands need a session")
+    }
+
+    func testTheSessionLastsForever() {
+        XCTAssertNil(VoiceLink.idleLifetime)
+        var m = VoiceMachine(now: 0)
+        _ = m.open(session: "s", now: 0, listenNow: nil, engine: nil)
+        let tenYears = 10 * 365 * 86_400.0
+        XCTAssertEqual(m.tick(now: tenYears), [.publish], "still beating, ten idle years on")
+        XCTAssertEqual(m.state.phase, .ready)
+        XCTAssertTrue(VoiceLink.alive(m.state, now: tenYears + 1))
+        XCTAssertFalse(VoiceLink.alive(m.state, now: tenYears + VoiceLink.staleAfter),
+                       "a dead app is still caught by its heartbeat")
+        XCTAssertEqual(m.handle(cmd(.end, at: tenYears + 2), now: tenYears + 2),
+                       [.abortCapture, .shutDown, .publish], "Turn off still ends it")
+    }
+
+    func testSessionLengthSetting() {
+        XCTAssertNil(VoiceLink.lifetime(setting: nil))
+        XCTAssertNil(VoiceLink.lifetime(setting: "always"))
+        XCTAssertNil(VoiceLink.lifetime(setting: "garbage"))
+        XCTAssertEqual(VoiceLink.lifetime(setting: "1h"), 3600)
+        XCTAssertEqual(VoiceLink.lifetime(setting: "15m"), 900)
+        var m = VoiceMachine(now: 0, idleLifetime: VoiceLink.lifetime(setting: "15m"))
+        _ = m.open(session: "s", now: 0, listenNow: nil, engine: nil)
+        XCTAssertEqual(m.state.expiresAt, 900)
+        XCTAssertEqual(m.tick(now: 900), [.abortCapture, .shutDown, .publish])
+    }
+
+    func testAQuietMicrophoneAfterAnInterruptionKeepsTheSession() {
+        // A call took the microphone: no heartbeat, the keyboard sees the app
+        // as gone, but the session itself is still on and beats again once
+        // audio comes back.
+        var m = VoiceMachine(now: 0)
+        _ = m.open(session: "s", now: 0, listenNow: nil, engine: nil)
+        XCTAssertEqual(m.tick(now: 60, audioFlowing: false), [])
+        XCTAssertTrue(m.isOn)
+        XCTAssertFalse(VoiceLink.alive(m.state, now: 60))
+        XCTAssertEqual(m.tick(now: 61, audioFlowing: true), [.publish])
+        XCTAssertTrue(VoiceLink.alive(m.state, now: 61))
     }
 
     func testListeningNeverTimesOutTheSessionButCapsTheUtterance() {
@@ -172,6 +211,57 @@ final class VoiceLinkTests: XCTestCase {
     func testOpenURL() {
         XCTAssertEqual(VoiceLink.openURL(utterance: "abc").absoluteString, "glyf://voice?u=abc")
         XCTAssertEqual(VoiceLink.openURL(utterance: nil).absoluteString, "glyf://voice")
+        let url = VoiceLink.openURL(utterance: "abc", host: "net.whatsapp.WhatsApp")
+        XCTAssertEqual(url.absoluteString, "glyf://voice?u=abc&h=net.whatsapp.WhatsApp")
+        XCTAssertEqual(VoiceLink.openURL(utterance: "abc", host: "").absoluteString, "glyf://voice?u=abc")
+        let back = VoiceLink.parseOpenURL(url)
+        XCTAssertEqual(back.utterance, "abc")
+        XCTAssertEqual(back.host, "net.whatsapp.WhatsApp")
+        let bare = VoiceLink.parseOpenURL(URL(string: "glyf://voice")!)
+        XCTAssertNil(bare.utterance)
+        XCTAssertNil(bare.host)
+    }
+
+    // MARK: Back to the app the keyboard was in
+
+    func testReturnAppsMapBundleIdsToTheirLinks() {
+        let cases: [(String, String, String)] = [
+            ("com.apple.MobileSMS", "Messages", "sms:"),
+            ("net.whatsapp.WhatsApp", "WhatsApp", "whatsapp://"),
+            ("ph.telegra.Telegraph", "Telegram", "tg://"),
+            ("com.burbn.instagram", "Instagram", "instagram://"),
+            ("com.tinyspeck.chatlyio", "Slack", "slack://"),
+            ("com.apple.mobilemail", "Mail", "message:"),
+            ("com.apple.mobilenotes", "Notes", "mobilenotes://"),
+            ("notion.id", "Notion", "notion://"),
+            ("com.hammerandchisel.discord", "Discord", "discord://"),
+            ("com.atebits.Tweetie2", "X", "twitter://"),
+            ("com.google.Gmail", "Gmail", "googlegmail://"),
+        ]
+        for (id, name, link) in cases {
+            let app = VoiceLink.returnApp(forHost: id)
+            XCTAssertEqual(app?.name, name, id)
+            XCTAssertEqual(app?.url.absoluteString, link, id)
+        }
+        XCTAssertNil(VoiceLink.returnApp(forHost: "com.apple.mobilesafari"),
+                     "Safari: any link opens a new page, not the tab")
+        XCTAssertNil(VoiceLink.returnApp(forHost: "com.example.unknown"))
+        XCTAssertNil(VoiceLink.returnApp(forHost: nil))
+        XCTAssertNil(VoiceLink.returnApp(forHost: ""))
+        for (id, entry) in VoiceLink.returnApps {
+            XCTAssertNotNil(URL(string: entry.url), id)
+            XCTAssertFalse(entry.url.hasPrefix("http"), "\(id): a web link would open Safari")
+            XCTAssertFalse(entry.name.isEmpty, id)
+        }
+    }
+
+    func testGoingBackWaitsForAudioThenGivesUp() {
+        XCTAssertEqual(VoiceLink.returnStep(sinceOpen: 0, audioFlowing: true), .wait, "the person sees Glyf take it")
+        XCTAssertEqual(VoiceLink.returnStep(sinceOpen: VoiceLink.returnAfter, audioFlowing: true), .go)
+        XCTAssertEqual(VoiceLink.returnStep(sinceOpen: 1, audioFlowing: false), .wait, "no audio yet")
+        XCTAssertEqual(VoiceLink.returnStep(sinceOpen: 1.5, audioFlowing: true), .go)
+        XCTAssertEqual(VoiceLink.returnStep(sinceOpen: VoiceLink.returnGiveUp, audioFlowing: false), .stay)
+        XCTAssertLessThanOrEqual(VoiceLink.returnAfter, 1, "a minimum 1 second open and close")
     }
 
     func testStateRoundTripsThroughJSON() throws {

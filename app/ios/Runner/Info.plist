@@ -53,6 +53,8 @@
 	<string>Glyf listens only while voice typing is on, so the Glyf keyboard can type what you say. Speech is turned into text on your iPhone.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Glyf shows your screenshots from the last two days in the keyboard's clipboard so you can paste them. They stay on your phone.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Glyf turns what you say into text for the Glyf keyboard, on your iPhone.</string>
 	<key>UIApplicationSceneManifest</key>

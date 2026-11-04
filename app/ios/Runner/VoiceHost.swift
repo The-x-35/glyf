@@ -8,13 +8,19 @@ import os.log
 /// session that keeps AVAudioEngine's input running in the background
 /// (UIBackgroundModes audio, the orange dot), throws the sound away while
 /// idle, and feeds Apple's on-device recognizer between the keyboard's start
-/// and stop. Five idle minutes (VoiceLink.idleLifetime) end it.
+/// and stop. The session has no idle end (VoiceLink.idleLifetime): Turn off,
+/// a force-quit, a restart or iOS ends it. It also starts by itself, with no
+/// screen, whenever Glyf comes to the front with the microphone and speech
+/// already allowed (autoStart), and from Start Glyf Voice (Control Center,
+/// the Action button, Siri: VoiceIntents.swift). Calls, Siri and other apps
+/// taking the microphone pause it; it picks up again when they are done.
 final class VoiceHost {
     static let shared = VoiceHost()
     private let log = Logger(subsystem: "so.glyf.app", category: "voice")
 
     private var machine = VoiceMachine(now: Date().timeIntervalSince1970)
-    private let engine = AVAudioEngine()
+    /// Replaced after a media-services reset (the old one is dead).
+    private var engine = AVAudioEngine()
     private var tapOn = false
     private var heartbeat: Timer?
     private var recognizer: VoiceRecognizer?
@@ -45,6 +51,19 @@ final class VoiceHost {
 
     private var overlay: VoiceOverlay?
 
+    /// A start in progress (permissions, recognizer, audio): later callers
+    /// wait for it instead of starting the microphone twice.
+    private var starting = false
+    private var startWaiters: [(Bool) -> Void] = []
+    /// The utterance the keyboard's link asked to hear, for the start in
+    /// progress.
+    private var queuedListen: String?
+    /// Turn off was tapped while Glyf is in front: coming back from Control
+    /// Center (which makes the app active again) must not undo it.
+    private var turnedOffThisVisit = false
+    private var resumeTry = 0
+    private var sessionObservers: [NSObjectProtocol] = []
+
     /// DEBUG: a recording fed instead of the microphone (simulator tests).
     private var debugFile: URL?
     private var debugFeed: DispatchSourceTimer?
@@ -56,7 +75,14 @@ final class VoiceHost {
         // Back in their chat: the screen goes, the session stays.
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.overlay?.dismiss() }
+        ) { [weak self] _ in
+            self?.overlay?.dismiss()
+            self?.turnedOffThisVisit = false
+        }
+        // Every time Glyf comes to the front: the session, silently.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.autoStart() }
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "--glyf-voice-file"), i + 1 < args.count {
@@ -70,32 +96,107 @@ final class VoiceHost {
         if let s = VoiceLink.readState(), s.phase != .off {
             VoiceLink.publish(.off(now: Self.now))
         }
+        // ...and so does a Live Activity it left behind.
+        VoiceActivityHost.shared.end()
     }
 
-    /// Wakes the host up so it hears the keyboard's commands.
+    /// Wakes the host up so it hears the keyboard's commands and starts the
+    /// session each time Glyf comes to the front.
     func boot() {}
 
     // MARK: Opening
 
-    /// glyf://voice[?u=<utterance>] from the keyboard's mic.
-    func open(_ url: URL, scene: UIWindowScene?) {
-        let u = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-            .queryItems?.first { $0.name == "u" }?.value
-        showOverlay(in: scene)
-        overlay?.show(.starting)
-        start(listenNow: u)
+    /// The session, with no screen, whenever Glyf is opened (Arpit,
+    /// 2026-11-04: "start the session whenever [the user] opens the app"),
+    /// so the keyboard's Voice works with no trip through Glyf. Only when
+    /// the microphone and Speech Recognition are already allowed and the
+    /// keyboard has said it has Full Access: a plain open never asks for a
+    /// permission; only the keyboard's Voice does.
+    func autoStart() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--glyf-no-voice-autostart") { return }
+        #endif
+        // Not as RunnerTests' host app: unit tests keep the microphone off.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
+        guard !turnedOffThisVisit else { return }
+        guard Self.permissionsGranted, Self.keyboardHasFullAccess else { return }
+        if machine.isOn && engine.isRunning { return }
+        log.log("GLYF_VOICE autostart")
+        start(listenNow: nil, silent: true)
     }
 
-    private func start(listenNow: String?) {
-        requestPermissions { [weak self] ok, why in
+    /// Both prompts answered yes before (nothing is asked here).
+    static var permissionsGranted: Bool {
+        AVAudioApplication.shared.recordPermission == .granted
+            && SFSpeechRecognizer.authorizationStatus() == .authorized
+    }
+
+    /// The keyboard's last ping (it writes one on every appearance, and can
+    /// only write to the App Group with Full Access) says it has Full Access.
+    static var keyboardHasFullAccess: Bool {
+        AppGroupStore.readKeyboardPing()?["hasFullAccess"] as? Bool == true
+    }
+
+    /// glyf://voice[?u=<utterance>&h=<host bundle id>] from the keyboard's
+    /// mic. Once listening is on, Glyf goes back to the app named by `h`
+    /// when it knows that app's link (VoiceLink.returnApp); otherwise the
+    /// one line says to go back.
+    func open(_ url: URL, scene: UIWindowScene?) {
+        let link = VoiceLink.parseOpenURL(url)
+        turnedOffThisVisit = false
+        showOverlay(in: scene)
+        overlay?.show(.starting)
+        log.log("GLYF_VOICE open host=\(link.host ?? "-", privacy: .public)")
+        start(listenNow: link.utterance) { [weak self] ok in
+            guard let self, ok else { return }
+            self.goBack(to: link.host, startedAt: Self.now)
+        }
+    }
+
+    /// Start Glyf Voice from Control Center, the Action button, Siri or
+    /// Shortcuts (AudioRecordingIntent): the session in the background,
+    /// with the Live Activity iOS asks for. False when the microphone or
+    /// speech was never allowed: that needs Glyf in front.
+    @MainActor
+    func startFromIntent() async -> Bool {
+        guard Self.permissionsGranted else { return false }
+        turnedOffThisVisit = false
+        VoiceActivityHost.shared.begin()
+        let ok = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            start(listenNow: nil, silent: true) { c.resume(returning: $0) }
+        }
+        if !ok { VoiceActivityHost.shared.end() }
+        log.log("GLYF_VOICE intent start ok=\(ok)")
+        return ok
+    }
+
+    /// `silent`: no screen and no permission prompt (a plain app open, an
+    /// intent). `done` hears whether listening is on.
+    private func start(listenNow: String?, silent: Bool = false, done: ((Bool) -> Void)? = nil) {
+        if let done { startWaiters.append(done) }
+        if let listenNow { queuedListen = listenNow }
+        guard !starting else { return }
+        starting = true
+        let finish: (Bool) -> Void = { [weak self] ok in
+            guard let self else { return }
+            self.starting = false
+            let waiters = self.startWaiters
+            self.startWaiters = []
+            waiters.forEach { $0(ok) }
+        }
+        requestPermissions(prompt: !silent) { [weak self] ok, why in
             guard let self else { return }
             guard ok else {
-                self.overlay?.show(.denied(why))
-                VoiceLink.publish({ var s = VoiceLink.State.off(now: Self.now); s.error = why; return s }())
+                if !silent {
+                    self.overlay?.show(.denied(why))
+                    VoiceLink.publish({ var s = VoiceLink.State.off(now: Self.now); s.error = why; return s }())
+                }
+                self.queuedListen = nil
+                finish(false)
                 return
             }
             self.prepareRecognizer {
-                if !self.machine.isOn {
+                if !self.machine.isOn || !self.engine.isRunning {
                     do {
                         try self.startAudio()
                     } catch {
@@ -104,10 +205,14 @@ final class VoiceHost {
                         // The simulator's input can fail; a test file still runs.
                         if self.debugFile == nil {
                             self.overlay?.show(.failed("Microphone unavailable"))
+                            self.queuedListen = nil
+                            finish(false)
                             return
                         }
                         #else
                         self.overlay?.show(.failed("Microphone unavailable"))
+                        self.queuedListen = nil
+                        finish(false)
                         return
                         #endif
                     }
@@ -118,17 +223,70 @@ final class VoiceHost {
                 let engineName = self.debugFile != nil ? "file"
                     : self.analyzerFormat != nil ? "dictation" : "speech"
                 #endif
+                self.machine.idleLifetime = VoiceLink.lifetime(setting: SettingsStore.current.voiceReady)
+                let listen = self.queuedListen
+                self.queuedListen = nil
+                self.resumeTry = 0
                 self.run(self.machine.open(session: UUID().uuidString, now: Self.now,
-                                           listenNow: listenNow, engine: engineName))
+                                           listenNow: listen, engine: engineName))
                 self.overlay?.show(.listening)
                 self.startHeartbeat()
+                finish(true)
             }
         }
     }
 
+    // MARK: Back to the app the keyboard was in
+
+    /// Arpit, 2026-11-04: "if Glyf opens because of the voice thing, can you
+    /// send it back to the app it came from, so it's a minimum 1 second open
+    /// and close". Public API only on this side: the host app's own URL
+    /// scheme through UIApplication.open. Which app it was comes from the
+    /// keyboard (HostAppID, private, see there); `voiceReturn` = false in
+    /// settings turns the whole thing off.
+    private func goBack(to host: String?, startedAt: Double) {
+        guard SettingsStore.current.voiceReturn != false,
+              let app = VoiceLink.returnApp(forHost: host) else { return }
+        overlay?.show(.returning(app.name))
+        func check() {
+            guard machine.isOn else { overlay?.show(.listening); return }
+            lock.lock()
+            let flowing = Self.now - lastBufferAt < 1 || debugFeed != nil
+            lock.unlock()
+            switch VoiceLink.returnStep(sinceOpen: Self.now - startedAt, audioFlowing: flowing) {
+            case .wait:
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { check() }
+            case .stay:
+                log.log("GLYF_VOICE return: no audio, staying")
+                overlay?.show(.listening)
+            case .go:
+                log.log("GLYF_VOICE return to \(app.name, privacy: .public)")
+                UIApplication.shared.open(app.url, options: [:]) { [weak self] ok in
+                    if !ok {
+                        self?.log.log("GLYF_VOICE return failed")
+                        self?.overlay?.show(.listening)
+                    }
+                }
+            }
+        }
+        check()
+    }
+
     // MARK: Permissions
 
-    private func requestPermissions(_ done: @escaping (Bool, String) -> Void) {
+    /// `prompt` false: only what was answered before counts (a plain open
+    /// or an intent never shows a permission alert).
+    private func requestPermissions(prompt: Bool = true, _ done: @escaping (Bool, String) -> Void) {
+        guard prompt else {
+            if AVAudioApplication.shared.recordPermission != .granted {
+                done(false, "Allow the microphone in Settings › Glyf")
+            } else if SFSpeechRecognizer.authorizationStatus() != .authorized {
+                done(false, "Allow Speech Recognition in Settings › Glyf")
+            } else {
+                done(true, "")
+            }
+            return
+        }
         let mic: (@escaping (Bool) -> Void) -> Void = { cb in
             AVAudioApplication.requestRecordPermission { ok in DispatchQueue.main.async { cb(ok) } }
         }
@@ -232,27 +390,39 @@ final class VoiceHost {
         if engine.isRunning { engine.stop() }
         if tapOn { engine.inputNode.removeTap(onBus: 0); tapOn = false }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        for o in observers { NotificationCenter.default.removeObserver(o) }
+        for o in observers + sessionObservers { NotificationCenter.default.removeObserver(o) }
         observers = []
+        sessionObservers = []
         log.log("GLYF_VOICE audio off")
     }
 
     private func observeSession() {
-        guard observers.isEmpty else { return }
         let nc = NotificationCenter.default
-        observers.append(nc.addObserver(forName: AVAudioSession.interruptionNotification,
-                                        object: nil, queue: .main) { [weak self] note in
-            self?.interrupted(note)
-        })
+        if sessionObservers.isEmpty {
+            sessionObservers.append(nc.addObserver(forName: AVAudioSession.interruptionNotification,
+                                                   object: nil, queue: .main) { [weak self] note in
+                self?.interrupted(note)
+            })
+            sessionObservers.append(nc.addObserver(forName: AVAudioSession.routeChangeNotification,
+                                                   object: nil, queue: .main) { [weak self] note in
+                // A headset, CarPlay or a call's route: if the input stopped
+                // with it, pick it up again.
+                guard let self, self.machine.isOn, !self.engine.isRunning else { return }
+                let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
+                self.log.log("GLYF_VOICE route change \(raw), input stopped")
+                self.resumeAudio()
+            })
+            sessionObservers.append(nc.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification,
+                                                   object: nil, queue: .main) { [weak self] _ in
+                self?.rebuildAfterReset()
+            })
+        }
+        guard observers.isEmpty else { return }
         observers.append(nc.addObserver(forName: .AVAudioEngineConfigurationChange,
                                         object: engine, queue: .main) { [weak self] _ in
             // A headset came or went: the input's format changed under the tap.
             guard let self, self.machine.isOn else { return }
-            do { try self.installTapAndStart() } catch { self.lost("Microphone changed") }
-        })
-        observers.append(nc.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification,
-                                        object: nil, queue: .main) { [weak self] _ in
-            self?.lost("Voice stopped")
+            do { try self.installTapAndStart() } catch { self.resumeAudio() }
         })
     }
 
@@ -261,30 +431,64 @@ final class VoiceHost {
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         switch type {
         case .began:
-            // A call or Siri: what was heard so far stands.
+            // A call or Siri: what was heard so far stands. The session
+            // stays; only the heartbeat pauses while no audio comes in.
+            log.log("GLYF_VOICE interrupted")
             if let u = machine.state.utterance, machine.state.phase == .listening {
                 run(machine.handle(.init(id: UUID().uuidString, verb: .stop, at: Self.now,
                                          utterance: u), now: Self.now))
             }
         case .ended:
-            do {
-                try AVAudioSession.sharedInstance().setActive(true)
-                try installTapAndStart()
-            } catch {
-                lost("Voice stopped: another app has the microphone")
-            }
+            let opts = AVAudioSession.InterruptionOptions(
+                rawValue: note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+            log.log("GLYF_VOICE interruption ended resume=\(opts.contains(.shouldResume))")
+            // Resumed with or without iOS's shouldResume hint: the session is
+            // mixable and the person expects voice to still be there. A
+            // refusal is retried for a while (resumeAudio).
+            resumeTry = 0
+            resumeAudio()
         @unknown default:
             break
         }
     }
 
-    private func lost(_ why: String) {
-        var fx = machine.shutDown(now: Self.now)
-        fx.removeAll { $0 == .publish }
-        run(fx)
-        var s = machine.state
-        s.error = why
-        VoiceLink.publish(s)
+    /// The input again after an interruption or a route change. Retried
+    /// every 2 s for a minute while another app holds the microphone; after
+    /// that the session waits, its heartbeat stale, and the next keyboard tap
+    /// (which opens Glyf) or the next time Glyf comes to the front starts the
+    /// audio again.
+    private func resumeAudio() {
+        guard machine.isOn else { return }
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            if !engine.isRunning || !tapOn { try installTapAndStart() }
+            resumeTry = 0
+            log.log("GLYF_VOICE audio resumed")
+        } catch {
+            resumeTry += 1
+            log.error("GLYF_VOICE resume \(self.resumeTry) failed \(error.localizedDescription, privacy: .public)")
+            guard resumeTry < 30 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, self.machine.isOn, !self.engine.isRunning else { return }
+                self.resumeAudio()
+            }
+        }
+    }
+
+    /// The media server restarted: every audio object is dead. A new
+    /// engine, the same session.
+    private func rebuildAfterReset() {
+        log.log("GLYF_VOICE media services reset")
+        for o in observers { NotificationCenter.default.removeObserver(o) }
+        observers = []
+        tapOn = false
+        engine = AVAudioEngine()
+        guard machine.isOn else { return }
+        do {
+            try startAudio()
+        } catch {
+            resumeAudio()
+        }
     }
 
     // MARK: Heartbeat
@@ -341,6 +545,7 @@ final class VoiceHost {
 
     /// The person ended it (the overlay's Turn off).
     func end() {
+        turnedOffThisVisit = UIApplication.shared.applicationState == .active
         run(machine.shutDown(now: Self.now))
         overlay?.dismiss()
     }
@@ -357,6 +562,7 @@ final class VoiceHost {
                 heartbeat?.invalidate(); heartbeat = nil
                 stopLevels()
                 stopAudio()
+                VoiceActivityHost.shared.end()
             case .publish:
                 VoiceLink.publish(machine.state)
             }
@@ -368,6 +574,7 @@ final class VoiceHost {
         carried = ""
         restarts = []
         overlay?.setWords("")
+        VoiceActivityHost.shared.update(listening: true)
         let r = startRecognizer(u)
         lock.lock()
         let early = preRoll
@@ -456,6 +663,7 @@ final class VoiceHost {
         lock.lock(); sink = nil; lock.unlock()
         stopDebugFeed()
         recognizer?.finish()
+        VoiceActivityHost.shared.update(listening: false)
     }
 
     private func abortCapture() {
@@ -465,6 +673,7 @@ final class VoiceHost {
         recognizer?.cancel()
         recognizer = nil
         recognizing = nil
+        VoiceActivityHost.shared.update(listening: false)
     }
 
     // MARK: DEBUG: a recording in place of the microphone
@@ -832,11 +1041,13 @@ final class AnalyzerRecognizer: VoiceRecognizer {
 /// One line and a way to turn it off, over whatever the app was showing,
 /// in the keyboard panel's glass: a frosted sheet with a violet bloom and
 /// the same ribbon moving with the voice. The person goes back with iOS's
-/// "◀ Messages" (or a swipe along the bottom edge); since iOS 26.4 no app can
-/// take them back by itself.
+/// "◀ Messages" (or a swipe along the bottom edge), or Glyf takes them back
+/// itself when it knows the app they came from (VoiceHost.goBack).
 final class VoiceOverlay {
     enum Mode {
         case starting, listening
+        /// Listening, and on the way back to this app.
+        case returning(String)
         case denied(String)
         case failed(String)
     }
@@ -966,13 +1177,21 @@ final class VoiceOverlay {
         case .listening:
             line.text = "Listening is on · go back to keep typing"
             button.setTitle("Turn off", for: .normal)
+        case .returning(let app):
+            line.text = "Listening is on · back to \(app)"
+            button.setTitle("Turn off", for: .normal)
         case .denied(let why), .failed(let why):
             line.text = why
             button.setTitle(nil, for: .normal)
             if case .denied = mode { button.setTitle("Open Settings", for: .normal) }
         }
         button.isHidden = button.title(for: .normal) == nil
-        let live: Bool = { if case .listening = mode { return true }; return false }()
+        let live: Bool = {
+            switch mode {
+            case .listening, .returning: return true
+            default: return false
+            }
+        }()
         ribbon.calm = !live
         ribbon.alpha = live ? 1 : 0.4
         if !live { ribbon.level = 0 }
@@ -985,7 +1204,10 @@ final class VoiceOverlay {
 
     func setLevel(_ level: Float) {
         guard !window.isHidden else { return }
-        if case .listening = mode { ribbon.level = level }
+        switch mode {
+        case .listening, .returning: ribbon.level = level
+        default: break
+        }
     }
 
     private func buttonTapped() {

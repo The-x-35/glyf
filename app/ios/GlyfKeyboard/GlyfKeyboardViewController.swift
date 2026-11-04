@@ -156,6 +156,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         /// space went in. Undo works from exactly there: anything written,
         /// deleted or moved to since leaves the correction behind.
         var anchor: String? = nil
+        /// What came after the fix at the anchor: its space, or the
+        /// punctuation that made the fix and then a space (WordTracker.undoTail).
+        var tail = ""
     }
     private var lastCorrection: Correction?
 
@@ -177,7 +180,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// text ("free" in a pasted line) would swap it back.
     private func undoableCorrection(before: String?) -> Correction? {
         guard let corr = lastCorrection, let anchor = corr.anchor, let before,
-              before == anchor, before.hasSuffix(corr.replacement + " ") else { return nil }
+              before == anchor, !corr.tail.isEmpty, before.hasSuffix(corr.replacement + corr.tail) else { return nil }
         return corr
     }
     /// Where each letter of the word being typed was touched.
@@ -559,6 +562,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             hasFullAccess: hasFullAccess,
             lexicon: { [weak self] done in self?.requestSupplementaryLexicon(completion: done) },
             ready: { [weak self] _ in
+                // The engine may load after viewWillAppear's seeding ran.
+                self?.seedOwnNames()
                 self?.updateCandidates()
                 self?.glideDecoderReady()?.warm()
             })
@@ -1684,6 +1689,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
             || proxy.keyboardType == .webSearch {
             policy.remove(.autocorrect)
         }
+        // A field that turns autocorrect off (search bars) teaches nothing:
+        // "teh" typed twice into Safari's search bar was never fixed in
+        // Messages again (RESEARCH-IMPROVEMENTS-APP 12).
+        if proxy.autocorrectionType == .no || proxy.keyboardType == .webSearch {
+            policy.remove(.learning)
+        }
         if let type = contentType, [.name, .givenName, .familyName, .nickname].contains(type) {
             policy.remove(.autocorrect)
         }
@@ -1691,17 +1702,32 @@ final class GlyfKeyboardViewController: UIInputViewController {
         return policy
     }
 
+    /// Where autocorrect is off but learning is on (the "Autocorrect"
+    /// setting off, X's composer), only words autocorrect would have left
+    /// alone are learned. A name field learns what it's given.
+    private var learnsOnlyWordsItWouldKeep: Bool {
+        !SettingsStore.current.autocorrect || textDocumentProxy.keyboardType == .twitter
+    }
+
     /// The person's own names are words to the engine, whatever the
     /// dictionary makes of them (2026-10-07 probe: "hi arpit" offered
-    /// armpit): each word of a saved name is kept, once per spelling.
+    /// armpit): each word of a saved name is kept, once per spelling. The
+    /// vault's details that are names too (first and last name, company,
+    /// city, state) are never autocorrected (2026-11-04).
     private var seededNames: Set<String> = []
     /// The text before the caret at the last strip update (PhraseMemory).
     private var phraseSeen = ""
     private func seedOwnNames() {
         guard let engine = typing else { return }
-        let names = Set(VaultStore.shared.load().fields.filter { $0.kind == "name" }
-            .flatMap { $0.value.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "-" }).map(String.init) }
-            .filter { $0.count >= 2 })
+        let fields = VaultStore.shared.load().fields
+        func words(_ values: [String]) -> Set<String> {
+            Set(values.flatMap { $0.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "-" }).map(String.init) }
+                .filter { $0.count >= 2 })
+        }
+        let names = words(fields.filter { $0.kind == "name" }.map(\.value))
+        let details = words(["givenName", "familyName", "company", "city", "state"]
+            .flatMap { Smart.detailsFor(kind: $0, fields: fields).map(\.value) })
+        engine.setOwnNames(names.union(details).sorted())
         guard names != seededNames else { return }
         for name in names.subtracting(seededNames) { engine.keep(name) }
         seededNames = names
@@ -2038,7 +2064,17 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let word = WordTracker.currentWord(beforeContext: before)
         if word.isEmpty {
             if let corr = undoableCorrection(before: before) {
-                toolbar.showSuggestions([.init(text: corr.original, kind: .undo)])
+                // Apple's way: what was typed, in quotes, in the first slot; a
+                // tap puts it back and teaches the engine. The next words
+                // keep the other two slots once the space is in.
+                var items: [GlyfToolbar.Suggestion] = [.init(text: corr.original, kind: .undo)]
+                if let engine = typing, corr.tail == " ",
+                   let previous = WordTracker.previousWord(beforeContext: before) {
+                    items += engine.predictions(
+                        previous: previous, beforePrevious: WordTracker.wordBeforePrevious(beforeContext: before),
+                        policy: policy).prefix(2).map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
+                }
+                toolbar.showSuggestions(items)
             } else if let engine = typing, before?.hasSuffix(" ") == true,
                       let previous = WordTracker.previousWord(beforeContext: before) {
                 var items = engine.predictions(
@@ -2134,11 +2170,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         guard let engine = typing else { return }
         var kept = word
+        // What this word may teach: a typo left standing teaches nothing.
+        var learn = policy
         recentFixes.removeAll { Date().timeIntervalSince($0.at) > 300 }
         if let i = recentFixes.firstIndex(where: { $0.touched && $0.original.lowercased() == word.lowercased() }) {
             // Corrected, gone back into, and typed the same again: keep it.
             let refused = recentFixes.remove(at: i)
-            engine.revert(typed: word, correction: refused.replacement)
+            if policy.contains(.learning) { engine.revert(typed: word, correction: refused.replacement) }
         } else if policy.contains(.autocorrect),
            let fix = suggestions(for: word, before: before, policy: policy)?.autocorrect, fix != word {
             // "Correct automatically" off: the word stands exactly as typed.
@@ -2150,11 +2188,24 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 recentFixes.append(RecentFix(original: word, replacement: fix, at: Date()))
                 if recentFixes.count > 8 { recentFixes.removeFirst(recentFixes.count - 8) }
                 kept = fix
+                // A capital typed mid-sentence was meant: twice, and it's a name.
+                engine.noteCorrected(typed: word, fix: fix, sentenceStart: sentenceStart, policy: policy)
+            } else {
+                // Left standing but not chosen: typed twice it would become a
+                // word and never be fixed again (RESEARCH-IMPROVEMENTS-APP 12).
+                learn.remove(.learning)
             }
+        } else if !policy.contains(.autocorrect), policy.contains(.learning), learnsOnlyWordsItWouldKeep,
+                  engine.wouldFix(word, previous: previous,
+                                  beforePrevious: WordTracker.wordBeforePrevious(beforeContext: before),
+                                  sentenceStart: sentenceStart) {
+            // Autocorrect switched off: what it would have fixed is a typo,
+            // not a word to learn.
+            learn.remove(.learning)
         }
         let autoCapitalized = sentenceStart && SettingsStore.current.autocapitalize
             && textDocumentProxy.autocapitalizationType != UITextAutocapitalizationType.none
-        engine.commit(word: kept, previous: previous, autoCapitalized: autoCapitalized, policy: policy)
+        engine.commit(word: kept, previous: previous, autoCapitalized: autoCapitalized, policy: learn)
         TypingStore.shared.scheduleSave()
     }
 
@@ -2188,20 +2239,37 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// correction is never offered for that word again.
     @discardableResult
     private func undoLastCorrection() -> Bool {
-        guard let corr = undoableCorrection(before: beforeContext),
-              let before = beforeContext else { return false }
-        let tail = before.hasSuffix(corr.replacement + " ") ? corr.replacement + " "
-            : before.hasSuffix(corr.replacement) ? corr.replacement : nil
-        guard let tail else { return false }
-        for _ in 0..<tail.count { hostDelete() }
-        let spaced = tail.count > corr.replacement.count
-        hostInsert(spaced ? corr.original + " " : corr.original)
+        guard let corr = undoableCorrection(before: beforeContext), let before = beforeContext,
+              let undo = WordTracker.undo(before: before, original: corr.original,
+                                          replacement: corr.replacement, tail: corr.tail) else { return false }
+        for _ in 0..<undo.delete { hostDelete() }
+        hostInsert(undo.insert)
         lastCorrection = nil
-        if corr.fromEngine {
-            typing?.revert(typed: corr.original, correction: corr.replacement)
-            TypingStore.shared.scheduleSave()
-        }
+        teachUndo(corr)
         return true
+    }
+
+    /// `ch` just went in after a word: a correction it made is undoable from
+    /// here, and one it follows (`extending`, undoable just before it) moves
+    /// its anchor here while what came after the fix is only marks and one
+    /// space. Reads the host only when there is a correction to anchor.
+    private func anchorCorrection(after ch: Character, extending: Correction?) {
+        guard let corr = lastCorrection else { return }
+        if corr.anchor == nil {
+            lastCorrection?.anchor = beforeContext
+            lastCorrection?.tail = String(ch)
+        } else if let extending, let tail = WordTracker.undoTail(extending.tail, adding: ch) {
+            lastCorrection?.anchor = beforeContext
+            lastCorrection?.tail = tail
+        }
+    }
+
+    /// An undone engine correction is never offered for that word again,
+    /// and the word is kept (the "retype teaches" logic, PersonalLexicon.revert).
+    private func teachUndo(_ corr: Correction) {
+        guard corr.fromEngine, typingPolicy.contains(.learning) else { return }
+        typing?.revert(typed: corr.original, correction: corr.replacement)
+        TypingStore.shared.scheduleSave()
     }
 }
 
@@ -2221,8 +2289,14 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         var tHost: Double = 0
         var before: String?
         var readBefore = false
+        /// A fix this punctuation makes, or one whose punctuation it follows
+        /// ("teh!?"), stays undoable with the marks after it.
+        var punctuation: Character?
+        var extending: Correction?
         if text.count == 1, let ch = text.first {
             if WordTracker.correctionBoundaries.contains(ch) {
+                punctuation = ch
+                if lastCorrection?.anchor != nil { extending = undoableCorrection(before: beforeContext) }
                 // Punctuation ends the word: correct it before the mark lands.
                 commitCurrentWord()
             } else if !WordTracker.boundaries.contains(ch) || ch == "'" || ch == "’" {
@@ -2241,6 +2315,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         let tI = Perf.mark()
         hostInsert(text)
         let tInsert = Perf.ms(tI)
+        if let ch = punctuation { anchorCorrection(after: ch, extending: extending) }
         let tS = Perf.mark()
         syncAutoShift(knownBefore: readBefore ? (before ?? "") + text : nil)
         let tShift = Perf.ms(tS)
@@ -2257,14 +2332,12 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         if glideBackspace() { return }
         // Backspace right after a correction puts back what was typed (and
         // teaches the engine to leave that word alone).
-        if let corr = undoableCorrection(before: beforeContext) {
+        // After a fix made by punctuation ("the,") backspace deletes as usual.
+        if let corr = undoableCorrection(before: beforeContext), corr.tail == " " {
             for _ in 0..<(corr.replacement.count + 1) { hostDelete() }
             hostInsert(corr.original)
             lastCorrection = nil
-            if corr.fromEngine {
-                typing?.revert(typed: corr.original, correction: corr.replacement)
-                TypingStore.shared.scheduleSave()
-            }
+            teachUndo(corr)
         } else {
             lastCorrection = nil
             hostDelete()
@@ -2325,6 +2398,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
                 lastCorrection = Correction(original: token, replacement: filled.text, fromEngine: false)
                 hostInsert(" ")
                 lastCorrection?.anchor = beforeContext
+                lastCorrection?.tail = " "
             }
             syncAutoShift()
             scheduleCandidates()
@@ -2334,10 +2408,12 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
 
         // Autocorrect + learning on commit (§6.1, Engine/Typing) — the
         // policy keeps secure fields untouched (§11.9).
+        // "teh," then space: the fix stays undoable with its comma and space.
+        let extending = lastCorrection?.anchor != nil ? undoableCorrection(before: beforeContext) : nil
         commitCurrentWord()
         hostInsert(" ")
         // A correction this space just made is undoable from here only.
-        if let corr = lastCorrection, corr.anchor == nil { lastCorrection?.anchor = beforeContext }
+        anchorCorrection(after: " ", extending: extending)
         syncAutoShift()
         scheduleCandidates()
         notifyHUD()
@@ -3633,8 +3709,11 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             let u = UUID().uuidString
             voiceOpenedAt = voiceNow
             showVoicePanel(u, .opening)
-            log.log("GLYF_VOICE open app")
-            HostAppOpener.open(VoiceLink.openURL(utterance: u), from: self) { [weak self] strategy in
+            // The app Glyf goes back to once listening is on (private API,
+            // see HostAppID; off with voiceReturn = false).
+            let host = SettingsStore.current.voiceReturn == false ? nil : HostAppID.read(from: self)
+            log.log("GLYF_VOICE open app host=\(host ?? "-", privacy: .public)")
+            HostAppOpener.open(VoiceLink.openURL(utterance: u, host: host), from: self) { [weak self] strategy in
                 guard let self, strategy == .none else { return }
                 self.showVoicePanel(nil, .notice("Open Glyf to turn on voice typing"))
             }

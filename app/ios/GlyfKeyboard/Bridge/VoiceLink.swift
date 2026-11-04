@@ -25,12 +25,28 @@ enum VoiceLink {
     static let takenFile = "voice-taken.json"
 
     /// How long a session lives with nothing said before the app lets the
-    /// microphone go. Each use restarts it. An hour, not Wispr Flow's 5
-    /// minutes: after 5 a pause sent every next tap back through the Glyf
-    /// app (Arpit, 2026-11-04: "why is it opening the Glyf app every time I
-    /// click on the mic"). Apple lets a recording started in the foreground
-    /// run on in the background; Turn off in Glyf ends it at once.
-    static let idleLifetime: TimeInterval = 60 * 60
+    /// microphone go: nil, no limit (Arpit, 2026-11-04: "session that lasts
+    /// forever"). It ends when the person taps Turn off in Glyf, force-quits
+    /// Glyf, the phone restarts, or iOS ends it; the heartbeat below still
+    /// tells the keyboard when the app is gone. Earlier: 5 minutes (Wispr
+    /// Flow's default), then an hour ("why is it opening the Glyf app every
+    /// time I click on the mic"). Apple lets a recording started in the
+    /// foreground run on in the background.
+    static let idleLifetime: TimeInterval? = nil
+    /// `State.expiresAt` of a session with no idle end (2100-01-01): kept a
+    /// plain number so the file reads the same for every app version.
+    static let never: Double = 4_102_444_800
+
+    /// The session length a person picked (`SettingsStore.voiceReady`):
+    /// "always" (the default, also nil or anything unknown), "1h" or "15m".
+    static func lifetime(setting: String?) -> TimeInterval? {
+        switch setting {
+        case "1h": return 60 * 60
+        case "15m": return 15 * 60
+        default: return idleLifetime
+        }
+    }
+
     /// One utterance stops by itself after this long.
     static let maxUtterance: TimeInterval = 5 * 60
     /// The app writes its heartbeat this often while the microphone runs.
@@ -44,12 +60,98 @@ enum VoiceLink {
     /// A final older than this is not typed into whatever field is open now.
     static let deliverWithin: TimeInterval = 60
 
-    static func openURL(utterance: String?) -> URL {
+    /// glyf://voice?u=<utterance>&h=<host bundle id>. `h` is the app the
+    /// keyboard was typing in, when the keyboard could tell (HostAppID):
+    /// the app goes back to it once listening is on (`returnURL`).
+    static func openURL(utterance: String?, host: String? = nil) -> URL {
         var c = URLComponents()
         c.scheme = "glyf"
         c.host = "voice"
-        if let utterance { c.queryItems = [URLQueryItem(name: "u", value: utterance)] }
+        var q: [URLQueryItem] = []
+        if let utterance { q.append(URLQueryItem(name: "u", value: utterance)) }
+        if let host, !host.isEmpty { q.append(URLQueryItem(name: "h", value: host)) }
+        if !q.isEmpty { c.queryItems = q }
         return c.url!
+    }
+
+    // MARK: Back to the app the keyboard was in
+
+    /// An app the voice link can send the person back to: its own URL
+    /// scheme opens it where it was (public `UIApplication.open`, no
+    /// LSApplicationQueriesSchemes needed to open). Safari is left out on
+    /// purpose: every Safari URL opens a new page rather than the tab the
+    /// person was typing in, so Safari gets the "go back" line instead.
+    struct ReturnApp: Equatable {
+        let name: String
+        let url: URL
+    }
+
+    /// Bundle id → (display name, URL that opens it).
+    static let returnApps: [String: (name: String, url: String)] = [
+        "com.apple.MobileSMS": ("Messages", "sms:"),
+        "com.apple.mobilemail": ("Mail", "message:"),
+        "com.apple.mobilenotes": ("Notes", "mobilenotes://"),
+        "com.apple.mobilecal": ("Calendar", "calshow://"),
+        "com.apple.reminders": ("Reminders", "x-apple-reminderkit://"),
+        "com.apple.Maps": ("Maps", "maps://"),
+        "net.whatsapp.WhatsApp": ("WhatsApp", "whatsapp://"),
+        "net.whatsapp.WhatsAppSMB": ("WhatsApp Business", "whatsapp-smb://"),
+        "ph.telegra.Telegraph": ("Telegram", "tg://"),
+        "org.whispersystems.signal": ("Signal", "sgnl://"),
+        "com.facebook.Messenger": ("Messenger", "fb-messenger://"),
+        "com.facebook.Facebook": ("Facebook", "fb://"),
+        "com.burbn.instagram": ("Instagram", "instagram://"),
+        "com.burbn.barcelona": ("Threads", "barcelona://"),
+        "com.atebits.Tweetie2": ("X", "twitter://"),
+        "xyz.blueskyweb.app": ("Bluesky", "bluesky://"),
+        "com.toyopagroup.picaboo": ("Snapchat", "snapchat://"),
+        "com.reddit.Reddit": ("Reddit", "reddit://"),
+        "com.linkedin.LinkedIn": ("LinkedIn", "linkedin://"),
+        "com.hammerandchisel.discord": ("Discord", "discord://"),
+        "com.tinyspeck.chatlyio": ("Slack", "slack://"),
+        "com.microsoft.skype.teams": ("Teams", "msteams://"),
+        "com.microsoft.Office.Outlook": ("Outlook", "ms-outlook://"),
+        "com.google.Gmail": ("Gmail", "googlegmail://"),
+        "com.google.chrome.ios": ("Chrome", "googlechrome://"),
+        "com.google.GoogleMobile": ("Google", "google://"),
+        "notion.id": ("Notion", "notion://"),
+        "jp.naver.line": ("LINE", "line://"),
+        "com.viber": ("Viber", "viber://"),
+    ]
+
+    /// Where to send the person after Glyf opened for voice, or nil: the
+    /// app shows its one "go back" line instead.
+    static func returnApp(forHost bundleID: String?) -> ReturnApp? {
+        guard let id = bundleID?.trimmingCharacters(in: .whitespaces), !id.isEmpty,
+              let entry = returnApps[id], let url = URL(string: entry.url)
+        else { return nil }
+        return ReturnApp(name: entry.name, url: url)
+    }
+
+    /// The voice link's two values: the utterance to hear at once and the
+    /// host app's bundle id.
+    static func parseOpenURL(_ url: URL) -> (utterance: String?, host: String?) {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ name: String) -> String? {
+            items.first { $0.name == name }?.value.flatMap { $0.isEmpty ? nil : $0 }
+        }
+        return (value("u"), value("h"))
+    }
+
+    /// Glyf goes back once listening is on: at least `returnAfter` after
+    /// the link came (the person sees the app take it), and only once audio
+    /// is coming in. With no audio by `returnGiveUp`, it stays (Wispr Flow
+    /// does the same at about 2 s) and shows the line.
+    static let returnAfter: TimeInterval = 0.6
+    static let returnGiveUp: TimeInterval = 2.0
+
+    /// Whether to go back now, wait, or give up.
+    enum ReturnStep: Equatable { case wait, go, stay }
+
+    static func returnStep(sinceOpen: TimeInterval, audioFlowing: Bool) -> ReturnStep {
+        if sinceOpen >= returnGiveUp { return audioFlowing ? .go : .stay }
+        guard sinceOpen >= returnAfter else { return .wait }
+        return audioFlowing ? .go : .wait
     }
 
     // MARK: Wire types
@@ -432,10 +534,11 @@ struct VoiceMachine {
     private(set) var state: VoiceLink.State
     /// Commands already acted on (a note can arrive twice for one file).
     private var handled: [String] = []
-    let idleLifetime: TimeInterval
+    /// nil: the session never ends by itself (`VoiceLink.idleLifetime`).
+    var idleLifetime: TimeInterval?
     let maxUtterance: TimeInterval
 
-    init(now: Double, idleLifetime: TimeInterval = VoiceLink.idleLifetime,
+    init(now: Double, idleLifetime: TimeInterval? = VoiceLink.idleLifetime,
          maxUtterance: TimeInterval = VoiceLink.maxUtterance) {
         state = .off(now: now)
         self.idleLifetime = idleLifetime
@@ -450,9 +553,9 @@ struct VoiceMachine {
         var fx: [Effect] = []
         if state.phase == .off {
             state = VoiceLink.State(session: session, phase: .ready, heartbeat: now,
-                                    expiresAt: now + idleLifetime, engine: engine)
+                                    expiresAt: expiry(now), engine: engine)
         } else {
-            state.expiresAt = now + idleLifetime
+            state.expiresAt = expiry(now)
             state.heartbeat = now
         }
         if let u = listenNow, state.phase == .ready, !handled.contains(u) {
@@ -485,7 +588,7 @@ struct VoiceMachine {
             state.level = 0
             state.final = nil
             state.since = nil
-            state.expiresAt = now + idleLifetime
+            state.expiresAt = expiry(now)
             return [.abortCapture, .publish]
         case .end:
             return shutDown(now: now)
@@ -580,7 +683,7 @@ struct VoiceMachine {
         state.final = nil
         state.finishedAt = nil
         state.error = nil
-        state.expiresAt = now + idleLifetime
+        state.expiresAt = expiry(now)
         return [.beginCapture(u)]
     }
 
@@ -592,7 +695,12 @@ struct VoiceMachine {
         state.finishedAt = now
         state.since = nil
         state.heartbeat = now
-        state.expiresAt = now + idleLifetime
+        state.expiresAt = expiry(now)
+    }
+
+    /// When an idle session ends, counted from `now`.
+    func expiry(_ now: Double) -> Double {
+        idleLifetime.map { now + $0 } ?? VoiceLink.never
     }
 
     private mutating func remember(_ id: String) {

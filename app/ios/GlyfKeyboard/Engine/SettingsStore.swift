@@ -151,6 +151,13 @@ struct GlyfSettings: Codable, Equatable {
     /// Voice typing's style pill, as last picked (VoiceLink.Style raw value;
     /// nil = As spoken, nothing sent).
     var voiceStyle: String? = nil
+    /// How long voice typing stays ready with nothing said: nil or "always"
+    /// (no limit, the default), "1h" or "15m" (VoiceLink.lifetime).
+    var voiceReady: String? = nil
+    /// false turns off going back to the app the keyboard was in after
+    /// Glyf opened for voice (the keyboard stops reading the host app's id,
+    /// which uses private API: HostAppID). nil = on.
+    var voiceReturn: Bool? = nil
     /// The person's Cal.com or Calendly booking page, set in the app
     /// (Connected tools → Booking link). The calendar's Book a time uses it.
     var bookingLink: String? = nil
