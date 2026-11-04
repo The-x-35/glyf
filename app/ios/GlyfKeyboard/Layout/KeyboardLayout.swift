@@ -368,3 +368,24 @@ enum KeyHit {
                           width: dx * 2, height: dy * 2))
     }
 }
+
+/// How a key's legend is drawn where it differs from what it types:
+/// measured on Apple's keyboard (iOS 26.5 sim, 2026-11-04).
+enum KeyLegend {
+    /// Letters change with shift; digits and symbols don't.
+    static func hasCase(_ c: String?) -> Bool {
+        guard let c else { return false }
+        return c.lowercased() != c.uppercased()
+    }
+    /// Apple's labels for the straight quotes: curly, as its keys show them
+    /// (what is typed is unchanged).
+    static let shownAs: [String: String] = ["\"": "\u{201D}", "'": "\u{2019}"]
+    /// Symbols Apple draws bigger than its 22pt, by ink on the iOS 26.5 sim:
+    /// * 9.7 x 10.3pt, • 7 x 7.3, # 15 x 18, . and , a little heavier.
+    static let symbolScale: [String: CGFloat] = [
+        "*": 1.48, "\u{2022}": 1.57, "#": 1.11, ".": 1.16, ",": 1.16,
+    ]
+    /// Grown that much, * rides high and • low in a centred label; Apple's
+    /// sit 15pt and 16.7pt under the key's top.
+    static let symbolOffset: [String: CGFloat] = ["*": 4, "\u{2022}": -3]
+}

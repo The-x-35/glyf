@@ -58,6 +58,92 @@ enum KeyMetrics {
     static func sideKeyWidth(keyWidth: CGFloat) -> CGFloat { keyWidth * 1.35 }
 }
 
+/// The emoji board, laid out like Apple's. Since iOS 18.1 an iPhone's emoji
+/// keyboard shows FOUR rows of bigger emoji where it used to show five
+/// (Arpit's iPhone 16 Pro on iOS 18.7, 2026-11-04: "normal iOS uses only 4
+/// rows"). The iOS 26.5 simulator still draws the older five-row board, so
+/// the five-row numbers below are what was measured there (Messages, 402pt,
+/// @3x, ink not boxes) and the four rows are the same board with each row
+/// grown to a quarter of the grid, glyph and column pitch keeping Apple's
+/// proportions:
+///
+///     Apple, 5 rows (sim)   row 38.4  column 46.0  glyph ink 29.3  first glyph x 15.3
+///     Glyf, 4 rows (402)    row 47.5  column 56.9  glyph ink 36.2  first glyph x 15.3
+///
+/// The chrome is Apple's own: a 40pt search field 9pt in from the edges,
+/// the section name 13.7pt under it in a lighter grey, nine category glyphs
+/// 33.2pt apart starting at 51.3, delete 21.3 x 17.7pt of ink. Search keeps
+/// the board's height (Apple's does) with one row of 34.7pt emoji 53pt apart.
+enum EmojiMetrics {
+    /// Rows in the grid. Apple's iPhone board since iOS 18.1.
+    static let rows = 4
+
+    /// Apple's five-row grid, measured on the iOS 26.5 simulator.
+    static let appleRowPitch: CGFloat = 38.4
+    static let appleColumnPitch: CGFloat = 46.0
+    static let appleGlyphInk: CGFloat = 29.3
+    /// Apple Color Emoji's ink per point of font size (a 32pt face draws a
+    /// 29.7pt face), so a wanted ink size gives the font size.
+    static let inkPerPoint: CGFloat = 0.928
+
+    /// The board's own height over the letters: unchanged (the keyboard
+    /// never changes height for emoji beyond what it always has).
+    static let extraHeight: CGFloat = 44
+
+    // Chrome, in the board's own coordinates.
+    static let fieldTop: CGFloat = 4
+    static let fieldHeight: CGFloat = 40
+    static let fieldInset: CGFloat = 9
+    /// The section name's frame; its capitals start 3.7pt lower, 13.7pt
+    /// under the field, as on Apple's.
+    static let labelTop: CGFloat = 54
+    static let labelX: CGFloat = 12
+    /// The grid's band: 6.6pt under the section name's capitals, ending
+    /// 21.4pt above the category glyphs' middle.
+    static let gridTop: CGFloat = 73.5
+    static let gridBottomInset: CGFloat = 41.5
+    /// The category bar: 34pt tall, its middle 20pt off the board's bottom.
+    static let barHeight: CGFloat = 34
+    static let barBottomInset: CGFloat = 37
+    static let barX: CGFloat = 51.3
+    static let barTrailing: CGFloat = 51.9
+    static let barCount: CGFloat = 9
+    /// The first glyph's left edge, which Apple lines up with the section name.
+    static let glyphLeft: CGFloat = 15.3
+
+    /// One row of the grid for a board this tall, on a half point.
+    static func rowPitch(boardHeight h: CGFloat) -> CGFloat {
+        floor((h - gridBottomInset - gridTop) / CGFloat(rows) * 2) / 2
+    }
+    static func columnPitch(rowPitch r: CGFloat) -> CGFloat {
+        (r * appleColumnPitch / appleRowPitch * 10).rounded() / 10
+    }
+    static func glyphInk(rowPitch r: CGFloat) -> CGFloat { r * appleGlyphInk / appleRowPitch }
+    static func glyphFont(rowPitch r: CGFloat) -> CGFloat {
+        (glyphInk(rowPitch: r) / inkPerPoint * 2).rounded() / 2
+    }
+    /// Where the first column's cell starts so its glyph lands on glyphLeft.
+    static func gridX(rowPitch r: CGFloat) -> CGFloat {
+        glyphLeft - (columnPitch(rowPitch: r) - glyphInk(rowPitch: r)) / 2
+    }
+    /// The board on a phone this wide: strip + keys + extraHeight.
+    static func boardHeight(width: CGFloat) -> CGFloat {
+        Glass.toolbarHeight + KeyMetrics.keysHeight(width: width) + extraHeight
+    }
+
+    // Search: the field and one row of results over the letter keys, the
+    // whole keyboard as tall as the board (no jump), the keys where they
+    // always are.
+    static func searchStripHeight() -> CGFloat { Glass.toolbarHeight + extraHeight }
+    static let searchFieldTop: CGFloat = 4
+    static let searchFieldHeight: CGFloat = 36
+    static let searchRowTop: CGFloat = 44
+    static let searchPitch: CGFloat = 53
+    static let searchGlyphInk: CGFloat = 34.7
+    static var searchGlyphFont: CGFloat { (searchGlyphInk / inkPerPoint * 2).rounded() / 2 }
+    static let searchGlyphLeft: CGFloat = 11.7
+}
+
 enum Glass {
 
     /// Resolved by the keyboard VC from settings + host appearance.

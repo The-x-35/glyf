@@ -37,6 +37,7 @@
 		22D65AB7F68DF03931D9BEA4 /* GlyfSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */; };
 		2540EDA655A54D9E4E7583E6 /* EmojiWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BBF672C0FE55E8909037167 /* EmojiWords.swift */; };
 		264770223DD8226DB4B988F0 /* ActSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */; };
+		27B73DD85E5FD2DD312CFFCF /* VoiceRibbon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94B3C3D63F7099CB952602F9 /* VoiceRibbon.swift */; };
 		2A912A3A2667B8B877F3D48B /* Limelight-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 388D61D138FDBAFAA1285C8E /* Limelight-OFL.txt */; };
 		2B349CFEA18C8406D3283AFA /* PhraseMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98D66DB9F3AD86E0BE0734CB /* PhraseMemory.swift */; };
 		2B5E6338753681D58EACB5F9 /* LibreBaskerville-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 247D9B0B0E4EA952277BC51B /* LibreBaskerville-OFL.txt */; };
@@ -44,6 +45,7 @@
 		301F473B5F209817B6C95E96 /* AccentPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603D199225C0A5A5986ECBD5 /* AccentPopup.swift */; };
 		3030BB09C6837BD7E0B85F68 /* TempMailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5892699230017F64EAF27C9F /* TempMailView.swift */; };
 		309E617884555E0AC636FA4C /* theme-synth-letter.caf in Resources */ = {isa = PBXBuildFile; fileRef = 125884997F276F9118A06C86 /* theme-synth-letter.caf */; };
+		31A1467FC23B9489A3CE883B /* VoiceRibbon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94B3C3D63F7099CB952602F9 /* VoiceRibbon.swift */; };
 		31A5DBAC5940AE8D66750E8C /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		32FC55795C0B9820F7327F6A /* ChakraPetch-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 788C2CADF24BE97BCADF5EAD /* ChakraPetch-Medium.ttf */; };
 		3306AEEFF24C2165E619C1CE /* Billing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F6E535557BADA4D9455FF9 /* Billing.swift */; };
@@ -122,7 +124,7 @@
 		7B5554953A9D457F7570E420 /* ShipporiMincho-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4A92B0C9C7B571F07FC36B5F /* ShipporiMincho-Medium.ttf */; };
 		7C790C9704BCE2E111609C54 /* GoogleAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11231DCD6CA4C179B56BBB /* GoogleAccess.swift */; };
 		7D2FF1279F607C439779B65F /* EmojiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAFFC06C09A0F4C0BC665EE /* EmojiData.swift */; };
-		7D93F1E3A583EAE4E2525168 /* VoiceStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79DC6165B130D41D60F2677F /* VoiceStrip.swift */; };
+		7D93F1E3A583EAE4E2525168 /* VoicePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79DC6165B130D41D60F2677F /* VoicePanel.swift */; };
 		7E090EF4DD1F0AD64B5899F4 /* Prata-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 87497C0980C4F98A0FCC11D0 /* Prata-OFL.txt */; };
 		7F06F8B50C201C5ADE91869E /* KeyMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */; };
 		80CD13C50A97137175CC0529 /* TempMail.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10C49ED64EB5C3D1C4AF361 /* TempMail.swift */; };
@@ -404,7 +406,7 @@
 		7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		788C2CADF24BE97BCADF5EAD /* ChakraPetch-Medium.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "ChakraPetch-Medium.ttf"; sourceTree = "<group>"; };
 		79A18448EF0F4C763B35281E /* VaultTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultTests.swift; sourceTree = "<group>"; };
-		79DC6165B130D41D60F2677F /* VoiceStrip.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceStrip.swift; sourceTree = "<group>"; };
+		79DC6165B130D41D60F2677F /* VoicePanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoicePanel.swift; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		7B45C4A1A9F02EC32C4EC037 /* EmojiBoard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmojiBoard.swift; sourceTree = "<group>"; };
 		7F9E78CD043DC8AAFC3C7B62 /* GlyfMark.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfMark.swift; sourceTree = "<group>"; };
@@ -419,6 +421,7 @@
 		90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfSession.swift; sourceTree = "<group>"; };
 		9185252D8BB3209B13267E60 /* GlyfKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GlyfKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		93329AF8F4221605DA4D6321 /* GlideDecoderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlideDecoderTests.swift; sourceTree = "<group>"; };
+		94B3C3D63F7099CB952602F9 /* VoiceRibbon.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceRibbon.swift; sourceTree = "<group>"; };
 		9501A2F1F9982E5262930960 /* brushed.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = brushed.png; sourceTree = "<group>"; };
 		95E80307EC5FA4DFD33EA0B2 /* CourierPrime-Regular.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "CourierPrime-Regular.ttf"; sourceTree = "<group>"; };
 		969AE566AACBB47939055C04 /* TonesPopup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TonesPopup.swift; sourceTree = "<group>"; };
@@ -712,7 +715,8 @@
 				F81D5A3AF9671D3656603DE7 /* GamesSurface.swift */,
 				A84F81FFA1263B12519806DD /* PaySurface.swift */,
 				5892699230017F64EAF27C9F /* TempMailView.swift */,
-				79DC6165B130D41D60F2677F /* VoiceStrip.swift */,
+				79DC6165B130D41D60F2677F /* VoicePanel.swift */,
+				94B3C3D63F7099CB952602F9 /* VoiceRibbon.swift */,
 			);
 			name = Surfaces;
 			path = Surfaces;
@@ -1349,7 +1353,8 @@
 				DAB657796AFC7D3E8C3E338A /* KeyboardThemes.swift in Sources */,
 				B1218EBF6B6EEC196E8AD9BE /* KeyFaces.swift in Sources */,
 				FE67E3AE1BF08A1BA3C236EE /* VoiceLink.swift in Sources */,
-				7D93F1E3A583EAE4E2525168 /* VoiceStrip.swift in Sources */,
+				7D93F1E3A583EAE4E2525168 /* VoicePanel.swift in Sources */,
+				27B73DD85E5FD2DD312CFFCF /* VoiceRibbon.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1455,6 +1460,7 @@
 				719B86642624213ECDBF06EE /* WalletSecrets.swift in Sources */,
 				D25084FDDF3ACD1538FE0351 /* VoiceLink.swift in Sources */,
 				58F92DA03FBAAFFFEC54552B /* VoiceHost.swift in Sources */,
+				31A1467FC23B9489A3CE883B /* VoiceRibbon.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

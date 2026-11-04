@@ -82,10 +82,12 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
     /// While true the board is a strip (field + one result row) and the
     /// keyboard's letter keys are visible below it.
     private(set) var searchActive = false
-    /// Strip height in search mode (field row + results row).
-    static let searchStripHeight: CGFloat = 96
+    /// Strip height in search mode (field row + results row): the strip's
+    /// place plus the board's extra, so searching never changes the
+    /// keyboard's height and the keys sit where they always do (Apple's).
+    static var searchStripHeight: CGFloat { EmojiMetrics.searchStripHeight() }
     /// How much taller than the letters the grid stands (Apple's does too).
-    static let extraHeight: CGFloat = 44
+    static let extraHeight: CGFloat = EmojiMetrics.extraHeight
 
     // Emoji
     private var collection: UICollectionView!
@@ -97,6 +99,8 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
     private var currentCategory = 0
     private var searchResults: [String]?
     private var tonePopup: UIView?
+    /// The emoji face's point size: the grid's or the search row's.
+    private var glyphSize: CGFloat = 39
 
     // The mode switch: four glyphs with Apple's grey circle behind one.
     private let modeBar = UIView()
@@ -261,11 +265,11 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
                             for: .touchUpInside)
         addSubview(abcButton)
 
-        // Apple's grid, measured on iOS 26: columns about 47pt apart, rows
-        // 39pt, five rows, filled top to bottom and paging sideways.
+        // Apple's grid: four rows of big emoji (iPhone, iOS 18.1 on), filled
+        // top to bottom and scrolling sideways. Sizes in EmojiMetrics.
         let layout = UICollectionViewFlowLayout()
         layout.scrollDirection = .horizontal
-        layout.itemSize = CGSize(width: 47, height: 39)
+        layout.itemSize = CGSize(width: 57, height: 47.5)
         layout.minimumInteritemSpacing = 0
         layout.minimumLineSpacing = 0
         layout.sectionInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 14)
@@ -343,7 +347,8 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         addSubview(lettersButton)
 
         deleteButton.setImage(UIImage(systemName: "delete.left"), for: .normal)
-        deleteButton.setPreferredSymbolConfiguration(.init(pointSize: 18, weight: .regular),
+        // Apple's: 21.3 x 17.7pt of ink, measured.
+        deleteButton.setPreferredSymbolConfiguration(.init(pointSize: 20.5, weight: .regular),
                                                      forImageIn: .normal)
         deleteButton.tintColor = Glass.textPrimary
         deleteButton.accessibilityIdentifier = "emoji:delete"
@@ -425,7 +430,8 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         // Ocean…) it all but vanishes, and KLIPY's "Powered by" line has to
         // be readable, so there the board's own ink is softened instead.
         if Glass.themedBgActive { return Glass.textPrimary.withAlphaComponent(0.72) }
-        return Glass.chromeDark ? UIColor(white: 0.60, alpha: 1) : UIColor(red: 0.55, green: 0.56, blue: 0.58, alpha: 1)
+        // Light: Apple's (165,166,169), measured on the iOS 26.5 sheet.
+        return Glass.chromeDark ? UIColor(white: 0.60, alpha: 1) : UIColor(red: 0.647, green: 0.651, blue: 0.663, alpha: 1)
     }
     /// The soft circle Apple puts behind the chosen category.
     private static var thumbColor: UIColor {
@@ -543,7 +549,7 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
             (v as? UIButton)?.tintColor = i == section ? Glass.textPrimary : Glass.textSecondary
         }
         let frame = tabs.convert(views[section].frame, to: self)
-        let d = min(frame.height, 30)
+        let d = min(frame.height, 29.5)
         tabThumb.frame = CGRect(x: frame.midX - d / 2, y: frame.midY - d / 2, width: d, height: d)
         tabThumb.layer.cornerRadius = d / 2
         if !searchActive {
@@ -990,6 +996,9 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         let cell = cv.dequeueReusableCell(withReuseIdentifier: "e", for: indexPath) as! EmojiCell
         let e = emoji(at: indexPath)
         cell.label.text = e
+        if cell.label.font.pointSize != glyphSize {
+            cell.label.font = .systemFont(ofSize: glyphSize)
+        }
         // VoiceOver reads the emoji's name; tests find a result by its place.
         cell.isAccessibilityElement = true
         cell.accessibilityLabel = EmojiData.info(EmojiData.base(of: e))?.name ?? e
@@ -1131,6 +1140,14 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
 
     // MARK: Layout
 
+    /// The emoji face's size for the grid or the search row; the visible
+    /// cells take it at once.
+    private func setGlyphSize(_ size: CGFloat) {
+        guard glyphSize != size else { return }
+        glyphSize = size
+        collection.reloadData()
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         let flow = collection.collectionViewLayout as? UICollectionViewFlowLayout
@@ -1138,21 +1155,29 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         if searchActive {
             // Strip mode: [ABC][field][x] + one row (emoji, search terms or
             // emoticons); the letter keys live below this view.
-            abcButton.frame = CGRect(x: 6, y: 6, width: 44, height: 32)
-            searchEditor.frame = CGRect(x: 54, y: 6, width: bounds.width - 96, height: 32)
+            // Apple's search row: 34.7pt emoji 53pt apart, the first one's
+            // ink 11.7pt in, its middle 28.3pt over the first key row.
+            let fy = EmojiMetrics.searchFieldTop, fh = EmojiMetrics.searchFieldHeight
+            abcButton.frame = CGRect(x: 6, y: fy + (fh - 32) / 2, width: 44, height: 32)
+            searchEditor.frame = CGRect(x: 54, y: fy, width: bounds.width - 96, height: fh)
             closeButton.isHidden = false
-            closeButton.frame = CGRect(x: bounds.width - 40, y: 6, width: 32, height: 32)
+            closeButton.frame = CGRect(x: bounds.width - 40, y: fy + (fh - 32) / 2, width: 32, height: 32)
+            let rowY = EmojiMetrics.searchRowTop, rowH = max(1, bounds.height - rowY)
+            let pitch = EmojiMetrics.searchPitch
+            let x0 = EmojiMetrics.searchGlyphLeft - (pitch - EmojiMetrics.searchGlyphInk) / 2
             collection.isHidden = !isEmoji
-            collection.frame = CGRect(x: 8, y: 46, width: bounds.width - 16, height: 44)
+            collection.frame = CGRect(x: x0, y: rowY, width: bounds.width - x0, height: rowH)
             suggestionBar.isHidden = isEmoji
-            suggestionBar.frame = CGRect(x: 0, y: 50, width: bounds.width, height: 36)
+            suggestionBar.frame = CGRect(x: 0, y: rowY + (rowH - 36) / 2, width: bounds.width, height: 36)
             for v in [sectionLabel, attributionLabel, lettersButton, deleteButton, tabThumb, tabs,
                       chipFade, modeBar, statusLabel] as [UIView] { v.isHidden = true }
             mediaGrid.isHidden = true
             emoticonGrid.isHidden = true
             spinner.isHidden = true
-            if isEmoji, flow?.itemSize != CGSize(width: 44, height: 44) {
-                flow?.itemSize = CGSize(width: 44, height: 44); flow?.invalidateLayout()
+            setGlyphSize(EmojiMetrics.searchGlyphFont)
+            let size = CGSize(width: pitch, height: rowH)
+            if isEmoji, flow?.itemSize != size {
+                flow?.itemSize = size; flow?.invalidateLayout()
             }
             return
         }
@@ -1164,10 +1189,12 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
         suggestionBar.isHidden = true
         modeBar.isHidden = false
         let modeW: CGFloat = 4 * 32 + 3 * 2
-        // The field ends where it always has, so the section name and the
-        // five rows stay on Apple's lines (measured: within 1pt of iOS 26).
-        let fieldY: CGFloat = 4, fieldH: CGFloat = 36
-        searchEditor.frame = CGRect(x: 8, y: fieldY, width: bounds.width - 16 - modeW - 8, height: fieldH)
+        // Apple's field: 40pt tall, 9pt in from the edge (here it ends
+        // before the mode glyphs). Every number is in EmojiMetrics.
+        let fieldY = EmojiMetrics.fieldTop, fieldH = EmojiMetrics.fieldHeight
+        let fieldX = EmojiMetrics.fieldInset
+        searchEditor.frame = CGRect(x: fieldX, y: fieldY,
+                                    width: bounds.width - fieldX - 8 - modeW - 8, height: fieldH)
         modeBar.frame = CGRect(x: bounds.width - 8 - modeW, y: fieldY + (fieldH - 32) / 2,
                                width: modeW, height: 32)
         for (i, b) in modeButtons.enumerated() {
@@ -1180,18 +1207,22 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
 
         sectionLabel.isHidden = false
         attributionLabel.isHidden = mode.kind == nil
-        let labelY = fieldY + fieldH + 4
+        let labelY = EmojiMetrics.labelTop
+        let labelX = EmojiMetrics.labelX
         attributionLabel.frame = CGRect(x: bounds.width / 2, y: labelY, width: bounds.width / 2 - 14, height: 16)
-        sectionLabel.frame = CGRect(x: 14, y: labelY,
-                                    width: bounds.width - 28 - (attributionLabel.isHidden ? 0 : bounds.width / 2 - 14),
+        sectionLabel.frame = CGRect(x: labelX, y: labelY,
+                                    width: bounds.width - labelX * 2 - (attributionLabel.isHidden ? 0 : bounds.width / 2 - 14),
                                     height: 16)
-        let barY = bounds.height - 36
+        let barH = EmojiMetrics.barHeight
+        let barY = bounds.height - EmojiMetrics.barBottomInset
         lettersButton.isHidden = false
         deleteButton.isHidden = false
-        lettersButton.frame = CGRect(x: 4, y: barY, width: 46, height: 34)
-        deleteButton.frame = CGRect(x: bounds.width - 48, y: barY, width: 44, height: 34)
-        let barRect = CGRect(x: 54, y: barY, width: bounds.width - 108, height: 34)
-        let gridTop = labelY + 20
+        lettersButton.frame = CGRect(x: 4, y: barY, width: 46, height: barH)
+        deleteButton.frame = CGRect(x: bounds.width - 48, y: barY, width: 44, height: barH)
+        // Apple's nine category glyphs: 33.2pt apart, the first centred at 67.9.
+        let barRect = CGRect(x: EmojiMetrics.barX, y: barY,
+                             width: bounds.width - EmojiMetrics.barX - EmojiMetrics.barTrailing, height: barH)
+        let gridTop = EmojiMetrics.gridTop
         let gridRect = CGRect(x: 0, y: gridTop, width: bounds.width, height: max(0, barY - gridTop - 2))
 
         tabs.isHidden = !isEmoji
@@ -1207,9 +1238,14 @@ final class EmojiBoard: UIView, UICollectionViewDataSource, UICollectionViewDele
 
         if isEmoji {
             tabs.frame = barRect
-            collection.frame = gridRect.insetBy(dx: 4, dy: 0)
-            let rowH = floor(collection.bounds.height / 5)
-            let size = CGSize(width: 47, height: rowH)
+            // Four rows, each a quarter of the grid's band; the first glyph
+            // lines up with the section name, the grid runs to the edge.
+            let row = EmojiMetrics.rowPitch(boardHeight: bounds.height)
+            let x0 = EmojiMetrics.gridX(rowPitch: row)
+            collection.frame = CGRect(x: x0, y: gridTop, width: bounds.width - x0,
+                                      height: row * CGFloat(EmojiMetrics.rows) + 0.5)
+            setGlyphSize(EmojiMetrics.glyphFont(rowPitch: row))
+            let size = CGSize(width: EmojiMetrics.columnPitch(rowPitch: row), height: row)
             if flow?.itemSize != size { flow?.itemSize = size; flow?.invalidateLayout() }
             highlightTab(currentCategory)
         } else {

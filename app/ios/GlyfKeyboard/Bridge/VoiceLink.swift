@@ -80,6 +80,10 @@ enum VoiceLink {
         var error: String?
         /// Which recognizer is in use ("dictation", "speech", "file").
         var engine: String?
+        /// The microphone's loudness, 0…1 (`normalizedLevel`), written about
+        /// 16 times a second while listening so the keyboard's wave moves
+        /// with the voice. Nil from an app that predates it.
+        var level: Float?
 
         static func off(now: Double) -> State {
             State(session: "", phase: .off, heartbeat: now, expiresAt: now)
@@ -128,6 +132,160 @@ enum VoiceLink {
               let at = s.finishedAt, now - at < deliverWithin
         else { return nil }
         return (u, text)
+    }
+
+    // MARK: Level
+
+    /// How often the app writes `State.level` while listening.
+    static let levelEvery: TimeInterval = 1.0 / 16
+    /// A level that moved less than this is not worth a write.
+    static let levelStep: Float = 0.03
+
+    /// A buffer's RMS as 0…1 on a decibel scale: -55 dB (a quiet room) is
+    /// nothing, -12 dB (speaking close) is full.
+    static func normalizedLevel(rms: Float) -> Float {
+        guard rms > 0, rms.isFinite else { return 0 }
+        let db = 20 * log10(rms)
+        let v = (db + 55) / 43
+        return min(1, max(0, v))
+    }
+
+    // MARK: Style (the panel's pill)
+
+    /// How the words read when ✓ puts them in. As spoken is the
+    /// recognizer's own text; the rest run one existing server glyf on ✓.
+    enum Style: String, CaseIterable, Codable {
+        case asSpoken, clean, formal, casual, excited
+
+        static let standard: Style = .asSpoken
+
+        /// The pill's word.
+        var title: String {
+            switch self {
+            case .asSpoken: return "As spoken"
+            case .clean: return "Clean"
+            case .formal: return "Formal"
+            case .casual: return "Casual"
+            case .excited: return "Excited"
+            }
+        }
+
+        /// The menu's row, written the way it reads (Wispr's menu does this).
+        var menuTitle: String {
+            switch self {
+            case .formal: return "Formal."
+            case .excited: return "Excited!"
+            default: return title
+            }
+        }
+
+        /// The server glyf and its vars, or nil: nothing is sent.
+        var run: (glyfId: String, vars: [String: String])? {
+            switch self {
+            case .asSpoken: return nil
+            case .clean: return ("dictation.clean", [:])
+            case .formal: return ("dictation.formal", [:])
+            case .casual: return ("rewrite.tone", ["tone": "casual, relaxed, like a text to a friend"])
+            case .excited: return ("rewrite.tone", ["tone": "excited, upbeat and warm"])
+            }
+        }
+
+        /// A stored value, or the default for anything unknown.
+        static func from(_ raw: String?) -> Style {
+            raw.flatMap(Style.init(rawValue:)) ?? standard
+        }
+    }
+
+    /// The model's text in place of what was said: no quotes or labels it
+    /// wrapped the answer in, and nothing when it gave back nothing.
+    static func polished(original: String, cleaned: String) -> String {
+        var t = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        for label in ["Cleaned text:", "Rewritten text:", "Rewritten:", "Message:", "Transcript:"]
+        where t.hasPrefix(label) {
+            t = String(t.dropFirst(label.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let pairs: [(Character, Character)] = [("\"", "\""), ("“", "”"), ("'", "'")]
+        for (open, close) in pairs where t.count >= 2 && t.first == open && t.last == close {
+            let inner = t.dropFirst().dropLast()
+            // Only quotes around the whole answer, not a quote inside it.
+            if !inner.contains(open) && !inner.contains(close) {
+                t = String(inner).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return t.isEmpty ? original : t
+    }
+
+    // MARK: Spoken punctuation
+
+    // Gboard's spoken punctuation (support.google.com/gboard/answer/2781851),
+    // the same list Android's VoiceText reads: period or full stop, comma,
+    // question mark, exclamation point or mark, new line, new paragraph.
+    private static let spoken: [(NSRegularExpression, String)] = [
+        ("[ ]*\\bnew paragraph\\b[ ]*", "\n\n"),
+        ("[ ]*\\bnew line\\b[ ]*", "\n"),
+        ("[ ]*\\b(?:period|full stop)\\b", "."),
+        ("[ ]*\\bcomma\\b", ","),
+        ("[ ]*\\bquestion mark\\b", "?"),
+        ("[ ]*\\bexclamation (?:point|mark)\\b", "!"),
+    ].map { (try! NSRegularExpression(pattern: $0.0, options: [.caseInsensitive]), $0.1) }
+
+    private static func replace(_ pattern: String, in text: String, with template: String) -> String {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return text }
+        return re.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text),
+                                           withTemplate: template)
+    }
+
+    /// "see you soon period" → "see you soon.". Read only when the
+    /// recognizer wrote no marks of its own: one that punctuates
+    /// (addsPunctuation, DictationTranscriber) already turned a said
+    /// "period" into "." and left the word where it was meant.
+    static func spokenPunctuation(_ text: String) -> String {
+        guard !text.contains(where: { ".,!?;:".contains($0) }) else { return text }
+        var out = text
+        for (re, mark) in spoken {
+            out = re.stringByReplacingMatches(in: out, range: NSRange(out.startIndex..., in: out),
+                                              withTemplate: NSRegularExpression.escapedTemplate(for: mark))
+        }
+        guard out != text else { return text }
+        // A space after a mark that runs into a word, none before one.
+        out = replace("([.,!?])(?=[^\\s.,!?])", in: out, with: "$1 ")
+        out = replace(" +", in: out, with: " ")
+        out = replace(" *\\n *", in: out, with: "\n")
+        out = out.trimmingCharacters(in: CharacterSet(charactersIn: " "))
+        // A capital after each sentence's end inside what was said.
+        return capitalizeSentences(out)
+    }
+
+    static func capitalizeSentences(_ text: String) -> String {
+        var out = ""
+        var upNext = false
+        for ch in text {
+            if upNext, ch.isLetter {
+                out += ch.uppercased()
+                upNext = false
+                continue
+            }
+            out.append(ch)
+            if ".!?\n".contains(ch) { upNext = true }
+            else if !ch.isWhitespace { upNext = false }
+        }
+        return out
+    }
+
+    /// The words as the panel shows them while they are heard: spoken
+    /// punctuation read, the first letter a capital.
+    static func live(_ heard: String) -> String {
+        let t = spokenPunctuation(heard.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard let first = t.first else { return "" }
+        return first.uppercased() + t.dropFirst()
+    }
+
+    /// Two stretches the recognizer heard one after the other, as one.
+    static func joined(_ a: String, _ b: String) -> String {
+        let a = a.trimmingCharacters(in: .whitespaces), b = b.trimmingCharacters(in: .whitespaces)
+        if a.isEmpty { return b }
+        if b.isEmpty { return a }
+        return a + " " + b
     }
 
     // MARK: Words into a field
@@ -314,11 +472,13 @@ struct VoiceMachine {
                   let u = state.utterance else { return [] }
             state.phase = .finishing
             state.since = now
+            state.level = 0
             return [.endCapture(u), .publish]
         case .cancel:
             guard state.phase == .listening || state.phase == .finishing else { return [] }
             state.phase = .ready
             state.partial = ""
+            state.level = 0
             state.final = nil
             state.since = nil
             state.expiresAt = now + idleLifetime
@@ -334,6 +494,27 @@ struct VoiceMachine {
               text != state.partial else { return [] }
         state.partial = text
         return [.publish]
+    }
+
+    /// The microphone's level (0…1) while an utterance is heard. Published
+    /// only when it moved by `levelStep`, and back to 0 when it stops.
+    mutating func level(_ value: Float) -> [Effect] {
+        guard state.phase == .listening else {
+            guard let old = state.level, old != 0 else { return [] }
+            state.level = 0
+            return [.publish]
+        }
+        let v = min(1, max(0, value))
+        if let old = state.level, abs(old - v) < VoiceLink.levelStep { return [] }
+        state.level = v
+        return [.publish]
+    }
+
+    /// The recognizer ended a stretch by itself (a long pause) while the
+    /// person is still talking: the utterance keeps listening, and what was
+    /// heard carries into the next stretch. True when it carries on.
+    func continues(utterance: String) -> Bool {
+        state.utterance == utterance && state.phase == .listening
     }
 
     mutating func finished(_ text: String, utterance: String, now: Double) -> [Effect] {
@@ -401,6 +582,7 @@ struct VoiceMachine {
 
     private mutating func settle(_ text: String, now: Double) {
         state.phase = .ready
+        state.level = 0
         state.final = text
         state.partial = text
         state.finishedAt = now

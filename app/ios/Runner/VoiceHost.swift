@@ -34,6 +34,14 @@ final class VoiceHost {
     private var preRoll: [AVAudioPCMBuffer] = []
     private var preRollFrames: AVAudioFrameCount = 0
     private var level: Float = 0
+    /// The level, about 16 times a second (VoiceLink.levelEvery), for the
+    /// keyboard's wave and the listening screen's.
+    private var levelTimer: Timer?
+    /// Words from earlier stretches of this utterance: a recognizer that
+    /// ends by itself after a long pause is followed by a new one, and the
+    /// person keeps talking until ✓ (Wispr Flow does the same).
+    private var carried = ""
+    private var restarts: [Double] = []
 
     private var overlay: VoiceOverlay?
 
@@ -282,6 +290,7 @@ final class VoiceHost {
     // MARK: Heartbeat
 
     private func startHeartbeat() {
+        startLevels()
         guard heartbeat == nil else { return }
         let t = Timer(timeInterval: VoiceLink.heartbeatEvery, repeats: true) { [weak self] _ in
             self?.beat()
@@ -293,11 +302,33 @@ final class VoiceHost {
     private func beat() {
         lock.lock()
         let flowing = Self.now - lastBufferAt < 2 || debugFeed != nil
-        let lvl = level
         lock.unlock()
-        overlay?.setLevel(lvl)
         run(machine.tick(now: Self.now, audioFlowing: flowing))
         if !machine.isOn { heartbeat?.invalidate(); heartbeat = nil }
+    }
+
+    private func startLevels() {
+        guard levelTimer == nil else { return }
+        let t = Timer(timeInterval: VoiceLink.levelEvery, repeats: true) { [weak self] _ in
+            self?.levelTick()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        levelTimer = t
+    }
+
+    private func stopLevels() {
+        levelTimer?.invalidate()
+        levelTimer = nil
+    }
+
+    private func levelTick() {
+        guard machine.isOn else { stopLevels(); return }
+        lock.lock()
+        let rms = level
+        lock.unlock()
+        let v = recognizer?.simulatedLevel ?? VoiceLink.normalizedLevel(rms: rms)
+        overlay?.setLevel(v)
+        run(machine.level(v))
     }
 
     // MARK: Commands
@@ -324,6 +355,7 @@ final class VoiceHost {
             case .abortCapture: abortCapture()
             case .shutDown:
                 heartbeat?.invalidate(); heartbeat = nil
+                stopLevels()
                 stopAudio()
             case .publish:
                 VoiceLink.publish(machine.state)
@@ -333,49 +365,14 @@ final class VoiceHost {
 
     private func beginCapture(_ u: String) {
         abortCapture()
-        let r: VoiceRecognizer
-        #if DEBUG && targetEnvironment(simulator)
-        if true {
-            r = ScriptRecognizer()
-        } else if #available(iOS 26, *), let format = analyzerFormat {
-            r = AnalyzerRecognizer(format: format)
-        } else {
-            r = SpeechRecognizer()
-        }
-        #else
-        if #available(iOS 26, *), let format = analyzerFormat {
-            r = AnalyzerRecognizer(format: format)
-        } else {
-            r = SpeechRecognizer()
-        }
-        #endif
-        r.onPartial = { [weak self] text in
-            guard let self else { return }
-            self.overlay?.setWords(text)
-            self.run(self.machine.partial(text, utterance: u))
-        }
-        r.onFinal = { [weak self] text in
-            guard let self, self.recognizing == u else { return }
-            self.log.log("GLYF_VOICE final chars=\(text.count)")
-            self.recognizing = nil
-            self.recognizer = nil
-            self.run(self.machine.finished(text, utterance: u, now: Self.now))
-        }
-        r.onError = { [weak self] message in
-            guard let self, self.recognizing == u else { return }
-            self.log.error("GLYF_VOICE error \(message, privacy: .public)")
-            self.recognizing = nil
-            self.recognizer = nil
-            self.run(self.machine.failed(message, utterance: u, now: Self.now))
-        }
-        recognizer = r
-        recognizing = u
-        r.begin()
+        carried = ""
+        restarts = []
+        overlay?.setWords("")
+        let r = startRecognizer(u)
         lock.lock()
         let early = preRoll
         preRoll = []
         preRollFrames = 0
-        sink = { [weak r] b in r?.append(b) }
         lock.unlock()
         if debugFile != nil {
             startDebugFeed()
@@ -383,6 +380,75 @@ final class VoiceHost {
             for b in early { r.append(b) }
         }
         log.log("GLYF_VOICE listening")
+    }
+
+    private func makeRecognizer() -> VoiceRecognizer {
+        #if DEBUG && targetEnvironment(simulator)
+        return ScriptRecognizer()
+        #else
+        if #available(iOS 26, *), let format = analyzerFormat {
+            return AnalyzerRecognizer(format: format)
+        }
+        return SpeechRecognizer()
+        #endif
+    }
+
+    /// A recognizer for one stretch of utterance `u`, fed from the sink.
+    @discardableResult
+    private func startRecognizer(_ u: String) -> VoiceRecognizer {
+        let r = makeRecognizer()
+        r.onPartial = { [weak self] text in
+            guard let self, self.recognizing == u else { return }
+            let all = VoiceLink.joined(self.carried, text)
+            self.overlay?.setWords(VoiceLink.live(all))
+            self.run(self.machine.partial(all, utterance: u))
+        }
+        r.onFinal = { [weak self] text in
+            guard let self, self.recognizing == u else { return }
+            let all = VoiceLink.joined(self.carried, text)
+            self.recognizing = nil
+            self.recognizer = nil
+            // Still listening: the recognizer stopped by itself after a
+            // pause. The words carry on into a new stretch.
+            if self.machine.continues(utterance: u), self.mayRestart() {
+                self.log.log("GLYF_VOICE stretch ended, listening on")
+                self.carried = all
+                self.startRecognizer(u)
+                return
+            }
+            self.log.log("GLYF_VOICE final chars=\(all.count)")
+            self.run(self.machine.finished(all, utterance: u, now: Self.now))
+        }
+        r.onError = { [weak self] message in
+            guard let self, self.recognizing == u else { return }
+            self.log.error("GLYF_VOICE error \(message, privacy: .public)")
+            self.recognizing = nil
+            self.recognizer = nil
+            // A quiet stretch ("no speech") mid-utterance is not the end.
+            if self.machine.continues(utterance: u), self.mayRestart() {
+                self.carried = self.machine.state.partial
+                self.startRecognizer(u)
+                return
+            }
+            self.run(self.machine.failed(message, utterance: u, now: Self.now))
+        }
+        recognizer = r
+        recognizing = u
+        r.begin()
+        lock.lock()
+        sink = { [weak r] b in r?.append(b) }
+        lock.unlock()
+        return r
+    }
+
+    /// At most four new stretches in eight seconds: a recognizer that keeps
+    /// failing at once ends the utterance instead of spinning.
+    private func mayRestart() -> Bool {
+        let now = Self.now
+        restarts = restarts.filter { now - $0 < 8 }
+        guard restarts.count < 4 else { return false }
+        restarts.append(now)
+        return true
     }
 
     private func endCapture(_ u: String) {
@@ -393,6 +459,7 @@ final class VoiceHost {
     }
 
     private func abortCapture() {
+        carried = ""
         lock.lock(); sink = nil; lock.unlock()
         stopDebugFeed()
         recognizer?.cancel()
@@ -455,6 +522,8 @@ class VoiceRecognizer {
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
     var onError: ((String) -> Void)?
+    /// A stand-in loudness (the simulator's script), else nil: the mic's.
+    var simulatedLevel: Float? { nil }
     func begin() {}
     func append(_ buffer: AVAudioPCMBuffer) {}
     func finish() {}
@@ -528,42 +597,81 @@ final class SpeechRecognizer: VoiceRecognizer {
 /// The simulator has no speech models: SFSpeechRecognizer fails with
 /// kLSRErrorDomain 300 "Failed to initialize recognizer" (on-device and
 /// server alike) and SpeechAnalyzer lists no audio formats (iOS 26.5
-/// runtime, 2026-11-04). So a simulator build "hears" a script, one word
-/// every 0.3 s from the moment listening starts, while the microphone, the
-/// background session and the keyboard round trip stay real. The script is
-/// bridge/voice-test.txt in the App Group when present.
+/// runtime, 2026-11-04). So a simulator build "hears" a script, a word at
+/// a time at a speaking pace with pauses after each sentence, punctuated as
+/// a recognizer with addsPunctuation writes it, and a loudness that rises
+/// and falls with the words. The microphone, the background session and
+/// the keyboard round trip stay real. The script is bridge/voice-test.txt in
+/// the App Group when present ("#silence" hears nothing).
 final class ScriptRecognizer: VoiceRecognizer {
     private var timer: Timer?
     private var said: [String] = []
+    private var queue: [String] = []
+    private var wait = 0
+    private var talking = false
+    private let born = CACurrentMediaTime()
+
+    static let standard = "Hey, are you free for dinner on Friday? I was thinking we could try "
+        + "that new Thai place downtown. Let me know what works for you!"
 
     static var script: [String] {
         let custom = AppGroupStore.bridgeDir
             .flatMap { try? String(contentsOf: $0.appendingPathComponent("voice-test.txt"), encoding: .utf8) }?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let text = (custom?.isEmpty == false ? custom! : "hello this is glyf voice typing on the simulator")
+        if custom == "#silence" { return [] }
+        let text = (custom?.isEmpty == false ? custom! : standard)
         return text.split(separator: " ").map(String.init)
     }
 
+    override var simulatedLevel: Float? {
+        guard talking else { return 0.04 + Float.random(in: 0...0.03) }
+        let t = CACurrentMediaTime() - born
+        let syllables = 0.5 + 0.5 * sin(t * 13.0)
+        let phrase = 0.65 + 0.35 * sin(t * 2.9)
+        return Float(min(1, 0.22 + 0.7 * syllables * phrase + Double.random(in: -0.06...0.06)))
+    }
+
     override func begin() {
-        var words = Self.script
-        timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] t in
-            guard let self, !words.isEmpty else { t.invalidate(); return }
-            self.said.append(words.removeFirst())
-            self.onPartial?(self.said.joined(separator: " "))
+        queue = Self.script
+        // Ticks of 0.1 s: a word every three, a breath after a sentence.
+        wait = 4
+        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.step()
+        }
+    }
+
+    private func step() {
+        guard !queue.isEmpty else { talking = false; return }
+        if wait > 0 {
+            wait -= 1
+            if wait <= 2 { talking = true }
+            return
+        }
+        let word = queue.removeFirst()
+        said.append(word)
+        onPartial?(said.joined(separator: " "))
+        if let last = word.last, ".?!".contains(last) {
+            wait = 8; talking = false
+        } else if word.hasSuffix(",") {
+            wait = 4
+        } else {
+            wait = 2
         }
     }
 
     override func finish() {
         timer?.invalidate()
-        let text = said.joined(separator: " ")
+        talking = false
+        var text = said.joined(separator: " ")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
             guard !text.isEmpty else { self.onError?("Didn't catch that"); return }
-            self.onFinal?(text.prefix(1).uppercased() + text.dropFirst() + ".")
+            if let last = text.last, !".?!".contains(last) { text += "." }
+            self.onFinal?(text.prefix(1).uppercased() + text.dropFirst())
         }
     }
 
-    override func cancel() { timer?.invalidate() }
+    override func cancel() { timer?.invalidate(); talking = false }
 }
 #endif
 
@@ -583,6 +691,13 @@ final class AnalyzerRecognizer: VoiceRecognizer {
 
     private static var locale: Locale { Locale.current }
 
+    /// Long, progressive dictation with the recognizer's own punctuation.
+    private static var preset: DictationTranscriber.Preset {
+        var p = DictationTranscriber.Preset.progressiveLongDictation
+        p.transcriptionOptions.insert(.punctuation)
+        return p
+    }
+
     /// The analyzer's audio format when the dictation model for this
     /// phone's language is installed; otherwise asks for it (for next time)
     /// and answers nil.
@@ -592,7 +707,7 @@ final class AnalyzerRecognizer: VoiceRecognizer {
             log.log("GLYF_VOICE analyzer: \(Self.locale.identifier, privacy: .public) unsupported")
             return nil
         }
-        let module = DictationTranscriber(locale: locale, preset: .progressiveLongDictation)
+        let module = DictationTranscriber(locale: locale, preset: preset)
         let status = await AssetInventory.status(forModules: [module])
         log.log("GLYF_VOICE analyzer: \(locale.identifier, privacy: .public) status=\(String(describing: status), privacy: .public)")
         guard status == .installed else {
@@ -619,7 +734,7 @@ final class AnalyzerRecognizer: VoiceRecognizer {
 
     init(format: AVAudioFormat) {
         self.format = format
-        transcriber = DictationTranscriber(locale: Self.locale, preset: .progressiveLongDictation)
+        transcriber = DictationTranscriber(locale: Self.locale, preset: Self.preset)
         analyzer = SpeechAnalyzer(modules: [transcriber])
         (input, feed) = AsyncStream<AnalyzerInput>.makeStream()
         super.init()
@@ -714,9 +829,11 @@ final class AnalyzerRecognizer: VoiceRecognizer {
 
 // MARK: - The screen the mic opens
 
-/// One line and a way to turn it off, over whatever the app was showing.
-/// The person goes back with iOS's "◀ Messages" (or a swipe along the
-/// bottom edge); since iOS 26.4 no app can take them back by itself.
+/// One line and a way to turn it off, over whatever the app was showing,
+/// in the keyboard panel's glass: a frosted sheet with a violet bloom and
+/// the same ribbon moving with the voice. The person goes back with iOS's
+/// "◀ Messages" (or a swipe along the bottom edge); since iOS 26.4 no app can
+/// take them back by itself.
 final class VoiceOverlay {
     enum Mode {
         case starting, listening
@@ -725,68 +842,115 @@ final class VoiceOverlay {
     }
 
     private let window: UIWindow
-    private let ring = UIView()
-    private let mic = UIImageView()
+    private let blur = UIVisualEffectView(effect: nil)
+    private let wash = CAGradientLayer()
+    private let ribbon = VoiceRibbon()
     private let line = UILabel()
     private let words = UILabel()
-    private let button = UIButton(type: .system)
+    private let button = UIButton(type: .custom)
     private let onEnd: () -> Void
     private var mode: Mode = .starting
+    private static let violet = UIColor(red: 0x7C / 255, green: 0x5C / 255, blue: 0xFF / 255, alpha: 1)
 
     init(scene: UIWindowScene, onEnd: @escaping () -> Void) {
         self.onEnd = onEnd
         window = UIWindow(windowScene: scene)
         window.windowLevel = .alert + 1
-        let vc = UIViewController()
-        vc.view.backgroundColor = .systemBackground
+        let vc = OverlayController()
         window.rootViewController = vc
         let root = vc.view!
+        root.backgroundColor = .clear
         root.accessibilityIdentifier = "voice:overlay"
+        vc.onTraits = { [weak self] in self?.applyPalette() }
 
-        ring.backgroundColor = UIColor.systemPurple.withAlphaComponent(0.16)
-        ring.layer.cornerRadius = 60
-        mic.image = UIImage(systemName: "mic.fill",
-                            withConfiguration: UIImage.SymbolConfiguration(pointSize: 40, weight: .medium))
-        mic.tintColor = .systemPurple
-        mic.contentMode = .center
-        line.font = .systemFont(ofSize: 17, weight: .semibold)
+        blur.effect = UIBlurEffect(style: .systemThickMaterial)
+        blur.contentView.layer.addSublayer(wash)
+        wash.type = .radial
+        wash.startPoint = CGPoint(x: 0.5, y: 0.42)
+        wash.endPoint = CGPoint(x: 1.25, y: 0.95)
+
+        line.font = .systemFont(ofSize: 19, weight: .semibold)
         line.textAlignment = .center
         line.numberOfLines = 2
+        line.textColor = .label
         line.accessibilityIdentifier = "voice:line"
-        words.font = .systemFont(ofSize: 15)
+        words.font = .systemFont(ofSize: 17, weight: .regular)
         words.textColor = .secondaryLabel
         words.textAlignment = .center
         words.numberOfLines = 3
         words.lineBreakMode = .byTruncatingHead
-        button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+        button.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        button.layer.cornerRadius = 26
+        button.layer.cornerCurve = .continuous
+        button.layer.borderWidth = 0.5
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowRadius = 12
+        button.layer.shadowOffset = CGSize(width: 0, height: 4)
+        button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 34, bottom: 0, right: 34)
         button.accessibilityIdentifier = "voice:button"
         button.addAction(UIAction { [weak self] _ in self?.buttonTapped() }, for: .touchUpInside)
 
-        for v in [ring, mic, line, words, button] as [UIView] {
+        for v in [blur, ribbon, line, words, button] as [UIView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(v)
         }
         NSLayoutConstraint.activate([
-            ring.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            ring.centerYAnchor.constraint(equalTo: root.centerYAnchor, constant: -80),
-            ring.widthAnchor.constraint(equalToConstant: 120),
-            ring.heightAnchor.constraint(equalToConstant: 120),
-            mic.centerXAnchor.constraint(equalTo: ring.centerXAnchor),
-            mic.centerYAnchor.constraint(equalTo: ring.centerYAnchor),
-            line.topAnchor.constraint(equalTo: ring.bottomAnchor, constant: 32),
-            line.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
-            line.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
-            words.topAnchor.constraint(equalTo: line.bottomAnchor, constant: 12),
+            blur.topAnchor.constraint(equalTo: root.topAnchor),
+            blur.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            blur.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            blur.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            ribbon.centerYAnchor.constraint(equalTo: root.centerYAnchor, constant: -70),
+            ribbon.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            ribbon.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            ribbon.heightAnchor.constraint(equalToConstant: 140),
+            line.topAnchor.constraint(equalTo: ribbon.bottomAnchor, constant: 28),
+            line.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
+            line.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
+            words.topAnchor.constraint(equalTo: line.bottomAnchor, constant: 14),
             words.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 32),
             words.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -32),
-            button.bottomAnchor.constraint(equalTo: root.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+            button.bottomAnchor.constraint(equalTo: root.safeAreaLayoutGuide.bottomAnchor, constant: -28),
             button.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            button.heightAnchor.constraint(equalToConstant: 52),
         ])
+        vc.onLayout = { [weak self] in
+            guard let self else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            self.wash.frame = root.bounds
+            CATransaction.commit()
+        }
+        applyPalette()
+    }
+
+    private func applyPalette() {
+        let dark = window.traitCollection.userInterfaceStyle == .dark
+        wash.colors = [Self.violet.withAlphaComponent(dark ? 0.30 : 0.16).cgColor,
+                       Self.violet.withAlphaComponent(0).cgColor]
+        ribbon.colors = dark
+            ? [UIColor(red: 0.80, green: 0.73, blue: 1, alpha: 1), UIColor(red: 0.58, green: 0.45, blue: 1, alpha: 1),
+               UIColor(red: 0.40, green: 0.60, blue: 1, alpha: 1)]
+            : [UIColor(red: 0.66, green: 0.55, blue: 1, alpha: 1), Self.violet,
+               UIColor(red: 0.30, green: 0.50, blue: 1, alpha: 1)]
+        styleButton()
+    }
+
+    private func styleButton() {
+        let dark = window.traitCollection.userInterfaceStyle == .dark
+        let primary: Bool = { if case .denied = mode { return true }; return false }()
+        button.backgroundColor = primary ? Self.violet
+            : (dark ? UIColor.white.withAlphaComponent(0.14) : UIColor.white.withAlphaComponent(0.85))
+        button.setTitleColor(primary ? .white : .label, for: .normal)
+        button.layer.borderColor = (dark ? UIColor.white.withAlphaComponent(0.14)
+                                         : UIColor.black.withAlphaComponent(0.06)).cgColor
+        button.layer.shadowOpacity = primary ? 0.35 : (dark ? 0.3 : 0.08)
+        button.layer.shadowColor = (primary ? Self.violet : UIColor.black).cgColor
     }
 
     func present() {
         window.isHidden = false
         words.text = nil
+        applyPalette()
     }
 
     func dismiss() {
@@ -808,9 +972,11 @@ final class VoiceOverlay {
             if case .denied = mode { button.setTitle("Open Settings", for: .normal) }
         }
         button.isHidden = button.title(for: .normal) == nil
-        let off: Bool = { if case .denied = mode { return true }; if case .failed = mode { return true }; return false }()
-        mic.image = UIImage(systemName: off ? "mic.slash.fill" : "mic.fill",
-                            withConfiguration: UIImage.SymbolConfiguration(pointSize: 40, weight: .medium))
+        let live: Bool = { if case .listening = mode { return true }; return false }()
+        ribbon.calm = !live
+        ribbon.alpha = live ? 1 : 0.4
+        if !live { ribbon.level = 0 }
+        styleButton()
     }
 
     func setWords(_ text: String) {
@@ -818,8 +984,8 @@ final class VoiceOverlay {
     }
 
     func setLevel(_ level: Float) {
-        let s = 1 + CGFloat(min(level * 6, 0.35))
-        UIView.animate(withDuration: 0.25) { self.ring.transform = CGAffineTransform(scaleX: s, y: s) }
+        guard !window.isHidden else { return }
+        if case .listening = mode { ribbon.level = level }
     }
 
     private func buttonTapped() {
@@ -831,5 +997,21 @@ final class VoiceOverlay {
         default:
             onEnd()
         }
+    }
+}
+
+/// Tells the overlay when its size or appearance changed.
+private final class OverlayController: UIViewController {
+    var onLayout: (() -> Void)?
+    var onTraits: (() -> Void)?
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        onLayout?()
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        onTraits?()
     }
 }

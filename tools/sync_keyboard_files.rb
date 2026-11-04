@@ -55,6 +55,7 @@ RUNNER_SHARED = %w[
   Bridge/GoogleAccess.swift
   Bridge/IntentStore.swift
   Bridge/VoiceLink.swift
+  Surfaces/VoiceRibbon.swift
   Engine/SecretScanner.swift
   Engine/VaultStore.swift
   Engine/SettingsStore.swift

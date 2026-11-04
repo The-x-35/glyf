@@ -180,4 +180,105 @@ final class VoiceLinkTests: XCTestCase {
         let back = try JSONDecoder().decode(VoiceLink.State.self, from: JSONEncoder().encode(s))
         XCTAssertEqual(back, s)
     }
+
+    // MARK: The panel: style, punctuation, level
+
+    func testStylesMapToExistingGlyfs() {
+        XCTAssertNil(VoiceLink.Style.asSpoken.run, "as spoken sends nothing")
+        XCTAssertEqual(VoiceLink.Style.clean.run?.glyfId, "dictation.clean")
+        XCTAssertEqual(VoiceLink.Style.formal.run?.glyfId, "dictation.formal")
+        XCTAssertEqual(VoiceLink.Style.casual.run?.glyfId, "rewrite.tone")
+        XCTAssertEqual(VoiceLink.Style.excited.run?.glyfId, "rewrite.tone")
+        XCTAssertNotNil(VoiceLink.Style.casual.run?.vars["tone"])
+        XCTAssertNotEqual(VoiceLink.Style.casual.run?.vars["tone"], VoiceLink.Style.excited.run?.vars["tone"])
+        XCTAssertEqual(VoiceLink.Style.allCases.map(\.title),
+                       ["As spoken", "Clean", "Formal", "Casual", "Excited"])
+        XCTAssertEqual(VoiceLink.Style.excited.menuTitle, "Excited!")
+    }
+
+    func testStyleIsRememberedAndDefaultsToAsSpoken() {
+        XCTAssertEqual(VoiceLink.Style.from(nil), .asSpoken)
+        XCTAssertEqual(VoiceLink.Style.from("nonsense"), .asSpoken)
+        XCTAssertEqual(VoiceLink.Style.from("formal"), .formal)
+        XCTAssertNil(GlyfSettings().voiceStyle, "a new install is As spoken")
+        var s = GlyfSettings()
+        s.voiceStyle = VoiceLink.Style.casual.rawValue
+        let back = try? JSONDecoder().decode(GlyfSettings.self, from: JSONEncoder().encode(s))
+        XCTAssertEqual(VoiceLink.Style.from(back?.voiceStyle), .casual)
+    }
+
+    func testPolishedTakesOffWrapping() {
+        XCTAssertEqual(VoiceLink.polished(original: "um hi", cleaned: "\"Hi.\""), "Hi.")
+        XCTAssertEqual(VoiceLink.polished(original: "um hi", cleaned: "“Hi there.”\n"), "Hi there.")
+        XCTAssertEqual(VoiceLink.polished(original: "um hi", cleaned: "Cleaned text: Hi."), "Hi.")
+        XCTAssertEqual(VoiceLink.polished(original: "um hi", cleaned: "  "), "um hi", "nothing back: as said")
+        XCTAssertEqual(VoiceLink.polished(original: "x", cleaned: "\"Go\" she said, \"now\""),
+                       "\"Go\" she said, \"now\"", "quotes inside stay")
+    }
+
+    func testSpokenPunctuation() {
+        XCTAssertEqual(VoiceLink.spokenPunctuation("see you soon period"), "see you soon.")
+        XCTAssertEqual(VoiceLink.spokenPunctuation("hi comma how are you question mark"), "hi, how are you?")
+        XCTAssertEqual(VoiceLink.spokenPunctuation("wow exclamation point that was fun full stop"),
+                       "wow! That was fun.")
+        XCTAssertEqual(VoiceLink.spokenPunctuation("first new line second"), "first\nSecond")
+        XCTAssertEqual(VoiceLink.spokenPunctuation("one new paragraph two"), "one\n\nTwo")
+        XCTAssertEqual(VoiceLink.spokenPunctuation("The period ended."), "The period ended.",
+                       "a recognizer that punctuates already read the marks")
+        XCTAssertEqual(VoiceLink.spokenPunctuation("periodic table"), "periodic table", "whole words only")
+    }
+
+    func testLiveWordsAreCapitalisedAndPunctuated() {
+        XCTAssertEqual(VoiceLink.live("  hey, are you free?"), "Hey, are you free?")
+        XCTAssertEqual(VoiceLink.live("call me period thanks"), "Call me. Thanks")
+        XCTAssertEqual(VoiceLink.live(""), "")
+    }
+
+    func testJoinedStretches() {
+        XCTAssertEqual(VoiceLink.joined("Hello there.", "How are you?"), "Hello there. How are you?")
+        XCTAssertEqual(VoiceLink.joined("", "Hi"), "Hi")
+        XCTAssertEqual(VoiceLink.joined("Hi ", " "), "Hi")
+    }
+
+    func testNormalizedLevel() {
+        XCTAssertEqual(VoiceLink.normalizedLevel(rms: 0), 0)
+        XCTAssertEqual(VoiceLink.normalizedLevel(rms: .nan), 0)
+        XCTAssertEqual(VoiceLink.normalizedLevel(rms: 0.0005), 0, "a quiet room is nothing")
+        XCTAssertEqual(VoiceLink.normalizedLevel(rms: 0.5), 1, "close speech is full")
+        let mid = VoiceLink.normalizedLevel(rms: 0.02)
+        XCTAssertGreaterThan(mid, 0.3)
+        XCTAssertLessThan(mid, 0.8)
+    }
+
+    func testLevelIsPublishedOnlyWhileListeningAndWhenItMoves() {
+        var m = VoiceMachine(now: 0)
+        _ = m.open(session: "s", now: 0, listenNow: nil, engine: nil)
+        XCTAssertEqual(m.level(0.5), [], "nothing is being heard")
+        XCTAssertNil(m.state.level)
+        _ = m.handle(cmd(.start, "u1", at: 1), now: 1)
+        XCTAssertEqual(m.level(0.5), [.publish])
+        XCTAssertEqual(m.state.level, 0.5)
+        XCTAssertEqual(m.level(0.51), [], "a small move isn't worth a write")
+        XCTAssertEqual(m.level(1.7), [.publish])
+        XCTAssertEqual(m.state.level, 1, "clamped")
+        _ = m.handle(cmd(.stop, at: 2, utterance: "u1"), now: 2)
+        XCTAssertEqual(m.state.level, 0, "stopping drops the wave")
+        XCTAssertEqual(m.level(0.8), [])
+    }
+
+    func testAStretchEndingMidUtteranceCarriesOn() {
+        var m = VoiceMachine(now: 0)
+        _ = m.open(session: "s", now: 0, listenNow: "u1", engine: nil)
+        XCTAssertTrue(m.continues(utterance: "u1"), "still listening: a new stretch, not the end")
+        XCTAssertFalse(m.continues(utterance: "u2"))
+        _ = m.handle(cmd(.stop, at: 1, utterance: "u1"), now: 1)
+        XCTAssertFalse(m.continues(utterance: "u1"), "after ✓ the final is the end")
+    }
+
+    func testStateFromAnOlderAppDecodesWithoutALevel() throws {
+        let json = #"{"session":"s","phase":"listening","heartbeat":1,"expiresAt":2,"partial":"hi"}"#
+        let s = try JSONDecoder().decode(VoiceLink.State.self, from: Data(json.utf8))
+        XCTAssertNil(s.level)
+        XCTAssertEqual(s.partial, "hi")
+    }
 }

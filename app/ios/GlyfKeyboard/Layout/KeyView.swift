@@ -11,7 +11,9 @@ struct ReturnFace: Equatable {
     var text: String?
     var primary = false
 
-    static let plain = ReturnFace(symbol: "return")
+    /// Apple's plain return carries a fifth more ink than a light glyph
+    /// (744 vs 658 px at 3x, measured): its regular weight.
+    static let plain = ReturnFace(symbol: "return", weight: .regular)
 }
 
 /// One key. Glass fill + hairline stroke + shadow per §5.1; press scales to
@@ -80,9 +82,11 @@ final class KeyView: UIControl {
         addSubview(subtitle)
         icon.contentMode = .center
         // Measured against iOS: shift and delete draw ~19.7 x 17pt, which is
-        // this symbol size. Ours used to come out a tenth small.
+        // this symbol size. Ours used to come out a tenth small. The weight
+        // is regular: Apple's delete carries 1055 px of ink at 3x to a light
+        // glyph's 876 (iOS 26.5 sim, 2026-11-04).
         icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
-            pointSize: 19.5, weight: Glass.glyphWeight(.light))
+            pointSize: 19.5, weight: Glass.glyphWeight(.regular))
         icon.tintColor = Glass.keyInk
         addSubview(icon)
 
@@ -124,7 +128,9 @@ final class KeyView: UIControl {
         } else {
             // The system keyboard sits its capitals 1pt below where a centred
             // label puts them; lowercase already lands on Apple's row.
-            label.frame = spec.isChar && shifted && !spec.pad ? bounds.offsetBy(dx: 0, dy: 1) : bounds
+            label.frame = spec.isChar && shifted && !spec.pad && KeyLegend.hasCase(spec.char)
+                ? bounds.offsetBy(dx: 0, dy: 1)
+                : bounds.offsetBy(dx: 0, dy: spec.pad ? 0 : KeyLegend.symbolOffset[spec.char ?? ""] ?? 0)
         }
         icon.frame = bounds
         layoutLegend()
@@ -232,7 +238,17 @@ final class KeyView: UIControl {
             text = c
             label.font = Glass.keyFont(ofSize: 19)
         case .char(let c):
-            text = shifted ? c.uppercased() : c
+            text = shifted ? c.uppercased() : (KeyLegend.shownAs[c] ?? c)
+            if !KeyLegend.hasCase(c) {
+                // Digits and symbols have one size whatever shift says:
+                // Apple's are 22pt (a 1 is 15.3pt of ink), a few drawn
+                // bigger, all measured on the iOS 26.5 sim (2026-11-04).
+                // Ours took the lowercase 24.5 with shift off and 22 with it
+                // on, so the 123 page changed size with the field's caps.
+                if shifted { text = KeyLegend.shownAs[c] ?? c }
+                label.font = Glass.keyFont(ofSize: 22 * (KeyLegend.symbolScale[c] ?? 1))
+                break
+            }
             // Measured against the system keyboard on the same simulator, by
             // ink as well as bounding box: a lowercase a matches 24.5pt (24
             // is 2px short in x-height, 25 carries 7% more ink), a capital A
@@ -269,10 +285,15 @@ final class KeyView: UIControl {
             text = m
             // Apple, by ink: "123" and "ABC" 18pt, "#+=" 13pt; on the phone
             // pad "+*#" 23pt, letter-spaced, and "123" 21pt.
-            let size: CGFloat = spec.pad ? (m == "+*#" ? 23 : 21) : (m == "#+=" ? 13 : 18)
+            // The "123" in the #+= page's third row is smaller than the
+            // bottom row's: 23.3 x 11.3pt of ink to 27.3 x 13.3, about 15.5pt.
+            let size: CGFloat = spec.pad ? (m == "+*#" ? 23 : 21)
+                : (m == "#+=" ? 13 : (spec.sideKey ? 15.5 : 18))
             label.font = Glass.keyFont(ofSize: size)
         case .emoji:
-            image = UIImage(systemName: "face.smiling")
+            // Apple's key is a grin with an open mouth and a bolder line
+            // than SF's face.smiling (1242 px of ink at 3x to 813).
+            image = KeyGlyphs.emojiKey()
         }
         label.text = text
         label.isHidden = text == nil
@@ -861,3 +882,52 @@ final class KeyView: UIControl {
 }
 
 enum ShiftState { case off, on, capsLock }
+
+/// Key glyphs SF Symbols has no match for.
+enum KeyGlyphs {
+    private static var cachedEmoji: UIImage?
+
+    /// Apple's emoji key, drawn from its ink on the iOS 26.5 sim (3x): a
+    /// 18.7pt circle in a 1.67pt line (drawn 1.45: antialiasing adds the
+    /// rest, 1435 px of ink at 1.67 against Apple's 1242), two upright oval eyes, and an open
+    /// grin, a flat top 1.3pt under the middle and 12.3pt wide, its lower
+    /// half filled, the teeth a thin white band.
+    static func emojiKey() -> UIImage {
+        if let cachedEmoji { return cachedEmoji }
+        let side: CGFloat = 21
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { ctx in
+            let c = CGPoint(x: side / 2, y: side / 2)
+            let line: CGFloat = 1.45
+            let r = (18.7 - line) / 2
+            UIColor.black.setStroke()
+            UIColor.black.setFill()
+            let face = UIBezierPath(arcCenter: c, radius: r, startAngle: 0, endAngle: .pi * 2, clockwise: true)
+            face.lineWidth = line
+            face.stroke()
+            for dx in [-2.75, 2.75] as [CGFloat] {
+                UIBezierPath(ovalIn: CGRect(x: c.x + dx - 1.05, y: c.y - 3.75, width: 2.1, height: 2.9)).fill()
+            }
+            // The grin: a D with a flat top, filled, then the teeth cut out.
+            let top = c.y + 1.3, half: CGFloat = 6.15, depth: CGFloat = 4.9
+            let mouth = UIBezierPath()
+            mouth.move(to: CGPoint(x: c.x - half, y: top))
+            mouth.addLine(to: CGPoint(x: c.x + half, y: top))
+            mouth.addCurve(to: CGPoint(x: c.x, y: top + depth),
+                           controlPoint1: CGPoint(x: c.x + half, y: top + depth * 0.62),
+                           controlPoint2: CGPoint(x: c.x + half * 0.55, y: top + depth))
+            mouth.addCurve(to: CGPoint(x: c.x - half, y: top),
+                           controlPoint1: CGPoint(x: c.x - half * 0.55, y: top + depth),
+                           controlPoint2: CGPoint(x: c.x - half, y: top + depth * 0.62))
+            mouth.close()
+            mouth.lineJoinStyle = .round
+            mouth.lineWidth = 1.0
+            mouth.fill()
+            mouth.stroke()
+            ctx.cgContext.setBlendMode(.clear)
+            UIBezierPath(rect: CGRect(x: c.x - half + 1.1, y: top + 0.9,
+                                      width: (half - 1.1) * 2, height: 1.1)).fill()
+        }.withRenderingMode(.alwaysTemplate)
+        cachedEmoji = image
+        return image
+    }
+}

@@ -112,27 +112,26 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var pendingEdit: NoteEditSurface.Edit?
     /// §6.13 T — persistent strip above the toolbar while enabled.
     private var hud: TranslationHUD?
-    /// Voice typing's strip, while an utterance is open (VoiceLink).
-    private var voiceStrip: VoiceStrip?
-    /// The utterance the strip shows.
+    /// Voice typing's panel over the strip and keys, while an utterance is
+    /// open (VoiceLink).
+    private var voicePanel: VoicePanel?
+    /// The utterance the panel shows.
     private var voiceUtterance: String?
-    /// While the strip is up: reads the app's state between its notes, and
+    /// While the panel is up: reads the app's state between its notes, and
     /// notices a heartbeat that stopped.
     private var voicePoll: Timer?
     private var voiceObserving = false
     private var voiceOpenedAt: Double = 0
-    /// True while voice typing itself writes to the field.
-    private var voiceWriting = false
     /// The heartbeat of the app's last error line already shown.
     private static var voiceErrorShown: Double = 0
     /// Between viewDidAppear and viewWillDisappear.
     private var voiceVisible = false
-    /// What voice typing just put in, as inserted (spaces included), while it
-    /// still sits right before the cursor: the strip offers Polish for it.
-    private var voiceSpan: String?
-    /// The words as said, while their polished version is in the field.
-    private var voiceRaw: String?
-    private var voicePolishing = 0
+    /// Bumped to drop a style run that no longer applies (✕, a new go).
+    private var voiceRun = 0
+    /// The panel's notice closes itself after a moment.
+    private var voiceNoticeClose: DispatchWorkItem?
+    /// Set while a style runs: puts the words in (the rewrite, or nil for as said).
+    private var voicePendingInsert: ((String?) -> Void)?
     /// §6.13 R — transient overlay over the keys, not a Surface.
     private var tonesPopup: TonesPopup?
     /// §6.15: did the user act on the bar's result (Replace/Insert/Copy)?
@@ -231,11 +230,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .none:
             return base
         case .emoji:
-            // Searching collapses the board to a strip ABOVE the letter
-            // keys, so the surface needs room for both.
             // Apple's emoji keyboard stands a little taller than its letters,
-            // so its five rows get the same 39pt they have there.
-            return base + (emoji?.searchActive == true ? EmojiBoard.searchStripHeight : EmojiBoard.extraHeight)
+            // and searching it keeps that height: the strip (field + one row
+            // of results) takes the toolbar's place and the extra, so the
+            // letter keys come up exactly where they always are.
+            return base + EmojiBoard.extraHeight
         // Panels take the key area instead of growing the keyboard, exactly
         // like the website: the keys never move, so muscle memory holds.
         // Ask Glyf keeps the keys live under it; its chips row adds height.
@@ -451,6 +450,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         keyboardView.rebuild()
         applyBoardPaint()
         emoji?.applyPalette()
+        voicePanel?.applyPalette()
     }
 
     /// The painted board of a colour or gradient theme.
@@ -886,23 +886,28 @@ final class GlyfKeyboardViewController: UIInputViewController {
                                     canGoBack: shell?.canGoBack == true,
                                     keepTools: shellAtMenu)
         }
-        let showVoice = surface == .none && voiceStrip != nil
-        let showHUD = surface == .none && hudActive && !showVoice
+        let showVoice = surface == .none && voicePanel != nil
+        // The panel stands in for the strip and the keys, which stay laid
+        // out exactly where they are (same frames, same height) and fade.
+        let voiceUp = showVoice && voicePanel?.isUp == true
+        let showHUD = surface == .none && hudActive && !voiceUp
         hud?.isHidden = !showHUD
-        voiceStrip?.isHidden = !showVoice
+        voicePanel?.isHidden = !showVoice
+        toolbar.alpha = voiceUp ? 0 : 1
         switch surface {
         case .none:
             let y: CGFloat = 0
             if showHUD {
                 ensureHUD().frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             }
-            if showVoice {
-                voiceStrip?.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            if showVoice, let panel = voicePanel {
+                panel.frame = CGRect(x: 0, y: 0, width: w, height: h)
+                content.bringSubviewToFront(panel)
             }
-            toolbar.isHidden = showHUD || showVoice
+            toolbar.isHidden = showHUD
             toolbar.frame = CGRect(x: 0, y: y, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = false
-            keyboardView.alpha = 1
+            keyboardView.alpha = voiceUp ? 0 : 1
             keyboardView.frame = CGRect(x: 0, y: y + Glass.toolbarHeight, width: w,
                                         height: max(0, h - y - Glass.toolbarHeight))
             tonesPopup?.frame = keyboardView.frame
@@ -910,11 +915,13 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.isHidden = false
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             if emoji?.searchActive == true {
-                // Strip + letter keys (Apple's emoji-search behavior).
+                // Strip + letter keys (Apple's emoji-search behavior). The
+                // strip stands in for the toolbar, as on Apple's.
+                toolbar.isHidden = true
                 keyboardView.isHidden = false
-                emoji?.frame = CGRect(x: 0, y: Glass.toolbarHeight, width: w,
+                emoji?.frame = CGRect(x: 0, y: 0, width: w,
                                       height: EmojiBoard.searchStripHeight)
-                let keysY = Glass.toolbarHeight + EmojiBoard.searchStripHeight
+                let keysY = EmojiBoard.searchStripHeight
                 keyboardView.frame = CGRect(x: 0, y: keysY, width: w,
                                             height: max(0, h - keysY))
             } else {
@@ -1279,13 +1286,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
     func hostInsert(_ text: String) {
         textDocumentProxy.insertText(text)
         forgetBefore()
-        voiceTypedOver()
     }
 
     func hostDelete() {
         textDocumentProxy.deleteBackward()
         forgetBefore()
-        voiceTypedOver()
     }
 
     func hostAdjust(byCharacterOffset offset: Int) {
@@ -3609,6 +3614,9 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
 
     private var voiceNow: Double { Date().timeIntervalSince1970 }
 
+    /// The style the pill shows, as last picked.
+    private var voiceStyle: VoiceLink.Style { VoiceLink.Style.from(SettingsStore.current.voiceStyle) }
+
     /// The mic: start, stop, or open Glyf to turn listening on.
     func voiceTapped() {
         if isSecureField {
@@ -3616,136 +3624,122 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             return
         }
         observeVoice()
-        // Saying more: Polish and Undo were about the words before.
-        voiceSpan = nil
-        voiceRaw = nil
-        voicePolishing += 1
+        voiceRun += 1
         let state = VoiceLink.readState()
         switch VoiceLink.tapAction(state: state, now: voiceNow, fullAccess: hasFullAccess) {
         case .needsFullAccess:
-            KeyboardToast.show(in: content, text: "Voice typing needs Full Access")
+            showVoicePanel(nil, .notice("Voice typing needs Full Access"))
         case .openApp:
             let u = UUID().uuidString
             voiceOpenedAt = voiceNow
-            showVoiceStrip(u, .opening)
+            showVoicePanel(u, .opening)
             log.log("GLYF_VOICE open app")
             HostAppOpener.open(VoiceLink.openURL(utterance: u), from: self) { [weak self] strategy in
                 guard let self, strategy == .none else { return }
-                self.closeVoiceStrip()
-                KeyboardToast.show(in: self.content, text: "Open Glyf to turn on voice typing")
+                self.showVoicePanel(nil, .notice("Open Glyf to turn on voice typing"))
             }
         case .start:
             let u = UUID().uuidString
-            showVoiceStrip(u, .listening(""))
+            showVoicePanel(u, .listening(""))
             VoiceLink.send(.init(id: u, verb: .start, at: voiceNow, utterance: u))
         case .stop:
             voiceDone()
         }
     }
 
+    /// ✓: stop listening; the words go in when the app has the last of them.
+    /// ✓ again while a style is rewriting them: in as they were said.
     private func voiceDone() {
+        if case .polishing = voicePanel?.mode {
+            voicePendingInsert?(nil)
+            return
+        }
         let s = VoiceLink.readState()
         let u = voiceUtterance ?? s?.utterance
         VoiceLink.send(.init(id: UUID().uuidString, verb: .stop, at: voiceNow, utterance: u))
-        voiceStrip?.show(.finishing(s?.partial ?? ""))
+        voicePanel?.show(.finishing(VoiceLink.live(s?.partial ?? "")))
     }
 
+    /// ✕: the words are thrown away, whatever stage they are at.
     private func voiceCancel() {
-        if voiceStrip?.isAfterwords == true {
-            voiceSpan = nil
-            voiceRaw = nil
-            voicePolishing += 1
-            closeVoiceStrip()
-            return
+        voiceRun += 1
+        voicePendingInsert = nil
+        if let mode = voicePanel?.mode {
+            switch mode {
+            case .listening, .finishing, .opening:
+                VoiceLink.send(.init(id: UUID().uuidString, verb: .cancel, at: voiceNow, utterance: voiceUtterance))
+            case .polishing, .notice:
+                break
+            }
         }
-        VoiceLink.send(.init(id: UUID().uuidString, verb: .cancel, at: voiceNow, utterance: voiceUtterance))
         if let u = voiceUtterance { VoiceLink.markTaken(u) }
-        closeVoiceStrip()
-    }
-
-    /// Any key after the words went in: Polish no longer applies to them.
-    private func voiceTypedOver() {
-        guard !voiceWriting, voiceStrip?.isAfterwords == true else { return }
-        voiceSpan = nil
-        voiceRaw = nil
-        voicePolishing += 1
-        closeVoiceStrip()
+        closeVoicePanel()
     }
 
     /// Off screen mid-utterance (sent, dismissed, another app): the words
     /// are thrown away rather than typed later into some other field. On the
-    /// way into Glyf (the strip says Opening) the app is about to listen.
+    /// way into Glyf (the panel says Opening) the app is about to listen.
     private func voiceKeyboardLeaving() {
-        guard let mode = voiceStrip?.mode else { return }
+        guard let mode = voicePanel?.mode else { return }
         switch mode {
-        case .listening, .finishing:
+        case .listening, .finishing, .polishing:
             voiceCancel()
-        case .typed, .polishing, .polished:
-            voiceSpan = nil
-            voiceRaw = nil
-            voicePolishing += 1
-            closeVoiceStrip()
+        case .notice:
+            closeVoicePanel(animated: false)
         case .opening:
             break
         }
     }
 
-    /// Polish: the words just said, cleaned up by the server's
-    /// dictation.clean glyf (fillers out, punctuation and casing fixed, the
-    /// wording kept), in place of what was said.
-    private func voicePolish() {
-        guard let span = voiceSpan, !isSecureField else { return }
-        let core = span.trimmingCharacters(in: .whitespaces)
-        let lead = String(span.prefix(while: { $0 == " " }))
-        let tail = String(span.reversed().prefix(while: { $0 == " " }))
-        voicePolishing += 1
-        let run = voicePolishing
-        Funnel.mark("first_ai")
-        voiceStrip?.show(.polishing(core))
-        BackendClient.shared.run(glyfId: "dictation.clean", input: core, onToken: { _ in },
-            onDone: { [weak self] text, _ in
-                guard let self, run == self.voicePolishing else { return }
-                let polished = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard (self.beforeContext ?? "").hasSuffix(span), !polished.isEmpty else {
-                    self.voiceCancel(); return
-                }
-                if polished == core {
-                    self.voiceCancel()
-                    KeyboardToast.show(in: self.content, text: "Already reads well")
-                    return
-                }
-                let replaced = lead + polished + tail
-                self.voiceReplace(span, with: replaced)
-                self.voiceRaw = span
-                self.voiceSpan = replaced
-                self.voiceStrip?.show(.polished(polished))
-            },
-            onError: { [weak self] message in
-                guard let self, run == self.voicePolishing else { return }
-                self.voiceStrip?.show(.typed(core))
-                // The strip's Polish is the retry.
-                KeyboardToast.show(in: self.content, text: message
-                    .replacingOccurrences(of: " Tap to retry.", with: "")
-                    .replacingOccurrences(of: ". Tap to retry", with: ""))
-            })
-    }
-
-    /// Undo: the words as they were said, back in place of the polished ones.
-    private func voiceUndo() {
-        guard let span = voiceSpan, let raw = voiceRaw, (beforeContext ?? "").hasSuffix(span) else {
-            voiceCancel(); return
+    /// The words in the field: as said, or through the pill's style first.
+    private func voiceDeliver(_ heard: String, utterance: String) {
+        let said = VoiceLink.live(heard)
+        guard !said.isEmpty, !isSecureField else { closeVoicePanel(); return }
+        let style = voiceStyle
+        guard let job = style.run, hasFullAccess,
+              said.split(whereSeparator: \.isWhitespace).count >= 2 else {
+            voiceInsert(said)
+            closeVoicePanel()
+            return
         }
-        voiceReplace(span, with: raw)
-        voiceSpan = nil
-        voiceRaw = nil
-        closeVoiceStrip()
+        voiceRun += 1
+        let run = voiceRun
+        voiceUtterance = utterance
+        showVoicePanel(utterance, .polishing(said))
+        Funnel.mark("first_ai")
+        log.log("GLYF_VOICE style \(style.rawValue, privacy: .public)")
+        // One way in, whichever comes first: the rewrite, a failure (as
+        // said, plus one line), ✓ again (as said), or the clock.
+        var landed = false
+        let land: (String?) -> Void = { [weak self] rewritten in
+            guard let self, !landed, run == self.voiceRun else { return }
+            landed = true
+            self.voicePendingInsert = nil
+            self.voiceInsert(rewritten.map { VoiceLink.polished(original: said, cleaned: $0) } ?? said)
+            self.closeVoicePanel()
+        }
+        voicePendingInsert = land
+        BackendClient.shared.run(glyfId: job.glyfId, input: said, vars: job.vars, onToken: { _ in },
+            onDone: { text, _ in land(text) },
+            onError: { [weak self] _ in
+                guard let self, !landed, run == self.voiceRun else { return }
+                land(nil)
+                KeyboardToast.show(in: self.content, text: "Couldn't polish · typed as said")
+            })
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            guard let self, !landed, run == self.voiceRun else { return }
+            land(nil)
+            KeyboardToast.show(in: self.content, text: "Couldn't polish · typed as said")
+        }
     }
 
-    private func voiceReplace(_ span: String, with text: String) {
-        voiceWriting = true
-        for _ in 0..<span.count { hostDelete() }
+    private func voiceInsert(_ words: String) {
+        let before = beforeContext ?? ""
+        let after = textDocumentProxy.documentContextAfterInput ?? ""
+        let text = VoiceLink.fitted(words, before: before, after: after)
+        guard !text.isEmpty else { return }
         hostInsert(text)
-        voiceWriting = false
+        log.log("GLYF_VOICE inserted chars=\(text.count)")
         syncAutoShift()
         updateCandidates()
     }
@@ -3757,7 +3751,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     /// On every appearance: an utterance the app is hearing (the one the mic
-    /// opened it for) takes the strip; finished words not yet typed go in.
+    /// opened it for) takes the panel; finished words not yet typed go in.
     private func voiceResume() {
         guard hasFullAccess, let s = VoiceLink.readState() else { return }
         // The app couldn't listen (no microphone permission, say): its one
@@ -3766,105 +3760,118 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         if s.phase == .off, let why = s.error, voiceNow - s.heartbeat < 60,
            Self.voiceErrorShown != s.heartbeat {
             Self.voiceErrorShown = s.heartbeat
-            closeVoiceStrip()
             log.log("GLYF_VOICE error shown")
-            KeyboardToast.show(in: content, text: why)
+            showVoicePanel(nil, .notice(why))
             return
         }
-        guard s.phase != .off || s.final != nil || voiceStrip != nil else { return }
+        guard s.phase != .off || s.final != nil || voicePanel != nil else { return }
         observeVoice()
         voiceStateChanged()
     }
 
-    private func showVoiceStrip(_ utterance: String, _ mode: VoiceStrip.Mode) {
-        voiceUtterance = utterance
-        if voiceStrip == nil {
-            let v = VoiceStrip()
+    private func showVoicePanel(_ utterance: String?, _ mode: VoicePanel.Mode) {
+        if let utterance { voiceUtterance = utterance }
+        voiceNoticeClose?.cancel()
+        voiceNoticeClose = nil
+        let fresh = voicePanel == nil || voicePanel?.isUp == false
+        if fresh {
+            voicePanel?.removeFromSuperview()
+            let v = VoicePanel()
+            v.style = voiceStyle
             v.onCancel = { [weak self] in self?.voiceCancel() }
             v.onDone = { [weak self] in self?.voiceDone() }
-            v.onPolish = { [weak self] in self?.voicePolish() }
-            v.onUndo = { [weak self] in self?.voiceUndo() }
-            v.onAgain = { [weak self] in self?.voiceTapped() }
+            v.onStyle = { s in SettingsStore.update { $0.voiceStyle = s.rawValue } }
             content.addSubview(v)
-            voiceStrip = v
+            voicePanel = v
+            v.frame = content.bounds
+            v.show(mode)
+            v.layoutIfNeeded()
+            v.present(alongside: { [weak self] in self?.applySurfaceLayout(animated: false) })
+        } else {
+            voicePanel?.show(mode)
         }
-        voiceStrip?.show(mode)
-        if voiceStrip?.isAfterwords == true {
+        switch mode {
+        case .notice:
             voicePoll?.invalidate()
             voicePoll = nil
-        } else if voicePoll == nil {
-            let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.voiceStateChanged() }
-            RunLoop.main.add(t, forMode: .common)
-            voicePoll = t
+            // One line, read, then the keys come back.
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, case .notice = self.voicePanel?.mode else { return }
+                self.closeVoicePanel()
+            }
+            voiceNoticeClose = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6, execute: work)
+        case .polishing:
+            voicePoll?.invalidate()
+            voicePoll = nil
+        default:
+            if voicePoll == nil {
+                let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.voiceStateChanged() }
+                RunLoop.main.add(t, forMode: .common)
+                voicePoll = t
+            }
         }
-        applySurfaceLayout(animated: false)
     }
 
-    private func closeVoiceStrip() {
+    private func closeVoicePanel(animated: Bool = true) {
         voicePoll?.invalidate()
         voicePoll = nil
+        voiceNoticeClose?.cancel()
+        voiceNoticeClose = nil
         voiceUtterance = nil
-        voiceStrip?.removeFromSuperview()
-        voiceStrip = nil
-        applySurfaceLayout(animated: false)
+        guard let panel = voicePanel else { return }
+        voicePanel = nil
+        if animated, voiceVisible, panel.isUp {
+            // The keys fade back in as the panel goes.
+            panel.dismiss(alongside: { [weak self] in self?.applySurfaceLayout(animated: false) })
+        } else {
+            panel.removeFromSuperview()
+            applySurfaceLayout(animated: false)
+        }
     }
 
     private func voiceStateChanged() {
         // Off screen (on the way into Glyf, say): nothing is typed and no
         // line is shown where nobody sees it; the next appearance catches up.
         guard voiceVisible else { return }
+        if case .polishing = voicePanel?.mode { return }
         let s = VoiceLink.readState()
         let now = voiceNow
         if let d = VoiceLink.deliverable(s, taken: VoiceLink.readTaken(), now: now) {
             VoiceLink.markTaken(d.utterance)
-            closeVoiceStrip()
-            guard !isSecureField else { return }
-            let before = beforeContext ?? ""
-            let after = textDocumentProxy.documentContextAfterInput ?? ""
-            let text = VoiceLink.fitted(d.text, before: before, after: after)
-            voiceSpan = nil
-            voiceWriting = true
-            hostInsert(text)
-            voiceWriting = false
-            log.log("GLYF_VOICE inserted chars=\(text.count)")
-            syncAutoShift()
-            updateCandidates()
-            // A few words or more: the strip offers Polish while they are
-            // still right before the cursor.
-            if hasFullAccess, text.split(whereSeparator: \.isWhitespace).count >= 3 {
-                voiceSpan = text
-                voiceRaw = nil
-                showVoiceStrip(d.utterance, .typed(text.trimmingCharacters(in: .whitespaces)))
-            }
+            voiceDeliver(d.text, utterance: d.utterance)
             return
         }
         guard let s else { return }
-        if voiceStrip?.isAfterwords == true { return }
         switch s.phase {
         case .listening, .finishing:
             guard VoiceLink.alive(s, now: now), let u = s.utterance, u != VoiceLink.readTaken() else { break }
-            showVoiceStrip(u, s.phase == .listening ? .listening(s.partial) : .finishing(s.partial))
+            let words = VoiceLink.live(s.partial)
+            showVoicePanel(u, s.phase == .listening ? .listening(words) : .finishing(words))
+            voicePanel?.setLevel(s.phase == .listening ? (s.level ?? 0) : 0)
             return
         case .ready, .off:
             break
         }
-        guard voiceStrip != nil else { return }
-        // Opening the app takes a moment: the strip waits for it, whatever an
+        guard let panel = voicePanel else { return }
+        if case .notice = panel.mode { return }
+        // Opening the app takes a moment: the panel waits for it, whatever an
         // old session left in the file, until the app says something new.
-        if voiceStrip?.mode == .opening, s.heartbeat < voiceOpenedAt {
+        // A fresh app start first resets a dead session's file to off; that
+        // is not an answer either.
+        if panel.mode == .opening, s.heartbeat < voiceOpenedAt || (s.phase == .off && s.error == nil) {
             // Nothing from the app half a minute on: it never came up.
-            if now - voiceOpenedAt > 30 { closeVoiceStrip() }
+            if now - voiceOpenedAt > 30 { closeVoicePanel() }
             return
         }
-        if case .listening = voiceStrip?.mode, s.phase == .ready, s.utterance != voiceUtterance,
+        if case .listening = panel.mode, s.phase == .ready, s.utterance != voiceUtterance,
            VoiceLink.alive(s, now: now) {
             return // the start is on its way to the app
         }
-        let why = s.error ?? (s.phase == .off ? "Voice typing is off"
+        let why = s.error ?? (s.phase == .off ? "Voice typing stopped"
             : VoiceLink.alive(s, now: now) ? "Didn't catch that" : "Voice typing stopped")
         Self.voiceErrorShown = s.heartbeat
-        closeVoiceStrip()
-        KeyboardToast.show(in: content, text: why)
+        showVoicePanel(nil, .notice(why))
     }
 }
 
