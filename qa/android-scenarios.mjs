@@ -133,6 +133,7 @@ async function tapOpen(view, pred, ms = 3000) {
 async function fresh() {
   tool("close");
   tool("clear");
+  tool("policyreset");   // docs/STRIP-POLICY.md: no ✕ from an earlier scenario carries over
   await sleep(500);
 }
 
@@ -1292,7 +1293,7 @@ scenarios.push(
 
 // --- 2026-09-30: a ✕ on every strip chip ---
 scenarios.push(
-  { id: "S215", title: "A chip's ✕ waves it off for those words, a new sum brings one back, and Insert never dismisses", run: async () => {
+  { id: "S215", title: "A chip's ✕ keeps it away: the same sum typed again and a new sum bring none (docs/STRIP-POLICY.md)", run: async () => {
     // "we should add some button to dismiss it, like a cross on left or something, figure out" (2026-09-30).
     await fresh();
     await type("2+5");
@@ -1310,17 +1311,14 @@ scenarios.push(
     // Back to what the strip shows without a chip: the tools, or words.
     const strip = TOOL_IDS.some(id => find(s, byId(id))) ? "tools" : s.views.some(idStarts("suggest:")) ? "words" : "nothing";
     const kept = s.text;
-    // More of the sum is a new sum: its chip comes.
+    // 2026-11-04 (docs/STRIP-POLICY.md): the same sum typed again stays away,
+    // and so does a new one: the kind rests in this app for ten minutes.
     await type("0");
-    const again = await waitFor(byId("strip:smart"), 3000);
+    await sleep(1500);
+    const again = find(await state(), byId("strip:smart"));
     const label = again ? chipLabel(await state(), again) : "none";
-    // Insert, pressed on the word itself beside the ✕, inserts; it never dismisses.
-    const verb = again && find(await state(), v => v.text === "Insert" &&
-      Math.abs(v.y - again.y) < again.h / 2 && Math.abs(v.x - again.x) < again.w / 2);
-    const r = verb ? await tapFor({ ...verb, id: "" }, x => x.includes("= 52"))
-      : { t: await text(), retried: false };
-    return { pass: gone && strip !== "nothing" && kept === "2+5" && label.includes("2+50 = 52") && r.t.includes("2+50 = 52"),
-      note: `✕ ${target}px; after it: chip gone ${gone}, strip shows ${strip}, text '${kept}'; typed 0 → '${label}'; Insert → '${r.t}'${second(r)}` };
+    return { pass: gone && strip !== "nothing" && kept === "2+5" && !again,
+      note: `✕ ${target}px; after it: chip gone ${gone}, strip shows ${strip}, text '${kept}'; typed 0 → chip '${label}'` };
   } },
 );
 

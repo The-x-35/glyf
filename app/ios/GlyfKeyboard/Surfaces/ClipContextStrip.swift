@@ -128,10 +128,12 @@ extension ClipContextStrip: UIGestureRecognizerDelegate {
 /// dismissed or used. iOS gives no copy timestamp, so "recent" is measured
 /// from the first time the keyboard saw this changeCount.
 enum ClipContext {
+    /// The clipboard panel's "just copied" card. The strip's chip is shorter
+    /// lived (StripPolicy.pasteFresh, docs/STRIP-POLICY.md).
     static let freshFor: TimeInterval = 10 * 60
     private static let file = "clip-context.json"
 
-    static func isFresh(now: Date = Date()) -> Bool {
+    static func isFresh(now: Date = Date(), within: TimeInterval = freshFor) -> Bool {
         let board = UIPasteboard.general
         let cc = board.changeCount
         var state = AppGroupStore.readJSON(name: file) ?? [:]
@@ -142,7 +144,7 @@ enum ClipContext {
             AppGroupStore.writeJSON(state, name: file)
         }
         let seen = (state["seen"] as? Double) ?? now.timeIntervalSince1970
-        return now.timeIntervalSince1970 - seen < freshFor && board.hasStrings
+        return now.timeIntervalSince1970 - seen < within && board.hasStrings
     }
 
     /// Dismissed or used: never offer this copy again.

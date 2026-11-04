@@ -290,6 +290,9 @@ final class GlyfScenarioUITests: XCTestCase {
         // stand-in (qa/fake-google.mjs): an earlier run must not decide.
         let google = args.contains("--glyf-test-google") ? [] : ["--glyf-test-google", ""]
         app.launchArguments = ["--glyf-skip-onboarding", "--glyf-seed-vault", "--glyf-clear-tour"] + google + args
+        // docs/STRIP-POLICY.md: no ✕ from an earlier scenario rests a chip
+        // this one checks (the keyboard reads the file on every appearance).
+        if let dir = bridgeDir { try? FileManager.default.removeItem(at: dir.appendingPathComponent("strip-policy.json")) }
         app.launch()
         sleep(1)
         for attempt in 0..<2 {
@@ -728,26 +731,36 @@ final class GlyfScenarioUITests: XCTestCase {
         note("inserted: '\(value)'")
     }
 
-    /// S215: every chip has a ✕; a dismissed chip stays gone for the same
-    /// text, the next change brings one back, and Insert never dismisses
-    /// (Arpit, 2026-09-30: "we should add some button to dismiss it").
-    func testS215_AChipsCrossDismissesItForThatText() throws {
+    /// S215: every chip has a ✕, and a chip put away stays away
+    /// (docs/STRIP-POLICY.md; Arpit, 2026-11-04: "when the user crosses it,
+    /// it comes again and again"): the same chip never comes back in the
+    /// field, even for the text typed again, and its kind rests in this app
+    /// for ten minutes, so a new sum brings none either. The words keep the
+    /// strip, and the ✕ never touches the text.
+    func testS215_AChipsCrossKeepsItAway() throws {
         open()
         clear()
         type("2+5")
         guard wait("strip:smart", 3) != nil else { return XCTFail("no chip for 2+5") }
+        keepScreenshot("S215-chip-before-cross")
         guard let close = wait("strip:smart:close", 2) else { return XCTFail("the chip has no ✕") }
         close.tap()
         XCTAssertTrue(gone("strip:smart", 3), "the chip stayed after its ✕")
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertFalse(el("strip:smart").exists, "the dismissed chip came back for the same text")
         XCTAssertTrue(value.hasPrefix("2+5") && !value.contains("="), "dismiss changed the text: '\(value)'")
+        // The same sum typed again: still away.
+        tap("key:delete")
+        type("5")
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertFalse(el("strip:smart").exists, "the dismissed chip came back for the sum typed again")
+        // A new sum: its kind rests in this app.
         type("0")
-        guard let again = wait("strip:smart", 3) else { return XCTFail("no chip for 2+50") }
-        XCTAssertTrue(again.label.contains("52"), "the strip shows '\(again.label)'")
-        again.tap()
-        XCTAssertTrue(waitValue(3) { $0.contains("2+50 = 52") }, "Insert gave '\(value)'")
-        note("dismissed 2+5, then 2+50 inserted '\(value)'")
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertFalse(el("strip:smart").exists, "a sum chip came back right after a ✕ on one")
+        keepScreenshot("S215-no-chip-after-cross")
+        XCTAssertTrue(value.hasPrefix("2+50") && !value.contains("="), "the text is '\(value)'")
+        note("dismissed 2+5; retyped 2+5 and then 2+50: no chip, text '\(value)'")
     }
 
     /// S219: typing "email" offers every saved email and a temp address;

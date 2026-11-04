@@ -371,6 +371,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                         KeyboardTyping.scheduleSave(this@GlyfIME)
                     }
                 }
+                // The strip policy's memory (docs/STRIP-POLICY.md) wiped, so
+                // one scenario's ✕ never rests a chip the next one checks.
+                "policyreset" -> {
+                    stripPolicy.restore(null)
+                    stripPolicy.enter("")
+                    imePrefs.edit().remove("stripPolicy").apply()
+                }
                 "delwords" -> {
                     val n = intent.getIntExtra("count", 1)
                     onDeleteWordsPreview(n)
@@ -690,6 +697,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         actGeneration++ // a late act result must not land in a new field
         recentFixes.clear()  // another field: its corrections are not these
         dismissedChip = null // and a chip waved off there may come here
+        stripPolicy.enter(policyFieldId())
         voiceSpan = null; voiceRaw = null; voicePolishing++ // words said in the last field
         dismissOverlay()
         if (searchActive) exitSearch()
@@ -2924,7 +2932,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val question = if (settings.optBoolean("candidates", true)) Smart.question(tail) else null
         if (question != null) {
             cancelSuggestion()
-            val shown = showStripChip("action", null, "AI answer", "") {
+            val shown = showStripChip("action", null, "AI answer", "", policyKey = question) {
                 hideStripChip()
                 val ic = currentInputConnection
                 startAct(ic?.getTextBeforeCursor(4000, 0)?.toString() ?: "",
@@ -2935,7 +2943,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         val cached = suggestedChip
         if (cached != null && suggestedFor == trimmed) {
-            return showStripChip("action", null, cached.label, "") {
+            return showStripChip("action", null, cached.label, "", policyKey = cached.intent + "|" + cached.query) {
                 suggestedChip = null
                 suggestedFor = ""
                 hideStripChip()
@@ -3011,7 +3019,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // what the Mac copies meanwhile must not put a paste chip in them.
         val busy = searchActive || barActive || vaultEditActive || overlay != null ||
             featurePanel != null || isSecureField() || qaClipHeld
-        val fresh = stamp > 0 && System.currentTimeMillis() - stamp < 10 * 60 * 1000 &&
+        val fresh = stamp > 0 && System.currentTimeMillis() - stamp < (StripPolicy.PASTE_FRESH * 1000).toLong() &&
             stamp != imePrefs.getLong("clipDone", -1)
         val typed = currentInputConnection?.getTextBeforeCursor(1, 0)?.isNotEmpty() == true
         val tourBlocks = tourStep()?.let { !TourCoach.allowsChip("paste", it, tourCopied()) } == true
@@ -3129,8 +3137,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  done). False when this chip was waved off for these words: not shown. */
     private fun showStripChip(kind: String, label: String?, value: String, verb: String,
                               lead: String? = null, extra: String? = null, onExtra: (() -> Unit)? = null,
-                              onClose: (() -> Unit)? = null,
+                              onClose: (() -> Unit)? = null, policyKey: String? = null,
                               onTap: () -> Unit): Boolean {
+        if (!policyAllows(kind, value, policyKey)) return false
         // The chip's purple, lighter so it reads on the card (Arpit,
         // 2026-09-30: "insert button text etc to be lighter colour purple so
         // it doesnt look unreadable"): over 3:1 in bold on either card.
@@ -3149,7 +3158,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }
         val chip = chipCard(kind, endPad, onClose) ?: return false
         // A tap anywhere but the ✕ does the verb.
-        chip.setOnClickListener { com.arpit.glyf.store.Funnel.mark(this, "first_answer"); onTap() }
+        chip.setOnClickListener { com.arpit.glyf.store.Funnel.mark(this, "first_answer"); policyUsed(); onTap() }
         // A lead glyph's ink sits 1.6dp inside its box; words start on their edge.
         val lead0 = px(10f - 1.6f)
         val text0 = px(10f)
@@ -3196,7 +3205,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 setColor(Color.argb(36, 0x7C, 0x5C, 0xFF))
             }
             setTag(com.arpit.glyf.R.id.qa_id, "strip:smart:extra")
-            setOnClickListener { onExtra() }
+            setOnClickListener { policyUsed(); onExtra() }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(26)).apply { leftMargin = dp(10) })
         placeChip(chip, kind)
         return true
@@ -3230,6 +3239,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (stripChipKind == kind) hideStripChip()
             return false
         }
+        if (!policyAllows(kind, values.joinToString(" · ") + if (temp) " · Temp" else "", null)) return false
         hideStripChip()
         val accent = stripAccent()
         val secondary = chipSecondary()
@@ -3242,7 +3252,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTint(secondary)
             setTag(com.arpit.glyf.R.id.qa_id, "strip:smart:close")
             contentDescription = "Dismiss"
-            setOnClickListener { onClose?.invoke() ?: dismissChip(key) }
+            setOnClickListener { policyDismissed(); onClose?.invoke() ?: dismissChip(key) }
         })
         fun card(id: String, said: String, onTap: () -> Unit) = MagicChip(this, chromeDark).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -3252,7 +3262,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setOnClickListener { onTap() }
         }
         for ((i, value) in values.take(3).withIndex()) {
-            val chip = card("strip:smart:choice:$i", value) { com.arpit.glyf.store.Funnel.mark(this, "first_answer"); onIndex(i) }
+            val chip = card("strip:smart:choice:$i", value) { com.arpit.glyf.store.Funnel.mark(this, "first_answer"); policyUsed(); onIndex(i) }
             // An address is known by its start ("alex.s219@exa…"): cut in the
             // middle, two emails read the same ("alex….com").
             val words = TextView(this).apply {
@@ -3267,7 +3277,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             row.addPart(ChipRow.Part(chip, words, temp = false))
         }
         if (temp) {
-            val chip = card("strip:smart:choice:temp", "Temp mail") { onTemp() }
+            val chip = card("strip:smart:choice:temp", "Temp mail") { policyUsed(); onTemp() }
             // iOS: the envelope in a 17dp box, 6dp before the word.
             chip.addView(ToolIcon(this, "tempmail", accent).apply { solid = true; weight = 1.8f },
                 LinearLayout.LayoutParams(dp(ChipRow.MARK.toInt()), dp(ChipRow.MARK.toInt())).apply {
@@ -3328,7 +3338,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setTint(secondary)
             setTag(com.arpit.glyf.R.id.qa_id, "strip:smart:close")
             contentDescription = "Dismiss"
-            setOnClickListener { if (onClose != null) onClose() else dismissChip(key) }
+            setOnClickListener { policyDismissed(); if (onClose != null) onClose() else dismissChip(key) }
         }, LinearLayout.LayoutParams(dp(36), dp(36)))
         // A hairline 10dp past the cross (so 2.5dp inside the ✕'s target),
         // then 10dp to the chip's words: a thumb going for them never lands
@@ -3371,6 +3381,111 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun chipKey(kind: String): String {
         val words = currentInputConnection?.getTextBeforeCursor(120, 0)?.toString()?.trim().orEmpty()
         return "$kind\u0000$words"
+    }
+
+    // MARK: Strip policy (docs/STRIP-POLICY.md; iOS twin: present())
+
+    /** Which chip may show and when, and what a ✕ or typing past one means
+     *  for the next (Arpit, 2026-11-04: "when the user crosses it, it comes
+     *  again and again ... it should not be irritating and it should be
+     *  useful at the same time"). */
+    private val stripPolicy by lazy {
+        StripPolicy(imePrefs.getString("stripPolicy", null)?.let { runCatching { JSONObject(it) }.getOrNull() })
+    }
+    /** When the text last changed (a key, a commit, the app). */
+    private var lastEditAt = 0L
+    /** The chip on screen, as the policy knows it. */
+    private var shownPolicy: Pair<StripPolicy.Kind, String>? = null
+
+    private fun nowSeconds() = System.currentTimeMillis() / 1000.0
+    private fun policyScope() = currentInputEditorInfo?.packageName ?: "app"
+    private fun policyFieldId() = currentInputEditorInfo?.let { "${it.packageName}/${it.fieldId}" } ?: ""
+    private fun saveStripPolicy() = imePrefs.edit().putString("stripPolicy", stripPolicy.json().toString()).apply()
+
+    /** Passwords get nothing; digit, phone and date boxes only what they are
+     *  for (a saved detail, a copy, a mail's code). */
+    private fun policyField(): StripPolicy.Field {
+        if (isSecureField()) return StripPolicy.Field.SECRET
+        val type = currentInputEditorInfo?.inputType ?: return StripPolicy.Field.NORMAL
+        return when (type and InputType.TYPE_MASK_CLASS) {
+            InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_PHONE, InputType.TYPE_CLASS_DATETIME -> StripPolicy.Field.CODE
+            else -> StripPolicy.Field.NORMAL
+        }
+    }
+
+    private fun policyKindOf(stripKind: String, value: String): StripPolicy.Kind? = when (stripKind) {
+        "voice" -> null   // the words just said, not an offer
+        "paste" -> StripPolicy.Kind.PASTE
+        "fill", "tempfield" -> StripPolicy.Kind.FILL
+        "tempmail" -> StripPolicy.Kind.MAIL
+        "event", "booking" -> StripPolicy.Kind.PLAN
+        "pay", "buy" -> StripPolicy.Kind.PAY
+        "action" -> if (value == "Add a Meet link") StripPolicy.Kind.PLAN else StripPolicy.Kind.AI
+        else -> if (stripSmartDetail?.startsWith("vault:") == true) StripPolicy.Kind.FILL else StripPolicy.Kind.ANSWER
+    }
+
+    /** May this chip show now? False leaves the strip to the words (and a
+     *  pause asks again). Draws nothing. */
+    private fun policyAllows(stripKind: String, value: String, policyKey: String?): Boolean {
+        val kind = policyKindOf(stripKind, value) ?: run { shownPolicy = null; return true }
+        if (stripTitleRow != null) return false
+        // The tour keeps the strip for the step it is coaching.
+        if (tourStep() != null) { shownPolicy = null; return true }
+        val id = "$stripKind|${stripSmartDetail.orEmpty()}|$value|${policyKey.orEmpty()}"
+        val now = nowSeconds()
+        fun no(): Boolean {
+            if (stripChip != null && stripChipKind != "voice") hideStripChip()
+            return false
+        }
+        if (!StripPolicy.allowed(kind, policyField()) || !stripPolicy.allows(kind, id, policyScope(), now)) return no()
+        val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString().orEmpty()
+        val word = WordContext.currentWord(before)
+        val policy = typingPolicy()
+        val midWord = word.isNotEmpty() && word.first().isLetter() && settings.optBoolean("candidates", true) &&
+            policy and TypingEngine.SUGGESTIONS != 0 && !WordContext.insideLinkOrAddress(before)
+        val typing = StripPolicy.Typing(
+            sinceEdit = (android.os.SystemClock.uptimeMillis() - lastEditAt) / 1000.0,
+            midWord = midWord,
+            undoOnOffer = word.isEmpty() && undoableCorrection(before) != null,
+        ) { engineSuggestions(word, before, policy)?.autocorrect != null }
+        return when (val t = stripPolicy.timing(kind, id, typing)) {
+            StripPolicy.Timing.Now -> {
+                stripPolicy.shown(kind, id, before, now)
+                shownPolicy = kind to id
+                true
+            }
+            is StripPolicy.Timing.Wait -> {
+                main.removeCallbacks(suggestionsTick)
+                main.postDelayed(suggestionsTick, (t.seconds * 1000).toLong() + 20)
+                no()
+            }
+            StripPolicy.Timing.Words -> no()
+        }
+    }
+
+    /** The ✕: this chip never comes back in this field, its kind rests in
+     *  this app for a while, and three in a day rest it everywhere. */
+    private fun policyDismissed() {
+        val (kind, id) = shownPolicy ?: return
+        shownPolicy = null
+        stripPolicy.dismissed(kind, id, policyScope(), nowSeconds())
+        saveStripPolicy()
+    }
+
+    /** Tapped: wanted, so typing past that kind starts counting over. */
+    private fun policyUsed() {
+        val (kind, _) = shownPolicy ?: return
+        shownPolicy = null
+        stripPolicy.used(kind, policyScope())
+        saveStripPolicy()
+    }
+
+    /** The copy now on the clipboard is done: used, waved off or typed past. */
+    private fun markClipDone() {
+        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val stamp = cm.primaryClipDescription?.timestamp ?: return
+        imePrefs.edit().putLong("clipDone", stamp).apply()
+        if (stripChipKind == "paste") hideStripChip()
     }
 
     /** Waved off: gone, and the strip shows what it would have without it. */
@@ -4182,6 +4297,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private val suggestionsTick = Runnable { updateSuggestions() }
 
     private fun scheduleSuggestions() {
+        lastEditAt = android.os.SystemClock.uptimeMillis()
         main.removeCallbacks(suggestionsTick)
         main.postDelayed(suggestionsTick, 30L)
     }
@@ -4207,6 +4323,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             showSuggestions(emptyList()); return
         }
         val before = ic.getTextBeforeCursor(96, 0)?.toString() ?: ""
+        // The chip that was up: typed past it? (docs/STRIP-POLICY.md)
+        stripPolicy.enter(policyFieldId())
+        when (stripPolicy.observe(before, policyScope(), nowSeconds())) {
+            is StripPolicy.Seen.Ignored -> saveStripPolicy()
+            // A copy shows once: typed past, it is done.
+            StripPolicy.Seen.PasteIgnored -> markClipDone()
+            else -> {}
+        }
         // A form asking for something already in the vault: offer it, one tap
         // fills it. Android tells a keyboard what the field wants (hint,
         // autofill hints, input type), so this is exact here. It comes before

@@ -151,6 +151,7 @@
 		8E6A5A1F5513539AC55DB2C0 /* scanlines.png in Resources */ = {isa = PBXBuildFile; fileRef = C3F6B051CAAD6F2855EDE3F4 /* scanlines.png */; };
 		8EE319B1516CC2D1684B7013 /* EmojiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAFFC06C09A0F4C0BC665EE /* EmojiData.swift */; };
 		8FDA6AA2F6697F472DBE6E53 /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7508C7D7086528DBA50605BC /* GlassTokens.swift */; };
+		90DA2BCE058EA3A5FCA82F0A /* StripPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D507802D7DF4BAC500A479D /* StripPolicyTests.swift */; };
 		91DC1E3D85291E4E37CCEFD3 /* Exo2-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = E17F996587E95315E69CCD65 /* Exo2-OFL.txt */; };
 		91E3A56EB8244E365BC6E1F6 /* RatesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235F44B4001D69C6942D575B /* RatesStore.swift */; };
 		922265267F1A3B7BEDDF5E3C /* MemoryLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C778BE7B854B6E1973814E1F /* MemoryLogger.swift */; };
@@ -166,6 +167,7 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		990316DEF9B02574D04CF58D /* StripPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33DE4772DF6464263C43DC4 /* StripPolicy.swift */; };
 		99BF66CC97C5F3CE3E814B27 /* EventParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB882BCA6F90D372D5921104 /* EventParse.swift */; };
 		99CD0A1E92AFD104D6057384 /* VaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00522630AB9AC3B92A56A844 /* VaultStore.swift */; };
 		9A04715B056388F956B067DC /* Orbitron-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = B2BF239E8B3B849AB0338A2E /* Orbitron-OFL.txt */; };
@@ -248,6 +250,7 @@
 		F09FB067BD51ED48A82C5790 /* theme-typewriter-letter.caf in Resources */ = {isa = PBXBuildFile; fileRef = 16A8D9B958FE3F0446402563 /* theme-typewriter-letter.caf */; };
 		F1D3EBC57AB8F7FF8D71C1D9 /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
 		F251CA78B70604399E32C957 /* VoiceLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F1BCB35DB203CD807BBC143 /* VoiceLink.swift */; };
+		F2B6BF0856ECD963DA025F88 /* StripPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33DE4772DF6464263C43DC4 /* StripPolicy.swift */; };
 		F2C8649A7B54E2C631BADFCD /* TokenLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34FC7350DC7DC4389B8DC303 /* TokenLookup.swift */; };
 		F3D4F6BB40657FF3C6CBF829 /* GlideTyping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B79EBEDC453CC0133DD54D /* GlideTyping.swift */; };
 		F3F70A9CD2E23F0F6A54E6AE /* GlyfScenarioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5EDE3074B7BAC0173FA466A /* GlyfScenarioUITests.swift */; };
@@ -421,6 +424,7 @@
 		79DC6165B130D41D60F2677F /* VoicePanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoicePanel.swift; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		7B45C4A1A9F02EC32C4EC037 /* EmojiBoard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmojiBoard.swift; sourceTree = "<group>"; };
+		7D507802D7DF4BAC500A479D /* StripPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StripPolicyTests.swift; sourceTree = "<group>"; };
 		7DA7727A8B67C7FC63CDA577 /* GlyfVoiceWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GlyfVoiceWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7F9E78CD043DC8AAFC3C7B62 /* GlyfMark.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfMark.swift; sourceTree = "<group>"; };
 		8234BE4687484A021A8CC2FA /* en.glyd */ = {isa = PBXFileReference; includeInIndex = 1; name = en.glyd; path = ../dict/en.glyd; sourceTree = SOURCE_ROOT; };
@@ -490,6 +494,7 @@
 		CA42DC9EEAB6229F4E9B75D6 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
 		CFAFFC06C09A0F4C0BC665EE /* EmojiData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmojiData.swift; sourceTree = "<group>"; };
 		D0F2DCC2EBB90B3C4A69FEA1 /* NotoCatalogue.generated.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotoCatalogue.generated.swift; sourceTree = "<group>"; };
+		D33DE4772DF6464263C43DC4 /* StripPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StripPolicy.swift; sourceTree = "<group>"; };
 		D3AE87935123DD4CCAADF82E /* WeatherStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WeatherStore.swift; sourceTree = "<group>"; };
 		D3C4806D658B589BB4822AC4 /* VoiceHost.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceHost.swift; sourceTree = "<group>"; };
 		D580A139E7DF9CB049153E03 /* KeyboardLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardLayout.swift; sourceTree = "<group>"; };
@@ -657,6 +662,7 @@
 				C7877A73125C76A28049E9F0 /* PhoneLookupsTests.swift */,
 				4D7C8FB1B5D5DB92871EE5DF /* KeyboardThemeTests.swift */,
 				AFD30BEB6E47B595C9ED5F4F /* VoiceLinkTests.swift */,
+				7D507802D7DF4BAC500A479D /* StripPolicyTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -800,6 +806,7 @@
 				D0F2DCC2EBB90B3C4A69FEA1 /* NotoCatalogue.generated.swift */,
 				13F9ECA34981E4B81725A00C /* NotoStickers.swift */,
 				34FC7350DC7DC4389B8DC303 /* TokenLookup.swift */,
+				D33DE4772DF6464263C43DC4 /* StripPolicy.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -1431,6 +1438,7 @@
 				7D93F1E3A583EAE4E2525168 /* VoicePanel.swift in Sources */,
 				27B73DD85E5FD2DD312CFFCF /* VoiceRibbon.swift in Sources */,
 				76562D9536259510FB866CCE /* HostAppID.swift in Sources */,
+				F2B6BF0856ECD963DA025F88 /* StripPolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1496,6 +1504,8 @@
 				0E9D10F6D850284D2533AA58 /* KeyFaces.swift in Sources */,
 				F251CA78B70604399E32C957 /* VoiceLink.swift in Sources */,
 				0ED9FB30A8AAF113CA501397 /* VoiceLinkTests.swift in Sources */,
+				990316DEF9B02574D04CF58D /* StripPolicy.swift in Sources */,
+				90DA2BCE058EA3A5FCA82F0A /* StripPolicyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

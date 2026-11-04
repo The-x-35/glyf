@@ -509,6 +509,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         super.viewWillAppear(animated)
         SettingsStore.invalidate()
         recentFixes = []   // another field: its corrections are not these
+        hostScopeRead = false   // maybe another app: read it again when asked
+        stripPolicy.restore(json: AppGroupStore.readJSON(name: Self.stripPolicyFile))
         // The translate strip belongs to the session it was opened in. Left
         // persisted it greets the next app as an unexplained empty band.
         if SettingsStore.current.translationHUD == true {
@@ -807,7 +809,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // "See you at noon." was on the clipboard, 2026-10-14).
         let unread = ClipboardStore.pasteboardHasNewContent()
         if unread { nameTheCopy() }
-        cachedPaste = ClipContext.isFresh()
+        cachedPaste = ClipContext.isFresh(within: StripPolicy.pasteFresh)
             // A sensitive copy isn't shown in the strip: the placeholder pastes it.
             ? ((unread ? nil : ClipboardStore.load().first.flatMap { $0.sensitive == true ? nil : $0.text })
                 ?? "Tap to paste what you copied")
@@ -842,6 +844,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     }
 
     private func scheduleCandidates() {
+        lastEditAt = CACurrentMediaTime()
+        chipRecheck?.cancel()
+        chipRecheck = nil
         candidatesWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -855,10 +860,20 @@ final class GlyfKeyboardViewController: UIInputViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: work)
     }
     private var suggestedFor = ""
-    /// The text a chip was dismissed on with its ✕: no chip comes back for it
-    /// until the text changes (Arpit, 2026-09-30: "add some button to
-    /// dismiss it").
-    private var dismissedTail: String?
+    /// Which chip may show and when, and what a ✕ or typing past one means
+    /// for the next (docs/STRIP-POLICY.md; Arpit, 2026-11-04: "when the user
+    /// crosses it, it comes again and again ... it should not be irritating
+    /// and it should be useful at the same time").
+    private lazy var stripPolicy = StripPolicy(json: AppGroupStore.readJSON(name: Self.stripPolicyFile))
+    private static let stripPolicyFile = "strip-policy.json"
+    /// When the text last changed (a key, a commit, the host).
+    private var lastEditAt: CFTimeInterval = 0
+    /// A chip waiting for the fingers to stop.
+    private var chipRecheck: DispatchWorkItem?
+    /// The app being typed in, read once per appearance (HostAppID; nil on
+    /// iOS 26.4+, then the field stands in for the app).
+    private var hostScope: String?
+    private var hostScopeRead = false
     /// A mail that landed at the temp address, and when: offered in the
     /// strip until it is used, put away or five minutes old (a code goes
     /// stale), and never again (each mail's chip shows once).
@@ -1741,27 +1756,30 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.showSmart(nil)
             return false
         }
+        let before = beforeContext ?? ""
+        // The chip that was up: typed past it? (docs/STRIP-POLICY.md)
+        if let doc = documentID { stripPolicy.enter(field: doc.uuidString) }
+        switch stripPolicy.observe(before: before, scope: policyScope, now: Date().timeIntervalSince1970) {
+        case .nothing: break
+        case .ignored: saveStripPolicy()
+        case .pasteIgnored:
+            // A copy shows once: typed past, it is done.
+            ClipContext.markDone()
+            cachedPaste = nil
+            lastClipProbe = 0
+        }
         // A mail that just landed at the temp address comes first: its code
         // is what the field is waiting for.
         if let mail = mailChip {
             if Date().timeIntervalSince(mail.at) < 300, tourStep == nil {
                 cancelSuggestion()
-                toolbar.showSmart(mail.chip)
-                return true
+                if present(mail.chip) { return true }
+            } else {
+                mailChip = nil
             }
-            mailChip = nil
         }
-        let before = beforeContext ?? ""
         let tail = String(before.suffix(120))
         notePhrases(before)
-        if let gone = dismissedTail {
-            if gone == tail.trimmingCharacters(in: .whitespacesAndNewlines) {
-                cancelSuggestion()
-                toolbar.showSmart(nil)
-                return false
-            }
-            dismissedTail = nil
-        }
         // Something just copied rides in the strip as one chip, never as a
         // second row: history's copy when we already have it, otherwise the
         // offer itself (tapping reads, which is the moment iOS asks).
@@ -1877,8 +1895,119 @@ final class GlyfKeyboardViewController: UIInputViewController {
         } else {
             cancelSuggestion()
         }
-        toolbar.showSmart(chip)
-        return chip != nil
+        return present(chip)
+    }
+
+    // MARK: Strip policy (docs/STRIP-POLICY.md)
+
+    /// Shows the chip if the policy lets it come now; otherwise the word
+    /// slots keep the strip (and a pause brings the chip back for another look).
+    private func present(_ chip: Smart.Chip?) -> Bool {
+        guard let chip else {
+            toolbar.showSmart(nil)
+            return false
+        }
+        let kind = Self.policyKind(chip)
+        let id = Self.policyID(chip)
+        let now = Date().timeIntervalSince1970
+        guard StripPolicy.allowed(kind, in: policyField),
+              stripPolicy.allows(kind, id: id, scope: policyScope, now: now) else {
+            toolbar.showSmart(nil)
+            return false
+        }
+        let before = beforeContext
+        let word = WordTracker.currentWord(beforeContext: before)
+        let policy = typingPolicy
+        let midWord = !word.isEmpty && (word.first?.isLetter ?? false)
+            && SettingsStore.current.candidates && policy.contains(.suggestions)
+            && !WordTracker.insideLinkOrAddress(beforeContext: before)
+        let typing = StripPolicy.Typing(
+            sinceEdit: CACurrentMediaTime() - lastEditAt,
+            midWord: midWord,
+            undoOnOffer: word.isEmpty && undoableCorrection(before: before) != nil,
+            fixPending: { [weak self] in
+                self?.suggestions(for: word, before: before, policy: policy)?.autocorrect != nil
+            })
+        switch stripPolicy.timing(kind, id: id, typing: typing) {
+        case .now:
+            toolbar.showSmart(chip)
+            stripPolicy.shown(kind, id: id, before: before ?? "", now: now)
+            return true
+        case .wait(let seconds):
+            toolbar.showSmart(nil)
+            recheckChip(after: seconds)
+            return false
+        case .words:
+            toolbar.showSmart(nil)
+            return false
+        }
+    }
+
+    private func recheckChip(after seconds: TimeInterval) {
+        chipRecheck?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.chipRecheck = nil
+            self?.updateCandidates()
+        }
+        chipRecheck = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.02, execute: work)
+    }
+
+    /// A chip tapped: wanted, so typing past that kind starts counting over.
+    private func noteChipUsed(_ chip: Smart.Chip) {
+        stripPolicy.used(Self.policyKind(chip), scope: policyScope)
+        saveStripPolicy()
+    }
+
+    private func saveStripPolicy() {
+        AppGroupStore.writeJSON(stripPolicy.json, name: Self.stripPolicyFile)
+    }
+
+    /// The app (HostAppID, unless voiceReturn is off), else this field.
+    private var policyScope: String {
+        if !hostScopeRead {
+            hostScopeRead = true
+            hostScope = SettingsStore.current.voiceReturn == false ? nil : HostAppID.read(from: self)
+        }
+        if let hostScope { return hostScope }
+        return "doc:" + (documentID?.uuidString ?? "none")
+    }
+
+    /// Passwords get nothing; codes, cards and digit pads only what they
+    /// are for (a saved detail, a copy, a mail's code).
+    private var policyField: StripPolicy.Field {
+        if isSecureField { return .secret }
+        if let type = fieldContentType {
+            if [.password, .newPassword].contains(type) { return .secret }
+            if [.oneTimeCode, .creditCardNumber].contains(type) { return .code }
+        }
+        if keyboardView.context.isPad { return .code }
+        switch textDocumentProxy.keyboardType {
+        case .numberPad?, .decimalPad?, .phonePad?, .asciiCapableNumberPad?: return .code
+        default: return .normal
+        }
+    }
+
+    static func policyKind(_ chip: Smart.Chip) -> StripPolicy.Kind {
+        if chip.copiedText != nil { return .paste }
+        switch chip {
+        case .calc, .money, .convert: return .answer
+        case .vault, .details, .tempAddress: return .fill
+        case .paste: return .paste
+        case .pay, .buy: return .pay
+        case .action(_, _, let intent): return intent == "meet" ? .plan : .ai
+        case .event, .booking: return .plan
+        case .tempMail: return .mail
+        }
+    }
+
+    /// The same chip for the same text: its kind and what it offers (an AI
+    /// chip also by what it would ask).
+    static func policyID(_ chip: Smart.Chip) -> String {
+        if case .action(let label, let query, let intent) = chip {
+            return "ai|\(intent)|\(label)|\(query)"
+        }
+        return "\(chipKind(chip))|\(chip.value)"
     }
 
     /// An email chip gets a Temp mail part: your email and Temp, or two of
@@ -3362,6 +3491,14 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// marked done and never offered again — it is still in the clipboard
     /// panel if it turns out it was wanted after all.
     func toolbarSmartDismissed() {
+        // This chip never comes back in this field, its kind rests in this
+        // app for a while, and three in a day rest it everywhere
+        // (docs/STRIP-POLICY.md).
+        if let chip = toolbar.smartChip {
+            stripPolicy.dismissed(Self.policyKind(chip), id: Self.policyID(chip),
+                                  scope: policyScope, now: Date().timeIntervalSince1970)
+            saveStripPolicy()
+        }
         if case .tempMail? = toolbar.smartChip {
             // Each mail's chip shows once: put away, it is gone.
             mailChip = nil
@@ -3375,10 +3512,6 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             // the chip comes straight back until the next key.
             cachedPaste = nil
             lastClipProbe = 0
-        } else {
-            // Any other chip (a sum, money, an AI answer, a detail, a plan)
-            // stays gone for this text; the next change can bring one back.
-            dismissedTail = (beforeContext ?? "").suffix(120).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         suggestedChip = nil
         suggestedFor = ""
@@ -3387,6 +3520,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     }
 
     func toolbarSmartTapped(_ chip: Smart.Chip) {
+        noteChipUsed(chip)
         Funnel.mark("first_answer")
         switch chip {
         case .tempMail(let id, _, let code):
@@ -3533,6 +3667,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// its chip back on every empty field until something else is copied.
     /// The tour still practises on the app's sheet, never for real.
     func toolbarSmartExtraTapped(_ chip: Smart.Chip) {
+        noteChipUsed(chip)
         switch chip {
         case .pay(let address, let amount, let token, _):
             ClipContext.markDone()
@@ -3565,6 +3700,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// One part of a details chip: a saved detail types itself, as its own
     /// chip would; Temp mail types a temp address.
     func toolbarSmartChoiceTapped(_ chip: Smart.Chip, index: Int) {
+        noteChipUsed(chip)
         Funnel.mark("first_answer")
         if case .convert(let c) = chip {
             guard index < c.results.count else { return }
