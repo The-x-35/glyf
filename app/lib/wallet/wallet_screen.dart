@@ -9,6 +9,8 @@ import 'send_screen.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
 import 'wallet_flow.dart';
+import '../evm/evm_wallet.dart';
+import '../evm/evm_wallet_screen.dart';
 
 /// Profile → Wallet: connect a wallet, see what's in it, send or buy. On a
 /// phone with a Mobile Wallet Adapter wallet (the Seeker's Seed Vault,
@@ -38,6 +40,7 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     WalletFlow.link.addListener(_refresh);
     WalletFlow.load().then((_) => _refresh());
+    EvmWallet.load();
     Mwa.isAvailable().then((here) {
       if (mounted && here) setState(() => _mwaHere = true);
     });
@@ -105,6 +108,8 @@ class _WalletScreenState extends State<WalletScreen> {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
           children: [
             if (link == null) _connectCard() else _walletCard(link),
+            const SizedBox(height: 18),
+            _ethereumRow(),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -253,6 +258,42 @@ class _WalletScreenState extends State<WalletScreen> {
       ],
     );
   }
+
+  /// The Glyf wallet: Ethereum and its L2s, Whitechain, Arkiv.
+  Widget _ethereumRow() => Semantics(
+    identifier: 'wallet:ethereum',
+    button: true,
+    child: GestureDetector(
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EvmWalletScreen())),
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Ethereum', style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
+                  SizedBox(height: 2),
+                  Text('Base, Arbitrum, Optimism, Whitechain',
+                      style: TextStyle(color: Glass.inkSoft, fontSize: 13.5)),
+                ],
+              ),
+            ),
+            ValueListenableBuilder<String?>(
+              valueListenable: EvmWallet.address,
+              builder: (_, a, _) => Text(
+                a == null ? 'Set up' : '${a.substring(0, 6)}…${a.substring(a.length - 4)}',
+                style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')]),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.chevron_right_rounded, color: Glass.inkSoft),
+          ],
+        ),
+      ),
+    ),
+  );
 
   Widget _balance(String symbol, String amount, String usd) => Container(
     padding: const EdgeInsets.all(12),

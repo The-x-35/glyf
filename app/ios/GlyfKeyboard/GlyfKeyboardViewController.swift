@@ -1257,6 +1257,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
         guard Date().timeIntervalSince1970 - at < 5 * 60 else { return }
         let detail = obj["detail"] as? String
         KeyboardToast.show(in: content, text: detail.map { "\(title) · \($0)" } ?? title)
+        // A Whitechain request made in the app: its pay link goes in the
+        // chat it was asked for in, once.
+        if let insert = obj["insert"] as? String, !insert.isEmpty, !isSecureField {
+            hostInsert(Self.spaced(insert, after: beforeContext))
+        }
     }
 
     private func showTonesPopup() {

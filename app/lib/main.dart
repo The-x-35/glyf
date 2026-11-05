@@ -14,6 +14,8 @@ import 'wallet/buy_screen.dart';
 import 'wallet/crypto_pay.dart';
 import 'wallet/pay_launch_screen.dart';
 import 'wallet/pay_status_screen.dart';
+import 'evm/evm_wallet_screen.dart';
+import 'evm/trade_screen.dart';
 import 'wallet/send_screen.dart';
 import 'wallet/wallet_screen.dart';
 import 'wallet/wallet_flow.dart';
@@ -140,6 +142,16 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       // Phantom's answer to Connect or to a payment: finished on its own
       // screen, which sends the signed payment on.
       _push('phantom', (_) => PayStatusScreen(reply: uri), link: link);
+      return;
+    }
+    if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('trade') == true) {
+      // The keyboard read a trade and quoted it: the Glyf wallet signs it here.
+      final q = Uri.parse(uri.queryParameters['path']!).queryParameters;
+      _push('trade', (_) => TradeScreen(query: q), link: link);
+      return;
+    }
+    if (uri.host == 'open' && uri.queryParameters['path'] == 'evm-wallet') {
+      _push('evm-wallet', (_) => const EvmWalletScreen(), replace: false);
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('pay') == true) {
