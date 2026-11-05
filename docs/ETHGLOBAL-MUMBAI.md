@@ -27,13 +27,19 @@ Glyf enters the **Continuity Track** (already selected on the ETHGlobal project 
 | **1inch** | Build an Aqua App, Continuity, $2,000 | A DeFi position built on Aqua/SwapVM contracts. | **Not a fit.** That's a protocol build, not a keyboard. |
 | **Chainlink** | none for continuity | CCIP inside our own contracts. | **Not eligible.** |
 
-## Recommended picks (3)
+## Picks (decided by Arpit, 6 Nov)
 
-1. **Definitive:** the best fit, they already like Glyf, and natural-language trading is the thing they asked for.
-2. **Uniswap:** four equal places, and swaps on Ethereum and the L2s are the core of "Glyf on Ethereum".
-3. **World:** two continuity prizes from one pick, and the human check before money moves is a real product feature, not a login screen.
+1. **Definitive (Flash):** he showed them Glyf and they liked it. Natural-language trading is the thing they asked for.
+2. **Uniswap:** he showed them too. Swaps on Ethereum and the L2s are the natural integration.
+3. **Whitechain:** USDT send and request from the keyboard, with a small payment-request contract on Whitechain Sepolia and onchain receipts. It reuses the EVM wallet, payments and names built for Uniswap.
 
-ENS and SNS name resolution ("pay arpit.eth", "pay arpit.sol") gets built anyway, because both Definitive and Uniswap demos need it. It just isn't one of the three picks. Arkiv is the swap-in if World's integration turns out to fight a native app.
+Ruled out:
+- **World:** Arpit doesn't want it.
+- **Hedera:** its continuity prize needs a project already on Hedera.
+- **ENS:** plain resolution counts as cosmetic, and subnames need a mainnet .eth purchase.
+- **Arkiv:** a separate feature with five write-up files, too much for the time left.
+
+ENS and SNS resolution still get built for "pay arpit.eth", "pay arpit.sol".
 
 ## What gets built (shared pieces first)
 
@@ -42,8 +48,10 @@ ENS and SNS name resolution ("pay arpit.eth", "pay arpit.sol") gets built anyway
 3. **Intent parser.** Phrases like "swap 0.05 eth to usdc on base", "sell my eth if it drops below 3000", "take profit at 4500" and "buy $20 of eth over a day" are turned into a structured order and shown as a confirm card. Nothing moves without the wallet's signature.
 4. **Uniswap swap.** Trading API `/quote`, then `/swap` (plus an approval or Permit2 when needed), then the wallet sends.
 5. **Flash orders.** `/quote` returns the payload to sign: EIP-712 on EVM, an Ed25519 message on Solana through Phantom. Then `/order`, and `/orders` is polled. The result comes back to the keyboard as a toast. DCA isn't a Flash order type, so "every day" becomes a TWAP over the period.
-6. **World ID check.** Before an AI-built order or payment over a set amount, IDKit runs and our server validates the proof. The demo shows both an approved and a refused path.
-7. **Submission files.** README "before and during" section, `FEEDBACK.md` (Uniswap), the Flash and World integration notes, the AI-use section, and the demo video. Arpit records the video in his own voice.
+6. **Whitechain USDT.** Whitechain Sepolia (chain 1874) is added to the wallet. A `GlyfPayRequest` contract is deployed and verified on the Whitechain explorer: a request has an amount, a payee and a memo, and paying it settles in test USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7` and emits a receipt.
+   - "request 20 usdt" in a chat inserts a link to the request; the other person taps it and pays from their wallet. Both keyboards then show the receipt.
+   - Needed for judging: `WHITECHAIN_FEEDBACK.md`, a README line on why onchain settlement, and a before-and-during section.
+7. **Submission files.** README "before and during" section, `FEEDBACK.md` (Uniswap), the Flash and Whitechain integration notes, the AI-use section, and the demo video. Arpit records the video in his own voice.
 
 ## Keyboard ideas beyond the brief
 
@@ -62,5 +70,5 @@ ENS and SNS name resolution ("pay arpit.eth", "pay arpit.sol") gets built anyway
 - **Public repo:** ETHGlobal needs one, and `The-x-35/glyf` is private. Pick one:
   - make it public (the history was scrubbed on 16 Sep, but `.env`-style files still need a check first), or
   - publish only this branch's new code as a public repo.
-- **Keys:** a Flash API key (Definitive), a Uniswap API key (developers.uniswap.org), a World developer-portal app id, and a Reown project id if WalletConnect is OK.
+- **Keys:** a Flash API key (Definitive), a Uniswap API key (developers.uniswap.org), and a Reown project id if WalletConnect is OK.
 - **Funds for the demo:** a few dollars on Base (and SOL for the Solana Flash order) in your own wallet. Flash and Uniswap execute on mainnet, and you sign every transaction.
