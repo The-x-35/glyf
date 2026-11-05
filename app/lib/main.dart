@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 
 import 'core/auth.dart';
@@ -14,6 +15,7 @@ import 'wallet/buy_screen.dart';
 import 'wallet/crypto_pay.dart';
 import 'wallet/pay_launch_screen.dart';
 import 'wallet/pay_status_screen.dart';
+import 'evm/evm_wallet.dart';
 import 'evm/evm_wallet_screen.dart';
 import 'evm/trade_screen.dart';
 import 'wallet/send_screen.dart';
@@ -95,6 +97,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     Billing.listen();
     WalletFlow.load();
     WalletFlow.loadEnabled();
+    _loadEvmWallet();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(
@@ -129,6 +132,16 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
         CryptoPay.resume();
       }
     }
+  }
+
+  /// The Glyf wallet's address reaches the keyboard on every launch; UI
+  /// tests make one with `--glyf-test-evm-wallet` (never in a release build).
+  Future<void> _loadEvmWallet() async {
+    if (!kReleaseMode && (await GlyfBridge.launchArgs()).contains('--glyf-test-evm-wallet')) {
+      await EvmWallet.ensure();
+      return;
+    }
+    await EvmWallet.load();
   }
 
   Future<void> _handleLink(String link) async {

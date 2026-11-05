@@ -371,32 +371,40 @@ final class TradeSurface: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let pad: CGFloat = 12
-        let w = bounds.width - pad * 2
-        let cardH: CGFloat = 86
-        var y: CGFloat = 10
-        topCard.frame = CGRect(x: pad, y: y, width: w, height: cardH)
-        y += cardH + 6
-        bottomCard.frame = CGRect(x: pad, y: y, width: w, height: cardH)
-        y += cardH + 4
-        let buttonH: CGFloat = 46
-        let buttonY = bounds.height - buttonH - 10
-        metaLabel.frame = CGRect(x: pad, y: y, width: w, height: max(16, buttonY - y))
-        goButton.frame = CGRect(x: pad, y: buttonY, width: w, height: buttonH)
-        layoutCard(topCard, key: topKey, right: topHeld, value: topAmount, sub: topUSD, pill: topToken)
-        layoutCard(bottomCard, key: bottomKey, right: nil, value: bottomValue, sub: bottomSub, pill: bottomToken)
+        // The Buy panel's numbers (PaySurface.layoutBuy), so the two read as
+        // one design: 10pt margins, a 42pt button, the meta line under it
+        // when there's room, the two cards sharing what's left.
+        let x: CGFloat = 10
+        let cw = bounds.width - 20
+        let goH: CGFloat = 42
+        let showMeta = bounds.height >= 236
+        metaLabel.isHidden = !showMeta
+        let bottom = bounds.height - 8 - (showMeta ? 19 : 0)
+        goButton.frame = CGRect(x: x, y: bottom - goH, width: cw, height: goH)
+        if showMeta { metaLabel.frame = CGRect(x: x, y: goButton.frame.maxY + 4, width: cw, height: 15) }
+        let top: CGFloat = 6
+        let gap: CGFloat = 6
+        let room = goButton.frame.minY - 8 - top - gap
+        let topH = min(84, max(66, (room * 0.53).rounded()))
+        let bottomH = max(56, room - topH)
+        topCard.frame = CGRect(x: x, y: top, width: cw, height: topH)
+        bottomCard.frame = CGRect(x: x, y: topCard.frame.maxY + gap, width: cw, height: bottomH)
+        layoutCard(topCard, key: topKey, right: topHeld, value: topAmount, sub: topUSD, pill: topToken, pillH: 32)
+        layoutCard(bottomCard, key: bottomKey, right: nil, value: bottomValue, sub: bottomSub, pill: bottomToken, pillH: 28)
     }
 
-    private func layoutCard(_ card: UIView, key: UILabel, right: UILabel?, value: UILabel, sub: UILabel, pill: UILabel) {
-        let inset: CGFloat = 14
-        let w = card.bounds.width - inset * 2
-        key.frame = CGRect(x: inset, y: 10, width: w * 0.6, height: 16)
-        right?.frame = CGRect(x: inset + w * 0.4, y: 10, width: w * 0.6, height: 16)
+    private func layoutCard(_ card: UIView, key: UILabel, right: UILabel?, value: UILabel, sub: UILabel,
+                            pill: UILabel, pillH: CGFloat) {
+        let cw = card.bounds.width
+        let h = card.bounds.height
+        key.frame = CGRect(x: 12, y: 8, width: cw * 0.6, height: 16)
+        right?.frame = CGRect(x: cw * 0.4, y: 7, width: cw * 0.6 - 10, height: 18)
         let textW = (pill.text as NSString?)?.size(withAttributes: [.font: pill.font!]).width ?? 0
-        let pillWidth = min(130, max(64, textW + 24))
-        pill.frame = CGRect(x: card.bounds.width - inset - pillWidth, y: 32, width: pillWidth, height: 30)
-        value.frame = CGRect(x: inset, y: 29, width: w - pillWidth - 10, height: 32)
-        sub.frame = CGRect(x: inset, y: 62, width: w, height: 16)
+        let pw = min(140, max(56, textW + 24))
+        pill.frame = CGRect(x: cw - 10 - pw, y: 8 + 16 + (h - 24 - pillH) / 2, width: pw, height: pillH)
+        let valueH: CGFloat = pillH == 32 ? 30 : 28
+        value.frame = CGRect(x: 12, y: pillH == 32 ? 26 : 24, width: pill.frame.minX - 20, height: valueH)
+        sub.frame = CGRect(x: 12, y: value.frame.maxY, width: cw - 24, height: 15)
     }
 }
 

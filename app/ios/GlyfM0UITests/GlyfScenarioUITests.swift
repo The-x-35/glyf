@@ -2549,6 +2549,49 @@ final class GlyfScenarioUITests: XCTestCase {
         return (lum, dot, violet)
     }
 
+    // MARK: - ETHGlobal Mumbai: trades in words
+
+    /// S300: each kind of trade typed in plain words gets its chip, and the
+    /// chip opens the trade panel with the right cards and button. Quotes
+    /// come from a local branch server when TEST_RUNNER_GLYF_SESSION is set.
+    func testS300_TradesInWordsOpenTheTradePanel() throws {
+        var args = ["--glyf-test-evm-wallet"]
+        if let token = ProcessInfo.processInfo.environment["GLYF_SESSION"] { args.append("--glyf-test-session=\(token)") }
+        open(args)
+        let cases: [(typed: String, chip: String, go: String, shot: String)] = [
+            ("swap 0.05 eth to usdc on base", "Swap 0.05 ETH → USDC", "Swap", "trade-swap"),
+            ("sell my eth if it drops below 3000", "Stop-loss ETH at $3,000", "Place stop-loss", "trade-stoploss"),
+            ("buy $100 of eth if it dips below 2800", "Buy ETH at $2,800", "Place limit order", "trade-limit"),
+            ("my eth take profit 4500 stop loss 3000", "TP $4,500", "Set bracket", "trade-bracket"),
+            ("protect my eth with a 5% trail", "Trail ETH by 5%", "Set trailing stop", "trade-trail"),
+            ("buy $20 of eth every day for a week", "over a week", "Start TWAP", "trade-twap"),
+            ("move 50 usdc from base to arbitrum", "Move 50 USDC to Arbitrum", "Move to Arbitrum", "trade-bridge"),
+            ("send 5 usdc to vitalik.eth", "Send 5 USDC to vitalik.eth", "Send", "trade-send"),
+            ("request 20 usdt", "Request 20 USDT", "Create request", "trade-request"),
+        ]
+        var seen: [String] = []
+        for c in cases {
+            clear()
+            type(c.typed)
+            let chip = wait("strip:smart", 6)
+            let label = chip?.label ?? "none"
+            seen.append("\(c.typed) → \(label)")
+            XCTAssertTrue(label.contains(c.chip), "\(c.typed): the strip shows '\(label)'")
+            guard let chip else { continue }
+            chip.tap()
+            guard let go = wait("trade:go", 5) else { XCTFail("\(c.typed): no trade panel"); continue }
+            // The quote or the price lands, or says it couldn't.
+            sleep(3)
+            XCTAssertTrue(go.label.hasPrefix(c.go) || go.label.contains("Glyf wallet") || go.label == "Name not found",
+                          "\(c.typed): the button says '\(go.label)'")
+            keepScreenshot(c.shot)
+            seen.append("  value '\(el("trade:value").label)' · sub '\(el("trade:sub").label)' · go '\(go.label)'")
+            tap("toolbar:close")
+            sleep(1)
+        }
+        note(seen.joined(separator: "\n"))
+    }
+
     private func keepScreenshot(_ name: String) {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.lifetime = .keepAlways
