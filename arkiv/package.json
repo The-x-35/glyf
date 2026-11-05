@@ -1,0 +1,15 @@
+{
+  "name": "glyf-arkiv",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "keygen": "node keygen.mjs",
+    "vectors": "node vectors.mjs",
+    "test": "node vectors.mjs",
+    "ref": "node ref.mjs"
+  },
+  "dependencies": {
+    "@arkiv-network/sdk": "1.0.1",
+    "viem": "2.57.16"
+  }
+}
