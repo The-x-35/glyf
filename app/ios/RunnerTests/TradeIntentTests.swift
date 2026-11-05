@@ -156,6 +156,16 @@ final class TradeIntentTests: XCTestCase {
         }
     }
 
+    func testARequestLinkInTheChatOffersPay() {
+        let link = "Pay me 20 USDT: https://www.tryglyf.com/pay?chain=1874&contract=0x2a1cB3CDA2d72e02d4BaF04C809145c0869975D7&id=7"
+        XCTAssertEqual(Smart.payRequestPath(in: link),
+                       "pay-request?chain=1874&contract=0x2a1cB3CDA2d72e02d4BaF04C809145c0869975D7&id=7")
+        guard case .payLink? = Smart.chip(for: link, fields: []) else { return XCTFail("no Pay chip") }
+        // Copied, with nothing typed yet: the same chip.
+        guard case .payLink? = Smart.chip(for: "", fields: [], paste: link) else { return XCTFail("no Pay chip for a copy") }
+        XCTAssertNil(Smart.payRequestPath(in: "https://www.tryglyf.com/pay"))
+    }
+
     func testOrdinaryWordsAreNoTrade() {
         for text in ["swap shifts with sam", "I'll buy dinner tonight", "sell the old bike",
                      "send me the doc", "stop it", "I want to take profit from this lesson"] {

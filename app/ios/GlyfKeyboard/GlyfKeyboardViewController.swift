@@ -1826,7 +1826,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             switch chip {
             // A copied address still pastes; it just isn't paid.
             case .pay(_, _, _, let copied?)?, .buy(_, _, _, let copied?)?: chip = .paste(text: copied)
-            case .pay?, .buy?, .trade?: chip = nil
+            case .pay?, .buy?, .trade?, .payLink?: chip = nil
             case .money(let shown, let insert, _)?: chip = .money(shown: shown, insert: insert, buy: nil)
             default: break
             }
@@ -2004,7 +2004,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .calc, .money, .convert: return .answer
         case .vault, .details, .tempAddress: return .fill
         case .paste: return .paste
-        case .pay, .buy, .trade: return .pay
+        case .pay, .buy, .trade, .payLink: return .pay
         case .action(_, _, let intent): return intent == "meet" ? .plan : .ai
         case .event, .booking: return .plan
         case .tempMail: return .mail
@@ -2044,6 +2044,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .pay: return "pay"
         case .buy: return "buy"
         case .trade(let t): return "trade|\(t.title)"
+        case .payLink(let path): return "paylink|\(path)"
         case .action: return "action"
         case .event: return "event"
         case .booking: return "booking"
@@ -3601,6 +3602,20 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             return
         case .pay, .buy, .trade:
             toolbarSmartExtraTapped(chip)
+            return
+        case .payLink(let path):
+            // The request is read from the chain and paid in the app.
+            noteChipUsed(chip)
+            ClipContext.markDone()
+            cachedPaste = nil
+            toolbar.showSmart(nil)
+            let parts = path.split(separator: "?", maxSplits: 1)
+            var query: [String: String] = [:]
+            for pair in (parts.count > 1 ? parts[1] : "").split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1)
+                if kv.count == 2 { query[String(kv[0])] = String(kv[1]) }
+            }
+            openApp(path: String(parts[0]), query: query)
             return
         default:
             break
