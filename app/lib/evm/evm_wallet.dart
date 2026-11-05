@@ -39,7 +39,7 @@ abstract final class EvmWallet {
     final existing = await load();
     if (existing != null) return existing;
     final key = EthPrivateKey.createRandom(Random.secure());
-    await GlyfBridge.walletSecretSave(_keyName, bytesToHex(key.privateKey, padToEvenLength: true));
+    await GlyfBridge.walletSecretSave(_keyName, _hex32(key));
     _key = key;
     address.value = key.address.hexEip55;
     await _share();
@@ -58,6 +58,12 @@ abstract final class EvmWallet {
   /// The keyboard reads the address from shared settings: balances, its own
   /// address getting no Send chip, and whose requests are whose.
   static Future<void> _share() => GlyfBridge.updateSharedSettings((s) => s..['evmAddress'] = address.value);
+
+  /// The key as exactly 32 bytes: web3dart's own bytes carry a sign byte
+  /// (33 long) whenever the top bit is set.
+  static String _hex32(EthPrivateKey key) => key.privateKeyInt.toRadixString(16).padLeft(64, '0');
+
+  static Uint8List get _keyBytes => hexToBytes(_hex32(_signer));
 
   static EthPrivateKey get _signer {
     final key = _key;
@@ -91,7 +97,7 @@ abstract final class EvmWallet {
 
   /// EIP-712 typed data (Flash orders, Permit2), as a 0x signature.
   static String signTypedData(Object typedData) => EthSigUtil.signTypedData(
-        privateKeyInBytes: _signer.privateKey,
+        privateKeyInBytes: _keyBytes,
         jsonData: typedData is String ? typedData : jsonEncode(typedData),
         version: TypedDataVersion.V4,
       );

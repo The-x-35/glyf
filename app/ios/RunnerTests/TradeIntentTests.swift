@@ -110,6 +110,9 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(i.amount, "140")
         XCTAssertEqual(i.durationSeconds, 7 * 86_400)
         XCTAssertEqual(i.title, "Buy $140 of ETH over a week")
+        // Autocorrect's "everyday", and "daily" for every day.
+        XCTAssertEqual(read("buy $20 of eth everyday for a week")?.amount, "140")
+        XCTAssertEqual(read("dca $10 into eth daily for 5 days")?.durationSeconds, 5 * 86_400)
         let over = try XCTUnwrap(read("dca $300 into eth over 3 days"))
         XCTAssertEqual(over.amount, "300")
         XCTAssertEqual(over.durationSeconds, 3 * 86_400)

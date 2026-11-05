@@ -288,7 +288,13 @@ struct TradeIntent: Equatable {
 
     // "buy $20 of eth every day for a week", "dca $50 into eth weekly for 4 weeks",
     // "buy $100 of eth over a day"
-    private static func twap(_ t: String) -> TradeIntent? {
+    private static func twap(_ text: String) -> TradeIntent? {
+        // Autocorrect makes "every day" "everyday"; people say "daily" too.
+        var t = text
+        for (said, meant) in [("everyday", "every day"), ("daily", "every day"), ("weekly", "every week"),
+                              ("hourly", "every hour")] {
+            t = t.replacingOccurrences(of: #"\b\#(said)\b"#, with: meant, options: [.regularExpression, .caseInsensitive])
+        }
         let units = #"(hour|day|week)s?"#
         if let m = match(start + #"(?:buy|dca)\s+\$"# + num + #"\s+(?:of|worth\s+of|into|in)\s+"# + sym + #"\s+(?:every|each|a|per)\s+"# + units + #"(?:\s+for\s+(a|an|one|two|three|four|five|six|seven|\d+)\s+"# + units + ")?" + chainPart + end, t) {
             guard let each = Double(amount(m[1]) ?? ""), let asset = symbol(m[2]) else { return nil }

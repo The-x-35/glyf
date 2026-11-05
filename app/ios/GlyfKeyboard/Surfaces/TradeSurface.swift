@@ -186,19 +186,22 @@ final class TradeSurface: UIView {
     }
 
     private func quote(sell: String, buy: String, amount: String?, usd: Bool, buyAmount: String?) {
-        var body: [String: Any] = ["chain": intent.chainName, "sell": sell, "buy": buy]
-        if let buyAmount { body["amount"] = buyAmount; body["side"] = "buy" }
-        else if let amount { body["amount"] = amount; body["side"] = "sell" }
-        else { body["amount"] = "1"; body["side"] = "sell" }
-        if usd { body["side"] = "sell" }
+        // "buy 0.1 eth": what 0.1 ETH costs, asked the other way round.
+        let reversed = buyAmount != nil
+        let body: [String: Any] = ["chain": intent.chainName,
+                                   "sell": reversed ? buy : sell, "buy": reversed ? sell : buy,
+                                   "amount": buyAmount ?? amount ?? "1"]
         BackendClient.shared.evmJSON(path: "/uniswap/quote", body: body) { [weak self] obj in
             guard let self else { return }
             self.asking = false
-            if let obj, obj["error"] == nil {
-                self.quoteOut = Self.number(obj["amountOut"]) ?? Self.number((obj["buy"] as? [String: Any])?["amount"])
-                self.quoteInUSD = Self.number(obj["sellUsd"]) ?? Self.number(obj["amountInUsd"])
-                self.quoteOutUSD = Self.number(obj["buyUsd"]) ?? Self.number(obj["amountOutUsd"])
-                if amount == nil, buyAmount == nil, !usd { self.quoteOut = nil }   // "all": the app knows how much
+            if let obj, obj["amountOut"] != nil {
+                self.quoteOut = Self.number(obj["amountOut"])
+                let inUSD = Self.number(obj["sellUsd"]) ?? Self.number((obj["sell"] as? [String: Any])?["usd"])
+                let outUSD = Self.number(obj["buyUsd"]) ?? Self.number((obj["buy"] as? [String: Any])?["usd"])
+                self.quoteInUSD = reversed ? outUSD : inUSD
+                self.quoteOutUSD = reversed ? inUSD : outUSD
+                // "All": the app knows how much once it reads the balance.
+                if amount == nil, !reversed, !usd { self.quoteOut = nil; self.quoteInUSD = nil }
             }
             self.render()
         }
@@ -209,7 +212,7 @@ final class TradeSurface: UIView {
         BackendClient.shared.evmJSON(path: "/uniswap/quote",
                                      body: ["chain": intent.chainName == "solana" ? "base" : intent.chainName,
                                             "sell": symbol == "SOL" ? "ETH" : symbol, "buy": "USDC",
-                                            "amount": "1", "side": "sell"]) { [weak self] obj in
+                                            "amount": "1"]) { [weak self] obj in
             guard let self else { return }
             self.asking = false
             if symbol != "SOL" { self.marketPrice = Self.number(obj?["amountOut"]) }

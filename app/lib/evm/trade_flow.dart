@@ -80,22 +80,31 @@ abstract final class TradeFlow {
       'buy': q['buy'],
       'recipient': address,
       'swapper': address,
-      'slippageBps': 50,
+      'slippage': 0.5,
     };
     if (q['buyAmount'] != null) {
-      body['amount'] = q['buyAmount'];
-      body['side'] = 'buy';
+      // "buy 0.1 eth with usdc": what 0.1 ETH costs now, a hair over so
+      // the swap lands at least the amount asked for.
+      final cost = await GlyfApi.evmPost('/uniswap/quote',
+          {'chain': chain.name, 'sell': q['buy'], 'buy': q['sell'], 'amount': q['buyAmount']});
+      final need = double.tryParse('${cost['amountOut']}');
+      if (need == null || need <= 0) throw GlyfApiException('Uniswap had no price for ${q['buy']}');
+      body['amount'] = _trim(need * 1.006);
     } else if (q['amount'] != null) {
       body['amount'] = q['amount'];
-      body['side'] = 'sell';
     } else {
       // "sell my eth": everything, less the gas to send it when it's ETH.
       body['amount'] = await _allOf(chain, address, q['sell']!);
-      body['side'] = 'sell';
     }
     final swap = await GlyfApi.evmPost('/uniswap/swap', body);
     final sellSym = q['sell']!;
     final buySym = q['buy']!;
+    final reset = swap['approvalReset'];
+    if (reset is Map) {
+      yield TradeOutcome(TradeState.working, 'Resetting the $sellSym allowance…');
+      final hash = await EvmWallet.send(chain, EvmCall.fromJson(Map<String, dynamic>.from(reset)));
+      await EvmRpc.receipt(chain, hash);
+    }
     final approval = swap['approval'];
     if (approval is Map) {
       yield TradeOutcome(TradeState.working, 'Letting Uniswap use your $sellSym…');
@@ -170,7 +179,7 @@ abstract final class TradeFlow {
     if (kind == 'bridge') {
       body['recipientAddress'] = address;
     } else if (!buying && qty == null) {
-      qty = await _allOf(chain, address, target, keepGas: false);
+      qty = await _allOf(chain, address, target);
     } else if (buying && q['buyAmount'] != null && q['price'] != null) {
       // "buy 0.1 eth at 2800": 0.1 × 2800 of the contra.
       qty = _trim(double.parse(q['buyAmount']!) * double.parse(q['price']!));
@@ -226,42 +235,46 @@ abstract final class TradeFlow {
     yield const TradeOutcome(TradeState.working, 'Asking Flash…');
     final quote = await GlyfApi.evmPost('/flash/quote', await flashBody(q, kind, chain, address));
     final evm = Map<String, dynamic>.from((quote['evm'] as Map?) ?? const {});
-    // An allowance first, when Flash says the token needs one.
-    final approve = evm['approveTx'] ?? evm['approvalTx'];
-    if (approve is Map) {
-      yield TradeOutcome(TradeState.working, 'Letting Flash use your ${q['sell']}…');
-      final hash = await EvmWallet.send(chain, EvmCall.fromJson(Map<String, dynamic>.from(approve)));
+    // Anything Flash wants on chain first: an allowance (to Permit2), and
+    // for ETH a wrap to WETH, which is what the order then spends.
+    final setup = <Object?>[
+      evm['approveTx'] ?? evm['approvalTx'],
+      ...((evm['setupTxs'] as List?) ?? const []),
+      // Only when the order spends ETH the wallet holds as ETH.
+      if (q['sell'] == chain.native || (q['buy'] == chain.native && kind == 'bridge')) (quote['wrap'] as Map?)?['evmTx'],
+    ].whereType<Map>().where((t) => t['to'] != null).toList();
+    for (final tx in setup) {
+      final wrapping = identical(tx, (quote['wrap'] as Map?)?['evmTx']);
+      yield TradeOutcome(TradeState.working, wrapping ? 'Wrapping ETH…' : 'Letting Flash use your ${q['sell']}…');
+      final hash = await EvmWallet.send(chain, EvmCall.fromJson(Map<String, dynamic>.from(tx)));
       final r = await EvmRpc.receipt(chain, hash);
       if (r == null || !EvmRpc.succeeded(r)) {
-        yield TradeOutcome(TradeState.failed, 'The approval didn’t go through', txUrl: chain.txUrl(hash));
+        yield TradeOutcome(TradeState.failed, wrapping ? 'The wrap didn’t go through' : 'The approval didn’t go through',
+            txUrl: chain.txUrl(hash));
         return;
       }
     }
-    // Spending ETH: Flash trades WETH, so it's wrapped first.
-    final wrap = quote['wrap'];
-    if (wrap is Map && wrap['to'] != null) {
-      yield const TradeOutcome(TradeState.working, 'Wrapping ETH…');
-      final hash = await EvmWallet.send(chain, EvmCall.fromJson(Map<String, dynamic>.from(wrap)));
-      await EvmRpc.receipt(chain, hash);
+    // The server hands back the order ready but for the signatures.
+    final order = Map<String, dynamic>.from((quote['order'] as Map?) ?? const {});
+    final typed = order['evmOrderTypedData'] ?? evm['orderTypedData'];
+    if (typed == null) {
+      throw GlyfApiException((quote['error'] ?? quote['message'] ?? 'Flash sent nothing to sign').toString());
     }
-    final typed = evm['orderTypedData'];
-    if (typed == null) throw GlyfApiException((quote['error'] ?? quote['message'] ?? 'Flash sent nothing to sign').toString());
     yield const TradeOutcome(TradeState.working, 'Signing the order…');
-    final order = <String, Object?>{
-      'quoteId': quote['quoteId'],
-      'userSignature': EvmWallet.signTypedData(typed),
-      'evmOrderTypedData': typed,
-      'bridgeQuoteId': ?quote['bridgeQuoteId'],
-    };
-    final permit = evm['permit2TypedData'] ?? evm['permitTypedData'];
-    if (permit != null) {
-      order['evmPermit2TypedData'] = permit;
-      order['evmPermit2Signature'] = EvmWallet.signTypedData(permit);
+    order['evmOrderTypedData'] = typed;
+    order['userSignature'] = EvmWallet.signTypedData(typed);
+    if (order['evmPermitTypedData'] != null) {
+      order['evmPermitSignature'] = EvmWallet.signTypedData(order['evmPermitTypedData']!);
     }
-    final bracketTyped = evm['attachedBracketTypedData'] ?? evm['bracketOrderTypedData'];
-    if (bracketTyped != null) {
-      order['evmAttachedBracketTypedData'] = bracketTyped;
-      order['attachedBracketSignature'] = EvmWallet.signTypedData(bracketTyped);
+    final pairTyped = ((quote['attachedBracket'] as Map?)?['evm'] as Map?)?['orderTypedData'];
+    final pair = order['attachedBracket'];
+    if (pair is Map && pairTyped != null) {
+      final signed = Map<String, dynamic>.from(pair);
+      signed['userSignature'] = EvmWallet.signTypedData(pairTyped);
+      if (signed['evmPermitTypedData'] != null) {
+        signed['evmPermitSignature'] = EvmWallet.signTypedData(signed['evmPermitTypedData']!);
+      }
+      order['attachedBracket'] = signed;
     }
     final placed = await GlyfApi.evmPost('/flash/order', order);
     final id = (placed['orderId'] ?? placed['id'])?.toString();
@@ -384,8 +397,7 @@ abstract final class TradeFlow {
 
   /// One [symbol] in dollars, from Uniswap (1 of it quoted to USDC).
   static Future<double> _priceOf(EvmChain chain, String symbol) async {
-    final res = await GlyfApi.evmPost('/uniswap/quote',
-        {'chain': chain.name, 'sell': symbol, 'buy': 'USDC', 'amount': '1', 'side': 'sell'});
+    final res = await GlyfApi.evmPost('/uniswap/quote', {'chain': chain.name, 'sell': symbol, 'buy': 'USDC', 'amount': '1'});
     final p = double.tryParse('${res['amountOut']}');
     if (p == null || p <= 0) throw GlyfApiException('No price for $symbol on ${chain.label}');
     return p;
