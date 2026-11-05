@@ -103,6 +103,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var pay: PaySurface?
     /// What the pay strip opens with (set right before setSurface(.pay)).
     private var pendingPay: PaySurface.Intent?
+    /// A trade said in words, over the keys (ETHGlobal Mumbai).
+    private var trade: TradeSurface?
+    private var pendingTrade: TradeIntent?
     private var connector: ConnectorSurface?
     /// The Calendar tool: a month and the chosen day's events.
     private var calendarView: CalendarSurface?
@@ -139,7 +142,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var cursorMirror: CursorMirror?
     private var lastCursorAdjust: CFTimeInterval = 0
 
-    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard, games, pay }
+    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard, games, pay, trade }
     private var surface: Surface = .none
 
     /// When set, key input routes into an inline editor (bar prompt / emoji search).
@@ -258,7 +261,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // emoji search.
         case .connector where calendarView?.editingTitle == true:
             return base + EventComposer.editStripHeight
-        case .shell, .connector, .act, .clipboard, .games, .pay: return base
+        case .shell, .connector, .act, .clipboard, .games, .pay, .trade: return base
         }
     }
 
@@ -766,6 +769,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .games: return ("gamecontroller", "Games")
         case .pay where pay?.editingAmount != true:
             return ("dollarsign.circle", pay?.headerTitle ?? "Pay")
+        case .trade: return ("arrow.triangle.2.circlepath", trade?.headerTitle ?? "Trade")
         case .connector where connector?.searchActive != true: return ("calendar", "Calendar")
         default: return (nil, nil)
         }
@@ -971,6 +975,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = true
             pay?.frame = panelRect(w, h)
+        case .trade:
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            keyboardView.isHidden = true
+            trade?.frame = panelRect(w, h)
         case .connector:
             toolbar.isHidden = connector?.searchActive == true
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
@@ -1052,7 +1061,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             for overlay in [self.shell, self.bar, self.emoji, self.connector,
                             self.search, self.noteEdit, self.hud, self.calendarView,
                             self.tonesPopup, self.act, self.clipStrip,
-                            self.clipboardPanel, self.games, self.pay] as [UIView?] {
+                            self.clipboardPanel, self.games, self.pay, self.trade] as [UIView?] {
                 overlay?.alpha = 1
             }
             self.view.layoutIfNeeded()
@@ -1106,6 +1115,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             // Closed mid-amount: the field's own keys again, not the pad.
             keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
             keyboardView.setMode(.letters)
+        case .trade: trade?.removeFromSuperview(); trade = nil
         case .none: break
         }
         inlineTarget = nil
@@ -1199,6 +1209,15 @@ final class GlyfKeyboardViewController: UIInputViewController {
             prepareEntrance(p, animated: animated)
             pay = p
             MemoryLogger.logSurface("pay")
+        case .trade:
+            guard let intent = pendingTrade else { break }
+            pendingTrade = nil
+            let t = TradeSurface(intent: intent)
+            t.delegate = self
+            content.addSubview(t)
+            prepareEntrance(t, animated: animated)
+            trade = t
+            MemoryLogger.logSurface("trade")
         case .none:
             break
         }
@@ -1494,6 +1513,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return .other(close: "noteedit:close")
         case .pay:
             return .other(close: "pay:close")
+        case .trade:
+            return .other(close: "trade:close")
         case .bar:
             return .other(close: "bar:close|toolbar:close")
         }
@@ -1800,7 +1821,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             switch chip {
             // A copied address still pastes; it just isn't paid.
             case .pay(_, _, _, let copied?)?, .buy(_, _, _, let copied?)?: chip = .paste(text: copied)
-            case .pay?, .buy?: chip = nil
+            case .pay?, .buy?, .trade?: chip = nil
             case .money(let shown, let insert, _)?: chip = .money(shown: shown, insert: insert, buy: nil)
             default: break
             }
@@ -1972,7 +1993,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .calc, .money, .convert: return .answer
         case .vault, .details, .tempAddress: return .fill
         case .paste: return .paste
-        case .pay, .buy: return .pay
+        case .pay, .buy, .trade: return .pay
         case .action(_, _, let intent): return intent == "meet" ? .plan : .ai
         case .event, .booking: return .plan
         case .tempMail: return .mail
@@ -2011,6 +2032,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .paste: return "paste"
         case .pay: return "pay"
         case .buy: return "buy"
+        case .trade(let t): return "trade|\(t.title)"
         case .action: return "action"
         case .event: return "event"
         case .booking: return "booking"
@@ -3566,7 +3588,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             toolbar.showSmart(nil)
             updateCandidates()
             return
-        case .pay, .buy:
+        case .pay, .buy, .trade:
             toolbarSmartExtraTapped(chip)
             return
         default:
@@ -3667,6 +3689,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             pendingPay = .buy(mint: mint,
                               symbol: parts.count > 1 ? String(parts[1]) : "",
                               price: parts.count > 3 ? String(parts[3]) : nil)
+        case .trade(let t):
+            pendingTrade = t
+            setSurface(.trade)
+            return
         default:
             return
         }
@@ -4465,6 +4491,27 @@ extension GlyfKeyboardViewController: ConnectorSurfaceDelegate {
 
     func connectorOpenApp(path: String) {
         openApp(path: path)
+    }
+}
+
+// MARK: - TradeSurfaceDelegate
+
+extension GlyfKeyboardViewController: TradeSurfaceDelegate {
+
+    /// Signing is the app's (the Glyf wallet's key lives in its Keychain):
+    /// one hop there, and the outcome comes back as a toast.
+    func tradeHandOff(query: [String: String]) {
+        setSurface(.none)
+        openApp(path: "trade", query: query)
+    }
+
+    func tradeSetUpWallet() {
+        setSurface(.none)
+        openApp(path: "evm-wallet")
+    }
+
+    func tradeToast(_ text: String) {
+        KeyboardToast.show(in: content, text: text)
     }
 }
 

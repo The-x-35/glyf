@@ -26,6 +26,7 @@ TEST_SHARED = %w[
   Engine/SpaceGesture.swift
   Engine/Smart.swift
   Engine/StripPolicy.swift
+  Engine/TradeIntent.swift
   Engine/EmojiWords.swift
   Engine/PhraseMemory.swift
   Engine/WeatherStore.swift

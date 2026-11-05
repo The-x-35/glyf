@@ -357,6 +357,15 @@ abstract final class GlyfApi {
   /// POST /wallet/rpc — one Solana RPC call through Glyf's server, which
   /// adds the node's key (it never ships in the app). The `result`, or a
   /// GlyfApiException with the node's own words.
+  /// The Ethereum side (lib/evm): names, the EVM relay, Uniswap, Flash and
+  /// Whitechain, all JSON in and out.
+  static Future<Map<String, dynamic>> evmPost(String path, Map<String, Object?> body,
+          {Duration timeout = const Duration(seconds: 25)}) =>
+      _postJson(path, body, timeout: timeout);
+
+  static Future<Map<String, dynamic>> evmGet(String path, {Duration timeout = const Duration(seconds: 12)}) =>
+      _getJson(path, timeout: timeout);
+
   static Future<Object?> walletRpc(String method, List<Object?> params) async {
     final res = await _postJson('/wallet/rpc', {'method': method, 'params': params},
         timeout: const Duration(seconds: 20));
