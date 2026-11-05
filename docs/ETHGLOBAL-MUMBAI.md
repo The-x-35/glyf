@@ -72,3 +72,12 @@ ENS and SNS resolution still get built for "pay arpit.eth", "pay arpit.sol".
   - publish only this branch's new code as a public repo.
 - **Keys:** a Flash API key (Definitive), a Uniswap API key (developers.uniswap.org), and a Reown project id if WalletConnect is OK.
 - **Funds for the demo:** a few dollars on Base (and SOL for the Solana Flash order) in your own wallet. Flash and Uniswap execute on mainnet, and you sign every transaction.
+
+## Update, 6 Nov 03:30 IST: all four built, pick three
+
+Arpit asked for Arkiv too ("add an option to maybe build for Arkiv as well"), so Definitive, Uniswap, Whitechain and Arkiv are all built. ETHGlobal still takes only **three partner picks**, so one has to be left off at submission.
+
+- **Definitive and Uniswap: keep both.** They're Arpit's call, and he showed both teams Glyf.
+- **Third: Arkiv, unless Whitechain gives test USDT.** Whitechain's prize needs a real payment in its test USDT, and nobody outside Whitechain can mint it (owner-only, and no faucet). Arkiv needs only test GLM from its faucet, and its first place is $3,000 against Whitechain's two $1,500 places.
+
+The judges' guide is `docs/ETHGLOBAL-SUBMISSION.md`.

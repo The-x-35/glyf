@@ -218,6 +218,7 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
             GridView.count(
               crossAxisCount: 2,
               shrinkWrap: true,
+              padding: EdgeInsets.zero,
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
