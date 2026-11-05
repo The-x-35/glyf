@@ -2564,13 +2564,14 @@ final class GlyfScenarioUITests: XCTestCase {
             ("buy $100 of eth if it dips below 2800", "Buy ETH at $2,800", "Place limit order", "trade-limit"),
             ("my eth take profit 4500 stop loss 3000", "TP $4,500", "Set bracket", "trade-bracket"),
             ("protect my eth with a 5% trail", "Trail ETH by 5%", "Set trailing stop", "trade-trail"),
-            ("buy $20 of eth every day for a week", "over a week", "Start TWAP", "trade-twap"),
+            ("buy $20 of eth every day for a week ", "over a week", "Start TWAP", "trade-twap"),
             ("move 50 usdc from base to arbitrum", "Move 50 USDC to Arbitrum", "Move to Arbitrum", "trade-bridge"),
             ("send 5 usdc to vitalik.eth", "Send 5 USDC to vitalik.eth", "Send", "trade-send"),
             ("request 20 usdt", "Request 20 USDT", "Create request", "trade-request"),
         ]
         var seen: [String] = []
-        for c in cases {
+        let only = ProcessInfo.processInfo.environment["GLYF_TRADE_ONLY"]
+        for c in cases where only == nil || c.shot.contains(only!) {
             clear()
             type(c.typed)
             let chip = wait("strip:smart", 6)
@@ -2590,6 +2591,34 @@ final class GlyfScenarioUITests: XCTestCase {
             sleep(1)
         }
         note(seen.joined(separator: "\n"))
+    }
+
+    /// S301: the trade panel's button hands the swap to the app, which quotes
+    /// it again, builds and signs it with the Glyf wallet and sends it. An
+    /// empty test wallet gets as far as the network, which says there's no
+    /// ETH for it: the whole path short of money moving.
+    func testS301_TheSwapButtonSignsInTheApp() throws {
+        var args = ["--glyf-test-evm-wallet"]
+        if let token = ProcessInfo.processInfo.environment["GLYF_SESSION"] { args.append("--glyf-test-session=\(token)") }
+        open(args)
+        clear()
+        type("swap 0.001 eth to usdc on base")
+        guard let chip = wait("strip:smart", 6) else { return XCTFail("no trade chip") }
+        chip.tap()
+        guard let go = wait("trade:go", 5) else { return XCTFail("no trade panel") }
+        sleep(3)
+        keepScreenshot("e2e-panel")
+        go.tap()
+        guard let title = wait("trade:title", 15) else { return XCTFail("the app never showed the trade") }
+        // Working, then an answer from the chain.
+        let end = Date().addingTimeInterval(40)
+        while Date() < end, title.label.hasSuffix("…") || title.label == "One moment…" { sleep(1) }
+        let detail = el("trade:detail")
+        note("app: '\(title.label)' · '\(detail.exists ? detail.label : "")'")
+        keepScreenshot("e2e-result")
+        XCTAssertFalse(title.label.hasSuffix("…"), "still '\(title.label)'")
+        XCTAssertTrue(title.label == "Swapped" || (detail.exists && detail.label.contains("Not enough")),
+                      "got '\(title.label)' · '\(detail.exists ? detail.label : "")'")
     }
 
     private func keepScreenshot(_ name: String) {

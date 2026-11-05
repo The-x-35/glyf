@@ -62,7 +62,8 @@ abstract final class TradeFlow {
   /// Nodes and APIs speak in codes; the screen says what they mean.
   static String _plain(String message) {
     final m = message.toLowerCase();
-    if (m.contains('insufficient funds') || m.contains('insufficient balance') || m.contains('exceeds balance')) {
+    if (m.contains('insufficient funds') || m.contains('insufficient balance') || m.contains('exceeds balance') ||
+        m.contains('outoffunds') || m.contains('transfer amount exceeds')) {
       return 'Not enough in the Glyf wallet for this and its fee';
     }
     if (m.contains('nonce')) return 'Another transaction is still going through. Try again in a moment';

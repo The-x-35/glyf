@@ -1931,6 +1931,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let now = Date().timeIntervalSince1970
         guard StripPolicy.allowed(kind, in: policyField),
               stripPolicy.allows(kind, id: id, now: now) else {
+            // A longer trade typed on past a shorter one ("buy $20 of eth"
+            // → "… every day for a week") is the same intent growing, not
+            // a no: look again once the quiet is over, without a keystroke.
+            if case .trade = chip, stripPolicy.quietUntil > now {
+                recheckChip(after: stripPolicy.quietUntil - now + 0.05)
+            }
             toolbar.showSmart(nil)
             return false
         }

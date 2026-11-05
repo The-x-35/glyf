@@ -260,10 +260,12 @@ final class TradeSurface: UIView {
                 topAmount.text = quoteOut == nil ? "…" : "≈ " + Self.amount(quoteOut!, i.sell)
                 bottomValue.text = buyAmount
             } else {
-                topAmount.text = i.amount ?? (held.map { Self.amount($0, i.sell) } ?? "All")
+                let some = held.map { $0 > 0 } ?? true
+                topAmount.text = i.amount ?? (some ? (held.map { Self.amount($0, i.sell) } ?? "All") : "All")
                 bottomValue.text = quoteOut.map { Self.amount($0, i.buy) } ?? (asking ? "…" : "—")
             }
             topUSD.text = i.amountIsUSD ? "$\(i.amount ?? "")" : (quoteInUSD.map(PaySurface.dollars) ?? "")
+            if i.amount == nil, i.buyAmount == nil, !i.amountIsUSD, held == 0 { topUSD.text = "No \(i.sell) on \(i.chainLabel) yet" }
             bottomSub.text = quoteOutUSD.map(PaySurface.dollars) ?? (asking ? "Asking Uniswap" : "")
         case .limit, .stop, .stopLoss, .takeProfit, .bracket, .trailingStop:
             let selling = i.kind == .stopLoss || i.kind == .takeProfit || i.kind == .trailingStop
@@ -273,8 +275,10 @@ final class TradeSurface: UIView {
             let asset = selling ? i.sell : i.buy
             topToken.text = asset
             if selling {
-                topAmount.text = i.amount ?? (held.map { Self.amount($0, asset) } ?? "All")
-                topUSD.text = i.amount == nil ? "Everything held" : ""
+                // "All" of nothing is said as nothing held, not as 0.
+                let some = held.map { $0 > 0 } ?? true
+                topAmount.text = i.amount ?? (some ? (held.map { Self.amount($0, asset) } ?? "All") : "All")
+                topUSD.text = i.amount != nil ? "" : (some ? "Everything held" : "No \(asset) on \(i.chainLabel) yet")
             } else if i.amountIsUSD {
                 topAmount.text = "$\(i.amount ?? "")"
                 topUSD.text = "of \(asset), paid in \(i.sell)"

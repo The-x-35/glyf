@@ -17,6 +17,8 @@ import 'wallet/pay_launch_screen.dart';
 import 'wallet/pay_status_screen.dart';
 import 'evm/evm_wallet.dart';
 import 'evm/evm_wallet_screen.dart';
+import 'evm/pay_request.dart';
+import 'evm/pay_request_screen.dart';
 import 'evm/trade_screen.dart';
 import 'wallet/send_screen.dart';
 import 'wallet/wallet_screen.dart';
@@ -155,6 +157,18 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       // Phantom's answer to Connect or to a payment: finished on its own
       // screen, which sends the signed payment on.
       _push('phantom', (_) => PayStatusScreen(reply: uri), link: link);
+      return;
+    }
+    // A Whitechain request's link (glyf://pay-request?chain=1874&contract=…&id=…),
+    // or the keyboard handing one over (glyf://open?path=pay-request?…).
+    final requestLink = uri.host == 'pay-request'
+        ? uri
+        : (uri.host == 'open' && uri.queryParameters['path']?.startsWith('pay-request') == true)
+            ? Uri.parse(uri.queryParameters['path']!)
+            : null;
+    final request = requestLink == null ? null : PayRequests.parse(requestLink);
+    if (request != null) {
+      _push('pay-request', (_) => PayRequestScreen(contract: request.contract, id: request.id), link: link);
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('trade') == true) {

@@ -148,6 +148,14 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(read("can you send it, I'll request 15 usdt for dinner")?.amount, nil)
     }
 
+    func testTheStripOffersEachTradeAsItsChip() {
+        for text in ["Buy $20 of eth every day for a week ", "Buy $20 of eth every day for a week",
+                     "Sell my eth if it drops below 3000", "Request 20 usdt", "Send 5 usdc to vitalik.eth"] {
+            let chip = Smart.chip(for: text, fields: [])
+            guard case .trade? = chip else { return XCTFail("\(text): \(String(describing: chip))") }
+        }
+    }
+
     func testOrdinaryWordsAreNoTrade() {
         for text in ["swap shifts with sam", "I'll buy dinner tonight", "sell the old bike",
                      "send me the doc", "stop it", "I want to take profit from this lesson"] {

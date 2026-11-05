@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:glyf/evm/evm_chains.dart';
 import 'package:glyf/evm/evm_wallet.dart';
+import 'package:glyf/evm/pay_request.dart';
 import 'package:glyf/evm/trade_flow.dart';
 
 void main() {
@@ -137,5 +138,18 @@ void main() {
     expect(bridge['targetChain'], 'arbitrum');
     expect(bridge['contraChain'], 'base');
     expect(bridge['recipientAddress'], address);
+  });
+
+  test('a Whitechain request is createRequest(USDT, units, memo, anyone, never)', () {
+    final data = PayRequests.createCalldata('20.5', 'dinner');
+    expect(data.substring(0, 10), '0xdd0bacc1');
+    expect(data.substring(10, 74), '000000000000000000000000cedfb56113143d55b2358b8cfbb0deb5ad2f55a7');
+    expect(BigInt.parse(data.substring(74, 138), radix: 16), BigInt.from(20500000));
+    expect(PayRequests.units('20'), BigInt.from(20000000));
+    expect(PayRequests.whole(BigInt.from(20500000)), '20.5');
+    expect(PayRequests.whole(BigInt.from(7000000)), '7');
+    final link = Uri.parse('glyf://pay-request?chain=1874&contract=0x2a1cB3CDA2d72e02d4BaF04C809145c0869975D7&id=42');
+    expect(PayRequests.parse(link)?.id, BigInt.from(42));
+    expect(PayRequests.parse(Uri.parse('glyf://pay-request?chain=1&contract=0x2a1cB3CDA2d72e02d4BaF04C809145c0869975D7&id=42')), isNull);
   });
 }
