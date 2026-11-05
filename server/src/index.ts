@@ -29,6 +29,10 @@ import { billingRoutes } from "./routes/billing.js";
 import { codeRoutes } from "./routes/codes.js";
 import { cryptoPayRoutes } from "./routes/cryptopay.js";
 import { reportRoutes } from "./routes/report.js";
+import { namesRoutes } from "./routes/names.js";
+import { evmRoutes } from "./routes/evm.js";
+import { flashRoutes } from "./routes/flash.js";
+import { uniswapRoutes } from "./routes/uniswap.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -113,6 +117,10 @@ export function buildApp(kv: KV = defaultKV()) {
   codeRoutes(app);
   cryptoPayRoutes(app);
   reportRoutes(app);
+  namesRoutes(app);
+  evmRoutes(app);
+  flashRoutes(app);
+  uniswapRoutes(app);
   return app;
 }
 
