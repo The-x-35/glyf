@@ -4528,6 +4528,13 @@ extension GlyfKeyboardViewController: TradeSurfaceDelegate {
     /// one hop there, and the outcome comes back as a toast.
     func tradeHandOff(query: [String: String]) {
         setSurface(.none)
+        // A .sol name is Solana's: the existing Phantom send takes it.
+        if query["kind"] == "send", query["chain"] == "solana", let to = query["address"] {
+            var pay = ["kind": "send", "to": to, "token": query["sell"] ?? "USDC"]
+            if let amount = query["amount"] { pay["amount"] = amount }
+            openApp(path: "pay", query: pay)
+            return
+        }
         openApp(path: "trade", query: query)
     }
 

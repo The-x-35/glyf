@@ -361,8 +361,11 @@ final class TradeSurface: UIView {
         }
     }
 
+    /// Solana sends are Phantom's, not the Glyf wallet's.
+    private var needsGlyfWallet: Bool { wallet == nil && intent.chainName != "solana" }
+
     private var goTitle: String {
-        if wallet == nil { return "Set up your Glyf wallet" }
+        if needsGlyfWallet { return "Set up your Glyf wallet" }
         if short { return "Not enough \(intent.sell)" }
         switch intent.kind {
         case .swap:
@@ -383,13 +386,13 @@ final class TradeSurface: UIView {
 
     private func renderGo() {
         goButton.setTitle(goTitle, for: .normal)
-        let blocked = wallet != nil && ((intent.kind == .send && resolveFailed) || short)
+        let blocked = !needsGlyfWallet && ((intent.kind == .send && resolveFailed) || short)
         goButton.isEnabled = !blocked
         goButton.alpha = blocked ? 0.5 : 1
     }
 
     private func go() {
-        guard wallet != nil else { delegate?.tradeSetUpWallet(); return }
+        guard !needsGlyfWallet else { delegate?.tradeSetUpWallet(); return }
         var q = intent.query
         if let resolved { q["address"] = resolved }
         delegate?.tradeHandOff(query: q)
