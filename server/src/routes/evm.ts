@@ -30,6 +30,10 @@ const ALLOWED = new Set([
   "eth_getLogs",
 ]);
 
+/** Arkiv's own reads, on its chain only: the vault backup's restore query,
+ *  one entity, and the block clock that tells when an entity runs out. */
+const ARKIV_READS = new Set(["arkiv_query", "arkiv_getEntity", "arkiv_getBlockTiming"]);
+
 const RpcSchema = z.object({
   chain: z.union([z.string().min(1).max(40), z.number().int().positive()]),
   method: z.string().min(1).max(40),
@@ -46,7 +50,8 @@ export function evmRoutes(app: FastifyInstance, deps: EvmDeps = {}): void {
   app.post("/evm/rpc", async (req, reply) => {
     const parsed = RpcSchema.safeParse(req.body);
     const chain = parsed.success ? chainOf(parsed.data.chain) : null;
-    if (!parsed.success || !chain || !ALLOWED.has(parsed.data.method)) {
+    const arkivRead = chain?.id === 7794095 && ARKIV_READS.has(parsed.success ? parsed.data.method : "");
+    if (!parsed.success || !chain || !(ALLOWED.has(parsed.data.method) || arkivRead)) {
       return reply.code(400).send({ ok: false, error: "Bad request" });
     }
     const { method, params } = parsed.data;

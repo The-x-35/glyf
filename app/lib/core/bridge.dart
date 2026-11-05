@@ -119,8 +119,9 @@ abstract final class GlyfBridge {
   static Future<String?> walletSecretLoad(String name) =>
       _call<String>('walletSecretLoad', {'name': name});
 
-  static Future<void> walletSecretSave(String name, String value) =>
-      _call<bool>('walletSecretSave', {'name': name, 'value': value});
+  /// [sync] keeps the item in iCloud Keychain (the vault backup's secret).
+  static Future<void> walletSecretSave(String name, String value, {bool sync = false}) =>
+      _call<bool>('walletSecretSave', {'name': name, 'value': value, if (sync) 'sync': true});
 
   static Future<void> walletSecretClear(String name) =>
       _call<bool>('walletSecretClear', {'name': name});

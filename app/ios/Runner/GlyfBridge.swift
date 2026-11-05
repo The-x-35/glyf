@@ -110,7 +110,7 @@ final class GlyfBridge {
             let args = call.arguments as? [String: Any]
             let name = args?["name"] as? String ?? ""
             let value = args?["value"] as? String ?? ""
-            result(!name.isEmpty && WalletSecrets.save(name, value))
+            result(!name.isEmpty && WalletSecrets.save(name, value, sync: args?["sync"] as? Bool == true))
         case "walletSecretClear":
             let name = (call.arguments as? [String: Any])?["name"] as? String ?? ""
             if !name.isEmpty { WalletSecrets.clear(name) }

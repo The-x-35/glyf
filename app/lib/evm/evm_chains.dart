@@ -27,7 +27,7 @@ class EvmChain {
 
   /// Whitechain's OP Stack testnet: USDT payment requests (GlyfPayRequest).
   static const whitechainSepolia = EvmChain(1874, 'whitechain-sepolia', 'Whitechain',
-      'https://testnet.whitechain.io', native: 'WBT', testnet: true);
+      'https://explorer.testnet.whitechain.io', native: 'WBT', testnet: true);
 
   /// Arkiv's DB-chain testnet: where the encrypted vault backup lives.
   static const arkiv = EvmChain(7794095, 'arkiv', 'Arkiv', 'https://rabdi.explorer.arkiv.network',

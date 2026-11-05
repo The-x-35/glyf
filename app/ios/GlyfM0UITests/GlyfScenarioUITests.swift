@@ -2583,7 +2583,8 @@ final class GlyfScenarioUITests: XCTestCase {
             guard let go = wait("trade:go", 5) else { XCTFail("\(c.typed): no trade panel"); continue }
             // The quote or the price lands, or says it couldn't.
             sleep(3)
-            XCTAssertTrue(go.label.hasPrefix(c.go) || go.label.contains("Glyf wallet") || go.label == "Name not found",
+            XCTAssertTrue(go.label.hasPrefix(c.go) || go.label.contains("Glyf wallet") || go.label == "Name not found"
+                          || go.label.hasPrefix("Not enough"),
                           "\(c.typed): the button says '\(go.label)'")
             keepScreenshot(c.shot)
             seen.append("  value '\(el("trade:value").label)' · sub '\(el("trade:sub").label)' · go '\(go.label)'")
@@ -2608,6 +2609,13 @@ final class GlyfScenarioUITests: XCTestCase {
         guard let go = wait("trade:go", 5) else { return XCTFail("no trade panel") }
         sleep(3)
         keepScreenshot("e2e-panel")
+        // An empty test wallet: the panel says so before anything is signed
+        // (the path past it was run with the check off, 6 Nov).
+        if go.label.hasPrefix("Not enough") {
+            note("panel: '\(go.label)'")
+            XCTAssertFalse(go.isEnabled, "a short wallet's button still taps")
+            return
+        }
         go.tap()
         guard let title = wait("trade:title", 15) else { return XCTFail("the app never showed the trade") }
         // Working, then an answer from the chain.

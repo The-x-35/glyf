@@ -2,15 +2,18 @@ import Foundation
 import Security
 
 /// The wallet link's secrets: Phantom's session for Glyf and our half of the
-/// encryption its deeplinks use. They can't move money (Phantom holds the
-/// keys), but they stay in the Keychain, on this device only.
+/// encryption its deeplinks use, and the Glyf wallet's Ethereum key, in the
+/// Keychain on this device only. The vault backup's secret is the one item
+/// saved with `sync`: iCloud Keychain carries it to the person's next phone,
+/// which is how that phone finds and opens the backup on Arkiv.
 enum WalletSecrets {
     private static let service = "so.glyf.wallet"
 
     private static func query(_ name: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
-         kSecAttrAccount as String: name]
+         kSecAttrAccount as String: name,
+         kSecAttrSynchronizable as String: kSecAttrSynchronizableAny]
     }
 
     static func load(_ name: String) -> String? {
@@ -24,13 +27,15 @@ enum WalletSecrets {
     }
 
     @discardableResult
-    static func save(_ name: String, _ value: String) -> Bool {
+    static func save(_ name: String, _ value: String, sync: Bool = false) -> Bool {
         let data = Data(value.utf8)
         let update: [String: Any] = [kSecValueData as String: data]
         if SecItemUpdate(query(name) as CFDictionary, update as CFDictionary) == errSecSuccess { return true }
         var add = query(name)
         add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        add[kSecAttrSynchronizable as String] = sync
+        add[kSecAttrAccessible as String] = sync
+            ? kSecAttrAccessibleAfterFirstUnlock : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 

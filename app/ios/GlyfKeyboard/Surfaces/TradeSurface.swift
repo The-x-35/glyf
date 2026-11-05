@@ -341,8 +341,29 @@ final class TradeSurface: UIView {
         setNeedsLayout()
     }
 
+    /// What the wallet holds is known and falls short of what's spent
+    /// (the Buy panel's "Not enough SOL"): the button says so.
+    private var short: Bool {
+        guard let held, intent.kind != .request, intent.chainName != "solana" else { return false }
+        if intent.amount == nil, intent.buyAmount == nil { return held <= 0 && Self.sells(intent) }
+        let spend = intent.buyAmount != nil ? quoteOut : Double(intent.amount ?? "")
+        guard let spend, Self.sells(intent) || intent.amountIsUSD || intent.buyAmount != nil else { return false }
+        return spend > held
+    }
+
+    /// The panel spends what `sell` names (a swap, a send, an order that sells).
+    private static func sells(_ i: TradeIntent) -> Bool {
+        switch i.kind {
+        case .swap, .send, .bridge, .stopLoss, .takeProfit, .trailingStop: return true
+        case .bracket: return i.buyAmount == nil && !i.amountIsUSD
+        case .limit: return i.sell != "USDC" && i.sell != "USDT"
+        default: return false
+        }
+    }
+
     private var goTitle: String {
         if wallet == nil { return "Set up your Glyf wallet" }
+        if short { return "Not enough \(intent.sell)" }
         switch intent.kind {
         case .swap:
             if let usd = quoteInUSD { return "Swap ≈ \(PaySurface.dollars(usd))" }
@@ -362,7 +383,7 @@ final class TradeSurface: UIView {
 
     private func renderGo() {
         goButton.setTitle(goTitle, for: .normal)
-        let blocked = wallet != nil && intent.kind == .send && resolveFailed
+        let blocked = wallet != nil && ((intent.kind == .send && resolveFailed) || short)
         goButton.isEnabled = !blocked
         goButton.alpha = blocked ? 0.5 : 1
     }
