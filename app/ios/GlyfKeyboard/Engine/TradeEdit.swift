@@ -271,6 +271,28 @@ enum TradeEdit {
         return i
     }
 
+    /// An order whose asset changed (another token, or a chain that trades
+    /// another coin): its prices were the old asset's, so they go back to
+    /// the starters' distances from the new market (SponsorMenu.starter),
+    /// filled once the panel has the new price.
+    static func repriced(_ intent: TradeIntent, was: TradeIntent) -> TradeIntent {
+        guard intent.kind != .swap, asset(intent) != asset(was) else { return intent }
+        var i = intent
+        switch i.kind {
+        case .limit: i.price = nil; i.pricePercent = sells(i) ? 5 : -5
+        case .stop: i.price = nil; i.pricePercent = 5
+        case .stopLoss: i.price = nil; i.pricePercent = -10
+        case .takeProfit: i.price = nil; i.pricePercent = 10
+        case .bracket:
+            i.price = nil; i.pricePercent = 10
+            i.stopPrice = nil; i.stopPercent = -10
+        default: break
+        }
+        // An amount of the old coin isn't an amount of the new one.
+        if sells(i), i.kind != .bridge, i.kind != .send { i.amount = nil }
+        return i
+    }
+
     /// You pay and You get trade places; the amount stays what's typed.
     static func flip(_ intent: TradeIntent) -> TradeIntent {
         var i = intent
