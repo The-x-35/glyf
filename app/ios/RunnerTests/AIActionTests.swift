@@ -57,7 +57,8 @@ final class AIActionTests: XCTestCase {
         // Inside Flash's 30 days: one order spread over the whole span, as before.
         let i = try XCTUnwrap(TradeIntent.parse("buy $20 of eth every day for a week"))
         XCTAssertNil(i.plan)
-        XCTAssertEqual(i.title, "Buy $140 of ETH over a week")
+        XCTAssertEqual(i.amount, "140")
+        XCTAssertEqual(i.title, "Buy $20 of ETH every day for 7 days")
         // Past 30 days ("weekly" read as 7 weeks): now the recurring plan.
         let long = try XCTUnwrap(TradeIntent.parse("dca $50 into eth weekly"))
         XCTAssertEqual(long.plan?.period, .week)

@@ -109,7 +109,7 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(i.kind, .twap)
         XCTAssertEqual(i.amount, "140")
         XCTAssertEqual(i.durationSeconds, 7 * 86_400)
-        XCTAssertEqual(i.title, "Buy $140 of ETH over a week")
+        XCTAssertEqual(i.title, "Buy $20 of ETH every day for 7 days")
         // Autocorrect's "everyday", and "daily" for every day.
         XCTAssertEqual(read("buy $20 of eth everyday for a week")?.amount, "140")
         XCTAssertEqual(read("dca $10 into eth daily for 5 days")?.durationSeconds, 5 * 86_400)
@@ -228,6 +228,24 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(TradeIntent.baseStock("AAPLon"), "AAPL")
         XCTAssertNil(TradeIntent.baseStock("SOL"))
         XCTAssertNil(read("I ate an apple"))
+    }
+
+    /// "every time", "whenever" and "it's below" read as a price to wait
+    /// for; a DCA says what was typed, not its total.
+    func testHowPeopleSayAPriceAndADCA() throws {
+        for text in ["buy $10 of tesla every time it dips below 300", "buy $10 of tesla whenever it drops below 300",
+                     "buy $10 of tesla when it's below 300", "buy $10 of tesla when it’s below 300",
+                     "buy $10 of tesla if the price is under 300"] {
+            let i = try XCTUnwrap(read(text), text)
+            XCTAssertEqual(i.kind, .limit, text)
+            XCTAssertEqual(i.price, "300", text)
+            XCTAssertEqual(i.buy, "TSLA", text)
+        }
+        XCTAssertEqual(read("sell my eth whenever it falls below 1800")?.kind, .stopLoss)
+        let dca = try XCTUnwrap(read("buy $5 of eth every hour for 2 hours"))
+        XCTAssertEqual(dca.kind, .twap)
+        XCTAssertEqual(dca.amount, "10")
+        XCTAssertEqual(dca.title, "Buy $5 of ETH every hour for 2 hours")
     }
 
     func testAWalletSecretIsNeverKeptInClipboardHistory() {

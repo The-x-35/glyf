@@ -54,6 +54,9 @@ struct TradeIntent: Equatable {
     var to: String?
     /// "buy 0.1 eth": the amount wanted back, not the amount spent.
     var buyAmount: String?
+    /// A DCA as typed: each buy, its unit and how many (amount is the total).
+    var slice: Slice?
+    struct Slice: Equatable { var amount: String; var unit: String; var count: Int }
     /// A g menu starter (SponsorMenu.starter): the trigger is this many
     /// percent from the market (-10 = 10% under), set as `price` once the
     /// trade panel has the price. Never read from words.
@@ -128,6 +131,12 @@ struct TradeIntent: Equatable {
         case .trailingStop: return "Trail \(sell) by \(trailPercent ?? "")%"
         case .twap:
             if let planTitle { return planTitle }
+            // As typed while it still adds up; an edited amount reads as a total.
+            if let slice, let each = Double(slice.amount), let total = Double(amount ?? ""),
+               abs(each * Double(slice.count) - total) < 0.000001 {
+                let span = slice.count == 1 ? "for 1 \(slice.unit)" : "for \(slice.count) \(slice.unit)s"
+                return "Buy $\(slice.amount) of \(buy) every \(slice.unit) \(span)"
+            }
             return "Buy \(amountIsUSD ? "$\(amount ?? "")" : amountText) of \(buy) \(Self.span(durationSeconds))"
         case .bridge:
             return "Move \(amountText) to \(Self.chainLabels[toChain ?? ""] ?? (toChain ?? "").capitalized)"
@@ -297,7 +306,7 @@ struct TradeIntent: Equatable {
         let held = #"(?:all\s+(?:of\s+)?(?:my\s+)?|my\s+|"# + num + #"\s+)?"#
         let price = #"\$?"# + num
         // "sell my eth if it drops below 3000", "sell 0.1 eth when it falls to $3,000"
-        if let m = match(start + #"sell\s+"# + held + sym + #"\s+(?:if|when|once)\s+(?:it|the\s+price|price|"# + sym + #")\s+(?:drops?|falls?|goes|dips?|gets|is)\s+(?:below|under|to|beneath)\s+"# + price + chainPart + end, t) {
+        if let m = match(start + #"sell\s+"# + held + sym + #"\s+(?:if|when|once|whenever|every\s+time|each\s+time)\s+(?:it|the\s+price|price|"# + sym + #")(?:\s+is|['’]s)?\s+(?:(?:drops?|falls?|goes|dips?|gets)\s+)?(?:below|under|to|beneath)\s+"# + price + chainPart + end, t) {
             return order(.stopLoss, amount: m[1], asset: m[2]!, price: m[4], chain: m[5])
         }
         // "stop loss my eth at 3000", "stop-loss eth 3000", "sl eth at 3000"
@@ -317,7 +326,7 @@ struct TradeIntent: Equatable {
             return order(.limit, amount: m[1], asset: m[2]!, price: m[3], chain: m[4])
         }
         // "buy eth if it drops to 2800", "buy $100 of eth if it dips below 2800"
-        if let m = match(start + #"buy\s+(?:\$"# + num + #"\s+(?:of|worth\s+of)\s+|"# + num + #"\s+)?"# + sym + #"\s+(?:if|when|once)\s+(?:it|the\s+price|price)\s+(?:drops?|falls?|dips?|goes|gets|is)\s+(?:below|under|to)\s+"# + price + chainPart + end, t) {
+        if let m = match(start + #"buy\s+(?:\$"# + num + #"\s+(?:of|worth\s+of)\s+|"# + num + #"\s+)?"# + sym + #"\s+(?:if|when|once|whenever|every\s+time|each\s+time)\s+(?:it|the\s+price|price)(?:\s+is|['’]s)?\s+(?:(?:drops?|falls?|dips?|goes|gets)\s+)?(?:below|under|to)\s+"# + price + chainPart + end, t) {
             return buyOrder(.limit, usd: m[1], qty: m[2], asset: m[3]!, price: m[4], chain: m[5])
         }
         // "buy $100 of eth at 2800", "limit buy eth at 2800"
@@ -378,6 +387,8 @@ struct TradeIntent: Equatable {
                                 chain: chain(m[6], token: asset))
             i.amountIsUSD = true
             i.durationSeconds = span
+            // What was typed, not the total: "$5 of ETH every hour for 2 hours".
+            i.slice = Slice(amount: trimmed(each), unit: m[3]!.lowercased(), count: slices)
             return i
         }
         if let m = match(start + #"(?:buy|dca)\s+\$"# + num + #"\s+(?:of|worth\s+of|into|in)\s+"# + sym + #"\s+over\s+(a|an|one|two|three|four|five|six|seven|\d+)\s+"# + units + chainPart + end, t) {

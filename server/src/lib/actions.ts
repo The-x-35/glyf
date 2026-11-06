@@ -21,6 +21,9 @@ export const TOKENS: Record<string, string> = {
   wbtc: "WBTC", btc: "WBTC", bitcoin: "WBTC", cbbtc: "CBBTC", uni: "UNI", link: "LINK", aave: "AAVE",
   op: "OP", arb: "ARB", pol: "POL", matic: "POL", aero: "AERO", degen: "DEGEN", sol: "SOL", solana: "SOL",
   pepe: "PEPE", ldo: "LDO",
+  // Shares, tokenized on Base (the keyboard trades them there by address).
+  aapl: "AAPL", apple: "AAPL", tsla: "TSLA", tesla: "TSLA", nvda: "NVDA", nvidia: "NVDA", msft: "MSFT",
+  microsoft: "MSFT", googl: "GOOGL", google: "GOOGL", alphabet: "GOOGL", amzn: "AMZN", amazon: "AMZN", meta: "META",
 };
 const STABLES = ["USDC", "USDT", "DAI"];
 export const CHAINS = ["base", "ethereum", "arbitrum", "optimism", "polygon", "unichain", "solana"] as const;
@@ -191,7 +194,7 @@ booking.link {} they want someone to pick a time
 search|youtube|shorts|maps {query} something to look up, watch or find nearby
 translate {to} the language to write their message in
 convert {query} units or currency to convert ("5 ft in cm")
-Tokens: ETH WBTC SOL USDC USDT DAI UNI LINK AAVE OP ARB POL AERO DEGEN PEPE LDO. Chains: base ethereum arbitrum optimism polygon unichain solana. Numbers as numbers. Give a chain only when they name one ("eth" is a token). Never invent an amount, price or name that was not typed.`;
+Tokens: ETH WBTC SOL USDC USDT DAI UNI LINK AAVE OP ARB POL AERO DEGEN PEPE LDO, and shares AAPL TSLA NVDA MSFT GOOGL AMZN META (Apple, Tesla, Nvidia…). Chains: base ethereum arbitrum optimism polygon unichain solana. Numbers as numbers. Give a chain only when they name one ("eth" is a token). Never invent an amount, price or name that was not typed.`;
 
 /** Typing that a tool might act on: only these take the extra look when the
  *  rules already had a chip for the sentence. */
