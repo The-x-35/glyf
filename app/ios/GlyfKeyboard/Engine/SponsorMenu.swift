@@ -35,6 +35,9 @@ enum SponsorMenu {
         case swap
         /// Uniswap: the starter swap on this chain.
         case swapOn(String)
+        /// Uniswap's panel, Solana: Jupiter's swap (the keyboard's Buy panel),
+        /// as Uniswap's own app routes Solana through Jupiter.
+        case jupiter
         /// Definitive: the Flash order already typed.
         case typed
         /// Definitive: a starter of this kind on the chain picked.
@@ -49,6 +52,7 @@ enum SponsorMenu {
             switch self {
             case .swap: return "swap"
             case .swapOn(let chain): return "swap:\(chain)"
+            case .jupiter: return "jupiter"
             case .typed: return "typed"
             case .order(let kind): return "order:\(kind.rawValue)"
             case .openOrders: return "orders"
@@ -59,6 +63,7 @@ enum SponsorMenu {
         init?(id: String) {
             switch id {
             case "swap": self = .swap
+            case "jupiter": self = .jupiter
             case "typed": self = .typed
             case "orders": self = .openOrders
             case "receipts": self = .receipts
@@ -96,6 +101,8 @@ enum SponsorMenu {
         case trade(TradeIntent)
         /// One hop to the app.
         case openApp(path: String)
+        /// The keyboard's Buy panel, swapping on Solana through Jupiter.
+        case solanaSwap
     }
 
     /// Every chain Glyf swaps on through Uniswap (the server's EVM chains).
@@ -136,6 +143,7 @@ enum SponsorMenu {
                 .option(.swapOn($0), title: TradeIntent.chainLabels[$0] ?? $0.capitalized, detail: nil,
                         icon: "chain:\($0)")
             }
+            rows.append(.option(.jupiter, title: "Solana", detail: "Jupiter", icon: "chain:solana"))
             return rows
         case .definitive:
             var rows: [Entry] = [.chainPicker, .header("Orders")]
@@ -217,6 +225,7 @@ enum SponsorMenu {
         switch option {
         case .swap: return .trade(typedSwap(typed) ?? starterSwap(on: "base"))
         case .swapOn(let chain): return .trade(starterSwap(on: chain))
+        case .jupiter: return .solanaSwap
         case .typed: return typedOrder(typed).map { .trade($0) }
         case .order(let kind): return starter(kind, chain: flashChain).map { .trade($0) }
         case .openOrders: return .openApp(path: "evm-wallet")

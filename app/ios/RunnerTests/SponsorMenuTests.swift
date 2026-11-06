@@ -38,7 +38,7 @@ final class SponsorMenuTests: XCTestCase {
     }
 
     func testOptionIdsRoundTrip() {
-        var all: [SponsorMenu.Option] = [.swap, .typed, .openOrders, .receipts]
+        var all: [SponsorMenu.Option] = [.swap, .jupiter, .typed, .openOrders, .receipts]
         all += SponsorMenu.swapChains.map { .swapOn($0) }
         all += SponsorMenu.orderKinds.map { .order($0) }
         for option in all { XCTAssertEqual(SponsorMenu.Option(id: option.id), option, option.id) }
@@ -51,7 +51,7 @@ final class SponsorMenuTests: XCTestCase {
 
     func testUniswapListsSwapAndEveryChain() {
         let entries = SponsorMenu.entries(for: .uniswap, typed: "", privateAI: nil)
-        XCTAssertEqual(options(entries), [.swap] + ["base", "ethereum", "arbitrum", "optimism", "unichain"].map { .swapOn($0) })
+        XCTAssertEqual(options(entries), [.swap] + ["base", "ethereum", "arbitrum", "optimism", "unichain"].map { .swapOn($0) } + [.jupiter])
         XCTAssertEqual(entries[0], .option(.swap, title: "Swap", detail: "10 USDC → ETH", icon: "arrow.left.arrow.right"))
         XCTAssertEqual(entries[1], .header("Chains"))
         guard case .option(_, let title, _, _) = entries[3] else { return XCTFail() }
@@ -187,6 +187,16 @@ final class SponsorMenuTests: XCTestCase {
         XCTAssertEqual(trade(.order(.trailingStop), chain: "solana")?.sell, "SOL")
         let bridge = try XCTUnwrap(trade(.order(.bridge), chain: "solana"))
         XCTAssertEqual(bridge.toChain, "base")
+    }
+
+    /// Solana sits under Uniswap's chains as Jupiter (Uniswap's own app
+    /// routes Solana through Jupiter), and opens the keyboard's Buy panel.
+    func testSolanaSwapsGoThroughJupiter() {
+        let entries = SponsorMenu.entries(for: .uniswap, typed: "", privateAI: nil)
+        XCTAssertEqual(entries.last, .option(.jupiter, title: "Solana", detail: "Jupiter", icon: "chain:solana"))
+        XCTAssertEqual(SponsorMenu.action(for: .jupiter, typed: ""), .solanaSwap)
+        XCTAssertEqual(TradeIntent.parse("swap 10 usdc to usdt on solana")?.venue, "Jupiter")
+        XCTAssertEqual(TradeIntent.parse("swap 10 usdc to eth on base")?.venue, "Uniswap")
     }
 
     func testOpenOrdersAndReceiptsOpenTheApp() {

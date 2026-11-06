@@ -4385,6 +4385,11 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         case .openApp(let path):
             setSurface(.none)
             openApp(path: path)
+        case .solanaSwap:
+            // Buying SOL with what the wallet holds, Jupiter's route.
+            let sol = RatesStore.shared.crypto["SOL"].map { String(format: "$%.2f", $0) }
+            pendingPay = .buy(mint: PaySurface.wsol, symbol: "SOL", price: sol)
+            setSurface(.pay)
         case nil:
             break
         }

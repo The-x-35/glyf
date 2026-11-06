@@ -417,6 +417,7 @@ final class TradeSurface: UIView {
         guard let amount = reversed ? i.buyAmount : i.amount else {
             asking = false; clearQuote(); render(); return
         }
+        if i.chainName == "solana" { jupiterQuote(i, amount: amount, reversed: reversed, serial: serial); return }
         var body: [String: Any] = ["chain": reversed ? buyChain : i.chainName,
                                    "sell": reversed ? buyRef : sellRef, "buy": reversed ? sellRef : buyRef,
                                    "amount": amount]
@@ -458,6 +459,34 @@ final class TradeSurface: UIView {
             self.asking = false
             self.marketPrice = price
             self.fillPrice()
+            self.render()
+        }
+    }
+
+    /// A Solana swap's quote: Jupiter's prices for both sides (the app asks
+    /// Jupiter for the real order before anything is signed).
+    private func jupiterQuote(_ i: TradeIntent, amount: String, reversed: Bool, serial: Int) {
+        let rates = RatesStore.shared
+        let usd = { (symbol: String) -> Double? in TradeEdit.stables.contains(symbol) ? 1 : rates.crypto[symbol] }
+        let take = { [weak self] in
+            guard let self, serial == self.quoteSerial, self.asking else { return }
+            guard let sell = usd(i.sell), let buy = usd(i.buy), sell > 0, buy > 0,
+                  let n = Double(amount.replacingOccurrences(of: ",", with: "")) else { return }
+            self.asking = false
+            self.quoteError = nil
+            // Forward: what `n` of the sell side gets. Reversed: what `n` of
+            // the buy side costs, in the sell side.
+            self.quoteOut = reversed ? n * buy / sell : n * sell / buy
+            self.quoteInUSD = n * (reversed ? buy : sell)
+            self.quoteOutUSD = self.quoteInUSD
+            self.render()
+        }
+        for symbol in [i.sell, i.buy] where usd(symbol) == nil { rates.ensureToken(symbol, then: take) }
+        take()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, serial == self.quoteSerial, self.asking else { return }
+            self.asking = false
+            self.quoteError = "Jupiter has no price right now"
             self.render()
         }
     }

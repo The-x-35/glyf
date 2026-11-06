@@ -47,9 +47,9 @@ void main() {
   Finder byId(String id) => find.byWidgetPredicate((w) => w is Semantics && w.properties.identifier == id);
 
   test('the partners, in order, with 0G only on the Private AI build', () {
-    expect(ConnectedToolsScreen.partnerTools(zeroG: true).map((t) => t.title), ['Uniswap', 'Definitive', '0G']);
-    expect(ConnectedToolsScreen.partnerTools(zeroG: false).map((t) => t.title), ['Uniswap', 'Definitive']);
-    expect(ConnectedToolsScreen.partnerTools(zeroG: true).map((t) => t.brand), ['uniswap', 'definitive', 'zerog']);
+    expect(ConnectedToolsScreen.partnerTools(zeroG: true).map((t) => t.title), ['Uniswap', 'Jupiter', 'Definitive', '0G']);
+    expect(ConnectedToolsScreen.partnerTools(zeroG: false).map((t) => t.title), ['Uniswap', 'Jupiter', 'Definitive']);
+    expect(ConnectedToolsScreen.partnerTools(zeroG: true).map((t) => t.brand), ['uniswap', 'jupiter', 'definitive', 'zerog']);
   });
 
   testWidgets('shows Uniswap, Definitive and 0G as on, each with its mark', (tester) async {
@@ -58,7 +58,7 @@ void main() {
     await settle(tester);
 
     expect(find.text('Trading and AI'), findsOneWidget);
-    for (final id in ['tools:uniswap', 'tools:definitive', 'tools:zerog']) {
+    for (final id in ['tools:uniswap', 'tools:jupiter', 'tools:definitive', 'tools:zerog']) {
       expect(byId(id), findsOneWidget, reason: id);
       expect(byId('$id:on'), findsOneWidget, reason: '$id on');
     }
@@ -67,7 +67,7 @@ void main() {
     expect(find.text('Flash'), findsOneWidget);
     expect(find.text('0G'), findsOneWidget);
     expect(find.text('Private AI'), findsOneWidget);
-    for (final brand in ['uniswap', 'definitive', 'zerog']) {
+    for (final brand in ['uniswap', 'jupiter', 'definitive', 'zerog']) {
       expect(find.byWidgetPredicate((w) => w is BrandMark && w.brand == brand), findsOneWidget, reason: brand);
     }
   });

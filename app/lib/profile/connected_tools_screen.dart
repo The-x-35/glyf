@@ -31,6 +31,8 @@ class ConnectedToolsScreen extends StatefulWidget {
 
   static List<PartnerTool> partnerTools({required bool zeroG}) => [
         (brand: 'uniswap', title: 'Uniswap', detail: null, id: 'tools:uniswap'),
+        // Uniswap's own app routes Solana through Jupiter; so does Glyf.
+        (brand: 'jupiter', title: 'Jupiter', detail: 'Solana swaps', id: 'tools:jupiter'),
         (brand: 'definitive', title: 'Definitive', detail: 'Flash', id: 'tools:definitive'),
         if (zeroG) (brand: 'zerog', title: '0G', detail: 'Private AI', id: 'tools:zerog'),
       ];
@@ -298,7 +300,11 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
         behavior: HitTestBehavior.opaque,
         onTap: () async {
           await Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => tool.brand == 'zerog' ? const KeyboardScreen() : const EvmWalletScreen()));
+              builder: (_) => switch (tool.brand) {
+                    'zerog' => const KeyboardScreen(),
+                    'jupiter' => const WalletScreen(),
+                    _ => const EvmWalletScreen(),
+                  }));
           if (mounted) _load();
         },
         child: _toolCard(

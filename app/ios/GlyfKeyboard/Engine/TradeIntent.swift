@@ -79,7 +79,8 @@ struct TradeIntent: Equatable {
     /// Who carries it out, as the strip says it.
     var venue: String {
         switch kind {
-        case .swap: return "Uniswap"
+        // Solana has no Uniswap pools here: Jupiter swaps there.
+        case .swap: return chainName == "solana" ? "Jupiter" : "Uniswap"
         case .send: return "Glyf wallet"
         case .request: return "Whitechain"
         default: return "Flash"

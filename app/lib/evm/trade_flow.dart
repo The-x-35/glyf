@@ -57,6 +57,14 @@ abstract final class TradeFlow {
     final kind = q['kind'] ?? 'swap';
     final onSolana = q['chain'] == 'solana';
     try {
+      if (onSolana && kind == 'swap') {
+        // Uniswap has no Solana pools here; Jupiter swaps there (as Uniswap's
+        // own app does), signed by the Glyf wallet's key or Phantom.
+        await for (final o in _jupiterSwap(q)) {
+          yield o.state == TradeState.working ? o : await _told(o);
+        }
+        return;
+      }
       if (onSolana && !const {'swap', 'send', 'request'}.contains(kind)) {
         // Solana's orders: the Glyf wallet's key or Phantom, as the switch says.
         await for (final o in _flashSolana(q, kind)) {
@@ -567,6 +575,50 @@ abstract final class TradeFlow {
       if (fromQuote != null) return fromQuote;
       rethrow;
     }
+  }
+
+  /// A swap on Solana: Jupiter's order for the taker, signed through the
+  /// wallet's own buy (WalletFlow.buy: the Glyf wallet here, or Phantom).
+  static Stream<TradeOutcome> _jupiterSwap(Map<String, String> q) async* {
+    yield const TradeOutcome(TradeState.working, 'Asking Jupiter…');
+    final sell = await _solanaToken(q['sell'] ?? 'SOL');
+    final buy = await _solanaToken(q['buy'] ?? 'USDC');
+    final String amount;
+    if (q['buyAmount'] != null) {
+      // "buy 1 sol with usdc": what it costs now, a hair over.
+      final want = double.tryParse(q['buyAmount']!) ?? 0;
+      amount = _trim(want * await _priceOnSolana(buy.symbol) / await _priceOnSolana(sell.symbol) * 1.006);
+    } else if (q['amount'] != null) {
+      amount = q['amount']!;
+    } else {
+      throw GlyfApiException('Say how much ${sell.symbol} to swap');
+    }
+    final start = await WalletFlow.buy(token: buy, payWith: sell, amount: amount);
+    if (start.error != null) {
+      yield TradeOutcome(TradeState.failed, 'Jupiter couldn’t swap that', detail: start.error);
+      return;
+    }
+    final progress = start.progress;
+    if (progress == null) {
+      // Phantom has it; its answer comes back to the wallet.
+      yield const TradeOutcome(TradeState.submitted, 'Approve the swap in Phantom',
+          detail: 'Glyf shows the result when Phantom sends you back');
+      return;
+    }
+    await for (final o in progress) {
+      yield jupiterOutcome(o);
+    }
+  }
+
+  /// A wallet step as the trade screen shows it.
+  static TradeOutcome jupiterOutcome(PayOutcome o) {
+    final url = o.signature == null ? null : WalletFlow.solscanUrl(o.signature!);
+    return switch (o.state) {
+      PayState.working => TradeOutcome(TradeState.working, o.title, detail: o.detail),
+      PayState.done => TradeOutcome(TradeState.done, o.title, detail: o.detail, txUrl: url, hash: o.signature),
+      PayState.submitted => TradeOutcome(TradeState.submitted, o.title, detail: o.detail, txUrl: url, hash: o.signature),
+      PayState.failed || PayState.cancelled => TradeOutcome(TradeState.failed, o.title, detail: o.detail),
+    };
   }
 
   static Future<TokenInfo> _solanaToken(String symbol) async {
