@@ -188,7 +188,32 @@ struct TradeIntent: Equatable {
         "wbtc": "WBTC", "btc": "WBTC", "bitcoin": "WBTC", "cbbtc": "CBBTC", "uni": "UNI", "link": "LINK",
         "aave": "AAVE", "op": "OP", "arb": "ARB", "pol": "POL", "matic": "POL", "aero": "AERO",
         "degen": "DEGEN", "sol": "SOL", "solana": "SOL", "pepe": "PEPE", "ldo": "LDO",
+        "aapl": "AAPL", "apple": "AAPL", "tsla": "TSLA", "tesla": "TSLA", "nvda": "NVDA", "nvidia": "NVDA",
+        "msft": "MSFT", "microsoft": "MSFT", "googl": "GOOGL", "google": "GOOGL", "alphabet": "GOOGL",
+        "amzn": "AMZN", "amazon": "AMZN", "meta": "META",
     ]
+
+    /// Tokenized shares on Base (the "…c" shares, the deepest there: Uniswap
+    /// and Flash both trade them against USDC), by ticker. Arpit, 2026-11-07:
+    /// "if I type $Apple on the keyboard, I should see the option to buy on
+    /// Uniswap through Base".
+    static let baseStocks: [String: String] = [
+        "AAPL": "0xb200000000000000000000C2e324d24d7eEcd1fb",
+        "TSLA": "0xb2000000000000000000001e800a7f5189430cd0",
+        "NVDA": "0xb20000000000000000000078ee7ce2fe4908108c",
+        "MSFT": "0xb200000000000000000000ab99cfa739e253872b",
+        "GOOGL": "0xb2000000000000000000002d0ba3164cc74f58b7",
+        "AMZN": "0xb200000000000000000000d9192b6b456483c2e8",
+        "META": "0xb2000000000000000000008bc8786b856e61707c",
+    ]
+
+    /// A share's ticker from what a price chip or a token list calls it
+    /// ("AAPLx", "AAPLon", "AAPLc", "aapl"), when Base has it.
+    static func baseStock(_ name: String) -> String? {
+        var t = name.uppercased().replacingOccurrences(of: "$", with: "")
+        for suffix in ["ON", "X", "C"] where baseStocks[t] == nil && t.hasSuffix(suffix) { t = String(t.dropLast(suffix.count)) }
+        return baseStocks[t] == nil ? nil : t
+    }
 
     static let chains: [String: String] = [
         "base": "base", "ethereum": "ethereum", "eth mainnet": "ethereum", "mainnet": "ethereum",
@@ -196,7 +221,7 @@ struct TradeIntent: Equatable {
         "polygon": "polygon", "unichain": "unichain", "solana": "solana", "whitechain": "whitechain-sepolia",
     ]
 
-    private static let sym = #"(eth|ether|weth|usdc|usdt|dai|wbtc|btc|bitcoin|cbbtc|uni|link|aave|op|arb|pol|matic|aero|degen|sol|solana|pepe|ldo)"#
+    private static let sym = #"\$?(eth|ether|weth|usdc|usdt|dai|wbtc|btc|bitcoin|cbbtc|uni|link|aave|op|arb|pol|matic|aero|degen|sol|solana|pepe|ldo|aapl|apple|tsla|tesla|nvda|nvidia|msft|microsoft|googl|google|alphabet|amzn|amazon|meta)"#
     private static let num = #"(\d+(?:[.,]\d+)?(?:k)?)"#
     private static let chainPart = #"(?:\s+on\s+(base|ethereum|eth mainnet|mainnet|arbitrum|arb|optimism|op|polygon|unichain|solana|whitechain))?"#
     private static let chainWord = #"(base|ethereum|eth mainnet|mainnet|arbitrum|arb|optimism|op|unichain|polygon|solana|whitechain)"#
@@ -214,7 +239,12 @@ struct TradeIntent: Equatable {
         guard words.contains(where: lower.contains) else { return nil }
         // A schedule longer than Flash's 30-day TWAP is a recurring plan.
         let spread = twap(t).flatMap { ($0.durationSeconds ?? 0) <= RecurringPlan.flashMaxSeconds ? $0 : nil }
-        return bracket(t) ?? orders(t) ?? spread ?? recurring(t) ?? bridgeMove(t) ?? send(t) ?? request(t) ?? swap(t)
+        guard var r = bracket(t) ?? orders(t) ?? spread ?? recurring(t) ?? bridgeMove(t) ?? send(t) ?? request(t) ?? swap(t)
+        else { return nil }
+        // A share trades on Base, by its address there.
+        if let a = baseStocks[r.sell] { r.sellAddress = a; r.chain = "base" }
+        if let a = baseStocks[r.buy] { r.buyAddress = a; r.chain = "base" }
+        return r
     }
 
     // "swap 0.05 eth to usdc on base", "sell 0.1 eth", "buy 20 usdc of eth"
@@ -434,6 +464,7 @@ struct TradeIntent: Equatable {
     static func stableFor(_ symbol: String) -> String { ["USDC", "USDT", "DAI"].contains(symbol) ? "ETH" : "USDC" }
 
     private static func chain(_ word: String?, token: String) -> String? {
+        if baseStocks[token] != nil { return "base" }
         if let word, let c = chains[word.lowercased()] { return c }
         return token == "SOL" ? "solana" : nil
     }

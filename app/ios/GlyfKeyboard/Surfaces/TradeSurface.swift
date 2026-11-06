@@ -450,7 +450,7 @@ final class TradeSurface: UIView {
     private func price(of symbol: String) {
         if TradeEdit.stables.contains(symbol) { marketPrice = 1; asking = false; render(); return }
         if symbol == "SOL" || intent.chainName == "solana" { jupiterPrice(symbol); return }
-        let ref = known["\(intent.chainName)|\(symbol.uppercased())"]?.address ?? symbol
+        let ref = TradeIntent.baseStocks[symbol.uppercased()] ?? known["\(intent.chainName)|\(symbol.uppercased())"]?.address ?? symbol
         BackendClient.shared.evmJSON(path: "/uniswap/quote",
                                      body: ["chain": intent.chainName, "sell": ref, "buy": "USDC", "amount": "1"]) { [weak self] obj in
             guard let self else { return }

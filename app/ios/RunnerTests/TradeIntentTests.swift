@@ -208,6 +208,28 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(TradeIntent.walletName(chain: nil, mode: "external"), "MetaMask")
     }
 
+    /// Shares trade on Base, by their address there: a buy is a Uniswap
+    /// swap from USDC, a buy below a price is a Flash limit.
+    func testSharesTradeOnBase() throws {
+        let buy = try XCTUnwrap(read("buy $10 of apple"))
+        XCTAssertEqual(buy.kind, .swap)
+        XCTAssertEqual(buy.sell, "USDC")
+        XCTAssertEqual(buy.buy, "AAPL")
+        XCTAssertEqual(buy.chainName, "base")
+        XCTAssertEqual(buy.buyAddress, "0xb200000000000000000000C2e324d24d7eEcd1fb")
+        XCTAssertEqual(buy.venue, "Uniswap")
+        XCTAssertEqual(read("buy $10 of $aapl")?.buy, "AAPL")
+        let limit = try XCTUnwrap(read("buy $10 of tesla if it dips below 300"))
+        XCTAssertEqual(limit.kind, .limit)
+        XCTAssertEqual(limit.chainName, "base")
+        XCTAssertEqual(limit.query["buyAddress"] ?? limit.query["sellAddress"], TradeIntent.baseStocks["TSLA"])
+        XCTAssertEqual(read("swap 20 usdc to nvda on solana")?.chainName, "base")
+        XCTAssertEqual(TradeIntent.baseStock("AAPLx"), "AAPL")
+        XCTAssertEqual(TradeIntent.baseStock("AAPLon"), "AAPL")
+        XCTAssertNil(TradeIntent.baseStock("SOL"))
+        XCTAssertNil(read("I ate an apple"))
+    }
+
     func testAWalletSecretIsNeverKeptInClipboardHistory() {
         XCTAssertTrue(ClipboardStore.isGlyfSecret(["public.utf8-plain-text", "org.nspasteboard.ConcealedType", "so.glyf.secret"]))
         XCTAssertFalse(ClipboardStore.isGlyfSecret(["public.utf8-plain-text", "org.nspasteboard.ConcealedType"]))

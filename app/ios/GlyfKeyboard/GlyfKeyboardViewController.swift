@@ -3864,6 +3864,12 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     /// the one hop iOS allows). A copy that was used this way must not bring
     /// its chip back on every empty field until something else is copied.
     /// The tour still practises on the app's sheet, never for real.
+    /// The Base share a price chip names ("1 AAPL = $342.37"), if any.
+    static func baseShare(_ shown: String) -> String? {
+        let parts = shown.split(separator: " ")
+        return parts.count > 1 ? TradeIntent.baseStock(String(parts[1])) : nil
+    }
+
     func toolbarSmartExtraTapped(_ chip: Smart.Chip) {
         noteChipUsed(chip)
         switch chip {
@@ -3883,6 +3889,12 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             ClipContext.markDone()
             cachedPaste = nil
             pendingPay = .buy(mint: mint, symbol: symbol, price: price)
+        case .money(let shown, _, _?) where Self.baseShare(shown) != nil:
+            // A share Base has ($apple): bought there with USDC, on Uniswap.
+            if let ticker = Self.baseShare(shown), let t = TradeIntent.parse("buy $10 of \(ticker.lowercased()) on base") {
+                openTradePanel(t)
+            }
+            return
         case .money(let shown, _, let mint?):
             // "1 SOL = $121.39": the ticker and its price, off the chip.
             let parts = shown.split(separator: " ")
