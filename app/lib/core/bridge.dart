@@ -100,6 +100,10 @@ abstract final class GlyfBridge {
   static Future<bool> openURL(String url) async =>
       await _call<bool>('openURL', {'url': url}) ?? false;
 
+  /// A metamask:// deeplink; false when MetaMask isn't installed.
+  static Future<bool> openMetaMask(String url) async =>
+      await _call<bool>('openMetaMask', {'url': url}) ?? false;
+
   static Future<String?> documentsPath() => _call<String>('documentsPath');
 
   static Future<List<String>> launchArgs() async =>
@@ -186,11 +190,20 @@ abstract final class GlyfBridge {
     }
   }
 
+  /// One read-change-write at a time: two at once (the wallet saving its
+  /// connection while MetaMask's channel is saved) would each write back
+  /// the file as they read it, and the later one would drop the other's key.
+  static Future<void> _settingsQueue = Future.value();
+
   static Future<void> updateSharedSettings(
-      Map<String, dynamic> Function(Map<String, dynamic>) mutate) async {
-    final current = await sharedSettings();
-    final next = mutate(Map<String, dynamic>.from(current));
-    await _call<bool>('writeSharedSettings', {'json': jsonEncode(next)});
+      Map<String, dynamic> Function(Map<String, dynamic>) mutate) {
+    final run = _settingsQueue.then((_) async {
+      final current = await sharedSettings();
+      final next = mutate(Map<String, dynamic>.from(current));
+      await _call<bool>('writeSharedSettings', {'json': jsonEncode(next)});
+    });
+    _settingsQueue = run.catchError((_) {});
+    return run;
   }
 
   static Future<Map<String, dynamic>> onboardingState() async {

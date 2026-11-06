@@ -30,7 +30,7 @@ const CreateSchema = z.object({
   orderId: z.string().regex(/^[\w-]{1,80}$/).optional(),
 });
 
-/** Where the link points: this server's public address (as routes/walletjobs.ts). */
+/** Where the link points: this server's public address (PUBLIC_BASE_URL, else the host it was asked on). */
 function base(req: FastifyRequest): string {
   const fixed = process.env.PUBLIC_BASE_URL?.replace(/\/+$/, "");
   if (fixed) return fixed;

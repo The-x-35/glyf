@@ -174,7 +174,7 @@ class _PayRequestScreenState extends State<PayRequestScreen> {
                           Text(_progress!, style: const TextStyle(color: Glass.inkSoft, fontSize: 14.5)),
                         if (_reopen != null)
                           TextButton(
-                            onPressed: () => GlyfBridge.openURL(_reopen!),
+                            onPressed: () => GlyfBridge.openMetaMask(_reopen!),
                             child: Text('Open ${EvmSigner.kind.value.label}',
                                 style: const TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
                           ),

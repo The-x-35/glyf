@@ -194,7 +194,7 @@ class _TradeScreenState extends State<TradeScreen> {
                     identifier: 'trade:reopen',
                     button: true,
                     child: PillButton(
-                        label: 'Open ${EvmSigner.kind.value.label}', onPressed: () => GlyfBridge.openURL(o.reopen!)),
+                        label: 'Open ${EvmSigner.kind.value.label}', onPressed: () => GlyfBridge.openMetaMask(o.reopen!)),
                   ),
                   const SizedBox(height: 6),
                 ],

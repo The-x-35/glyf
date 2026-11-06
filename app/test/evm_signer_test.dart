@@ -4,6 +4,7 @@ import 'package:eth_sig_util/eth_sig_util.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:glyf/evm/evm_chains.dart';
 import 'package:glyf/evm/evm_signer.dart';
+import 'package:glyf/evm/metamask_link.dart';
 import 'package:glyf/evm/evm_wallet.dart';
 import 'package:web3dart/crypto.dart' show hexToBytes;
 import 'package:web3dart/web3dart.dart';
@@ -53,32 +54,45 @@ void main() {
       final sig = '0x${bytesToHexString(account.signPersonalMessageToUint8List(utf8.encode(message)))}';
       expect(EvmSigner.recoverMessage(message, sig).toLowerCase(), signer.toLowerCase());
     }
-    // Must stay word for word what the server puts in the job (lib/walletjobs.ts).
     expect(EvmSigner.connectMessage('X'), 'Glyf: use this wallet to sign\nCode: X');
   });
 
-  test('steps go to the server the way its job takes them', () {
-    final tx = TxStep(EvmChain.base, 'Swap ETH for USDC',
-        EvmCall(to: '0x2626664c2603336E57B271c5C0b26F421741e481', data: '0x5ae401dc', value: BigInt.parse('50000000000000000')));
-    expect(EvmSigner.stepJson(tx), {
-      'type': 'tx',
-      'chainId': 8453,
+  test('builds MetaMask’s requests the way eth_sendTransaction, typed data and personal_sign take them', () {
+    const from = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+    final tx = EvmCall(to: '0x2626664c2603336E57B271c5C0b26F421741e481', data: '0x5ae401dc',
+        value: BigInt.parse('50000000000000000'), gas: BigInt.from(21000));
+    expect(EvmSigner.txJson(from, tx), {
+      'from': from,
       'to': '0x2626664c2603336E57B271c5C0b26F421741e481',
       'data': '0x5ae401dc',
-      'value': '50000000000000000',
-      'label': 'Swap ETH for USDC',
+      'value': '0xb1a2bc2ec50000',
+      'gas': '0x5208',
     });
-    final signed = EvmSigner.stepJson(TypedStep(EvmChain.base, 'Sign the stop-loss', jsonEncode(typed)));
-    expect(signed['type'], 'typed');
-    expect((signed['data'] as Map)['primaryType'], 'FlashOrder');
-    expect(EvmSigner.stepJson(MessageStep(EvmChain.base, 'Cancel', 'hi')), {'type': 'message', 'message': 'hi', 'label': 'Cancel'});
+    final typedRpc = EvmSigner.signRpc(from, TypedStep(EvmChain.base, 'Sign the stop-loss', jsonEncode(typed)));
+    expect(typedRpc['method'], 'eth_signTypedData_v4');
+    expect((jsonDecode((typedRpc['params'] as List)[1] as String) as Map)['primaryType'], 'FlashOrder');
+    expect(EvmSigner.signRpc(from, MessageStep(EvmChain.base, 'Cancel', 'hi')),
+        {'method': 'personal_sign', 'params': ['0x6869', from]});
   });
 
-  test('opens the page inside each wallet’s own browser', () {
-    const page = 'https://api.tryglyf.com/w/abc';
-    expect(EvmSigner.walletLink(EvmSignerKind.metamask, page), 'https://metamask.app.link/dapp/api.tryglyf.com/w/abc');
-    expect(EvmSigner.walletLink(EvmSignerKind.phantom, page),
-        'https://phantom.app/ul/browse/https%3A%2F%2Fapi.tryglyf.com%2Fw%2Fabc?ref=https%3A%2F%2Fapi.tryglyf.com');
+  test('speaks MetaMask’s deeplink protocol: a base64 message on mmsdk, an answer back on glyf://mmsdk', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const from = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+    final (id, url) = await MetaMaskLink.requestLink('personal_sign', ['0x6869', from], account: from, chainId: 8453);
+    final uri = Uri.parse(url);
+    expect('${uri.scheme}://${uri.host}', 'metamask://mmsdk');
+    expect(uri.queryParameters['scheme'], 'glyf');
+    expect(uri.queryParameters['account'], '$from@0x2105');
+    final sent = jsonDecode(utf8.decode(base64.decode(uri.queryParameters['message']!))) as Map;
+    expect(sent, {'id': id, 'jsonrpc': '2.0', 'method': 'personal_sign', 'params': ['0x6869', from]});
+    // What MetaMask opens with: data carries the answer, the accounts and the chain it's on.
+    final answer = base64.encode(utf8.encode(jsonEncode(
+        {'data': {'id': id, 'result': '0xsig', 'accounts': [from], 'chainId': '0x2105'}, 'name': 'metamask-provider'})));
+    expect(MetaMaskLink.handle(Uri.parse('glyf://mmsdk?message=${Uri.encodeComponent(answer)}')), isTrue);
+    expect(MetaMaskLink.walletChain, '0x2105');
+    final reply = MetaMaskReply.from({'id': '7', 'error': {'code': 4001, 'message': 'User rejected'}});
+    expect(reply.error?.refused, isTrue);
+    expect(MetaMaskLink.handle(Uri.parse('glyf://phantom?x=1')), isFalse);
   });
 }
 

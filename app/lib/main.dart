@@ -21,6 +21,7 @@ import 'evm/evm_wallet.dart';
 import 'evm/evm_wallet_screen.dart';
 import 'evm/pay_request.dart';
 import 'evm/pay_request_screen.dart';
+import 'evm/metamask_link.dart';
 import 'evm/trade_screen.dart';
 import 'wallet/send_screen.dart';
 import 'wallet/wallet_screen.dart';
@@ -155,9 +156,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       final id = uri.queryParameters['id'];
       if (id != null) _openDictation(id);
     }
-    // MetaMask's or Phantom's browser sending the person back after a
-    // signature: the screen that's waiting reads the answer itself.
-    if (uri.host == 'evm-return') return;
+    // MetaMask answering a request Glyf opened it on (lib/evm/metamask_link.dart):
+    // the screen that's waiting takes it from there.
+    if (MetaMaskLink.handle(uri)) return;
     if (uri.host == 'phantom') {
       // Phantom's answer to Connect or to a payment: finished on its own
       // screen, which sends the signed payment on.

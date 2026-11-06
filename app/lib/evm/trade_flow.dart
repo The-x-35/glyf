@@ -360,7 +360,8 @@ abstract final class TradeFlow {
       final token = await _token(chain, symbol);
       call = EvmCall(to: token.address, data: erc20Transfer(to, _units(amount, token.decimals)));
     }
-    final who = q['to'] ?? to;
+    final named = q['to'];
+    final who = named != null && !named.startsWith('0x') ? named : EvmSigner.short(to);
     late List<Signed> signed;
     yield* _sign('Send $amount $symbol to $who',
         [TxStep(chain, 'Send $amount $symbol to $who', call, failTitle: 'The send reverted')], (r) => signed = r);

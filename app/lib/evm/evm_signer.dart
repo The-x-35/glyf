@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:eth_sig_util/model/typed_data.dart';
 import 'package:eth_sig_util/util/signature.dart';
@@ -7,10 +8,10 @@ import 'package:eth_sig_util/util/typed_data.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/bridge.dart';
-import '../core/glyf_api.dart';
 import 'evm_chains.dart';
 import 'evm_rpc.dart';
 import 'evm_wallet.dart';
+import 'metamask_link.dart';
 
 /// What a signer is on ("Confirm in MetaMask"), and the link that opens
 /// the wallet again while it waits.
@@ -19,8 +20,7 @@ typedef SignProgress = void Function(String label, String? reopen);
 /// Which wallet signs the keyboard's Ethereum trades.
 enum EvmSignerKind {
   glyf('Glyf wallet'),
-  metamask('MetaMask'),
-  phantom('Phantom');
+  metamask('MetaMask');
 
   const EvmSignerKind(this.label);
   final String label;
@@ -100,10 +100,11 @@ class SignFailed implements Exception {
 }
 
 /// Signs with the Glyf wallet on the phone, or hands the steps to MetaMask
-/// or Phantom: a page of Glyf's opens in the wallet's own browser, the
-/// wallet signs there, and the answers come back through the server. Glyf
-/// holds no key of an outside wallet, and trusts nothing the page sends
-/// back until it has checked it here (who signed, who sent, that it landed).
+/// by deeplink (metamask_link.dart): Glyf builds each request, MetaMask
+/// opens on it and comes back with the answer. Glyf holds no key of
+/// MetaMask's, and trusts nothing it sends back until it has checked it here
+/// (who signed, who sent, that it landed). Phantom signs only Solana by
+/// deeplink, so it isn't one of these (its Solana wallet is lib/wallet/).
 abstract final class EvmSigner {
   static final kind = ValueNotifier<EvmSignerKind>(EvmSignerKind.glyf);
 
@@ -164,87 +165,109 @@ abstract final class EvmSigner {
         return s;
       });
 
-  // MARK: Outside wallets
-
-  /// The link that opens [url] in the wallet's own browser.
-  static String walletLink(EvmSignerKind k, String url) => switch (k) {
-        EvmSignerKind.metamask => 'https://metamask.app.link/dapp/${url.replaceFirst(RegExp(r'^https?://'), '')}',
-        EvmSignerKind.phantom =>
-          'https://phantom.app/ul/browse/${Uri.encodeComponent(url)}?ref=${Uri.encodeComponent(Uri.parse(url).origin)}',
-        EvmSignerKind.glyf => url,
-      };
+  // MARK: MetaMask
 
   static Completer<void>? _stop;
 
-  /// Stops waiting on the wallet (the screen's Stop).
-  static void stopWaiting() => _stop?.complete();
+  /// Stops waiting on MetaMask (the screen's Stop).
+  static void stopWaiting() {
+    final s = _stop;
+    if (s != null && !s.isCompleted) s.complete();
+  }
 
-  /// Connects [k]: the wallet signs a one-off message naming the job, and
-  /// the address that signed it is the one kept.
+  /// Connects MetaMask: it asks to connect and signs a one-off message in
+  /// the same trip, and the address that signed it is the one kept.
   static Stream<SignEvent> connect(EvmSignerKind k) async* {
-    final job = await GlyfApi.evmPost('/wallet-jobs', {'kind': 'connect', 'wallet': k.name, 'title': 'Connect ${k.label}'});
-    final id = job['id'] as String;
-    final link = walletLink(k, job['url'] as String);
-    await GlyfBridge.openURL(link);
-    yield SignEvent.progress('Connect in ${k.label}', reopen: link);
-    final answer = await _await(id, k, link, (label) {});
-    yield SignEvent.progress('Checking…');
-    final address = answer['address'] as String?;
-    final results = (answer['results'] as List? ?? const []).cast<Map>();
-    final signature = results.isEmpty ? null : results.first['signature'] as String?;
-    if (address == null || signature == null) throw SignFailed('${k.label} didn’t answer');
-    final signer = recoverMessage(connectMessage(id), signature);
-    if (signer.toLowerCase() != address.toLowerCase()) {
-      throw SignFailed('That signature isn’t from ${short(address)}');
+    if (k != EvmSignerKind.metamask) throw SignFailed('${k.label} can’t connect');
+    final message = connectMessage(_code());
+    final (id, url) = await MetaMaskLink.connectLink(message);
+    yield SignEvent.progress('Connect in MetaMask', reopen: MetaMaskLink.home);
+    final reply = await _ask(id, url, null);
+    yield const SignEvent.progress('Checking…');
+    final signature = reply.result is String ? reply.result as String : null;
+    final account = reply.accounts.isEmpty ? null : reply.accounts.first;
+    if (signature == null || account == null) throw SignFailed('MetaMask didn’t answer');
+    final signer = recoverMessage(message, signature);
+    if (signer.toLowerCase() != account.toLowerCase()) {
+      throw SignFailed('That signature isn’t from ${short(account)}');
     }
-    _connected[k] = _checksum(address);
+    _connected[k] = _checksum(signer);
     kind.value = k;
     EvmSigner.address.value = _connected[k];
     await _share();
     yield const SignEvent.done([]);
   }
 
-  /// Must match lib/walletjobs.ts connectMessage on the server.
-  static String connectMessage(String id) => 'Glyf: use this wallet to sign\nCode: $id';
+  static String connectMessage(String code) => 'Glyf: use this wallet to sign\nCode: $code';
 
-  /// Waits for the page to finish (polling the server), and says when the
-  /// wallet has sent something so the screen can follow along.
-  static Future<Map<String, dynamic>> _await(
-      String id, EvmSignerKind k, String link, void Function(String label) onProgress) async {
+  static String _code() {
+    final r = Random.secure();
+    return List.generate(12, (_) => r.nextInt(36).toRadixString(36)).join();
+  }
+
+  /// Opens MetaMask on one request and waits for the answer, saying what
+  /// went wrong the way the screen shows it.
+  static Future<MetaMaskReply> _ask(String id, String url, String? from) async {
     final stop = _stop = Completer<void>();
-    final end = DateTime.now().add(const Duration(minutes: 30));
-    var seen = 0;
     try {
-      while (DateTime.now().isBefore(end)) {
-        if (stop.isCompleted) throw SignFailed('Stopped', detail: 'Nothing more was asked of ${k.label}', cancelled: true);
-        Map<String, dynamic>? res;
-        try {
-          res = await GlyfApi.evmGet('/wallet-jobs/$id');
-        } on GlyfApiException {
-          res = null; // a dropped poll is no reason to stop waiting
-        }
-        if (res != null) {
-          final results = (res['results'] as List? ?? const []);
-          if (results.length > seen) {
-            seen = results.length;
-            onProgress('$seen done in ${k.label}');
-          }
-          switch (res['status']) {
-            case 'done':
-              return res;
-            case 'cancelled':
-              throw SignFailed('Stopped in ${k.label}', detail: res['error'] as String?, cancelled: true);
-            case 'failed':
-              throw SignFailed('That didn’t go through', detail: res['error'] as String?);
-          }
-        }
-        await Future.any([Future<void>.delayed(const Duration(milliseconds: 1500)), stop.future]);
+      final reply = await MetaMaskLink.send(id, url, stop: stop.future);
+      final e = reply.error;
+      if (e != null) throw e;
+      return reply;
+    } on MetaMaskError catch (e) {
+      if (e.refused) throw SignFailed('Stopped in MetaMask', detail: 'Nothing was signed', cancelled: true);
+      if (e.changed && from != null) {
+        throw SignFailed('MetaMask is on another account', detail: 'Switch to ${short(from)} in MetaMask and try again');
       }
-      throw SignFailed('${k.label} took too long', detail: 'Start again from the keyboard');
+      if (e.unauthorized) throw SignFailed('Connect MetaMask again', detail: 'Profile › Wallet › Ethereum › MetaMask');
+      throw SignFailed('MetaMask didn’t sign', detail: e.message);
     } finally {
       if (identical(_stop, stop)) _stop = null;
     }
   }
+
+  /// [rpcs] as one trip to MetaMask on [chain]: led by a chain switch when
+  /// MetaMask isn't known to be on it (it refuses anything else on the wrong
+  /// chain), as a metamask_batch when there's more than one.
+  static Future<(String id, String url, bool switched)> _trip(
+      String from, EvmChain chain, List<Map<String, Object?>> rpcs) async {
+    final switched = MetaMaskLink.walletChain?.toLowerCase() != MetaMaskLink.hexChain(chain.id);
+    final all = [
+      if (switched) {'method': 'wallet_switchEthereumChain', 'params': [{'chainId': MetaMaskLink.hexChain(chain.id)}]},
+      ...rpcs,
+    ];
+    final (id, url) = all.length == 1
+        ? await MetaMaskLink.requestLink(all.first['method'] as String, all.first['params'] as List<Object?>,
+            account: from, chainId: chain.id)
+        : await MetaMaskLink.requestLink('metamask_batch', all, account: from, chainId: chain.id);
+    return (id, url, switched);
+  }
+
+  /// What a trip answered, one result per rpc asked for (the switch's own
+  /// answer dropped).
+  static List<Object?> _results(MetaMaskReply reply, int asked, bool switched) {
+    final r = reply.result;
+    final list = asked + (switched ? 1 : 0) == 1 ? [r] : (r is List ? r : const []);
+    final mine = switched ? list.skip(1).toList() : list;
+    if (mine.length != asked) throw SignFailed('MetaMask stopped part way');
+    return mine;
+  }
+
+  /// A transaction as eth_sendTransaction takes it.
+  static Map<String, Object?> txJson(String from, EvmCall call) => {
+        'from': from,
+        'to': call.to,
+        if (call.data != null && call.data != '0x') 'data': call.data,
+        if (call.value > BigInt.zero) 'value': '0x${call.value.toRadixString(16)}',
+        if (call.gas != null) 'gas': '0x${call.gas!.toRadixString(16)}',
+      };
+
+  /// A signature step as MetaMask takes it.
+  static Map<String, Object?> signRpc(String from, SignStep s) => switch (s) {
+        TypedStep() => {'method': 'eth_signTypedData_v4', 'params': [from, jsonEncode(s.map)]},
+        MessageStep(:final message) => {'method': 'personal_sign', 'params': [MetaMaskLink.hexText(message), from]},
+        TxStep() => throw ArgumentError('a transaction is sent, not signed'),
+      };
 
   // MARK: Signing
 
@@ -289,83 +312,76 @@ abstract final class EvmSigner {
     yield SignEvent.done(out);
   }
 
+  /// MetaMask, by deeplink: each transaction is a trip (it has to land
+  /// before the next is asked for); signatures in a row go in one batch.
   static Stream<SignEvent> _runOutside(EvmSignerKind k, String from, String title, List<SignStep> steps) async* {
-    final job = await GlyfApi.evmPost('/wallet-jobs', {
-      'kind': 'run',
-      'wallet': k.name,
-      'title': title,
-      'from': from,
-      'steps': [for (final s in steps) stepJson(s)],
-    });
-    final id = job['id'] as String;
-    final link = walletLink(k, job['url'] as String);
-    await GlyfBridge.openURL(link);
-    yield SignEvent.progress('Confirm in ${k.label}', reopen: link);
-    final progress = StreamController<SignEvent>();
-    final answer = _await(id, k, link, (label) => progress.add(SignEvent.progress(label, reopen: link)));
-    unawaited(answer.whenComplete(progress.close).then((_) {}, onError: (_) {}));
-    yield* progress.stream;
-    final res = await answer;
-    yield const SignEvent.progress('Checking…');
-    final results = (res['results'] as List? ?? const []).cast<Map>();
-    if (results.length != steps.length) throw SignFailed('${k.label} stopped part way');
     final out = <Signed>[];
-    for (var i = 0; i < steps.length; i++) {
+    var i = 0;
+    while (i < steps.length) {
       final step = steps[i];
-      final got = results[i];
-      switch (step) {
-        case TxStep():
-          final hash = got['hash'] as String?;
-          if (hash == null) throw SignFailed('${k.label} sent nothing for “${step.label}”');
-          final r = await EvmRpc.receipt(step.chain, hash, timeout: const Duration(seconds: 30));
-          if (r == null) {
-            if (i == steps.length - 1) {
-              out.add(Signed(hash: hash, pending: true));
-              continue;
-            }
-            throw SignFailed('${step.label} hasn’t landed', hash: hash, chain: step.chain);
+      if (step is TxStep) {
+        final (id, url, switched) = await _trip(from, step.chain, [
+          {'method': 'eth_sendTransaction', 'params': [txJson(from, step.call)]},
+        ]);
+        yield SignEvent.progress('${step.label}: confirm in MetaMask', reopen: MetaMaskLink.home);
+        final reply = await _ask(id, url, from);
+        final hash = _results(reply, 1, switched).first;
+        if (hash is! String || !RegExp(r'^0x[0-9a-fA-F]{64}$').hasMatch(hash)) {
+          throw SignFailed('MetaMask sent nothing for “${step.label}”');
+        }
+        yield SignEvent.progress('Waiting for ${step.chain.name}…');
+        final r = await EvmRpc.receipt(step.chain, hash, timeout: const Duration(seconds: 60));
+        if (r == null) {
+          if (i == steps.length - 1) {
+            out.add(Signed(hash: hash, pending: true));
+            i++;
+            continue;
           }
-          final sender = (r['from'] as String? ?? '').toLowerCase();
-          final to = (r['to'] as String? ?? '').toLowerCase();
-          if (sender != from.toLowerCase() || to != step.call.to.toLowerCase()) {
-            throw SignFailed('That transaction isn’t the one asked for', hash: hash, chain: step.chain);
-          }
-          if (!EvmRpc.succeeded(r)) {
-            throw SignFailed(step.failTitle ?? '${step.label} didn’t go through',
-                detail: step.failDetail, hash: hash, chain: step.chain);
-          }
-          out.add(Signed(hash: hash));
-        case TypedStep():
-          final sig = got['signature'] as String?;
-          if (sig == null || recoverTyped(step.map, sig).toLowerCase() != from.toLowerCase()) {
-            throw SignFailed('That signature isn’t from ${short(from)}');
-          }
-          out.add(Signed(signature: sig));
-        case MessageStep():
-          final sig = got['signature'] as String?;
-          if (sig == null || recoverMessage(step.message, sig).toLowerCase() != from.toLowerCase()) {
-            throw SignFailed('That signature isn’t from ${short(from)}');
-          }
-          out.add(Signed(signature: sig));
+          throw SignFailed('${step.label} hasn’t landed', hash: hash, chain: step.chain);
+        }
+        final sender = (r['from'] as String? ?? '').toLowerCase();
+        final to = (r['to'] as String? ?? '').toLowerCase();
+        if (sender != from.toLowerCase() || to != step.call.to.toLowerCase()) {
+          throw SignFailed('That transaction isn’t the one asked for', hash: hash, chain: step.chain);
+        }
+        if (!EvmRpc.succeeded(r)) {
+          throw SignFailed(step.failTitle ?? '${step.label} didn’t go through',
+              detail: step.failDetail, hash: hash, chain: step.chain);
+        }
+        out.add(Signed(hash: hash));
+        i++;
+        continue;
+      }
+      // Signatures in a row (an order and its permit): one trip.
+      final group = <SignStep>[];
+      while (i < steps.length && steps[i] is! TxStep && steps[i].chain.id == step.chain.id) {
+        group.add(steps[i++]);
+      }
+      final (id, url, switched) = await _trip(from, step.chain, [for (final s in group) signRpc(from, s)]);
+      yield SignEvent.progress(
+          group.length == 1 ? '${step.label}: sign in MetaMask' : 'Sign ${group.length} in MetaMask',
+          reopen: MetaMaskLink.home);
+      final reply = await _ask(id, url, from);
+      final got = _results(reply, group.length, switched);
+      yield const SignEvent.progress('Checking…');
+      for (var j = 0; j < group.length; j++) {
+        final s = group[j];
+        final sig = got[j];
+        final signer = sig is! String
+            ? null
+            : switch (s) {
+                TypedStep() => recoverTyped(s.map, sig),
+                MessageStep(:final message) => recoverMessage(message, sig),
+                TxStep() => null,
+              };
+        if (signer == null || signer.toLowerCase() != from.toLowerCase()) {
+          throw SignFailed('That signature isn’t from ${short(from)}');
+        }
+        out.add(Signed(signature: sig as String));
       }
     }
     yield SignEvent.done(out);
   }
-
-  /// A step as the server's job takes it (routes/walletjobs.ts).
-  static Map<String, Object?> stepJson(SignStep s) => switch (s) {
-        TxStep(:final call) => {
-            'type': 'tx',
-            'chainId': s.chain.id,
-            'to': call.to,
-            if (call.data != null) 'data': call.data,
-            if (call.value > BigInt.zero) 'value': call.value.toString(),
-            if (call.gas != null) 'gas': call.gas.toString(),
-            'label': s.label,
-          },
-        TypedStep() => {'type': 'typed', 'chainId': s.chain.id, 'data': s.map, 'label': s.label},
-        MessageStep(:final message) => {'type': 'message', 'message': message, 'label': s.label},
-      };
 
   // MARK: Checks
 

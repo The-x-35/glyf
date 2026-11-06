@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/theme.dart';
-import '../profile/brand_marks.dart' show PhantomMark;
 import 'evm_chains.dart';
 import 'evm_signer.dart';
 import 'evm_wallet.dart';
@@ -189,7 +188,7 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
                   child: Row(
                     children: [
                       TextButton(
-                        onPressed: () => GlyfBridge.openURL(_reopen!),
+                        onPressed: () => GlyfBridge.openMetaMask(_reopen!),
                         child: Text('Open ${_connecting?.label ?? ''}',
                             style: const TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
                       ),
@@ -256,7 +255,6 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
   }
 
   Widget _signerMark(EvmSignerKind k) => switch (k) {
-        EvmSignerKind.phantom => const PhantomMark(size: 34),
         EvmSignerKind.glyf => Container(
             width: 34,
             height: 34,
