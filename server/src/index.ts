@@ -33,7 +33,6 @@ import { namesRoutes } from "./routes/names.js";
 import { evmRoutes } from "./routes/evm.js";
 import { flashRoutes } from "./routes/flash.js";
 import { uniswapRoutes } from "./routes/uniswap.js";
-import { walletJobRoutes } from "./routes/walletjobs.js";
 import { tradeShareRoutes } from "./routes/tradeshare.js";
 import { privateAIHooks, privateAIRoutes } from "./lib/privateai.js";
 
@@ -125,7 +124,6 @@ export function buildApp(kv: KV = defaultKV()) {
   evmRoutes(app);
   flashRoutes(app);
   uniswapRoutes(app);
-  walletJobRoutes(app, kv);
   tradeShareRoutes(app, kv);
   privateAIRoutes(app, kv);
   return app;

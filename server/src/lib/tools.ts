@@ -24,6 +24,10 @@ export const ToolMetaSchema = z.object({
   output: z.string(),
   scopes: z.array(z.string()).default([]),
   discloses: z.string().min(1),
+  /** Where to turn it on, said when a run needs it and it is off. */
+  connect: z.string().optional(),
+  /** What a Builder try-out shows for a phone tool (no real link is made). */
+  sample: z.string().optional(),
   rateLimit: z.object({ perMin: z.number().int().positive() }),
   timeoutMs: z.number().int().positive(),
 });
@@ -44,6 +48,26 @@ export function loadTools(dir = registryDir("tools")): Map<string, ToolMeta> {
 
 export function toolExists(id: string): boolean {
   return loadTools().has(id);
+}
+
+/** Tools the PHONE answers ("auth": "phone:<connection>"): a new Google Meet
+ *  link, the booking link, the day's calendar. Their grants and data never
+ *  leave the phone, so the keyboard runs them and sends each answer as the
+ *  var `phone.<tool id>`; the server only puts it where the glyf says. */
+export function isPhoneTool(id: string): boolean {
+  return loadTools().get(id)?.auth.startsWith("phone:") ?? false;
+}
+
+export const phoneVar = (id: string): string => `phone.${id}`;
+
+/** The phone tools a glyf uses, in step order. The app hands this list to the
+ *  keyboard so it knows what to fetch before the run. */
+export function phoneToolsOf(steps: { type: string; tool?: string }[]): string[] {
+  const out: string[] = [];
+  for (const s of steps) {
+    if (s.type === "tool" && s.tool && isPhoneTool(s.tool) && !out.includes(s.tool)) out.push(s.tool);
+  }
+  return out;
 }
 
 // Simple per-tool rate limiting (§6.11 rateLimit.perMin).
@@ -88,6 +112,11 @@ export async function runTool(
   const meta = loadTools().get(id);
   if (!meta) throw new Error(`unknown tool '${id}'`);
   let token = "";
+  if (meta.auth.startsWith("phone:")) {
+    // Answered on the phone (the engine reads the var); reaching here means
+    // the phone sent nothing for it.
+    throw refuse(meta.connect ?? `Open this glyf from the Glyf keyboard`);
+  }
   if (meta.auth !== "none") {
     const provider = meta.auth.replace("oauth:", "");
     token = connections[provider] ?? "";
@@ -370,6 +399,24 @@ export async function runTool(
         url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
       });
       return JSON.stringify(rows);
+    }
+    case "place.here": {
+      const lat = Number(args.lat), lon = Number(args.lon);
+      if (!args.lat || !args.lon || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+        throw refuse(meta.connect ?? "needs your location");
+      }
+      const spot = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+      const link = `https://www.google.com/maps/search/?api=1&query=${spot}`;
+      // The street is a nicety: without it the link still says where.
+      const near = await fetchJSON(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&lat=${lat}&lon=${lon}`,
+        meta.timeoutMs).then(d => {
+          const a = (d as { address?: Record<string, string> }).address ?? {};
+          const street = a.road ?? a.pedestrian ?? a.neighbourhood ?? a.suburb;
+          const town = a.city ?? a.town ?? a.village ?? a.county;
+          return [street, town].filter(Boolean).join(", ");
+        }).catch(() => "");
+      return near ? `Near ${near} ${link}` : link;
     }
     case "places.search": {
       const q = (args.query || "").trim();
@@ -687,6 +734,10 @@ function mockTool(id: string, args: Record<string, string>): string {
       return `${args.repo || "owner/repo"} ★12,345 · Swift — MOCK repo`;
     case "food.info":
       return `${args.food || "Food"}: 250 kcal/100g, Nutri-Score B MOCK`;
+    case "place.here":
+      return args.lat && args.lon
+        ? `Near MOCK Street, Mock City https://www.google.com/maps/search/?api=1&query=${args.lat},${args.lon}`
+        : (() => { throw refuse("Turn on Nearby in Glyf › Profile › Search"); })();
     case "calendar.today":
       return "9:30 AM — MOCK Standup\n2:00 PM — MOCK Design review";
     case "notion.search":

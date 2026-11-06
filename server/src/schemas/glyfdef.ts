@@ -70,6 +70,9 @@ export const GlyfDefSchema = z.object({
     mode: z.enum(["replace", "insert", "copy", "preview", "hud"]),
     from: z.string(),
   }),
+  /** Where this glyf's AI runs: true = 0G's Private Computer, false = the
+   *  usual models, left out = whatever the phone's Private AI switch says. */
+  privateAI: z.boolean().optional(),
 });
 
 export type GlyfDef = z.infer<typeof GlyfDefSchema>;

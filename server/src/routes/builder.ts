@@ -6,6 +6,8 @@ import type { Guard } from "../lib/guard.js";
 import { runGlyf, userFacingRunError } from "../lib/glyfengine.js";
 import { completeStreaming } from "../providers/openrouter.js";
 import { GlyfLibrary, SaveGlyfSchema, validateUserDef, ensureInputWired } from "../lib/userglyfs.js";
+import { aiContext } from "../lib/privateai.js";
+import { cleanTools, connectionsOf, outsideTools, recipeFor, toolSection } from "../lib/buildertools.js";
 
 /** §6.8 — the Builder. Plain English → runnable Builder-format definition.
  *  Generation runs on the smart tier in STRICT mode: the model must return
@@ -14,6 +16,11 @@ import { GlyfLibrary, SaveGlyfSchema, validateUserDef, ensureInputWired } from "
 const GenerateSchema = z.object({
   description: z.string().min(4).max(600),
   deviceId: z.string().min(8).max(64),
+  /** The Builder's Tools switches that are on ("meet", "booking", "live"…).
+   *  Left out (builds before 6 Nov 2026) = the Builder as it always was. */
+  tools: z.array(z.string().max(24)).max(16).optional(),
+  /** The glyf's Private AI switch; left out = follow the phone. */
+  privateAI: z.boolean().optional(),
 });
 
 const TestSchema = z.object({
@@ -41,25 +48,52 @@ Step types you may use:
 - {"id":"s1","type":"llm","model":"fast","prompt":"...","out":"x"} — prompt may use {{input}} and any var/out via {{name}}. The prompt MUST end with an instruction to reply with ONLY the resulting text.
 - {"id":"s2","type":"format","template":"...{{x}}...","out":"y"}
 - {"id":"s3","type":"if","cond":"{{x}} contains y","then":["s4"],"else":["s5"]} (branch steps listed by id)
-- {"id":"s4","type":"tool","tool":"weather.now","args":{"place":"{{input}}"},"out":"w"} — ONLY these tools exist:
+{{TOOLS}}
+The glyf runs inside a phone keyboard: what it writes goes straight into a chat message the person is typing. So every llm prompt must ask for text that is ready to send as it is: in the writer's own voice, about as long as their message (a short chat stays a short chat), never a formal email unless the glyf is about email, no subject line, no sign-off, and never placeholders like [Name] or [Date].
+The LAST produced out must be named "final" (or output.from must point at it).
+"input" should be "field" when the action transforms what the user typed, "clipboard" when it reacts to copied content, "none" when it needs no text.
+Keep it minimal: most glyfs are ONE llm step.`;
+
+const TOOLS_BEFORE = `- {"id":"s4","type":"tool","tool":"weather.now","args":{"place":"{{input}}"},"out":"w"} — ONLY these tools exist:
   weather.now(place), air.quality(place), quote.crypto(symbol), stocks.quote(symbol), fx.convert(amount,from,to),
   time.now(timezone), url.unfurl(url), wiki.summary(topic), dict.define(word), word.synonyms(word),
   places.search(query), route.eta(from,to), holidays.next(country), books.search(query), news.tech(),
   sports.next(team), recipes.search(dish), joke.random(), quote.inspire(), advice.random(), fact.random(),
   urban.define(term), country.info(country), repo.info(repo), food.info(food),
   calendar.today() [needs Google connected], notion.search(query) [needs Notion connected].
-  Never invent tools.
-The glyf runs inside a phone keyboard: what it writes goes straight into a chat message the person is typing. So every llm prompt must ask for text that is ready to send as it is: in the writer's own voice, about as long as their message (a short chat stays a short chat), never a formal email unless the glyf is about email, no subject line, no sign-off, and never placeholders like [Name] or [Date].
-The LAST produced out must be named "final" (or output.from must point at it).
-"input" should be "field" when the action transforms what the user typed, "clipboard" when it reacts to copied content, "none" when it needs no text.
-Keep it minimal: most glyfs are ONE llm step.`;
+  Never invent tools.`;
+
+/** The Builder's instructions: as they always were, or with the tools the
+ *  person switched on. */
+export function builderSystem(tools?: string[]): string {
+  return SYSTEM.replace("{{TOOLS}}", () => (tools ? toolSection(tools) : TOOLS_BEFORE));
+}
+
+/** What the app shows as on: the switches the glyf uses, and where its AI
+ *  runs when the person chose. */
+function finish(def: Record<string, unknown> & { requires?: unknown }, tools: string[] | undefined,
+                privateAI: boolean | undefined) {
+  const parsed = GlyfDefSchema.parse(def);
+  if (tools) parsed.requires = { ...parsed.requires, connectors: connectionsOf(parsed) };
+  if (privateAI !== undefined) parsed.privateAI = privateAI;
+  return parsed;
+}
 
 export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard: Guard): void {
 
   app.post("/builder/generate", async (req, reply) => {
     const parsed = GenerateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "Bad request" });
-    const { description, deviceId } = parsed.data;
+    const { description, deviceId, privateAI } = parsed.data;
+    const tools = parsed.data.tools ? cleanTools(parsed.data.tools) : undefined;
+
+    // "Send a Meet link": made at once, no model and no run spent.
+    const recipe = tools ? recipeFor(description, tools) : null;
+    if (recipe) {
+      req.log.info({ recipe: true }, "builder_generated");
+      return { def: finish(recipe, tools, privateAI) };
+    }
+
     const gate = await guard.spend(req, deviceId);
     if (!gate.ok) return reply.code(429).send({ error: gate.message });
 
@@ -79,7 +113,7 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard:
         }],
         output: { mode: "preview", from: "final" },
       };
-      return { def };
+      return { def: tools || privateAI !== undefined ? finish(def, tools, privateAI) : def };
     }
 
     // STRICT tier (§8.3): validate, retry once, fail closed.
@@ -87,7 +121,7 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard:
       let res: { text: string };
       try {
         res = await completeStreaming("smart", [
-          { role: "system", content: SYSTEM },
+          { role: "system", content: builderSystem(tools) },
           { role: "user", content: `Design a glyf: ${description}` },
         ], { onToken: () => {} });
       } catch (err) {
@@ -110,8 +144,10 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard:
         const def = ensureInputWired(GlyfDefSchema.parse(candidate));
         const refusal = validateUserDef(def);
         if (refusal) throw new Error(refusal);
+        const outside = tools ? outsideTools(def, tools) : null;
+        if (outside) throw new Error(`uses ${outside}, which is off`);
         req.log.info({ attempt, ok: true }, "builder_generated");
-        return { def };
+        return { def: tools || privateAI !== undefined ? finish(def, tools, privateAI) : def };
       } catch (err) {
         req.log.warn({ attempt, err: String(err) }, "builder_invalid");
       }
@@ -133,12 +169,18 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard:
     const gate = await guard.spend(req, parsed.data.deviceId);
     if (!gate.ok) return reply.code(429).send({ error: gate.message });
 
+    // The try-out runs where the glyf will: on 0G when it says so.
+    const ai = aiContext();
+    // As /glyf/run: a glyf's own Private AI only counts on the hackathon build.
+    if (ai && ai.asked && defParsed.data.privateAI !== undefined) ai.zeroG = defParsed.data.privateAI;
+
     const started = Date.now();
     try {
       const text = await runGlyf({
         def: defParsed.data,
         input: parsed.data.input,
         vars: parsed.data.vars,
+        samples: true,
         complete: async (tier, prompt, onToken) =>
           (await completeStreaming(tier, [{ role: "user", content: prompt }], { onToken })).text,
         onToken: () => {},
