@@ -52,12 +52,25 @@ abstract final class EvmWallet {
     await GlyfBridge.walletSecretClear(_keyName);
     _key = null;
     address.value = null;
-    await GlyfBridge.updateSharedSettings((s) => s..remove('evmAddress'));
+    await GlyfBridge.updateSharedSettings((s) {
+      final signer = s['evmSigner'] as String?;
+      if (signer == null || signer == 'glyf') s.remove('evmAddress');
+      return s;
+    });
   }
 
   /// The keyboard reads the address from shared settings: balances, its own
   /// address getting no Send chip, and whose requests are whose.
-  static Future<void> _share() => GlyfBridge.updateSharedSettings((s) => s..['evmAddress'] = address.value);
+  /// Only while the Glyf wallet is the one signing (EvmSigner): with
+  /// MetaMask or Phantom chosen, the keyboard follows that address instead.
+  static Future<void> _share() => GlyfBridge.updateSharedSettings((s) {
+        final signer = s['evmSigner'] as String?;
+        if (signer == null || signer == 'glyf') s['evmAddress'] = address.value;
+        return s;
+      });
+
+  /// [a] with its EIP-55 checksum.
+  static String checksum(String a) => EthereumAddress.fromHex(a).hexEip55;
 
   /// The key as exactly 32 bytes: web3dart's own bytes carry a sign byte
   /// (33 long) whenever the top bit is set.

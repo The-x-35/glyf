@@ -7,6 +7,7 @@ import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import 'evm_chains.dart';
 import 'evm_rpc.dart';
+import 'evm_signer.dart';
 import 'evm_wallet.dart';
 
 /// A USDT payment request on Whitechain (contracts/src/GlyfPayRequest.sol):
@@ -97,10 +98,9 @@ abstract final class PayRequests {
 
   /// Asks for [amount] USDT from anyone, never expiring; resolves with the
   /// new request's id, the transaction and its link.
-  static Future<({BigInt id, String txHash, String link})> create({required String amount, String memo = ''}) async {
+  static Future<({BigInt id, String txHash, String link})> create(
+      {required String amount, String memo = '', SignProgress? onProgress}) async {
     final c = await contract();
-    final address = await EvmWallet.load();
-    if (address == null) throw GlyfApiException('No Glyf wallet yet');
     final data = _fn('createRequest').encodeCall([
       EthereumAddress.fromHex(usdt),
       units(amount),
@@ -108,7 +108,11 @@ abstract final class PayRequests {
       EthereumAddress.fromHex('0x0000000000000000000000000000000000000000'),
       BigInt.zero,
     ]);
-    final hash = await EvmWallet.send(chain, EvmCall(to: c, data: '0x${bytesToHex(data)}'));
+    final signed = await _sign('Ask for $amount USDT', [
+      TxStep(chain, 'Make the request on Whitechain', EvmCall(to: c, data: '0x${bytesToHex(data)}'),
+          failTitle: 'Whitechain refused the request'),
+    ], onProgress);
+    final hash = signed.single.hash!;
     final receipt = await EvmRpc.receipt(chain, hash);
     if (receipt == null) throw GlyfApiException('Whitechain is taking long to confirm the request');
     if (!EvmRpc.succeeded(receipt)) throw GlyfApiException('Whitechain refused the request');
@@ -147,31 +151,45 @@ abstract final class PayRequests {
     );
   }
 
-  /// Pays [request] from the Glyf wallet: an allowance for exactly the
+  /// Pays [request] from the chosen wallet: an allowance for exactly the
   /// amount when the contract hasn't one, then pay. Resolves with the pay
   /// transaction's hash once it has landed.
-  static Future<String> pay(String contract, PayRequest request) async {
-    final me = await EvmWallet.load();
-    if (me == null) throw GlyfApiException('No Glyf wallet yet');
+  static Future<String> pay(String contract, PayRequest request, {SignProgress? onProgress}) async {
+    final me = await EvmSigner.load();
+    if (me == null) throw GlyfApiException('No wallet yet. Set one up in Profile › Wallet › Ethereum');
     final allowance = await _uint(request.token,
         '0xdd62ed3e${_word(me.substring(2))}${_word(contract.substring(2))}');
-    if (allowance < request.units) {
-      final approve = '0x095ea7b3${_word(contract.substring(2))}${_word(request.units.toRadixString(16))}';
-      final hash = await EvmWallet.send(chain, EvmCall(to: request.token, data: approve));
-      final r = await EvmRpc.receipt(chain, hash);
-      if (r == null || !EvmRpc.succeeded(r)) throw GlyfApiException('The USDT allowance didn’t go through');
-    }
     final data = _fn('pay').encodeCall([request.id]);
-    final hash = await EvmWallet.send(chain, EvmCall(to: contract, data: '0x${bytesToHex(data)}'));
-    final r = await EvmRpc.receipt(chain, hash);
-    if (r == null) throw GlyfApiException('Whitechain is taking long to confirm the payment');
-    if (!EvmRpc.succeeded(r)) throw GlyfApiException('Whitechain refused the payment');
-    return hash;
+    final signed = await _sign('Pay ${request.amount} USDT', [
+      if (allowance < request.units)
+        TxStep(chain, 'Let the request take ${request.amount} USDT',
+            EvmCall(to: request.token,
+                data: '0x095ea7b3${_word(contract.substring(2))}${_word(request.units.toRadixString(16))}'),
+            failTitle: 'The USDT allowance didn’t go through'),
+      TxStep(chain, 'Pay ${request.amount} USDT', EvmCall(to: contract, data: '0x${bytesToHex(data)}'),
+          failTitle: 'Whitechain refused the payment'),
+    ], onProgress);
+    final last = signed.last;
+    if (last.pending) throw GlyfApiException('Whitechain is taking long to confirm the payment');
+    return last.hash!;
   }
 
-  /// The USDT the Glyf wallet holds on Whitechain, whole.
+  /// Runs [steps] with the chosen wallet, telling [onProgress] what it's on.
+  static Future<List<Signed>> _sign(String title, List<SignStep> steps, SignProgress? onProgress) async {
+    List<Signed>? out;
+    await for (final e in EvmSigner.run(title, steps)) {
+      if (e.results != null) {
+        out = e.results;
+      } else {
+        onProgress?.call(e.label!, e.reopen);
+      }
+    }
+    return out!;
+  }
+
+  /// The USDT the chosen wallet holds on Whitechain, whole.
   static Future<String> balance() async {
-    final me = await EvmWallet.load();
+    final me = await EvmSigner.load();
     if (me == null) return '0';
     return whole(await _uint(usdt, '0x70a08231${_word(me.substring(2))}'));
   }

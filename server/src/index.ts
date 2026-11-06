@@ -33,6 +33,7 @@ import { namesRoutes } from "./routes/names.js";
 import { evmRoutes } from "./routes/evm.js";
 import { flashRoutes } from "./routes/flash.js";
 import { uniswapRoutes } from "./routes/uniswap.js";
+import { walletJobRoutes } from "./routes/walletjobs.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -121,6 +122,7 @@ export function buildApp(kv: KV = defaultKV()) {
   evmRoutes(app);
   flashRoutes(app);
   uniswapRoutes(app);
+  walletJobRoutes(app, kv);
   return app;
 }
 

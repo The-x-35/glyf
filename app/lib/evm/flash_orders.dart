@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/glyf_api.dart';
 import '../core/theme.dart';
+import 'evm_chains.dart';
+import 'evm_signer.dart';
 
 /// The Flash orders this wallet has waiting (stop-losses, take-profits,
 /// limits, trails, TWAPs), newest first, each with a Cancel.
@@ -37,8 +39,17 @@ class _FlashOrdersListState extends State<FlashOrdersList> {
   Future<void> _cancel(String id) async {
     setState(() => _cancelling.add(id));
     try {
-      await GlyfApi.evmPost('/flash/cancel', {'orderId': id});
+      // Flash's own cancel message, signed by the wallet that funds the
+      // order (EIP-191); no transaction and no fee.
+      final message = 'Definitive Flash v1 — Cancel Order\nOrder: $id';
+      String? signature;
+      await for (final e in EvmSigner.run('Cancel a Flash order', [MessageStep(EvmChain.base, 'Cancel the order', message)])) {
+        if (e.results != null) signature = e.results!.single.signature;
+      }
+      await GlyfApi.evmPost('/flash/orders/$id/cancel', {'cancelMessage': message, 'userSignature': signature});
       await _load();
+    } on SignFailed catch (e) {
+      if (mounted && !e.cancelled) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     } on Exception catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     }

@@ -5,11 +5,12 @@ import 'package:flutter/services.dart';
 
 import '../core/bridge.dart';
 import '../core/theme.dart';
+import 'evm_signer.dart';
 import 'trade_flow.dart';
 
 /// The flash between the keyboard and the chain: the keyboard read the
-/// trade and showed its quote, so this signs it with the Glyf wallet at
-/// once and says how it went. Back in the chat, the keyboard says it too.
+/// trade and showed its quote, so this signs it at once (the Glyf wallet
+/// here, or MetaMask or Phantom in their own app) and says how it went. Back in the chat, the keyboard says it too.
 class TradeScreen extends StatefulWidget {
   const TradeScreen({super.key, required this.query, this.run});
 
@@ -127,6 +128,15 @@ class _TradeScreenState extends State<TradeScreen> {
                   ),
                 ],
                 const Spacer(flex: 3),
+                if (working && o.reopen != null) ...[
+                  Semantics(
+                    identifier: 'trade:reopen',
+                    button: true,
+                    child: PillButton(
+                        label: 'Open ${EvmSigner.kind.value.label}', onPressed: () => GlyfBridge.openURL(o.reopen!)),
+                  ),
+                  const SizedBox(height: 6),
+                ],
                 if (working)
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),

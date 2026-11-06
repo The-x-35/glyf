@@ -2,7 +2,7 @@ import UIKit
 
 protocol TradeSurfaceDelegate: AnyObject {
     /// The trade as read and quoted, handed to the app, which signs it with
-    /// the Glyf wallet and says how it went when the keyboard is next up.
+    /// the chosen wallet and says how it went when the keyboard is next up.
     func tradeHandOff(query: [String: String])
     /// No Glyf wallet on this phone yet: the app makes one.
     func tradeSetUpWallet()
@@ -20,6 +20,14 @@ final class TradeSurface: UIView {
 
     let intent: TradeIntent
     private let wallet = SettingsStore.current.evmAddress
+    /// The wallet that signs, as the app names it.
+    private let walletName: String = {
+        switch SettingsStore.current.evmSigner {
+        case "metamask": return "MetaMask"
+        case "phantom": return "Phantom"
+        default: return "Glyf wallet"
+        }
+    }()
 
     // Top card: what leaves (or what's asked for).
     private let topCard = UIView()
@@ -332,7 +340,7 @@ final class TradeSurface: UIView {
             topAmount.text = i.amount ?? ""
             topUSD.text = "Test USDT on Whitechain"
             bottomKey.text = "Paid to"
-            bottomValue.text = wallet.map(Smart.shortAddress) ?? "Your Glyf wallet"
+            bottomValue.text = wallet.map(Smart.shortAddress) ?? "Your \(walletName)"
             bottomToken.text = "Whitechain"
             bottomSub.text = "A link goes in the chat; they pay it"
         }

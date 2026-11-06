@@ -3,11 +3,11 @@ import 'package:flutter/services.dart';
 
 import '../core/bridge.dart';
 import '../core/theme.dart';
-import 'evm_wallet.dart';
+import 'evm_signer.dart';
 import 'pay_request.dart';
 
 /// Someone's request, opened from its link: who asks, how much, for what,
-/// and one button that pays it from the Glyf wallet. Read from Whitechain,
+/// and one button that pays it from the chosen wallet. Read from Whitechain,
 /// never from the link, so an edited link can't change what's paid.
 class PayRequestScreen extends StatefulWidget {
   const PayRequestScreen({super.key, required this.contract, required this.id});
@@ -25,6 +25,8 @@ class _PayRequestScreenState extends State<PayRequestScreen> {
   String? _error;
   bool _paying = false;
   String? _paidTx;
+  String? _progress;
+  String? _reopen;
 
   @override
   void initState() {
@@ -34,7 +36,7 @@ class _PayRequestScreenState extends State<PayRequestScreen> {
 
   Future<void> _load() async {
     try {
-      await EvmWallet.load();
+      await EvmSigner.load();
       final r = await PayRequests.load(widget.contract, widget.id);
       final b = await PayRequests.balance();
       if (!mounted) return;
@@ -56,14 +58,28 @@ class _PayRequestScreenState extends State<PayRequestScreen> {
       _error = null;
     });
     try {
-      final hash = await PayRequests.pay(widget.contract, r);
+      final hash = await PayRequests.pay(widget.contract, r,
+          onProgress: (label, reopen) {
+            if (mounted) {
+              setState(() {
+                _progress = label;
+                _reopen = reopen;
+              });
+            }
+          });
       HapticFeedback.mediumImpact();
       if (mounted) setState(() => _paidTx = hash);
       await _load();
     } on Exception catch (e) {
       if (mounted) setState(() => _error = '$e');
     }
-    if (mounted) setState(() => _paying = false);
+    if (mounted) {
+      setState(() {
+        _paying = false;
+        _progress = null;
+        _reopen = null;
+      });
+    }
   }
 
   static String _short(String a) => '${a.substring(0, 6)}…${a.substring(a.length - 4)}';
@@ -71,7 +87,7 @@ class _PayRequestScreenState extends State<PayRequestScreen> {
   @override
   Widget build(BuildContext context) {
     final r = _request;
-    final me = EvmWallet.address.value;
+    final me = EvmSigner.address.value;
     return Scaffold(
       backgroundColor: Glass.bg,
       appBar: AppBar(
@@ -145,11 +161,24 @@ class _PayRequestScreenState extends State<PayRequestScreen> {
               identifier: 'request:pay',
               button: true,
               child: _paying
-                  ? const SizedBox(
-                      height: 52,
-                      child: Center(
-                        child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Glass.ink)),
-                      ),
+                  ? Column(
+                      children: [
+                        const SizedBox(
+                          height: 52,
+                          child: Center(
+                            child: SizedBox(
+                                width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Glass.ink)),
+                          ),
+                        ),
+                        if (_progress != null)
+                          Text(_progress!, style: const TextStyle(color: Glass.inkSoft, fontSize: 14.5)),
+                        if (_reopen != null)
+                          TextButton(
+                            onPressed: () => GlyfBridge.openURL(_reopen!),
+                            child: Text('Open ${EvmSigner.kind.value.label}',
+                                style: const TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
+                          ),
+                      ],
                     )
                   : PillButton(label: 'Pay ${r.amount} USDT', onPressed: _pay),
             ),

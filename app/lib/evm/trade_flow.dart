@@ -5,6 +5,7 @@ import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import 'evm_chains.dart';
 import 'evm_rpc.dart';
+import 'evm_signer.dart';
 import 'evm_wallet.dart';
 import 'pay_request.dart';
 
@@ -12,7 +13,7 @@ import 'pay_request.dart';
 enum TradeState { working, done, submitted, failed }
 
 class TradeOutcome {
-  const TradeOutcome(this.state, this.title, {this.detail, this.txUrl, this.insert});
+  const TradeOutcome(this.state, this.title, {this.detail, this.txUrl, this.insert, this.reopen});
 
   final TradeState state;
   final String title;
@@ -23,20 +24,25 @@ class TradeOutcome {
 
   /// Text the keyboard types into the chat on its return (a pay link).
   final String? insert;
+
+  /// Opens MetaMask or Phantom again while it's waiting on them.
+  final String? reopen;
 }
 
-/// What the keyboard read (TradeIntent.query) carried out with the Glyf
-/// wallet: Uniswap for swaps, Definitive's Flash for every order that waits
+/// What the keyboard read (TradeIntent.query) carried out with the chosen
+/// wallet (EvmSigner: the Glyf wallet, MetaMask or Phantom): Uniswap for
+/// swaps, Definitive's Flash for every order that waits
 /// on a price or spreads over time, plain transfers for sends, GlyfPayRequest
 /// on Whitechain for requests. Every number is asked for again here: the
 /// keyboard's quote was only for show.
 abstract final class TradeFlow {
   static Stream<TradeOutcome> run(Map<String, String> q) async* {
     try {
-      final address = await EvmWallet.load();
+      final address = await EvmSigner.load();
       if (address == null) {
-        yield const TradeOutcome(TradeState.failed, 'No Glyf wallet yet',
-            detail: 'Make one in Profile › Wallet, then try again');
+        yield TradeOutcome(TradeState.failed,
+            EvmSigner.kind.value == EvmSignerKind.glyf ? 'No Glyf wallet yet' : '${EvmSigner.kind.value.label} isn’t connected',
+            detail: 'Set it up in Profile › Wallet › Ethereum, then try again');
         return;
       }
       final kind = q['kind'] ?? 'swap';
@@ -50,6 +56,10 @@ abstract final class TradeFlow {
       await for (final o in steps) {
         yield o.state == TradeState.working ? o : await _told(o);
       }
+    } on SignFailed catch (e) {
+      yield await _told(TradeOutcome(TradeState.failed, e.title,
+          detail: e.detail == null ? null : _plain(e.detail!),
+          txUrl: e.hash == null ? null : e.chain?.txUrl(e.hash!)));
     } on GlyfApiException catch (e) {
       yield await _told(TradeOutcome(TradeState.failed, 'That didn’t go through', detail: _plain(e.message)));
     } on EvmRpcException catch (e) {
@@ -59,12 +69,26 @@ abstract final class TradeFlow {
     }
   }
 
+  static String _walletName() =>
+      EvmSigner.kind.value == EvmSignerKind.glyf ? 'the Glyf wallet' : EvmSigner.kind.value.label;
+
+  /// The signer's progress as the screen shows it; [got] receives what was signed.
+  static Stream<TradeOutcome> _sign(String title, List<SignStep> steps, void Function(List<Signed>) got) async* {
+    await for (final e in EvmSigner.run(title, steps)) {
+      if (e.results != null) {
+        got(e.results!);
+      } else {
+        yield TradeOutcome(TradeState.working, e.label!, reopen: e.reopen);
+      }
+    }
+  }
+
   /// Nodes and APIs speak in codes; the screen says what they mean.
   static String _plain(String message) {
     final m = message.toLowerCase();
     if (m.contains('insufficient funds') || m.contains('insufficient balance') || m.contains('exceeds balance') ||
         m.contains('outoffunds') || m.contains('transfer amount exceeds')) {
-      return 'Not enough in the Glyf wallet for this and its fee';
+      return 'Not enough in ${_walletName()} for this and its fee';
     }
     if (m.contains('nonce')) return 'Another transaction is still going through. Try again in a moment';
     if (m.contains('timeout') || m.contains('timed out')) return 'The network took too long to answer';
@@ -100,44 +124,31 @@ abstract final class TradeFlow {
     final swap = await GlyfApi.evmPost('/uniswap/swap', body);
     final sellSym = q['sell']!;
     final buySym = q['buy']!;
-    final reset = swap['approvalReset'];
-    if (reset is Map) {
-      yield TradeOutcome(TradeState.working, 'Resetting the $sellSym allowance…');
-      final hash = await EvmWallet.send(chain, EvmCall.fromJson(Map<String, dynamic>.from(reset)));
-      await EvmRpc.receipt(chain, hash);
+    final steps = <SignStep>[
+      if (swap['approvalReset'] is Map)
+        TxStep(chain, 'Reset the $sellSym allowance', EvmCall.fromJson(Map<String, dynamic>.from(swap['approvalReset'] as Map))),
+      if (swap['approval'] is Map)
+        TxStep(chain, 'Let Uniswap use your $sellSym', EvmCall.fromJson(Map<String, dynamic>.from(swap['approval'] as Map)),
+            failTitle: 'The approval didn’t go through'),
+      for (final tx in (swap['txs'] as List? ?? const []).cast<Map>())
+        TxStep(chain, 'Swap $sellSym for $buySym', EvmCall.fromJson(Map<String, dynamic>.from(tx)),
+            failTitle: 'The swap reverted', failDetail: 'The price moved past the limit. Nothing was spent but the fee'),
+    ];
+    if (steps.whereType<TxStep>().every((t) => !t.label.startsWith('Swap'))) {
+      throw GlyfApiException('Uniswap had no route for this');
     }
-    final approval = swap['approval'];
-    if (approval is Map) {
-      yield TradeOutcome(TradeState.working, 'Letting Uniswap use your $sellSym…');
-      final hash = await EvmWallet.send(chain, EvmCall.fromJson(Map<String, dynamic>.from(approval)));
-      final r = await EvmRpc.receipt(chain, hash);
-      if (r == null || !EvmRpc.succeeded(r)) {
-        yield TradeOutcome(TradeState.failed, 'The approval didn’t go through', txUrl: chain.txUrl(hash));
-        return;
-      }
-    }
-    final txs = (swap['txs'] as List? ?? const []).cast<Map>();
-    if (txs.isEmpty) throw GlyfApiException('Uniswap had no route for this');
-    yield TradeOutcome(TradeState.working, 'Swapping $sellSym for $buySym…');
-    String? last;
-    for (final tx in txs) {
-      last = await EvmWallet.send(chain, EvmCall.fromJson(Map<String, dynamic>.from(tx)));
-      final r = await EvmRpc.receipt(chain, last);
-      if (r == null) {
-        yield TradeOutcome(TradeState.submitted, 'Swap sent', detail: 'Still confirming on ${chain.label}',
-            txUrl: chain.txUrl(last));
-        return;
-      }
-      if (!EvmRpc.succeeded(r)) {
-        yield TradeOutcome(TradeState.failed, 'The swap reverted',
-            detail: 'The price moved past the limit. Nothing was spent but the fee', txUrl: chain.txUrl(last));
-        return;
-      }
+    late List<Signed> signed;
+    yield* _sign('Swap $sellSym for $buySym', steps, (r) => signed = r);
+    final last = signed.last;
+    if (last.pending) {
+      yield TradeOutcome(TradeState.submitted, 'Swap sent', detail: 'Still confirming on ${chain.label}',
+          txUrl: chain.txUrl(last.hash!));
+      return;
     }
     final inAmount = _fmt(swap['amountIn']);
     final outAmount = _fmt(swap['amountOut']);
     yield TradeOutcome(TradeState.done, 'Swapped',
-        detail: '$inAmount $sellSym → $outAmount $buySym on ${chain.label}', txUrl: chain.txUrl(last!));
+        detail: '$inAmount $sellSym → $outAmount $buySym on ${chain.label}', txUrl: chain.txUrl(last.hash!));
   }
 
   // MARK: Flash
@@ -230,7 +241,7 @@ abstract final class TradeFlow {
   static Stream<TradeOutcome> _flash(Map<String, String> q, String kind, EvmChain chain, String address) async* {
     if (chain.name == 'solana') {
       yield const TradeOutcome(TradeState.failed, 'Solana orders come next',
-          detail: 'Flash orders sign with the Glyf wallet on Base, Ethereum, Arbitrum, Optimism and Polygon for now');
+          detail: 'Flash orders sign on Base, Ethereum, Arbitrum, Optimism and Polygon for now');
       return;
     }
     yield const TradeOutcome(TradeState.working, 'Asking Flash…');
@@ -238,45 +249,48 @@ abstract final class TradeFlow {
     final evm = Map<String, dynamic>.from((quote['evm'] as Map?) ?? const {});
     // Anything Flash wants on chain first: an allowance (to Permit2), and
     // for ETH a wrap to WETH, which is what the order then spends.
+    final wrapTx = (quote['wrap'] as Map?)?['evmTx'];
     final setup = <Object?>[
       evm['approveTx'] ?? evm['approvalTx'],
-      ...((evm['setupTxs'] as List?) ?? const []),
+      ...((evm['setupTxs'] as List?) ?? (quote['setupTxs'] as List?) ?? const []),
       // Only when the order spends ETH the wallet holds as ETH.
-      if (q['sell'] == chain.native || (q['buy'] == chain.native && kind == 'bridge')) (quote['wrap'] as Map?)?['evmTx'],
+      if (q['sell'] == chain.native || (q['buy'] == chain.native && kind == 'bridge')) wrapTx,
     ].whereType<Map>().where((t) => t['to'] != null).toList();
-    for (final tx in setup) {
-      final wrapping = identical(tx, (quote['wrap'] as Map?)?['evmTx']);
-      yield TradeOutcome(TradeState.working, wrapping ? 'Wrapping ETH…' : 'Letting Flash use your ${q['sell']}…');
-      final hash = await EvmWallet.send(chain, EvmCall.fromJson(Map<String, dynamic>.from(tx)));
-      final r = await EvmRpc.receipt(chain, hash);
-      if (r == null || !EvmRpc.succeeded(r)) {
-        yield TradeOutcome(TradeState.failed, wrapping ? 'The wrap didn’t go through' : 'The approval didn’t go through',
-            txUrl: chain.txUrl(hash));
-        return;
-      }
-    }
     // The server hands back the order ready but for the signatures.
     final order = Map<String, dynamic>.from((quote['order'] as Map?) ?? const {});
     final typed = order['evmOrderTypedData'] ?? evm['orderTypedData'];
     if (typed == null) {
       throw GlyfApiException((quote['error'] ?? quote['message'] ?? 'Flash sent nothing to sign').toString());
     }
-    yield const TradeOutcome(TradeState.working, 'Signing the order…');
     order['evmOrderTypedData'] = typed;
-    order['userSignature'] = EvmWallet.signTypedData(typed);
-    if (order['evmPermitTypedData'] != null) {
-      order['evmPermitSignature'] = EvmWallet.signTypedData(order['evmPermitTypedData']!);
-    }
     final pairTyped = ((quote['attachedBracket'] as Map?)?['evm'] as Map?)?['orderTypedData'];
-    final pair = order['attachedBracket'];
-    if (pair is Map && pairTyped != null) {
-      final signed = Map<String, dynamic>.from(pair);
-      signed['userSignature'] = EvmWallet.signTypedData(pairTyped);
-      if (signed['evmPermitTypedData'] != null) {
-        signed['evmPermitSignature'] = EvmWallet.signTypedData(signed['evmPermitTypedData']!);
-      }
-      order['attachedBracket'] = signed;
+    final pair = order['attachedBracket'] is Map ? Map<String, dynamic>.from(order['attachedBracket'] as Map) : null;
+    final title = _placedTitle(kind).replaceFirst(RegExp(r' (set|placed|started)$'), '');
+    final steps = <SignStep>[
+      for (final tx in setup)
+        identical(tx, wrapTx)
+            ? TxStep(chain, 'Wrap ETH for the order', EvmCall.fromJson(Map<String, dynamic>.from(tx)),
+                failTitle: 'The wrap didn’t go through')
+            : TxStep(chain, 'Let Flash use your ${q['sell']}', EvmCall.fromJson(Map<String, dynamic>.from(tx)),
+                failTitle: 'The approval didn’t go through'),
+      TypedStep(chain, 'Sign the $title', typed),
+      if (order['evmPermitTypedData'] != null) TypedStep(chain, 'Sign the allowance', order['evmPermitTypedData']!),
+      if (pair != null && pairTyped != null) TypedStep(chain, 'Sign the take profit and stop', pairTyped),
+      if (pair != null && pairTyped != null && pair['evmPermitTypedData'] != null)
+        TypedStep(chain, 'Sign their allowance', pair['evmPermitTypedData']!),
+    ];
+    late List<Signed> signed;
+    yield* _sign(title, steps, (r) => signed = r);
+    // The signatures, in the order they were asked for after the setup.
+    var i = setup.length;
+    order['userSignature'] = signed[i++].signature;
+    if (order['evmPermitTypedData'] != null) order['evmPermitSignature'] = signed[i++].signature;
+    if (pair != null && pairTyped != null) {
+      pair['userSignature'] = signed[i++].signature;
+      if (pair['evmPermitTypedData'] != null) pair['evmPermitSignature'] = signed[i++].signature;
+      order['attachedBracket'] = pair;
     }
+    yield const TradeOutcome(TradeState.working, 'Placing the order…');
     final placed = await GlyfApi.evmPost('/flash/order', order);
     final id = (placed['orderId'] ?? placed['id'])?.toString();
     if (id == null) throw GlyfApiException((placed['error'] ?? 'Flash didn’t take the order').toString());
@@ -338,17 +352,17 @@ abstract final class TradeFlow {
       final token = await _token(chain, symbol);
       call = EvmCall(to: token.address, data: erc20Transfer(to, _units(amount, token.decimals)));
     }
-    final hash = await EvmWallet.send(chain, call);
-    final r = await EvmRpc.receipt(chain, hash);
     final who = q['to'] ?? to;
-    if (r == null) {
+    late List<Signed> signed;
+    yield* _sign('Send $amount $symbol to $who',
+        [TxStep(chain, 'Send $amount $symbol to $who', call, failTitle: 'The send reverted')], (r) => signed = r);
+    final sent = signed.single;
+    if (sent.pending) {
       yield TradeOutcome(TradeState.submitted, 'Sent', detail: '$amount $symbol to $who, still confirming',
-          txUrl: chain.txUrl(hash));
-    } else if (EvmRpc.succeeded(r)) {
-      yield TradeOutcome(TradeState.done, 'Sent', detail: '$amount $symbol to $who on ${chain.label}',
-          txUrl: chain.txUrl(hash));
+          txUrl: chain.txUrl(sent.hash!));
     } else {
-      yield TradeOutcome(TradeState.failed, 'The send reverted', txUrl: chain.txUrl(hash));
+      yield TradeOutcome(TradeState.done, 'Sent', detail: '$amount $symbol to $who on ${chain.label}',
+          txUrl: chain.txUrl(sent.hash!));
     }
   }
 
@@ -361,7 +375,14 @@ abstract final class TradeFlow {
       return;
     }
     yield const TradeOutcome(TradeState.working, 'Making the request on Whitechain…');
-    final made = await PayRequests.create(amount: amount, memo: q['memo'] ?? '');
+    final progress = StreamController<TradeOutcome>();
+    final making = PayRequests.create(
+        amount: amount,
+        memo: q['memo'] ?? '',
+        onProgress: (label, reopen) => progress.add(TradeOutcome(TradeState.working, label, reopen: reopen)));
+    unawaited(making.whenComplete(progress.close).then((_) {}, onError: (_) {}));
+    yield* progress.stream;
+    final made = await making;
     yield TradeOutcome(TradeState.done, 'Request ready',
         detail: '$amount USDT · the link is going in the chat',
         txUrl: EvmChain.whitechainSepolia.txUrl(made.txHash),
@@ -389,11 +410,11 @@ abstract final class TradeFlow {
       if (s == symbol.toUpperCase() || (symbol == 'ETH' && s == 'NATIVE')) {
         var amount = double.tryParse('${b['amount'] ?? b['balance'] ?? 0}') ?? 0;
         if (symbol == chain.native && keepGas) amount -= chain.id == 1 ? 0.003 : 0.0002;
-        if (amount <= 0) throw GlyfApiException('No $symbol in the Glyf wallet on ${chain.label}');
+        if (amount <= 0) throw GlyfApiException('No $symbol in ${_walletName()} on ${chain.label}');
         return _trim(amount);
       }
     }
-    throw GlyfApiException('No $symbol in the Glyf wallet on ${chain.label}');
+    throw GlyfApiException('No $symbol in ${_walletName()} on ${chain.label}');
   }
 
   /// One [symbol] in dollars, from Uniswap (1 of it quoted to USDC).

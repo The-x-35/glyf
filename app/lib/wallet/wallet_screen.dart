@@ -9,7 +9,7 @@ import 'send_screen.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
 import 'wallet_flow.dart';
-import '../evm/evm_wallet.dart';
+import '../evm/evm_signer.dart';
 import '../evm/evm_wallet_screen.dart';
 
 /// Profile → Wallet: connect a wallet, see what's in it, send or buy. On a
@@ -40,7 +40,7 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     WalletFlow.link.addListener(_refresh);
     WalletFlow.load().then((_) => _refresh());
-    EvmWallet.load();
+    EvmSigner.load();
     Mwa.isAvailable().then((here) {
       if (mounted && here) setState(() => _mwaHere = true);
     });
@@ -281,9 +281,12 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
             ),
             ValueListenableBuilder<String?>(
-              valueListenable: EvmWallet.address,
+              valueListenable: EvmSigner.address,
               builder: (_, a, _) => Text(
-                a == null ? 'Set up' : '${a.substring(0, 6)}…${a.substring(a.length - 4)}',
+                a == null
+                    ? 'Set up'
+                    : '${EvmSigner.kind.value == EvmSignerKind.glyf ? '' : '${EvmSigner.kind.value.label} · '}'
+                        '${a.substring(0, 6)}…${a.substring(a.length - 4)}',
                 style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')]),
               ),
             ),

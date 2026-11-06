@@ -15,6 +15,7 @@ import 'wallet/buy_screen.dart';
 import 'wallet/crypto_pay.dart';
 import 'wallet/pay_launch_screen.dart';
 import 'wallet/pay_status_screen.dart';
+import 'evm/evm_signer.dart';
 import 'evm/evm_wallet.dart';
 import 'evm/evm_wallet_screen.dart';
 import 'evm/pay_request.dart';
@@ -141,9 +142,8 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
   Future<void> _loadEvmWallet() async {
     if (!kReleaseMode && (await GlyfBridge.launchArgs()).contains('--glyf-test-evm-wallet')) {
       await EvmWallet.ensure();
-      return;
     }
-    await EvmWallet.load();
+    await EvmSigner.load();
   }
 
   Future<void> _handleLink(String link) async {
@@ -153,6 +153,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       final id = uri.queryParameters['id'];
       if (id != null) _openDictation(id);
     }
+    // MetaMask's or Phantom's browser sending the person back after a
+    // signature: the screen that's waiting reads the answer itself.
+    if (uri.host == 'evm-return') return;
     if (uri.host == 'phantom') {
       // Phantom's answer to Connect or to a payment: finished on its own
       // screen, which sends the signed payment on.
@@ -172,7 +175,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('trade') == true) {
-      // The keyboard read a trade and quoted it: the Glyf wallet signs it here.
+      // The keyboard read a trade and quoted it: the chosen wallet signs it.
       final q = Uri.parse(uri.queryParameters['path']!).queryParameters;
       _push('trade', (_) => TradeScreen(query: q), link: link);
       return;

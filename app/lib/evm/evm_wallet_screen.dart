@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/theme.dart';
+import '../profile/brand_marks.dart' show PhantomMark;
 import 'evm_chains.dart';
+import 'evm_signer.dart';
 import 'evm_wallet.dart';
 import 'flash_orders.dart';
 
-/// Profile → Wallet → Ethereum: the Glyf wallet that signs the keyboard's
-/// swaps (Uniswap), orders (Flash) and requests (Whitechain). One address on
-/// every chain; the key is made here and stays in this phone's Keychain.
+/// Profile → Wallet → Ethereum: which wallet signs the keyboard's swaps
+/// (Uniswap), orders (Flash) and requests (Whitechain). The Glyf wallet's
+/// key is made here and stays in this phone's Keychain; MetaMask and Phantom
+/// keep their own keys and sign in their own app (EvmSigner).
 class EvmWalletScreen extends StatefulWidget {
   const EvmWalletScreen({super.key});
 
@@ -23,6 +27,10 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
   String? _error;
   bool _making = false;
 
+  /// The outside wallet being connected, and the link that opens it again.
+  EvmSignerKind? _connecting;
+  String? _reopen;
+
   static const _chains = [
     EvmChain.base, EvmChain.ethereum, EvmChain.arbitrum, EvmChain.optimism, EvmChain.whitechainSepolia,
   ];
@@ -30,11 +38,11 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
   @override
   void initState() {
     super.initState();
-    EvmWallet.load().then((_) => _refresh());
+    EvmSigner.load().then((_) => _refresh());
   }
 
   Future<void> _refresh() async {
-    final address = EvmWallet.address.value;
+    final address = EvmSigner.address.value;
     if (address == null) return;
     setState(() => _balances = null);
     try {
@@ -51,9 +59,44 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
 
   Future<void> _make() async {
     setState(() => _making = true);
-    await EvmWallet.ensure();
+    await EvmSigner.choose(EvmSignerKind.glyf);
     if (!mounted) return;
     setState(() => _making = false);
+    _refresh();
+  }
+
+  Future<void> _pick(EvmSignerKind k) async {
+    if (_connecting != null) return;
+    setState(() => _error = null);
+    if (k == EvmSignerKind.glyf) {
+      if (EvmWallet.address.value == null) return _make();
+      await EvmSigner.choose(k);
+      return _refresh();
+    }
+    if (EvmSigner.connected(k) != null) {
+      await EvmSigner.choose(k);
+      return _refresh();
+    }
+    setState(() => _connecting = k);
+    try {
+      await for (final e in EvmSigner.connect(k)) {
+        if (e.reopen != null && mounted) setState(() => _reopen = e.reopen);
+      }
+    } on SignFailed catch (e) {
+      if (mounted && !e.cancelled) setState(() => _error = '$e');
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _connecting = null;
+      _reopen = null;
+    });
+    _refresh();
+  }
+
+  Future<void> _disconnect(EvmSignerKind k) async {
+    await EvmSigner.disconnect(k);
     _refresh();
   }
 
@@ -67,13 +110,15 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
         title: const Text('Ethereum', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
       ),
       body: ValueListenableBuilder<String?>(
-        valueListenable: EvmWallet.address,
+        valueListenable: EvmSigner.address,
         builder: (context, address, _) => RefreshIndicator(
           color: Glass.ink,
           onRefresh: _refresh,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
             children: [
+              _signWith(),
+              const SizedBox(height: 18),
               if (address == null) _makeCard() else ...[
                 _walletCard(address),
                 const SizedBox(height: 18),
@@ -126,6 +171,109 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
         ),
       );
 
+  Widget _signWith() => GlassCard(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: ValueListenableBuilder<EvmSignerKind>(
+          valueListenable: EvmSigner.kind,
+          builder: (context, chosen, _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(18, 10, 18, 4),
+                child: Text('Sign with', style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w600)),
+              ),
+              for (final k in EvmSignerKind.values) _signerRow(k, chosen == k),
+              if (_reopen != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 2, 18, 8),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => GlyfBridge.openURL(_reopen!),
+                        child: Text('Open ${_connecting?.label ?? ''}',
+                            style: const TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: EvmSigner.stopWaiting,
+                        child: const Text('Stop',
+                            style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _signerRow(EvmSignerKind k, bool chosen) {
+    final address = EvmSigner.connected(k);
+    final waiting = _connecting == k;
+    return Semantics(
+      identifier: 'evm:signer:${k.name}',
+      button: true,
+      selected: chosen,
+      child: InkWell(
+        onTap: () => _pick(k),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          child: Row(
+            children: [
+              _signerMark(k),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(k.label, style: const TextStyle(color: Glass.ink, fontSize: 16, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 1),
+                    Text(
+                      waiting
+                          ? 'Waiting for ${k.label}…'
+                          : address != null
+                              ? EvmSigner.short(address)
+                              : k == EvmSignerKind.glyf
+                                  ? 'Make one'
+                                  : 'Connect',
+                      style: const TextStyle(
+                          color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')]),
+                    ),
+                  ],
+                ),
+              ),
+              if (waiting)
+                const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2, color: Glass.ink))
+              else if (chosen && address != null)
+                const Icon(Icons.check_rounded, size: 22, color: Glass.ink)
+              else
+                const SizedBox(width: 22),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _signerMark(EvmSignerKind k) => switch (k) {
+        EvmSignerKind.phantom => const PhantomMark(size: 34),
+        EvmSignerKind.glyf => Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: Glass.pill, borderRadius: BorderRadius.circular(9)),
+            child: const Text('g',
+                style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800, height: 1.05)),
+          ),
+        EvmSignerKind.metamask => Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: Glass.bg, borderRadius: BorderRadius.circular(9)),
+            child: const Icon(Icons.account_balance_wallet_rounded, size: 19, color: Glass.ink),
+          ),
+      };
+
   Widget _walletCard(String address) {
     final rows = _balances;
     return GlassCard(
@@ -139,8 +287,8 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Glyf wallet',
-                        style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
+                    Text(EvmSigner.kind.value.label,
+                        style: const TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 2),
                     Semantics(
                       identifier: 'evm:address',
@@ -164,6 +312,16 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Address copied')));
                 },
               ),
+              if (EvmSigner.kind.value != EvmSignerKind.glyf)
+                Semantics(
+                  identifier: 'evm:disconnect',
+                  button: true,
+                  child: TextButton(
+                    onPressed: () => _disconnect(EvmSigner.kind.value),
+                    child: const Text('Disconnect',
+                        style: TextStyle(color: Glass.inkSoft, fontSize: 14, fontWeight: FontWeight.w600)),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 14),
