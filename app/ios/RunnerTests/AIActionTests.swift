@@ -142,4 +142,17 @@ extension AIActionTests {
         XCTAssertNil(i.planOverRow)
         XCTAssertNil(TradeIntent.parse("buy $20 of eth every day for a week")?.planOverRow)
     }
+
+    /// The live AI's answer for "grab 10 dollars of tesla whenever it slips
+    /// under 300" opens as $10 of Tesla at $300 on Base.
+    func testAnAIFlashOrderKeepsTheTypedValues() throws {
+        let action = AIAction(tool: "trade.flash", label: "Buy TSLA at $300 · Flash", params: ["type": "limit", "asset": "TSLA", "amount": "10", "usd": "true", "price": "300"])
+        let t = try XCTUnwrap(action.trade)
+        XCTAssertEqual(t.kind, .limit)
+        XCTAssertEqual(t.amount, "10")
+        XCTAssertTrue(t.amountIsUSD)
+        XCTAssertEqual(t.price, "300")
+        XCTAssertEqual(t.buy, "TSLA")
+        XCTAssertEqual(t.chainName, "base")
+    }
 }
