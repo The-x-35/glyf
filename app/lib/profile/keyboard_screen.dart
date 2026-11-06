@@ -234,8 +234,8 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
                     ? 'Photos are off for Glyf. Allow them in Settings › Glyf › Photos'
                     : 'Photos are off for Glyf. Allow them in Settings › Apps › Glyf › Permissions'),
             _switch('AI suggestions as you type', 'aiSuggest'),
-            _switch('Private AI on 0G', 'privateAI', fallback: true),
-            if ((_settings['privateAI'] as bool?) ?? true) _receiptsRow(),
+            _switch('Private AI on 0G', 'privateAI'),
+            if ((_settings['privateAI'] as bool?) ?? false) _receiptsRow(),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),
           ]),
         ],

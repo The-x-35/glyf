@@ -116,15 +116,15 @@ abstract final class GlyfApi {
     if (privateAI) req.headers.set('X-Glyf-AI', '0g');
   }
 
-  /// Private AI (Keyboard › Private AI on 0G, on unless turned off): the
+  /// Private AI (Keyboard › Private AI on 0G, off unless turned on; 0G is for testing only): the
   /// server answers this phone's AI calls with 0G's Private Computer, models
   /// run in TEEs (server/src/lib/privateai.ts). The keyboard reads the same
   /// setting.
-  static bool privateAI = true;
+  static bool privateAI = false;
 
   static Future<void> loadPrivateAI() async {
     final s = await GlyfBridge.sharedSettings();
-    privateAI = (s['privateAI'] as bool?) ?? true;
+    privateAI = (s['privateAI'] as bool?) ?? false;
   }
 
   // ---- JSON helpers ------------------------------------------------------
