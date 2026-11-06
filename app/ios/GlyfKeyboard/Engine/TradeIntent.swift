@@ -60,6 +60,9 @@ struct TradeIntent: Equatable {
     var pricePercent: Double?
     /// The same for a bracket's stop-loss.
     var stopPercent: Double?
+    /// A buy repeated on a schedule ("dca $20 in eth each month"), placed
+    /// as this one Flash TWAP (TradeRecurring.swift).
+    var plan: RecurringPlan?
 
     /// A starter whose price waits on the market's.
     var awaitingPrice: Bool {
@@ -113,6 +116,7 @@ struct TradeIntent: Equatable {
             return "\(sell) TP \(Self.dollars(price)) · SL \(Self.dollars(stopPrice))"
         case .trailingStop: return "Trail \(sell) by \(trailPercent ?? "")%"
         case .twap:
+            if let planTitle { return planTitle }
             return "Buy \(amountIsUSD ? "$\(amount ?? "")" : amountText) of \(buy) \(Self.span(durationSeconds))"
         case .bridge:
             return "Move \(amountText) to \(Self.chainLabels[toChain ?? ""] ?? (toChain ?? "").capitalized)"
@@ -189,9 +193,11 @@ struct TradeIntent: Equatable {
         // Cheap test first: every pattern has one of these words.
         let lower = t.lowercased()
         let words = ["swap", "convert", "trade", "buy", "sell", "stop", "take profit", "tp ", "trail",
-                     "dca", "move", "bridge", "send", "pay", "request", "protect", "limit"]
+                     "dca", "move", "bridge", "send", "pay", "request", "protect", "limit", "invest", "stack", "put"]
         guard words.contains(where: lower.contains) else { return nil }
-        return bracket(t) ?? orders(t) ?? twap(t) ?? bridgeMove(t) ?? send(t) ?? request(t) ?? swap(t)
+        // A schedule longer than Flash's 30-day TWAP is a recurring plan.
+        let spread = twap(t).flatMap { ($0.durationSeconds ?? 0) <= RecurringPlan.flashMaxSeconds ? $0 : nil }
+        return bracket(t) ?? orders(t) ?? spread ?? recurring(t) ?? bridgeMove(t) ?? send(t) ?? request(t) ?? swap(t)
     }
 
     // "swap 0.05 eth to usdc on base", "sell 0.1 eth", "buy 20 usdc of eth"

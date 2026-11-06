@@ -2629,6 +2629,53 @@ final class GlyfScenarioUITests: XCTestCase {
                       "got '\(title.label)' · '\(detail.exists ? detail.label : "")'")
     }
 
+    /// S302: a recurring buy typed in words ("dca $20 in eth each month") is
+    /// read on the phone as a Flash TWAP plan: its chip opens the trade panel
+    /// with $20 a month for 12 months, and says Flash's 30 days hold month 1.
+    func testS302_ADCAInWordsOpensTheTradePanelFilledIn() throws {
+        var args = ["--glyf-test-evm-wallet"]
+        if let token = ProcessInfo.processInfo.environment["GLYF_SESSION"] { args.append("--glyf-test-session=\(token)") }
+        open(args)
+        clear()
+        type("dca $20 in eth each month")
+        guard let chip = wait("strip:smart", 6) else { return XCTFail("no DCA chip") }
+        let label = chip.label
+        XCTAssertTrue(label.contains("DCA $20 of ETH monthly"), "the strip shows '\(label)'")
+        keepScreenshot("dca-chip")
+        chip.tap()
+        guard let go = wait("trade:go", 5) else { return XCTFail("no trade panel") }
+        sleep(2)
+        keepScreenshot("dca-panel")
+        let over = el("trade:row:duration")
+        note("chip '\(label)' · over '\(over.exists ? over.label : "none")' · go '\(go.label)'")
+        XCTAssertTrue(over.exists && over.label.contains("month 1 of 12"), "the Over row says '\(over.label)'")
+        XCTAssertTrue(go.label.hasPrefix("Start TWAP") || go.label.contains("Glyf wallet") || go.label.hasPrefix("Not enough"),
+                      "the button says '\(go.label)'")
+    }
+
+    /// S303: words the phone can't read as a trade ("i wanna put 20 bucks
+    /// into eth every month") go to POST /suggest with actions on; the
+    /// model's checked action comes back as the same DCA chip and panel.
+    /// Needs a branch server (MOCK_AI is enough) at the sim's backendURL.
+    func testS303_TheAIRecommendsADCAAndOpensItFilledIn() throws {
+        var args = ["--glyf-test-evm-wallet"]
+        if let token = ProcessInfo.processInfo.environment["GLYF_SESSION"] { args.append("--glyf-test-session=\(token)") }
+        open(args)
+        clear()
+        type("i wanna put 20 bucks into eth every month")
+        guard let chip = wait("strip:smart", 10) else { return XCTFail("no recommendation") }
+        let label = chip.label
+        XCTAssertTrue(label.contains("DCA $20 of ETH monthly"), "the strip shows '\(label)'")
+        keepScreenshot("ai-dca-chip")
+        chip.tap()
+        guard wait("trade:go", 5) != nil else { return XCTFail("no trade panel") }
+        sleep(2)
+        keepScreenshot("ai-dca-panel")
+        let over = el("trade:row:duration")
+        note("chip '\(label)' · over '\(over.exists ? over.label : "none")'")
+        XCTAssertTrue(over.exists && over.label.contains("month 1 of 12"), "the Over row says '\(over.label)'")
+    }
+
     private func keepScreenshot(_ name: String) {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.lifetime = .keepAlways

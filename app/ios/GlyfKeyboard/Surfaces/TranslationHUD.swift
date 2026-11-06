@@ -91,6 +91,16 @@ final class TranslationHUD: UIView {
     /// Where translations go, once the server has said.
     var targetLanguage: String? { target }
 
+    /// Translations go to `language` ("Spanish"), as a tap on the direction
+    /// would set it (the strip's recommended action).
+    func translate(into language: String) {
+        forcedTarget = language
+        target = language
+        updateDirection()
+        lastSource = ""
+        if !lastWindow.isEmpty { draftChanged(lastWindow) }
+    }
+
     /// A fresh strip decides the direction itself again.
     func refreshTarget() {
         forcedTarget = nil
