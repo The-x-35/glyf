@@ -53,7 +53,7 @@ class _SecretCopyButtonState extends State<SecretCopyButton> {
       );
 }
 
-/// Profile › Wallet › Recovery phrase: the 12 words, numbered.
+/// Profile › Wallet › Recovery phrase: the 24 words (12 on an older phrase), numbered.
 class RecoveryPhraseScreen extends StatelessWidget {
   const RecoveryPhraseScreen({super.key, required this.phrase});
   final String phrase;

@@ -55,7 +55,7 @@ void main() {
   });
 
   group('the Glyf wallet', () {
-    test('a new wallet is 12 words, both addresses from them, only public ones shared', () async {
+    test('a new wallet is 24 words, both addresses from them, only public ones shared', () async {
       final evm = await EvmWallet.ensure();
       final phrase = secrets[GlyfKeys.phraseName]!;
       expect(Bip39.isValid(phrase), isTrue);

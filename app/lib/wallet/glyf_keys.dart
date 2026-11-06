@@ -10,7 +10,7 @@ import 'hd_keys.dart';
 /// bridge, the same store as the Phantom session; never in shared settings,
 /// never sent, never logged).
 ///
-/// Since 2026-11-06 a Glyf wallet is a 12-word recovery phrase, and both of
+/// Since 2026-11-06 a Glyf wallet is a 24-word recovery phrase, and both of
 /// its addresses come from it the way MetaMask (Ethereum) and Phantom
 /// (Solana) derive theirs, so the words open the same wallet there.
 /// Wallets made before that are one random Ethereum key (`evm-key`): that
