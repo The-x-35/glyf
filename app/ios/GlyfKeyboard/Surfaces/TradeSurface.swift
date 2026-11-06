@@ -611,7 +611,7 @@ final class TradeSurface: UIView {
         // Top card: what's spent, or an order's asset.
         let top = isSwap ? i.sell : TradeEdit.asset(i)
         payCard.key.text = topKey
-        payCard.setChain(label(i.chainName), enabled: TradeEdit.chains(for: i).count > 1)
+        payCard.setChain(label(i.chainName), key: i.chainName, enabled: TradeEdit.chains(for: i).count > 1)
         payCard.token.set(symbol: Self.display(top), logo: logo(top, chain: i.chainName), enabled: tappable)
         let typed = TradeEdit.value(.amount, i)
         payCard.setAmount(TradeEdit.shown(.amount, i), placeholder: typed.isEmpty)
@@ -625,7 +625,7 @@ final class TradeSurface: UIView {
             if let have = balance(i.sell, on: i.chainName), have > 0 { detail.append("Balance \(PaySurface.compact(have))") }
             payCard.sub.text = detail.joined(separator: " · ")
             getCard.key.text = "You get"
-            getCard.setChain(label(buyChain), enabled: true)
+            getCard.setChain(label(buyChain), key: buyChain, enabled: true)
             getCard.token.set(symbol: Self.display(i.buy), logo: logo(i.buy, chain: buyChain), enabled: true)
             if let buyAmount = i.buyAmount {
                 getCard.setAmount(buyAmount, placeholder: false)
@@ -830,7 +830,7 @@ final class TradeSurface: UIView {
         var y: CGFloat = 0
         for c in chains {
             let row = TokenRow()
-            row.setChain(label(c), selected: c == current)
+            row.setChain(label(c), chain: c, selected: c == current)
             row.accessibilityIdentifier = "trade:chainrow:\(c)"
             row.onTap = { [weak self] in self?.pickedChain(c, side: side) }
             row.frame = CGRect(x: 0, y: y, width: bounds.width, height: TokenRow.chainHeight)
@@ -952,10 +952,18 @@ private final class TradeCard: UIView {
         amount.textColor = placeholder ? Glass.textSecondary : Glass.textPrimary
     }
 
-    func setChain(_ name: String, enabled: Bool) {
+    func setChain(_ name: String, key: String, enabled: Bool) {
         let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 12.5, weight: .medium),
                                                     .foregroundColor: Glass.textSecondary]
-        let text = NSMutableAttributedString(string: name, attributes: attrs)
+        let text = NSMutableAttributedString()
+        if let mark = ChainLogo.image(key, side: 13) {
+            let a = NSTextAttachment()
+            a.image = mark
+            a.bounds = CGRect(x: 0, y: -2, width: 13, height: 13)
+            text.append(NSAttributedString(attachment: a))
+            text.append(NSAttributedString(string: " ", attributes: attrs))
+        }
+        text.append(NSAttributedString(string: name, attributes: attrs))
         if enabled { text.append(NSAttributedString(string: " ▾", attributes: attrs)) }
         chain.setAttributedTitle(text, for: .normal)
         chain.isUserInteractionEnabled = enabled
@@ -1140,7 +1148,7 @@ private final class TokenRow: UIControl {
         setNeedsLayout()
     }
 
-    func setChain(_ label: String, selected: Bool) {
+    func setChain(_ label: String, chain: String, selected: Bool) {
         chainRow = true
         isAccessibilityElement = true
         accessibilityLabel = label
@@ -1149,7 +1157,7 @@ private final class TokenRow: UIControl {
         name.text = nil
         right.text = nil
         check.isHidden = !selected
-        logoView.image = TokenLogo.placeholder(label)
+        logoView.image = ChainLogo.image(chain, side: 28) ?? TokenLogo.placeholder(label)
         setNeedsLayout()
     }
 
@@ -1159,7 +1167,8 @@ private final class TokenRow: UIControl {
         super.layoutSubviews()
         let w = bounds.width, h = bounds.height
         let d: CGFloat = chainRow ? 28 : 32
-        logoView.layer.cornerRadius = d / 2
+        // A chain's mark keeps its own shape (Base's square, Arbitrum's hexagon).
+        logoView.layer.cornerRadius = chainRow ? 0 : d / 2
         logoView.frame = CGRect(x: 16, y: (h - d) / 2, width: d, height: d)
         let tx = logoView.frame.maxX + 12
         check.frame = CGRect(x: w - 32, y: (h - 16) / 2, width: 16, height: 16)

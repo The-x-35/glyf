@@ -21,6 +21,7 @@ TEST_SHARED = %w[
   Design/KeyboardThemes.swift
   Design/KeyFaces.swift
   Design/GlyfMark.swift
+  Design/ChainLogo.swift
   Design/EmojiData.swift
   Engine/Games.swift
   Engine/SpaceGesture.swift

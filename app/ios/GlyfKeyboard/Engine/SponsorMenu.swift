@@ -134,7 +134,7 @@ enum SponsorMenu {
             ]
             rows += swapChains.map {
                 .option(.swapOn($0), title: TradeIntent.chainLabels[$0] ?? $0.capitalized, detail: nil,
-                        icon: "square.stack.3d.up")
+                        icon: "chain:\($0)")
             }
             return rows
         case .definitive:
