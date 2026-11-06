@@ -139,6 +139,19 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(hex.to, "0x52908400098527886E0F7030069857D2E4169EE7")
     }
 
+    func testSolanaOrdersGoToTheAppOnSolana() throws {
+        // Phantom signs these (lib/wallet/flash_solana.dart): the app reads chain=solana.
+        let stop = try XCTUnwrap(read("sell 0.1 sol if it drops below 100"))
+        XCTAssertEqual(stop.kind, .stopLoss)
+        XCTAssertEqual(stop.query["chain"], "solana")
+        XCTAssertEqual(stop.query["sell"], "SOL")
+        let bracket = try XCTUnwrap(read("buy 0.1 sol, tp 200, sl 100"))
+        XCTAssertEqual(bracket.kind, .bracket)
+        XCTAssertEqual(bracket.query["chain"], "solana")
+        XCTAssertEqual(bracket.query["buyAmount"], "0.1")
+        XCTAssertEqual(read("buy $10 of sol at 80")?.query["chain"], "solana")
+    }
+
     func testARequestIsWhitechainUSDT() throws {
         let i = try XCTUnwrap(read("request 20 usdt"))
         XCTAssertEqual(i.kind, .request)

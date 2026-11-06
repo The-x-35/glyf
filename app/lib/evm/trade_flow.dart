@@ -1,8 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
+import '../wallet/base58.dart';
+import '../wallet/flash_solana.dart';
+import '../wallet/phantom.dart';
+import '../wallet/solana.dart';
+import '../wallet/wallet_api.dart';
+import '../wallet/wallet_flow.dart';
 import 'evm_chains.dart';
 import 'evm_rpc.dart';
 import 'evm_signer.dart';
@@ -43,7 +51,16 @@ class TradeOutcome {
 /// keyboard's quote was only for show.
 abstract final class TradeFlow {
   static Stream<TradeOutcome> run(Map<String, String> q) async* {
+    final kind = q['kind'] ?? 'swap';
+    final onSolana = q['chain'] == 'solana';
     try {
+      if (onSolana && !const {'swap', 'send', 'request'}.contains(kind)) {
+        // Phantom signs Solana's orders (lib/wallet/): no EVM wallet needed.
+        await for (final o in _flashSolana(q, kind)) {
+          yield o.state == TradeState.working ? o : await _told(o);
+        }
+        return;
+      }
       final address = await EvmSigner.load();
       if (address == null) {
         yield TradeOutcome(TradeState.failed,
@@ -51,7 +68,6 @@ abstract final class TradeFlow {
             detail: 'Set it up in Profile › Wallet › Ethereum, then try again');
         return;
       }
-      final kind = q['kind'] ?? 'swap';
       final chain = EvmChain.named(q['chain']) ?? EvmChain.base;
       final Stream<TradeOutcome> steps = switch (kind) {
         'swap' => _swap(q, chain, address),
@@ -64,19 +80,25 @@ abstract final class TradeFlow {
       }
     } on SignFailed catch (e) {
       yield await _told(TradeOutcome(TradeState.failed, e.title,
-          detail: e.detail == null ? null : _plain(e.detail!),
-          txUrl: e.hash == null ? null : e.chain?.txUrl(e.hash!)));
+          detail: e.detail == null ? null : _plain(e.detail!, solana: onSolana),
+          txUrl: e.hash == null ? null : (onSolana ? WalletFlow.solscanUrl(e.hash!) : e.chain?.txUrl(e.hash!))));
     } on GlyfApiException catch (e) {
-      yield await _told(TradeOutcome(TradeState.failed, 'That didn’t go through', detail: _plain(e.message)));
+      yield await _told(
+          TradeOutcome(TradeState.failed, 'That didn’t go through', detail: _plain(e.message, solana: onSolana)));
     } on EvmRpcException catch (e) {
       yield await _told(TradeOutcome(TradeState.failed, 'The network said no', detail: _plain(e.message)));
+    } on WalletError catch (e) {
+      yield await _told(TradeOutcome(TradeState.failed, 'Solana said no', detail: _plain(e.message, solana: true)));
     } catch (e) {
-      yield await _told(TradeOutcome(TradeState.failed, 'Something went wrong', detail: _plain('$e')));
+      yield await _told(TradeOutcome(TradeState.failed, 'Something went wrong', detail: _plain('$e', solana: onSolana)));
     }
   }
 
-  static String _walletName() =>
-      EvmSigner.kind.value == EvmSignerKind.glyf ? 'the Glyf wallet' : EvmSigner.kind.value.label;
+  static String _walletName({bool solana = false}) => solana
+      ? 'Phantom'
+      : EvmSigner.kind.value == EvmSignerKind.glyf
+          ? 'the Glyf wallet'
+          : EvmSigner.kind.value.label;
 
   /// The signer's progress as the screen shows it; [got] receives what was signed.
   static Stream<TradeOutcome> _sign(String title, List<SignStep> steps, void Function(List<Signed>) got) async* {
@@ -90,11 +112,15 @@ abstract final class TradeFlow {
   }
 
   /// Nodes and APIs speak in codes; the screen says what they mean.
-  static String _plain(String message) {
+  static String _plain(String message, {bool solana = false}) {
     final m = message.toLowerCase();
+    if (m.contains('no record of a prior credit')) return 'Your Phantom wallet needs a little SOL for the network fee';
+    if (solana && (m.contains('does not exist') || m.contains('ata_setup') || m.contains('delegat'))) {
+      return 'The setup hasn’t landed on Solana yet. Try again in a minute';
+    }
     if (m.contains('insufficient funds') || m.contains('insufficient balance') || m.contains('exceeds balance') ||
         m.contains('outoffunds') || m.contains('transfer amount exceeds')) {
-      return 'Not enough in ${_walletName()} for this and its fee';
+      return 'Not enough in ${_walletName(solana: solana)} for this and its fee';
     }
     if (m.contains('nonce')) return 'Another transaction is still going through. Try again in a moment';
     if (m.contains('timeout') || m.contains('timed out')) return 'The network took too long to answer';
@@ -175,7 +201,19 @@ abstract final class TradeFlow {
   /// the target asset's dollars (notional); sells count the target, buys
   /// the contra (Flash's own convention).
   static Future<Map<String, Object?>> flashBody(
-      Map<String, String> q, String kind, EvmChain chain, String address) async {
+          Map<String, String> q, String kind, EvmChain chain, String address) =>
+      flashBodyOn(q, kind, chain.name, address,
+          toChain: EvmChain.named(q['toChain'])?.name,
+          allOf: (symbol) => _allOf(chain, address, symbol),
+          priceOf: (symbol) => _priceOf(chain, symbol));
+
+  /// [flashBody] on any of Flash's chains ("solana" too): [allOf] reads
+  /// what's held of a coin, [priceOf] its dollar price.
+  @visibleForTesting
+  static Future<Map<String, Object?>> flashBodyOn(Map<String, String> q, String kind, String chainName, String address,
+      {String? toChain,
+      required Future<String> Function(String symbol) allOf,
+      required Future<double> Function(String symbol) priceOf}) async {
     final sell = q['sell']!;
     final buy = q['buy']!;
     final stable = {'USDC', 'USDT', 'DAI'};
@@ -183,10 +221,9 @@ abstract final class TradeFlow {
     final buying = stable.contains(sell) && !stable.contains(buy);
     final target = buying ? buy : sell;
     final contra = buying ? sell : buy;
-    final toChain = EvmChain.named(q['toChain']);
     final body = <String, Object?>{
-      'targetChain': kind == 'bridge' ? (toChain ?? chain).name : chain.name,
-      'contraChain': chain.name,
+      'targetChain': kind == 'bridge' ? (toChain ?? chainName) : chainName,
+      'contraChain': chainName,
       'target': target,
       'contra': kind == 'bridge' ? sell : contra,
       'side': kind == 'bridge' ? 'buy' : (buying ? 'buy' : 'sell'),
@@ -198,13 +235,14 @@ abstract final class TradeFlow {
     if (kind == 'bridge') {
       body['recipientAddress'] = address;
     } else if (!buying && qty == null) {
-      qty = await _allOf(chain, address, target);
-    } else if (buying && q['buyAmount'] != null && q['price'] != null) {
-      // "buy 0.1 eth at 2800": 0.1 × 2800 of the contra.
+      qty = await allOf(target);
+    } else if (buying && q['buyAmount'] != null && q['price'] != null && kind != 'bracket') {
+      // "buy 0.1 eth at 2800": 0.1 × 2800 of the contra. (A bracket's price
+      // is its take-profit, not what the buy pays.)
       qty = _trim(double.parse(q['buyAmount']!) * double.parse(q['price']!));
     } else if (buying && q['buyAmount'] != null) {
       // "buy 0.1 eth, tp 4500, sl 3000": a market buy, so today's price.
-      qty = _trim(double.parse(q['buyAmount']!) * await _priceOf(chain, target));
+      qty = _trim(double.parse(q['buyAmount']!) * await priceOf(target));
     }
     body['qty'] = qty;
     final price = q['price'];
@@ -246,11 +284,6 @@ abstract final class TradeFlow {
   }
 
   static Stream<TradeOutcome> _flash(Map<String, String> q, String kind, EvmChain chain, String address) async* {
-    if (chain.name == 'solana') {
-      yield const TradeOutcome(TradeState.failed, 'Solana orders come next',
-          detail: 'Flash orders sign on Base, Ethereum, Arbitrum, Optimism and Polygon for now');
-      return;
-    }
     yield const TradeOutcome(TradeState.working, 'Asking Flash…');
     final quote = await GlyfApi.evmPost('/flash/quote', await flashBody(q, kind, chain, address));
     final evm = Map<String, dynamic>.from((quote['evm'] as Map?) ?? const {});
@@ -304,10 +337,224 @@ abstract final class TradeFlow {
     yield TradeOutcome(
       kind == 'bridge' || (kind == 'bracket' && q['buyAmount'] != null) ? TradeState.submitted : TradeState.done,
       _placedTitle(kind),
-      detail: _placedDetail(q, kind, chain),
+      detail: _placedDetail(q, kind, chain.label, toLabel: EvmChain.named(q['toChain'])?.label),
       txUrl: 'https://app.definitive.fi/orders/$id',
       orderId: id,
     );
+  }
+
+  // MARK: Flash on Solana
+
+  /// A Flash order on Solana, signed in Phantom over its deeplinks
+  /// (flash.definitive.fi/docs/solana-overview.md): Flash quotes it for the
+  /// Phantom wallet; anything it needs on chain first (token accounts, the
+  /// SOL wrap, its delegation) goes into ONE transaction built here, signed
+  /// in Phantom and broadcast by Flash; then Phantom signs Flash's order
+  /// message (and the attached take-profit / stop-loss's), every signature
+  /// is checked against the wallet's key, and the order goes in.
+  static Stream<TradeOutcome> _flashSolana(Map<String, String> q, String kind) async* {
+    if (kind == 'bridge') {
+      yield const TradeOutcome(TradeState.failed, 'Moving from Solana comes next',
+          detail: 'Flash moves coins from Base, Ethereum, Arbitrum, Optimism and Polygon for now');
+      return;
+    }
+    await WalletFlow.load();
+    final wallet = WalletFlow.link.value;
+    if (wallet == null || wallet.viaMwa) {
+      yield const TradeOutcome(TradeState.failed, 'Phantom isn’t connected',
+          detail: 'Connect it in Profile › Wallet, then try again');
+      return;
+    }
+    final funder = wallet.address;
+    yield const TradeOutcome(TradeState.working, 'Asking Flash…');
+    final quote = await GlyfApi.evmPost(
+        '/flash/quote',
+        await flashBodyOn(q, kind, 'solana', funder,
+            allOf: (symbol) => _allOnSolana(funder, symbol), priceOf: _priceOnSolana));
+    final svm = quote['svm'] is Map ? Map<String, dynamic>.from(quote['svm'] as Map) : null;
+    final order = Map<String, dynamic>.from((quote['order'] as Map?) ?? const {});
+    final message = svm?['orderMessage'] as String?;
+    if (svm == null || message == null) {
+      throw GlyfApiException((quote['error'] ?? quote['message'] ?? 'Flash sent nothing to sign').toString());
+    }
+    // What Phantom will be asked to sign says what the person asked for:
+    // the coin spent, and exactly how much of it.
+    final buying = order['side'] == 'buy';
+    final spentMint = '${buying ? order['contraAsset'] : order['targetAsset']}';
+    final gotMint = '${buying ? order['targetAsset'] : order['contraAsset']}';
+    final decimals = (((quote['tokens'] as Map?)?[buying ? 'contra' : 'target'] as Map?)?['decimals'] as num?)?.toInt();
+    final total = decimals == null ? null : Sol.units('${order['qty']}', decimals);
+    final problem = FlashSvm.messageProblem(message, mint: spentMint, total: total);
+    if (problem != null) throw SignFailed(problem, detail: 'Nothing was signed');
+    final pair = order['attachedBracket'] is Map ? Map<String, dynamic>.from(order['attachedBracket'] as Map) : null;
+    final pairMessage = ((quote['attachedBracket'] as Map?)?['svm'] as Map?)?['orderMessage'] as String?;
+    if (pair != null) {
+      final p = FlashSvm.messageProblem(pairMessage, mint: gotMint);
+      if (p != null) throw SignFailed(p, detail: 'Nothing was signed');
+    }
+    final placed0 = _placedTitle(kind).replaceFirst(RegExp(r' (set|placed|started)$'), '');
+    final title = placed0.startsWith('TWAP') ? placed0 : placed0[0].toLowerCase() + placed0.substring(1);
+
+    // 1. On chain first, once per token: one transaction, one trip.
+    String? setupSig;
+    final setupIxs = FlashSvm.setupInstructions(quote);
+    if (setupIxs.isNotEmpty) {
+      final asked = FlashSvm.setupTransaction(quote: quote, funder: funder, blockhash: await _solanaBlockhash(quote))!;
+      yield const TradeOutcome(TradeState.working, 'Approve the setup in Phantom',
+          detail: 'Token accounts and Flash’s allowance, once per token');
+      final reply = await _askPhantom((id) => WalletFlow.phantom.signUrl(asked, id, step: PhantomRequests.step));
+      final signed = await _phantomAnswer(() => WalletFlow.phantom.finishSign(reply));
+      if (!FlashSvm.isSignedSetup(signed, asked, funder)) {
+        throw SignFailed('That isn’t what Glyf asked Phantom to sign', detail: 'Nothing was sent');
+      }
+      setupSig = FlashSvm.txSignature(signed);
+      yield TradeOutcome(TradeState.working, 'Setting up on Solana…',
+          txUrl: setupSig == null ? null : WalletFlow.solscanUrl(setupSig));
+      // A simulator's stand-in wallet holds no SOL to pay for the setup:
+      // `--glyf-test-flash-skip-setup` (never in a release build) checks the
+      // signed setup and goes on without sending it, so the order's own
+      // signing and Flash's answer to it can be seen.
+      final skip = await _testFlag('--glyf-test-flash-skip-setup');
+      final sent = skip
+          ? const {'status': 'confirmed'}
+          : await GlyfApi.evmPost('/flash/setup-transaction', {'signedSetupTx': base64.encode(signed)},
+              timeout: const Duration(seconds: 60));
+      if (sent['status'] != 'confirmed' && setupSig != null) {
+        bool? landed;
+        try {
+          landed = await SolanaRpc.confirm(setupSig, wait: const Duration(seconds: 45));
+        } catch (_) {
+          // No node to ask: Flash refuses the order until the setup lands.
+        }
+        if (landed == false) {
+          throw SignFailed('The setup didn’t go through',
+              detail: 'Solana turned it down. Nothing else was signed', hash: setupSig);
+        }
+      }
+    }
+
+    // Definitive pays for the delegation when it offers to: Phantom signs
+    // Flash's transaction, and it goes back with the order.
+    final sponsored = svm['sponsoredDelegateTx'];
+    if (sponsored is String && sponsored.isNotEmpty) {
+      final asked = base64.decode(sponsored);
+      yield const TradeOutcome(TradeState.working, 'Let Flash use your coins in Phantom',
+          detail: 'Definitive pays this one’s fee');
+      final reply = await _askPhantom((id) => WalletFlow.phantom.signUrl(asked, id, step: PhantomRequests.step));
+      final signed = await _phantomAnswer(() => WalletFlow.phantom.finishSign(reply));
+      if (!FlashSvm.isSignedSponsored(signed, asked, funder)) {
+        throw SignFailed('That isn’t what Glyf asked Phantom to sign', detail: 'Nothing was placed');
+      }
+      order['svmSponsoredDelegateTx'] = base64.encode(signed);
+    }
+
+    // 2. The order itself: a message, no fee.
+    yield TradeOutcome(TradeState.working, 'Sign the $title in Phantom', txUrl: _solscan(setupSig));
+    order['userSignature'] = Base58.encode(await _signOnSolana(message, funder));
+    if (pair != null) {
+      yield TradeOutcome(TradeState.working, 'Sign the take profit and stop in Phantom', txUrl: _solscan(setupSig));
+      pair['userSignature'] = Base58.encode(await _signOnSolana(pairMessage!, funder));
+      order['attachedBracket'] = pair;
+    }
+    yield TradeOutcome(TradeState.working, 'Placing the order…', txUrl: _solscan(setupSig));
+    final placed = await GlyfApi.evmPost('/flash/order', order);
+    final id = (placed['orderId'] ?? placed['id'])?.toString();
+    if (id == null) throw GlyfApiException((placed['error'] ?? 'Flash didn’t take the order').toString());
+    yield TradeOutcome(
+      kind == 'bracket' && q['buyAmount'] != null ? TradeState.submitted : TradeState.done,
+      _placedTitle(kind),
+      detail: '${_placedDetail(q, kind, 'Solana')} · Order ${id.length > 8 ? id.substring(0, 8) : id}',
+      txUrl: 'https://app.definitive.fi/orders/$id',
+      orderId: id,
+      hash: setupSig,
+    );
+  }
+
+  static String? _solscan(String? signature) => signature == null ? null : WalletFlow.solscanUrl(signature);
+
+  /// Phantom signs [message] (Flash's UTF-8 order text); the signature is
+  /// the funder's or the order stops here.
+  static Future<Uint8List> _signOnSolana(String message, String funder) async {
+    final reply = await _askPhantom((id) => WalletFlow.phantom.signMessageUrl(message, id, step: PhantomRequests.step));
+    final signature = await _phantomAnswer(() => WalletFlow.phantom.finishSignMessage(reply));
+    if (!FlashSvm.verifyMessage(message, signature, funder)) {
+      throw SignFailed('That signature isn’t from ${Sol.short(funder)}', detail: 'Nothing was placed');
+    }
+    return signature;
+  }
+
+  /// Opens Phantom on the request [build] makes for an id, and waits for
+  /// its answer on `glyf://phantom/trade/<id>`.
+  static Future<Uri> _askPhantom(Future<Uri> Function(String id) build) async {
+    final id = PhantomRequests.newId();
+    final Uri url;
+    try {
+      url = await build(id);
+    } on PhantomError catch (e) {
+      throw SignFailed(e.message);
+    }
+    try {
+      return await PhantomRequests.ask(id, () async {
+        final failed = await WalletFlow.openPhantom(url);
+        // No Phantom on a simulator: with `--glyf-test-phantom` (never in a
+        // release build) qa/fake-phantom.mjs answers the logged link.
+        return failed != null && await _testFlag('--glyf-test-phantom') ? null : failed;
+      });
+    } on PhantomUnavailable catch (e) {
+      throw SignFailed(e.message);
+    } on TimeoutException {
+      throw SignFailed('Phantom didn’t answer', detail: 'Nothing was placed. Try again');
+    }
+  }
+
+  static Future<bool> _testFlag(String flag) async =>
+      !kReleaseMode && (await GlyfBridge.launchArgs()).contains(flag);
+
+  static Future<T> _phantomAnswer<T>(Future<T> Function() read) async {
+    try {
+      return await read();
+    } on PhantomError catch (e) {
+      if (e.cancelled) throw SignFailed('Cancelled in Phantom', detail: 'Nothing was placed', cancelled: true);
+      throw SignFailed('Phantom couldn’t sign it', detail: e.message);
+    }
+  }
+
+  /// A recent blockhash to build the setup with: Solana's, or the one in
+  /// Flash's own setup transaction when no node answers.
+  static Future<String> _solanaBlockhash(Map quote) async {
+    try {
+      return await SolanaRpc.blockhash();
+    } catch (_) {
+      final fromQuote = FlashSvm.blockhashOf(quote);
+      if (fromQuote != null) return fromQuote;
+      rethrow;
+    }
+  }
+
+  static Future<TokenInfo> _solanaToken(String symbol) async {
+    final s = symbol.toUpperCase();
+    if (s == 'SOL') return TokenInfo.sol;
+    if (s == 'USDC') return TokenInfo.usdc;
+    final t = await Jupiter.token(symbol);
+    if (t == null) throw GlyfApiException('Glyf doesn’t know $symbol on Solana');
+    return t;
+  }
+
+  /// Everything Phantom's wallet holds of [symbol]; SOL keeps 0.01 back for
+  /// the fees and the token accounts' rent.
+  static Future<String> _allOnSolana(String owner, String symbol) async {
+    final token = await _solanaToken(symbol);
+    var units = token.mint == Sol.wsol ? await SolanaRpc.solBalance(owner) : await SolanaRpc.tokenBalance(owner, token.mint);
+    if (token.mint == Sol.wsol) units -= BigInt.from(10000000);
+    if (units <= BigInt.zero) throw GlyfApiException('No ${token.symbol} in Phantom');
+    return Sol.format(units, token.decimals, maxDecimals: token.decimals);
+  }
+
+  static Future<double> _priceOnSolana(String symbol) async {
+    if (const {'USDC', 'USDT'}.contains(symbol.toUpperCase())) return 1;
+    final p = (await _solanaToken(symbol)).usdPrice ?? (await Jupiter.token(symbol))?.usdPrice;
+    if (p == null || p <= 0) throw GlyfApiException('No price for $symbol on Solana');
+    return p;
   }
 
   static String _placedTitle(String kind) => switch (kind) {
@@ -322,19 +569,19 @@ abstract final class TradeFlow {
         _ => 'Order placed',
       };
 
-  static String _placedDetail(Map<String, String> q, String kind, EvmChain chain) {
+  static String _placedDetail(Map<String, String> q, String kind, String chainLabel, {String? toLabel}) {
     final p = q['price'] == null ? '' : '\$${q['price']}';
     final asset = {'USDC', 'USDT', 'DAI'}.contains(q['sell']) ? q['buy'] : q['sell'];
     return switch (kind) {
-      'stop-loss' => 'Sells $asset if it falls to $p · ${chain.label}',
-      'take-profit' => 'Sells $asset if it rises to $p · ${chain.label}',
-      'limit' => 'Fills at $p or better · ${chain.label}',
-      'stop' => 'Buys $asset if it breaks $p · ${chain.label}',
-      'bracket' => 'Take profit $p · stop \$${q['stopPrice']} · ${chain.label}',
-      'trailing-stop' => 'Follows $asset ${q['trail']}% below its high · ${chain.label}',
-      'twap' => '\$${q['amount']} of $asset in slices · ${chain.label}',
-      'bridge' => '${q['amount']} ${q['sell']} to ${EvmChain.named(q['toChain'])?.label ?? ''}',
-      _ => chain.label,
+      'stop-loss' => 'Sells $asset if it falls to $p · $chainLabel',
+      'take-profit' => 'Sells $asset if it rises to $p · $chainLabel',
+      'limit' => 'Fills at $p or better · $chainLabel',
+      'stop' => 'Buys $asset if it breaks $p · $chainLabel',
+      'bracket' => 'Take profit $p · stop \$${q['stopPrice']} · $chainLabel',
+      'trailing-stop' => 'Follows $asset ${q['trail']}% below its high · $chainLabel',
+      'twap' => '\$${q['amount']} of $asset in slices · $chainLabel',
+      'bridge' => '${q['amount']} ${q['sell']} to ${toLabel ?? ''}',
+      _ => chainLabel,
     };
   }
 

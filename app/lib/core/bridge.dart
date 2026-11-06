@@ -190,20 +190,11 @@ abstract final class GlyfBridge {
     }
   }
 
-  /// One read-change-write at a time: two at once (the wallet saving its
-  /// connection while MetaMask's channel is saved) would each write back
-  /// the file as they read it, and the later one would drop the other's key.
-  static Future<void> _settingsQueue = Future.value();
-
   static Future<void> updateSharedSettings(
-      Map<String, dynamic> Function(Map<String, dynamic>) mutate) {
-    final run = _settingsQueue.then((_) async {
-      final current = await sharedSettings();
-      final next = mutate(Map<String, dynamic>.from(current));
-      await _call<bool>('writeSharedSettings', {'json': jsonEncode(next)});
-    });
-    _settingsQueue = run.catchError((_) {});
-    return run;
+      Map<String, dynamic> Function(Map<String, dynamic>) mutate) async {
+    final current = await sharedSettings();
+    final next = mutate(Map<String, dynamic>.from(current));
+    await _call<bool>('writeSharedSettings', {'json': jsonEncode(next)});
   }
 
   static Future<Map<String, dynamic>> onboardingState() async {

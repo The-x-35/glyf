@@ -122,6 +122,7 @@ class _TradeScreenState extends State<TradeScreen> {
     if (url.contains('etherscan')) return 'View on Etherscan';
     if (url.contains('arbiscan')) return 'View on Arbiscan';
     if (url.contains('whitechain')) return 'View on Whitechain';
+    if (url.contains('solscan')) return 'View on Solscan';
     return 'View transaction';
   }
 

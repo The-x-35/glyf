@@ -140,6 +140,40 @@ void main() {
     expect(bridge['recipientAddress'], address);
   });
 
+  test('a Solana order is the same body on solana, its "all" and prices from Phantom’s side', () async {
+    const funder = 'DYbqrJ7eRQNi4kb4suurTovK2wXxSq87ujuAeLDroQ69';
+    final asked = <String>[];
+    Future<String> allOf(String s) async => s == 'SOL' ? '1.25' : throw StateError(s);
+    Future<double> priceOf(String s) async {
+      asked.add(s);
+      return 90;
+    }
+
+    final stop = await TradeFlow.flashBodyOn(
+        {'kind': 'stop-loss', 'sell': 'SOL', 'buy': 'USDC', 'price': '100', 'chain': 'solana'}, 'stop-loss', 'solana', funder,
+        allOf: allOf, priceOf: priceOf);
+    expect(stop['targetChain'], 'solana');
+    expect(stop['contraChain'], 'solana');
+    expect(stop['target'], 'SOL');
+    expect(stop['qty'], '1.25');
+    expect(stop['funderAddress'], funder);
+
+    // "buy 0.1 sol, tp 200, sl 100": a market buy at today's price, the
+    // pair attached; 200 is the take-profit, not what the buy pays.
+    final bracket = await TradeFlow.flashBodyOn(
+        {'kind': 'bracket', 'sell': 'USDC', 'buy': 'SOL', 'buyAmount': '0.1', 'price': '200', 'stopPrice': '100'},
+        'bracket', 'solana', funder,
+        allOf: allOf, priceOf: priceOf);
+    expect(bracket['orderType'], 'market');
+    expect(bracket['side'], 'buy');
+    expect(bracket['qty'], '9');
+    expect(asked, ['SOL']);
+    expect(bracket['attachedBracket'], {
+      'takeProfit': {'notionalPrice': '200'},
+      'stopLoss': {'notionalPrice': '100'},
+    });
+  });
+
   test('a Whitechain request is createRequest(USDT, units, memo, anyone, never)', () {
     final data = PayRequests.createCalldata('20.5', 'dinner');
     expect(data.substring(0, 10), '0xdd0bacc1');

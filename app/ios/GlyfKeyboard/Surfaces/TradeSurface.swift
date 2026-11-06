@@ -20,14 +20,16 @@ final class TradeSurface: UIView {
 
     let intent: TradeIntent
     private let wallet = SettingsStore.current.evmAddress
-    /// The wallet that signs, as the app names it.
-    private let walletName: String = {
+    /// The wallet that signs, as the app names it. Solana's is Phantom
+    /// (its deeplinks sign only Solana; lib/wallet/flash_solana.dart).
+    private var walletName: String {
+        if intent.chainName == "solana" { return "Phantom" }
         switch SettingsStore.current.evmSigner {
         case "metamask": return "MetaMask"
         case "phantom": return "Phantom"
         default: return "Glyf wallet"
         }
-    }()
+    }
 
     // Top card: what leaves (or what's asked for).
     private let topCard = UIView()
@@ -344,7 +346,8 @@ final class TradeSurface: UIView {
             bottomToken.text = "Whitechain"
             bottomSub.text = "A link goes in the chat; they pay it"
         }
-        metaLabel.text = i.detail
+        // "Solana · Flash · Phantom": who signs, when it isn't the EVM wallet.
+        metaLabel.text = i.chainName == "solana" && i.kind != .send ? "\(i.detail) · \(walletName)" : i.detail
         renderGo()
         setNeedsLayout()
     }

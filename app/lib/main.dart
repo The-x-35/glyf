@@ -14,6 +14,7 @@ import 'launch/launch_overlay.dart';
 import 'onboarding/demo_chat.dart';
 import 'wallet/buy_screen.dart';
 import 'wallet/crypto_pay.dart';
+import 'wallet/flash_solana.dart';
 import 'wallet/pay_launch_screen.dart';
 import 'wallet/pay_status_screen.dart';
 import 'evm/evm_signer.dart';
@@ -159,6 +160,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     // MetaMask answering a request Glyf opened it on (lib/evm/metamask_link.dart):
     // the screen that's waiting takes it from there.
     if (MetaMaskLink.handle(uri)) return;
+    // Phantom answering a step of a Flash order on Solana
+    // (lib/wallet/flash_solana.dart): the trade that's waiting takes it.
+    if (PhantomRequests.handle(uri)) return;
     if (uri.host == 'phantom') {
       // Phantom's answer to Connect or to a payment: finished on its own
       // screen, which sends the signed payment on.
