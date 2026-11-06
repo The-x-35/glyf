@@ -185,7 +185,7 @@ export function groundAction(action: Action | null, text: string): Action | null
 export const ACTION_GUIDE = `action: only when one of Glyf's tools does what they typed, {"tool":"…","params":{…}}, else leave it out. Tools (params, ? = optional):
 trade.swap {sell,buy,amount?,usd?,chain?} swap or buy now; usd:true when the amount is dollars of what is bought
 trade.dca {asset,every,period,periods?,spend?,chain?} a repeated buy; every = dollars each time; period hour|day|week|month; periods = how many buys
-trade.flash {type,asset,side?,amount?,price?,stopPrice?,trailPercent?,hours?,chain?} an order that waits; type limit|stop|stop-loss|take-profit|bracket|trailing-stop|twap
+trade.flash {type,asset,side?,amount?,usd?,price?,stopPrice?,trailPercent?,hours?,chain?} an order that waits; type limit|stop|stop-loss|take-profit|bracket|trailing-stop|twap; usd:true when the amount is dollars ("buy $10 of tesla below 300" is limit, amount 10, usd true, price 300)
 trade.bridge {asset,amount,from,to} the same token to another chain
 send {to,amount,token} crypto to a .eth/.sol name or 0x address
 calendar.event {title,when} a plan with a day or time ("dinner with sam", "fri 8pm")
