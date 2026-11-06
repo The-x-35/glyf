@@ -199,7 +199,7 @@ Tokens: ETH WBTC SOL USDC USDT DAI UNI LINK AAVE OP ARB POL AERO DEGEN PEPE LDO,
 /** Typing that a tool might act on: only these take the extra look when the
  *  rules already had a chip for the sentence. */
 export function mayAct(text: string): boolean {
-  return /\b(buy|sell|swap|dca|invest|stack|trade|bridge|send|pay|transfer|stop[- ]?loss|take profit|limit|trail|eth|btc|bitcoin|sol|usdc|usdt|call|meet|zoom|schedule|book|calendar|remind|dinner|lunch|meeting|tomorrow|tmrw|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|translate|youtube|shorts|video|map|directions|near me|convert|search|google)\b/i
+  return /\b(buy|sell|swap|dca|invest|stack|trade|grab|get me|shares?|stocks?|aapl|apple|tsla|tesla|nvda|nvidia|msft|microsoft|googl|google|amzn|amazon|meta|dips?|under|below|bridge|send|pay|transfer|stop[- ]?loss|take profit|limit|trail|eth|btc|bitcoin|sol|usdc|usdt|call|meet|zoom|schedule|book|calendar|remind|dinner|lunch|meeting|tomorrow|tmrw|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|translate|youtube|shorts|video|map|directions|near me|convert|search|google)\b/i
     .test(text);
 }
 
