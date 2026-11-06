@@ -2197,7 +2197,17 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let kinds = SettingsStore.current.aiUsesVault == false ? [] : Array(Set(fields.map(\.kind))).sorted()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.suggestTask = BackendClient.shared.suggestAction(text: trimmed, kinds: kinds) {
+            self.suggestTask = BackendClient.shared.suggestAction(text: trimmed, kinds: kinds, onAction: {
+                [weak self] action in
+                // The model named one of Glyf's tools: its chip opens that
+                // tool with the values filled in (AIAction).
+                guard let self, self.surface == .none, let chip = action.chip,
+                      String((self.beforeContext ?? "").suffix(120))
+                        .trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
+                self.suggestedFor = trimmed
+                self.suggestedChip = chip
+                self.updateCandidates()
+            }) {
                 [weak self] intent, label, query in
                 guard let self, self.surface == .none else { return }
                 let before = self.beforeContext ?? ""
@@ -3083,6 +3093,21 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         }
     }
 
+    /// The search tabs and translate, opened from a recommended action with
+    /// what the model read filled in (AIAction).
+    private func openRecommended(_ tool: String, query: String) {
+        switch tool {
+        case "translate":
+            if SettingsStore.current.translationHUD != true { toggleTranslateHUD() }
+            ensureHUD().translate(into: query)
+        default:
+            let tab: SearchSurface.Tab = tool == "youtube" ? .youtube : tool == "shorts" ? .shorts
+                : tool == "maps" ? .maps : .web
+            setSurface(.search)
+            search?.run(query: query, on: tab)
+        }
+    }
+
     /// A fresh Google Meet link, straight into the message (the Meet key and
     /// the "Add a Meet link" chip).
     private func insertMeetLink() {
@@ -3674,6 +3699,14 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         if case .action(_, _, "meet") = chip {
             toolbar.showSmart(nil)
             insertMeetLink()
+            return
+        }
+        if case .action(_, let query, let intent) = chip, intent.hasPrefix("open:") {
+            // A recommended action: its tool, opened with the values in it.
+            suggestedChip = nil
+            suggestedFor = ""
+            toolbar.showSmart(nil)
+            openRecommended(String(intent.dropFirst("open:".count)), query: query)
             return
         }
         if case .action(_, _, let intent) = chip {

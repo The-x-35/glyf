@@ -27,6 +27,8 @@ TEST_SHARED = %w[
   Engine/Smart.swift
   Engine/StripPolicy.swift
   Engine/TradeIntent.swift
+  Engine/TradeRecurring.swift
+  Engine/AIAction.swift
   Engine/SponsorMenu.swift
   Engine/EmojiWords.swift
   Engine/PhraseMemory.swift

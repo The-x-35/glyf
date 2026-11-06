@@ -91,8 +91,9 @@ class RecoveryPhraseScreen extends StatelessWidget {
                       decoration: BoxDecoration(color: Glass.bg, borderRadius: BorderRadius.circular(12)),
                       child: Row(
                         children: [
+                          // Room for two digits and a gap: 24 words run to "24".
                           SizedBox(
-                            width: 18,
+                            width: 24,
                             child: Text('${i + 1}',
                                 style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5, fontWeight: FontWeight.w600)),
                           ),

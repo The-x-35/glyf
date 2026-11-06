@@ -173,6 +173,14 @@ final class GlyfWidgetDataTests: XCTestCase {
 
     // MARK: Next meeting
 
+    func testRunGlyfAsksForTextOnlyForTextGlyfsWithNone() {
+        XCTAssertTrue(GlyfIntentParsing.asksForText(glyfId: "glyf.proofread", input: ""))
+        XCTAssertTrue(GlyfIntentParsing.asksForText(glyfId: "rewrite.polite", input: "  \n"))
+        XCTAssertTrue(GlyfIntentParsing.asksForText(glyfId: "glyf.translate", input: ""))
+        XCTAssertFalse(GlyfIntentParsing.asksForText(glyfId: "glyf.proofread", input: "teh cat"))
+        XCTAssertFalse(GlyfIntentParsing.asksForText(glyfId: "custom.meet", input: ""))
+    }
+
     func testTheMeetingActivityStartsTenMinutesBeforeACallAndNotForOthers() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let call = URL(string: "https://meet.google.com/abc-defg-hij")!

@@ -146,10 +146,14 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
   }
 
   /// The Glyf wallet's address reaches the keyboard on every launch; UI
-  /// tests make one with `--glyf-test-evm-wallet` (never in a release build).
+  /// tests make one with `--glyf-test-evm-wallet`, and `--glyf-forget-wallet`
+  /// clears it first so a fresh one can be made (never in a release build).
   Future<void> _loadEvmWallet() async {
-    if (!kReleaseMode && (await GlyfBridge.launchArgs()).contains('--glyf-test-evm-wallet')) {
-      await EvmWallet.ensure();
+    if (!kReleaseMode) {
+      final args = await GlyfBridge.launchArgs();
+      // ignore: invalid_use_of_visible_for_testing_member
+      if (args.contains('--glyf-forget-wallet')) await EvmWallet.forget();
+      if (args.contains('--glyf-test-evm-wallet')) await EvmWallet.ensure();
     }
     await EvmSigner.load();
   }

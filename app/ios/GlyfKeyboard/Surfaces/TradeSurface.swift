@@ -351,6 +351,11 @@ final class TradeSurface: UIView {
             bottomValue.text = TradeIntent.span(i.durationSeconds).replacingOccurrences(of: "over ", with: "").capitalizedFirst
             bottomToken.text = i.buy
             bottomSub.text = marketPrice.map { "\(i.buy) now \(PaySurface.dollars($0))" } ?? ""
+            // A recurring plan: its cadence, and what Flash's 30 days cover.
+            if let plan = i.plan {
+                topUSD.text = plan.summary
+                if let note = plan.capNote { bottomSub.text = note }
+            }
         case .bridge:
             topKey.text = "Move"
             topAmount.text = i.amount ?? ""

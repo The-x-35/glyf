@@ -429,6 +429,15 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             onError: { _ in })
     }
 
+    /// Opens on a tab with a query already searched (the strip's recommended
+    /// action: "YouTube: dune 2 trailer"); the query stays editable.
+    func run(query: String, on t: Tab) {
+        tab = t
+        styleChips()
+        queryEditor.setText(query)
+        submit()
+    }
+
     @objc private func activateQuery() {
         queryEditor.isActive = true
         delegate?.searchActivated(queryEditor)

@@ -1,4 +1,4 @@
-import { decodeFunctionResult, encodeFunctionData, getAddress, parseAbi } from "viem";
+import { concatHex, decodeFunctionResult, encodeFunctionData, getAddress, numberToHex, parseAbi } from "viem";
 import { ethCall, type EvmChain, type FetchFn } from "./evm.js";
 import { ERC20_ABI, wrappedNative, type EvmToken } from "./tokens.js";
 
@@ -42,8 +42,13 @@ const ADDRESS_THIS = "0x0000000000000000000000000000000000000002" as const;
 export const QUOTER_ABI = parseAbi([
   "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
 ]);
+/** QuoterV2's multi-pool quote: a packed path token, fee, token, fee, token. */
+export const QUOTER_PATH_ABI = parseAbi([
+  "function quoteExactInput(bytes path, uint256 amountIn) returns (uint256 amountOut, uint160[] sqrtPriceX96AfterList, uint32[] initializedTicksCrossedList, uint256 gasEstimate)",
+]);
 export const ROUTER_ABI = parseAbi([
   "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)",
+  "function exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)",
   "function multicall(uint256 deadline, bytes[] data) payable returns (bytes[] results)",
   "function unwrapWETH9(uint256 amountMinimum, address recipient) payable",
 ]);
@@ -71,6 +76,53 @@ export interface V3Quote {
   amountOut: bigint;
   fee: number;
   gasEstimate: bigint;
+  /** A two-pool route: in → via → out, with each pool's fee. */
+  via?: `0x${string}`;
+  fees?: [number, number];
+}
+
+/** v3's packed path: token (20 bytes), fee (3 bytes), token, fee, token. */
+export function v3Path(tokens: `0x${string}`[], fees: number[]): `0x${string}` {
+  const parts: `0x${string}`[] = [];
+  tokens.forEach((t, i) => {
+    parts.push(t.toLowerCase() as `0x${string}`);
+    if (i < fees.length) parts.push(numberToHex(fees[i], { size: 3 }));
+  });
+  return concatHex(parts);
+}
+
+/** Two-pool routes through each of `mids` (WETH, USDC), every fee pair,
+ *  in one eth_call; the best one. For a pair with no pool of its own. */
+export async function quoteV3TwoHop(fetchImpl: FetchFn, chain: EvmChain, r: {
+  tokenIn: `0x${string}`; tokenOut: `0x${string}`; amountIn: bigint;
+}, mids: `0x${string}`[]): Promise<V3Quote | null> {
+  const v3 = V3[chain.key];
+  const via = mids.filter(m => m.toLowerCase() !== r.tokenIn.toLowerCase() && m.toLowerCase() !== r.tokenOut.toLowerCase());
+  if (!v3 || via.length === 0) return null;
+  const routes = via.flatMap(mid => FEE_TIERS.flatMap(a => FEE_TIERS.map(b => ({ mid, fees: [a, b] as [number, number] }))));
+  const calls = routes.map(x => ({
+    target: v3.quoterV2,
+    allowFailure: true,
+    callData: encodeFunctionData({ abi: QUOTER_PATH_ABI, functionName: "quoteExactInput",
+      args: [v3Path([r.tokenIn, x.mid, r.tokenOut], x.fees), r.amountIn] }),
+  }));
+  const data = await ethCall(fetchImpl, chain, MULTICALL3,
+    encodeFunctionData({ abi: MULTICALL3_ABI, functionName: "aggregate3", args: [calls] }));
+  const results = decodeFunctionResult({ abi: MULTICALL3_ABI, functionName: "aggregate3", data });
+  let best: V3Quote | null = null;
+  routes.forEach((x, i) => {
+    const res = results[i];
+    if (!res?.success || res.returnData === "0x") return;
+    try {
+      const [amountOut, , , gasEstimate] = decodeFunctionResult({ abi: QUOTER_PATH_ABI, functionName: "quoteExactInput", data: res.returnData });
+      if (amountOut > 0n && (!best || amountOut > best.amountOut)) {
+        best = { amountOut, fee: x.fees[0], gasEstimate, via: x.mid, fees: x.fees };
+      }
+    } catch {
+      // No answer from this route.
+    }
+  });
+  return best;
 }
 
 /** The contract a v3 swap trades: WETH stands in for ETH. */
@@ -118,15 +170,22 @@ export async function quoteV3Many(fetchImpl: FetchFn, chain: EvmChain,
 export function v3SwapTx(chain: EvmChain, args: {
   sell: EvmToken; buy: EvmToken; amountIn: bigint; minOut: bigint; fee: number;
   recipient: `0x${string}`; deadline: bigint;
+  /** A two-pool route (quoteV3TwoHop): exactInput over the packed path. */
+  via?: `0x${string}`; fees?: [number, number];
 }): PlainTx {
   const v3 = V3[chain.key];
   const tokenIn = v3Address(chain, args.sell)!;
   const tokenOut = v3Address(chain, args.buy)!;
-  const swap = encodeFunctionData({ abi: ROUTER_ABI, functionName: "exactInputSingle", args: [{
-    tokenIn, tokenOut, fee: args.fee,
-    recipient: args.buy.native ? ADDRESS_THIS : args.recipient,
-    amountIn: args.amountIn, amountOutMinimum: args.minOut, sqrtPriceLimitX96: 0n,
-  }] });
+  const recipient = args.buy.native ? ADDRESS_THIS : args.recipient;
+  const swap = args.via && args.fees
+    ? encodeFunctionData({ abi: ROUTER_ABI, functionName: "exactInput", args: [{
+      path: v3Path([tokenIn, args.via, tokenOut], args.fees), recipient,
+      amountIn: args.amountIn, amountOutMinimum: args.minOut,
+    }] })
+    : encodeFunctionData({ abi: ROUTER_ABI, functionName: "exactInputSingle", args: [{
+      tokenIn, tokenOut, fee: args.fee, recipient,
+      amountIn: args.amountIn, amountOutMinimum: args.minOut, sqrtPriceLimitX96: 0n,
+    }] });
   const steps: `0x${string}`[] = [swap];
   if (args.buy.native) {
     steps.push(encodeFunctionData({ abi: ROUTER_ABI, functionName: "unwrapWETH9", args: [args.minOut, args.recipient] }));
