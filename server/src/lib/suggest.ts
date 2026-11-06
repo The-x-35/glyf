@@ -105,6 +105,9 @@ const STARTER_QUERIES = [
   "News today", "Translate",
 ];
 
+/** The Shorts tab's landing when the trends feed is down. */
+const SHORTS_STARTERS = ["Funny cats", "Quick recipes", "Workout", "Travel", "Dance"];
+
 export interface SuggestContext {
   country?: string;
   lat?: number;
@@ -197,6 +200,20 @@ export async function suggest(
       if (cards.length) provider = "youtube-chart";
     }
     out = { vertical, cards, provider };
+  } else if (vertical === "shorts") {
+    // YouTube's popular chart holds no Shorts (0 of 50 in US, IN and GB,
+    // measured 2026-11-06) and a search costs 100 units, so the Shorts tab
+    // opens on today's trending searches: a tap runs them as a Shorts search.
+    let cards = await trendingSearches(country).catch(() => []);
+    let provider = "google-trends";
+    if (!cards.length) {
+      provider = "starter";
+      cards = SHORTS_STARTERS.map((title, i) => ({
+        kind: "query" as const, id: `shorts-starter-${i}`, title,
+        url: `https://www.youtube.com/results?search_query=${encodeURIComponent(title)}`,
+      }));
+    }
+    out = { vertical, cards, provider };
   } else if (vertical === "maps") {
     // Nothing sensible to suggest without knowing where the user is.
     const cards = ctx.lat !== undefined && ctx.lon !== undefined
@@ -229,6 +246,15 @@ function mockSuggest(vertical: Vertical): SuggestResponse {
         channel: "Popular on YouTube", duration: "10:02", emoji: "🎥",
         url: "https://youtu.be/dQw4w9WgXcQ",
       }],
+    };
+  }
+  if (vertical === "shorts") {
+    return {
+      vertical, provider: "mock",
+      cards: SHORTS_STARTERS.slice(0, 3).map((title, i) => ({
+        kind: "query" as const, id: `mock-sq-${i}`, title,
+        url: `https://www.youtube.com/results?search_query=${encodeURIComponent(title)}`,
+      })),
     };
   }
   if (vertical === "maps") {

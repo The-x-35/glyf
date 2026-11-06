@@ -16,34 +16,41 @@ enum ThumbLoader {
         guard !configured else { return }
         configured = true
         cache.countLimit = 40
-        // ~64px² RGBA ≈ 16KB each; 4MB is a generous ceiling for 40 of them.
-        cache.totalCostLimit = 4 * 1024 * 1024
+        // ~64px² RGBA ≈ 16KB each; a Short's tall frame ≈ 0.45MB, so 6MB keeps
+        // a shelf of ten and the small ones beside it.
+        cache.totalCostLimit = 6 * 1024 * 1024
         NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil, queue: .main) { _ in cache.removeAllObjects() }
     }
 
-    static func cached(_ urlString: String) -> UIImage? {
+    static func cached(_ urlString: String, variant: String = "") -> UIImage? {
         configure()
-        return cache.object(forKey: urlString as NSString)
+        return cache.object(forKey: (urlString + variant) as NSString)
     }
 
     /// Loads and downscales to `maxPixel` on the long edge. The completion
     /// runs on the main queue, once, and may be called synchronously when the
     /// image is already cached.
+    ///
+    /// `crop` cuts the decoded picture (in its pixels) before it is kept, so
+    /// only what is shown stays in memory; `variant` names that cut in the
+    /// cache key.
     static func load(_ urlString: String, maxPixel: CGFloat = 160,
+                     variant: String = "", crop: ((CGSize) -> CGRect)? = nil,
                      completion: @escaping (UIImage?) -> Void) {
         configure()
-        if let hit = cache.object(forKey: urlString as NSString) {
+        let key = urlString + variant
+        if let hit = cache.object(forKey: key as NSString) {
             completion(hit); return
         }
         guard let url = URL(string: urlString), url.scheme?.hasPrefix("http") == true else {
             completion(nil); return
         }
-        if inFlight[urlString] != nil {
-            inFlight[urlString]?.append(completion); return
+        if inFlight[key] != nil {
+            inFlight[key]?.append(completion); return
         }
-        inFlight[urlString] = [completion]
+        inFlight[key] = [completion]
 
         var req = URLRequest(url: url)
         req.timeoutInterval = 8
@@ -53,13 +60,23 @@ enum ThumbLoader {
             req.glyfSession()
         }
         URLSession.shared.dataTask(with: req) { data, _, _ in
-            let image = data.flatMap { downscale($0, maxPixel: maxPixel) }
+            var image = data.flatMap { downscale($0, maxPixel: maxPixel) }
+            if let crop, let cg = image?.cgImage {
+                // Redrawn, not `cropping(to:)`: a cropped CGImage keeps the
+                // whole decoded picture alive behind it.
+                let rect = crop(CGSize(width: cg.width, height: cg.height)).integral
+                let format = UIGraphicsImageRendererFormat.default()
+                format.scale = 1
+                image = UIGraphicsImageRenderer(size: rect.size, format: format).image { _ in
+                    UIImage(cgImage: cg).draw(at: CGPoint(x: -rect.minX, y: -rect.minY))
+                }
+            }
             DispatchQueue.main.async {
                 if let image {
                     let cost = Int(image.size.width * image.size.height * 4)
-                    cache.setObject(image, forKey: urlString as NSString, cost: cost)
+                    cache.setObject(image, forKey: key as NSString, cost: cost)
                 }
-                let waiting = inFlight.removeValue(forKey: urlString) ?? []
+                let waiting = inFlight.removeValue(forKey: key) ?? []
                 for block in waiting { block(image) }
             }
         }.resume()
