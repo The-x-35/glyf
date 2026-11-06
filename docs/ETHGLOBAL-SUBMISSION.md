@@ -5,8 +5,13 @@ Glyf is an AI keyboard for iPhone and Android. It's on TestFlight, and its Solan
 - "swap 0.05 eth to usdc on base" → a Uniswap swap.
 - "sell my eth if it drops below 3000", "take profit eth at 4500", "my eth: take profit 4500, stop loss 3000", "protect my eth with a 5% trail", "buy $100 of eth if it dips below 2800", "buy $20 of eth every day for a week", "move 50 usdc from base to arbitrum" → Definitive Flash advanced orders.
 - "send 5 usdc to vitalik.eth" / "pay arpit.sol 5 usdc" → ENS / SNS names resolved, then a transfer.
-- "request 20 usdt" → a USDT payment request on Whitechain; the pay link is typed into the chat.
-- Vault › Backup → the saved details encrypted on the phone and kept on Arkiv, restorable on a new phone.
+- "sell 0.1 sol if it drops below 100" → the same Flash orders on Solana, signed in Phantom.
+- After a trade, **Share in chat** puts it in the conversation as a link; a friend's **Copy this trade** opens the same order in their Glyf.
+- The keyboard's AI runs privately on **0G's Private Computer** (TEE-verified), with each answer's request id in the app.
+
+Signing stays in the wallet: the Glyf wallet (an on-device key), **MetaMask by its own deeplinks** (Ethereum and L2s) or **Phantom by its deeplinks** (Solana). Glyf builds every transaction on the phone, and the wallet app only signs.
+
+Also built at Mumbai, but not entered (ETHGlobal allows three partners): USDT requests on Whitechain ("request 20 usdt") and the Vault's encrypted backup on Arkiv.
 
 ## Before and during
 
@@ -22,6 +27,10 @@ Glyf is an AI keyboard for iPhone and Android. It's on TestFlight, and its Solan
 | Names, EVM relay, Flash proxy, Uniswap | `server/src/routes/{names,evm,flash,uniswap}.ts`, `server/src/lib/{names,evm,tokens,uniswap}.ts` | all of it (42 tests) |
 | GlyfPayRequest (Whitechain) | `contracts/` | all of it (13 tests + fork test) |
 | Vault on Arkiv | `app/lib/evm/arkiv_vault.dart`, `arkiv/` | all of it (byte-for-byte with the Arkiv SDK) |
+| MetaMask by deeplink | `app/lib/evm/metamask_link.dart`, `evm_signer.dart` | all of it (tests: `app/test/evm_signer_test.dart`) |
+| Flash on Solana through Phantom | `app/lib/wallet/flash_solana.dart` | all of it (18 tests: `app/test/wallet/flash_solana_test.dart`) |
+| Share and copy a trade | `server/src/routes/tradeshare.ts`, `app/lib/evm/trade_share.dart`, the keyboard's Share trade chip | all of it (10 tests) |
+| Private AI on 0G | `server/src/lib/privateai.ts`, `server/src/providers/openrouter.ts`, Keyboard › 0G receipts | all of it (5 tests: `server/test/privateai.test.ts`) |
 
 ## Partner by partner
 
@@ -34,7 +43,9 @@ Glyf is an AI keyboard for iPhone and Android. It's on TestFlight, and its Solan
 - **Code:**
   - `server/src/routes/flash.ts` maps symbols to assets and builds the `/order` draft.
   - `app/lib/evm/trade_flow.dart` (`flashBody`, `_flash`) sends the approval and the wrap, signs `evmOrderTypedData` (plus Permit2 and the attached bracket), and submits.
-  - `app/lib/evm/flash_orders.dart` lists open orders with Cancel.
+  - `app/lib/evm/flash_orders.dart` lists open orders with Cancel, which signs Flash's own cancel message.
+  - `app/lib/wallet/flash_solana.dart`: the same orders on Solana. One setup transaction is built on the phone from Flash's instructions; Phantom signs it and the order message by deeplink, each checked with Ed25519 first.
+- **Social:** a placed trade shares into the chat (`/t/<id>`), and Copy this trade opens it in a friend's Glyf (`server/src/routes/tradeshare.ts`, `app/lib/evm/trade_share.dart`).
 - **Proof:** live quotes from Flash during the build. For example, 0.01 ETH stop-loss on Base returns `approveTx` to the Flash vault, `wrap.evmTx` and `evm.orderTypedData`, with a fee of about $0.04.
   - **ARPIT:** add the demo's order id and its onchain fill.
 
@@ -46,26 +57,21 @@ Glyf is an AI keyboard for iPhone and Android. It's on TestFlight, and its Solan
   - **ARPIT:** add the demo swap's transaction hash.
 - **Feedback:** `FEEDBACK.md`. Also send it through the form at developers.uniswap.org/hackathon-feedback.
 
-### Whitechain: "Continuity · Bring Your Product to Whitechain"
+### 0G: "Keep Building on 0G"
 
-- `GlyfPayRequest` on Whitechain Sepolia (1874): request, pay (approve or EIP-2612 permit), cancel, refund, and Receipt events. It never holds funds.
-- **Code:**
-  - `contracts/src/GlyfPayRequest.sol`;
-  - `app/lib/evm/pay_request.dart` and `pay_request_screen.dart`;
-  - the keyboard types the link into the chat (`showPayOutcomeIfFresh`).
-- **Why onchain:** see `WHITECHAIN_FEEDBACK.md`.
-- **ARPIT:** the deployed and verified address, and one USDT payment's explorer link (needs test WBT and test USDT, below).
+- **Every AI call of this build runs on 0G's Private Computer.** That covers hold-space answers, rewrites, the strip's suggestions and Build your own.
+- **How it's called:** `router-api.0g.ai` with Private trust mode and `verify_tee`, on `0gm-1.0-35b-a3b-sia` (the plain 0gm build behind it, nothing outside 0G).
+- **Receipts:** each answer's `x_0g_trace` (request id, provider, `tee_verified`, cost) is kept as a receipt, listed in the app under Profile › Keyboard › 0G receipts.
+- **Before:** no 0G code at all; Glyf's AI ran on OpenRouter and Google. Everything 0G is new from 6 Nov.
+- **Proof:** a production answer on 6 Nov came back as request `dd07c98d-8a45-4f68-8d49-b2eb551a40b9`, `tee_verified: true`, $0.000155.
+- **Scope:** the builds already on TestFlight never send the 0G header and keep the usual models (`docs/DECISIONS.md` D109).
 
-### Arkiv: "Build on Arkiv (existing projects)"
+### Also built (not entered)
 
-- The Vault's details, shorthand and combos, AES-256-GCM-encrypted per item, as wallet-owned Arkiv entities.
-  - The owner key is derived from a secret in iCloud Keychain, so a new phone finds and opens them.
-  - One transaction writes what changed, deletes what was removed and extends what's near expiry.
-- **Code:** `app/lib/evm/arkiv_vault.dart`, `app/lib/evm/arkiv_backup_card.dart`, and `arkiv/` (protocol, design, judge files).
-- **Proof:** `app/test/arkiv_test.dart` matches the official SDK's bytes, signed transactions included. Restore queries run live on Rabdi.
-  - **ARPIT:** the backup key's address (shown in the Vault) needs test GLM, then one backup's transaction.
+- **Whitechain:** `GlyfPayRequest` on Whitechain Sepolia (`contracts/`, `app/lib/evm/pay_request*.dart`, `WHITECHAIN_FEEDBACK.md`).
+- **Arkiv:** the Vault's encrypted backup (`app/lib/evm/arkiv_vault.dart`, `arkiv/`), byte-for-byte with the Arkiv SDK.
 
-> ETHGlobal allows **three partner prizes** per project. All four are built. Pick three at submission (see the end of `docs/ETHGLOBAL-MUMBAI.md`).
+> ETHGlobal allows **three partner prizes** per project: **Definitive, Uniswap and 0G**. Every form field, ready to paste, is in `docs/ETHGLOBAL-FORM.md`.
 
 ## How AI was used
 
@@ -75,11 +81,11 @@ Glyf is built by Arpit with an AI coding assistant, and that's true of this hack
 - **The assistant wrote most of the code and tests** to those instructions:
   - the Swift keyboard parts, the Dart app parts, the TypeScript server routes, the Solidity contract and the Arkiv port;
   - it ran the simulator scenarios and checked the work against live Flash, Uniswap, ENS and Arkiv endpoints.
-- **The plan and research** are in `docs/ETHGLOBAL-MUMBAI.md`. There are no separate spec-kit files.
+- **The plan and research** are in `docs/ETHGLOBAL-MUMBAI.md`; every decision, with Arpit's words, is in `docs/DECISIONS.md`. There are no separate spec-kit files.
 
 ## Run it
 
-- **Server:** `cd server && npm install && npm test` (426 tests). Needs `SESSION_SECRET`, plus `MOCK_AI=true` for the AI suites.
+- **Server:** `cd server && npm install && npm test` (444 tests). Needs `SESSION_SECRET`, plus `MOCK_AI=true` for the AI suites.
   - `FLASH_API_KEY` enables Flash; `UNISWAP_API_KEY` switches swaps to the Trading API, otherwise on-chain v3 is used.
 - **App:** `cd app && flutter test` (Dart tests, including `test/evm_test.dart` and `test/arkiv_test.dart`), then build for the iOS simulator.
   - The keyboard scenarios are `GlyfScenarioUITests/testS300_TradesInWordsOpenTheTradePanel` and `testS301_TheSwapButtonSignsInTheApp`.
@@ -88,7 +94,4 @@ Glyf is built by Arpit with an AI coding assistant, and that's true of this hack
 
 ## The demo (2 to 4 minutes, Arpit's own voice)
 
-1. In Messages, type "swap 0.002 eth to usdc on base". Show the chip, the Uniswap quote card, Swap, and the Basescan link.
-2. Type "sell my eth if it drops below 2000". Show the Flash card, Place stop-loss, and the order under Profile › Wallet › Ethereum › Orders.
-3. Type "request 5 usdt". The link lands in the chat. Open it on the second phone, Pay, and show the Receipt on the Whitechain explorer.
-4. Vault › Backup › Back up. Show the Arkiv explorer, then Restore on a fresh install.
+The full script with timings is `docs/DEMO-SCRIPT.md`: Definitive Flash on Base and Solana, sharing a trade, a Uniswap swap, private AI on 0G, then Glyf's own calendar, search and Build your own.
