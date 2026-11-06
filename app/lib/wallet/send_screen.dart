@@ -249,7 +249,7 @@ class _SendScreenState extends State<SendScreen> {
                         ),
                       ),
                     )
-                  : PillButton(label: 'Review in Phantom', onPressed: link == null ? null : _send),
+                  : PillButton(label: link?.internal ?? false ? 'Send' : 'Review in Phantom', onPressed: link == null ? null : _send),
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),

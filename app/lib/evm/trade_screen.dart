@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../core/theme.dart';
+import '../wallet/wallet_mode.dart';
 import 'evm_signer.dart';
+import 'trade_activity.dart';
 import 'trade_flow.dart';
 import 'trade_share.dart';
 
@@ -74,6 +76,7 @@ class _TradeScreenState extends State<TradeScreen> {
 
   void _show(TradeOutcome outcome) {
     if (!mounted) return;
+    TradeActivity.show(this, widget.query, outcome);
     if (outcome.state == TradeState.done) HapticFeedback.mediumImpact();
     setState(() => _outcome = outcome);
   }
@@ -270,7 +273,7 @@ class _TradeScreenState extends State<TradeScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'With ${EvmSigner.kind.value == EvmSignerKind.glyf ? 'your Glyf wallet' : EvmSigner.kind.value.label}',
+                'With ${WalletModes.mode.value == WalletMode.internal ? 'your Glyf wallet' : widget.query['chain'] == 'solana' ? 'Phantom' : 'MetaMask'}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Glass.inkSoft, fontSize: 14),
               ),

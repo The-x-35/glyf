@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import WidgetKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -162,7 +163,19 @@ import UIKit
     CalendarSync.shared.refreshIfEnabled()
     NotificationCenter.default.addObserver(
       forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
-    ) { _ in CalendarSync.shared.refreshIfEnabled() }
+    ) { _ in
+      CalendarSync.shared.refreshIfEnabled()
+      // The widgets read the calendar and settings the app just wrote.
+      WidgetCenter.shared.reloadAllTimelines()
+      MeetingActivityHost.refresh()
+    }
+    MeetingActivityHost.refresh()
+    // Run ⟨glyf⟩ in Shortcuts and Siri lists the glyfs saved since last time.
+    if #available(iOS 18.0, *) { GlyfShortcuts.updateAppShortcutParameters() }
+    #if DEBUG
+    if ProcessInfo.processInfo.arguments.contains("--glyf-demo-trade") { TradeActivityHost.shared.demo() }
+    if ProcessInfo.processInfo.arguments.contains("--glyf-demo-meeting") { MeetingActivityHost.demo() }
+    #endif
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

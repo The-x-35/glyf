@@ -103,7 +103,7 @@ enum ClipboardStore {
     /// So this sits behind the same switch as the full read.
     static func captureDetected(_ done: @escaping (Bool) -> Void) {
         guard !reading, fullAccessHint, pasteboardHasNewContent(),
-              SettingsStore.current.clipboardHistory != false, !copyIsRemote
+              SettingsStore.current.clipboardHistory != false, !copyIsRemote, !copyIsGlyfSecret
         else { return done(false) }
         let concealed = copyIsConcealed
         // Only the three iOS 14 patterns are plain `DetectionPattern`s; the
@@ -172,7 +172,7 @@ enum ClipboardStore {
         guard !reading, fullAccessHint, pasteboardHasNewContent(),
               SettingsStore.current.clipboardHistory != false,
               SettingsStore.current.clipboardCaptureAll == true,
-              UIPasteboard.general.hasStrings
+              UIPasteboard.general.hasStrings, !copyIsGlyfSecret
         else { return done(false, false) }
         let concealed = copyIsConcealed
         // Reading `.string` can raise "Allow Paste?", and the read waits for
@@ -215,6 +215,14 @@ enum ClipboardStore {
     static func isFromAnotherDevice(_ types: [String]) -> Bool {
         types.contains("com.apple.is-remote-clipboard")
     }
+
+    /// A recovery phrase or private key Glyf's Wallet screen copied (marked
+    /// so.glyf.secret, local-only, expiring): never kept in history.
+    static func isGlyfSecret(_ types: [String]) -> Bool {
+        types.contains("so.glyf.secret")
+    }
+
+    private static var copyIsGlyfSecret: Bool { isGlyfSecret(UIPasteboard.general.types) }
 
     /// Reading the types asks nothing of iOS and fetches nothing.
     private static var copyIsRemote: Bool { isFromAnotherDevice(UIPasteboard.general.types) }

@@ -18,17 +18,16 @@ final class TradeSurface: UIView {
 
     weak var delegate: TradeSurfaceDelegate?
 
-    let intent: TradeIntent
-    private let wallet = SettingsStore.current.evmAddress
-    /// The wallet that signs, as the app names it. Solana's is Phantom
-    /// (its deeplinks sign only Solana; lib/wallet/flash_solana.dart).
+    /// A g menu starter's price is set here once the market's is known.
+    private(set) var intent: TradeIntent
+    /// The address that signs on this trade's chain (public, never a key).
+    private lazy var wallet: String? = intent.chainName == "solana"
+        ? SettingsStore.current.walletAddress : SettingsStore.current.evmAddress
+    /// The wallet that signs, as the app names it: the switch in the app
+    /// (walletMode) picks the Glyf wallet on every chain, or Phantom on
+    /// Solana and MetaMask elsewhere.
     private var walletName: String {
-        if intent.chainName == "solana" { return "Phantom" }
-        switch SettingsStore.current.evmSigner {
-        case "metamask": return "MetaMask"
-        case "phantom": return "Phantom"
-        default: return "Glyf wallet"
-        }
+        TradeIntent.walletName(chain: intent.chainName, mode: SettingsStore.current.walletMode)
     }
 
     // Top card: what leaves (or what's asked for).
@@ -219,15 +218,47 @@ final class TradeSurface: UIView {
 
     private func price(of symbol: String) {
         if ["USDC", "USDT", "DAI"].contains(symbol) { marketPrice = 1; asking = false; render(); return }
+        // SOL is not a Uniswap token: Jupiter's price, as the money chip has it.
+        if symbol == "SOL" { jupiterPrice(symbol); return }
         BackendClient.shared.evmJSON(path: "/uniswap/quote",
                                      body: ["chain": intent.chainName == "solana" ? "base" : intent.chainName,
-                                            "sell": symbol == "SOL" ? "ETH" : symbol, "buy": "USDC",
-                                            "amount": "1"]) { [weak self] obj in
+                                            "sell": symbol, "buy": "USDC", "amount": "1"]) { [weak self] obj in
             guard let self else { return }
+            let price = Self.number(obj?["amountOut"])
+            // A starter can't be placed without a price: Jupiter's, then.
+            if price == nil, self.intent.awaitingPrice { self.jupiterPrice(symbol); return }
             self.asking = false
-            if symbol != "SOL" { self.marketPrice = Self.number(obj?["amountOut"]) }
+            self.marketPrice = price
+            self.fillPrice()
             self.render()
         }
+    }
+
+    /// The dollar price RatesStore keeps (Jupiter, then the server).
+    private func jupiterPrice(_ symbol: String) {
+        let rates = RatesStore.shared
+        let take = { [weak self] in
+            guard let self, self.asking else { return }
+            self.asking = false
+            self.marketPrice = rates.crypto[symbol]
+            self.fillPrice()
+            self.render()
+        }
+        if rates.crypto[symbol] != nil { take(); return }
+        rates.ensureToken(symbol, then: take)
+        // A lookup already in flight or a fresh miss calls nothing back.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: take)
+    }
+
+    /// A starter's trigger, set from the price now (SponsorMenu.priced).
+    private func fillPrice() {
+        guard intent.awaitingPrice, let marketPrice else { return }
+        intent = SponsorMenu.priced(intent, market: marketPrice)
+    }
+
+    /// A price on the panel; a starter's still waiting on the market's.
+    private func shown(_ price: String?) -> String {
+        price == nil ? (asking ? "…" : "—") : TradeIntent.dollars(price)
     }
 
     static func number(_ any: Any?) -> Double? {
@@ -299,13 +330,13 @@ final class TradeSurface: UIView {
             bottomKey.text = "When"
             bottomToken.text = asset
             switch i.kind {
-            case .stopLoss: bottomValue.text = "≤ \(TradeIntent.dollars(i.price))"
-            case .takeProfit: bottomValue.text = "≥ \(TradeIntent.dollars(i.price))"
-            case .stop: bottomValue.text = "≥ \(TradeIntent.dollars(i.price))"
-            case .limit: bottomValue.text = (selling ? "≥ " : "≤ ") + TradeIntent.dollars(i.price)
+            case .stopLoss: bottomValue.text = "≤ \(shown(i.price))"
+            case .takeProfit: bottomValue.text = "≥ \(shown(i.price))"
+            case .stop: bottomValue.text = "≥ \(shown(i.price))"
+            case .limit: bottomValue.text = (selling ? "≥ " : "≤ ") + shown(i.price)
             case .bracket:
                 bottomKey.text = "Take profit · Stop"
-                bottomValue.text = "\(TradeIntent.dollars(i.price)) · \(TradeIntent.dollars(i.stopPrice))"
+                bottomValue.text = "\(shown(i.price)) · \(shown(i.stopPrice))"
             default:
                 bottomKey.text = "Trail"
                 bottomValue.text = "\(i.trailPercent ?? "")% below the high"
@@ -377,6 +408,7 @@ final class TradeSurface: UIView {
 
     private var goTitle: String {
         if needsGlyfWallet { return "Set up your Glyf wallet" }
+        if intent.awaitingPrice { return asking ? "Getting the price" : "No price yet" }
         if short { return "Not enough \(intent.sell)" }
         switch intent.kind {
         case .swap:
@@ -397,13 +429,14 @@ final class TradeSurface: UIView {
 
     private func renderGo() {
         goButton.setTitle(goTitle, for: .normal)
-        let blocked = !needsGlyfWallet && ((intent.kind == .send && resolveFailed) || short)
+        let blocked = !needsGlyfWallet && ((intent.kind == .send && resolveFailed) || short || intent.awaitingPrice)
         goButton.isEnabled = !blocked
         goButton.alpha = blocked ? 0.5 : 1
     }
 
     private func go() {
         guard !needsGlyfWallet else { delegate?.tradeSetUpWallet(); return }
+        guard !intent.awaitingPrice else { return }
         var q = intent.query
         if let resolved { q["address"] = resolved }
         delegate?.tradeHandOff(query: q)

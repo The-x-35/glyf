@@ -130,6 +130,18 @@ abstract final class GlyfBridge {
   static Future<void> walletSecretClear(String name) =>
       _call<bool>('walletSecretClear', {'name': name});
 
+  /// The phone's own unlock (Face ID, Touch ID or the passcode) before a
+  /// wallet secret is shown; [reason] is what the system prompt says. False
+  /// when refused, cancelled, or the phone can't ask.
+  static Future<bool> deviceAuth(String reason) async =>
+      await _call<bool>('deviceAuth', {'reason': reason}) ?? false;
+
+  /// A wallet secret onto the clipboard: this device only (no Universal
+  /// Clipboard), gone after [seconds], marked concealed so clipboard
+  /// managers (and Glyf's own history) never keep it. False when it can't.
+  static Future<bool> copySecret(String text, {int seconds = 60}) async =>
+      await _call<bool>('copySecret', {'text': text, 'seconds': seconds}) ?? false;
+
   // Signing in (SignIn.swift / SignIn.kt): `idToken` on success (with `name`
   // and `email` when the provider shares them), `error` otherwise.
 

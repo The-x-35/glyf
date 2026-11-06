@@ -183,6 +183,10 @@ struct GlyfSettings: Codable, Equatable {
     var evmAddress: String? = nil
     /// Which one: "glyf" (or nil), "metamask", "phantom".
     var evmSigner: String? = nil
+    /// Which wallets sign (app: Keyboard › Sign with): "internal" (or nil)
+    /// is the Glyf wallet on every chain, "external" is Phantom on Solana
+    /// and MetaMask on Ethereum (lib/wallet/wallet_mode.dart).
+    var walletMode: String? = nil
     /// Private AI: the server answers this phone's AI calls with 0G's
     /// Private Computer (models in TEEs). Only the hackathon build writes it;
     /// unset (every other build) is the usual AI: 0G is for testing only.

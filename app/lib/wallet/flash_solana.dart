@@ -212,12 +212,12 @@ abstract final class FlashSvm {
     final key = Sol.key(funder);
     if (got == null || want == null || key == null) return false;
     if (!_bytesEqual(got.message, want.message)) return false;
-    final slot = _signerSlot(got.message, key);
+    final slot = signerSlot(got.message, key);
     return slot != null && slot < got.signatures.length && verify(got.message, got.signatures[slot], key);
   }
 
   /// The funder's position among a message's signers, legacy or v0.
-  static int? _signerSlot(Uint8List message, Uint8List key) {
+  static int? signerSlot(Uint8List message, Uint8List key) {
     var i = message.isNotEmpty && message[0] & 0x80 != 0 ? 1 : 0;
     if (message.length < i + 4) return null;
     final signers = message[i];

@@ -896,8 +896,11 @@ final class PaySurface: UIView {
         for b in percentButtons { b.isHidden = !editing }
 
         if needsConnect {
-            leadLabel.text = "Connect Phantom once in the app; after that you pay right here."
-            ctaButton.setTitle("Connect Phantom", for: .normal)
+            let external = SettingsStore.current.walletMode == "external"
+            leadLabel.text = external
+                ? "Connect Phantom once in the app; after that you pay right here."
+                : "Make your Glyf wallet once in the app; after that you pay right here."
+            ctaButton.setTitle(external ? "Connect Phantom" : "Open Wallet", for: .normal)
             ctaButton.removeTarget(nil, action: nil, for: .allEvents)
             ctaButton.addAction(UIAction { [weak self] _ in self?.delegate?.payConnect() }, for: .touchUpInside)
         }
@@ -918,11 +921,11 @@ final class PaySurface: UIView {
             }
             metaLabel.text = isPrivate
                 ? "Nobody onchain sees who paid · about 0.002 SOL + 0.1%"
-                : "Phantom signs · nothing moves without you"
+                : "\(TradeIntent.walletName(chain: "solana", mode: SettingsStore.current.walletMode)) signs · nothing moves without you"
             goButton.setTitle(isPrivate && paying.mint == Self.usdcMint ? "Send privately" : "Send", for: .normal)
         case .buy:
             toName.textColor = Glass.textPrimary
-            metaLabel.text = "Best route via Jupiter · Phantom signs"
+            metaLabel.text = "Best route via Jupiter · \(TradeIntent.walletName(chain: "solana", mode: SettingsStore.current.walletMode)) signs"
             renderQuote()
         }
         privateIcon.tintColor = isPrivate ? Glass.textPrimary : Glass.textSecondary

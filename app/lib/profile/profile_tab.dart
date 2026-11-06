@@ -16,6 +16,7 @@ import '../core/text_sheet.dart';
 import '../core/theme.dart';
 import '../shell/app_tour.dart';
 import '../onboarding/onboarding_flow.dart';
+import '../evm/evm_signer.dart';
 import '../wallet/solana.dart' show Sol;
 import '../wallet/wallet_flow.dart' show WalletFlow, WalletLink;
 import '../wallet/wallet_screen.dart';
@@ -410,7 +411,11 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
             builder: (context, link, _) => _navCard(
               icon: Icons.account_balance_wallet_outlined,
               title: 'Wallet',
-              trailingText: link == null ? 'Connect Phantom' : Sol.short(link.address),
+              trailingText: link != null
+                  ? Sol.short(link.address)
+                  : EvmSigner.address.value != null
+                      ? EvmSigner.short(EvmSigner.address.value!)
+                      : 'Set up',
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (ctx) => const WalletScreen(),
               )),

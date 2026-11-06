@@ -207,7 +207,7 @@ final class TokenLookup {
         guard let t = ranked(exact, { (tags($0).contains("major") ? 2 : 0) + (tags($0).contains("strict") ? 1 : 0) }).first
         else { return nil }
         return Quote(symbol: symbol, name: t["name"] as? String ?? symbol, mint: t["id"] as! String,
-                     usd: number(t["usdPrice"])!, major: tags(t).contains("major"), ticker: symbol)
+                     usd: number(t["usdPrice"])!, change24h: change(t), major: tags(t).contains("major"), ticker: symbol)
     }
 
     /// A share's own ticker: AAPLx and AAPLon are both AAPL.

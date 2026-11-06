@@ -13,8 +13,8 @@ protocol GlyfShellDelegate: AnyObject {
     func shellOpenSearch()
     /// A g menu tile was tapped: the same tool ids the strip uses.
     func shellOpenTool(_ id: String)
-    /// One of the sponsor apps on the g menu's top row was tapped.
-    func shellOpenSponsor(_ sponsor: SponsorMenu.Sponsor)
+    /// An option on a sponsor's panel (the g menu's top row) was tapped.
+    func shellSponsorOption(_ option: SponsorMenu.Option)
     /// Run one of the person's own glyfs on what they are typing.
     func shellRunGlyf(_ id: String)
     /// A tile held and dragged: it can be dropped on the strip to live there.
@@ -249,6 +249,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
         buildAddButton()
         buildTempMail()
+        NotificationCenter.default.addObserver(self, selector: #selector(sponsorSettingChanged),
+                                               name: Self.sponsorChanged, object: nil)
         restoreOrRoot()
     }
 
@@ -554,8 +556,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             label.isUserInteractionEnabled = false
             cell.addSubview(label)
 
+            // Its own panel, listing all it does; nothing runs on this tap.
             cell.addAction(UIAction { [weak self] _ in
-                self?.delegate?.shellOpenSponsor(sponsor)
+                self?.push(sponsor.screenId)
             }, for: .touchUpInside)
             cell.isHidden = !sponsors.contains(sponsor)
             grid.addSubview(cell)
@@ -974,6 +977,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         titleLabel.text = screen.title
         backButton.isHidden = screen.id == "root"
         if screen.id == "root" { refreshGrid() }
+        if screen.id == SponsorMenu.Sponsor.zeroG.screenId { loadReceipts() }
         // The vault's last card can always scroll out from under the +.
         let clearance = screen.id == "vault" ? Self.addClearance : 0
         vaultGrid.contentInset.bottom = clearance
@@ -1185,6 +1189,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             }
             return Screen(id: id, title: "Style", rows: rows, showOpenInApp: false)
 
+        case _ where SponsorMenu.Sponsor(screenId: id) != nil:
+            return sponsorScreen(SponsorMenu.Sponsor(screenId: id)!)
+
         case "vault:detail":
             // The kinds, as the app's Vault names them; one tap and the
             // strip over the keys takes its value.
@@ -1201,6 +1208,68 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// What the Style screen shows its styles on (the keyboard sets it as
     /// the screen opens): the words picked out, or the message so far.
     static var styleSample = ""
+
+    // MARK: Sponsor panels (Uniswap, Definitive, 0G)
+
+    /// The text before the cursor as the menu opened: a sponsor's panel
+    /// offers the trade typed there.
+    static var sponsorTyped = ""
+    /// GET /ai/receipts's answer for the 0G panel (nil when it failed).
+    private static var receipts: [[String: Any]]?
+    private static var receiptsLoaded = false
+
+    /// Everything a sponsor does, as rows (SponsorMenu.entries).
+    private static func sponsorScreen(_ sponsor: SponsorMenu.Sponsor) -> Screen {
+        let entries = SponsorMenu.entries(for: sponsor, typed: sponsorTyped, flashChain: SponsorMenu.flashChain,
+                                          privateAI: SettingsStore.current.privateAI,
+                                          receipts: receipts, receiptsLoaded: receiptsLoaded)
+        let rows: [Row] = entries.map { entry in
+            switch entry {
+            case .header(let t):
+                return .header(title: t)
+            case .option(let option, let title, let detail, let icon):
+                return .nav(icon: icon, title: title, detail: detail, target: "!sponsor:\(option.id)")
+            case .status(let title, let value, let icon):
+                return .nav(icon: icon, title: title, detail: value, target: "!none")
+            case .chainPicker:
+                return .segmented(title: "Chain", options: SponsorMenu.flashChains,
+                                  value: { SponsorMenu.flashChain },
+                                  set: { SponsorMenu.flashChain = $0 })
+            case .privateAISwitch:
+                return .toggle(title: "Private AI",
+                               value: { SettingsStore.current.privateAI == true },
+                               set: { on in
+                                   SettingsStore.update { $0.privateAI = on }
+                                   // The last answer's rows come and go with it.
+                                   NotificationCenter.default.post(name: GlyfShell.sponsorChanged, object: nil)
+                               })
+            }
+        }
+        return Screen(id: sponsor.screenId, title: sponsor.title, rows: rows, showOpenInApp: false)
+    }
+
+    static let sponsorChanged = Notification.Name("glyf.shell.sponsorChanged")
+
+    /// The 0G panel's last answer, asked each time the panel opens.
+    private func loadReceipts() {
+        guard SettingsStore.current.privateAI == true else { return }
+        BackendClient.shared.evmJSON(path: "/ai/receipts") { [weak self] obj in
+            Self.receipts = (obj?["receipts"] as? [Any])?.compactMap { $0 as? [String: Any] }
+            Self.receiptsLoaded = true
+            guard let self, self.screen.id == SponsorMenu.Sponsor.zeroG.screenId else { return }
+            self.rowChanged(reload: true)
+        }
+    }
+
+    @objc private func sponsorSettingChanged() {
+        guard screen.id == SponsorMenu.Sponsor.zeroG.screenId else { return }
+        // After the switch's own slide, so the reload doesn't cut it short.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.screen.id == SponsorMenu.Sponsor.zeroG.screenId else { return }
+            self.rowChanged(reload: true)
+            self.loadReceipts()
+        }
+    }
 
     private static func styleIcon(_ style: Smart.TextStyle) -> String {
         switch style {
@@ -1312,6 +1381,10 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                 delegate?.shellOpenTool(String(target.dropFirst("!connector:".count)))
             } else if target.hasPrefix("!style:") {
                 delegate?.shellApplyStyle(String(target.dropFirst("!style:".count)))
+            } else if target.hasPrefix("!sponsor:") {
+                if let option = SponsorMenu.Option(id: String(target.dropFirst("!sponsor:".count))) {
+                    delegate?.shellSponsorOption(option)
+                }
             } else {
                 push(target)
             }

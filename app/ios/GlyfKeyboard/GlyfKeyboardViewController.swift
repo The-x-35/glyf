@@ -771,6 +771,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         switch surface {
         case .shell:
             let title = shell?.headerTitle ?? "Glyf"
+            // A sponsor's panel wears its mark (Toolbar reads "sponsor:…").
+            if let id = shell?.screenId, SponsorMenu.Sponsor(screenId: id) != nil { return (id, title) }
             return (title == "Glyf" ? "square.grid.2x2" : nil, title)
         // (The g menu keeps the tools on the strip: see keepTools below.)
         case .emoji where emoji?.searchActive != true: return ("face.smiling", "Emoji")
@@ -1134,6 +1136,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         if new != .none { toolbar.showSmart(nil) }
         switch new {
         case .shell:
+            // What a sponsor's panel offers to carry out: a trade typed.
+            GlyfShell.sponsorTyped = beforeContext ?? ""
             let s = GlyfShell()
             s.delegate = self
             content.addSubview(s)
@@ -4318,27 +4322,19 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         openTool(id)
     }
 
-    /// The g menu's sponsor row: Uniswap and Definitive put the trade panel
-    /// up (what was typed, when it is a trade for them, else a starter), as
-    /// the trade chip does; 0G says whether Private AI is on and where its
-    /// last answer ran, or opens Keyboard settings to turn it on.
-    func shellOpenSponsor(_ sponsor: SponsorMenu.Sponsor) {
-        _ = SettingsStore.reloadIfChanged()
-        let privateAI = SettingsStore.current.privateAI
-        switch SponsorMenu.action(for: sponsor, typed: beforeContext ?? "", privateAI: privateAI) {
+    /// An option on a sponsor's panel (Uniswap, Definitive, 0G): the trade
+    /// panel with that trade on it, or one hop to the app.
+    func shellSponsorOption(_ option: SponsorMenu.Option) {
+        // The words the panel read as it opened, so a row does what it said.
+        switch SponsorMenu.action(for: option, typed: GlyfShell.sponsorTyped, flashChain: SponsorMenu.flashChain) {
         case .trade(let t):
             pendingTrade = t
             setSurface(.trade)
         case .openApp(let path):
             setSurface(.none)
             openApp(path: path)
-        case .privateAIStatus:
-            setSurface(.none)
-            BackendClient.shared.evmJSON(path: "/ai/receipts") { [weak self] obj in
-                guard let self else { return }
-                let receipts = (obj?["receipts"] as? [Any])?.compactMap { $0 as? [String: Any] }
-                KeyboardToast.show(in: self.content, text: SponsorMenu.statusLine(receipts: receipts))
-            }
+        case nil:
+            break
         }
     }
 

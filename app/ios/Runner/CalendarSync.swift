@@ -83,6 +83,11 @@ final class CalendarSync {
                     "calendar": e.calendar?.title ?? "",
                 ]
                 if let location = e.location, !location.isEmpty { row["location"] = location }
+                // The call to join, for the Next event widget's Join.
+                if let join = [e.url?.absoluteString, e.location, e.notes].lazy
+                    .compactMap({ GlyfWidgetData.joinURL(in: $0) }).first {
+                    row["meet"] = join.absoluteString
+                }
                 if let color = e.calendar?.cgColor, let hex = Self.hex(color) { row["color"] = hex }
                 return row
             }

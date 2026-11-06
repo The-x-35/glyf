@@ -317,7 +317,7 @@ class _BuyScreenState extends State<BuyScreen> {
                         ),
                       )
                     : PillButton(
-                        label: 'Buy with Phantom',
+                        label: link?.internal ?? false ? 'Buy' : 'Buy with Phantom',
                         onPressed: link == null || _payAmount == null ? null : _buy,
                       ),
               ),

@@ -1,23 +1,20 @@
 import 'dart:convert';
-import 'dart:math';
-
 import 'package:eth_sig_util/eth_sig_util.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web3dart/crypto.dart' show bytesToHex, hexToBytes, keccak256;
 import 'package:web3dart/web3dart.dart';
 
 import '../core/bridge.dart';
+import '../wallet/glyf_keys.dart';
 import 'evm_chains.dart';
 import 'evm_rpc.dart';
 
-/// Glyf's own Ethereum wallet: one key, made on this phone and sealed in
-/// the Keychain (the same store as the Phantom session). Glyf's servers never
-/// see it. It signs swaps, Flash orders, Whitechain requests and the Arkiv
-/// vault backup on every EVM chain Glyf knows, because a keyboard can't hold
-/// a WalletConnect session and the simulator has no wallet app to hand off to.
+/// Glyf's own Ethereum wallet, made on this phone and sealed in the
+/// Keychain (GlyfKeys: a recovery phrase since 2026-11-06, or the one
+/// random key wallets were before). Glyf's servers never see it. It signs
+/// swaps, Flash orders, Whitechain requests and the Arkiv vault backup on
+/// every EVM chain Glyf knows.
 abstract final class EvmWallet {
-  static const _keyName = 'evm-key';
-
   static EthPrivateKey? _key;
 
   /// The wallet's address once it exists, checksummed.
@@ -25,38 +22,41 @@ abstract final class EvmWallet {
 
   /// Loads the key if one was made before; never makes one.
   static Future<String?> load() async {
-    if (_key != null) return address.value;
-    final hex = await GlyfBridge.walletSecretLoad(_keyName);
-    if (hex == null || hex.isEmpty) return null;
-    _key = EthPrivateKey.fromHex(hex);
-    address.value = _key!.address.hexEip55;
-    await _share();
+    await GlyfKeys.load();
+    return _adopt();
+  }
+
+  /// The wallet, made the first time it's asked for (always a phrase wallet).
+  static Future<String> ensure() async {
+    await GlyfKeys.ensure();
+    return (await _adopt())!;
+  }
+
+  /// The old-key wallet becomes a phrase wallet (GlyfKeys.switchToPhrase):
+  /// a new address signs from now on; the old key stays on this phone.
+  static Future<String> switchToPhrase() async {
+    await GlyfKeys.switchToPhrase();
+    return (await _adopt())!;
+  }
+
+  static Future<String?> _adopt() async {
+    final key = GlyfKeys.evmKey;
+    final changed = key?.address.hexEip55 != address.value;
+    _key = key;
+    address.value = key?.address.hexEip55;
+    if (key != null && changed) await _share();
     return address.value;
   }
 
-  /// The wallet, made the first time it's asked for.
-  static Future<String> ensure() async {
-    final existing = await load();
-    if (existing != null) return existing;
-    final key = EthPrivateKey.createRandom(Random.secure());
-    await GlyfBridge.walletSecretSave(_keyName, _hex32(key));
-    _key = key;
-    address.value = key.address.hexEip55;
-    await _share();
-    return address.value!;
-  }
-
-  /// Forgets the key on this phone. Whatever it holds stays on chain, out of
-  /// reach without the key, so the screen that calls this asks first.
+  /// Forgets the wallet in memory and on this phone. Tests only: the app
+  /// never deletes a wallet key.
+  @visibleForTesting
   static Future<void> forget() async {
-    await GlyfBridge.walletSecretClear(_keyName);
+    await GlyfBridge.walletSecretClear(GlyfKeys.phraseName);
+    await GlyfBridge.walletSecretClear(GlyfKeys.legacyName);
+    GlyfKeys.reset();
     _key = null;
     address.value = null;
-    await GlyfBridge.updateSharedSettings((s) {
-      final signer = s['evmSigner'] as String?;
-      if (signer == null || signer == 'glyf') s.remove('evmAddress');
-      return s;
-    });
   }
 
   /// The keyboard reads the address from shared settings: balances, its own

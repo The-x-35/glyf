@@ -62,16 +62,4 @@ enum GlyfVoiceIntentError: Error, CustomLocalizedStringResourceConvertible {
     }
 }
 
-#if !GLYF_WIDGET
-/// "Start Glyf voice" for Siri, and the Action button's and Shortcuts'
-/// list. Only the app may declare these.
-@available(iOS 18.0, *)
-struct GlyfVoiceShortcuts: AppShortcutsProvider {
-    static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: StartGlyfVoiceIntent(),
-                    phrases: ["Start \(.applicationName) voice", "Turn on \(.applicationName) voice"],
-                    shortTitle: "Start Glyf Voice",
-                    systemImageName: "mic.fill")
-    }
-}
-#endif
+// Its Siri phrases are in GlyfShortcuts (Runner), the app's one AppShortcutsProvider.

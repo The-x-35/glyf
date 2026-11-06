@@ -199,4 +199,17 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(q["stopPrice"], "3000")
         XCTAssertEqual(q["buyAmount"], "0.1")
     }
+
+    func testTheSwitchNamesTheWalletPerChain() {
+        XCTAssertEqual(TradeIntent.walletName(chain: "solana", mode: nil), "Glyf wallet")
+        XCTAssertEqual(TradeIntent.walletName(chain: "base", mode: "internal"), "Glyf wallet")
+        XCTAssertEqual(TradeIntent.walletName(chain: "solana", mode: "external"), "Phantom")
+        XCTAssertEqual(TradeIntent.walletName(chain: "base", mode: "external"), "MetaMask")
+        XCTAssertEqual(TradeIntent.walletName(chain: nil, mode: "external"), "MetaMask")
+    }
+
+    func testAWalletSecretIsNeverKeptInClipboardHistory() {
+        XCTAssertTrue(ClipboardStore.isGlyfSecret(["public.utf8-plain-text", "org.nspasteboard.ConcealedType", "so.glyf.secret"]))
+        XCTAssertFalse(ClipboardStore.isGlyfSecret(["public.utf8-plain-text", "org.nspasteboard.ConcealedType"]))
+    }
 }

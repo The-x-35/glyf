@@ -4,6 +4,37 @@ import '../core/glyf_api.dart';
 import '../core/theme.dart';
 import 'evm_chains.dart';
 import 'evm_signer.dart';
+import 'trade_activity.dart';
+import 'trade_flow.dart';
+
+/// Cancels a Flash order: Flash's own cancel message, signed by the wallet
+/// that funds the order (EIP-191); no transaction and no fee. The order
+/// list's Cancel and the Live Activity's (glyf://open?path=flash-cancel&id=…)
+/// both come here.
+abstract final class FlashCancel {
+  static Future<void> run(String id) async {
+    final message = 'Definitive Flash v1 — Cancel Order\nOrder: $id';
+    String? signature;
+    await for (final e in EvmSigner.run('Cancel a Flash order', [MessageStep(EvmChain.base, 'Cancel the order', message)])) {
+      if (e.results != null) signature = e.results!.single.signature;
+    }
+    await GlyfApi.evmPost('/flash/orders/$id/cancel', {'cancelMessage': message, 'userSignature': signature});
+    await TradeActivity.cancelled(id);
+  }
+
+  /// The same, as the trade screen's steps.
+  static Stream<TradeOutcome> steps(String id) async* {
+    yield const TradeOutcome(TradeState.working, 'Cancelling the order…');
+    try {
+      await run(id);
+      yield const TradeOutcome(TradeState.done, 'Order cancelled', detail: 'Flash won’t place it');
+    } on SignFailed catch (e) {
+      yield TradeOutcome(TradeState.failed, e.cancelled ? 'Not cancelled' : e.title, detail: e.detail);
+    } on GlyfApiException catch (e) {
+      yield TradeOutcome(TradeState.failed, 'Flash didn’t cancel it', detail: e.message);
+    }
+  }
+}
 
 /// The Flash orders this wallet has waiting (stop-losses, take-profits,
 /// limits, trails, TWAPs), newest first, each with a Cancel.
@@ -39,14 +70,7 @@ class _FlashOrdersListState extends State<FlashOrdersList> {
   Future<void> _cancel(String id) async {
     setState(() => _cancelling.add(id));
     try {
-      // Flash's own cancel message, signed by the wallet that funds the
-      // order (EIP-191); no transaction and no fee.
-      final message = 'Definitive Flash v1 — Cancel Order\nOrder: $id';
-      String? signature;
-      await for (final e in EvmSigner.run('Cancel a Flash order', [MessageStep(EvmChain.base, 'Cancel the order', message)])) {
-        if (e.results != null) signature = e.results!.single.signature;
-      }
-      await GlyfApi.evmPost('/flash/orders/$id/cancel', {'cancelMessage': message, 'userSignature': signature});
+      await FlashCancel.run(id);
       await _load();
     } on SignFailed catch (e) {
       if (mounted && !e.cancelled) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));

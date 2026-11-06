@@ -42,4 +42,15 @@ enum WalletSecrets {
     static func clear(_ name: String) {
         SecItemDelete(query(name) as CFDictionary)
     }
+
+    /// What a copied secret puts on the clipboard: the text, the
+    /// nspasteboard.org concealed mark, and Glyf's own mark, which the
+    /// keyboard's clipboard history skips (ClipboardStore.isGlyfSecret).
+    static func pasteboardItems(_ text: String) -> [[String: Any]] {
+        [["public.utf8-plain-text": text,
+          "org.nspasteboard.ConcealedType": text,
+          glyfSecretType: Data()]]
+    }
+
+    static let glyfSecretType = "so.glyf.secret"
 }

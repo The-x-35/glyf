@@ -1,5 +1,6 @@
 import Contacts
 import Flutter
+import LocalAuthentication
 import Photos
 import PhotosUI
 import UIKit
@@ -123,6 +124,25 @@ final class GlyfBridge {
         case "walletSecretClear":
             let name = (call.arguments as? [String: Any])?["name"] as? String ?? ""
             if !name.isEmpty { WalletSecrets.clear(name) }
+            result(true)
+        case "deviceAuth":
+            // Face ID / Touch ID, falling back to the passcode, before the
+            // Wallet screen shows a recovery phrase or a private key.
+            let reason = (call.arguments as? [String: Any])?["reason"] as? String ?? "Show your wallet"
+            let context = LAContext()
+            var error: NSError?
+            guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return result(false) }
+            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, _ in
+                DispatchQueue.main.async { result(ok) }
+            }
+        case "copySecret":
+            let args = call.arguments as? [String: Any]
+            guard let text = args?["text"] as? String, !text.isEmpty else { return result(false) }
+            let seconds = (args?["seconds"] as? Int) ?? 60
+            UIPasteboard.general.setItems(WalletSecrets.pasteboardItems(text), options: [
+                .localOnly: true,
+                .expirationDate: Date().addingTimeInterval(TimeInterval(seconds)),
+            ])
             result(true)
         case "documentsPath":
             result(FileManager.default.urls(for: .documentDirectory,
@@ -441,6 +461,19 @@ final class GlyfBridge {
             SettingsStore.update {
                 $0.lastLat = nil
                 $0.lastLon = nil
+            }
+            result(true)
+
+        // The trade in flight on the Lock Screen and in the Dynamic Island
+        // (TradeActivityHost; lib/evm/trade_activity.dart).
+        case "liveActivity.start", "liveActivity.update":
+            result(TradeActivityHost.shared.show(call.arguments as? [String: Any] ?? [:]))
+        case "liveActivity.end":
+            TradeActivityHost.shared.end(id: (call.arguments as? [String: Any])?["id"] as? String)
+            result(true)
+        case "liveActivity.cancelled":
+            if let id = (call.arguments as? [String: Any])?["orderId"] as? String {
+                TradeActivityHost.shared.orderCancelled(id)
             }
             result(true)
 
