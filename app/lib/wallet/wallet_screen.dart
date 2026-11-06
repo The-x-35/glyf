@@ -195,7 +195,6 @@ class _WalletScreenState extends State<WalletScreen> {
                     icon: const Icon(Icons.copy_rounded, size: 19, color: Glass.inkSoft),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: link.address));
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Address copied')));
                     },
                   ),
                 ],

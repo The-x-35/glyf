@@ -640,7 +640,6 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             : card.insertText(style: SettingsStore.current.pasteStyle ?? "titleAndLink")
         UIPasteboard.general.string = text
         delegate?.searchInsert(text)
-        KeyboardToast.show(in: self, text: "Inserted · copied")
     }
 }
 

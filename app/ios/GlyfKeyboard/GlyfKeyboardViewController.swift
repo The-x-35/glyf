@@ -3078,7 +3078,6 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
         UIPasteboard.general.string = text
         _ = ClipboardStore.inserting(text, into: ClipboardStore.load(), now: Date())
             .map(ClipboardStore.save)
-        if let act { KeyboardToast.show(in: act, text: "Copied") }
     }
 
     func actRetry() { runAct() }
@@ -3195,8 +3194,8 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
     func clipboardPanelCopiedImage() {
         setSurface(.none)
         // iOS lets no keyboard put an image in a text box: it is on the
-        // clipboard, one hold of the box away.
-        KeyboardToast.show(in: content, text: "Copied. Hold the text box to paste")
+        // clipboard, one hold of the box away. No toast for a copy (Arpit,
+        // 2026-11-06: "you should not show toast for any clipboard thing").
     }
 
 }
@@ -4185,14 +4184,12 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         }
         UIPasteboard.general.image = image
         setSurface(.none)
-        KeyboardToast.show(in: content, text: "Copied. Hold the text box to paste")
     }
 
     func shellCopyText(_ text: String) {
         UIPasteboard.general.string = text
         // Our own copy: the strip must not offer it back as a paste.
         ClipboardStore.ignoreNextChange()
-        KeyboardToast.show(in: content, text: "Copied")
     }
 
     /// Style: the words picked out are replaced by their styled form; with
@@ -4383,7 +4380,6 @@ extension GlyfKeyboardViewController: EmojiBoardDelegate {
             }
             ClipboardStore.ignoreNextChange()
             MediaRecents.push(item, kind: kind)
-            KeyboardToast.show(in: self.content, text: "\(noun) copied. Hold the text box and tap Paste")
             done(true)
         }
     }
