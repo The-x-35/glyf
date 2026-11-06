@@ -311,6 +311,12 @@ struct PersonalLexicon: Equatable {
 
     mutating func unblock(_ form: String) { blocked.remove(TypingText.key(form)) }
 
+    /// One emoji habit dropped from "My words" ("love you" → "❤️❤️❤️"),
+    /// leaving the words themselves. It's learned again only from scratch.
+    mutating func forgetEmoji(context: String, run: String) {
+        emoji[context + Self.separator + run] = nil
+    }
+
     /// A correction turned down, on its own (a revert also keeps the word).
     mutating func reject(typed: String, correction: String) {
         rejected[typed.lowercased() + Self.separator + correction.lowercased(), default: 0] += 1

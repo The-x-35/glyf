@@ -740,10 +740,11 @@ extension URLRequest {
         if let token = GlyfSession.token() {
             setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        // Private AI (off unless turned on; for testing 0G only): the server sends this phone's
+        // Private AI, on the hackathon build only (it writes privateAI; other
+        // builds leave it unset and send nothing): "0g" sends this phone's
         // model calls to 0G's Private Computer (server/src/lib/privateai.ts).
-        if SettingsStore.current.privateAI ?? false {
-            setValue("0g", forHTTPHeaderField: "X-Glyf-AI")
+        if let on = SettingsStore.current.privateAI {
+            setValue(on ? "0g" : "off", forHTTPHeaderField: "X-Glyf-AI")
         }
     }
 }

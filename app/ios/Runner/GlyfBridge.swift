@@ -332,7 +332,7 @@ final class GlyfBridge {
             result(readBridgeFile("typing-memory.json"))
         case "typingEdit":
             let args = call.arguments as? [String: Any] ?? [:]
-            guard let op = args["op"] as? String, ["add", "forget", "reset"].contains(op) else {
+            guard let op = args["op"] as? String, ["add", "forget", "forgetEmoji", "reset"].contains(op) else {
                 result(false)
                 return
             }

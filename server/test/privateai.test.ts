@@ -77,4 +77,13 @@ describe("private AI on 0G", () => {
     expect((await app.inject({ url: "/who", headers: { "x-glyf-ai": "0g" } })).json()).toEqual({ zeroG: true });
     expect((await app.inject({ url: "/who" })).json()).toEqual({ zeroG: false });
   });
+
+  it("lets a glyf's own Private AI count only on the hackathon build, which sends X-Glyf-AI", async () => {
+    const app = Fastify();
+    privateAIHooks(app, new MemoryKV());
+    app.get("/asked", async () => ({ asked: aiContext()?.asked ?? null, zeroG: aiContext()?.zeroG ?? null }));
+    expect((await app.inject({ url: "/asked", headers: { "x-glyf-ai": "off" } })).json()).toEqual({ asked: true, zeroG: false });
+    // TestFlight sends nothing: no glyf can turn 0G on for it.
+    expect((await app.inject({ url: "/asked" })).json()).toEqual({ asked: false, zeroG: false });
+  });
 });

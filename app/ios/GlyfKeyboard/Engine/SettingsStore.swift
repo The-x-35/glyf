@@ -184,7 +184,8 @@ struct GlyfSettings: Codable, Equatable {
     /// Which one: "glyf" (or nil), "metamask", "phantom".
     var evmSigner: String? = nil
     /// Private AI: the server answers this phone's AI calls with 0G's
-    /// Private Computer (models in TEEs). Unset is off: 0G is for testing only.
+    /// Private Computer (models in TEEs). Only the hackathon build writes it;
+    /// unset (every other build) is the usual AI: 0G is for testing only.
     var privateAI: Bool? = nil
     /// How the last payment went, written by the app when Phantom answers
     /// ({"title","detail","at"}); the keyboard says it once and clears it.

@@ -112,7 +112,9 @@ export function glyfRoutes(
 
     // The glyf's own Private AI choice, when it made one, beats the phone's.
     const ai = aiContext();
-    if (ai && def.privateAI !== undefined) ai.zeroG = def.privateAI;
+    // A glyf's own Private AI only counts on the hackathon build (it sends
+    // X-Glyf-AI); every other phone keeps the usual AI whatever the glyf says.
+    if (ai && ai.asked && def.privateAI !== undefined) ai.zeroG = def.privateAI;
 
     const abort = new AbortController();
     // Response close = client went away mid-stream. (req.raw "close" fires as

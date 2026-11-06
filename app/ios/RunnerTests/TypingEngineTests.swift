@@ -445,6 +445,18 @@ final class TypingEngineTests: XCTestCase {
                      "nothing offered where suggestions are off")
     }
 
+    func testOneEmojiHabitCanBeForgottenAndTheWordsStay() {
+        let engine = TypingEngine(base: nil)
+        for _ in 0..<2 { send("love you ❤️❤️❤️ ", to: engine) }
+        XCTAssertEqual(engine.emojiRun(after: "you", previous: "love", today: today), "❤️❤️❤️")
+        // My words › Emoji lists each context it was learned under; ✕ on each.
+        engine.forgetEmoji(context: "love you", run: "❤️❤️❤️")
+        engine.forgetEmoji(context: "you", run: "❤️❤️❤️")
+        XCTAssertNil(engine.emojiRun(after: "you", previous: "love", today: today))
+        XCTAssertTrue(engine.personal.emoji.isEmpty)
+        XCTAssertFalse(engine.personal.blocked.contains("love"), "the words themselves are not forgotten")
+    }
+
     func testEmojiRunsAreNotLearnedWhereLearningIsOff() {
         let engine = TypingEngine(base: nil)
         // A secure (or code, email, search) field's policy has no .learning.

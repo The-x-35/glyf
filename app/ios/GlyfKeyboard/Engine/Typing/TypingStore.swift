@@ -148,6 +148,10 @@ final class TypingStore {
             switch edit["op"] as? String {
             case "add": engine.add(word)
             case "forget": engine.forget(word)
+            // "<context>\t<emoji run>", from My words › Emoji.
+            case "forgetEmoji":
+                let parts = word.components(separatedBy: "\t")
+                if parts.count == 2 { engine.forgetEmoji(context: parts[0], run: parts[1]) }
             case "reset": engine.replacePersonal(PersonalLexicon())
             default: break
             }

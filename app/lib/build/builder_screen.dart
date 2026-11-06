@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
+import '../core/flavor.dart';
 import '../core/dismiss_keyboard.dart';
 import '../core/bridge.dart';
 import '../core/catalog.dart';
@@ -620,13 +621,14 @@ class _BuilderScreenState extends State<BuilderScreen> {
   Widget _toolsCard() {
     final used = _def == null ? const <String>{} : GlyfTools.usedBy(_def!);
     return _card([
-      _toolRow(
-        mark: _iconTile(Icons.lock_outline_rounded),
-        title: 'Private AI on 0G',
-        id: 'private-ai',
-        on: _privateAI,
-        onChanged: _setPrivate,
-      ),
+      if (Flavor.zeroG)
+        _toolRow(
+          mark: _iconTile(Icons.lock_outline_rounded),
+          title: 'Private AI on 0G',
+          id: 'private-ai',
+          on: _privateAI,
+          onChanged: _setPrivate,
+        ),
       for (final t in GlyfTools.all)
         _toolRow(
           mark: switch (t.brand) {

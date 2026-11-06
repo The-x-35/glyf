@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kReleaseMode;
 
 import 'auth.dart';
 import 'bridge.dart';
+import 'flavor.dart';
 
 /// The privacy policy, on the website (App Store 5.1.1 wants it in the app too).
 const privacyPolicyURL = 'https://www.tryglyf.com/privacy';
@@ -113,7 +114,7 @@ abstract final class GlyfApi {
   static void _signIn(HttpClientRequest req) {
     final token = Auth.bearer;
     if (token != null) req.headers.set('Authorization', 'Bearer $token');
-    if (privateAI) req.headers.set('X-Glyf-AI', '0g');
+    if (Flavor.zeroG) req.headers.set('X-Glyf-AI', privateAI ? '0g' : 'off');
   }
 
   /// Private AI (Keyboard › Private AI on 0G, off unless turned on; 0G is for testing only): the
@@ -124,7 +125,16 @@ abstract final class GlyfApi {
 
   static Future<void> loadPrivateAI() async {
     final s = await GlyfBridge.sharedSettings();
-    privateAI = (s['privateAI'] as bool?) ?? false;
+    final saved = s['privateAI'] as bool?;
+    // Only the hackathon build may use 0G, and there it starts on (written
+    // down so the keyboard follows). Any other build clears the key, so the
+    // keyboard sends nothing and keeps the usual AI.
+    privateAI = Flavor.zeroG && (saved ?? true);
+    if (Flavor.zeroG && saved == null) {
+      await GlyfBridge.updateSharedSettings((s) => s..['privateAI'] = true);
+    } else if (!Flavor.zeroG && saved != null) {
+      await GlyfBridge.updateSharedSettings((s) => s..remove('privateAI'));
+    }
   }
 
   // ---- JSON helpers ------------------------------------------------------

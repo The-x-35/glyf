@@ -14,4 +14,10 @@ abstract final class Flavor {
   /// Store build: its Publisher Policy counts them as regulated financial
   /// services. The price still shows; only Buy goes.
   static bool get stockBuys => !dappStore;
+
+  /// The hackathon build (ETHGlobal Mumbai): `--dart-define=GLYF_ZEROG=true`.
+  /// Its AI runs on 0G's Private Computer by default, with a switch for it
+  /// in Keyboard and in Build your own. Every other build has neither and
+  /// keeps the usual AI: 0G is for testing only.
+  static const zeroG = bool.fromEnvironment('GLYF_ZEROG');
 }

@@ -835,6 +835,10 @@ final class TypingEngine {
         rebuildExtra()
     }
 
+    func forgetEmoji(context: String, run: String) {
+        personal.forgetEmoji(context: context, run: run)
+    }
+
     func markEditsApplied(_ at: Double) { personal.editsAppliedAt = at }
 
     /// Words, not codes: no digits, no addresses, no secrets.

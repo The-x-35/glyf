@@ -28,6 +28,9 @@ export interface ZeroGReceipt {
 
 export interface AIContext {
   zeroG: boolean;
+  /** The phone sent X-Glyf-AI at all ("0g" or "off"): only the hackathon
+   *  build does, so only there may a glyf's own privateAI switch 0G on. */
+  asked: boolean;
   /** 0G's request ids for the completions this request made, for the log. */
   requests: string[];
   user?: string;
@@ -47,7 +50,7 @@ export function wantsZeroG(header: string | string[] | undefined): boolean {
 
 /** Runs `fn` as a request that asked for 0G (tests, scripts). */
 export function withZeroG<T>(fn: () => T, extra: Partial<AIContext> = {}): T {
-  return als.run({ zeroG: true, requests: [], ...extra }, fn);
+  return als.run({ zeroG: true, asked: true, requests: [], ...extra }, fn);
 }
 
 const COLLECTION = "zgreceipts";
@@ -72,7 +75,8 @@ export function privateAIHooks(app: FastifyInstance, kv: KV): void {
   // Callback style, so the handler and everything it awaits run inside run().
   // protectRoutes' hook runs first, so the account is already known here.
   app.addHook("onRequest", (req, _reply, done) => {
-    als.run({ zeroG: wantsZeroG(req.headers["x-glyf-ai"]), requests: [], user: req.glyfUser, kv }, done);
+    const header = req.headers["x-glyf-ai"];
+    als.run({ zeroG: wantsZeroG(header), asked: header !== undefined, requests: [], user: req.glyfUser, kv }, done);
   });
   app.addHook("onResponse", async (req) => {
     const ctx = als.getStore();

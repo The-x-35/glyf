@@ -171,7 +171,8 @@ export function builderRoutes(app: FastifyInstance, library: GlyfLibrary, guard:
 
     // The try-out runs where the glyf will: on 0G when it says so.
     const ai = aiContext();
-    if (ai && defParsed.data.privateAI !== undefined) ai.zeroG = defParsed.data.privateAI;
+    // As /glyf/run: a glyf's own Private AI only counts on the hackathon build.
+    if (ai && ai.asked && defParsed.data.privateAI !== undefined) ai.zeroG = defParsed.data.privateAI;
 
     const started = Date.now();
     try {
