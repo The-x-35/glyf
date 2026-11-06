@@ -8,8 +8,8 @@ protocol SearchSurfaceDelegate: AnyObject {
     func searchLayoutChanged()
 }
 
-/// Gboard-style search suite (§6.12): chip tabs (Search / YouTube / Maps /
-/// Contacts / Translate), an inline query the keyboard types into, and rich
+/// Gboard-style search suite (§6.12): chip tabs (Search / YouTube / Shorts /
+/// Maps / Contacts / Translate), an inline query the keyboard types into, and rich
 /// result cards that paste into the field. Typing: the search row and one
 /// row of suggestion chips above the keys; once results land they take the
 /// chips' and the keys' place (ABC returns). The keyboard is the same height
@@ -17,7 +17,8 @@ protocol SearchSurfaceDelegate: AnyObject {
 ///
 /// The card designs are the ones on tryglyf.com — an answer card with the sun
 /// arc, video cards with thumbnail + duration badge, place cards with rating
-/// and open-now. `SearchCard.kind` picks the cell.
+/// and open-now. `SearchCard.kind` picks the cell. Shorts land on a sideways
+/// shelf of tall 9:16 cards instead of the list.
 final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
 
     weak var delegate: SearchSurfaceDelegate?
@@ -27,6 +28,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     enum Tab: String, CaseIterable {
         case web = "Search"
         case youtube = "YouTube"
+        case shorts = "Shorts"
         case maps = "Maps"
         case contacts = "Contacts"
         case translate = "Translate"
@@ -35,6 +37,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             switch self {
             case .web: return "magnifyingglass"
             case .youtube: return "play.rectangle"
+            case .shorts: return "play.rectangle"   // drawn upright: BrandMark.shortsTab
             case .maps: return "map"
             case .contacts: return "person.crop.circle"
             case .translate: return "character.bubble"
@@ -46,6 +49,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             switch self {
             case .web: return "web"
             case .youtube: return "yt"
+            case .shorts: return "shorts"
             case .maps: return "maps"
             case .contacts, .translate: return nil
             }
@@ -102,6 +106,17 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     private let chipsRowView = ControlScrollView()
     private var suggestionChips: [UIButton] = []
     private let table = UITableView(frame: .zero, style: .plain)
+    /// The Shorts tab's results: tall cards side by side, swiped through.
+    private let shelf: UICollectionView = {
+        let flow = UICollectionViewFlowLayout()
+        flow.scrollDirection = .horizontal
+        flow.minimumLineSpacing = 8
+        flow.sectionInset = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+        return UICollectionView(frame: .zero, collectionViewLayout: flow)
+    }()
+    private var showsShelf: Bool {
+        expandedForResults && tab == .shorts && cards.contains { $0.kind == "short" }
+    }
     private var task: URLSessionDataTask?
     private let hasFullAccess: Bool
 
@@ -137,7 +152,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             var cfg = UIButton.Configuration.plain()
             // Neutral stroke marks, like the website: the vendors' own marks
             // belong on the result cards, not the tabs.
-            cfg.image = UIImage(systemName: t.icon)?
+            cfg.image = t == .shorts ? BrandMark.shortsTab() : UIImage(systemName: t.icon)?
                 .applyingSymbolConfiguration(.init(pointSize: 15, weight: .medium))
             cfg.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10,
                                                         bottom: 6, trailing: 10)
@@ -192,6 +207,17 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         addSubview(table)
         table.noEdgeEffects()
 
+        shelf.backgroundColor = Glass.touchableGrid
+        shelf.showsHorizontalScrollIndicator = false
+        shelf.alwaysBounceHorizontal = true
+        shelf.dataSource = self
+        shelf.delegate = self
+        shelf.register(ShortCell.self, forCellWithReuseIdentifier: "short")
+        shelf.accessibilityIdentifier = "search:shelf"
+        shelf.isHidden = true
+        addSubview(shelf)
+        shelf.noEdgeEffects()
+
         styleChips()
         MemoryLogger.logSurface("search")
     }
@@ -206,7 +232,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         switch t {
         case .web:
             return BrandMark.google(size: 15)?.withRenderingMode(.alwaysOriginal)
-        case .youtube:
+        case .youtube, .shorts:
             return BrandMark.youtube(size: 15)?.withRenderingMode(.alwaysOriginal)
         case .maps:
             return BrandMark.pin(size: 15)?.withRenderingMode(.alwaysOriginal)
@@ -221,9 +247,12 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         super.layoutSubviews()
         let rowH = Self.rowHeight
         closeButton.frame = CGRect(x: 2, y: (rowH - 30) / 2, width: 32, height: 30)
-        // Tab track: 3pt padding, 2pt gaps, 35pt icon-only tabs.
-        let pillW: CGFloat = 35, pad: CGFloat = 3, gap: CGFloat = 2, pillH: CGFloat = 30
+        // Tab track: 3pt padding, 2pt gaps, icon-only tabs up to 35pt wide,
+        // narrower when they would leave the query (beside ABC) under ~70pt:
+        // 30pt each on a 402pt phone, 35 on 440.
+        let pad: CGFloat = 3, gap: CGFloat = 2, pillH: CGFloat = 30
         let n = CGFloat(chipButtons.count)
+        let pillW = min(35, max(28, floor((bounds.width - 218) / n)))
         let trackW = pillW * n + gap * (n - 1) + pad * 2
         let trackH = pillH + pad * 2
         chipsRow.frame = CGRect(x: 34, y: (rowH - trackH) / 2, width: trackW, height: trackH)
@@ -269,10 +298,17 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             statusLabel.frame = CGRect(x: 14, y: rowH + 2, width: bounds.width - 28, height: 15)
             statusLabel.isHidden = status.isEmpty
         }
-        table.isHidden = !expandedForResults
+        table.isHidden = !expandedForResults || showsShelf
+        shelf.isHidden = !showsShelf
         let tableY = rowH + (status.isEmpty ? 4 : 18)
         table.frame = CGRect(x: 0, y: tableY, width: bounds.width,
                              height: max(0, bounds.height - tableY - 4))
+        let shelfFrame = CGRect(x: 0, y: tableY + 2, width: bounds.width,
+                                height: max(0, bounds.height - tableY - 10))
+        if shelf.frame != shelfFrame {
+            shelf.frame = shelfFrame
+            shelf.collectionViewLayout.invalidateLayout()
+        }
     }
 
     /// The suggestion row: a recent or trending search runs when tapped, a
@@ -481,10 +517,16 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         if q.isEmpty { showLanding() } else { showContactMatches(q, live: true) }
     }
 
+    private func reloadResults() {
+        table.reloadData()
+        shelf.reloadData()
+        shelf.setContentOffset(.zero, animated: false)
+    }
+
     /// Re-lays out the suggestion row while the keyboard stays put.
     private func showRows() {
         rebuildChips()
-        table.reloadData()
+        reloadResults()
         table.setContentOffset(.zero, animated: false)
         setNeedsLayout()
         delegate?.searchLayoutChanged()
@@ -505,7 +547,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         } else {
             table.tableFooterView = nil
         }
-        table.reloadData()
+        reloadResults()
         table.setContentOffset(.zero, animated: false)
         setNeedsLayout()
         delegate?.searchLayoutChanged()
@@ -515,7 +557,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
         expandedForResults = false
         cards = []
         status = ""
-        table.reloadData()
+        reloadResults()
         setNeedsLayout()
         delegate?.searchLayoutChanged()
         activateQuery()
@@ -531,7 +573,7 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
             expandedForResults = false
             cards = []
             status = ""
-            table.reloadData()
+            reloadResults()
             setNeedsLayout()
             delegate?.searchLayoutChanged()
         }
@@ -602,6 +644,173 @@ final class SearchSurface: UIView, UITableViewDataSource, UITableViewDelegate {
     }
 }
 
+// MARK: - Shorts shelf
+
+extension SearchSurface: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+    func collectionView(_ collectionView: UICollectionView,
+                        numberOfItemsInSection section: Int) -> Int {
+        showsShelf ? cards.count : 0
+    }
+
+    func collectionView(_ collectionView: UICollectionView,
+                        cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "short",
+                                                      for: indexPath) as! ShortCell
+        cell.fill(cards[indexPath.item])
+        return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView,
+                        layout collectionViewLayout: UICollectionViewLayout,
+                        sizeForItemAt indexPath: IndexPath) -> CGSize {
+        ShortsThumb.cardSize(height: max(40, collectionView.bounds.height))
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        choose(cards[indexPath.item])
+    }
+}
+
+/// A Short on the shelf: YouTube's 9:16 frame edge to edge, the YouTube mark
+/// and the length on top, the title and channel over a shade at the foot —
+/// the way YouTube's own Shorts shelf reads. The last tile is the link to
+/// more Shorts on YouTube.
+final class ShortCell: UICollectionViewCell {
+    private let thumb = UIImageView()
+    private let shade = CAGradientLayer()
+    private let ytMark = UIImageView()
+    private let badge = UILabel()
+    private let title = UILabel()
+    private let channel = UILabel()
+    private let moreMark = UIImageView()
+    private let moreTitle = UILabel()
+    private var thumbURL = ""
+    private var isMore = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+        contentView.backgroundColor = UIColor.gray.withAlphaComponent(0.18)
+        contentView.layer.cornerRadius = 15
+        contentView.layer.cornerCurve = .continuous
+        contentView.layer.borderWidth = 1
+        contentView.layer.borderColor = Glass.strokeHairline.cgColor
+        contentView.clipsToBounds = true
+
+        thumb.clipsToBounds = true
+        contentView.addSubview(thumb)
+        shade.colors = [UIColor.black.withAlphaComponent(0).cgColor,
+                        UIColor.black.withAlphaComponent(0.72).cgColor]
+        shade.locations = [0, 1]
+        contentView.layer.addSublayer(shade)
+
+        // YouTube requires its mark on every card that shows its content.
+        ytMark.image = BrandMark.youtube(size: 16)?.withRenderingMode(.alwaysOriginal)
+        ytMark.contentMode = .scaleAspectFit
+        badge.font = .systemFont(ofSize: 10, weight: .semibold)
+        badge.textColor = .white
+        badge.backgroundColor = UIColor.black.withAlphaComponent(0.72)
+        badge.textAlignment = .center
+        badge.layer.cornerRadius = 4
+        badge.layer.cornerCurve = .continuous
+        badge.clipsToBounds = true
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = .white
+        title.numberOfLines = 3
+        channel.font = .systemFont(ofSize: 11)
+        channel.textColor = UIColor.white.withAlphaComponent(0.78)
+        moreMark.image = BrandMark.youtube(size: 30)?.withRenderingMode(.alwaysOriginal)
+        moreMark.contentMode = .scaleAspectFit
+        moreTitle.font = .systemFont(ofSize: 13, weight: .medium)
+        moreTitle.textColor = Glass.textPrimary
+        moreTitle.textAlignment = .center
+        moreTitle.numberOfLines = 3
+        for v in [ytMark, badge, title, channel, moreMark, moreTitle] { contentView.addSubview(v) }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func fill(_ c: BackendClient.SearchCard) {
+        isMore = c.kind != "short"
+        for v in [thumb, ytMark, badge, title, channel] as [UIView] { v.isHidden = isMore }
+        shade.isHidden = isMore
+        moreMark.isHidden = !isMore
+        moreTitle.isHidden = !isMore
+        contentView.backgroundColor = isMore
+            ? Glass.surfaceCard : UIColor.gray.withAlphaComponent(0.18)
+        accessibilityIdentifier = isMore ? "search:card:link" : "search:card:short"
+        accessibilityLabel = isMore ? c.title : "\(c.title). \(c.channel ?? "")"
+        if isMore {
+            moreTitle.text = c.title
+            thumbURL = ""
+            thumb.image = nil
+            setNeedsLayout()
+            return
+        }
+        title.text = c.title
+        channel.text = c.channel
+        badge.text = c.duration.map { " \($0) " }
+        badge.isHidden = (c.duration ?? "").isEmpty
+        // A vertical video's frame fills the card; anything else is fitted
+        // whole, never cropped (YouTube's policies).
+        let portrait = c.portrait == true
+        thumb.contentMode = portrait ? .scaleAspectFill : .scaleAspectFit
+        thumbURL = c.thumb ?? ""
+        let variant = portrait ? "#9x16" : ""
+        thumb.image = ThumbLoader.cached(thumbURL, variant: variant)
+        if thumb.image == nil, !thumbURL.isEmpty {
+            let wanted = thumbURL
+            ThumbLoader.load(wanted, maxPixel: 320, variant: variant,
+                             crop: { ShortsThumb.frame(imageSize: $0, portrait: portrait) }) { [weak self] image in
+                guard let self, self.thumbURL == wanted else { return }
+                self.thumb.image = image
+            }
+        }
+        setNeedsLayout()
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        thumbURL = ""
+        thumb.image = nil
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let b = contentView.bounds
+        thumb.frame = b
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        shade.frame = CGRect(x: 0, y: b.height * 0.5, width: b.width, height: b.height * 0.5)
+        CATransaction.commit()
+        ytMark.frame = CGRect(x: 8, y: 8, width: 16, height: 16)
+        let bw = badge.intrinsicContentSize.width + 4
+        badge.frame = CGRect(x: b.width - bw - 7, y: 9, width: bw, height: 14)
+        let inset: CGFloat = 8
+        channel.frame = CGRect(x: inset, y: b.height - inset - 14, width: b.width - inset * 2, height: 14)
+        let titleH = min(48, title.sizeThatFits(CGSize(width: b.width - inset * 2,
+                                                       height: .greatestFiniteMagnitude)).height)
+        title.frame = CGRect(x: inset, y: channel.frame.minY - titleH - 2,
+                             width: b.width - inset * 2, height: titleH)
+        moreMark.frame = CGRect(x: (b.width - 30) / 2, y: b.height / 2 - 34, width: 30, height: 30)
+        moreTitle.frame = CGRect(x: 10, y: b.height / 2 + 4, width: b.width - 20, height: 52)
+        moreTitle.sizeToFit()
+        moreTitle.frame = CGRect(x: 10, y: b.height / 2 + 4, width: b.width - 20,
+                                 height: moreTitle.frame.height)
+    }
+
+    override var isHighlighted: Bool {
+        didSet {
+            UIView.animate(withDuration: 0.12) {
+                self.contentView.transform = self.isHighlighted
+                    ? CGAffineTransform(scaleX: 0.97, y: 0.97) : .identity
+                self.contentView.alpha = self.isHighlighted ? 0.88 : 1
+            }
+        }
+    }
+}
+
 // MARK: - Brand marks
 
 /// The Google / YouTube / Maps marks, drawn rather than shipped as assets so
@@ -650,6 +859,26 @@ enum BrandMark {
         }
     }
 
+    /// The Shorts tab: the YouTube tab's play.rectangle stood upright, as a
+    /// template so it tints like the SF Symbols beside it.
+    static func shortsTab() -> UIImage? {
+        render(width: 16, height: 19) { ctx, _ in
+            ctx.setStrokeColor(UIColor.black.cgColor)
+            ctx.setLineWidth(1.7)
+            ctx.addPath(UIBezierPath(roundedRect: CGRect(x: 2.35, y: 1.35, width: 11.3, height: 16.3),
+                                     cornerRadius: 3).cgPath)
+            ctx.strokePath()
+            ctx.setFillColor(UIColor.black.cgColor)
+            let p = UIBezierPath()
+            p.move(to: CGPoint(x: 6.4, y: 6.6))
+            p.addLine(to: CGPoint(x: 6.4, y: 12.4))
+            p.addLine(to: CGPoint(x: 10.9, y: 9.5))
+            p.close()
+            ctx.addPath(p.cgPath)
+            ctx.fillPath()
+        }?.withRenderingMode(.alwaysTemplate)
+    }
+
     static func pin(size: CGFloat) -> UIImage? {
         render(size: size) { ctx, r in
             ctx.setFillColor(UIColor(red: 0.92, green: 0.26, blue: 0.21, alpha: 1).cgColor)
@@ -671,7 +900,12 @@ enum BrandMark {
 
     private static func render(size: CGFloat,
                                _ draw: (CGContext, CGRect) -> Void) -> UIImage? {
-        let rect = CGRect(x: 0, y: 0, width: size, height: size)
+        render(width: size, height: size, draw)
+    }
+
+    private static func render(width: CGFloat, height: CGFloat,
+                               _ draw: (CGContext, CGRect) -> Void) -> UIImage? {
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
         let renderer = UIGraphicsImageRenderer(size: rect.size)
         return renderer.image { context in draw(context.cgContext, rect) }
     }

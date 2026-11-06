@@ -394,6 +394,61 @@ final class GlyfEngineTests: XCTestCase {
             "https://x.dev")
     }
 
+    // MARK: Shorts tab (2026-11-06) — same assertions as server/test/shorts.test.ts
+
+    func testShortPastesLikeAVideo() {
+        let short = card(title: "Ranking Chaotic Cat Moments",
+                         url: "https://www.youtube.com/shorts/GVES6-kBzRE", emoji: "🎥")
+        XCTAssertEqual(short.insertText(style: "titleAndLink"),
+                       "https://www.youtube.com/shorts/GVES6-kBzRE\n🎥 Ranking Chaotic Cat Moments")
+        XCTAssertEqual(short.insertText(style: "linkOnly"),
+                       "https://www.youtube.com/shorts/GVES6-kBzRE")
+    }
+
+    /// The server's shorts response, as it crosses the wire.
+    func testShortsResponseDecodes() throws {
+        let json = """
+        {"ok":true,"vertical":"shorts","query":"cats","provider":"youtube-data-api","cards":[
+          {"kind":"short","id":"vert1","videoId":"vert1","title":"Cat water","channel":"Catzilla",
+           "duration":"0:20","seconds":20,"portrait":true,"emoji":"🎥",
+           "thumb":"https://i.ytimg.com/vi/vert1/sddefault.jpg",
+           "url":"https://www.youtube.com/shorts/vert1"},
+          {"kind":"short","id":"nodim","videoId":"nodim","title":"Clip","channel":"C",
+           "duration":"0:15","seconds":15,"emoji":"🎥","url":"https://www.youtube.com/shorts/nodim"},
+          {"kind":"link","id":"tail","title":"More Shorts on YouTube","domain":"youtube.com",
+           "url":"https://www.youtube.com/results?search_query=cats%20%23shorts"}]}
+        """
+        let out = try JSONDecoder().decode(GlyfKeyboardSearchResult.self, from: Data(json.utf8))
+        XCTAssertEqual(out.vertical, "shorts")
+        XCTAssertEqual(out.cards.map(\.kind), ["short", "short", "link"])
+        let first = out.cards[0]
+        XCTAssertEqual(first.seconds, 20)
+        XCTAssertEqual(first.portrait, true)
+        XCTAssertEqual(first.duration, "0:20")
+        XCTAssertEqual(first.channel, "Catzilla")
+        XCTAssertEqual(first.insertText(style: "titleAndLink"),
+                       "https://www.youtube.com/shorts/vert1\n🎥 Cat water")
+        XCTAssertNil(out.cards[1].portrait)
+    }
+
+    /// A vertical video's thumbnail is its 9:16 frame centred on YouTube's
+    /// filler: the card shows the frame. Anything else is shown whole.
+    func testShortsThumbShowsTheVerticalFrame() {
+        XCTAssertEqual(ShortsThumb.frame(imageSize: CGSize(width: 640, height: 480), portrait: true),
+                       CGRect(x: 185, y: 0, width: 270, height: 480))
+        XCTAssertEqual(ShortsThumb.frame(imageSize: CGSize(width: 480, height: 360), portrait: true),
+                       CGRect(x: 138, y: 0, width: 203, height: 360))
+        XCTAssertEqual(ShortsThumb.frame(imageSize: CGSize(width: 1280, height: 720), portrait: true),
+                       CGRect(x: 437, y: 0, width: 405, height: 720))
+        // Landscape or unknown: never cropped.
+        XCTAssertEqual(ShortsThumb.frame(imageSize: CGSize(width: 640, height: 480), portrait: false),
+                       CGRect(x: 0, y: 0, width: 640, height: 480))
+        // An image already narrower than 9:16 stays whole.
+        XCTAssertEqual(ShortsThumb.frame(imageSize: CGSize(width: 100, height: 400), portrait: true),
+                       CGRect(x: 0, y: 0, width: 100, height: 400))
+        XCTAssertEqual(ShortsThumb.cardSize(height: 224), CGSize(width: 126, height: 224))
+    }
+
     /// A settings.json left behind by a release install must not send a DEBUG
     /// build at production. Found the hard way: the simulator had the live
     /// domain persisted and every search failed with an opaque TLS error.

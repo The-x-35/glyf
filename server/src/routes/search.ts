@@ -8,14 +8,14 @@ import { drawAhead, drawMap, mapAsk } from "../lib/staticmap.js";
 import { suggest } from "../lib/suggest.js";
 
 /** The search suite's own endpoint. `/tools/run` stays as it is — glyf chains
- *  consume flat strings — while the keyboard's Search / YouTube / Maps tabs
+ *  consume flat strings — while the keyboard's Search / YouTube / Shorts / Maps tabs
  *  need typed cards with thumbnails, ratings and durations.
  *
  *  Lookups cost nothing and never touch the plan meter; the web tab's model
  *  answer, when nothing else answered, counts as a run like any other. */
 
 const BodySchema = z.object({
-  vertical: z.enum(["web", "yt", "maps"]),
+  vertical: z.enum(["web", "yt", "maps", "shorts"]),
   query: z.string().min(1).max(200),
   deviceId: z.string().min(1).max(80),
   /** Optional coarse location — the containing app asks for permission and
@@ -104,7 +104,7 @@ export function searchRoutes(app: FastifyInstance, kv: KV, guard: Guard): void {
   app.get("/search/suggest", async (req, reply) => {
     const q = req.query as Record<string, string | undefined>;
     const vertical = q.vertical ?? "web";
-    if (vertical !== "web" && vertical !== "yt" && vertical !== "maps") {
+    if (vertical !== "web" && vertical !== "yt" && vertical !== "maps" && vertical !== "shorts") {
       return reply.code(400).send({ error: "bad vertical" });
     }
     const num = (v: string | undefined) => {

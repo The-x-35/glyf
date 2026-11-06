@@ -2,8 +2,8 @@ import { instantAnswer, rightNow, type AnswerContext } from "./answers.js";
 import { TTLCache } from "./cache.js";
 import { completeStreaming } from "../providers/openrouter.js";
 import type {
-  AnswerCard, LinkCard, PlaceCard, SearchCard, SearchResponse, VideoCard,
-  Vertical,
+  AnswerCard, LinkCard, PlaceCard, SearchCard, SearchResponse, ShortCard,
+  VideoCard, Vertical,
 } from "./searchcards.js";
 
 /** The search suite's engine: one function per vertical, each a chain of
@@ -345,6 +345,114 @@ async function searchYouTube(q: string, ctx: SearchContext): Promise<SearchRespo
     domain: "youtube.com",
   };
   return { vertical: "yt", query: q, cards: [...cards, tail], provider };
+}
+
+// ── shorts ────────────────────────────────────────────────────────────────
+
+/** A Short may run up to three minutes (YouTube, since 15 Oct 2024). */
+export const SHORTS_MAX_SECONDS = 180;
+
+/** ISO-8601 PT2M14S → 134; null when YouTube sent something else. */
+export function durationSeconds(iso: string): number | null {
+  const m = iso.match(/^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!m) return null;
+  return Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600
+    + Number(m[3] ?? 0) * 60 + Number(m[4] ?? 0);
+}
+
+/** What YouTube's search is asked for a Shorts query. Measured 2026-11-06 on
+ *  "cat" and "iphone 17 review" (videoDuration=short, then videos.list):
+ *  with "#shorts" appended 29 of 30 results were vertical and ≤ 3 min,
+ *  without it 22 of 25, so the tag goes on unless the user typed it. */
+export function shortsQuery(q: string): string {
+  return /#shorts?\b/i.test(q) ? q : `${q} #shorts`;
+}
+
+export function shortsURL(videoId: string): string {
+  return `https://www.youtube.com/shorts/${videoId}`;
+}
+
+/** search.list costs 100 units of a 10,000-unit day; videos.list costs 1 for
+ *  the whole page. `search()` caches the answer like the YouTube tab's. */
+async function youtubeShorts(q: string, ctx: SearchContext): Promise<ShortCard[]> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) return [];
+  const found = await json<{
+    items?: { id?: { videoId?: string }; snippet?: { title?: string; channelTitle?: string } }[];
+  }>("https://www.googleapis.com/youtube/v3/search?" + new URLSearchParams({
+    // "short" is YouTube's under-four-minutes bucket; the three-minute
+    // ceiling is checked against each video's real length below.
+    part: "snippet", type: "video", videoDuration: "short", maxResults: "15",
+    q: shortsQuery(q), key,
+    ...(ctx.country ? { regionCode: ctx.country } : {}),
+  }), 7000);
+  const ids = [...new Set((found.items ?? [])
+    .map(v => v.id?.videoId).filter((id): id is string => !!id))];
+  if (!ids.length) return [];
+
+  // The length is what makes it a Short, so without it nothing is shown.
+  const details = await json<{
+    items?: {
+      id?: string;
+      contentDetails?: { duration?: string };
+      snippet?: {
+        title?: string; channelTitle?: string; liveBroadcastContent?: string;
+        thumbnails?: Record<string, { url?: string } | undefined>;
+      };
+      // Strings in YouTube's JSON (int64); present because maxHeight is sent.
+      player?: { embedWidth?: string | number; embedHeight?: string | number };
+    }[];
+  }>("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
+    part: "contentDetails,snippet,player", maxHeight: "640", id: ids.join(","), key,
+  }), 6000);
+  const byId = new Map((details.items ?? []).map(d => [d.id, d]));
+  const searched = new Map((found.items ?? []).map(v => [v.id?.videoId, v.snippet]));
+
+  const cards: ShortCard[] = [];
+  for (const id of ids) {
+    const d = byId.get(id);
+    const state = d?.snippet?.liveBroadcastContent;
+    if (!d || state === "live" || state === "upcoming") continue;
+    const iso = d.contentDetails?.duration ?? "";
+    const seconds = durationSeconds(iso);
+    if (!seconds || seconds > SHORTS_MAX_SECONDS) continue;
+    const w = Number(d.player?.embedWidth), h = Number(d.player?.embedHeight);
+    const th = d.snippet?.thumbnails ?? {};
+    // videos.list titles are plain text; search.list's are HTML-escaped.
+    const title = d.snippet?.title ?? decodeEntities(searched.get(id)?.title ?? "");
+    cards.push({
+      kind: "short", id, videoId: id,
+      title: title || "Short",
+      channel: d.snippet?.channelTitle ?? decodeEntities(searched.get(id)?.channelTitle ?? ""),
+      seconds, duration: formatDuration(iso),
+      ...(w > 0 && h > 0 ? { portrait: h > w } : {}),
+      // 640x480 is the smallest that stays sharp on a tall card; every
+      // video has high, most have standard.
+      thumb: th.standard?.url ?? th.high?.url ?? th.medium?.url,
+      url: shortsURL(id),
+      emoji: "🎥",
+    });
+  }
+  // Vertical first; a landscape clip that is short enough still counts.
+  // (Array sort is stable, so YouTube's relevance order holds within each.)
+  cards.sort((a, b) => Number(b.portrait === true) - Number(a.portrait === true));
+  return cards.slice(0, 10);
+}
+
+async function searchShorts(q: string, ctx: SearchContext): Promise<SearchResponse> {
+  let cards: ShortCard[] = [];
+  let provider = "none";
+  try {
+    cards = await youtubeShorts(q, ctx);
+    if (cards.length) provider = "youtube-data-api";
+  } catch { /* fall through */ }
+  const tail: LinkCard = {
+    kind: "link", id: "tail",
+    title: cards.length ? "More Shorts on YouTube" : `Search YouTube for “${q}”`,
+    url: `https://www.youtube.com/results?search_query=${encodeURIComponent(shortsQuery(q))}`,
+    domain: "youtube.com",
+  };
+  return { vertical: "shorts", query: q, cards: [...cards, tail], provider };
 }
 
 // ── maps ──────────────────────────────────────────────────────────────────
@@ -961,6 +1069,19 @@ function mockSearch(vertical: Vertical, q: string): SearchResponse {
       channel: "Nightride FM", duration: "1:02:14", emoji: "🎥",
       url: "https://youtu.be/n61ULEU7CO0",
     },
+  ] : vertical === "shorts" ? [
+    {
+      kind: "short", id: "mock-s1", videoId: "ih7q2SE5M18",
+      title: "Ranking The Funniest Cat Water Moments", channel: "Catzilla",
+      duration: "0:20", seconds: 20, portrait: true, emoji: "🎥",
+      url: "https://www.youtube.com/shorts/ih7q2SE5M18",
+    },
+    {
+      kind: "short", id: "mock-s2", videoId: "GVES6-kBzRE",
+      title: "Ranking Chaotic Cat Moments", channel: "Catzilla",
+      duration: "0:26", seconds: 26, portrait: true, emoji: "🎥",
+      url: "https://www.youtube.com/shorts/GVES6-kBzRE",
+    },
   ] : vertical === "maps" ? [
     {
       kind: "place", id: "mock-p1", title: "Blue Tokai Coffee",
@@ -1008,6 +1129,7 @@ export async function search(
   if (hit) return JSON.parse(hit) as SearchResponse;
 
   const out = vertical === "yt" ? await searchYouTube(q, ctx)
+    : vertical === "shorts" ? await searchShorts(q, ctx)
     : vertical === "maps" ? await searchMaps(q, ctx)
     : await searchWeb(q, ctx, opts);
   // Brave's terms allow only "transient storage required for operation" —
@@ -1112,6 +1234,7 @@ export function searchProviders(): Record<Vertical, string> {
       : process.env.SERPER_API_KEY ? "google"
       : "ai",
     yt: process.env.YOUTUBE_API_KEY ? "youtube-data-api" : "none",
+    shorts: process.env.YOUTUBE_API_KEY ? "youtube-data-api" : "none",
     maps: process.env.GOOGLE_PLACES_KEY ? "google-places"
       : process.env.GEOAPIFY_KEY ? "geoapify"
       : process.env.NODE_ENV !== "production" ? "openstreetmap-dev" : "none",
