@@ -15,9 +15,11 @@ abstract final class Flavor {
   /// services. The price still shows; only Buy goes.
   static bool get stockBuys => !dappStore;
 
-  /// The hackathon build (ETHGlobal Mumbai): `--dart-define=GLYF_ZEROG=true`.
-  /// Its AI runs on 0G's Private Computer by default, with a switch for it
-  /// in Keyboard and in Build your own. Every other build has neither and
-  /// keeps the usual AI: 0G is for testing only.
-  static const zeroG = bool.fromEnvironment('GLYF_ZEROG');
+  /// 0G Private AI (ETHGlobal Mumbai): on in this version by default, with a
+  /// switch in Keyboard and in Build your own. Builds already out (TestFlight)
+  /// have none of this and send nothing, so they keep the usual AI; the server
+  /// uses 0G only when it has ZEROG_API_KEY. Before this code goes into a
+  /// release for everyone, decide this default (docs/DECISIONS.md D109).
+  /// `--dart-define=GLYF_ZEROG=false` builds without it.
+  static const zeroG = bool.fromEnvironment('GLYF_ZEROG', defaultValue: true);
 }
