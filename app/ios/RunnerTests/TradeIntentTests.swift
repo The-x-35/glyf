@@ -74,7 +74,7 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(i.kind, .limit)
         XCTAssertTrue(i.amountIsUSD)
         XCTAssertEqual(i.price, "2800")
-        XCTAssertEqual(i.title, "Buy ETH at $2,800")
+        XCTAssertEqual(i.title, "Buy $100 of ETH at $2,800")
         XCTAssertEqual(read("buy 0.1 eth at 2800")?.kind, .limit)
     }
 
@@ -240,7 +240,15 @@ final class TradeIntentTests: XCTestCase {
             XCTAssertEqual(i.kind, .limit, text)
             XCTAssertEqual(i.price, "300", text)
             XCTAssertEqual(i.buy, "TSLA", text)
+            XCTAssertEqual(i.amount, "10", text)
+            XCTAssertTrue(i.amountIsUSD, text)
+            XCTAssertEqual(TradeEdit.shown(.amount, i), "$10", text)
         }
+        // As the phone types it: capitals, autocorrect's curly apostrophe.
+        let typed = try XCTUnwrap(read("Buy $10 of Tesla every time it dips below 300"))
+        XCTAssertEqual(TradeEdit.shown(.amount, typed), "$10")
+        XCTAssertEqual(TradeEdit.shown(.price, typed), "$300")
+        XCTAssertEqual(typed.title, "Buy $10 of TSLA at $300")
         XCTAssertEqual(read("sell my eth whenever it falls below 1800")?.kind, .stopLoss)
         let dca = try XCTUnwrap(read("buy $5 of eth every hour for 2 hours"))
         XCTAssertEqual(dca.kind, .twap)
@@ -253,3 +261,4 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertFalse(ClipboardStore.isGlyfSecret(["public.utf8-plain-text", "org.nspasteboard.ConcealedType"]))
     }
 }
+

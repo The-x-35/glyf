@@ -79,6 +79,16 @@ struct TradeIntent: Equatable {
         (pricePercent != nil && price == nil) || (stopPercent != nil && stopPrice == nil)
     }
 
+    /// What a buy order buys, with the amount typed: "$10 of TSLA", "0.1 ETH".
+    private var buyText: String {
+        if amountIsUSD, let amount { return "$\(amount) of \(buy)" }
+        if let buyAmount { return "\(buyAmount) \(buy)" }
+        return buy
+    }
+
+    /// What a sell order sells: "0.5 ETH", or the token when it's all of it.
+    private var sellText: String { amount.map { "\($0) \(sell)" } ?? sell }
+
     /// Who carries it out, as the strip says it.
     var venue: String {
         switch kind {
@@ -122,10 +132,10 @@ struct TradeIntent: Equatable {
             return "Swap \(amountText) → \(buy)"
         case .limit:
             return sell == "USDC" || sell == "USDT"
-                ? "Buy \(buy) at \(Self.dollars(price))" : "Sell \(sell) at \(Self.dollars(price))"
-        case .stop: return "Buy \(buy) above \(Self.dollars(price))"
-        case .stopLoss: return "Stop-loss \(sell) at \(Self.dollars(price))"
-        case .takeProfit: return "Take profit \(sell) at \(Self.dollars(price))"
+                ? "Buy \(buyText) at \(Self.dollars(price))" : "Sell \(sellText) at \(Self.dollars(price))"
+        case .stop: return "Buy \(buyText) above \(Self.dollars(price))"
+        case .stopLoss: return "Stop-loss \(sellText) at \(Self.dollars(price))"
+        case .takeProfit: return "Take profit \(sellText) at \(Self.dollars(price))"
         case .bracket:
             return "\(sell) TP \(Self.dollars(price)) · SL \(Self.dollars(stopPrice))"
         case .trailingStop: return "Trail \(sell) by \(trailPercent ?? "")%"
