@@ -716,6 +716,30 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         }.resume()
     }
 
+    /// evmJSON that also hands back a refusal's words (`error`, `code`), so
+    /// a panel can say "Cross-chain swaps need a Uniswap API key" instead of
+    /// a blank. `obj` is the body whatever the status; `ok` is a 2xx.
+    func evmJSONResult(path: String, body: [String: Any]? = nil,
+                       done: @escaping (_ ok: Bool, _ obj: [String: Any]?) -> Void) -> URLSessionDataTask? {
+        guard let url = URL(string: SettingsStore.current.backendURL + path) else { done(false, nil); return nil }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.timeoutInterval = 15
+        if let body {
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        let task = session.dataTask(with: req) { data, response, error in
+            if (error as? URLError)?.code == .cancelled { return }
+            let ok = ((response as? HTTPURLResponse)?.statusCode ?? 0) / 100 == 2
+            let obj = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            DispatchQueue.main.async { done(ok, obj) }
+        }
+        task.resume()
+        return task
+    }
+
     // MARK: Meter (§6.16)
 
     func fetchRemaining(completion: @escaping (Int?) -> Void) {

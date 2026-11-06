@@ -60,6 +60,13 @@ struct TradeIntent: Equatable {
     var pricePercent: Double?
     /// The same for a bracket's stop-loss.
     var stopPercent: Double?
+    /// A token picked in the panel by its contract (GET /uniswap/tokens),
+    /// sent beside the symbol so a lookalike symbol can't stand in.
+    var sellAddress: String?
+    var buyAddress: String?
+    /// A swap whose You get side is on another chain ("swap 50 usdc on base
+    /// to eth on arbitrum"): Uniswap's cross-chain route. Nil = same chain.
+    var buyChain: String?
     /// A buy repeated on a schedule ("dca $20 in eth each month"), placed
     /// as this one Flash TWAP (TradeRecurring.swift).
     var plan: RecurringPlan?
@@ -105,6 +112,9 @@ struct TradeIntent: Equatable {
         case .swap:
             if amountIsUSD { return "Buy \(amountText)" }
             if buyAmount != nil { return "Buy \(amountText) with \(sell)" }
+            if let buyChain, buyChain != chainName {
+                return "Swap \(amountText) → \(buy) on \(Self.chainLabels[buyChain] ?? buyChain.capitalized)"
+            }
             return "Swap \(amountText) → \(buy)"
         case .limit:
             return sell == "USDC" || sell == "USDT"
@@ -129,6 +139,8 @@ struct TradeIntent: Equatable {
     var detail: String {
         switch kind {
         case .bridge: return "\(chainLabel) → \(Self.chainLabels[toChain ?? ""] ?? "") · Flash"
+        case .swap where buyChain != nil && buyChain != chainName:
+            return "\(chainLabel) → \(Self.chainLabels[buyChain!] ?? buyChain!.capitalized) · Uniswap"
         default: return "\(chainLabel) · \(venue)"
         }
     }
@@ -145,6 +157,9 @@ struct TradeIntent: Equatable {
         if let durationSeconds { q["duration"] = String(durationSeconds) }
         if let to { q["to"] = to }
         if let buyAmount { q["buyAmount"] = buyAmount }
+        if let sellAddress { q["sellAddress"] = sellAddress }
+        if let buyAddress { q["buyAddress"] = buyAddress }
+        if let buyChain, buyChain != chainName { q["buyChain"] = buyChain }
         return q
     }
 
@@ -183,6 +198,7 @@ struct TradeIntent: Equatable {
     private static let sym = #"(eth|ether|weth|usdc|usdt|dai|wbtc|btc|bitcoin|cbbtc|uni|link|aave|op|arb|pol|matic|aero|degen|sol|solana|pepe|ldo)"#
     private static let num = #"(\d+(?:[.,]\d+)?(?:k)?)"#
     private static let chainPart = #"(?:\s+on\s+(base|ethereum|eth mainnet|mainnet|arbitrum|arb|optimism|op|polygon|unichain|solana|whitechain))?"#
+    private static let chainWord = #"(base|ethereum|eth mainnet|mainnet|arbitrum|arb|optimism|op|unichain|polygon|solana|whitechain)"#
     private static let end = #"\s*[.!]?\s*$"#
     /// Where a command may begin: the start, or after a sentence ends.
     private static let start = #"(?:^|[.!?\n]\s*|\b(?:pls|please|glyf|hey glyf)[,:]?\s+)"#
@@ -202,6 +218,15 @@ struct TradeIntent: Equatable {
 
     // "swap 0.05 eth to usdc on base", "sell 0.1 eth", "buy 20 usdc of eth"
     private static func swap(_ t: String) -> TradeIntent? {
+        // "swap 50 usdc on base to eth on arbitrum": each side on its chain.
+        if let m = match(start + #"(?:swap|convert|trade|exchange|bridge)\s+"# + num + #"\s+"# + sym + #"\s+(?:on|from)\s+"# + chainWord + #"\s+(?:to|for|into)\s+"# + sym + #"\s+on\s+"# + chainWord + end, t),
+           let sell = symbol(m[2]), let from = chains[m[3]!.lowercased()], let buy = symbol(m[4]),
+           let to = chains[m[5]!.lowercased()], from != "solana", to != "solana", from != "whitechain-sepolia",
+           to != "whitechain-sepolia" {
+            var i = TradeIntent(kind: .swap, amount: amount(m[1]), sell: sell, buy: buy, chain: from)
+            if to != from { i.buyChain = to } else if sell == buy { return nil }
+            return i
+        }
         if let m = match(start + #"(?:swap|convert|trade|exchange)\s+(?:all\s+(?:of\s+)?(?:my\s+)?|my\s+|"# + num + #"\s+)?"# + sym + #"\s+(?:to|for|into)\s+"# + sym + chainPart + end, t) {
             return swapOf(amount: m[1], sell: m[2]!, buy: m[3]!, chain: m[4])
         }

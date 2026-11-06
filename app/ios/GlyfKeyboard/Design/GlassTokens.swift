@@ -414,6 +414,12 @@ enum Glass {
         isDark ? UIColor(white: 0.86, alpha: 1)
                : UIColor(red: 0x17 / 255, green: 0x18 / 255, blue: 0x1C / 255, alpha: 1)
     }
+    /// A switch's on track: ink in light (the app's), iOS's green in dark,
+    /// where a light track under the white thumb read the same as off.
+    static var switchOn: UIColor {
+        isDark ? UIColor(red: 0x30 / 255, green: 0xD1 / 255, blue: 0x58 / 255, alpha: 1)
+               : UIColor(red: 0x17 / 255, green: 0x18 / 255, blue: 0x1C / 255, alpha: 1)
+    }
     /// Text on `controlOn` (a selected segment's title).
     static var controlOnText: UIColor {
         isDark ? UIColor(red: 0x17 / 255, green: 0x18 / 255, blue: 0x1C / 255, alpha: 1) : .white

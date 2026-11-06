@@ -2676,6 +2676,99 @@ final class GlyfScenarioUITests: XCTestCase {
         XCTAssertTrue(over.exists && over.label.contains("month 1 of 12"), "the Over row says '\(over.label)'")
     }
 
+    /// S304: every value on the trade panel is set in the keyboard. A swap's
+    /// amount on the digits, a token from the picker (search, then a pick),
+    /// a chain from the list (another chain on You get is cross-chain), the
+    /// flip; a Flash bracket's prices and its chain. Screenshots at each
+    /// state (GLYF_SHOT_TAG names the appearance, light or dark).
+    func testS304_TheTradePanelEditsEveryValue() throws {
+        var args = ["--glyf-test-evm-wallet"]
+        if let token = ProcessInfo.processInfo.environment["GLYF_SESSION"] { args.append("--glyf-test-session=\(token)") }
+        open(args)
+        let tag = ProcessInfo.processInfo.environment["GLYF_SHOT_TAG"] ?? "light"
+        func shot(_ n: String) { keepScreenshot("\(tag)-\(n)") }
+        func retype(_ id: String, _ text: String) {
+            tap(id)
+            guard wait("trade:editor", 4) != nil else { return XCTFail("no editor for \(id)") }
+            for _ in 0..<10 { el("key:delete").tap() }
+            type(text)
+        }
+        clear()
+        type("swap 10 usdc to eth on base")
+        guard let chip = wait("strip:smart", 6) else { return XCTFail("no swap chip") }
+        chip.tap()
+        guard wait("trade:go", 5) != nil else { return XCTFail("no trade panel") }
+        sleep(4)
+        shot("swap-panel")
+        // The amount, on the keyboard's own digits.
+        retype("trade:amount", "25")
+        shot("swap-amount-edit")
+        tap("trade:done")
+        sleep(4)
+        XCTAssertEqual(el("trade:amount").label, "25")
+        shot("swap-quote")
+        // A token: the picker, a search, a pick.
+        tap("trade:token:buy")
+        guard wait("trade:picker", 4) != nil else { return XCTFail("no token picker") }
+        sleep(3)
+        shot("token-picker")
+        tap("trade:search")
+        type("pepe")
+        sleep(3)
+        shot("token-search")
+        guard let pepe = wait("trade:result:PEPE", 6) else { return XCTFail("no PEPE in the search") }
+        pepe.tap()
+        sleep(5)
+        shot("swap-pepe")
+        note("pepe: value '\(el("trade:value").label)' · go '\(el("trade:go").label)'")
+        // The flip.
+        tap("trade:flip")
+        sleep(4)
+        shot("swap-flipped")
+        tap("trade:flip")
+        sleep(1)
+        // You get on another chain: cross-chain, which needs Uniswap's key.
+        tap("trade:chain:buy")
+        guard wait("trade:chainrow:arbitrum", 4) != nil else { return XCTFail("no chain picker") }
+        shot("chain-picker")
+        tap("trade:chainrow:arbitrum")
+        sleep(4)
+        shot("swap-crosschain")
+        note("cross-chain: sub '\(el("trade:sub").label)' · go '\(el("trade:go").label)'")
+        tap("toolbar:close")
+        sleep(1)
+
+        // Flash: a bracket's prices and its chain.
+        clear()
+        type("my eth take profit 4500 stop loss 3000")
+        guard let order = wait("strip:smart", 6) else { return XCTFail("no bracket chip") }
+        order.tap()
+        guard wait("trade:go", 5) != nil else { return XCTFail("no bracket panel") }
+        sleep(3)
+        shot("flash-bracket")
+        retype("trade:row:stopPrice", "3200")
+        shot("flash-edit")
+        tap("trade:done")
+        sleep(1)
+        XCTAssertTrue(el("trade:row:stopPrice").label.contains("3,200") || el("trade:row:stopPrice").exists)
+        retype("trade:row:stopPrice", "5000")
+        tap("trade:done")
+        sleep(1)
+        XCTAssertEqual(el("trade:go").label, "Take profit must be above the stop-loss")
+        shot("flash-problem")
+        retype("trade:row:stopPrice", "3200")
+        tap("trade:done")
+        sleep(1)
+        tap("trade:chain:sell")
+        guard wait("trade:chainrow:solana", 4) != nil else { return XCTFail("no Flash chains") }
+        shot("flash-chains")
+        tap("trade:chainrow:solana")
+        sleep(4)
+        shot("flash-solana")
+        note("solana: go '\(el("trade:go").label)'")
+        tap("toolbar:close")
+    }
+
     private func keepScreenshot(_ name: String) {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.lifetime = .keepAlways

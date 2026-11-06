@@ -263,6 +263,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // Paying is a panel over the keys; typing the amount collapses it
         // to a strip with the digits below, like a New Event title.
         case .pay where pay?.editingAmount == true: return base + PaySurface.editStripHeight
+        // A trade value or a token search being typed: a strip over the keys.
+        case .trade where trade?.editStripHeight != nil: return base + (trade?.editStripHeight ?? 0)
         // A New Event title being typed: its strip rides over the keys, like
         // emoji search.
         case .connector where calendarView?.editingTitle == true:
@@ -780,6 +782,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .games: return ("gamecontroller", "Games")
         case .pay where pay?.editingAmount != true:
             return ("dollarsign.circle", pay?.headerTitle ?? "Pay")
+        // The trade's name stays up while a value is typed: the strip's
+        // words are for the chat, not for a price.
         case .trade: return ("arrow.triangle.2.circlepath", trade?.headerTitle ?? "Trade")
         case .connector where connector?.searchActive != true: return ("calendar", "Calendar")
         default: return (nil, nil)
@@ -986,6 +990,14 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = true
             pay?.frame = panelRect(w, h)
+        case .trade where trade?.editStripHeight != nil:
+            let stripH = trade?.editStripHeight ?? 0
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            keyboardView.isHidden = false
+            trade?.frame = CGRect(x: 0, y: Glass.toolbarHeight, width: w, height: stripH)
+            let tradeKeysY = Glass.toolbarHeight + stripH
+            keyboardView.frame = CGRect(x: 0, y: tradeKeysY, width: w, height: max(0, h - tradeKeysY))
         case .trade:
             toolbar.isHidden = false
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
@@ -1126,7 +1138,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
             // Closed mid-amount: the field's own keys again, not the pad.
             keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
             keyboardView.setMode(.letters)
-        case .trade: trade?.removeFromSuperview(); trade = nil
+        case .trade:
+            trade?.removeFromSuperview(); trade = nil
+            // Closed mid-value: the field's own keys again, not the pad.
+            keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
+            keyboardView.setMode(.letters)
         case .none: break
         }
         inlineTarget = nil
@@ -2631,6 +2647,11 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
     }
 
     func kbReturnTapped() {
+        if inlineTarget != nil, surface == .trade {
+            // Return = done with the value (or the search); Swap stays a tap.
+            trade?.endEditing()
+            return
+        }
         if inlineTarget != nil, surface == .pay {
             // Return = done typing the amount; Send stays a deliberate tap.
             pay?.endAmount()
@@ -3869,8 +3890,7 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
                               symbol: parts.count > 1 ? String(parts[1]) : "",
                               price: parts.count > 3 ? String(parts[3]) : nil)
         case .trade(let t):
-            pendingTrade = t
-            setSurface(.trade)
+            openTradePanel(t)
             return
         default:
             return
@@ -4361,8 +4381,7 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         // The words the panel read as it opened, so a row does what it said.
         switch SponsorMenu.action(for: option, typed: GlyfShell.sponsorTyped, flashChain: SponsorMenu.flashChain) {
         case .trade(let t):
-            pendingTrade = t
-            setSurface(.trade)
+            openTradePanel(t)
         case .openApp(let path):
             setSurface(.none)
             openApp(path: path)
@@ -4712,6 +4731,27 @@ extension GlyfKeyboardViewController: TradeSurfaceDelegate {
     func tradeToast(_ text: String) {
         KeyboardToast.show(in: content, text: text)
     }
+
+    /// A value or a token search opened or closed on the trade panel: the
+    /// keys come up on the digits (or letters) and leave again after.
+    func tradeLayoutChanged() {
+        guard surface == .trade else { return }
+        inlineTarget?.isActive = false
+        let editor = trade?.activeEditor
+        inlineTarget = editor
+        editor?.isActive = true
+        keyboardView.context = fieldContext
+        keyboardView.setMode(.letters)
+        if editor != nil, trade?.wantsDecimalPad != true { keyboardView.syncAutoShift(wantsCapital: false) }
+        applySurfaceLayout(animated: true)
+    }
+
+    /// The trade panel with `intent` on it, as if it had been typed: the g
+    /// menu's sponsor rows, the strip's trade chip and any prefilled entry.
+    func openTradePanel(_ intent: TradeIntent) {
+        pendingTrade = intent
+        setSurface(.trade)
+    }
 }
 
 // MARK: - PaySurfaceDelegate
@@ -4737,6 +4777,8 @@ extension GlyfKeyboardViewController: PaySurfaceDelegate {
     /// typed into the pay panel.
     private var fieldContext: KeyboardContext {
         if surface == .pay, pay?.activeEditor != nil { return .decimalPad }
+        if surface == .trade, trade?.wantsDecimalPad == true { return .decimalPad }
+        if surface == .trade, trade?.activeEditor != nil { return KeyboardContext(keyboardType: .default) }
         if surface == .noteEdit, let keys = noteEdit?.keysContext { return keys }
         return KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
     }
