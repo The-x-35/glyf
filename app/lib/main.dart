@@ -104,7 +104,10 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     WalletFlow.load();
     WalletFlow.loadEnabled();
     _loadEvmWallet();
-    GlyfApi.loadPrivateAI();
+    // Awaited: the tour-hint cleanup below writes the same file, and two
+    // writes at once lose one (privateAI was lost, so the keyboard never
+    // asked for 0G).
+    await GlyfApi.loadPrivateAI();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(

@@ -4319,6 +4319,30 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         openTool(id)
     }
 
+    /// The g menu's sponsor row: Uniswap and Definitive put the trade panel
+    /// up (what was typed, when it is a trade for them, else a starter), as
+    /// the trade chip does; 0G says whether Private AI is on and where its
+    /// last answer ran, or opens Keyboard settings to turn it on.
+    func shellOpenSponsor(_ sponsor: SponsorMenu.Sponsor) {
+        _ = SettingsStore.reloadIfChanged()
+        let privateAI = SettingsStore.current.privateAI
+        switch SponsorMenu.action(for: sponsor, typed: beforeContext ?? "", privateAI: privateAI) {
+        case .trade(let t):
+            pendingTrade = t
+            setSurface(.trade)
+        case .openApp(let path):
+            setSurface(.none)
+            openApp(path: path)
+        case .privateAIStatus:
+            setSurface(.none)
+            BackendClient.shared.evmJSON(path: "/ai/receipts") { [weak self] obj in
+                guard let self else { return }
+                let receipts = (obj?["receipts"] as? [Any])?.compactMap { $0 as? [String: Any] }
+                KeyboardToast.show(in: self.content, text: SponsorMenu.statusLine(receipts: receipts))
+            }
+        }
+    }
+
     func shellRunGlyf(_ id: String) {
         setSurface(.none)
         // The HUD shows the letter the glyf sits on; one with no key wears the g.

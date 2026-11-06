@@ -103,7 +103,7 @@ enum ClipboardStore {
     /// So this sits behind the same switch as the full read.
     static func captureDetected(_ done: @escaping (Bool) -> Void) {
         guard !reading, fullAccessHint, pasteboardHasNewContent(),
-              SettingsStore.current.clipboardHistory != false
+              SettingsStore.current.clipboardHistory != false, !copyIsRemote
         else { return done(false) }
         let concealed = copyIsConcealed
         // Only the three iOS 14 patterns are plain `DetectionPattern`s; the
@@ -137,7 +137,7 @@ enum ClipboardStore {
         // Both routes are reads, so both sit behind the same switch. Left
         // off, nothing here touches the clipboard and iOS never asks; the
         // Paste button is how a copy gets in.
-        guard SettingsStore.current.clipboardCaptureAll == true else {
+        guard SettingsStore.current.clipboardCaptureAll == true, !copyIsRemote else {
             return done(false)
         }
         captureEverything { took, asked in
@@ -207,6 +207,18 @@ enum ClipboardStore {
 
     /// A password manager marks what it copies (the nspasteboard.org types,
     /// 1Password's own): kept as sensitive. Reading the types asks nothing of iOS.
+    /// A copy from the Mac or iPad (Universal Clipboard) carries this type.
+    /// Reading such a copy makes iOS fetch it from the other device and put
+    /// up "Pasting from MacBook…" at the top of the screen, so the keyboard
+    /// never reads one on its own: it waits as a Paste chip, and the tap
+    /// fetches it (Arpit, 2026-11-06: "I don't need to see the toast").
+    static func isFromAnotherDevice(_ types: [String]) -> Bool {
+        types.contains("com.apple.is-remote-clipboard")
+    }
+
+    /// Reading the types asks nothing of iOS and fetches nothing.
+    private static var copyIsRemote: Bool { isFromAnotherDevice(UIPasteboard.general.types) }
+
     private static var copyIsConcealed: Bool {
         let marked: Set<String> = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType",
                                    "com.agilebits.onepassword"]
