@@ -518,7 +518,12 @@ final class GlyfToolbar: UIView {
         panelLabel.isHidden = !open || keepTools
         panelIcon.preferredSymbolConfiguration =
             UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)
-        panelIcon.image = icon.flatMap { UIImage(systemName: $0) }
+        // "sponsor:uniswap": a g menu sponsor's own mark, not a symbol.
+        if let sponsor = icon.flatMap({ SponsorMenu.Sponsor(screenId: $0) }) {
+            panelIcon.image = SponsorMarks.image(sponsor, size: 22)
+        } else {
+            panelIcon.image = icon.flatMap { UIImage(systemName: $0) }
+        }
         panelIcon.isHidden = !open || keepTools || panelIcon.image == nil
         if open {
             scroll.isHidden = hideTools

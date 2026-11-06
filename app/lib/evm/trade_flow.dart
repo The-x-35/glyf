@@ -2,15 +2,18 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:pinenacl/ed25519.dart' as ed;
 
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
 import '../wallet/base58.dart';
 import '../wallet/flash_solana.dart';
+import '../wallet/glyf_keys.dart';
 import '../wallet/phantom.dart';
 import '../wallet/solana.dart';
 import '../wallet/wallet_api.dart';
 import '../wallet/wallet_flow.dart';
+import '../wallet/wallet_mode.dart';
 import 'evm_chains.dart';
 import 'evm_rpc.dart';
 import 'evm_signer.dart';
@@ -55,7 +58,7 @@ abstract final class TradeFlow {
     final onSolana = q['chain'] == 'solana';
     try {
       if (onSolana && !const {'swap', 'send', 'request'}.contains(kind)) {
-        // Phantom signs Solana's orders (lib/wallet/): no EVM wallet needed.
+        // Solana's orders: the Glyf wallet's key or Phantom, as the switch says.
         await for (final o in _flashSolana(q, kind)) {
           yield o.state == TradeState.working ? o : await _told(o);
         }
@@ -65,7 +68,7 @@ abstract final class TradeFlow {
       if (address == null) {
         yield TradeOutcome(TradeState.failed,
             EvmSigner.kind.value == EvmSignerKind.glyf ? 'No Glyf wallet yet' : '${EvmSigner.kind.value.label} isn’t connected',
-            detail: 'Set it up in Profile › Wallet › Ethereum, then try again');
+            detail: EvmSigner.route.missing);
         return;
       }
       final chain = EvmChain.named(q['chain']) ?? EvmChain.base;
@@ -95,7 +98,7 @@ abstract final class TradeFlow {
   }
 
   static String _walletName({bool solana = false}) => solana
-      ? 'Phantom'
+      ? (WalletFlow.link.value?.internal ?? false ? 'the Glyf wallet' : 'Phantom')
       : EvmSigner.kind.value == EvmSignerKind.glyf
           ? 'the Glyf wallet'
           : EvmSigner.kind.value.label;
@@ -114,7 +117,10 @@ abstract final class TradeFlow {
   /// Nodes and APIs speak in codes; the screen says what they mean.
   static String _plain(String message, {bool solana = false}) {
     final m = message.toLowerCase();
-    if (m.contains('no record of a prior credit')) return 'Your Phantom wallet needs a little SOL for the network fee';
+    if (m.contains('no record of a prior credit')) {
+      final name = _walletName(solana: true);
+      return '${name[0].toUpperCase()}${name.substring(1)} needs a little SOL for the network fee';
+    }
     if (solana && (m.contains('does not exist') || m.contains('ata_setup') || m.contains('delegat'))) {
       return 'The setup hasn’t landed on Solana yet. Try again in a minute';
     }
@@ -361,11 +367,16 @@ abstract final class TradeFlow {
     await WalletFlow.load();
     final wallet = WalletFlow.link.value;
     if (wallet == null || wallet.viaMwa) {
-      yield const TradeOutcome(TradeState.failed, 'Phantom isn’t connected',
-          detail: 'Connect it in Profile › Wallet, then try again');
+      final r = WalletFlow.route;
+      yield TradeOutcome(TradeState.failed,
+          r.signer == WalletSigner.glyf ? 'No Solana Glyf wallet yet' : 'Phantom isn’t connected',
+          detail: r.missing ?? 'Connect Phantom in Profile › Wallet');
       return;
     }
     final funder = wallet.address;
+    // The Glyf wallet signs right here; Phantom by deeplink.
+    final here = wallet.internal ? GlyfKeys.solanaSigner : null;
+    if (wallet.internal && here == null) throw SignFailed('The Glyf wallet isn’t on this phone');
     yield const TradeOutcome(TradeState.working, 'Asking Flash…');
     final quote = await GlyfApi.evmPost(
         '/flash/quote',
@@ -400,10 +411,17 @@ abstract final class TradeFlow {
     final setupIxs = FlashSvm.setupInstructions(quote);
     if (setupIxs.isNotEmpty) {
       final asked = FlashSvm.setupTransaction(quote: quote, funder: funder, blockhash: await _solanaBlockhash(quote))!;
-      yield const TradeOutcome(TradeState.working, 'Approve the setup in Phantom',
-          detail: 'Token accounts and Flash’s allowance, once per token');
-      final reply = await _askPhantom((id) => WalletFlow.phantom.signUrl(asked, id, step: PhantomRequests.step));
-      final signed = await _phantomAnswer(() => WalletFlow.phantom.finishSign(reply));
+      final Uint8List signed;
+      if (here != null) {
+        yield const TradeOutcome(TradeState.working, 'Setting up on Solana…',
+            detail: 'Token accounts and Flash’s allowance, once per token');
+        signed = SolanaSigning.signTransaction(asked, here) ?? Uint8List(0);
+      } else {
+        yield const TradeOutcome(TradeState.working, 'Approve the setup in Phantom',
+            detail: 'Token accounts and Flash’s allowance, once per token');
+        final reply = await _askPhantom((id) => WalletFlow.phantom.signUrl(asked, id, step: PhantomRequests.step));
+        signed = await _phantomAnswer(() => WalletFlow.phantom.finishSign(reply));
+      }
       if (!FlashSvm.isSignedSetup(signed, asked, funder)) {
         throw SignFailed('That isn’t what Glyf asked Phantom to sign', detail: 'Nothing was sent');
       }
@@ -438,10 +456,17 @@ abstract final class TradeFlow {
     final sponsored = svm['sponsoredDelegateTx'];
     if (sponsored is String && sponsored.isNotEmpty) {
       final asked = base64.decode(sponsored);
-      yield const TradeOutcome(TradeState.working, 'Let Flash use your coins in Phantom',
-          detail: 'Definitive pays this one’s fee');
-      final reply = await _askPhantom((id) => WalletFlow.phantom.signUrl(asked, id, step: PhantomRequests.step));
-      final signed = await _phantomAnswer(() => WalletFlow.phantom.finishSign(reply));
+      final Uint8List signed;
+      if (here != null) {
+        yield const TradeOutcome(TradeState.working, 'Letting Flash use your coins…',
+            detail: 'Definitive pays this one’s fee');
+        signed = SolanaSigning.signTransaction(asked, here) ?? Uint8List(0);
+      } else {
+        yield const TradeOutcome(TradeState.working, 'Let Flash use your coins in Phantom',
+            detail: 'Definitive pays this one’s fee');
+        final reply = await _askPhantom((id) => WalletFlow.phantom.signUrl(asked, id, step: PhantomRequests.step));
+        signed = await _phantomAnswer(() => WalletFlow.phantom.finishSign(reply));
+      }
       if (!FlashSvm.isSignedSponsored(signed, asked, funder)) {
         throw SignFailed('That isn’t what Glyf asked Phantom to sign', detail: 'Nothing was placed');
       }
@@ -449,11 +474,14 @@ abstract final class TradeFlow {
     }
 
     // 2. The order itself: a message, no fee.
-    yield TradeOutcome(TradeState.working, 'Sign the $title in Phantom', txUrl: _solscan(setupSig));
-    order['userSignature'] = Base58.encode(await _signOnSolana(message, funder));
+    yield TradeOutcome(TradeState.working, here != null ? 'Signing the $title…' : 'Sign the $title in Phantom',
+        txUrl: _solscan(setupSig));
+    order['userSignature'] = Base58.encode(await _signOnSolana(message, funder, here));
     if (pair != null) {
-      yield TradeOutcome(TradeState.working, 'Sign the take profit and stop in Phantom', txUrl: _solscan(setupSig));
-      pair['userSignature'] = Base58.encode(await _signOnSolana(pairMessage!, funder));
+      yield TradeOutcome(TradeState.working,
+          here != null ? 'Signing the take profit and stop…' : 'Sign the take profit and stop in Phantom',
+          txUrl: _solscan(setupSig));
+      pair['userSignature'] = Base58.encode(await _signOnSolana(pairMessage!, funder, here));
       order['attachedBracket'] = pair;
     }
     yield TradeOutcome(TradeState.working, 'Placing the order…', txUrl: _solscan(setupSig));
@@ -472,11 +500,17 @@ abstract final class TradeFlow {
 
   static String? _solscan(String? signature) => signature == null ? null : WalletFlow.solscanUrl(signature);
 
-  /// Phantom signs [message] (Flash's UTF-8 order text); the signature is
-  /// the funder's or the order stops here.
-  static Future<Uint8List> _signOnSolana(String message, String funder) async {
-    final reply = await _askPhantom((id) => WalletFlow.phantom.signMessageUrl(message, id, step: PhantomRequests.step));
-    final signature = await _phantomAnswer(() => WalletFlow.phantom.finishSignMessage(reply));
+  /// [here] (the Glyf wallet's key) or Phantom signs [message] (Flash's
+  /// UTF-8 order text); the signature is the funder's or the order stops here.
+  static Future<Uint8List> _signOnSolana(String message, String funder, ed.SigningKey? here) async {
+    final Uint8List signature;
+    if (here != null) {
+      signature = SolanaSigning.signMessage(utf8.encode(message), here);
+    } else {
+      final reply =
+          await _askPhantom((id) => WalletFlow.phantom.signMessageUrl(message, id, step: PhantomRequests.step));
+      signature = await _phantomAnswer(() => WalletFlow.phantom.finishSignMessage(reply));
+    }
     if (!FlashSvm.verifyMessage(message, signature, funder)) {
       throw SignFailed('That signature isn’t from ${Sol.short(funder)}', detail: 'Nothing was placed');
     }

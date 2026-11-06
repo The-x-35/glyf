@@ -11,7 +11,9 @@ import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 import '../core/themes.dart';
+import '../evm/evm_signer.dart';
 import '../wallet/wallet_flow.dart';
+import '../wallet/wallet_mode.dart';
 import 'theme_preview.dart';
 
 /// Everything about the keyboard on one page: how it looks, then how it types.
@@ -217,7 +219,14 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           // The wallet is a feature people turn on (Arpit, 2026-10-14: "have
           // wallet as feature which we can enable from settings and not for
           // everyone"): Send, Buy and the Wallet screen appear with it.
-          _card([_currencyRow(), _switch('Wallet', 'walletEnabled')]),
+          // One switch for who signs, every chain (Arpit, 2026-11-06): the
+          // Glyf wallet, or Phantom on Solana and MetaMask on Ethereum.
+          _card([
+            _currencyRow(),
+            _switch('Wallet', 'walletEnabled'),
+            if ((_settings['walletEnabled'] as bool?) ?? false)
+              _choiceRow('Sign with', 'walletMode', {for (final m in WalletMode.values) m.name: m.label}),
+          ]),
           const SizedBox(height: 18),
           _label('Clipboard & AI'),
           _card([
@@ -407,7 +416,14 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
         ),
       ),
     );
-    if (picked != null && picked != current) await _set(key, picked);
+    if (picked != null && picked != current) {
+      await _set(key, picked);
+      if (key == 'walletMode') {
+        WalletModes.mode.value = WalletMode.of(picked);
+        await EvmSigner.follow();
+        await WalletFlow.load();
+      }
+    }
   }
 
   Widget _segmented(String title, String key, List<String> options) {

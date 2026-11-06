@@ -11,8 +11,16 @@ TARGET = 'GlyfVoiceWidget'
 BUNDLE_ID = 'com.arpit.glyf.voicewidget'
 TEAM = 'YNABR226PF'
 DEPLOYMENT = '18.0' # ControlWidget is iOS 18; the app itself stays 17.0
-SHARED = %w[Shared/VoiceIntents.swift Shared/VoiceActivityAttributes.swift].freeze
-WIDGET_ONLY = %w[GlyfVoiceWidget.swift].freeze
+SHARED = %w[Shared/VoiceIntents.swift Shared/VoiceActivityAttributes.swift
+            Shared/GlyfTradeAttributes.swift Shared/TradeIntents.swift Shared/GlyfIntents.swift
+            Shared/GlyfIntentParsing.swift Shared/GlyfWidgetData.swift Shared/GlyfMeetingAttributes.swift].freeze
+WIDGET_ONLY = %w[GlyfVoiceWidget.swift GlyfWidgetStyle.swift GlyfTradeLiveActivity.swift GlyfHomeWidgets.swift
+                 GlyfMeetingLiveActivity.swift].freeze
+# Runner's own: the trade activity's host, the intents' server and Google
+# calls, and the one AppShortcutsProvider.
+RUNNER_ONLY = %w[TradeActivityHost.swift MeetingActivityHost.swift GlyfIntentAPI.swift GlyfShortcuts.swift].freeze
+# Keyboard files the widget draws or fetches with: the mark, Jupiter prices.
+FROM_KEYBOARD = %w[Design/GlyfMark.swift Engine/TokenLookup.swift].freeze
 
 project = Xcodeproj::Project.open(PROJECT_PATH)
 runner = project.targets.find { |t| t.name == 'Runner' }
@@ -94,6 +102,43 @@ end
     runner.source_build_phase.add_file_reference(ref, true)
     notes << "runner:#{rel}"
   end
+end
+
+# The unit tests, Runner's own files, and the keyboard's files the widget uses.
+tests = project.targets.find { |t| t.name == 'RunnerTests' }
+if tests
+  # GlyfWidgetDataTests.swift (the shared files' pure parts, through
+  # @testable import Runner) and GlyfWidgetSnapshots.swift (the widgets
+  # drawn in every size) sit beside the other tests; the snapshots compile
+  # the widget's views and style into the tests.
+  tg = project.main_group['RunnerTests']
+  %w[GlyfWidgetDataTests.swift GlyfWidgetSnapshots.swift].each do |name|
+    next unless tg && File.exist?(File.expand_path("../app/ios/RunnerTests/#{name}", __dir__))
+    tref = tg.files.find { |f| f.path == name } || tg.new_reference(name)
+    next if tests.source_build_phase.files_references.include?(tref)
+    tests.source_build_phase.add_file_reference(tref, true)
+    notes << "tests:#{name}"
+  end
+  %w[GlyfHomeWidgets.swift GlyfWidgetStyle.swift].each do |rel|
+    ref = ref_for(group, shared_group, rel)
+    next if tests.source_build_phase.files_references.include?(ref)
+    tests.source_build_phase.add_file_reference(ref, true)
+    notes << "tests:#{rel}"
+  end
+end
+rgroup = project.main_group['Runner']
+RUNNER_ONLY.each do |name|
+  ref = rgroup.files.find { |f| f.path == name } || rgroup.new_reference(name)
+  next if runner.source_build_phase.files_references.include?(ref)
+  runner.source_build_phase.add_file_reference(ref, true)
+  notes << "runner:#{name}"
+end
+FROM_KEYBOARD.each do |rel|
+  ref = kb.source_build_phase.files_references.find { |f| f.real_path.to_s.end_with?("GlyfKeyboard/#{rel}") }
+  abort "GlyfKeyboard/#{rel} missing from the keyboard" unless ref
+  next if widget.source_build_phase.files_references.include?(ref)
+  widget.source_build_phase.add_file_reference(ref, true)
+  notes << "widget:#{rel}"
 end
 
 # --- Embed in Runner ---------------------------------------------------------

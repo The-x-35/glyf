@@ -101,7 +101,7 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
     return TokenInfo(mint: mint, symbol: symbol, name: symbol, decimals: decimals, verified: true);
   }
 
-  bool get _needsConnect => _error == 'Connect your wallet first';
+  bool get _needsConnect => _error != null && _error!.contains('Profile › Wallet');
 
   @override
   Widget build(BuildContext context) {
@@ -152,7 +152,7 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
               const Spacer(flex: 3),
               if (_needsConnect)
                 PillButton(
-                  label: 'Connect Phantom',
+                  label: 'Open Wallet',
                   onPressed: () => Navigator.of(context)
                       .pushReplacement(MaterialPageRoute(builder: (_) => const WalletScreen())),
                 )

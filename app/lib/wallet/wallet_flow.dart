@@ -8,10 +8,12 @@ import '../core/bridge.dart';
 import '../core/flavor.dart';
 import '../core/telemetry.dart';
 import 'base58.dart';
+import 'glyf_keys.dart';
 import 'mwa.dart';
 import 'phantom.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
+import 'wallet_mode.dart';
 
 /// The Keychain (iPhone) or a Keystore-sealed file (Android), through the
 /// bridge: the Phantom session and our half of its encryption.
@@ -26,9 +28,12 @@ class BridgeSecrets implements SecretStore {
 
 /// The connected wallet, however it signs.
 class WalletLink {
-  const WalletLink({required this.address, required this.viaMwa});
+  const WalletLink({required this.address, required this.viaMwa, this.internal = false});
 
   final String address;
+
+  /// The Glyf wallet's own Solana key signs, right here (GlyfKeys).
+  final bool internal;
 
   /// Signing happens on this phone over Mobile Wallet Adapter (Seed Vault
   /// on a Seeker, or any MWA wallet), not by a Phantom deeplink round trip.
@@ -102,8 +107,34 @@ abstract final class WalletFlow {
   static final phantom = Phantom(BridgeSecrets());
   static final mwa = Mwa(BridgeSecrets());
 
-  /// The connected wallet, or null.
+  /// The Solana wallet that signs (WalletModes: the Glyf wallet's, or the
+  /// connected Phantom / MWA wallet), or null.
   static final link = ValueNotifier<WalletLink?>(null);
+
+  /// The connected outside wallet (Phantom, or MWA on Android), whether or
+  /// not the switch has it signing.
+  static final external = ValueNotifier<WalletLink?>(null);
+
+  /// Where the switch sends Solana signing right now.
+  static WalletRoute get route => WalletModes.route(
+        solana: true,
+        mode: WalletModes.mode.value,
+        glyfEvm: GlyfKeys.evmAddress.value,
+        glyfSolana: GlyfKeys.solanaAddress.value,
+        phantom: external.value?.address,
+      );
+
+  /// The switch or a wallet changed: [link] follows, and the keyboard
+  /// gets the address that signs.
+  static Future<void> follow() async {
+    final r = route;
+    final next = r.signer == WalletSigner.glyf
+        ? (r.address == null ? null : WalletLink(address: r.address!, viaMwa: false, internal: true))
+        : external.value;
+    final changed = next?.address != link.value?.address || next?.internal != link.value?.internal;
+    link.value = next;
+    if (changed) await _shareAddress(next?.address);
+  }
 
   /// Whether the wallet is turned on (Profile › Keyboard › Wallet); off,
   /// the Wallet card, Send, Buy and pay links stay hidden (2026-10-14).
@@ -118,13 +149,16 @@ abstract final class WalletFlow {
   static const phantomPlayStore = 'https://play.google.com/store/apps/details?id=app.phantom';
 
   static Future<void> load() async {
+    await GlyfKeys.load();
+    await WalletModes.load();
     final seeded = await mwa.load();
     if (seeded != null) {
-      link.value = WalletLink(address: seeded.address, viaMwa: true);
-      return;
+      external.value = WalletLink(address: seeded.address, viaMwa: true);
+    } else {
+      final p = await phantom.link();
+      external.value = p == null ? null : WalletLink(address: p.address, viaMwa: false);
     }
-    final p = await phantom.link();
-    link.value = p == null ? null : WalletLink(address: p.address, viaMwa: false);
+    await follow();
   }
 
   /// Connects a wallet. The phone's own wallet layer is asked first (Seed
@@ -137,8 +171,8 @@ abstract final class WalletFlow {
       try {
         final account = await mwa.connect();
         if (account == null) return null; // backed out in the wallet
-        link.value = WalletLink(address: account.address, viaMwa: true);
-        await _shareAddress(account.address);
+        external.value = WalletLink(address: account.address, viaMwa: true);
+        await follow();
         Telemetry.log('wallet_connected', {'mwa': true});
         return null;
       } catch (_) {
@@ -154,8 +188,8 @@ abstract final class WalletFlow {
     await mwa.disconnect();
     await phantom.forget();
     await BridgeSecrets().clear(_pendingName);
-    link.value = null;
-    await _shareAddress(null);
+    external.value = null;
+    await follow();
     Telemetry.log('wallet_disconnected', {});
   }
 
@@ -167,7 +201,7 @@ abstract final class WalletFlow {
     bool private = false,
   }) async {
     final wallet = await _linked();
-    if (wallet == null) return const PayStart.error('Connect your wallet first');
+    if (wallet == null) return PayStart.error(route.missing ?? 'Connect your wallet first');
     final recipient = to.trim();
     if (!Sol.isAddress(recipient)) return const PayStart.error('That isn’t a Solana address');
     if (recipient == wallet.address) return const PayStart.error('That’s your own wallet');
@@ -235,6 +269,7 @@ abstract final class WalletFlow {
       );
       await BridgeSecrets().save(_pendingName, jsonEncode(pending.toJson()));
       Telemetry.log('wallet_send_started', {'private': private, 'token': token.symbol, 'mwa': wallet.viaMwa});
+      if (wallet.internal) return PayStart.progress(_payHere(pending, tx));
       if (wallet.viaMwa) return PayStart.progress(_payOverMwa(pending, tx));
       final opened = await _open(await phantom.signUrl(tx, pending.id));
       return opened == null ? const PayStart.opened() : PayStart.error(opened);
@@ -270,7 +305,7 @@ abstract final class WalletFlow {
   static Future<PayStart> buy({required TokenInfo token, required TokenInfo payWith, required String amount}) async {
     if (token.stock && !Flavor.stockBuys) return const PayStart.error(noStockBuys);
     final wallet = await _linked();
-    if (wallet == null) return const PayStart.error('Connect your wallet first');
+    if (wallet == null) return PayStart.error(route.missing ?? 'Connect your wallet first');
     final units = Sol.units(amount, payWith.decimals);
     if (units == null) return const PayStart.error('Enter an amount');
     try {
@@ -290,6 +325,7 @@ abstract final class WalletFlow {
       );
       await BridgeSecrets().save(_pendingName, jsonEncode(pending.toJson()));
       Telemetry.log('wallet_buy_started', {'token': token.symbol, 'payWith': payWith.symbol, 'mwa': wallet.viaMwa});
+      if (wallet.internal) return PayStart.progress(_payHere(pending, base64.decode(tx)));
       if (wallet.viaMwa) return PayStart.progress(_payOverMwa(pending, base64.decode(tx)));
       final opened = await _open(await phantom.signUrl(base64.decode(tx), pending.id));
       return opened == null ? const PayStart.opened() : PayStart.error(opened);
@@ -310,8 +346,8 @@ abstract final class WalletFlow {
     if (step == 'connect') {
       try {
         final wallet = await phantom.finishConnect(reply);
-        link.value = WalletLink(address: wallet.address, viaMwa: false);
-        await _shareAddress(wallet.address);
+        external.value = WalletLink(address: wallet.address, viaMwa: false);
+        await follow();
         Telemetry.log('wallet_connected', {});
         yield await _told(PayOutcome(
             state: PayState.done, title: 'Phantom connected', detail: Sol.short(wallet.address)));
@@ -364,6 +400,21 @@ abstract final class WalletFlow {
       yield await _told(unknownOutcome);
       return;
     }
+    yield* _settle(pending, signed);
+  }
+
+  /// The Glyf wallet signs on this phone: no other app, no reply to wait for.
+  static Stream<PayOutcome> _payHere(PendingPay pending, Uint8List tx) async* {
+    final verb = pending.kind == PayKind.buy ? 'Buying' : 'Sending';
+    final key = GlyfKeys.solanaSigner;
+    final signed = key == null ? null : SolanaSigning.signTransaction(tx, key);
+    if (signed == null) {
+      await BridgeSecrets().clear(_pendingName);
+      yield await _told(PayOutcome(
+          state: PayState.failed, title: 'The Glyf wallet couldn’t sign it', detail: 'Nothing was sent', kind: pending.kind));
+      return;
+    }
+    yield PayOutcome(state: PayState.working, title: '$verb…', detail: pending.summary, kind: pending.kind);
     yield* _settle(pending, signed);
   }
 

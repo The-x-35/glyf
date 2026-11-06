@@ -3,14 +3,21 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-/// Glyf's widget extension: the Glyf Voice control (Control Center, the Lock
-/// Screen, the Action button) and the Live Activity a session started from
-/// it shows. iOS 18+.
+/// Glyf's widget extension (iOS 18+): the Glyf Voice control (Control
+/// Center, the Lock Screen, the Action button) and its Live Activity, the
+/// trade-in-flight Live Activity, the next meeting's, and the Home and Lock
+/// Screen widgets (GlyfHomeWidgets.swift).
 @main
 struct GlyfVoiceWidgets: WidgetBundle {
     var body: some Widget {
         GlyfVoiceControl()
         GlyfVoiceLiveActivity()
+        GlyfTradeLiveActivity()
+        GlyfMeetingLiveActivity()
+        GlyfAllInOneWidget()
+        WatchlistWidget()
+        QuickGlyfsWidget()
+        NextEventWidget()
     }
 }
 

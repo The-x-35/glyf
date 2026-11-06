@@ -20,6 +20,7 @@ import 'wallet/pay_status_screen.dart';
 import 'evm/evm_signer.dart';
 import 'evm/evm_wallet.dart';
 import 'evm/evm_wallet_screen.dart';
+import 'evm/flash_orders.dart';
 import 'evm/pay_request.dart';
 import 'evm/pay_request_screen.dart';
 import 'evm/metamask_link.dart';
@@ -188,6 +189,15 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       // The keyboard read a trade and quoted it: the chosen wallet signs it.
       final q = Uri.parse(uri.queryParameters['path']!).queryParameters;
       _push('trade', (_) => TradeScreen(query: q), link: link);
+      return;
+    }
+    if (uri.host == 'open' && uri.queryParameters['path'] == 'flash-cancel') {
+      // Cancel on a placed order's Live Activity (TradeActivityHost.swift).
+      final id = uri.queryParameters['id'];
+      if (id != null) {
+        _push('flash-cancel', (_) => TradeScreen(query: const {'kind': 'cancel'}, run: (_) => FlashCancel.steps(id)),
+            link: link);
+      }
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path'] == 'evm-wallet') {

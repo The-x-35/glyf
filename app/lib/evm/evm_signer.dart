@@ -8,6 +8,7 @@ import 'package:eth_sig_util/util/typed_data.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/bridge.dart';
+import '../wallet/wallet_mode.dart';
 import 'evm_chains.dart';
 import 'evm_rpc.dart';
 import 'evm_wallet.dart';
@@ -118,11 +119,12 @@ abstract final class EvmSigner {
 
   static bool _loaded = false;
 
+  /// Reads the switch (WalletModes: the Glyf wallet, or MetaMask for
+  /// Ethereum) and what's connected; the signer and its address follow.
   static Future<String?> load() async {
+    final s = await GlyfBridge.sharedSettings();
     if (!_loaded) {
       _loaded = true;
-      final s = await GlyfBridge.sharedSettings();
-      kind.value = EvmSignerKind.of(s['evmSigner'] as String?);
       final saved = s['evmWallets'];
       if (saved is Map) {
         for (final e in saved.entries) {
@@ -131,24 +133,38 @@ abstract final class EvmSigner {
         }
       }
     }
+    WalletModes.mode.value = WalletModes.fromSettings(s);
     await EvmWallet.load();
-    address.value = connected(kind.value);
+    return _follow();
+  }
+
+  /// Where the switch sends Ethereum signing right now.
+  static WalletRoute get route => WalletModes.route(
+      solana: false,
+      mode: WalletModes.mode.value,
+      glyfEvm: EvmWallet.address.value,
+      metamask: _connected[EvmSignerKind.metamask]);
+
+  /// The signer the switch picks, written for the keyboard.
+  static Future<String?> _follow() async {
+    final r = route;
+    final k = r.signer == WalletSigner.metamask ? EvmSignerKind.metamask : EvmSignerKind.glyf;
+    final changed = k != kind.value || r.address != address.value;
+    kind.value = k;
+    address.value = r.address;
+    if (changed) await _share();
     return address.value;
   }
 
-  /// Signs with [k] from now on (an outside wallet only once it's connected).
-  static Future<void> choose(EvmSignerKind k) async {
-    if (k != EvmSignerKind.glyf && _connected[k] == null) return;
-    kind.value = k;
-    if (k == EvmSignerKind.glyf) await EvmWallet.ensure();
-    address.value = connected(k);
+  /// The switch changed (Profile › Keyboard › Sign with).
+  static Future<void> follow() async {
+    await load();
     await _share();
   }
 
   static Future<void> disconnect(EvmSignerKind k) async {
     _connected.remove(k);
-    if (kind.value == k) kind.value = EvmSignerKind.glyf;
-    address.value = connected(kind.value);
+    await _follow();
     await _share();
   }
 
@@ -156,6 +172,9 @@ abstract final class EvmSigner {
   /// "Not enough ETH" are about the wallet that will sign.
   static Future<void> _share() => GlyfBridge.updateSharedSettings((s) {
         s['evmSigner'] = kind.value.name;
+        // A phone from before the switch keeps what it had (fromSettings),
+        // written down so the keyboard and Keyboard › Sign with agree.
+        s['walletMode'] ??= WalletModes.mode.value.name;
         s['evmWallets'] = {for (final e in _connected.entries) e.key.name: e.value};
         if (address.value == null) {
           s.remove('evmAddress');
@@ -192,8 +211,7 @@ abstract final class EvmSigner {
       throw SignFailed('That signature isn’t from ${short(account)}');
     }
     _connected[k] = _checksum(signer);
-    kind.value = k;
-    EvmSigner.address.value = _connected[k];
+    await _follow();
     await _share();
     yield const SignEvent.done([]);
   }
@@ -219,7 +237,7 @@ abstract final class EvmSigner {
       if (e.changed && from != null) {
         throw SignFailed('MetaMask is on another account', detail: 'Switch to ${short(from)} in MetaMask and try again');
       }
-      if (e.unauthorized) throw SignFailed('Connect MetaMask again', detail: 'Profile › Wallet › Ethereum › MetaMask');
+      if (e.unauthorized) throw SignFailed('Connect MetaMask again', detail: 'Profile › Wallet › MetaMask');
       throw SignFailed('MetaMask didn’t sign', detail: e.message);
     } finally {
       if (identical(_stop, stop)) _stop = null;
@@ -277,7 +295,7 @@ abstract final class EvmSigner {
     await load();
     final k = kind.value;
     final from = address.value;
-    if (from == null) throw SignFailed('No wallet yet', detail: 'Make one or connect one in Profile › Wallet › Ethereum');
+    if (from == null) throw SignFailed('No wallet yet', detail: route.missing);
     if (k == EvmSignerKind.glyf) {
       yield* _runHere(steps);
     } else {

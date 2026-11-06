@@ -47,7 +47,9 @@ void main() {
     expect(await EvmWallet.load(), isNull);
     final address = await EvmWallet.ensure();
     expect(address, matches(RegExp(r'^0x[0-9a-fA-F]{40}$')));
-    expect(secrets['evm-key'], hasLength(64));
+    // A new wallet is a recovery phrase; no random key is made any more.
+    expect(secrets['glyf-phrase']!.split(' '), hasLength(12));
+    expect(secrets['evm-key'], isNull);
     expect(shared['evmAddress'], address);
     // The same key comes back, not a new one.
     expect(await EvmWallet.ensure(), address);

@@ -54,6 +54,17 @@ struct TradeIntent: Equatable {
     var to: String?
     /// "buy 0.1 eth": the amount wanted back, not the amount spent.
     var buyAmount: String?
+    /// A g menu starter (SponsorMenu.starter): the trigger is this many
+    /// percent from the market (-10 = 10% under), set as `price` once the
+    /// trade panel has the price. Never read from words.
+    var pricePercent: Double?
+    /// The same for a bracket's stop-loss.
+    var stopPercent: Double?
+
+    /// A starter whose price waits on the market's.
+    var awaitingPrice: Bool {
+        (pricePercent != nil && price == nil) || (stopPercent != nil && stopPrice == nil)
+    }
 
     /// Who carries it out, as the strip says it.
     var venue: String {
@@ -435,5 +446,15 @@ struct TradeIntent: Equatable {
             let r = m.range(at: i)
             return r.location == NSNotFound ? nil : ns.substring(with: r)
         }
+    }
+}
+
+extension TradeIntent {
+    /// Who signs a trade on [chain], as the app names it: the app's switch
+    /// (shared settings `walletMode`, lib/wallet/wallet_mode.dart) picks the
+    /// Glyf wallet on every chain, or Phantom on Solana and MetaMask elsewhere.
+    static func walletName(chain: String?, mode: String?) -> String {
+        guard mode == "external" else { return "Glyf wallet" }
+        return chain == "solana" ? "Phantom" : "MetaMask"
     }
 }
