@@ -176,7 +176,6 @@ class _ArkivBackupCardState extends State<ArkivBackupCard> {
                 child: GestureDetector(
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: _owner!));
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup address copied')));
                   },
                   child: Text(
                     'Needs Arkiv test GLM · ${_owner!.substring(0, 6)}…${_owner!.substring(_owner!.length - 4)}',

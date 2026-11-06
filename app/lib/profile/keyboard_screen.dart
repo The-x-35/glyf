@@ -683,7 +683,6 @@ class _ReceiptTile extends StatelessWidget {
               color: tee == true ? const Color(0xFF34C759) : Glass.inkSoft)),
       onTap: () {
         Clipboard.setData(ClipboardData(text: id));
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Request id copied')));
       },
     );
   }

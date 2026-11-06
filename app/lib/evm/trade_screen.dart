@@ -91,7 +91,7 @@ class _TradeScreenState extends State<TradeScreen> {
       await Clipboard.setData(ClipboardData(text: text));
       await TradeShare.handToKeyboard(text);
       HapticFeedback.selectionClick();
-      note = 'Copied. Back in the chat, tap Share trade';
+      note = 'Back in the chat, tap Share trade';
     } on GlyfApiException catch (e) {
       note = 'Couldn’t make the link: ${e.message}';
     } catch (_) {

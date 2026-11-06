@@ -307,7 +307,6 @@ class _EvmWalletScreenState extends State<EvmWalletScreen> {
                 icon: const Icon(Icons.copy_rounded, size: 19, color: Glass.inkSoft),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: address));
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Address copied')));
                 },
               ),
               if (EvmSigner.kind.value != EvmSignerKind.glyf)
