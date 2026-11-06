@@ -51,7 +51,7 @@ Also built at Mumbai, but not entered (ETHGlobal allows three partners): USDT re
 
 ### Uniswap Foundation: "Build with Uniswap"
 
-- Swaps on Base, Ethereum, Arbitrum, Optimism, Polygon and Unichain from the keyboard.
+- Swaps on Base, Ethereum, Arbitrum, Optimism and Unichain from the keyboard, any token to any token.
 - **Code:** see `FEEDBACK.md`, which lists every file and line range.
 - **Proof:** a live v3 quote on Base, 0.05 ETH = 111.71 USDC, shown on the keyboard. The swap calldata was simulated with a balance override.
   - **ARPIT:** add the demo swap's transaction hash.

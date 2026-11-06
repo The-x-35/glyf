@@ -4,6 +4,28 @@ AI keyboard for iPhone and Android. *Type less. glyf more.*
 
 **Everything about the project (decisions, timeline, every part, open items, full chat history) is in [docs/README.md](docs/README.md).**
 
+## ETHGlobal Mumbai (Continuity Track, 5–7 Nov 2026)
+
+Type a trade in any chat and the keyboard places it: "sell my eth if it drops below 3000" is a Definitive Flash stop-loss, "swap 0.05 eth to usdc on base" is a Uniswap swap, and the keyboard's AI runs privately on 0G. The judges' guide is [docs/ETHGLOBAL-SUBMISSION.md](docs/ETHGLOBAL-SUBMISSION.md); the demo script is [docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md).
+
+- **Before and during.** Before: commit `f42b9c0` (4 Nov 2026), Glyf as on TestFlight, with no EVM code, no Flash, no Uniswap and no 0G. During: every commit after it (`git log f42b9c0..main`), made on branch `ethglobal-mumbai` and merged into `main`.
+- **Definitive Flash** (advanced orders on Base and Solana):
+  - trades read in plain words, no AI: [TradeIntent.swift](app/ios/GlyfKeyboard/Engine/TradeIntent.swift);
+  - quote, order, open orders, cancel, Solana setup: [server/src/routes/flash.ts#L249-L364](server/src/routes/flash.ts#L249-L364);
+  - EVM signing (evmOrderTypedData, Permit2, brackets): [app/lib/evm/trade_flow.dart](app/lib/evm/trade_flow.dart);
+  - Solana signing through Phantom, with Ed25519 checks: [app/lib/wallet/flash_solana.dart](app/lib/wallet/flash_solana.dart).
+- **Uniswap** (swaps on Base, Ethereum, Arbitrum, Optimism and Unichain):
+  - Trading API and v3 quoting (QuoterV2 over every fee tier in one Multicall3 call, two-pool routes) and SwapRouter02 calldata: [server/src/lib/uniswap.ts#L85-L243](server/src/lib/uniswap.ts#L85-L243);
+  - routes: [server/src/routes/uniswap.ts#L252-L349](server/src/routes/uniswap.ts#L252-L349);
+  - signing on the phone: [app/lib/evm/trade_flow.dart#L138](app/lib/evm/trade_flow.dart#L138);
+  - feedback: [FEEDBACK.md](FEEDBACK.md).
+- **0G Private Computer** (every AI call of this build, TEE-verified):
+  - the X-Glyf-AI header, the receipts store and GET /ai/receipts: [server/src/lib/privateai.ts](server/src/lib/privateai.ts);
+  - the 0G provider and its x_0g_trace: [server/src/providers/openrouter.ts#L22-L80](server/src/providers/openrouter.ts#L22-L80);
+  - changelog: 6 Nov, Private AI on 0G with receipts; 6 Nov evening, AI action recommendations on 0G; next, Private AI as the default for everyone and 0G Storage for the encrypted vault backup.
+- **Wallets:** the Glyf wallet (one 24-word phrase for Ethereum and Solana, [app/lib/wallet/hd_keys.dart](app/lib/wallet/hd_keys.dart)), MetaMask by deeplink ([app/lib/evm/metamask_link.dart](app/lib/evm/metamask_link.dart)) and Phantom by deeplink. No web pages and no WalletConnect relay.
+- **How AI was used:** Glyf is built by Arpit with an AI coding assistant (Claude Code), and so was this work. Arpit chose the product, the partners, the UX rules and every trade-off, and tested on his iPhone; the assistant wrote most of the code and its unit tests to those instructions, read the partner docs, and checked the work on the simulator against live Flash, Uniswap and 0G endpoints. The plan and decisions are in [docs/ETHGLOBAL-MUMBAI.md](docs/ETHGLOBAL-MUMBAI.md) and [docs/DECISIONS.md](docs/DECISIONS.md).
+
 **Design:** Apple-like and simple, no explainer lines. Apple-standard keyboard
 metrics (260pt: 44 toolbar + 216 keys), liquid-glass keys by default, and the
 keyboard follows the host's light or dark mode. The website has light and dark;

@@ -62,7 +62,7 @@ On screen: the link opened, showing the **Copy this trade** page. Open it on a s
 
 👆 **Swap**, then confirm. Show the Basescan link.
 
-> "Base, Ethereum, Arbitrum, Optimism, Polygon and Unichain."
+> "Base, Ethereum, Arbitrum, Optimism and Unichain, any token to any token."
 
 ## 2:00–2:30 · 0G: the keyboard's AI, private
 

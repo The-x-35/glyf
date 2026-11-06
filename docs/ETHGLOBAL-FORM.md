@@ -23,7 +23,7 @@ One section per field of the Hacker Dashboard form (Project › Project details,
 
 > Glyf is an AI keyboard for iPhone that already ships on TestFlight: hold space for an AI answer or a rewrite, chips that fill in sums, money, calendar slots, YouTube and Maps results, a vault for your details, and a Solana wallet through Phantom. At ETHGlobal Mumbai we taught it to trade, from the words you already type.
 >
-> Type "sell my eth if it drops below 2000" in WhatsApp, Messages or anywhere else, and the keyboard reads it on the phone (no AI call, no server), shows a quote card, and hands it to the wallet to sign. Every Definitive Flash advanced order is reachable by a sentence: stop-loss, take-profit, limit, stop buy, brackets (on a holding or attached to a buy), trailing stops, TWAP ("buy $20 of eth every day for a week") and cross-chain moves, on Base and on Solana. "swap 0.05 eth to usdc on base" is a Uniswap swap on Base, Ethereum, Arbitrum, Optimism, Polygon or Unichain.
+> Type "sell my eth if it drops below 2000" in WhatsApp, Messages or anywhere else, and the keyboard reads it on the phone (no AI call, no server), shows a quote card, and hands it to the wallet to sign. Every Definitive Flash advanced order is reachable by a sentence: stop-loss, take-profit, limit, stop buy, brackets (on a holding or attached to a buy), trailing stops, TWAP ("buy $20 of eth every day for a week") and cross-chain moves, on Base and on Solana. "swap 0.05 eth to usdc on base" is a Uniswap swap on Base, Ethereum, Arbitrum, Optimism or Unichain, any token to any token.
 >
 > Signing stays with you. Glyf builds every transaction on the phone, then signs with its own on-device wallet, or jumps to MetaMask (Ethereum and L2s) or Phantom (Solana) by deeplink and comes straight back. It checks what the wallet answers before acting: who signed, who sent, that it landed.
 >
@@ -97,7 +97,7 @@ Screenshots from the iPhone simulator, in `docs/ethglobal-shots/` (the assistant
 
 **How we used it:**
 
-> Swaps from any chat: "swap 0.05 eth to usdc on base" shows a live Uniswap quote in the keyboard and the app signs the swap. Base, Ethereum, Arbitrum, Optimism, Polygon and Unichain. With a Trading API key we use /check_approval, /quote and /swap (proxy approvals, no Permit2); without one, QuoterV2 across all fee tiers in one Multicall3 call and SwapRouter02 multicall calldata, with native ETH in and unwrapWETH9 out. Exact-amount approvals and the mainnet USDT allowance reset are handled. Code: server/src/lib/uniswap.ts, server/src/routes/uniswap.ts, app/lib/evm/trade_flow.dart (_swap), app/ios/GlyfKeyboard/Surfaces/TradeSurface.swift.
+> Swaps from any chat: "swap 0.05 eth to usdc on base" shows a live Uniswap quote in the keyboard and the app signs the swap. Base, Ethereum, Arbitrum, Optimism and Unichain, any token on Uniswap's token list, with two-pool routes through WETH or USDC. With a Trading API key we use /check_approval, /quote and /swap (proxy approvals, no Permit2); without one, QuoterV2 across all fee tiers in one Multicall3 call and SwapRouter02 multicall calldata, with native ETH in and unwrapWETH9 out. Exact-amount approvals and the mainnet USDT allowance reset are handled. Code: server/src/lib/uniswap.ts, server/src/routes/uniswap.ts, app/lib/evm/trade_flow.dart (_swap), app/ios/GlyfKeyboard/Surfaces/TradeSurface.swift.
 
 - **ARPIT:** the demo swap's transaction hash.
 
