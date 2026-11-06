@@ -449,6 +449,7 @@ final class TradeSurface: UIView {
 
     private func price(of symbol: String) {
         if TradeEdit.stables.contains(symbol) { marketPrice = 1; asking = false; render(); return }
+        if let share = TradeIntent.baseStocks[symbol.uppercased()] { sharePrice(symbol, address: share); return }
         if symbol == "SOL" || intent.chainName == "solana" { jupiterPrice(symbol); return }
         let ref = TradeIntent.baseStocks[symbol.uppercased()] ?? known["\(intent.chainName)|\(symbol.uppercased())"]?.address ?? symbol
         BackendClient.shared.evmJSON(path: "/uniswap/quote",
@@ -487,6 +488,20 @@ final class TradeSurface: UIView {
             guard let self, serial == self.quoteSerial, self.asking else { return }
             self.asking = false
             self.quoteError = "Jupiter has no price right now"
+            self.render()
+        }
+    }
+
+    /// A Base share's price, from Flash's own listing (some shares, Tesla's
+    /// among them, have no Uniswap pool on Base, and Flash trades them anyway).
+    private func sharePrice(_ symbol: String, address: String) {
+        BackendClient.shared.evmJSON(path: "/flash/search?chain=base&query=\(symbol.uppercased())&limit=8") { [weak self] obj in
+            guard let self else { return }
+            let rows = (obj?["results"] as? [[String: Any]]) ?? (obj?["assets"] as? [[String: Any]]) ?? (obj?["tokens"] as? [[String: Any]]) ?? []
+            let row = rows.first { (($0["address"] as? String) ?? "").lowercased() == address.lowercased() }
+            self.asking = false
+            self.marketPrice = Self.number(row?["price"])
+            self.fillPrice()
             self.render()
         }
     }
