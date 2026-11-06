@@ -1,4 +1,5 @@
 import { env } from "../env.js";
+import { aiContext, noteZeroG } from "../lib/privateai.js";
 import { KEEP_PLACEHOLDERS, SecretVault } from "../lib/secrets.js";
 
 /** §8: OpenRouter, backend only, OpenAI-compatible, streamed — plus any
@@ -18,6 +19,9 @@ const PROVIDERS: Record<string, { url: string; key: () => string }> = {
   mistral: { url: "https://api.mistral.ai/v1/chat/completions", key: () => env.mistralKey },
   inception: { url: "https://api.inceptionlabs.ai/v1/chat/completions", key: () => env.inceptionKey },
   cerebras: { url: "https://api.cerebras.ai/v1/chat/completions", key: () => env.cerebrasKey },
+  // 0G Private Computer: models run in TEEs, and the router keeps billing
+  // metadata only (lib/privateai.ts says who is sent here).
+  zerog: { url: "https://router-api.0g.ai/v1/chat/completions", key: () => env.zeroGKey },
 };
 
 /** "groq:<model>", "gemini:<model>", … go to that provider; everything else
@@ -37,12 +41,18 @@ export function endpointFor(spec: string): Endpoint | null {
     key: env.openrouterKey, model, openrouter: true } : null;
 }
 
+const isZeroG = (ep: Endpoint) => ep.url.startsWith("https://router-api.0g.ai/");
+
 /** "fast" answers someone holding space, "smart" builds and rewrites at
  *  length, and "suggest" reads a pause in typing for the strip's chip: a
  *  read nobody asked for, so it has its own small, cheap chain. */
 export type Tier = "fast" | "smart" | "suggest" | "answer";
 
 function chainFor(tier: Tier): string[] {
+  // A phone that asked for private AI gets 0G and nothing else: falling
+  // through to another provider would send its typing somewhere it said no
+  // to. Without a 0G key the ask is ignored, so nothing breaks before one is set.
+  if (aiContext()?.zeroG && env.zeroGKey) return tier === "smart" ? env.zeroGSmartModels : env.zeroGModels;
   return tier === "smart" ? env.smartModels : tier === "suggest" ? env.suggestModels
     : tier === "answer" ? env.answerModels : env.fastModels;
 }
@@ -62,6 +72,13 @@ export function requestOptions(ep: Endpoint, tier: Tier): Record<string, unknown
   // are sent: it is someone's typing (the privacy policy says so, and
   // Google's OAuth review asked, 2026-10-01).
   if (ep.openrouter) opts.provider = { data_collection: "deny" };
+  if (isZeroG(ep)) {
+    // The router checks the answer's TEE signature and says so in
+    // x_0g_trace; its models think first unless told not to.
+    opts.verify_tee = true;
+    opts.chat_template_kwargs = { enable_thinking: false };
+    return opts;
+  }
   if (ep.openrouter) {
     // Hybrid models (Qwen 3.7 Flash, DeepSeek V4 Flash, Ling) think first
     // unless told not to: measured, a rewrite took 16 s and ten times the
@@ -110,6 +127,9 @@ export function resetCooldowns(): void {
 /** How long a model gets to start answering before the next one is tried.
  *  A suggestion that comes late comes after the message has gone. */
 export const FIRST_BYTE_MS: Record<Tier, number> = { fast: 4000, smart: 20000, suggest: 2500, answer: 4000 };
+
+/** 0G's models start slower than OpenRouter's (a TEE, fewer replicas). */
+export const ZEROG_FIRST_BYTE_MS = 8000;
 
 /** The last model in a chain gets this long to start (and between chunks). */
 export const LAST_FIRST_BYTE_MS = 15000;
@@ -209,7 +229,8 @@ async function completeMasked(
     // on to the next one rather than wait it out.
     const attempt = new AbortController();
     let stallTimer: ReturnType<typeof setTimeout> | undefined;
-    const stuck = setTimeout(() => attempt.abort(), last ? Math.max(FIRST_BYTE_MS[tier], LAST_FIRST_BYTE_MS) : FIRST_BYTE_MS[tier]);
+    const firstByte = isZeroG(ep) ? Math.max(FIRST_BYTE_MS[tier], ZEROG_FIRST_BYTE_MS) : FIRST_BYTE_MS[tier];
+    const stuck = setTimeout(() => attempt.abort(), last ? Math.max(firstByte, LAST_FIRST_BYTE_MS) : firstByte);
     const onAbort = () => attempt.abort();
     handlers.signal?.addEventListener("abort", onAbort);
     try {
@@ -219,6 +240,8 @@ async function completeMasked(
           Authorization: `Bearer ${ep.key}`,
           "Content-Type": "application/json",
           ...(ep.openrouter ? { "HTTP-Referer": "https://tryglyf.com", "X-Title": "Glyf" } : {}),
+          // Only providers that run the model in a TEE.
+          ...(isZeroG(ep) ? { "X-0G-Provider-Trust-Mode": "private" } : {}),
         },
         body: JSON.stringify({ model: ep.model, messages, stream: true, ...requestOptions(ep, tier),
           ...(handlers.temperature !== undefined ? { temperature: handlers.temperature } : {}),
@@ -239,11 +262,12 @@ async function completeMasked(
         continue;
       }
       const gate = new VerdictGate(forward);
+      const trace: ZeroGTrace = {};
       const text = await drainSSE(res.body, { ...handlers, onToken: t => gate.push(t) }, () => {
         if (!handlers.stallMs) return;
         clearTimeout(stallTimer);
         stallTimer = setTimeout(() => attempt.abort(), last ? Math.max(handlers.stallMs, LAST_FIRST_BYTE_MS) : handlers.stallMs);
-      });
+      }, isZeroG(ep) ? m => Object.assign(trace, m) : undefined);
       if (text.trim().length === 0) {
         attempts.push({ model, status: "empty" });
         dropped();
@@ -255,6 +279,10 @@ async function completeMasked(
         attempts.push({ model, status: "classifier" });
         dropped();
         continue;
+      }
+      if (isZeroG(ep)) {
+        noteZeroG({ requestId: trace.requestId ?? trace.id ?? res.headers.get("zg-res-key") ?? "unknown",
+          model: ep.model, provider: trace.provider, teeVerified: trace.teeVerified ?? null, costUsdMicro: trace.costUsdMicro, at: Date.now() });
       }
       return { text, model, attempts };
     } catch (err) {
@@ -310,10 +338,21 @@ export class VerdictGate {
   }
 }
 
+/** 0G's x_0g_trace, as far as a stream has told it. */
+interface ZeroGTrace {
+  id?: string;
+  requestId?: string;
+  provider?: string;
+  teeVerified?: boolean | null;
+  costUsdMicro?: number;
+}
+
 async function drainSSE(
   body: ReadableStream<Uint8Array>,
   handlers: StreamHandlers,
   onChunk: () => void = () => {},
+  /** What 0G says about the call, as its chunks carry it. */
+  onTrace?: (t: ZeroGTrace) => void,
 ): Promise<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -333,6 +372,18 @@ async function drainSSE(
       if (payload === "[DONE]") return text;
       try {
         const obj = JSON.parse(payload);
+        if (onTrace) {
+          const t = obj.x_0g_trace;
+          if (typeof obj.id === "string") onTrace({ id: obj.id });
+          if (t && typeof t === "object") {
+            onTrace({
+              ...(typeof t.request_id === "string" ? { requestId: t.request_id } : {}),
+              ...(typeof t.provider === "string" ? { provider: t.provider } : {}),
+              ...("tee_verified" in t ? { teeVerified: t.tee_verified ?? null } : {}),
+              ...(t.billing?.total_cost_usd_micro !== undefined ? { costUsdMicro: Number(t.billing.total_cost_usd_micro) } : {}),
+            });
+          }
+        }
         const delta: string = obj.choices?.[0]?.delta?.content ?? "";
         if (delta) {
           text += delta;

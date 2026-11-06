@@ -29,6 +29,13 @@ import { billingRoutes } from "./routes/billing.js";
 import { codeRoutes } from "./routes/codes.js";
 import { cryptoPayRoutes } from "./routes/cryptopay.js";
 import { reportRoutes } from "./routes/report.js";
+import { namesRoutes } from "./routes/names.js";
+import { evmRoutes } from "./routes/evm.js";
+import { flashRoutes } from "./routes/flash.js";
+import { uniswapRoutes } from "./routes/uniswap.js";
+import { walletJobRoutes } from "./routes/walletjobs.js";
+import { tradeShareRoutes } from "./routes/tradeshare.js";
+import { privateAIHooks, privateAIRoutes } from "./lib/privateai.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -64,6 +71,7 @@ export function buildApp(kv: KV = defaultKV()) {
   // The lock goes on before any route is registered, so nothing added later
   // is open by accident.
   protectRoutes(app, { limits });
+  privateAIHooks(app, kv);
   const library = new GlyfLibrary(kv);
   app.decorate("glyfKV", kv);
 
@@ -113,6 +121,13 @@ export function buildApp(kv: KV = defaultKV()) {
   codeRoutes(app);
   cryptoPayRoutes(app);
   reportRoutes(app);
+  namesRoutes(app);
+  evmRoutes(app);
+  flashRoutes(app);
+  uniswapRoutes(app);
+  walletJobRoutes(app, kv);
+  tradeShareRoutes(app, kv);
+  privateAIRoutes(app, kv);
   return app;
 }
 
