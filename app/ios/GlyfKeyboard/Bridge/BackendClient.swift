@@ -685,6 +685,28 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         }
     }
 
+    // MARK: Ethereum (ETHGlobal Mumbai)
+
+    /// GET (no body) or POST JSON to the Ethereum side of the server: names,
+    /// balances, Uniswap quotes. The object, or nil when the call failed;
+    /// on the main queue.
+    func evmJSON(path: String, body: [String: Any]? = nil, done: @escaping ([String: Any]?) -> Void) {
+        guard let url = URL(string: SettingsStore.current.backendURL + path) else { done(nil); return }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.timeoutInterval = 12
+        if let body {
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        session.dataTask(with: req) { data, response, _ in
+            let ok = ((response as? HTTPURLResponse)?.statusCode ?? 0) / 100 == 2
+            let obj = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            DispatchQueue.main.async { done(ok ? obj : nil) }
+        }.resume()
+    }
+
     // MARK: Meter (§6.16)
 
     func fetchRemaining(completion: @escaping (Int?) -> Void) {
@@ -717,6 +739,12 @@ extension URLRequest {
     mutating func glyfSession() {
         if let token = GlyfSession.token() {
             setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        // Private AI, on the hackathon build only (it writes privateAI; other
+        // builds leave it unset and send nothing): "0g" sends this phone's
+        // model calls to 0G's Private Computer (server/src/lib/privateai.ts).
+        if let on = SettingsStore.current.privateAI {
+            setValue(on ? "0g" : "off", forHTTPHeaderField: "X-Glyf-AI")
         }
     }
 }

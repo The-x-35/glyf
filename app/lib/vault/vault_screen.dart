@@ -9,6 +9,7 @@ import '../core/dismiss_keyboard.dart';
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
+import '../evm/arkiv_backup_card.dart';
 
 /// The vault: the details, notes and shorthand the keyboard types for you.
 /// Add and edit live in the app only; the keyboard just picks and types.
@@ -214,6 +215,10 @@ class _VaultScreenState extends State<VaultScreen> {
                   ),
                 if (_images.isEmpty) _addRow('Keep an image', _addImage),
               ],
+
+              const SizedBox(height: 18),
+              _sectionHeader('Backup'),
+              ArkivBackupCard(vault: _vault, onRestored: _refresh),
             ],
           ),
         ),

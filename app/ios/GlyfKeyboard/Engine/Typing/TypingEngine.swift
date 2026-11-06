@@ -793,6 +793,27 @@ final class TypingEngine {
         return fix != typed
     }
 
+    /// An emoji run the person just put after their words ("love you
+    /// ❤️❤️❤️"): learned like a word pair, only where learning is on (never
+    /// in a password, code or search field) and only after real words.
+    /// Returns true when it was learned.
+    @discardableResult
+    func noteEmoji(_ run: EmojiRuns.Run, policy: Policy, today: Int = TypingText.day()) -> Bool {
+        guard policy.contains(.learning), Self.isLearnable(run.word),
+              run.emoji.count <= EmojiRuns.longest, run.emoji.allSatisfy(EmojiRuns.isEmoji) else { return false }
+        let previous = run.previous.flatMap { Self.isLearnable($0) ? $0 : nil }
+        personal.noteEmoji(run.emoji, after: run.word, previous: previous, today: today)
+        return true
+    }
+
+    /// The emoji run this person puts after `word` once it's a habit, for
+    /// the strip's emoji slot (ahead of EmojiWords' guess).
+    func emojiRun(after word: String, previous: String?, policy: Policy = .all,
+                  today: Int = TypingText.day()) -> String? {
+        guard policy.contains(.suggestions) else { return nil }
+        return personal.emojiRun(after: word, previous: previous, today: today)
+    }
+
     func revert(typed: String, correction: String, today: Int = TypingText.day()) {
         personal.revert(typed: typed, correction: correction, today: today)
         rebuildExtra()
@@ -812,6 +833,10 @@ final class TypingEngine {
     func forget(_ form: String) {
         personal.forget(form)
         rebuildExtra()
+    }
+
+    func forgetEmoji(context: String, run: String) {
+        personal.forgetEmoji(context: context, run: run)
     }
 
     func markEditsApplied(_ at: Double) { personal.editsAppliedAt = at }

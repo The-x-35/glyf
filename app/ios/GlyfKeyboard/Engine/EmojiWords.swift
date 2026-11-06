@@ -70,3 +70,74 @@ enum EmojiWords {
         "diamond": "💎", "bomb": "💣", "knife": "🔪", "sword": "⚔️", "shield": "🛡️", "flag": "🏁", "finish": "🏁", "goodjob": "👏",
     ]
 }
+
+/// The emoji a person puts after their own words, as they type them ("love
+/// you ❤️❤️❤️", "haha 😂"): found in the text before the caret, so the
+/// engine can learn the habit (PersonalLexicon.noteEmoji) and offer the same
+/// run in the emoji slot next time (Arpit, 2026-11-06: "a person who uses
+/// emojis a lot ... we can learn that as well"). Pure logic, unit-tested.
+enum EmojiRuns {
+
+    /// Longer runs are decoration, not a habit worth a slot.
+    static let longest = 6
+
+    struct Run: Equatable {
+        /// The emoji exactly as typed, one to `longest` of them.
+        var emoji: String
+        /// The word just before them ("you"), and the one before that ("love").
+        var word: String
+        var previous: String?
+        /// The text up to the run's end: one occurrence is learned once.
+        var anchor: String
+    }
+
+    /// A picture emoji, not a digit or a # that also has an emoji form.
+    static func isEmoji(_ c: Character) -> Bool {
+        guard let first = c.unicodeScalars.first else { return false }
+        if first.properties.isEmojiPresentation { return true }
+        // ❤️ is U+2764 + VS16; 1️⃣ is a keycap; 👨‍👩‍👧 joins with ZWJ.
+        return first.properties.isEmoji && c.unicodeScalars.count > 1
+            && c.unicodeScalars.contains { $0.value == 0xFE0F || $0.value == 0x20E3 || $0.value == 0x200D }
+    }
+
+    /// The emoji run the text ends with (spaces after it don't count) and
+    /// the words before it. Nil without a word right before the run: after
+    /// a sentence's end, a link or a number there is nothing to learn it by.
+    static func trailing(_ text: String) -> Run? {
+        var body = Substring(text)
+        while let c = body.last, c.isWhitespace { body = body.dropLast() }
+        let anchor = String(body)
+        var count = 0
+        while let c = body.last, isEmoji(c) {
+            body = body.dropLast()
+            count += 1
+        }
+        guard count > 0, count <= longest else { return nil }
+        let emoji = String(anchor.suffix(count))
+        while let c = body.last, WordTracker.spaces.contains(c) { body = body.dropLast() }
+        let rest = String(body)
+        let word = WordTracker.currentWord(beforeContext: rest)
+        guard word.count >= 2, word.allSatisfy({ $0.isLetter || $0 == "'" || $0 == "’" }),
+              !WordTracker.insideLinkOrAddress(beforeContext: rest) else { return nil }
+        // A word of its own, not the tail of "tryglyf.com" or "v2.beta".
+        if let c = rest.dropLast(word.count).last, !c.isWhitespace, !"(\"“‘".contains(c) { return nil }
+        let previous = WordTracker.previousWord(beforeContext: rest)
+            .flatMap { p in p.allSatisfy({ $0.isLetter || $0 == "'" || $0 == "’" }) ? p : nil }
+        return Run(emoji: emoji, word: word, previous: previous, anchor: anchor)
+    }
+
+    /// A run the person has just finished, between two looks at the text
+    /// before the caret: a space or a line break typed after it (or the
+    /// run put in with its space, as a strip tap does), or the message sent
+    /// (the field emptied). A draft the keyboard opens on teaches nothing:
+    /// only a few characters may have come in since the last look.
+    static func finished(seen: String, now: String) -> Run? {
+        if let last = now.last, last.isWhitespace, let run = trailing(now) {
+            let added = now.count - seen.count
+            guard added >= 1, added <= run.emoji.count + 2 else { return nil }
+            return run
+        }
+        if now.isEmpty, let last = seen.last, !last.isWhitespace { return trailing(seen) }
+        return nil
+    }
+}

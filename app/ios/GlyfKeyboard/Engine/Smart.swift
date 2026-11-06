@@ -58,6 +58,17 @@ enum Smart {
         /// for each result ("10 inch" → 25.4 cm, 0.254 m), and a tap on a
         /// part adds it in brackets (Smart.conversions).
         case convert(Conversions)
+        /// A trade said in words ("swap 0.05 eth to usdc on base", "sell my
+        /// eth if it drops below 3000", "request 20 usdt"): a tap opens the
+        /// trade panel over the keys (TradeSurface), nothing typed.
+        case trade(TradeIntent)
+        /// A Whitechain request's pay link on screen or just copied ("Pay me
+        /// 20 USDT: https://www.tryglyf.com/pay?chain=1874&contract=…&id=…"):
+        /// a tap opens it in the app, which reads it from the chain and pays.
+        case payLink(path: String)
+        /// A trade just shared from the app (Share in chat): its line and
+        /// link, which a tap types into the chat (TradeShare in the app).
+        case shareTrade(text: String)
 
         /// The parts of a chip drawn as a row of chips: the saved details (and
         /// Temp), or a measurement's results.
@@ -81,6 +92,9 @@ enum Smart {
             case .tempMail: return "Mail"
             case .tempAddress(let live): return live == nil ? "Email" : "Temp email"
             case .details(let fields, _, _): return fields.first?.title ?? "Email"
+            case .trade(let t): return t.venue
+            case .payLink: return "Whitechain"
+            case .shareTrade: return "Share trade"
             }
         }
         /// The verb on the chip's right edge: what a tap does. Nil for the
@@ -97,6 +111,16 @@ enum Smart {
             case .tempMail(_, _, let code): return code == nil ? "Open" : "Insert"
             case .tempAddress(let live): return live == nil ? "Create" : "Insert"
             case .details, .convert: return nil    // each part is its own action
+            case .trade(let t):
+                switch t.kind {
+                case .swap: return t.amountIsUSD || t.buyAmount != nil ? "Buy" : "Swap"
+                case .send: return "Send"
+                case .request: return "Request"
+                case .bridge: return "Move"
+                default: return "Set"
+                }
+            case .payLink: return "Pay"
+            case .shareTrade: return "Insert"
             }
         }
         /// A second action, as a button beside the first: Buy on a token's
@@ -126,6 +150,9 @@ enum Smart {
             case .vault(let f): return f.title
             case .pay: return "Wallet"
             case .buy(_, let symbol, _, _): return symbol
+            case .trade(let t): return t.venue
+            case .payLink: return "Whitechain"
+            case .shareTrade: return "Share trade"
             default: return nil
             }
         }
@@ -154,6 +181,9 @@ enum Smart {
                 return (fields.map(\.shown) + (temp ? ["Temp mail"] : [])).joined(separator: " · ")
             case .convert(let c):
                 return c.source.isEmpty ? c.results.joined(separator: " · ") : "\(c.source) = " + c.results.joined(separator: " · ")
+            case .trade(let t): return t.title + " · " + t.chainLabel
+            case .payLink: return "A USDT request"
+            case .shareTrade(let text): return text
             }
         }
         /// What tapping the chip puts in the field.
@@ -171,8 +201,21 @@ enum Smart {
             case .tempMail(_, _, let code): return code ?? ""   // no code: opens the mail
             case .tempAddress(let live): return live ?? ""   // none live: made first, then typed
             case .details, .convert: return ""   // a part's own tap types it
+            case .trade: return ""     // opens the trade panel instead of typing
+            case .payLink: return ""   // opens the request in the app
+            case .shareTrade(let text): return text
             }
         }
+    }
+
+    /// The app path for a GlyfPayRequest link in the text (its https or
+    /// glyf:// form), the last one if there are several.
+    static func payRequestPath(in text: String) -> String? {
+        let pattern = #"(?:https?://(?:www\.)?tryglyf\.com/pay|glyf://pay-request)\?((?:chain=\d+&)?contract=0x[0-9a-fA-F]{40}&id=\d+)"#
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.matches(in: text, range: NSRange(text.startIndex..., in: text)).last,
+              let r = Range(m.range(at: 1), in: text) else { return nil }
+        return "pay-request?" + text[r]
     }
 
     /// A Cal.com or Calendly booking page in the text ("cal.com/sam/30min",
@@ -300,6 +343,12 @@ enum Smart {
                 return nil
             }
         }
+        // Someone's request link, in the chat or just copied: pay it.
+        if let link = payRequestPath(in: text) ?? (text.isEmpty ? paste.flatMap(payRequestPath) : nil) {
+            return .payLink(path: link)
+        }
+        // A trade said in words: swaps, orders, sends to a name, requests.
+        if let t = TradeIntent.parse(text) { return .trade(t) }
         // A link longer than the strip's view of the message: its trackers.
         if let context = linkContext, context.count > text.count, endsInLink(text), let c = cleanLink(in: context) {
             return .convert(c)

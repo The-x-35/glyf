@@ -377,6 +377,14 @@ Details live in the area docs: [WEBSITE.md](WEBSITE.md), [APPS.md](APPS.md), [BA
 
 ---
 
+## Fri 6 Nov 2026: ETHGlobal Mumbai build
+
+**D108. The suggestion bar offers single next words only, never phrases, and never cuts a word with "…".** "it's bad to have showing dot because if a person can't even guess what's the full sentence is, it's not worth it to show that shit. So I think it's better to have only a single word suggestion. I think Google and Apple also do the same." A long word shrinks (17pt down to 11pt) to fit whole, then takes a wider slot, else it is left out. A remembered sentence offers its next word, one tap at a time, instead of the rest of the sentence in one chip. Whole-sentence suggestions are parked, not rejected: "if you know any way of suggesting the whole sentence, you can let me know. That would be really cool to have" — revisit only with a design where the whole sentence is readable.
+
+**D109. 0G Private AI is for this version only, not for the builds already out.** "the app on the test flight, etc., should use our Gemini stuff, etc., only ... it's only for our testing thing." Then, so it doesn't hang on remembering a build flag: "you can just add it in the code ... because the old versions don't have that thing." This version (`Flavor.zeroG`, on by default in code) shows Private AI on 0G in Keyboard and Build your own and starts with it on; the builds already on TestFlight have no switch and send no `X-Glyf-AI` header, and the server never uses 0G for a phone that sends none, whatever a glyf says. The server uses 0G only with `ZEROG_API_KEY` set. **Open:** before this code ships to everyone, decide whether 0G stays on by default (`--dart-define=GLYF_ZEROG=false` builds without it).
+
+---
+
 ## Standing rules (apply to all future work)
 
 These came out of the decisions above and Arpit's feedback. [WORKING-AGREEMENTS.md](WORKING-AGREEMENTS.md) has the full list with context.

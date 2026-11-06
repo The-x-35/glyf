@@ -38,6 +38,9 @@ dependencies:
   crypto: ^3.0.7
   # Mobile Wallet Adapter: Seed Vault on the Seeker, or any MWA wallet.
   solana_mobile_client: ^0.1.2
+  web3dart: ^2.7.3
+  eth_sig_util: ^0.0.9
+  pointycastle: ^3.9.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

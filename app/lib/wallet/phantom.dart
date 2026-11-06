@@ -117,14 +117,41 @@ class Phantom {
   }
 
   /// Opens Phantom to sign [transaction] (unsigned bytes). The reply comes
-  /// back to glyf://phantom/sign/[id].
-  Future<Uri> signUrl(Uint8List transaction, String id) async {
+  /// back to glyf://phantom/[step]/[id]: `sign` for a payment (WalletFlow),
+  /// `trade` for a step of a Flash order (PhantomRequests).
+  Future<Uri> signUrl(Uint8List transaction, String id, {String step = 'sign'}) async {
     final link = await this.link();
     if (link == null) throw const PhantomError('4100', 'Connect Phantom first');
     return _request('signTransaction', link, {
       'transaction': Base58.encode(transaction),
       'session': link.session,
-    }, redirect: '$redirectBase/sign/$id');
+    }, redirect: '$redirectBase/$step/$id');
+  }
+
+  /// Opens Phantom to sign [message], a plain UTF-8 text Phantom shows as it
+  /// is (Flash's order message). The reply comes back to
+  /// glyf://phantom/[step]/[id].
+  Future<Uri> signMessageUrl(String message, String id, {String step = 'trade'}) async {
+    final link = await this.link();
+    if (link == null) throw const PhantomError('4100', 'Connect Phantom first');
+    return _request('signMessage', link, {
+      'message': Base58.encode(Uint8List.fromList(utf8.encode(message))),
+      'session': link.session,
+      'display': 'utf8',
+    }, redirect: '$redirectBase/$step/$id');
+  }
+
+  /// The 64-byte Ed25519 signature in Phantom's reply to signMessage. Not
+  /// yet checked: the caller verifies it against the wallet's key.
+  Future<Uint8List> finishSignMessage(Uri reply) async {
+    _throwIfRefused(reply);
+    final link = await this.link();
+    if (link == null) throw const PhantomError('4100', 'Connect Phantom first');
+    final json = _open(reply, secret: link.dappSecret, phantomKey: link.phantomKey);
+    final signature = json['signature'];
+    final bytes = signature is String ? Base58.decode(signature) : null;
+    if (bytes == null || bytes.length != 64) throw const PhantomError('-32603', 'Phantom sent an answer Glyf can’t read');
+    return bytes;
   }
 
   /// The signed transaction in Phantom's reply, exactly as Phantom signed

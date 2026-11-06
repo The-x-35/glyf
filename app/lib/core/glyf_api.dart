@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kReleaseMode;
 
 import 'auth.dart';
 import 'bridge.dart';
+import 'flavor.dart';
 
 /// The privacy policy, on the website (App Store 5.1.1 wants it in the app too).
 const privacyPolicyURL = 'https://www.tryglyf.com/privacy';
@@ -113,6 +114,27 @@ abstract final class GlyfApi {
   static void _signIn(HttpClientRequest req) {
     final token = Auth.bearer;
     if (token != null) req.headers.set('Authorization', 'Bearer $token');
+    if (Flavor.zeroG) req.headers.set('X-Glyf-AI', privateAI ? '0g' : 'off');
+  }
+
+  /// Private AI (Keyboard › Private AI on 0G, off unless turned on; 0G is for testing only): the
+  /// server answers this phone's AI calls with 0G's Private Computer, models
+  /// run in TEEs (server/src/lib/privateai.ts). The keyboard reads the same
+  /// setting.
+  static bool privateAI = false;
+
+  static Future<void> loadPrivateAI() async {
+    final s = await GlyfBridge.sharedSettings();
+    final saved = s['privateAI'] as bool?;
+    // Only the hackathon build may use 0G, and there it starts on (written
+    // down so the keyboard follows). Any other build clears the key, so the
+    // keyboard sends nothing and keeps the usual AI.
+    privateAI = Flavor.zeroG && (saved ?? true);
+    if (Flavor.zeroG && saved == null) {
+      await GlyfBridge.updateSharedSettings((s) => s..['privateAI'] = true);
+    } else if (!Flavor.zeroG && saved != null) {
+      await GlyfBridge.updateSharedSettings((s) => s..remove('privateAI'));
+    }
   }
 
   // ---- JSON helpers ------------------------------------------------------
@@ -182,20 +204,26 @@ abstract final class GlyfApi {
 
   /// Plain English → validated Builder-format def (strict, fail-closed).
   /// Generation can take a while on the smart tier.
-  static Future<Map<String, dynamic>> builderGenerate(String description) async {
+  /// [tools] are the Builder's Tools switches that are on; [privateAI] is
+  /// the glyf's own choice, left out to follow the phone.
+  static Future<Map<String, dynamic>> builderGenerate(String description,
+      {List<String>? tools, bool? privateAI}) async {
     final obj = await _postJson('/builder/generate', {
       'description': description,
       'deviceId': await _deviceId(),
+      'tools': ?tools,
+      'privateAI': ?privateAI,
     }, timeout: const Duration(seconds: 90));
     return (obj['def'] as Map).cast<String, dynamic>();
   }
 
   /// Test-drive a (possibly edited) def against sample input.
   static Future<String> builderTest(
-      Map<String, dynamic> def, String input) async {
+      Map<String, dynamic> def, String input, {Map<String, String> vars = const {}}) async {
     final obj = await _postJson('/builder/test', {
       'def': def,
       'input': input,
+      'vars': vars,
       'deviceId': await _deviceId(),
     }, timeout: const Duration(seconds: 90));
     return (obj['text'] as String?) ?? '';
@@ -289,6 +317,13 @@ abstract final class GlyfApi {
   /// Plans in USDC (wallet/crypto_pay.dart): whether the server takes them.
   static Future<Map<String, dynamic>> cryptoConfig() => _getJson('/billing/crypto');
 
+  /// The last answers 0G's Private Computer gave this account, newest first:
+  /// {requestId, model, provider, teeVerified, cost, at}.
+  static Future<List<Map<String, dynamic>>> zeroGReceipts() async {
+    final res = await _getJson('/ai/receipts');
+    return [for (final r in (res['receipts'] as List? ?? const [])) (r as Map).cast<String, dynamic>()];
+  }
+
   /// A Solana Pay request for [plan] ('plus' or 'max') and [period]
   /// ('month' or 'year').
   static Future<Map<String, dynamic>> cryptoRequest(String plan, String period) =>
@@ -357,6 +392,15 @@ abstract final class GlyfApi {
   /// POST /wallet/rpc — one Solana RPC call through Glyf's server, which
   /// adds the node's key (it never ships in the app). The `result`, or a
   /// GlyfApiException with the node's own words.
+  /// The Ethereum side (lib/evm): names, the EVM relay, Uniswap, Flash and
+  /// Whitechain, all JSON in and out.
+  static Future<Map<String, dynamic>> evmPost(String path, Map<String, Object?> body,
+          {Duration timeout = const Duration(seconds: 25)}) =>
+      _postJson(path, body, timeout: timeout);
+
+  static Future<Map<String, dynamic>> evmGet(String path, {Duration timeout = const Duration(seconds: 12)}) =>
+      _getJson(path, timeout: timeout);
+
   static Future<Object?> walletRpc(String method, List<Object?> params) async {
     final res = await _postJson('/wallet/rpc', {'method': method, 'params': params},
         timeout: const Duration(seconds: 20));

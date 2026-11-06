@@ -56,6 +56,26 @@ class LearnedWord {
   final bool added;
 }
 
+/// An emoji run the keyboard learned after some words ("love you" → "❤️❤️❤️").
+class LearnedEmoji {
+  const LearnedEmoji(this.after, this.run, this.uses);
+  final String after;
+  final String run;
+  final int uses;
+
+  /// Emoji habits in the keyboard's typing-memory.json, as it offers them:
+  /// used twice or more (PersonalLexicon.emojiTimes), most used first.
+  static List<LearnedEmoji> from(Map<String, dynamic>? json) {
+    final out = <LearnedEmoji>[
+      for (final e in (json?['emoji'] as List? ?? const []).whereType<Map>())
+        if ((e['x'] as String? ?? '').isNotEmpty && (e['e'] as String? ?? '').isNotEmpty && ((e['t'] as num?) ?? 0) >= 2)
+          LearnedEmoji(e['x'] as String, e['e'] as String, (e['t'] as num).toInt()),
+    ];
+    out.sort((a, b) => b.uses.compareTo(a.uses));
+    return out;
+  }
+}
+
 /// Vocabulary: packs of words by kind (work, local language, fun), what the
 /// keyboard learned from you (your words, and the tone you keep), and packs
 /// made from a description. Everything the keyboard learns stays on the
@@ -75,6 +95,9 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
   Set<String> _enabled = {};
   bool _learning = true;
   List<LearnedWord> _learned = [];
+  List<LearnedEmoji> _emoji = [];
+  bool _wordsOpen = false;
+  bool _emojiOpen = false;
   /// The style the AI is asked to lean into, from the rewrites kept and
   /// closed; empty until one kind of rewrite is kept three more times than
   /// it is closed.
@@ -122,6 +145,7 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
           .toSet();
       _learning = settings['vocabLearning'] != false;
       _learned = _learnedFrom(words);
+      _emoji = LearnedEmoji.from(words);
       _loading = false;
     });
   }
@@ -164,6 +188,11 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
   Future<void> _forget(LearnedWord w) async {
     await GlyfBridge.typingEdit('forget', w.form);
     setState(() => _learned.remove(w));
+  }
+
+  Future<void> _forgetEmoji(LearnedEmoji e) async {
+    await GlyfBridge.typingEdit('forgetEmoji', '${e.after}\t${e.run}');
+    setState(() => _emoji.remove(e));
   }
 
   Future<void> _addWord() async {
@@ -232,7 +261,10 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
     );
     if (ok != true) return;
     await GlyfBridge.typingEdit('reset');
-    setState(() => _learned = []);
+    setState(() {
+      _learned = [];
+      _emoji = [];
+    });
   }
 
   Future<void> _resetTone() async {
@@ -471,7 +503,6 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
             child: Text('My words',
                 style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w700)),
           ),
-          Text('${_learned.length}', style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz, color: Glass.ink),
             color: Colors.white,
@@ -490,26 +521,28 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
             child: CupertinoSwitch(value: _learning, activeTrackColor: Glass.ink, onChanged: _setLearning),
           ),
         ]),
-        const SizedBox(height: 10),
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          for (final w in _learned.take(60)) _wordChip(w.form, onRemove: () => _forget(w)),
-          Semantics(
-            identifier: 'vocab:add-word',
-            button: true,
-            child: GestureDetector(
-              onTap: _addWord,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(color: Glass.pill, borderRadius: BorderRadius.circular(16)),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.add, size: 16, color: Colors.white),
-                  SizedBox(width: 4),
-                  Text('Add', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-                ]),
-              ),
+        _fold('Words', _learned.length, _wordsOpen, () => setState(() => _wordsOpen = !_wordsOpen), 'vocab:words'),
+        if (_wordsOpen)
+          for (final w in _learned) _learnedRow(w.form, w.uses, () => _forget(w)),
+        _fold('Emoji', _emoji.length, _emojiOpen, () => setState(() => _emojiOpen = !_emojiOpen), 'vocab:emoji'),
+        if (_emojiOpen)
+          for (final e in _emoji) _learnedRow('${e.after}  ${e.run}', e.uses, () => _forgetEmoji(e)),
+        Semantics(
+          identifier: 'vocab:add-word',
+          button: true,
+          child: InkWell(
+            onTap: _addWord,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: const BoxDecoration(border: Border(top: BorderSide(color: Glass.hairline))),
+              child: const Row(children: [
+                Icon(Icons.add, size: 19, color: Glass.ink),
+                SizedBox(width: 8),
+                Text('Add a word', style: TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w600)),
+              ]),
             ),
           ),
-        ]),
+        ),
       ]),
     );
   }
@@ -616,6 +649,51 @@ class _VocabularyScreenState extends State<VocabularyScreen> {
       ),
     );
   }
+
+  /// A heading that opens its list below it: Words, Emoji.
+  Widget _fold(String title, int count, bool open, VoidCallback onTap, String id) => Semantics(
+        identifier: id,
+        button: true,
+        expanded: open,
+        child: InkWell(
+          onTap: count == 0 ? null : onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: const BoxDecoration(border: Border(top: BorderSide(color: Glass.hairline))),
+            child: Row(children: [
+              Expanded(child: Text(title, style: const TextStyle(color: Glass.ink, fontSize: 15))),
+              Text('$count', style: const TextStyle(color: Glass.inkSoft, fontSize: 14)),
+              const SizedBox(width: 6),
+              AnimatedRotation(
+                turns: open ? 0.25 : 0,
+                duration: const Duration(milliseconds: 160),
+                child: Icon(Icons.chevron_right, size: 20, color: count == 0 ? Glass.hairline : Glass.inkSoft),
+              ),
+            ]),
+          ),
+        ),
+      );
+
+  /// One learned word or emoji habit: what it is, how often it was typed,
+  /// and ✕ to forget it.
+  Widget _learnedRow(String text, int uses, VoidCallback onRemove) => Padding(
+        padding: const EdgeInsets.only(left: 12),
+        child: Row(children: [
+          Expanded(
+            child: Text(text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Glass.ink, fontSize: 15)),
+          ),
+          if (uses > 0)
+            Text('$uses', style: const TextStyle(color: Glass.inkSoft, fontSize: 13, fontFeatures: [FontFeature.tabularFigures()])),
+          IconButton(
+            onPressed: onRemove,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.close, size: 17, color: Glass.inkSoft),
+          ),
+        ]),
+      );
 
   Widget _wordChip(String word, {VoidCallback? onRemove}) {
     return Container(

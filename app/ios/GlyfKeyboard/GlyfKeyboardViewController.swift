@@ -81,6 +81,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var clipStrip: ClipContextStrip?
     private var actTask: URLSessionDataTask?
     private var actInput: (before: String, after: String)?
+    /// A built glyf that reads nothing (a Meet link): its words go in at
+    /// the cursor, spaced, and the message stays.
+    private var actAddsOnly = false
     /// Set when a bound letter's skill is running in the act surface.
     private var actSkill: (glyfId: String, letter: String?)?
     /// A bar run's own name (the prompt itself) and its vars.
@@ -103,6 +106,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var pay: PaySurface?
     /// What the pay strip opens with (set right before setSurface(.pay)).
     private var pendingPay: PaySurface.Intent?
+    /// A trade said in words, over the keys (ETHGlobal Mumbai).
+    private var trade: TradeSurface?
+    private var pendingTrade: TradeIntent?
+    /// A trade the app just shared (Share in chat), offered once in the
+    /// strip: its line and link, read from shared settings on appearing.
+    private var tradeShareText: String?
     private var connector: ConnectorSurface?
     /// The Calendar tool: a month and the chosen day's events.
     private var calendarView: CalendarSurface?
@@ -139,7 +148,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var cursorMirror: CursorMirror?
     private var lastCursorAdjust: CFTimeInterval = 0
 
-    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard, games, pay }
+    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard, games, pay, trade }
     private var surface: Surface = .none
 
     /// When set, key input routes into an inline editor (bar prompt / emoji search).
@@ -258,7 +267,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // emoji search.
         case .connector where calendarView?.editingTitle == true:
             return base + EventComposer.editStripHeight
-        case .shell, .connector, .act, .clipboard, .games, .pay: return base
+        case .shell, .connector, .act, .clipboard, .games, .pay, .trade: return base
         }
     }
 
@@ -509,6 +518,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         super.viewWillAppear(animated)
         SettingsStore.invalidate()
         recentFixes = []   // another field: its corrections are not these
+        emojiSeen = ""     // a draft the keyboard opens on teaches nothing
+        emojiAnchor = nil
         // The translate strip belongs to the session it was opened in. Left
         // persisted it greets the next app as an unexplained empty band.
         if SettingsStore.current.translationHUD == true {
@@ -693,6 +704,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         toolbar.setRunsRemaining(GlyfCatalog.cachedRunsRemaining())
         showPayOutcomeIfFresh()
+        loadTradeShare()
         startTourWatch()
         // Host input sessions (Flutter especially) finish attaching a beat
         // AFTER viewDidAppear — inserting immediately loses the text.
@@ -766,6 +778,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .games: return ("gamecontroller", "Games")
         case .pay where pay?.editingAmount != true:
             return ("dollarsign.circle", pay?.headerTitle ?? "Pay")
+        case .trade: return ("arrow.triangle.2.circlepath", trade?.headerTitle ?? "Trade")
         case .connector where connector?.searchActive != true: return ("calendar", "Calendar")
         default: return (nil, nil)
         }
@@ -971,6 +984,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = true
             pay?.frame = panelRect(w, h)
+        case .trade:
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            keyboardView.isHidden = true
+            trade?.frame = panelRect(w, h)
         case .connector:
             toolbar.isHidden = connector?.searchActive == true
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
@@ -1052,7 +1070,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             for overlay in [self.shell, self.bar, self.emoji, self.connector,
                             self.search, self.noteEdit, self.hud, self.calendarView,
                             self.tonesPopup, self.act, self.clipStrip,
-                            self.clipboardPanel, self.games, self.pay] as [UIView?] {
+                            self.clipboardPanel, self.games, self.pay, self.trade] as [UIView?] {
                 overlay?.alpha = 1
             }
             self.view.layoutIfNeeded()
@@ -1106,6 +1124,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             // Closed mid-amount: the field's own keys again, not the pad.
             keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
             keyboardView.setMode(.letters)
+        case .trade: trade?.removeFromSuperview(); trade = nil
         case .none: break
         }
         inlineTarget = nil
@@ -1199,6 +1218,15 @@ final class GlyfKeyboardViewController: UIInputViewController {
             prepareEntrance(p, animated: animated)
             pay = p
             MemoryLogger.logSurface("pay")
+        case .trade:
+            guard let intent = pendingTrade else { break }
+            pendingTrade = nil
+            let t = TradeSurface(intent: intent)
+            t.delegate = self
+            content.addSubview(t)
+            prepareEntrance(t, animated: animated)
+            trade = t
+            MemoryLogger.logSurface("trade")
         case .none:
             break
         }
@@ -1238,6 +1266,36 @@ final class GlyfKeyboardViewController: UIInputViewController {
         guard Date().timeIntervalSince1970 - at < 5 * 60 else { return }
         let detail = obj["detail"] as? String
         KeyboardToast.show(in: content, text: detail.map { "\(title) · \($0)" } ?? title)
+        // A Whitechain request made in the app: its pay link goes in the
+        // chat it was asked for in, once.
+        if let insert = obj["insert"] as? String, !insert.isEmpty, !isSecureField {
+            hostInsert(Self.spaced(insert, after: beforeContext))
+        }
+    }
+
+    /// A trade shared from the app in the last 10 minutes: the strip offers
+    /// it (updateSmartChip). Older ones are dropped from settings.
+    private func loadTradeShare() {
+        guard let raw = SettingsStore.current.tradeShare, !raw.isEmpty else { return }
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let text = obj["text"] as? String, !text.isEmpty,
+              Date().timeIntervalSince1970 - (obj["at"] as? Double ?? 0) < 10 * 60 else {
+            tradeShareText = nil
+            SettingsStore.update { $0.tradeShare = nil }
+            return
+        }
+        tradeShareText = text
+        updateCandidates()
+    }
+
+    /// Shown once: typed or put away, it's gone from the strip and settings.
+    private func finishTradeShare() {
+        tradeShareText = nil
+        SettingsStore.update { $0.tradeShare = nil }
+        // The app copied the same line: no Paste chip for it after.
+        ClipContext.markDone()
+        cachedPaste = nil
     }
 
     private func showTonesPopup() {
@@ -1494,6 +1552,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return .other(close: "noteedit:close")
         case .pay:
             return .other(close: "pay:close")
+        case .trade:
+            return .other(close: "trade:close")
         case .bar:
             return .other(close: "bar:close|toolbar:close")
         }
@@ -1726,6 +1786,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var seededNames: Set<String> = []
     /// The text before the caret at the last strip update (PhraseMemory).
     private var phraseSeen = ""
+    /// The text before the caret at the last look for emoji runs, and the
+    /// last run learned (its text up to the run), so one is learned once.
+    private var emojiSeen = ""
+    private var emojiAnchor: String?
     private func seedOwnNames() {
         guard let engine = typing else { return }
         let fields = VaultStore.shared.load().fields
@@ -1771,6 +1835,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 mailChip = nil
             }
         }
+        // A trade just shared from the app: its line, for the chat it's going to.
+        if let text = tradeShareText, tourStep == nil {
+            cancelSuggestion()
+            if present(.shareTrade(text: text)) { return true }
+        }
         let tail = String(before.suffix(120))
         notePhrases(before)
         // Something just copied rides in the strip as one chip, never as a
@@ -1800,7 +1869,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             switch chip {
             // A copied address still pastes; it just isn't paid.
             case .pay(_, _, _, let copied?)?, .buy(_, _, _, let copied?)?: chip = .paste(text: copied)
-            case .pay?, .buy?: chip = nil
+            case .pay?, .buy?, .trade?, .payLink?: chip = nil
             case .money(let shown, let insert, _)?: chip = .money(shown: shown, insert: insert, buy: nil)
             default: break
             }
@@ -1849,11 +1918,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             WeatherStore.shared.ensure(lat: lat, lon: lon, fahrenheit: fahrenheit) { [weak self] in self?.updateCandidates() }
             if let w = Smart.weather, w.fahrenheit == fahrenheit, let a = Smart.weatherAnswer(in: tail, snapshot: w) { chip = .convert(a) }
         }
-        // A sentence the person keeps sending: its first words offer the rest.
-        if chip == nil, typingPolicy.contains(.learning),
-           let rest = PhraseMemoryStore.shared.memory.completion(after: tail, today: TypingText.day()) {
-            chip = .convert(Smart.Conversions(source: "", results: [rest], inserts: [rest], hows: [.after]))
-        }
+        // A sentence the person keeps sending offers its next word in the
+        // word slots (updateCandidates), not the rest of it as a chip.
         // Talk of a call: a Google Meet link where it's wanted, the Meet key's
         // behaviour surfaced (research 2026-10-07), only with Meet connected.
         if chip == nil, hasFullAccess, GoogleAccess.hasMeet, Smart.asksToCall(tail) {
@@ -1905,6 +1971,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         let now = Date().timeIntervalSince1970
         guard StripPolicy.allowed(kind, in: policyField),
               stripPolicy.allows(kind, id: id, now: now) else {
+            // A longer trade typed on past a shorter one ("buy $20 of eth"
+            // → "… every day for a week") is the same intent growing, not
+            // a no: look again once the quiet is over, without a keystroke.
+            if case .trade = chip, stripPolicy.quietUntil > now {
+                recheckChip(after: stripPolicy.quietUntil - now + 0.05)
+            }
             toolbar.showSmart(nil)
             return false
         }
@@ -1972,7 +2044,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .calc, .money, .convert: return .answer
         case .vault, .details, .tempAddress: return .fill
         case .paste: return .paste
-        case .pay, .buy: return .pay
+        case .pay, .buy, .trade, .payLink, .shareTrade: return .pay
         case .action(_, _, let intent): return intent == "meet" ? .plan : .ai
         case .event, .booking: return .plan
         case .tempMail: return .mail
@@ -2011,6 +2083,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .paste: return "paste"
         case .pay: return "pay"
         case .buy: return "buy"
+        case .trade(let t): return "trade|\(t.title)"
+        case .payLink(let path): return "paylink|\(path)"
+        case .shareTrade: return "sharetrade"
         case .action: return "action"
         case .event: return "event"
         case .booking: return "booking"
@@ -2158,6 +2233,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             Perf.reportHostReads() // end of the cycle: the whole keystroke's crossings
         }
         defer { applyTourHint() }         // the strip changed under the ring
+        noteEmojiRuns(beforeContext ?? "")
         let tCh = Perf.mark()
         let chipOwns = updateSmartChip()
         tChip = Perf.ms(tCh)
@@ -2184,11 +2260,22 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 toolbar.showSuggestions(items)
             } else if let engine = typing, before?.hasSuffix(" ") == true,
                       let previous = WordTracker.previousWord(beforeContext: before) {
-                var items = engine.predictions(
-                    previous: previous, beforePrevious: WordTracker.wordBeforePrevious(beforeContext: before),
-                    policy: policy).map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
-                // The word just finished brings its emoji to the last slot.
-                if let e = EmojiWords.emoji(for: previous) { items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)] }
+                let beforePrevious = WordTracker.wordBeforePrevious(beforeContext: before)
+                var words = engine.predictions(previous: previous, beforePrevious: beforePrevious, policy: policy)
+                // A sentence the person keeps sending offers its next word
+                // first: a word at a time, never the rest as a phrase.
+                if policy.contains(.learning), let next = PhraseMemoryStore.shared.memory.nextWord(
+                    after: String((before ?? "").suffix(120)), today: TypingText.day()) {
+                    words = [next] + words.filter { $0.lowercased() != next.lowercased() }
+                }
+                var items = words.map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
+                // The word just finished brings its emoji to the last slot:
+                // the run this person puts there ("love you" → ❤️❤️❤️) before
+                // the table's guess.
+                if let e = engine.emojiRun(after: previous, previous: beforePrevious, policy: policy)
+                    ?? EmojiWords.emoji(for: previous) {
+                    items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)]
+                }
                 toolbar.showSuggestions(items)
             } else {
                 toolbar.showSuggestions([])
@@ -2229,7 +2316,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
             items = Array(others.prefix(3))
             // A word typed in full brings its emoji ("pizza" → 🍕) to the
             // last slot, the way Gboard's and Apple's bars do.
-            if let e = EmojiWords.emoji(for: word) { items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)] }
+            if let e = typing?.emojiRun(after: word, previous: WordTracker.previousWord(beforeContext: before), policy: policy)
+                ?? EmojiWords.emoji(for: word) {
+                items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)]
+            }
         }
         toolbar.showSuggestions(items)
     }
@@ -2803,6 +2893,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         Funnel.mark("first_ai")
         actSkill = nil
         actSkillTitle = nil
+        actAddsOnly = false
         actVars = [:]
         actIntent = nil
         actInput = ("", "") // a copied text is acted on, never deleted from the field
@@ -2817,6 +2908,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         Funnel.mark("first_ai")
         actSkill = nil
         actSkillTitle = nil
+        actAddsOnly = false
         actVars = [:]
         actIntent = intent
         actInput = (before, after)
@@ -2842,9 +2934,19 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         // Field text is swapped on Insert; clipboard or empty input only inserts.
         actInput = input.source == "field"
             ? (beforeContext ?? "", input.after) : ("", "")
+        readsNothing(glyfId)
         actAccepted = false
         setSurface(.act)
         runAct()
+    }
+
+    /// A built glyf whose input is "none" (the app keeps it in
+    /// customInputs): nothing typed is sent, and Insert adds, never swaps.
+    private func readsNothing(_ glyfId: String) {
+        actAddsOnly = SettingsStore.current.customInputs?[glyfId] == "none"
+        guard actAddsOnly else { return }
+        actRunInput = ""
+        actInput = ("", "")
     }
 
     private func runAct() {
@@ -2854,6 +2956,20 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         if let skill = actSkill {
             let title = actSkillTitle ?? GlyfCatalog.title(for: skill.glyfId)
             act.showWorking(intent: actRunInput, title: title, keyLetter: skill.letter)
+            // A glyf built with the Builder's Tools may need the phone first:
+            // a new Meet link, the booking link, the day. Fetched here, then
+            // the run carries them (PhoneTools).
+            let phoneTools = SettingsStore.current.customTools?[skill.glyfId] ?? []
+            let missing = phoneTools.filter { actVars["phone.\($0)"] == nil }
+            if !missing.isEmpty {
+                PhoneTools.resolve(missing, hasFullAccess: hasFullAccess) { [weak self] vars, note in
+                    guard let self, self.surface == .act, self.actSkill?.glyfId == skill.glyfId else { return }
+                    if let note { self.act?.showFailure(note); return }
+                    self.actVars.merge(vars) { _, new in new }
+                    self.runAct()
+                }
+                return
+            }
             let vars = actVars   // BackendClient adds the two languages for glyf.translate
             var streamed = ""
             actTask = BackendClient.shared.run(
@@ -2993,6 +3109,23 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         }
     }
 
+    /// The emoji run the person just finished after their words ("love you
+    /// ❤️❤️❤️ ", or sent): one more use of that habit (EmojiRuns). Never
+    /// where learning is off, so never in a password, code or search field.
+    private func noteEmojiRuns(_ before: String) {
+        defer {
+            emojiSeen = before
+            if before.isEmpty { emojiAnchor = nil } // the next message is a new one
+        }
+        guard before != emojiSeen, let engine = typing else { return }
+        if before.isEmpty, !(textDocumentProxy.documentContextAfterInput ?? "").isEmpty { return }
+        let policy = typingPolicy
+        guard policy.contains(.learning), let run = EmojiRuns.finished(seen: emojiSeen, now: before),
+              run.anchor != emojiAnchor else { return }
+        emojiAnchor = run.anchor
+        if engine.noteEmoji(run, policy: policy) { TypingStore.shared.scheduleSave() }
+    }
+
     func kbTextInteraction() {}
 
     // MARK: Bar
@@ -3024,6 +3157,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         actRetryBudget = 1
         actInput = input.source == "field"
             ? (beforeContext ?? "", input.after) : ("", "")
+        readsNothing(glyfId)
         actAccepted = false
         setSurface(.act)
         runAct()
@@ -3062,7 +3196,9 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
             }
         }
         // Saved details go in on the phone, in place of their stand-ins.
-        let text = StandIns.fill(text)
+        var text = StandIns.fill(text)
+        if actAddsOnly { text = Self.spaced(text, after: beforeContext) }
+        actAddsOnly = false
         hostInsert(text)
         glyfWrote = text.trimmingCharacters(in: .whitespacesAndNewlines)
         actInput = nil
@@ -3078,10 +3214,13 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
         UIPasteboard.general.string = text
         _ = ClipboardStore.inserting(text, into: ClipboardStore.load(), now: Date())
             .map(ClipboardStore.save)
-        if let act { KeyboardToast.show(in: act, text: "Copied") }
     }
 
-    func actRetry() { runAct() }
+    func actRetry() {
+        // Again means again: a new Meet link, the day as it is now.
+        actVars = actVars.filter { !$0.key.hasPrefix("phone.") }
+        runAct()
+    }
 
     func actRetryAvailable(_ available: Bool) {
         guard surface == .act, Glass.solidLook else { return }
@@ -3195,8 +3334,8 @@ extension GlyfKeyboardViewController: ClipboardPanelDelegate {
     func clipboardPanelCopiedImage() {
         setSurface(.none)
         // iOS lets no keyboard put an image in a text box: it is on the
-        // clipboard, one hold of the box away.
-        KeyboardToast.show(in: content, text: "Copied. Hold the text box to paste")
+        // clipboard, one hold of the box away. No toast for a copy (Arpit,
+        // 2026-11-06: "you should not show toast for any clipboard thing").
     }
 
 }
@@ -3475,6 +3614,9 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             stripPolicy.dismissed(Self.policyKind(chip), id: Self.policyID(chip),
                                   now: Date().timeIntervalSince1970)
         }
+        if case .shareTrade? = toolbar.smartChip {
+            finishTradeShare()
+        }
         if case .tempMail? = toolbar.smartChip {
             // Each mail's chip shows once: put away, it is gone.
             mailChip = nil
@@ -3566,8 +3708,30 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             toolbar.showSmart(nil)
             updateCandidates()
             return
-        case .pay, .buy:
+        case .pay, .buy, .trade:
             toolbarSmartExtraTapped(chip)
+            return
+        case .payLink(let path):
+            // The request is read from the chain and paid in the app.
+            noteChipUsed(chip)
+            ClipContext.markDone()
+            cachedPaste = nil
+            toolbar.showSmart(nil)
+            let parts = path.split(separator: "?", maxSplits: 1)
+            var query: [String: String] = [:]
+            for pair in (parts.count > 1 ? parts[1] : "").split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1)
+                if kv.count == 2 { query[String(kv[0])] = String(kv[1]) }
+            }
+            openApp(path: String(parts[0]), query: query)
+            return
+        case .shareTrade(let text):
+            // The line and its link, in the chat it was shared for.
+            finishTradeShare()
+            hostInsert(Self.spaced(text, after: beforeContext))
+            toolbar.showSmart(nil)
+            syncAutoShift()
+            updateCandidates()
             return
         default:
             break
@@ -3667,6 +3831,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             pendingPay = .buy(mint: mint,
                               symbol: parts.count > 1 ? String(parts[1]) : "",
                               price: parts.count > 3 ? String(parts[3]) : nil)
+        case .trade(let t):
+            pendingTrade = t
+            setSurface(.trade)
+            return
         default:
             return
         }
@@ -4150,6 +4318,30 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         openTool(id)
     }
 
+    /// The g menu's sponsor row: Uniswap and Definitive put the trade panel
+    /// up (what was typed, when it is a trade for them, else a starter), as
+    /// the trade chip does; 0G says whether Private AI is on and where its
+    /// last answer ran, or opens Keyboard settings to turn it on.
+    func shellOpenSponsor(_ sponsor: SponsorMenu.Sponsor) {
+        _ = SettingsStore.reloadIfChanged()
+        let privateAI = SettingsStore.current.privateAI
+        switch SponsorMenu.action(for: sponsor, typed: beforeContext ?? "", privateAI: privateAI) {
+        case .trade(let t):
+            pendingTrade = t
+            setSurface(.trade)
+        case .openApp(let path):
+            setSurface(.none)
+            openApp(path: path)
+        case .privateAIStatus:
+            setSurface(.none)
+            BackendClient.shared.evmJSON(path: "/ai/receipts") { [weak self] obj in
+                guard let self else { return }
+                let receipts = (obj?["receipts"] as? [Any])?.compactMap { $0 as? [String: Any] }
+                KeyboardToast.show(in: self.content, text: SponsorMenu.statusLine(receipts: receipts))
+            }
+        }
+    }
+
     func shellRunGlyf(_ id: String) {
         setSurface(.none)
         // The HUD shows the letter the glyf sits on; one with no key wears the g.
@@ -4185,14 +4377,12 @@ extension GlyfKeyboardViewController: GlyfShellDelegate {
         }
         UIPasteboard.general.image = image
         setSurface(.none)
-        KeyboardToast.show(in: content, text: "Copied. Hold the text box to paste")
     }
 
     func shellCopyText(_ text: String) {
         UIPasteboard.general.string = text
         // Our own copy: the strip must not offer it back as a paste.
         ClipboardStore.ignoreNextChange()
-        KeyboardToast.show(in: content, text: "Copied")
     }
 
     /// Style: the words picked out are replaced by their styled form; with
@@ -4383,7 +4573,6 @@ extension GlyfKeyboardViewController: EmojiBoardDelegate {
             }
             ClipboardStore.ignoreNextChange()
             MediaRecents.push(item, kind: kind)
-            KeyboardToast.show(in: self.content, text: "\(noun) copied. Hold the text box and tap Paste")
             done(true)
         }
     }
@@ -4465,6 +4654,34 @@ extension GlyfKeyboardViewController: ConnectorSurfaceDelegate {
 
     func connectorOpenApp(path: String) {
         openApp(path: path)
+    }
+}
+
+// MARK: - TradeSurfaceDelegate
+
+extension GlyfKeyboardViewController: TradeSurfaceDelegate {
+
+    /// Signing is the app's (the Glyf wallet's key lives in its Keychain):
+    /// one hop there, and the outcome comes back as a toast.
+    func tradeHandOff(query: [String: String]) {
+        setSurface(.none)
+        // A .sol name is Solana's: the existing Phantom send takes it.
+        if query["kind"] == "send", query["chain"] == "solana", let to = query["address"] {
+            var pay = ["kind": "send", "to": to, "token": query["sell"] ?? "USDC"]
+            if let amount = query["amount"] { pay["amount"] = amount }
+            openApp(path: "pay", query: pay)
+            return
+        }
+        openApp(path: "trade", query: query)
+    }
+
+    func tradeSetUpWallet() {
+        setSurface(.none)
+        openApp(path: "evm-wallet")
+    }
+
+    func tradeToast(_ text: String) {
+        KeyboardToast.show(in: content, text: text)
     }
 }
 

@@ -13,6 +13,8 @@ protocol GlyfShellDelegate: AnyObject {
     func shellOpenSearch()
     /// A g menu tile was tapped: the same tool ids the strip uses.
     func shellOpenTool(_ id: String)
+    /// One of the sponsor apps on the g menu's top row was tapped.
+    func shellOpenSponsor(_ sponsor: SponsorMenu.Sponsor)
     /// Run one of the person's own glyfs on what they are typing.
     func shellRunGlyf(_ id: String)
     /// A tile held and dragged: it can be dropped on the strip to live there.
@@ -190,6 +192,12 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     private var order: [String] = []
     private var tileViews: [String: UIControl] = [:]
+    /// The top row: Uniswap, Definitive and (on the hackathon build) 0G.
+    private var sponsorViews: [SponsorMenu.Sponsor: UIControl] = [:]
+    private var sponsors: [SponsorMenu.Sponsor] = []
+    private static let sponsorRowH: CGFloat = 44
+    /// How far the tool tiles sit below the grid's top: the sponsor row.
+    private var tilesTop: CGFloat { sponsors.isEmpty ? 0 : Self.sponsorRowH + Self.gridGap }
     private var draggingTile: String?
 
     private static let stateFile = "shell-state.json"
@@ -453,6 +461,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         grid.alwaysBounceVertical = true
         grid.showsVerticalScrollIndicator = false
         order = Self.menuTools
+        buildSponsorRow()
         for (id, title) in Self.tools {
             let cell = UIControl()
             cell.accessibilityLabel = title
@@ -507,12 +516,80 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         }
     }
 
+    /// Three app cards over the tools, each its mark and its name, the
+    /// tiles' own fill, radius and hairline.
+    private func buildSponsorRow() {
+        sponsors = SponsorMenu.sponsors(privateAI: SettingsStore.current.privateAI)
+        for sponsor in SponsorMenu.Sponsor.allCases {
+            let cell = UIControl()
+            cell.accessibilityLabel = sponsor.title
+            cell.accessibilityIdentifier = "shell:sponsor:\(sponsor.rawValue)"
+            cell.isAccessibilityElement = true
+            cell.accessibilityTraits = .button
+
+            let card = UIView()
+            card.tag = 1
+            card.backgroundColor = Glass.surfaceTile
+            card.layer.cornerRadius = 14
+            card.layer.cornerCurve = .continuous
+            if !Glass.solidLook {
+                card.layer.borderWidth = 1
+                card.layer.borderColor = Glass.strokeHairline.cgColor
+            }
+            card.isUserInteractionEnabled = false
+            cell.addSubview(card)
+
+            let mark = UIImageView(image: SponsorMarks.image(sponsor, size: 26))
+            mark.tag = 2
+            mark.isUserInteractionEnabled = false
+            cell.addSubview(mark)
+
+            let label = UILabel()
+            label.tag = 3
+            label.text = sponsor.title
+            label.font = .systemFont(ofSize: 13, weight: .semibold)
+            label.textColor = Glass.textPrimary
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.8
+            label.isUserInteractionEnabled = false
+            cell.addSubview(label)
+
+            cell.addAction(UIAction { [weak self] _ in
+                self?.delegate?.shellOpenSponsor(sponsor)
+            }, for: .touchUpInside)
+            cell.isHidden = !sponsors.contains(sponsor)
+            grid.addSubview(cell)
+            sponsorViews[sponsor] = cell
+        }
+    }
+
+    /// The sponsor cards share the row equally; mark and name centred as one.
+    private func layoutSponsorRow() {
+        guard !sponsors.isEmpty else { return }
+        let gap = Self.gridGap, side = Self.gridSide, h = Self.sponsorRowH
+        let n = CGFloat(sponsors.count)
+        let w = (grid.bounds.width - side * 2 - gap * (n - 1)) / n
+        for (i, sponsor) in sponsors.enumerated() {
+            guard let cell = sponsorViews[sponsor] else { continue }
+            cell.frame = CGRect(x: side + CGFloat(i) * (w + gap), y: 0, width: w, height: h)
+            cell.viewWithTag(1)?.frame = cell.bounds
+            let label = cell.viewWithTag(3) as? UILabel
+            let mark: CGFloat = 26, space: CGFloat = 8
+            let textW = min(ceil(label?.intrinsicContentSize.width ?? 0), w - mark - space - 16)
+            let x = (w - mark - space - textW) / 2
+            cell.viewWithTag(2)?.frame = CGRect(x: x, y: (h - mark) / 2, width: mark, height: mark)
+            label?.frame = CGRect(x: x + mark + space, y: 0, width: textW, height: h)
+        }
+    }
+
     /// The tiles for what is off the strip right now. The strip can change
     /// while the menu is up (Toolbar items), and what joined it leaves here.
     private func refreshGrid() {
         guard draggingTile == nil else { return }
         order = Self.menuTools
         for (id, cell) in tileViews { cell.isHidden = !order.contains(id) }
+        sponsors = SponsorMenu.sponsors(privateAI: SettingsStore.current.privateAI)
+        for (sponsor, cell) in sponsorViews { cell.isHidden = !sponsors.contains(sponsor) }
         setNeedsLayout()
     }
 
@@ -564,14 +641,16 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     private static let gridSide: CGFloat = 6
     /// Two rows fill the panel with the third peeking in, so the grid shows
     /// at a glance that it scrolls.
-    private var tileHeight: CGFloat { max(64, (grid.bounds.height - 40 - Self.gridGap) / 2) }
+    private var tileHeight: CGFloat { max(64, (grid.bounds.height - tilesTop - 40 - Self.gridGap) / 2) }
 
     private func tileIndex(at p: CGPoint) -> Int? {
         let cols = Self.gridCols
         let cellW = (grid.bounds.width - Self.gridSide * 2 - Self.gridGap * CGFloat(cols - 1))
             / CGFloat(cols)
         let c = Int((p.x - Self.gridSide) / (cellW + Self.gridGap))
-        let r = Int(p.y / (tileHeight + Self.gridGap))
+        let y = p.y - tilesTop
+        guard y >= 0 else { return nil }
+        let r = Int(y / (tileHeight + Self.gridGap))
         guard c >= 0, c < cols, r >= 0 else { return nil }
         return min(order.count - 1, r * cols + c)
     }
@@ -582,19 +661,20 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         let cellW = (grid.bounds.width - Self.gridSide * 2 - Self.gridGap * CGFloat(cols - 1))
             / CGFloat(cols)
         let c = min(cols - 1, max(0, Int((p.x - Self.gridSide) / (cellW + Self.gridGap))))
-        let r = max(0, Int(p.y / (tileHeight + Self.gridGap)))
+        let r = max(0, Int((p.y - tilesTop) / (tileHeight + Self.gridGap)))
         return min(count, r * cols + c)
     }
 
     /// Tiles in `order`, four to a row.
     private func layoutGrid() {
         let cols = Self.gridCols, gap = Self.gridGap, side = Self.gridSide
+        layoutSponsorRow()
         for (i, id) in order.enumerated() {
             if let cell = tileViews[id] { layoutTile(cell, at: i) }
         }
         let rows = Int(ceil(Double(order.count) / Double(cols)))
         grid.contentSize = CGSize(width: grid.bounds.width,
-                                  height: CGFloat(rows) * (tileHeight + gap) - gap + side)
+                                  height: tilesTop + CGFloat(rows) * (tileHeight + gap) - gap + side)
     }
 
     private func layoutTile(_ cell: UIView, at i: Int) {
@@ -603,7 +683,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         let cellH = tileHeight
         let r = i / cols, c = i % cols
         let frame = CGRect(x: side + CGFloat(c) * (cellW + gap),
-                           y: CGFloat(r) * (cellH + gap),
+                           y: tilesTop + CGFloat(r) * (cellH + gap),
                            width: cellW, height: cellH)
         cell.frame = frame
         cell.viewWithTag(1)?.frame = CGRect(origin: .zero, size: frame.size)

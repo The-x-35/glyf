@@ -21,14 +21,31 @@ struct PersonalLexicon: Equatable {
         var day: Int
     }
 
+    /// An emoji run this person puts after a word or two ("love you" →
+    /// ❤️❤️❤️): decayed uses, raw uses, last day.
+    struct EmojiHabit: Equatable {
+        var count: Double
+        var total: Int
+        var day: Int
+    }
+
     static let halfLifeDays = 90.0
     static let expiryDays = 300
     static let maxWords = 10_000
     static let maxPairs = 30_000
+    static let maxEmoji = 3_000
+    /// An emoji run is offered after it followed the same words this often...
+    static let emojiTimes = 2
+    /// ...and on at least this share of the times those words were typed:
+    /// "thank you 🙏" twice says nothing about every other "you".
+    static let emojiShare = 0.15
     private static let separator = "\u{1F}"
 
     private(set) var words: [String: Word] = [:]
     private(set) var pairs: [String: Pair] = [:]
+    /// "context␟emoji" → habit; the context is one word key ("haha") or two
+    /// joined by a space ("love you").
+    private(set) var emoji: [String: EmojiHabit] = [:]
     /// "typed␟correction", both lowercased → times reverted.
     private(set) var rejected: [String: Int] = [:]
     private(set) var blocked: Set<String> = []
@@ -60,6 +77,11 @@ struct PersonalLexicon: Equatable {
             guard let typed = o["typed"] as? String, let fix = o["fix"] as? String else { continue }
             rejected[typed + Self.separator + fix] = o["n"] as? Int ?? 1
         }
+        for o in json["emoji"] as? [[String: Any]] ?? [] {
+            guard let x = o["x"] as? String, let e = o["e"] as? String, !x.isEmpty, !e.isEmpty else { continue }
+            emoji[x + Self.separator + e] = EmojiHabit(count: o["c"] as? Double ?? 0, total: o["t"] as? Int ?? 0,
+                                                       day: o["d"] as? Int ?? 0)
+        }
         blocked = Set(json["blocked"] as? [String] ?? [])
         editsAppliedAt = json["editsAt"] as? Double ?? 0
     }
@@ -79,6 +101,11 @@ struct PersonalLexicon: Equatable {
             "rejected": rejected.keys.sorted().map { k -> [String: Any] in
                 let parts = k.components(separatedBy: Self.separator)
                 return ["typed": parts[0], "fix": parts.count > 1 ? parts[1] : "", "n": rejected[k]!]
+            },
+            "emoji": emoji.keys.sorted().map { k -> [String: Any] in
+                let parts = k.components(separatedBy: Self.separator)
+                let h = emoji[k]!
+                return ["x": parts[0], "e": parts.count > 1 ? parts[1] : "", "c": h.count, "t": h.total, "d": h.day]
             },
             "blocked": blocked.sorted(),
             "editsAt": editsAppliedAt,
@@ -146,6 +173,38 @@ struct PersonalLexicon: Equatable {
             }?.value.form
     }
 
+    /// The emoji run this person puts after `word` (with `previous` before
+    /// it), once it's a habit: the two-word context first ("love you" →
+    /// ❤️❤️❤️ while "thank you" → 🙏), then the word alone.
+    func emojiRun(after word: String, previous: String?, today: Int) -> String? {
+        let w = TypingText.key(word)
+        guard !w.isEmpty, !blocked.contains(w) else { return nil }
+        var contexts: [(context: String, typed: Double)] = []
+        if let previous {
+            let p = TypingText.key(previous)
+            if !p.isEmpty {
+                let typed = pairs[p + Self.separator + w].map { decayed($0.count, from: $0.day, to: today) } ?? 0
+                contexts.append((p + " " + w, typed))
+            }
+        }
+        contexts.append((w, words[w].map { decayed($0.commits, from: $0.day, to: today) } ?? 0))
+        for (context, typed) in contexts {
+            let prefix = context + Self.separator
+            let best = emoji.filter { $0.key.hasPrefix(prefix) && $0.value.total >= Self.emojiTimes }
+                .max { a, b in
+                    let ca = decayed(a.value.count, from: a.value.day, to: today)
+                    let cb = decayed(b.value.count, from: b.value.day, to: today)
+                    return ca != cb ? ca < cb : a.value.day < b.value.day
+                }
+            guard let best else { continue }
+            let uses = decayed(best.value.count, from: best.value.day, to: today)
+            // Typed without a space ("haha😂") the word was never committed.
+            guard uses >= Self.emojiShare * max(typed, uses) else { continue }
+            return String(best.key.dropFirst(prefix.count))
+        }
+        return nil
+    }
+
     /// Learned, kept and added words — the ones a dictionary may not have.
     func knownForms() -> [(key: String, form: String)] {
         words.compactMap { key, w in isKnown(key) && !blocked.contains(key) ? (key, w.form) : nil }
@@ -172,6 +231,27 @@ struct PersonalLexicon: Equatable {
                 pair.day = today
                 pairs[pk] = pair
             }
+        }
+        prune(today: today)
+    }
+
+    /// `run` went in after `word` (and `previous` before it): one more use
+    /// of the habit for each context.
+    mutating func noteEmoji(_ run: String, after word: String, previous: String?, today: Int) {
+        let w = TypingText.key(word)
+        guard !w.isEmpty, !run.isEmpty, !blocked.contains(w) else { return }
+        var contexts = [w]
+        if let previous {
+            let p = TypingText.key(previous)
+            if !p.isEmpty, !blocked.contains(p) { contexts.append(p + " " + w) }
+        }
+        for context in contexts {
+            let k = context + Self.separator + run
+            var h = emoji[k] ?? EmojiHabit(count: 0, total: 0, day: today)
+            h.count = decayed(h.count, from: h.day, to: today) + 1
+            h.total += 1
+            h.day = today
+            emoji[k] = h
         }
         prune(today: today)
     }
@@ -219,6 +299,9 @@ struct PersonalLexicon: Equatable {
         guard !key.isEmpty else { return }
         words[key] = nil
         pairs = pairs.filter { k, _ in !k.hasPrefix(key + Self.separator) && !k.hasSuffix(Self.separator + key) }
+        emoji = emoji.filter { k, _ in
+            !(k.components(separatedBy: Self.separator).first ?? "").split(separator: " ").contains { $0 == key }
+        }
         // Its corrections come back too: a word forgotten in "My words" is
         // corrected again ("helloo" stayed uncorrected forever).
         let typed = form.lowercased()
@@ -227,6 +310,12 @@ struct PersonalLexicon: Equatable {
     }
 
     mutating func unblock(_ form: String) { blocked.remove(TypingText.key(form)) }
+
+    /// One emoji habit dropped from "My words" ("love you" → "❤️❤️❤️"),
+    /// leaving the words themselves. It's learned again only from scratch.
+    mutating func forgetEmoji(context: String, run: String) {
+        emoji[context + Self.separator + run] = nil
+    }
 
     /// A correction turned down, on its own (a revert also keeps the word).
     mutating func reject(typed: String, correction: String) {
@@ -249,12 +338,19 @@ struct PersonalLexicon: Equatable {
             }.prefix(Self.maxPairs)
             pairs = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
         }
+        if emoji.count > Self.maxEmoji + 200 {
+            let keep = emoji.sorted {
+                decayed($0.value.count, from: $0.value.day, to: today) > decayed($1.value.count, from: $1.value.day, to: today)
+            }.prefix(Self.maxEmoji)
+            emoji = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+        }
     }
 
     /// Drops what hasn't been used in 300 days. Run on load.
     mutating func expire(today: Int) {
         words = words.filter { _, w in w.added || today - w.day <= Self.expiryDays }
         pairs = pairs.filter { _, p in today - p.day <= Self.expiryDays }
+        emoji = emoji.filter { _, h in today - h.day <= Self.expiryDays }
     }
 
     private func decayed(_ value: Double, from day: Int, to today: Int) -> Double {

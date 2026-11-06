@@ -39,7 +39,15 @@ final class GlyfToolbar: UIView {
     private let slotLines = [UIView(), UIView()]
     private let scroll = ControlScrollView()
     private let itemsStack = UIStackView()
-    private let candidatesStack = UIStackView()
+    /// The word slots' container; SuggestionFit lays out its buttons.
+    private let candidatesStack = UIView()
+    private static let slotSpacing: CGFloat = 4
+    private var suggestionButtons: [UIButton] = []
+    /// How many of `slotLines` the current slots use (two, or one when a
+    /// long word took a slot's room).
+    private var slotLineCount = 2
+    private var fitKey = ""
+    private var fitPlan: [SuggestionFit.Slot] = []
     private let runsChip = UIButton(type: .system)
     /// The brand key that opens the Glyf menu: the app icon's g and violet
     /// dot on a black key (GlyfMark). Three layers, drawn from outlines.
@@ -192,9 +200,6 @@ final class GlyfToolbar: UIView {
         dropMarker.isHidden = true
         addSubview(dropMarker)
 
-        candidatesStack.axis = .horizontal
-        candidatesStack.spacing = 4
-        candidatesStack.distribution = .fillEqually
         candidatesStack.isHidden = true
         addSubview(candidatesStack)
         // The system bar rules its three slots off with two hairlines, whether
@@ -801,26 +806,29 @@ final class GlyfToolbar: UIView {
     private(set) var suggestions: [Suggestion] = []
 
     func showSuggestions(_ items: [Suggestion]) {
-        let items = Array(items.prefix(3))
+        // Words, never phrases: a slot holds one word (an emoji run counts
+        // as one) — Arpit, 2026-11-06: "only recommend the next word".
+        let items = Array(items.filter { $0.kind == .emoji || !$0.text.contains(where: \.isWhitespace) }.prefix(3))
         if items == suggestions, showingCandidates == !items.isEmpty {
             // Same words, but something else may have moved the strip since.
             applyCandidatesVisibility(toolsVisible: items.isEmpty || userPinnedTools)
             return
         }
         suggestions = items
-        candidatesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        for (i, item) in items.enumerated() {
+        suggestionButtons.forEach { $0.removeFromSuperview() }
+        suggestionButtons = items.enumerated().map { i, item in
             let b = suggestionButton(item)
             b.accessibilityIdentifier = "suggest:\(i)"
             b.addAction(UIAction { [weak self] _ in self?.delegate?.toolbarSuggestionTapped(item) },
                         for: .touchUpInside)
-            candidatesStack.addArrangedSubview(b)
+            candidatesStack.addSubview(b)
+            return b
         }
         // Always three slots, so one word sits in its slot and the lines
-        // between slots stay where they are (the system bar's way).
-        while !items.isEmpty, candidatesStack.arrangedSubviews.count < 3 {
-            candidatesStack.addArrangedSubview(UIView())
-        }
+        // between slots stay where they are (the system bar's way); laid out
+        // with the strip (layoutSuggestionSlots).
+        fitKey = ""
+        setNeedsLayout()
         showingCandidates = !items.isEmpty
         if items.isEmpty { userPinnedTools = false }
         applyCandidatesVisibility(toolsVisible: items.isEmpty || userPinnedTools)
@@ -831,7 +839,7 @@ final class GlyfToolbar: UIView {
         scroll.isHidden = !toolsVisible
         divider.isHidden = !toolsVisible || Glass.solidLook
         candidatesStack.isHidden = toolsVisible || !showingCandidates
-        for line in slotLines { line.isHidden = candidatesStack.isHidden }
+        for (i, line) in slotLines.enumerated() { line.isHidden = candidatesStack.isHidden || i >= slotLineCount }
         // The website's strip is six tools and the g pill, nothing else; the
         // run counter lives in the g menu's Account screen.
         runsChip.isHidden = runsRemaining == nil || !toolsVisible || Glass.solidLook
@@ -862,9 +870,56 @@ final class GlyfToolbar: UIView {
             ? Glass.fillBar : Glass.touchableGrid
         b.layer.cornerRadius = 8
         b.layer.cornerCurve = .continuous
-        b.titleLabel?.lineBreakMode = .byTruncatingTail
+        // Never "…": SuggestionFit picks a size the whole word fits at.
+        b.titleLabel?.lineBreakMode = .byClipping
+        b.titleLabel?.adjustsFontSizeToFitWidth = false
         b.accessibilityLabel = item.text
         return b
+    }
+
+    /// The slots across `candidatesStack`: every word whole, shrunk to fit
+    /// its slot when it is long (SuggestionFit), the hairlines on the
+    /// boundaries between slots.
+    private func layoutSuggestionSlots(mid: CGFloat, lineH: CGFloat) {
+        let width = Double(candidatesStack.bounds.width)
+        let titles = suggestionButtons.map { $0.title(for: .normal) ?? "" }
+        let full = suggestions.map { $0.kind == .emoji ? 22.0 : 17.0 }
+        let weights: [UIFont.Weight] = suggestions.map { $0.kind == .correction ? .semibold : .regular }
+        let key = "\(width)|" + titles.joined(separator: "\u{1F}") + "|\(weights.map(\.rawValue))"
+        if key != fitKey {
+            fitKey = key
+            fitPlan = SuggestionFit.plan(full: full, total: width, spacing: Double(Self.slotSpacing)) { i, size in
+                let font = UIFont.systemFont(ofSize: CGFloat(size), weight: weights[i])
+                return Double(ceil((titles[i] as NSString).size(withAttributes: [.font: font]).width))
+            }
+        }
+        let height = candidatesStack.bounds.height
+        var x: CGFloat = 0
+        var boundaries: [CGFloat] = []
+        var shown = Set<Int>()
+        for (j, slot) in fitPlan.enumerated() {
+            let w = CGFloat(slot.width)
+            if let i = slot.item, i < suggestionButtons.count {
+                let b = suggestionButtons[i]
+                b.frame = CGRect(x: x, y: 0, width: w, height: height)
+                let font = UIFont.systemFont(ofSize: CGFloat(slot.size), weight: weights[i])
+                if b.titleLabel?.font != font { b.titleLabel?.font = font }
+                shown.insert(i)
+            }
+            x += w
+            if j < fitPlan.count - 1 {
+                boundaries.append(x + Self.slotSpacing / 2)
+                x += Self.slotSpacing
+            }
+        }
+        for (i, b) in suggestionButtons.enumerated() { b.isHidden = !shown.contains(i) }
+        slotLineCount = suggestions.isEmpty ? 2 : min(boundaries.count, slotLines.count)
+        for (i, line) in slotLines.enumerated() {
+            guard i < boundaries.count else { line.isHidden = true; continue }
+            let lx = candidatesStack.frame.minX + boundaries[i]
+            line.frame = CGRect(x: lx.rounded() - 0.5, y: mid - lineH / 2, width: 1, height: lineH)
+            line.isHidden = candidatesStack.isHidden
+        }
     }
 
     // MARK: Runs chip (§6.2 — only when the free cap is low)
@@ -1053,15 +1108,10 @@ final class GlyfToolbar: UIView {
         scroll.contentSize = CGSize(width: toolsW, height: h)
         candidatesStack.frame = CGRect(x: left, y: mid - (h - 12) / 2,
                                        width: bounds.width - left - 8, height: h - 12)
-        // A hairline on each boundary between the three equal slots, drawn
-        // at the system bar's height: a little over half the strip.
-        let slotW = (candidatesStack.bounds.width - 2 * candidatesStack.spacing) / 3
-        let lineH = (h * 0.56).rounded()
-        for (i, line) in slotLines.enumerated() {
-            let x = candidatesStack.frame.minX + slotW * CGFloat(i + 1)
-                + candidatesStack.spacing * CGFloat(i) + candidatesStack.spacing / 2
-            line.frame = CGRect(x: x.rounded() - 0.5, y: mid - lineH / 2, width: 1, height: lineH)
-        }
+        // A hairline on each boundary between the slots (three equal ones
+        // unless a long word needed more), drawn at the system bar's
+        // height: a little over half the strip.
+        layoutSuggestionSlots(mid: mid, lineH: (h * 0.56).rounded())
     }
 }
 

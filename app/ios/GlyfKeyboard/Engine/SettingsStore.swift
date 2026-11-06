@@ -166,13 +166,34 @@ struct GlyfSettings: Codable, Equatable {
     /// The person's Cal.com or Calendly booking page, set in the app
     /// (Connected tools → Booking link). The calendar's Book a time uses it.
     var bookingLink: String? = nil
+    /// Built glyfs that need something from the phone before they run
+    /// (glyf id → "meet.new", "booking.link", "calendar.day"), written by the
+    /// app's Builder; PhoneTools fetches each and the run carries it.
+    var customTools: [String: [String]]? = nil
+    /// What each built glyf reads ("field", "clipboard", "none"); "none"
+    /// sends nothing typed and Insert adds at the cursor.
+    var customInputs: [String: String]? = nil
     /// The Phantom wallet connected in the app (its public address, never a
     /// key). An address that is your own is one you are sharing, so the
     /// strip offers no Send for it.
     var walletAddress: String? = nil
+    /// The Ethereum address that signs the keyboard's trades, the same on
+    /// every EVM chain: the Glyf wallet's (its key never leaves the app's
+    /// Keychain) or a connected MetaMask's or Phantom's (lib/evm/evm_signer.dart).
+    var evmAddress: String? = nil
+    /// Which one: "glyf" (or nil), "metamask", "phantom".
+    var evmSigner: String? = nil
+    /// Private AI: the server answers this phone's AI calls with 0G's
+    /// Private Computer (models in TEEs). Only the hackathon build writes it;
+    /// unset (every other build) is the usual AI: 0G is for testing only.
+    var privateAI: Bool? = nil
     /// How the last payment went, written by the app when Phantom answers
     /// ({"title","detail","at"}); the keyboard says it once and clears it.
     var walletOutcome: String? = nil
+    /// A trade shared from the app (lib/evm/trade_share.dart), as
+    /// {"text","at"}: the strip offers Share trade once for 10 minutes,
+    /// and a tap types the text and clears it.
+    var tradeShare: String? = nil
     /// Where temp mail asks: unset is mail.tm itself. Scenarios name the
     /// stand-in here (qa/fake-mailtm.mjs).
     var tempMailBase: String? = nil

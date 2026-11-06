@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// §6.12 — one result in the search suite.
 ///
@@ -10,7 +11,7 @@ import Foundation
 /// Lives in Engine (not Bridge) so the pure paste logic is unit-testable
 /// without dragging URLSession into the test target.
 struct GlyfKeyboardSearchCard: Decodable {
-    var kind: String            // "answer" | "link" | "video" | "place" | "contact"
+    var kind: String            // "answer" | "link" | "video" | "short" | "place" | "contact"
     var id: String
     var title: String
     var url: String
@@ -39,6 +40,12 @@ struct GlyfKeyboardSearchCard: Decodable {
     var duration: String?
     var live: Bool?
     var videoId: String?
+
+    // short (the Shorts tab; also carries channel, duration, thumb, videoId)
+    var seconds: Int?
+    /// YouTube reported a taller-than-wide player: the thumbnail is its 9:16
+    /// frame centred on YouTube's own filler.
+    var portrait: Bool?
 
     // place
     var address: String?
@@ -80,4 +87,28 @@ struct GlyfKeyboardSearchResult: Decodable {
     var query: String?
     var cards: [GlyfKeyboardSearchCard]
     var provider: String
+}
+
+/// The Shorts tab's tall cards (2026-11-06).
+enum ShortsThumb {
+    /// The part of a YouTube thumbnail a 9:16 card shows, in the image's own
+    /// pixels.
+    ///
+    /// YouTube draws a vertical video's thumbnail (hq 480x360, sd 640x480,
+    /// maxres 1280x720) as the full-height 9:16 frame centred on a blurred
+    /// copy of itself. For such a video the card shows just that frame,
+    /// which is the whole picture; anything else is shown whole (fitted),
+    /// because YouTube's policies forbid cropping a thumbnail.
+    static func frame(imageSize: CGSize, portrait: Bool) -> CGRect {
+        let full = CGRect(origin: .zero, size: imageSize)
+        guard portrait, imageSize.width > 0, imageSize.height > 0 else { return full }
+        let w = min(imageSize.width, (imageSize.height * 9 / 16).rounded())
+        return CGRect(x: ((imageSize.width - w) / 2).rounded(.down), y: 0,
+                      width: w, height: imageSize.height)
+    }
+
+    /// The tall card's size for a shelf of the given height: 9:16.
+    static func cardSize(height: CGFloat) -> CGSize {
+        CGSize(width: (height * 9 / 16).rounded(), height: height)
+    }
 }

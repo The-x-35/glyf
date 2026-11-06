@@ -95,6 +95,15 @@ final class GlyfBridge {
             } else {
                 result(false)
             }
+        case "openMetaMask":
+            // MetaMask's own deeplinks (lib/evm/metamask_link.dart): false
+            // when MetaMask isn't installed to take one.
+            if let s = (call.arguments as? [String: Any])?["url"] as? String,
+               let url = URL(string: s), url.scheme == "metamask" {
+                UIApplication.shared.open(url, options: [:]) { ok in result(ok) }
+            } else {
+                result(false)
+            }
         case "openPhantom":
             // Phantom's universal links, opened only by the Phantom app: false
             // when it isn't installed, never a detour through Safari.
@@ -110,7 +119,7 @@ final class GlyfBridge {
             let args = call.arguments as? [String: Any]
             let name = args?["name"] as? String ?? ""
             let value = args?["value"] as? String ?? ""
-            result(!name.isEmpty && WalletSecrets.save(name, value))
+            result(!name.isEmpty && WalletSecrets.save(name, value, sync: args?["sync"] as? Bool == true))
         case "walletSecretClear":
             let name = (call.arguments as? [String: Any])?["name"] as? String ?? ""
             if !name.isEmpty { WalletSecrets.clear(name) }
@@ -160,10 +169,16 @@ final class GlyfBridge {
         // Shared keyboard settings (App Group settings.json).
         // Served through SettingsStore.load() so the app always sees the
         // MIGRATED view — §6.13 defaults appear even before the keyboard's
-        // first run, and new fields carry their defaults.
+        // first run, and new fields carry their defaults — laid over the
+        // file itself, so keys only the app keeps (the connected MetaMask,
+        // its channel) come back too: Dart writes back what it reads.
         case "readSharedSettings":
             if let data = try? JSONEncoder().encode(SettingsStore.load()),
-               let json = String(data: data, encoding: .utf8) {
+               let json = String(
+                   data: SettingsStore.merged(data, over: AppGroupStore.bridgeDir.flatMap {
+                       try? Data(contentsOf: $0.appendingPathComponent("settings.json"))
+                   }),
+                   encoding: .utf8) {
                 result(json)
             } else {
                 result(readBridgeFile("settings.json"))
@@ -317,7 +332,7 @@ final class GlyfBridge {
             result(readBridgeFile("typing-memory.json"))
         case "typingEdit":
             let args = call.arguments as? [String: Any] ?? [:]
-            guard let op = args["op"] as? String, ["add", "forget", "reset"].contains(op) else {
+            guard let op = args["op"] as? String, ["add", "forget", "forgetEmoji", "reset"].contains(op) else {
                 result(false)
                 return
             }

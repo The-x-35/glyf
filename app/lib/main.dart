@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 
 import 'core/auth.dart';
@@ -5,6 +6,7 @@ import 'core/billing.dart';
 import 'core/bridge.dart';
 import 'core/catalog.dart';
 import 'core/funnel.dart';
+import 'core/glyf_api.dart';
 import 'core/telemetry.dart';
 import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
@@ -12,8 +14,16 @@ import 'launch/launch_overlay.dart';
 import 'onboarding/demo_chat.dart';
 import 'wallet/buy_screen.dart';
 import 'wallet/crypto_pay.dart';
+import 'wallet/flash_solana.dart';
 import 'wallet/pay_launch_screen.dart';
 import 'wallet/pay_status_screen.dart';
+import 'evm/evm_signer.dart';
+import 'evm/evm_wallet.dart';
+import 'evm/evm_wallet_screen.dart';
+import 'evm/pay_request.dart';
+import 'evm/pay_request_screen.dart';
+import 'evm/metamask_link.dart';
+import 'evm/trade_screen.dart';
 import 'wallet/send_screen.dart';
 import 'wallet/wallet_screen.dart';
 import 'wallet/wallet_flow.dart';
@@ -93,6 +103,11 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     Billing.listen();
     WalletFlow.load();
     WalletFlow.loadEnabled();
+    _loadEvmWallet();
+    // Awaited: the tour-hint cleanup below writes the same file, and two
+    // writes at once lose one (privateAI was lost, so the keyboard never
+    // asked for 0G).
+    await GlyfApi.loadPrivateAI();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(
@@ -129,6 +144,15 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     }
   }
 
+  /// The Glyf wallet's address reaches the keyboard on every launch; UI
+  /// tests make one with `--glyf-test-evm-wallet` (never in a release build).
+  Future<void> _loadEvmWallet() async {
+    if (!kReleaseMode && (await GlyfBridge.launchArgs()).contains('--glyf-test-evm-wallet')) {
+      await EvmWallet.ensure();
+    }
+    await EvmSigner.load();
+  }
+
   Future<void> _handleLink(String link) async {
     final uri = Uri.tryParse(link);
     if (uri == null) return;
@@ -136,10 +160,38 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       final id = uri.queryParameters['id'];
       if (id != null) _openDictation(id);
     }
+    // MetaMask answering a request Glyf opened it on (lib/evm/metamask_link.dart):
+    // the screen that's waiting takes it from there.
+    if (MetaMaskLink.handle(uri)) return;
+    // Phantom answering a step of a Flash order on Solana
+    // (lib/wallet/flash_solana.dart): the trade that's waiting takes it.
+    if (PhantomRequests.handle(uri)) return;
     if (uri.host == 'phantom') {
       // Phantom's answer to Connect or to a payment: finished on its own
       // screen, which sends the signed payment on.
       _push('phantom', (_) => PayStatusScreen(reply: uri), link: link);
+      return;
+    }
+    // A Whitechain request's link (glyf://pay-request?chain=1874&contract=…&id=…),
+    // or the keyboard handing one over (glyf://open?path=pay-request?…).
+    final requestLink = uri.host == 'pay-request'
+        ? uri
+        : (uri.host == 'open' && uri.queryParameters['path']?.startsWith('pay-request') == true)
+            ? Uri.parse(uri.queryParameters['path']!)
+            : null;
+    final request = requestLink == null ? null : PayRequests.parse(requestLink);
+    if (request != null) {
+      _push('pay-request', (_) => PayRequestScreen(contract: request.contract, id: request.id), link: link);
+      return;
+    }
+    if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('trade') == true) {
+      // The keyboard read a trade and quoted it: the chosen wallet signs it.
+      final q = Uri.parse(uri.queryParameters['path']!).queryParameters;
+      _push('trade', (_) => TradeScreen(query: q), link: link);
+      return;
+    }
+    if (uri.host == 'open' && uri.queryParameters['path'] == 'evm-wallet') {
+      _push('evm-wallet', (_) => const EvmWalletScreen(), replace: false);
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('pay') == true) {

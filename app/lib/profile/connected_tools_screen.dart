@@ -3,18 +3,37 @@ import 'package:flutter/material.dart';
 
 import '../core/auth.dart';
 import '../core/bridge.dart';
+import '../core/flavor.dart';
 import '../core/telemetry.dart';
+import '../build/glyf_tools.dart';
 import '../core/theme.dart';
+import '../evm/evm_wallet_screen.dart';
 import '../wallet/wallet_flow.dart';
 import '../wallet/wallet_screen.dart';
 import 'brand_marks.dart';
+import 'keyboard_screen.dart';
+
+/// A partner Glyf trades or thinks through (ETHGlobal Mumbai), as a row of
+/// Connected tools: Uniswap swaps and Definitive's Flash orders open the
+/// Ethereum wallet that signs them; 0G's Private AI opens Keyboard, where
+/// its switch and receipts are.
+typedef PartnerTool = ({String brand, String title, String? detail, String id});
 
 /// What Glyf reaches beyond the keyboard: private payments, the phone's
 /// calendar, Google Meet, a booking page, contacts, and the apps coming next.
 /// Onboarding asks for the calendar and Google Meet; this is where someone
 /// who said "Not now" turns them on later.
 class ConnectedToolsScreen extends StatefulWidget {
-  const ConnectedToolsScreen({super.key});
+  const ConnectedToolsScreen({super.key, this.zeroG = Flavor.zeroG});
+
+  /// 0G's row shows only on the build with Private AI (Flavor.zeroG).
+  final bool zeroG;
+
+  static List<PartnerTool> partnerTools({required bool zeroG}) => [
+        (brand: 'uniswap', title: 'Uniswap', detail: null, id: 'tools:uniswap'),
+        (brand: 'definitive', title: 'Definitive', detail: 'Flash', id: 'tools:definitive'),
+        if (zeroG) (brand: 'zerog', title: '0G', detail: 'Private AI', id: 'tools:zerog'),
+      ];
 
   @override
   State<ConnectedToolsScreen> createState() => _ConnectedToolsScreenState();
@@ -29,6 +48,8 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
   /// The person's Cal.com or Calendly page, for the keyboard's Book a time.
   String? _booking;
   String? _note;
+  /// Private AI on 0G, as Keyboard shows it (on unless turned off).
+  bool _privateAI = true;
 
   @override
   void initState() {
@@ -46,12 +67,12 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
       _google = google;
       final link = (shared['bookingLink'] as String?)?.trim() ?? '';
       _booking = link.isEmpty ? null : link;
+      _privateAI = (shared['privateAI'] as bool?) ?? true;
     });
   }
 
   /// On when the keyboard can use it: turned on, and still allowed.
-  static bool _calendarOn(Map<String, dynamic> status) =>
-      status['enabled'] == true && (status['permission'] == 'granted' || status['permission'] == 'writeOnly');
+  static bool _calendarOn(Map<String, dynamic> status) => GlyfTools.calendarOn(status);
 
   /// The phone asks once; after a refusal only Settings can allow it, and
   /// taking it back is Settings' too, so there is no off here.
@@ -236,6 +257,12 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
               child: Text(_note!, style: const TextStyle(fontSize: 13, color: Glass.inkSoft)),
             ),
           const SizedBox(height: 26),
+          _groupTitle('Trading and AI'),
+          for (final tool in ConnectedToolsScreen.partnerTools(zeroG: widget.zeroG)) ...[
+            _partnerRow(tool),
+            const SizedBox(height: 12),
+          ],
+          const SizedBox(height: 14),
           const Padding(
             padding: EdgeInsets.only(left: 4, bottom: 10),
             child: Text('Coming soon',
@@ -251,6 +278,35 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
             const SizedBox(height: 10),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _groupTitle(String text) => Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 10),
+        child: Text(text, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Glass.inkSoft)),
+      );
+
+  /// The whole card opens the screen that does the work; the right side
+  /// says whether it is on.
+  Widget _partnerRow(PartnerTool tool) {
+    final on = tool.brand != 'zerog' || _privateAI;
+    return Semantics(
+      identifier: tool.id,
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () async {
+          await Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => tool.brand == 'zerog' ? const KeyboardScreen() : const EvmWalletScreen()));
+          if (mounted) _load();
+        },
+        child: _toolCard(
+          brand: tool.brand,
+          title: tool.title,
+          detail: tool.detail,
+          trailing: on ? _onBadge('${tool.id}:on') : _greyPill('Off'),
+        ),
       ),
     );
   }
@@ -361,9 +417,11 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
         ),
       );
 
-  Widget _soon() => Container(
+  Widget _soon() => _greyPill('Soon');
+
+  Widget _greyPill(String label) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
         decoration: BoxDecoration(color: const Color(0xFFF1F2F5), borderRadius: BorderRadius.circular(20)),
-        child: const Text('Soon', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Glass.inkSoft)),
+        child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Glass.inkSoft)),
       );
 }

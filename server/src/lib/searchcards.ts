@@ -7,7 +7,9 @@
  *  field; renaming anything here means renaming it in three more places.
  */
 
-export type Vertical = "web" | "yt" | "maps";
+/** "shorts" (2026-11-06) is the YouTube Shorts tab: vertical videos of at
+ *  most three minutes. Older clients never send it, so it is purely additive. */
+export type Vertical = "web" | "yt" | "maps" | "shorts";
 
 /** Every card can be inserted into the host app. The client composes the
  *  paste from these three fields (§ paste format, Gboard parity):
@@ -66,6 +68,22 @@ export interface VideoCard extends CardBase {
   videoId: string;
 }
 
+/** A YouTube Short: a vertical video of at most three minutes, linked as
+ *  youtube.com/shorts/<id> so it opens in the Shorts player. */
+export interface ShortCard extends CardBase {
+  kind: "short";
+  channel: string;
+  /** "0:27" — always present: a Short is never live. */
+  duration: string;
+  seconds: number;
+  /** True when YouTube reports a taller-than-wide player. Such a card's
+   *  thumbnail is YouTube's 9:16 frame centred on its own filler, so the
+   *  client may show just that frame. Absent when YouTube didn't say. */
+  portrait?: boolean;
+  thumb?: string;
+  videoId: string;
+}
+
 export interface PlaceCard extends CardBase {
   kind: "place";
   address?: string;
@@ -87,7 +105,7 @@ export interface QueryCard extends CardBase {
   source?: string;
 }
 
-export type SearchCard = AnswerCard | LinkCard | VideoCard | PlaceCard | QueryCard;
+export type SearchCard = AnswerCard | LinkCard | VideoCard | ShortCard | PlaceCard | QueryCard;
 
 export interface SearchResponse {
   vertical: Vertical;

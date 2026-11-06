@@ -12,10 +12,19 @@
 //   node qa/fake-phantom.mjs connect   # after tapping Connect Phantom
 //   node qa/fake-phantom.mjs sign      # after Review in Phantom / Buy with Phantom
 //   node qa/fake-phantom.mjs cancel    # answer anything with "cancelled" (4001)
+//   node qa/fake-phantom.mjs message   # signMessage (a Flash order's message)
+//   node qa/fake-phantom.mjs auto      # whatever the last link asks: sign or message
+//
+// A Flash order on Solana (Trade screen) asks for a setup transaction, then
+// one message (two with an attached take-profit / stop-loss): run `auto`
+// after each Phantom step; `--wait` first waits for a link newer than the
+// last one answered.
 //
 // Needs tweetnacl, bs58 and @solana/web3.js:
 //   cd qa && npm i --no-save tweetnacl bs58 @solana/web3.js
 // SIM=<udid> picks the simulator (default: the booted one).
+// FAKE_PHANTOM_STATE=<file> keeps the stand-in's keys there instead of the
+// temp folder's glyf-fake-phantom.json.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +34,7 @@ import bs58 from "bs58";
 import { Keypair, VersionedTransaction } from "@solana/web3.js";
 
 const SIM = process.env.SIM ?? "booted";
-const STATE = join(tmpdir(), "glyf-fake-phantom.json");
+const STATE = process.env.FAKE_PHANTOM_STATE ?? join(tmpdir(), "glyf-fake-phantom.json");
 
 let state = existsSync(STATE) ? JSON.parse(readFileSync(STATE, "utf8")) : null;
 if (!state) {
@@ -55,8 +64,23 @@ function lastLink() {
   return new URL(link);
 }
 
-const mode = process.argv[2];
-const link = lastLink();
+let mode = process.argv[2];
+let link = lastLink();
+if (process.argv.includes("--wait")) {
+  // A link this stand-in already answered isn't answered twice.
+  const until = Date.now() + 120_000;
+  while (state.answered === link.searchParams.get("nonce")) {
+    if (Date.now() > until) throw new Error("No new Phantom link in 2 minutes");
+    await new Promise(r => setTimeout(r, 1500));
+    link = lastLink();
+  }
+}
+if (mode === "auto") {
+  if (link.pathname.endsWith("/signMessage")) mode = "message";
+  else if (link.pathname.endsWith("/signTransaction")) mode = "sign";
+  else if (link.pathname.endsWith("/connect")) mode = "connect";
+  else throw new Error(`Don't know how to answer ${link.pathname}`);
+}
 const p = link.searchParams;
 const reply = new URL(p.get("redirect_link"));
 const shared = nacl.box.before(bs58.decode(p.get("dapp_encryption_public_key")), enc.secretKey);
@@ -79,6 +103,14 @@ if (mode === "connect") {
     + `${tx.message.compiledInstructions.length} instructions, fee payer ${tx.message.staticAccountKeys[0].toBase58()}`);
   tx.sign([wallet]);
   seal({ transaction: bs58.encode(tx.serialize()) });
+} else if (mode === "message") {
+  if (!link.pathname.endsWith("/signMessage")) throw new Error(`The last link is ${link.pathname}, not a signMessage`);
+  const opened = nacl.box.open.after(bs58.decode(p.get("payload")), bs58.decode(p.get("nonce")), shared);
+  if (!opened) throw new Error("The request didn't open: it was sealed for another Phantom key");
+  const request = JSON.parse(Buffer.from(opened).toString());
+  const message = bs58.decode(request.message);
+  console.error(`signing the message ${JSON.stringify(Buffer.from(message).toString("utf8"))}`);
+  seal({ signature: bs58.encode(nacl.sign.detached(message, wallet.secretKey)), publicKey: wallet.publicKey.toBase58() });
 } else if (mode === "cancel") {
   reply.searchParams.set("errorCode", "4001");
   reply.searchParams.set("errorMessage", "User rejected the request.");
@@ -86,4 +118,6 @@ if (mode === "connect") {
   throw new Error("connect, sign or cancel?");
 }
 execFileSync("xcrun", ["simctl", "openurl", SIM, reply.toString()]);
+state.answered = p.get("nonce");
+writeFileSync(STATE, JSON.stringify(state));
 console.log(`answered ${mode}: ${reply.protocol}//${reply.host}${reply.pathname}`);

@@ -3,8 +3,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../core/bridge.dart';
+import '../core/flavor.dart';
+import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/theme.dart';
 import '../core/themes.dart';
@@ -232,6 +235,8 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
                     ? 'Photos are off for Glyf. Allow them in Settings › Glyf › Photos'
                     : 'Photos are off for Glyf. Allow them in Settings › Apps › Glyf › Permissions'),
             _switch('AI suggestions as you type', 'aiSuggest'),
+            if (Flavor.zeroG) _switch('Private AI on 0G', 'privateAI', fallback: true),
+            if (Flavor.zeroG && ((_settings['privateAI'] as bool?) ?? true)) _receiptsRow(),
             _switch('Let AI use your saved details', 'aiUsesVault', fallback: true),
           ]),
         ],
@@ -280,9 +285,66 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
             }
             _set(key, v);
             if (key == 'walletEnabled') WalletFlow.enabled.value = v;
+            if (key == 'privateAI') GlyfApi.privateAI = v;
           },
         ),
       ]),
+    );
+  }
+
+  /// Where the last AI answers ran: 0G's request id for each, and whether
+  /// 0G checked the TEE's signature on it.
+  Widget _receiptsRow() => InkWell(
+        key: const ValueKey('ai:receipts'),
+        onTap: _showReceipts,
+        child: const Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 12, 14),
+          child: Row(children: [
+            Expanded(child: Text('0G receipts', style: TextStyle(fontSize: 15))),
+            Icon(Icons.chevron_right, size: 20, color: Glass.inkSoft),
+          ]),
+        ),
+      );
+
+  Future<void> _showReceipts() async {
+    final load = GlyfApi.zeroGReceipts();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      useSafeArea: true,
+      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(Glass.radiusSheet))),
+      builder: (ctx) => SafeArea(
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: load,
+          builder: (ctx, snap) {
+            final list = snap.data ?? const [];
+            return ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(left: 4, bottom: 10),
+                  child: Text('0G receipts',
+                      style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+                ),
+                if (snap.connectionState != ConnectionState.done)
+                  const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator.adaptive()))
+                else if (snap.hasError)
+                  const _ReceiptNote('Couldn’t load them. Check the connection')
+                else if (list.isEmpty)
+                  const _ReceiptNote('No answers from 0G yet')
+                else
+                  for (final r in list) _ReceiptTile(r),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -583,4 +645,45 @@ class _MiniKeyboard extends CustomPainter {
 
   @override
   bool shouldRepaint(_MiniKeyboard old) => old.key != key || old.fn != fn;
+}
+
+
+class _ReceiptNote extends StatelessWidget {
+  const _ReceiptNote(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 16),
+        child: Text(text, style: const TextStyle(fontSize: 15, color: Glass.inkSoft)),
+      );
+}
+
+/// One answer: the model, when, 0G's request id (tap to copy) and the TEE check.
+class _ReceiptTile extends StatelessWidget {
+  const _ReceiptTile(this.r);
+  final Map<String, dynamic> r;
+
+  @override
+  Widget build(BuildContext context) {
+    final id = '${r['requestId'] ?? ''}';
+    final at = DateTime.fromMillisecondsSinceEpoch((r['at'] as num?)?.toInt() ?? 0);
+    final tee = r['teeVerified'];
+    final when = '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text('${r['model'] ?? '0G'} · $when', style: const TextStyle(fontSize: 15)),
+      subtitle: Text(id,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, fontFamily: 'Menlo', color: Glass.inkSoft)),
+      trailing: Text(tee == true ? 'TEE ✓' : tee == false ? 'TEE ✕' : 'TEE –',
+          style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: tee == true ? const Color(0xFF34C759) : Glass.inkSoft)),
+      onTap: () {
+        Clipboard.setData(ClipboardData(text: id));
+      },
+    );
+  }
 }
