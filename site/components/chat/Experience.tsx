@@ -756,6 +756,7 @@ export default function Experience() {
                 onSend={onSend}
                 onSnapshot={setSnap}
                 apiRef={kbApi}
+                privateAI={!!beatNow.zeroG}
               />
             </main>
           </div>

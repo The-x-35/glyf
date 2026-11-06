@@ -11,7 +11,7 @@ import type { Coach, KbSnapshot } from "../kb/Keyboard";
  *  (app/lib/onboarding/tour_scenarios.dart), in the same order, with the
  *  same words, and its coach (TourCoach on iOS) points with the same labels. */
 
-export type ChipKind = "pay" | "paste" | "calc" | "money" | "vault" | "event";
+export type ChipKind = "pay" | "paste" | "calc" | "money" | "vault" | "event" | "trade";
 
 /** Chat-side state a coach may need (the bubble copy menu, what was copied). */
 export type ChatUi = { menu: string | null; copied: string | null };
@@ -31,6 +31,8 @@ export type Beat = {
   reply: string[] | ((sent: string) => string[]);
   tapback?: string;
   nudge: string;
+  /** This chat's AI runs on 0G Private Computer, and the keyboard says so. */
+  zeroG?: boolean;
 };
 
 export type Scenario = {
@@ -96,9 +98,94 @@ const typingPlan = (t: string) => t !== INVESTOR_PLAN && INVESTOR_PLAN.startsWit
  *  or the rest after a Delete (a chip put away comes back that way). */
 const typeRest = (line: string, t: string) => (t !== line && line.startsWith(t) ? line.slice(t.length) : null);
 const ZOYA_SUM = "$236/4";
+
+/** ETHGlobal Mumbai: what the trade chats have the keyboard type. */
+const STOP_LINE = "sell my eth if it drops below 3000";
+const SWAP_LINE = "swap 0.05 eth to usdc on base";
+const ZEROG_DRAFT = "ya ok will send the deck before 6 tmrw";
+
+/** A trade chat: the keyboard types the sentence, the strip offers the
+ *  trade, the panel quotes it, and one tap places it. */
+function tradeCoach(k: KbSnapshot, line: string, done: (t: string) => boolean, go: string): Coach {
+  if (done(k.text)) return SEND;
+  if (k.trading) return k.trading.stage === "placing" ? null : { target: "trade:go", label: go };
+  if (k.panel) return CLOSE;
+  if (k.trade) return { target: "strip:trade", label: "Tap" };
+  return typeRest(line, k.text) ? null : DELETE;
+}
+const stopSet = (t: string) => t.includes("Stop-loss set");
+const swapped = (t: string) => t.includes("Swapped");
+const deckPolished = (t: string) => /before 6 (PM )?tomorrow/i.test(t) && !/tmrw/i.test(t);
 const ZOYA_ASK = "my wallet address is ";
 
 export const SCENARIOS: Scenario[] = [
+  {
+    id: "ryan",
+    name: "Ryan",
+    avatar: "📉",
+    tint: "#0052ff",
+    tag: "Definitive Flash",
+    headline: ["Type a stop-loss.", "Flash places it."],
+    beats: [
+      {
+        them: ["eth just dipped 5% 😬", "you protecting your bag or what?"],
+        autotype: (k) => (k.panel ? null : typeRest(STOP_LINE, k.text)),
+        chips: ["trade"],
+        goal: stopSet,
+        coach: (k) => tradeCoach(k, STOP_LINE, stopSet, "Tap"),
+        reply: ["smart move 🧠", "flash watches it so you don't have to"],
+        tapback: "🔥",
+        nudge: "so are you selling or not? 👀",
+      },
+    ],
+  },
+  {
+    id: "leo",
+    name: "Leo",
+    avatar: "🏝️",
+    tint: "#ff007a",
+    tag: "Uniswap",
+    headline: ["Swap mid-chat.", "Uniswap quotes it."],
+    beats: [
+      {
+        them: ["trip fund time 🏝️", "can you cover 150 usdc on base?"],
+        autotype: (k) => (k.panel ? null : typeRest(SWAP_LINE, k.text)),
+        chips: ["trade"],
+        goal: swapped,
+        coach: (k) => tradeCoach(k, SWAP_LINE, swapped, "Tap"),
+        reply: ["legend 🙌", "send it when you can"],
+        tapback: "❤️",
+        nudge: "got usdc? 🙏",
+      },
+    ],
+  },
+  {
+    id: "maya",
+    name: "Maya",
+    avatar: "🔒",
+    tint: "#9200e1",
+    tag: "Private AI · 0G",
+    headline: ["Private AI.", "Running on 0G."],
+    beats: [
+      {
+        them: ["investor call is tomorrow 📈", "can you get me the deck before then?"],
+        prefill: ZEROG_DRAFT,
+        zeroG: true,
+        chips: [],
+        goal: deckPolished,
+        coach: (k) => {
+          if (k.act === "rewrite") return { target: "act:2", label: "Professional" };
+          if (k.act === "thinking") return null;
+          if (deckPolished(k.text)) return SEND;
+          if (k.panel) return CLOSE;
+          return k.text.trim() ? { target: "key:space", label: "Hold glyf" } : null;
+        },
+        reply: ["perfect, thank you 🙏"],
+        tapback: "👍",
+        nudge: "a bit more formal? it's for investors 😅",
+      },
+    ],
+  },
   {
     id: "sakshi",
     name: "Sakshi",

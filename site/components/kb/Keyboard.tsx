@@ -5,14 +5,14 @@ import { useEffect, useId, useImperativeHandle, useRef, useState, type CSSProper
 import {
   CLIP_AGE, CLIPS, EMOJI, HOLD_MS, LANGS, OWN_WALLET, POS, ROWS_123, ROWS_ABC, SEARCH_SUGGEST, SKILLS, SPACE_HOLD_MS, SHORTHAND, TONES, VAULT, WEATHER,
   autocorrect, calc, classify, contextual, isLink, money as moneyChip, proofread, rewrite, rowOf, searchCards, short, shortAddr, solAddress, suggest, translate,
-  SWAP_RATE, type ActResult, type Calc, type Card, type Lang, type Money, type Panel, type PayHint, type SearchTab, type VaultItem,
+  ETH_USD, SWAP_RATE, swapOut, tradeIntent, type ActResult, type Calc, type Card, type Lang, type Money, type Panel, type PayHint, type SearchTab, type Trade, type VaultItem,
 } from "./data";
 import {
   addDays, clock, dateText, dayLabel, eventsOn, freeTime, insertText, looksLikePlan, monthCells, monthLabel, sameDay, sampleEvents, startOfDay, summary,
   type CalEvent, type Plan,
 } from "./calendar";
 import { hub } from "./hub";
-import { MagicBlockLogo, MagicBlockMark, SolIcon, UsdcIcon } from "./brands";
+import { EthIcon, MagicBlockLogo, MagicBlockMark, SolIcon, UsdcIcon } from "./brands";
 import * as I from "./icons";
 import { ClockFace, GoogleG, SunArc, WeatherGlyph } from "./visuals";
 
@@ -43,6 +43,10 @@ export type KbSnapshot = {
   composing: boolean;
   /** The plan chip's words, when the strip is offering one. */
   event: string | null;
+  /** The trade the strip is offering, if that is its chip. */
+  trade: Trade["kind"] | null;
+  /** The trade panel, while it is open. */
+  trading: { stage: Trd["stage"] } | null;
 };
 
 export type Coach = { target: string; label: string } | null;
@@ -79,7 +83,12 @@ type State = {
   cal: Cal;
   /** The strip's chip was put away (its ✕); typing brings chips back. */
   chipOff: boolean;
+  trd: Trd;
 };
+
+/** The trade panel: a Uniswap swap or a Definitive Flash order, quoted in the keyboard. */
+type Trd = { t: Trade | null; stage: "form" | "placing" | "done"; step: number };
+const TRD: Trd = { t: null, stage: "form", step: 0 };
 
 /** New Event, as the composer holds it. */
 type Draft = { title: string; start: Date; end: Date; allDay: boolean; share: boolean };
@@ -107,11 +116,12 @@ type Chip =
   | { kind: "calc"; math: Calc }
   | { kind: "money"; cash: Money }
   | { kind: "vault"; item: VaultItem }
-  | { kind: "event"; plan: Plan; words: string };
+  | { kind: "event"; plan: Plan; words: string }
+  | { kind: "trade"; t: Trade };
 
 /** What the strip offers right now, if it may: a chat that is being coached
  *  only offers the chips its step is about (the app's TourCoach.allowsChip). */
-function chipFor(s: { text: string; panel: Panel; clip: State["clip"]; chipOff: boolean }, allow?: string[] | null): Chip | null {
+function chipFor(s: { text: string; panel: Panel; clip: State["clip"]; chipOff: boolean; auto?: boolean }, allow?: string[] | null): Chip | null {
   const chip = anyChip(s);
   return chip && (!allow || allow.includes(chip.kind)) ? chip : null;
 }
@@ -136,11 +146,20 @@ function chipParts(chip: Chip, s: { text: string; wal: Wal }) {
     }
     case "event":
       return { pid: "strip:event", lead: <I.CalendarIcon className="kb-smart-lead" />, label: null, value: chip.words, verb: "Add" };
+    case "trade": {
+      const t = chip.t;
+      return t.kind === "swap"
+        ? { pid: "strip:trade", lead: null, label: "Uniswap", value: `${t.amount} ${t.sell} → ${t.buy}`, verb: "Quote" }
+        : { pid: "strip:trade", lead: null, label: "Flash", value: `Stop-loss below $${t.below.toLocaleString("en-US")}`, verb: "Set up" };
+    }
   }
 }
 
-function anyChip(s: { text: string; panel: Panel; clip: State["clip"]; chipOff: boolean }): Chip | null {
+function anyChip(s: { text: string; panel: Panel; clip: State["clip"]; chipOff: boolean; auto?: boolean }): Chip | null {
   if (s.panel || s.chipOff) return null;
+  // A trade is offered once the keyboard has typed all of it, never half a sentence.
+  const t = s.auto ? null : tradeIntent(s.text);
+  if (t) return { kind: "trade", t };
   const to = solAddress(s.text);
   // Your own wallet, just shared: nothing to pay.
   if (to && to !== OWN_WALLET) return { kind: "pay", to };
@@ -197,7 +216,7 @@ const allEvents = (c: Cal) => [...sampleEvents(), ...c.added];
 const INITIAL: State = {
   text: "", mode: "abc", shift: false, panel: null, tab: "google", query: "", searchView: "suggest", results: null, searching: false,
   act: null, lang: "es", down: [], holding: null, fired: null, ripple: null, ai: false, fix: null, flash: null, toast: null, auto: false,
-  clip: null, wal: WAL, cal: CAL, chipOff: false,
+  clip: null, wal: WAL, cal: CAL, chipOff: false, trd: TRD,
 };
 
 const TOOLS = [
@@ -278,9 +297,11 @@ type Props = {
   onSend?: (text: string, layoutId: string) => void;
   onSnapshot?: (snap: KbSnapshot) => void;
   apiRef?: Ref<KeyboardApi>;
+  /** This chat's AI runs on 0G Private Computer (the ETHGlobal build). */
+  privateAI?: boolean;
 };
 
-export default function Keyboard({ seed, draftId, coach = null, autotype = null, chips = null, copied = null, onSend, onSnapshot, apiRef }: Props) {
+export default function Keyboard({ seed, draftId, coach = null, autotype = null, chips = null, copied = null, onSend, onSnapshot, apiRef, privateAI = false }: Props) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const [s, setS] = useState<State>(INITIAL);
@@ -536,6 +557,27 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
     set((z) => ({ wal: { ...z.wal, swap: "form" } }));
   };
 
+  /** A trade placed from the keyboard: quoted, signed in your wallet, then
+   *  swapped on Uniswap or placed on Definitive Flash (illustrative numbers). */
+  const runTrade = async () => {
+    const x = st.current;
+    if (!x.trd.t || x.trd.stage !== "form") return;
+    set({ trd: { ...x.trd, stage: "placing", step: 0 } });
+    for (let i = 1; i <= 3; i++) {
+      await sleep(760);
+      if (st.current.panel !== "trade") return set({ trd: { ...st.current.trd, stage: "form", step: 0 } });
+      set((y) => ({ trd: { ...y.trd, step: i } }));
+    }
+    await sleep(600);
+    const t = st.current.trd.t!;
+    const receipt =
+      t.kind === "swap"
+        ? `🔄 Swapped ${t.amount} ${t.sell} → ${money(swapOut(t))} ${t.buy} on ${t.chain} · Uniswap`
+        : `🛡️ Stop-loss set: sell ${t.amount} ${t.asset} below $${t.below.toLocaleString("en-US")} · Definitive Flash`;
+    streamTok.current++;
+    set({ panel: null, text: receipt, fix: null, flash: { at: 0, len: receipt.length, id: Date.now() }, trd: { ...st.current.trd, stage: "done", step: 0 } });
+  };
+
   const perform = (pid: string) => {
     const i = pid.indexOf(":");
     const kind = i < 0 ? pid : pid.slice(0, i);
@@ -648,6 +690,9 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
         if (arg === "private") return set({ wal: { ...x.wal, private: !x.wal.private } });
         if (arg === "send") return void runPayment();
         return;
+      case "trade":
+        if (arg === "go") return void runTrade();
+        return;
       case "swap":
         if (arg === "flip") return set({ wal: { ...x.wal, flipped: !x.wal.flipped } });
         if (arg === "go") return void runSwap();
@@ -669,6 +714,10 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
           if (!x.clip) return;
           set({ clip: { ...x.clip, used: true } });
           return drop(x.clip.text);
+        }
+        if (arg === "trade") {
+          const t = tradeIntent(x.text);
+          return t ? set({ panel: "trade", act: null, trd: { t, stage: "form", step: 0 } }) : undefined;
         }
         if (arg === "pay") {
           const to = solAddress(x.text);
@@ -933,6 +982,8 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
       calSeen: s.cal.seen,
       composing: s.panel === "calendar" && !!s.cal.compose,
       event: chip?.kind === "event" ? chip.words : null,
+      trade: chip?.kind === "trade" ? chip.t.kind : null,
+      trading: s.panel === "trade" ? { stage: s.trd.stage } : null,
     });
   }, [s, chips]);
 
@@ -1118,6 +1169,20 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
         </div>
       );
     }
+    if (s.panel === "trade" && s.trd.t) {
+      return (
+        <div className="kb-title">
+          <I.SwapIcon /> {s.trd.t.kind === "swap" ? "Swap · Uniswap" : "Order · Definitive Flash"}
+        </div>
+      );
+    }
+    if (privateAI && (s.panel === "act" || s.panel === "tones")) {
+      return (
+        <div className="kb-title">
+          <I.LockIcon /> Private AI · 0G <span className="kb-zg-ok">TEE verified</span>
+        </div>
+      );
+    }
     if (s.panel) {
       // A toast over the open calendar says what just happened in it.
       if (s.toast && s.panel === "calendar") return <div className="kb-toast"><I.CheckIcon /> {s.toast}</div>;
@@ -1229,6 +1294,7 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
     }
     return (
       <div className="kb-rows">
+        {privateAI && <p className="kb-zg-receipt">0G Private Computer · 0gm-1.0-35b-a3b-sia · request dd07c98d</p>}
         {a.options.map((o, i) => (
           <motion.button key={o.id} type="button" className={cx("kb-row", co(`act:${i}`))} onClick={() => perform(`act:${i}`)} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: i * 0.07, ease }}>
             <span className="kb-row-k">{o.label}</span>
@@ -1465,8 +1531,77 @@ export default function Keyboard({ seed, draftId, coach = null, autotype = null,
     );
   };
 
+  const tokIcon = (tok: string) => (tok === "ETH" ? <EthIcon className="tok" /> : <UsdcIcon className="tok" />);
+
+  const renderTrade = () => {
+    const r = s.trd;
+    const t = r.t;
+    if (!t) return null;
+    const steps =
+      t.kind === "swap"
+        ? [["Quoted", "Uniswap v3"], ["Signed", "your wallet"], ["Swapped", `on ${t.chain}`]]
+        : [["Order built", "Definitive Flash"], ["Signed", "your wallet"], ["Placed", `watching ${t.asset}`]];
+    return (
+      <div className="wal">
+        {r.stage === "placing" ? (
+          <ol className="wal-steps">
+            {steps.map(([title, by], i) => (
+              <motion.li key={title} className={cx(r.step > i && "done", r.step === i && "now")} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}>
+                <span className="wal-step-dot">{r.step > i ? <I.CheckIcon /> : null}</span>
+                <b>{title}</b>
+                <span className="wal-step-by">{by}</span>
+              </motion.li>
+            ))}
+          </ol>
+        ) : t.kind === "swap" ? (
+          <>
+            <div className="swap">
+              <div className="swap-row">
+                <span className="swap-k">Sell</span>
+                <b className="kb-num">{t.amount}</b>
+                <span className="tok-chip">{tokIcon(t.sell)}{t.sell}</span>
+              </div>
+              <span className="swap-flip" aria-hidden><I.SwapIcon /></span>
+              <div className="swap-row">
+                <span className="swap-k">Buy</span>
+                <b className="kb-num">≈ {money(swapOut(t))}</b>
+                <span className="tok-chip">{tokIcon(t.buy)}{t.buy}</span>
+              </div>
+            </div>
+            <p className="swap-meta">1 ETH ≈ ${money(ETH_USD)} · {t.chain} · best route via Uniswap</p>
+            <button type="button" className={cx("wal-go", co("trade:go"))} onClick={() => perform("trade:go")}>
+              Swap
+              {tip("trade:go")}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="swap">
+              <div className="swap-row">
+                <span className="swap-k">Sell</span>
+                <b className="kb-num">{t.amount}</b>
+                <span className="tok-chip">{tokIcon(t.asset)}{t.asset}</span>
+              </div>
+              <div className="swap-row">
+                <span className="swap-k">Below</span>
+                <b className="kb-num">${t.below.toLocaleString("en-US")}</b>
+              </div>
+            </div>
+            <p className="swap-meta">Stop-loss · now ${money(ETH_USD)} · {t.chain} · by Definitive Flash</p>
+            <button type="button" className={cx("wal-go", co("trade:go"))} onClick={() => perform("trade:go")}>
+              Place order
+              {tip("trade:go")}
+            </button>
+          </>
+        )}
+      </div>
+    );
+  };
+
   const renderPanel = () => {
     switch (s.panel) {
+      case "trade":
+        return renderTrade();
       case "calendar":
         return renderCalendar();
       case "wallet":
