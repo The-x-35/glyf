@@ -149,6 +149,7 @@
 		7ABC17A43FEC8FEF681568CC /* Billing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F6E535557BADA4D9455FF9 /* Billing.swift */; };
 		7B15D2A5E11C0989CAE367E6 /* IntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B2E745F387CCCC496C13F0 /* IntentStore.swift */; };
 		7B5554953A9D457F7570E420 /* ShipporiMincho-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4A92B0C9C7B571F07FC36B5F /* ShipporiMincho-Medium.ttf */; };
+		7C341B9A50BD1B77E1599DC1 /* TradeEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9622ADEA4BAABD666E1AD80C /* TradeEdit.swift */; };
 		7C790C9704BCE2E111609C54 /* GoogleAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11231DCD6CA4C179B56BBB /* GoogleAccess.swift */; };
 		7D2FF1279F607C439779B65F /* EmojiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAFFC06C09A0F4C0BC665EE /* EmojiData.swift */; };
 		7D93F1E3A583EAE4E2525168 /* VoicePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79DC6165B130D41D60F2677F /* VoicePanel.swift */; };
@@ -231,6 +232,7 @@
 		C0D6FCC5568C6E7DCC770910 /* GlyfShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE53B0D96D5A93520105A87A /* GlyfShortcuts.swift */; };
 		C1D204EDEA678C1A74EBBB55 /* VaultTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79A18448EF0F4C763B35281E /* VaultTests.swift */; };
 		C1DFF717F0874CFA159D8E3F /* TourCoach.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F09C0ACA1F1B45C6AC46AA4 /* TourCoach.swift */; };
+		C23D1023BA57365D71F683E1 /* TradeEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0FAA14A9BC6FFC38216D8B /* TradeEditTests.swift */; };
 		C2A05C124EC219D669C1BF39 /* knurl.png in Resources */ = {isa = PBXBuildFile; fileRef = 19CBF30E2DEF6FF8DF3D934A /* knurl.png */; };
 		C4C77B5885CED1DE299C2BEB /* GlyfWidgetSnapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C9A97B5158A15AEAF67D5BB /* GlyfWidgetSnapshots.swift */; };
 		C4EFD547EF8F549B71DFC515 /* GlyfTradeAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BAD201DB13C5FDA3A305A8F /* GlyfTradeAttributes.swift */; };
@@ -244,6 +246,7 @@
 		C956DA136CC6D8F8C40E48CE /* GlyfIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0C9413FB4575FD842AE4C39 /* GlyfIntents.swift */; };
 		C98A8C076412853AB1D442E1 /* ClipboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 707C5A7E74F5BA1712F4091F /* ClipboardStore.swift */; };
 		CD83D22C7C73F30CDB7318A7 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D7BD628E919BD87B27B98432 /* Pods_RunnerTests.framework */; };
+		CDF402C873BBD00C92FC9061 /* TradeEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9622ADEA4BAABD666E1AD80C /* TradeEdit.swift */; };
 		CFE402D105D9636BC65D745E /* TonesPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 969AE566AACBB47939055C04 /* TonesPopup.swift */; };
 		D033B5F0AA58522508224FF1 /* GoogleAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11231DCD6CA4C179B56BBB /* GoogleAccess.swift */; };
 		D08B3E99671708C31E947FEA /* Glyf.storekit in Resources */ = {isa = PBXBuildFile; fileRef = B4D5B1B8662F2B0D049BD085 /* Glyf.storekit */; };
@@ -431,6 +434,7 @@
 		397338FD53A5248DAFEBD08F /* Smart.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Smart.swift; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3B5899E45E1BF28ED6EFA1E4 /* ActSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActSurface.swift; sourceTree = "<group>"; };
+		3C0FAA14A9BC6FFC38216D8B /* TradeEditTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TradeEditTests.swift; sourceTree = "<group>"; };
 		3CECC849C144A1C00C88586B /* Toolbar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Toolbar.swift; sourceTree = "<group>"; };
 		3FAB6C89A5A109AF1D863E30 /* GlyfBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfBridge.swift; sourceTree = "<group>"; };
 		416376F36170FAEDC38BA98E /* TempMailTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TempMailTests.swift; sourceTree = "<group>"; };
@@ -504,6 +508,7 @@
 		94B3C3D63F7099CB952602F9 /* VoiceRibbon.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceRibbon.swift; sourceTree = "<group>"; };
 		9501A2F1F9982E5262930960 /* brushed.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = brushed.png; sourceTree = "<group>"; };
 		95E80307EC5FA4DFD33EA0B2 /* CourierPrime-Regular.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "CourierPrime-Regular.ttf"; sourceTree = "<group>"; };
+		9622ADEA4BAABD666E1AD80C /* TradeEdit.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TradeEdit.swift; sourceTree = "<group>"; };
 		969AE566AACBB47939055C04 /* TonesPopup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TonesPopup.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
@@ -741,6 +746,7 @@
 				208759A10298A53E284AC23B /* GlyfWidgetDataTests.swift */,
 				2C9A97B5158A15AEAF67D5BB /* GlyfWidgetSnapshots.swift */,
 				0276A6B5BF908A84EDB1C0E8 /* AIActionTests.swift */,
+				3C0FAA14A9BC6FFC38216D8B /* TradeEditTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -900,6 +906,7 @@
 				475CCCEB5FB57DFDAE1160E2 /* SponsorMenu.swift */,
 				C01A8D008A1D6F4C7ADBD562 /* AIAction.swift */,
 				559CF01A48DDE432B244EADB /* TradeRecurring.swift */,
+				9622ADEA4BAABD666E1AD80C /* TradeEdit.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -1544,6 +1551,7 @@
 				EBF774F646F4356D3E01295D /* SponsorMenu.swift in Sources */,
 				06913A7B9B8E1B47DF12FE33 /* AIAction.swift in Sources */,
 				1A50AED7F444EC3F6CB1BD51 /* TradeRecurring.swift in Sources */,
+				7C341B9A50BD1B77E1599DC1 /* TradeEdit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1622,6 +1630,8 @@
 				458B9CD89E38E31F4C5335F2 /* AIAction.swift in Sources */,
 				681AD98FCC4613451317AA29 /* TradeRecurring.swift in Sources */,
 				F845E4EB30DE0148B4604B8F /* AIActionTests.swift in Sources */,
+				CDF402C873BBD00C92FC9061 /* TradeEdit.swift in Sources */,
+				C23D1023BA57365D71F683E1 /* TradeEditTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

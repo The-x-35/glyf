@@ -137,10 +137,13 @@ abstract final class TradeFlow {
 
   static Stream<TradeOutcome> _swap(Map<String, String> q, EvmChain chain, String address) async* {
     yield const TradeOutcome(TradeState.working, 'Asking Uniswap…');
+    // A token picked in the keyboard rides by its address, so a lookalike
+    // symbol can't stand in; a swap can land on another chain (buyChain).
     final body = <String, Object?>{
       'chain': chain.name,
-      'sell': q['sell'],
-      'buy': q['buy'],
+      'sell': q['sellAddress'] ?? q['sell'],
+      'buy': q['buyAddress'] ?? q['buy'],
+      if (q['buyChain'] != null && q['buyChain'] != chain.name) 'buyChain': q['buyChain'],
       'recipient': address,
       'swapper': address,
       'slippage': 0.5,
@@ -149,7 +152,7 @@ abstract final class TradeFlow {
       // "buy 0.1 eth with usdc": what 0.1 ETH costs now, a hair over so
       // the swap lands at least the amount asked for.
       final cost = await GlyfApi.evmPost('/uniswap/quote',
-          {'chain': chain.name, 'sell': q['buy'], 'buy': q['sell'], 'amount': q['buyAmount']});
+          {'chain': chain.name, 'sell': q['buyAddress'] ?? q['buy'], 'buy': q['sellAddress'] ?? q['sell'], 'amount': q['buyAmount']});
       final need = double.tryParse('${cost['amountOut']}');
       if (need == null || need <= 0) throw GlyfApiException('Uniswap had no price for ${q['buy']}');
       body['amount'] = _trim(need * 1.006);
@@ -230,8 +233,9 @@ abstract final class TradeFlow {
     final body = <String, Object?>{
       'targetChain': kind == 'bridge' ? (toChain ?? chainName) : chainName,
       'contraChain': chainName,
-      'target': target,
-      'contra': kind == 'bridge' ? sell : contra,
+      // A bridge's target is on the other chain: its symbol, not this chain's address.
+      'target': kind == 'bridge' ? target : ((buying ? q['buyAddress'] : q['sellAddress']) ?? target),
+      'contra': kind == 'bridge' ? (q['sellAddress'] ?? sell) : ((buying ? q['sellAddress'] : q['buyAddress']) ?? contra),
       'side': kind == 'bridge' ? 'buy' : (buying ? 'buy' : 'sell'),
       'orderType': _flashOrderTypes[kind] ?? 'market',
       'funderAddress': address,

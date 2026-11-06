@@ -176,6 +176,17 @@ void main() {
     });
   });
 
+  test('a token picked in the keyboard rides by its address in a Flash order', () async {
+    const pepe = '0xB4fDe59a779991bfB6a52253B51947828b982be3';
+    final body = await TradeFlow.flashBodyOn(
+        {'kind': 'limit', 'sell': 'USDC', 'buy': 'PEPE', 'buyAddress': pepe, 'amount': '20', 'usd': '1', 'price': '0.00001'},
+        'limit', 'base', '0x1111111111111111111111111111111111111111',
+        allOf: (_) async => '0', priceOf: (_) async => 0.00001);
+    expect(body['target'], pepe);
+    expect(body['contra'], 'USDC');
+    expect(body['side'], 'buy');
+  });
+
   test('a Whitechain request is createRequest(USDT, units, memo, anyone, never)', () {
     final data = PayRequests.createCalldata('20.5', 'dinner');
     expect(data.substring(0, 10), '0xdd0bacc1');

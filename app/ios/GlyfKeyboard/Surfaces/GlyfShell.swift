@@ -1731,7 +1731,7 @@ private final class ShellCell: UITableViewCell {
             title.text = t
             let sw = UISwitch()
             sw.isOn = valueFn()
-            sw.onTintColor = Glass.controlOn
+            sw.onTintColor = Glass.switchOn
             sw.sizeToFit()
             sw.addAction(UIAction { [weak self] a in
                 guard let s = a.sender as? UISwitch else { return }
