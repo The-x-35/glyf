@@ -319,7 +319,7 @@ final class TradeSurface: UIView {
 
     private func picked(_ token: TokenPick, side: TradeEdit.Side) {
         known["\(chain(of: side))|\(token.symbol.uppercased())"] = token
-        intent = TradeEdit.pick(token, side: isSwap ? side : assetSide, in: intent)
+        intent = TradeEdit.repriced(TradeEdit.pick(token, side: isSwap ? side : assetSide, in: intent), was: intent)
         clearQuote()
         if !isSwap { marketPrice = nil; asking = true }
         setMode(.panel)
@@ -327,7 +327,7 @@ final class TradeSurface: UIView {
     }
 
     private func pickedChain(_ chain: String, side: TradeEdit.Side) {
-        intent = TradeEdit.pickChain(chain, side: side, in: intent)
+        intent = TradeEdit.repriced(TradeEdit.pickChain(chain, side: side, in: intent), was: intent)
         clearQuote()
         if !isSwap, side == .sell { marketPrice = nil; asking = true }
         setMode(.panel)

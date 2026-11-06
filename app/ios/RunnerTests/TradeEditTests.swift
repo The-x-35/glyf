@@ -142,6 +142,26 @@ final class TradeEditTests: XCTestCase {
         XCTAssertEqual(back.sell, "ETH")
     }
 
+    func testAnOrdersPricesFollowANewAsset() {
+        let eth = read("my eth tp 4500 sl 3000")
+        let sol = TradeEdit.repriced(TradeEdit.pickChain("solana", side: .sell, in: eth), was: eth)
+        XCTAssertEqual(sol.sell, "SOL")
+        XCTAssertNil(sol.price)
+        XCTAssertNil(sol.stopPrice)
+        XCTAssertTrue(sol.awaitingPrice)
+        let filled = SponsorMenu.priced(sol, market: 100)
+        XCTAssertEqual(filled.price, "110")
+        XCTAssertEqual(filled.stopPrice, "90")
+        // Same asset, another value: nothing reset.
+        let same = TradeEdit.apply(.price, "5000", to: eth)
+        XCTAssertEqual(TradeEdit.repriced(same, was: eth).price, "5000")
+        // A buy's limit goes back under the new market.
+        let buy = read("buy $20 of eth at 2800")
+        let link = TradeEdit.repriced(TradeEdit.pick(TokenPick(symbol: "LINK", name: "Chainlink"), side: .buy, in: buy), was: buy)
+        XCTAssertEqual(link.pricePercent, -5)
+        XCTAssertEqual(link.amount, "20", "dollars spent stay")
+    }
+
     func testYouGetOnAnotherChainIsCrossChain() {
         let i = TradeEdit.pickChain("arbitrum", side: .buy, in: read("swap 10 usdc to eth on base"))
         XCTAssertEqual(i.buyChain, "arbitrum")

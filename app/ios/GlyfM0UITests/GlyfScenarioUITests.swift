@@ -2814,6 +2814,19 @@ final class GlyfScenarioUITests: XCTestCase {
         keepScreenshot("dark-m-price")
         tap("trade:done")
         tap("toolbar:close")
+        sleep(1)
+        // The sponsor panels' chains, with their marks.
+        tap("toolbar:glyf")
+        guard let uni = wait("shell:sponsor:uniswap", 4) else { return XCTFail("no Uniswap tile") }
+        uni.tap()
+        sleep(1)
+        keepScreenshot("dark-m-uniswap")
+        tap("toolbar:back")
+        guard let flash = wait("shell:sponsor:definitive", 4) else { return XCTFail("no Definitive tile") }
+        flash.tap()
+        sleep(1)
+        keepScreenshot("dark-m-definitive")
+        tap("toolbar:close")
     }
 
     private func keepScreenshot(_ name: String) {
