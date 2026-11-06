@@ -22,7 +22,7 @@ Glyf is an AI keyboard for iPhone. At Mumbai it learned to swap on Ethereum and 
 ## Where we got stuck
 
 - **API keys.** The Trading API needs a key, and getting one isn't instant self-serve for a hackathon team at 2 am, so we built the v3 fallback first. A rate-limited, keyless sandbox key for hackathons would have saved hours.
-- **Multi-hop pairs.** The v3 fallback only does single pools. A pair without a direct pool returns nothing, and multi-hop routing is exactly what the API is for. A documented, keyless way to route multi-hop on-chain (even just a recommended path list) would help mobile builders.
+- **Multi-hop pairs.** On-chain v3 quoting is pool by pool, so a pair without a direct pool returns nothing. We wrote our own two-pool routing through WETH or USDC (QuoterV2's path quote), but multi-hop routing is exactly what the API is for. A documented, keyless way to route multi-hop on-chain (even just a recommended list of hub tokens per chain) would help mobile builders.
 - **Sources disagree.** The docs and third-party guides disagree on the Trading API host (`trade-api.gateway.uniswap.org` vs `trade.api.uniswap.org`) and on how keys are issued.
 - **UniswapX minimum.** Its 300 USDC minimum isn't on the quote page we read first, and keyboard-sized swaps are far below it.
 
