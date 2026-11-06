@@ -81,6 +81,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var clipStrip: ClipContextStrip?
     private var actTask: URLSessionDataTask?
     private var actInput: (before: String, after: String)?
+    /// A built glyf that reads nothing (a Meet link): its words go in at
+    /// the cursor, spaced, and the message stays.
+    private var actAddsOnly = false
     /// Set when a bound letter's skill is running in the act surface.
     private var actSkill: (glyfId: String, letter: String?)?
     /// A bar run's own name (the prompt itself) and its vars.
@@ -515,6 +518,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
         super.viewWillAppear(animated)
         SettingsStore.invalidate()
         recentFixes = []   // another field: its corrections are not these
+        emojiSeen = ""     // a draft the keyboard opens on teaches nothing
+        emojiAnchor = nil
         // The translate strip belongs to the session it was opened in. Left
         // persisted it greets the next app as an unexplained empty band.
         if SettingsStore.current.translationHUD == true {
@@ -1781,6 +1786,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var seededNames: Set<String> = []
     /// The text before the caret at the last strip update (PhraseMemory).
     private var phraseSeen = ""
+    /// The text before the caret at the last look for emoji runs, and the
+    /// last run learned (its text up to the run), so one is learned once.
+    private var emojiSeen = ""
+    private var emojiAnchor: String?
     private func seedOwnNames() {
         guard let engine = typing else { return }
         let fields = VaultStore.shared.load().fields
@@ -1909,11 +1918,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             WeatherStore.shared.ensure(lat: lat, lon: lon, fahrenheit: fahrenheit) { [weak self] in self?.updateCandidates() }
             if let w = Smart.weather, w.fahrenheit == fahrenheit, let a = Smart.weatherAnswer(in: tail, snapshot: w) { chip = .convert(a) }
         }
-        // A sentence the person keeps sending: its first words offer the rest.
-        if chip == nil, typingPolicy.contains(.learning),
-           let rest = PhraseMemoryStore.shared.memory.completion(after: tail, today: TypingText.day()) {
-            chip = .convert(Smart.Conversions(source: "", results: [rest], inserts: [rest], hows: [.after]))
-        }
+        // A sentence the person keeps sending offers its next word in the
+        // word slots (updateCandidates), not the rest of it as a chip.
         // Talk of a call: a Google Meet link where it's wanted, the Meet key's
         // behaviour surfaced (research 2026-10-07), only with Meet connected.
         if chip == nil, hasFullAccess, GoogleAccess.hasMeet, Smart.asksToCall(tail) {
@@ -2227,6 +2233,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             Perf.reportHostReads() // end of the cycle: the whole keystroke's crossings
         }
         defer { applyTourHint() }         // the strip changed under the ring
+        noteEmojiRuns(beforeContext ?? "")
         let tCh = Perf.mark()
         let chipOwns = updateSmartChip()
         tChip = Perf.ms(tCh)
@@ -2253,11 +2260,22 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 toolbar.showSuggestions(items)
             } else if let engine = typing, before?.hasSuffix(" ") == true,
                       let previous = WordTracker.previousWord(beforeContext: before) {
-                var items = engine.predictions(
-                    previous: previous, beforePrevious: WordTracker.wordBeforePrevious(beforeContext: before),
-                    policy: policy).map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
-                // The word just finished brings its emoji to the last slot.
-                if let e = EmojiWords.emoji(for: previous) { items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)] }
+                let beforePrevious = WordTracker.wordBeforePrevious(beforeContext: before)
+                var words = engine.predictions(previous: previous, beforePrevious: beforePrevious, policy: policy)
+                // A sentence the person keeps sending offers its next word
+                // first: a word at a time, never the rest as a phrase.
+                if policy.contains(.learning), let next = PhraseMemoryStore.shared.memory.nextWord(
+                    after: String((before ?? "").suffix(120)), today: TypingText.day()) {
+                    words = [next] + words.filter { $0.lowercased() != next.lowercased() }
+                }
+                var items = words.map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
+                // The word just finished brings its emoji to the last slot:
+                // the run this person puts there ("love you" → ❤️❤️❤️) before
+                // the table's guess.
+                if let e = engine.emojiRun(after: previous, previous: beforePrevious, policy: policy)
+                    ?? EmojiWords.emoji(for: previous) {
+                    items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)]
+                }
                 toolbar.showSuggestions(items)
             } else {
                 toolbar.showSuggestions([])
@@ -2298,7 +2316,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
             items = Array(others.prefix(3))
             // A word typed in full brings its emoji ("pizza" → 🍕) to the
             // last slot, the way Gboard's and Apple's bars do.
-            if let e = EmojiWords.emoji(for: word) { items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)] }
+            if let e = typing?.emojiRun(after: word, previous: WordTracker.previousWord(beforeContext: before), policy: policy)
+                ?? EmojiWords.emoji(for: word) {
+                items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)]
+            }
         }
         toolbar.showSuggestions(items)
     }
@@ -2872,6 +2893,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         Funnel.mark("first_ai")
         actSkill = nil
         actSkillTitle = nil
+        actAddsOnly = false
         actVars = [:]
         actIntent = nil
         actInput = ("", "") // a copied text is acted on, never deleted from the field
@@ -2886,6 +2908,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         Funnel.mark("first_ai")
         actSkill = nil
         actSkillTitle = nil
+        actAddsOnly = false
         actVars = [:]
         actIntent = intent
         actInput = (before, after)
@@ -2911,9 +2934,19 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         // Field text is swapped on Insert; clipboard or empty input only inserts.
         actInput = input.source == "field"
             ? (beforeContext ?? "", input.after) : ("", "")
+        readsNothing(glyfId)
         actAccepted = false
         setSurface(.act)
         runAct()
+    }
+
+    /// A built glyf whose input is "none" (the app keeps it in
+    /// customInputs): nothing typed is sent, and Insert adds, never swaps.
+    private func readsNothing(_ glyfId: String) {
+        actAddsOnly = SettingsStore.current.customInputs?[glyfId] == "none"
+        guard actAddsOnly else { return }
+        actRunInput = ""
+        actInput = ("", "")
     }
 
     private func runAct() {
@@ -2923,6 +2956,20 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         if let skill = actSkill {
             let title = actSkillTitle ?? GlyfCatalog.title(for: skill.glyfId)
             act.showWorking(intent: actRunInput, title: title, keyLetter: skill.letter)
+            // A glyf built with the Builder's Tools may need the phone first:
+            // a new Meet link, the booking link, the day. Fetched here, then
+            // the run carries them (PhoneTools).
+            let phoneTools = SettingsStore.current.customTools?[skill.glyfId] ?? []
+            let missing = phoneTools.filter { actVars["phone.\($0)"] == nil }
+            if !missing.isEmpty {
+                PhoneTools.resolve(missing, hasFullAccess: hasFullAccess) { [weak self] vars, note in
+                    guard let self, self.surface == .act, self.actSkill?.glyfId == skill.glyfId else { return }
+                    if let note { self.act?.showFailure(note); return }
+                    self.actVars.merge(vars) { _, new in new }
+                    self.runAct()
+                }
+                return
+            }
             let vars = actVars   // BackendClient adds the two languages for glyf.translate
             var streamed = ""
             actTask = BackendClient.shared.run(
@@ -3062,6 +3109,23 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         }
     }
 
+    /// The emoji run the person just finished after their words ("love you
+    /// ❤️❤️❤️ ", or sent): one more use of that habit (EmojiRuns). Never
+    /// where learning is off, so never in a password, code or search field.
+    private func noteEmojiRuns(_ before: String) {
+        defer {
+            emojiSeen = before
+            if before.isEmpty { emojiAnchor = nil } // the next message is a new one
+        }
+        guard before != emojiSeen, let engine = typing else { return }
+        if before.isEmpty, !(textDocumentProxy.documentContextAfterInput ?? "").isEmpty { return }
+        let policy = typingPolicy
+        guard policy.contains(.learning), let run = EmojiRuns.finished(seen: emojiSeen, now: before),
+              run.anchor != emojiAnchor else { return }
+        emojiAnchor = run.anchor
+        if engine.noteEmoji(run, policy: policy) { TypingStore.shared.scheduleSave() }
+    }
+
     func kbTextInteraction() {}
 
     // MARK: Bar
@@ -3093,6 +3157,7 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         actRetryBudget = 1
         actInput = input.source == "field"
             ? (beforeContext ?? "", input.after) : ("", "")
+        readsNothing(glyfId)
         actAccepted = false
         setSurface(.act)
         runAct()
@@ -3131,7 +3196,9 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
             }
         }
         // Saved details go in on the phone, in place of their stand-ins.
-        let text = StandIns.fill(text)
+        var text = StandIns.fill(text)
+        if actAddsOnly { text = Self.spaced(text, after: beforeContext) }
+        actAddsOnly = false
         hostInsert(text)
         glyfWrote = text.trimmingCharacters(in: .whitespacesAndNewlines)
         actInput = nil
@@ -3150,7 +3217,11 @@ extension GlyfKeyboardViewController: ActSurfaceDelegate {
         if let act { KeyboardToast.show(in: act, text: "Copied") }
     }
 
-    func actRetry() { runAct() }
+    func actRetry() {
+        // Again means again: a new Meet link, the day as it is now.
+        actVars = actVars.filter { !$0.key.hasPrefix("phone.") }
+        runAct()
+    }
 
     func actRetryAvailable(_ available: Bool) {
         guard surface == .act, Glass.solidLook else { return }

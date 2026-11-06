@@ -1,0 +1,13 @@
+{
+  "id": "meet.new",
+  "label": "New Google Meet link",
+  "auth": "phone:meet",
+  "inputs": [],
+  "output": "a new Google Meet link, made on the phone for every run",
+  "scopes": ["meetings.space.created"],
+  "discloses": "nothing you type; your phone asks Google Meet for a new link",
+  "connect": "Connect Google Meet in Glyf › Connected tools",
+  "sample": "https://meet.google.com/abc-mnop-xyz",
+  "rateLimit": { "perMin": 20 },
+  "timeoutMs": 8000
+}

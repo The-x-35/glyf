@@ -244,6 +244,18 @@ word. Counts halve every 90 days; entries unused for 300 days are dropped.
 Caps: 10,000 words, 30,000 word pairs. Reverting a correction blocks that
 pair forever and un-learns one commit of the wrong word.
 
+**Emoji habits** (iOS since 2026-11-06; Android owes it): a run of 1–6 emoji
+put right after a word ("love you ❤️❤️❤️", "haha😂") counts once when it is
+finished — a space or line break typed after it (or a strip tap that put it
+in with one), or the message sent (field emptied) — under the same field
+rules as words (nothing where learning is off). It is kept per context, the
+word alone and the two words (`"you"`, `"love you"`), in the lexicon file's
+`"emoji"` array (`x` context, `e` run, `c` decayed count, `t` uses, `d` day;
+3,000 cap, same decay and expiry). After 2 uses, and on at least 15% of the
+times that context was typed, the exact run takes the strip's emoji slot,
+the two-word context first, ahead of EmojiWords' guess. Forgetting a word
+drops its emoji habits.
+
 ## Undo and reverts
 
 Right after an autocorrect, while the caret is where the fix left it, the

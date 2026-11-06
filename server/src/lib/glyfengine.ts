@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { GlyfDef, GlyfDefSchema, GlyfStep } from "../schemas/glyfdef.js";
 import { registryDir } from "./paths.js";
-import { runTool, toolExists } from "./tools.js";
+import { isPhoneTool, loadTools, phoneVar, runTool, toolExists } from "./tools.js";
 
 /** Loads and executes Builder-format glyf definitions (§6.8).
  *  Executes llm · format · if · map · tool. `ask` steps resolve from
@@ -97,6 +97,9 @@ export interface RunOptions {
   onToken: (t: string) => void;
   /** connectionId lookups for OAuth tools (M6); keyless tools ignore it. */
   connections?: Record<string, string>;
+  /** A Builder try-out: a phone tool the app sent no answer for shows its
+   *  sample instead (no Meet link is made to preview a glyf). */
+  samples?: boolean;
 }
 
 /** Runs a glyf. Control flow: steps execute in order, EXCEPT steps that are
@@ -180,6 +183,18 @@ export async function runGlyf(opts: RunOptions): Promise<string> {
         if (!toolExists(step.tool)) {
           throw new Error(`unknown tool '${step.tool}' — tools resolve against the registry only`);
         }
+        // Answered on the phone: the keyboard sent it as phone.<tool>.
+        if (isPhoneTool(step.tool)) {
+          const meta = loadTools().get(step.tool)!;
+          const sent = (ctx[phoneVar(step.tool)] ?? "").trim();
+          const value = sent || (opts.samples ? meta.sample ?? "" : "");
+          if (!value) {
+            throw Object.assign(new Error(meta.connect ?? "Open this glyf from the Glyf keyboard"),
+              { userFacing: true });
+          }
+          ctx[step.out] = value;
+          break;
+        }
         const args: Record<string, string> = {};
         for (const [k, v] of Object.entries(step.args)) {
           args[k] = interpolate(String(v), ctx);
@@ -187,6 +202,13 @@ export async function runGlyf(opts: RunOptions): Promise<string> {
         try {
           ctx[step.out] = await runTool(step.tool, args, opts.connections ?? {});
         } catch (err) {
+          // A try-out on a phone that hasn't turned it on (no location yet):
+          // the sample shows what the glyf will write.
+          const sample = opts.samples ? loadTools().get(step.tool)?.sample : undefined;
+          if (sample && (err as { userFacing?: boolean })?.userFacing) {
+            ctx[step.out] = sample;
+            break;
+          }
           // Its service down or silent: the step it names answers instead.
           const target = step.fallback ? byId.get(step.fallback) : undefined;
           if (!target) throw err;

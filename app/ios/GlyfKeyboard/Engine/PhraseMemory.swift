@@ -83,6 +83,20 @@ struct PhraseMemory: Codable, Equatable {
     /// typed, offered once a word ends: two words at least typed, two at
     /// least to come. The most used one wins.
     func completion(after typed: String, today: Int) -> String? {
+        rest(after: typed, today: today, ahead: 2)?.joined(separator: " ")
+    }
+
+    /// The next word of a remembered sentence, for the strip's first slot:
+    /// the strip offers words, never the rest of a sentence (Arpit,
+    /// 2026-11-06: "only recommend the next word, not phrases"). A tap on
+    /// it brings the word after, so the sentence still comes a word a tap.
+    func nextWord(after typed: String, today: Int) -> String? {
+        guard let word = rest(after: typed, today: today, ahead: 1)?.first else { return nil }
+        let bare = word.trimmingCharacters(in: CharacterSet(charactersIn: ".,!?;:…\"“”()"))
+        return bare.isEmpty ? nil : bare
+    }
+
+    private func rest(after typed: String, today: Int, ahead: Int) -> [String]? {
         let sentence = Self.lastSentence(of: typed)
         let k = Self.key(sentence)
         guard k.count >= 5, k.split(separator: " ").count >= 2, typed.last != "\n" else { return nil }
@@ -95,8 +109,8 @@ struct PhraseMemory: Codable, Equatable {
         guard typed.last?.isWhitespace == true else { return nil }
         let typedWords = sentence.split(separator: " ").count
         let words = best.text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        guard words.count >= typedWords + 2 else { return nil }
-        return words[typedWords...].joined(separator: " ")
+        guard words.count >= typedWords + ahead else { return nil }
+        return Array(words[typedWords...])
     }
 }
 

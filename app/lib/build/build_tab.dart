@@ -138,6 +138,11 @@ class _BuildTabState extends State<BuildTab> {
       return s;
     });
     Catalog.rememberCustomTitles(titles);
+    // What each one needs fetched on the phone before it runs (a Meet link).
+    await rememberGlyfNeeds({
+      for (final g in mine)
+        if (g['def'] is Map) g['id'] as String: (g['def'] as Map).cast<String, dynamic>(),
+    });
   }
 
   Widget _sectionLabel(String text) => Text(text,

@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// docs/STRIP-POLICY.md. Android's StripPolicyTest.kt has the same cases.
@@ -137,5 +138,65 @@ final class StripPolicyTests: XCTestCase {
         p.dismissed(.answer, id: "a", now: t0)
         p.enter(field: "doc2")
         XCTAssertTrue(p.allows(.answer, id: "a", now: t0 + 1))
+    }
+
+    // MARK: SuggestionFit (Arpit, 2026-11-06: no "…", shrink the word instead)
+
+    /// 1pt of width per point of size per letter: easy numbers.
+    private func linear(_ words: [String]) -> (Int, Double) -> Double {
+        { i, size in Double(words[i].count) * size * 0.5 }
+    }
+
+    func testShortWordsKeepThreeEqualSlotsAtFullSize() {
+        let words = ["the", "you", "❤️"]
+        let plan = SuggestionFit.plan(full: [17, 17, 22], total: 314, spacing: 4, measure: linear(words))
+        XCTAssertEqual(plan.map(\.item), [0, 1, 2])
+        XCTAssertEqual(plan.map(\.size), [17, 17, 22])
+        XCTAssertEqual(Set(plan.map(\.width)).count, 1, "equal thirds")
+    }
+
+    func testALongWordShrinksInsteadOfTruncating() {
+        // 12 letters at 17 = 102 + 8 pad > 102 a slot: drawn smaller, whole.
+        let words = ["the", "relationship", "a"]
+        let plan = SuggestionFit.plan(full: [17, 17, 17], total: 314, spacing: 4, measure: linear(words))
+        XCTAssertEqual(plan.map(\.item), [0, 1, 2])
+        XCTAssertLessThan(plan[1].size, 17)
+        XCTAssertGreaterThanOrEqual(plan[1].size, SuggestionFit.smallest)
+        XCTAssertLessThanOrEqual(linear(words)(1, plan[1].size) + SuggestionFit.pad, plan[1].width)
+        XCTAssertEqual(plan[0].size, 17)
+    }
+
+    func testAWordTooLongEvenSmallGetsAWiderSlotOrItsSlotGoes() {
+        let words = ["internationalization", "inter", "intern"]
+        let plan = SuggestionFit.plan(full: [17, 17, 17], total: 314, spacing: 4, measure: linear(words))
+        // 20 letters at 11 = 110 + 8: more than a third, so a wider slot.
+        XCTAssertEqual(plan.first?.item, 0)
+        XCTAssertEqual(plan[0].size, SuggestionFit.smallest)
+        XCTAssertGreaterThan(plan[0].width, (314 - 8) / 3)
+        for slot in plan { if let i = slot.item {
+            XCTAssertLessThanOrEqual(linear(words)(i, slot.size) + SuggestionFit.pad, slot.width + 0.001)
+        } }
+        // Nothing fits the whole bar: dropped, never cut.
+        let huge = ["pneumonoultramicroscopicsilicovolcanoconiosis" + String(repeating: "x", count: 40)]
+        XCTAssertTrue(SuggestionFit.plan(full: [17], total: 314, spacing: 4, measure: linear(huge)).allSatisfy { $0.item == nil })
+    }
+
+    /// The real font on the iPhone 17 Pro's strip (about 322pt across).
+    func testInternationalizationFitsWholeInTheSystemFont() {
+        let words = ["internationalization", "international", "internationally"]
+        let measure: (Int, Double) -> Double = { i, size in
+            Double(ceil((words[i] as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: CGFloat(size))]).width))
+        }
+        let plan = SuggestionFit.plan(full: [17, 17, 17], total: 322, spacing: 4, measure: measure)
+        XCTAssertFalse(plan.isEmpty)
+        var shown = 0
+        for slot in plan { if let i = slot.item {
+            shown += 1
+            XCTAssertGreaterThanOrEqual(slot.size, SuggestionFit.smallest)
+            XCTAssertLessThanOrEqual(measure(i, slot.size) + SuggestionFit.pad, slot.width + 0.001, words[i])
+        } }
+        XCTAssertGreaterThanOrEqual(shown, 2)
+        XCTAssertEqual(plan.first?.item, 0, "the best word always stays")
+        XCTAssertEqual(plan.reduce(0) { $0 + $1.width } + 4 * Double(plan.count - 1), 322, accuracy: 0.01)
     }
 }

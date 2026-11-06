@@ -370,3 +370,73 @@ enum GoogleCache {
                                 name: file)
     }
 }
+
+// MARK: - Phone tools
+
+/// What a built glyf asks of the phone before it runs (the Builder's Tools):
+/// a new Google Meet link, the booking link, today's calendar. Each answer
+/// rides to /glyf/run as the var `phone.<tool>`, so Google's grant and the
+/// calendar never leave the phone. A tool that can't answer stops the run
+/// with where to turn it on.
+enum PhoneTools {
+    static func resolve(_ tools: [String], hasFullAccess: Bool, now: Date = Date(),
+                        done: @escaping (_ vars: [String: String], _ note: String?) -> Void) {
+        var vars: [String: String] = [:]
+        var pending = tools[...]
+        func next() {
+            guard let tool = pending.popFirst() else { return done(vars, nil) }
+            answer(tool, hasFullAccess: hasFullAccess, now: now) { value, note in
+                guard let value, !value.isEmpty else {
+                    return done(vars, note ?? "Open this glyf in Glyf to finish setting it up")
+                }
+                vars["phone.\(tool)"] = value
+                next()
+            }
+        }
+        DispatchQueue.main.async { next() }
+    }
+
+    private static func answer(_ tool: String, hasFullAccess: Bool, now: Date,
+                               _ done: @escaping (String?, String?) -> Void) {
+        switch tool {
+        case "meet.new":
+            CallLink.make(done)
+        case "booking.link":
+            let link = (SettingsStore.current.bookingLink ?? "").trimmingCharacters(in: .whitespaces)
+            done(link.isEmpty ? nil : (link.hasPrefix("http") ? link : "https://\(link)"),
+                 "Add your booking link in Glyf › Connected tools")
+        case "calendar.day":
+            done(dayText(hasFullAccess: hasFullAccess, now: now), "Turn on Calendar in Glyf › Connected tools")
+        default:
+            done(nil, "Update Glyf to run this glyf")
+        }
+    }
+
+    /// Today's events, one a line, then when the day has room; nil when the
+    /// keyboard can read no calendar at all.
+    static func dayText(hasFullAccess: Bool, now: Date = Date(), calendar cal: Calendar = .current) -> String? {
+        let start = cal.startOfDay(for: now)
+        let end = cal.date(byAdding: .day, value: 1, to: start) ?? now
+        var all: [CalendarText.Event]
+        if CalendarWriter.access(hasFullAccess: hasFullAccess) == .ready, CalendarWriter.canRead {
+            all = CalendarWriter.events(from: start, to: end)
+        } else if let json = AppGroupStore.readJSON(name: "calendar.json") {
+            all = CalendarText.events(fromJSON: json)
+        } else {
+            return nil
+        }
+        all = GoogleAdded.merged(into: all, now: now)
+        return lines(for: now, in: all, calendar: cal)
+    }
+
+    static func lines(for day: Date, in all: [CalendarText.Event], calendar cal: Calendar = .current,
+                      locale: Locale = .current, now: Date = Date()) -> String {
+        let today = CalendarText.events(on: day, in: all, calendar: cal)
+        let rows = today.map { e in
+            e.allDay ? "All day \(e.title)" : "\(CalendarText.range(e.start, e.end, calendar: cal, locale: locale)) \(e.title)"
+        }
+        let free = CalendarText.freeTime(on: day, in: all, calendar: cal, locale: locale, now: now)
+        return ((rows.isEmpty ? ["Nothing on the calendar today"] : rows) + [free])
+            .filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+}

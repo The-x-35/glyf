@@ -1,0 +1,13 @@
+{
+  "id": "booking.link",
+  "label": "My booking link",
+  "auth": "phone:booking",
+  "inputs": [],
+  "output": "the person's Cal.com or Calendly page, as saved on the phone",
+  "scopes": [],
+  "discloses": "your booking link, saved on your phone",
+  "connect": "Add your booking link in Glyf › Connected tools",
+  "sample": "https://cal.com/you",
+  "rateLimit": { "perMin": 30 },
+  "timeoutMs": 2000
+}

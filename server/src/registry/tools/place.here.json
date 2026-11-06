@@ -1,0 +1,16 @@
+{
+  "id": "place.here",
+  "label": "Where I am",
+  "auth": "none",
+  "inputs": [
+    { "name": "lat", "type": "string", "required": true },
+    { "name": "lon", "type": "string", "required": true }
+  ],
+  "output": "the street and area the phone is near, then a Google Maps link to the spot",
+  "scopes": [],
+  "discloses": "your phone's approximate location (the street is looked up on OpenStreetMap)",
+  "connect": "Turn on Nearby in Glyf › Profile › Search",
+  "sample": "Near Market St, San Francisco https://www.google.com/maps/search/?api=1&query=37.7897,-122.4000",
+  "rateLimit": { "perMin": 20 },
+  "timeoutMs": 6000
+}

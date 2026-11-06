@@ -194,20 +194,26 @@ abstract final class GlyfApi {
 
   /// Plain English → validated Builder-format def (strict, fail-closed).
   /// Generation can take a while on the smart tier.
-  static Future<Map<String, dynamic>> builderGenerate(String description) async {
+  /// [tools] are the Builder's Tools switches that are on; [privateAI] is
+  /// the glyf's own choice, left out to follow the phone.
+  static Future<Map<String, dynamic>> builderGenerate(String description,
+      {List<String>? tools, bool? privateAI}) async {
     final obj = await _postJson('/builder/generate', {
       'description': description,
       'deviceId': await _deviceId(),
+      'tools': ?tools,
+      'privateAI': ?privateAI,
     }, timeout: const Duration(seconds: 90));
     return (obj['def'] as Map).cast<String, dynamic>();
   }
 
   /// Test-drive a (possibly edited) def against sample input.
   static Future<String> builderTest(
-      Map<String, dynamic> def, String input) async {
+      Map<String, dynamic> def, String input, {Map<String, String> vars = const {}}) async {
     final obj = await _postJson('/builder/test', {
       'def': def,
       'input': input,
+      'vars': vars,
       'deviceId': await _deviceId(),
     }, timeout: const Duration(seconds: 90));
     return (obj['text'] as String?) ?? '';

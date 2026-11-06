@@ -9,6 +9,8 @@ import type { Guard } from "../lib/guard.js";
 import type { GlyfLibrary } from "../lib/userglyfs.js";
 import type { KV } from "../lib/store.js";
 import { connKey, PROVIDERS } from "./connector.js";
+import { aiContext } from "../lib/privateai.js";
+import { modelFree } from "../lib/buildertools.js";
 
 /** POST /glyf/run — SSE stream: token* → done | error (§6.4 fast path).
  *  Resolution order: shipped registry → the device's own glyfs → hub installs.
@@ -99,9 +101,18 @@ export function glyfRoutes(
     // §6.16 plans: the cap belongs to the account (or the phone, signed
     // out) and comes from the database — what the client says about its plan
     // is not evidence.
-    const gate = await guard.spend(req, deviceId);
-    if (!gate.ok) return fail(gate.message);
-    const remaining = gate.remaining;
+    // A glyf that only hands over a Meet link or a place calls no model and
+    // costs no run (only glyfs built with the Builder's Tools can be one).
+    let remaining: number | undefined;
+    if (!modelFree(def)) {
+      const gate = await guard.spend(req, deviceId);
+      if (!gate.ok) return fail(gate.message);
+      remaining = gate.remaining;
+    }
+
+    // The glyf's own Private AI choice, when it made one, beats the phone's.
+    const ai = aiContext();
+    if (ai && def.privateAI !== undefined) ai.zeroG = def.privateAI;
 
     const abort = new AbortController();
     // Response close = client went away mid-stream. (req.raw "close" fires as

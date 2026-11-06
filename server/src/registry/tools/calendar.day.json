@@ -1,0 +1,13 @@
+{
+  "id": "calendar.day",
+  "label": "My day",
+  "auth": "phone:calendar",
+  "inputs": [],
+  "output": "today's events from the phone's calendar, one per line (time, title), or 'Nothing on the calendar today'",
+  "scopes": [],
+  "discloses": "today's events in your phone's calendar",
+  "connect": "Turn on Calendar in Glyf › Connected tools",
+  "sample": "9:30 AM–10:00 AM Standup\n2:00 PM–3:00 PM Design review",
+  "rateLimit": { "perMin": 30 },
+  "timeoutMs": 2000
+}

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../core/auth.dart';
 import '../core/bridge.dart';
 import '../core/telemetry.dart';
+import '../build/glyf_tools.dart';
 import '../core/theme.dart';
 import '../wallet/wallet_flow.dart';
 import '../wallet/wallet_screen.dart';
@@ -50,8 +51,7 @@ class _ConnectedToolsScreenState extends State<ConnectedToolsScreen> {
   }
 
   /// On when the keyboard can use it: turned on, and still allowed.
-  static bool _calendarOn(Map<String, dynamic> status) =>
-      status['enabled'] == true && (status['permission'] == 'granted' || status['permission'] == 'writeOnly');
+  static bool _calendarOn(Map<String, dynamic> status) => GlyfTools.calendarOn(status);
 
   /// The phone asks once; after a refusal only Settings can allow it, and
   /// taking it back is Settings' too, so there is no off here.

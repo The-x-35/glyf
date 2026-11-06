@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
 import '../core/dismiss_keyboard.dart';
@@ -8,8 +9,30 @@ import '../core/telemetry.dart';
 import '../core/text_sheet.dart';
 import '../core/theme.dart';
 import '../home/keyboard_visual.dart';
+import '../profile/brand_marks.dart';
+import '../profile/connected_tools_screen.dart';
 import '../profile/paywall_sheet.dart';
+import '../profile/search_sheet.dart';
+import 'glyf_tools.dart';
 import 'key_picker.dart';
+
+/// Tells the keyboard what each built glyf needs before it runs: the phone
+/// tools to fetch (a new Meet link, the booking link, the day) and what it
+/// reads ("none" = nothing typed is sent, Insert adds at the cursor).
+Future<void> rememberGlyfNeeds(Map<String, Map<String, dynamic>> defsById) =>
+    GlyfBridge.updateSharedSettings((s) {
+      final tools = Map<String, dynamic>.from((s['customTools'] as Map<String, dynamic>?) ?? const {});
+      final inputs = Map<String, dynamic>.from((s['customInputs'] as Map<String, dynamic>?) ?? const {});
+      defsById.forEach((id, def) {
+        final needs = GlyfTools.phoneToolsOf(def);
+        needs.isEmpty ? tools.remove(id) : tools[id] = needs;
+        final input = def['input'];
+        input is String ? inputs[id] = input : inputs.remove(id);
+      });
+      s['customTools'] = tools;
+      s['customInputs'] = inputs;
+      return s;
+    });
 
 /// §6.8 — make a glyf. Say what it should do (or tap an idea), watch it work
 /// on a sample message, pick the key it lives on, save. The generated steps
@@ -44,14 +67,28 @@ class _BuilderScreenState extends State<BuilderScreen> {
   String? _error;
   String _result = '';
 
-  /// Tap one and it is made: no typing needed.
+  /// The Tools switches that are on: what this glyf may use.
+  final Set<String> _tools = {for (final t in GlyfTools.all) t.id};
+  /// Which tools are connected now (Connected tools / Profile › Search).
+  Map<String, bool> _ready = const {};
+  /// The glyf's Private AI: the phone's switch until this one is touched.
+  bool _privateAI = GlyfApi.privateAI;
+  bool _privateTouched = false;
+  /// What a try-out may use for real: the rough fix and the booking link.
+  Map<String, String> _testVars = const {};
+
+  /// Tap one and it is made: no typing needed. A tool idea turns its tool on.
   static const _ideas = [
-    ('💼', 'Turn it into a LinkedIn post'),
-    ('😊', 'Make it sound warmer'),
-    ('📝', 'Sum it up in 3 bullets'),
-    ('📧', 'Turn my notes into an email'),
-    ('🌮', 'Reply in Spanish'),
-    ('🙏', 'Say no, politely'),
+    ('📹', 'Send a new Meet link', 'meet', null),
+    ('📅', 'Share my booking link', 'booking', null),
+    ('📍', 'Share where I am', 'location', null),
+    ('🗓️', 'Tell them when I’m free today', 'calendar', null),
+    ('🔒', 'Rewrite it clearly, privately', null, true),
+    ('💼', 'Turn it into a LinkedIn post', null, null),
+    ('😊', 'Make it sound warmer', null, null),
+    ('📝', 'Sum it up in 3 bullets', null, null),
+    ('🌮', 'Reply in Spanish', null, null),
+    ('🙏', 'Say no, politely', null, null),
   ];
 
   @override
@@ -65,6 +102,49 @@ class _BuilderScreenState extends State<BuilderScreen> {
         setState(() => _bindings = b.map((k, v) => MapEntry(k, v.toString())));
       }
     });
+    _loadReady();
+  }
+
+  Future<void> _loadReady() async {
+    final google = await GlyfBridge.googleStatus();
+    final calendar = await GlyfBridge.calendarStatus();
+    final location = await GlyfBridge.locationStatus();
+    final shared = await GlyfBridge.sharedSettings();
+    final link = (shared['bookingLink'] as String?)?.trim();
+    final lat = shared['lastLat'], lon = shared['lastLon'];
+    if (!mounted) return;
+    setState(() {
+      _ready = GlyfTools.ready(google: google, calendar: calendar, location: location, bookingLink: link);
+      _testVars = {
+        if (lat is num && lon is num) ...{'lat': '$lat', 'lon': '$lon'},
+        if (link != null && link.isNotEmpty) 'phone.booking.link': link,
+      };
+    });
+  }
+
+  /// Connect goes where the tool is connected, then reads it again.
+  Future<void> _connect(GlyfTool tool) async {
+    if (tool.connect == ToolConnect.nearby) {
+      await showSearchSheet(context, nearby: _ready['location'] == true);
+    } else {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ConnectedToolsScreen()));
+    }
+    await _loadReady();
+  }
+
+  void _setTool(String id, bool on) {
+    setState(() => on ? _tools.add(id) : _tools.remove(id));
+    // The glyf must keep to what is on: make it again with the new set.
+    if (_def != null) _generate();
+  }
+
+  void _setPrivate(bool on) {
+    setState(() {
+      _privateAI = on;
+      _privateTouched = true;
+      _def?['privateAI'] = on;
+    });
+    if (_def != null) _test();
   }
 
   @override
@@ -75,8 +155,13 @@ class _BuilderScreenState extends State<BuilderScreen> {
     super.dispose();
   }
 
-  Future<void> _generate([String? idea]) async {
+  Future<void> _generate([String? idea, String? tool, bool? private]) async {
     if (idea != null) _describe.text = idea;
+    if (tool != null) _tools.add(tool);
+    if (private != null) {
+      _privateAI = private;
+      _privateTouched = true;
+    }
     final desc = _describe.text.trim();
     if (desc.length < 4 || _generating) return;
     FocusManager.instance.primaryFocus?.unfocus();
@@ -89,7 +174,9 @@ class _BuilderScreenState extends State<BuilderScreen> {
     });
     Telemetry.log('builder_generate');
     try {
-      final def = await GlyfApi.builderGenerate(desc);
+      final def = await GlyfApi.builderGenerate(desc,
+          tools: [for (final t in GlyfTools.all) if (_tools.contains(t.id)) t.id],
+          privateAI: _privateTouched ? _privateAI : null);
       _name.text = (def['name'] as String?) ?? 'My glyf';
       setState(() => _def = def);
       Telemetry.log('builder_generated_ok');
@@ -112,7 +199,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
       _result = '';
     });
     try {
-      final text = await GlyfApi.builderTest(def, _sample.text);
+      final text = await GlyfApi.builderTest(def, _sample.text, vars: _testVars);
       if (mounted) setState(() => _result = text);
       Telemetry.log('builder_tested');
     } on GlyfApiException catch (e) {
@@ -143,6 +230,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
       final saved = await GlyfApi.saveGlyf(def);
       final id = (saved['id'] as String?) ?? (def['id'] as String? ?? '');
       Telemetry.log('builder_saved');
+      if (id.isNotEmpty) await rememberGlyfNeeds({id: def});
       final key = _key;
       if (key != null && id.isNotEmpty) {
         await bindGlyf(letter: key, glyfId: id, displayName: def['name'] as String);
@@ -236,13 +324,16 @@ class _BuilderScreenState extends State<BuilderScreen> {
             const SizedBox(height: 22),
             _label('Ideas'),
             _card([
-              for (final (emoji, idea) in _ideas)
+              for (final (emoji, idea, tool, private) in _ideas)
                 _row(
                   leading: Text(emoji, style: const TextStyle(fontSize: 19)),
                   title: idea,
-                  onTap: () => _generate(idea),
+                  onTap: () => _generate(idea, tool, private),
                 ),
             ]),
+            const SizedBox(height: 22),
+            _label('Tools'),
+            _toolsCard(),
           ],
           if (_generating) ...[
             const SizedBox(height: 22),
@@ -252,6 +343,9 @@ class _BuilderScreenState extends State<BuilderScreen> {
             const SizedBox(height: 22),
             _label('Try it'),
             _preview(),
+            const SizedBox(height: 22),
+            _label('Tools'),
+            _toolsCard(),
             const SizedBox(height: 22),
             _label('Hold a key to run it'),
             _keyPicker(),
@@ -355,7 +449,7 @@ class _BuilderScreenState extends State<BuilderScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Align(
+        if (_def?['input'] != 'none') Align(
           alignment: Alignment.centerLeft,
           child: GestureDetector(
             onTap: () => setState(() => _editingSample = true),
@@ -500,7 +594,9 @@ class _BuilderScreenState extends State<BuilderScreen> {
                     color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w700)),
             title: (step['prompt'] ??
                     step['template'] ??
-                    (step['type'] == 'tool' ? 'Uses ${step['tool']}' : step['cond'] ?? ''))
+                    (step['type'] == 'tool'
+                        ? GlyfTools.toolTitles[step['tool']] ?? 'Uses ${step['tool']}'
+                        : step['cond'] ?? ''))
                 as String,
             maxLines: 3,
             trailing: step['prompt'] != null || step['template'] != null
@@ -517,6 +613,90 @@ class _BuilderScreenState extends State<BuilderScreen> {
           ),
       ],
     ]));
+  }
+
+  /// Private AI, then every tool a glyf can use: a switch each, and Connect
+  /// for the ones that aren't connected yet.
+  Widget _toolsCard() {
+    final used = _def == null ? const <String>{} : GlyfTools.usedBy(_def!);
+    return _card([
+      _toolRow(
+        mark: _iconTile(Icons.lock_outline_rounded),
+        title: 'Private AI on 0G',
+        id: 'private-ai',
+        on: _privateAI,
+        onChanged: _setPrivate,
+      ),
+      for (final t in GlyfTools.all)
+        _toolRow(
+          mark: switch (t.brand) {
+            'location' => _iconTile(Icons.near_me_outlined),
+            'details' => _iconTile(Icons.badge_outlined),
+            'live' => _iconTile(Icons.public_rounded),
+            _ => BrandMark(t.brand, size: 28),
+          },
+          title: t.title,
+          id: t.id,
+          inUse: used.contains(t.id),
+          on: _tools.contains(t.id),
+          onChanged: _generating ? null : (v) => _setTool(t.id, v),
+          connect: t.connect != ToolConnect.none && _ready[t.id] == false ? () => _connect(t) : null,
+        ),
+    ]);
+  }
+
+  Widget _iconTile(IconData icon) => Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(color: const Color(0xFFF1F2F5), borderRadius: BorderRadius.circular(8)),
+        child: Icon(icon, size: 17, color: Glass.ink),
+      );
+
+  Widget _toolRow({
+    required Widget mark,
+    required String title,
+    required String id,
+    required bool on,
+    required ValueChanged<bool>? onChanged,
+    bool inUse = false,
+    VoidCallback? connect,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+      child: Row(children: [
+        SizedBox(width: 28, child: Center(child: mark)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: Glass.ink, fontSize: 15, height: 1.3,
+                  fontWeight: inUse ? FontWeight.w700 : FontWeight.w400)),
+        ),
+        if (connect != null) ...[
+          Semantics(
+            identifier: 'builder:connect:$id',
+            button: true,
+            child: GestureDetector(
+              onTap: connect,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: Glass.ink, borderRadius: BorderRadius.circular(20)),
+                child: const Text('Connect',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+        Semantics(
+          identifier: 'builder:tool:$id',
+          toggled: on,
+          child: CupertinoSwitch(value: on, activeTrackColor: Glass.ink, onChanged: onChanged),
+        ),
+      ]),
+    );
   }
 
   Widget _label(String text) => Padding(

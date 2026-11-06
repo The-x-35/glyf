@@ -389,4 +389,90 @@ final class TypingEngineTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Emoji habits (Arpit, 2026-11-06: "typing 'I love you' with 3 hearts: we can learn that")
+
+    /// Types `text` the way the keyboard sees it: one look at the text
+    /// before the caret per character, as EmojiRuns.finished is fed, then
+    /// the field emptied (sent). Words are committed at their space.
+    private func send(_ text: String, to engine: TypingEngine, policy: TypingEngine.Policy = .all) {
+        var seen = ""
+        var anchor: String?
+        var typed = ""
+        func look(_ now: String) {
+            if let run = EmojiRuns.finished(seen: seen, now: now), run.anchor != anchor {
+                anchor = run.anchor
+                engine.noteEmoji(run, policy: policy, today: today)
+            }
+            seen = now
+        }
+        for ch in text {
+            if ch == " " {
+                let word = WordTracker.currentWord(beforeContext: typed)
+                if !word.isEmpty, word.allSatisfy(\.isLetter) {
+                    _ = engine.commit(word: word, previous: WordTracker.previousWord(beforeContext: typed),
+                                      autoCapitalized: false, policy: policy, today: today)
+                }
+            }
+            typed.append(ch)
+            look(typed)
+        }
+        look("")
+    }
+
+    func testEmojiRunAfterWordsIsLearnedAndOffered() {
+        let engine = TypingEngine(base: nil)
+        send("I love you ❤️❤️❤️", to: engine)
+        XCTAssertNil(engine.emojiRun(after: "you", previous: "love", today: today), "once is not yet a habit")
+        send("love you ❤️❤️❤️ ", to: engine)
+        XCTAssertEqual(engine.emojiRun(after: "you", previous: "love", today: today), "❤️❤️❤️", "the exact run")
+        // "thank you" has its own habit; the hearts don't follow every "you".
+        for _ in 0..<2 { send("thank you 🙏", to: engine) }
+        XCTAssertEqual(engine.emojiRun(after: "you", previous: "thank", today: today), "🙏")
+        for _ in 0..<20 { send("are you there", to: engine) }
+        XCTAssertNil(engine.emojiRun(after: "you", previous: "are", today: today),
+                     "two hearts in twenty-four you's is no habit of the word alone")
+        // A word alone, typed glued to its emoji too.
+        for _ in 0..<2 { send("haha😂", to: engine) }
+        XCTAssertEqual(engine.emojiRun(after: "haha", previous: nil, today: today), "😂")
+        // Kept on disk with the words, and gone with the word in My words.
+        let back = PersonalLexicon(json: engine.personal.json())
+        XCTAssertEqual(back.emojiRun(after: "you", previous: "love", today: today), "❤️❤️❤️")
+        XCTAssertEqual(back, engine.personal)
+        engine.forget("haha")
+        XCTAssertNil(engine.emojiRun(after: "haha", previous: nil, today: today))
+        XCTAssertNil(engine.emojiRun(after: "you", previous: "love", policy: [], today: today),
+                     "nothing offered where suggestions are off")
+    }
+
+    func testEmojiRunsAreNotLearnedWhereLearningIsOff() {
+        let engine = TypingEngine(base: nil)
+        // A secure (or code, email, search) field's policy has no .learning.
+        for _ in 0..<3 { send("love you ❤️❤️❤️ ", to: engine, policy: []) }
+        for _ in 0..<3 { send("love you ❤️❤️❤️ ", to: engine, policy: [.suggestions, .autocorrect]) }
+        XCTAssertNil(engine.emojiRun(after: "you", previous: "love", today: today))
+        XCTAssertTrue(engine.personal.emoji.isEmpty)
+        // Nor after a code, a link or a secret-looking token.
+        XCTAssertNil(EmojiRuns.trailing("482913 🔥"))
+        XCTAssertNil(EmojiRuns.trailing("see tryglyf.com 🔥"))
+        XCTAssertNil(EmojiRuns.trailing("Done. 🔥"), "no word right before it")
+        XCTAssertNil(EmojiRuns.trailing("wow 🔥🔥🔥🔥🔥🔥🔥"), "a wall of emoji is decoration")
+    }
+
+    func testEmojiRunDetection() {
+        XCTAssertEqual(EmojiRuns.trailing("I love you ❤️❤️❤️ ")?.emoji, "❤️❤️❤️")
+        XCTAssertEqual(EmojiRuns.trailing("I love you ❤️❤️❤️")?.word, "you")
+        XCTAssertEqual(EmojiRuns.trailing("I love you ❤️❤️❤️")?.previous, "love")
+        XCTAssertEqual(EmojiRuns.trailing("hi 👨‍👩‍👧")?.emoji, "👨‍👩‍👧")
+        XCTAssertNil(EmojiRuns.trailing("call me at 9"), "a digit is no emoji")
+        XCTAssertTrue(EmojiRuns.isEmoji("❤️"))
+        XCTAssertFalse(EmojiRuns.isEmoji("❤"), "the text-style heart is a symbol")
+        XCTAssertFalse(EmojiRuns.isEmoji("#"))
+        // Finished by its space, by a strip tap that put it in with one, or by sending.
+        XCTAssertNotNil(EmojiRuns.finished(seen: "love you ❤️", now: "love you ❤️ "))
+        XCTAssertNotNil(EmojiRuns.finished(seen: "love you ", now: "love you ❤️❤️❤️ "))
+        XCTAssertNotNil(EmojiRuns.finished(seen: "love you ❤️❤️", now: ""))
+        XCTAssertNil(EmojiRuns.finished(seen: "love you ❤️", now: "love you ❤️❤️"), "still typing it")
+        XCTAssertNil(EmojiRuns.finished(seen: "", now: "an old draft, love you ❤️ "), "a draft the keyboard opened on")
+    }
 }
