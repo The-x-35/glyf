@@ -45,8 +45,7 @@ One section per field of the Hacker Dashboard form (Project › Project details,
 >
 > Hacky bits: trades are understood without any AI; MetaMask's archived iOS SDK protocol re-implemented in 150 lines of Dart; test stand-ins that answer as MetaMask and Phantom on the simulator.
 
-**GitHub repository:** https://github.com/The-x-35/glyf (branch `ethglobal-mumbai`).
-- **ARPIT:** the repo has to be public first. The history was scanned on 6 Nov: no real keys anywhere.
+**GitHub repository:** https://github.com/The-x-35/glyf (public since 6 Nov; the history was scanned first: no real keys anywhere).
 
 ---
 
@@ -138,7 +137,7 @@ Screenshots from the iPhone simulator, in `docs/ethglobal-shots/` (the assistant
 ## Before and during (Continuity), for any field that asks
 
 - **Before:** commit `f42b9c0` on `main` (4 Nov 2026, before the event): Glyf as shipped on TestFlight. Solana only, Phantom for payments, AI on OpenRouter and Google, no EVM code, no 0G.
-- **During:** every commit on `ethglobal-mumbai` after `f42b9c0`: `git log f42b9c0..ethglobal-mumbai` (26 commits from 6 Nov 01:59 IST).
+- **During:** every commit after `f42b9c0`, made on branch `ethglobal-mumbai` and merged into `main` on 6 Nov: `git log f42b9c0..main`.
 
 ## How AI was used (ETHGlobal requires it)
 

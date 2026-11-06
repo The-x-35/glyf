@@ -47,11 +47,11 @@ void main() {
       expect(Bip39.isValid('abandon abandon'), isFalse);
     });
 
-    test('a new phrase is 12 known words with a good checksum, never the same twice', () {
+    test('a new phrase is 24 known words with a good checksum, never the same twice', () {
       final seen = <String>{};
       for (var i = 0; i < 20; i++) {
         final p = Bip39.generate();
-        expect(p.split(' ').length, 12);
+        expect(p.split(' ').length, 24);
         expect(Bip39.isValid(p), isTrue);
         seen.add(p);
       }

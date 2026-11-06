@@ -14,7 +14,7 @@ import 'base58.dart';
 import 'bip39_words.dart';
 
 /// A recovery phrase (BIP-39) and the two keys Glyf makes from it, the
-/// way MetaMask and Phantom do, so the same 12 words open the same
+/// way MetaMask and Phantom do, so the same 24 words open the same
 /// addresses there:
 /// - Ethereum: BIP-32 secp256k1 at m/44'/60'/0'/0/0 (MetaMask's first account)
 /// - Solana: SLIP-0010 ed25519 at m/44'/501'/0'/0' (Phantom's first account)
@@ -22,10 +22,11 @@ import 'bip39_words.dart';
 abstract final class Bip39 {
   static const words = bip39English;
 
-  /// 12 new words from 128 bits of the system's secure random source.
+  /// 24 new words from 256 bits of the system's secure random source
+  /// (Arpit, 2026-11-06: "we will have a 24 words seed phrase").
   static String generate({Random? random}) {
     final r = random ?? Random.secure();
-    return fromEntropy(Uint8List.fromList(List.generate(16, (_) => r.nextInt(256))));
+    return fromEntropy(Uint8List.fromList(List.generate(32, (_) => r.nextInt(256))));
   }
 
   /// [entropy] (16–32 bytes, a multiple of 4) as words: its bits and the
