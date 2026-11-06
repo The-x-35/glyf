@@ -30,6 +30,8 @@ One section per field of the Hacker Dashboard form (Project › Project details,
 > Trading is social: after a trade, Share in chat drops a link into the conversation, and a friend's Copy this trade opens the same order in their Glyf, which waits for their tap before it signs.
 >
 > And the AI is private: on this build, every AI call (rewrites, answers, the strip's suggestions, Build your own) runs on 0G's Private Computer inside a TEE, each answer verified by 0G, with its request id in the app's 0G receipts. Names, cards and codes are already swapped for placeholders on the phone before any model sees the text.
+>
+> The keyboard also recommends: type "dca 20$ in eth each month" and a chip offers the Flash plan, filled in; when the phone can't read a sentence, the AI (on 0G) picks the right tool, a trade, a calendar event, a Meet link, a search, and opens it prefilled. Every value is editable in the keyboard, Uniswap swaps any token to any token with token and chain pickers, and the Glyf wallet is a 24-word recovery phrase that makes both its Ethereum and Solana wallets, with Phantom and MetaMask one switch away.
 
 **How it's made** [about 1,600; minimum 280]:
 
