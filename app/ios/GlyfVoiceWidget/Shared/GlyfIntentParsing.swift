@@ -16,6 +16,14 @@ enum GlyfIntentParsing {
         throw GlyfIntentError.failed("Couldn't rewrite that right now")
     }
 
+    /// Run Glyf from a Shortcuts tile has no text yet: the built-ins that
+    /// work on text (rewrites, Proofread, Translate) ask for it first, so
+    /// they never run on nothing. Saved glyfs may need none, so they don't.
+    static func asksForText(glyfId: String, input: String) -> Bool {
+        guard input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return glyfId.hasPrefix("rewrite.") || glyfId == "glyf.proofread" || glyfId == "glyf.translate"
+    }
+
     /// The text of POST /glyf/run's event stream: its `done`, else the
     /// tokens; an `error` event throws its message.
     static func streamText(_ body: String) throws -> String {

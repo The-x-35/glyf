@@ -143,6 +143,9 @@ struct RunGlyfIntent: AppIntent {
         #if GLYF_WIDGET
         return .result(value: "", dialog: "")
         #else
+        if GlyfIntentParsing.asksForText(glyfId: glyf.id, input: input) {
+            input = try await $input.requestValue("What should \(glyf.title) work on?")
+        }
         let out = try await GlyfIntentAPI.runGlyf(glyf.id, input: input)
         return .result(value: out, dialog: "\(out)")
         #endif
