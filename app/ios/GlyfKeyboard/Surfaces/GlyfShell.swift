@@ -1658,6 +1658,11 @@ private final class ShellCell: UITableViewCell {
 
     private func setIcon(_ name: String) {
         chip.isHidden = false
+        // "chain:base": the chain's own mark, in its colours.
+        if name.hasPrefix("chain:"), let mark = ChainLogo.image(String(name.dropFirst(6)), side: 20) {
+            chipIcon.image = mark.withRenderingMode(.alwaysOriginal)
+            return
+        }
         chipIcon.image = UIImage(systemName: name)
     }
 
@@ -1665,6 +1670,21 @@ private final class ShellCell: UITableViewCell {
         trailing = v
         card.addSubview(v)
         setNeedsLayout()
+    }
+
+    /// A chain's mark and name as one segment image (a segment can't hold both).
+    static func chainSegment(_ chain: String) -> UIImage {
+        let name = (TradeIntent.chainLabels[chain] ?? chain.capitalized) as NSString
+        let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 13, weight: .semibold),
+                                                    .foregroundColor: Glass.textPrimary]
+        let tw = ceil(name.size(withAttributes: attrs).width)
+        let size = CGSize(width: 16 + 6 + tw, height: 18)
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            ChainLogo.image(chain, side: 16)?.draw(in: CGRect(x: 0, y: 1, width: 16, height: 16))
+            name.draw(at: CGPoint(x: 22, y: 0), withAttributes: attrs)
+        }.withRenderingMode(.alwaysOriginal)
+        image.accessibilityLabel = name as String
+        return image
     }
 
     private func chevron() -> UIView {
@@ -1761,9 +1781,13 @@ private final class ShellCell: UITableViewCell {
             accessibilityIdentifier = "toggle:\(t)"
         case .segmented(let t, let options, let valueFn, let set):
             title.text = t
-            let seg = UISegmentedControl(items: options.map(\.capitalized))
+            // Chains wear their marks beside their names.
+            let marked = options.allSatisfy { ChainLogo.mark($0) != nil }
+            let seg = marked
+                ? UISegmentedControl(items: options.map { Self.chainSegment($0) })
+                : UISegmentedControl(items: options.map(\.capitalized))
             seg.selectedSegmentIndex = options.firstIndex(of: valueFn()) ?? 0
-            seg.selectedSegmentTintColor = Glass.controlOn
+            seg.selectedSegmentTintColor = marked ? (Glass.isDark ? UIColor(white: 0.36, alpha: 1) : .white) : Glass.controlOn
             seg.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 13, weight: .medium),
                                         .foregroundColor: Glass.textPrimary], for: .normal)
             seg.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 13, weight: .semibold),

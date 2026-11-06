@@ -2769,6 +2769,53 @@ final class GlyfScenarioUITests: XCTestCase {
         tap("toolbar:close")
     }
 
+    /// S305: the trade panel on a dark sheet (Messages follows the system;
+    /// Glyf's own app is always light): a swap, its token and chain lists,
+    /// the amount strip, a Flash bracket and its price strip.
+    func testS305_TheTradePanelInDark() throws {
+        open(["--glyf-test-evm-wallet"])
+        let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
+        host = messages
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light; messages.terminate() }
+        XCUIDevice.shared.system.open(URL(string: "sms:+15555648583&body=hi")!)
+        XCTAssertTrue(messages.wait(for: .runningForeground, timeout: 8))
+        sleep(2)
+        if !switchToGlyf() { return XCTFail("Glyf keyboard not up in Messages") }
+        for _ in 0..<3 { el("key:delete").tap() }
+        type("swap 10 usdc to eth on base")
+        guard let chip = wait("strip:smart", 6) else { return XCTFail("no swap chip") }
+        chip.tap()
+        guard wait("trade:go", 5) != nil else { return XCTFail("no trade panel") }
+        sleep(4)
+        keepScreenshot("dark-m-swap")
+        tap("trade:token:buy")
+        sleep(3)
+        keepScreenshot("dark-m-tokens")
+        tap("trade:back")
+        tap("trade:chain:sell")
+        sleep(1)
+        keepScreenshot("dark-m-chains")
+        tap("trade:back")
+        tap("trade:amount")
+        sleep(1)
+        keepScreenshot("dark-m-amount")
+        tap("trade:done")
+        tap("toolbar:close")
+        sleep(1)
+        type(". my eth take profit 4500 stop loss 3000")
+        guard let order = wait("strip:smart", 6) else { return XCTFail("no bracket chip") }
+        order.tap()
+        guard wait("trade:go", 5) != nil else { return XCTFail("no bracket panel") }
+        sleep(3)
+        keepScreenshot("dark-m-bracket")
+        tap("trade:row:price")
+        sleep(1)
+        keepScreenshot("dark-m-price")
+        tap("trade:done")
+        tap("toolbar:close")
+    }
+
     private func keepScreenshot(_ name: String) {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.lifetime = .keepAlways
