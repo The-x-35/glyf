@@ -223,9 +223,9 @@ class _KeyboardScreenState extends State<KeyboardScreen> {
           // Glyf wallet, or Phantom on Solana and MetaMask on Ethereum.
           _card([
             _currencyRow(),
+            // Who signs (the Glyf wallet, or Phantom and MetaMask) is the
+            // switch at the top of Profile › Wallet, its one place.
             _switch('Wallet', 'walletEnabled'),
-            if ((_settings['walletEnabled'] as bool?) ?? false)
-              _choiceRow('Sign with', 'walletMode', {for (final m in WalletMode.values) m.name: m.label}),
           ]),
           const SizedBox(height: 18),
           _label('Clipboard & AI'),

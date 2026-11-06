@@ -3,12 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:glyf/evm/evm_signer.dart';
 import 'package:glyf/profile/keyboard_screen.dart';
 import 'package:glyf/wallet/wallet_mode.dart';
 
-/// Keyboard › Sign with: the one switch between the Glyf wallet and the
-/// outside wallets, shown with the wallet, saved where the keyboard reads it.
+/// The one switch between the Glyf wallet and the outside wallets: on the
+/// Wallet page (not in Keyboard settings), saved where the keyboard reads it.
 void main() {
   const bridge = MethodChannel('so.glyf/bridge');
   late Map<String, dynamic> stored;
@@ -46,27 +45,19 @@ void main() {
     await settle(tester);
   }
 
-  testWidgets('no Sign with until the wallet is on', (tester) async {
+  testWidgets('Keyboard settings have no Sign with: the switch lives on the Wallet page', (tester) async {
+    stored['walletEnabled'] = true;
     await open(tester);
     expect(find.byKey(const ValueKey('choice:walletMode')), findsNothing);
   });
 
-  testWidgets('Sign with shows the Glyf wallet, and picking outside wallets routes both chains there', (tester) async {
-    stored['walletEnabled'] = true;
-    await open(tester);
-    final row = find.byKey(const ValueKey('choice:walletMode'));
-    await tester.ensureVisible(row);
-    await tester.pumpAndSettle();
-    expect(find.descendant(of: row, matching: find.text('Glyf wallet')), findsOneWidget);
-    await tester.tap(row);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Phantom & MetaMask').last);
-    await tester.pumpAndSettle();
-    await settle(tester);
+  test('the Wallet page switch saves where the keyboard reads it, and routes both chains', () async {
+    await WalletModes.set(WalletMode.external);
     expect(stored['walletMode'], 'external');
-    expect(WalletModes.mode.value, WalletMode.external);
-    expect(EvmSigner.kind.value, EvmSignerKind.metamask);
-    expect(stored['evmSigner'], 'metamask');
-    expect(find.descendant(of: row, matching: find.text('Phantom & MetaMask')), findsOneWidget);
+    expect(WalletModes.route(solana: true, mode: WalletModes.mode.value).signer, WalletSigner.phantom);
+    expect(WalletModes.route(solana: false, mode: WalletModes.mode.value).signer, WalletSigner.metamask);
+    await WalletModes.set(WalletMode.internal);
+    expect(stored['walletMode'], 'internal');
+    expect(WalletModes.route(solana: true, mode: WalletModes.mode.value, glyfSolana: 'S').signer, WalletSigner.glyf);
   });
 }

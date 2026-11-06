@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart' show CupertinoSlidingSegmentedControl;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/bridge.dart';
+import '../core/glyf_api.dart';
 import '../core/theme.dart';
 import '../evm/evm_signer.dart';
 import '../evm/evm_wallet.dart';
@@ -16,6 +18,7 @@ import 'send_screen.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
 import 'wallet_flow.dart';
+import 'wallet_mode.dart';
 import 'wallet_secrets_screen.dart';
 
 /// Profile → Wallet. Two kinds of wallet:
@@ -24,9 +27,10 @@ import 'wallet_secrets_screen.dart';
 ///   shown only after the phone's own unlock;
 /// - outside wallets (external): Phantom for Solana, MetaMask for Ethereum
 ///   and its L2s, each signing in its own app.
-/// Which of them signs is one switch, Profile › Keyboard › Sign with
-/// (WalletModes); below are the Solana wallet that signs (balances, Send,
-/// Buy) and the Ethereum screen (balances, orders).
+/// Which of them signs is the one switch at the top (WalletModes); below it,
+/// the Ethereum and Solana wallets that sign, each with its balances
+/// (Arpit, 2026-11-07: "just have a toggle, internal wallet or external
+/// wallet ... it should show the balance of both Ethereum and Solana").
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
 
@@ -38,6 +42,10 @@ class _WalletScreenState extends State<WalletScreen> {
   BigInt? _sol;
   BigInt? _usdc;
   double? _solPrice;
+
+  /// The Ethereum wallet that signs, on Base; ETH's price in dollars.
+  ({double eth, double usdc})? _evm;
+  double? _ethPrice;
   bool _connecting = false;
   bool _making = false;
   String? _error;
@@ -59,7 +67,10 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     WalletFlow.link.addListener(_refresh);
     WalletFlow.load().then((_) => _refresh());
-    EvmSigner.load().then((_) => mounted ? setState(() {}) : null);
+    EvmSigner.load().then((_) {
+      if (mounted) setState(() {});
+      _refreshEvm();
+    });
     Mwa.isAvailable().then((here) {
       if (mounted && here) setState(() => _mwaHere = true);
     });
@@ -103,6 +114,7 @@ class _WalletScreenState extends State<WalletScreen> {
     await WalletFlow.load();
     if (mounted) setState(() {});
     _refresh();
+    _refreshEvm();
   }
 
   Future<void> _make() async {
@@ -210,6 +222,69 @@ class _WalletScreenState extends State<WalletScreen> {
     if (mounted) setState(() {});
   }
 
+  /// The one switch: the Glyf wallet (one recovery phrase, Ethereum and
+  /// Solana from it) or Phantom and MetaMask.
+  Future<void> _setMode(WalletMode m) async {
+    if (WalletModes.mode.value == m) return;
+    setState(() {
+      _evm = null;
+      _sol = _usdc = null;
+      _error = null;
+    });
+    await WalletModes.set(m);
+    await EvmSigner.follow();
+    await WalletFlow.load();
+    if (mounted) setState(() {});
+    _refresh();
+    _refreshEvm();
+  }
+
+  /// The Ethereum wallet that signs, on Base: ETH and USDC, and ETH's price.
+  Future<void> _refreshEvm() async {
+    final address = EvmSigner.address.value;
+    if (address == null) {
+      if (mounted) setState(() => _evm = null);
+      return;
+    }
+    try {
+      final res = await GlyfApi.evmGet('/evm/balances?chain=base&address=$address');
+      final rows = (res['balances'] as List? ?? const []).map((b) => Map<String, dynamic>.from(b as Map));
+      double held(String symbol) =>
+          double.tryParse('${rows.where((r) => r['symbol'] == symbol).firstOrNull?['amount'] ?? 0}') ?? 0;
+      double? price = _ethPrice;
+      if (price == null) {
+        final q = await GlyfApi.evmPost('/uniswap/quote', {'chain': 'base', 'sell': 'ETH', 'buy': 'USDC', 'amount': '1'});
+        price = double.tryParse('${q['amountOut']}');
+      }
+      if (!mounted) return;
+      setState(() {
+        _evm = (eth: held('ETH'), usdc: held('USDC'));
+        _ethPrice = price;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Couldn’t read the Ethereum balance');
+    }
+  }
+
+  double? get _total {
+    final e = _evm, sol = _sol, usdc = _usdc;
+    double sum = 0;
+    var any = false;
+    if (e != null && _ethPrice != null) {
+      sum += e.eth * _ethPrice! + e.usdc;
+      any = true;
+    }
+    if (sol != null && _solPrice != null) {
+      sum += sol.toDouble() / 1e9 * _solPrice!;
+      any = true;
+    }
+    if (usdc != null) {
+      sum += usdc.toDouble() / 1e6;
+      any = true;
+    }
+    return any ? sum : null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -221,43 +296,307 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       body: ListenableBuilder(
         listenable: Listenable.merge([
+          WalletModes.mode,
           WalletFlow.link,
           WalletFlow.external,
           GlyfKeys.evmAddress,
           GlyfKeys.solanaAddress,
           EvmSigner.address,
         ]),
-        builder: (context, _) => ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-          children: [
-            _glyfCard(),
-            const SizedBox(height: 18),
-            _label('Outside wallets'),
-            _outsideCard(),
-            if (WalletFlow.link.value != null) ...[
-              const SizedBox(height: 18),
-              _solanaCard(WalletFlow.link.value!),
-            ],
-            const SizedBox(height: 18),
-            _ethereumRow(),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Glass.danger, fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ],
-        ),
+        builder: (context, _) {
+          final internal = WalletModes.mode.value == WalletMode.internal;
+          final made = GlyfKeys.evmAddress.value != null;
+          return RefreshIndicator(
+            onRefresh: () => Future.wait([_refresh(), _refreshEvm()]),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+              children: [
+                _modeSwitch(internal),
+                const SizedBox(height: 18),
+                if (internal && !made)
+                  _makeCard()
+                else ...[
+                  _totalHeader(),
+                  const SizedBox(height: 14),
+                  _ethereumCard(internal),
+                  const SizedBox(height: 14),
+                  _solanaCard(internal),
+                  if (internal) ...[
+                    const SizedBox(height: 14),
+                    _secretsCard(),
+                  ],
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Glass.danger, fontSize: 14, fontWeight: FontWeight.w600)),
+                ],
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _label(String text) => Padding(
-        padding: const EdgeInsets.only(left: 4, bottom: 8),
-        child: Text(text, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Glass.inkSoft)),
+  Widget _modeSwitch(bool internal) => Semantics(
+        identifier: 'wallet:mode',
+        child: SizedBox(
+          width: double.infinity,
+          child: CupertinoSlidingSegmentedControl<WalletMode>(
+            groupValue: internal ? WalletMode.internal : WalletMode.external,
+            backgroundColor: const Color(0x14000000),
+            thumbColor: Colors.white,
+            padding: const EdgeInsets.all(3),
+            onValueChanged: (m) => m == null ? null : _setMode(m),
+            children: {
+              for (final m in WalletMode.values)
+                m: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  child: Text(m == WalletMode.internal ? 'Glyf wallet' : 'Phantom & MetaMask',
+                      key: ValueKey('wallet:mode:${m.name}'),
+                      style: const TextStyle(color: Glass.ink, fontSize: 14.5, fontWeight: FontWeight.w700)),
+                ),
+            },
+          ),
+        ),
       );
+
+  Widget _makeCard() => GlassCard(
+        padding: const EdgeInsets.all(18),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            _glyfMark(),
+            const SizedBox(width: 12),
+            const Text('Glyf wallet', style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
+          ]),
+          const SizedBox(height: 16),
+          Semantics(
+            identifier: 'wallet:make',
+            button: true,
+            child: _making
+                ? SizedBox(height: 52, child: Center(child: _spinner()))
+                : PillButton(label: 'Make my wallet', onPressed: _make),
+          ),
+        ]),
+      );
+
+  Widget _totalHeader() {
+    final total = _total;
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Balance', style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(
+          total == null ? '…' : '\$${_money(total)}',
+          key: const ValueKey('wallet:total'),
+          style: const TextStyle(
+              color: Glass.ink, fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -0.8,
+              fontFeatures: [FontFeature.tabularFigures()]),
+        ),
+      ]),
+    );
+  }
+
+  static String _money(double v) {
+    final s = v.toStringAsFixed(2);
+    final whole = s.split('.')[0], cents = s.split('.')[1];
+    final grouped = whole.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
+    return '$grouped.$cents';
+  }
+
+  /// A chain's card: its name and who signs, the address (tap to copy),
+  /// or Connect when an outside wallet isn't linked yet.
+  Widget _chainHeader({
+    required String chain,
+    required String signer,
+    required Widget mark,
+    required String? address,
+    required String short,
+    Widget? trailing,
+  }) {
+    return Row(children: [
+      mark,
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(chain, style: const TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 1),
+          GestureDetector(
+            onTap: address == null ? null : () => _copyAddress(address),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(address == null ? signer : '$signer · $short',
+                  style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')])),
+              if (address != null) ...[
+                const SizedBox(width: 5),
+                Icon(_copied == address ? Icons.check_rounded : Icons.copy_rounded, size: 14, color: Glass.inkSoft),
+              ],
+            ]),
+          ),
+        ]),
+      ),
+      ?trailing,
+    ]);
+  }
+
+  Widget _connectButton(String id, String label, bool busy, VoidCallback onTap) => busy
+      ? Padding(padding: const EdgeInsets.only(right: 8), child: _spinner())
+      : Semantics(
+          identifier: id,
+          button: true,
+          child: TextButton(
+            onPressed: onTap,
+            child: Text(label, style: const TextStyle(color: Glass.ink, fontSize: 14.5, fontWeight: FontWeight.w700)),
+          ),
+        );
+
+  Widget _ethereumCard(bool internal) {
+    final address = EvmSigner.address.value;
+    final mm = EvmSigner.connected(EvmSignerKind.metamask);
+    final linked = internal || mm != null;
+    final e = _evm;
+    String usd(double amount, double? price) => price == null ? '' : '\$${_money(amount * price)}';
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Semantics(
+          identifier: 'wallet:ethereum',
+          child: _chainHeader(
+            chain: 'Ethereum',
+            signer: internal ? 'Glyf wallet' : 'MetaMask',
+            mark: internal ? _glyfMark() : _plainMark(Icons.account_balance_wallet_rounded),
+            address: linked ? address : null,
+            short: address == null ? '' : EvmSigner.short(address),
+            trailing: internal
+                ? null
+                : mm == null
+                    ? _connectButton('wallet:metamask:connect', 'Connect', _mmWaiting, _connectMetaMask)
+                    : _connectButton('wallet:metamask:disconnect', 'Disconnect', false, _disconnectMetaMask),
+          ),
+        ),
+        if (_mmReopen != null && !internal)
+          Row(children: [
+            TextButton(
+              onPressed: () => GlyfBridge.openMetaMask(_mmReopen!),
+              child: const Text('Open MetaMask', style: TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: EvmSigner.stopWaiting,
+              child: const Text('Stop', style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+          ]),
+        if (linked && address != null) ...[
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: _balance('ETH · Base', e == null ? '…' : _amount(e.eth, 5), e == null ? '' : usd(e.eth, _ethPrice))),
+            const SizedBox(width: 10),
+            Expanded(child: _balance('USDC · Base', e == null ? '…' : _amount(e.usdc, 2), e == null ? '' : '\$${_money(e.usdc)}')),
+          ]),
+          const SizedBox(height: 6),
+          _row('Other chains and orders', null,
+              id: 'wallet:ethereum:more',
+              chevron: true,
+              onTap: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const EvmWalletScreen()))
+                  .then((_) => _refreshEvm())),
+        ],
+      ]),
+    );
+  }
+
+  static String _amount(double v, int digits) {
+    if (v == 0) return '0';
+    final s = v.toStringAsFixed(digits);
+    return s.contains('.') ? s.replaceFirst(RegExp(r'\.?0+$'), '') : s;
+  }
+
+  Widget _solanaCard(bool internal) {
+    final link = WalletFlow.link.value;
+    final phantom = WalletFlow.external.value;
+    String usd(BigInt? units, int decimals, double? price) {
+      if (units == null || price == null) return '';
+      return '\$${_money(units.toDouble() / BigInt.from(10).pow(decimals).toDouble() * price)}';
+    }
+
+    final signer = internal ? 'Glyf wallet' : (_mwaHere ? 'Your wallet' : 'Phantom');
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Semantics(
+          identifier: 'wallet:solana',
+          child: _chainHeader(
+            chain: 'Solana',
+            signer: signer,
+            mark: internal ? _glyfMark() : (_mwaHere ? _plainMark(Icons.account_balance_wallet_rounded) : const PhantomMark(size: 34)),
+            address: link?.address,
+            short: link == null ? '' : Sol.short(link.address),
+            trailing: internal
+                ? null
+                : phantom == null
+                    ? _connectButton('wallet:phantom:connect', 'Connect', _connecting, _connectPhantom)
+                    : _connectButton('wallet:phantom:disconnect', 'Disconnect', false, () async {
+                        await WalletFlow.disconnect();
+                        if (mounted) setState(() {});
+                      }),
+          ),
+        ),
+        if (link != null) ...[
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: _balance('SOL', _sol == null ? '…' : Sol.format(_sol!, 9), usd(_sol, 9, _solPrice))),
+            const SizedBox(width: 10),
+            Expanded(child: _balance('USDC', _usdc == null ? '…' : Sol.format(_usdc!, 6, maxDecimals: 2), usd(_usdc, 6, 1))),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(
+              child: PillButton(
+                label: 'Send',
+                onPressed: () => Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const SendScreen()))
+                    .then((_) => _refresh()),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: PillButton(
+                label: 'Buy',
+                primary: false,
+                onPressed: () => Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const BuyScreen()))
+                    .then((_) => _refresh()),
+              ),
+            ),
+          ]),
+        ],
+      ]),
+    );
+  }
+
+  /// The Glyf wallet's secrets, each behind the phone's own unlock.
+  Widget _secretsCard() {
+    final legacy = GlyfKeys.isLegacyOnly;
+    final rows = <Widget>[
+      if (legacy)
+        _row('Recovery phrase', _making ? null : 'Make one',
+            id: 'wallet:switch', chevron: true, busy: _making, onTap: _making ? null : _switchToPhrase)
+      else
+        _row('Recovery phrase', null, id: 'wallet:phrase:show', chevron: true, onTap: _showPhrase),
+      _row('Private keys', null, id: 'wallet:keys:show', chevron: true, onTap: _showKeys),
+    ];
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const Divider(height: 1, indent: 18, color: Glass.hairline),
+          rows[i],
+        ],
+      ]),
+    );
+  }
 
   Widget _glyfMark() => Container(
         width: 34,
@@ -270,66 +609,6 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _spinner() => const SizedBox(
       width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2, color: Glass.ink));
-
-  /// The Glyf wallet: made here, its two addresses, its secrets.
-  Widget _glyfCard() {
-    final evm = GlyfKeys.evmAddress.value;
-    final sol = GlyfKeys.solanaAddress.value;
-    final header = Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
-      child: Row(children: [
-        _glyfMark(),
-        const SizedBox(width: 12),
-        const Text('Glyf wallet', style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
-      ]),
-    );
-    if (evm == null) {
-      return GlassCard(
-        padding: const EdgeInsets.only(bottom: 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            header,
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Semantics(
-                identifier: 'wallet:make',
-                button: true,
-                child: _making
-                    ? SizedBox(height: 52, child: Center(child: _spinner()))
-                    : PillButton(label: 'Make my wallet', onPressed: _make),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    final legacy = GlyfKeys.isLegacyOnly;
-    final rows = <Widget>[
-      _row('Ethereum', EvmSigner.short(evm), id: 'wallet:glyf:evm', copied: _copied == evm, onTap: () => _copyAddress(evm)),
-      if (sol != null)
-        _row('Solana', Sol.short(sol), id: 'wallet:glyf:solana', copied: _copied == sol, onTap: () => _copyAddress(sol)),
-      if (legacy)
-        _row('Recovery phrase', _making ? null : 'Make one',
-            id: 'wallet:switch', chevron: true, busy: _making, onTap: _making ? null : _switchToPhrase)
-      else
-        _row('Recovery phrase', null, id: 'wallet:phrase:show', chevron: true, onTap: _showPhrase),
-      _row('Private keys', null, id: 'wallet:keys:show', chevron: true, onTap: _showKeys),
-    ];
-    return GlassCard(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          header,
-          for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) const Divider(height: 1, indent: 18, color: Glass.hairline),
-            rows[i],
-          ],
-        ],
-      ),
-    );
-  }
 
   Widget _row(String title, String? value,
       {required String id, bool chevron = false, bool copied = false, bool busy = false, VoidCallback? onTap}) {
@@ -360,206 +639,12 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  /// Phantom (Solana) and MetaMask (Ethereum and its L2s): connect,
-  /// disconnect, and the address each one signs as.
-  Widget _outsideCard() {
-    final phantom = WalletFlow.external.value;
-    final mm = EvmSigner.connected(EvmSignerKind.metamask);
-    return GlassCard(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _outsideRow(
-            id: 'wallet:phantom',
-            mark: _mwaHere ? _plainMark(Icons.account_balance_wallet_rounded) : const PhantomMark(size: 34),
-            name: _mwaHere ? 'Your wallet' : 'Phantom',
-            chain: 'Solana',
-            address: phantom == null ? null : Sol.short(phantom.address),
-            busy: _connecting,
-            onConnect: _connectPhantom,
-            onDisconnect: () async {
-              await WalletFlow.disconnect();
-              if (mounted) setState(() {});
-            },
-          ),
-          const Divider(height: 1, indent: 18, color: Glass.hairline),
-          _outsideRow(
-            id: 'wallet:metamask',
-            mark: _plainMark(Icons.account_balance_wallet_rounded),
-            name: 'MetaMask',
-            chain: 'Ethereum and L2s',
-            address: mm == null ? null : EvmSigner.short(mm),
-            busy: _mmWaiting,
-            onConnect: _connectMetaMask,
-            onDisconnect: _disconnectMetaMask,
-          ),
-          if (_mmReopen != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
-              child: Row(children: [
-                TextButton(
-                  onPressed: () => GlyfBridge.openMetaMask(_mmReopen!),
-                  child: const Text('Open MetaMask',
-                      style: TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: EvmSigner.stopWaiting,
-                  child: const Text('Stop', style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600)),
-                ),
-              ]),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _plainMark(IconData icon) => Container(
         width: 34,
         height: 34,
         alignment: Alignment.center,
         decoration: BoxDecoration(color: Glass.bg, borderRadius: BorderRadius.circular(9)),
         child: Icon(icon, size: 19, color: Glass.ink),
-      );
-
-  Widget _outsideRow({
-    required String id,
-    required Widget mark,
-    required String name,
-    required String chain,
-    required String? address,
-    required bool busy,
-    required VoidCallback onConnect,
-    required VoidCallback onDisconnect,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 8, 8, 8),
-      child: Row(children: [
-        mark,
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: const TextStyle(color: Glass.ink, fontSize: 16, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 1),
-            Text(address ?? chain,
-                style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')])),
-          ]),
-        ),
-        if (busy)
-          Padding(padding: const EdgeInsets.only(right: 12), child: _spinner())
-        else
-          Semantics(
-            identifier: address == null ? '$id:connect' : '$id:disconnect',
-            button: true,
-            child: TextButton(
-              onPressed: address == null ? onConnect : onDisconnect,
-              child: Text(address == null ? 'Connect' : 'Disconnect',
-                  style: TextStyle(
-                      color: address == null ? Glass.ink : Glass.inkSoft, fontSize: 14.5, fontWeight: FontWeight.w700)),
-            ),
-          ),
-      ]),
-    );
-  }
-
-  /// The Solana wallet that signs: its balances, Send and Buy.
-  Widget _solanaCard(WalletLink link) {
-    String usd(BigInt? units, int decimals, double? price) {
-      if (units == null || price == null) return '';
-      final value = units.toDouble() / BigInt.from(10).pow(decimals).toDouble() * price;
-      return '\$${value.toStringAsFixed(2)}';
-    }
-
-    return GlassCard(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(children: [
-            const Expanded(
-              child: Text('Solana', style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
-            ),
-            Semantics(
-              identifier: 'wallet:solana:signer',
-              child: Text(
-                '${link.internal ? 'Glyf wallet' : link.viaMwa ? 'Your wallet' : 'Phantom'} · ${Sol.short(link.address)}',
-                style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')]),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(child: _balance('SOL', _sol == null ? '…' : Sol.format(_sol!, 9), usd(_sol, 9, _solPrice))),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _balance('USDC', _usdc == null ? '…' : Sol.format(_usdc!, 6, maxDecimals: 2), usd(_usdc, 6, 1)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: PillButton(
-                  label: 'Send',
-                  onPressed: () => Navigator.of(context)
-                      .push(MaterialPageRoute(builder: (_) => const SendScreen()))
-                      .then((_) => _refresh()),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: PillButton(
-                  label: 'Buy',
-                  primary: false,
-                  onPressed: () => Navigator.of(context)
-                      .push(MaterialPageRoute(builder: (_) => const BuyScreen()))
-                      .then((_) => _refresh()),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Ethereum and its L2s, Whitechain: balances and Flash orders.
-  Widget _ethereumRow() => Semantics(
-        identifier: 'wallet:ethereum',
-        button: true,
-        child: GestureDetector(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EvmWalletScreen())),
-          child: GlassCard(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Ethereum', style: TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
-                      SizedBox(height: 2),
-                      Text('Base, Arbitrum, Optimism, Whitechain',
-                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Glass.inkSoft, fontSize: 13.5)),
-                    ],
-                  ),
-                ),
-                Builder(builder: (_) {
-                  final a = EvmSigner.address.value;
-                  return Text(
-                    a == null ? '' : EvmSigner.short(a),
-                    style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')]),
-                  );
-                }),
-                const SizedBox(width: 6),
-                const Icon(Icons.chevron_right_rounded, color: Glass.inkSoft),
-              ],
-            ),
-          ),
-        ),
       );
 
   Widget _balance(String symbol, String amount, String usd) => Container(
