@@ -176,9 +176,16 @@ struct GlyfSettings: Codable, Equatable {
     var evmAddress: String? = nil
     /// Which one: "glyf" (or nil), "metamask", "phantom".
     var evmSigner: String? = nil
+    /// Private AI: the server answers this phone's AI calls with 0G's
+    /// Private Computer (models in TEEs). Unset is on.
+    var privateAI: Bool? = nil
     /// How the last payment went, written by the app when Phantom answers
     /// ({"title","detail","at"}); the keyboard says it once and clears it.
     var walletOutcome: String? = nil
+    /// A trade shared from the app (lib/evm/trade_share.dart), as
+    /// {"text","at"}: the strip offers Share trade once for 10 minutes,
+    /// and a tap types the text and clears it.
+    var tradeShare: String? = nil
     /// Where temp mail asks: unset is mail.tm itself. Scenarios name the
     /// stand-in here (qa/fake-mailtm.mjs).
     var tempMailBase: String? = nil

@@ -113,6 +113,18 @@ abstract final class GlyfApi {
   static void _signIn(HttpClientRequest req) {
     final token = Auth.bearer;
     if (token != null) req.headers.set('Authorization', 'Bearer $token');
+    if (privateAI) req.headers.set('X-Glyf-AI', '0g');
+  }
+
+  /// Private AI (Keyboard › Private AI on 0G, on unless turned off): the
+  /// server answers this phone's AI calls with 0G's Private Computer, models
+  /// run in TEEs (server/src/lib/privateai.ts). The keyboard reads the same
+  /// setting.
+  static bool privateAI = true;
+
+  static Future<void> loadPrivateAI() async {
+    final s = await GlyfBridge.sharedSettings();
+    privateAI = (s['privateAI'] as bool?) ?? true;
   }
 
   // ---- JSON helpers ------------------------------------------------------
@@ -288,6 +300,13 @@ abstract final class GlyfApi {
 
   /// Plans in USDC (wallet/crypto_pay.dart): whether the server takes them.
   static Future<Map<String, dynamic>> cryptoConfig() => _getJson('/billing/crypto');
+
+  /// The last answers 0G's Private Computer gave this account, newest first:
+  /// {requestId, model, provider, teeVerified, cost, at}.
+  static Future<List<Map<String, dynamic>>> zeroGReceipts() async {
+    final res = await _getJson('/ai/receipts');
+    return [for (final r in (res['receipts'] as List? ?? const [])) (r as Map).cast<String, dynamic>()];
+  }
 
   /// A Solana Pay request for [plan] ('plus' or 'max') and [period]
   /// ('month' or 'year').

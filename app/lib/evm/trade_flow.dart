@@ -13,7 +13,8 @@ import 'pay_request.dart';
 enum TradeState { working, done, submitted, failed }
 
 class TradeOutcome {
-  const TradeOutcome(this.state, this.title, {this.detail, this.txUrl, this.insert, this.reopen});
+  const TradeOutcome(this.state, this.title,
+      {this.detail, this.txUrl, this.insert, this.reopen, this.hash, this.orderId});
 
   final TradeState state;
   final String title;
@@ -27,6 +28,11 @@ class TradeOutcome {
 
   /// Opens MetaMask or Phantom again while it's waiting on them.
   final String? reopen;
+
+  /// What a shared trade links to (TradeShare): the swap's transaction, or
+  /// Flash's order.
+  final String? hash;
+  final String? orderId;
 }
 
 /// What the keyboard read (TradeIntent.query) carried out with the chosen
@@ -142,13 +148,14 @@ abstract final class TradeFlow {
     final last = signed.last;
     if (last.pending) {
       yield TradeOutcome(TradeState.submitted, 'Swap sent', detail: 'Still confirming on ${chain.label}',
-          txUrl: chain.txUrl(last.hash!));
+          txUrl: chain.txUrl(last.hash!), hash: last.hash);
       return;
     }
     final inAmount = _fmt(swap['amountIn']);
     final outAmount = _fmt(swap['amountOut']);
     yield TradeOutcome(TradeState.done, 'Swapped',
-        detail: '$inAmount $sellSym → $outAmount $buySym on ${chain.label}', txUrl: chain.txUrl(last.hash!));
+        detail: '$inAmount $sellSym → $outAmount $buySym on ${chain.label}', txUrl: chain.txUrl(last.hash!),
+        hash: last.hash);
   }
 
   // MARK: Flash
@@ -299,6 +306,7 @@ abstract final class TradeFlow {
       _placedTitle(kind),
       detail: _placedDetail(q, kind, chain),
       txUrl: 'https://app.definitive.fi/orders/$id',
+      orderId: id,
     );
   }
 

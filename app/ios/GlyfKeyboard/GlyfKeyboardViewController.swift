@@ -106,6 +106,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// A trade said in words, over the keys (ETHGlobal Mumbai).
     private var trade: TradeSurface?
     private var pendingTrade: TradeIntent?
+    /// A trade the app just shared (Share in chat), offered once in the
+    /// strip: its line and link, read from shared settings on appearing.
+    private var tradeShareText: String?
     private var connector: ConnectorSurface?
     /// The Calendar tool: a month and the chosen day's events.
     private var calendarView: CalendarSurface?
@@ -696,6 +699,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
         toolbar.setRunsRemaining(GlyfCatalog.cachedRunsRemaining())
         showPayOutcomeIfFresh()
+        loadTradeShare()
         startTourWatch()
         // Host input sessions (Flutter especially) finish attaching a beat
         // AFTER viewDidAppear — inserting immediately loses the text.
@@ -1264,6 +1268,31 @@ final class GlyfKeyboardViewController: UIInputViewController {
         }
     }
 
+    /// A trade shared from the app in the last 10 minutes: the strip offers
+    /// it (updateSmartChip). Older ones are dropped from settings.
+    private func loadTradeShare() {
+        guard let raw = SettingsStore.current.tradeShare, !raw.isEmpty else { return }
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let text = obj["text"] as? String, !text.isEmpty,
+              Date().timeIntervalSince1970 - (obj["at"] as? Double ?? 0) < 10 * 60 else {
+            tradeShareText = nil
+            SettingsStore.update { $0.tradeShare = nil }
+            return
+        }
+        tradeShareText = text
+        updateCandidates()
+    }
+
+    /// Shown once: typed or put away, it's gone from the strip and settings.
+    private func finishTradeShare() {
+        tradeShareText = nil
+        SettingsStore.update { $0.tradeShare = nil }
+        // The app copied the same line: no Paste chip for it after.
+        ClipContext.markDone()
+        cachedPaste = nil
+    }
+
     private func showTonesPopup() {
         guard surface == .none, !isSecureField else { return }
         dismissTonesPopup()
@@ -1797,6 +1826,11 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 mailChip = nil
             }
         }
+        // A trade just shared from the app: its line, for the chat it's going to.
+        if let text = tradeShareText, tourStep == nil {
+            cancelSuggestion()
+            if present(.shareTrade(text: text)) { return true }
+        }
         let tail = String(before.suffix(120))
         notePhrases(before)
         // Something just copied rides in the strip as one chip, never as a
@@ -2004,7 +2038,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .calc, .money, .convert: return .answer
         case .vault, .details, .tempAddress: return .fill
         case .paste: return .paste
-        case .pay, .buy, .trade, .payLink: return .pay
+        case .pay, .buy, .trade, .payLink, .shareTrade: return .pay
         case .action(_, _, let intent): return intent == "meet" ? .plan : .ai
         case .event, .booking: return .plan
         case .tempMail: return .mail
@@ -2045,6 +2079,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .buy: return "buy"
         case .trade(let t): return "trade|\(t.title)"
         case .payLink(let path): return "paylink|\(path)"
+        case .shareTrade: return "sharetrade"
         case .action: return "action"
         case .event: return "event"
         case .booking: return "booking"
@@ -3509,6 +3544,9 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             stripPolicy.dismissed(Self.policyKind(chip), id: Self.policyID(chip),
                                   now: Date().timeIntervalSince1970)
         }
+        if case .shareTrade? = toolbar.smartChip {
+            finishTradeShare()
+        }
         if case .tempMail? = toolbar.smartChip {
             // Each mail's chip shows once: put away, it is gone.
             mailChip = nil
@@ -3616,6 +3654,14 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
                 if kv.count == 2 { query[String(kv[0])] = String(kv[1]) }
             }
             openApp(path: String(parts[0]), query: query)
+            return
+        case .shareTrade(let text):
+            // The line and its link, in the chat it was shared for.
+            finishTradeShare()
+            hostInsert(Self.spaced(text, after: beforeContext))
+            toolbar.showSmart(nil)
+            syncAutoShift()
+            updateCandidates()
             return
         default:
             break

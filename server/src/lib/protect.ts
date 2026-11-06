@@ -31,6 +31,9 @@ export const OPEN_PATHS: readonly (string | RegExp)[] = [
   // A wallet's browser signing a Glyf job: its unguessable id is the key,
   // and the app checks every answer itself (routes/walletjobs.ts).
   /^\/w\/[\w-]+(\/(job|result|receipt))?$/,
+  // A shared trade's page, sent into a chat: its unguessable id is the
+  // link, and it only reads (routes/tradeshare.ts).
+  /^\/t\/[\w-]+$/,
   // Providers redirect here; they carry their own state. Starting a
   // connection is not open: it needs the session, like everything else.
   /^\/oauth\/[^/]+\/callback$/,

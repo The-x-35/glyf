@@ -31,6 +31,8 @@ export const env = {
   mistralKey: process.env.MISTRAL_API_KEY ?? "",
   inceptionKey: process.env.INCEPTION_API_KEY ?? "",
   cerebrasKey: process.env.CEREBRAS_API_KEY ?? "",
+  // 0G Private Computer (pc.0g.ai), only for phones that send X-Glyf-AI: 0g.
+  zeroGKey: process.env.ZEROG_API_KEY ?? "",
   mockAI: process.env.MOCK_AI === "true",
   /** The models and each plan's day are set here in code, never by the
    *  environment: a stale Railway variable once kept production on a slow
@@ -72,6 +74,14 @@ export const env = {
    * a free plan"). A refused key is skipped for ten minutes, so the backup
    * answers at its own speed (about 1.6 s for a rewrite). */
   suggestModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite", "inclusionai/ling-3.0-flash", "gemini:gemini-3.5-flash-lite"],
+  /** Private AI (lib/privateai.ts): 0G's own 35B MoE, run in a TEE. The
+   *  "-sia" build is the one whose answers 0G's router verifies
+   *  (x_0g_trace.tee_verified true), streaming a rewrite in about 2.2 s for
+   *  about $0.00003 (measured 2026-11-06); the plain build (2.4 s, cheaper,
+   *  unverified) stands behind it. GLM 5.3, the other Private model, thinks
+   *  into the answer even when told not to. Nothing outside 0G answers. */
+  zeroGModels: ["zerog:0gm-1.0-35b-a3b-sia", "zerog:0gm-1.0-35b-a3b"] as string[],
+  zeroGSmartModels: ["zerog:0gm-1.0-35b-a3b-sia", "zerog:0gm-1.0-35b-a3b"] as string[],
   /** How long a glyf run's text is replayed (routes/glyf.ts): ten minutes
    *  at most, so nothing a person reads is ever much older than that. */
   cacheTtlMs: Math.min(num("CACHE_TTL_MS", 10 * 60 * 1000), 10 * 60 * 1000),

@@ -4,13 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/bridge.dart';
+import '../core/glyf_api.dart';
 import '../core/theme.dart';
 import 'evm_signer.dart';
 import 'trade_flow.dart';
+import 'trade_share.dart';
 
 /// The flash between the keyboard and the chain: the keyboard read the
 /// trade and showed its quote, so this signs it at once (the Glyf wallet
 /// here, or MetaMask or Phantom in their own app) and says how it went. Back in the chat, the keyboard says it too.
+/// A friend's trade opened from its link (copied=1) waits for a tap first:
+/// nothing on this phone read it out loud yet. A trade that went through
+/// can be shared into the chat as a link (TradeShare).
 class TradeScreen extends StatefulWidget {
   const TradeScreen({super.key, required this.query, this.run});
 
@@ -28,9 +33,34 @@ class _TradeScreenState extends State<TradeScreen> {
   TradeOutcome _outcome = const TradeOutcome(TradeState.working, 'One moment…');
   StreamSubscription<TradeOutcome>? _sub;
 
+  /// A friend's trade, from its link: shown, and signed only after a tap.
+  bool get _copied => widget.query['copied'] == '1';
+  bool _waiting = false;
+
+  /// The chat line once the link is made, so a second tap only copies again.
+  String? _shareText;
+  bool _sharing = false;
+  String? _shareNote;
+
   @override
   void initState() {
     super.initState();
+    if (_copied) {
+      if (!TradeShare.shareable(widget.query)) {
+        _outcome = const TradeOutcome(TradeState.failed, 'Only trades can be copied',
+            detail: 'Sends and requests stay with the person who made them');
+      } else {
+        _waiting = true;
+        // Which wallet will sign, for the line under the trade.
+        EvmSigner.load().then((_) => mounted ? setState(() {}) : null, onError: (_) {});
+      }
+      return;
+    }
+    _start();
+  }
+
+  void _start() {
+    if (_waiting) setState(() => _waiting = false);
     _sub = (widget.run ?? TradeFlow.run)(widget.query).listen(
       _show,
       onError: (Object e) => _show(TradeOutcome(TradeState.failed, 'Something went wrong', detail: '$e')),
@@ -47,6 +77,36 @@ class _TradeScreenState extends State<TradeScreen> {
     if (outcome.state == TradeState.done) HapticFeedback.mediumImpact();
     setState(() => _outcome = outcome);
   }
+
+  /// Makes the link, copies the chat line, and leaves it for the keyboard.
+  Future<void> _share() async {
+    if (_sharing) return;
+    setState(() {
+      _sharing = true;
+      _shareNote = null;
+    });
+    String note;
+    try {
+      final text = _shareText ??= await TradeShare.post(widget.query, _outcome);
+      await Clipboard.setData(ClipboardData(text: text));
+      await TradeShare.handToKeyboard(text);
+      HapticFeedback.selectionClick();
+      note = 'Copied. Back in the chat, tap Share trade';
+    } on GlyfApiException catch (e) {
+      note = 'Couldn’t make the link: ${e.message}';
+    } catch (_) {
+      note = 'Couldn’t make the link. Try again';
+    }
+    if (!mounted) return;
+    setState(() {
+      _sharing = false;
+      _shareNote = note;
+    });
+  }
+
+  bool get _canShare =>
+      (_outcome.state == TradeState.done || _outcome.state == TradeState.submitted) &&
+      TradeShare.shareable(widget.query);
 
   @override
   void dispose() {
@@ -67,6 +127,7 @@ class _TradeScreenState extends State<TradeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_waiting) return _confirmCopy(context);
     final o = _outcome;
     final working = o.state == TradeState.working;
     return PopScope(
@@ -145,10 +206,88 @@ class _TradeScreenState extends State<TradeScreen> {
                       style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
                     ),
                   )
-                else
-                  PillButton(label: 'Done', onPressed: () => Navigator.of(context).maybePop()),
+                else ...[
+                  if (_canShare) ...[
+                    if (_shareNote != null) ...[
+                      Semantics(
+                        identifier: 'trade:shareNote',
+                        liveRegion: true,
+                        child: Text(
+                          _shareNote!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    Semantics(
+                      identifier: 'trade:share',
+                      button: true,
+                      child: PillButton(label: _sharing ? 'Making the link…' : 'Share in chat', onPressed: _sharing ? null : _share),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  PillButton(
+                      label: 'Done', primary: !_canShare, onPressed: () => Navigator.of(context).maybePop()),
+                ],
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A friend's trade before anything is asked: what it is, and one button.
+  Widget _confirmCopy(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Glass.bg,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+          child: Column(
+            children: [
+              const Spacer(flex: 2),
+              _circle(Colors.white, Icons.content_copy_rounded, Glass.ink),
+              const SizedBox(height: 22),
+              Semantics(
+                identifier: 'trade:title',
+                child: const Text(
+                  'Copy this trade',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Glass.ink, fontSize: 26, fontWeight: FontWeight.w800),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Semantics(
+                identifier: 'trade:detail',
+                child: Text(
+                  TradeShare.describe(widget.query, past: false),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Glass.inkSoft, fontSize: 16, height: 1.35),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'With ${EvmSigner.kind.value == EvmSignerKind.glyf ? 'your Glyf wallet' : EvmSigner.kind.value.label}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Glass.inkSoft, fontSize: 14),
+              ),
+              const Spacer(flex: 3),
+              Semantics(
+                identifier: 'trade:copy',
+                button: true,
+                child: PillButton(label: 'Copy this trade', onPressed: _start),
+              ),
+              const SizedBox(height: 6),
+              TextButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                child: const Text(
+                  'Close',
+                  style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
           ),
         ),
       ),

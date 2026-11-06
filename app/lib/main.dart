@@ -6,6 +6,7 @@ import 'core/billing.dart';
 import 'core/bridge.dart';
 import 'core/catalog.dart';
 import 'core/funnel.dart';
+import 'core/glyf_api.dart';
 import 'core/telemetry.dart';
 import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
@@ -101,6 +102,7 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     WalletFlow.load();
     WalletFlow.loadEnabled();
     _loadEvmWallet();
+    GlyfApi.loadPrivateAI();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(

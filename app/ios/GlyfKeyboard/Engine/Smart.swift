@@ -66,6 +66,9 @@ enum Smart {
         /// 20 USDT: https://www.tryglyf.com/pay?chain=1874&contract=…&id=…"):
         /// a tap opens it in the app, which reads it from the chain and pays.
         case payLink(path: String)
+        /// A trade just shared from the app (Share in chat): its line and
+        /// link, which a tap types into the chat (TradeShare in the app).
+        case shareTrade(text: String)
 
         /// The parts of a chip drawn as a row of chips: the saved details (and
         /// Temp), or a measurement's results.
@@ -91,6 +94,7 @@ enum Smart {
             case .details(let fields, _, _): return fields.first?.title ?? "Email"
             case .trade(let t): return t.venue
             case .payLink: return "Whitechain"
+            case .shareTrade: return "Share trade"
             }
         }
         /// The verb on the chip's right edge: what a tap does. Nil for the
@@ -116,6 +120,7 @@ enum Smart {
                 default: return "Set"
                 }
             case .payLink: return "Pay"
+            case .shareTrade: return "Insert"
             }
         }
         /// A second action, as a button beside the first: Buy on a token's
@@ -147,6 +152,7 @@ enum Smart {
             case .buy(_, let symbol, _, _): return symbol
             case .trade(let t): return t.venue
             case .payLink: return "Whitechain"
+            case .shareTrade: return "Share trade"
             default: return nil
             }
         }
@@ -177,6 +183,7 @@ enum Smart {
                 return c.source.isEmpty ? c.results.joined(separator: " · ") : "\(c.source) = " + c.results.joined(separator: " · ")
             case .trade(let t): return t.title + " · " + t.chainLabel
             case .payLink: return "A USDT request"
+            case .shareTrade(let text): return text
             }
         }
         /// What tapping the chip puts in the field.
@@ -196,6 +203,7 @@ enum Smart {
             case .details, .convert: return ""   // a part's own tap types it
             case .trade: return ""     // opens the trade panel instead of typing
             case .payLink: return ""   // opens the request in the app
+            case .shareTrade(let text): return text
             }
         }
     }
