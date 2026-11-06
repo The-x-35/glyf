@@ -10,7 +10,7 @@ import '../core/theme.dart';
 import '../evm/evm_signer.dart';
 import '../evm/evm_wallet.dart';
 import '../evm/evm_wallet_screen.dart';
-import '../profile/brand_marks.dart' show PhantomMark;
+import '../profile/brand_marks.dart' show BrandMark, PhantomMark;
 import 'buy_screen.dart';
 import 'glyf_keys.dart';
 import 'mwa.dart';
@@ -466,7 +466,7 @@ class _WalletScreenState extends State<WalletScreen> {
           child: _chainHeader(
             chain: 'Ethereum',
             signer: internal ? 'Glyf wallet' : 'MetaMask',
-            mark: internal ? _glyfMark() : _plainMark(Icons.account_balance_wallet_rounded),
+            mark: _chainMark('ethereum', internal ? null : const BrandMark('metamask', size: 18)),
             address: linked ? address : null,
             short: address == null ? '' : EvmSigner.short(address),
             trailing: internal
@@ -530,7 +530,7 @@ class _WalletScreenState extends State<WalletScreen> {
           child: _chainHeader(
             chain: 'Solana',
             signer: signer,
-            mark: internal ? _glyfMark() : (_mwaHere ? _plainMark(Icons.account_balance_wallet_rounded) : const PhantomMark(size: 34)),
+            mark: _chainMark('solana', internal ? null : (_mwaHere ? null : const PhantomMark(size: 18))),
             address: link?.address,
             short: link == null ? '' : Sol.short(link.address),
             trailing: internal
@@ -598,6 +598,26 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
+  /// The chain's own logo; with an outside wallet, its logo sits on the
+  /// corner (MetaMask on Ethereum, Phantom on Solana).
+  Widget _chainMark(String chain, Widget? wallet) => SizedBox(
+        width: 40,
+        height: 40,
+        child: Stack(clipBehavior: Clip.none, children: [
+          BrandMark(chain, size: 38),
+          if (wallet != null)
+            Positioned(
+              right: -3,
+              bottom: -3,
+              child: Container(
+                padding: const EdgeInsets.all(1.5),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(7)),
+                child: wallet,
+              ),
+            ),
+        ]),
+      );
+
   Widget _glyfMark() => Container(
         width: 34,
         height: 34,
@@ -638,14 +658,6 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
     );
   }
-
-  Widget _plainMark(IconData icon) => Container(
-        width: 34,
-        height: 34,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: Glass.bg, borderRadius: BorderRadius.circular(9)),
-        child: Icon(icon, size: 19, color: Glass.ink),
-      );
 
   Widget _balance(String symbol, String amount, String usd) => Container(
         padding: const EdgeInsets.all(12),

@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 /// Logos for the tools Glyf connects to, drawn in code so no image ships and
@@ -6,7 +8,7 @@ class BrandMark extends StatelessWidget {
   const BrandMark(this.brand, {super.key, this.size = 44});
 
   /// magicblock | calendar | contacts | gmail | gcal | meet | notion | slack |
-  /// spotify | calcom | calendly | booking | uniswap | definitive | zerog | jupiter
+  /// spotify | calcom | calendly | booking | uniswap | definitive | zerog | jupiter | metamask | ethereum | solana
   final String brand;
   final double size;
 
@@ -22,6 +24,9 @@ class BrandMark extends StatelessWidget {
       'definitive' => (Colors.black, null),
       'zerog' => (Colors.white, const Color(0x1F000000)),
       'jupiter' => (const Color(0xFF131A2A), null),
+      'metamask' => (Colors.white, const Color(0x1A000000)),
+      'ethereum' => (Colors.white, const Color(0x1A000000)),
+      'solana' => (Colors.black, null),
       _ => (Colors.white, const Color(0x1A000000)),
     };
     return Container(
@@ -200,6 +205,39 @@ class _MarkPainter extends CustomPainter {
         for (final d in _jupiter) {
           canvas.drawPath(svgPath(d, fill: PathFillType.nonZero), paint);
         }
+        canvas.restore();
+      case 'metamask':
+        // The fox (35x33), 70% of the tile wide.
+        final w = s * 0.7, k = w / 35;
+        canvas.save();
+        canvas.translate((s - w) / 2, (s - 33 * k) / 2);
+        canvas.scale(k);
+        for (final (color, d) in _metamask) {
+          canvas.drawPath(svgPath(d, fill: PathFillType.nonZero), fill(Color(color)));
+        }
+        canvas.restore();
+      case 'ethereum':
+        // ethereum.org's diamond (256x417), 58% of the tile tall.
+        final h = s * 0.58, k = h / 417;
+        canvas.save();
+        canvas.translate((s - 256 * k) / 2, (s - h) / 2);
+        canvas.scale(k);
+        for (final (color, d) in _ethereum) {
+          canvas.drawPath(svgPath(d, fill: PathFillType.nonZero), fill(Color(color)));
+        }
+        canvas.restore();
+      case 'solana':
+        // The Solana Foundation's gradient mark (120x99), 62% of the tile wide.
+        final w = s * 0.62, k = w / 120;
+        canvas.save();
+        canvas.translate((s - w) / 2, (s - 99 * k) / 2);
+        canvas.scale(k);
+        final paint = Paint()
+          ..isAntiAlias = true
+          ..shader = ui.Gradient.linear(const Offset(10.13, 101.37), const Offset(99.83, -8.26), const [
+            Color(0xFF9945FF), Color(0xFF8752F3), Color(0xFF5497D5), Color(0xFF43B4CA), Color(0xFF28E0B9), Color(0xFF19FB9B),
+          ], const [0.08, 0.3, 0.5, 0.6, 0.72, 0.97]);
+        canvas.drawPath(svgPath(_solana, fill: PathFillType.nonZero), paint);
         canvas.restore();
       case 'contacts':
         canvas.drawCircle(Offset(s / 2, s * 0.4), s * 0.14, fill(const Color(0xFF8E8E93)));
@@ -443,3 +481,52 @@ const _jupiter = [
   'M15.4609 17.2485C9.59662 13.8416 3.11626 13.3079 0 15.6855C0.00612096 16.4297 0.0630166 17.1726 0.170292 17.9091C1.08699 17.6312 2.03177 17.4562 2.98718 17.3874C6.46952 17.1254 10.3087 18.0957 13.7927 20.1207C17.2766 22.1458 20.023 25.0018 21.5209 28.1543C21.935 29.018 22.2508 29.9254 22.4624 30.8595C23.1555 30.5878 23.8294 30.2694 24.4794 29.9066C25.0011 26.0213 21.3268 20.656 15.4609 17.2485Z',
   'M30.1434 15.3141C28.3082 12.3036 25.1724 9.40969 21.3158 7.17039C17.4593 4.93109 13.3977 3.64033 9.87257 3.53674C7.1853 3.45919 5.10382 4.11053 4.02457 5.34109C8.50588 4.58182 14.4168 5.85794 20.146 9.18625C25.8753 12.5146 29.9135 17.0181 31.4722 21.2868C32.0064 19.7406 31.5416 17.6098 30.1434 15.3141Z',
 ];
+
+/// MetaMask's fox (github.com/MetaMask/metamask-extension, app/images/logo/
+/// metamask-fox.svg, viewBox 0 0 35 33): each facet's colour and path.
+const _metamask = <(int, String)>[
+  (0xFFE17726, 'm32.9582 1-13.1341 9.7183 2.4424-5.72731z'),
+  (0xFFE27625, 'm2.66296 1 13.01714 9.809-2.3254-5.81802z'),
+  (0xFFE27625, 'm28.2295 23.5335-3.4947 5.3386 7.4829 2.0603 2.1436-7.2823z'),
+  (0xFFE27625, 'm1.27281 23.6501 2.13055 7.2823 7.46994-2.0603-3.48166-5.3386z'),
+  (0xFFE27625, 'm10.4706 14.5149-2.0786 3.1358 7.405.3369-.2469-7.969z'),
+  (0xFFE27625, 'm25.1505 14.5149-5.1575-4.58704-.1688 8.05974 7.4049-.3369z'),
+  (0xFFE27625, 'm10.8733 28.8721 4.4819-2.1639-3.8583-3.0062z'),
+  (0xFFE27625, 'm20.2659 26.7082 4.4689 2.1639-.6105-5.1701z'),
+  (0xFFD5BFB2, 'm24.7348 28.8721-4.469-2.1639.3638 2.9025-.039 1.231z'),
+  (0xFFD5BFB2, 'm10.8732 28.8721 4.1572 1.9696-.026-1.231.3508-2.9025z'),
+  (0xFF233447, 'm15.1084 21.7842-3.7155-1.0884 2.6243-1.2051z'),
+  (0xFF233447, 'm20.5126 21.7842 1.0913-2.2935 2.6372 1.2051z'),
+  (0xFFCC6228, 'm10.8733 28.8721.6495-5.3386-4.13117.1167z'),
+  (0xFFCC6228, 'm24.0982 23.5335.6366 5.3386 3.4946-5.2219z'),
+  (0xFFCC6228, 'm27.2291 17.6507-7.405.3369.6885 3.7966 1.0913-2.2935 2.6372 1.2051z'),
+  (0xFFCC6228, 'm11.3929 20.6958 2.6242-1.2051 1.0913 2.2935.6885-3.7966-7.40495-.3369z'),
+  (0xFFE27525, 'm8.392 17.6507 3.1049 6.0513-.1039-3.0062z'),
+  (0xFFE27525, 'm24.2412 20.6958-.1169 3.0062 3.1049-6.0513z'),
+  (0xFFE27525, 'm15.797 17.9876-.6886 3.7967.8704 4.4833.1949-5.9087z'),
+  (0xFFE27525, 'm19.8242 17.9876-.3638 2.3584.1819 5.9216.8704-4.4833z'),
+  (0xFFF5841F, 'm20.5127 21.7842-.8704 4.4834.6236.4406 3.8584-3.0062.1169-3.0062z'),
+  (0xFFF5841F, 'm11.3929 20.6958.104 3.0062 3.8583 3.0062.6236-.4406-.8704-4.4834z'),
+  (0xFFC0AC9D, 'm20.5906 30.8417.039-1.231-.3378-.2851h-4.9626l-.3248.2851.026 1.231-4.1572-1.9696 1.4551 1.1921 2.9489 2.0344h5.0536l2.962-2.0344 1.442-1.1921z'),
+  (0xFF161616, 'm20.2659 26.7082-.6236-.4406h-3.6635l-.6236.4406-.3508 2.9025.3248-.2851h4.9626l.3378.2851z'),
+  (0xFF763E1A, 'm33.5168 11.3532 1.1043-5.36447-1.6629-4.98873-12.6923 9.3944 4.8846 4.1205 6.8983 2.0085 1.52-1.7752-.6626-.4795 1.0523-.9588-.8054-.622 1.0523-.8034z'),
+  (0xFF763E1A, 'm1 5.98873 1.11724 5.36447-.71451.5313 1.06527.8034-.80545.622 1.05228.9588-.66255.4795 1.51997 1.7752 6.89835-2.0085 4.8846-4.1205-12.69233-9.3944z'),
+  (0xFFF5841F, 'm32.0489 16.5234-6.8983-2.0085 2.0786 3.1358-3.1049 6.0513 4.1052-.0519h6.1318z'),
+  (0xFFF5841F, 'm10.4705 14.5149-6.89828 2.0085-2.29944 7.1267h6.11883l4.10519.0519-3.10487-6.0513z'),
+  (0xFFF5841F, 'm19.8241 17.9876.4417-7.5932 2.0007-5.4034h-8.9119l2.0006 5.4034.4417 7.5932.1689 2.3842.013 5.8958h3.6635l.013-5.8958z'),
+];
+
+/// ethereum.org's diamond (viewBox 0 0 256 417), the same six facets the
+/// keyboard draws (ChainLogo.swift).
+const _ethereum = <(int, String)>[
+  (0xFF343434, 'M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z'),
+  (0xFF8C8C8C, 'M127.962 0L0 212.32l127.962 75.639V154.158z'),
+  (0xFF3C3C3B, 'M127.961 312.187l-1.575 1.92v98.199l1.575 4.6L256 236.587z'),
+  (0xFF8C8C8C, 'M127.962 416.905v-104.72L0 236.585z'),
+  (0xFF141414, 'M127.961 287.958l127.96-75.637-127.96-58.162z'),
+  (0xFF393939, 'M0 212.32l127.96 75.638v-133.8z'),
+];
+
+/// The Solana Foundation's mark (solana-mark-gradient.svg, viewBox 0 0 120 99).
+const _solana =
+    'M119.37 78.0655L99.5477 97.658C98.6753 98.508 97.4637 99 96.2036 99H2.27787C1.01777 99 0 98.0159 0 96.8529C0 96.3161 0.242326 95.824 0.630048 95.4215L20.4039 75.8289C21.2763 74.979 22.4879 74.487 23.748 74.487H117.674C118.934 74.487 120 75.3816 120 76.5447C120 77.0814 119.806 77.6182 119.37 78.0208M99.5477 38.5226C98.6753 37.6727 97.4637 37.1807 96.2036 37.1807H2.27787C1.01777 37.2254 0 38.1648 0 39.3278C0 39.8646 0.242326 40.3566 0.630048 40.7592L20.4039 60.3965C21.2763 61.2464 22.4879 61.7384 23.748 61.7384H117.674C118.934 61.7384 119.952 60.7543 119.952 59.5913C119.952 59.0545 119.709 58.5625 119.321 58.1599L99.5477 38.5226ZM2.27787 24.4769H96.1551C97.4152 24.4769 98.6268 23.9848 99.4992 23.1349L119.37 3.54238C120.242 2.69248 120.194 1.35052 119.273 0.545352C119.176 0.455888 119.079 0.366425 118.934 0.321693C118.546 0.0980342 118.11 -0.0361611 117.674 0.00857069H23.748C22.4879 0.00857069 21.2763 0.50062 20.4039 1.35052L0.630048 20.943C-0.242326 21.7929 -0.193861 23.1349 0.775444 23.9401C1.21163 24.2979 1.74475 24.5216 2.32633 24.5216';

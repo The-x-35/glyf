@@ -123,8 +123,8 @@ class RecoveryPhraseScreen extends StatelessWidget {
 }
 
 /// Profile › Wallet › Private keys: Ethereum (0x hex) and Solana (base58,
-/// the 64-byte secret Phantom imports), and the pre-phrase Ethereum key
-/// while this phone still holds one.
+/// the 64-byte secret Phantom imports), both from the recovery phrase. The
+/// pre-phrase key isn't listed (Arpit, 2026-11-07: "no one used that").
 class PrivateKeysScreen extends StatelessWidget {
   const PrivateKeysScreen({super.key});
 
@@ -133,7 +133,6 @@ class PrivateKeysScreen extends StatelessWidget {
     final rows = <(String, String?, String?, String)>[
       ('Ethereum', GlyfKeys.evmAddress.value, GlyfKeys.evmKeyHex, 'evm'),
       ('Solana', GlyfKeys.solanaAddress.value, GlyfKeys.solanaSecret, 'solana'),
-      ('Ethereum (old)', GlyfKeys.oldEvmAddress.value, GlyfKeys.oldEvmKeyHex, 'evm-old'),
     ].where((r) => r.$3 != null).toList();
     return Scaffold(
       backgroundColor: Glass.bg,
