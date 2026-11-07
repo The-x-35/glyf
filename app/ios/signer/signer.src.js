@@ -91,7 +91,9 @@ function explorer(chain) {
     optimism: "https://optimistic.etherscan.io/tx/" }[chain] ?? "https://basescan.org/tx/";
 }
 
-function typedOf(t) {
+function typedOf(raw) {
+  // Flash sends its typed data as a JSON string.
+  const t = typeof raw === "string" ? JSON.parse(raw) : raw;
   const types = { ...t.types }; delete types.EIP712Domain;
   return { domain: t.domain, types, primaryType: t.primaryType, message: t.message };
 }
@@ -128,15 +130,23 @@ async function flash(q, kind, c) {
   const order = { ...(quote.order ?? {}) };
   const typed = order.evmOrderTypedData ?? evm.orderTypedData;
   if (!typed) throw new Error(quote.error || "Flash sent nothing to sign");
-  order.evmOrderTypedData = typed;
+  order.evmOrderTypedData = typeof typed === "string" ? typed : JSON.stringify(typed);
   say("Signing the order…");
   order.userSignature = await c.account.signTypedData(typedOf(typed));
-  if (order.evmPermitTypedData) order.evmPermitSignature = await c.account.signTypedData(typedOf(order.evmPermitTypedData));
+  const permit = order.evmPermitTypedData ?? evm.permitTypedData;
+  if (permit) {
+    order.evmPermitTypedData = typeof permit === "string" ? permit : JSON.stringify(permit);
+    order.evmPermitSignature = await c.account.signTypedData(typedOf(permit));
+  }
   const pairTyped = quote.attachedBracket?.evm?.orderTypedData;
   if (order.attachedBracket && pairTyped) {
     const pair = { ...order.attachedBracket };
     pair.userSignature = await c.account.signTypedData(typedOf(pairTyped));
-    if (pair.evmPermitTypedData) pair.evmPermitSignature = await c.account.signTypedData(typedOf(pair.evmPermitTypedData));
+    const pairPermit = pair.evmPermitTypedData ?? quote.attachedBracket?.evm?.permitTypedData;
+    if (pairPermit) {
+      pair.evmPermitTypedData = typeof pairPermit === "string" ? pairPermit : JSON.stringify(pairPermit);
+      pair.evmPermitSignature = await c.account.signTypedData(typedOf(pairPermit));
+    }
     order.attachedBracket = pair;
   }
   say("Placing the order…");
