@@ -890,6 +890,16 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(Smart.calc("250*400", indianGrouping: false)?.value, "100,000")
     }
 
+    func testYourNameAfterThisIsOrIAm() {
+        let fields = [VaultField(id: "n", kind: "name", label: "Name", value: "Arpit Singh")]
+        for text in ["this is", "This is ", "Hi, this is ", "I am", "I am ", "i'm ", "I’m ", "Hey, I am "] {
+            XCTAssertEqual(Smart.vaultMatch(text, fields: fields)?.value, "Arpit Singh", text)
+        }
+        for text in ["this is great", "I am going", "what I am"] {
+            XCTAssertNil(Smart.vaultMatch(text, fields: fields), text)
+        }
+    }
+
     func testTheRightSavedDetailForWhatTheSentenceAsks() {
         let fields = [VaultField(id: "a", kind: "address", label: "Home", value: "123 Market St"),
                       VaultField(id: "e", kind: "email", label: "Email", value: "me@example.com"),
