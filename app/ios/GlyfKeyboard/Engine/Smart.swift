@@ -104,6 +104,7 @@ enum Smart {
         var extra: String? {
             switch self {
             case .money(_, _, let mint): return mint == nil ? nil : "Buy"
+            case .paste(let t): return TextPDF.offers(t) ? "PDF" : nil
             case .pay(_, _, _, let copied): return copied == nil ? nil : "Send"
             case .buy(_, _, _, let copied): return copied == nil ? nil : "Buy"
             default: return nil

@@ -890,6 +890,19 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(Smart.calc("250*400", indianGrouping: false)?.value, "100,000")
     }
 
+    /// A long copy offers a PDF beside Paste; the PDF holds every page of it.
+    func testALongCopyBecomesAPDF() {
+        let short = "see you at 5"
+        let long = (1...60).map { "Line \($0): the quarterly report says revenue grew in every region this year." }.joined(separator: "\n")
+        XCTAssertNil(Smart.Chip.paste(text: short).extra)
+        XCTAssertEqual(Smart.Chip.paste(text: long).extra, "PDF")
+        let pdf = TextPDF.make(String(repeating: long + "\n", count: 6))
+        XCTAssertEqual(String(decoding: pdf.prefix(5), as: UTF8.self), "%PDF-")
+        let doc = CGPDFDocument(CGDataProvider(data: pdf as CFData)!)!
+        XCTAssertGreaterThan(doc.numberOfPages, 3, "every line lands on a page")
+        XCTAssertEqual(TextPDF.title(long), "Line 1: the quarterly report says revenue grew in every r…")
+    }
+
     func testYourNameAfterThisIsOrIAm() {
         let fields = [VaultField(id: "n", kind: "name", label: "Name", value: "Arpit Singh")]
         for text in ["this is", "This is ", "Hi, this is ", "I am", "I am ", "i'm ", "I’m ", "Hey, I am "] {
