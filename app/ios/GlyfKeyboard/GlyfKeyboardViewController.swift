@@ -3717,6 +3717,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         default:
             break
         }
+        if case .action(_, _, "pdfReady") = chip {
+            toolbar.showSmart(nil)
+            return
+        }
         if case .action(_, _, "meet") = chip {
             toolbar.showSmart(nil)
             insertMeetLink()
@@ -3873,6 +3877,14 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     func toolbarSmartExtraTapped(_ chip: Smart.Chip) {
         noteChipUsed(chip)
         switch chip {
+        case .paste(let text) where TextPDF.offers(text):
+            // A long copy as a PDF on the clipboard: the person pastes it in
+            // the message box (a keyboard can't insert a file).
+            ClipContext.markDone()
+            cachedPaste = nil
+            let ok = TextPDF.copy(text)
+            toolbar.showSmart(ok ? .action(label: "PDF ready to paste", query: "", intent: "pdfReady") : nil)
+            return
         case .pay(let address, let amount, let token, _):
             ClipContext.markDone()
             cachedPaste = nil

@@ -109,6 +109,7 @@
 		5BD908AC081B1766CD6B2082 /* EventParseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F6D71A3FD3BDF87B2412DD /* EventParseTests.swift */; };
 		5C544F3EFFA3927D874C208B /* Contracts.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4223D5E2A46414C673A83747 /* Contracts.generated.swift */; };
 		5D0824B6D13C98AAF635A8A3 /* KeyboardTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1970AAC7DE67739D3B0851FE /* KeyboardTheme.swift */; };
+		5D46C1AAECCFF06E84D4BF7D /* TextPDF.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFFEDB51EF9B15EF086DDFC3 /* TextPDF.swift */; };
 		5E0A6309E93806626CBD55BA /* TypingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF986CE579005D015F108B53 /* TypingStore.swift */; };
 		5E70B15A6B693915AD3585D0 /* NotoCatalogue.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F2DCC2EBB90B3C4A69FEA1 /* NotoCatalogue.generated.swift */; };
 		6067EEA53B44D0BB1E58354B /* linen.png in Resources */ = {isa = PBXBuildFile; fileRef = B9AE160AB12CFF2F24A671C1 /* linen.png */; };
@@ -175,6 +176,7 @@
 		8C925CBEA5B9F81EDAA9B1F2 /* theme-sonar-return.caf in Resources */ = {isa = PBXBuildFile; fileRef = 73FC74D37D559816CBC76406 /* theme-sonar-return.caf */; };
 		8CDFDA410E29956D1735FA6D /* Autocorrect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06CC38085C3400E0BFBEF26D /* Autocorrect.swift */; };
 		8E6A5A1F5513539AC55DB2C0 /* scanlines.png in Resources */ = {isa = PBXBuildFile; fileRef = C3F6B051CAAD6F2855EDE3F4 /* scanlines.png */; };
+		8EDCC50468C602D19D13965E /* TextPDF.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFFEDB51EF9B15EF086DDFC3 /* TextPDF.swift */; };
 		8EE319B1516CC2D1684B7013 /* EmojiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAFFC06C09A0F4C0BC665EE /* EmojiData.swift */; };
 		8FDA6AA2F6697F472DBE6E53 /* GlassTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7508C7D7086528DBA50605BC /* GlassTokens.swift */; };
 		907B1F7E6C1FF06DB160E5A8 /* SponsorMarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C31F37B9D4BF7470B802D9 /* SponsorMarks.swift */; };
@@ -610,6 +612,7 @@
 		EBF13C3419D7D5D10B0F0884 /* CalendarSync.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CalendarSync.swift; sourceTree = "<group>"; };
 		ECD645FA9D6C2D0902AF8ADA /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		ED172FBD98BD64B321D6F03F /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		EFFEDB51EF9B15EF086DDFC3 /* TextPDF.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TextPDF.swift; sourceTree = "<group>"; };
 		F22621FA28A0473C913A2802 /* NoteEditSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteEditSurface.swift; sourceTree = "<group>"; };
 		F25E808ECB86F3613221456A /* GoogleEvent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleEvent.swift; sourceTree = "<group>"; };
 		F2E78F3328F27A5F72F19B32 /* ThumbLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThumbLoader.swift; sourceTree = "<group>"; };
@@ -919,6 +922,7 @@
 				9622ADEA4BAABD666E1AD80C /* TradeEdit.swift */,
 				C041893C2A22E62C9C45ED2F /* KeyboardSigner.swift */,
 				AA581918EB4B5BC667A32788 /* SignerScript.swift */,
+				EFFEDB51EF9B15EF086DDFC3 /* TextPDF.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -1568,6 +1572,7 @@
 				25C61CE24351DB6B36B66D1C /* ChainLogo.swift in Sources */,
 				760559B9AD92349CDCD4EC5E /* KeyboardSigner.swift in Sources */,
 				1E3D1D22B9C16F399BC76A40 /* SignerScript.swift in Sources */,
+				8EDCC50468C602D19D13965E /* TextPDF.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1650,6 +1655,7 @@
 				C23D1023BA57365D71F683E1 /* TradeEditTests.swift in Sources */,
 				6DAD85FA1017270F915FF276 /* ChainLogo.swift in Sources */,
 				B6F023B49E48A3C38BB012F1 /* ChainLogoTests.swift in Sources */,
+				5D46C1AAECCFF06E84D4BF7D /* TextPDF.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

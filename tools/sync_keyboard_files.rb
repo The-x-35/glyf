@@ -9,6 +9,7 @@ KB_DIR = File.expand_path('../app/ios/GlyfKeyboard', __dir__)
 # Files whose logic is pure enough to unit-test from RunnerTests (host-app bundle).
 TEST_SHARED = %w[
   Engine/SecretScanner.swift
+  Engine/TextPDF.swift
   Engine/ClipboardStore.swift
   Engine/Autocorrect.swift
   Engine/SettingsStore.swift
