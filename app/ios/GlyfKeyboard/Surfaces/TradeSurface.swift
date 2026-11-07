@@ -794,8 +794,11 @@ final class TradeSurface: UIView {
         return false
     }
 
+    /// Signing in the keyboard: the stage on the button, taps held off.
+    var working: String? { didSet { renderGo() } }
+
     private func renderGo() {
-        goButton.setTitle(goTitle, for: .normal)
+        goButton.setTitle(working ?? goTitle, for: .normal)
         let off = blocked
         goButton.backgroundColor = off ? Self.offFill : Glass.imBlue
         goButton.setTitleColor(off ? Glass.textSecondary : .white, for: .normal)
@@ -805,9 +808,11 @@ final class TradeSurface: UIView {
         ? UIColor(white: 1, alpha: 0.10) : UIColor(white: 0, alpha: 0.06) }
 
     private func go() {
+        guard working == nil else { return }
         guard !needsGlyfWallet else { delegate?.tradeSetUpWallet(); return }
         guard !blocked else { return }
         var q = intent.query
+        q["title"] = intent.title
         if let resolved { q["address"] = resolved }
         delegate?.tradeHandOff(query: q)
     }

@@ -4729,6 +4729,27 @@ extension GlyfKeyboardViewController: TradeSurfaceDelegate {
     /// Signing is the app's (the Glyf wallet's key lives in its Keychain):
     /// one hop there, and the outcome comes back as a toast.
     func tradeHandOff(query: [String: String]) {
+        // The Glyf wallet on an EVM chain signs right here, in the keyboard:
+        // the panel shows each stage, and the receipt lands in the chat.
+        if KeyboardSigner.canSign(query) {
+            let panel = trade
+            panel?.working = "Signing…"
+            KeyboardSigner.shared.run(query, step: { panel?.working = $0 }, done: { [weak self] out in
+                guard let self else { return }
+                panel?.working = nil
+                guard out["ok"] as? Bool == true else {
+                    KeyboardToast.show(in: self.content, text: (out["error"] as? String).map { String($0.prefix(90)) } ?? "That didn’t go through")
+                    return
+                }
+                self.setSurface(.none)
+                let title = query["title"] ?? "Trade"
+                let venue = query["kind"] == "swap" ? "Uniswap" : "Definitive Flash"
+                let link = (out["url"] as? String).map { " \($0)" } ?? ""
+                self.hostInsert("✅ \(title) · \(venue)\(link)")
+                self.syncAutoShift()
+            })
+            return
+        }
         setSurface(.none)
         // A .sol name is Solana's: the existing Phantom send takes it.
         if query["kind"] == "send", query["chain"] == "solana", let to = query["address"] {

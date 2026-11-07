@@ -34,6 +34,7 @@
 		1A50AED7F444EC3F6CB1BD51 /* TradeRecurring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 559CF01A48DDE432B244EADB /* TradeRecurring.swift */; };
 		1B2BAD50C9B1E9BCA2E97671 /* NotoCatalogue.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F2DCC2EBB90B3C4A69FEA1 /* NotoCatalogue.generated.swift */; };
 		1CAC13D36C427C7132889EF1 /* ClipboardPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACF0028C0693E817D1AC231 /* ClipboardPanel.swift */; };
+		1E3D1D22B9C16F399BC76A40 /* SignerScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA581918EB4B5BC667A32788 /* SignerScript.swift */; };
 		1E8F2AD959D8B4A5E2285685 /* TradeIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0BAA705A9C4B8159B83571E /* TradeIntents.swift */; };
 		1F364DBC8EC1DE00F0A91565 /* VoiceActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26453310B4F57B154D633C84 /* VoiceActivityAttributes.swift */; };
 		20A21D92D3A57F8A1719908F /* AppGroupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E2D6C716568F302A5E39D8 /* AppGroupStore.swift */; };
@@ -140,6 +141,7 @@
 		74F6D5939D660DC657906B07 /* GlyfCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D8C4C96456B2A323C0EE8F0 /* GlyfCatalog.swift */; };
 		74FF30F226F5869FCA82EA69 /* ShipporiMincho-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 09FF406B8FBBB9305C059C2C /* ShipporiMincho-OFL.txt */; };
 		753C44428381110779FCE51D /* GlydTrie.swift in Sources */ = {isa = PBXBuildFile; fileRef = 420BCE51F821608027ACDA01 /* GlydTrie.swift */; };
+		760559B9AD92349CDCD4EC5E /* KeyboardSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C041893C2A22E62C9C45ED2F /* KeyboardSigner.swift */; };
 		76562D9536259510FB866CCE /* HostAppID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9849EF5EBAFC3A76A993552C /* HostAppID.swift */; };
 		766B89438D8A7F5C1E326099 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60BFE26B50FE956967CF026 /* SettingsStore.swift */; };
 		76E6D73ED1E3DC2CEF162457 /* GlyfMeetingAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B2BB70F48D4060611D32D2E /* GlyfMeetingAttributes.swift */; };
@@ -538,6 +540,7 @@
 		A6A1C1B829364960405CA876 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		A84F81FFA1263B12519806DD /* PaySurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaySurface.swift; sourceTree = "<group>"; };
 		AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfKeyboardViewController.swift; sourceTree = "<group>"; };
+		AA581918EB4B5BC667A32788 /* SignerScript.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SignerScript.swift; sourceTree = "<group>"; };
 		AB882BCA6F90D372D5921104 /* EventParse.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EventParse.swift; sourceTree = "<group>"; };
 		ADB9E43E6C30DA5026053D1C /* LocationOnce.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationOnce.swift; sourceTree = "<group>"; };
 		AE3609485EA2AE112CC456E8 /* theme-wood-letter.caf */ = {isa = PBXFileReference; includeInIndex = 1; path = "theme-wood-letter.caf"; sourceTree = "<group>"; };
@@ -562,6 +565,7 @@
 		BF6DB2DF0F83FB95AAE78ADA /* GlyfShell.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfShell.swift; sourceTree = "<group>"; };
 		BFA1967D53B71016F7C029BB /* KeyFaces.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyFaces.swift; sourceTree = "<group>"; };
 		C01A8D008A1D6F4C7ADBD562 /* AIAction.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AIAction.swift; sourceTree = "<group>"; };
+		C041893C2A22E62C9C45ED2F /* KeyboardSigner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardSigner.swift; sourceTree = "<group>"; };
 		C12D726CB74F142FAD61A004 /* CormorantGaramond-SemiBold.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "CormorantGaramond-SemiBold.ttf"; sourceTree = "<group>"; };
 		C1B5AEC4D0B8450A3B98A044 /* GlyfIntentAPI.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlyfIntentAPI.swift; sourceTree = "<group>"; };
 		C3F6B051CAAD6F2855EDE3F4 /* scanlines.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = scanlines.png; sourceTree = "<group>"; };
@@ -913,6 +917,8 @@
 				C01A8D008A1D6F4C7ADBD562 /* AIAction.swift */,
 				559CF01A48DDE432B244EADB /* TradeRecurring.swift */,
 				9622ADEA4BAABD666E1AD80C /* TradeEdit.swift */,
+				C041893C2A22E62C9C45ED2F /* KeyboardSigner.swift */,
+				AA581918EB4B5BC667A32788 /* SignerScript.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -1560,6 +1566,8 @@
 				1A50AED7F444EC3F6CB1BD51 /* TradeRecurring.swift in Sources */,
 				7C341B9A50BD1B77E1599DC1 /* TradeEdit.swift in Sources */,
 				25C61CE24351DB6B36B66D1C /* ChainLogo.swift in Sources */,
+				760559B9AD92349CDCD4EC5E /* KeyboardSigner.swift in Sources */,
+				1E3D1D22B9C16F399BC76A40 /* SignerScript.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
