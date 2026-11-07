@@ -95,7 +95,12 @@ function typedOf(raw) {
   // Flash sends its typed data as a JSON string.
   const t = typeof raw === "string" ? JSON.parse(raw) : raw;
   const types = { ...t.types }; delete types.EIP712Domain;
-  return { domain: t.domain, types, primaryType: t.primaryType, message: t.message };
+  // Flash writes domain.chainId as a string, and viem leaves a string chainId
+  // out of the domain hash, so the signature fails Flash's check. A number
+  // (as Definitive's own flash-mcp does).
+  const domain = { ...t.domain };
+  if (domain.chainId !== undefined && domain.chainId !== null) domain.chainId = Number(domain.chainId);
+  return { domain, types, primaryType: t.primaryType, message: t.message };
 }
 
 async function flash(q, kind, c) {
