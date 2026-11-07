@@ -880,7 +880,8 @@ enum Smart {
     /// vault field kind, and for socials to a platform. Smart.kt's twin.
     private static let triggers: [(pattern: String, kind: String, label: String?)] = [
         // "This is" introduces you only at the start: "Hi, this is", not "this is great".
-        (#"(?:\bmy name is|\bname:|(?:^|[.!?,\n]\s*|\b(?:hi|hey|hello|hii|hiya)\W*)this is)\s*$"#, "name", nil),
+        // "I am" / "I'm" too, at the start the same way (Arpit, 2026-11-07).
+        (#"(?:\bmy name is|\bname:|(?:^|[.!?,\n]\s*|\b(?:hi|hey|hello|hii|hiya)\W*)(?:this is|i am|i['’]m|im))\s*$"#, "name", nil),
         // Before address: "my wallet address" asks for the wallet.
         // A coin's name alone is not a wallet ("$sol" is its price, "I bought
         // sol" a purchase), nor is someone else's ("phantom wallet is down").
