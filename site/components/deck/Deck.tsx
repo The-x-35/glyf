@@ -258,6 +258,39 @@ const SLIDES: Slide[] = [
     ),
   },
   {
+    id: "trade",
+    label: "Trade from chat",
+    render: (c) => (
+      <Demo
+        id="ryan"
+        eyebrow="Trade from any chat"
+        capture={c}
+        points={[
+          "Type an order like a message. The keyboard reads it on the phone, no AI needed",
+          "Definitive Flash: limits, stop-losses, brackets and DCA on Base and Solana",
+          "Uniswap swaps and tokenized stocks, like Apple on Base",
+          "Signed by your own wallet, without leaving the keyboard",
+        ]}
+      />
+    ),
+  },
+  {
+    id: "private-ai",
+    label: "Private AI",
+    render: (c) => (
+      <Demo
+        id="maya"
+        eyebrow="Private AI on 0G"
+        capture={c}
+        points={[
+          "Every AI call runs on 0G Private Computer, inside a secure enclave",
+          "Each answer comes with a receipt you can verify",
+          "Names, cards and codes are swapped out on the phone before anything is sent",
+        ]}
+      />
+    ),
+  },
+  {
     id: "skills",
     label: "Skills",
     render: () => (
@@ -353,8 +386,12 @@ const SLIDES: Slide[] = [
         </div>
         <ul className="d-grid2">
           <li>
-            <b>The keyboard never signs</b>
-            <span>Payments hand off to your own wallet. Phantom signs, and no key ever touches Glyf</span>
+            <b>Your wallet, your keys</b>
+            <span>The Glyf wallet's keys stay on your phone. Phantom and MetaMask sign in their own apps</span>
+          </li>
+          <li>
+            <b>Private AI you can verify</b>
+            <span>AI runs on 0G Private Computer in a secure enclave, with a receipt for every answer</span>
           </li>
           <li>
             <b>Your details stay encrypted</b>
@@ -364,9 +401,38 @@ const SLIDES: Slide[] = [
             <b>Silent in password fields</b>
             <span>No AI, no suggestions, no clipboard capture</span>
           </li>
+        </ul>
+      </div>
+    ),
+  },
+  {
+    id: "traction",
+    label: "Traction",
+    tone: "grey",
+    render: () => (
+      <div className="d-split">
+        <div>
+          <p className="d-eyebrow">Traction</p>
+          <h2 className="d-title">
+            <span>Live in beta.</span> <span>Already winning.</span>
+          </h2>
+        </div>
+        <ul className="d-grid2">
           <li>
-            <b>It learns how you type</b>
-            <span>Your names, slang and shorthand stop getting corrected, and 20 vocabulary packs cover the rest</span>
+            <b>100+ beta users</b>
+            <span>On TestFlight, using Glyf as their everyday keyboard</span>
+          </li>
+          <li>
+            <b>ETHGlobal Mumbai 2026</b>
+            <span>Won Definitive's and 0G's prizes, and a Top 10 finalist</span>
+          </li>
+          <li>
+            <b>iPhone and Android</b>
+            <span>Native keyboards on both, working end to end</span>
+          </li>
+          <li>
+            <b>Built with the best</b>
+            <span>0G, Definitive, Uniswap, Jupiter, MagicBlock and Phantom</span>
           </li>
         </ul>
       </div>
@@ -396,7 +462,11 @@ const SLIDES: Slide[] = [
           </li>
           <li>
             <b>Money moves like messages</b>
-            <span>Stablecoins on Solana make paying a friend as quick as texting them</span>
+            <span>Stablecoins and tokenized stocks make paying or investing as quick as texting</span>
+          </li>
+          <li>
+            <b>Private AI is now provable</b>
+            <span>Secure enclaves like 0G's let a keyboard show exactly where your words went</span>
           </li>
         </ul>
       </div>
@@ -415,7 +485,7 @@ const SLIDES: Slide[] = [
           <div>
             <small>Free</small>
             <b>$0</b>
-            <span>10 AI actions a day</span>
+            <span>50 AI actions a week</span>
           </div>
           <div>
             <small>Plus</small>
@@ -432,7 +502,7 @@ const SLIDES: Slide[] = [
             <span>500 AI actions a day</span>
           </div>
         </div>
-        <p className="d-note">Later: fees on swaps and payments, and a creator marketplace for skills.</p>
+        <p className="d-note">Plus small fees on in-chat swaps, orders and private payments. Later: a creator marketplace for skills.</p>
       </div>
     ),
   },
@@ -449,22 +519,93 @@ const SLIDES: Slide[] = [
           <div>
             <small>Now</small>
             <ul>
-              <li>Waitlist live at tryglyf.com</li>
-              <li>Private beta on TestFlight</li>
+              <li>100+ beta users on TestFlight</li>
+              <li>Private AI on 0G</li>
+              <li>Trading from any chat</li>
             </ul>
           </div>
           <div>
             <small>Next</small>
             <ul>
-              <li>Public TestFlight</li>
               <li>App Store and Google Play launch</li>
               <li>Plus and Max subscriptions</li>
+              <li>Solana Seeker dApp Store</li>
             </ul>
           </div>
           <div>
             <small>Later</small>
             <ul>
               <li>Skills hub with creators</li>
+              <li>Agents that pay from your keyboard</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: "team",
+    label: "Team",
+    render: () => (
+      <div className="d-split">
+        <div>
+          <p className="d-eyebrow">Team</p>
+          <h2 className="d-title">
+            <span>Arpit Singh.</span> <span>Founder and CEO.</span>
+          </h2>
+          <p className="d-lede">Builds the whole stack: iOS and Android keyboards, the app, the server and the on-chain side.</p>
+        </div>
+        <ul className="d-grid2">
+          <li>
+            <b>B.Tech, Computer Science</b>
+            <span>IIIT Una</span>
+          </li>
+          <li>
+            <b>Avici and Send Arcade</b>
+            <span>Built consumer crypto products before Glyf</span>
+          </li>
+          <li>
+            <b>Founded VibeGame</b>
+            <span>A no-code game builder on Solana</span>
+          </li>
+          <li>
+            <b>Ships fast</b>
+            <span>Glyf's trading build went from idea to two ETHGlobal prizes in one weekend</span>
+          </li>
+        </ul>
+      </div>
+    ),
+  },
+  {
+    id: "ask",
+    label: "The ask",
+    tone: "grey",
+    render: () => (
+      <div className="d-stack">
+        <p className="d-eyebrow">The ask</p>
+        <h2 className="d-title d-title--center">
+          <span>Raising $3M</span> <span>pre-seed.</span>
+        </h2>
+        <div className="d-road">
+          <div>
+            <small>Team</small>
+            <ul>
+              <li>Mobile and backend engineers</li>
+              <li>A growth lead</li>
+            </ul>
+          </div>
+          <div>
+            <small>Launch</small>
+            <ul>
+              <li>App Store and Google Play</li>
+              <li>Solana Seeker dApp Store</li>
+            </ul>
+          </div>
+          <div>
+            <small>Growth</small>
+            <ul>
+              <li>Creators and crypto communities</li>
+              <li>Private AI at scale on 0G</li>
             </ul>
           </div>
         </div>
@@ -503,6 +644,8 @@ export default function Deck() {
   const [i, setI] = useState(0);
   const [dir, setDir] = useState(1);
   const [capture, setCapture] = useState(false);
+  /** GIF recording: the deck chrome hidden, the demos running live. */
+  const [filming, setFilming] = useState(false);
   const [ready, setReady] = useState(false);
   const touch = useRef<{ x: number; y: number; demo: boolean } | null>(null);
   /** The slide we're on, readable from callbacks without making them stale. */
@@ -511,7 +654,9 @@ export default function Deck() {
 
   useEffect(() => {
     setI(fromHash());
-    setCapture(new URLSearchParams(window.location.search).has("capture"));
+    const q = new URLSearchParams(window.location.search);
+    setCapture(q.has("capture"));
+    setFilming(q.has("gif"));
     setReady(true);
     const onHash = () => setI(fromHash());
     window.addEventListener("hashchange", onHash);
@@ -546,7 +691,7 @@ export default function Deck() {
 
   return (
     <div
-      className={cx("deck", capture && "is-capture")}
+      className={cx("deck", (capture || filming) && "is-capture")}
       onTouchStart={(e) => {
         const t = e.touches[0];
         touch.current = { x: t.clientX, y: t.clientY, demo: !!(e.target as HTMLElement).closest(".lc, .fx-stage") };
@@ -560,7 +705,7 @@ export default function Deck() {
         if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(t.clientY - s.y)) go(i + (dx < 0 ? 1 : -1));
       }}
     >
-      {!capture && (
+      {!capture && !filming && (
         <div className="deck-progress" aria-hidden>
           <motion.i animate={{ scaleX: (i + 1) / SLIDES.length }} transition={{ duration: 0.5, ease }} />
         </div>
@@ -582,29 +727,13 @@ export default function Deck() {
         </motion.section>
       )}
 
-      {!capture && (
+      {!capture && !filming && (
         <nav className="deck-nav" aria-label="Slides">
           <a className="wordmark deck-home" href="/" aria-label="tryglyf.com">
             glyf<span className="dot" />
           </a>
           <span className="deck-label">{slide.label}</span>
           <div className="deck-ctl">
-            <a
-              className="deck-pdf"
-              href="/glyf-pitch-deck.pdf"
-              target="_blank"
-              rel="noopener"
-              onClick={(e) => {
-                const root = document.documentElement;
-                const dark = root.dataset.theme === "dark" || (!root.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
-                if (dark) {
-                  e.preventDefault();
-                  window.open("/glyf-pitch-deck-dark.pdf", "_blank", "noopener");
-                }
-              }}
-            >
-              PDF
-            </a>
             <ThemeToggle />
             <button type="button" onClick={() => go(i - 1)} disabled={i === 0} aria-label="Previous slide">
               ‹
