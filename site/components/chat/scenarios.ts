@@ -11,7 +11,7 @@ import type { Coach, KbSnapshot } from "../kb/Keyboard";
  *  (app/lib/onboarding/tour_scenarios.dart), in the same order, with the
  *  same words, and its coach (TourCoach on iOS) points with the same labels. */
 
-export type ChipKind = "pay" | "paste" | "calc" | "money" | "vault" | "event";
+export type ChipKind = "pay" | "paste" | "calc" | "money" | "vault" | "event" | "trade";
 
 /** Chat-side state a coach may need (the bubble copy menu, what was copied). */
 export type ChatUi = { menu: string | null; copied: string | null };

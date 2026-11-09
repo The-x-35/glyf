@@ -1060,3 +1060,8 @@ body:has(.is-capture) nextjs-portal {
   max-width: 440px;
   margin-top: clamp(24px, 4vh, 40px);
 }
+
+/* Filming (?gif) and stills (?capture): no Playing/Replay bar under the phone. */
+.is-capture .lc-bar {
+  display: none;
+}

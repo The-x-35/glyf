@@ -19,6 +19,38 @@ export type PayHint = { amount: string; token: "USDC" | "SOL"; name?: string };
 export const WALLET_BALANCE = { USDC: "1,240.18", SOL: "8.42" };
 export const SWAP_RATE = 142.27; // illustrative SOL→USDC quote
 
+/** A trade typed in plain words, as the keyboards read it (TradeIntent.swift):
+ *  a swap goes to Uniswap, an order that waits goes to Definitive Flash. */
+export type Trade =
+  | { kind: "swap"; amount: number; sell: string; buy: string; chain: string }
+  | { kind: "stop"; amount: number; asset: string; below: number; chain: string };
+
+/** Illustrative market numbers for the trade chats. */
+export const ETH_USD = 3452.18;
+export const ETH_HELD = 0.5;
+
+const CHAINS: Record<string, string> = { base: "Base", ethereum: "Ethereum", arbitrum: "Arbitrum", optimism: "Optimism", unichain: "Unichain" };
+const SWAP_TRADE = /^swap\s+([\d.]+)\s+(eth|usdc)\s+(?:to|for|into)\s+(eth|usdc)(?:\s+on\s+(base|ethereum|arbitrum|optimism|unichain))?$/i;
+const STOP_TRADE = /^sell\s+(?:my\s+)?(eth)\s+if\s+it\s+drops\s+below\s+\$?([\d,]+)$/i;
+
+export function tradeIntent(text: string): Trade | null {
+  const t = text.trim();
+  const sw = t.match(SWAP_TRADE);
+  if (sw && sw[2].toLowerCase() !== sw[3].toLowerCase()) {
+    return { kind: "swap", amount: parseFloat(sw[1]), sell: sw[2].toUpperCase(), buy: sw[3].toUpperCase(), chain: CHAINS[(sw[4] ?? "base").toLowerCase()] };
+  }
+  const st = t.match(STOP_TRADE);
+  if (st) return { kind: "stop", amount: ETH_HELD, asset: st[1].toUpperCase(), below: parseInt(st[2].replace(/,/g, ""), 10), chain: "Base" };
+  return null;
+}
+
+/** What a trade gets for its tokens at the illustrative price, Uniswap's 0.05% pool fee taken. */
+export function swapOut(t: Extract<Trade, { kind: "swap" }>): number {
+  const usd = t.sell === "ETH" ? t.amount * ETH_USD : t.amount;
+  const out = t.buy === "ETH" ? usd / ETH_USD : usd;
+  return out * 0.9995;
+}
+
 export type Panel =
   | null
   | "menu"
@@ -32,7 +64,8 @@ export type Panel =
   | "translate"
   | "chips"
   | "wallet"
-  | "calendar";
+  | "calendar"
+  | "trade";
 
 export type SearchTab = "google" | "youtube" | "maps";
 export type Lang = "hi" | "es" | "fr";

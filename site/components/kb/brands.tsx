@@ -42,3 +42,17 @@ export const UsdcIcon = ({ className }: { className?: string }) => (
   // eslint-disable-next-line @next/next/no-img-element
   <img className={className} src="/brands/usdc.png" alt="USDC" width={20} height={20} />
 );
+
+/** ethereum.org's diamond on a white disc, so it reads on dark sheets too. */
+export const EthIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 32 32" width={20} height={20} role="img" aria-label="ETH">
+    <circle cx="16" cy="16" r="16" fill="#fff" />
+    <circle cx="16" cy="16" r="15.5" fill="none" stroke="#e3e6ee" />
+    <path fill="#343434" d="M16 4.5 15.85 5v15.07l.15.15 7-4.14z" />
+    <path fill="#8c8c8c" d="M16 4.5 9 16.08l7 4.14V4.5z" />
+    <path fill="#3c3c3b" d="m16 21.55-.09.1v5.37l.09.25 7-9.86z" />
+    <path fill="#8c8c8c" d="M16 27.27v-5.72l-7-4.14z" />
+    <path fill="#141414" d="m16 20.22 7-4.14-7-3.18z" />
+    <path fill="#393939" d="m9 16.08 7 4.14v-7.32z" />
+  </svg>
+);
