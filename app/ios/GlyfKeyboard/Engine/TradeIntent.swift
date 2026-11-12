@@ -2,7 +2,8 @@ import Foundation
 
 /// A trade said in plain words at the end of a message, read on the phone
 /// with no model: a swap goes to Uniswap (Jupiter on Solana), an order that
-/// waits for a price to Definitive's Flash. The keyboard only shows what it
+/// waits for a price to Definitive's Flash, a send to an ENS (.eth) or SNS
+/// (.sol) name or an address. The keyboard only shows what it
 /// read; the app quotes it again and the person's own wallet app (MetaMask
 /// or Phantom) signs. The keyboard never holds a key (SPEC §1.5).
 struct TradeIntent: Equatable {
@@ -27,6 +28,10 @@ struct TradeIntent: Equatable {
         case twap
         /// Flash: the same token moved to another chain.
         case bridge
+        /// A send to an ENS or SNS name, or an address: "send 5 usdc to
+        /// vitalik.eth". MetaMask sends it on Ethereum chains, Phantom on
+        /// Solana (a .sol name, or SOL itself).
+        case send
     }
 
     var kind: Kind
@@ -67,6 +72,10 @@ struct TradeIntent: Equatable {
     /// A buy repeated on a schedule ("dca $20 in eth each month"), placed
     /// as this one Flash TWAP (TradeRecurring.swift).
     var plan: RecurringPlan?
+    /// A send's recipient as typed: vitalik.eth, arpit.sol, or 0x… (the
+    /// name is lowercased; the panel looks up its address before anything
+    /// is signed).
+    var to: String?
 
     /// A starter whose price waits on the market's.
     var awaitingPrice: Bool {
@@ -88,6 +97,7 @@ struct TradeIntent: Equatable {
         switch kind {
         // Solana has no Uniswap pools here: Jupiter swaps there.
         case .swap: return chainName == "solana" ? "Jupiter" : "Uniswap"
+        case .send: return Self.walletName(chain: chainName)
         default: return "Flash"
         }
     }
@@ -139,6 +149,8 @@ struct TradeIntent: Equatable {
             return "Buy \(amountIsUSD ? "$\(amount ?? "")" : amountText) of \(buy) \(Self.span(durationSeconds))"
         case .bridge:
             return "Move \(amountText) to \(Self.chainLabels[toChain ?? ""] ?? (toChain ?? "").capitalized)"
+        case .send:
+            return "Send \(amountText) to \(to.map(Self.shortRecipient) ?? "")"
         }
     }
 
@@ -166,6 +178,7 @@ struct TradeIntent: Equatable {
         if let sellAddress { q["sellAddress"] = sellAddress }
         if let buyAddress { q["buyAddress"] = buyAddress }
         if let buyChain, buyChain != chainName { q["buyChain"] = buyChain }
+        if let to { q["to"] = to }
         return q
     }
 
@@ -240,11 +253,11 @@ struct TradeIntent: Equatable {
         // Cheap test first: every pattern has one of these words.
         let lower = t.lowercased()
         let words = ["swap", "convert", "trade", "buy", "sell", "stop", "take profit", "tp ", "trail",
-                     "dca", "move", "bridge", "send", "protect", "limit", "invest", "stack", "put"]
+                     "dca", "move", "bridge", "send", "pay", "transfer", "protect", "limit", "invest", "stack", "put"]
         guard words.contains(where: lower.contains) else { return nil }
         // A schedule longer than Flash's 30-day TWAP is a recurring plan.
         let spread = twap(t).flatMap { ($0.durationSeconds ?? 0) <= RecurringPlan.flashMaxSeconds ? $0 : nil }
-        guard var r = bracket(t) ?? orders(t) ?? spread ?? recurring(t) ?? bridgeMove(t) ?? swap(t)
+        guard var r = bracket(t) ?? orders(t) ?? spread ?? recurring(t) ?? bridgeMove(t) ?? send(t) ?? swap(t)
         else { return nil }
         // A share trades on Base, by its address there.
         if let a = baseStocks[r.sell] { r.sellAddress = a; r.chain = "base" }
@@ -408,6 +421,39 @@ struct TradeIntent: Equatable {
         return i
     }
 
+    // "send 20 usdc to vitalik.eth", "pay arpit.sol 5 usdc", "send 0.01 eth to 0x12…"
+    private static func send(_ t: String) -> TradeIntent? {
+        let who = #"([a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:eth|sol)|0x[0-9a-fA-F]{40})"#
+        var m = match(start + #"(?:send|pay|transfer)\s+"# + num + #"\s+"# + sym + #"\s+to\s+"# + who + chainPart + end, t)
+        if m == nil, let n = match(start + #"(?:send|pay)\s+"# + who + #"\s+"# + num + #"\s+"# + sym + chainPart + end, t) {
+            m = [n[0], n[2], n[3], n[1], n[4]]
+        }
+        guard let m, let asset = symbol(m[2]), let to = m[3], baseStocks[asset] == nil else { return nil }
+        let address = to.hasPrefix("0x") || to.hasPrefix("0X")
+        let name = to.lowercased()
+        // A .sol name is Solana's, and SOL only moves there: Phantom sends
+        // it, and Phantom's send here carries SOL or USDC.
+        let onSolana = name.hasSuffix(".sol") || asset == "SOL"
+        if onSolana, address || !["SOL", "USDC"].contains(asset) { return nil }
+        var i = TradeIntent(kind: .send, amount: amount(m[1]), sell: asset, buy: asset,
+                            chain: onSolana ? "solana" : chain(m[4], token: asset))
+        if i.chain == "solana", !onSolana { return nil }
+        i.to = address ? to : name
+        return i.amount == nil ? nil : i
+    }
+
+    /// A send's recipient on the strip: a name as typed, an address short.
+    static func shortRecipient(_ to: String) -> String {
+        guard to.hasPrefix("0x"), to.count > 12 else { return to }
+        return "\(to.prefix(6))…\(to.suffix(4))"
+    }
+
+    /// Whether [to] is a name to look up (not an address already).
+    static func isName(_ to: String?) -> Bool {
+        guard let to else { return false }
+        return to.hasSuffix(".eth") || to.hasSuffix(".sol")
+    }
+
     // MARK: helpers
 
     private static func order(_ kind: Kind, amount a: String?, asset s: String, price p: String?, chain c: String?) -> TradeIntent? {
@@ -495,6 +541,51 @@ struct TradeIntent: Equatable {
 }
 
 extension TradeIntent {
+    /// A send on Solana (a .sol name, or SOL to a name) goes through the
+    /// app's existing Phantom send (glyf://open?path=pay), with the address
+    /// the name resolved to; everything else is the Trade screen's, which
+    /// asks MetaMask. Nil when it isn't a Solana send.
+    static func phantomSend(_ query: [String: String]) -> [String: String]? {
+        guard query["kind"] == "send", query["chain"] == "solana", let to = query["address"],
+              let amount = query["amount"] else { return nil }
+        let token = (query["sell"] ?? "").uppercased()
+        let asset: (mint: String, decimals: Int)
+        switch token {
+        case "SOL": asset = ("So11111111111111111111111111111111111111112", 9)
+        case "USDC": asset = ("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", 6)
+        default: return nil
+        }
+        return ["kind": "send", "to": to, "amount": amount, "token": token,
+                "mint": asset.mint, "symbol": token, "decimals": String(asset.decimals)]
+    }
+
+    /// What GET /names/resolve said, as the address for [chain] or the
+    /// reason there is none.
+    static func recipient(for name: String, chain: String, ok: Bool, answer: [String: Any]?) -> (String?, String?) {
+        guard ok else {
+            if answer?["found"] as? Bool == false { return (nil, "\(name) isn’t registered") }
+            return (nil, "Couldn’t look up \(name)")
+        }
+        let addresses = answer?["addresses"] as? [String: Any] ?? [:]
+        // TradeIntent's chain names are the server's, Unichain aside (an
+        // ENS name sets no Unichain record; its Ethereum one is the same account).
+        let own = addresses[chain] as? String
+        let found = chain == "solana" ? own : (own ?? addresses["ethereum"] as? String)
+        guard let found, !found.isEmpty else {
+            return (nil, chain == "solana" ? "\(name) has no Solana address" : "\(name) has no Ethereum address")
+        }
+        if chain == "solana" {
+            guard found.range(of: #"^[1-9A-HJ-NP-Za-km-z]{32,44}$"#, options: .regularExpression) != nil else {
+                return (nil, "\(name) has no Solana address")
+            }
+        } else {
+            guard found.range(of: #"^0x[0-9a-fA-F]{40}$"#, options: .regularExpression) != nil else {
+                return (nil, "\(name) has no Ethereum address")
+            }
+        }
+        return (found, nil)
+    }
+
     /// Who signs a trade on [chain], as the app names it: always the
     /// person's own wallet app, Phantom on Solana and MetaMask elsewhere.
     static func walletName(chain: String?) -> String {

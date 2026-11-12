@@ -127,16 +127,122 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertNil(read("move 50 usdc from base to base"))
     }
 
-    /// Sends to a name and Whitechain pay requests aren't trades here: the
-    /// keyboard's own Send chip (an address) and Pay stay as they were.
-    func testSendsAndRequestsAreNoTrade() {
-        for text in ["send 20 usdc to arpit.eth", "pay arpit.sol 5 usdc",
-                     "send 0.01 eth to 0x52908400098527886E0F7030069857D2E4169EE7",
+    /// Sends to an ENS or SNS name (Arpit, 2026-11-12: "I feel you can add
+    /// sending to .eth and .sol"): MetaMask on Ethereum chains, Phantom on
+    /// Solana. Whitechain pay requests stay out.
+    func testASendToANameIsRead() throws {
+        let eth = try XCTUnwrap(read("send 20 usdc to Vitalik.ETH"))
+        XCTAssertEqual(eth.kind, .send)
+        XCTAssertEqual(eth.to, "vitalik.eth")
+        XCTAssertEqual(eth.amount, "20")
+        XCTAssertEqual(eth.sell, "USDC")
+        XCTAssertEqual(eth.chainName, "base")
+        XCTAssertEqual(eth.title, "Send 20 USDC to vitalik.eth")
+        XCTAssertEqual(eth.detail, "Base · MetaMask")
+        XCTAssertEqual(eth.query["to"], "vitalik.eth")
+        XCTAssertEqual(eth.query["kind"], "send")
+
+        let arb = try XCTUnwrap(read("pls send 0.01 eth to pay.arpit.eth on arbitrum"))
+        XCTAssertEqual(arb.chainName, "arbitrum")
+        XCTAssertEqual(arb.to, "pay.arpit.eth")
+
+        let sol = try XCTUnwrap(read("pay arpit.sol 5 usdc"))
+        XCTAssertEqual(sol.to, "arpit.sol")
+        XCTAssertEqual(sol.chainName, "solana")
+        XCTAssertEqual(sol.detail, "Solana · Phantom")
+        // SOL lives on Solana, even to an ENS name (its Solana record).
+        XCTAssertEqual(read("send 1 sol to vitalik.eth")?.chainName, "solana")
+
+        let hex = try XCTUnwrap(read("send 0.01 eth to 0x52908400098527886E0F7030069857D2E4169EE7"))
+        XCTAssertEqual(hex.to, "0x52908400098527886E0F7030069857D2E4169EE7")
+        XCTAssertEqual(hex.title, "Send 0.01 ETH to 0x5290…9EE7")
+        XCTAssertFalse(TradeIntent.isName(hex.to))
+        XCTAssertTrue(TradeIntent.isName(eth.to))
+        guard case .trade(let chip)? = Smart.chip(for: "send 5 usdc to vitalik.eth", fields: []) else {
+            return XCTFail("no send chip")
+        }
+        XCTAssertEqual(chip.to, "vitalik.eth")
+    }
+
+    func testSendsGlyfCantCarryAreNotRead() {
+        for text in ["send usdc to arpit.eth",                // no amount
+                     "send 5 usdt to arpit.sol",              // Phantom's send here: SOL or USDC
+                     "send 1 sol to 0x52908400098527886E0F7030069857D2E4169EE7",
+                     "send 5 usdc to arpit.eth on solana",    // an ENS name's EVM send isn't on Solana
+                     "send 1 tsla to arpit.eth",              // shares stay trades
+                     "send 5 usdc to arpit.com",
                      "request 20 usdt", "request 15 usdt on whitechain"] {
             XCTAssertNil(read(text), text)
         }
         // Whitechain isn't a trading chain.
         XCTAssertNil(read("swap 1 usdc to eth on whitechain"))
+    }
+
+    /// The panel shows the address a name points at before anything is
+    /// signed, and a name that points nowhere stops the send.
+    func testANameResolvesForTheSendsChain() {
+        let answer: [String: Any] = ["ok": true, "found": true, "name": "vitalik.eth",
+                                     "addresses": ["ethereum": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+                                                   "base": "0x1111111111111111111111111111111111111111",
+                                                   "solana": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"]]
+        XCTAssertEqual(TradeIntent.recipient(for: "vitalik.eth", chain: "base", ok: true, answer: answer).0,
+                       "0x1111111111111111111111111111111111111111")
+        // No Unichain record: the Ethereum one is the same account.
+        XCTAssertEqual(TradeIntent.recipient(for: "vitalik.eth", chain: "unichain", ok: true, answer: answer).0,
+                       "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045")
+        XCTAssertEqual(TradeIntent.recipient(for: "vitalik.eth", chain: "solana", ok: true, answer: answer).0,
+                       "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")
+        // A Solana send never falls back to an Ethereum address.
+        let evmOnly: [String: Any] = ["addresses": ["ethereum": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"]]
+        let noSol = TradeIntent.recipient(for: "vitalik.eth", chain: "solana", ok: true, answer: evmOnly)
+        XCTAssertNil(noSol.0)
+        XCTAssertEqual(noSol.1, "vitalik.eth has no Solana address")
+        let missing = TradeIntent.recipient(for: "nobody.sol", chain: "solana", ok: false, answer: ["ok": false, "found": false])
+        XCTAssertNil(missing.0)
+        XCTAssertEqual(missing.1, "nobody.sol isn’t registered")
+        XCTAssertEqual(TradeIntent.recipient(for: "a.eth", chain: "base", ok: false, answer: nil).1, "Couldn’t look up a.eth")
+        // Junk in a record is no address.
+        XCTAssertNil(TradeIntent.recipient(for: "a.eth", chain: "base", ok: true, answer: ["addresses": ["base": "0x12"]]).0)
+    }
+
+    /// A Solana send goes to the app's existing Phantom send, with the
+    /// address the name resolved to; an Ethereum one to the Trade screen.
+    func testASolanaSendGoesThroughPhantom() throws {
+        var q = try XCTUnwrap(read("send 1.5 sol to arpit.sol")).query
+        q["address"] = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+        let pay = try XCTUnwrap(TradeIntent.phantomSend(q))
+        XCTAssertEqual(pay["kind"], "send")
+        XCTAssertEqual(pay["to"], "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")
+        XCTAssertEqual(pay["amount"], "1.5")
+        XCTAssertEqual(pay["mint"], "So11111111111111111111111111111111111111112")
+        XCTAssertEqual(pay["decimals"], "9")
+        var usdc = try XCTUnwrap(read("pay arpit.sol 5 usdc")).query
+        usdc["address"] = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+        XCTAssertEqual(TradeIntent.phantomSend(usdc)?["mint"], "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+        // Not resolved yet: nothing goes anywhere.
+        XCTAssertNil(TradeIntent.phantomSend(try XCTUnwrap(read("pay arpit.sol 5 usdc")).query))
+        var evm = try XCTUnwrap(read("send 5 usdc to vitalik.eth")).query
+        evm["address"] = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+        XCTAssertNil(TradeIntent.phantomSend(evm))
+    }
+
+    /// The panel edits a send like a move: the token is both sides, the
+    /// amount stays, and the chains are where the name can be paid.
+    func testASendIsEditedInThePanel() throws {
+        let i = try XCTUnwrap(read("send 5 usdc to vitalik.eth"))
+        XCTAssertTrue(TradeEdit.sells(i))
+        XCTAssertEqual(TradeEdit.fields(i), [.amount])
+        XCTAssertEqual(TradeEdit.chains(for: i), SponsorMenu.swapChains)
+        XCTAssertEqual(TradeEdit.chains(for: try XCTUnwrap(read("pay arpit.sol 5 usdc"))), ["solana"])
+        XCTAssertNil(TradeEdit.problem(i))
+        var none = i
+        none.amount = nil
+        XCTAssertEqual(TradeEdit.problem(none), "Enter an amount")
+        let dai = TradeEdit.pick(TokenPick(symbol: "DAI", name: "Dai"), side: .sell, in: i)
+        XCTAssertEqual(dai.sell, "DAI")
+        XCTAssertEqual(dai.buy, "DAI")
+        XCTAssertEqual(dai.amount, "5")
+        XCTAssertEqual(dai.to, "vitalik.eth")
     }
 
     func testSolanaOrdersGoToTheAppOnSolana() throws {

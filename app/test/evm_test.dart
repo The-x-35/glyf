@@ -187,13 +187,84 @@ void main() {
     expect(EvmSigner.checksum('not an address'), 'not an address');
   });
 
-  test('a send or a pay request is not a trade: refused before any wallet is asked', () async {
-    for (final kind in ['send', 'request']) {
-      final out = await TradeFlow.run({'kind': kind, 'sell': 'USDC', 'amount': '5', 'to': 'arpit.eth'}).toList();
-      expect(out.single.state, TradeState.failed, reason: kind);
-    }
+  test('a pay request is not a trade: refused before any wallet is asked', () async {
+    final out = await TradeFlow.run({'kind': 'request', 'sell': 'USDT', 'amount': '5'}).toList();
+    expect(out.single.state, TradeState.failed);
     expect(opened, isEmpty);
     expect(calls.where((m) => m.startsWith('walletSecret')), isEmpty);
+  });
+
+  test('a send to a name needs MetaMask connected, and a Solana send is Phantom’s', () async {
+    final eth = await TradeFlow.run({'kind': 'send', 'sell': 'USDC', 'amount': '5', 'to': 'vitalik.eth', 'chain': 'base'}).toList();
+    expect(eth.single.title, 'MetaMask isn’t connected');
+    final sol = await TradeFlow.run({'kind': 'send', 'sell': 'SOL', 'amount': '1', 'to': 'arpit.sol', 'chain': 'solana'}).toList();
+    expect(sol.single.state, TradeState.failed);
+    expect(sol.single.title, 'Send it from Phantom');
+    expect(opened, isEmpty);
+  });
+
+  test('a send’s name resolves to its own record on the chain, else its Ethereum one', () {
+    const answer = {
+      'addresses': {
+        'ethereum': '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+        'base': '0x1111111111111111111111111111111111111111',
+        'solana': '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+      }
+    };
+    expect(TradeFlow.recipientFrom(answer, EvmChain.base), '0x1111111111111111111111111111111111111111');
+    expect(TradeFlow.recipientFrom(answer, EvmChain.unichain), '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045');
+    expect(TradeFlow.recipientFrom(const {'addresses': {'solana': '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU'}}, EvmChain.base),
+        isNull);
+    expect(TradeFlow.recipientFrom(const {'addresses': {'base': '0x12'}}, EvmChain.base), isNull);
+  });
+
+  test('a send is a plain transfer of ETH, or the token’s ERC-20 transfer', () {
+    const to = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+    final eth = TradeFlow.sendCall(chain: EvmChain.base, to: to, symbol: 'ETH', amount: '0.01', tokens: const [])!;
+    expect(eth.to, to);
+    expect(eth.value, BigInt.parse('10000000000000000'));
+    expect(eth.data, isNull);
+    const usdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+    final tokens = [
+      {'symbol': 'ETH', 'address': '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE', 'decimals': 18, 'native': true},
+      {'symbol': 'USDC', 'address': usdc, 'decimals': 6},
+    ];
+    final token = TradeFlow.sendCall(chain: EvmChain.base, to: to, symbol: 'usdc', amount: '20.5', tokens: tokens)!;
+    expect(token.to, usdc);
+    expect(token.value, BigInt.zero);
+    expect(token.data,
+        '0xa9059cbb000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045'
+        '000000000000000000000000000000000000000000000000000000000138ce20');
+    expect(TradeFlow.sendCall(chain: EvmChain.base, to: to, symbol: 'PEPE', amount: '1', tokens: tokens), isNull);
+    // A token picked by its address in the keyboard is that token, not a lookalike symbol.
+    expect(TradeFlow.sendCall(chain: EvmChain.base, to: to, symbol: 'USDC', amount: '1', tokens: tokens, tokenAddress: usdc)?.to,
+        usdc);
+    expect(TradeFlow.sendCall(
+            chain: EvmChain.base, to: to, symbol: 'USDC', amount: '1', tokens: tokens,
+            tokenAddress: '0x2222222222222222222222222222222222222222'),
+        isNull);
+    expect(TradeFlow.units('1.2345678', 6), BigInt.from(1234567));
+  });
+
+  test('a name that points elsewhere than the keyboard showed stops the send before MetaMask', () async {
+    shared = {'evmWallets': {'metamask': wallet}};
+    final asked = <String>[];
+    final real = TradeFlow.evmGet;
+    addTearDown(() => TradeFlow.evmGet = real);
+    TradeFlow.evmGet = (path) async {
+      asked.add(path);
+      return {
+        'addresses': {'ethereum': '0x3333333333333333333333333333333333333333'}
+      };
+    };
+    final out = await TradeFlow.run({
+      'kind': 'send', 'sell': 'USDC', 'amount': '5', 'to': 'vitalik.eth', 'chain': 'base',
+      'address': '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    }).toList();
+    expect(asked.single, '/names/resolve?name=vitalik.eth');
+    expect(out.last.state, TradeState.failed);
+    expect(out.last.title, 'vitalik.eth points somewhere else now');
+    expect(opened, isEmpty);
   });
 
   test('an Ethereum trade without MetaMask says to connect it', () async {

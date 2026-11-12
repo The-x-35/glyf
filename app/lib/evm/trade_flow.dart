@@ -41,20 +41,32 @@ class TradeOutcome {
 /// own wallet app: Uniswap for swaps and Definitive's Flash for every order
 /// that waits on a price or spreads over time, signed in MetaMask on
 /// Ethereum chains; Jupiter swaps and Flash orders on Solana, signed in
-/// Phantom. Glyf builds each request and checks each answer; it holds no
+/// Phantom. A send to an ENS name (or an address) on an Ethereum chain is
+/// one MetaMask transaction too. Glyf builds each request and checks each answer; it holds no
 /// key. Every number is asked for again here: the keyboard's quote was only
 /// for show.
 abstract final class TradeFlow {
   /// The kinds the keyboard hands over (TradeIntent.query `kind`).
-  static const kinds = {'swap', 'limit', 'stop', 'stop-loss', 'take-profit', 'bracket', 'trailing-stop', 'twap', 'bridge'};
+  static const kinds = {'swap', 'limit', 'stop', 'stop-loss', 'take-profit', 'bracket', 'trailing-stop', 'twap', 'bridge', 'send'};
+
+  /// Where a send's name is looked up (GET /names/resolve) and a chain's
+  /// coins listed (GET /evm/tokens); a test stands in for the server.
+  @visibleForTesting
+  static Future<Map<String, dynamic>> Function(String path) evmGet = GlyfApi.evmGet;
 
   static Stream<TradeOutcome> run(Map<String, String> q) async* {
     final kind = q['kind'] ?? 'swap';
     final onSolana = q['chain'] == 'solana';
     if (!kinds.contains(kind)) {
-      // A send or a pay request from an older keyboard: not a trade here.
+      // A pay request from an older keyboard: not a trade here.
       yield await _told(const TradeOutcome(TradeState.failed, 'Glyf can’t do that one',
-          detail: 'Swaps and orders only. Send from Profile › Wallet'));
+          detail: 'Swaps, orders and sends only. Send from Profile › Wallet'));
+      return;
+    }
+    if (kind == 'send' && onSolana) {
+      // The keyboard hands a Solana send to Phantom's own send (path=pay).
+      yield await _told(const TradeOutcome(TradeState.failed, 'Send it from Phantom',
+          detail: 'Solana sends go through Profile › Wallet › Send'));
       return;
     }
     try {
@@ -81,6 +93,7 @@ abstract final class TradeFlow {
       final chain = EvmChain.named(q['chain']) ?? EvmChain.base;
       final Stream<TradeOutcome> steps = switch (kind) {
         'swap' => _swap(q, chain, address),
+        'send' => _send(q, chain, address),
         _ => _flash(q, kind, chain, address),
       };
       await for (final o in steps) {
@@ -641,6 +654,125 @@ abstract final class TradeFlow {
       'bridge' => '${q['amount']} ${q['sell']} to ${toLabel ?? ''}',
       _ => chainLabel,
     };
+  }
+
+  // MARK: sends
+
+  static final _evmAddress = RegExp(r'^0x[0-9a-fA-F]{40}$');
+
+  /// A send to an ENS name or an address, as one MetaMask transaction: the
+  /// gas coin as a plain transfer, a token as its ERC-20 transfer. A name
+  /// is looked up again here (the keyboard's link could say anything), and
+  /// a name that now points elsewhere than the keyboard showed stops it.
+  static Stream<TradeOutcome> _send(Map<String, String> q, EvmChain chain, String address) async* {
+    final named = (q['to'] ?? '').trim().toLowerCase();
+    final symbol = (q['sell'] ?? chain.native).toUpperCase();
+    final amount = q['amount'];
+    if (amount == null || (double.tryParse(amount) ?? 0) <= 0) {
+      yield const TradeOutcome(TradeState.failed, 'How much?', detail: 'Say an amount, like “send 20 usdc to vitalik.eth”');
+      return;
+    }
+    String to;
+    if (_evmAddress.hasMatch(q['to'] ?? '')) {
+      to = q['to']!;
+    } else if (named.endsWith('.eth')) {
+      yield TradeOutcome(TradeState.working, 'Looking up $named…');
+      final Map<String, dynamic> answer;
+      try {
+        answer = await evmGet('/names/resolve?name=${Uri.encodeQueryComponent(named)}');
+      } on GlyfApiException catch (e) {
+        yield TradeOutcome(TradeState.failed, e.message.contains('404') ? '$named isn’t registered' : 'Couldn’t look up $named',
+            detail: e.message.contains('404') ? 'Check the name and try again' : null);
+        return;
+      }
+      final found = recipientFrom(answer, chain);
+      if (found == null) {
+        yield TradeOutcome(TradeState.failed, '$named has no address on ${chain.label}');
+        return;
+      }
+      final shown = q['address'];
+      if (shown != null && shown.toLowerCase() != found.toLowerCase()) {
+        yield TradeOutcome(TradeState.failed, '$named points somewhere else now',
+            detail: 'Glyf found ${EvmSigner.short(found)}, not ${EvmSigner.short(shown)}. Nothing was sent');
+        return;
+      }
+      to = found;
+    } else {
+      yield TradeOutcome(TradeState.failed, 'No address for ${named.isEmpty ? 'that send' : named}');
+      return;
+    }
+    if (to.toLowerCase() == address.toLowerCase()) {
+      yield const TradeOutcome(TradeState.failed, 'That’s your own wallet');
+      return;
+    }
+    final who = named.endsWith('.eth') ? '$named (${EvmSigner.short(to)})' : EvmSigner.short(to);
+    final tokens = symbol == chain.native ? const <Map>[] : ((await evmGet('/evm/tokens?chain=${chain.name}'))['tokens'] as List? ?? const []).cast<Map>();
+    final call = sendCall(chain: chain, to: to, symbol: symbol, amount: amount, tokens: tokens, tokenAddress: q['sellAddress']);
+    if (call == null) {
+      yield TradeOutcome(TradeState.failed, 'Glyf doesn’t know $symbol on ${chain.label}');
+      return;
+    }
+    final title = 'Send $amount $symbol to $who';
+    late List<Signed> signed;
+    yield* _sign(title, [TxStep(chain, title, call, failTitle: 'The send reverted')], (r) => signed = r);
+    final sent = signed.single;
+    yield TradeOutcome(sent.pending ? TradeState.submitted : TradeState.done, 'Sent',
+        detail: sent.pending ? '$amount $symbol to $who, still confirming' : '$amount $symbol to $who on ${chain.label}',
+        txUrl: chain.txUrl(sent.hash!), hash: sent.hash);
+  }
+
+  /// The address GET /names/resolve gave for [chain]: the name's own record
+  /// there, else its Ethereum one (an account is the same on every chain;
+  /// the server lists such chains as inferred). Null when there is none.
+  @visibleForTesting
+  static String? recipientFrom(Map<String, dynamic> answer, EvmChain chain) {
+    final addresses = (answer['addresses'] as Map?)?.cast<String, Object?>() ?? const {};
+    final own = addresses[chain.name] ?? addresses['ethereum'];
+    return own is String && _evmAddress.hasMatch(own) ? own : null;
+  }
+
+  /// The transaction for a send: [amount] of the gas coin straight to [to],
+  /// or the token's ERC-20 transfer, found in [tokens] (GET /evm/tokens) by
+  /// its address when the keyboard picked one, else by symbol.
+  @visibleForTesting
+  static EvmCall? sendCall(
+      {required EvmChain chain,
+      required String to,
+      required String symbol,
+      required String amount,
+      required List<Map> tokens,
+      String? tokenAddress}) {
+    if (symbol.toUpperCase() == chain.native) {
+      return EvmCall(to: to, value: units(amount, 18), gas: BigInt.from(21000));
+    }
+    for (final t in tokens) {
+      final a = (t['address'] as String? ?? '').toLowerCase();
+      final match = tokenAddress != null
+          ? a == tokenAddress.toLowerCase()
+          : (t['symbol'] as String? ?? '').toUpperCase() == symbol.toUpperCase();
+      if (!match || t['native'] == true || !_evmAddress.hasMatch(a)) continue;
+      final decimals = (t['decimals'] as num?)?.toInt();
+      if (decimals == null) return null;
+      return EvmCall(to: t['address'] as String, data: erc20Transfer(to, units(amount, decimals)));
+    }
+    return null;
+  }
+
+  /// ERC-20 transfer(address,uint256) calldata.
+  @visibleForTesting
+  static String erc20Transfer(String to, BigInt amount) =>
+      '0xa9059cbb${_word(to.substring(2))}${_word(amount.toRadixString(16))}';
+
+  static String _word(String hex) => hex.toLowerCase().padLeft(64, '0');
+
+  /// "20.5" of a token with [decimals] as its smallest units.
+  @visibleForTesting
+  static BigInt units(String amount, int decimals) {
+    final parts = amount.trim().split('.');
+    final whole = BigInt.parse(parts[0].isEmpty ? '0' : parts[0]);
+    final frac = parts.length > 1 ? parts[1] : '';
+    final padded = frac.length > decimals ? frac.substring(0, decimals) : frac.padRight(decimals, '0');
+    return whole * BigInt.from(10).pow(decimals) + (padded.isEmpty ? BigInt.zero : BigInt.parse(padded));
   }
 
   // MARK: helpers

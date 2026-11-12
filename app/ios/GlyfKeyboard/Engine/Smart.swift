@@ -106,6 +106,7 @@ enum Smart {
                 switch t.kind {
                 case .swap: return t.amountIsUSD || t.buyAmount != nil ? "Buy" : "Swap"
                 case .bridge: return "Move"
+                case .send: return "Send"
                 default: return "Set"
                 }
             }

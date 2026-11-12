@@ -67,7 +67,7 @@ enum TradeEdit {
     /// A Flash order on what's held sells it; one paid in dollars buys.
     static func sells(_ i: TradeIntent) -> Bool {
         switch i.kind {
-        case .swap, .bridge, .stopLoss, .takeProfit, .trailingStop: return true
+        case .swap, .bridge, .send, .stopLoss, .takeProfit, .trailingStop: return true
         case .bracket: return i.buyAmount == nil && !i.amountIsUSD
         case .limit: return !stables.contains(i.sell)
         default: return false
@@ -76,7 +76,7 @@ enum TradeEdit {
 
     /// The asset an order is about (the side that isn't dollars).
     static func asset(_ i: TradeIntent) -> String {
-        if i.kind == .swap || i.kind == .bridge { return i.sell }
+        if i.kind == .swap || i.kind == .bridge || i.kind == .send { return i.sell }
         return sells(i) ? i.sell : i.buy
     }
 
@@ -95,7 +95,7 @@ enum TradeEdit {
         case .bracket: return [.amount, .price, .stopPrice]
         case .trailingStop: return [.amount, .trail]
         case .twap: return [.amount, .duration]
-        case .swap, .bridge: return [.amount]
+        case .swap, .bridge, .send: return [.amount]
         }
     }
 
@@ -228,6 +228,8 @@ enum TradeEdit {
         case .bridge:
             if !positive(i.amount) { return "Enter an amount" }
             if i.toChain == nil || i.toChain == i.chainName { return "Pick another chain" }
+        case .send:
+            if !positive(i.amount) { return "Enter an amount" }
         default:
             break
         }
@@ -240,7 +242,7 @@ enum TradeEdit {
         var i = intent
         let symbol = token.symbol.uppercased() == "CBBTC" ? "CBBTC" : token.symbol
         let address = token.native ? nil : token.address
-        if i.kind == .bridge {
+        if i.kind == .bridge || i.kind == .send {
             i.sell = symbol; i.buy = symbol
             i.sellAddress = address; i.buyAddress = address
             return i
@@ -289,7 +291,7 @@ enum TradeEdit {
         default: break
         }
         // An amount of the old coin isn't an amount of the new one.
-        if sells(i), i.kind != .bridge { i.amount = nil }
+        if sells(i), i.kind != .bridge, i.kind != .send { i.amount = nil }
         return i
     }
 
@@ -312,6 +314,9 @@ enum TradeEdit {
     static func chains(for i: TradeIntent) -> [String] {
         switch i.kind {
         case .swap: return SponsorMenu.swapChains
+        // A send stays where its name points: Solana for a .sol name or
+        // SOL, any of MetaMask's chains otherwise.
+        case .send: return i.chainName == "solana" ? ["solana"] : SponsorMenu.swapChains
         default: return flashChains
         }
     }

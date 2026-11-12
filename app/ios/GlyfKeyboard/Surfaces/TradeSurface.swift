@@ -93,6 +93,15 @@ final class TradeSurface: UIView {
     /// Whole tokens held by symbol, per chain, once /evm/balances answers.
     private var held: [String: [String: Double]] = [:]
     private var asking = true
+    /// A send's recipient: the address its name points at on the send's
+    /// chain (GET /names/resolve), once looked up; the typed address as is.
+    private var resolved: String?
+    /// The name points nowhere (or nowhere on this chain), or the lookup
+    /// failed: the button says which, and nothing is handed on.
+    private var resolveProblem: String?
+    /// The "name|chain" last asked, so a token change doesn't ask again.
+    private var resolvedFor: String?
+    private var resolveTask: URLSessionDataTask?
     private var quoteTask: URLSessionDataTask?
     private var quoteWork: DispatchWorkItem?
     private var quoteSerial = 0
@@ -141,6 +150,7 @@ final class TradeSurface: UIView {
         case .trailingStop: return "Trailing stop"
         case .twap: return "TWAP"
         case .bridge: return "Bridge"
+        case .send: return "Send"
         }
     }
 
@@ -338,10 +348,37 @@ final class TradeSurface: UIView {
         switch i.kind {
         case .swap:
             requote()
+        case .send:
+            resolve()
+            price(of: i.sell)
         default:
             price(of: TradeEdit.asset(i))
         }
         render()
+    }
+
+    /// The address a send goes to, shown (shortened) before anything is
+    /// signed. A name is looked up for the send's chain: an ENS name's own
+    /// record there, else its Ethereum one (the server says which it used);
+    /// a .sol name's Solana owner. Nothing found means nothing is sent.
+    private func resolve() {
+        guard let to = intent.to else { resolved = nil; resolveProblem = "No one to send to"; return }
+        guard TradeIntent.isName(to) else { resolved = to; resolveProblem = nil; resolvedFor = nil; return }
+        let chain = intent.chainName
+        let key = "\(to)|\(chain)"
+        guard key != resolvedFor else { return }
+        resolvedFor = key
+        resolved = nil
+        resolveProblem = nil
+        resolveTask?.cancel()
+        let encoded = to.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? to
+        resolveTask = BackendClient.shared.evmJSONResult(path: "/names/resolve?name=\(encoded)") { [weak self] ok, obj in
+            guard let self, self.resolvedFor == key else { return }
+            let (address, problem) = TradeIntent.recipient(for: to, chain: chain, ok: ok, answer: obj)
+            self.resolved = address
+            self.resolveProblem = problem
+            self.render()
+        }
     }
 
     private func loadBalances(_ chain: String) {
@@ -617,7 +654,7 @@ final class TradeSurface: UIView {
         case .panel: renderPanel()
         case .number(let field):
             stripKey.text = TradeEdit.label(field, intent)
-            numberEditor.placeholder = field == .amount && TradeEdit.sells(intent) && intent.kind != .bridge ? "All" : "0"
+            numberEditor.placeholder = field == .amount && TradeEdit.sells(intent) && intent.kind != .bridge && intent.kind != .send ? "All" : "0"
         case .tokens(let side): renderTokenList(side)
         case .search(let side): renderResults(side)
         case .chains(let side): renderChainList(side)
@@ -632,7 +669,9 @@ final class TradeSurface: UIView {
         let top = isSwap ? i.sell : TradeEdit.asset(i)
         payCard.key.text = topKey
         payCard.setChain(label(i.chainName), key: i.chainName, enabled: TradeEdit.chains(for: i).count > 1)
-        payCard.token.set(symbol: Self.display(top), logo: logo(top, chain: i.chainName), enabled: true)
+        // Phantom's send here takes SOL or USDC as read; no picker for it.
+        let tokenPicks = !(i.kind == .send && i.chainName == "solana")
+        payCard.token.set(symbol: Self.display(top), logo: logo(top, chain: i.chainName), enabled: tokenPicks)
         let typed = TradeEdit.value(.amount, i)
         payCard.setAmount(TradeEdit.shown(.amount, i), placeholder: typed.isEmpty)
 
@@ -672,6 +711,7 @@ final class TradeSurface: UIView {
     private var topKey: String {
         switch intent.kind {
         case .swap: return "You pay"
+        case .send: return "Send"
         case .bridge: return "Move"
         case .twap: return "Spend"
         default: return TradeEdit.sells(intent) ? "Sell" : "Buy"
@@ -689,6 +729,13 @@ final class TradeSurface: UIView {
         switch i.kind {
         case .bridge:
             specs.append(("toChain", "To", label(i.toChain ?? ""), true, { [weak self] in self?.openChains(.buy) }))
+        case .send:
+            let to = i.to ?? ""
+            specs.append(("to", "To", TradeIntent.shortRecipient(to), false, {}))
+            if TradeIntent.isName(to) {
+                let shown = resolved.map(Smart.shortAddress) ?? (resolveProblem == nil ? "…" : "Not found")
+                specs.append(("address", "Address", shown, false, {}))
+            }
         default:
             break
         }
@@ -747,6 +794,10 @@ final class TradeSurface: UIView {
         case .trailingStop: return "Set trailing stop"
         case .twap: return "Start TWAP"
         case .bridge: return "Move to \(label(intent.toChain ?? ""))"
+        case .send:
+            if let resolveProblem { return resolveProblem }
+            if resolved == nil { return "Looking up \(intent.to ?? "")" }
+            return "Send \(intent.amount ?? "") \(Self.display(intent.sell))"
         }
     }
 
@@ -754,6 +805,9 @@ final class TradeSurface: UIView {
         if needsWallet { return false }
         if TradeEdit.problem(intent) != nil || short || intent.awaitingPrice { return true }
         if isSwap, quoteError != nil || asking { return true }
+        // A send waits for its address, and never goes to a name that
+        // didn't resolve.
+        if intent.kind == .send, resolved == nil || resolveProblem != nil { return true }
         return false
     }
 
@@ -772,6 +826,7 @@ final class TradeSurface: UIView {
         guard !blocked else { return }
         var q = intent.query
         q["title"] = intent.title
+        if intent.kind == .send, let resolved { q["address"] = resolved }
         delegate?.tradeHandOff(query: q)
     }
 

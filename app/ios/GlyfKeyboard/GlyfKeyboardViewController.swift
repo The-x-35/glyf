@@ -4607,6 +4607,10 @@ extension GlyfKeyboardViewController: TradeSurfaceDelegate {
     /// MetaMask or Phantom, and the outcome comes back as a toast.
     func tradeHandOff(query: [String: String]) {
         setSurface(.none)
+        if let pay = TradeIntent.phantomSend(query) {
+            openApp(path: "pay", query: pay)
+            return
+        }
         openApp(path: "trade", query: query)
     }
 
