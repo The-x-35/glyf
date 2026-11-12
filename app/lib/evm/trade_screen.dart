@@ -5,13 +5,17 @@ import 'package:flutter/services.dart';
 
 import '../core/bridge.dart';
 import '../core/theme.dart';
+import '../near/near_flow.dart';
+import '../near/near_views.dart';
 import 'trade_flow.dart';
 
 /// The flash between the keyboard and the chain: the keyboard read the
 /// trade and showed its quote, so this asks for it at once in the person's
 /// own wallet app (MetaMask on Ethereum chains, Phantom on Solana) and says
 /// how it went. Back in the chat, the keyboard says it too. Glyf holds no
-/// key: every transaction and signature is made in that wallet.
+/// key: every transaction and signature is made in that wallet. A NEAR
+/// Intents trade also shows its live quote, Guard's checks, and for a chain
+/// Glyf can't sign on, the deposit to pay from any wallet.
 class TradeScreen extends StatefulWidget {
   const TradeScreen({super.key, required this.query, this.run});
 
@@ -32,7 +36,12 @@ class _TradeScreenState extends State<TradeScreen> {
   @override
   void initState() {
     super.initState();
-    _sub = (widget.run ?? TradeFlow.run)(widget.query).listen(
+    _start(widget.query);
+  }
+
+  void _start(Map<String, String> query) {
+    _sub?.cancel();
+    _sub = (widget.run ?? TradeFlow.run)(query).listen(
       _show,
       onError: (Object e) => _show(TradeOutcome(TradeState.failed, 'Something went wrong', detail: '$e')),
       onDone: () {
@@ -56,8 +65,16 @@ class _TradeScreenState extends State<TradeScreen> {
     super.dispose();
   }
 
-  String get _linkLabel {
-    final url = _outcome.txUrl ?? '';
+  /// Guard stopped it: the same trade again, past the check.
+  void _sendAnyway() {
+    setState(() => _outcome = const TradeOutcome(TradeState.working, 'One moment…'));
+    _start({...widget.query, 'anyway': '1'});
+  }
+
+  static String _linkLabel(String url) {
+    if (url.contains('near-intents.org')) return 'View on NEAR Intents';
+    if (url.contains('nearblocks')) return 'View on NearBlocks';
+    if (url.contains('mempool.space')) return 'View on mempool.space';
     if (url.contains('definitive.fi')) return 'View on Definitive';
     if (url.contains('basescan')) return 'View on Basescan';
     if (url.contains('etherscan')) return 'View on Etherscan';
@@ -70,6 +87,7 @@ class _TradeScreenState extends State<TradeScreen> {
   Widget build(BuildContext context) {
     final o = _outcome;
     final working = o.state == TradeState.working;
+    final near = o is NearOutcome && o.quote != null ? o : null;
     return PopScope(
       canPop: !working,
       child: Scaffold(
@@ -77,83 +95,130 @@ class _TradeScreenState extends State<TradeScreen> {
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-            child: Column(
-              children: [
-                const Spacer(flex: 2),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 260),
-                  transitionBuilder: (child, a) => ScaleTransition(
-                    scale: Tween(begin: 0.7, end: 1.0).animate(CurvedAnimation(parent: a, curve: Curves.easeOutBack)),
-                    child: FadeTransition(opacity: a, child: child),
-                  ),
-                  child: KeyedSubtree(key: ValueKey(o.state), child: _badge(o.state)),
-                ),
-                const SizedBox(height: 22),
-                Semantics(
-                  identifier: 'trade:title',
-                  child: Text(
-                    o.title,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Glass.ink, fontSize: 26, fontWeight: FontWeight.w800),
-                  ),
-                ),
-                if (o.detail != null) ...[
-                  const SizedBox(height: 8),
-                  Semantics(
-                    identifier: 'trade:detail',
-                    child: Text(
-                      o.detail!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Glass.inkSoft,
-                        fontSize: 16,
-                        height: 1.35,
-                        fontFeatures: [FontFeature.disable('calt')],
+            child: near != null
+                ? Column(
+                    children: [
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.only(top: 28, bottom: 16),
+                          child: Column(
+                            children: [
+                              ..._head(o),
+                              const SizedBox(height: 22),
+                              if (near.manual) ...[
+                                Semantics(
+                                  identifier: 'trade:near:deposit',
+                                  child: NearDepositCard(quote: near.quote!),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                              NearQuoteCard(quote: near.quote!, recipient: near.recipient),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-                if (o.txUrl != null) ...[
-                  const SizedBox(height: 10),
-                  TextButton(
-                    onPressed: () => GlyfBridge.openURL(o.txUrl!),
-                    child: Text(
-                      _linkLabel,
-                      style: const TextStyle(
-                        color: Glass.ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ],
-                const Spacer(flex: 3),
-                if (working && o.reopen != null) ...[
-                  Semantics(
-                    identifier: 'trade:reopen',
-                    button: true,
-                    child: PillButton(label: 'Open MetaMask', onPressed: () => GlyfBridge.openMetaMask(o.reopen!)),
-                  ),
-                  const SizedBox(height: 6),
-                ],
-                if (working)
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text(
-                      'Close',
-                      style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
+                      ..._buttons(o, working, blocked: near.blocked),
+                    ],
                   )
-                else
-                  PillButton(label: 'Done', onPressed: () => Navigator.of(context).maybePop()),
-              ],
-            ),
+                : Column(
+                    children: [const Spacer(flex: 2), ..._head(o), const Spacer(flex: 3), ..._buttons(o, working)],
+                  ),
           ),
         ),
       ),
     );
   }
+
+  /// The badge, the line, its detail and its links.
+  List<Widget> _head(TradeOutcome o) {
+    final explorer = o is NearOutcome ? o.explorer : null;
+    return [
+      AnimatedSwitcher(
+        duration: const Duration(milliseconds: 260),
+        transitionBuilder: (child, a) => ScaleTransition(
+          scale: Tween(begin: 0.7, end: 1.0).animate(CurvedAnimation(parent: a, curve: Curves.easeOutBack)),
+          child: FadeTransition(opacity: a, child: child),
+        ),
+        child: KeyedSubtree(key: ValueKey(o.state), child: _badge(o.state)),
+      ),
+      const SizedBox(height: 22),
+      Semantics(
+        identifier: 'trade:title',
+        child: Text(
+          o.title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Glass.ink, fontSize: 26, fontWeight: FontWeight.w800),
+        ),
+      ),
+      if (o.detail != null) ...[
+        const SizedBox(height: 8),
+        Semantics(
+          identifier: 'trade:detail',
+          child: Text(
+            o.detail!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Glass.inkSoft,
+              fontSize: 16,
+              height: 1.35,
+              fontFeatures: [FontFeature.disable('calt')],
+            ),
+          ),
+        ),
+      ],
+      if (o.txUrl != null) ...[const SizedBox(height: 10), _link(o.txUrl!)],
+      // Done or refunded: the trade on NEAR Intents' own explorer too.
+      if (explorer != null && explorer != o.txUrl && o.state != TradeState.working) _link(explorer),
+    ];
+  }
+
+  Widget _link(String url) => TextButton(
+    onPressed: () => GlyfBridge.openURL(url),
+    child: Text(
+      _linkLabel(url),
+      style: const TextStyle(
+        color: Glass.ink,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+        decoration: TextDecoration.underline,
+      ),
+    ),
+  );
+
+  List<Widget> _buttons(TradeOutcome o, bool working, {bool blocked = false}) => [
+    if (blocked) ...[
+      PillButton(label: 'Don’t send', onPressed: () => Navigator.of(context).maybePop()),
+      const SizedBox(height: 6),
+      Semantics(
+        identifier: 'trade:near:anyway',
+        button: true,
+        child: TextButton(
+          onPressed: _sendAnyway,
+          child: const Text(
+            'Send anyway',
+            style: TextStyle(color: Glass.danger, fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ),
+    ] else if (working && o.reopen != null) ...[
+      Semantics(
+        identifier: 'trade:reopen',
+        button: true,
+        child: PillButton(label: 'Open MetaMask', onPressed: () => GlyfBridge.openMetaMask(o.reopen!)),
+      ),
+      const SizedBox(height: 6),
+    ],
+    if (working)
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text(
+          'Close',
+          style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+      )
+    else if (!blocked)
+      PillButton(label: 'Done', onPressed: () => Navigator.of(context).maybePop()),
+  ];
 
   Widget _badge(TradeState state) {
     switch (state) {
@@ -176,13 +241,13 @@ class _TradeScreenState extends State<TradeScreen> {
   }
 
   Widget _circle(Color fill, IconData icon, Color ink) => Container(
-        width: 84,
-        height: 84,
-        decoration: BoxDecoration(
-          color: fill,
-          shape: BoxShape.circle,
-          border: fill == Colors.white ? Border.all(color: Glass.hairline) : null,
-        ),
-        child: Icon(icon, size: 44, color: ink),
-      );
+    width: 84,
+    height: 84,
+    decoration: BoxDecoration(
+      color: fill,
+      shape: BoxShape.circle,
+      border: fill == Colors.white ? Border.all(color: Glass.hairline) : null,
+    ),
+    child: Icon(icon, size: 44, color: ink),
+  );
 }

@@ -5,6 +5,7 @@ import 'core/billing.dart';
 import 'core/bridge.dart';
 import 'core/catalog.dart';
 import 'core/funnel.dart';
+import 'core/glyf_api.dart';
 import 'core/telemetry.dart';
 import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
@@ -101,6 +102,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     // The connected MetaMask's address reaches the keyboard (and an older
     // build's own-wallet address leaves it).
     EvmSigner.load();
+    // Awaited: the tour-hint cleanup below writes the same file, and two
+    // writes at once lose one.
+    await GlyfApi.loadPrivateAI();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(
