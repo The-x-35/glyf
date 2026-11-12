@@ -2957,10 +2957,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (!shown && stripChipKind in smartKinds) hideStripChip()
             return shown
         }
+        // A tool the model named, filled in (AIAction; android-trade).
+        val recommended = suggestedAction
+        if (recommended != null && suggestedFor == trimmed) showRecommended(recommended)?.let { return it }
         val cached = suggestedChip
         if (cached != null && suggestedFor == trimmed) {
             return showStripChip("action", null, cached.label, "", policyKey = cached.intent + "|" + cached.query) {
                 suggestedChip = null
+                suggestedAction = null
                 suggestedFor = ""
                 hideStripChip()
                 val ic = currentInputConnection
@@ -3003,11 +3007,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             text = text,
             deviceId = settings.optString("deviceId"),
             kinds = if (settings.optBoolean("aiUsesVault", true)) fields.map { it.kind }.distinct() else emptyList(),
+            onAction = { action -> main.post { takeRecommended(text, action) } },
         ) { intent, label, query -> main.post {
             val now = (currentInputConnection?.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
             // The sentence moved on while we were asking: drop it.
             if (now != text) return@post
             suggestedFor = text
+            suggestedAction = null
             if (intent == "detail") {
                 // The model named the kind; the value is this phone's own.
                 suggestedDetail = fields.firstOrNull { it.kind == label } ?: return@post
@@ -6049,10 +6055,74 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             onBack = null, icon = "pay")
     }
 
-    // MARK: Trading (android-trade): the trade chip and panel, and the g
-    // menu's Uniswap and Definitive panels.
+    // MARK: Trading (android-trade): the trade chip and panel, the g menu's
+    // Uniswap and Definitive panels, and the strip's recommended action.
     // The keyboard only quotes; MetaMask or Phantom signs in the app
     // (Arpit, 2026-11-12: "the wallet would be external wallet only").
+
+    /** A tool the model named for the sentence (AIAction), filled in; shown
+     *  in place of its text chip. */
+    private var suggestedAction: Smart.Chip? = null
+
+    /** POST /suggest named a tool: kept for these words, if they still stand. */
+    private fun takeRecommended(text: String, action: AIAction) {
+        val now = (currentInputConnection?.getTextBeforeCursor(120, 0)?.toString() ?: "").trim()
+        if (now != text || featurePanel != null) return
+        val chip = action.chip ?: return
+        // Without the wallet on, nothing to trade; a Meet link only with Meet.
+        if (chip is Smart.Chip.Trade && !walletOn) return
+        if (chip is Smart.Chip.Action && chip.intent == "meet" && !com.arpit.glyf.store.GoogleAccess.hasMeet(this)) return
+        suggestedFor = text
+        suggestedDetail = null
+        suggestedChip = null
+        suggestedAction = chip
+        updateSuggestions()
+    }
+
+    /** The recommended action's chip, which opens its tool with the values
+     *  in it; nothing runs from the strip. Null falls through to the rest. */
+    private fun showRecommended(chip: Smart.Chip): Boolean? {
+        val used = { suggestedAction = null; suggestedFor = "" }
+        return when (chip) {
+            is Smart.Chip.Trade -> showTradeChip(chip, used)
+            is Smart.Chip.Event -> showStripChip("event", null, Smart.display(chip), "Add", lead = "calendar") {
+                used(); hideStripChip()
+                showCalendarPanel().compose(chip.plan)
+            }
+            is Smart.Chip.Action -> showStripChip("action", null, chip.label, "", policyKey = chip.intent + "|" + chip.query) {
+                used(); hideStripChip()
+                when {
+                    chip.intent == "meet" -> insertMeetLink()
+                    chip.intent.startsWith("open:") -> openRecommended(chip.intent.removePrefix("open:"), chip.query)
+                    else -> {
+                        val ic = currentInputConnection
+                        startAct(ic?.getTextBeforeCursor(4000, 0)?.toString() ?: "",
+                            ic?.getTextAfterCursor(4000, 0)?.toString() ?: "", chip.intent)
+                    }
+                }
+            }
+            else -> null
+        }
+    }
+
+    /** Search, YouTube or Maps with the model's query searched, or the
+     *  translate strip set to its language (iOS openRecommended). */
+    private fun openRecommended(tool: String, query: String) {
+        if (tool == "translate") {
+            if (translateStrip == null) runTranslateOnField()
+            translateForced = query
+            translateTarget = query
+            translateSource = ""
+            translateDraftChanged()
+            return
+        }
+        enterSearch()
+        searchTab = when (tool) { "youtube" -> "yt"; "maps" -> "maps"; else -> "web" }
+        styleSearchTabs(animated = false)
+        searchQuery = query
+        renderQuery()
+        submitSearch()
+    }
 
     /** The strip's trade chip: the venue, the whole order, and what a tap does. */
     private fun showTradeChip(chip: Smart.Chip.Trade, used: (() -> Unit)? = null): Boolean =

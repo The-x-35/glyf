@@ -206,6 +206,9 @@ object BackendClient {
         text: String,
         deviceId: String,
         kinds: List<String> = emptyList(),
+        /** Given, the phone asks for a tool the model names (actions:true)
+         *  and opens it prefilled (AIAction); it wins over the text chip. */
+        onAction: ((AIAction) -> Unit)? = null,
         onResult: (intent: String, label: String, query: String) -> Unit,
     ): () -> Unit {
         val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -222,9 +225,15 @@ object BackendClient {
                 val body = JSONObject().put("text", text).put("deviceId", deviceId)
                 // The kinds of detail saved, never the details.
                 if (kinds.isNotEmpty()) body.put("kinds", org.json.JSONArray(kinds))
+                if (onAction != null) body.put("actions", true)
                 c.outputStream.use { it.write(body.toString().toByteArray()) }
                 if (c.responseCode !in 200..299 || cancelled.get()) return@execute
                 val json = JSONObject(c.inputStream.bufferedReader().readText())
+                // A tool the model named, checked by the server, wins over its text chip.
+                if (onAction != null) json.optJSONObject("action")?.let { AIAction.from(it) }?.let {
+                    if (!cancelled.get()) onAction(it)
+                    return@execute
+                }
                 val s = json.optJSONObject("suggestion") ?: return@execute
                 val intent = s.optStringOrNull("intent") ?: return@execute
                 val label = s.optStringOrNull("label") ?: return@execute
