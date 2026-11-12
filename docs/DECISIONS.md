@@ -377,6 +377,12 @@ Details live in the area docs: [WEBSITE.md](WEBSITE.md), [APPS.md](APPS.md), [BA
 
 ---
 
+## Thu 12 Nov 2026: after ETHGlobal Mumbai
+
+**D110. Main starts again from `f42b9c0` (Glyf before the hackathon) on a branch `beta`, with only the trading kept, and outside wallets only.** "Uniswap, Jupiter, and Definitive we can have, but the wallet would be external wallet only. Remove the internal wallet thing." Kept: trades read in plain words on the iPhone keyboard and its trade panel (Definitive Flash orders on Base and Solana, Uniswap swaps on five chains, Jupiter for Solana swaps, shares on Base), the strip's AI action recommendation, Connected tools' Trading group, YouTube Shorts, no copy toasts, a long copy as a PDF, the name after "I am", the deck. MetaMask signs Ethereum by its own deeplinks and Phantom signs Solana; Glyf holds no key and the keyboard never signs (SPEC §1.5). Left out: 0G and Private AI, the Glyf wallet (recovery phrase, keys in the app or the keyboard, the wallet switch), Whitechain pay requests and contracts, the Arkiv backup, sends to .eth/.sol names, shared trade links, Build your own tools, learned emoji habits, the trade Live Activity, widgets and Shortcuts, and the site's ETHGlobal chats. Everything from the hackathon stays on the tag `ethglobal-mumbai-final` (`24b9597`). (D108 and D109 were the hackathon branch's own, and stay there with it.)
+
+---
+
 ## Standing rules (apply to all future work)
 
 These came out of the decisions above and Arpit's feedback. [WORKING-AGREEMENTS.md](WORKING-AGREEMENTS.md) has the full list with context.
