@@ -365,6 +365,9 @@ function groundNear(action: Action, text: string): Action | null {
     }
     case "near.request":
       if (!typed(text, p.amount)) return null;
+      // The link is already in the message (Request put it there): asking
+      // again would only make a second link for the same money.
+      if (/\/pay\/[A-Za-z0-9_-]{6,}/.test(text)) return null;
       if (p.coin !== undefined && !coinNamed(p.coin as string, text)) delete p.coin;
       if (p.count !== undefined && !typed(text, p.count)) delete p.count;
       if (p.each && !/\b(each|apiece|per (person|head)|a head|everyone|every one)\b/.test(t)) delete p.each;

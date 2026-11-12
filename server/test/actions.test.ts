@@ -185,6 +185,10 @@ describe("NEAR Intents actions", () => {
     const made = await ground({ tool: "near.request", params: { amount: 22.5, chain: "base", note: "pizza night", count: 3, each: true } }, owe);
     expect(made?.params).toEqual({ amount: "22.5" });
     expect(made?.label).toBe("Request $22.50 · NEAR Intents");
+    // Once Request has put the link in the message, it isn't offered again.
+    expect(await ground({ tool: "near.request", params: { amount: 22.5, chain: "solana" } },
+      `${owe} Pay $22.50 for dinner: https://api.tryglyf.com/pay/QsgAQOKA-Apb`)).toBeNull();
+    expect(mockAction(`${owe} Pay $22.50 for dinner: http://127.0.0.1:8793/pay/WY51hsKtz6tI`)).toBeNull();
     // The launch video's bill: four of us, $22.50 each.
     expect(await ground({ tool: "near.request", params: { amount: 90, count: 4, us: true, note: "dinner" } }, "dinner was $90 for the four of us"))
       .toMatchObject({ label: "Request $22.50 each · NEAR Intents", params: { amount: "90", count: 4, us: true, note: "dinner" } });
