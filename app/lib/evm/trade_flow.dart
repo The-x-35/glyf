@@ -72,10 +72,26 @@ abstract final class TradeFlow {
           detail: 'Solana sends go through Profile › Wallet › Send'));
       return;
     }
+    // The NEAR Intents quote last shown: a wallet that fails after it
+    // (Phantom not installed, a cancel in MetaMask) keeps it on the screen.
+    NearOutcome? near;
+    TradeOutcome keep(TradeOutcome o) {
+      final shown = near;
+      if (shown == null || shown.quote == null) return o;
+      return NearOutcome(o.state, o.title,
+          detail: o.detail,
+          txUrl: o.txUrl,
+          hash: o.hash,
+          quote: shown.quote,
+          recipient: shown.recipient,
+          // NEAR Intents' page only once something was sent to it.
+          explorer: o.hash == null ? null : shown.explorer);
+    }
     try {
       // Earn is only ever NEAR Intents (1Click Earn's vaults).
       if (q['venue'] == 'near' || kind == 'earn') {
         await for (final o in NearFlow.run(q)) {
+          if (o is NearOutcome && o.quote != null) near = o;
           yield o.state == TradeState.working ? o : await _told(o);
         }
         return;
@@ -110,18 +126,19 @@ abstract final class TradeFlow {
         yield o.state == TradeState.working ? o : await _told(o);
       }
     } on SignFailed catch (e) {
-      yield await _told(TradeOutcome(TradeState.failed, e.title,
+      yield await _told(keep(TradeOutcome(TradeState.failed, e.title,
           detail: e.detail == null ? null : _plain(e.detail!, solana: onSolana),
-          txUrl: e.hash == null ? null : (onSolana ? WalletFlow.solscanUrl(e.hash!) : e.chain?.txUrl(e.hash!))));
+          hash: e.hash,
+          txUrl: e.hash == null ? null : (onSolana ? WalletFlow.solscanUrl(e.hash!) : e.chain?.txUrl(e.hash!)))));
     } on GlyfApiException catch (e) {
-      yield await _told(
-          TradeOutcome(TradeState.failed, 'That didn’t go through', detail: _plain(e.message, solana: onSolana)));
+      yield await _told(keep(
+          TradeOutcome(TradeState.failed, 'That didn’t go through', detail: _plain(e.message, solana: onSolana))));
     } on EvmRpcException catch (e) {
-      yield await _told(TradeOutcome(TradeState.failed, 'The network said no', detail: _plain(e.message)));
+      yield await _told(keep(TradeOutcome(TradeState.failed, 'The network said no', detail: _plain(e.message))));
     } on WalletError catch (e) {
-      yield await _told(TradeOutcome(TradeState.failed, 'Solana said no', detail: _plain(e.message, solana: true)));
+      yield await _told(keep(TradeOutcome(TradeState.failed, 'Solana said no', detail: _plain(e.message, solana: true))));
     } catch (e) {
-      yield await _told(TradeOutcome(TradeState.failed, 'Something went wrong', detail: _plain('$e', solana: onSolana)));
+      yield await _told(keep(TradeOutcome(TradeState.failed, 'Something went wrong', detail: _plain('$e', solana: onSolana))));
     }
   }
 

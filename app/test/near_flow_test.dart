@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:glyf/core/glyf_api.dart';
 import 'package:glyf/evm/evm_chains.dart';
 import 'package:glyf/evm/evm_signer.dart';
 import 'package:glyf/evm/trade_flow.dart';
@@ -621,6 +622,34 @@ void main() {
     expect(wallet.solanaAsked, hasLength(1));
   });
 
+  test('Phantom not installed: the line says so and the quote stays on the screen', () async {
+    NearFlow.wallet = _NoPhantomWallet();
+    NearFlow.api = _FakeApi((_) => _quote(
+        sell: 'SOL', sellChain: 'solana', sellDecimals: 9, sellAddress: null, buy: 'USDC', buyChain: 'base',
+        amountIn: '0.2', amountInBase: '200000000', depositAddress: _solDeposit,
+        deposit: {'kind': 'sol', 'chain': 'solana', 'to': _solDeposit, 'lamports': '200000000'}));
+    final out = await TradeFlow.run({'kind': 'swap', 'venue': 'near', 'sell': 'SOL', 'chain': 'solana', 'buy': 'USDC',
+      'buyChain': 'base', 'amount': '0.2'}).toList();
+    final last = out.last;
+    expect(last.state, TradeState.failed);
+    expect(last.title, 'Install Phantom, then try again');
+    expect(last, isA<NearOutcome>());
+    final kept = last as NearOutcome;
+    expect(kept.quote!.amountIn, '0.2', reason: 'the quote card stays');
+    expect(kept.recipient, 'your wallet');
+    expect(kept.explorer, isNull, reason: 'nothing was sent to NEAR Intents');
+    expect(jsonDecode(shared['walletOutcome'] as String)['title'], 'Install Phantom, then try again');
+  });
+
+  test('a failure before any quote stays a plain line', () async {
+    NearFlow.wallet = _FakeWallet(evm: null);
+    NearFlow.api = _FakeApi((_) => throw GlyfApiException('NEAR Intents is busy'));
+    final out = await TradeFlow.run({'kind': 'swap', 'venue': 'near', 'sell': 'SOL', 'chain': 'solana', 'buy': 'USDC',
+      'buyChain': 'solana', 'amount': '0.2'}).toList();
+    expect(out.last.title, 'That didn’t go through');
+    expect(out.last is NearOutcome && (out.last as NearOutcome).quote != null, isFalse);
+  });
+
   test('the trade screen’s flow sends venue=near here, even a send from Solana', () async {
     NearFlow.api = _FakeApi((_) => _quote(
         sell: 'SOL', sellChain: 'solana', sellDecimals: 9, sellAddress: null, buy: 'USDC', buyChain: 'near',
@@ -661,4 +690,10 @@ class _ForgingWallet extends _FakeWallet {
     final parts = FlashSvm.split(tx)!;
     return Uint8List.fromList([...tx.sublist(0, 1), ...other.sign(parts.message).signature.asTypedList, ...parts.message]);
   }
+}
+
+/// No Phantom on the phone: its App Store page opened instead.
+class _NoPhantomWallet extends _FakeWallet {
+  @override
+  Future<Uint8List> signSolana(Uint8List tx) async => throw SignFailed('Install Phantom, then try again');
 }

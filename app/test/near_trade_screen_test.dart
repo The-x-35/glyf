@@ -180,6 +180,23 @@ void main() {
     expect(find.text('Done'), findsOneWidget);
     unawaited(steps.close());
   });
+
+  testWidgets('Install Phantom keeps the quote card: You pay, You get, then Done', (tester) async {
+    final steps = await open(tester);
+    steps.add(NearOutcome(TradeState.working, 'Send 20 USDC to NEAR Intents: approve in Phantom',
+        quote: _quote(sell: 'SOL', sellChain: 'solana'), recipient: 'your wallet'));
+    await tester.pump();
+    steps.add(NearOutcome(TradeState.failed, 'Install Phantom, then try again',
+        quote: _quote(sell: 'SOL', sellChain: 'solana'), recipient: 'your wallet'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Install Phantom, then try again'), findsOneWidget);
+    expect(find.text('You pay'), findsOneWidget);
+    expect(find.text('You get'), findsOneWidget);
+    expect(find.text('to your wallet'), findsOneWidget);
+    expect(find.text('View on NEAR Intents'), findsNothing);
+    expect(find.text('Done'), findsOneWidget);
+    unawaited(steps.close());
+  });
 }
 
 class _Connecting extends NearWallet {
