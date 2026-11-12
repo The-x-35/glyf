@@ -36,6 +36,8 @@ class ToolMenuView(
     private val onDragOverStrip: (Float?) -> Unit,
     /** A tile released over the strip. */
     private val onPinToStrip: (String, Float) -> Unit,
+    /** The top row's Uniswap or Definitive card: its own panel (SponsorPanel). */
+    private val onSponsor: ((SponsorMenu.Sponsor) -> Unit)? = null,
 ) : FrameLayout(context) {
 
     private val density = resources.displayMetrics.density
@@ -68,12 +70,22 @@ class ToolMenuView(
     private val gap get() = dp(8f)
     private val side get() = dp(6f)
     private val tileW get() = (width - side * 2 - gap * (cols - 1)) / cols
-    private val tileH get() = max(dp(64f), (height - dp(40f) - gap) / 2)
+    private val tileH get() = max(dp(64f), (height - tilesTop - dp(40f) - gap) / 2)
+    /** The sponsor row over the tiles (Uniswap, Definitive), as iOS's grid has it. */
+    private val sponsorCards = LinkedHashMap<SponsorMenu.Sponsor, View>()
+    private val sponsorRowH get() = dp(44f)
+    private val tilesTop get() = if (sponsorCards.isEmpty()) 0f else sponsorRowH + gap
 
     init {
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         for ((id, title) in ToolIcon.TOOLS) {
             if (id in order) tiles[id] = tile(id, title).also { grid.addView(it) }
+        }
+        // Its own panel, listing all it does; nothing runs on this tap.
+        onSponsor?.let { open ->
+            for (sponsor in SponsorMenu.sponsors) {
+                sponsorCards[sponsor] = SponsorPanel.card(context, sponsor) { open(sponsor) }.also { grid.addView(it) }
+            }
         }
     }
 
@@ -120,6 +132,19 @@ class ToolMenuView(
     private fun layoutTiles(animated: Boolean) {
         val w = tileW
         val h = tileH
+        // The sponsor cards share the row equally.
+        if (sponsorCards.isNotEmpty()) {
+            val n = sponsorCards.size
+            val cardW = ((width - side * 2 - gap * (n - 1)) / n).toInt()
+            for ((k, card) in sponsorCards.values.withIndex()) {
+                val lp = card.layoutParams as LayoutParams
+                if (lp.width != cardW || lp.height != sponsorRowH.toInt()) {
+                    lp.width = cardW; lp.height = sponsorRowH.toInt(); card.layoutParams = lp
+                }
+                card.x = side + k * (cardW + gap)
+                card.y = 0f
+            }
+        }
         // Icon over caption, centred as a column with an 8pt gap (iOS).
         val iconH = dp(26f)
         val capH = dp(15f)
@@ -140,7 +165,7 @@ class ToolMenuView(
             else { cell.x = x; cell.y = y }
         }
         val rows = ceil(order.size / cols.toDouble()).toInt()
-        val gridH = (rows * (h + gap) - gap + side).toInt()
+        val gridH = (tilesTop + rows * (h + gap) - gap + side).toInt()
         if (gridHeight != gridH) {
             gridHeight = gridH
             grid.post { grid.requestLayout() }
@@ -152,12 +177,12 @@ class ToolMenuView(
     /** The slot at a point in the grid, up to [last]. */
     private fun slotAt(xInGrid: Float, yInGrid: Float, last: Int): Int {
         val c = ((xInGrid - side) / (tileW + gap)).toInt().coerceIn(0, cols - 1)
-        val r = (yInGrid / (tileH + gap)).toInt().coerceAtLeast(0)
+        val r = ((yInGrid - tilesTop) / (tileH + gap)).toInt().coerceAtLeast(0)
         return (r * cols + c).coerceIn(0, maxOf(0, last))
     }
 
     private fun slotX(i: Int) = side + (i % cols) * (tileW + gap)
-    private fun slotY(i: Int) = (i / cols) * (tileH + gap)
+    private fun slotY(i: Int) = tilesTop + (i / cols) * (tileH + gap)
 
     /** A tool held on the strip, at raw [rawX], [rawY] (nulls once it left
      *  the menu): over the grid its tile opens a slot where it would land,

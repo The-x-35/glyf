@@ -2703,7 +2703,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  the model says Glyf could do with the sentence. One chip, which owns
      *  the strip. True when shown. */
     private fun updateSmartChip(before: String): Boolean {
-        val smartKinds = setOf("smart", "pay", "buy", "action", "event", "booking")
+        val smartKinds = setOf("smart", "pay", "buy", "action", "event", "booking", "trade")
         if (searchActive || barActive || vaultEditActive || overlay != null || featurePanel != null ||
             isSecureField() || translateStrip != null) {
             if (stripChipKind in smartKinds) hideStripChip()
@@ -2819,7 +2819,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     extra = if (mint != null) "Buy" else null,
                     onExtra = {
                         hideStripChip()
-                        if (mint != null) showPayPanel(PayPanelView.Intent.Buy(
+                        // A share Base has ($apple): bought there with USDC, on Uniswap (android-trade).
+                        val share = shown?.getOrNull(1)?.let { TradeIntent.baseStock(it) }
+                        val onBase = share?.let { TradeIntent.parse("buy \$10 of ${it.lowercase()} on base") }
+                        if (onBase != null) showTradePanel(onBase)
+                        else if (mint != null) showPayPanel(PayPanelView.Intent.Buy(
                             mint, shown?.getOrNull(1) ?: "", shown?.getOrNull(3)))
                     }) {
                     val ic = currentInputConnection
@@ -2919,6 +2923,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     showPayPanel(PayPanelView.Intent.Buy(chip.mint, chip.symbol, chip.price))
                 }
             }
+            // A trade said in words: its panel over the keys, which only
+            // quotes; MetaMask or Phantom signs in the app (android-trade).
+            is Smart.Chip.Trade -> return showTradeChip(chip)
             else -> {}
         }
         // Talk of a call: a Google Meet link where it's wanted, only with
@@ -3424,7 +3431,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         "fill", "tempfield" -> StripPolicy.Kind.FILL
         "tempmail" -> StripPolicy.Kind.MAIL
         "event", "booking" -> StripPolicy.Kind.PLAN
-        "pay", "buy" -> StripPolicy.Kind.PAY
+        "pay", "buy", "trade" -> StripPolicy.Kind.PAY
         "action" -> if (value == "Add a Meet link") StripPolicy.Kind.PLAN else StripPolicy.Kind.AI
         else -> if (stripSmartDetail?.startsWith("vault:") == true) StripPolicy.Kind.FILL else StripPolicy.Kind.ANSWER
     }
@@ -3442,7 +3449,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (stripChip != null && stripChipKind != "voice") hideStripChip()
             return false
         }
-        if (!StripPolicy.allowed(kind, policyField()) || !stripPolicy.allows(kind, id, now)) return no()
+        if (!StripPolicy.allowed(kind, policyField()) || !stripPolicy.allows(kind, id, now)) {
+            // A longer trade typed on past a shorter one ("buy $20 of eth" →
+            // "… every day for a week") is the same intent growing, not a no:
+            // look again once the quiet is over, without a keystroke (iOS twin).
+            if (stripKind == "trade" && stripPolicy.quietUntil > now) {
+                main.removeCallbacks(suggestionsTick)
+                main.postDelayed(suggestionsTick, ((stripPolicy.quietUntil - now) * 1000).toLong() + 50)
+            }
+            return no()
+        }
         val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString().orEmpty()
         val word = WordContext.currentWord(before)
         val policy = typingPolicy()
@@ -5067,6 +5083,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             onOpen = { id -> openTool(id) },
             onDragOverStrip = { rawX -> showStripDropMarker(rawX) },
             onPinToStrip = { id, rawX -> pinToStrip(id, rawX) },
+            onSponsor = { showSponsorPanel(it) },
         )
         root.addView(menu, root.indexOfChild(keyboard) + 1,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, panelH))
@@ -6031,6 +6048,68 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         showStripTitle(if (intent is PayPanelView.Intent.Buy) "Buy ${intent.symbol}" else "Pay",
             onBack = null, icon = "pay")
     }
+
+    // MARK: Trading (android-trade): the trade chip and panel, and the g
+    // menu's Uniswap and Definitive panels.
+    // The keyboard only quotes; MetaMask or Phantom signs in the app
+    // (Arpit, 2026-11-12: "the wallet would be external wallet only").
+
+    /** The strip's trade chip: the venue, the whole order, and what a tap does. */
+    private fun showTradeChip(chip: Smart.Chip.Trade, used: (() -> Unit)? = null): Boolean =
+        showStripChip("trade", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "Set",
+            policyKey = "trade|" + chip.intent.title) {
+            used?.invoke()
+            hideStripChip()
+            showTradePanel(chip.intent)
+        }
+
+    /** The trade panel over the keys (TradePanelView): the strip names it,
+     *  its button hands the trade to the app (glyf://open?path=trade?…),
+     *  and with no wallet for the chain it opens Profile › Wallet. */
+    private fun showTradePanel(intent: TradeIntent) {
+        dismissFeaturePanel()
+        val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
+        keyboard.visibility = View.GONE
+        val panel = TradePanelView(
+            this, keyboard.palette(),
+            backendURL = settings.optString("backendURL"),
+            evmAddress = settings.optString("evmAddress").ifEmpty { null },
+            solanaAddress = settings.optString("walletAddress").ifEmpty { null },
+            start = intent,
+            onHandOff = { query -> dismissFeaturePanel(); openAppPath("trade", query) },
+            onConnect = { dismissFeaturePanel(); openAppPath("wallet") },
+            onToast = { notice(it) },
+            onTitle = { title -> showStripTitle(title, onBack = null, icon = "trend") },
+            clipText = { com.arpit.glyf.store.ClipboardStore.clipText(this) },
+        )
+        root.addView(panel, root.indexOfChild(keyboard),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, keysH))
+        featurePanel = panel
+        showStripTitle(TradeQuote.headerTitle(intent.kind), onBack = null, icon = "trend")
+    }
+
+    /** A sponsor's panel from the g menu's top row: everything it does as
+     *  rows, the trade typed first (SponsorMenu, SponsorPanel). */
+    private fun showSponsorPanel(sponsor: SponsorMenu.Sponsor) {
+        val typed = currentInputConnection?.getTextBeforeCursor(200, 0)?.toString().orEmpty()
+        val (_, body) = panelShell(sponsor.title, pad = intArrayOf(0, 0, 0, 8))
+        SponsorPanel.fill(this, shellRows(body), sponsor, typed,
+            onOption = { sponsorOption(it, typed) },
+            onChain = { SponsorMenu.flashChain = it; showSponsorPanel(sponsor) })
+    }
+
+    private fun sponsorOption(option: SponsorMenu.Option, typed: String) {
+        when (val a = SponsorMenu.action(option, typed, SponsorMenu.flashChain)) {
+            is SponsorMenu.Action.Trade -> showTradePanel(a.intent)
+            is SponsorMenu.Action.OpenApp -> { dismissFeaturePanel(); openAppPath(a.path) }
+            // Buying SOL with what the wallet holds, Jupiter's route.
+            SponsorMenu.Action.SolanaSwap -> showPayPanel(PayPanelView.Intent.Buy(PayPanelView.WSOL, "SOL",
+                RatesStore.cryptoUsd("SOL")?.let { "$" + String.format(java.util.Locale.US, "%.2f", it) }))
+            null -> {}
+        }
+    }
+
+    // MARK: end of Trading (android-trade)
 
     /** A payment finished while the keyboard was away (the app wrote how it
      *  went into shared settings): said once, back in the chat. */

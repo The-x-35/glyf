@@ -56,6 +56,9 @@ class ShellRows(private val ctx: Context, private val body: LinearLayout,
         val qaId: String? = null,
         val titleColor: Int? = null,
         val centered: Boolean = false,
+        /** A view of its own at the start in place of the grey chip (a
+         *  chain's mark, a sponsor's tile), 28dp square. */
+        val leading: View? = null,
         val onTap: (() -> Unit)? = null,
     )
 
@@ -138,7 +141,10 @@ class ShellRows(private val ctx: Context, private val body: LinearLayout,
             setPadding(dp(TEXT_X), 0, dp(TEXT_X), 0)
         }
         var textX = TEXT_X
-        if (r.glyph != null || r.letter != null) {
+        if (r.leading != null) {
+            line.addView(r.leading, LinearLayout.LayoutParams(dp(28f), dp(28f)).apply { rightMargin = dp(12f) })
+            textX += 28f + 12f
+        } else if (r.glyph != null || r.letter != null) {
             val chip = FrameLayout(ctx).apply {
                 background = Glass.card(ctx, fill = Glass.fillField, radius = 7f)
             }
