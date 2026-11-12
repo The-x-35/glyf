@@ -773,6 +773,8 @@ extension URLRequest {
         if let token = GlyfSession.token() {
             setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        // Private AI on NEAR AI Cloud, when the app's switch is on.
+        if let ai = SettingsStore.current.privateAIHeader { setValue(ai, forHTTPHeaderField: "X-Glyf-AI") }
     }
 }
 

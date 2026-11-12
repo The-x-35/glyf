@@ -462,15 +462,21 @@ final class TradeSurface: UIView {
         }
     }
 
-    /// NEAR Intents' quote (POST /near/quote), dry: no refund address or
-    /// recipient, so 1Click makes no deposit address for a preview. A send
+    /// NEAR Intents' quote (POST /near/quote), dry: no refund address, so
+    /// 1Click makes no deposit address for a preview. A send
     /// asks for exactly what the recipient gets. The app asks again with
     /// both before anything is signed.
     private func nearQuote(_ i: TradeIntent, serial: Int) {
         guard let amount = i.amount else { asking = false; clearQuote(); render(); return }
-        let body: [String: Any] = ["sell": i.sellAddress ?? i.sell, "sellChain": i.chainName,
+        var body: [String: Any] = ["sell": i.sellAddress ?? i.sell, "sellChain": i.chainName,
                                    "buy": i.buyAddress ?? i.buy, "buyChain": i.buyChain ?? i.chainName,
                                    "amount": amount, "exact": i.kind == .send ? "out" : "in", "slippage": 1]
+        // The recipient without a refund address keeps it a preview, and
+        // lets Guard check it against those paid before.
+        if let to = i.to {
+            body["recipient"] = to
+            body["recent"] = Array((SettingsStore.current.nearRecent ?? []).prefix(20))
+        }
         quoteTask = BackendClient.shared.evmJSONResult(path: "/near/quote", body: body) { [weak self] ok, obj in
             guard let self, serial == self.quoteSerial else { return }
             let q = NearQuote(ok: ok, obj)
@@ -891,6 +897,8 @@ final class TradeSurface: UIView {
         var q = intent.query
         q["title"] = intent.title
         if intent.kind == .send, let resolved { q["address"] = resolved }
+        // Guard stopped it and the person tapped Send anyway.
+        if guardBlocks { q["anyway"] = "1" }
         delegate?.tradeHandOff(query: q)
     }
 

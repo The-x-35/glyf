@@ -678,4 +678,30 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(TradeEdit.builtIn(chain: "bitcoin").map(\.symbol), ["BTC"])
         XCTAssertEqual(TradeEdit.builtIn(chain: "near").map(\.symbol), ["NEAR", "USDC", "USDT"])
     }
+
+    /// The shared settings with `privateAI` (and `nearRecent`) set as given.
+    private func settings(_ edit: (inout [String: Any]) -> Void) throws -> GlyfSettings {
+        var dict = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(GlyfSettings())) as? [String: Any])
+        edit(&dict)
+        return try JSONDecoder().decode(GlyfSettings.self, from: JSONSerialization.data(withJSONObject: dict))
+    }
+
+    /// Private AI on NEAR AI Cloud: the app writes "near" or removes the
+    /// key; the ETHGlobal build's Bool reads as off without losing the file.
+    func testPrivateAIOnNEARIsReadFromTheSharedSettings() throws {
+        let on = try settings { $0["privateAI"] = "near"; $0["nearRecent"] = ["alice.near", "0xab"] }
+        XCTAssertEqual(on.privateAI?.value, "near")
+        XCTAssertEqual(on.privateAIHeader, "near")
+        XCTAssertEqual(on.nearRecent, ["alice.near", "0xab"])
+        let missing = try settings { $0["privateAI"] = nil }
+        XCTAssertNil(missing.privateAI)
+        XCTAssertNil(missing.privateAIHeader)
+        for legacy in [true, false] {
+            let old = try settings { $0["privateAI"] = legacy; $0["haptics"] = false }
+            XCTAssertNil(old.privateAIHeader, "\(legacy)")
+            XCTAssertFalse(old.haptics, "the rest of the file still reads")
+        }
+        XCTAssertNil((try settings { $0["privateAI"] = "0g" }).privateAIHeader)
+        XCTAssertNil((try settings { $0["privateAI"] = NSNull() }).privateAIHeader)
+    }
 }
