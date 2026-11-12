@@ -33,6 +33,10 @@ const SuggestSchema = z.object({
   /** A phone that can open a tool prefilled (lib/actions.ts). Old phones
    *  never send it, and get exactly the answers they always did. */
   actions: z.boolean().optional(),
+  /** A keyboard that knows NEAR Intents' tools (near.swap, near.send,
+   *  near.request). Keyboards from before them would drop such a chip and
+   *  lose the slot, so they never get one. */
+  near: z.boolean().optional(),
 });
 
 /** What the chip says, and what the keyboard runs when it is tapped. */
@@ -85,7 +89,8 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
       (DETAIL_KINDS as readonly string[]).includes(k)).sort();
 
     const wantsActions = parsed.data.actions === true;
-    const key = TTLCache.key(["suggest", text.toLowerCase(), kinds.join(","), wantsActions ? "a" : ""]);
+    const knowsNear = parsed.data.near === true;
+    const key = TTLCache.key(["suggest", text.toLowerCase(), kinds.join(","), wantsActions ? "a" : "", knowsNear ? "n" : ""]);
     const hit = cache.get(key);
     let suggestion: Suggestion;
     let action: Action | null = null;
@@ -123,6 +128,7 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
         const gate = await guard.suggest(req, parsed.data.deviceId);
         if (gate.ok) action = (await readTyping(text, kinds, true))?.action ?? null;
       }
+      if (!knowsNear && action?.tool.startsWith("near.")) action = null;
       cache.set(key, JSON.stringify(wantsActions ? { suggestion, action } : suggestion));
     }
     // Events only: the text itself never reaches the log.

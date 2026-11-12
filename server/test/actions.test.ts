@@ -218,11 +218,19 @@ describe("NEAR Intents actions", () => {
     expect(mockAction("swap 20 usdc to eth")).toBeNull();
   });
 
-  it("comes back from POST /suggest for a phone that asks", async () => {
+  it("comes back from POST /suggest for a keyboard that knows NEAR's tools", async () => {
     const app = signedInApp();
     const res = (await app.inject({ method: "POST", url: "/suggest",
-      payload: { text: "you owe me 22.50 for dinner, I'm on solana", deviceId: "actions-test-0002", actions: true } })).json();
+      payload: { text: "you owe me 22.50 for dinner, I'm on solana", deviceId: "actions-test-0002", actions: true, near: true } })).json();
     expect(res.action).toEqual({ tool: "near.request", label: "Request $22.50 on Solana · NEAR Intents",
       params: { amount: "22.5", chain: "solana", note: "dinner" } });
+  });
+
+  it("never reaches a keyboard from before NEAR's tools", async () => {
+    const app = signedInApp();
+    const res = (await app.inject({ method: "POST", url: "/suggest",
+      payload: { text: "you owe me 22.50 for dinner, I'm on solana", deviceId: "actions-test-0003", actions: true } })).json();
+    expect(res.ok).toBe(true);
+    expect(res.action).toBeNull();
   });
 });
