@@ -59,11 +59,12 @@ class NearWallet {
   /// Connects [wallet] ("metamask", "phantom", "hot") from the trade
   /// screen's button. Null when it's connected; else what went wrong.
   /// Connecting one never touches the others' saved settings.
-  Future<String?> connect(String wallet) async {
+  /// [opened] hears HOT's link, for the screen's Open HOT Wallet.
+  Future<String?> connect(String wallet, {void Function(String link)? opened}) async {
     switch (wallet) {
       case 'hot':
         try {
-          await HotWallet.connect();
+          await HotWallet.connect(opened: opened);
           return null;
         } on HotError catch (e) {
           return e.refused ? 'Cancelled in HOT Wallet' : e.message;
@@ -244,7 +245,7 @@ abstract final class NearFlow {
               : null;
 
   /// Connects [w] for the trade screen's button (see NearWallet.connect).
-  static Future<String?> connect(String w) => wallet.connect(w);
+  static Future<String?> connect(String w, {void Function(String link)? opened}) => wallet.connect(w, opened: opened);
 
   static const walletNames = {'metamask': 'MetaMask', 'phantom': 'Phantom', 'hot': HotWallet.name};
 

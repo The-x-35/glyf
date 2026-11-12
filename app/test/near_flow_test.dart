@@ -127,7 +127,7 @@ class _FakeWallet extends NearWallet {
   }
 
   @override
-  Future<String?> connect(String wallet) async {
+  Future<String?> connect(String wallet, {void Function(String link)? opened}) async {
     connected.add(wallet);
     return null;
   }

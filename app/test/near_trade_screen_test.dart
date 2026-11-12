@@ -162,7 +162,7 @@ void main() {
 class _Connecting extends NearWallet {
   final asked = <String>[];
   @override
-  Future<String?> connect(String wallet) async {
+  Future<String?> connect(String wallet, {void Function(String link)? opened}) async {
     asked.add(wallet);
     return null;
   }

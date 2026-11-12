@@ -90,7 +90,12 @@ class _TradeScreenState extends State<TradeScreen> {
       _connecting = wallet;
       _outcome = TradeOutcome(TradeState.working, 'Connect $name', detail: 'Approve in $name, then come back here');
     });
-    final error = await NearFlow.connect(wallet);
+    final error = await NearFlow.connect(wallet, opened: (link) {
+      if (mounted && _connecting == wallet) {
+        setState(() => _outcome = TradeOutcome(TradeState.working, 'Connect $name',
+            detail: 'Approve in $name, then come back here', reopen: link));
+      }
+    });
     if (!mounted) return;
     setState(() => _connecting = null);
     if (error != null) {
@@ -280,6 +285,10 @@ class _TradeScreenState extends State<TradeScreen> {
             : PillButton(label: 'Open MetaMask', onPressed: () => GlyfBridge.openMetaMask(o.reopen!)),
       ),
       const SizedBox(height: 6),
+      if (_connecting == 'hot') ...[
+        PillButton(label: 'Stop', primary: false, onPressed: HotWallet.stopWaiting),
+        const SizedBox(height: 6),
+      ],
     ] else if (working && _connecting == 'hot') ...[
       PillButton(label: 'Stop', primary: false, onPressed: HotWallet.stopWaiting),
       const SizedBox(height: 6),
