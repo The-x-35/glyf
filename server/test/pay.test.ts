@@ -199,6 +199,10 @@ describe("POST /near/requests", () => {
   it("splits a total, pays a .near name on NEAR, and makes a Sputnik DAO a shared pot", async () => {
     const { create } = setup();
     expect((await create({ amount: 90, to: MINE, count: 4 })).json()).toMatchObject({ amount: "22.5", each: false, count: 4 });
+    // "$90 for the four of us": the writer paid the bill, three people owe a quarter.
+    const us = (await create({ amount: 90, to: MINE, count: 4, us: true, note: "dinner" })).json();
+    expect(us).toMatchObject({ amount: "22.5", each: false, count: 3 });
+    expect(us.text).toBe(`Pay your $22.50 share for dinner: ${us.url}`);
     expect((await create({ amount: 5, to: "alice.near" })).json()).toMatchObject({ chain: "near", coin: "USDC", pot: false });
     expect((await create({ amount: 2, coin: "near", to: "alice.near" })).json()).toMatchObject({ coin: "NEAR" });
     const pot = (await create({ amount: 50, to: "trip.sputnik-dao.near", note: "cabin", each: true, count: 6 })).json();

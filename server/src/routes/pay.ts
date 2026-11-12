@@ -40,6 +40,9 @@ const RequestBody = z.object({
   note: z.string().max(200).default(""),
   each: z.boolean().optional(),
   count: z.number().int().min(1).max(100).optional(),
+  /** The writer is one of `count` ("$90 for 4 of us"): the share is still
+   *  the total over count, and count - 1 people are asked to pay. */
+  us: z.boolean().optional(),
 });
 
 const QuoteBody = z.object({
@@ -159,10 +162,11 @@ export function payRoutes(app: FastifyInstance, deps: PayDeps): void {
     } catch (err) {
       return failed(req, reply, err, "pay_request");
     }
-    const count = b.count ?? null;
     const each = b.each === true;
+    const share = shareOf(amount, coin, each, b.count ?? null);
+    const count = b.count === undefined ? null : b.us && b.count >= 2 ? b.count - 1 : b.count;
     const r: PayRequest = {
-      id: newId(), amount: shareOf(amount, coin, each, count), typedAmount: amount, coin, chain: chain.key, to,
+      id: newId(), amount: share, typedAmount: amount, coin, chain: chain.key, to,
       note: cleanNote(b.note), each, count, pot: SPUTNIK.test(to), createdBy: user, createdAt: now(),
     };
     saveRequest(kv, r);
