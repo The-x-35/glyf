@@ -17,8 +17,9 @@ protocol TradeSurfaceDelegate: AnyObject {
 /// the amount and prices on the keyboard's own digits (the panel folds to a
 /// strip over them, as the Buy panel does), tokens from a picker with
 /// search, chains from a list. One card per side, at most one detail line
-/// each, one button. The quote here is Uniswap's (or the price an order
-/// waits on); the app asks again at signing, so nothing shown is signed.
+/// each, one button. The quote here is Uniswap's, NEAR Intents' across
+/// chains (or the price an order waits on); the app asks again at signing,
+/// so nothing shown is signed.
 final class TradeSurface: UIView {
 
     weak var delegate: TradeSurfaceDelegate?
@@ -90,6 +91,8 @@ final class TradeSurface: UIView {
     private var quoteOutUSD: Double?
     private var quoteError: String?
     private var marketPrice: Double?
+    /// NEAR Intents' answer (time, what's paid for a send, Guard's words).
+    private var near: NearQuote?
     /// Whole tokens held by symbol, per chain, once /evm/balances answers.
     private var held: [String: [String: Double]] = [:]
     private var asking = true
@@ -123,6 +126,9 @@ final class TradeSurface: UIView {
     }
 
     private var isSwap: Bool { intent.kind == .swap }
+    /// The panel quotes it as it changes: a swap, or a NEAR Intents send.
+    private var quotes: Bool { isSwap || intent.isNear }
+    private var nearSend: Bool { intent.kind == .send && intent.isNear }
     private var buyChain: String { intent.buyChain ?? intent.chainName }
 
     init(intent: TradeIntent) {
@@ -141,7 +147,7 @@ final class TradeSurface: UIView {
     /// The strip's header while the panel is up.
     var headerTitle: String {
         switch intent.kind {
-        case .swap: return "Swap"
+        case .swap: return intent.isNear && intent.sell == intent.buy ? "Move" : "Swap"
         case .limit: return "Limit order"
         case .stop: return "Stop buy"
         case .stopLoss: return "Stop-loss"
@@ -320,7 +326,7 @@ final class TradeSurface: UIView {
         requote()
     }
 
-    private func clearQuote() { quoteOut = nil; quoteInUSD = nil; quoteOutUSD = nil; quoteError = nil }
+    private func clearQuote() { quoteOut = nil; quoteInUSD = nil; quoteOutUSD = nil; quoteError = nil; near = nil }
 
     private func picked(_ token: TokenPick, side: TradeEdit.Side) {
         known["\(chain(of: side))|\(token.symbol.uppercased())"] = token
@@ -350,7 +356,7 @@ final class TradeSurface: UIView {
             requote()
         case .send:
             resolve()
-            price(of: i.sell)
+            if i.isNear { requote() } else { price(of: i.sell) }
         default:
             price(of: TradeEdit.asset(i))
         }
@@ -364,7 +370,8 @@ final class TradeSurface: UIView {
     private func resolve() {
         guard let to = intent.to else { resolved = nil; resolveProblem = "No one to send to"; return }
         guard TradeIntent.isName(to) else { resolved = to; resolveProblem = nil; resolvedFor = nil; return }
-        let chain = intent.chainName
+        // A NEAR Intents send is looked up where it lands, not where it's paid.
+        let chain = intent.isNear ? (intent.buyChain ?? intent.chainName) : intent.chainName
         let key = "\(to)|\(chain)"
         guard key != resolvedFor else { return }
         resolvedFor = key
@@ -382,7 +389,7 @@ final class TradeSurface: UIView {
     }
 
     private func loadBalances(_ chain: String) {
-        guard chain != "solana", held[chain] == nil,
+        guard TradeIntent.uniswapReach.contains(chain), held[chain] == nil,
               let address = SettingsStore.current.evmAddress, !address.isEmpty else { return }
         BackendClient.shared.evmJSON(path: "/evm/balances?chain=\(chain)&address=\(address)") { [weak self] obj in
             guard let self, let list = obj?["balances"] as? [[String: Any]] else { return }
@@ -404,7 +411,7 @@ final class TradeSurface: UIView {
 
     /// A quote shortly after the last change (typing doesn't ask per key).
     private func requote() {
-        guard isSwap else {
+        guard quotes else {
             if intent.awaitingPrice { price(of: TradeEdit.asset(intent)) }
             render()
             return
@@ -424,6 +431,7 @@ final class TradeSurface: UIView {
         quoteSerial += 1
         let serial = quoteSerial
         if TradeEdit.problem(i) != nil { asking = false; render(); return }
+        if i.isNear { nearQuote(i, serial: serial); return }
         // "buy 0.1 eth": what 0.1 ETH costs, asked the other way round.
         let reversed = i.buyAmount != nil
         let sellRef = i.sellAddress ?? i.sell
@@ -450,6 +458,28 @@ final class TradeSurface: UIView {
                 self.quoteOut = nil; self.quoteInUSD = nil; self.quoteOutUSD = nil
                 self.quoteError = Self.shortError(obj?["error"] as? String)
             }
+            self.render()
+        }
+    }
+
+    /// NEAR Intents' quote (POST /near/quote), dry: no refund address or
+    /// recipient, so 1Click makes no deposit address for a preview. A send
+    /// asks for exactly what the recipient gets. The app asks again with
+    /// both before anything is signed.
+    private func nearQuote(_ i: TradeIntent, serial: Int) {
+        guard let amount = i.amount else { asking = false; clearQuote(); render(); return }
+        let body: [String: Any] = ["sell": i.sellAddress ?? i.sell, "sellChain": i.chainName,
+                                   "buy": i.buyAddress ?? i.buy, "buyChain": i.buyChain ?? i.chainName,
+                                   "amount": amount, "exact": i.kind == .send ? "out" : "in", "slippage": 1]
+        quoteTask = BackendClient.shared.evmJSONResult(path: "/near/quote", body: body) { [weak self] ok, obj in
+            guard let self, serial == self.quoteSerial else { return }
+            let q = NearQuote(ok: ok, obj)
+            self.asking = false
+            self.near = q.error == nil ? q : nil
+            self.quoteOut = q.amountOut
+            self.quoteInUSD = q.inUSD
+            self.quoteOutUSD = q.outUSD
+            self.quoteError = q.error.map { Self.shortError($0) }
             self.render()
         }
     }
@@ -543,7 +573,8 @@ final class TradeSurface: UIView {
 
     private func prefetchTokens(_ chain: String, query: String = "") {
         if tokenRows[chain] == nil { tokenRows[chain] = TradeEdit.builtIn(chain: chain) }
-        guard chain != "solana" else { return }
+        // Uniswap's token list is for its own chains.
+        guard TradeIntent.uniswapReach.contains(chain) else { return }
         if query.isEmpty, (tokenRows[chain]?.count ?? 0) > 8 { return }
         let q = query.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
         if !query.isEmpty { searchLoading = true }
@@ -570,7 +601,7 @@ final class TradeSurface: UIView {
         let chain = chain(of: side)
         searchResults = TradeEdit.filter(tokenRows[chain] ?? [], query: text)
         searchWork?.cancel()
-        if !text.isEmpty, chain != "solana" {
+        if !text.isEmpty, TradeIntent.uniswapReach.contains(chain) {
             let work = DispatchWorkItem { [weak self] in self?.prefetchTokens(chain, query: text) }
             searchWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
@@ -668,9 +699,16 @@ final class TradeSurface: UIView {
         // Top card: what's spent, or an order's asset.
         let top = isSwap ? i.sell : TradeEdit.asset(i)
         payCard.key.text = topKey
-        payCard.setChain(label(i.chainName), key: i.chainName, enabled: TradeEdit.chains(for: i).count > 1)
+        if nearSend {
+            // What arrives, where: the chain it's paid from is a row below.
+            let dest = i.buyChain ?? i.chainName
+            payCard.setChain(label(dest), key: dest, enabled: false)
+        } else {
+            payCard.setChain(label(i.chainName), key: i.chainName, enabled: TradeEdit.chains(for: i).count > 1)
+        }
         // Phantom's send here takes SOL or USDC as read; no picker for it.
-        let tokenPicks = !(i.kind == .send && i.chainName == "solana")
+        // A NEAR Intents send keeps the coin typed (its chain decides it).
+        let tokenPicks = !(i.kind == .send && (i.chainName == "solana" || i.isNear))
         payCard.token.set(symbol: Self.display(top), logo: logo(top, chain: i.chainName), enabled: tokenPicks)
         let typed = TradeEdit.value(.amount, i)
         payCard.setAmount(TradeEdit.shown(.amount, i), placeholder: typed.isEmpty)
@@ -696,10 +734,16 @@ final class TradeSurface: UIView {
             getCard.amount.isUserInteractionEnabled = false
             // An error speaks on the button, in one line.
             getCard.sub.text = quoteError == nil ? (quoteOutUSD.map { Self.approx($0) } ?? "") : ""
+            if i.isNear, quoteError == nil {
+                // "≈ $19.88 · ~32 s via NEAR Intents", or what Guard found.
+                let via = (near?.time.map { "\($0) via " } ?? "via ") + "NEAR Intents"
+                getCard.sub.text = near?.guardText ?? [getCard.sub.text ?? "", via].filter { !$0.isEmpty }.joined(separator: " · ")
+            }
         } else {
             // Orders: what's held of the asset, and the price now.
             var detail: [String] = []
-            if let p = marketPrice { detail.append("\(Self.display(top)) \(PaySurface.dollars(p))") }
+            if nearSend { if let usd = quoteOutUSD { detail.append(Self.approx(usd)) } }
+            else if let p = marketPrice { detail.append("\(Self.display(top)) \(PaySurface.dollars(p))") }
             else if asking { detail.append("…") }
             if TradeEdit.sells(i), let have = balance(top, on: i.chainName), have > 0 { detail.append("Balance \(PaySurface.compact(have))") }
             payCard.sub.text = detail.joined(separator: " · ")
@@ -732,7 +776,15 @@ final class TradeSurface: UIView {
         case .send:
             let to = i.to ?? ""
             specs.append(("to", "To", TradeIntent.shortRecipient(to), false, {}))
-            if TradeIntent.isName(to) {
+            if nearSend {
+                // A NEAR account is its name; the button says if it's missing.
+                let pay = near?.amountIn.map { "≈ \(Self.amount($0, i.sell)) \(Self.display(i.sell))" }
+                    ?? (asking ? "…" : Self.display(i.sell))
+                specs.append(("pay", "You pay", "\(pay) · \(label(i.chainName))", true,
+                              { [weak self] in self?.openChains(.sell) }))
+                specs.append(("via", "Arrives", (near?.time.map { "\($0) via " } ?? "via ") + "NEAR Intents", false, {}))
+                if let note = near?.guardText { specs.append(("guard", "Check", note, false, {})) }
+            } else if TradeIntent.isName(to) {
                 let shown = resolved.map(Smart.shortAddress) ?? (resolveProblem == nil ? "…" : "Not found")
                 specs.append(("address", "Address", shown, false, {}))
             }
@@ -766,22 +818,34 @@ final class TradeSurface: UIView {
         guard i.chainName != "solana", let held = balance(i.sell, on: i.chainName) else { return false }
         guard TradeEdit.sells(i) || i.amountIsUSD || i.buyAmount != nil || i.kind == .twap else { return false }
         if i.amount == nil, i.buyAmount == nil { return held <= 0 }
-        let spend = i.buyAmount != nil ? quoteOut : Double(i.amount ?? "")
+        // A NEAR Intents send spends what the quote says it costs.
+        let spend = nearSend ? near?.amountIn : i.buyAmount != nil ? quoteOut : Double(i.amount ?? "")
         guard let spend else { return false }
         return spend > held + 1e-12
     }
 
     /// No wallet connected in the app for this chain: MetaMask for
     /// Ethereum chains, Phantom for Solana.
-    private var needsWallet: Bool { (wallet ?? "").isEmpty }
+    /// A chain Glyf can't sign on (Bitcoin, NEAR…) needs none: the app shows
+    /// the deposit address to pay from any wallet.
+    private var needsWallet: Bool {
+        guard intent.chainName == "solana" || TradeIntent.evmChains.contains(intent.chainName) else { return false }
+        return (wallet ?? "").isEmpty
+    }
+
+    /// Guard found something that should stop a send (a lookalike, a
+    /// missing account): the button says "Send anyway".
+    private var guardBlocks: Bool { near?.guardLevel == "block" }
 
 
     private var goTitle: String {
         if needsWallet { return "Connect \(walletName)" }
         if let p = TradeEdit.problem(intent) { return p }
         if intent.awaitingPrice { return asking ? "Getting the price" : "No price yet" }
-        if isSwap, let quoteError { return quoteError }
+        if quotes, let quoteError { return quoteError }
         if short { return "Not enough \(Self.display(intent.sell))" }
+        if intent.kind == .send, let resolveProblem { return resolveProblem }
+        if guardBlocks { return "Send anyway" }
         switch intent.kind {
         case .swap:
             if let usd = quoteInUSD { return "Swap ≈ \(PaySurface.dollars(usd))" }
@@ -804,7 +868,7 @@ final class TradeSurface: UIView {
     private var blocked: Bool {
         if needsWallet { return false }
         if TradeEdit.problem(intent) != nil || short || intent.awaitingPrice { return true }
-        if isSwap, quoteError != nil || asking { return true }
+        if quotes, quoteError != nil || asking { return true }
         // A send waits for its address, and never goes to a name that
         // didn't resolve.
         if intent.kind == .send, resolved == nil || resolveProblem != nil { return true }
@@ -814,7 +878,7 @@ final class TradeSurface: UIView {
     private func renderGo() {
         goButton.setTitle(goTitle, for: .normal)
         let off = blocked
-        goButton.backgroundColor = off ? Self.offFill : Glass.imBlue
+        goButton.backgroundColor = off ? Self.offFill : guardBlocks ? .systemRed : Glass.imBlue
         goButton.setTitleColor(off ? Glass.textSecondary : .white, for: .normal)
     }
 
@@ -885,7 +949,8 @@ final class TradeSurface: UIView {
 
     private func renderChainList(_ side: TradeEdit.Side) {
         clearPicker()
-        pickerTitle.text = intent.kind == .bridge && side == .buy ? "Move to" : (side == .buy ? "Get it on" : "Chain")
+        pickerTitle.text = intent.kind == .bridge && side == .buy ? "Move to"
+            : side == .buy ? "Get it on" : nearSend ? "Pay from" : "Chain"
         var chains = TradeEdit.chains(for: intent)
         if intent.kind == .bridge, side == .buy { chains = chains.filter { $0 != intent.chainName } }
         let current = side == .buy ? (intent.kind == .bridge ? (intent.toChain ?? "") : buyChain) : intent.chainName
