@@ -18,6 +18,11 @@ class PhraseMemoryTest {
         assertNull(m.completion("On my wa", day))
         assertNull(m.completion("On ", day))
         assertNull(m.completion("On my ", day + 61))
+        // The strip offers it a word at a time, never as a phrase (D108).
+        assertEquals("way", m.nextWord("On my ", day))
+        assertEquals("10", m.nextWord("On my way, be there in ", day))
+        assertNull("nothing left", m.nextWord("On my way, be there in 10 ", day))
+        assertNull(m.nextWord("On my wa", day))
         val n = PhraseMemory()
         repeat(3) {
             n.record("your code is 482913 for login", day)

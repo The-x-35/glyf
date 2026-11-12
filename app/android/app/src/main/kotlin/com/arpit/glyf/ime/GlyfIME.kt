@@ -2773,13 +2773,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             Weather.ensure(settings.optDouble("lastLat"), settings.optDouble("lastLon"), fahrenheit) { main.post { updateSuggestions() } }
             Weather.snapshot?.takeIf { it.fahrenheit == fahrenheit }?.let { w -> Weather.answer(tail, w)?.let { chip = Smart.Chip.Convert(it) } }
         }
-        // A sentence the person keeps sending: its first words offer the rest.
-        if (chip == null && typingPolicy() and TypingEngine.LEARNING != 0) {
-            com.arpit.glyf.ime.typing.PhraseMemoryStore.get(this)
-                .completion(tail, com.arpit.glyf.ime.typing.TypingText.day())?.let { rest ->
-                    chip = Smart.Chip.Convert(Smart.Conversions("", listOf(rest), listOf(rest), listOf(Smart.Insertion.AFTER)))
-                }
-        }
+        // A sentence the person keeps sending offers its next word in the
+        // word slots (updateSuggestions), not the rest of it as a chip (D108).
         // The tour keeps the strip for the step it is coaching.
         val step = tourStep()
         if (step != null) {
@@ -4396,8 +4391,16 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                             .take(2).map { Suggestion(it, Suggestion.Kind.WORD) }
                     else emptyList())
                 engine != null && before.endsWith(" ") && previous != null -> {
-                    val next = engine.predictions(previous, policy, beforePrevious = WordContext.wordBeforePrevious(before))
-                        .map { Suggestion(it, Suggestion.Kind.WORD) }
+                    var words = engine.predictions(previous, policy, beforePrevious = WordContext.wordBeforePrevious(before))
+                    // A sentence the person keeps sending offers its next
+                    // word first: a word at a time, never the rest (D108).
+                    if (policy and TypingEngine.LEARNING != 0) {
+                        com.arpit.glyf.ime.typing.PhraseMemoryStore.get(this)
+                            .nextWord(before.takeLast(120), com.arpit.glyf.ime.typing.TypingText.day())?.let { w ->
+                                words = listOf(w) + words.filter { !it.equals(w, ignoreCase = true) }
+                            }
+                    }
+                    val next = words.map { Suggestion(it, Suggestion.Kind.WORD) }
                     // The word just written brings its emoji to the last slot (iOS 10-07).
                     EmojiWords.emoji(previous)?.let { next.take(2) + Suggestion(it, Suggestion.Kind.EMOJI) } ?: next
                 }
@@ -4428,14 +4431,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     private fun showSuggestions(items: List<Suggestion>) {
         if (!::suggestionRow.isInitialized) return
-        val list = items.take(3)
+        // Words, never phrases: a slot holds one word (an emoji run counts as
+        // one), D108 (Arpit, 2026-11-06: "only a single word suggestion").
+        val list = items.filter { it.kind == Suggestion.Kind.EMOJI || it.text.none(Char::isWhitespace) }.take(3)
         if (list == suggestionsShown) { applySuggestionVisibility(); return }
         suggestionsShown = list
-        suggestionRow.removeAllViews()
         val ink = ink()
-        val slots = mutableListOf<View>()
-        for ((i, item) in list.withIndex()) {
-            slots += TextView(this).apply {
+        suggestionSlots = list.withIndex().map { (i, item) ->
+            TextView(this).apply {
                 text = when (item.kind) {
                     Suggestion.Kind.LITERAL -> "“${item.text}”"
                     // What was typed before the last autocorrect, in quotes,
@@ -4445,7 +4448,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 }
                 gravity = Gravity.CENTER
                 maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
+                // Never "…": SuggestionFit picks a size the whole word fits at.
+                ellipsize = null
+                setHorizontallyScrolling(false)
+                includeFontPadding = false
+                setPadding(0, 0, 0, 0)
                 textSize = if (item.kind == Suggestion.Kind.EMOJI) 22f else 17f   // the system bar's size (a 12dp cap height)
                 typeface = if (item.kind == Suggestion.Kind.CORRECTION) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
                 setTextColor(if (item.kind == Suggestion.Kind.LITERAL) Color.argb(150, Color.red(ink), Color.green(ink), Color.blue(ink)) else ink)
@@ -4459,17 +4466,57 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 setOnClickListener { suggestionTapped(item) }
             }
         }
-        // Always three slots with a hairline between them, like the system
-        // bar: one word sits in its slot and the lines stay where they are.
-        while (list.isNotEmpty() && slots.size < 3) slots += View(this)
-        for ((i, v) in slots.withIndex()) {
-            if (i > 0) suggestionRow.addView(View(this).apply {
-                setBackgroundColor(Color.argb(if (chromeDark) 70 else 40, Color.red(ink), Color.green(ink), Color.blue(ink)))
-            }, LinearLayout.LayoutParams(dp(1), dp(22)).apply { gravity = Gravity.CENTER_VERTICAL })
-            suggestionRow.addView(v, LinearLayout.LayoutParams(0, dp(32), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+        suggestionFitWidth = -1
+        if (!suggestionFitListening) {
+            suggestionFitListening = true
+            suggestionRow.addOnLayoutChangeListener { v, l, _, r, _, _, _, _, _ ->
+                if (r - l != suggestionFitWidth && r - l > 0) v.post { layoutSuggestionSlots() }
+            }
         }
+        layoutSuggestionSlots()
         if (list.isEmpty()) toolsPinned = false
         applySuggestionVisibility()
+    }
+
+    /** The word slots, as built for [suggestionsShown]; laid out by
+     *  layoutSuggestionSlots once the row's width is known. */
+    private var suggestionSlots: List<TextView> = emptyList()
+    private var suggestionFitWidth = -1
+    private var suggestionFitListening = false
+
+    /** Always three slots with a hairline between them, like the system bar,
+     *  every word whole: a long word shrinks to fit its slot, then takes a
+     *  wider one, else it is left out (SuggestionFit, D108). */
+    private fun layoutSuggestionSlots() {
+        val row = suggestionRow
+        val ink = ink()
+        val gap = dp(3)
+        // Before the first layout: the row's share of the keyboard's width.
+        val width = row.width.takeIf { it > 0 } ?: (resources.displayMetrics.widthPixels - dp(64))
+        suggestionFitWidth = row.width
+        row.removeAllViews()
+        if (suggestionSlots.isEmpty()) return
+        val scaled = resources.displayMetrics.scaledDensity
+        val paint = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        val titles = suggestionSlots.map { it.text.toString() }
+        val faces = suggestionSlots.map { it.typeface }
+        val full = suggestionsShown.map { if (it.kind == Suggestion.Kind.EMOJI) 22.0 else 17.0 }
+        val plan = SuggestionFit.plan(full, total = (width - 2 * gap).toDouble(), spacing = (dp(1) + 2 * gap).toDouble(),
+                                      pad = dp(8).toDouble()) { i, size ->
+            paint.typeface = faces[i]
+            paint.textSize = (size * scaled).toFloat()
+            kotlin.math.ceil(paint.measureText(titles[i]).toDouble())
+        }
+        for ((j, slot) in plan.withIndex()) {
+            if (j > 0) row.addView(View(this).apply {
+                setBackgroundColor(Color.argb(if (chromeDark) 70 else 40, Color.red(ink), Color.green(ink), Color.blue(ink)))
+            }, LinearLayout.LayoutParams(dp(1), dp(22)).apply { gravity = Gravity.CENTER_VERTICAL })
+            val v: View = slot.item?.let { i -> suggestionSlots[i].also { it.textSize = slot.size.toFloat() } } ?: View(this)
+            (v.parent as? android.view.ViewGroup)?.removeView(v)
+            row.addView(v, LinearLayout.LayoutParams(slot.width.toInt(), dp(32)).apply {
+                marginStart = gap; marginEnd = gap
+            })
+        }
     }
 
     private fun applySuggestionVisibility() {

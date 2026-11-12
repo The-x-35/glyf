@@ -181,3 +181,81 @@ class StripPolicy {
         onScreen = null
     }
 }
+
+/** The strip's word slots never cut a word with "…" (D108; Arpit,
+ *  2026-11-06: "Google reduces the font size of the word ... show the
+ *  complete word"): a long word is drawn smaller, down to [SMALLEST]; one
+ *  that doesn't fit even then gets the room it needs and the other slots
+ *  share the rest, and when that leaves them too little the last word gives
+ *  up its slot. Pure: the caller measures. StripPolicy.swift's
+ *  SuggestionFit, with the same numbers and the same tests (sizes in sp,
+ *  widths in whatever unit `measure`, `total`, `spacing` and `pad` share). */
+object SuggestionFit {
+    /** The smallest size a word is drawn at: Gboard's shrunk words stop
+     *  about here, still easy to read. */
+    const val SMALLEST = 11.0
+    /** Air left beside a word inside its slot, both sides together (iOS
+     *  points; the IME passes it in pixels). */
+    const val PAD = 8.0
+    const val STEP = 0.5
+
+    /** [item] is the index of what's drawn in it (null for an empty slot),
+     *  [size] its font size (0 for an empty slot). */
+    data class Slot(val item: Int?, val width: Double, val size: Double)
+
+    /** The biggest size, from [full] down to [SMALLEST] in half points, at
+     *  which a word `measure(size)` wide fits [width]; null when even the
+     *  smallest doesn't. */
+    fun size(full: Double, width: Double, pad: Double = PAD, measure: (Double) -> Double): Double? {
+        var s = full
+        while (s >= SMALLEST - 0.001) {
+            if (measure(s) + pad <= width) return s
+            s -= STEP
+        }
+        return null
+    }
+
+    /** Slots for up to three items (best first) across [total], [spacing]
+     *  apart: always three slots as the system bar has (an empty one for each
+     *  word not offered), equal thirds whenever every word fits one.
+     *  `full[i]` is item i's usual size; `measure(i, size)` its width. */
+    fun plan(full: List<Double>, total: Double, spacing: Double, pad: Double = PAD,
+             measure: (Int, Double) -> Double): List<Slot> {
+        val offered = minOf(full.size, 3)
+        val items = (0 until offered).toMutableList()
+        val empty = 3 - offered
+        while (items.isNotEmpty()) {
+            val count = items.size + empty
+            val inner = total - spacing * (count - 1)
+            val equal = inner / count
+            fun fitted(i: Int, width: Double) = size(full[i], width, pad) { measure(i, it) }
+            val need = mutableMapOf<Int, Double>()
+            for (i in items) if (fitted(i, equal) == null) need[i] = measure(i, SMALLEST) + pad
+            var widths: List<Double>? = null
+            if (need.isEmpty()) {
+                widths = List(count) { equal }
+            } else {
+                val rest = inner - need.values.sum()
+                val narrow = count - need.size
+                if (narrow == 0) {
+                    if (rest >= 0) widths = items.map { need.getValue(it) + rest / need.size }
+                } else if (rest > 0) {
+                    val share = rest / narrow
+                    if (items.all { need[it] != null || fitted(it, share) != null }) {
+                        widths = items.map { need[it] ?: share } + List(empty) { share }
+                    }
+                }
+            }
+            if (widths != null) {
+                return (0 until count).map { j ->
+                    if (j >= items.size) Slot(null, widths[j], 0.0)
+                    else Slot(items[j], widths[j], fitted(items[j], widths[j]) ?: SMALLEST)
+                }
+            }
+            // Too little room for everything: the last word goes.
+            items.removeAt(items.size - 1)
+        }
+        val equal = (total - spacing * 2) / 3
+        return List(3) { Slot(null, equal, 0.0) }
+    }
+}

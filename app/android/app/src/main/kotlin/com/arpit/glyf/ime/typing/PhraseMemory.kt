@@ -83,7 +83,19 @@ class PhraseMemory {
 
     /** The rest of a remembered sentence that starts with what is being
      *  typed, offered once a word ends: two words typed, two to come. */
-    fun completion(typed: String, today: Int): String? {
+    fun completion(typed: String, today: Int): String? = rest(typed, today, ahead = 2)?.joinToString(" ")
+
+    /** The next word of a remembered sentence, for the strip's first word
+     *  slot: the strip offers words, never the rest of a sentence (D108,
+     *  Arpit, 2026-11-06: "only a single word suggestion"). A tap on it
+     *  brings the word after, so the sentence still comes a word a tap.
+     *  PhraseMemory.swift's nextWord(after:today:). */
+    fun nextWord(typed: String, today: Int): String? {
+        val word = rest(typed, today, ahead = 1)?.firstOrNull() ?: return null
+        return word.trim('.', ',', '!', '?', ';', ':', '…', '"', '“', '”', '(', ')').ifEmpty { null }
+    }
+
+    private fun rest(typed: String, today: Int, ahead: Int): List<String>? {
         if (typed.lastOrNull()?.isWhitespace() != true || typed.endsWith("\n")) return null
         val sentence = lastSentence(typed)
         val k = key(sentence)
@@ -94,8 +106,8 @@ class PhraseMemory {
         }.maxWithOrNull(compareBy<Entry> { it.count }.thenBy { it.last }) ?: return null
         val typedWords = sentence.split(" ").filter { it.isNotEmpty() }.size
         val words = best.text.split(" ").filter { it.isNotEmpty() }
-        if (words.size < typedWords + 2) return null
-        return words.drop(typedWords).joinToString(" ")
+        if (words.size < typedWords + ahead) return null
+        return words.drop(typedWords)
     }
 }
 
