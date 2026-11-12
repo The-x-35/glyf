@@ -358,7 +358,12 @@ extension AIActionTests {
             "text": "Proposing 120 USDC to caterer.near from the trip pot for catering. Vote: https://trezu.app/trip.sputnik-dao.near/requests",
             "bond": "0.1", "proposers": "everyone", "threshold": ["words": "2 of 3"]]
         let p = PotProposal(ok: true, link, to: "caterer.near", account: nil)
-        XCTAssertEqual(p.headline, "Propose $120 to caterer.near · needs 2 of 3 · bond 0.1 NEAR")
+        XCTAssertEqual(p.headline, "Propose $120 to caterer.near")
+        XCTAssertEqual(p.terms, "Needs 2 of 3 · bond 0.1 NEAR")
+        var noRule = link
+        noRule["threshold"] = NSNull()
+        noRule["bond"] = nil
+        XCTAssertNil(PotProposal(ok: true, noRule, to: "caterer.near", account: nil).terms)
         XCTAssertEqual(p.fill, "Type 120 USDC, note: catering")
         XCTAssertFalse(p.notMember)
         var members = link
@@ -367,4 +372,36 @@ extension AIActionTests {
         XCTAssertFalse(PotProposal(ok: true, members, to: "caterer.near", account: "Ben.near").notMember)
         XCTAssertEqual(PotProposal.membersOnly, "Only members can propose from this pot")
     }
+
+    /// A chip's words are never cut mid-word (D108): roomy, one line at 15 pt;
+    /// tighter, the venue part goes whole; the pot's payout, too long alone
+    /// even at 11 pt in the strip's 188 pt, wraps onto two lines.
+    func testChipWordsFitWithoutCutting() {
+        let roomy = ChipFit.fit(value: "See the build pot · Sputnik DAO", label: nil, width: 400, height: 30)
+        XCTAssertEqual(roomy, ChipFit.Fit(parts: ["See the build pot", "Sputnik DAO"], label: nil, size: 15, lines: 1))
+        let pay = "Propose $120 to caterer from the build pot · Sputnik DAO"
+        let tight = ChipFit.fit(value: pay, label: nil, width: 188, height: 30)
+        XCTAssertEqual(tight.parts, ["Propose $120 to caterer from the build pot"])
+        XCTAssertEqual(tight.lines, 2)
+        XCTAssertGreaterThanOrEqual(tight.size, 11)
+        let box = ChipFit.string(tight.parts, label: nil, size: tight.size)
+            .boundingRect(with: CGSize(width: 188, height: 1000), options: [.usesLineFragmentOrigin], context: nil)
+        XCTAssertLessThanOrEqual(ceil(box.height), 30)
+        // A bill split keeps its answer: the question goes before the answer is cut.
+        let split = ChipFit.fit(value: "$90 for the four of us = $22.50 each", label: nil, width: 188, height: 30,
+                                shorter: "$22.50 each")
+        XCTAssertEqual(split, ChipFit.Fit(parts: ["$22.50 each"], label: nil, size: 15, lines: 1))
+        // A payout drops its pot ("Propose $120 to caterer"), on one line.
+        let payChip = Smart.Chip.action(label: pay, query: "{}", intent: "near:pot.pay")
+        XCTAssertEqual(ChipFit.shorter(payChip), "Propose $120 to caterer · Sputnik DAO")
+        let short = ChipFit.fit(value: pay, label: nil, width: 188, height: 30, shorter: ChipFit.shorter(payChip))
+        XCTAssertEqual(short.parts, ["Propose $120 to caterer"])
+        XCTAssertEqual(short.lines, 1)
+        XCTAssertNil(ChipFit.shorter(.action(label: "See the build pot · Sputnik DAO", query: "{}", intent: "near:pot")))
+        // One line still wins when a smaller size or a dropped part does it.
+        let earn = ChipFit.fit(value: "Put 50 USDC to work · Morpho", label: "NEAR Intents", width: 188, height: 30)
+        XCTAssertEqual(earn.lines, 1)
+        XCTAssertLessThanOrEqual(ceil(ChipFit.string(earn.parts, label: earn.label, size: earn.size).size().width), 188)
+    }
+
 }

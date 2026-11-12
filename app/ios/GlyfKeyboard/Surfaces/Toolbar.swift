@@ -623,29 +623,16 @@ final class GlyfToolbar: UIView {
 
     private func fitWhole(_ chip: Smart.Chip, width: CGFloat) {
         guard width > 0 else { return }
-        var parts = chip.value.components(separatedBy: " · ")
-        var label = chip.label
-        func line(_ size: CGFloat) -> NSAttributedString {
-            let out = NSMutableAttributedString()
-            if let label {
-                out.append(NSAttributedString(string: label + "  ", attributes: [
-                    .foregroundColor: Glass.chipTextSecondary, .font: UIFont.systemFont(ofSize: size - 2, weight: .medium)]))
-            }
-            out.append(NSAttributedString(string: parts.joined(separator: " · "), attributes: [
-                .foregroundColor: Glass.chipText, .font: UIFont.systemFont(ofSize: size)]))
-            return out
-        }
-        smartValue.lineBreakMode = .byClipping
-        while true {
-            for size in stride(from: 15.0, through: 11.0, by: -0.5) {
-                let l = line(CGFloat(size))
-                if ceil(l.size().width) <= width { smartValue.attributedText = l; return }
-            }
-            if parts.count > 1 { parts.removeLast(); continue }
-            if label != nil { label = nil; continue }
-            smartValue.attributedText = line(11)
-            return
-        }
+        let fit = ChipFit.fit(value: chip.value, label: chip.label, width: width, height: smartValue.bounds.height,
+                              shorter: ChipFit.shorter(chip))
+        let out = NSMutableAttributedString(attributedString: ChipFit.string(fit.parts, label: fit.label, size: fit.size))
+        let labelLength = fit.label.map { ($0 + "  ").utf16.count } ?? 0
+        out.addAttribute(.foregroundColor, value: Glass.chipTextSecondary, range: NSRange(location: 0, length: labelLength))
+        out.addAttribute(.foregroundColor, value: Glass.chipText,
+                         range: NSRange(location: labelLength, length: out.length - labelLength))
+        smartValue.numberOfLines = fit.lines
+        smartValue.lineBreakMode = fit.lines > 1 ? .byWordWrapping : .byClipping
+        smartValue.attributedText = out
     }
 
     /// One chip across the strip, or nil to go back to tools and suggestions.
@@ -654,6 +641,7 @@ final class GlyfToolbar: UIView {
     func showSmart(_ chip: Smart.Chip?, extra: String? = nil) {
         smartChip = chip
         smartValue.lineBreakMode = .byTruncatingTail
+        smartValue.numberOfLines = 1
         let isRow = chip?.choices != nil
         let wasShowing = !smartCard.isHidden || !choiceRow.isHidden
         smartCard.isHidden = chip == nil || panelTitle != nil || isRow

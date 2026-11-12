@@ -825,8 +825,10 @@ final class TradeSurface: UIView {
                 // The line over the button took the Arrives row: the time rides here.
                 if alert != nil, let time = near?.time { detail.append(time) }
             } else if isEarn {
-                // What the coins are worth; the vault's share count never shows.
+                // What the coins are worth (the vault's share count never
+                // shows) and how long it takes, as a swap's card says it.
                 if let usd = i.earnOut ? quoteOutUSD : quoteInUSD { detail.append(Self.approx(usd)) }
+                if let time = earn?.time { detail.append(time) }
             }
             else if let p = marketPrice { detail.append("\(Self.display(top)) \(PaySurface.dollars(p))") }
             else if asking { detail.append("…") }
@@ -859,18 +861,17 @@ final class TradeSurface: UIView {
         switch i.kind {
         case .earn:
             // The server's words lead ("≈ $49.75 in Gauntlet USDC Prime at
-            // 4.5% APY"), then who runs the vault and how long it takes.
+            // 4.5% APY"), then who runs the vault. The time rides on the
+            // card above: three rows and the notice left the card no room.
             let all = i.earnOut && i.amount == nil
             var words = asking ? "…" : "—"
             if let earn {
-                words = all ? "All your \(i.sell) back on \(label(i.chainName)) from \(earn.vaultName ?? "Earn")" : (earn.words ?? words)
+                // The vault's name stays off the row: the Vault row says who.
+                words = all ? "All your \(i.sell) back on \(label(i.chainName))" : (earn.rowWords ?? words)
             }
             specs.append(RowSpec(id: "earn", label: "You get", value: words, tap: false, action: {}, bold: true))
             specs.append(RowSpec(id: "vault", label: "Vault", value: earn?.vaultLine(fallback: i.earnProtocol) ?? i.earnProtocol,
                                  tap: false, action: {}))
-            if !all {
-                specs.append(RowSpec(id: "arrives", label: "Arrives", value: earn?.time ?? (asking ? "…" : "—"), tap: false, action: {}))
-            }
         case .bridge:
             specs.append(RowSpec(id: "toChain", label: "To", value: label(i.toChain ?? ""), tap: true,
                                  action: { [weak self] in self?.openChains(.buy) }))
@@ -927,7 +928,7 @@ final class TradeSurface: UIView {
     /// The wallet knows what's held and it's short of what's spent.
     private var short: Bool {
         let i = intent
-        guard i.chainName != "solana", let held = balance(i.sell, on: i.chainName) else { return false }
+        guard i.spendsHeldCoin, i.chainName != "solana", let held = balance(i.sell, on: i.chainName) else { return false }
         guard TradeEdit.sells(i) || i.amountIsUSD || i.buyAmount != nil || i.kind == .twap else { return false }
         if i.amount == nil, i.buyAmount == nil { return held <= 0 }
         // A NEAR Intents send spends what the quote says it costs.
@@ -1029,6 +1030,10 @@ final class TradeSurface: UIView {
             alertText.textColor = Glass.textSecondary
             alertText.text = EarnQuote.notice
         }
+        // Earn's notice stays on one line, a size smaller if it must; a
+        // warning keeps 13 pt and wraps.
+        alertText.font = .systemFont(ofSize: 13, weight: .medium)
+        alertText.numberOfLines = 2
         if let a = alert {
             let red = a.block
             let ink: UIColor = red ? .systemRed : Self.amber
@@ -1205,6 +1210,10 @@ final class TradeSurface: UIView {
         var bottom = goButton.frame.minY - 6
         if !alertLine.isHidden {
             let textW = cw - 8 - 20
+            if alert == nil, isEarn, let size = EarnQuote.noticeSize(fitting: textW) {
+                alertText.font = .systemFont(ofSize: size, weight: .medium)
+                alertText.numberOfLines = 1
+            }
             let fits = alertText.sizeThatFits(CGSize(width: textW, height: 40))
             let h = min(34, max(18, ceil(fits.height)))
             alertLine.frame = CGRect(x: x + 4, y: bottom - h, width: cw - 8, height: h)
@@ -1502,7 +1511,9 @@ private final class FieldRow: UIControl {
         let fit = Self.fitted(text, width: vw, weight: bold ? .semibold : .regular, extra: mark)
         value.adjustsFontSizeToFitWidth = false
         value.numberOfLines = fit.lines
-        value.lineBreakMode = fit.lines == 1 ? .byClipping : .byCharWrapping
+        // Two lines break between words ("Gauntlet" whole); an address,
+        // one long word, between characters.
+        value.lineBreakMode = fit.lines == 1 ? .byClipping : text.contains(" ") ? .byWordWrapping : .byCharWrapping
         let s = NSMutableAttributedString(string: text, attributes: [.font: fit.font, .foregroundColor: value.textColor!])
         if check, let tick = UIImage(systemName: "checkmark.circle.fill")?.withTintColor(.systemGreen, renderingMode: .alwaysOriginal) {
             let a = NSTextAttachment(image: tick)

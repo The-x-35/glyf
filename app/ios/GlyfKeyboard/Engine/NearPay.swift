@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// A pay link to ask for (POST /near/requests; docs/NEAR-SPEC.md, Hand-off:
 /// the keyboard's Request button): from the bill split's chip ("$22.50
@@ -282,8 +283,10 @@ struct PotView: Equatable {
 struct PotProposal: Equatable {
     var url: String?
     var text: String?
-    /// "Propose $120 to caterer.near · needs 2 of 3 · bond 0.1 NEAR".
+    /// "Propose $120 to caterer.near": the card's bold line.
     var headline: String?
+    /// "Needs 2 of 3 · bond 0.1 NEAR": the vote and its cost, under it.
+    var terms: String?
     /// "Type 120 USDC, note: catering": what Trezu doesn't prefill.
     var fill: String?
     /// The person can't file it: "Only members can propose from this pot".
@@ -301,10 +304,11 @@ struct PotProposal: Equatable {
         let fill = obj["fill"] as? [String: Any]
         let amount = (fill?["amount"] as? String) ?? ""
         let coin = (fill?["coin"] as? String) ?? "USDC"
-        var head = "Propose \(PotAsk.money(amount, coin)) to \(to)"
-        if let words = (obj["threshold"] as? [String: Any])?["words"] as? String { head += " · needs \(words)" }
-        if let bond = obj["bond"] as? String { head += " · bond \(bond) NEAR" }
-        headline = head
+        headline = "Propose \(PotAsk.money(amount, coin)) to \(to)"
+        var terms: [String] = []
+        if let words = (obj["threshold"] as? [String: Any])?["words"] as? String { terms.append("Needs \(words)") }
+        if let bond = obj["bond"] as? String { terms.append("bond \(bond) NEAR") }
+        self.terms = terms.isEmpty ? nil : terms.joined(separator: " · ")
         let note = (fill?["note"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         self.fill = "Type \(amount) \(coin)" + (note.map { ", note: \($0)" } ?? "")
         if let list = obj["proposers"] as? [String] {
@@ -325,5 +329,77 @@ extension Dictionary where Key == String, Value == String {
     init(chipQuery: String) {
         let obj = chipQuery.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: String]
         self = obj ?? [:]
+    }
+}
+
+/// How a whole chip's words fit the strip without "…" (D108): 15 pt down to
+/// 11 pt in half points on one line; then the last " · " part goes whole (the
+/// venue word, "Sputnik DAO"), then the grey label, fitted again; then the
+/// chip's shorter words when it has them (a bill split's answer alone,
+/// "$22.50 each", rather than "$90 for the four of us =" with the answer cut
+/// off); and when even that is too wide at 11 pt ("Propose $120 to caterer
+/// from the build pot"), it wraps onto two lines, 13 pt down to 11 pt, rather
+/// than being cut mid-word.
+enum ChipFit {
+    struct Fit: Equatable {
+        var parts: [String]
+        var label: String?
+        var size: CGFloat
+        var lines: Int
+        var text: String { parts.joined(separator: " · ") }
+    }
+
+    /// What a whole chip says when its words don't fit: a sum's answer
+    /// without its question ("$22.50 each"), a payout without its pot
+    /// ("Propose $120 to caterer"; the panel names the pot).
+    static func shorter(_ chip: Smart.Chip) -> String? {
+        switch chip {
+        case .convert(let c) where !c.source.isEmpty:
+            return c.results.joined(separator: " · ")
+        case .action(_, _, let intent) where intent == "near:pot.pay":
+            let short = chip.value.replacingOccurrences(of: #" from the [^·]*?(?= · |$)"#, with: "", options: .regularExpression)
+            return short == chip.value ? nil : short
+        default:
+            return nil
+        }
+    }
+
+    static func valueFont(_ size: CGFloat) -> UIFont { .systemFont(ofSize: size) }
+    static func labelFont(_ size: CGFloat) -> UIFont { .systemFont(ofSize: size - 2, weight: .medium) }
+
+    static func string(_ parts: [String], label: String?, size: CGFloat) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        if let label { out.append(NSAttributedString(string: label + "  ", attributes: [.font: labelFont(size)])) }
+        out.append(NSAttributedString(string: parts.joined(separator: " · "), attributes: [.font: valueFont(size)]))
+        return out
+    }
+
+    static func fit(value: String, label: String?, width: CGFloat, height: CGFloat, shorter: String? = nil) -> Fit {
+        func oneLine(_ value: String, _ label: String?) -> Fit? {
+            var parts = value.components(separatedBy: " · ")
+            var label = label
+            while true {
+                for size in stride(from: 15.0, through: 11.0, by: -0.5) {
+                    let l = string(parts, label: label, size: CGFloat(size))
+                    if ceil(l.size().width) <= width { return Fit(parts: parts, label: label, size: CGFloat(size), lines: 1) }
+                }
+                if parts.count > 1 { parts.removeLast(); continue }
+                if label != nil { label = nil; continue }
+                return nil
+            }
+        }
+        if let fit = oneLine(value, label) { return fit }
+        if let shorter, let fit = oneLine(shorter, nil) { return fit }
+        let parts = [value.components(separatedBy: " · ")[0]]
+        for size in stride(from: 13.0, through: 11.0, by: -0.5) {
+            let font = valueFont(CGFloat(size))
+            let box = string(parts, label: nil, size: CGFloat(size))
+                .boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                              options: [.usesLineFragmentOrigin], context: nil)
+            if ceil(box.height) <= min(height, ceil(font.lineHeight * 2) + 1) {
+                return Fit(parts: parts, label: nil, size: CGFloat(size), lines: 2)
+            }
+        }
+        return Fit(parts: parts, label: nil, size: 11, lines: 2)
     }
 }

@@ -326,7 +326,8 @@ final class PotSurface: UIView {
             return
         }
         headline.text = p.headline
-        detail.text = p.fill
+        // The vote and its bond, then what to type in Trezu, a line each.
+        detail.text = [p.terms, p.fill].compactMap { $0 }.joined(separator: "\n")
         if p.notMember { warning.text = PotProposal.membersOnly }
         setPrimary(on: p.url != nil && !p.notMember)
         setSecondary(on: p.text != nil)

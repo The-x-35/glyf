@@ -642,7 +642,7 @@ says "Add your pot in Glyf" and nothing is asked.
 - **near.pot.pay**: if `to` isn't a NEAR account (`"the caterer"`), the
   panel asks "caterer's NEAR account" (checked with GET
   /names/resolve). Then GET /near/pot/propose-link and show "Propose
-  $120 to caterer.near · needs 2 of 3 · bond 0.1 NEAR". **Propose in
+  $120 to caterer.near", with "Needs 2 of 3 · bond 0.1 NEAR" under it. **Propose in
   Trezu** opens `url` and copies nothing; the panel shows `fill` ("Type
   120 USDC, note: catering") so the person can finish there. Back in
   chat, **Insert** puts `text` at the cursor. When `proposers` is a list

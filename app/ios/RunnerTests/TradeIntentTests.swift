@@ -797,6 +797,11 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(toSol.chainName, "solana")
         XCTAssertEqual(toSol.query["chain"], "solana")
         XCTAssertEqual(toSol.query["direction"], "out")
+        // Out spends the vault's shares: the coin held never stops the button.
+        XCTAssertFalse(all.spendsHeldCoin)
+        XCTAssertFalse(twenty.spendsHeldCoin)
+        XCTAssertTrue(try XCTUnwrap(TradeIntent.parse("put $50 to work")).spendsHeldCoin)
+        XCTAssertTrue(try XCTUnwrap(TradeIntent.parse("swap 20 usdc on base to sol")).spendsHeldCoin)
     }
 
     func testWordsThatAreNotEarnStayWords() {
@@ -850,6 +855,9 @@ final class TradeIntentTests: XCTestCase {
                                    "words": "≈ $49.75 in Gauntlet USDC Prime at 4.5% APY"]
         let q = EarnQuote(ok: true, live)
         XCTAssertEqual(q.words, "≈ $49.75 in Gauntlet USDC Prime at 4.5% APY")
+        XCTAssertEqual(q.rowWords, "≈ $49.75 in Gauntlet USDC Prime")
+        XCTAssertEqual(EarnQuote(ok: true, ["ok": true, "words": "20 USDC back on Base from Gauntlet USDC Prime"]).rowWords,
+                       "20 USDC back on Base from Gauntlet USDC Prime")
         XCTAssertEqual(q.vaultLine(fallback: "x"), "Morpho · 4.5% APY")
         XCTAssertEqual(q.time, "~52 s")
         XCTAssertNil(q.error)
@@ -865,6 +873,19 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(kamino.vaultName, "Kamino SOL Balanced")
         XCTAssertEqual(kamino.apyText, "4.24% APY")
         XCTAssertEqual(EarnQuote.notice, "Yield isn't guaranteed; NEAR Intents doesn't run the vault")
+    }
+
+    /// Earn's notice stays on one line in the panel on every iPhone width
+    /// (the panel's line is the width less 52 pt), a size smaller if it must,
+    /// never under 11 pt; somewhere too narrow it says so (nil) and wraps.
+    func testEarnsNoticeFitsOneLine() throws {
+        for screen: CGFloat in [375, 390, 402, 440] {
+            let size = try XCTUnwrap(EarnQuote.noticeSize(fitting: screen - 52), "\(screen)")
+            XCTAssertGreaterThanOrEqual(size, 11)
+            XCTAssertLessThanOrEqual(size, 13)
+        }
+        XCTAssertEqual(EarnQuote.noticeSize(fitting: 1000), 13)
+        XCTAssertNil(EarnQuote.noticeSize(fitting: 120))
     }
 
     /// Coins no token list carries here still show their own logo.

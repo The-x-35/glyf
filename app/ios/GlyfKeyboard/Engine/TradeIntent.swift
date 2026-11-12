@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// A trade said in plain words at the end of a message, read on the phone
 /// with no model: a swap goes to Uniswap (Jupiter on Solana), an order that
@@ -85,6 +86,11 @@ struct TradeIntent: Equatable {
     /// Earn: out of the vault rather than into it. Out with no amount is
     /// everything in it (the app reads the share balance).
     var earnOut = false
+    /// Whether the panel checks what the wallet holds of the coin before
+    /// the button: taking money out of Earn spends the vault's shares, not
+    /// the coin (the app reads the shares and says "Nothing in Earn yet"),
+    /// so "No USDC on Base" never stops it.
+    var spendsHeldCoin: Bool { !(kind == .earn && earnOut) }
     /// Earn: the vault named (gtusdcp, kamino-sol, taler-usdc); nil is the
     /// coin's own (USDC → Gauntlet USDC Prime, SOL → Kamino SOL Balanced).
     var vault: String?
@@ -1086,6 +1092,13 @@ struct EarnQuote: Equatable {
         return "\(TradeIntent.trimmed((apy * 100).rounded() / 100))% APY"
     }
 
+    /// The words for the You get row: the server's without their APY
+    /// ("≈ $49.75 in Gauntlet USDC Prime"), which the Vault row under it
+    /// already says, so they fit the row at its own size.
+    var rowWords: String? {
+        words.map { $0.replacingOccurrences(of: #" at [0-9.]+% APY$"#, with: "", options: .regularExpression) }
+    }
+
     /// "Morpho · 4.5% APY".
     func vaultLine(fallback: String) -> String { "\(protocolName ?? fallback) · \(apyText)" }
 
@@ -1097,6 +1110,20 @@ struct EarnQuote: Equatable {
 
     /// 1Click's ToS §7, in a line.
     static let notice = "Yield isn't guaranteed; NEAR Intents doesn't run the vault"
+
+    /// The size the notice is drawn at to stay on one line in `width`: 13 pt
+    /// down to 11 pt in half points (as the toast shrinks), nil when even 11
+    /// pt is too wide and it wraps. On one line the Earn panel keeps room
+    /// for the amount's card over its rows.
+    static func noticeSize(fitting width: CGFloat) -> CGFloat? {
+        var size: CGFloat = 13
+        while size >= 11 {
+            let w = (notice as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: size, weight: .medium)]).width
+            if ceil(w) <= width { return size }
+            size -= 0.5
+        }
+        return nil
+    }
 }
 
 /// Numbers as the server sends them: a number or a string.
