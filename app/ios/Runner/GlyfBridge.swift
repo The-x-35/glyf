@@ -95,6 +95,15 @@ final class GlyfBridge {
             } else {
                 result(false)
             }
+        case "openMetaMask":
+            // MetaMask's own deeplinks (lib/evm/metamask_link.dart): false
+            // when MetaMask isn't installed to take one.
+            if let s = (call.arguments as? [String: Any])?["url"] as? String,
+               let url = URL(string: s), url.scheme == "metamask" {
+                UIApplication.shared.open(url, options: [:]) { ok in result(ok) }
+            } else {
+                result(false)
+            }
         case "openPhantom":
             // Phantom's universal links, opened only by the Phantom app: false
             // when it isn't installed, never a detour through Safari.

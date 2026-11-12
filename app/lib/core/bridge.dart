@@ -100,6 +100,10 @@ abstract final class GlyfBridge {
   static Future<bool> openURL(String url) async =>
       await _call<bool>('openURL', {'url': url}) ?? false;
 
+  /// A metamask:// deeplink; false when MetaMask isn't installed.
+  static Future<bool> openMetaMask(String url) async =>
+      await _call<bool>('openMetaMask', {'url': url}) ?? false;
+
   static Future<String?> documentsPath() => _call<String>('documentsPath');
 
   static Future<List<String>> launchArgs() async =>

@@ -1,20 +1,27 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/bridge.dart';
+import '../core/glyf_api.dart';
 import '../core/theme.dart';
-import '../profile/brand_marks.dart' show PhantomMark;
-import 'mwa.dart';
+import '../evm/evm_signer.dart';
+import '../evm/evm_wallet_screen.dart';
+import '../profile/brand_marks.dart' show BrandMark, PhantomMark;
 import 'buy_screen.dart';
+import 'mwa.dart';
 import 'send_screen.dart';
 import 'solana.dart';
 import 'wallet_api.dart';
 import 'wallet_flow.dart';
 
-/// Profile → Wallet: connect a wallet, see what's in it, send or buy. On a
-/// phone with a Mobile Wallet Adapter wallet (the Seeker's Seed Vault,
-/// Phantom on Android) the connection and every signature happen right
-/// here; elsewhere Phantom opens and answers by deeplink. Glyf never holds
-/// a key either way.
+/// Profile → Wallet: the person's own wallets, each signing in its own app.
+/// MetaMask for Ethereum and its L2s, Phantom for Solana (or, on a phone
+/// with Mobile Wallet Adapter, the wallet that lives there), each with its
+/// balances. Glyf holds no key: it builds each request and the wallet signs
+/// it (Arpit, 2026-11-12: "the wallet would be external wallet only. Remove
+/// the internal wallet thing").
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
 
@@ -26,8 +33,20 @@ class _WalletScreenState extends State<WalletScreen> {
   BigInt? _sol;
   BigInt? _usdc;
   double? _solPrice;
+
+  /// The Ethereum wallet that signs, on Base; ETH's price in dollars.
+  ({double eth, double usdc})? _evm;
+  double? _ethPrice;
   bool _connecting = false;
   String? _error;
+
+  /// MetaMask being connected, and the link that opens it again.
+  bool _mmWaiting = false;
+  String? _mmReopen;
+
+  /// The address row just tapped (copied), for its tick.
+  String? _copied;
+  Timer? _copiedTimer;
 
   /// A Mobile Wallet Adapter wallet lives on this phone (Seed Vault on a
   /// Seeker): connect and sign here, with no Phantom round trip.
@@ -38,6 +57,10 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     WalletFlow.link.addListener(_refresh);
     WalletFlow.load().then((_) => _refresh());
+    EvmSigner.load().then((_) {
+      if (mounted) setState(() {});
+      _refreshEvm();
+    });
     Mwa.isAvailable().then((here) {
       if (mounted && here) setState(() => _mwaHere = true);
     });
@@ -46,6 +69,7 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   void dispose() {
     WalletFlow.link.removeListener(_refresh);
+    _copiedTimer?.cancel();
     super.dispose();
   }
 
@@ -73,7 +97,14 @@ class _WalletScreenState extends State<WalletScreen> {
     }
   }
 
-  Future<void> _connect() async {
+  void _copyAddress(String address) {
+    Clipboard.setData(ClipboardData(text: address));
+    setState(() => _copied = address);
+    _copiedTimer?.cancel();
+    _copiedTimer = Timer(const Duration(seconds: 2), () => mounted ? setState(() => _copied = null) : null);
+  }
+
+  Future<void> _connectPhantom() async {
     setState(() {
       _connecting = true;
       _error = null;
@@ -86,8 +117,77 @@ class _WalletScreenState extends State<WalletScreen> {
     });
   }
 
-  Future<void> _disconnect() async {
-    await WalletFlow.disconnect();
+  Future<void> _connectMetaMask() async {
+    if (_mmWaiting) return;
+    setState(() {
+      _mmWaiting = true;
+      _error = null;
+    });
+    try {
+      await for (final e in EvmSigner.connect(EvmSignerKind.metamask)) {
+        if (e.reopen != null && mounted) setState(() => _mmReopen = e.reopen);
+      }
+    } on SignFailed catch (e) {
+      if (mounted && !e.cancelled) setState(() => _error = '$e');
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _mmWaiting = false;
+      _mmReopen = null;
+    });
+  }
+
+  Future<void> _disconnectMetaMask() async {
+    await EvmSigner.disconnect(EvmSignerKind.metamask);
+    if (mounted) setState(() {});
+  }
+
+  /// The Ethereum wallet that signs, on Base: ETH and USDC, and ETH's price.
+  Future<void> _refreshEvm() async {
+    final address = EvmSigner.address.value;
+    if (address == null) {
+      if (mounted) setState(() => _evm = null);
+      return;
+    }
+    try {
+      final res = await GlyfApi.evmGet('/evm/balances?chain=base&address=$address');
+      final rows = (res['balances'] as List? ?? const []).map((b) => Map<String, dynamic>.from(b as Map));
+      double held(String symbol) =>
+          double.tryParse('${rows.where((r) => r['symbol'] == symbol).firstOrNull?['amount'] ?? 0}') ?? 0;
+      double? price = _ethPrice;
+      if (price == null) {
+        final q = await GlyfApi.evmPost('/uniswap/quote', {'chain': 'base', 'sell': 'ETH', 'buy': 'USDC', 'amount': '1'});
+        price = double.tryParse('${q['amountOut']}');
+      }
+      if (!mounted) return;
+      setState(() {
+        _evm = (eth: held('ETH'), usdc: held('USDC'));
+        _ethPrice = price;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Couldn’t read the Ethereum balance');
+    }
+  }
+
+  double? get _total {
+    final e = _evm, sol = _sol, usdc = _usdc;
+    double sum = 0;
+    var any = false;
+    if (e != null && _ethPrice != null) {
+      sum += e.eth * _ethPrice! + e.usdc;
+      any = true;
+    }
+    if (sol != null && _solPrice != null) {
+      sum += sol.toDouble() / 1e9 * _solPrice!;
+      any = true;
+    }
+    if (usdc != null) {
+      sum += usdc.toDouble() / 1e6;
+      any = true;
+    }
+    return any ? sum : null;
   }
 
   @override
@@ -99,191 +199,295 @@ class _WalletScreenState extends State<WalletScreen> {
         surfaceTintColor: Colors.transparent,
         title: const Text('Wallet', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
       ),
-      body: ValueListenableBuilder<WalletLink?>(
-        valueListenable: WalletFlow.link,
-        builder: (context, link, _) => ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-          children: [
-            if (link == null) _connectCard() else _walletCard(link),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Glass.danger, fontSize: 14, fontWeight: FontWeight.w600),
+      body: ListenableBuilder(
+        listenable: Listenable.merge([WalletFlow.link, EvmSigner.address]),
+        builder: (context, _) {
+          return RefreshIndicator(
+            onRefresh: () => Future.wait([_refresh(), _refreshEvm()]),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+              children: [
+                _totalHeader(),
+                const SizedBox(height: 14),
+                _ethereumCard(),
+                const SizedBox(height: 14),
+                _solanaCard(),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Glass.danger, fontSize: 14, fontWeight: FontWeight.w600)),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _totalHeader() {
+    final total = _total;
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Balance', style: TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(
+          total == null ? '…' : '\$${_money(total)}',
+          key: const ValueKey('wallet:total'),
+          style: const TextStyle(
+              color: Glass.ink, fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -0.8,
+              fontFeatures: [FontFeature.tabularFigures()]),
+        ),
+      ]),
+    );
+  }
+
+  static String _money(double v) {
+    final s = v.toStringAsFixed(2);
+    final whole = s.split('.')[0], cents = s.split('.')[1];
+    final grouped = whole.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
+    return '$grouped.$cents';
+  }
+
+  /// A chain's card: its name and who signs, the address (tap to copy),
+  /// or Connect when an outside wallet isn't linked yet.
+  Widget _chainHeader({
+    required String chain,
+    required String signer,
+    required Widget mark,
+    required String? address,
+    required String short,
+    Widget? trailing,
+  }) {
+    return Row(children: [
+      mark,
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(chain, style: const TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 1),
+          GestureDetector(
+            onTap: address == null ? null : () => _copyAddress(address),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(address == null ? signer : '$signer · $short',
+                  style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')])),
+              if (address != null) ...[
+                const SizedBox(width: 5),
+                Icon(_copied == address ? Icons.check_rounded : Icons.copy_rounded, size: 14, color: Glass.inkSoft),
+              ],
+            ]),
+          ),
+        ]),
+      ),
+      ?trailing,
+    ]);
+  }
+
+  Widget _connectButton(String id, String label, bool busy, VoidCallback onTap) => busy
+      ? Padding(padding: const EdgeInsets.only(right: 8), child: _spinner())
+      : Semantics(
+          identifier: id,
+          button: true,
+          child: TextButton(
+            onPressed: onTap,
+            child: Text(label, style: const TextStyle(color: Glass.ink, fontSize: 14.5, fontWeight: FontWeight.w700)),
+          ),
+        );
+
+  Widget _ethereumCard() {
+    final address = EvmSigner.address.value;
+    final mm = EvmSigner.connected(EvmSignerKind.metamask);
+    final linked = mm != null;
+    final e = _evm;
+    String usd(double amount, double? price) => price == null ? '' : '\$${_money(amount * price)}';
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Semantics(
+          identifier: 'wallet:ethereum',
+          child: _chainHeader(
+            chain: 'Ethereum',
+            signer: 'MetaMask',
+            mark: _chainMark('ethereum', const BrandMark('metamask', size: 18)),
+            address: linked ? address : null,
+            short: address == null ? '' : EvmSigner.short(address),
+            trailing: mm == null
+                ? _connectButton('wallet:metamask:connect', 'Connect', _mmWaiting, _connectMetaMask)
+                : _connectButton('wallet:metamask:disconnect', 'Disconnect', false, _disconnectMetaMask),
+          ),
+        ),
+        if (_mmReopen != null)
+          Row(children: [
+            TextButton(
+              onPressed: () => GlyfBridge.openMetaMask(_mmReopen!),
+              child: const Text('Open MetaMask', style: TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: EvmSigner.stopWaiting,
+              child: const Text('Stop', style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+          ]),
+        if (linked && address != null) ...[
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: _balance('ETH · Base', e == null ? '…' : _amount(e.eth, 5), e == null ? '' : usd(e.eth, _ethPrice))),
+            const SizedBox(width: 10),
+            Expanded(child: _balance('USDC · Base', e == null ? '…' : _amount(e.usdc, 2), e == null ? '' : '\$${_money(e.usdc)}')),
+          ]),
+          const SizedBox(height: 6),
+          _row('Other chains and orders', null,
+              id: 'wallet:ethereum:more',
+              chevron: true,
+              onTap: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const EvmWalletScreen()))
+                  .then((_) => _refreshEvm())),
+        ],
+      ]),
+    );
+  }
+
+  static String _amount(double v, int digits) {
+    if (v == 0) return '0';
+    final s = v.toStringAsFixed(digits);
+    return s.contains('.') ? s.replaceFirst(RegExp(r'\.?0+$'), '') : s;
+  }
+
+  Widget _solanaCard() {
+    final link = WalletFlow.link.value;
+    String usd(BigInt? units, int decimals, double? price) {
+      if (units == null || price == null) return '';
+      return '\$${_money(units.toDouble() / BigInt.from(10).pow(decimals).toDouble() * price)}';
+    }
+
+    final signer = _mwaHere ? 'Your wallet' : 'Phantom';
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Semantics(
+          identifier: 'wallet:solana',
+          child: _chainHeader(
+            chain: 'Solana',
+            signer: signer,
+            mark: _chainMark('solana', _mwaHere ? null : const PhantomMark(size: 18)),
+            address: link?.address,
+            short: link == null ? '' : Sol.short(link.address),
+            trailing: link == null
+                ? _connectButton('wallet:phantom:connect', 'Connect', _connecting, _connectPhantom)
+                : _connectButton('wallet:phantom:disconnect', 'Disconnect', false, () async {
+                    await WalletFlow.disconnect();
+                    if (mounted) setState(() {});
+                  }),
+          ),
+        ),
+        if (link != null) ...[
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: _balance('SOL', _sol == null ? '…' : Sol.format(_sol!, 9), usd(_sol, 9, _solPrice))),
+            const SizedBox(width: 10),
+            Expanded(child: _balance('USDC', _usdc == null ? '…' : Sol.format(_usdc!, 6, maxDecimals: 2), usd(_usdc, 6, 1))),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(
+              child: PillButton(
+                label: 'Send',
+                onPressed: () => Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const SendScreen()))
+                    .then((_) => _refresh()),
               ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: PillButton(
+                label: 'Buy',
+                primary: false,
+                onPressed: () => Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const BuyScreen()))
+                    .then((_) => _refresh()),
+              ),
+            ),
+          ]),
+        ],
+      ]),
+    );
+  }
+
+  /// The chain's own logo, with the wallet that signs on its corner
+  /// (MetaMask on Ethereum, Phantom on Solana).
+  Widget _chainMark(String chain, Widget? wallet) => SizedBox(
+        width: 40,
+        height: 40,
+        child: Stack(clipBehavior: Clip.none, children: [
+          BrandMark(chain, size: 38),
+          if (wallet != null)
+            Positioned(
+              right: -3,
+              bottom: -3,
+              child: Container(
+                padding: const EdgeInsets.all(1.5),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(7)),
+                child: wallet,
+              ),
+            ),
+        ]),
+      );
+
+  Widget _spinner() => const SizedBox(
+      width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2, color: Glass.ink));
+
+  Widget _row(String title, String? value,
+      {required String id, bool chevron = false, bool copied = false, bool busy = false, VoidCallback? onTap}) {
+    return Semantics(
+      identifier: id,
+      button: onTap != null,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 13, 14, 13),
+          child: Row(children: [
+            Expanded(child: Text(title, style: const TextStyle(color: Glass.ink, fontSize: 15.5, fontWeight: FontWeight.w600))),
+            if (value != null)
+              Text(value,
+                  style: const TextStyle(color: Glass.inkSoft, fontSize: 14, fontFeatures: [FontFeature.disable('calt')])),
+            if (busy) _spinner(),
+            if (copied) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.check_rounded, size: 17, color: Glass.ink),
+            ] else if (!chevron && value != null) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.copy_rounded, size: 15, color: Glass.inkSoft),
             ],
-          ],
+            if (chevron) const Icon(Icons.chevron_right_rounded, color: Glass.inkSoft),
+          ]),
         ),
       ),
     );
   }
 
-  Widget _connectCard() => GlassCard(
-    padding: const EdgeInsets.all(20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+  Widget _balance(String symbol, String amount, String usd) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: Glass.bg, borderRadius: BorderRadius.circular(14)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!_mwaHere) ...const [PhantomMark(size: 46), SizedBox(width: 14)],
+            Text(symbol, style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
             Text(
-              _mwaHere ? 'Your wallet' : 'Phantom',
-              style: const TextStyle(color: Glass.ink, fontSize: 18, fontWeight: FontWeight.w800),
+              amount,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Glass.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
             ),
+            if (usd.isNotEmpty) Text(usd, style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
           ],
         ),
-        const SizedBox(height: 14),
-        Text(
-          _mwaHere
-              ? 'Send and buy from your keyboard. Your own wallet signs every payment, right on this phone; Glyf never holds your keys.'
-              : 'Send and buy from your keyboard. Phantom signs every payment; Glyf never holds your keys.',
-          style: const TextStyle(color: Glass.inkSoft, fontSize: 14.5, height: 1.4),
-        ),
-        const SizedBox(height: 18),
-        Semantics(
-          identifier: 'wallet:connect',
-          button: true,
-          child: _connecting
-              ? const SizedBox(height: 52, child: Center(child: _Spinner()))
-              : PillButton(label: _mwaHere ? 'Connect wallet' : 'Connect Phantom', onPressed: _connect),
-        ),
-      ],
-    ),
-  );
-
-  Widget _walletCard(WalletLink link) {
-    String usd(BigInt? units, int decimals, double? price) {
-      if (units == null || price == null) return '';
-      final value = units.toDouble() / BigInt.from(10).pow(decimals).toDouble() * price;
-      return '\$${value.toStringAsFixed(2)}';
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        GlassCard(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  if (!link.viaMwa) ...const [PhantomMark(size: 44), SizedBox(width: 12)],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          link.viaMwa ? 'Your wallet' : 'Phantom',
-                          style: const TextStyle(color: Glass.ink, fontSize: 17, fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          Sol.short(link.address),
-                          style: const TextStyle(
-                            color: Glass.inkSoft,
-                            fontSize: 13.5,
-                            fontFeatures: [FontFeature.disable('calt')],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Copy address',
-                    icon: const Icon(Icons.copy_rounded, size: 19, color: Glass.inkSoft),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: link.address));
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(child: _balance('SOL', _sol == null ? '…' : Sol.format(_sol!, 9), usd(_sol, 9, _solPrice))),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _balance(
-                      'USDC',
-                      _usdc == null ? '…' : Sol.format(_usdc!, 6, maxDecimals: 2),
-                      usd(_usdc, 6, 1),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: PillButton(
-                      label: 'Send',
-                      onPressed: () => Navigator.of(
-                        context,
-                      ).push(MaterialPageRoute(builder: (_) => const SendScreen())).then((_) => _refresh()),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: PillButton(
-                      label: 'Buy',
-                      primary: false,
-                      onPressed: () => Navigator.of(
-                        context,
-                      ).push(MaterialPageRoute(builder: (_) => const BuyScreen())).then((_) => _refresh()),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        Center(
-          child: TextButton(
-            onPressed: _disconnect,
-            child: const Text(
-              'Disconnect',
-              style: TextStyle(color: Glass.danger, fontSize: 14, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _balance(String symbol, String amount, String usd) => Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(color: Glass.bg, borderRadius: BorderRadius.circular(14)),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          symbol,
-          style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          amount,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Glass.ink,
-            fontSize: 19,
-            fontWeight: FontWeight.w700,
-            fontFeatures: [FontFeature.tabularFigures()],
-          ),
-        ),
-        if (usd.isNotEmpty) Text(usd, style: const TextStyle(color: Glass.inkSoft, fontSize: 12.5)),
-      ],
-    ),
-  );
-}
-
-class _Spinner extends StatelessWidget {
-  const _Spinner();
-  @override
-  Widget build(BuildContext context) =>
-      const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Glass.ink));
+      );
 }

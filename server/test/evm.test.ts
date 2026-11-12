@@ -83,7 +83,8 @@ describe("POST /evm/rpc", () => {
 
   it("refuses methods a wallet doesn't need, and unknown chains", async () => {
     const { calls, rpc } = setup(() => ({ result: null }));
-    for (const method of ["eth_sign", "eth_sendTransaction", "debug_traceTransaction", "eth_accounts"]) {
+    // Sending is the wallet app's job: Glyf carries no raw transaction either.
+    for (const method of ["eth_sign", "eth_sendTransaction", "eth_sendRawTransaction", "debug_traceTransaction", "eth_accounts"]) {
       expect((await rpc("base", method)).statusCode).toBe(400);
     }
     expect((await rpc("solana", "eth_chainId")).statusCode).toBe(400);
@@ -91,10 +92,10 @@ describe("POST /evm/rpc", () => {
   });
 
   it("passes on the node's own error, and says when the node is down", async () => {
-    const { rpc } = setup(call => call.method === "eth_sendRawTransaction"
+    const { rpc } = setup(call => call.method === "eth_estimateGas"
       ? { error: { code: -32000, message: "insufficient funds for gas * price + value" } }
       : new Error("connect ECONNREFUSED"));
-    const sent = await rpc("base", "eth_sendRawTransaction", ["0x02f8"]);
+    const sent = await rpc("base", "eth_estimateGas", [{ to: "0x1111111111111111111111111111111111111111", value: "0x1" }]);
     expect(sent.statusCode).toBe(400);
     expect(sent.json()).toMatchObject({ ok: false, code: -32000, error: /insufficient funds/ });
     const down = await rpc("optimism", "eth_blockNumber");

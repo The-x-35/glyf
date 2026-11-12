@@ -5,14 +5,15 @@ import { chainOf, ethCall, evmRpc, RpcError, type FetchFn } from "../lib/evm.js"
 import { ERC20_ABI, tokensOn } from "../lib/tokens.js";
 
 /**
- * The Ethereum wallet's node calls, the EVM twin of POST /wallet/rpc.
+ * The app's reads from an Ethereum chain, the EVM twin of POST /wallet/rpc.
  *
- * The wallet lives on the phone: it holds its own key, builds each
- * EIP-1559 transaction and signs it there. What it needs from a node goes
- * through here, to the chain's public RPC (or the one its variable names),
- * so the app ships no RPC list and a keyed node can be swapped in later
- * without an update. Only the calls a wallet makes are carried; the server
- * never holds or sees a key that can move money.
+ * The person's own wallet app (MetaMask) builds, signs and sends every
+ * transaction; Glyf only reads: balances, gas, and the receipt that says a
+ * transaction MetaMask sent landed and is the one asked for. Reads go to the
+ * chain's public RPC (or the one its variable names), so the app ships no
+ * RPC list and a keyed node can be swapped in later without an update.
+ * Nothing that sends or signs is carried, and the server never holds or
+ * sees a key that can move money.
  */
 
 const ALLOWED = new Set([
@@ -23,7 +24,6 @@ const ALLOWED = new Set([
   "eth_maxPriorityFeePerGas",
   "eth_feeHistory",
   "eth_getTransactionCount",
-  "eth_sendRawTransaction",
   "eth_getTransactionReceipt",
   "eth_blockNumber",
   "eth_chainId",

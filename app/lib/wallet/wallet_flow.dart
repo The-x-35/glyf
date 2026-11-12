@@ -519,6 +519,10 @@ abstract final class WalletFlow {
     return o;
   }
 
+  /// Opens Phantom on [url] (a Flash order's steps, lib/evm/trade_flow.dart):
+  /// an error to show, or null.
+  static Future<String?> openPhantom(Uri url) => _open(url);
+
   /// Phantom, or its App Store page when it isn't installed.
   static Future<String?> _open(Uri url) async {
     // Debug builds log the link, so a stand-in Phantom can answer it on a

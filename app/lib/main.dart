@@ -10,8 +10,13 @@ import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
 import 'launch/launch_overlay.dart';
 import 'onboarding/demo_chat.dart';
+import 'evm/evm_signer.dart';
+import 'evm/evm_wallet_screen.dart';
+import 'evm/metamask_link.dart';
+import 'evm/trade_screen.dart';
 import 'wallet/buy_screen.dart';
 import 'wallet/crypto_pay.dart';
+import 'wallet/flash_solana.dart';
 import 'wallet/pay_launch_screen.dart';
 import 'wallet/pay_status_screen.dart';
 import 'wallet/send_screen.dart';
@@ -93,6 +98,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     Billing.listen();
     WalletFlow.load();
     WalletFlow.loadEnabled();
+    // The connected MetaMask's address reaches the keyboard (and an older
+    // build's own-wallet address leaves it).
+    EvmSigner.load();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(
@@ -136,10 +144,26 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
       final id = uri.queryParameters['id'];
       if (id != null) _openDictation(id);
     }
+    // MetaMask answering a request Glyf opened it on (lib/evm/metamask_link.dart):
+    // the screen that's waiting takes it from there.
+    if (MetaMaskLink.handle(uri)) return;
+    // Phantom answering a step of a Flash order on Solana
+    // (lib/wallet/flash_solana.dart): the trade that's waiting takes it.
+    if (PhantomRequests.handle(uri)) return;
     if (uri.host == 'phantom') {
       // Phantom's answer to Connect or to a payment: finished on its own
       // screen, which sends the signed payment on.
       _push('phantom', (_) => PayStatusScreen(reply: uri), link: link);
+      return;
+    }
+    if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('trade') == true) {
+      // The keyboard read a trade and quoted it: the person's own wallet signs it.
+      final q = Uri.parse(uri.queryParameters['path']!).queryParameters;
+      _push('trade', (_) => TradeScreen(query: q), link: link);
+      return;
+    }
+    if (uri.host == 'open' && uri.queryParameters['path'] == 'evm-wallet') {
+      _push('evm-wallet', (_) => const EvmWalletScreen(), replace: false);
       return;
     }
     if (uri.host == 'open' && uri.queryParameters['path']?.startsWith('pay') == true) {

@@ -354,6 +354,15 @@ abstract final class GlyfApi {
   /// receives it and the rate in basis points (0 when there is none).
   static Future<Map<String, dynamic>> walletFees() => _getJson('/wallet/fees');
 
+  /// The trading side (lib/evm): the EVM read relay, Uniswap and Flash,
+  /// all JSON in and out. Nothing here signs: the wallet app does.
+  static Future<Map<String, dynamic>> evmPost(String path, Map<String, Object?> body,
+          {Duration timeout = const Duration(seconds: 25)}) =>
+      _postJson(path, body, timeout: timeout);
+
+  static Future<Map<String, dynamic>> evmGet(String path, {Duration timeout = const Duration(seconds: 12)}) =>
+      _getJson(path, timeout: timeout);
+
   /// POST /wallet/rpc — one Solana RPC call through Glyf's server, which
   /// adds the node's key (it never ships in the app). The `result`, or a
   /// GlyfApiException with the node's own words.
