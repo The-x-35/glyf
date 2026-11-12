@@ -17,8 +17,9 @@ protocol TradeSurfaceDelegate: AnyObject {
 /// the amount and prices on the keyboard's own digits (the panel folds to a
 /// strip over them, as the Buy panel does), tokens from a picker with
 /// search, chains from a list. One card per side, at most one detail line
-/// each, one button. The quote here is Uniswap's (or the price an order
-/// waits on); the app asks again at signing, so nothing shown is signed.
+/// each, one button. The quote here is Uniswap's, NEAR Intents' across
+/// chains (or the price an order waits on); the app asks again at signing,
+/// so nothing shown is signed.
 final class TradeSurface: UIView {
 
     weak var delegate: TradeSurfaceDelegate?
@@ -69,6 +70,11 @@ final class TradeSurface: UIView {
     private var rows: [FieldRow] = []
     private let flipButton = UIButton(type: .custom)
     private let goButton = UIButton(type: .system)
+    /// Over the button: what Guard (or the name lookup) found, red when it
+    /// stops the trade, amber when it only asks for a look.
+    private let alertLine = UIView()
+    private let alertMark = UIImageView()
+    private let alertText = UILabel()
 
     // Strip
     private let stripKey = UILabel()
@@ -90,6 +96,8 @@ final class TradeSurface: UIView {
     private var quoteOutUSD: Double?
     private var quoteError: String?
     private var marketPrice: Double?
+    /// NEAR Intents' answer (time, what's paid for a send, Guard's words).
+    private var near: NearQuote?
     /// Whole tokens held by symbol, per chain, once /evm/balances answers.
     private var held: [String: [String: Double]] = [:]
     private var asking = true
@@ -123,6 +131,9 @@ final class TradeSurface: UIView {
     }
 
     private var isSwap: Bool { intent.kind == .swap }
+    /// The panel quotes it as it changes: a swap, or a NEAR Intents send.
+    private var quotes: Bool { isSwap || intent.isNear }
+    private var nearSend: Bool { intent.kind == .send && intent.isNear }
     private var buyChain: String { intent.buyChain ?? intent.chainName }
 
     init(intent: TradeIntent) {
@@ -138,10 +149,19 @@ final class TradeSurface: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The strip's header mark: NEAR's N for a NEAR Intents trade.
+    var headerIcon: String { intent.isNear ? SponsorMenu.Sponsor.near.screenId : "arrow.triangle.2.circlepath" }
+
     /// The strip's header while the panel is up.
     var headerTitle: String {
+        // Who carries it sits in the header, so the rows stay short.
+        if intent.isNear { return "\(kindTitle) via NEAR Intents" }
+        return kindTitle
+    }
+
+    private var kindTitle: String {
         switch intent.kind {
-        case .swap: return "Swap"
+        case .swap: return intent.isNear && intent.sell == intent.buy ? "Move" : "Swap"
         case .limit: return "Limit order"
         case .stop: return "Stop buy"
         case .stopLoss: return "Stop-loss"
@@ -202,6 +222,15 @@ final class TradeSurface: UIView {
         goButton.accessibilityIdentifier = "trade:go"
         goButton.addAction(UIAction { [weak self] _ in self?.go() }, for: .touchUpInside)
         addSubview(goButton)
+
+        alertLine.accessibilityIdentifier = "trade:alert"
+        alertText.font = .systemFont(ofSize: 13, weight: .medium)
+        alertText.numberOfLines = 2
+        alertText.lineBreakMode = .byWordWrapping
+        alertMark.contentMode = .scaleAspectFit
+        alertLine.addSubview(alertMark)
+        alertLine.addSubview(alertText)
+        addSubview(alertLine)
 
         // Strip
         stripKey.font = .systemFont(ofSize: 12, weight: .semibold)
@@ -320,7 +349,7 @@ final class TradeSurface: UIView {
         requote()
     }
 
-    private func clearQuote() { quoteOut = nil; quoteInUSD = nil; quoteOutUSD = nil; quoteError = nil }
+    private func clearQuote() { quoteOut = nil; quoteInUSD = nil; quoteOutUSD = nil; quoteError = nil; near = nil }
 
     private func picked(_ token: TokenPick, side: TradeEdit.Side) {
         known["\(chain(of: side))|\(token.symbol.uppercased())"] = token
@@ -350,7 +379,7 @@ final class TradeSurface: UIView {
             requote()
         case .send:
             resolve()
-            price(of: i.sell)
+            if i.isNear { requote() } else { price(of: i.sell) }
         default:
             price(of: TradeEdit.asset(i))
         }
@@ -364,7 +393,8 @@ final class TradeSurface: UIView {
     private func resolve() {
         guard let to = intent.to else { resolved = nil; resolveProblem = "No one to send to"; return }
         guard TradeIntent.isName(to) else { resolved = to; resolveProblem = nil; resolvedFor = nil; return }
-        let chain = intent.chainName
+        // A NEAR Intents send is looked up where it lands, not where it's paid.
+        let chain = intent.isNear ? (intent.buyChain ?? intent.chainName) : intent.chainName
         let key = "\(to)|\(chain)"
         guard key != resolvedFor else { return }
         resolvedFor = key
@@ -382,7 +412,7 @@ final class TradeSurface: UIView {
     }
 
     private func loadBalances(_ chain: String) {
-        guard chain != "solana", held[chain] == nil,
+        guard TradeIntent.uniswapReach.contains(chain), held[chain] == nil,
               let address = SettingsStore.current.evmAddress, !address.isEmpty else { return }
         BackendClient.shared.evmJSON(path: "/evm/balances?chain=\(chain)&address=\(address)") { [weak self] obj in
             guard let self, let list = obj?["balances"] as? [[String: Any]] else { return }
@@ -404,7 +434,7 @@ final class TradeSurface: UIView {
 
     /// A quote shortly after the last change (typing doesn't ask per key).
     private func requote() {
-        guard isSwap else {
+        guard quotes else {
             if intent.awaitingPrice { price(of: TradeEdit.asset(intent)) }
             render()
             return
@@ -424,6 +454,7 @@ final class TradeSurface: UIView {
         quoteSerial += 1
         let serial = quoteSerial
         if TradeEdit.problem(i) != nil { asking = false; render(); return }
+        if i.isNear { nearQuote(i, serial: serial); return }
         // "buy 0.1 eth": what 0.1 ETH costs, asked the other way round.
         let reversed = i.buyAmount != nil
         let sellRef = i.sellAddress ?? i.sell
@@ -450,6 +481,34 @@ final class TradeSurface: UIView {
                 self.quoteOut = nil; self.quoteInUSD = nil; self.quoteOutUSD = nil
                 self.quoteError = Self.shortError(obj?["error"] as? String)
             }
+            self.render()
+        }
+    }
+
+    /// NEAR Intents' quote (POST /near/quote), dry: no refund address, so
+    /// 1Click makes no deposit address for a preview. A send
+    /// asks for exactly what the recipient gets. The app asks again with
+    /// both before anything is signed.
+    private func nearQuote(_ i: TradeIntent, serial: Int) {
+        guard let amount = i.amount else { asking = false; clearQuote(); render(); return }
+        var body: [String: Any] = ["sell": i.sellAddress ?? i.sell, "sellChain": i.chainName,
+                                   "buy": i.buyAddress ?? i.buy, "buyChain": i.buyChain ?? i.chainName,
+                                   "amount": amount, "exact": i.kind == .send ? "out" : "in", "slippage": 1]
+        // The recipient without a refund address keeps it a preview, and
+        // lets Guard check it against those paid before.
+        if let to = i.to {
+            body["recipient"] = to
+            body["recent"] = Array((SettingsStore.current.nearRecent ?? []).prefix(20))
+        }
+        quoteTask = BackendClient.shared.evmJSONResult(path: "/near/quote", body: body) { [weak self] ok, obj in
+            guard let self, serial == self.quoteSerial else { return }
+            let q = NearQuote(ok: ok, obj)
+            self.asking = false
+            self.near = q.error == nil ? q : nil
+            self.quoteOut = q.amountOut
+            self.quoteInUSD = q.inUSD
+            self.quoteOutUSD = q.outUSD
+            self.quoteError = q.error.map { Self.shortError($0) }
             self.render()
         }
     }
@@ -543,7 +602,8 @@ final class TradeSurface: UIView {
 
     private func prefetchTokens(_ chain: String, query: String = "") {
         if tokenRows[chain] == nil { tokenRows[chain] = TradeEdit.builtIn(chain: chain) }
-        guard chain != "solana" else { return }
+        // Uniswap's token list is for its own chains.
+        guard TradeIntent.uniswapReach.contains(chain) else { return }
         if query.isEmpty, (tokenRows[chain]?.count ?? 0) > 8 { return }
         let q = query.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
         if !query.isEmpty { searchLoading = true }
@@ -570,7 +630,7 @@ final class TradeSurface: UIView {
         let chain = chain(of: side)
         searchResults = TradeEdit.filter(tokenRows[chain] ?? [], query: text)
         searchWork?.cancel()
-        if !text.isEmpty, chain != "solana" {
+        if !text.isEmpty, TradeIntent.uniswapReach.contains(chain) {
             let work = DispatchWorkItem { [weak self] in self?.prefetchTokens(chain, query: text) }
             searchWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
@@ -640,6 +700,7 @@ final class TradeSurface: UIView {
         rowsCard.isHidden = !panel || isSwap
         flipButton.isHidden = !panel || !isSwap
         goButton.isHidden = !panel
+        alertLine.isHidden = !panel || alert == nil
         stripKey.isHidden = !wantsDecimalPad
         numberEditor.isHidden = !wantsDecimalPad
         searchEditor.isHidden = !(tokensList || searching)
@@ -668,9 +729,16 @@ final class TradeSurface: UIView {
         // Top card: what's spent, or an order's asset.
         let top = isSwap ? i.sell : TradeEdit.asset(i)
         payCard.key.text = topKey
-        payCard.setChain(label(i.chainName), key: i.chainName, enabled: TradeEdit.chains(for: i).count > 1)
+        if nearSend {
+            // What arrives, where: the chain it's paid from is a row below.
+            let dest = i.buyChain ?? i.chainName
+            payCard.setChain(label(dest), key: dest, enabled: false)
+        } else {
+            payCard.setChain(label(i.chainName), key: i.chainName, enabled: TradeEdit.chains(for: i).count > 1)
+        }
         // Phantom's send here takes SOL or USDC as read; no picker for it.
-        let tokenPicks = !(i.kind == .send && i.chainName == "solana")
+        // A NEAR Intents send keeps the coin typed (its chain decides it).
+        let tokenPicks = !(i.kind == .send && (i.chainName == "solana" || i.isNear))
         payCard.token.set(symbol: Self.display(top), logo: logo(top, chain: i.chainName), enabled: tokenPicks)
         let typed = TradeEdit.value(.amount, i)
         payCard.setAmount(TradeEdit.shown(.amount, i), placeholder: typed.isEmpty)
@@ -696,10 +764,19 @@ final class TradeSurface: UIView {
             getCard.amount.isUserInteractionEnabled = false
             // An error speaks on the button, in one line.
             getCard.sub.text = quoteError == nil ? (quoteOutUSD.map { Self.approx($0) } ?? "") : ""
+            if i.isNear, quoteError == nil, let time = near?.time {
+                // "≈ $19.88 · ~32 s"; NEAR Intents is in the header.
+                getCard.sub.text = [getCard.sub.text ?? "", time].filter { !$0.isEmpty }.joined(separator: " · ")
+            }
         } else {
             // Orders: what's held of the asset, and the price now.
             var detail: [String] = []
-            if let p = marketPrice { detail.append("\(Self.display(top)) \(PaySurface.dollars(p))") }
+            if nearSend {
+                if let usd = quoteOutUSD { detail.append(Self.approx(usd)) }
+                // The line over the button took the Arrives row: the time rides here.
+                if alert != nil, let time = near?.time { detail.append(time) }
+            }
+            else if let p = marketPrice { detail.append("\(Self.display(top)) \(PaySurface.dollars(p))") }
             else if asking { detail.append("…") }
             if TradeEdit.sells(i), let have = balance(top, on: i.chainName), have > 0 { detail.append("Balance \(PaySurface.compact(have))") }
             payCard.sub.text = detail.joined(separator: " · ")
@@ -721,20 +798,39 @@ final class TradeSurface: UIView {
     /// An order's values under the asset: one row each, tap to change.
     private func renderRows() {
         let i = intent
-        var specs: [(id: String, label: String, value: String, tap: Bool, action: () -> Void)] = []
+        var specs: [RowSpec] = []
         for field in TradeEdit.fields(i) where field != .amount {
-            specs.append((field.rawValue, TradeEdit.label(field, i), TradeEdit.shown(field, i), true,
-                          { [weak self] in self?.begin(field) }))
+            specs.append(RowSpec(id: field.rawValue, label: TradeEdit.label(field, i), value: TradeEdit.shown(field, i),
+                                 tap: true, action: { [weak self] in self?.begin(field) }))
         }
         switch i.kind {
         case .bridge:
-            specs.append(("toChain", "To", label(i.toChain ?? ""), true, { [weak self] in self?.openChains(.buy) }))
+            specs.append(RowSpec(id: "toChain", label: "To", value: label(i.toChain ?? ""), tap: true,
+                                 action: { [weak self] in self?.openChains(.buy) }))
         case .send:
             let to = i.to ?? ""
-            specs.append(("to", "To", TradeIntent.shortRecipient(to), false, {}))
-            if TradeIntent.isName(to) {
-                let shown = resolved.map(Smart.shortAddress) ?? (resolveProblem == nil ? "…" : "Not found")
-                specs.append(("address", "Address", shown, false, {}))
+            if nearSend {
+                // A name as typed, ticked once NEAR says it's there; an
+                // address shortened. Red when Guard stops the send.
+                let name = TradeIntent.isName(to)
+                specs.append(RowSpec(id: "to", label: "To", value: name ? to : Smart.shortAddress(to), tap: false,
+                                     action: {}, tint: alert?.block == true ? .systemRed : nil,
+                                     check: name && resolved != nil && resolveProblem == nil))
+                let pay = near?.amountIn.map { "≈ \(Self.amount($0, i.sell)) \(Self.display(i.sell))" }
+                    ?? (asking ? "…" : Self.display(i.sell))
+                specs.append(RowSpec(id: "pay", label: "You pay", value: "\(pay) · \(label(i.chainName))", tap: true,
+                                     action: { [weak self] in self?.openChains(.sell) }, bold: true))
+                // A line over the button takes the time's place.
+                if alert == nil {
+                    specs.append(RowSpec(id: "arrives", label: "Arrives", value: near?.time ?? (asking ? "…" : "—"),
+                                         tap: false, action: {}))
+                }
+            } else {
+                specs.append(RowSpec(id: "to", label: "To", value: TradeIntent.shortRecipient(to), tap: false, action: {}))
+                if TradeIntent.isName(to) {
+                    let shown = resolved.map(Smart.shortAddress) ?? (resolveProblem == nil ? "…" : "Not found")
+                    specs.append(RowSpec(id: "address", label: "Address", value: shown, tap: false, action: {}))
+                }
             }
         default:
             break
@@ -755,7 +851,8 @@ final class TradeSurface: UIView {
             guard k < specs.count else { continue }
             let s = specs[k]
             r.accessibilityIdentifier = "trade:row:\(s.id)"
-            r.set(label: s.label, value: s.value, tappable: s.tap, separator: k > 0)
+            r.set(label: s.label, value: s.value, tappable: s.tap, separator: k > 0, fresh: nearSend, bold: s.bold,
+                  tint: s.tint, check: s.check)
             r.onTap = s.action
         }
     }
@@ -766,22 +863,56 @@ final class TradeSurface: UIView {
         guard i.chainName != "solana", let held = balance(i.sell, on: i.chainName) else { return false }
         guard TradeEdit.sells(i) || i.amountIsUSD || i.buyAmount != nil || i.kind == .twap else { return false }
         if i.amount == nil, i.buyAmount == nil { return held <= 0 }
-        let spend = i.buyAmount != nil ? quoteOut : Double(i.amount ?? "")
+        // A NEAR Intents send spends what the quote says it costs.
+        let spend = nearSend ? near?.amountIn : i.buyAmount != nil ? quoteOut : Double(i.amount ?? "")
         guard let spend else { return false }
         return spend > held + 1e-12
     }
 
     /// No wallet connected in the app for this chain: MetaMask for
     /// Ethereum chains, Phantom for Solana.
-    private var needsWallet: Bool { (wallet ?? "").isEmpty }
+    /// A chain Glyf can't sign on (Bitcoin, NEAR…) needs none: the app shows
+    /// the deposit address to pay from any wallet.
+    private var needsWallet: Bool {
+        guard intent.chainName == "solana" || TradeIntent.evmChains.contains(intent.chainName) else { return false }
+        return (wallet ?? "").isEmpty
+    }
 
+    /// Guard found something that should stop a send (a lookalike, a
+    /// missing account): the button says "Send anyway".
+    private var guardBlocks: Bool { alert?.block == true && alert?.fix == nil }
+
+
+    /// What stops or questions a NEAR Intents trade, for the line over the
+    /// button: a name with no account, or Guard's worst check. `fix` is the
+    /// button's words when it blocks; nil there means "Send anyway" (a
+    /// lookalike may be the person's own new address).
+    private var alert: (text: String, block: Bool, fix: String?)? {
+        guard intent.isNear else { return nil }
+        if intent.kind == .send, let resolveProblem {
+            return (resolveProblem, true, TradeIntent.isName(intent.to) ? "Check the name" : "Check the address")
+        }
+        guard let near, let level = near.guardLevel else { return nil }
+        let text = near.guardText ?? (level == "block" ? "Guard stopped this" : "Take a look first")
+        guard level == "block" else { return (text, false, nil) }
+        switch near.guardId {
+        case "lookalike": return (text, true, nil)
+        case "no-account": return (text, true, "Check the name")
+        default: return (text, true, "Check the address")
+        }
+    }
 
     private var goTitle: String {
+        // A block outranks everything: say what to fix.
+        if let a = alert, a.block { return a.fix ?? "Send anyway" }
         if needsWallet { return "Connect \(walletName)" }
         if let p = TradeEdit.problem(intent) { return p }
+        // No one there outranks everything else: "No NEAR account x.near".
+        if intent.kind == .send, let resolveProblem { return resolveProblem }
         if intent.awaitingPrice { return asking ? "Getting the price" : "No price yet" }
-        if isSwap, let quoteError { return quoteError }
-        if short { return "Not enough \(Self.display(intent.sell))" }
+        if quotes, let quoteError { return quoteError }
+        if short { return haveText }
+        if guardBlocks { return "Send anyway" }
         switch intent.kind {
         case .swap:
             if let usd = quoteInUSD { return "Swap ≈ \(PaySurface.dollars(usd))" }
@@ -801,10 +932,20 @@ final class TradeSurface: UIView {
         }
     }
 
+    /// "You have 2.10 USDC", or "No USDC on Base".
+    private var haveText: String {
+        let symbol = Self.display(intent.sell)
+        guard let have = balance(intent.sell, on: intent.chainName) else { return "Not enough \(symbol)" }
+        if have <= 0 { return "No \(symbol) on \(label(intent.chainName))" }
+        let shown = TradeEdit.stables.contains(intent.sell) ? String(format: "%.2f", have) : Self.amount(have, symbol)
+        return "You have \(shown) \(symbol)"
+    }
+
     private var blocked: Bool {
+        if let a = alert, a.block, a.fix != nil { return true }
         if needsWallet { return false }
         if TradeEdit.problem(intent) != nil || short || intent.awaitingPrice { return true }
-        if isSwap, quoteError != nil || asking { return true }
+        if quotes, quoteError != nil || asking { return true }
         // A send waits for its address, and never goes to a name that
         // didn't resolve.
         if intent.kind == .send, resolved == nil || resolveProblem != nil { return true }
@@ -812,21 +953,36 @@ final class TradeSurface: UIView {
     }
 
     private func renderGo() {
+        if let a = alert {
+            let red = a.block
+            let ink: UIColor = red ? .systemRed : Self.amber
+            alertMark.image = UIImage(systemName: red ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill",
+                                      withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+            alertMark.tintColor = ink
+            alertText.textColor = ink
+            alertText.text = a.text
+        }
         goButton.setTitle(goTitle, for: .normal)
         let off = blocked
-        goButton.backgroundColor = off ? Self.offFill : Glass.imBlue
+        goButton.backgroundColor = off ? Self.offFill : guardBlocks ? .systemRed : Glass.imBlue
         goButton.setTitleColor(off ? Glass.textSecondary : .white, for: .normal)
     }
+
+    private static let amber = UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 1.0, green: 0.76, blue: 0.28, alpha: 1) : UIColor(red: 0.72, green: 0.45, blue: 0.0, alpha: 1) }
 
     private static let offFill = UIColor { $0.userInterfaceStyle == .dark
         ? UIColor(white: 1, alpha: 0.10) : UIColor(white: 0, alpha: 0.06) }
 
     private func go() {
+        if let a = alert, a.block, a.fix != nil { return }
         guard !needsWallet else { delegate?.tradeSetUpWallet(); return }
         guard !blocked else { return }
         var q = intent.query
         q["title"] = intent.title
         if intent.kind == .send, let resolved { q["address"] = resolved }
+        // Guard stopped it and the person tapped Send anyway.
+        if guardBlocks { q["anyway"] = "1" }
         delegate?.tradeHandOff(query: q)
     }
 
@@ -885,7 +1041,8 @@ final class TradeSurface: UIView {
 
     private func renderChainList(_ side: TradeEdit.Side) {
         clearPicker()
-        pickerTitle.text = intent.kind == .bridge && side == .buy ? "Move to" : (side == .buy ? "Get it on" : "Chain")
+        pickerTitle.text = intent.kind == .bridge && side == .buy ? "Move to"
+            : side == .buy ? "Get it on" : nearSend ? "Pay from" : "Chain"
         var chains = TradeEdit.chains(for: intent)
         if intent.kind == .bridge, side == .buy { chains = chains.filter { $0 != intent.chainName } }
         let current = side == .buy ? (intent.kind == .bridge ? (intent.toChain ?? "") : buyChain) : intent.chainName
@@ -938,6 +1095,7 @@ final class TradeSurface: UIView {
         case .panel:
             break
         }
+        if intent.isNear { layoutNear(x: x, cw: cw); return }
         let goH: CGFloat = 44
         goButton.frame = CGRect(x: x, y: bounds.height - 8 - goH, width: cw, height: goH)
         let top: CGFloat = 8
@@ -961,6 +1119,58 @@ final class TradeSurface: UIView {
             }
         }
     }
+
+    /// A NEAR Intents panel: the line over the button when there is one,
+    /// and rows at least 32 pt tall, the card taking what's left.
+    private func layoutNear(x: CGFloat, cw: CGFloat) {
+        let w = bounds.width
+        let goH: CGFloat = 40
+        goButton.frame = CGRect(x: x, y: bounds.height - 8 - goH, width: cw, height: goH)
+        var bottom = goButton.frame.minY - 6
+        if !alertLine.isHidden {
+            let textW = cw - 8 - 20
+            let fits = alertText.sizeThatFits(CGSize(width: textW, height: 40))
+            let h = min(34, max(18, ceil(fits.height)))
+            alertLine.frame = CGRect(x: x + 4, y: bottom - h, width: cw - 8, height: h)
+            alertMark.frame = CGRect(x: 0, y: (min(h, 18) - 15) / 2 + 1, width: 15, height: 15)
+            alertText.frame = CGRect(x: 20, y: 0, width: textW, height: h)
+            bottom = alertLine.frame.minY - 5
+        }
+        let top: CGFloat = 6
+        if isSwap {
+            let gap: CGFloat = 4
+            let ch = min(84, floor((bottom - top - gap) / 2))
+            payCard.frame = CGRect(x: x, y: top, width: cw, height: ch)
+            getCard.frame = CGRect(x: x, y: payCard.frame.maxY + gap, width: cw, height: ch)
+            flipButton.frame = CGRect(x: (w - 32) / 2, y: payCard.frame.maxY + gap / 2 - 16, width: 32, height: 32)
+            return
+        }
+        let visible = rows.filter { !$0.isHidden }
+        let count = CGFloat(max(1, visible.count))
+        let rowH = min(44, max(30, floor((bottom - top - 4 - 50) / count)))
+        let ch = min(84, bottom - top - 4 - rowH * count)
+        payCard.frame = CGRect(x: x, y: top, width: cw, height: ch)
+        rowsCard.frame = CGRect(x: x, y: payCard.frame.maxY + 4, width: cw, height: rowH * count)
+        var y: CGFloat = 0
+        for r in visible {
+            r.frame = CGRect(x: 0, y: y, width: cw, height: rowH)
+            y += rowH
+        }
+    }
+}
+
+/// One row of a trade's values, as the panel lists it.
+private struct RowSpec {
+    var id: String
+    var label: String
+    var value: String
+    var tap: Bool
+    var action: () -> Void
+    var bold = false
+    /// The value's colour when it isn't the usual (red for a blocked name).
+    var tint: UIColor? = nil
+    /// A green tick after the value: the name was found.
+    var check = false
 }
 
 // MARK: - pieces
@@ -1037,14 +1247,18 @@ private final class TradeCard: UIView {
         let pad: CGFloat = 14
         // Right: the token pill, the chain under it.
         let pillW = token.fitWidth
-        token.frame = CGRect(x: w - 10 - pillW, y: 8, width: pillW, height: 32)
+        // A short card (a NEAR send over its rows) packs the same pieces tighter.
+        let compact = h < 60
+        token.frame = CGRect(x: w - 10 - pillW, y: compact ? 6 : 8, width: pillW, height: compact ? 28 : 32)
         chain.frame = CGRect(x: w * 0.45, y: token.frame.maxY + 1, width: w * 0.55 - pad + 2, height: max(16, h - token.frame.maxY - 5))
         // Left: "You pay · ≈ $25.00", then the amount.
         let keyW = ceil((key.text as NSString? ?? "").size(withAttributes: [.font: key.font!]).width)
-        key.frame = CGRect(x: pad, y: 9, width: keyW, height: 16)
-        sub.frame = CGRect(x: key.frame.maxX + 6, y: 9, width: max(0, token.frame.minX - key.frame.maxX - 14), height: 16)
+        let keyY: CGFloat = compact ? 6 : 9
+        key.frame = CGRect(x: pad, y: keyY, width: keyW, height: 16)
+        sub.frame = CGRect(x: key.frame.maxX + 6, y: keyY, width: max(0, token.frame.minX - key.frame.maxX - 14), height: 16)
         right.frame = .zero
-        amount.frame = CGRect(x: pad, y: 26, width: token.frame.minX - pad - 8, height: max(28, h - 30))
+        let amountY: CGFloat = compact ? 21 : 26
+        amount.frame = CGRect(x: pad, y: amountY, width: token.frame.minX - pad - 8, height: max(26, h - amountY - 3))
     }
 }
 
@@ -1137,15 +1351,52 @@ private final class FieldRow: UIControl {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func set(label: String, value v: String, tappable: Bool, separator: Bool) {
+    /// A NEAR send's rows: values fitted (never cut), plain but for You
+    /// pay. Every other panel keeps the rows it always had.
+    private var fresh = false
+    private var bold = true
+    private var tint: UIColor?
+    private var check = false
+    private var text = ""
+
+    func set(label: String, value v: String, tappable: Bool, separator: Bool, fresh: Bool = false, bold: Bool = true,
+             tint: UIColor? = nil, check: Bool = false) {
         name.text = label
-        value.text = v
+        text = v
+        self.fresh = fresh
+        self.bold = bold
+        self.tint = tint
+        self.check = check
         isAccessibilityElement = true
         accessibilityLabel = "\(label) \(v)"
         accessibilityTraits = tappable ? .button : .staticText
-        value.textColor = tappable ? Glass.textPrimary : Glass.textSecondary
+        // The old rows grey what can't be tapped; a NEAR send's values are
+        // all read, so they stay primary.
+        value.textColor = tint ?? (tappable || fresh ? Glass.textPrimary : Glass.textSecondary)
         isUserInteractionEnabled = tappable
         line.isHidden = !separator
+        setNeedsLayout()
+    }
+
+    /// The value at the largest size from 15 pt down to 11 pt (half points)
+    /// that fits one line, else on two lines; never cut with "…".
+    static func fitted(_ text: String, width: CGFloat, weight: UIFont.Weight, extra: CGFloat = 0,
+                       from top: CGFloat = 15) -> (font: UIFont, lines: Int) {
+        var size = top
+        while size >= 11 {
+            let f = UIFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+            if ceil((text as NSString).size(withAttributes: [.font: f]).width) + extra <= width { return (f, 1) }
+            size -= 0.5
+        }
+        size = top
+        while size > 11 {
+            let f = UIFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+            let r = (text as NSString).boundingRect(with: CGSize(width: width - extra, height: .greatestFiniteMagnitude),
+                                                    options: .usesLineFragmentOrigin, attributes: [.font: f], context: nil)
+            if ceil(r.height) <= ceil(f.lineHeight * 2) { return (f, 2) }
+            size -= 0.5
+        }
+        return (UIFont.monospacedDigitSystemFont(ofSize: 11, weight: weight), 2)
     }
 
     override var isHighlighted: Bool { didSet { value.alpha = isHighlighted ? 0.5 : 1 } }
@@ -1153,9 +1404,39 @@ private final class FieldRow: UIControl {
     override func layoutSubviews() {
         super.layoutSubviews()
         let w = bounds.width, h = bounds.height
-        name.frame = CGRect(x: 14, y: 0, width: w * 0.45, height: h)
-        value.frame = CGRect(x: w * 0.4, y: 0, width: w * 0.6 - 14, height: h)
         line.frame = CGRect(x: 14, y: 0, width: w - 28, height: Glass.hairlineWidth)
+        guard fresh else {
+            // The rows as they always were.
+            value.attributedText = nil
+            value.text = text
+            value.font = .monospacedDigitSystemFont(ofSize: 17, weight: .semibold)
+            value.numberOfLines = 1
+            value.adjustsFontSizeToFitWidth = true
+            name.font = .systemFont(ofSize: 15)
+            name.frame = CGRect(x: 14, y: 0, width: w * 0.45, height: h)
+            value.frame = CGRect(x: w * 0.4, y: 0, width: w * 0.6 - 14, height: h)
+            return
+        }
+        name.font = .systemFont(ofSize: 15)
+        let nameW = ceil((name.text as NSString? ?? "").size(withAttributes: [.font: name.font!]).width)
+        name.frame = CGRect(x: 14, y: 0, width: nameW, height: h)
+        let vx = name.frame.maxX + 16
+        let vw = max(0, w - 14 - vx)
+        let mark: CGFloat = check ? 20 : 0
+        let fit = Self.fitted(text, width: vw, weight: bold ? .semibold : .regular, extra: mark)
+        value.adjustsFontSizeToFitWidth = false
+        value.numberOfLines = fit.lines
+        value.lineBreakMode = fit.lines == 1 ? .byClipping : .byCharWrapping
+        let s = NSMutableAttributedString(string: text, attributes: [.font: fit.font, .foregroundColor: value.textColor!])
+        if check, let tick = UIImage(systemName: "checkmark.circle.fill")?.withTintColor(.systemGreen, renderingMode: .alwaysOriginal) {
+            let a = NSTextAttachment(image: tick)
+            a.bounds = CGRect(x: 0, y: -2, width: 14, height: 14)
+            s.append(NSAttributedString(string: " "))
+            s.append(NSAttributedString(attachment: a))
+        }
+        value.attributedText = s
+        value.textAlignment = .right
+        value.frame = CGRect(x: vx, y: 1, width: vw, height: h - 2)
     }
 }
 

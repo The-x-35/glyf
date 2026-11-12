@@ -20,9 +20,10 @@ final class SponsorMenuTests: XCTestCase {
         return t
     }
 
-    func testUniswapAndDefinitiveAndNothingElse() {
-        XCTAssertEqual(SponsorMenu.sponsors, [.uniswap, .definitive])
-        XCTAssertEqual(SponsorMenu.Sponsor.allCases.map(\.title), ["Uniswap", "Definitive"])
+    func testUniswapDefinitiveAndNEARIntentsAndNothingElse() {
+        XCTAssertEqual(SponsorMenu.sponsors, [.uniswap, .definitive, .near])
+        XCTAssertEqual(SponsorMenu.Sponsor.allCases.map(\.title), ["Uniswap", "Definitive", "NEAR Intents"])
+        XCTAssertEqual(SponsorMenu.Sponsor(screenId: "sponsor:near"), .near)
         XCTAssertNil(SponsorMenu.Sponsor(screenId: "sponsor:0g"))
     }
 
@@ -36,13 +37,15 @@ final class SponsorMenuTests: XCTestCase {
     }
 
     func testOptionIdsRoundTrip() {
-        var all: [SponsorMenu.Option] = [.swap, .jupiter, .typed, .openOrders]
+        var all: [SponsorMenu.Option] = [.swap, .jupiter, .typed, .openOrders, .nearTrade]
+        all += SponsorMenu.nearStarters.map { .nearStarter($0.id) }
         all += SponsorMenu.swapChains.map { .swapOn($0) }
         all += SponsorMenu.orderKinds.map { .order($0) }
         for option in all { XCTAssertEqual(SponsorMenu.Option(id: option.id), option, option.id) }
         XCTAssertNil(SponsorMenu.Option(id: "swap:polygon"))
         XCTAssertNil(SponsorMenu.Option(id: "order:send"))
         XCTAssertNil(SponsorMenu.Option(id: "receipts"))
+        XCTAssertNil(SponsorMenu.Option(id: "near:moon"))
         XCTAssertNil(SponsorMenu.Option(id: "nope"))
     }
 
@@ -200,5 +203,35 @@ final class SponsorMenuTests: XCTestCase {
 
     func testOpenOrdersOpensTheApp() {
         XCTAssertEqual(SponsorMenu.action(for: .openOrders, typed: ""), .openApp(path: "evm-wallet"))
+    }
+
+    // MARK: NEAR Intents
+
+    func testNEARIntentsStartsWithUSDCOnBaseToSOL() throws {
+        let entries = SponsorMenu.entries(for: .near, typed: "")
+        XCTAssertEqual(entries[0], .option(.nearTrade, title: "Swap", detail: "20 USDC → SOL", icon: "arrow.left.arrow.right"))
+        XCTAssertEqual(entries[1], .header("Across chains"))
+        XCTAssertEqual(options(entries), [.nearTrade, .nearStarter("base-solana"), .nearStarter("solana-base"), .nearStarter("base-near")])
+        XCTAssertEqual(entries[2], .option(.nearStarter("base-solana"), title: "Base → Solana", detail: "20 USDC → SOL", icon: "chain:solana"))
+        XCTAssertEqual(entries[3], .option(.nearStarter("solana-base"), title: "Solana → Base", detail: "0.1 SOL → USDC", icon: "chain:base"))
+        XCTAssertEqual(entries[4], .option(.nearStarter("base-near"), title: "Base → NEAR", detail: "20 USDC → NEAR", icon: "chain:near"))
+        let t = try XCTUnwrap(trade(.nearTrade))
+        XCTAssertEqual(t.venue, "NEAR Intents")
+        XCTAssertEqual(t.sell, "USDC")
+        XCTAssertEqual(t.chainName, "base")
+        XCTAssertEqual(t.buy, "SOL")
+        XCTAssertEqual(t.buyChain, "solana")
+        for s in SponsorMenu.nearStarters {
+            XCTAssertEqual(trade(.nearStarter(s.id))?.isNear, true, s.id)
+        }
+    }
+
+    func testNEARIntentsTakesTheNEARTradeTyped() {
+        let typed = "ok. send 5 usdc to alice.near"
+        XCTAssertEqual(trade(.nearTrade, typed: typed), TradeIntent.parse(typed))
+        XCTAssertEqual(SponsorMenu.entries(for: .near, typed: typed)[0],
+                       .option(.nearTrade, title: "Send", detail: "5 USDC to alice.near", icon: "arrow.left.arrow.right"))
+        // A Uniswap swap typed isn't NEAR's: the starter instead.
+        XCTAssertEqual(trade(.nearTrade, typed: "swap 1 eth to usdc"), SponsorMenu.nearStarter("base-solana"))
     }
 }

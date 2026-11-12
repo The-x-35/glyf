@@ -81,7 +81,7 @@ struct AIAction: Equatable {
                                             period: period, periods: params["periods"].flatMap { Int($0) },
                                             chain: params["chain"])
         }
-        return tradeWords.flatMap(TradeIntent.parse)
+        return tradeWords.flatMap { TradeIntent.parse($0) }
     }
 
     /// The chip it shows as; nil when this phone can't open it.

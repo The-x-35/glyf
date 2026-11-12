@@ -1,5 +1,20 @@
 import Foundation
 
+/// A string setting that another build may have written as something else
+/// (a Bool, a number): anything but a string reads as nil, so one odd key
+/// never resets every setting.
+struct LenientString: Codable, Equatable {
+    var value: String?
+    init(_ value: String?) { self.value = value }
+    init(from decoder: Swift.Decoder) throws {
+        value = try? decoder.singleValueContainer().decode(String.self)
+    }
+    func encode(to encoder: Swift.Encoder) throws {
+        var c = encoder.singleValueContainer()
+        if let value { try c.encode(value) } else { try c.encodeNil() }
+    }
+}
+
 /// User-facing keyboard settings, persisted in the App Group so both the
 /// extension and the Flutter app read/write the same state (§6.2/§6.3).
 struct GlyfSettings: Codable, Equatable {
@@ -176,6 +191,17 @@ struct GlyfSettings: Codable, Equatable {
     var evmAddress: String? = nil
     /// Which wallet that is: "metamask" (the only one).
     var evmSigner: String? = nil
+    /// Private AI: "near" while the app's switch sends Glyf's model calls to
+    /// NEAR AI Cloud (the X-Glyf-AI header); gone when off. The ETHGlobal
+    /// build wrote a Bool here, which reads as off rather than failing the
+    /// whole file.
+    var privateAI: LenientString? = nil
+    /// Recipients the app last paid through NEAR Intents (newest first, 20
+    /// at most): the panel's quote sends them so Guard can spot a lookalike.
+    var nearRecent: [String]? = nil
+
+    /// The X-Glyf-AI header every call carries: "near", or none.
+    var privateAIHeader: String? { privateAI?.value == "near" ? "near" : nil }
     /// How the last payment went, written by the app when Phantom answers
     /// ({"title","detail","at"}); the keyboard says it once and clears it.
     var walletOutcome: String? = nil

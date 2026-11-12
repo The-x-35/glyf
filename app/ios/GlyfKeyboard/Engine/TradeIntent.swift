@@ -3,7 +3,9 @@ import Foundation
 /// A trade said in plain words at the end of a message, read on the phone
 /// with no model: a swap goes to Uniswap (Jupiter on Solana), an order that
 /// waits for a price to Definitive's Flash, a send to an ENS (.eth) or SNS
-/// (.sol) name or an address. The keyboard only shows what it
+/// (.sol) name or an address, and NEAR Intents takes what those can't
+/// reach (Solana with an EVM chain, Bitcoin, Zcash, NEAR…; docs/NEAR-SPEC.md).
+/// The keyboard only shows what it
 /// read; the app quotes it again and the person's own wallet app (MetaMask
 /// or Phantom) signs. The keyboard never holds a key (SPEC §1.5).
 struct TradeIntent: Equatable {
@@ -94,6 +96,7 @@ struct TradeIntent: Equatable {
 
     /// Who carries it out, as the strip says it.
     var venue: String {
+        if isNear { return "NEAR Intents" }
         switch kind {
         // Solana has no Uniswap pools here: Jupiter swaps there.
         case .swap: return chainName == "solana" ? "Jupiter" : "Uniswap"
@@ -109,6 +112,9 @@ struct TradeIntent: Equatable {
     static let chainLabels = [
         "base": "Base", "ethereum": "Ethereum", "arbitrum": "Arbitrum", "optimism": "Optimism",
         "polygon": "Polygon", "unichain": "Unichain", "solana": "Solana",
+        "bsc": "BNB Chain", "avalanche": "Avalanche", "gnosis": "Gnosis", "near": "NEAR", "bitcoin": "Bitcoin",
+        "zcash": "Zcash", "ton": "TON", "tron": "Tron", "xrp": "XRP", "dogecoin": "Dogecoin", "litecoin": "Litecoin",
+        "sui": "Sui", "aptos": "Aptos", "stellar": "Stellar", "cardano": "Cardano",
     ]
 
     var chainLabel: String { Self.chainLabels[chainName] ?? chainName.capitalized }
@@ -122,6 +128,11 @@ struct TradeIntent: Equatable {
     /// The chip's words: "Swap 0.05 ETH → USDC", "Stop-loss ETH at $3,000".
     var title: String {
         switch kind {
+        case .swap where isNear:
+            // The chains are the detail's: "Base → Solana · NEAR Intents".
+            return sell == buy ? "Move \(amountText) to \(Self.label(buyChain))" : "Swap \(amountText) → \(buy)"
+        case .send where isNear:
+            return "Send \(amount ?? "") \(buy) to \(to.map(Self.shortRecipient) ?? "")"
         case .swap:
             if amountIsUSD { return "Buy \(amountText)" }
             if buyAmount != nil { return "Buy \(amountText) with \(sell)" }
@@ -156,6 +167,7 @@ struct TradeIntent: Equatable {
 
     /// Under the title: where and through whom.
     var detail: String {
+        if isNear { return "\(route) · NEAR Intents" }
         switch kind {
         case .bridge: return "\(chainLabel) → \(Self.chainLabels[toChain ?? ""] ?? "") · Flash"
         case .swap where buyChain != nil && buyChain != chainName:
@@ -179,6 +191,12 @@ struct TradeIntent: Equatable {
         if let buyAddress { q["buyAddress"] = buyAddress }
         if let buyChain, buyChain != chainName { q["buyChain"] = buyChain }
         if let to { q["to"] = to }
+        if isNear {
+            q["venue"] = "near"
+            q["buyChain"] = buyChain ?? chainName
+            // A send pays the recipient exactly the amount typed.
+            if kind == .send { q["exact"] = "out" }
+        }
         return q
     }
 
@@ -247,7 +265,9 @@ struct TradeIntent: Equatable {
     /// Where a command may begin: the start, or after a sentence ends.
     private static let start = #"(?:^|[.!?\n]\s*|\b(?:pls|please|glyf|hey glyf)[,:]?\s+)"#
 
-    static func parse(_ text: String) -> TradeIntent? {
+    /// `near: false` reads the words as before NEAR Intents (the
+    /// Definitive panel's Flash bridge between Solana and Base).
+    static func parse(_ text: String, near: Bool = true) -> TradeIntent? {
         let t = String(text.suffix(200))
         if t.count < 8 { return nil }
         // Cheap test first: every pattern has one of these words.
@@ -257,7 +277,11 @@ struct TradeIntent: Equatable {
         guard words.contains(where: lower.contains) else { return nil }
         // A schedule longer than Flash's 30-day TWAP is a recurring plan.
         let spread = twap(t).flatMap { ($0.durationSeconds ?? 0) <= RecurringPlan.flashMaxSeconds ? $0 : nil }
-        guard var r = bracket(t) ?? orders(t) ?? spread ?? recurring(t) ?? bridgeMove(t) ?? send(t) ?? swap(t)
+        // NEAR Intents reads first only what nothing else carries (each of
+        // its readers gives nil for a trade Uniswap or Flash would take).
+        let viaNear = { (read: (String) -> TradeIntent?) -> TradeIntent? in near ? read(t) : nil }
+        guard var r = bracket(t) ?? orders(t) ?? spread ?? recurring(t) ?? viaNear(nearMove) ?? bridgeMove(t)
+                ?? viaNear(nearSend) ?? send(t) ?? viaNear(nearSwap) ?? swap(t)
         else { return nil }
         // A share trades on Base, by its address there.
         if let a = baseStocks[r.sell] { r.sellAddress = a; r.chain = "base" }
@@ -444,14 +468,16 @@ struct TradeIntent: Equatable {
 
     /// A send's recipient on the strip: a name as typed, an address short.
     static func shortRecipient(_ to: String) -> String {
-        guard to.hasPrefix("0x"), to.count > 12 else { return to }
+        // A Bitcoin, Zcash or NEAR implicit address is long too; a name isn't cut.
+        let address = to.hasPrefix("0x") ? to.count > 12 : !to.contains(".") && to.count > 20
+        guard address else { return to }
         return "\(to.prefix(6))…\(to.suffix(4))"
     }
 
     /// Whether [to] is a name to look up (not an address already).
     static func isName(_ to: String?) -> Bool {
         guard let to else { return false }
-        return to.hasSuffix(".eth") || to.hasSuffix(".sol")
+        return to.hasSuffix(".eth") || to.hasSuffix(".sol") || to.hasSuffix(".near")
     }
 
     // MARK: helpers
@@ -546,7 +572,9 @@ extension TradeIntent {
     /// the name resolved to; everything else is the Trade screen's, which
     /// asks MetaMask. Nil when it isn't a Solana send.
     static func phantomSend(_ query: [String: String]) -> [String: String]? {
-        guard query["kind"] == "send", query["chain"] == "solana", let to = query["address"],
+        // A NEAR Intents send paid from Solana is the Trade screen's: Phantom
+        // pays the deposit address 1Click gives, not the recipient.
+        guard query["kind"] == "send", query["chain"] == "solana", query["venue"] != "near", let to = query["address"],
               let amount = query["amount"] else { return nil }
         let token = (query["sell"] ?? "").uppercased()
         let asset: (mint: String, decimals: Int)
@@ -562,6 +590,16 @@ extension TradeIntent {
     /// What GET /names/resolve said, as the address for [chain] or the
     /// reason there is none.
     static func recipient(for name: String, chain: String, ok: Bool, answer: [String: Any]?) -> (String?, String?) {
+        // A NEAR account is its name: it only has to exist (NEAR RPC
+        // view_account, on the server).
+        if name.hasSuffix(".near") {
+            if answer?["exists"] as? Bool == false || answer?["found"] as? Bool == false {
+                return (nil, "No NEAR account named \(name)")
+            }
+            guard ok else { return (nil, "Couldn’t look up \(name)") }
+            let address = (answer?["address"] as? String) ?? ((answer?["addresses"] as? [String: Any])?["near"] as? String)
+            return (address.flatMap { $0.isEmpty ? nil : $0 } ?? name, nil)
+        }
         guard ok else {
             if answer?["found"] as? Bool == false { return (nil, "\(name) isn’t registered") }
             return (nil, "Couldn’t look up \(name)")
@@ -590,5 +628,264 @@ extension TradeIntent {
     /// person's own wallet app, Phantom on Solana and MetaMask elsewhere.
     static func walletName(chain: String?) -> String {
         chain == "solana" ? "Phantom" : "MetaMask"
+    }
+}
+
+// MARK: NEAR Intents
+
+extension TradeIntent {
+
+    /// Chains Uniswap's words reach here, its cross-chain route included.
+    /// A trade within one, or between two, stays Uniswap's (or Flash's).
+    static let uniswapReach: Set<String> = ["base", "ethereum", "arbitrum", "optimism", "polygon", "unichain"]
+
+    /// EVM chains NEAR Intents reaches: MetaMask pays from any of them.
+    static let evmChains: Set<String> = uniswapReach.union(["bsc", "avalanche", "gnosis"])
+
+    /// Chains that are neither Ethereum's kind nor Solana: only NEAR
+    /// Intents reaches them, and Glyf can't sign there (the app shows a
+    /// deposit address to pay from any wallet).
+    static let otherChains: Set<String> = ["near", "bitcoin", "zcash", "ton", "tron", "xrp", "dogecoin", "litecoin",
+                                           "sui", "aptos", "stellar", "cardano"]
+
+    /// Coins that live on a chain of their own, and that chain.
+    static let nativeChain: [String: String] = [
+        "BTC": "bitcoin", "ZEC": "zcash", "NEAR": "near", "TON": "ton", "TRX": "tron", "XRP": "xrp",
+        "DOGE": "dogecoin", "LTC": "litecoin", "SUI": "sui", "APT": "aptos", "XLM": "stellar", "ADA": "cardano",
+        "SOL": "solana", "BNB": "bsc", "AVAX": "avalanche",
+    ]
+
+    /// The coins only NEAR Intents trades, by the words for them. "btc" is
+    /// Bitcoin's own here; on an EVM chain it stays WBTC (`symbols`).
+    static let nearSymbols: [String: String] = [
+        "btc": "BTC", "bitcoin": "BTC", "zec": "ZEC", "zcash": "ZEC", "near": "NEAR", "ton": "TON", "toncoin": "TON",
+        "trx": "TRX", "tron": "TRX", "xrp": "XRP", "doge": "DOGE", "dogecoin": "DOGE", "ltc": "LTC", "litecoin": "LTC",
+        "sui": "SUI", "apt": "APT", "aptos": "APT", "xlm": "XLM", "stellar": "XLM", "ada": "ADA", "cardano": "ADA",
+        "bnb": "BNB", "avax": "AVAX",
+    ]
+
+    /// Words for chains in a NEAR trade ("on bitcoin", "on btc", "from solana").
+    static let nearChainWords: [String: String] = [
+        "base": "base", "ethereum": "ethereum", "eth": "ethereum", "eth mainnet": "ethereum", "mainnet": "ethereum",
+        "arbitrum": "arbitrum", "arb": "arbitrum", "optimism": "optimism", "op": "optimism", "polygon": "polygon",
+        "unichain": "unichain", "solana": "solana", "sol": "solana", "bsc": "bsc", "bnb chain": "bsc",
+        "bnb": "bsc", "avalanche": "avalanche", "avax": "avalanche", "gnosis": "gnosis", "near": "near",
+        "bitcoin": "bitcoin", "btc": "bitcoin", "zcash": "zcash", "zec": "zcash", "ton": "ton", "tron": "tron",
+        "trx": "tron", "xrp": "xrp", "dogecoin": "dogecoin", "doge": "dogecoin", "litecoin": "litecoin",
+        "ltc": "litecoin", "sui": "sui", "aptos": "aptos", "apt": "aptos", "stellar": "stellar", "xlm": "stellar",
+        "cardano": "cardano", "ada": "cardano",
+    ]
+
+    /// NEAR Intents carries it: a swap between chains Uniswap doesn't join,
+    /// or a send to a NEAR account, a Bitcoin or a Zcash address. Worked
+    /// out from the trade itself, so a chain changed on the panel moves it
+    /// to Uniswap (or back) on its own.
+    var isNear: Bool {
+        switch kind {
+        case .swap: return Self.nearRoute(chainName, buyChain ?? chainName)
+        case .send: return buyChain != nil && buyChain != chainName
+        default: return false
+        }
+    }
+
+    /// "Base → Solana": where it's paid from and where it lands.
+    var route: String { "\(chainLabel) → \(Self.label(buyChain ?? chainName))" }
+
+    static func label(_ chain: String?) -> String { chain.map { chainLabels[$0] ?? $0.capitalized } ?? "" }
+
+    /// A trade from `from` to `to` that only NEAR Intents can carry.
+    static func nearRoute(_ from: String, _ to: String) -> Bool {
+        from != to && !(uniswapReach.contains(from) && uniswapReach.contains(to))
+    }
+
+    /// Whether 1Click has `token` on `chain`: a chain's own coin only at
+    /// home; USDC and USDT where they're issued; any other token on EVM.
+    static func nearHas(_ token: String, on chain: String) -> Bool {
+        if let home = nativeChain[token] { return home == chain }
+        if evmChains.contains(chain) { return baseStocks[token] == nil }
+        switch chain {
+        case "solana", "near": return token == "USDC" || token == "USDT"
+        case "tron", "ton": return token == "USDT"
+        default: return false
+        }
+    }
+
+    /// `token` if it's on `chain`, else that chain's own coin.
+    static func nearFit(_ token: String, on chain: String) -> String {
+        if nearHas(token, on: chain) { return token }
+        if let own = nativeChain.first(where: { $0.value == chain })?.key { return own }
+        return "ETH"
+    }
+
+    /// Which chain a NEAR trade's recipient is on, from its form: a NEAR
+    /// account (alice.near, or 64 hex characters), a Bitcoin address
+    /// (bc1…, 1…, 3…) or a Zcash t-address (t1…, t3…).
+    static func nearRecipientChain(_ to: String) -> String? {
+        func shaped(_ p: String) -> Bool { to.range(of: p, options: .regularExpression) != nil }
+        if shaped(#"^(?:[a-z0-9]+[-_])*[a-z0-9]+(?:\.(?:[a-z0-9]+[-_])*[a-z0-9]+)*\.near$"#)
+            || shaped(#"^[0-9a-f]{64}$"#) { return "near" }
+        if shaped(#"^bc1[02-9ac-hj-np-z]{11,71}$"#) || shaped(#"^[13][1-9A-HJ-NP-Za-km-z]{25,34}$"#) { return "bitcoin" }
+        if shaped(#"^t[13][1-9A-HJ-NP-Za-km-z]{33}$"#) { return "zcash" }
+        return nil
+    }
+
+    // MARK: reading
+
+    private static func alternatives(_ words: some Collection<String>) -> String {
+        "(" + words.sorted { $0.count != $1.count ? $0.count > $1.count : $0 < $1 }
+            .map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|") + ")"
+    }
+
+    private static let nearSym = #"\$?"# + alternatives(Set(symbols.keys).union(nearSymbols.keys))
+    private static let nearChain = alternatives(nearChainWords.keys)
+    /// Loose here (the words are matched without case); nearRecipientChain
+    /// checks the form.
+    private static let nearWho = #"([a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.near|[0-9a-f]{64}|bc1[a-z0-9]{11,71}|t[13][a-z0-9]{33}|[13][a-z0-9]{25,34})"#
+
+    /// A coin's symbol in a NEAR trade: Bitcoin's own BTC unless the words
+    /// put it on an EVM chain, where it's WBTC as ever.
+    private static func nearToken(_ word: String, chain: String?) -> String? {
+        let w = word.lowercased()
+        if let chain, evmChains.contains(chain), let s = symbols[w] { return s }
+        return (nearSymbols[w] ?? symbols[w]).flatMap { baseStocks[$0] == nil ? $0 : nil }
+    }
+
+    /// A recipient as it's kept: names and hex in lower case, base58 as typed.
+    private static func recipientKept(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        return lower.hasSuffix(".near") || lower.hasPrefix("bc1") || lower.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+            ? lower : raw
+    }
+
+    private static func isBTCWord(_ word: String?) -> Bool { ["btc", "bitcoin"].contains(word?.lowercased() ?? "") }
+
+    // "swap 20 usdc on base to sol", "swap 0.2 sol to usdc on base",
+    // "swap 50 usdc on arbitrum to btc to bc1q…", "swap 20 usdc on base to near"
+    static func nearSwap(_ t: String) -> TradeIntent? {
+        let pattern = start + #"(?:swap|convert|trade|exchange|bridge)\s+"# + num + #"\s+"# + nearSym
+            + #"(?:\s+(?:on|from)\s+"# + nearChain + ")?" + #"\s+(?:to|for|into)\s+"# + nearSym
+            + #"(?:\s+on\s+"# + nearChain + ")?" + #"(?:\s+(?:to|for)\s+"# + nearWho + ")?" + end
+        guard let m = match(pattern, t), let sellWord = m[2], let buyWord = m[4] else { return nil }
+        let to = m[6].map(recipientKept)
+        let toChain = to.flatMap(nearRecipientChain)
+        if to != nil, toChain == nil { return nil }
+        let saidSell = m[3].flatMap { nearChainWords[$0.lowercased()] }
+        let saidBuy = m[5].flatMap { nearChainWords[$0.lowercased()] } ?? toChain
+        guard let sell = nearToken(sellWord, chain: saidSell), let buy = nearToken(buyWord, chain: saidBuy) else { return nil }
+        var sellChain = saidSell ?? nativeChain[sell]
+        var buyChain = saidBuy ?? nativeChain[buy]
+        // USDC with no chain said is paid from Base (or lands there) when
+        // the other side is a chain of its own. Beside Solana it could as
+        // well be Solana's own USDC, so it isn't guessed.
+        if sellChain == nil, let b = buyChain, otherChains.contains(b) { sellChain = "base" }
+        if buyChain == nil, let s = sellChain, otherChains.contains(s) { buyChain = "base" }
+        guard let from = sellChain, let into = buyChain else { return nil }
+        // "btc" with no chain is WBTC on Uniswap, as it was, unless the
+        // other side is Solana or a chain of its own, or it goes to a
+        // Bitcoin address (docs/NEAR-SPEC.md).
+        if isBTCWord(sellWord), saidSell == nil, uniswapReach.contains(into) { return nil }
+        if isBTCWord(buyWord), saidBuy == nil, uniswapReach.contains(from) { return nil }
+        guard nearRoute(from, into), nearHas(sell, on: from), nearHas(buy, on: into) else { return nil }
+        if let toChain, toChain != into { return nil }
+        var i = TradeIntent(kind: .swap, amount: amount(m[1]), sell: sell, buy: buy, chain: from)
+        i.buyChain = into
+        i.to = to
+        return i.amount == nil ? nil : i
+    }
+
+    // "move 50 usdc from base to solana": the same coin, between chains
+    // Uniswap and Flash don't join (Flash still moves between EVM chains).
+    static func nearMove(_ t: String) -> TradeIntent? {
+        guard let m = match(start + #"(?:move|bridge|send)\s+"# + num + #"\s+"# + nearSym + #"\s+from\s+"# + nearChain
+                            + #"\s+to\s+"# + nearChain + end, t),
+              let from = nearChainWords[m[3]!.lowercased()], let into = nearChainWords[m[4]!.lowercased()],
+              nearRoute(from, into), let token = nearToken(m[2]!, chain: from),
+              nearHas(token, on: from), nearHas(token, on: into)
+        else { return nil }
+        var i = TradeIntent(kind: .swap, amount: amount(m[1]), sell: token, buy: token, chain: from)
+        i.buyChain = into
+        return i.amount == nil ? nil : i
+    }
+
+    // "send 5 usdc to alice.near", "send 0.001 btc to bc1q…", "pay bob.near
+    // 10 usdc with sol", "… with usdc on arbitrum", "… from solana". The
+    // amount is what the recipient gets; USDC on Base pays unless said.
+    static func nearSend(_ t: String) -> TradeIntent? {
+        let payFrom = #"(?:\s+(?:with|using)\s+"# + nearSym + #"(?:\s+(?:on|from)\s+"# + nearChain + ")?)?"
+            + #"(?:\s+from\s+"# + nearChain + ")?"
+        var m = match(start + #"(?:send|pay|transfer)\s+"# + num + #"\s+"# + nearSym + #"\s+to\s+"# + nearWho + payFrom + end, t)
+        if m == nil, let n = match(start + #"(?:send|pay)\s+"# + nearWho + #"\s+"# + num + #"\s+"# + nearSym + payFrom + end, t) {
+            m = [n[0], n[2], n[3], n[1], n[4], n[5], n[6]]
+        }
+        guard let m, let gotWord = m[2], let raw = m[3] else { return nil }
+        let to = recipientKept(raw)
+        guard let dest = nearRecipientChain(to), let got = nearToken(gotWord, chain: dest), nearHas(got, on: dest)
+        else { return nil }
+        let saidChain = m[5].flatMap { nearChainWords[$0.lowercased()] } ?? m[6].flatMap { nearChainWords[$0.lowercased()] }
+        var pay = "USDC"
+        if let word = m[4] {
+            guard let said = nearToken(word, chain: saidChain) else { return nil }
+            pay = said
+        }
+        let from = saidChain ?? nativeChain[pay] ?? "base"
+        guard nearHas(pay, on: from), nearRoute(from, dest) else { return nil }
+        var i = TradeIntent(kind: .send, amount: amount(m[1]), sell: pay, buy: got, chain: from)
+        i.buyChain = dest
+        i.to = to
+        return i.amount == nil ? nil : i
+    }
+}
+
+/// What POST /near/quote said, as the trade panel shows it. Pure, so
+/// RunnerTests pins how an answer reads.
+struct NearQuote: Equatable {
+    var amountIn: Double?
+    var amountOut: Double?
+    var inUSD: Double?
+    var outUSD: Double?
+    var seconds: Int?
+    /// Guard's worst finding: "warn" or "block", with its words.
+    var guardLevel: String?
+    var guardText: String?
+    /// Which check it was ("lookalike", "no-account", "chain-mismatch"…).
+    var guardId: String?
+    /// The server's words when there's no quote.
+    var error: String?
+
+    init(ok: Bool, _ obj: [String: Any]?) {
+        func number(_ any: Any?) -> Double? {
+            if let d = any as? Double { return d }
+            if let i = any as? Int { return Double(i) }
+            if let s = any as? String { return Double(s) }
+            return nil
+        }
+        guard ok, let obj, obj["ok"] as? Bool != false, let out = number(obj["amountOut"]) else {
+            let words = obj?["error"] as? String
+            error = (words?.isEmpty ?? true) ? "No quote right now" : words
+            return
+        }
+        amountIn = number(obj["amountIn"])
+        amountOut = out
+        inUSD = number(obj["amountInUsd"])
+        outUSD = number(obj["amountOutUsd"])
+        seconds = number(obj["timeSeconds"]).map { Int($0.rounded()) }
+        let guardObj = obj["guard"] as? [String: Any]
+        let checks = guardObj?["checks"] as? [[String: Any]] ?? []
+        // A block outranks a warning; "ok" says nothing.
+        for level in ["block", "warn"] {
+            if let c = checks.first(where: { $0["level"] as? String == level }) {
+                guardLevel = level
+                guardText = c["text"] as? String
+                guardId = c["id"] as? String
+                break
+            }
+        }
+        if guardLevel == nil, let level = guardObj?["level"] as? String, level != "ok" { guardLevel = level }
+    }
+
+    /// "~32 s", "~2 min".
+    var time: String? {
+        guard let s = seconds, s > 0 else { return nil }
+        return s < 90 ? "~\(s) s" : "~\(Int((Double(s) / 60).rounded())) min"
     }
 }

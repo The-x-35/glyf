@@ -606,11 +606,44 @@ final class GlyfToolbar: UIView {
         paintChoices()
     }
 
+    /// A trade chip's words are never cut with "…" (D108): they shrink from
+    /// 15 pt to 11 pt in half points; when even that is too wide, the last
+    /// " · " part (the chain, or a NEAR route) goes whole and the rest is
+    /// fitted again, then the venue word before it. As Android's ChipFit.
+    private func fitTrade(_ t: TradeIntent, width: CGFloat) {
+        guard width > 0 else { return }
+        let chip = Smart.Chip.trade(t)
+        var parts = chip.value.components(separatedBy: " · ")
+        var label = chip.label
+        func line(_ size: CGFloat) -> NSAttributedString {
+            let out = NSMutableAttributedString()
+            if let label {
+                out.append(NSAttributedString(string: label + "  ", attributes: [
+                    .foregroundColor: Glass.chipTextSecondary, .font: UIFont.systemFont(ofSize: size - 2, weight: .medium)]))
+            }
+            out.append(NSAttributedString(string: parts.joined(separator: " · "), attributes: [
+                .foregroundColor: Glass.chipText, .font: UIFont.systemFont(ofSize: size)]))
+            return out
+        }
+        smartValue.lineBreakMode = .byClipping
+        while true {
+            for size in stride(from: 15.0, through: 11.0, by: -0.5) {
+                let l = line(CGFloat(size))
+                if ceil(l.size().width) <= width { smartValue.attributedText = l; return }
+            }
+            if parts.count > 1 { parts.removeLast(); continue }
+            if label != nil { label = nil; continue }
+            smartValue.attributedText = line(11)
+            return
+        }
+    }
+
     /// One chip across the strip, or nil to go back to tools and suggestions.
     /// `extra` names a second action the chip itself does not carry ("Temp"
     /// beside your email, in an email field).
     func showSmart(_ chip: Smart.Chip?, extra: String? = nil) {
         smartChip = chip
+        smartValue.lineBreakMode = .byTruncatingTail
         let isRow = chip?.choices != nil
         let wasShowing = !smartCard.isHidden || !choiceRow.isHidden
         smartCard.isHidden = chip == nil || panelTitle != nil || isRow
@@ -1056,6 +1089,7 @@ final class GlyfToolbar: UIView {
             if lead { smartLead.frame = CGRect(x: contentX, y: (cardH - 16) / 2, width: 16, height: 16) }
             let textX = lead ? contentX + 16 + 8 : contentX
             smartValue.frame = CGRect(x: textX, y: 0, width: max(0, right - textX), height: cardH)
+            if case .trade(let t)? = smartChip { fitTrade(t, width: smartValue.frame.width) }
             magic.layout(frame: smartCard.frame, radius: smartCard.layer.cornerRadius)
         }
         if !choiceRow.isHidden { layoutChoiceRow(left: left, right: rightInk, keyMid: keyMid) }
