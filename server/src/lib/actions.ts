@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { NEAR_IMPLICIT_ACCOUNT, NEAR_NAME } from "./names.js";
+import { shortAddress } from "./nearguard.js";
+import { addressFits, CHAIN_WORDS, homeChainOf, NEAR_CHAINS, nearChainOf, type NearChain } from "./nearintents.js";
+import { amountWords, shareOf } from "./payrequests.js";
 
 /**
  * The strip's recommended action: when a pause in typing reads as something
@@ -52,6 +56,41 @@ const amount = z.union([z.number(), z.string().max(20)]).transform((v, ctx) => {
 const percent = amount.refine(v => Number(v) >= 0.5 && Number(v) <= 50, "trail between 0.5% and 50%");
 const query = z.string().trim().min(1).max(120);
 
+/** Coins NEAR Intents moves, by what people type ("btc" is real Bitcoin
+ *  here, not Uniswap's WBTC). */
+export const NEAR_COINS: Record<string, string> = {
+  usdc: "USDC", usdt: "USDT", eth: "ETH", ether: "ETH", sol: "SOL", solana: "SOL", btc: "BTC", bitcoin: "BTC",
+  zec: "ZEC", zcash: "ZEC", near: "NEAR", ton: "TON", trx: "TRX", tron: "TRX", xrp: "XRP", doge: "DOGE",
+  dogecoin: "DOGE", ltc: "LTC", litecoin: "LTC", sui: "SUI", apt: "APT", aptos: "APT", xlm: "XLM", stellar: "XLM",
+  ada: "ADA", cardano: "ADA", bnb: "BNB",
+};
+const nearCoin = z.string().max(12).transform((s, ctx) => {
+  const c = NEAR_COINS[s.trim().toLowerCase().replace(/^\$/, "")];
+  if (!c) { ctx.addIssue({ code: "custom", message: "unknown coin" }); return z.NEVER; }
+  return c;
+});
+const nearChain = z.string().max(16).transform((s, ctx) => {
+  const c = nearChainOf(s);
+  if (!c) { ctx.addIssue({ code: "custom", message: "unknown chain" }); return z.NEVER; }
+  return c.key;
+});
+/** Who a NEAR Intents send can pay by name or address alone (the spec's
+ *  sends): a .near name, an implicit account, a Bitcoin or Zcash address. */
+const nearPayee = z.string().trim().min(2).max(100).refine(t => NEAR_NAME.test(t) || NEAR_IMPLICIT_ACCOUNT.test(t)
+  || addressFits(NEAR_CHAINS.bitcoin, t) || addressFits(NEAR_CHAINS.zcash, t), "not a NEAR name or a BTC/ZEC address");
+
+/** Where a coin sits when nobody said: its own chain (SOL on Solana, BTC on
+ *  Bitcoin), else Base, the phone's default. */
+export function nearSide(coin: string, chain?: string): NearChain {
+  return (chain ? NEAR_CHAINS[chain] : null) ?? (typeof coin === "string" ? homeChainOf(coin) : null) ?? NEAR_CHAINS.base;
+}
+
+/** NEAR Intents takes a trade only where Uniswap, Jupiter and Flash can't:
+ *  Solana against an EVM chain, or any other chain on either side. */
+export function crossesForNear(a: NearChain, b: NearChain): boolean {
+  return a.kind === "other" || b.kind === "other" || a.kind !== b.kind;
+}
+
 const FLASH_TYPES = ["limit", "stop", "stop-loss", "take-profit", "bracket", "trailing-stop", "twap"] as const;
 
 /** Each tool's values. Keys the model adds beyond these are dropped. */
@@ -89,6 +128,22 @@ export const ACTION_PARAMS = {
   translate: z.object({ to: z.string().trim().min(2).max(24).regex(/^[\p{L} ]+$/u) }),
   rewrite: z.object({}),
   convert: z.object({ query: z.string().trim().min(2).max(60) }),
+  "near.swap": z.object({
+    sell: nearCoin, buy: nearCoin, amount: amount.optional(), sellChain: nearChain.optional(), buyChain: nearChain.optional(),
+  }).refine(p => p.sell !== p.buy || nearSide(p.sell, p.sellChain).key !== nearSide(p.buy, p.buyChain).key, "a swap needs two sides")
+    .refine(p => crossesForNear(nearSide(p.sell, p.sellChain), nearSide(p.buy, p.buyChain)), "Uniswap, Jupiter or Flash does that one"),
+  "near.send": z.object({ to: nearPayee, amount, coin: nearCoin.optional(), with: nearCoin.optional(), withChain: nearChain.optional() })
+    .transform(p => ({ ...p, coin: p.coin ?? (addressFits(NEAR_CHAINS.bitcoin, p.to) ? "BTC"
+      : addressFits(NEAR_CHAINS.zcash, p.to) ? "ZEC" : "USDC") }))
+    .refine(p => !addressFits(NEAR_CHAINS.bitcoin, p.to) || p.coin === "BTC", "a Bitcoin address gets BTC")
+    .refine(p => !addressFits(NEAR_CHAINS.zcash, p.to) || p.coin === "ZEC", "a Zcash address gets ZEC"),
+  "near.request": z.object({
+    amount, coin: nearCoin.optional(), chain: nearChain.optional(), each: z.boolean().optional(),
+    count: z.number().int().min(2).max(50).optional(),
+    /** The bill's people include the writer ("for 4 of us"). */
+    us: z.boolean().optional(),
+    note: z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} '&-]+$/u).optional(),
+  }),
 } as const;
 
 export type ActionTool = keyof typeof ACTION_PARAMS;
@@ -107,6 +162,8 @@ const money = (v: unknown) => {
 const ADVERB = { hour: "hourly", day: "daily", week: "weekly", month: "monthly" } as const;
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const clip = (s: string, n = 40) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+const payee = (to: string) => (NEAR_NAME.test(to) ? to : shortAddress(to));
+const VIA_NEAR = " · NEAR Intents";
 
 /** The chip's words, from checked values only. */
 export function actionLabel(tool: ActionTool, p: Record<string, any>): string {
@@ -137,6 +194,18 @@ export function actionLabel(tool: ActionTool, p: Record<string, any>): string {
     case "translate": return `Translate to ${capital(p.to)}`;
     case "rewrite": return "Tidy this up";
     case "convert": return `Convert ${clip(p.query, 30)}`;
+    case "near.swap":
+      if (p.sell === p.buy) return `Move ${p.amount ? `${p.amount} ` : ""}${p.sell} to ${nearSide(p.buy, p.buyChain).name}${VIA_NEAR}`;
+      return `Swap ${p.amount ? `${p.amount} ` : ""}${p.sell} → ${p.buy}${VIA_NEAR}`;
+    case "near.send":
+      return `Send ${p.amount} ${p.coin} to ${payee(p.to)}${p.with && p.with !== p.coin ? ` with ${p.with}` : ""}${VIA_NEAR}`;
+    case "near.request": {
+      const coin = p.coin ?? "USDC";
+      const each = Boolean(p.each || p.count);
+      const share = shareOf(p.amount, coin, Boolean(p.each), p.count ?? null);
+      const where = p.chain ? ` on ${NEAR_CHAINS[p.chain].name}` : "";
+      return `Request ${amountWords(share, coin)}${each ? " each" : ""}${where}${VIA_NEAR}`;
+    }
   }
 }
 
@@ -159,6 +228,7 @@ export function checkAction(raw: unknown): Action | null {
  *  goes and the phone's own default (Base) stands. */
 export function groundAction(action: Action | null, text: string): Action | null {
   if (!action) return null;
+  if (action.tool.startsWith("near.")) return groundNear(action, text);
   const chain = action.params.chain;
   if (typeof chain !== "string") return action;
   const t = text.toLowerCase();
@@ -171,6 +241,80 @@ export function groundAction(action: Action | null, text: string): Action | null
   const params = { ...action.params };
   delete params.chain;
   return { ...action, params, label: actionLabel(action.tool, params) };
+}
+
+const NUMBER_WORDS: Record<string, number> = {
+  two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+};
+
+/** Every number the words say: "$22.50", "1,200", "1.5k", "four". */
+export function numbersIn(text: string): number[] {
+  const out: number[] = [];
+  for (const m of text.toLowerCase().matchAll(/(\d[\d,]*(?:\.\d+)?|\.\d+)\s?(k\b)?/g)) {
+    const n = Number(m[1].replace(/,/g, ""));
+    if (Number.isFinite(n)) out.push(m[2] ? n * 1000 : n);
+  }
+  for (const m of text.toLowerCase().matchAll(/\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/g)) {
+    out.push(NUMBER_WORDS[m[1]]);
+  }
+  return out;
+}
+
+const typed = (text: string, value: unknown) =>
+  numbersIn(text).some(n => Math.abs(n - Number(value)) < 1e-9);
+
+/** A chain counts as named only after "on", "to", "from", "in", "via" or
+ *  "into": most chain words are coins too ("sol", "near", "btc"). */
+function chainNamed(key: string, text: string): boolean {
+  const chain = NEAR_CHAINS[key];
+  if (!chain) return false;
+  const words = new Set([chain.key, chain.oneClick, chain.name.toLowerCase(),
+    ...Object.entries(CHAIN_WORDS).filter(([, c]) => c === key).map(([w]) => w)]);
+  const t = text.toLowerCase();
+  return [...words].some(w => new RegExp(`\\b(?:on|to|from|in|via|into)\\s+(?:the\\s+)?${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(t));
+}
+
+/** A coin counts as named when any of its words is in the text. */
+function coinNamed(symbol: string, text: string): boolean {
+  const t = text.toLowerCase();
+  return Object.entries(NEAR_COINS).some(([w, c]) => c === symbol && new RegExp(`(?:^|[^a-z0-9])\\$?${w}(?![a-z0-9])`).test(t));
+}
+
+/** NEAR Intents tools move money, so every value has to be in the words:
+ *  an amount, a headcount, a name or address that wasn't typed drops the
+ *  action (or the optional value), a chain the words never named goes and
+ *  the coin's own chain or Base stands, and a note keeps only typed words.
+ *  What's left is checked again from the start. */
+function groundNear(action: Action, text: string): Action | null {
+  const p: Record<string, unknown> = { ...action.params };
+  const t = text.toLowerCase();
+  for (const key of ["chain", "sellChain", "buyChain", "withChain"]) {
+    if (typeof p[key] === "string" && !chainNamed(p[key] as string, text)) delete p[key];
+  }
+  switch (action.tool) {
+    case "near.swap":
+      if (!coinNamed(p.sell as string, text) || !coinNamed(p.buy as string, text)) return null;
+      if (p.amount !== undefined && !typed(text, p.amount)) delete p.amount;
+      break;
+    case "near.send": {
+      const to = String(p.to);
+      if (!(NEAR_NAME.test(to) ? t.includes(to) : text.includes(to))) return null;
+      if (!typed(text, p.amount)) return null;
+      if (p.coin !== "USDC" && !coinNamed(p.coin as string, text) && !addressFits(NEAR_CHAINS.bitcoin, to)
+        && !addressFits(NEAR_CHAINS.zcash, to)) return null;
+      if (p.with !== undefined && !coinNamed(p.with as string, text)) delete p.with;
+      break;
+    }
+    case "near.request":
+      if (!typed(text, p.amount)) return null;
+      if (p.coin !== undefined && !coinNamed(p.coin as string, text)) delete p.coin;
+      if (p.count !== undefined && !typed(text, p.count)) delete p.count;
+      if (p.each && !/\b(each|apiece|per (person|head)|a head|everyone|every one)\b/.test(t)) delete p.each;
+      if (p.us && !(p.count !== undefined && /\b(of us|us|we)\b/.test(t))) delete p.us;
+      if (typeof p.note === "string" && !String(p.note).toLowerCase().split(/\s+/).every(w => t.includes(w))) delete p.note;
+      break;
+  }
+  return checkAction({ tool: action.tool, params: p });
 }
 
 /** What the prompt says about the tools: one line each, compact enough for
@@ -186,12 +330,16 @@ booking.link {} they want someone to pick a time
 search|youtube|shorts|maps {query} something to look up, watch or find nearby
 translate {to} the language to write their message in
 convert {query} units or currency to convert ("5 ft in cm")
+near.swap {sell,buy,amount?,sellChain?,buyChain?} a swap or move that crosses to or from Solana, Bitcoin, Zcash, NEAR or another chain Uniswap can't reach ("swap 20 usdc on base to sol")
+near.send {to,amount,coin?,with?,withChain?} pay a .near name, a Bitcoin or a Zcash address an exact amount; to exactly as typed; with = the coin they pay with
+near.request {amount,coin?,chain?,each?,count?,us?,note?} someone owes them money or a bill is split: a pay link. amount = the number typed (a total with count, each:true when it is per person); chain = where they want to be paid ("i'm on solana"); us:true when the writer is one of count ("for 4 of us"); note = what it's for, their word ("dinner")
+NEAR Intents coins: USDC USDT ETH SOL BTC ZEC NEAR TON TRX XRP DOGE LTC SUI APT XLM ADA BNB. Their chains also near bitcoin zcash ton tron.
 Tokens: ETH WBTC SOL USDC USDT DAI UNI LINK AAVE OP ARB POL AERO DEGEN PEPE LDO, and shares AAPL TSLA NVDA MSFT GOOGL AMZN META (Apple, Tesla, Nvidia…). Chains: base ethereum arbitrum optimism polygon unichain solana. Numbers as numbers. Give a chain only when they name one ("eth" is a token). Never invent an amount, price or name that was not typed.`;
 
 /** Typing that a tool might act on: only these take the extra look when the
  *  rules already had a chip for the sentence. */
 export function mayAct(text: string): boolean {
-  return /\b(buy|sell|swap|dca|invest|stack|trade|grab|get me|shares?|stocks?|aapl|apple|tsla|tesla|nvda|nvidia|msft|microsoft|googl|google|amzn|amazon|meta|dips?|under|below|bridge|send|pay|transfer|stop[- ]?loss|take profit|limit|trail|eth|btc|bitcoin|sol|usdc|usdt|call|meet|zoom|schedule|book|calendar|remind|dinner|lunch|meeting|tomorrow|tmrw|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|translate|youtube|shorts|video|map|directions|near me|convert|search|google)\b/i
+  return /\b(owes?|owed|split|chip in|pot|request|zec|zcash|near|buy|sell|swap|dca|invest|stack|trade|grab|get me|shares?|stocks?|aapl|apple|tsla|tesla|nvda|nvidia|msft|microsoft|googl|google|amzn|amazon|meta|dips?|under|below|bridge|send|pay|transfer|stop[- ]?loss|take profit|limit|trail|eth|btc|bitcoin|sol|usdc|usdt|call|meet|zoom|schedule|book|calendar|remind|dinner|lunch|meeting|tomorrow|tmrw|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|translate|youtube|shorts|video|map|directions|near me|convert|search|google)\b/i
     .test(text);
 }
 
@@ -199,6 +347,21 @@ export function mayAct(text: string): boolean {
  *  the whole path without a key. */
 export function mockAction(text: string): Action | null {
   const t = text.toLowerCase();
+  const owe = t.match(/\b(?:owes? me|pay me(?: back)?)\b\D*?(\d+(?:\.\d+)?)/);
+  if (owe) {
+    const chain = t.match(/\b(?:on|in)\s+(solana|base|near|arbitrum|ethereum)\b/)?.[1];
+    const note = t.match(/\bfor\s+(?:the\s+)?([a-z]+)\b/)?.[1];
+    return groundAction(checkAction({ tool: "near.request", params: { amount: owe[1], ...(chain ? { chain } : {}),
+      ...(note ? { note } : {}) } }), text);
+  }
+  const swap = t.match(/\bswap\s+(\d+(?:\.\d+)?)\s+([a-z]+)(?:\s+on\s+([a-z]+))?\s+(?:to|for|into)\s+([a-z]+)(?:\s+on\s+([a-z]+))?/);
+  if (swap) {
+    const [, n, sell, sellChain, buy, buyChain] = swap;
+    return groundAction(checkAction({ tool: "near.swap", params: { amount: n, sell, buy,
+      ...(sellChain ? { sellChain } : {}), ...(buyChain ? { buyChain } : {}) } }), text);
+  }
+  const send = t.match(/\b(?:send|pay)\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+to\s+([a-z0-9._-]+\.near)\b/);
+  if (send) return groundAction(checkAction({ tool: "near.send", params: { amount: send[1], coin: send[2], to: send[3] } }), text);
   const dca = t.match(/(?:\$\s?(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s?(?:\$|bucks|dollars|usd))\s.*?\b(eth|ether|btc|bitcoin|sol)\b.*?\b(?:every|each|a|per)\s+(hour|day|week|month)/);
   if (dca) return checkAction({ tool: "trade.dca", params: { asset: dca[3], every: Number(dca[1] ?? dca[2]), period: dca[4] } });
   if (/\b(hop on|jump on|quick) (a )?call\b|\bvideo call\b/.test(t)) return checkAction({ tool: "meet.link", params: {} });
