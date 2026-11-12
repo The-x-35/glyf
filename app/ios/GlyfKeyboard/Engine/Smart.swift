@@ -104,6 +104,7 @@ enum Smart {
             case .details, .convert: return nil    // each part is its own action
             case .trade(let t):
                 switch t.kind {
+                case .swap where t.isNear && t.sell == t.buy: return "Move"
                 case .swap: return t.amountIsUSD || t.buyAmount != nil ? "Buy" : "Swap"
                 case .bridge: return "Move"
                 case .send: return "Send"
@@ -168,7 +169,8 @@ enum Smart {
                 return (fields.map(\.shown) + (temp ? ["Temp mail"] : [])).joined(separator: " · ")
             case .convert(let c):
                 return c.source.isEmpty ? c.results.joined(separator: " · ") : "\(c.source) = " + c.results.joined(separator: " · ")
-            case .trade(let t): return t.title + " · " + t.chainLabel
+            // NEAR Intents crosses chains: "Swap 20 USDC → SOL · Base → Solana".
+            case .trade(let t): return t.title + " · " + (t.isNear ? t.route : t.chainLabel)
             }
         }
         /// What tapping the chip puts in the field.
@@ -304,6 +306,9 @@ enum Smart {
         // you are sharing, not paying. Until the lookup says which, nothing
         // (the keyboard asks, and the strip is arranged again).
         let typed = payment(in: text)
+        // A Bitcoin or Zcash address can pass for a Solana one; said in a
+        // NEAR Intents send ("send 0.01 btc to 1BvB…"), the words decide.
+        if let p = typed, let t = TradeIntent.parse(text), t.isNear, t.to == p.address { return .trade(t) }
         let copy = typed == nil && text.isEmpty ? paste : nil
         if let p = typed ?? copy.flatMap({ payment(in: $0) }), p.address != ownWallet {
             switch rates.addresses[p.address] {

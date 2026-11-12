@@ -342,5 +342,340 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(dca.amount, "10")
         XCTAssertEqual(dca.title, "Buy $5 of ETH every hour for 2 hours")
     }
-}
 
+    // MARK: NEAR Intents (docs/NEAR-SPEC.md)
+
+    private let bech32 = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+    private let tAddress = "t1Rv4exT7bqhZqi2j7xz8bUHDMxwosrjADU"
+    private let implicit = "98793cd91a3f870fb126f66285808c7e094afcfc4eda8a970f6648cdf0dbd6de"
+
+    /// The spec's first row: USDC on Base to SOL on Solana.
+    func testASwapFromBaseToSolanaGoesThroughNEARIntents() throws {
+        let i = try XCTUnwrap(read("swap 20 usdc on base to sol"))
+        XCTAssertEqual(i.kind, .swap)
+        XCTAssertTrue(i.isNear)
+        XCTAssertEqual(i.amount, "20")
+        XCTAssertEqual(i.sell, "USDC")
+        XCTAssertEqual(i.buy, "SOL")
+        XCTAssertEqual(i.chainName, "base")
+        XCTAssertEqual(i.buyChain, "solana")
+        XCTAssertEqual(i.venue, "NEAR Intents")
+        XCTAssertEqual(i.title, "Swap 20 USDC → SOL")
+        XCTAssertEqual(i.detail, "Base → Solana · NEAR Intents")
+        XCTAssertEqual(i.query["venue"], "near")
+        XCTAssertEqual(i.query["kind"], "swap")
+        XCTAssertEqual(i.query["chain"], "base")
+        XCTAssertEqual(i.query["buyChain"], "solana")
+        XCTAssertEqual(i.query["amount"], "20")
+        XCTAssertNil(i.query["exact"])
+        // The same said other ways.
+        XCTAssertEqual(read("swap 20 usdc on base to sol on solana"), i)
+        XCTAssertEqual(read("Swap 20 USDC from Base to SOL"), i)
+        XCTAssertEqual(read("pls swap 20 usdc on base to solana")?.buy, "SOL")
+    }
+
+    func testASwapFromSolanaToBase() throws {
+        let i = try XCTUnwrap(read("swap 0.2 sol to usdc on base"))
+        XCTAssertTrue(i.isNear)
+        XCTAssertEqual(i.sell, "SOL")
+        XCTAssertEqual(i.chainName, "solana")
+        XCTAssertEqual(i.buy, "USDC")
+        XCTAssertEqual(i.buyChain, "base")
+        XCTAssertEqual(i.title, "Swap 0.2 SOL → USDC")
+        XCTAssertEqual(i.detail, "Solana → Base · NEAR Intents")
+        XCTAssertEqual(read("swap 0.2 sol on solana to usdc on arbitrum")?.buyChain, "arbitrum")
+        XCTAssertEqual(read("swap 0.2 sol to eth on base")?.buy, "ETH")
+    }
+
+    /// Bitcoin, NEAR and Zcash need someone to pay: an address typed after,
+    /// or (NEAR) the account saved in the app.
+    func testSwapsToChainsOfTheirOwn() throws {
+        let btc = try XCTUnwrap(read("swap 50 usdc on arbitrum to btc to \(bech32)"))
+        XCTAssertEqual(btc.sell, "USDC")
+        XCTAssertEqual(btc.chainName, "arbitrum")
+        XCTAssertEqual(btc.buy, "BTC")
+        XCTAssertEqual(btc.buyChain, "bitcoin")
+        XCTAssertEqual(btc.to, bech32)
+        XCTAssertEqual(btc.detail, "Arbitrum → Bitcoin · NEAR Intents")
+        XCTAssertEqual(btc.query["to"], bech32)
+        XCTAssertEqual(btc.query["buyChain"], "bitcoin")
+
+        let near = try XCTUnwrap(read("swap 20 usdc on base to near"))
+        XCTAssertEqual(near.buy, "NEAR")
+        XCTAssertEqual(near.buyChain, "near")
+        XCTAssertNil(near.to)
+        XCTAssertEqual(near.title, "Swap 20 USDC → NEAR")
+        XCTAssertEqual(near.detail, "Base → NEAR · NEAR Intents")
+        XCTAssertEqual(read("swap 20 usdc on base to near to alice.near")?.to, "alice.near")
+
+        let zec = try XCTUnwrap(read("swap 20 usdc on base to zec"))
+        XCTAssertEqual(zec.buy, "ZEC")
+        XCTAssertEqual(zec.buyChain, "zcash")
+        XCTAssertEqual(read("swap 20 usdc on base to zec to \(tAddress)")?.to, tAddress)
+        // Base pays when no chain is said and the other side has its own.
+        XCTAssertEqual(read("swap 20 usdc to zec")?.chainName, "base")
+        // Native BTC said by its chain, or beside Solana.
+        XCTAssertEqual(read("swap 20 usdc on base to btc on bitcoin")?.buy, "BTC")
+        XCTAssertEqual(read("swap 1 sol to btc")?.buyChain, "bitcoin")
+        let fromBTC = try XCTUnwrap(read("swap 0.01 btc on bitcoin to usdc on base"))
+        XCTAssertEqual(fromBTC.chainName, "bitcoin")
+        XCTAssertEqual(fromBTC.sell, "BTC")
+        XCTAssertEqual(fromBTC.buyChain, "base")
+        // Every chain only NEAR Intents reaches.
+        for (word, coin, chain) in [("ton", "TON", "ton"), ("tron", "TRX", "tron"), ("xrp", "XRP", "xrp"),
+                                    ("doge", "DOGE", "dogecoin"), ("ltc", "LTC", "litecoin"), ("sui", "SUI", "sui"),
+                                    ("aptos", "APT", "aptos"), ("xlm", "XLM", "stellar"), ("cardano", "ADA", "cardano")] {
+            let t = try XCTUnwrap(read("swap 20 usdc on base to \(word)"), word)
+            XCTAssertEqual(t.buy, coin, word)
+            XCTAssertEqual(t.buyChain, chain, word)
+            XCTAssertEqual(t.venue, "NEAR Intents", word)
+        }
+    }
+
+    func testMovingTheSameCoinAcrossChainsNEARIntentsJoins() throws {
+        let i = try XCTUnwrap(read("move 50 usdc from base to solana"))
+        XCTAssertEqual(i.kind, .swap)
+        XCTAssertTrue(i.isNear)
+        XCTAssertEqual(i.sell, "USDC")
+        XCTAssertEqual(i.buy, "USDC")
+        XCTAssertEqual(i.chainName, "base")
+        XCTAssertEqual(i.buyChain, "solana")
+        XCTAssertEqual(i.title, "Move 50 USDC to Solana")
+        XCTAssertEqual(i.detail, "Base → Solana · NEAR Intents")
+        XCTAssertEqual(i.query["venue"], "near")
+        XCTAssertEqual(read("bridge 10 usdc from solana to arbitrum")?.buyChain, "arbitrum")
+        // Between EVM chains it's Flash's, as before.
+        let flash = try XCTUnwrap(read("move 50 usdc from base to arbitrum"))
+        XCTAssertEqual(flash.kind, .bridge)
+        XCTAssertEqual(flash.venue, "Flash")
+        // A coin Solana doesn't have stays a Flash move, as it was.
+        XCTAssertEqual(read("move 0.1 eth from base to solana")?.kind, .bridge)
+        // Flash's own words (the Definitive panel) read as they did.
+        XCTAssertEqual(TradeIntent.parse("move 10 usdc from solana to base", near: false)?.kind, .bridge)
+    }
+
+    /// Sends pay the recipient exactly (EXACT_OUTPUT), from USDC on Base
+    /// unless the words say what pays.
+    func testSendsToANEARAccount() throws {
+        let i = try XCTUnwrap(read("send 5 usdc to alice.near"))
+        XCTAssertEqual(i.kind, .send)
+        XCTAssertTrue(i.isNear)
+        XCTAssertEqual(i.amount, "5")
+        XCTAssertEqual(i.buy, "USDC")
+        XCTAssertEqual(i.buyChain, "near")
+        XCTAssertEqual(i.sell, "USDC")
+        XCTAssertEqual(i.chainName, "base")
+        XCTAssertEqual(i.to, "alice.near")
+        XCTAssertEqual(i.venue, "NEAR Intents")
+        XCTAssertEqual(i.title, "Send 5 USDC to alice.near")
+        XCTAssertEqual(i.detail, "Base → NEAR · NEAR Intents")
+        XCTAssertEqual(i.query["venue"], "near")
+        XCTAssertEqual(i.query["exact"], "out")
+        XCTAssertEqual(i.query["kind"], "send")
+        XCTAssertEqual(i.query["to"], "alice.near")
+        XCTAssertEqual(i.query["buy"], "USDC")
+        XCTAssertEqual(i.query["buyChain"], "near")
+        XCTAssertEqual(i.query["sell"], "USDC")
+        XCTAssertEqual(i.query["chain"], "base")
+        XCTAssertTrue(TradeIntent.isName(i.to))
+
+        let sol = try XCTUnwrap(read("pay bob.near 10 usdc with sol"))
+        XCTAssertEqual(sol.to, "bob.near")
+        XCTAssertEqual(sol.amount, "10")
+        XCTAssertEqual(sol.buy, "USDC")
+        XCTAssertEqual(sol.sell, "SOL")
+        XCTAssertEqual(sol.chainName, "solana")
+        XCTAssertEqual(sol.detail, "Solana → NEAR · NEAR Intents")
+        let arb = try XCTUnwrap(read("send 5 usdc to alice.near with usdc on arbitrum"))
+        XCTAssertEqual(arb.sell, "USDC")
+        XCTAssertEqual(arb.chainName, "arbitrum")
+        let fromSol = try XCTUnwrap(read("send 5 usdc to Alice.NEAR from solana"))
+        XCTAssertEqual(fromSol.chainName, "solana")
+        XCTAssertEqual(fromSol.sell, "USDC")
+        XCTAssertEqual(fromSol.to, "alice.near")
+        XCTAssertEqual(read("send 2 near to sub.alice.near with eth")?.sell, "ETH")
+        XCTAssertEqual(read("send 2 near to sub.alice.near with eth")?.buy, "NEAR")
+        let hex = try XCTUnwrap(read("send 3 usdt to \(implicit)"))
+        XCTAssertEqual(hex.buyChain, "near")
+        XCTAssertEqual(hex.to, implicit)
+        XCTAssertEqual(hex.title, "Send 3 USDT to 98793c…d6de")
+        XCTAssertFalse(TradeIntent.isName(hex.to))
+    }
+
+    func testSendsToBitcoinAndZcashAddresses() throws {
+        let btc = try XCTUnwrap(read("send 0.001 btc to \(bech32)"))
+        XCTAssertEqual(btc.buy, "BTC")
+        XCTAssertEqual(btc.buyChain, "bitcoin")
+        XCTAssertEqual(btc.sell, "USDC")
+        XCTAssertEqual(btc.chainName, "base")
+        XCTAssertEqual(btc.amount, "0.001")
+        XCTAssertEqual(btc.title, "Send 0.001 BTC to bc1qar…5mdq")
+        XCTAssertEqual(btc.query["exact"], "out")
+        XCTAssertEqual(btc.query["to"], bech32)
+        for legacy in ["1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"] {
+            let t = try XCTUnwrap(read("send 0.01 bitcoin to \(legacy)"), legacy)
+            XCTAssertEqual(t.buyChain, "bitcoin", legacy)
+            XCTAssertEqual(t.to, legacy, legacy)    // base58 keeps its case
+        }
+        let zec = try XCTUnwrap(read("send 1.5 zec to \(tAddress) with sol"))
+        XCTAssertEqual(zec.buy, "ZEC")
+        XCTAssertEqual(zec.buyChain, "zcash")
+        XCTAssertEqual(zec.sell, "SOL")
+        XCTAssertEqual(zec.detail, "Solana → Zcash · NEAR Intents")
+        XCTAssertNil(TradeIntent.phantomSend(zec.query.merging(["address": tAddress]) { $1 }))
+    }
+
+    func testNEARTradesThatCantBeAreNotRead() {
+        for text in ["send 5 usdc to \(bech32)",          // Bitcoin carries only BTC
+                     "send 1 btc to alice.near",            // NEAR takes NEAR, USDC, USDT here
+                     "send 5 zec to \(bech32)",
+                     "send 2 near to alice.near with near", // that's a plain NEAR transfer
+                     "send usdc to alice.near",             // no amount
+                     "send 5 usdc to alice.nearby",
+                     "send 5 usdc to bc1qshort",
+                     "swap 50 usdc on arbitrum to btc to alice.near", // the address doesn't fit
+                     "swap 20 usdc to sol",                 // which USDC? not guessed beside Solana
+                     "swap 0.2 sol to usdc",
+                     "swap 1 near on base to usdc on solana",
+                     "swap 10 tsla on base to sol"] {
+            XCTAssertNil(read(text), text)
+        }
+        XCTAssertNil(TradeIntent.nearRecipientChain("alice.eth"))
+        XCTAssertNil(TradeIntent.nearRecipientChain("0x52908400098527886E0F7030069857D2E4169EE7"))
+    }
+
+    /// Everything Uniswap, Jupiter and Flash read stays theirs.
+    func testOldTradesStayWhereTheyWere() throws {
+        let uni = try XCTUnwrap(read("swap 50 usdc on base to eth on arbitrum"))
+        XCTAssertFalse(uni.isNear)
+        XCTAssertEqual(uni.venue, "Uniswap")
+        XCTAssertEqual(uni.detail, "Base → Arbitrum · Uniswap")
+        XCTAssertNil(uni.query["venue"])
+        XCTAssertEqual(read("swap 50 usdc on base to eth on polygon")?.venue, "Uniswap")
+        for (text, venue) in [("swap 0.05 eth to usdc on base", "Uniswap"), ("swap 10 usdc to usdt on solana", "Jupiter"),
+                              ("swap 0.01 btc to usdc", "Uniswap"), ("swap 20 usdc to btc", "Uniswap"),
+                              ("buy $50 of eth", "Uniswap"), ("sell 0.1 sol if it drops below 100", "Flash"),
+                              ("move 50 usdc from base to arbitrum", "Flash"),
+                              ("send 20 usdc to vitalik.eth", "MetaMask"), ("pay arpit.sol 5 usdc", "Phantom")] {
+            let t = try XCTUnwrap(read(text), text)
+            XCTAssertFalse(t.isNear, text)
+            XCTAssertEqual(t.venue, venue, text)
+            XCTAssertNil(t.query["venue"], text)
+            XCTAssertNil(t.query["exact"], text)
+        }
+        XCTAssertEqual(read("swap 0.01 btc to usdc")?.sell, "WBTC")
+        XCTAssertEqual(read("swap 20 usdc to btc")?.buy, "WBTC")
+        // Words that were never a trade still aren't.
+        for text in ["I'm near the station", "send it near noon", "swap 1 sol to usdc on solana",
+                     "buy a ton of snacks", "send 5 usdc to arpit.eth on solana"] {
+            XCTAssertNil(read(text), text)
+        }
+    }
+
+    func testTheStripOffersNEARTrades() {
+        guard case .trade(let t)? = Smart.chip(for: "swap 20 usdc on base to sol", fields: []) else {
+            return XCTFail("no NEAR swap chip")
+        }
+        let chip = Smart.Chip.trade(t)
+        XCTAssertEqual(chip.key, "NEAR Intents")
+        XCTAssertEqual(chip.value, "Swap 20 USDC → SOL · Base → Solana")
+        XCTAssertEqual(chip.verb, "Swap")
+        guard case .trade(let send)? = Smart.chip(for: "send 5 usdc to alice.near", fields: []) else {
+            return XCTFail("no NEAR send chip")
+        }
+        XCTAssertEqual(Smart.Chip.trade(send).value, "Send 5 USDC to alice.near · Base → NEAR")
+        XCTAssertEqual(Smart.Chip.trade(send).verb, "Send")
+        guard case .trade(let move)? = Smart.chip(for: "move 50 usdc from base to solana", fields: []) else {
+            return XCTFail("no NEAR move chip")
+        }
+        XCTAssertEqual(Smart.Chip.trade(move).verb, "Move")
+        // A legacy Bitcoin address looks like a Solana one; the words say which.
+        guard case .trade(let legacy)? = Smart.chip(for: "send 0.01 btc to 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", fields: []) else {
+            return XCTFail("no Bitcoin send chip")
+        }
+        XCTAssertEqual(legacy.buyChain, "bitcoin")
+        // Old chips read as they did.
+        guard case .trade(let uni)? = Smart.chip(for: "swap 0.05 eth to usdc on base", fields: []) else { return XCTFail() }
+        XCTAssertEqual(Smart.Chip.trade(uni).value, "Swap 0.05 ETH → USDC · Base")
+    }
+
+    /// GET /names/resolve for a .near name: the account, or "No NEAR account".
+    func testANEARNameIsCheckedOnNEAR() {
+        let found: [String: Any] = ["ok": true, "found": true, "chain": "near", "address": "alice.near", "exists": true]
+        XCTAssertEqual(TradeIntent.recipient(for: "alice.near", chain: "near", ok: true, answer: found).0, "alice.near")
+        let missing: [String: Any] = ["ok": true, "chain": "near", "address": "nobody.near", "exists": false]
+        let none = TradeIntent.recipient(for: "nobody.near", chain: "near", ok: true, answer: missing)
+        XCTAssertNil(none.0)
+        XCTAssertEqual(none.1, "No NEAR account nobody.near")
+        XCTAssertEqual(TradeIntent.recipient(for: "nobody.near", chain: "near", ok: false,
+                                             answer: ["ok": false, "exists": false]).1, "No NEAR account nobody.near")
+        XCTAssertEqual(TradeIntent.recipient(for: "a.near", chain: "near", ok: false, answer: nil).1, "Couldn’t look up a.near")
+    }
+
+    /// What POST /near/quote's answer shows on the panel.
+    func testANEARQuoteReads() {
+        let answer: [String: Any] = [
+            "ok": true, "dry": true, "venue": "NEAR Intents", "amountIn": "20", "amountInUsd": "19.99",
+            "amountOut": "0.2438", "amountOutUsd": "19.88", "timeSeconds": 32,
+            "guard": ["level": "warn", "checks": [["id": "new-recipient", "level": "warn", "text": "First time paying this address"],
+                                                  ["id": "lookalike", "level": "block", "text": "Looks like 0xAb12…9fE0 you paid before, but it isn't"]]],
+        ]
+        let q = NearQuote(ok: true, answer)
+        XCTAssertEqual(q.amountIn, 20)
+        XCTAssertEqual(q.amountOut, 0.2438)
+        XCTAssertEqual(q.inUSD, 19.99)
+        XCTAssertEqual(q.outUSD, 19.88)
+        XCTAssertEqual(q.time, "~32 s")
+        XCTAssertEqual(q.guardLevel, "block")
+        XCTAssertEqual(q.guardText, "Looks like 0xAb12…9fE0 you paid before, but it isn't")
+        XCTAssertNil(q.error)
+        let quiet = NearQuote(ok: true, ["ok": true, "amountOut": 5, "timeSeconds": 150, "guard": ["level": "ok", "checks": []]])
+        XCTAssertNil(quiet.guardLevel)
+        XCTAssertEqual(quiet.time, "~3 min")
+        let small = NearQuote(ok: false, ["ok": false, "error": "Too small for NEAR Intents: at least $1"])
+        XCTAssertNil(small.amountOut)
+        XCTAssertEqual(small.error, "Too small for NEAR Intents: at least $1")
+        XCTAssertEqual(NearQuote(ok: false, nil).error, "No quote right now")
+    }
+
+    /// The panel's chain pickers for a NEAR trade, and what a pick does.
+    func testANEARTradeIsEditedInThePanel() throws {
+        let swap = try XCTUnwrap(read("swap 20 usdc on base to sol"))
+        XCTAssertTrue(TradeEdit.chains(for: swap).contains("bitcoin"))
+        XCTAssertTrue(TradeEdit.chains(for: swap).contains("solana"))
+        // To Bitcoin: what's bought becomes BTC.
+        let toBTC = TradeEdit.pickChain("bitcoin", side: .buy, in: swap)
+        XCTAssertEqual(toBTC.buy, "BTC")
+        XCTAssertEqual(toBTC.buyChain, "bitcoin")
+        XCTAssertTrue(toBTC.isNear)
+        // Both sides on Base: Uniswap's swap there, no longer NEAR's.
+        let same = TradeEdit.pickChain("base", side: .buy, in: swap)
+        XCTAssertNil(same.buyChain)
+        XCTAssertEqual(same.buy, "ETH")
+        XCTAssertFalse(same.isNear)
+        XCTAssertEqual(same.venue, "Uniswap")
+        // Paying from Arbitrum keeps USDC.
+        XCTAssertEqual(TradeEdit.pickChain("arbitrum", side: .sell, in: swap).sell, "USDC")
+        XCTAssertEqual(TradeEdit.pickChain("arbitrum", side: .sell, in: swap).chainName, "arbitrum")
+        // Flipped: SOL on Solana to USDC on Base.
+        let back = TradeEdit.flip(swap)
+        XCTAssertEqual(back.sell, "SOL")
+        XCTAssertEqual(back.chainName, "solana")
+        XCTAssertEqual(back.buyChain, "base")
+        XCTAssertTrue(back.isNear)
+
+        let send = try XCTUnwrap(read("send 0.001 btc to \(bech32)"))
+        XCTAssertEqual(TradeEdit.asset(send), "BTC")
+        XCTAssertEqual(TradeEdit.label(.amount, send), "Amount in BTC")
+        XCTAssertEqual(TradeEdit.chains(for: send), TradeEdit.nearPayChains)
+        let paid = TradeEdit.pickChain("solana", side: .sell, in: send)
+        XCTAssertEqual(paid.chainName, "solana")
+        XCTAssertEqual(paid.sell, "USDC")
+        XCTAssertEqual(paid.buy, "BTC")
+        XCTAssertEqual(paid.buyChain, "bitcoin")
+        XCTAssertEqual(TradeEdit.apply(.amount, "0.002", to: send).amount, "0.002")
+        XCTAssertNil(TradeEdit.problem(send))
+        XCTAssertEqual(TradeEdit.builtIn(chain: "bitcoin").map(\.symbol), ["BTC"])
+        XCTAssertEqual(TradeEdit.builtIn(chain: "near").map(\.symbol), ["NEAR", "USDC", "USDT"])
+    }
+}
