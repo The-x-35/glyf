@@ -33,6 +33,8 @@ import { evmRoutes } from "./routes/evm.js";
 import { flashRoutes } from "./routes/flash.js";
 import { uniswapRoutes } from "./routes/uniswap.js";
 import { namesRoutes } from "./routes/names.js";
+import { nearRoutes } from "./routes/near.js";
+import { privateAIHooks, privateAIRoutes } from "./lib/privateai.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -68,6 +70,7 @@ export function buildApp(kv: KV = defaultKV()) {
   // The lock goes on before any route is registered, so nothing added later
   // is open by accident.
   protectRoutes(app, { limits });
+  privateAIHooks(app, kv);
   const library = new GlyfLibrary(kv);
   app.decorate("glyfKV", kv);
 
@@ -121,6 +124,8 @@ export function buildApp(kv: KV = defaultKV()) {
   flashRoutes(app);
   uniswapRoutes(app);
   namesRoutes(app);
+  nearRoutes(app);
+  privateAIRoutes(app, kv);
   return app;
 }
 

@@ -183,3 +183,38 @@ export async function resolveEns(ens: EnsLookup, name: string): Promise<NameAnsw
   if (inferred.length) answer.inferred = inferred;
   return answer;
 }
+
+/** "send 5 usdc to alice.near": NEAR accounts are checked, not resolved. The
+ *  account id is the address; view_account on a NEAR RPC
+ *  (https://rpc.mainnet.near.org, or NEAR_RPC_URL) says whether it exists. */
+export const NEAR_RPC = "https://rpc.mainnet.near.org";
+
+/** A .near name (sub-accounts included), lowercase. */
+export const NEAR_NAME = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)+near$/;
+/** An implicit account: the hex of its own ed25519 key. */
+export const NEAR_IMPLICIT_ACCOUNT = /^[0-9a-f]{64}$/;
+
+export interface NearLookup {
+  /** True when the account is on chain; false for UNKNOWN_ACCOUNT. Throws
+   *  when the node can't say. */
+  exists(account: string): Promise<boolean>;
+}
+
+export function nearRpc(fetchImpl: FetchFn = fetch, url?: string): NearLookup {
+  const endpoint = () => (url ?? process.env.NEAR_RPC_URL ?? "").trim() || NEAR_RPC;
+  return {
+    async exists(account) {
+      const res = await fetchImpl(endpoint(), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: "glyf", method: "query",
+          params: { request_type: "view_account", finality: "final", account_id: account } }),
+        signal: AbortSignal.timeout(8_000),
+      });
+      const json = await res.json().catch(() => null) as { result?: unknown; error?: { cause?: { name?: string } } } | null;
+      if (json?.result) return true;
+      if (json?.error?.cause?.name === "UNKNOWN_ACCOUNT") return false;
+      throw new Error(`near rpc ${res.status} ${json?.error?.cause?.name ?? "no answer"}`);
+    },
+  };
+}

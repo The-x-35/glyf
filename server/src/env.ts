@@ -31,6 +31,9 @@ export const env = {
   mistralKey: process.env.MISTRAL_API_KEY ?? "",
   inceptionKey: process.env.INCEPTION_API_KEY ?? "",
   cerebrasKey: process.env.CEREBRAS_API_KEY ?? "",
+  /** NEAR AI Cloud (cloud-api.near.ai), only for phones that send
+   *  X-Glyf-AI: near (lib/privateai.ts). */
+  nearAIKey: process.env.NEARAI_API_KEY ?? "",
   mockAI: process.env.MOCK_AI === "true",
   /** The models and each plan's day are set here in code, never by the
    *  environment: a stale Railway variable once kept production on a slow
@@ -72,6 +75,14 @@ export const env = {
    * a free plan"). A refused key is skipped for ten minutes, so the backup
    * answers at its own speed (about 1.6 s for a rewrite). */
   suggestModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite", "inclusionai/ling-3.0-flash", "gemini:gemini-3.5-flash-lite"],
+  /** Private AI (lib/privateai.ts): NEAR AI Cloud's own private models,
+   *  run in TEEs (owned_by "nearai", each with a model attestation report,
+   *  checked 2026-11-13). Qwen 3.6 35B-A3B (3B active, the quickest of
+   *  them on paper) first, GLM 5.3 Flash behind it; thinking is turned off
+   *  for both. Not yet timed: the key had no credits on 2026-11-13 (402
+   *  no_limit_configured). Nothing outside NEAR AI answers these phones. */
+  nearAIModels: ["nearai:Qwen/Qwen3.6-35B-A3B-FP8", "nearai:z-ai/glm-5.3-flash"] as string[],
+  nearAISmartModels: ["nearai:Qwen/Qwen3.6-35B-A3B-FP8", "nearai:z-ai/glm-5.3-flash"] as string[],
   /** How long a glyf run's text is replayed (routes/glyf.ts): ten minutes
    *  at most, so nothing a person reads is ever much older than that. */
   cacheTtlMs: Math.min(num("CACHE_TTL_MS", 10 * 60 * 1000), 10 * 60 * 1000),

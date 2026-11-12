@@ -168,6 +168,55 @@ verification is kept as a receipt (GET /ai/receipts). With no key the header
 is ignored. Port the shape of `server/src/lib/privateai.ts` from branch
 `ethglobal-mumbai`, where 0G did the same.
 
+## Server as built (branch near-server, 13 Nov)
+
+Everything above holds. What the server adds or decides where the spec was
+open, so the clients can rely on it:
+
+- **POST /near/quote** also returns `exact` ("in"/"out"), `recipient` and
+  `refundTo` (null on a dry quote). On exact-in, `amountInBase` and
+  `deposit.amountBase` are the typed amount in base units, exactly; on a send
+  (exact-out) they are 1Click's `amountIn`, which carries the slippage (the
+  excess is refunded). A dry quote is priced with valid stand-in addresses
+  that are never shown. NEAR's coin is listed by 1Click as wNEAR
+  (`nep141:wrap.near`) and is shown as `NEAR`. 1Click's "too low" becomes
+  "Too small for NEAR Intents: at least $0.15".
+- **A recipient that can't be on the destination chain** (an EVM address for
+  SOL) is not an error: the answer is a dry preview (`dry: true`, no
+  deposit) with Guard's `chain-mismatch` block, so the panel can say why.
+- **Guard texts:** "Looks like 0xAb12…9fE0 you paid before, but it isn't",
+  "No NEAR account bob.near", "That's an EVM address, not Solana",
+  "First time paying this address", "Over your $200 a day ($40 spent
+  today)", "Over $1,000". When NEAR RPC can't be reached, `no-account` comes
+  as a **warn** ("Couldn't check bob.near on NEAR"), not a block. Guard runs
+  whenever `recipient` is sent, dry or live.
+- **GET /near/status** maps 1Click's `KNOWN_DEPOSIT_TX` (seen, not yet
+  confirmed) to `PROCESSING`. A refund adds `refunded` (whole coins). An
+  address 1Click doesn't know is a 404.
+- **GET /names/resolve** for `.near`: found is 200 `{ok, found: true, name,
+  chain: "near", address, exists: true, addresses: {near}}`; unknown is 404
+  `{ok: false, found: false, name, chain, address, exists: false}` (as ENS
+  and SNS misses already are). A 64-hex implicit account is always
+  `exists: true` (it is paid into being) with `implicit: true` and `funded`.
+- **Private AI:** NEAR AI Cloud's base URL is `https://cloud-api.near.ai/v1`
+  (checked). The chain is `Qwen/Qwen3.6-35B-A3B-FP8` then
+  `z-ai/glm-5.3-flash`, both NEAR-run models with model attestation reports,
+  thinking off. Receipts are checked when the app asks: GET /ai/receipts
+  returns `{ok, provider: "NEAR AI Cloud", verifyUrl:
+  "https://cloud.near.ai/verify", receipts: [{id, verified, chatId, model,
+  requestHash, responseHash, at, status, signature?, reason?}]}`, newest
+  first, `at` in ms, `verified` true, false, or null while pending (`status`
+  pending, verified, failed, unavailable). A receipt is verified when NEAR's
+  ECDSA signature (GET /v1/signature/{id}) recovers to its signing address,
+  covers SHA-256 of the exact request and response bytes, and that address is
+  in the model's attestation report.
+- **For judges:** `cd server && npm install && npm run near:quote -- "swap 20
+  usdc on base to sol"` prints a live dry quote (and Guard's checks for a
+  phrase with a recipient), no session or .env needed.
+- **Env (Vercel):** `NEARAI_API_KEY` (private AI; without it the header is
+  ignored), optional `NEAR_INTENTS_JWT` (drops 1Click's 0.2% keyless fee),
+  optional `NEAR_RPC_URL`.
+
 ## Hand-off keyboard → app
 
 `glyf://open?path=trade?…` with TradeIntent.query, plus:

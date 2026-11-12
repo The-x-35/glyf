@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionResult, getAddress, parseAbi, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
-import { base58, COIN_TYPES, ensName, resolveEns, viemEns, type EnsLookup, type SnsLookup } from "../src/lib/names.js";
+import { base58, COIN_TYPES, ensName, NEAR_RPC, nearRpc, resolveEns, viemEns, type EnsLookup, type NearLookup, type SnsLookup } from "../src/lib/names.js";
 import { namesRoutes } from "../src/routes/names.js";
 
 const ARPIT = getAddress("0x1234567890abcdef1234567890abcdef12345678");
@@ -165,5 +165,78 @@ describe("GET /names/resolve and /names/reverse", () => {
     const none = await app.inject({ method: "GET", url: `/names/reverse?address=${BASE_ONLY}` });
     expect(none.statusCode).toBe(404);
     expect((await app.inject({ method: "GET", url: "/names/reverse?address=hello" })).statusCode).toBe(400);
+  });
+});
+
+describe(".near names", () => {
+  const IMPLICIT = "98793cd91a3f870fb126f66285808c7e094afcfc4eda8a970f6648cdf0dbd6de";
+
+  /** NEAR's view_account: accounts it has, UNKNOWN_ACCOUNT for the rest. */
+  function fakeNear(accounts: string[], fail = false) {
+    const asked: string[] = [];
+    const near: NearLookup = {
+      async exists(account) {
+        asked.push(account);
+        if (fail) throw new Error("fetch failed");
+        return accounts.includes(account);
+      },
+    };
+    const app = Fastify();
+    namesRoutes(app, { ens: fakeEns({}).ens, sns: null, near });
+    return { app, asked };
+  }
+
+  it("asks NEAR RPC view_account and reads UNKNOWN_ACCOUNT as no account", async () => {
+    const bodies: { url: string; body: any }[] = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      bodies.push({ url: String(url), body });
+      const known = body.params.account_id === "illia.near";
+      return new Response(JSON.stringify(known
+        ? { jsonrpc: "2.0", id: body.id, result: { amount: "1", block_height: 1 } }
+        : { jsonrpc: "2.0", id: body.id, error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_ACCOUNT" } } }),
+      { headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const near = nearRpc(fetchImpl);
+    expect(await near.exists("illia.near")).toBe(true);
+    expect(await near.exists("nobody.near")).toBe(false);
+    expect(bodies[0]).toEqual({ url: NEAR_RPC, body: { jsonrpc: "2.0", id: "glyf", method: "query",
+      params: { request_type: "view_account", finality: "final", account_id: "illia.near" } } });
+    const broken = nearRpc((async () => new Response("{}", { status: 503 })) as unknown as typeof fetch, "https://near.example/rpc");
+    await expect(broken.exists("illia.near")).rejects.toThrow(/near rpc 503/);
+  });
+
+  it("answers a .near account with its chain and address, and keeps the usual shape", async () => {
+    const { app } = fakeNear(["alice.near", "pay.alice.near"]);
+    const res = await app.inject({ method: "GET", url: "/names/resolve?name=Alice.near" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, found: true, name: "alice.near", chain: "near", address: "alice.near",
+      exists: true, addresses: { near: "alice.near" } });
+    expect((await app.inject({ method: "GET", url: "/names/resolve?name=pay.alice.near" })).json().exists).toBe(true);
+  });
+
+  it("says exists:false (404, found:false) for a .near name NEAR doesn't have, and remembers it", async () => {
+    const { app, asked } = fakeNear([]);
+    for (let i = 0; i < 2; i++) {
+      const res = await app.inject({ method: "GET", url: "/names/resolve?name=nobody.near" });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ ok: false, found: false, name: "nobody.near", chain: "near", address: "nobody.near", exists: false });
+    }
+    expect(asked).toEqual(["nobody.near"]);
+  });
+
+  it("takes an implicit account as existing (it can be paid before it's funded) and says whether it's funded", async () => {
+    const { app } = fakeNear([]);
+    const res = await app.inject({ method: "GET", url: `/names/resolve?name=${IMPLICIT}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ found: true, chain: "near", address: IMPLICIT, exists: true, implicit: true, funded: false });
+    const down = fakeNear([], true);
+    expect((await down.app.inject({ method: "GET", url: `/names/resolve?name=${IMPLICIT}` })).json())
+      .toMatchObject({ exists: true, implicit: true });
+  });
+
+  it("is a 502 when NEAR doesn't answer for a name, never ENS's answer", async () => {
+    const { app } = fakeNear([], true);
+    expect((await app.inject({ method: "GET", url: "/names/resolve?name=alice.near" })).statusCode).toBe(502);
   });
 });

@@ -1,4 +1,6 @@
 import { env } from "../env.js";
+import { createHash } from "node:crypto";
+import { aiContext, noteNearAI, sha256 } from "../lib/privateai.js";
 import { KEEP_PLACEHOLDERS, SecretVault } from "../lib/secrets.js";
 
 /** §8: OpenRouter, backend only, OpenAI-compatible, streamed — plus any
@@ -18,6 +20,9 @@ const PROVIDERS: Record<string, { url: string; key: () => string }> = {
   mistral: { url: "https://api.mistral.ai/v1/chat/completions", key: () => env.mistralKey },
   inception: { url: "https://api.inceptionlabs.ai/v1/chat/completions", key: () => env.inceptionKey },
   cerebras: { url: "https://api.cerebras.ai/v1/chat/completions", key: () => env.cerebrasKey },
+  // NEAR AI Cloud: open models in TEEs, each answer signed (lib/privateai.ts
+  // says who is sent here).
+  nearai: { url: "https://cloud-api.near.ai/v1/chat/completions", key: () => env.nearAIKey },
 };
 
 /** "groq:<model>", "gemini:<model>", … go to that provider; everything else
@@ -37,12 +42,20 @@ export function endpointFor(spec: string): Endpoint | null {
     key: env.openrouterKey, model, openrouter: true } : null;
 }
 
+const createSha256 = () => createHash("sha256");
+const isNearAI = (ep: Endpoint) => ep.url.startsWith("https://cloud-api.near.ai/");
+
 /** "fast" answers someone holding space, "smart" builds and rewrites at
  *  length, and "suggest" reads a pause in typing for the strip's chip: a
  *  read nobody asked for, so it has its own small, cheap chain. */
 export type Tier = "fast" | "smart" | "suggest" | "answer";
 
 function chainFor(tier: Tier): string[] {
+  // A phone that asked for private AI gets NEAR AI and nothing else: falling
+  // through to another provider would send its typing somewhere it said no
+  // to. Without a NEAR AI key the ask is ignored, so nothing breaks before
+  // one is set.
+  if (aiContext()?.near && env.nearAIKey) return tier === "smart" ? env.nearAISmartModels : env.nearAIModels;
   return tier === "smart" ? env.smartModels : tier === "suggest" ? env.suggestModels
     : tier === "answer" ? env.answerModels : env.fastModels;
 }
@@ -62,6 +75,11 @@ export function requestOptions(ep: Endpoint, tier: Tier): Record<string, unknown
   // are sent: it is someone's typing (the privacy policy says so, and
   // Google's OAuth review asked, 2026-10-01).
   if (ep.openrouter) opts.provider = { data_collection: "deny" };
+  if (isNearAI(ep)) {
+    // Qwen and GLM think first unless told not to (vLLM's chat template).
+    opts.chat_template_kwargs = { enable_thinking: false };
+    return opts;
+  }
   if (ep.openrouter) {
     // Hybrid models (Qwen 3.7 Flash, DeepSeek V4 Flash, Ling) think first
     // unless told not to: measured, a rewrite took 16 s and ten times the
@@ -110,6 +128,10 @@ export function resetCooldowns(): void {
 /** How long a model gets to start answering before the next one is tried.
  *  A suggestion that comes late comes after the message has gone. */
 export const FIRST_BYTE_MS: Record<Tier, number> = { fast: 4000, smart: 20000, suggest: 2500, answer: 4000 };
+
+/** NEAR AI's private models start slower than OpenRouter's (a TEE, fewer
+ *  replicas). */
+export const NEARAI_FIRST_BYTE_MS = 8000;
 
 /** The last model in a chain gets this long to start (and between chunks). */
 export const LAST_FIRST_BYTE_MS = 15000;
@@ -209,9 +231,14 @@ async function completeMasked(
     // on to the next one rather than wait it out.
     const attempt = new AbortController();
     let stallTimer: ReturnType<typeof setTimeout> | undefined;
-    const stuck = setTimeout(() => attempt.abort(), last ? Math.max(FIRST_BYTE_MS[tier], LAST_FIRST_BYTE_MS) : FIRST_BYTE_MS[tier]);
+    const firstByte = isNearAI(ep) ? Math.max(FIRST_BYTE_MS[tier], NEARAI_FIRST_BYTE_MS) : FIRST_BYTE_MS[tier];
+    const stuck = setTimeout(() => attempt.abort(), last ? Math.max(firstByte, LAST_FIRST_BYTE_MS) : firstByte);
     const onAbort = () => attempt.abort();
     handlers.signal?.addEventListener("abort", onAbort);
+    // The exact bytes sent: NEAR AI signs their hash.
+    const body = JSON.stringify({ model: ep.model, messages, stream: true, ...requestOptions(ep, tier),
+      ...(handlers.temperature !== undefined ? { temperature: handlers.temperature } : {}),
+      ...(handlers.maxTokens !== undefined ? { max_tokens: handlers.maxTokens } : {}) });
     try {
       const res = await fetch(ep.url, {
         method: "POST",
@@ -220,9 +247,7 @@ async function completeMasked(
           "Content-Type": "application/json",
           ...(ep.openrouter ? { "HTTP-Referer": "https://tryglyf.com", "X-Title": "Glyf" } : {}),
         },
-        body: JSON.stringify({ model: ep.model, messages, stream: true, ...requestOptions(ep, tier),
-          ...(handlers.temperature !== undefined ? { temperature: handlers.temperature } : {}),
-          ...(handlers.maxTokens !== undefined ? { max_tokens: handlers.maxTokens } : {}) }),
+        body,
         signal: attempt.signal,
       });
       clearTimeout(stuck);
@@ -239,11 +264,13 @@ async function completeMasked(
         continue;
       }
       const gate = new VerdictGate(forward);
+      const near = isNearAI(ep) ? { hash: createSha256(), chatId: "" } : null;
       const text = await drainSSE(res.body, { ...handlers, onToken: t => gate.push(t) }, () => {
         if (!handlers.stallMs) return;
         clearTimeout(stallTimer);
         stallTimer = setTimeout(() => attempt.abort(), last ? Math.max(handlers.stallMs, LAST_FIRST_BYTE_MS) : handlers.stallMs);
-      });
+      }, near ? { onBytes: b => near.hash.update(b), onObject: o => { if (!near.chatId && typeof o.id === "string") near.chatId = o.id; } }
+        : undefined);
       if (text.trim().length === 0) {
         attempts.push({ model, status: "empty" });
         dropped();
@@ -255,6 +282,10 @@ async function completeMasked(
         attempts.push({ model, status: "classifier" });
         dropped();
         continue;
+      }
+      if (near && near.chatId) {
+        noteNearAI({ chatId: near.chatId, model: ep.model, requestHash: sha256(body),
+          responseHash: near.hash.digest("hex"), at: Date.now() });
       }
       return { text, model, attempts };
     } catch (err) {
@@ -310,10 +341,18 @@ export class VerdictGate {
   }
 }
 
+/** For NEAR AI: every byte as it came (its signature covers their hash) and
+ *  each parsed chunk (the chat id rides in them). */
+interface RawTap {
+  onBytes(bytes: Uint8Array): void;
+  onObject(obj: Record<string, unknown>): void;
+}
+
 async function drainSSE(
   body: ReadableStream<Uint8Array>,
   handlers: StreamHandlers,
   onChunk: () => void = () => {},
+  tap?: RawTap,
 ): Promise<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -323,6 +362,7 @@ async function drainSSE(
     const { done, value } = await reader.read();
     if (done) break;
     onChunk();
+    tap?.onBytes(value);
     buffer += decoder.decode(value, { stream: true });
     let idx: number;
     while ((idx = buffer.indexOf("\n")) >= 0) {
@@ -330,9 +370,14 @@ async function drainSSE(
       buffer = buffer.slice(idx + 1);
       if (!line.startsWith("data:")) continue;
       const payload = line.slice(5).trim();
-      if (payload === "[DONE]") return text;
+      // NEAR AI's hash covers the whole stream, so it is read to the end.
+      if (payload === "[DONE]") {
+        if (tap) continue;
+        return text;
+      }
       try {
         const obj = JSON.parse(payload);
+        tap?.onObject(obj);
         const delta: string = obj.choices?.[0]?.delta?.content ?? "";
         if (delta) {
           text += delta;
