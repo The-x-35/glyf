@@ -8,14 +8,17 @@ import 'package:glyf/core/auth.dart';
 import 'package:glyf/core/theme.dart';
 import 'package:glyf/onboarding/onboarding_flow.dart';
 import 'package:glyf/profile/profile_tab.dart';
+import 'package:glyf/wallet/wallet_flow.dart';
 
 void main() {
   const bridge = MethodChannel('so.glyf/bridge');
   late bool contactsOn;
   late bool nearbyOn;
   late List<String> calls;
+  late Map<String, dynamic>? shared;
 
   setUp(() {
+    shared = null;
     contactsOn = false;
     nearbyOn = true;
     calls = [];
@@ -36,6 +39,11 @@ void main() {
           return jsonEncode({'enabled': nearbyOn, 'permission': 'granted'});
         case 'locationDisable':
           nearbyOn = false;
+          return true;
+        case 'readSharedSettings':
+          return shared == null ? null : jsonEncode(shared);
+        case 'writeSharedSettings':
+          shared = jsonDecode((call.arguments as Map)['json'] as String) as Map<String, dynamic>;
           return true;
       }
       return null;
@@ -253,6 +261,66 @@ void main() {
     final flow = tester.widget<OnboardingFlow>(find.byType(OnboardingFlow));
     expect(flow.replay, isTrue);
 
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Group pot sits under Wallet, a row with its value and nothing under it, saved as nearPot', (tester) async {
+    phone(tester);
+    shared = {'walletEnabled': true, 'evmWallets': {'metamask': '0xabc'}};
+    WalletFlow.enabled.value = true;
+    addTearDown(() => WalletFlow.enabled.value = false);
+    await tester.runAsync(Auth.restore);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ProfileTab(onRerunOnboarding: () {})),
+    ));
+    await settle(tester);
+
+    final row = byId('profile:pot');
+    await tester.scrollUntilVisible(row, 200);
+    expect(find.descendant(of: row, matching: find.text('Group pot')), findsOneWidget);
+    expect(find.descendant(of: row, matching: find.text('Add')), findsOneWidget);
+    // Just the label and its value: no sentence under the row.
+    expect(find.descendant(of: row, matching: find.byType(Text)), findsNWidgets(2));
+    final walletY = tester.getTopLeft(find.text('Wallet')).dy;
+    expect(tester.getTopLeft(find.text('Group pot')).dy, greaterThan(walletY));
+
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'alice.near');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('A pot is a Sputnik DAO, like trip.sputnik-dao.near'), findsOneWidget);
+    expect(shared!.containsKey('nearPot'), isFalse);
+
+    await tester.enterText(find.byType(TextField), 'Trip');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    await settle(tester);
+    expect(shared!['nearPot'], 'trip.sputnik-dao.near');
+    // What else was saved stays.
+    expect(shared!['evmWallets'], {'metamask': '0xabc'});
+    expect(find.descendant(of: row, matching: find.text('trip.sputnik-dao.near')), findsOneWidget);
+
+    // Saved empty, it is forgotten.
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    await settle(tester);
+    expect(shared!.containsKey('nearPot'), isFalse);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('no Group pot row while the wallet is off', (tester) async {
+    phone(tester);
+    await tester.runAsync(Auth.restore);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ProfileTab(onRerunOnboarding: () {})),
+    ));
+    await settle(tester);
+    expect(find.text('Group pot'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 }

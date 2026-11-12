@@ -13,6 +13,7 @@ import '../core/catalog.dart';
 import '../core/glyf_api.dart';
 import '../core/telemetry.dart';
 import '../core/text_sheet.dart';
+import '../near/near_pot.dart';
 import '../core/theme.dart';
 import '../shell/app_tour.dart';
 import '../onboarding/onboarding_flow.dart';
@@ -422,6 +423,23 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
             ),
           ),
           ),
+          // The Sputnik DAO a pot chip means when it names none, beside the
+          // wallets it is paid from.
+          ValueListenableBuilder<bool>(
+            valueListenable: WalletFlow.enabled,
+            builder: (context, on, _) => !on
+                ? const SizedBox.shrink()
+                : Semantics(
+                    identifier: 'profile:pot',
+                    button: true,
+                    child: _navCard(
+                      icon: Icons.groups_outlined,
+                      title: 'Group pot',
+                      trailingText: _pot.isEmpty ? 'Add' : _pot,
+                      onTap: _editPot,
+                    ),
+                  ),
+          ),
           Semantics(
             identifier: 'profile:tour',
             button: true,
@@ -607,6 +625,34 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
       fullscreenDialog: true,
       builder: (ctx) => OnboardingFlow(replay: true, onDone: () => Navigator.of(ctx).pop()),
     ));
+    _refresh();
+  }
+
+  String get _pot => (_settings[NearPot.key] as String?)?.trim() ?? '';
+
+  /// The group pot: a Sputnik DAO, saved where the keyboard reads it.
+  /// Saved empty, it is forgotten.
+  Future<void> _editPot() async {
+    final text = await showTextSheet(
+      context,
+      title: 'Group pot',
+      action: 'Save',
+      initial: _pot,
+      maxLength: 64,
+      autocorrect: false,
+      check: (t) => NearPot.normalize(t) == null ? NearPot.invalid : null,
+    );
+    if (text == null) return;
+    final pot = NearPot.normalize(text);
+    if (pot == null) return;
+    await GlyfBridge.updateSharedSettings((s) {
+      if (pot.isEmpty) {
+        s.remove(NearPot.key);
+      } else {
+        s[NearPot.key] = pot;
+      }
+      return s;
+    });
     _refresh();
   }
 
