@@ -76,13 +76,14 @@ export const env = {
    * answers at its own speed (about 1.6 s for a rewrite). */
   suggestModels: ["qwen/qwen3.7-flash", "google/gemini-2.5-flash-lite", "inclusionai/ling-3.0-flash", "gemini:gemini-3.5-flash-lite"],
   /** Private AI (lib/privateai.ts): NEAR AI Cloud's own private models,
-   *  run in TEEs (owned_by "nearai", each with a model attestation report,
-   *  checked 2026-11-13). Qwen 3.6 35B-A3B (3B active, the quickest of
-   *  them on paper) first, GLM 5.3 Flash behind it; thinking is turned off
-   *  for both. Not yet timed: the key had no credits on 2026-11-13 (402
-   *  no_limit_configured). Nothing outside NEAR AI answers these phones. */
-  nearAIModels: ["nearai:Qwen/Qwen3.6-35B-A3B-FP8", "nearai:z-ai/glm-5.3-flash"] as string[],
-  nearAISmartModels: ["nearai:Qwen/Qwen3.6-35B-A3B-FP8", "nearai:z-ai/glm-5.3-flash"] as string[],
+   *  run in TEEs (verifiable, each with a model attestation report).
+   *  Measured 2026-11-13 on a rewrite with thinking off: Qwen 3.6 35B-A3B
+   *  answered in 1.1 s ($0.17 in / $1.10 out per million tokens), Qwen 3.8
+   *  27B in 2.5 s ($0.04 / $1.35). GLM 5.3 Flash was dropped: it thought for
+   *  800 characters anyway and took 6.6 s. Nothing outside NEAR AI answers
+   *  these phones. */
+  nearAIModels: ["nearai:Qwen/Qwen3.6-35B-A3B-FP8", "nearai:Qwen/Qwen3.8-27B"] as string[],
+  nearAISmartModels: ["nearai:Qwen/Qwen3.6-35B-A3B-FP8", "nearai:Qwen/Qwen3.8-27B"] as string[],
   /** How long a glyf run's text is replayed (routes/glyf.ts): ten minutes
    *  at most, so nothing a person reads is ever much older than that. */
   cacheTtlMs: Math.min(num("CACHE_TTL_MS", 10 * 60 * 1000), 10 * 60 * 1000),

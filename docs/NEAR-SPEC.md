@@ -200,7 +200,7 @@ open, so the clients can rely on it:
   `exists: true` (it is paid into being) with `implicit: true` and `funded`.
 - **Private AI:** NEAR AI Cloud's base URL is `https://cloud-api.near.ai/v1`
   (checked). The chain is `Qwen/Qwen3.6-35B-A3B-FP8` then
-  `z-ai/glm-5.3-flash`, both NEAR-run models with model attestation reports,
+  `Qwen/Qwen3.8-27B` (GLM 5.3 Flash dropped 13 Nov: it kept thinking with thinking off, 6.6 s), both NEAR-run models with model attestation reports,
   thinking off. Receipts are checked when the app asks: GET /ai/receipts
   returns `{ok, provider: "NEAR AI Cloud", verifyUrl:
   "https://cloud.near.ai/verify", receipts: [{id, verified, chatId, model,
