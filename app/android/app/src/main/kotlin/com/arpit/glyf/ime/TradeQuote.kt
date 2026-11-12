@@ -114,8 +114,12 @@ object TradeQuote {
         return spend > held + 1e-12
     }
 
-    /** What the button says first: no wallet, then what's wrong, then the trade. */
-    fun go(i: TradeIntent, wallet: String?, asking: Boolean, quote: Quote?, held: Double?): Go {
+    /** What the button says first: no wallet, then what's wrong, then the
+     *  trade. A send waits for its address ([resolved], what its name points
+     *  at; the typed address as is) and never goes to a name that didn't
+     *  resolve ([resolveProblem]). */
+    fun go(i: TradeIntent, wallet: String?, asking: Boolean, quote: Quote?, held: Double?,
+           resolved: String? = null, resolveProblem: String? = null): Go {
         if (wallet.isNullOrEmpty()) return Go("Connect ${TradeIntent.walletName(i.chainName)}", blocked = false, connect = true)
         val isSwap = i.kind == TradeIntent.Kind.SWAP
         TradeEdit.problem(i)?.let { return Go(it, true, false) }
@@ -132,13 +136,35 @@ object TradeQuote {
             TradeIntent.Kind.TRAILING_STOP -> "Set trailing stop"
             TradeIntent.Kind.TWAP -> "Start TWAP"
             TradeIntent.Kind.BRIDGE -> "Move to ${TradeIntent.chainLabels[i.toChain ?: ""] ?: TradeIntent.capitalized(i.toChain ?: "")}"
+            TradeIntent.Kind.SEND -> resolveProblem
+                ?: if (resolved == null) "Looking up ${i.to ?: ""}" else "Send ${i.amount ?: ""} ${display(i.sell)}"
         }
+        if (i.kind == TradeIntent.Kind.SEND) return Go(title, resolved == null || resolveProblem != null, false)
         return Go(title, isSwap && asking, false)
     }
 
     /** What the app is handed (glyf://open?path=trade?…): the trade's own
      *  words and its title, for the Trade screen to quote again and sign. */
-    fun handOff(i: TradeIntent): Map<String, String> = i.query + ("title" to i.title)
+    fun handOff(i: TradeIntent, resolved: String? = null): Map<String, String> {
+        val q = i.query + ("title" to i.title)
+        return if (i.kind == TradeIntent.Kind.SEND && resolved != null) q + ("address" to resolved) else q
+    }
+
+    /** Where a hand-off goes in the app: a Solana send to the existing
+     *  Phantom send (path pay), everything else to the Trade screen, which
+     *  asks MetaMask (or Phantom for a Flash order on Solana). */
+    fun destination(query: Map<String, String>): Pair<String, Map<String, String>> =
+        TradeIntent.phantomSend(query)?.let { "pay" to it } ?: ("trade" to query)
+
+    /** A send's rows under its amount: To (the name, or the address short)
+     *  and, for a name, the Address it points at once GET /names/resolve has
+     *  answered ([resolved]; "Not found" with a [problem], "…" until then). */
+    fun sendRows(i: TradeIntent, resolved: String?, problem: String?): List<Pair<String, String>> {
+        val to = i.to ?: ""
+        val rows = mutableListOf("To" to TradeIntent.shortRecipient(to))
+        if (TradeIntent.isName(to)) rows.add("Address" to (resolved?.let { Smart.shortAddress(it) } ?: if (problem == null) "…" else "Not found"))
+        return rows
+    }
 
     /** The strip's name for the panel. */
     fun headerTitle(kind: TradeIntent.Kind): String = when (kind) {
@@ -151,11 +177,13 @@ object TradeQuote {
         TradeIntent.Kind.TRAILING_STOP -> "Trailing stop"
         TradeIntent.Kind.TWAP -> "TWAP"
         TradeIntent.Kind.BRIDGE -> "Bridge"
+        TradeIntent.Kind.SEND -> "Send"
     }
 
     /** The top card's key: You pay on a swap, else what the order does. */
     fun topKey(i: TradeIntent): String = when (i.kind) {
         TradeIntent.Kind.SWAP -> "You pay"
+        TradeIntent.Kind.SEND -> "Send"
         TradeIntent.Kind.BRIDGE -> "Move"
         TradeIntent.Kind.TWAP -> "Spend"
         else -> if (TradeEdit.sells(i)) "Sell" else "Buy"

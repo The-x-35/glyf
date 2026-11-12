@@ -66,7 +66,7 @@ object TradeEdit {
 
     /** A Flash order on what's held sells it; one paid in dollars buys. */
     fun sells(i: TradeIntent): Boolean = when (i.kind) {
-        TradeIntent.Kind.SWAP, TradeIntent.Kind.BRIDGE, TradeIntent.Kind.STOP_LOSS,
+        TradeIntent.Kind.SWAP, TradeIntent.Kind.BRIDGE, TradeIntent.Kind.SEND, TradeIntent.Kind.STOP_LOSS,
         TradeIntent.Kind.TAKE_PROFIT, TradeIntent.Kind.TRAILING_STOP -> true
         TradeIntent.Kind.BRACKET -> i.buyAmount == null && !i.amountIsUSD
         TradeIntent.Kind.LIMIT -> i.sell !in stables
@@ -75,7 +75,7 @@ object TradeEdit {
 
     /** The asset an order is about (the side that isn't dollars). */
     fun asset(i: TradeIntent): String {
-        if (i.kind == TradeIntent.Kind.SWAP || i.kind == TradeIntent.Kind.BRIDGE) return i.sell
+        if (i.kind == TradeIntent.Kind.SWAP || i.kind == TradeIntent.Kind.BRIDGE || i.kind == TradeIntent.Kind.SEND) return i.sell
         return if (sells(i)) i.sell else i.buy
     }
 
@@ -95,7 +95,7 @@ object TradeEdit {
         TradeIntent.Kind.BRACKET -> listOf(TradeField.AMOUNT, TradeField.PRICE, TradeField.STOP_PRICE)
         TradeIntent.Kind.TRAILING_STOP -> listOf(TradeField.AMOUNT, TradeField.TRAIL)
         TradeIntent.Kind.TWAP -> listOf(TradeField.AMOUNT, TradeField.DURATION)
-        TradeIntent.Kind.SWAP, TradeIntent.Kind.BRIDGE -> listOf(TradeField.AMOUNT)
+        TradeIntent.Kind.SWAP, TradeIntent.Kind.BRIDGE, TradeIntent.Kind.SEND -> listOf(TradeField.AMOUNT)
     }
 
     /** The row's name for a field. */
@@ -221,6 +221,7 @@ object TradeEdit {
                 if (!positive(i.amount)) return "Enter an amount"
                 if (i.toChain == null || i.toChain == i.chainName) return "Pick another chain"
             }
+            TradeIntent.Kind.SEND -> if (!positive(i.amount)) return "Enter an amount"
             else -> {}
         }
         return null
@@ -232,7 +233,7 @@ object TradeEdit {
         val i = intent.copy()
         val symbol = if (token.symbol.uppercase(Locale.US) == "CBBTC") "CBBTC" else token.symbol
         val address = if (token.native) null else token.address
-        if (i.kind == TradeIntent.Kind.BRIDGE) {
+        if (i.kind == TradeIntent.Kind.BRIDGE || i.kind == TradeIntent.Kind.SEND) {
             i.sell = symbol; i.buy = symbol
             i.sellAddress = address; i.buyAddress = address
             return i
@@ -284,7 +285,7 @@ object TradeEdit {
             else -> {}
         }
         // An amount of the old coin isn't an amount of the new one.
-        if (sells(i) && i.kind != TradeIntent.Kind.BRIDGE) i.amount = null
+        if (sells(i) && i.kind != TradeIntent.Kind.BRIDGE && i.kind != TradeIntent.Kind.SEND) i.amount = null
         return i
     }
 
@@ -304,8 +305,13 @@ object TradeEdit {
     }
 
     /** The chains a trade of this kind can be on. */
-    fun chains(i: TradeIntent): List<String> =
-        if (i.kind == TradeIntent.Kind.SWAP) SponsorMenu.SWAP_CHAINS else FLASH_CHAINS
+    fun chains(i: TradeIntent): List<String> = when (i.kind) {
+        TradeIntent.Kind.SWAP -> SponsorMenu.SWAP_CHAINS
+        // A send stays where its name points: Solana for a .sol name or
+        // SOL, any of MetaMask's chains otherwise.
+        TradeIntent.Kind.SEND -> if (i.chainName == "solana") listOf("solana") else SponsorMenu.SWAP_CHAINS
+        else -> FLASH_CHAINS
+    }
 
     /** Flash's chains that this server also has an EVM node for, Solana too. */
     val FLASH_CHAINS = listOf("base", "solana", "ethereum", "arbitrum", "optimism")

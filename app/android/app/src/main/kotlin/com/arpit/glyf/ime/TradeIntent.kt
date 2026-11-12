@@ -10,8 +10,8 @@ import kotlin.math.min
 /**
  * A trade said in plain words at the end of a message, read on the phone
  * with no model: a swap goes to Uniswap (Jupiter on Solana), an order that
- * waits for a price to Definitive's Flash. The keyboard only shows what it
- * read; the app quotes it again and the person's own wallet app (MetaMask
+ * waits for a price to Definitive's Flash, a send to an ENS (.eth) or SNS
+ * (.sol) name or an address. The keyboard only shows what it read; the app quotes it again and the person's own wallet app (MetaMask
  * or Phantom) signs. The keyboard never holds a key (SPEC §1.5).
  * The twin of TradeIntent.swift and TradeRecurring.swift, rule for rule.
  */
@@ -53,6 +53,10 @@ data class TradeIntent(
     /** A buy repeated on a schedule ("dca $20 in eth each month"), placed
      *  as this one Flash TWAP. */
     var plan: RecurringPlan? = null,
+    /** A send's recipient as typed: vitalik.eth, arpit.sol, or 0x… (the
+     *  name is lowercased; the panel looks up its address before anything
+     *  is signed). */
+    var to: String? = null,
 ) {
 
     enum class Kind(val raw: String) {
@@ -73,7 +77,11 @@ data class TradeIntent(
         /** Flash: one order spread over time. */
         TWAP("twap"),
         /** Flash: the same token moved to another chain. */
-        BRIDGE("bridge");
+        BRIDGE("bridge"),
+        /** A send to an ENS or SNS name, or an address: "send 5 usdc to
+         *  vitalik.eth". MetaMask sends it on Ethereum chains, Phantom on
+         *  Solana (a .sol name, or SOL itself). */
+        SEND("send");
 
         companion object {
             fun of(raw: String): Kind? = values().firstOrNull { it.raw == raw }
@@ -103,6 +111,7 @@ data class TradeIntent(
         get() = when (kind) {
             // Solana has no Uniswap pools here: Jupiter swaps there.
             Kind.SWAP -> if (chainName == "solana") "Jupiter" else "Uniswap"
+            Kind.SEND -> walletName(chainName)
             else -> "Flash"
         }
 
@@ -141,6 +150,7 @@ data class TradeIntent(
             Kind.TRAILING_STOP -> "Trail $sell by ${trailPercent ?: ""}%"
             Kind.TWAP -> twapTitle()
             Kind.BRIDGE -> "Move $amountText to ${chainLabels[toChain ?: ""] ?: capitalized(toChain ?: "")}"
+            Kind.SEND -> "Send $amountText to ${to?.let { shortRecipient(it) } ?: ""}"
         }
 
     private fun twapTitle(): String {
@@ -183,6 +193,7 @@ data class TradeIntent(
             sellAddress?.let { q["sellAddress"] = it }
             buyAddress?.let { q["buyAddress"] = it }
             buyChain?.let { if (it != chainName) q["buyChain"] = it }
+            to?.let { q["to"] = it }
             return q
         }
 
@@ -307,7 +318,7 @@ data class TradeIntent(
         private const val START = """(?:^|[.!?\n]\s*|\b(?:pls|please|glyf|hey glyf)[,:]?\s+)"""
 
         private val triggers = listOf("swap", "convert", "trade", "buy", "sell", "stop", "take profit", "tp ", "trail",
-            "dca", "move", "bridge", "send", "protect", "limit", "invest", "stack", "put")
+            "dca", "move", "bridge", "send", "pay", "transfer", "protect", "limit", "invest", "stack", "put")
 
         fun parse(text: String): TradeIntent? {
             val t = text.takeLast(200)
@@ -317,7 +328,7 @@ data class TradeIntent(
             if (triggers.none { lower.contains(it) }) return null
             // A schedule longer than Flash's 30-day TWAP is a recurring plan.
             val spread = twap(t)?.takeIf { (it.durationSeconds ?: 0) <= RecurringPlan.FLASH_MAX_SECONDS }
-            val r = bracket(t) ?: orders(t) ?: spread ?: recurring(t) ?: bridgeMove(t) ?: swap(t) ?: return null
+            val r = bracket(t) ?: orders(t) ?: spread ?: recurring(t) ?: bridgeMove(t) ?: send(t) ?: swap(t) ?: return null
             // A share trades on Base, by its address there.
             baseStocks[r.sell]?.let { r.sellAddress = it; r.chain = "base" }
             baseStocks[r.buy]?.let { r.buyAddress = it; r.chain = "base" }
@@ -510,6 +521,80 @@ data class TradeIntent(
             val i = TradeIntent(Kind.BRIDGE, amount = amount(m[1]), sell = asset, buy = asset, chain = from)
             i.toChain = to
             return i
+        }
+
+        // "send 20 usdc to vitalik.eth", "pay arpit.sol 5 usdc", "send 0.01 eth to 0x12…"
+        private fun send(t: String): TradeIntent? {
+            val who = """([a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:eth|sol)|0x[0-9a-fA-F]{40})"""
+            var m = match(START + """(?:send|pay|transfer)\s+""" + NUM + """\s+""" + SYM + """\s+to\s+""" + who + CHAIN_PART + END, t)
+            if (m == null) {
+                match(START + """(?:send|pay)\s+""" + who + """\s+""" + NUM + """\s+""" + SYM + CHAIN_PART + END, t)?.let { n ->
+                    m = listOf(n[0], n[2], n[3], n[1], n[4])
+                }
+            }
+            val g = m ?: return null
+            val asset = symbol(g[2]) ?: return null
+            val to = g[3] ?: return null
+            if (baseStocks[asset] != null) return null
+            val address = to.startsWith("0x") || to.startsWith("0X")
+            val name = to.lowercase(Locale.US)
+            // A .sol name is Solana's, and SOL only moves there: Phantom sends
+            // it, and Phantom's send here carries SOL or USDC.
+            val onSolana = name.endsWith(".sol") || asset == "SOL"
+            if (onSolana && (address || asset !in listOf("SOL", "USDC"))) return null
+            val i = TradeIntent(Kind.SEND, amount = amount(g[1]), sell = asset, buy = asset,
+                chain = if (onSolana) "solana" else chain(g[4], asset))
+            if (i.chain == "solana" && !onSolana) return null
+            i.to = if (address) to else name
+            return if (i.amount == null) null else i
+        }
+
+        /** A send's recipient on the strip: a name as typed, an address short. */
+        fun shortRecipient(to: String): String {
+            if (!to.startsWith("0x") || to.length <= 12) return to
+            return to.take(6) + "…" + to.takeLast(4)
+        }
+
+        /** Whether [to] is a name to look up (not an address already). */
+        fun isName(to: String?): Boolean = to != null && (to.endsWith(".eth") || to.endsWith(".sol"))
+
+        /** A send on Solana (a .sol name, or SOL to a name) goes through the
+         *  app's existing Phantom send (glyf://open?path=pay), with the address
+         *  the name resolved to; everything else is the Trade screen's, which
+         *  asks MetaMask. Null when it isn't a Solana send. */
+        fun phantomSend(query: Map<String, String>): Map<String, String>? {
+            if (query["kind"] != "send" || query["chain"] != "solana") return null
+            val to = query["address"] ?: return null
+            val amount = query["amount"] ?: return null
+            val token = (query["sell"] ?: "").uppercase(Locale.US)
+            val (mint, decimals) = when (token) {
+                "SOL" -> "So11111111111111111111111111111111111111112" to 9
+                "USDC" -> "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" to 6
+                else -> return null
+            }
+            return mapOf("kind" to "send", "to" to to, "amount" to amount, "token" to token,
+                "mint" to mint, "symbol" to token, "decimals" to decimals.toString())
+        }
+
+        /** What GET /names/resolve said, as the address for [chain] or the
+         *  reason there is none: (address, problem). */
+        fun recipient(name: String, chain: String, ok: Boolean, answer: org.json.JSONObject?): Pair<String?, String?> {
+            if (!ok) {
+                if (answer != null && answer.has("found") && !answer.optBoolean("found", true)) return null to "$name isn’t registered"
+                return null to "Couldn’t look up $name"
+            }
+            val addresses = answer?.optJSONObject("addresses")
+            // TradeIntent's chain names are the server's, Unichain aside (an
+            // ENS name sets no Unichain record; its Ethereum one is the same account).
+            fun record(k: String) = (addresses?.opt(k) as? String)?.takeIf { it.isNotEmpty() }
+            val own = record(chain)
+            val found = if (chain == "solana") own else (own ?: record("ethereum"))
+            val solana = chain == "solana"
+            val none = if (solana) "$name has no Solana address" else "$name has no Ethereum address"
+            if (found == null) return null to none
+            val shape = if (solana) Regex("""^[1-9A-HJ-NP-Za-km-z]{32,44}$""") else Regex("""^0x[0-9a-fA-F]{40}$""")
+            if (!shape.matches(found)) return null to none
+            return found to null
         }
 
         // "dca $20 in eth each month", "dca 20$ eth weekly", "invest 100 usdc in

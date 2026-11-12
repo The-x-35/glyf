@@ -6146,7 +6146,13 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             evmAddress = settings.optString("evmAddress").ifEmpty { null },
             solanaAddress = settings.optString("walletAddress").ifEmpty { null },
             start = intent,
-            onHandOff = { query -> dismissFeaturePanel(); openAppPath("trade", query) },
+            // A Solana send goes to the app's Phantom send, the rest to its
+            // Trade screen (MetaMask; Phantom for Flash on Solana).
+            onHandOff = { query ->
+                dismissFeaturePanel()
+                val (path, q) = TradeQuote.destination(query)
+                openAppPath(path, q)
+            },
             onConnect = { dismissFeaturePanel(); openAppPath("wallet") },
             onToast = { notice(it) },
             onTitle = { title -> showStripTitle(title, onBack = null, icon = "trend") },

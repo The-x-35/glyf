@@ -17,9 +17,10 @@ import java.util.concurrent.Executors
  *  nowhere says so and sends nothing (Arpit, 2026-11-12: "I feel you can
  *  add sending to .eth and .sol, ENS and SNS").
  *
- *  Only .sol here, in SOL or USDC (what Send pays in): the iPhone keyboard
- *  also sends to .eth names, signed in MetaMask, which this keyboard has no
- *  way to open yet. The words are read as TradeIntent.swift reads a send. */
+ *  Only .sol here, in SOL or USDC (what Send pays in). A send to an .eth
+ *  name or a 0x address is TradeIntent's (kind SEND): the trade panel looks
+ *  its name up and the app has MetaMask sign. The words are read as
+ *  TradeIntent.swift reads a send. */
 object NameSend {
 
     data class Ask(val name: String, val amount: String, val token: String)

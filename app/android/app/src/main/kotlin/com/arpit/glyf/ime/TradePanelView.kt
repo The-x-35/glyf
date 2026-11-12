@@ -78,6 +78,14 @@ class TradePanelView(
     private var serial = 0
     /** Whole tokens held by symbol, per chain, once /evm/balances answers. */
     private val held = mutableMapOf<String, Map<String, Double>>()
+    /** A send's recipient: the address its name points at on the send's
+     *  chain (GET /names/resolve), once looked up; the typed address as is. */
+    private var resolved: String? = null
+    /** The name points nowhere (or nowhere on this chain), or the lookup
+     *  failed: the button says which, and nothing is handed on. */
+    private var resolveProblem: String? = null
+    /** The "name|chain" last asked, so a token change doesn't ask again. */
+    private var resolvedFor: String? = null
     /** Picker rows per chain (server answer merged over the built-in few). */
     private val tokenRows = mutableMapOf<String, List<TokenPick>>()
 
@@ -143,20 +151,20 @@ class TradePanelView(
         if (enabled) setOnClickListener { onTap() }
     }
 
-    private fun tokenPill(symbol: String, qa: String, onTap: () -> Unit) =
-        label("${TradeQuote.display(symbol)} ▾", 14f, true, palette.ink).apply {
+    private fun tokenPill(symbol: String, qa: String, onTap: (() -> Unit)?) =
+        label(TradeQuote.display(symbol) + if (onTap != null) " ▾" else "", 14f, true, palette.ink).apply {
             background = pill()
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(6), dp(10), dp(6))
             setTag(com.arpit.glyf.R.id.qa_id, qa)
-            setOnClickListener { onTap() }
+            if (onTap != null) setOnClickListener { onTap() }
         }
 
     /** One side: its key and chain, the amount (a tap types it) and its
      *  token, a line under them. */
     private fun sideCard(key: String, chain: String, chainEnabled: Boolean, onChain: () -> Unit,
                          amount: String, placeholder: Boolean, onAmount: (() -> Unit)?,
-                         token: String, onToken: () -> Unit, sub: String, id: String): View {
+                         token: String, onToken: (() -> Unit)?, sub: String, id: String): View {
         val c = card()
         c.setTag(com.arpit.glyf.R.id.qa_id, "trade:$id")
         val top = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -224,12 +232,15 @@ class TradePanelView(
             val market = marketPrice
             if (market != null) sub.add("${TradeQuote.display(top)} ${TradeQuote.dollars(market)}") else if (asking) sub.add("…")
             if (TradeEdit.sells(i)) balance(top, i.chainName)?.takeIf { it > 0 }?.let { sub.add("Balance ${PayPanelView.compact(it)}") }
+            // Phantom's send here takes SOL or USDC as read; no picker for it.
+            val tokenPicks = !(i.kind == TradeIntent.Kind.SEND && i.chainName == "solana")
             body.addView(sideCard(TradeQuote.topKey(i), i.chainName, chains, { openChains(TradeEdit.Side.SELL) },
                 TradeEdit.shown(TradeField.AMOUNT, i), TradeEdit.value(TradeField.AMOUNT, i).isEmpty(),
-                { begin(TradeField.AMOUNT) }, top, { openTokens(assetSide) }, sub.joinToString(" · "), "paycard"), full(top = dp(2)))
+                { begin(TradeField.AMOUNT) }, top, if (tokenPicks) ({ openTokens(assetSide) }) else null,
+                sub.joinToString(" · "), "paycard"), full(top = dp(2)))
             renderRows()
         }
-        val go = TradeQuote.go(i, wallet, asking, quote, balance(i.sell, i.chainName))
+        val go = TradeQuote.go(i, wallet, asking, quote, balance(i.sell, i.chainName), resolved, resolveProblem)
         body.addView(label(go.title, 15f, true, if (go.blocked) palette.inkSoft else Color.WHITE).apply {
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
@@ -250,6 +261,9 @@ class TradePanelView(
         }.toMutableList()
         if (i.kind == TradeIntent.Kind.BRIDGE) {
             specs.add(Spec("toChain", "To", TradeIntent.chainLabels[i.toChain ?: ""] ?: "") { openChains(TradeEdit.Side.BUY) })
+        }
+        if (i.kind == TradeIntent.Kind.SEND) {
+            for ((l, v) in TradeQuote.sendRows(i, resolved, resolveProblem)) specs.add(Spec(l.lowercase(), l, v) {})
         }
         // A recurring buy: the Over row says how much of the plan this Flash
         // order holds (Flash runs 30 days at most).
@@ -282,7 +296,8 @@ class TradePanelView(
         val strip = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         col.addView(label(TradeEdit.label(field, intent), 12.5f, true, palette.inkSoft))
-        val placeholder = if (field == TradeField.AMOUNT && TradeEdit.sells(intent) && intent.kind != TradeIntent.Kind.BRIDGE) "All" else "0"
+        val placeholder = if (field == TradeField.AMOUNT && TradeEdit.sells(intent) && intent.kind != TradeIntent.Kind.BRIDGE &&
+            intent.kind != TradeIntent.Kind.SEND) "All" else "0"
         col.addView(label(typed.ifEmpty { placeholder }, 19f, true, if (typed.isEmpty()) palette.inkSoft else palette.ink).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), 0, dp(10), 0)
@@ -477,7 +492,7 @@ class TradePanelView(
     private fun go(g: TradeQuote.Go) {
         if (g.connect) { onConnect(); return }
         if (g.blocked) return
-        onHandOff(TradeQuote.handOff(intent))
+        onHandOff(TradeQuote.handOff(intent, resolved))
     }
 
     // MARK: live numbers
@@ -485,8 +500,35 @@ class TradePanelView(
     private fun loadLive() {
         val title = TradeQuote.headerTitle(intent.kind)
         if (title != shownTitle) { shownTitle = title; onTitle(title) }
-        if (isSwap) requote() else price(TradeEdit.asset(intent))
+        when {
+            isSwap -> requote()
+            intent.kind == TradeIntent.Kind.SEND -> { resolve(); price(intent.sell) }
+            else -> price(TradeEdit.asset(intent))
+        }
         render()
+    }
+
+    /** The address a send goes to, shown (shortened) before anything is
+     *  signed. A name is looked up for the send's chain: an ENS name's own
+     *  record there, else its Ethereum one; a .sol name's Solana owner.
+     *  Nothing found means nothing is sent. */
+    private fun resolve() {
+        val to = intent.to
+        if (to == null) { resolved = null; resolveProblem = "No one to send to"; return }
+        if (!TradeIntent.isName(to)) { resolved = to; resolveProblem = null; resolvedFor = null; return }
+        val chain = intent.chainName
+        val key = "$to|$chain"
+        if (key == resolvedFor) return
+        resolvedFor = key
+        resolved = null
+        resolveProblem = null
+        http("GET", "/names/resolve?name=" + java.net.URLEncoder.encode(to, "UTF-8"), null) { ok, obj ->
+            if (resolvedFor != key) return@http
+            val (address, problem) = TradeIntent.recipient(to, chain, ok, obj)
+            resolved = address
+            resolveProblem = problem
+            render()
+        }
     }
 
     private fun balance(symbol: String, chain: String): Double? {

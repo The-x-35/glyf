@@ -124,6 +124,7 @@ object Smart {
         is Chip.Trade -> when (chip.intent.kind) {
             TradeIntent.Kind.SWAP -> if (chip.intent.amountIsUSD || chip.intent.buyAmount != null) "Buy" else "Swap"
             TradeIntent.Kind.BRIDGE -> "Move"
+            TradeIntent.Kind.SEND -> "Send"
             else -> "Set"
         }
         is Chip.Action, is Chip.Details, is Chip.Convert -> null

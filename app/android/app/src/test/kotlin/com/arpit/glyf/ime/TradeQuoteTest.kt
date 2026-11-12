@@ -130,6 +130,37 @@ class TradeQuoteTest {
         assertEquals("Buy $10 of TSLA at $300", q["title"])
     }
 
+    /** A send's button waits for its name's address and says why it can't
+     *  go (TradeSurface.swift's goTitle and blocked for .send). */
+    @Test fun aSendWaitsForItsAddress() {
+        val send = read("send 5 usdc to vitalik.eth")
+        val address = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+        assertEquals("Connect MetaMask", TradeQuote.go(send, null, false, null, null).title)
+        assertEquals(TradeQuote.Go("Looking up vitalik.eth", blocked = true, connect = false),
+            TradeQuote.go(send, "0xabc", false, null, null))
+        assertEquals(TradeQuote.Go("vitalik.eth has no Ethereum address", blocked = true, connect = false),
+            TradeQuote.go(send, "0xabc", false, null, null, resolveProblem = "vitalik.eth has no Ethereum address"))
+        assertEquals(TradeQuote.Go("Send 5 USDC", blocked = false, connect = false),
+            TradeQuote.go(send, "0xabc", false, null, 20.0, resolved = address))
+        assertEquals("Not enough USDC", TradeQuote.go(send, "0xabc", false, null, 1.0, resolved = address).title)
+        assertEquals("Enter an amount", TradeQuote.go(send.copy(amount = null), "0xabc", false, null, null, resolved = address).title)
+        // The rows: the name, and the address it points at once known.
+        assertEquals(listOf("To" to "vitalik.eth", "Address" to "…"), TradeQuote.sendRows(send, null, null))
+        assertEquals(listOf("To" to "vitalik.eth", "Address" to "0xd8…6045"), TradeQuote.sendRows(send, address, null))
+        assertEquals(listOf("To" to "vitalik.eth", "Address" to "Not found"), TradeQuote.sendRows(send, null, "vitalik.eth isn’t registered"))
+        // An address typed is its own row, and nothing to look up.
+        assertEquals(listOf("To" to "0x5290…9EE7"),
+            TradeQuote.sendRows(read("send 0.01 eth to 0x52908400098527886E0F7030069857D2E4169EE7"), null, null))
+        // The app gets the address the panel showed, to check again.
+        val q = TradeQuote.handOff(send, address)
+        assertEquals(address, q["address"])
+        assertEquals("vitalik.eth", q["to"])
+        assertEquals("Send 5 USDC to vitalik.eth", q["title"])
+        assertNull(TradeQuote.handOff(send)["address"])
+        assertEquals("Send", TradeQuote.headerTitle(TradeIntent.Kind.SEND))
+        assertEquals("Send", TradeQuote.topKey(send))
+    }
+
     @Test fun namesAndFigures() {
         assertEquals("Stop-loss", TradeQuote.headerTitle(TradeIntent.Kind.STOP_LOSS))
         assertEquals("You pay", TradeQuote.topKey(read("swap 10 usdc to eth")))
