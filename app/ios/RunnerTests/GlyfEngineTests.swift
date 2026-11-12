@@ -1584,6 +1584,21 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(PhraseMemory.lastSentence(of: "Hi! Running late today"), "Running late today")
     }
 
+    /// The launch video's line: a bill and how many people, said any way
+    /// (2026-11-12). SmartProbeTest.aBillForThePeopleSaidIsSplit on Android.
+    func testABillForThePeopleSaidIsSplit() {
+        func q(_ t: String) -> [String]? { Smart.quickAnswer(in: t, region: "US")?.results }
+        XCTAssertEqual(q("dinner was $90 for 4 of us"), ["$22.50 each"])
+        XCTAssertEqual(q("dinner was $90 for the four of us"), ["$22.50 each"])
+        XCTAssertEqual(q("the cabin is $1,200 for 6 people"), ["$200 each"])
+        XCTAssertEqual(q("split $90 between 4 people"), ["$22.50 each"])
+        XCTAssertEqual(q("split $90 between four"), ["$22.50 each"])
+        XCTAssertEqual(q("$60 split three ways"), ["$20 each"])
+        for t in ["$90 for 4 tickets", "a table for 4 of us", "$90 for 1 of us", "we paid $90 for four"] {
+            XCTAssertNil(Smart.billMath(in: t), t)
+        }
+    }
+
     func testEverydayPhrasesInOtherLanguages() {
         func q(_ t: String) -> [String]? { Smart.quickAnswer(in: t, region: "US")?.results }
         XCTAssertEqual(q("thank you in spanish"), ["gracias"])

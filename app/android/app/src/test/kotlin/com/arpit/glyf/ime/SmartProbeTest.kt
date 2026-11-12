@@ -277,4 +277,19 @@ class SmartProbeTest {
         assertEquals("🍕", EmojiWords.emoji("Pizzas"))
         assertNull(EmojiWords.emoji("the"))
     }
+
+    /** The launch video's line: a bill and how many people, said any way
+     *  (2026-11-12). GlyfEngineTests.testABillForThePeopleSaidIsSplit. */
+    @Test fun aBillForThePeopleSaidIsSplit() {
+        fun a(t: String) = Smart.quickAnswer(t, region = "US")?.results
+        assertEquals(listOf("\$22.50 each"), a("dinner was \$90 for 4 of us"))
+        assertEquals(listOf("\$22.50 each"), a("dinner was \$90 for the four of us"))
+        assertEquals(listOf("\$200 each"), a("the cabin is \$1,200 for 6 people"))
+        assertEquals(listOf("\$22.50 each"), a("split \$90 between 4 people"))
+        assertEquals(listOf("\$22.50 each"), a("split \$90 between four"))
+        assertEquals(listOf("\$20 each"), a("\$60 split three ways"))
+        for (t in listOf("\$90 for 4 tickets", "a table for 4 of us", "\$90 for 1 of us", "we paid \$90 for four")) {
+            assertNull(t, Smart.billMath(t))
+        }
+    }
 }

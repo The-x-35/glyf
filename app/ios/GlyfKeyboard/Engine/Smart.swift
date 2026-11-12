@@ -2385,19 +2385,31 @@ extension Smart {
 
     private static func number(_ s: String?) -> Double? { s.flatMap { Double($0.replacingOccurrences(of: ",", with: "")) } }
 
+    /// A bill's headcount, in digits or words: "4", "four".
+    private static func headcount(_ s: String?) -> Double? {
+        guard let s else { return nil }
+        let words = ["two": 2.0, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+                     "nine": 9, "ten": 10, "eleven": 11, "twelve": 12]
+        return number(s) ?? words[s.lowercased()]
+    }
+
     /// "split 120 4 ways" → $30 each; "15% tip on 80" → $12 tip, $92 total;
     /// "20% off 80" → $64, save $16; "$80 + 8.875% tax" → $87.10 total,
     /// $7.10 tax. Each needs its word (split, tip, off, tax), so "50% sure"
     /// and "24/7" stay what they are.
     static func billMath(in text: String) -> Conversions? {
         let ways = #"\s*(?:ways?|people|persons|of us|friends)?"#
+        // How many, in digits or words ("four of us").
+        let count = #"(\d{1,2}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"#
         let splits = [
-            #"\bsplit\s+(?:the\s+)?(?:bill\s+(?:of\s+)?|[a-z]{2,12}\s+(?:of\s+)?)?"# + sym + #"\s*"# + amt + #"\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+|with\s+)?(\d{1,2})"# + ways + end,
-            sym + #"\s*"# + amt + #"\s+(?:split|divided)\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+)?(\d{1,2})"# + ways + end,
-            sym + #"\s*"# + amt + #"\s+(?:between|among)\s+(\d{1,2})\s+(?:people|persons|of us|friends)"# + end,
+            #"\bsplit\s+(?:the\s+)?(?:bill\s+(?:of\s+)?|[a-z]{2,12}\s+(?:of\s+)?)?"# + sym + #"\s*"# + amt + #"\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+|with\s+)?"# + count + ways + end,
+            sym + #"\s*"# + amt + #"\s+(?:split|divided)\s+(?:in\s+|into\s+|between\s+|among\s+|by\s+)?"# + count + ways + end,
+            sym + #"\s*"# + amt + #"\s+(?:between|among)\s+"# + count + #"\s+(?:people|persons|of us|friends)"# + end,
+            // "dinner was $90 for 4 of us", "$90 for the four of us", "$120 for 3 people".
+            sym + #"\s*"# + amt + #"\s+for\s+(?:the\s+|all\s+)?"# + count + #"\s+(?:of us|people|persons|friends)"# + end,
         ]
         for p in splits {
-            guard let g = firstMatch(p, in: text), let bill = number(g[2]), let n = number(g[3]), n >= 2, n <= 50 else { continue }
+            guard let g = firstMatch(p, in: text), let bill = number(g[2]), let n = headcount(g[3]), n >= 2, n <= 50 else { continue }
             let s = g[1] ?? ""
             return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces), results: ["\(billMoney(bill / n, s)) each"])
         }
