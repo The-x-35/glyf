@@ -50,6 +50,14 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertEqual(SecretScanner.scan("meet at 6"), .clean)
     }
 
+    // MARK: ClipboardStore: a copy from the Mac is never read on its own
+
+    func testACopyFromAnotherDeviceIsLeftForThePasteTap() {
+        XCTAssertTrue(ClipboardStore.isFromAnotherDevice(["public.utf8-plain-text", "com.apple.is-remote-clipboard"]))
+        XCTAssertFalse(ClipboardStore.isFromAnotherDevice(["public.utf8-plain-text"]))
+        XCTAssertFalse(ClipboardStore.isFromAnotherDevice([]))
+    }
+
     // MARK: ClipboardStore (§6.1: 20 items, 1h expiry, pins survive)
 
     func testClipboardExpiryAndCap() {
