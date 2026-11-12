@@ -53,7 +53,30 @@ const PLACEHOLDER: Record<string, string> = {
   evm: "0x…", solana: "Your Solana address", bitcoin: "bc1…", zcash: "t1…", near: "you.near",
 };
 
-export function renderPayPage(r: PayRequest, tally: Tally, nonce: string): string {
+/** What a shared pot holds and who's in it, read live from the DAO
+ *  (lib/sputnik.ts): "Holds 7,811.32 NEAR · 1 USDC", "hack.near, mintlu.near and 77 more". */
+export interface PotSummary { holds: string; members: string }
+
+export function potSummary(balance: { near: string; tokens: { symbol: string; amount: string }[] }, members: string[],
+  memberCount: number): PotSummary {
+  const fmt = (v: string) => {
+    const [i, f] = v.split(".");
+    return Number(i).toLocaleString("en-US") + (f ? `.${f.slice(0, 2)}` : "");
+  };
+  const sums = new Map<string, number>();
+  for (const t of balance.tokens) sums.set(t.symbol, (sums.get(t.symbol) ?? 0) + Number(t.amount));
+  const near = Number(balance.near) + (sums.get("NEAR") ?? 0);
+  sums.delete("NEAR");
+  const parts = [`${fmt(near.toFixed(2).replace(/\.?0+$/, ""))} NEAR`,
+    ...[...sums].map(([s, n]) => `${fmt(n.toFixed(2).replace(/\.?0+$/, ""))} ${s}`)];
+  const shown = members.slice(0, 3);
+  const more = memberCount - shown.length;
+  const who = shown.length === 0 ? "" : more > 0 ? `${shown.join(", ")} and ${more} more` : shown.length > 1
+    ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : shown[0];
+  return { holds: `Holds ${parts.join(" · ")}`, members: who ? `${memberCount} ${memberCount === 1 ? "member" : "members"}: ${who}` : "" };
+}
+
+export function renderPayPage(r: PayRequest, tally: Tally, nonce: string, pot: PotSummary | null = null): string {
   const chain = NEAR_CHAINS[r.chain];
   const money = amountWords(r.amount, r.coin);
   const options = PAY_WITH.filter(o => !(o.coin === r.coin && o.chain === r.chain)).map(o => ({
@@ -150,6 +173,7 @@ export function renderPayPage(r: PayRequest, tally: Tally, nonce: string): strin
   <p class="line">${escape(headline(r))}</p>
   ${r.pot ? `<p class="pot">Into the ${escape(daoName(r.to))} DAO treasury · shared pot</p>`
     : `<p class="pot">Paid as ${escape(r.coin)} on ${escape(chain?.name ?? r.chain)}</p>`}
+  ${pot ? `<p class="pot" id="potHolds">${escape(pot.holds)}</p>${pot.members ? `<p class="pot" id="potMembers">${escape(pot.members)}</p>` : ""}` : ""}
   <p class="tally" id="tally">${tally.words ? `${dots}<span id="tallyWords">${escape(tally.words)}</span>` : ""}</p>
 
   <p class="done" id="full"${tally.full ? "" : " hidden"}>Everyone's paid</p>

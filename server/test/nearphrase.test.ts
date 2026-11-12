@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chainOfAddress, parseNearPhrase } from "../src/lib/nearphrase.js";
+import { chainOfAddress, parseEarnPhrase, parseNearPhrase, parsePotPhrase } from "../src/lib/nearphrase.js";
 
 /** docs/NEAR-SPEC.md's table of what people type, read the server's way. */
 
@@ -56,5 +56,54 @@ describe("NEAR phrases", () => {
     expect(parseNearPhrase("swap usdc to sol")).toBeNull();
     expect(parseNearPhrase("swap 20 usdc on moon to sol")).toBeNull();
     expect(parseNearPhrase("send 5 usdc")).toBeNull();
+  });
+});
+
+describe("Earn phrases", () => {
+  it("reads idle coins put to work", () => {
+    const usdc50 = { kind: "earn", direction: "in", coin: "USDC", amount: "50" };
+    for (const t of ["put $50 to work", "put 50 usdc to work", "Put my 50 USDC to work.", "earn on 50 usdc", "earn yield on $50",
+      "park 50 usdc", "park $50 in earn", "start earning on 50 usdc"]) expect(parseEarnPhrase(t), t).toEqual(usdc50);
+    expect(parseEarnPhrase("put 0.5 sol to work")).toEqual({ kind: "earn", direction: "in", coin: "SOL", amount: "0.5" });
+    expect(parseEarnPhrase("stake .5 sol in a vault")).toEqual({ kind: "earn", direction: "in", coin: "SOL", amount: "0.5" });
+    expect(parseEarnPhrase("put 50 usdc on solana to work")).toEqual({ ...usdc50, chain: "solana" });
+    expect(parseEarnPhrase("park 50 usdc on base")).toEqual({ ...usdc50, chain: "base" });
+  });
+
+  it("reads taking it back out, all of it or an amount", () => {
+    expect(parseEarnPhrase("take my usdc out of earn")).toEqual({ kind: "earn", direction: "out", coin: "USDC" });
+    expect(parseEarnPhrase("take my sol out of earn")).toEqual({ kind: "earn", direction: "out", coin: "SOL" });
+    expect(parseEarnPhrase("take 20 usdc out of earn")).toEqual({ kind: "earn", direction: "out", coin: "USDC", amount: "20" });
+    expect(parseEarnPhrase("withdraw $20 from earn")).toEqual({ kind: "earn", direction: "out", coin: "USDC", amount: "20" });
+    expect(parseEarnPhrase("take 20 usdc out of earn to solana")).toMatchObject({ direction: "out", chain: "solana" });
+  });
+
+  it("leaves everything else alone", () => {
+    for (const t of ["earn on 50 doge", "take it out", "park the car", "put the kids to work", "put 50 usdc on moon to work",
+      "swap 20 usdc on base to sol"]) expect(parseEarnPhrase(t), t).toBeNull();
+  });
+});
+
+describe("pot phrases", () => {
+  it("reads a look at the pot", () => {
+    expect(parsePotPhrase("how much is in the trip pot")).toEqual({ kind: "pot", ask: "balance", pot: "trip" });
+    expect(parsePotPhrase("How much is left in the trip pot?")).toEqual({ kind: "pot", ask: "balance", pot: "trip" });
+    expect(parsePotPhrase("what's in the pot")).toEqual({ kind: "pot", ask: "balance" });
+    expect(parsePotPhrase("check the trip pot")).toEqual({ kind: "pot", ask: "balance", pot: "trip" });
+    expect(parsePotPhrase("pot balance")).toEqual({ kind: "pot", ask: "balance" });
+    expect(parsePotPhrase("how much is in build.sputnik-dao.near")).toEqual({ kind: "pot", ask: "balance", dao: "build.sputnik-dao.near" });
+  });
+
+  it("reads a payout from the pot, to a name or a NEAR account", () => {
+    expect(parsePotPhrase("pay the caterer $120 from the pot")).toEqual({ kind: "pot", ask: "pay", payee: "the caterer", amount: "120", coin: "USDC" });
+    expect(parsePotPhrase("pay caterer.near 120 usdc from the trip pot for catering")).toEqual({ kind: "pot", ask: "pay",
+      payee: "caterer.near", amount: "120", coin: "USDC", pot: "trip", note: "catering" });
+    expect(parsePotPhrase("send bob.near 5 near out of the pot")).toEqual({ kind: "pot", ask: "pay", payee: "bob.near", amount: "5", coin: "NEAR" });
+  });
+
+  it("leaves everything else alone", () => {
+    for (const t of ["pay the caterer $120", "how much is in the bank", "the pot is boiling", "send 5 usdc to alice.near"]) {
+      expect(parsePotPhrase(t), t).toBeNull();
+    }
   });
 });

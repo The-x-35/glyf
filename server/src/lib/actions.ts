@@ -2,7 +2,8 @@ import { z } from "zod";
 import { NEAR_IMPLICIT_ACCOUNT, NEAR_NAME } from "./names.js";
 import { shortAddress } from "./nearguard.js";
 import { addressFits, CHAIN_WORDS, homeChainOf, NEAR_CHAINS, nearChainOf, type NearChain } from "./nearintents.js";
-import { amountWords, shareOf } from "./payrequests.js";
+import { parseEarnPhrase, parsePotPhrase } from "./nearphrase.js";
+import { amountWords, shareOf, SPUTNIK } from "./payrequests.js";
 
 /**
  * The strip's recommended action: when a pause in typing reads as something
@@ -91,6 +92,21 @@ export function crossesForNear(a: NearChain, b: NearChain): boolean {
   return a.kind === "other" || b.kind === "other" || a.kind !== b.kind;
 }
 
+/** Earn's coins: USDC (Morpho on Base) and SOL (Kamino on Solana). */
+const earnCoin = nearCoin.refine(c => c === "USDC" || c === "SOL", "Earn takes USDC or SOL");
+/** The word a pot goes by ("the trip pot"): the phone maps it to its saved DAO. */
+const potWord = z.string().trim().toLowerCase().pipe(z.string().regex(/^[a-z][a-z0-9-]{1,20}$/));
+const potDao = z.string().trim().toLowerCase().pipe(z.string().regex(SPUTNIK));
+/** Who a pot pays: a NEAR account, or the words they were called by
+ *  ("the caterer"), which the app turns into an account before proposing. */
+const potPayee = z.string().trim().min(2).max(64).refine(t => NEAR_NAME.test(t) || NEAR_IMPLICIT_ACCOUNT.test(t)
+  || /^[\p{L}][\p{L}\p{N} .'&-]{1,40}$/u.test(t), "a NEAR account or a name");
+const potCoin = z.string().max(8).transform((s, ctx) => {
+  const c = s.trim().replace(/^\$/, "").toUpperCase();
+  if (!["NEAR", "USDC", "USDT"].includes(c)) { ctx.addIssue({ code: "custom", message: "a pot pays NEAR, USDC or USDT" }); return z.NEVER; }
+  return c;
+});
+
 const FLASH_TYPES = ["limit", "stop", "stop-loss", "take-profit", "bracket", "trailing-stop", "twap"] as const;
 
 /** Each tool's values. Keys the model adds beyond these are dropped. */
@@ -144,6 +160,16 @@ export const ACTION_PARAMS = {
     us: z.boolean().optional(),
     note: z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} '&-]+$/u).optional(),
   }),
+  /** Idle coins into an Earn vault, or (out) back out of it. */
+  "near.earn": z.object({ amount: amount.optional(), coin: earnCoin.optional(), out: z.boolean().optional(), chain: nearChain.optional() })
+    .transform(p => ({ ...p, coin: p.coin ?? "USDC" })),
+  /** A look at a group pot: its balance, members and open payouts. */
+  "near.pot": z.object({ pot: potWord.optional(), dao: potDao.optional() }),
+  /** A payout from the pot, to propose for the members' vote. */
+  "near.pot.pay": z.object({
+    to: potPayee, amount, coin: potCoin.optional(), pot: potWord.optional(), dao: potDao.optional(),
+    note: z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} '&-]+$/u).optional(),
+  }).transform(p => ({ ...p, coin: p.coin ?? "USDC" })),
 } as const;
 
 export type ActionTool = keyof typeof ACTION_PARAMS;
@@ -164,6 +190,10 @@ const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const clip = (s: string, n = 40) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const payee = (to: string) => (NEAR_NAME.test(to) ? to : shortAddress(to));
 const VIA_NEAR = " · NEAR Intents";
+const VIA_DAO = " · Sputnik DAO";
+const EARN_VENUE: Record<string, string> = { USDC: "Morpho", SOL: "Kamino" };
+const coinMoney = (amount: string, coin: string) => (coin === "USDC" ? money(amount) : `${amount} ${coin}`);
+const potName = (p: Record<string, any>) => (p.dao ? p.dao.replace(/\.sputnik-dao\.near$/, "") + " pot" : p.pot ? `${p.pot} pot` : "pot");
 
 /** The chip's words, from checked values only. */
 export function actionLabel(tool: ActionTool, p: Record<string, any>): string {
@@ -206,6 +236,13 @@ export function actionLabel(tool: ActionTool, p: Record<string, any>): string {
       const where = p.chain ? ` on ${NEAR_CHAINS[p.chain].name}` : "";
       return `Request ${amountWords(share, coin)}${each ? " each" : ""}${where}${VIA_NEAR}`;
     }
+    case "near.earn":
+      if (p.out) return `Take ${p.amount ? `${p.amount} ` : "your "}${p.coin} out of Earn${VIA_NEAR}`;
+      return `Put ${p.amount ? `${p.amount} ` : ""}${p.coin} to work · ${EARN_VENUE[p.coin]}${VIA_NEAR}`;
+    case "near.pot":
+      return `See the ${potName(p)}${VIA_DAO}`;
+    case "near.pot.pay":
+      return `Propose ${coinMoney(p.amount, p.coin)} to ${clip(String(p.to).replace(/^the\s+/i, ""), 24)} from the ${potName(p)}${VIA_DAO}`;
   }
 }
 
@@ -305,6 +342,27 @@ function groundNear(action: Action, text: string): Action | null {
       if (p.with !== undefined && !coinNamed(p.with as string, text)) delete p.with;
       break;
     }
+    case "near.earn": {
+      const usdc = p.coin === "USDC" && (coinNamed("USDC", text) || /\$\s?\d|\b(dollars|bucks|usd|stables?)\b/.test(t));
+      if (!usdc && !(p.coin === "SOL" && coinNamed("SOL", text))) return null;
+      const out = /\b(out|withdraw|redeem|unstake|cash out|take back)\b/.test(t);
+      if (Boolean(p.out) !== out) return null;
+      if (!out && !/\b(earn\w*|to work|park|yield|interest|vault|stake|savings|apy)\b/.test(t)) return null;
+      if (p.amount !== undefined && !typed(text, p.amount)) delete p.amount;
+      break;
+    }
+    case "near.pot":
+    case "near.pot.pay": {
+      if (!/\b(pot|treasury|kitty)\b|\.sputnik-dao\.near\b/.test(t)) return null;
+      if (typeof p.pot === "string" && !new RegExp(`\\b${p.pot}\\s+(pot|treasury|kitty)\\b`).test(t)) delete p.pot;
+      if (typeof p.dao === "string" && !t.includes(p.dao as string)) delete p.dao;
+      if (action.tool === "near.pot") break;
+      if (!t.includes(String(p.to).toLowerCase())) return null;
+      if (!typed(text, p.amount)) return null;
+      if (p.coin !== "USDC" && !new RegExp(`\\b${String(p.coin).toLowerCase()}\\b`).test(t)) return null;
+      if (typeof p.note === "string" && !String(p.note).toLowerCase().split(/\s+/).every(w => t.includes(w))) delete p.note;
+      break;
+    }
     case "near.request":
       if (!typed(text, p.amount)) return null;
       if (p.coin !== undefined && !coinNamed(p.coin as string, text)) delete p.coin;
@@ -332,6 +390,9 @@ translate {to} the language to write their message in
 convert {query} units or currency to convert ("5 ft in cm")
 near.swap {sell,buy,amount?,sellChain?,buyChain?} a swap or move that crosses to or from Solana, Bitcoin, Zcash, NEAR or another chain Uniswap can't reach ("swap 20 usdc on base to sol")
 near.send {to,amount,coin?,with?,withChain?} pay a .near name, a Bitcoin or a Zcash address an exact amount; to exactly as typed; with = the coin they pay with
+near.earn {amount?,coin?,out?,chain?} idle USDC or SOL into a yield vault ("put $50 to work", "park 50 usdc", "earn on 0.5 sol"); out:true to take it back out ("take my usdc out of earn"); chain = where the coins are
+near.pot {pot?,dao?} what's in a group pot ("how much is in the trip pot"); pot = their word before "pot" ("trip"), dao = a typed name.sputnik-dao.near
+near.pot.pay {to,amount,coin?,pot?,dao?,note?} pay someone from the group pot ("pay the caterer $120 from the pot"); to = who, exactly as typed ("the caterer" or caterer.near); coin NEAR USDC USDT
 near.request {amount,coin?,chain?,each?,count?,us?,note?} someone owes them money or a bill is split: a pay link. amount = the number typed (a total with count, each:true when it is per person); chain = where they want to be paid ("i'm on solana"); us:true when the writer is one of count ("for 4 of us"); note = what it's for, their word ("dinner")
 NEAR Intents coins: USDC USDT ETH SOL BTC ZEC NEAR TON TRX XRP DOGE LTC SUI APT XLM ADA BNB. Their chains also near bitcoin zcash ton tron.
 Tokens: ETH WBTC SOL USDC USDT DAI UNI LINK AAVE OP ARB POL AERO DEGEN PEPE LDO, and shares AAPL TSLA NVDA MSFT GOOGL AMZN META (Apple, Tesla, Nvidia…). Chains: base ethereum arbitrum optimism polygon unichain solana. Numbers as numbers. Give a chain only when they name one ("eth" is a token). Never invent an amount, price or name that was not typed.`;
@@ -339,7 +400,7 @@ Tokens: ETH WBTC SOL USDC USDT DAI UNI LINK AAVE OP ARB POL AERO DEGEN PEPE LDO,
 /** Typing that a tool might act on: only these take the extra look when the
  *  rules already had a chip for the sentence. */
 export function mayAct(text: string): boolean {
-  return /\b(owes?|owed|split|chip in|pot|request|zec|zcash|near|buy|sell|swap|dca|invest|stack|trade|grab|get me|shares?|stocks?|aapl|apple|tsla|tesla|nvda|nvidia|msft|microsoft|googl|google|amzn|amazon|meta|dips?|under|below|bridge|send|pay|transfer|stop[- ]?loss|take profit|limit|trail|eth|btc|bitcoin|sol|usdc|usdt|call|meet|zoom|schedule|book|calendar|remind|dinner|lunch|meeting|tomorrow|tmrw|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|translate|youtube|shorts|video|map|directions|near me|convert|search|google)\b/i
+  return /\b(owes?|owed|split|chip in|pot|kitty|treasury|earn|earning|park|yield|vault|to work|request|zec|zcash|near|buy|sell|swap|dca|invest|stack|trade|grab|get me|shares?|stocks?|aapl|apple|tsla|tesla|nvda|nvidia|msft|microsoft|googl|google|amzn|amazon|meta|dips?|under|below|bridge|send|pay|transfer|stop[- ]?loss|take profit|limit|trail|eth|btc|bitcoin|sol|usdc|usdt|call|meet|zoom|schedule|book|calendar|remind|dinner|lunch|meeting|tomorrow|tmrw|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|translate|youtube|shorts|video|map|directions|near me|convert|search|google)\b/i
     .test(text);
 }
 
@@ -347,6 +408,17 @@ export function mayAct(text: string): boolean {
  *  the whole path without a key. */
 export function mockAction(text: string): Action | null {
   const t = text.toLowerCase();
+  const earn = parseEarnPhrase(text);
+  if (earn) {
+    return groundAction(checkAction({ tool: "near.earn", params: { coin: earn.coin, ...(earn.amount ? { amount: earn.amount } : {}),
+      ...(earn.direction === "out" ? { out: true } : {}), ...(earn.chain ? { chain: earn.chain } : {}) } }), text);
+  }
+  const pot = parsePotPhrase(text);
+  if (pot?.ask === "balance") return groundAction(checkAction({ tool: "near.pot", params: { pot: pot.pot, dao: pot.dao } }), text);
+  if (pot?.ask === "pay") {
+    return groundAction(checkAction({ tool: "near.pot.pay", params: { to: pot.payee, amount: pot.amount, coin: pot.coin,
+      pot: pot.pot, dao: pot.dao, note: pot.note } }), text);
+  }
   const owe = t.match(/\b(?:owes? me|pay me(?: back)?)\b\D*?(\d+(?:\.\d+)?)/);
   if (owe) {
     const chain = t.match(/\b(?:on|in)\s+(solana|base|near|arbitrum|ethereum)\b/)?.[1];

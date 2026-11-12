@@ -6,12 +6,13 @@ import type { FetchFn } from "../lib/evm.js";
 import type { Limiter } from "../lib/limits.js";
 import { NEAR_NAME, nearRpc, type NearLookup } from "../lib/names.js";
 import { IntentsError, NEAR_CHAINS, NearIntents, nearChainOf, type StatusAnswer } from "../lib/nearintents.js";
-import { depositUri, metamaskLink, notFoundPage, qrDataUri, renderPayPage } from "../lib/paypage.js";
+import { depositUri, metamaskLink, notFoundPage, potSummary, qrDataUri, renderPayPage, type PotSummary } from "../lib/paypage.js";
 import {
   amountWords, chainForRecipient, coinWords, cleanAmount, getPayer, getRequest, MAX_PAYERS, newId, PAY_WITH, payersOf,
   recipientProblem, saveRequest, savePayer, shareOf, SPUTNIK, tallyOf, type Payer, type PayRequest,
 } from "../lib/payrequests.js";
 import { clientIp } from "../lib/protect.js";
+import { Pots, type NearViews } from "../lib/sputnik.js";
 import type { KV } from "../lib/store.js";
 
 /**
@@ -63,6 +64,8 @@ export interface PayDeps {
   fetchImpl?: FetchFn;
   jwt?: () => string;
   near?: NearLookup;
+  /** NEAR RPC views for a pot's live balance and members (lib/sputnik.ts). */
+  views?: NearViews;
   now?: () => number;
   /** Where links point; PUBLIC_BASE_URL, else api.tryglyf.com in production. */
   base?: () => string;
@@ -102,6 +105,15 @@ export function payRoutes(app: FastifyInstance, deps: PayDeps): void {
   const base = deps.base ?? payBase;
   const quotesPerMinute = deps.quotesPerMinute ?? 10;
   const requestsPerDay = deps.requestsPerDay ?? 100;
+  const pots = new Pots({ views: deps.views, fetchImpl: deps.fetchImpl, now: deps.now });
+
+  /** A pot's balance and members for its page, if NEAR answers in time;
+   *  the page never waits long or fails for it. */
+  async function potFor(dao: string): Promise<PotSummary | null> {
+    const look = pots.pot(dao).then(p => potSummary(p.balance, p.members, p.memberCount)).catch(() => null);
+    const late = new Promise<null>(done => setTimeout(() => done(null), 2_500).unref?.());
+    return Promise.race([look, late]);
+  }
 
   function failed(req: FastifyRequest, reply: FastifyReply, err: unknown, what: string) {
     if (err instanceof IntentsError) {
@@ -190,7 +202,8 @@ export function payRoutes(app: FastifyInstance, deps: PayDeps): void {
     reply.header("content-security-policy",
       `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; `
       + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
-    return reply.type("text/html").send(renderPayPage(r, tallyOf(r, payersOf(kv, r.id)), nonce));
+    const pot = r.pot ? await potFor(r.to) : null;
+    return reply.type("text/html").send(renderPayPage(r, tallyOf(r, payersOf(kv, r.id)), nonce, pot));
   });
 
   app.post("/pay/:id/quote", async (req, reply) => {
