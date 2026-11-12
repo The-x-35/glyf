@@ -34,6 +34,7 @@ import { flashRoutes } from "./routes/flash.js";
 import { uniswapRoutes } from "./routes/uniswap.js";
 import { namesRoutes } from "./routes/names.js";
 import { nearRoutes } from "./routes/near.js";
+import { payRoutes } from "./routes/pay.js";
 import { privateAIHooks, privateAIRoutes } from "./lib/privateai.js";
 
 declare module "fastify" {
@@ -125,6 +126,7 @@ export function buildApp(kv: KV = defaultKV()) {
   uniswapRoutes(app);
   namesRoutes(app);
   nearRoutes(app);
+  payRoutes(app, { kv, limits });
   privateAIRoutes(app, kv);
   return app;
 }

@@ -75,7 +75,7 @@ export const NEAR_CHAINS: Record<string, NearChain> = {
 };
 
 /** What people type for a chain, beside its key and 1Click's code. */
-const CHAIN_WORDS: Record<string, string> = {
+export const CHAIN_WORDS: Record<string, string> = {
   eth: "ethereum", mainnet: "ethereum", arb: "arbitrum", op: "optimism", pol: "polygon", matic: "polygon",
   bnb: "bsc", binance: "bsc", avax: "avalanche", xdai: "gnosis", sol: "solana", btc: "bitcoin", zec: "zcash",
   trx: "tron", ripple: "xrp", doge: "dogecoin", ltc: "litecoin", apt: "aptos", xlm: "stellar", ada: "cardano",
