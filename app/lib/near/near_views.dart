@@ -57,8 +57,18 @@ class NearQuoteCard extends StatelessWidget {
   /// APY"), the vault, who runs it and its APY, then the coin side only.
   /// The shares side is never shown as a number: Morpho's count in the
   /// millions, and the line already says what they're worth.
+  /// Earn's two lines: the server's words without their APY, which the pill
+  /// beside the vault says ("≈ $49.75 in Gauntlet USDC Prime"), and the
+  /// vault line without the vault's name when the words already carry it
+  /// ("Morpho").
+  static (String, String) earnLines(String? words, String vaultName, String protocol) {
+    final head = (words ?? vaultName).replaceFirst(RegExp(r' at [0-9.]+% APY$'), '');
+    return (head, head.contains(vaultName) ? protocol : '$vaultName · $protocol');
+  }
+
   Widget _earn() {
     final vault = quote.vault!;
+    final (head, vaultLine) = earnLines(quote.words, vault.name, vault.protocol);
     final out = quote.direction == 'out';
     final secs = quote.timeSeconds;
     return Column(
@@ -73,7 +83,7 @@ class NearQuoteCard extends StatelessWidget {
                 Semantics(
                   identifier: 'trade:near:earn:words',
                   child: Text(
-                    quote.words ?? vault.name,
+                    head,
                     style: const TextStyle(
                       color: Glass.ink,
                       fontSize: 20,
@@ -89,7 +99,7 @@ class NearQuoteCard extends StatelessWidget {
                     child: Semantics(
                       identifier: 'trade:near:earn:vault',
                       child: Text(
-                        '${vault.name} · ${vault.protocol}',
+                        vaultLine,
                         style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w600),
                       ),
                     ),

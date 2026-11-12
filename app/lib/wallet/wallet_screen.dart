@@ -400,6 +400,7 @@ class _WalletScreenState extends State<WalletScreen> {
           Row(children: [
             TextButton(
               onPressed: () => GlyfBridge.openMetaMask(_mmReopen!),
+              style: _leadingButton,
               child: const Text('Open MetaMask', style: TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
             ),
             const Spacer(),
@@ -515,6 +516,7 @@ class _WalletScreenState extends State<WalletScreen> {
           Row(children: [
             TextButton(
               onPressed: () => GlyfBridge.openURL(_hotReopen!),
+              style: _leadingButton,
               child: const Text('Open HOT Wallet', style: TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
             ),
             const Spacer(),
@@ -557,6 +559,10 @@ class _WalletScreenState extends State<WalletScreen> {
         ]),
       );
 
+  /// A text button that starts where the card's words start (the chain's
+  /// mark, the rows under it); its padding stays on the right.
+  static final _leadingButton = TextButton.styleFrom(padding: const EdgeInsets.fromLTRB(0, 8, 12, 8));
+
   Widget _spinner() => const SizedBox(
       width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2, color: Glass.ink));
 
@@ -568,12 +574,28 @@ class _WalletScreenState extends State<WalletScreen> {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 13, 14, 13),
+          // Rows sit inside a card's own padding: their words line up with
+          // the chain's mark above, the chevron with its button.
+          padding: const EdgeInsets.fromLTRB(0, 13, 4, 13),
           child: Row(children: [
-            Expanded(child: Text(title, style: const TextStyle(color: Glass.ink, fontSize: 15.5, fontWeight: FontWeight.w600))),
-            if (value != null)
-              Text(value,
-                  style: const TextStyle(color: Glass.inkSoft, fontSize: 14, fontFeatures: [FontFeature.disable('calt')])),
+            Text(title, style: const TextStyle(color: Glass.ink, fontSize: 15.5, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 12),
+            // A long value (a pot's whole DAO account) shrinks to the room
+            // left, whole, rather than running past the card.
+            Expanded(
+              child: value == null
+                  ? const SizedBox.shrink()
+                  : Align(
+                      alignment: Alignment.centerRight,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(value,
+                            maxLines: 1,
+                            style: const TextStyle(
+                                color: Glass.inkSoft, fontSize: 14, fontFeatures: [FontFeature.disable('calt')])),
+                      ),
+                    ),
+            ),
             if (busy) _spinner(),
             if (copied) ...[
               const SizedBox(width: 6),
@@ -626,12 +648,17 @@ class WalletSignerLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(mainAxisSize: MainAxisSize.min, children: [
+      // Shrinks to fit rather than fading its last characters: an address
+      // that loses its end ("0x7099…7") can't be checked by eye.
       Flexible(
-        child: Text(text,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.fade,
-            style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')])),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(text,
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')])),
+        ),
       ),
       if (copyIcon != null) ...[
         const SizedBox(width: 5),

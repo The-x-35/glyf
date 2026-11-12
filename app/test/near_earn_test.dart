@@ -680,8 +680,9 @@ void main() {
       steps.add(NearOutcome(TradeState.working, 'Send 50 USDC to NEAR Intents: confirm in MetaMask',
           quote: NearQuote.fromJson(_liveIn), recipient: 'your wallet', reopen: 'metamask://'));
       await tester.pump();
-      expect(find.text('≈ \$49.75 in Gauntlet USDC Prime at 4.5% APY'), findsOneWidget);
-      expect(find.text('Gauntlet USDC Prime · Morpho'), findsOneWidget);
+      // The APY is said once, in the pill; the vault's name once, in the line.
+      expect(find.text('≈ \$49.75 in Gauntlet USDC Prime'), findsOneWidget);
+      expect(find.text('Morpho'), findsOneWidget);
       expect(find.text('4.5% APY'), findsOneWidget);
       expect(find.text('You pay'), findsOneWidget);
       expect(find.text('50 USDC'), findsOneWidget);
@@ -700,6 +701,7 @@ void main() {
           quote: NearQuote.fromJson({..._outLive(), 'vault': {..._gauntlet, 'apy': null}}), recipient: 'your wallet'));
       await tester.pump();
       expect(find.text('20 USDC back on Base from Gauntlet USDC Prime'), findsOneWidget);
+      expect(find.text('Morpho'), findsOneWidget);
       expect(find.text('APY n/a'), findsOneWidget);
       expect(find.text('You get'), findsOneWidget);
       expect(find.text('20 USDC'), findsOneWidget, reason: 'exact out: no ≈');
@@ -708,6 +710,13 @@ void main() {
       expect(find.textContaining('18146730'), findsNothing);
       unawaited(steps.close());
     });
+  });
+
+  test('the Earn card says the APY and the vault once each', () {
+    expect(NearQuoteCard.earnLines('≈ \$49.75 in Gauntlet USDC Prime at 4.51% APY', 'Gauntlet USDC Prime', 'Morpho'),
+        ('≈ \$49.75 in Gauntlet USDC Prime', 'Morpho'));
+    expect(NearQuoteCard.earnLines(null, 'Kamino SOL Balanced', 'Kamino'), ('Kamino SOL Balanced', 'Kamino'));
+    expect(NearQuoteCard.earnLines('≈ \$12 put to work', 'Taler USDC', 'Taler'), ('≈ \$12 put to work', 'Taler USDC · Taler'));
   });
 
   group('the group pot setting', () {
