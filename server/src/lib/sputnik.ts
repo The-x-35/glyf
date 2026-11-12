@@ -304,7 +304,8 @@ export class Pots {
     for (const t of balance.tokens) sums.set(t.symbol, (sums.get(t.symbol) ?? 0) + Number(t.amount));
     const nearTotal = Number(balance.near) + (sums.get("NEAR") ?? 0);
     sums.delete("NEAR");
-    const two = (n: number) => String(Math.round(n * 100) / 100);
+    // "7,811.32 NEAR", grouped as the pot's pay page says it.
+    const two = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
     const holds = [`${two(nearTotal)} NEAR`, ...[...sums].map(([sym, n]) => `${two(n)} ${sym}`)].join(" · ");
     const text = `The ${name} pot holds ${holds}. ${members.length} ${members.length === 1 ? "member" : "members"}`
       + `${rule ? `, payouts need ${rule.words}` : ""}.${open ? ` ${open} ${open === 1 ? "proposal" : "proposals"} open` : ""}`;

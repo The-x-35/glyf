@@ -46,7 +46,7 @@ const PROPOSALS = [
 type Rpc = { account_id: string; method_name?: string; args?: any; request_type: string };
 
 /** A NEAR RPC: views answered from a table, an unknown account as NEAR says it. */
-function fakeRpc(opts: { down?: boolean; panicAvailable?: boolean; accounts?: string[] } = {}) {
+function fakeRpc(opts: { down?: boolean; panicAvailable?: boolean; accounts?: string[]; available?: string } = {}) {
   const calls: Rpc[] = [];
   const accounts = opts.accounts ?? [DAO];
   const fetchImpl = (async (url: string, init: RequestInit = {}) => {
@@ -69,7 +69,7 @@ function fakeRpc(opts: { down?: boolean; panicAvailable?: boolean; accounts?: st
       if (m === "get_last_proposal_id") return result(8);
       if (m === "get_available_amount") {
         if (opts.panicAvailable) return reply({ result: { error: "wasm execution failed: attempt to subtract with overflow", logs: [] } });
-        return result("42500000000000000000000000");
+        return result(opts.available ?? "42500000000000000000000000");
       }
       if (m === "get_proposals") return result(PROPOSALS.filter(p => p.id >= args.from_index && p.id < args.from_index + args.limit));
     }
@@ -158,6 +158,13 @@ describe("a pot, read from NEAR", () => {
     const before = rpc.calls.length;
     await pots.pot(DAO);
     expect(rpc.calls.length).toBe(before);
+  });
+
+  it("groups a big balance's thousands in the line put in the chat, as the pay page does", async () => {
+    const rpc = fakeRpc({ available: "7811321498000000000000000000" });
+    const pot = await new Pots({ fetchImpl: rpc.fetchImpl, now: () => NOW }).pot(DAO);
+    expect(pot.balance.near).toBe("7811.321498");
+    expect(pot.text).toMatch(/^The trip pot holds 7,811\.32 NEAR · 140\.5 USDC\. /);
   });
 
   it("says plainly when there's no such DAO, it isn't one, or NEAR is down", async () => {
