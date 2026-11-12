@@ -22,14 +22,19 @@ abstract final class MetaMaskLink {
   /// Opens MetaMask on whatever it's showing: the screen's "Open MetaMask"
   /// while it waits. Never the request again, which MetaMask would queue twice.
   static const home = 'metamask://';
-  static const _originator = {
-    'title': 'Glyf',
-    'url': 'https://tryglyf.com',
-    'icon': 'https://tryglyf.com/icon.png',
-    'dappId': 'tryglyf.com',
-    'platform': 'ios',
-    'apiVersion': '0.8.10',
-  };
+  /// Who's asking, as MetaMask's SDK says it, with the phone's own
+  /// platform: "ios" on the iPhone, "android" on Android (the same
+  /// deeplinks, opened there by GlyfBridge.kt's openMetaMask).
+  static Map<String, String> originatorFor(String platform) => {
+        'title': 'Glyf',
+        'url': 'https://tryglyf.com',
+        'icon': 'https://tryglyf.com/icon.png',
+        'dappId': 'tryglyf.com',
+        'platform': platform == 'android' ? 'android' : 'ios',
+        'apiVersion': '0.8.10',
+      };
+
+  static Map<String, String> get _originator => originatorFor(Platform.operatingSystem);
 
   /// One channel for this install; MetaMask keeps the connection under it.
   static String? _channel;

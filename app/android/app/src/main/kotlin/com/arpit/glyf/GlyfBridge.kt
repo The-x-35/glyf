@@ -179,6 +179,21 @@ class GlyfBridge(private val ctx: Context) : MethodChannel.MethodCallHandler {
                     }
                 } else result.success(false)
             }
+            // MetaMask's own deeplinks (lib/evm/metamask_link.dart), in the
+            // MetaMask app by its package: false when it isn't installed, as
+            // on iOS. Its answer comes back on glyf://mmsdk (MainActivity).
+            "openMetaMask" -> {
+                val url = call.argument<String>("url")
+                if (!MetaMaskLinks.accepts(url)) return result.success(false)
+                try {
+                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .setPackage(MetaMaskLinks.PACKAGE)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    result.success(true)
+                } catch (_: android.content.ActivityNotFoundException) {
+                    result.success(false)
+                }
+            }
             // Phantom's links go to the Phantom app itself (phantom.app's own
             // app-link file isn't served there, so the package is named):
             // false when it isn't installed.

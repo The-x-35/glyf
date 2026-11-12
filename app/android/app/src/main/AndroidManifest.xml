@@ -106,6 +106,13 @@
         </intent>
         <!-- The wallet opens Phantom to connect and to sign. -->
         <package android:name="app.phantom"/>
+        <!-- Trades on Ethereum chains sign in MetaMask, opened on its own
+             metamask:// links (GlyfBridge openMetaMask). -->
+        <package android:name="io.metamask"/>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="metamask"/>
+        </intent>
         <!-- Mobile Wallet Adapter: without this, package visibility on
              Android 11+ hides Seed Vault and other MWA wallets. -->
         <intent>
