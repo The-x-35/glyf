@@ -989,10 +989,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             row.addView(back, LinearLayout.LayoutParams(dp(30), LinearLayout.LayoutParams.MATCH_PARENT)
                 .apply { leftMargin = start - dp(4) })
         }
-        if (icon != null) row.addView(ToolIcon(this, icon, Glass.textPrimary).apply {
+        // "sponsor:near" is that sponsor's own mark (NEAR's N over a NEAR
+        // Intents trade); anything else a strip glyph.
+        val sponsorMark = icon?.let { SponsorMenu.Sponsor.of(it) }
+        if (icon != null) row.addView(if (sponsorMark != null) SponsorMarkView(this, sponsorMark).apply {
+            contentDescription = sponsorMark.title
+        } else ToolIcon(this, icon, Glass.textPrimary).apply {
             solid = true
             weight = 1.8f
-        }, LinearLayout.LayoutParams(dp(24), dp(24)).apply {
+        }, LinearLayout.LayoutParams(dp(if (sponsorMark != null) 22 else 24), dp(if (sponsorMark != null) 22 else 24)).apply {
             leftMargin = if (back == null) start else -dp(2)
             rightMargin = dp(6)
         })
@@ -6228,7 +6233,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             },
             onConnect = { dismissFeaturePanel(); openAppPath("wallet") },
             onToast = { notice(it) },
-            onTitle = { title -> showStripTitle(title, onBack = null, icon = "trend") },
+            onTitle = { title, icon -> showStripTitle(title, onBack = null, icon = icon) },
             clipText = { com.arpit.glyf.store.ClipboardStore.clipText(this) },
             // A token search: a strip over the letter keys, like New Event's title.
             onSearching = { searching ->
@@ -6238,11 +6243,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 }
                 if (searching) { keyboard.mode = Mode.LETTERS; keyboard.shifted = false; keyboard.rebuild() }
             },
+            nearRecent = SettingsStore.nearRecent(settings),
         )
         root.addView(panel, root.indexOfChild(keyboard),
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, keysH))
         featurePanel = panel
-        showStripTitle(TradeQuote.headerTitle(intent.kind), onBack = null, icon = "trend")
+        showStripTitle(TradeQuote.headerTitle(intent), onBack = null, icon = TradeQuote.headerIcon(intent))
     }
 
     /** A sponsor's panel from the g menu's top row: everything it does as

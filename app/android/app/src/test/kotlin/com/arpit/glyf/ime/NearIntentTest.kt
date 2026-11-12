@@ -374,4 +374,177 @@ class NearIntentTest {
             BackendClient.privateAI = was
         }
     }
+
+    /** What POST /near/quote's answer shows on the panel. */
+    @Test fun aNEARQuoteReads() {
+        val answer = JSONObject("""{"ok": true, "dry": true, "venue": "NEAR Intents", "amountIn": "20", "amountInUsd": "19.99",
+            "amountOut": "0.2438", "amountOutUsd": "19.88", "timeSeconds": 32,
+            "guard": {"level": "warn", "checks": [{"id": "new-recipient", "level": "warn", "text": "First time paying this address"},
+                {"id": "lookalike", "level": "block", "text": "Looks like 0xAb12…9fE0 you paid before, but it isn't"}]}}""")
+        val q = NearQuote.read(true, answer)
+        assertEquals(20.0, q.amountIn!!, 0.0)
+        assertEquals(0.2438, q.amountOut!!, 0.0)
+        assertEquals(19.99, q.inUsd!!, 0.0)
+        assertEquals(19.88, q.outUsd!!, 0.0)
+        assertEquals("~32 s", q.time)
+        assertEquals("block", q.guardLevel)
+        assertEquals("Looks like 0xAb12…9fE0 you paid before, but it isn't", q.guardText)
+        assertEquals("lookalike", q.guardId)
+        assertNull(q.error)
+        val quiet = NearQuote.read(true, JSONObject("""{"ok": true, "amountOut": 5, "timeSeconds": 150, "guard": {"level": "ok", "checks": []}}"""))
+        assertNull(quiet.guardLevel)
+        assertEquals("~3 min", quiet.time)
+        val small = NearQuote.read(false, JSONObject("""{"ok": false, "error": "Too small for NEAR Intents: at least $1"}"""))
+        assertNull(small.amountOut)
+        assertEquals("Too small for NEAR Intents: at least $1", small.error)
+        assertEquals("No quote right now", NearQuote.read(false, null).error)
+    }
+
+    /** What the panel asks POST /near/quote: a dry preview, exact-out for a
+     *  send, the recipient and the ones paid before for Guard. */
+    @Test fun thePanelAsksForADryNEARQuote() {
+        val swap = TradeQuote.nearBody(must("swap 20 usdc on base to sol"))!!
+        assertEquals("USDC", swap.getString("sell"))
+        assertEquals("base", swap.getString("sellChain"))
+        assertEquals("SOL", swap.getString("buy"))
+        assertEquals("solana", swap.getString("buyChain"))
+        assertEquals("20", swap.getString("amount"))
+        assertEquals("in", swap.getString("exact"))
+        assertEquals(1, swap.getInt("slippage"))
+        // Dry: never a refund address from the keyboard.
+        assertFalse(swap.has("refundTo"))
+        assertFalse(swap.has("recipient"))
+        val recent = (1..25).map { "r$it.near" }
+        val send = TradeQuote.nearBody(must("send 5 usdc to alice.near"), recent)!!
+        assertEquals("out", send.getString("exact"))
+        assertEquals("5", send.getString("amount"))
+        assertEquals("USDC", send.getString("buy"))
+        assertEquals("near", send.getString("buyChain"))
+        assertEquals("alice.near", send.getString("recipient"))
+        assertEquals(20, send.getJSONArray("recent").length())
+        assertEquals("r1.near", send.getJSONArray("recent").getString(0))
+        assertFalse(send.has("refundTo"))
+        // Nothing to ask: no amount, or not NEAR's.
+        assertNull(TradeQuote.nearBody(must("send 5 usdc to alice.near").copy(amount = null)))
+        assertNull(TradeQuote.nearBody(must("swap 0.05 eth to usdc on base")))
+        assertTrue(TradeQuote.quotes(must("send 5 usdc to alice.near")))
+        assertFalse(TradeQuote.quotes(must("send 5 usdc to vitalik.eth")))
+    }
+
+    private fun quote(guardId: String?, level: String?, text: String? = null, amountIn: Double = 5.02) =
+        NearQuote(amountIn = amountIn, amountOut = 5.0, inUsd = 5.02, outUsd = 5.0, seconds = 35,
+            guardLevel = level, guardText = text, guardId = guardId)
+
+    /** Guard's block wins: the button says what to fix and stays off; a
+     *  lookalike offers a red "Send anyway" that hands off with anyway=1;
+     *  a warning only asks for a look. */
+    @Test fun guardDecidesTheButton() {
+        val send = must("send 5 usdc to alice.near")
+        val wallet = "0xabc"
+        val missing = TradeQuote.go(send, wallet, false, TradeQuote.Quote(5.0, 5.02, 5.0), 50.0,
+            resolveProblem = "No NEAR account named alice.near")
+        assertEquals(TradeQuote.Go("Check the name", blocked = true, connect = false), missing)
+        assertEquals(TradeQuote.Alert("No NEAR account named alice.near", true, "Check the name"),
+            TradeQuote.alert(send, null, "No NEAR account named alice.near"))
+        val btc = must("send 0.001 btc to bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq")
+        assertEquals("Check the address", TradeQuote.alert(btc, null, "Bad")?.fix)
+        val mismatch = quote("chain-mismatch", "block", "That's an EVM address, not Solana")
+        assertEquals("Check the address", TradeQuote.go(btc, wallet, false, TradeQuote.Quote(0.001), 50.0, btc.to, null, mismatch).title)
+        assertEquals("Check the name", TradeQuote.alert(send, quote("no-account", "block", "No NEAR account bob.near"), null)?.fix)
+        // Even without a wallet, a block says what to fix first.
+        assertEquals("Check the name", TradeQuote.go(send, null, false, null, null, resolveProblem = "No NEAR account named alice.near").title)
+
+        val look = quote("lookalike", "block", "Looks like 0xAb12…9fE0 you paid before, but it isn't")
+        val anyway = TradeQuote.go(send, wallet, false, TradeQuote.Quote(5.0, 5.02, 5.0), 50.0, "alice.near", null, look)
+        assertEquals(TradeQuote.Go("Send anyway", blocked = false, connect = false, red = true), anyway)
+        val handed = TradeQuote.handOff(send, "alice.near", anyway = anyway.red)
+        assertEquals("1", handed["anyway"])
+        assertEquals("alice.near", handed["address"])
+        assertEquals("near", handed["venue"])
+        assertEquals("out", handed["exact"])
+        assertNull(TradeQuote.handOff(send, "alice.near")["anyway"])
+        // Still asking: "Send anyway", off until the quote is in.
+        assertTrue(TradeQuote.go(send, wallet, true, null, 50.0, "alice.near", null, look).blocked)
+
+        val warn = quote("new-recipient", "warn", "First time paying this address")
+        assertEquals(TradeQuote.Alert("First time paying this address", false, null), TradeQuote.alert(send, warn, null))
+        val live = TradeQuote.go(send, wallet, false, TradeQuote.Quote(5.0, 5.02, 5.0), 50.0, "alice.near", null, warn)
+        assertEquals(TradeQuote.Go("Send 5 USDC", blocked = false, connect = false), live)
+        assertEquals("Send 0.001 BTC", TradeQuote.go(btc, wallet, false, TradeQuote.Quote(0.001), 50.0, btc.to, null, quote(null, null)).title)
+        // A level with no words still says something.
+        assertEquals("Take a look first", TradeQuote.alert(send, quote(null, "warn"), null)?.text)
+        // Uniswap's trades have no alert.
+        assertNull(TradeQuote.alert(must("swap 0.05 eth to usdc on base"), warn, null))
+    }
+
+    /** Short of money, a NEAR trade's button says what's held; a chain Glyf
+     *  can't sign on needs no wallet. */
+    @Test fun theButtonSaysWhatsHeld() {
+        val send = must("send 5 usdc to alice.near")
+        val q = TradeQuote.Quote(5.0, 5.02, 5.0)
+        assertEquals("You have 2.10 USDC", TradeQuote.go(send, "0xabc", false, q, 2.1, "alice.near", null, quote(null, null)).title)
+        assertTrue(TradeQuote.go(send, "0xabc", false, q, 2.1, "alice.near", null, quote(null, null)).blocked)
+        assertEquals("No USDC on Base", TradeQuote.go(send, "0xabc", false, q, 0.0, "alice.near", null, quote(null, null)).title)
+        val swap = must("swap 0.5 eth on base to sol")
+        assertEquals("You have 0.25 ETH", TradeQuote.haveText(swap, 0.25))
+        assertEquals("Not enough ETH", TradeQuote.haveText(swap, null))
+        // Uniswap says it as it always did.
+        assertEquals("Not enough USDC", TradeQuote.go(must("swap 10 usdc to eth"), "0xabc", false, TradeQuote.Quote(0.003, 10.0, 9.98), 5.0).title)
+        // Paid from Bitcoin: no wallet to connect, the app shows the deposit address.
+        val fromBTC = must("swap 0.01 btc on bitcoin to usdc on base")
+        val go = TradeQuote.go(fromBTC, null, false, TradeQuote.Quote(600.0, 600.0, 599.0), null)
+        assertFalse(go.connect)
+        assertEquals("Swap ≈ $600", go.title)
+        assertEquals("Connect MetaMask", TradeQuote.go(must("swap 20 usdc on base to sol"), null, false, null, null).title)
+        assertEquals("Connect Phantom", TradeQuote.go(must("swap 0.2 sol to usdc on base"), "", false, null, null).title)
+    }
+
+    /** The strip names a NEAR panel with who carries it, under NEAR's N. */
+    @Test fun theHeaderSaysViaNEARIntents() {
+        assertEquals("Swap via NEAR Intents", TradeQuote.headerTitle(must("swap 20 usdc on base to sol")))
+        assertEquals("Move via NEAR Intents", TradeQuote.headerTitle(must("move 50 usdc from base to solana")))
+        assertEquals("Send via NEAR Intents", TradeQuote.headerTitle(must("send 5 usdc to alice.near")))
+        assertEquals("sponsor:near", TradeQuote.headerIcon(must("send 5 usdc to alice.near")))
+        assertEquals(SponsorMenu.Sponsor.NEAR, SponsorMenu.Sponsor.of(TradeQuote.headerIcon(must("swap 20 usdc on base to sol"))))
+        // Everything else keeps its name and mark.
+        assertEquals("Swap", TradeQuote.headerTitle(must("swap 0.05 eth to usdc on base")))
+        assertEquals("Send", TradeQuote.headerTitle(must("send 5 usdc to vitalik.eth")))
+        assertEquals("trend", TradeQuote.headerIcon(must("swap 0.05 eth to usdc on base")))
+    }
+
+    /** A NEAR send's rows: To, You pay (bold, tap for another chain) and
+     *  Arrives, whose time moves to the card when an alert takes the room. */
+    @Test fun aNEARSendsRows() {
+        val send = must("send 5 usdc to alice.near")
+        val rows = TradeQuote.nearSendRows(send, quote(null, null), false, "alice.near", null)
+        assertEquals(listOf("to", "pay", "arrives"), rows.map { it.id })
+        assertEquals(TradeQuote.Row("to", "To", "alice.near", check = true), rows[0])
+        assertEquals(TradeQuote.Row("pay", "You pay", "≈ 5.02 USDC · Base", tap = true, bold = true), rows[1])
+        assertEquals(TradeQuote.Row("arrives", "Arrives", "~35 s"), rows[2])
+        val asking = TradeQuote.nearSendRows(send, null, true, null, null)
+        assertEquals("… · Base", asking[1].value)
+        assertEquals("…", asking[2].value)
+        assertFalse(asking[0].check)
+        val blocked = TradeQuote.nearSendRows(send, null, false, null, "No NEAR account named alice.near")
+        assertEquals(listOf("to", "pay"), blocked.map { it.id })
+        assertTrue(blocked[0].red)
+        assertFalse(blocked[0].check)
+        val btc = TradeQuote.nearSendRows(must("send 0.001 btc to bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"),
+            quote(null, null, amountIn = 61.2), false, "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", null)
+        assertEquals("bc1q…5mdq", btc[0].value)
+        assertFalse(btc[0].check)
+        assertEquals("≈ 61.2 USDC · Base", btc[1].value)
+    }
+
+    /** A row's value shrinks from 15 to 11, then takes two lines; never "…". */
+    @Test fun rowValuesFitWithoutAnEllipsis() {
+        val w: (String, Double) -> Double = { t, size -> t.length * size / 2 }
+        assertEquals(15.0 to 1, TradeQuote.rowFit("alice.near", 100.0, w))
+        assertEquals(12.5 to 1, TradeQuote.rowFit("x".repeat(16), 100.0, w))
+        val long = "nobody-glyf-zz9-and-more.near"
+        val (size, lines) = TradeQuote.rowFit(long, 100.0, w)
+        assertEquals(2, lines)
+        assertTrue(size in 11.0..15.0)
+        assertEquals(11.0 to 2, TradeQuote.rowFit("x".repeat(400), 100.0, w))
+    }
 }
