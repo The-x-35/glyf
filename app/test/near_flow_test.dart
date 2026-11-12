@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -64,10 +63,10 @@ class _FakeApi extends NearApi {
 /// MetaMask and Phantom, answering the way they do; nothing real is signed
 /// but the Solana deposit, by the test's own key.
 class _FakeWallet extends NearWallet {
-  _FakeWallet({this.evm = _evm, this.sol = _sol});
+  _FakeWallet({this.evm = _evm});
 
   final String? evm;
-  final String? sol;
+  final String sol = _sol;
   final evmSteps = <SignStep>[];
   final solanaAsked = <Uint8List>[];
   final solanaSent = <Uint8List>[];
