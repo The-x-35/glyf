@@ -733,7 +733,8 @@ object Smart {
      *  Smart.swift's twin. */
     private val triggers: List<Triple<Regex, List<String>, String?>> = listOf(
         // "This is" introduces you only at the start: "Hi, this is", not "this is great".
-        Triple("""(?:\bmy name is|\bname:|(?:^|[.!?,\n]\s*|\b(?:hi|hey|hello|hii|hiya)\W*)this is)\s*$""", listOf("name"), null),
+        // "I am" / "I'm" too, at the start the same way (Arpit, 2026-11-07).
+        Triple("""(?:\bmy name is|\bname:|(?:^|[.!?,\n]\s*|\b(?:hi|hey|hello|hii|hiya)\W*)(?:this is|i am|i['’]m|im))\s*$""", listOf("name"), null),
         // Before address: "my wallet address" asks for the wallet.
         // A coin's name alone is not a wallet ("$sol" is its price, "I bought
         // sol" a purchase), nor is someone else's ("phantom wallet is down").

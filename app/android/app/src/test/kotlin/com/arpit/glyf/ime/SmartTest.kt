@@ -182,6 +182,18 @@ class SmartTest {
         }
     }
 
+    /** Your name after "this is", "I am" or "I'm" at the start of a message
+     *  (Arpit, 2026-11-07): GlyfEngineTests' testYourNameAfterThisIsOrIAm. */
+    @Test fun yourNameAfterThisIsOrIAm() {
+        val fields = listOf(Smart.Field("name", "Name", "Alex Kim"))
+        for (text in listOf("this is", "This is ", "Hi, this is ", "I am", "I am ", "i'm ", "I’m ", "Hey, I am ")) {
+            assertEquals(text, "Alex Kim", Smart.vaultMatch(text, fields)?.value)
+        }
+        for (text in listOf("this is great", "I am going", "what I am")) {
+            assertNull(text, Smart.vaultMatch(text, fields))
+        }
+    }
+
     /** The first letters of a saved detail offer all of it (Arpit,
      *  2026-10-06: "as soon person enters first 2-4 letters of any details in
      *  vault show that"): GlyfEngineTests' testTheFirstLettersOfADetailOfferIt. */

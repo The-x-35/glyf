@@ -1738,7 +1738,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         (getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager)
             ?.setPrimaryClip(android.content.ClipData.newPlainText("glyf", text))
-        notice("Inserted · copied")
     }
 
     private fun dismissSearchResults() {
@@ -4082,7 +4081,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val text = withDetails(raw)
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         cm.setPrimaryClip(android.content.ClipData.newPlainText("Glyf", text))
-        notice("Copied")
     }
 
     private fun actClose() {
@@ -6305,8 +6303,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     if (sent) return@post
                 }
                 val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                // On the clipboard, one hold of the box away. No toast for a
+                // copy (Arpit, 2026-11-06: "you should not show toast for any
+                // clipboard thing").
                 cm.setPrimaryClip(clip)
-                notice("Screenshot copied")
             }
         }.start()
     }
@@ -6751,7 +6751,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         actions.addView(pill("Copy", primary = false, id = "tempmail:copy", size = 14f, field = true) {
             (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                 .setPrimaryClip(android.content.ClipData.newPlainText("", box.address))
-            notice("Copied")
         }.apply { minWidth = dp(72); setPadding(dp(14), 0, dp(14), 0) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply { leftMargin = dp(8) })
         actions.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
@@ -6951,7 +6950,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             block.addView(pill("Copy", primary = false, id = "tempmail:code:copy", size = 14f, field = true) {
                 (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                     .setPrimaryClip(android.content.ClipData.newPlainText("", code))
-                notice("Copied")
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)))
             block.addView(pill("Insert", primary = true, id = "tempmail:code:insert", accent = true, size = 14f) {
                 tempInsert(code)
@@ -7098,7 +7096,6 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                     }
                     val clip = android.content.ClipData(noun, arrayOf(mime), android.content.ClipData.Item(uri))
                     (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(clip)
-                    notice("$noun copied. Paste it in the message")
                     done(true)
                 }
             }.start()
@@ -7335,7 +7332,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         noticeView = null
     }
 
-    /** A short message over the keys ("Copied", "Connect Google Meet in
+    /** A short message over the keys ("Couldn’t look up a.eth", "Connect Google Meet in
      *  Glyf › Connected tools"). Not a system Toast, and not a PopupWindow:
      *  Android draws a keyboard's window above both, so either one sits
      *  under the keys where nobody sees it. It goes on the keyboard's own
