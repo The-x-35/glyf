@@ -505,7 +505,7 @@ function plainQuoteError(err: unknown, t: { sell: IntentToken; buy: IntentToken;
   }
   if (/recipient is not valid/i.test(m)) return new IntentsError(400, `That isn't a ${t.buyChain.name} address`);
   if (/refundTo is not valid/i.test(m)) return new IntentsError(400, `Refunds need your ${t.sellChain.name} address`);
-  if (/not available|no quotes?|failed to get quote/i.test(m)) {
+  if (/not available|no quotes?|failed to get quote|internal server error/i.test(m)) {
     return new IntentsError(400, `NEAR Intents can't trade ${SHOWN_AS[t.sell.symbol.toUpperCase()] ?? t.sell.symbol} on ${t.sellChain.name} `
       + `for ${SHOWN_AS[t.buy.symbol.toUpperCase()] ?? t.buy.symbol} on ${t.buyChain.name} right now`);
   }

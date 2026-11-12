@@ -71,13 +71,27 @@ export function nearRoutes(app: FastifyInstance, deps: NearDeps = {}): void {
     // A recipient that can't be on the destination chain gets the preview
     // and Guard's block, rather than 1Click's "recipient is not valid".
     const fits = !b.recipient || !buyChain || addressFits(buyChain, b.recipient);
+    const ask = (recipient?: string) => intents.quote({ sell: b.sell, sellChain: b.sellChain, buy: b.buy,
+      buyChain: b.buyChain, amount: b.amount, exact: b.exact, slippage: b.slippage, refundTo: b.refundTo,
+      ...(recipient ? { recipient } : {}) });
+    const check = (amountInUsd: string | null) => guardRecipient({ recipient: b.recipient!, chain: buyChain!,
+      recent: b.recent, amountInUsd: amountInUsd === null ? null : Number(amountInUsd),
+      dailyLimitUsd: b.dailyLimitUsd, spentTodayUsd: b.spentTodayUsd }, near);
     try {
-      const quote = await intents.quote({ sell: b.sell, sellChain: b.sellChain, buy: b.buy, buyChain: b.buyChain,
-        amount: b.amount, exact: b.exact, slippage: b.slippage, refundTo: b.refundTo,
-        ...(fits ? { recipient: b.recipient } : {}) });
-      const guard = b.recipient && buyChain ? await guardRecipient({ recipient: b.recipient, chain: buyChain, recent: b.recent,
-        amountInUsd: quote.amountInUsd === null ? null : Number(quote.amountInUsd),
-        dailyLimitUsd: b.dailyLimitUsd, spentTodayUsd: b.spentTodayUsd }, near) : undefined;
+      let quote: Awaited<ReturnType<typeof ask>>;
+      let guard: Awaited<ReturnType<typeof check>> | undefined;
+      try {
+        quote = await ask(fits ? b.recipient : undefined);
+      } catch (err) {
+        // 1Click refuses a live quote to a .near name that doesn't exist
+        // with a bare "Internal server error". When Guard blocks that
+        // recipient anyway, the answer is the preview with Guard's reason.
+        if (!(err instanceof IntentsError) || err.status !== 400 || !fits || !b.recipient || !buyChain) throw err;
+        guard = await check(null);
+        if (guard.level !== "block") throw err;
+        quote = await ask(undefined);
+      }
+      if (b.recipient && buyChain && !guard) guard = await check(quote.amountInUsd);
       req.log.info({ sellChain: quote.sell.chain, buyChain: quote.buy.chain, exact: quote.exact, dry: quote.dry,
         guard: guard?.level }, "near_quote");
       return { ...quote, ...(guard ? { guard } : {}) };

@@ -331,6 +331,25 @@ describe("POST /near/quote, GET /near/status, POST /near/submit", () => {
     expect(calls.find(c => c.url.endsWith("/v0/quote"))!.body.recipient).toBe(NEAR_CHAINS.solana.placeholder);
   });
 
+  it("answers a .near name 1Click refuses with a preview and Guard's no-account block", async () => {
+    // 1Click answers a live quote to a NEAR account that doesn't exist with
+    // 400 "Internal server error" (seen 2026-11-13 for nobody-glyf-zz9.near).
+    const refused = () => new Response(JSON.stringify({ message: "Internal server error" }), { status: 400 });
+    const { app } = setup({ quote: body => body.dry ? fake1Click().fetchImpl(`${ONECLICK}/v0/quote`,
+      { method: "POST", body: JSON.stringify(body) }) as unknown as Response : refused() });
+    const res = await quote(app, { sell: "USDC", sellChain: "base", buy: "USDC", buyChain: "near", amount: "5", exact: "out",
+      refundTo: MINE, recipient: "nobody-glyf-zz9.near" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ok: true, dry: true, depositAddress: null, amountOut: "5",
+      guard: { level: "block", checks: [{ id: "no-account", level: "block", text: "No NEAR account nobody-glyf-zz9.near" },
+        { id: "new-recipient", level: "warn", text: "First time paying this address" }] } });
+    // A recipient Guard has nothing against keeps 1Click's refusal, in the trade's words.
+    const known = await quote(app, { sell: "USDC", sellChain: "base", buy: "USDC", buyChain: "near", amount: "5", exact: "out",
+      refundTo: MINE, recipient: "alice.near" });
+    expect(known.statusCode).toBe(400);
+    expect(known.json()).toEqual({ ok: false, error: "NEAR Intents can't trade USDC on Base for USDC on NEAR right now" });
+  });
+
   it("says what's wrong with a request, and sends 1Click's failures as 400 or 502", async () => {
     const { app } = setup();
     expect((await quote(app, { sell: "USDC", sellChain: "base", buy: "SOL", buyChain: "solana", amount: "lots" })).json())
