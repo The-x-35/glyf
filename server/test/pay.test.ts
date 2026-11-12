@@ -11,6 +11,7 @@ import {
   tallyOf, type Payer, type PayRequest,
 } from "../src/lib/payrequests.js";
 import { MemoryKV } from "../src/lib/store.js";
+import { NEAR_USDC, type NearViews } from "../src/lib/sputnik.js";
 import { chatText, cleanNote, payRoutes } from "../src/routes/pay.js";
 import { NEAR_CHAINS } from "../src/lib/nearintents.js";
 
@@ -81,7 +82,7 @@ function fake1Click() {
 
 const fakeNear = (accounts: string[]): NearLookup => ({ exists: async a => accounts.includes(a) });
 
-function setup(opts: { accounts?: string[]; quotesPerMinute?: number; now?: () => number } = {}) {
+function setup(opts: { accounts?: string[]; quotesPerMinute?: number; now?: () => number; views?: NearViews } = {}) {
   const f = fake1Click();
   const kv = new MemoryKV();
   const app = Fastify();
@@ -92,7 +93,7 @@ function setup(opts: { accounts?: string[]; quotesPerMinute?: number; now?: () =
   });
   payRoutes(app, { kv, limits: new MemoryLimiter(), fetchImpl: f.fetchImpl, jwt: () => "",
     near: fakeNear(opts.accounts ?? ["alice.near", "trip.sputnik-dao.near"]), now: opts.now ?? (() => NOW),
-    base: () => "https://api.tryglyf.com", quotesPerMinute: opts.quotesPerMinute });
+    base: () => "https://api.tryglyf.com", quotesPerMinute: opts.quotesPerMinute, views: opts.views });
   const create = (payload: object) => app.inject({ method: "POST", url: "/near/requests", payload,
     headers: { "x-test-user": "google:alice" } });
   const quote = (id: string, payload: object, ip = "1.2.3.4") => app.inject({ method: "POST", url: `/pay/${id}/quote`, payload,
@@ -267,6 +268,29 @@ describe("GET /pay/:id", () => {
     const potHtml = (await app.inject({ method: "GET", url: `/pay/${pot.id}` })).body;
     expect(potHtml).toContain("Shared pot");
     expect(potHtml).toContain("Into the trip DAO treasury · shared pot");
+    // No NEAR RPC here: the page still opens, without the pot's live line.
+    expect(potHtml).not.toContain('id="potHolds"');
+  });
+
+  it("shows a shared pot's live balance and members, read from the DAO", async () => {
+    const answers: Record<string, unknown> = {
+      get_config: { name: "trip", purpose: "" }, get_last_proposal_id: 0, get_available_amount: "42500000000000000000000000",
+      get_policy: { roles: [{ name: "council", kind: { Group: ["ana.near", "ben.near", "cy.near", "dee.near"] }, permissions: ["*:*"], vote_policy: {} }],
+        default_vote_policy: { weight_kind: "RoleWeight", quorum: "0", threshold: [1, 2] }, proposal_bond: "0", proposal_period: "604800000000000" },
+      ft_balance_of: "120500000", mt_batch_balance_of: ["0", "0", "0"],
+    };
+    const views: NearViews = {
+      view: async (account, method) => {
+        if (method === "ft_balance_of" && account !== NEAR_USDC) return "0" as never;
+        return answers[method] as never;
+      },
+      account: async () => ({ amount: "0", locked: "0", storage_usage: 0 }),
+    };
+    const { app, create } = setup({ views });
+    const pot = (await create({ amount: 50, to: "trip.sputnik-dao.near", each: true })).json();
+    const html = (await app.inject({ method: "GET", url: `/pay/${pot.id}` })).body;
+    expect(html).toContain('<p class="pot" id="potHolds">Holds 42.5 NEAR · 120.5 USDC</p>');
+    expect(html).toContain("4 members: ana.near, ben.near, cy.near and 1 more");
   });
 
   it("is a 404 page for a link that doesn't exist", async () => {
