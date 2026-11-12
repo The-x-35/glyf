@@ -23,7 +23,8 @@ class NearAsset {
 
 /// How the deposit is made (docs/NEAR-SPEC.md, POST /near/quote `deposit`):
 /// `erc20`, `native` (EVM, signed in MetaMask), `sol`, `spl` (Solana,
-/// signed in Phantom) or `manual` (any other chain: shown to copy).
+/// signed in Phantom), `near` (NEAR, signed in HOT Wallet) or `manual`
+/// (any other chain: shown to copy).
 class NearDeposit {
   const NearDeposit({
     required this.kind,
@@ -38,6 +39,7 @@ class NearDeposit {
     this.lamports,
     this.mint,
     this.decimals,
+    this.receiverId,
   });
 
   final String kind;
@@ -52,6 +54,9 @@ class NearDeposit {
   final String? lamports;
   final String? mint;
   final int? decimals;
+
+  /// `near`: the token contract the transaction goes to.
+  final String? receiverId;
 
   static NearDeposit fromJson(Object? j) {
     final m = j is Map ? j : const {};
@@ -69,6 +74,7 @@ class NearDeposit {
       lamports: s('lamports'),
       mint: s('mint'),
       decimals: (m['decimals'] as num?)?.toInt(),
+      receiverId: s('receiverId'),
     );
   }
 }
@@ -162,7 +168,7 @@ class NearQuote {
     this.explorer,
     this.guardLevel = 'ok',
     this.checks = const [],
-    this.exact,
+    this.exactOut = false,
     this.kind,
     this.direction,
     this.vault,
@@ -170,6 +176,10 @@ class NearQuote {
   });
 
   final bool dry;
+
+  /// A send (EXACT_OUTPUT): the recipient gets [amountOut] exactly, and
+  /// whatever of [amountIn] isn't needed comes back.
+  final bool exactOut;
   final NearAsset sell;
   final NearAsset buy;
   final String amountIn;
@@ -188,9 +198,6 @@ class NearQuote {
   /// `ok`, `warn` or `block`: the worst of [checks].
   final String guardLevel;
   final List<NearCheck> checks;
-
-  /// `in` (the amount paid is exact) or `out` (the amount that arrives is).
-  final String? exact;
 
   /// Earn only: `earn`, `in` or `out`, the vault, and the line the screen
   /// leads with ("≈ $49.75 in Gauntlet USDC Prime at 4.5% APY"), never the
@@ -223,12 +230,12 @@ class NearQuote {
       deadline: DateTime.tryParse(s('deadline') ?? ''),
       deposit: j['deposit'] is Map ? NearDeposit.fromJson(j['deposit']) : null,
       explorer: s('explorer'),
+      exactOut: j['exact'] == 'out',
       guardLevel: '${guard['level'] ?? 'ok'}',
       checks: [
         for (final c in (guard['checks'] as List? ?? const []).whereType<Map>())
           NearCheck('${c['id'] ?? ''}', '${c['level'] ?? 'warn'}', '${c['text'] ?? ''}'),
       ],
-      exact: s('exact'),
       kind: s('kind'),
       direction: s('direction'),
       vault: NearVault.fromJson(j['vault']),
@@ -289,8 +296,10 @@ class NearApi {
 
   /// POST /near/submit: tells 1Click the deposit went out, which speeds up
   /// its pickup.
-  Future<void> submit({required String depositAddress, required String txHash, String? memo}) =>
-      GlyfApi.evmPost('/near/submit', {'depositAddress': depositAddress, 'txHash': txHash, 'memo': ?memo});
+  /// [nearSender]: the account that paid a deposit on NEAR.
+  Future<void> submit({required String depositAddress, required String txHash, String? memo, String? nearSender}) =>
+      GlyfApi.evmPost('/near/submit',
+          {'depositAddress': depositAddress, 'txHash': txHash, 'memo': ?memo, 'nearSenderAccount': ?nearSender});
 
   /// GET /near/status for the deposit address.
   Future<NearStatus> status({required String depositAddress, String? memo}) async {

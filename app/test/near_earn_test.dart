@@ -11,6 +11,7 @@ import 'package:glyf/evm/evm_signer.dart';
 import 'package:glyf/evm/trade_flow.dart';
 import 'package:glyf/evm/trade_screen.dart';
 import 'package:glyf/near/near_api.dart';
+import 'package:glyf/near/hot_wallet.dart';
 import 'package:glyf/near/near_earn.dart';
 import 'package:glyf/near/near_flow.dart';
 import 'package:glyf/near/near_pot.dart';
@@ -166,7 +167,7 @@ class _FakeApi extends NearApi {
   }
 
   @override
-  Future<void> submit({required String depositAddress, required String txHash, String? memo}) async =>
+  Future<void> submit({required String depositAddress, required String txHash, String? memo, String? nearSender}) async =>
       submitted.add('$depositAddress $txHash');
 
   @override
@@ -214,6 +215,19 @@ class _FakeWallet extends NearWallet {
     yield SignEvent.progress('${steps.single.label}: confirm in MetaMask', reopen: 'metamask://');
     yield const SignEvent.done([Signed(hash: _evmHash)]);
   }
+
+  /// HOT Wallet's NEAR deposits, as asked.
+  final nearAsked = <List<NearTransaction>>[];
+
+  @override
+  Future<HotCall> startNear(List<NearTransaction> txs) async {
+    nearAsked.add(txs);
+    return const HotCall(id: 'abc', query: 'q', link: 'https://app.hot-labs.org/link?hotcall-abc');
+  }
+
+  @override
+  Future<List<NearSent>> finishNear(HotCall call, List<NearTransaction> txs, {required String signer}) async =>
+      [NearSent(hash: 'NearHash1', signer: signer, receiver: txs.single.receiverId)];
 
   @override
   Future<String> solanaBlockhash() async => _blockhash;
@@ -269,7 +283,7 @@ void main() {
       expect(q.isEarn, isTrue);
       expect(q.kind, 'earn');
       expect(q.direction, 'in');
-      expect(q.exact, 'in');
+      expect(q.exactOut, isFalse);
       expect(q.words, '≈ \$49.75 in Gauntlet USDC Prime at 4.5% APY');
       final v = q.vault!;
       expect([v.id, v.name, v.protocol, v.chain, v.chainName, v.receipt],
@@ -285,7 +299,7 @@ void main() {
     test('the live withdrawal and a vault with no APY', () {
       final q = NearQuote.fromJson(_liveOut);
       expect(q.direction, 'out');
-      expect(q.exact, 'out');
+      expect(q.exactOut, isTrue);
       expect(q.words, '20 USDC back on Base from Gauntlet USDC Prime');
       expect(q.dry, isTrue);
 
@@ -582,12 +596,40 @@ void main() {
       expect(api.bodies.single['recipient'], _sol);
     });
 
+    test('USDC on NEAR into the Base vault: HOT Wallet pays the deposit, the shares land in MetaMask', () async {
+      const usdc = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+      const nearDeposit = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
+      shared['nearAccount'] = 'arpit.near';
+      final wallet = NearFlow.wallet = _FakeWallet();
+      final api = NearFlow.api = _FakeApi((_) => {
+            ..._liveIn,
+            'sell': {'symbol': 'USDC', 'chain': 'near', 'decimals': 6, 'address': usdc},
+            'depositAddress': nearDeposit,
+            'deposit': {'kind': 'near', 'chain': 'near', 'receiverId': usdc, 'token': usdc, 'amountBase': '50000000',
+              'depositAddress': nearDeposit},
+          });
+      final out = await run({'venue': 'near', 'kind': 'earn', 'direction': 'in', 'coin': 'USDC', 'amount': '50', 'chain': 'near'});
+      expect(api.bodies.single['refundTo'], 'arpit.near');
+      expect(api.bodies.single['recipient'], _evm);
+      expect(wallet.nearAsked.single.single.receiverId, usdc);
+      expect(wallet.evmSteps, isEmpty);
+      expect(api.submitted, ['$nearDeposit NearHash1']);
+      expect(out.last.title, 'Earning on 50 USDC');
+
+      // No HOT Wallet: said, with the button that connects it.
+      shared.remove('nearAccount');
+      final missing = await run({'venue': 'near', 'kind': 'earn', 'direction': 'in', 'coin': 'USDC', 'amount': '50', 'chain': 'near'});
+      expect(missing.single.title, 'HOT Wallet isn’t connected');
+      expect((missing.single as NearOutcome).connect, 'hot');
+    });
+
     test('a missing wallet is said as the swap says it, and nothing is asked', () async {
       final api = NearFlow.api = _FakeApi((_) => _liveIn);
       NearFlow.wallet = _FakeWallet(evm: null);
       var out = await run({'venue': 'near', 'kind': 'earn', 'direction': 'in', 'coin': 'USDC', 'amount': '50'});
       expect(out.single.title, 'MetaMask isn’t connected');
       expect(out.single.detail, EvmSigner.missing);
+      expect((out.single as NearOutcome).connect, 'metamask', reason: 'the screen’s button connects it');
       out = await run({'venue': 'near', 'kind': 'earn', 'direction': 'out', 'coin': 'USDC', 'all': '1'});
       expect(out.single.title, 'MetaMask isn’t connected');
 

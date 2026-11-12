@@ -199,6 +199,10 @@ struct GlyfSettings: Codable, Equatable {
     /// Recipients the app last paid through NEAR Intents (newest first, 20
     /// at most): the panel's quote sends them so Guard can spot a lookalike.
     var nearRecent: [String]? = nil
+    /// The NEAR account HOT Wallet signed in with in the app (Profile ›
+    /// Wallet; lib/near/hot_wallet.dart), beside MetaMask's and Phantom's:
+    /// it pays a NEAR Intents trade from NEAR and gets a swap to NEAR.
+    var nearAccount: String? = nil
 
     /// The X-Glyf-AI header every call carries: "near", or none.
     var privateAIHeader: String? { privateAI?.value == "near" ? "near" : nil }

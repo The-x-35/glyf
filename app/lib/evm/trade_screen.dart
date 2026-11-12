@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../core/bridge.dart';
 import '../core/theme.dart';
+import '../near/hot_wallet.dart';
 import '../near/near_flow.dart';
 import '../near/near_views.dart';
 import 'trade_flow.dart';
@@ -33,6 +34,9 @@ class _TradeScreenState extends State<TradeScreen> {
   TradeOutcome _outcome = const TradeOutcome(TradeState.working, 'One moment…');
   StreamSubscription<TradeOutcome>? _sub;
   final _refund = TextEditingController();
+
+  /// A wallet being connected from the screen's button ("hot"…).
+  String? _connecting;
 
   @override
   void initState() {
@@ -75,6 +79,31 @@ class _TradeScreenState extends State<TradeScreen> {
     FocusScope.of(context).unfocus();
     setState(() => _outcome = const TradeOutcome(TradeState.working, 'One moment…'));
     _start({...widget.query, 'refundTo': to});
+  }
+
+  /// The trade's wallet isn't connected: connect it here, then the same
+  /// trade again. MetaMask, Phantom and HOT Wallet stay side by side.
+  Future<void> _connect(String wallet) async {
+    if (_connecting != null) return;
+    final name = NearFlow.walletNames[wallet] ?? wallet;
+    setState(() {
+      _connecting = wallet;
+      _outcome = TradeOutcome(TradeState.working, 'Connect $name', detail: 'Approve in $name, then come back here');
+    });
+    final error = await NearFlow.connect(wallet, opened: (link) {
+      if (mounted && _connecting == wallet) {
+        setState(() => _outcome = TradeOutcome(TradeState.working, 'Connect $name',
+            detail: 'Approve in $name, then come back here', reopen: link));
+      }
+    });
+    if (!mounted) return;
+    setState(() => _connecting = null);
+    if (error != null) {
+      setState(() => _outcome = NearOutcome(TradeState.failed, '$name isn’t connected', detail: error, connect: wallet));
+      return;
+    }
+    setState(() => _outcome = const TradeOutcome(TradeState.working, 'One moment…'));
+    _start(widget.query);
   }
 
   /// Guard stopped it: the same trade again, past the check.
@@ -132,8 +161,13 @@ class _TradeScreenState extends State<TradeScreen> {
                       ..._buttons(o, working, blocked: near.blocked),
                     ],
                   )
-                : Column(
-                    children: [const Spacer(flex: 2), ..._head(o), const Spacer(flex: 3), ..._buttons(o, working)],
+                // As wide as the screen: with only Close under it, a
+                // working line's column shrank to its text and sat left.
+                : SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      children: [const Spacer(flex: 2), ..._head(o), const Spacer(flex: 3), ..._buttons(o, working)],
+                    ),
                   ),
           ),
         ),
@@ -236,12 +270,32 @@ class _TradeScreenState extends State<TradeScreen> {
           ),
         ),
       ),
+    ] else if (o is NearOutcome && o.connect != null && !working) ...[
+      Semantics(
+        identifier: 'trade:connect:${o.connect}',
+        button: true,
+        child: PillButton(
+            label: 'Connect ${NearFlow.walletNames[o.connect] ?? 'wallet'}', onPressed: () => _connect(o.connect!)),
+      ),
+      TextButton(
+        onPressed: () => Navigator.of(context).maybePop(),
+        child: const Text('Close', style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600)),
+      ),
     ] else if (working && o.reopen != null) ...[
       Semantics(
         identifier: 'trade:reopen',
         button: true,
-        child: PillButton(label: 'Open MetaMask', onPressed: () => GlyfBridge.openMetaMask(o.reopen!)),
+        child: o.reopen!.startsWith(HotRelay.appLink)
+            ? PillButton(label: 'Open HOT Wallet', onPressed: () => GlyfBridge.openURL(o.reopen!))
+            : PillButton(label: 'Open MetaMask', onPressed: () => GlyfBridge.openMetaMask(o.reopen!)),
       ),
+      const SizedBox(height: 6),
+      if (_connecting == 'hot') ...[
+        PillButton(label: 'Stop', primary: false, onPressed: HotWallet.stopWaiting),
+        const SizedBox(height: 6),
+      ],
+    ] else if (working && _connecting == 'hot') ...[
+      PillButton(label: 'Stop', primary: false, onPressed: HotWallet.stopWaiting),
       const SizedBox(height: 6),
     ],
     if (working)
@@ -252,7 +306,7 @@ class _TradeScreenState extends State<TradeScreen> {
           style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
         ),
       )
-    else if (!blocked && !(o is NearOutcome && o.askRefund != null))
+    else if (!blocked && !(o is NearOutcome && (o.askRefund != null || o.connect != null)))
       PillButton(label: 'Done', onPressed: () => Navigator.of(context).maybePop()),
   ];
 

@@ -625,9 +625,25 @@ extension TradeIntent {
     }
 
     /// Who signs a trade on [chain], as the app names it: always the
-    /// person's own wallet app, Phantom on Solana and MetaMask elsewhere.
+    /// person's own wallet app, Phantom on Solana, HOT Wallet on NEAR and
+    /// MetaMask elsewhere.
     static func walletName(chain: String?) -> String {
-        chain == "solana" ? "Phantom" : "MetaMask"
+        chain == "solana" ? "Phantom" : chain == "near" ? "HOT Wallet" : "MetaMask"
+    }
+
+    /// The wallet the app needs connected before [i] can go, or nil: the
+    /// one that pays on its chain (MetaMask on EVM chains, Phantom on
+    /// Solana, HOT Wallet on NEAR), and HOT Wallet for a NEAR Intents trade
+    /// landing on NEAR with no "to" (it goes to the person's own account,
+    /// so the panel never asks for one). Chains Glyf can't sign on need none.
+    static func missingWallet(_ i: TradeIntent, evm: String?, solana: String?, near: String?) -> String? {
+        let has = { (s: String?) in !(s ?? "").isEmpty }
+        let chain = i.chainName
+        if chain == "solana" { return has(solana) ? nil : walletName(chain: chain) }
+        if evmChains.contains(chain) { if !has(evm) { return walletName(chain: chain) } }
+        if i.isNear, chain == "near", !has(near) { return walletName(chain: "near") }
+        if i.isNear, (i.buyChain ?? chain) == "near", i.to == nil, !has(near) { return walletName(chain: "near") }
+        return nil
     }
 }
 

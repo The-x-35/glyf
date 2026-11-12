@@ -122,12 +122,15 @@ final class TradeSurface: UIView {
     private var searchResults: [TokenPick] = []
     private var searchLoading = false
 
-    private var wallet: String? {
-        intent.chainName == "solana" ? SettingsStore.current.walletAddress : SettingsStore.current.evmAddress
+    private var walletName: String {
+        missingWallet ?? TradeIntent.walletName(chain: intent.chainName)
     }
 
-    private var walletName: String {
-        TradeIntent.walletName(chain: intent.chainName)
+    /// The wallet still to connect in the app: the chain's own, or HOT
+    /// Wallet for a NEAR Intents trade from or to NEAR.
+    private var missingWallet: String? {
+        let s = SettingsStore.current
+        return TradeIntent.missingWallet(intent, evm: s.evmAddress, solana: s.walletAddress, near: s.nearAccount)
     }
 
     private var isSwap: Bool { intent.kind == .swap }
@@ -869,14 +872,12 @@ final class TradeSurface: UIView {
         return spend > held + 1e-12
     }
 
-    /// No wallet connected in the app for this chain: MetaMask for
-    /// Ethereum chains, Phantom for Solana.
-    /// A chain Glyf can't sign on (Bitcoin, NEAR…) needs none: the app shows
-    /// the deposit address to pay from any wallet.
-    private var needsWallet: Bool {
-        guard intent.chainName == "solana" || TradeIntent.evmChains.contains(intent.chainName) else { return false }
-        return (wallet ?? "").isEmpty
-    }
+    /// No wallet connected in the app for this trade: MetaMask for
+    /// Ethereum chains, Phantom for Solana, HOT Wallet for NEAR (a NEAR
+    /// Intents trade from NEAR, or to the person's own NEAR account).
+    /// A chain Glyf can't sign on (Bitcoin, Zcash…) needs none: the app
+    /// shows the deposit address to pay from any wallet.
+    private var needsWallet: Bool { missingWallet != nil }
 
     /// Guard found something that should stop a send (a lookalike, a
     /// missing account): the button says "Send anyway".

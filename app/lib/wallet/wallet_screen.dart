@@ -5,9 +5,12 @@ import 'package:flutter/services.dart';
 
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
+import '../core/text_sheet.dart';
 import '../core/theme.dart';
 import '../evm/evm_signer.dart';
 import '../evm/evm_wallet_screen.dart';
+import '../near/hot_wallet.dart';
+import '../near/near_pot.dart';
 import '../profile/brand_marks.dart' show BrandMark, PhantomMark;
 import 'buy_screen.dart';
 import 'mwa.dart';
@@ -18,8 +21,8 @@ import 'wallet_flow.dart';
 
 /// Profile → Wallet: the person's own wallets, each signing in its own app.
 /// MetaMask for Ethereum and its L2s, Phantom for Solana (or, on a phone
-/// with Mobile Wallet Adapter, the wallet that lives there), each with its
-/// balances. Glyf holds no key: it builds each request and the wallet signs
+/// with Mobile Wallet Adapter, the wallet that lives there), HOT Wallet for
+/// NEAR, each with its balances. All three stay connected side by side. Glyf holds no key: it builds each request and the wallet signs
 /// it (Arpit, 2026-11-12: "the wallet would be external wallet only. Remove
 /// the internal wallet thing").
 class WalletScreen extends StatefulWidget {
@@ -44,6 +47,16 @@ class _WalletScreenState extends State<WalletScreen> {
   bool _mmWaiting = false;
   String? _mmReopen;
 
+  /// HOT Wallet being connected, and the link that opens it again.
+  bool _hotWaiting = false;
+  String? _hotReopen;
+
+  /// The NEAR account's NEAR, in yocto.
+  BigInt? _near;
+
+  /// The group pot (shared settings `nearPot`), a Sputnik DAO on NEAR.
+  String _pot = '';
+
   /// The address row just tapped (copied), for its tick.
   String? _copied;
   Timer? _copiedTimer;
@@ -61,6 +74,11 @@ class _WalletScreenState extends State<WalletScreen> {
       if (mounted) setState(() {});
       _refreshEvm();
     });
+    HotWallet.load().then((_) {
+      if (mounted) setState(() {});
+      _refreshNear();
+    });
+    _loadPot();
     Mwa.isAvailable().then((here) {
       if (mounted && here) setState(() => _mwaHere = true);
     });
@@ -144,6 +162,68 @@ class _WalletScreenState extends State<WalletScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _connectHot() async {
+    if (_hotWaiting) return;
+    setState(() {
+      _hotWaiting = true;
+      _error = null;
+    });
+    try {
+      await HotWallet.connect(opened: (link) {
+        if (mounted) setState(() => _hotReopen = link);
+      });
+      _refreshNear();
+    } on HotError catch (e) {
+      if (mounted && !e.stopped) setState(() => _error = e.refused ? 'Cancelled in HOT Wallet' : e.message);
+    }
+    if (!mounted) return;
+    setState(() {
+      _hotWaiting = false;
+      _hotReopen = null;
+    });
+  }
+
+  Future<void> _disconnectHot() async {
+    await HotWallet.disconnect();
+    if (mounted) setState(() => _near = null);
+  }
+
+  Future<void> _loadPot() async {
+    final pot = (await GlyfBridge.sharedSettings())[NearPot.key];
+    if (mounted) setState(() => _pot = pot is String ? pot.trim() : '');
+  }
+
+  /// The group pot: a Sputnik DAO, saved where the keyboard reads it for a
+  /// pot chip that names none. Saved empty, it is forgotten.
+  Future<void> _editPot() async {
+    final text = await showTextSheet(
+      context,
+      title: 'Group pot',
+      action: 'Save',
+      initial: _pot,
+      maxLength: 64,
+      autocorrect: false,
+      check: (t) => NearPot.normalize(t) == null ? NearPot.invalid : null,
+    );
+    final pot = text == null ? null : NearPot.normalize(text);
+    if (pot == null) return;
+    await GlyfBridge.updateSharedSettings((s) {
+      if (pot.isEmpty) {
+        s.remove(NearPot.key);
+      } else {
+        s[NearPot.key] = pot;
+      }
+      return s;
+    });
+    await _loadPot();
+  }
+
+  Future<void> _refreshNear() async {
+    final a = HotWallet.account.value;
+    final near = a == null ? null : await HotWallet.balance(a.accountId);
+    if (mounted) setState(() => _near = near);
+  }
+
   /// The Ethereum wallet that signs, on Base: ETH and USDC, and ETH's price.
   Future<void> _refreshEvm() async {
     final address = EvmSigner.address.value;
@@ -200,10 +280,10 @@ class _WalletScreenState extends State<WalletScreen> {
         title: const Text('Wallet', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
       ),
       body: ListenableBuilder(
-        listenable: Listenable.merge([WalletFlow.link, EvmSigner.address]),
+        listenable: Listenable.merge([WalletFlow.link, EvmSigner.address, HotWallet.account]),
         builder: (context, _) {
           return RefreshIndicator(
-            onRefresh: () => Future.wait([_refresh(), _refreshEvm()]),
+            onRefresh: () => Future.wait([_refresh(), _refreshEvm(), _refreshNear()]),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
               children: [
@@ -212,6 +292,8 @@ class _WalletScreenState extends State<WalletScreen> {
                 _ethereumCard(),
                 const SizedBox(height: 14),
                 _solanaCard(),
+                const SizedBox(height: 14),
+                _nearCard(),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(_error!,
@@ -410,6 +492,50 @@ class _WalletScreenState extends State<WalletScreen> {
       ]),
     );
   }
+
+  Widget _nearCard() {
+    final a = HotWallet.account.value;
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Semantics(
+          identifier: 'wallet:near',
+          child: _chainHeader(
+            chain: 'NEAR',
+            signer: HotWallet.name,
+            mark: _chainMark('near', null),
+            address: a?.accountId,
+            short: a == null ? '' : _shortNear(a.accountId),
+            trailing: a == null
+                ? _connectButton('wallet:hot:connect', 'Connect', _hotWaiting, _connectHot)
+                : _connectButton('wallet:hot:disconnect', 'Disconnect', false, _disconnectHot),
+          ),
+        ),
+        if (_hotReopen != null)
+          Row(children: [
+            TextButton(
+              onPressed: () => GlyfBridge.openURL(_hotReopen!),
+              child: const Text('Open HOT Wallet', style: TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700)),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: HotWallet.stopWaiting,
+              child: const Text('Stop', style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+          ]),
+        if (a != null) ...[
+          const SizedBox(height: 14),
+          _balance('NEAR', _near == null ? '…' : HotWallet.format(_near!), ''),
+        ],
+        // The pot is paid into from any wallet, so it shows connected or not.
+        const SizedBox(height: 6),
+        _row('Group pot', _pot.isEmpty ? 'Add' : _pot, id: 'wallet:near:pot', chevron: true, onTap: _editPot),
+      ]),
+    );
+  }
+
+  /// A named account as it is; an implicit one (64 hex) shortened.
+  static String _shortNear(String id) => id.length <= 24 ? id : '${id.substring(0, 6)}…${id.substring(id.length - 4)}';
 
   /// The chain's own logo, with the wallet that signs on its corner
   /// (MetaMask on Ethereum, Phantom on Solana).

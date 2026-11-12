@@ -169,7 +169,19 @@ export type Deposit =
   | { kind: "native"; chain: string; chainId: number; to: string; data: "0x"; value: string; amountBase: string; depositAddress: string }
   | { kind: "sol"; chain: "solana"; to: string; lamports: string; amountBase: string; depositAddress: string }
   | { kind: "spl"; chain: "solana"; to: string; mint: string; amountBase: string; decimals: number; depositAddress: string }
+  | { kind: "near"; chain: "near"; to: string; receiverId: string; token: string; wrap: boolean; amount: string; amountBase: string;
+      symbol: string; depositAddress: string; actions: NearAction[] }
   | { kind: "manual"; chain: string; to: string; memo: string | null; amount: string; amountBase: string; symbol: string; depositAddress: string };
+
+/** One action of a NEAR transaction, as HOT Wallet's relay takes it
+ *  (near-connect's ConnectorAction: JSON args, amounts in yoctoNEAR). */
+export type NearAction = { type: "FunctionCall"; params: { methodName: string; args: Record<string, unknown>; gas: string; deposit: string } };
+
+/** What a NEP-145 account registration costs on wrap.near and NEAR's USDC
+ *  (storage_balance_bounds, 1.25e21 yocto = 0.00125 NEAR). With
+ *  registration_only, anything over it comes back. */
+export const NEAR_STORAGE_DEPOSIT = "1250000000000000000000";
+const TGAS = "000000000000";
 
 export interface QuoteAnswer {
   ok: true;
@@ -273,6 +285,24 @@ export function depositFor(chain: NearChain, token: IntentToken, depositAddress:
   if (chain.kind === "sol") {
     if (!token.contractAddress) return { kind: "sol", chain: "solana", to: depositAddress, lamports: amountBase, amountBase, depositAddress };
     return { kind: "spl", chain: "solana", to: depositAddress, mint: token.contractAddress, amountBase, decimals: token.decimals, depositAddress };
+  }
+  if (chain.key === "near" && token.contractAddress && token.assetId === `nep141:${token.contractAddress}`) {
+    // A NEP-141 token on NEAR, paid from the person's own account in HOT
+    // Wallet: one transaction to the token's contract that registers the
+    // deposit address there (a fresh implicit account isn't), wraps NEAR
+    // first when it's NEAR (1Click takes wNEAR), and ft_transfers it.
+    const contract = token.contractAddress;
+    const wrap = contract === "wrap.near";
+    const call = (methodName: string, args: Record<string, unknown>, gas: string, deposit: string): NearAction =>
+      ({ type: "FunctionCall", params: { methodName, args, gas: gas + TGAS, deposit } });
+    const actions = [
+      call("storage_deposit", { account_id: depositAddress, registration_only: true }, "30", NEAR_STORAGE_DEPOSIT),
+      ...(wrap ? [call("near_deposit", {}, "10", amountBase)] : []),
+      call("ft_transfer", { receiver_id: depositAddress, amount: amountBase }, "30", "1"),
+    ];
+    return { kind: "near", chain: "near", to: depositAddress, receiverId: contract, token: contract, wrap,
+      amount: whole(amountBase, token.decimals), amountBase, symbol: SHOWN_AS[token.symbol.toUpperCase()] ?? token.symbol,
+      depositAddress, actions };
   }
   return { kind: "manual", chain: chain.key, to: depositAddress, memo, amount: whole(amountBase, token.decimals), amountBase,
     symbol: SHOWN_AS[token.symbol.toUpperCase()] ?? token.symbol, depositAddress };
@@ -483,8 +513,9 @@ export class NearIntents {
   }
 
   /** Tells 1Click the deposit went out, which speeds up its pickup. */
-  async submit(depositAddress: string, txHash: string, memo?: string): Promise<{ ok: true }> {
-    await this.call("/v0/deposit/submit", { method: "POST", body: { txHash, depositAddress, ...(memo ? { memo } : {}) } });
+  async submit(depositAddress: string, txHash: string, memo?: string, nearSenderAccount?: string): Promise<{ ok: true }> {
+    await this.call("/v0/deposit/submit", { method: "POST",
+      body: { txHash, depositAddress, ...(memo ? { memo } : {}), ...(nearSenderAccount ? { nearSenderAccount } : {}) } });
     return { ok: true };
   }
 }

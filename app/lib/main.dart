@@ -14,6 +14,7 @@ import 'onboarding/demo_chat.dart';
 import 'evm/evm_signer.dart';
 import 'evm/evm_wallet_screen.dart';
 import 'evm/metamask_link.dart';
+import 'near/hot_wallet.dart';
 import 'evm/trade_screen.dart';
 import 'wallet/buy_screen.dart';
 import 'wallet/crypto_pay.dart';
@@ -132,6 +133,8 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Back from HOT Wallet (it doesn't open Glyf again): ask its relay now.
+      HotRelay.wake();
       Funnel.report();
       _checkPendingDictation();
       if (_onboarded) {

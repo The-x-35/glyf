@@ -5,12 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:glyf/evm/trade_flow.dart';
 import 'package:glyf/evm/trade_screen.dart';
 import 'package:glyf/near/near_api.dart';
+import 'package:glyf/near/hot_wallet.dart';
 import 'package:glyf/near/near_flow.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-NearQuote _quote({String sell = 'USDC', String sellChain = 'base', List<Map<String, String>> checks = const [], String? memo}) =>
+NearQuote _quote({String sell = 'USDC', String sellChain = 'base', List<Map<String, String>> checks = const [], String? memo,
+        String exact = 'in'}) =>
     NearQuote.fromJson({
       'ok': true,
+      'exact': exact,
       'sell': {'symbol': sell, 'chain': sellChain, 'decimals': 6},
       'buy': {'symbol': 'SOL', 'chain': 'solana', 'decimals': 9},
       'amountIn': '20',
@@ -58,6 +61,27 @@ void main() {
     expect(find.text('\$19.99'), findsOneWidget);
     expect(find.text('~32 s · via NEAR Intents'), findsOneWidget);
     expect(find.text('Open MetaMask'), findsOneWidget);
+    unawaited(steps.close());
+  });
+
+  testWidgets('a working line with no quote yet sits in the middle of the screen', (tester) async {
+    final steps = await open(tester);
+    steps.add(const NearOutcome(TradeState.working, 'Asking NEAR Intents…'));
+    await tester.pump();
+    final width = tester.getSize(find.byType(Scaffold)).width;
+    expect(tester.getCenter(find.text('Asking NEAR Intents…')).dx, moreOrLessEquals(width / 2, epsilon: 1));
+    expect(tester.getCenter(find.text('Close')).dx, moreOrLessEquals(width / 2, epsilon: 1));
+    unawaited(steps.close());
+  });
+
+  testWidgets('a send says what the recipient gets exactly, without ≈', (tester) async {
+    final steps = await open(tester);
+    steps.add(NearOutcome(TradeState.working, 'Send 5.0553 USDC to NEAR Intents: confirm in MetaMask',
+        quote: _quote(exact: 'out'), recipient: 'illia.near', reopen: 'metamask://'));
+    await tester.pump();
+    expect(find.text('0.2438 SOL'), findsOneWidget);
+    expect(find.text('≈ 0.2438 SOL'), findsNothing);
+    expect(find.text('to illia.near'), findsOneWidget);
     unawaited(steps.close());
   });
 
@@ -117,6 +141,31 @@ void main() {
     unawaited(steps.close());
   });
 
+  testWidgets('a trade from NEAR waiting on HOT offers Open HOT Wallet', (tester) async {
+    final steps = await open(tester);
+    steps.add(NearOutcome(TradeState.working, 'Send 5 NEAR to NEAR Intents: approve in HOT Wallet',
+        quote: _quote(sell: 'NEAR', sellChain: 'near'), recipient: 'your wallet', reopen: '${HotRelay.appLink}?hotcall-abc'));
+    await tester.pump();
+    expect(find.text('Open HOT Wallet'), findsOneWidget);
+    expect(find.text('Open MetaMask'), findsNothing);
+  });
+
+  testWidgets('a wallet that isn’t connected: Connect HOT Wallet connects it, then the same trade again', (tester) async {
+    final asked = <Map<String, String>>[];
+    final wallet = _Connecting();
+    NearFlow.wallet = wallet;
+    addTearDown(() => NearFlow.wallet = const NearWallet());
+    final steps = await open(tester, asked: asked);
+    steps.add(const NearOutcome(TradeState.failed, 'HOT Wallet isn’t connected',
+        detail: 'Connect HOT Wallet in Profile › Wallet', connect: 'hot'));
+    await tester.pump();
+    expect(find.text('Done'), findsNothing);
+    await tester.tap(find.text('Connect HOT Wallet'));
+    await tester.pump();
+    expect(wallet.asked, ['hot']);
+    expect(asked, hasLength(2), reason: 'the trade runs again once HOT is connected');
+  });
+
   testWidgets('done: the destination’s transaction and NEAR Intents’ explorer', (tester) async {
     final steps = await open(tester);
     steps.add(NearOutcome(TradeState.done, 'Swapped',
@@ -131,4 +180,13 @@ void main() {
     expect(find.text('Done'), findsOneWidget);
     unawaited(steps.close());
   });
+}
+
+class _Connecting extends NearWallet {
+  final asked = <String>[];
+  @override
+  Future<String?> connect(String wallet, {void Function(String link)? opened}) async {
+    asked.add(wallet);
+    return null;
+  }
 }
