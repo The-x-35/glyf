@@ -132,8 +132,13 @@ class _TradeScreenState extends State<TradeScreen> {
                       ..._buttons(o, working, blocked: near.blocked),
                     ],
                   )
-                : Column(
-                    children: [const Spacer(flex: 2), ..._head(o), const Spacer(flex: 3), ..._buttons(o, working)],
+                // As wide as the screen: with only Close under it, a
+                // working line's column shrank to its text and sat left.
+                : SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      children: [const Spacer(flex: 2), ..._head(o), const Spacer(flex: 3), ..._buttons(o, working)],
+                    ),
                   ),
           ),
         ),

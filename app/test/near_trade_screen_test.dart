@@ -8,9 +8,11 @@ import 'package:glyf/near/near_api.dart';
 import 'package:glyf/near/near_flow.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-NearQuote _quote({String sell = 'USDC', String sellChain = 'base', List<Map<String, String>> checks = const [], String? memo}) =>
+NearQuote _quote({String sell = 'USDC', String sellChain = 'base', List<Map<String, String>> checks = const [], String? memo,
+        String exact = 'in'}) =>
     NearQuote.fromJson({
       'ok': true,
+      'exact': exact,
       'sell': {'symbol': sell, 'chain': sellChain, 'decimals': 6},
       'buy': {'symbol': 'SOL', 'chain': 'solana', 'decimals': 9},
       'amountIn': '20',
@@ -58,6 +60,27 @@ void main() {
     expect(find.text('\$19.99'), findsOneWidget);
     expect(find.text('~32 s · via NEAR Intents'), findsOneWidget);
     expect(find.text('Open MetaMask'), findsOneWidget);
+    unawaited(steps.close());
+  });
+
+  testWidgets('a working line with no quote yet sits in the middle of the screen', (tester) async {
+    final steps = await open(tester);
+    steps.add(const NearOutcome(TradeState.working, 'Asking NEAR Intents…'));
+    await tester.pump();
+    final width = tester.getSize(find.byType(Scaffold)).width;
+    expect(tester.getCenter(find.text('Asking NEAR Intents…')).dx, moreOrLessEquals(width / 2, epsilon: 1));
+    expect(tester.getCenter(find.text('Close')).dx, moreOrLessEquals(width / 2, epsilon: 1));
+    unawaited(steps.close());
+  });
+
+  testWidgets('a send says what the recipient gets exactly, without ≈', (tester) async {
+    final steps = await open(tester);
+    steps.add(NearOutcome(TradeState.working, 'Send 5.0553 USDC to NEAR Intents: confirm in MetaMask',
+        quote: _quote(exact: 'out'), recipient: 'illia.near', reopen: 'metamask://'));
+    await tester.pump();
+    expect(find.text('0.2438 SOL'), findsOneWidget);
+    expect(find.text('≈ 0.2438 SOL'), findsNothing);
+    expect(find.text('to illia.near'), findsOneWidget);
     unawaited(steps.close());
   });
 
