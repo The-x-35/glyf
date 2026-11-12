@@ -3020,7 +3020,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (recommended != null && suggestedFor == trimmed) showRecommended(recommended)?.let { return it }
         val cached = suggestedChip
         if (cached != null && suggestedFor == trimmed) {
-            return showStripChip("action", null, cached.label, "", policyKey = cached.intent + "|" + cached.query) {
+            return showStripChip("action", null, cached.label, "", policyKey = cached.intent + "|" + cached.query,
+                shorter = ChipFit.shorter(cached)) {
                 suggestedChip = null
                 suggestedAction = null
                 suggestedFor = ""
@@ -3253,7 +3254,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun showStripChip(kind: String, label: String?, value: String, verb: String,
                               lead: String? = null, extra: String? = null, onExtra: (() -> Unit)? = null,
                               onClose: (() -> Unit)? = null, policyKey: String? = null,
-                              onTap: () -> Unit): Boolean {
+                              shorter: String? = null, onTap: () -> Unit): Boolean {
         if (!policyAllows(kind, value, policyKey)) return false
         // The chip's purple, lighter so it reads on the card (Arpit,
         // 2026-09-30: "insert button text etc to be lighter colour purple so
@@ -3286,8 +3287,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setPadding(0, 0, dp(8), 0)
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (lead == null) leftMargin = text0 })
-        // Never "…" (D108): smaller words, then the last " · " part goes (ChipFit).
-        chip.addView(FittedText(this, value, 15f).apply {
+        // Never "…" (D108): smaller words, then the last " · " part goes, then
+        // the chip's shorter words, then two lines (ChipFit.whole).
+        chip.addView(FittedText(this, value, 15f, shorter).apply {
             setTextColor(ink())
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             if (lead == null && label == null) leftMargin = text0
@@ -6294,7 +6296,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** A NEAR chip (a pay link to ask for, the pot, a payout from it): its
      *  tap does what its verb says. */
     private fun showNearChip(chip: Smart.Chip.Action, used: (() -> Unit)? = null): Boolean =
-        showStripChip("action", null, chip.label, Smart.verb(chip) ?: "", policyKey = chip.intent + "|" + chip.query) {
+        showStripChip("action", null, chip.label, Smart.verb(chip) ?: "", policyKey = chip.intent + "|" + chip.query,
+            shorter = ChipFit.shorter(chip)) {
             used?.invoke()
             hideStripChip()
             val params = NearPay.params(chip.query)
@@ -6309,8 +6312,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val a = chip.answer
         val ask = a.request ?: return false
         stripSmartDetail = "convert"
+        // Too wide for its question ("$90 for the four of us ="), the
+        // answer alone: "$22.50 each" (ChipFit.shorter).
         return showStripChip("smart", null, Smart.display(chip), "Insert", extra = "Request",
-            onExtra = { hideStripChip(); requestPayLink(ask) }) {
+            onExtra = { hideStripChip(); requestPayLink(ask) }, shorter = ChipFit.shorter(chip)) {
             val ic = currentInputConnection
             ic?.commitText(Smart.conversionInsert(a.insert(0), ic.getTextBeforeCursor(1, 0)?.toString()), 1)
             hideStripChip()

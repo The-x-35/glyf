@@ -291,8 +291,9 @@ class TradePanelView(
                 // The line over the button took the Arrives row: the time rides here.
                 if (alert() != null) near?.time?.let { sub.add(it) }
             } else if (isEarn) {
-                // What the coins are worth; the vault's share count never shows.
-                (if (i.earnOut) quote?.outUsd else quote?.inUsd)?.let { sub.add(TradeQuote.approx(it)) }
+                // What the coins are worth (the vault's share count never
+                // shows) and how long it takes, as a swap's card says it.
+                sub.addAll(TradeQuote.earnCardLine(i, quote, earn))
             } else if (market != null) sub.add("${TradeQuote.display(top)} ${TradeQuote.dollars(market)}") else if (asking) sub.add("…")
             if (TradeEdit.sells(i)) balance(top, i.chainName)?.takeIf { it > 0 }?.let { sub.add("Balance ${PayPanelView.compact(it)}") }
             // Phantom's send here takes SOL or USDC as read; no picker for it.
@@ -328,13 +329,11 @@ class TradePanelView(
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             body.addView(line, full(top = dp(7)))
         }
-        // Earn's line over the button: 1Click's word on yield.
+        // Earn's line over the button: 1Click's word on yield, on one line,
+        // 13 down to 11 sp if it must (EarnQuote.noticeSize), so the amount's
+        // card keeps its room; two lines only when even 11 is too wide.
         if (isEarn && alert() == null) {
-            body.addView(TextView(context).apply {
-                text = EarnQuote.NOTICE
-                textSize = 12.5f
-                maxLines = 2
-                ellipsize = null
+            body.addView(NoticeText(context).apply {
                 setTextColor(palette.inkSoft)
                 setPadding(dp(4), 0, dp(4), 0)
                 setTag(com.arpit.glyf.R.id.qa_id, "trade:notice")
@@ -1034,6 +1033,10 @@ private class RowValue(ctx: Context, private val value: String) : TextView(ctx) 
         maxLines = 2
         ellipsize = null
         gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        // Two lines break between words ("Gauntlet" whole, never
+        // hyphenated); an address, one long word, between characters.
+        if (value.contains(' ') && android.os.Build.VERSION.SDK_INT >= 23)
+            hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NONE
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -1046,6 +1049,35 @@ private class RowValue(ctx: Context, private val value: String) : TextView(ctx) 
                 probe.measureText(t).toDouble()
             }
             if (textSize != (size * scale).toFloat()) setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, size.toFloat())
+            if (maxLines != lines) maxLines = lines
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
+}
+
+/** Earn's notice (EarnQuote.NOTICE): one line at the largest size from 13 to
+ *  11 sp that fits, else 13 sp on two lines; never "…". */
+private class NoticeText(ctx: Context) : TextView(ctx) {
+    init {
+        text = EarnQuote.NOTICE
+        textSize = EarnQuote.NOTICE_FULL.toFloat()
+        maxLines = 2
+        ellipsize = null
+        if (android.os.Build.VERSION.SDK_INT >= 28) typeface = Typeface.create(Typeface.DEFAULT, 500, false)
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val room = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight).toDouble()
+        if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED && room > 0) {
+            val scale = resources.displayMetrics.scaledDensity
+            val probe = android.text.TextPaint(paint)
+            val size = EarnQuote.noticeSize(room) { sp ->
+                probe.textSize = (sp * scale).toFloat()
+                probe.measureText(EarnQuote.NOTICE).toDouble()
+            }
+            val sp = size ?: EarnQuote.NOTICE_FULL
+            val lines = if (size != null) 1 else 2
+            if (textSize != (sp * scale).toFloat()) setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, sp.toFloat())
             if (maxLines != lines) maxLines = lines
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)

@@ -204,7 +204,7 @@ class PotPanelView(
             setTag(com.arpit.glyf.R.id.qa_id, "pot:card")
         }
         c.addView(label(headline, 15f, true, palette.ink, lines = 4).apply { setTag(com.arpit.glyf.R.id.qa_id, "pot:text") })
-        detail?.let { c.addView(label(it, 13f, false, palette.inkSoft, lines = 2).apply { setTag(com.arpit.glyf.R.id.qa_id, "pot:fill") }, full(top = dp(4))) }
+        detail?.let { c.addView(label(it, 13f, false, palette.inkSoft, lines = 3).apply { setTag(com.arpit.glyf.R.id.qa_id, "pot:fill") }, full(top = dp(4))) }
         warning?.let { c.addView(label(it, 13f, true, red, lines = 2).apply { setTag(com.arpit.glyf.R.id.qa_id, "pot:warning") }, full(top = dp(4))) }
         body.addView(c, full(top = dp(2)))
     }
@@ -248,7 +248,8 @@ class PotPanelView(
             account == null -> card("Propose $money to $payeeWords from the ${ask.potName}", warning = accountProblem)
             loading -> card("Asking the pot…")
             p == null || p.error != null -> card("Propose $money to ${account ?: ""}", warning = p?.error)
-            else -> card(p.headline ?: "", detail = p.fill, warning = if (p.notMember) PotProposal.MEMBERS_ONLY else null)
+            // The vote and its bond, then what to type in Trezu, a line each.
+            else -> card(p.headline ?: "", detail = p.detail, warning = if (p.notMember) PotProposal.MEMBERS_ONLY else null)
         }
         if (needsAccount) {
             val row = LinearLayout(context).apply {

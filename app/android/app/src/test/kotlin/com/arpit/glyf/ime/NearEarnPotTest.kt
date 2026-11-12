@@ -151,8 +151,9 @@ class NearEarnPotTest {
         assertEquals("4.24% APY", kamino.apyText)
         assertEquals("Yield isn't guaranteed; NEAR Intents doesn't run the vault", EarnQuote.NOTICE)
         val rows = TradeQuote.earnRows(read("take my usdc out of earn"), kamino.copy(vaultName = "Gauntlet USDC Prime"), false)
-        assertEquals(listOf("All your USDC back on Base from Gauntlet USDC Prime", "Kamino · 4.24% APY"), rows.map { it.value })
-        assertEquals(listOf("You get", "Vault", "Arrives"), TradeQuote.earnRows(read("put $50 to work"), q, false).map { it.label })
+        assertEquals(listOf("All your USDC back on Base", "Kamino · 4.24% APY"), rows.map { it.value })
+        // The time rides on the amount's card; no Arrives row (02c7471).
+        assertEquals(listOf("You get", "Vault"), TradeQuote.earnRows(read("put $50 to work"), q, false).map { it.label })
     }
 
     @Test fun coinsHaveTheirOwnLogos() {
@@ -338,7 +339,8 @@ class NearEarnPotTest {
             .put("text", "Proposing 120 USDC to caterer.near from the trip pot for catering. Vote: https://trezu.app/trip.sputnik-dao.near/requests")
             .put("bond", "0.1").put("proposers", "everyone").put("threshold", JSONObject().put("words", "2 of 3"))
         val p = PotProposal.of(true, link, "caterer.near", null)
-        assertEquals("Propose $120 to caterer.near · needs 2 of 3 · bond 0.1 NEAR", p.headline)
+        assertEquals("Propose $120 to caterer.near", p.headline)
+        assertEquals("Needs 2 of 3 · bond 0.1 NEAR", p.terms)
         assertEquals("Type 120 USDC, note: catering", p.fill)
         assertFalse(p.notMember)
         link.put("proposers", JSONArray().put("ana.near").put("ben.near"))

@@ -254,14 +254,21 @@ data class PotView(
 data class PotProposal(
     val url: String? = null,
     val text: String? = null,
-    /** "Propose $120 to caterer.near · needs 2 of 3 · bond 0.1 NEAR". */
+    /** "Propose $120 to caterer.near": the card's bold line. */
     val headline: String? = null,
+    /** "Needs 2 of 3 · bond 0.1 NEAR": the vote and its cost, under it. */
+    val terms: String? = null,
     /** "Type 120 USDC, note: catering": what Trezu doesn't prefill. */
     val fill: String? = null,
     /** The person can't file it: "Only members can propose from this pot". */
     val notMember: Boolean = false,
     val error: String? = null,
 ) {
+    /** The card's quieter lines: the vote and its bond, then what to type
+     *  in Trezu, a line each (PotSurface.swift, 02c7471). */
+    val detail: String?
+        get() = listOfNotNull(terms, fill).joinToString("\n").ifEmpty { null }
+
     companion object {
         const val MEMBERS_ONLY = "Only members can propose from this pot"
 
@@ -273,14 +280,15 @@ data class PotProposal(
             val fill = obj.optJSONObject("fill")
             val amount = fill?.let { NearPay.string(it, "amount") } ?: ""
             val coin = fill?.let { NearPay.string(it, "coin") } ?: "USDC"
-            var head = "Propose ${PotAsk.money(amount, coin)} to $to"
-            obj.optJSONObject("threshold")?.let { NearPay.string(it, "words") }?.let { head += " · needs $it" }
-            NearPay.string(obj, "bond")?.let { head += " · bond $it NEAR" }
+            val head = "Propose ${PotAsk.money(amount, coin)} to $to"
+            val terms = listOfNotNull(obj.optJSONObject("threshold")?.let { NearPay.string(it, "words") }?.let { "Needs $it" },
+                NearPay.string(obj, "bond")?.let { "bond $it NEAR" })
             val note = fill?.let { NearPay.string(it, "note") }?.takeIf { it.isNotEmpty() }
             val proposers = obj.optJSONArray("proposers")
             val notMember = proposers != null &&
                 (0 until proposers.length()).none { proposers.optString(it) == (account ?: "").lowercase(Locale.US) }
             return PotProposal(url = NearPay.string(obj, "url"), text = NearPay.string(obj, "text"), headline = head,
+                terms = terms.joinToString(" · ").ifEmpty { null },
                 fill = "Type $amount $coin" + (note?.let { ", note: $it" } ?: ""), notMember = notMember)
         }
     }
@@ -302,6 +310,11 @@ data class EarnQuote(
     /** "4.5% APY", or "APY n/a" when no one said. */
     val apyText: String get() = apy?.let { "${TradeIntent.trimmed(TradeIntent.rounded(it * 100) / 100)}% APY" } ?: "APY n/a"
 
+    /** The words for the You get row: the server's without their APY
+     *  ("≈ $49.75 in Gauntlet USDC Prime"), which the Vault row under it
+     *  already says, so they fit the row at its own size. */
+    val rowWords: String? get() = words?.replace(Regex(""" at [0-9.]+% APY$"""), "")
+
     /** "Morpho · 4.5% APY". */
     fun vaultLine(fallback: String): String = "${protocolName ?: fallback} · $apyText"
 
@@ -316,6 +329,24 @@ data class EarnQuote(
     companion object {
         /** 1Click's ToS §7, in a line. */
         const val NOTICE = "Yield isn't guaranteed; NEAR Intents doesn't run the vault"
+
+        /** The notice's sizes: 13 down to 11 in half points, on one line. */
+        const val NOTICE_FULL = 13.0
+        const val NOTICE_SMALLEST = 11.0
+
+        /** The size the notice is drawn at to stay on one line in [width]:
+         *  13 down to 11 in half points (as the toast shrinks), null when
+         *  even 11 is too wide and it wraps. On one line the Earn panel
+         *  keeps room for the amount's card over its rows. Pure:
+         *  `measure(size)` is the notice's width at that size. */
+        fun noticeSize(width: Double, measure: (Double) -> Double): Double? {
+            var s = NOTICE_FULL
+            while (s >= NOTICE_SMALLEST - 0.001) {
+                if (kotlin.math.ceil(measure(s)) <= width) return s
+                s -= 0.5
+            }
+            return null
+        }
 
         fun of(ok: Boolean, obj: JSONObject?): EarnQuote {
             if (!ok || obj == null || obj.optBoolean("ok", true) == false) {

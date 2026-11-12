@@ -110,7 +110,7 @@ object TradeQuote {
 
     /** The wallet knows what's held and it's short of what's spent. */
     fun short(i: TradeIntent, held: Double?, quoteOut: Double?, nearIn: Double? = null): Boolean {
-        if (i.chainName == "solana" || held == null) return false
+        if (!i.spendsHeldCoin || i.chainName == "solana" || held == null) return false
         if (!(TradeEdit.sells(i) || i.amountIsUSD || i.buyAmount != null || i.kind == TradeIntent.Kind.TWAP)) return false
         if (i.amount == null && i.buyAmount == null) return held <= 0
         // A NEAR Intents send spends what the quote says it costs.
@@ -377,7 +377,10 @@ object TradeQuote {
     }
 
     /** Earn's button: both wallets first (where the coins are and the
-     *  vault's chain), then what's wrong, then the words. */
+     *  vault's chain), then what's wrong, then the words. What the wallet
+     *  holds of the coin never stops it: taking out spends the vault's
+     *  shares ([TradeIntent.spendsHeldCoin]; "No USDC on Base" stopped the
+     *  iPhone's until 02c7471). */
     fun earnGo(i: TradeIntent, missing: String?, asking: Boolean, earn: EarnQuote?, error: String?): Go {
         if (missing != null) return Go("Connect $missing", blocked = false, connect = true)
         TradeEdit.problem(i)?.let { return Go(it, true, false) }
@@ -386,19 +389,25 @@ object TradeQuote {
         return Go(earnTitle(i), earn == null, false)
     }
 
-    /** Earn's rows: the server's words ("≈ $49.75 in Gauntlet USDC Prime at
-     *  4.5% APY"), who runs the vault and its APY, and the time; everything
-     *  out says where it lands and has no time. */
+    /** Earn's rows: the server's words without their APY ("≈ $49.75 in
+     *  Gauntlet USDC Prime"), then who runs the vault and its APY ("Morpho ·
+     *  4.51% APY"). The time rides on the amount's card ([earnCardLine]):
+     *  three rows and the notice left the card no room (02c7471). Everything
+     *  out says where it lands; the Vault row says from whom. */
     fun earnRows(i: TradeIntent, earn: EarnQuote?, asking: Boolean): List<Row> {
         val all = i.earnOut && i.amount == null
         var words = if (asking) "…" else "—"
-        if (earn != null) words = if (all) "All your ${i.sell} back on ${TradeIntent.label(i.chainName)} from ${earn.vaultName ?: "Earn"}"
-            else earn.words ?: words
-        val rows = mutableListOf(Row("earn", "You get", words, bold = true),
+        if (earn != null) words = if (all) "All your ${i.sell} back on ${TradeIntent.label(i.chainName)}"
+            else earn.rowWords ?: words
+        return listOf(Row("earn", "You get", words, bold = true),
             Row("vault", "Vault", earn?.vaultLine(i.earnProtocol) ?: i.earnProtocol))
-        if (!all) rows.add(Row("arrives", "Arrives", earn?.time ?: if (asking) "…" else "—"))
-        return rows
     }
+
+    /** The line under Earn's amount: what the coins are worth (the vault's
+     *  share count never shows) and how long it takes, as a swap's card
+     *  says it ("≈ $49.97 · ~52 s"). */
+    fun earnCardLine(i: TradeIntent, quote: Quote?, earn: EarnQuote?): List<String> =
+        listOfNotNull((if (i.earnOut) quote?.outUsd else quote?.inUsd)?.let { approx(it) }, earn?.time)
 
     /** A row's value at the largest size from 15 down to 11 (half points)
      *  that fits one line, else on two lines; never cut with "…". Pure:
@@ -410,11 +419,15 @@ object TradeQuote {
             if (measure(text, s) <= width) return s to 1
             s -= 0.5
         }
-        // Wrapped at any character (an address has no spaces): two lines
-        // hold a little under twice the room.
+        // Words break between words ("Gauntlet" whole, 02c7471): two lines
+        // when they wrap into two. An address has no spaces and wraps at any
+        // character: two lines hold a little under twice the room.
+        val words = text.contains(' ')
         s = 15.0
         while (s > 11.0 + 0.001) {
-            if (measure(text, s) <= width * 2 * 0.94) return s to 2
+            val two = if (words) (ChipFit.lines(text, s, width, measure) ?: 3) <= 2
+                else measure(text, s) <= width * 2 * 0.94
+            if (two) return s to 2
             s -= 0.5
         }
         return 11.0 to 2

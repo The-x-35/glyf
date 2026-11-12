@@ -66,6 +66,11 @@ data class TradeIntent(
      *  coin's own (USDC → Gauntlet USDC Prime, SOL → Kamino SOL Balanced). */
     var vault: String? = null,
 ) {
+    /** Whether the panel checks what the wallet holds of the coin before
+     *  the button: taking money out of Earn spends the vault's shares, not
+     *  the coin (the app reads the shares and says "Nothing in Earn yet"),
+     *  so "No USDC on Base" never stops it (TradeIntent.swift, 02c7471). */
+    val spendsHeldCoin: Boolean get() = !(kind == Kind.EARN && earnOut)
 
     enum class Kind(val raw: String) {
         /** Uniswap, now: "swap 0.05 eth to usdc on base", "buy $20 of eth". */

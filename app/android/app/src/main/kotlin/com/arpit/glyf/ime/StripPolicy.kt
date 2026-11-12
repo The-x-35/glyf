@@ -265,14 +265,20 @@ object SuggestionFit {
  *  smaller, from their usual size down to [SMALLEST] in half points; when
  *  even that is too wide, the last " · " part (the chain, a busy note) goes
  *  whole and the rest is tried again from the usual size. Only the last
- *  part ever goes, so a bracket's "TP … · SL …" keeps both prices. Pure:
- *  the caller measures (`measure(text, size)`, in the unit of [width]). */
+ *  part ever goes, so a bracket's "TP … · SL …" keeps both prices. Then the
+ *  chip's shorter words when it has them ([shorter]: a bill split's answer
+ *  alone, "$22.50 each", rather than "$90 for the four of us =" with the
+ *  answer clipped off), and when even those are too wide at 11, two lines,
+ *  13 down to 11, broken between words (iOS's ChipFit, 02c7471). Pure: the
+ *  caller measures (`measure(text, size)`, in the unit of [width]). */
 object ChipFit {
     const val SMALLEST = 11.0
     const val STEP = 0.5
     const val SEPARATOR = " · "
+    /** Where two lines start: a size under the one-line chip's 15. */
+    const val TWO_LINES = 13.0
 
-    data class Fit(val text: String, val size: Double, val fits: Boolean)
+    data class Fit(val text: String, val size: Double, val fits: Boolean, val lines: Int = 1)
 
     /** What may be shown, longest first: the whole, then without its last part. */
     fun candidates(value: String): List<String> {
@@ -290,12 +296,59 @@ object ChipFit {
         }
         return Fit(all.last(), SMALLEST, false)
     }
+
+    /** What a whole chip says when its words don't fit: a sum's answer
+     *  without its question ("$22.50 each"), a payout without its pot
+     *  ("Propose $120 to caterer"; the panel names the pot). Null: nothing
+     *  shorter to say. */
+    fun shorter(chip: Smart.Chip): String? = when {
+        chip is Smart.Chip.Convert && chip.answer.source.isNotEmpty() -> chip.answer.results.joinToString(SEPARATOR)
+        chip is Smart.Chip.Action && chip.intent == "near:pot.pay" -> {
+            val short = chip.label.replace(Regex(""" from the [^·]*?(?= · |$)"""), "")
+            if (short == chip.label) null else short
+        }
+        else -> null
+    }
+
+    /** How many lines [text] takes at [size] in [width], broken between
+     *  words; null when a single word is wider than a line (it would be cut
+     *  mid-word). */
+    fun lines(text: String, size: Double, width: Double, measure: (String, Double) -> Double): Int? {
+        var count = 0
+        var line = ""
+        for (word in text.split(' ').filter { it.isNotEmpty() }) {
+            if (measure(word, size) > width) return null
+            val next = if (line.isEmpty()) word else "$line $word"
+            if (line.isEmpty() || measure(next, size) <= width) line = next
+            else { count++; line = word }
+        }
+        return count + if (line.isEmpty()) 0 else 1
+    }
+
+    /** A whole chip's words: [fit] on one line, then [shorter] on one line,
+     *  then the first " · " part on two lines (13 down to 11, between
+     *  words), else that part at 11 on two lines, clipped, never "…". */
+    fun whole(value: String, full: Double, width: Double, shorter: String? = null,
+              measure: (String, Double) -> Double): Fit {
+        val one = fit(value, full, width, measure)
+        if (one.fits) return one
+        if (shorter != null) fit(shorter, full, width, measure).takeIf { it.fits }?.let { return it }
+        val first = value.split(SEPARATOR)[0]
+        var s = minOf(TWO_LINES, full)
+        while (s >= SMALLEST - 0.001) {
+            val n = lines(first, s, width, measure)
+            if (n != null && n <= 2) return Fit(first, s, true, 2)
+            s -= STEP
+        }
+        return Fit(first, SMALLEST, false, 2)
+    }
 }
 
-/** A chip's words, fitted to the room the chip gives them (ChipFit): never
- *  an ellipsis. [fullSp] is the usual size. */
-class FittedText(ctx: android.content.Context, private val value: String, private val fullSp: Float) :
-    android.widget.TextView(ctx) {
+/** A chip's words, fitted to the room the chip gives them (ChipFit.whole):
+ *  never an ellipsis. [fullSp] is the usual size; [shorter] what the chip
+ *  says when its words don't fit (ChipFit.shorter). */
+class FittedText(ctx: android.content.Context, private val value: String, private val fullSp: Float,
+                 private val shorter: String? = null) : android.widget.TextView(ctx) {
     init {
         text = value
         textSize = fullSp
@@ -311,11 +364,17 @@ class FittedText(ctx: android.content.Context, private val value: String, privat
         val room = (w - paddingLeft - paddingRight).toDouble()
         val scale = resources.displayMetrics.scaledDensity
         val probe = android.text.TextPaint(paint)
-        val f = ChipFit.fit(value, fullSp.toDouble(), room) { t, sp ->
+        val f = ChipFit.whole(value, fullSp.toDouble(), room, shorter) { t, sp ->
             probe.textSize = (sp * scale).toFloat()
             probe.measureText(t).toDouble()
         }
         post {
+            if (f.lines > 1) {
+                isSingleLine = false
+                maxLines = f.lines
+                // Two lines sit close, as iOS's wrapped chip does.
+                setLineSpacing(0f, 0.92f)
+            }
             if (text.toString() != f.text) text = f.text
             if (textSize != (f.size * scale).toFloat()) setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, f.size.toFloat())
         }
