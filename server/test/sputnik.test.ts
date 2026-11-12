@@ -133,7 +133,8 @@ describe("a pot, read from NEAR", () => {
         { symbol: "USDC", amount: "20", contract: NEAR_USDC, inIntents: true },
       ] },
       members: ["ana.near", "ben.near", "cy.near", "dee.near"], memberCount: 4,
-      threshold: { approvals: 2, of: 3, words: "2 of 3" }, bond: "0.1", votingDays: 7, lastProposalId: 8,
+      threshold: { approvals: 2, of: 3, words: "2 of 3" }, bond: "0.1", votingDays: 7, lastProposalId: 8, open: 2,
+      text: "The trip pot holds 42.5 NEAR · 140.5 USDC. 4 members, payouts need 2 of 3. 2 proposals open",
       links: { trezu: `https://trezu.app/${DAO}/dashboard`, propose: `https://trezu.app/${DAO}/payments` },
     });
     expect(pot.proposals.map(p => p.id)).toEqual([7, 6, 5, 4]);

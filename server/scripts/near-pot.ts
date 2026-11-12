@@ -46,6 +46,7 @@ try {
   console.log(`  Members      ${pot.memberCount}: ${pot.members.slice(0, 8).join(", ")}${pot.memberCount > 8 ? ", …" : ""}`);
   console.log(`  Payouts pass ${pot.threshold ? `${pot.threshold.words} ${pot.threshold.role} members approve` : "by token weight"}; bond ${pot.bond} NEAR, ${pot.votingDays} days to vote`);
   console.log(`  Can propose  ${pot.proposers === "everyone" ? "anyone" : pot.proposers.slice(0, 8).join(", ")}`);
+  console.log(`  In words     ${pot.text}`);
   console.log(`  Latest proposals (of ${pot.lastProposalId}):`);
   for (const p of pot.proposals) {
     const what = p.kind === "Transfer" && p.amount ? `${p.amount} ${p.coin} to ${p.receiver}` : p.kind;

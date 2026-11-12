@@ -247,6 +247,11 @@ export interface PotView {
   votingDays: number;
   proposals: PotProposal[];
   lastProposalId: number;
+  /** Proposals still open for votes, of those shown. */
+  open: number;
+  /** One line to put in the chat: "The trip pot holds 42.5 NEAR · 140.5
+   *  USDC. 4 members, payouts need 2 of 3. 1 payout open". */
+  text: string;
   links: { trezu: string; propose: string };
 }
 
@@ -291,16 +296,28 @@ export class Pots {
     ]);
     const proposals = await Promise.all((Array.isArray(rows) ? rows : []).map(r => this.proposal(id, policy, r)));
     const members = membersOf(policy);
+    const shown = proposals.filter((p): p is PotProposal => p !== null).sort((a, b) => b.id - a.id);
+    const open = shown.filter(p => p.status === "InProgress").length;
+    const name = String(config?.name ?? id.replace(/\.sputnik-dao\.near$/, ""));
+    const rule = voteRule(policy, "transfer");
+    const sums = new Map<string, number>();
+    for (const t of balance.tokens) sums.set(t.symbol, (sums.get(t.symbol) ?? 0) + Number(t.amount));
+    const nearTotal = Number(balance.near) + (sums.get("NEAR") ?? 0);
+    sums.delete("NEAR");
+    const two = (n: number) => String(Math.round(n * 100) / 100);
+    const holds = [`${two(nearTotal)} NEAR`, ...[...sums].map(([sym, n]) => `${two(n)} ${sym}`)].join(" · ");
+    const text = `The ${name} pot holds ${holds}. ${members.length} ${members.length === 1 ? "member" : "members"}`
+      + `${rule ? `, payouts need ${rule.words}` : ""}.${open ? ` ${open} ${open === 1 ? "proposal" : "proposals"} open` : ""}`;
     const view: PotView = {
-      ok: true, dao: id, name: String(config?.name ?? id.replace(/\.sputnik-dao\.near$/, "")),
+      ok: true, dao: id, name,
       purpose: String(config?.purpose ?? "").slice(0, 200),
       balance, members: members.slice(0, MAX_MEMBERS), memberCount: members.length,
       proposers: proposers(policy),
-      threshold: voteRule(policy, "transfer"),
+      threshold: rule,
       bond: coinAmount(String(policy.proposal_bond ?? "0"), 24),
       votingDays: Math.round(Number(BigInt(String(policy.proposal_period ?? "0")) / (NS_PER_MS * 1000n)) / 86400 * 10) / 10,
-      proposals: proposals.filter((p): p is PotProposal => p !== null).sort((a, b) => b.id - a.id),
-      lastProposalId: Number(last),
+      proposals: shown,
+      lastProposalId: Number(last), open, text,
       links: { trezu: `${TREZU}/${id}/dashboard`, propose: `${TREZU}/${id}/payments` },
     };
     this.kept.set(id, { at: this.now(), view });
