@@ -4,17 +4,18 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:glyf/evm/evm_signer.dart';
 import 'package:glyf/near/hot_wallet.dart';
 import 'package:glyf/wallet/base58.dart';
 
 /// HOT's relay (h4n.app) and clock as a test: what was posted, how often
 /// the answer was asked for, and the answers to give, in turn.
 class _FakeRelay {
-  _FakeRelay({this.answers = const [], this.ts = '1794511234494864516000'});
+  _FakeRelay({this.answers = const []});
 
   /// GET /{id}/response bodies in turn (the last repeats); null = `{"data":null}`.
   final List<Object?> answers;
-  final String ts;
+  final String ts = '1794511234494864516000';
   final posts = <(Uri, Map<String, dynamic>)>[];
   final gets = <Uri>[];
 
@@ -168,6 +169,16 @@ void main() {
     await HotWallet.disconnect();
     expect(shared, {'walletAddress': 'GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB', 'evmAddress': '0x19E7', 'evmSigner': 'metamask', 'haptics': false});
     expect(HotWallet.account.value, isNull);
+  });
+
+  test('MetaMask connecting or leaving keeps the NEAR account HOT left', () {
+    final s = {'nearAccount': 'arpit.near', 'nearPublicKey': 'ed25519:7xKX', 'nearWallet': 'hot', 'walletAddress': 'Gma'};
+    final on = EvmSigner.shared(Map.of(s), {EvmSignerKind.metamask: '0x19E7'}, '0x19E7');
+    expect(on, containsPair('nearAccount', 'arpit.near'));
+    expect(on, containsPair('walletAddress', 'Gma'));
+    final off = EvmSigner.shared(Map.of(s), const {}, null);
+    expect(off, containsPair('nearAccount', 'arpit.near'));
+    expect(off, containsPair('nearPublicKey', 'ed25519:7xKX'));
   });
 
   test('an answer that isn’t a NEAR account is refused and nothing is kept', () async {

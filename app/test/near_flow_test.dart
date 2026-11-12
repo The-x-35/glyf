@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:glyf/evm/evm_chains.dart';
 import 'package:glyf/evm/evm_signer.dart';
 import 'package:glyf/evm/trade_flow.dart';
+import 'package:glyf/near/hot_wallet.dart';
 import 'package:glyf/near/near_api.dart';
 import 'package:glyf/near/near_flow.dart';
 import 'package:glyf/wallet/base58.dart';
@@ -42,8 +43,8 @@ class _FakeApi extends NearApi {
   }
 
   @override
-  Future<void> submit({required String depositAddress, required String txHash, String? memo}) async =>
-      submitted.add('$depositAddress $txHash');
+  Future<void> submit({required String depositAddress, required String txHash, String? memo, String? nearSender}) async =>
+      submitted.add('$depositAddress $txHash${nearSender == null ? '' : ' from $nearSender'}');
 
   @override
   Future<NearStatus> status({required String depositAddress, String? memo}) async {
@@ -106,7 +107,34 @@ class _FakeWallet extends NearWallet {
 
   @override
   Future<bool?> confirmSolana(String signature) async => true;
+
+  /// HOT Wallet: what it was asked to sign, and how it answers.
+  final nearAsked = <List<NearTransaction>>[];
+  Object? hotAnswer;
+  final connected = <String>[];
+
+  @override
+  Future<HotCall> startNear(List<NearTransaction> txs) async {
+    nearAsked.add(txs);
+    return const HotCall(id: 'abc', query: 'q', link: 'https://app.hot-labs.org/link?hotcall-abc');
+  }
+
+  @override
+  Future<List<NearSent>> finishNear(HotCall call, List<NearTransaction> txs, {required String signer}) async {
+    final a = hotAnswer;
+    if (a is Exception) throw a;
+    return [NearSent(hash: _nearHash, signer: signer, receiver: txs.single.receiverId, failure: a as String?)];
+  }
+
+  @override
+  Future<String?> connect(String wallet) async {
+    connected.add(wallet);
+    return null;
+  }
 }
+
+const _nearHash = '8gA5Xq1kLmnPqRsTuVwXyZ23abcDEF';
+const _nearDeposit = '606bffe304070f24557a0d5cb8cca57812acfb478b341e9c32e76c68cfcbe48d';
 
 Map<String, dynamic> _quote({
   String sell = 'USDC',
@@ -374,7 +402,8 @@ void main() {
     final missing = await run(q);
     expect(missing.single.state, TradeState.failed);
     expect(missing.single.title, 'Who gets the NEAR?');
-    expect(missing.single.detail, 'Add your NEAR account, like “to alice.near”');
+    expect(missing.single.detail, 'Connect HOT Wallet in Profile › Wallet, or add an account like “to alice.near”');
+    expect((missing.single as NearOutcome).connect, 'hot', reason: 'the screen offers Connect HOT Wallet');
     expect(api.bodies, isEmpty);
 
     shared['nearAccount'] = 'arpit.near';
@@ -432,6 +461,164 @@ void main() {
     NearFlow.api = _FakeApi((_) => _quote());
     final out = await run({'kind': 'swap', 'venue': 'near', 'sell': 'USDC', 'chain': 'base', 'buy': 'SOL', 'buyChain': 'solana', 'amount': '20'});
     expect(out.single.title, 'MetaMask isn’t connected');
+    expect((out.single as NearOutcome).connect, 'metamask');
+  });
+
+  Map<String, dynamic> nearQuote({Map<String, dynamic>? deposit, String sellAddress = 'wrap.near', String amountInBase = '5000000000000000000000000'}) =>
+      _quote(
+        sell: 'NEAR',
+        sellChain: 'near',
+        sellDecimals: 24,
+        sellAddress: sellAddress,
+        buy: 'USDC',
+        buyChain: 'base',
+        amountIn: '5',
+        amountInBase: amountInBase,
+        amountOut: '17.05',
+        depositAddress: _nearDeposit,
+        deposit: deposit ??
+            {
+              'kind': 'near', 'chain': 'near', 'to': _nearDeposit, 'receiverId': 'wrap.near', 'token': 'wrap.near', 'wrap': true,
+              'amountBase': amountInBase, 'depositAddress': _nearDeposit,
+            },
+      );
+  const fromNear = {'kind': 'swap', 'venue': 'near', 'sell': 'NEAR', 'chain': 'near', 'buy': 'USDC', 'buyChain': 'base', 'amount': '5'};
+
+  test('from NEAR: HOT Wallet signs the deposit built here (register, wrap, ft_transfer), refunds to the NEAR account', () async {
+    shared['nearAccount'] = 'arpit.near';
+    final api = NearFlow.api = _FakeApi((_) => nearQuote(), delivered: '17.05');
+    final out = await run(fromNear);
+
+    final body = api.bodies.single;
+    expect(body['refundTo'], 'arpit.near');
+    expect(body['recipient'], _evm, reason: 'lands in MetaMask on Base');
+    final tx = wallet.nearAsked.single.single;
+    expect(tx.toJson(), {
+      'receiverId': 'wrap.near',
+      'actions': [
+        {
+          'type': 'FunctionCall',
+          'params': {
+            'methodName': 'storage_deposit',
+            'args': {'account_id': _nearDeposit, 'registration_only': true},
+            'gas': '30000000000000',
+            'deposit': '1250000000000000000000',
+          },
+        },
+        {
+          'type': 'FunctionCall',
+          'params': {'methodName': 'near_deposit', 'args': {}, 'gas': '10000000000000', 'deposit': '5000000000000000000000000'},
+        },
+        {
+          'type': 'FunctionCall',
+          'params': {
+            'methodName': 'ft_transfer',
+            'args': {'receiver_id': _nearDeposit, 'amount': '5000000000000000000000000'},
+            'gas': '30000000000000',
+            'deposit': '1',
+          },
+        },
+      ],
+    });
+    expect(wallet.evmSteps, isEmpty);
+    expect(api.submitted, ['$_nearDeposit $_nearHash from arpit.near']);
+    expect(out.map((o) => o.title), [
+      'Asking NEAR Intents…',
+      'Send 5 NEAR to NEAR Intents: approve in HOT Wallet',
+      'Deposit sent',
+      'Swapping on NEAR Intents',
+      'Swapped',
+    ]);
+    expect(out[1].reopen, 'https://app.hot-labs.org/link?hotcall-abc', reason: 'the screen’s Open HOT Wallet');
+    expect(out[2].txUrl, 'https://nearblocks.io/txns/$_nearHash');
+    expect(out.last.detail, '5 NEAR on NEAR → 17.05 USDC on Base');
+  });
+
+  test('from NEAR on an older server (deposit kind manual): still built here and signed in HOT', () async {
+    shared['nearAccount'] = 'arpit.near';
+    NearFlow.api = _FakeApi((_) => nearQuote(deposit: {'kind': 'manual', 'chain': 'near', 'depositAddress': _nearDeposit,
+          'amountBase': '5000000000000000000000000'}));
+    final out = await run(fromNear);
+    expect(wallet.nearAsked.single.single.receiverId, 'wrap.near');
+    expect(out.whereType<NearOutcome>().any((o) => o.manual), isFalse);
+    expect(out.last.state, TradeState.done);
+  });
+
+  test('USDC on NEAR is ft_transferred with no wrapping', () async {
+    shared['nearAccount'] = 'arpit.near';
+    const usdc = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+    NearFlow.api = _FakeApi((_) => {
+          ...nearQuote(sellAddress: usdc, amountInBase: '5000000',
+              deposit: {'kind': 'near', 'chain': 'near', 'receiverId': usdc, 'token': usdc, 'amountBase': '5000000', 'depositAddress': _nearDeposit}),
+          'sell': {'symbol': 'USDC', 'chain': 'near', 'decimals': 6, 'address': usdc},
+          'amountIn': '5',
+        });
+    await run({...fromNear, 'sell': 'USDC'});
+    final tx = wallet.nearAsked.single.single;
+    expect(tx.receiverId, usdc);
+    expect([for (final a in tx.actions) (a['params'] as Map)['methodName']], ['storage_deposit', 'ft_transfer']);
+  });
+
+  test('from NEAR without HOT Wallet: says so and offers to connect it, before any quote', () async {
+    final api = NearFlow.api = _FakeApi((_) => nearQuote());
+    final out = await run(fromNear);
+    expect(out.single.title, 'HOT Wallet isn’t connected');
+    expect(out.single.detail, 'Connect HOT Wallet in Profile › Wallet');
+    expect((out.single as NearOutcome).connect, 'hot');
+    expect(api.bodies, isEmpty);
+  });
+
+  test('a NEAR deposit that doesn’t match the quote is refused before HOT opens', () async {
+    shared['nearAccount'] = 'arpit.near';
+    NearFlow.api = _FakeApi((_) => nearQuote(deposit: {'kind': 'near', 'chain': 'near', 'receiverId': 'evil.near', 'token': 'evil.near',
+          'amountBase': '5000000000000000000000000', 'depositAddress': _nearDeposit}));
+    expect((await run(fromNear)).last.title, 'That deposit doesn’t add up');
+    NearFlow.api = _FakeApi((_) => nearQuote(deposit: {'kind': 'near', 'chain': 'near', 'receiverId': 'wrap.near', 'token': 'wrap.near',
+          'amountBase': '9000000000000000000000000', 'depositAddress': _nearDeposit}));
+    expect((await run(fromNear)).last.title, 'That deposit doesn’t add up');
+    expect(wallet.nearAsked, isEmpty);
+  });
+
+  test('a no in HOT Wallet is Cancelled, and a deposit NEAR turned down says so', () async {
+    shared['nearAccount'] = 'arpit.near';
+    NearFlow.api = _FakeApi((_) => nearQuote());
+    wallet.hotAnswer = SignFailed('Cancelled in HOT Wallet', detail: 'Nothing was sent', cancelled: true);
+    var out = await TradeFlow.run(fromNear).toList();
+    expect(out.last.title, 'Cancelled in HOT Wallet');
+    wallet.hotAnswer = '{"ActionError":{}}';
+    out = await TradeFlow.run(fromNear).toList();
+    expect(out.last.title, 'The deposit didn’t go through');
+  });
+
+  test('each origin chain picks its own wallet; the three never stand in for each other', () async {
+    expect(NearFlow.walletFor('base'), 'metamask');
+    expect(NearFlow.walletFor('arbitrum'), 'metamask');
+    expect(NearFlow.walletFor('bsc'), 'metamask');
+    expect(NearFlow.walletFor('solana'), 'phantom');
+    expect(NearFlow.walletFor('near'), 'hot');
+    expect(NearFlow.walletFor('bitcoin'), isNull, reason: 'paid from any wallet by hand');
+    expect(NearFlow.walletNames, {'metamask': 'MetaMask', 'phantom': 'Phantom', 'hot': 'HOT Wallet'});
+
+    // All three connected: Base pays from MetaMask, Solana from Phantom, NEAR from HOT.
+    shared['nearAccount'] = 'arpit.near';
+    NearFlow.api = _FakeApi((_) => _quote(buy: 'NEAR', buyChain: 'near'));
+    await run({'kind': 'swap', 'venue': 'near', 'sell': 'USDC', 'chain': 'base', 'buy': 'NEAR', 'buyChain': 'near', 'amount': '20'});
+    expect(wallet.evmSteps, hasLength(1));
+    expect(wallet.solanaAsked, isEmpty);
+    expect(wallet.nearAsked, isEmpty);
+
+    NearFlow.api = _FakeApi((_) => _quote(sell: 'SOL', sellChain: 'solana', sellDecimals: 9, sellAddress: null, buy: 'NEAR', buyChain: 'near',
+        amountIn: '0.2', amountInBase: '200000000', depositAddress: _solDeposit,
+        deposit: {'kind': 'sol', 'chain': 'solana', 'to': _solDeposit, 'lamports': '200000000'}));
+    await run({'kind': 'swap', 'venue': 'near', 'sell': 'SOL', 'chain': 'solana', 'buy': 'NEAR', 'buyChain': 'near', 'amount': '0.2'});
+    expect(wallet.solanaAsked, hasLength(1));
+    expect(wallet.nearAsked, isEmpty);
+
+    NearFlow.api = _FakeApi((_) => nearQuote());
+    await run(fromNear);
+    expect(wallet.nearAsked, hasLength(1));
+    expect(wallet.evmSteps, hasLength(1), reason: 'MetaMask wasn’t asked again');
+    expect(wallet.solanaAsked, hasLength(1));
   });
 
   test('the trade screen’s flow sends venue=near here, even a send from Solana', () async {
