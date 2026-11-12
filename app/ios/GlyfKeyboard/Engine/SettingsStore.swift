@@ -291,6 +291,17 @@ enum SettingsStore {
         return migrated(s)
     }
 
+    /// What the app reads (GlyfBridge readSharedSettings): the MIGRATED
+    /// view of [raw], laid over the file so the keys only the app keeps
+    /// there survive (evmWallets, MetaMask's connection; nearAccount;
+    /// cryptoPending). Without them the app's next write, which sends back
+    /// what it read, dropped MetaMask on every launch.
+    static func appView(raw: Data?) -> Data? {
+        let s = raw.flatMap { try? JSONDecoder().decode(GlyfSettings.self, from: $0) }.map(migrated) ?? GlyfSettings()
+        guard let ours = try? JSONEncoder().encode(s) else { return raw }
+        return merged(ours, over: raw)
+    }
+
     /// Pure + testable: every additive schema migration, oldest first.
     static func migrated(_ old: GlyfSettings) -> GlyfSettings {
         var s = old
