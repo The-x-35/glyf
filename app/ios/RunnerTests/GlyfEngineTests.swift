@@ -1566,6 +1566,11 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(m.completion(after: "On my wa", today: day), "only at a word's end")
         XCTAssertNil(m.completion(after: "On ", today: day), "two words first")
         XCTAssertNil(m.completion(after: "On my ", today: day + 61), "forgotten after 60 days")
+        // The strip offers it a word at a time, never as a phrase.
+        XCTAssertEqual(m.nextWord(after: "On my ", today: day), "way")
+        XCTAssertEqual(m.nextWord(after: "On my way, be there in ", today: day), "10")
+        XCTAssertNil(m.nextWord(after: "On my way, be there in 10 ", today: day), "nothing left")
+        XCTAssertNil(m.nextWord(after: "On my wa", today: day))
         // Never kept: codes, links, short lines.
         var n = PhraseMemory()
         for _ in 0..<3 {

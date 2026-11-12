@@ -1891,11 +1891,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             WeatherStore.shared.ensure(lat: lat, lon: lon, fahrenheit: fahrenheit) { [weak self] in self?.updateCandidates() }
             if let w = Smart.weather, w.fahrenheit == fahrenheit, let a = Smart.weatherAnswer(in: tail, snapshot: w) { chip = .convert(a) }
         }
-        // A sentence the person keeps sending: its first words offer the rest.
-        if chip == nil, typingPolicy.contains(.learning),
-           let rest = PhraseMemoryStore.shared.memory.completion(after: tail, today: TypingText.day()) {
-            chip = .convert(Smart.Conversions(source: "", results: [rest], inserts: [rest], hows: [.after]))
-        }
+        // A sentence the person keeps sending offers its next word in the
+        // word slots (updateCandidates), not the rest of it as a chip (D108).
         // Talk of a call: a Google Meet link where it's wanted, the Meet key's
         // behaviour surfaced (research 2026-10-07), only with Meet connected.
         if chip == nil, hasFullAccess, GoogleAccess.hasMeet, Smart.asksToCall(tail) {
@@ -2243,9 +2240,16 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 toolbar.showSuggestions(items)
             } else if let engine = typing, before?.hasSuffix(" ") == true,
                       let previous = WordTracker.previousWord(beforeContext: before) {
-                var items = engine.predictions(
+                var words = engine.predictions(
                     previous: previous, beforePrevious: WordTracker.wordBeforePrevious(beforeContext: before),
-                    policy: policy).map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
+                    policy: policy)
+                // A sentence the person keeps sending offers its next word
+                // first: a word at a time, never the rest as a phrase (D108).
+                if policy.contains(.learning), let next = PhraseMemoryStore.shared.memory.nextWord(
+                    after: String((before ?? "").suffix(120)), today: TypingText.day()) {
+                    words = [next] + words.filter { $0.lowercased() != next.lowercased() }
+                }
+                var items = words.map { GlyfToolbar.Suggestion(text: $0, kind: .word) }
                 // The word just finished brings its emoji to the last slot.
                 if let e = EmojiWords.emoji(for: previous) { items = Array(items.prefix(2)) + [.init(text: e, kind: .emoji)] }
                 toolbar.showSuggestions(items)

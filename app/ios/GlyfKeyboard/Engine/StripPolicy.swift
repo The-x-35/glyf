@@ -225,3 +225,92 @@ struct StripPolicy {
         return count
     }
 }
+
+// MARK: - How the word slots fit their words
+
+/// The strip's word slots never cut a word with "…" (Arpit, 2026-11-06:
+/// "Google reduces the font size of the word ... show the complete word"):
+/// a long word is drawn smaller, down to `smallest`; one that doesn't fit
+/// even then gets the room it needs and the other slots share the rest, and
+/// when that leaves them too little the last word gives up its slot. Pure:
+/// the caller measures (Toolbar uses the system font).
+enum SuggestionFit {
+    /// The smallest size a word is drawn at: Gboard's shrunk words stop
+    /// about here, still easy to read.
+    static let smallest = 11.0
+    /// Air left beside a word inside its slot, both sides together.
+    static let pad = 8.0
+    static let step = 0.5
+
+    struct Slot: Equatable {
+        /// The item drawn in it (an index into what was offered), nil for an
+        /// empty slot.
+        var item: Int?
+        var width: Double
+        /// Its font size; 0 for an empty slot.
+        var size: Double
+    }
+
+    /// The biggest size, from `full` down to `smallest` in half points, at
+    /// which a word `measure(size)` wide fits `width`. Nil when even the
+    /// smallest doesn't.
+    static func size(full: Double, width: Double, measure: (Double) -> Double) -> Double? {
+        var s = full
+        while s >= smallest - 0.001 {
+            if measure(s) + pad <= width { return s }
+            s -= step
+        }
+        return nil
+    }
+
+    /// Slots for up to three items (best first) across `total`, `spacing`
+    /// apart: always three slots as the system bar has (an empty one for
+    /// each word not offered), equal thirds whenever every word fits one.
+    /// `full[i]` is item i's usual size; `measure(i, size)` its width.
+    static func plan(full: [Double], total: Double, spacing: Double,
+                     measure: (Int, Double) -> Double) -> [Slot] {
+        let offered = min(full.count, 3)
+        var items = Array(0..<offered)
+        let empty = 3 - offered
+        while !items.isEmpty {
+            let count = items.count + empty
+            let inner = total - spacing * Double(count - 1)
+            let equal = inner / Double(count)
+            func fitted(_ i: Int, _ width: Double) -> Double? {
+                size(full: full[i], width: width) { measure(i, $0) }
+            }
+            var need: [Int: Double] = [:]
+            for i in items where fitted(i, equal) == nil {
+                need[i] = measure(i, smallest) + pad
+            }
+            var widths: [Double]? = nil
+            if need.isEmpty {
+                widths = Array(repeating: equal, count: count)
+            } else {
+                let rest = inner - need.values.reduce(0, +)
+                let narrow = count - need.count
+                if narrow == 0 {
+                    if rest >= 0 {
+                        widths = items.map { need[$0]! + rest / Double(need.count) }
+                    }
+                } else if rest > 0 {
+                    let share = rest / Double(narrow)
+                    if items.allSatisfy({ need[$0] != nil || fitted($0, share) != nil }) {
+                        widths = items.map { need[$0] ?? share } + Array(repeating: share, count: empty)
+                    }
+                }
+            }
+            if let widths {
+                return (0..<count).map { j in
+                    guard j < items.count else { return Slot(item: nil, width: widths[j], size: 0) }
+                    let i = items[j]
+                    return Slot(item: i, width: widths[j], size: fitted(i, widths[j]) ?? smallest)
+                }
+            }
+            // Too little room for everything: the last word goes.
+            items.removeLast()
+        }
+        let equal = (total - spacing * 2) / 3
+        return Array(repeating: Slot(item: nil, width: equal, size: 0), count: 3)
+    }
+}
