@@ -3231,11 +3231,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setPadding(0, 0, dp(8), 0)
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (lead == null) leftMargin = text0 })
-        chip.addView(TextView(this).apply {
-            text = value
-            textSize = 15f
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
+        // Never "…" (D108): smaller words, then the last " · " part goes (ChipFit).
+        chip.addView(FittedText(this, value, 15f).apply {
             setTextColor(ink())
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             if (lead == null && label == null) leftMargin = text0

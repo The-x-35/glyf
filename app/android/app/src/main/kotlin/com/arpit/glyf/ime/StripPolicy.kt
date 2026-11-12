@@ -259,3 +259,65 @@ object SuggestionFit {
         return List(3) { Slot(null, equal, 0.0) }
     }
 }
+
+/** A strip chip's words never end in "…" either (D108; Arpit, 2026-11-12,
+ *  from the emulator: "Stop-loss 0.5 ETH at $2,800 · …"): they are drawn
+ *  smaller, from their usual size down to [SMALLEST] in half points; when
+ *  even that is too wide, the last " · " part (the chain, a busy note) goes
+ *  whole and the rest is tried again from the usual size. Only the last
+ *  part ever goes, so a bracket's "TP … · SL …" keeps both prices. Pure:
+ *  the caller measures (`measure(text, size)`, in the unit of [width]). */
+object ChipFit {
+    const val SMALLEST = 11.0
+    const val STEP = 0.5
+    const val SEPARATOR = " · "
+
+    data class Fit(val text: String, val size: Double, val fits: Boolean)
+
+    /** What may be shown, longest first: the whole, then without its last part. */
+    fun candidates(value: String): List<String> {
+        val cut = value.lastIndexOf(SEPARATOR)
+        return if (cut > 0) listOf(value, value.substring(0, cut)) else listOf(value)
+    }
+
+    /** The first candidate that fits [width] at the biggest size from [full]
+     *  down to [SMALLEST]. When nothing does, the shortest at [SMALLEST]
+     *  (`fits` false: the view clips it, still without a "…"). */
+    fun fit(value: String, full: Double, width: Double, measure: (String, Double) -> Double): Fit {
+        val all = candidates(value)
+        for (text in all) {
+            SuggestionFit.size(full, width, pad = 0.0) { measure(text, it) }?.let { return Fit(text, it, true) }
+        }
+        return Fit(all.last(), SMALLEST, false)
+    }
+}
+
+/** A chip's words, fitted to the room the chip gives them (ChipFit): never
+ *  an ellipsis. [fullSp] is the usual size. */
+class FittedText(ctx: android.content.Context, private val value: String, private val fullSp: Float) :
+    android.widget.TextView(ctx) {
+    init {
+        text = value
+        textSize = fullSp
+        maxLines = 1
+        isSingleLine = true
+        ellipsize = null
+        contentDescription = value
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w == oldw || w <= 0) return
+        val room = (w - paddingLeft - paddingRight).toDouble()
+        val scale = resources.displayMetrics.scaledDensity
+        val probe = android.text.TextPaint(paint)
+        val f = ChipFit.fit(value, fullSp.toDouble(), room) { t, sp ->
+            probe.textSize = (sp * scale).toFloat()
+            probe.measureText(t).toDouble()
+        }
+        post {
+            if (text.toString() != f.text) text = f.text
+            if (textSize != (f.size * scale).toFloat()) setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, f.size.toFloat())
+        }
+    }
+}
