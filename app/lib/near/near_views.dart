@@ -8,15 +8,21 @@ import 'near_flow.dart';
 
 /// A NEAR Intents quote on the trade screen: what goes out and on which
 /// chain, what arrives where and for whom, how long it takes, and anything
-/// Guard said about the recipient.
+/// Guard said about the recipient. An Earn quote leads with its own line
+/// and its vault instead.
 class NearQuoteCard extends StatelessWidget {
   const NearQuoteCard({super.key, required this.quote, this.recipient});
+
+  /// 1Click's terms (section 7): the vault is the protocol's, not NEAR
+  /// Intents', and its yield can change or stop.
+  static const earnRisk = 'Yield isn’t guaranteed; NEAR Intents doesn’t run the vault';
 
   final NearQuote quote;
   final String? recipient;
 
   @override
   Widget build(BuildContext context) {
+    if (quote.isEarn) return _earn();
     final secs = quote.timeSeconds;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -42,6 +48,91 @@ class NearQuoteCard extends StatelessWidget {
           textAlign: TextAlign.center,
           style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w600),
         ),
+        ..._checks(),
+      ],
+    );
+  }
+
+  /// Earn: the server's line ("≈ $49.75 in Gauntlet USDC Prime at 4.5%
+  /// APY"), the vault, who runs it and its APY, then the coin side only.
+  /// The shares side is never shown as a number: Morpho's count in the
+  /// millions, and the line already says what they're worth.
+  Widget _earn() {
+    final vault = quote.vault!;
+    final out = quote.direction == 'out';
+    final secs = quote.timeSeconds;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GlassCard(
+          padding: EdgeInsets.zero,
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Semantics(
+                  identifier: 'trade:near:earn:words',
+                  child: Text(
+                    quote.words ?? vault.name,
+                    style: const TextStyle(
+                      color: Glass.ink,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25,
+                      fontFeatures: [FontFeature.disable('calt')],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(
+                    child: Semantics(
+                      identifier: 'trade:near:earn:vault',
+                      child: Text(
+                        '${vault.name} · ${vault.protocol}',
+                        style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Semantics(identifier: 'trade:near:earn:apy', child: _chainPill(vault.apyText)),
+                ]),
+              ]),
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16, color: Glass.hairline),
+            out
+                ? Semantics(
+                    identifier: 'trade:near:get',
+                    child: _side('You get', quote.amountOut, quote.buy, quote.amountOutUsd,
+                        approx: quote.exact != 'out', to: recipient),
+                  )
+                : Semantics(
+                    identifier: 'trade:near:pay',
+                    child: _side('You pay', quote.amountIn, quote.sell, quote.amountInUsd),
+                  ),
+          ]),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          '${secs == null ? '' : '~$secs s · '}via ${NearFlow.venue}',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 6),
+        Semantics(
+          identifier: 'trade:near:earn:risk',
+          child: const Text(
+            earnRisk,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Glass.inkSoft, fontSize: 12.5, height: 1.3),
+          ),
+        ),
+        ..._checks(),
+      ],
+    );
+  }
+
+  List<Widget> _checks() => [
         for (final c in quote.checks) ...[
           const SizedBox(height: 8),
           Semantics(
@@ -64,9 +155,7 @@ class NearQuoteCard extends StatelessWidget {
             ]),
           ),
         ],
-      ],
-    );
-  }
+      ];
 
   Widget _side(String label, String amount, NearAsset asset, String? usd, {bool approx = false, String? to}) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),

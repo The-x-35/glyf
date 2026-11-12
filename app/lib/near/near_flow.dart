@@ -13,6 +13,7 @@ import '../wallet/solana.dart';
 import '../wallet/wallet_api.dart';
 import '../wallet/wallet_flow.dart';
 import 'near_api.dart';
+import 'near_earn.dart';
 
 /// A step of a NEAR Intents trade, with what the trade screen shows beside
 /// its line: the live quote (You pay / You get, Guard's checks), the
@@ -40,6 +41,24 @@ class NearOutcome extends TradeOutcome {
   /// The chain ("Bitcoin") whose address a refund needs: paid from a wallet
   /// Glyf doesn't know, so the screen asks for it and goes on with refundTo.
   final String? askRefund;
+}
+
+/// What a trade's steps say, so swaps, sends and Earn share one way of
+/// paying and following.
+class _Words {
+  const _Words({required this.paid, required this.moving, required this.arriving, required this.done});
+
+  /// What goes in, as the screen says it ("20 USDC", "$20.29 of gtUSDCp").
+  final String paid;
+
+  /// The line while NEAR Intents works on it.
+  final String moving;
+
+  /// Its detail, from what is on its way (whole coins).
+  final String Function(String out) arriving;
+
+  /// The last line and its detail, from what arrived (whole coins).
+  final (String, String?) Function(String out) done;
 }
 
 /// What a NEAR Intents trade needs from the person's own wallets: who they
@@ -108,6 +127,12 @@ class NearWallet {
 
   Future<String> sendSolana(Uint8List signed) => SolanaRpc.send(signed);
 
+  /// The [vault] shares [owner] holds, in base units: the ERC-20's
+  /// balanceOf on its chain, or every token account of its SPL mint.
+  Future<BigInt> shares(EarnVault vault, String owner) => vault.chain == 'solana'
+      ? SolanaRpc.tokenBalance(owner, vault.share)
+      : NearEarn.erc20Balance(EvmChain.named(vault.chain)!, vault.share, owner);
+
   /// True when it landed, false when Solana refused it, null when unknown yet.
   Future<bool?> confirmSolana(String signature) => SolanaRpc.confirm(signature);
 }
@@ -166,6 +191,10 @@ abstract final class NearFlow {
 
   static Stream<TradeOutcome> run(Map<String, String> q) async* {
     final kind = q['kind'] ?? 'swap';
+    if (kind == 'earn') {
+      yield* _earn(q);
+      return;
+    }
     if (!const {'swap', 'send', 'bridge'}.contains(kind)) {
       yield const TradeOutcome(TradeState.failed, 'NEAR Intents swaps and sends only',
           detail: 'Orders that wait on a price go through Flash');
@@ -194,13 +223,7 @@ abstract final class NearFlow {
     final evm = _isEvm(sellChain) || _isEvm(buyChain) ? await wallet.evmAddress() : null;
     final sol = sellChain == 'solana' || buyChain == 'solana' ? await wallet.solanaAddress() : null;
     final nearAccount = (settings['nearAccount'] as String?)?.trim();
-    String? own(String chain) => _isEvm(chain)
-        ? evm
-        : chain == 'solana'
-            ? sol
-            : chain == 'near' && nearAccount != null && nearAccount.isNotEmpty
-                ? nearAccount
-                : null;
+    String? own(String chain) => _own(chain, evm: evm, sol: sol, nearAccount: nearAccount);
 
     final refundTo = q['refundTo'] ?? own(sellChain);
     if (refundTo == null && !_isEvm(sellChain) && sellChain != 'solana') {
@@ -210,16 +233,7 @@ abstract final class NearFlow {
       return;
     }
     if (refundTo == null) {
-      yield TradeOutcome(TradeState.failed, switch (sellChain) {
-        'solana' => 'Phantom isn’t connected',
-        _ when _isEvm(sellChain) => 'MetaMask isn’t connected',
-        _ => 'Where should a refund go?',
-      },
-          detail: switch (sellChain) {
-            'solana' => 'Connect Phantom in Profile › Wallet',
-            _ when _isEvm(sellChain) => EvmSigner.missing,
-            _ => 'Glyf needs your own ${chainLabel(sellChain)} address in case NEAR Intents can’t fill it',
-          });
+      yield _notConnected(sellChain);
       return;
     }
     final typed = q['to']?.trim();
@@ -259,8 +273,217 @@ abstract final class NearFlow {
       if (settings['dailyLimitUsd'] is num) 'dailyLimitUsd': settings['dailyLimitUsd'],
       if (settings['spentTodayUsd'] is num) 'spentTodayUsd': settings['spentTodayUsd'],
     });
+
+    // Guard first: a recipient that can't be paid (no such .near account, an
+    // address from another chain) comes back as a preview with no deposit
+    // address, and that is Guard's reason, never "no deposit address". Only
+    // a live quote can go ahead anyway.
+    if (quote.blocked && (q['anyway'] != '1' || quote.dry)) {
+      final check = quote.checks.firstWhere((c) => c.level == 'block', orElse: () => const NearCheck('', 'block', ''));
+      yield NearOutcome(TradeState.failed, check.text.isEmpty ? 'Guard stopped this one' : check.text,
+          detail: quote.dry ? 'Nothing was sent. Check the ${check.id == 'no-account' ? 'name' : 'address'}' : 'Nothing was sent',
+          quote: quote,
+          recipient: who,
+          explorer: quote.explorer,
+          blocked: !quote.dry);
+      return;
+    }
+    final problem = quoteProblem(quote,
+        sell: sell, sellChain: sellChain, buy: buy, buyChain: buyChain, amount: amount, exactIn: !send);
+    if (problem != null) {
+      yield NearOutcome(TradeState.failed, problem,
+          detail: 'Nothing was sent', quote: quote, recipient: who, explorer: quote.explorer);
+      return;
+    }
+    final paid = '${_fmt(quote.amountIn)} $sell';
+    final got = '$buy on ${chainLabel(buyChain)}';
+    final secs = quote.timeSeconds;
+    yield* _pay(quote,
+        sellChain: sellChain,
+        sol: sol,
+        refundTo: refundTo,
+        recipient: recipient,
+        mine: mine,
+        who: who,
+        words: _Words(
+          paid: paid,
+          moving: 'Swapping on $venue',
+          arriving: (out) => 'Deposit seen · ${_fmt(out)} $got${secs == null ? '' : ' in about $secs s'}',
+          done: (out) => send
+              ? ('Sent', '${_fmt(out)} $buy to $who on ${chainLabel(buyChain)}')
+              : ('Swapped', '$paid on ${chainLabel(sellChain)} → ${_fmt(out)} $got'),
+        ));
+  }
+
+  /// The person's own address on [chain]: MetaMask's on an EVM chain,
+  /// Phantom's on Solana, the saved NEAR account on NEAR.
+  static String? _own(String chain, {String? evm, String? sol, String? nearAccount}) => _isEvm(chain)
+      ? evm
+      : chain == 'solana'
+          ? sol
+          : chain == 'near' && nearAccount != null && nearAccount.isNotEmpty
+              ? nearAccount
+              : null;
+
+  /// The wallet that pays or holds on [chain] isn't connected: which one,
+  /// and where to connect it.
+  static TradeOutcome _notConnected(String chain) => TradeOutcome(TradeState.failed, switch (chain) {
+        'solana' => 'Phantom isn’t connected',
+        _ when _isEvm(chain) => 'MetaMask isn’t connected',
+        _ => 'Where should a refund go?',
+      },
+          detail: switch (chain) {
+            'solana' => 'Connect Phantom in Profile › Wallet',
+            _ when _isEvm(chain) => EvmSigner.missing,
+            _ => 'Glyf needs your own ${chainLabel(chain)} address in case NEAR Intents can’t fill it',
+          });
+
+  /// Earn (docs/NEAR-SPEC.md, Hand-off: Earn): idle USDC or SOL into a
+  /// yield vault, or back out of it. A deposit is an ordinary NEAR Intents
+  /// quote whose coin out is the vault's shares, and a withdrawal is the
+  /// reverse, so it is paid and followed exactly as a swap is. The shares
+  /// always live in the person's own wallet on the vault's chain.
+  static Stream<TradeOutcome> _earn(Map<String, String> q) async* {
+    final out = q['direction'] == 'out';
+    final coin = (q['coin'] ?? 'USDC').replaceFirst(r'$', '').toUpperCase();
+    final vault = NearEarn.vaultFor(vault: q['vault'], coin: coin);
+    if (vault == null) {
+      yield TradeOutcome(TradeState.failed, q['vault'] == null ? 'Earn takes USDC or SOL' : 'Glyf doesn’t know that vault',
+          detail: 'Like “put 50 usdc to work”');
+      return;
+    }
+    final chain = (q['chain'] ?? vault.chain).toLowerCase();
+    // "Take my usdc out of earn": every share, read from the wallet first.
+    final all = out && q['all'] == '1';
+    final amount = q['amount'];
+    if (!all && (amount == null || (double.tryParse(amount) ?? 0) <= 0)) {
+      yield TradeOutcome(TradeState.failed, 'How much?',
+          detail: out ? 'Say an amount, like “take 20 usdc out of earn”' : 'Say an amount, like “put 50 usdc to work”');
+      return;
+    }
+    final settings = await GlyfBridge.sharedSettings();
+    final evm = _isEvm(chain) || _isEvm(vault.chain) ? await wallet.evmAddress() : null;
+    final sol = chain == 'solana' || vault.chain == 'solana' ? await wallet.solanaAddress() : null;
+    final nearAccount = (settings['nearAccount'] as String?)?.trim();
+    String? own(String c) => _own(c, evm: evm, sol: sol, nearAccount: nearAccount);
+    final picked = NearEarn.addresses(out: out, vaultChain: vault.chain, chain: chain, own: own);
+
+    // The vault's side is always the person's own wallet there.
+    final shareHolder = out ? picked.refundTo : picked.recipient;
+    if (shareHolder == null) {
+      yield _notConnected(vault.chain);
+      return;
+    }
+    // In from a chain Glyf can't sign on: paid by hand, refunded to the
+    // address the screen asks for, as a swap from there is.
+    final refundTo = out ? picked.refundTo! : q['refundTo'] ?? picked.refundTo;
+    if (refundTo == null) {
+      if (_isEvm(chain) || chain == 'solana') {
+        yield _notConnected(chain);
+      } else {
+        yield NearOutcome(TradeState.failed, 'Where should a refund go?',
+            detail: 'Your own ${chainLabel(chain)} address, in case NEAR Intents can’t fill it',
+            askRefund: chainLabel(chain));
+      }
+      return;
+    }
+    final recipient = picked.recipient;
+    if (recipient == null) {
+      yield _isEvm(chain) || chain == 'solana'
+          ? _notConnected(chain)
+          : TradeOutcome(TradeState.failed, 'Where should the $coin land?',
+              detail: chain == 'near' ? 'Add your NEAR account in Profile' : 'Take it out to Base or Solana');
+      return;
+    }
+
+    String? shares;
+    if (all) {
+      yield const NearOutcome(TradeState.working, 'Reading what’s in Earn…');
+      BigInt held;
+      try {
+        held = await wallet.shares(vault, shareHolder);
+      } catch (_) {
+        yield const TradeOutcome(TradeState.failed, 'Couldn’t read what’s in Earn',
+            detail: 'The network didn’t answer. Try again in a moment');
+        return;
+      }
+      if (held <= BigInt.zero) {
+        yield TradeOutcome(TradeState.failed, 'Nothing in Earn yet', detail: 'No ${vault.receipt} in ${short(shareHolder)}');
+        return;
+      }
+      shares = '$held';
+    }
+
+    yield const NearOutcome(TradeState.working, 'Asking NEAR Intents…');
+    final quote = await api.earnQuote({
+      'coin': coin,
+      'chain': chain,
+      'direction': out ? 'out' : 'in',
+      'vault': vault.id,
+      if (shares != null) 'shares': shares else 'amount': amount,
+      'refundTo': refundTo,
+      'recipient': recipient,
+      'slippage': double.tryParse(q['slippage'] ?? '') ?? 1,
+    });
+    final receipt = vault.receipt.toUpperCase();
+    final problem = !quote.isEarn || quote.vault!.id != vault.id
+        ? 'That quote isn’t for this trade'
+        : shares != null && quote.amountInBase != shares
+            ? 'That quote isn’t for everything in Earn'
+            : quoteProblem(quote,
+                sell: out ? receipt : coin,
+                sellChain: out ? vault.chain : chain,
+                buy: out ? coin : receipt,
+                buyChain: out ? chain : vault.chain,
+                amount: amount ?? '',
+                exactIn: !out);
+    const who = 'your wallet';
+    if (problem != null) {
+      yield NearOutcome(TradeState.failed, problem,
+          detail: 'Nothing was sent', quote: quote, recipient: who, explorer: quote.explorer);
+      return;
+    }
+    final v = quote.vault!;
+    final secs = quote.timeSeconds;
+    // Shares go out as their dollar worth: Morpho's count in the millions.
+    final usdIn = double.tryParse(quote.amountInUsd ?? '');
+    final paid = out
+        ? (usdIn == null ? '${v.receipt} shares' : '\$${usdIn.toStringAsFixed(2)} of ${v.receipt}')
+        : '${_fmt(quote.amountIn)} $coin';
+    yield* _pay(quote,
+        sellChain: out ? vault.chain : chain,
+        sol: sol,
+        refundTo: refundTo,
+        recipient: recipient,
+        mine: true,
+        who: who,
+        words: _Words(
+          paid: paid,
+          moving: out ? 'Taking it out of ${v.name}' : 'Putting it into ${v.name}',
+          arriving: (_) => 'Deposit seen · ${quote.words ?? v.name}${secs == null ? '' : ' · about $secs s'}',
+          done: (got) => NearEarn.done(
+              out: out,
+              amount: out ? got : quote.amountIn,
+              coin: coin,
+              protocol: v.protocol,
+              chainName: chainLabel(chain)),
+        ));
+  }
+
+  /// A live quote paid and followed: the deposit from the person's own
+  /// wallet (MetaMask on an EVM chain, Phantom on Solana, any wallet by hand
+  /// elsewhere), told to 1Click, then asked after until it lands or is
+  /// refunded. Swaps, sends and Earn all end here; [words] is what they say.
+  static Stream<TradeOutcome> _pay(NearQuote quote,
+      {required String sellChain,
+      required String? sol,
+      required String refundTo,
+      required String recipient,
+      required bool mine,
+      required String who,
+      required _Words words}) async* {
     NearOutcome step(TradeState state, String title,
-            {String? detail, String? txUrl, String? reopen, String? hash, bool manual = false, bool blocked = false}) =>
+            {String? detail, String? txUrl, String? reopen, String? hash, bool manual = false}) =>
         NearOutcome(state, title,
             detail: detail,
             txUrl: txUrl,
@@ -269,30 +492,12 @@ abstract final class NearFlow {
             quote: quote,
             recipient: who,
             explorer: quote.explorer,
-            manual: manual,
-            blocked: blocked);
+            manual: manual);
 
-    // Guard first: a recipient that can't be paid (no such .near account, an
-    // address from another chain) comes back as a preview with no deposit
-    // address, and that is Guard's reason, never "no deposit address". Only
-    // a live quote can go ahead anyway.
-    if (quote.blocked && (q['anyway'] != '1' || quote.dry)) {
-      final check = quote.checks.firstWhere((c) => c.level == 'block', orElse: () => const NearCheck('', 'block', ''));
-      yield step(TradeState.failed, check.text.isEmpty ? 'Guard stopped this one' : check.text,
-          detail: quote.dry ? 'Nothing was sent. Check the ${check.id == 'no-account' ? 'name' : 'address'}' : 'Nothing was sent',
-          blocked: !quote.dry);
-      return;
-    }
-    final problem = quoteProblem(quote,
-        sell: sell, sellChain: sellChain, buy: buy, buyChain: buyChain, amount: amount, exactIn: !send);
-    if (problem != null) {
-      yield step(TradeState.failed, problem, detail: 'Nothing was sent');
-      return;
-    }
     final depositAddress = quote.depositAddress!;
     final memo = quote.depositMemo;
     final deposit = quote.deposit!;
-    final paid = '${_fmt(quote.amountIn)} $sell';
+    final paid = words.paid;
     final label = 'Send $paid to $venue';
 
     // 2. The deposit, from the person's own wallet.
@@ -362,7 +567,6 @@ abstract final class NearFlow {
         // Only a speed-up: 1Click finds the deposit on its own.
       }
     }
-    final got = '$buy on ${chainLabel(buyChain)}';
     final end = DateTime.now().add(giveUpAfter);
     String? shown;
     while (true) {
@@ -373,7 +577,7 @@ abstract final class NearFlow {
         // A dropped answer: ask again.
       }
       final explorer = status?.explorer ?? quote.explorer;
-      final out = _fmt(status?.amountOut ?? quote.amountOut);
+      final out = status?.amountOut ?? quote.amountOut;
       final originUrl = depositTx == null
           ? null
           : evmChain != null
@@ -381,8 +585,9 @@ abstract final class NearFlow {
               : WalletFlow.solscanUrl(depositTx);
       switch (status?.status) {
         case 'SUCCESS':
-          yield NearOutcome(TradeState.done, send ? 'Sent' : 'Swapped',
-              detail: send ? '$out $buy to $who on ${chainLabel(buyChain)}' : '$paid on ${chainLabel(sellChain)} → $out $got',
+          final (title, detail) = words.done(out);
+          yield NearOutcome(TradeState.done, title,
+              detail: detail,
               txUrl: status!.destinationTx?.url ?? explorer,
               hash: status.destinationTx?.hash ?? depositTx,
               quote: quote,
@@ -413,17 +618,16 @@ abstract final class NearFlow {
         return;
       }
       final line = switch (status?.status) {
-        'PROCESSING' || 'KNOWN_DEPOSIT_TX' => 'Swapping on $venue',
+        'PROCESSING' || 'KNOWN_DEPOSIT_TX' => words.moving,
         'INCOMPLETE_DEPOSIT' => 'Deposit seen, but short',
         _ => null,
       };
       if (line != null && line != shown) {
         shown = line;
-        final secs = quote.timeSeconds;
         yield step(TradeState.working, line,
             detail: line == 'Deposit seen, but short'
                 ? 'Send the rest of $paid to the same address, or $venue refunds it'
-                : 'Deposit seen · $out $got${secs == null ? '' : ' in about $secs s'}',
+                : words.arriving(out),
             txUrl: originUrl,
             hash: depositTx,
             manual: depositTx == null && line == 'Deposit seen, but short');

@@ -50,7 +50,7 @@ class TradeOutcome {
 /// for show.
 abstract final class TradeFlow {
   /// The kinds the keyboard hands over (TradeIntent.query `kind`).
-  static const kinds = {'swap', 'limit', 'stop', 'stop-loss', 'take-profit', 'bracket', 'trailing-stop', 'twap', 'bridge', 'send'};
+  static const kinds = {'swap', 'limit', 'stop', 'stop-loss', 'take-profit', 'bracket', 'trailing-stop', 'twap', 'bridge', 'send', 'earn'};
 
   /// Where a send's name is looked up (GET /names/resolve) and a chain's
   /// coins listed (GET /evm/tokens); a test stands in for the server.
@@ -73,7 +73,8 @@ abstract final class TradeFlow {
       return;
     }
     try {
-      if (q['venue'] == 'near') {
+      // Earn is only ever NEAR Intents (1Click Earn's vaults).
+      if (q['venue'] == 'near' || kind == 'earn') {
         await for (final o in NearFlow.run(q)) {
           yield o.state == TradeState.working ? o : await _told(o);
         }

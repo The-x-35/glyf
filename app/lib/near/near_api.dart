@@ -83,7 +83,66 @@ class NearCheck {
   final String text;
 }
 
-/// POST /near/quote's answer.
+/// The vault an Earn quote puts coins into or takes them out of
+/// (docs/NEAR-SPEC.md, GET /near/earn/vaults).
+class NearVault {
+  const NearVault({
+    required this.id,
+    required this.name,
+    required this.protocol,
+    required this.chain,
+    required this.chainName,
+    required this.receipt,
+    this.apy,
+  });
+
+  final String id;
+
+  /// "Gauntlet USDC Prime".
+  final String name;
+
+  /// Who runs it: "Morpho", "Kamino", "Taler".
+  final String protocol;
+
+  /// The Glyf chain its shares live on, and how people say it.
+  final String chain;
+  final String chainName;
+
+  /// The shares' symbol: "gtUSDCp".
+  final String receipt;
+
+  /// Percent a year (4.5 = 4.5%), or null when its protocol didn't say:
+  /// never guessed.
+  final double? apy;
+
+  /// "4.5% APY", or "APY n/a".
+  String get apyText {
+    final a = apy;
+    if (a == null) return 'APY n/a';
+    var s = a.toStringAsFixed(2);
+    while (s.contains('.') && (s.endsWith('0') || s.endsWith('.'))) {
+      s = s.substring(0, s.length - 1);
+    }
+    return '$s% APY';
+  }
+
+  static NearVault? fromJson(Object? j) {
+    if (j is! Map || j['id'] == null) return null;
+    String s(String k) => '${j[k] ?? ''}';
+    return NearVault(
+      id: s('id'),
+      name: s('name'),
+      protocol: s('protocol'),
+      chain: s('chain'),
+      chainName: s('chainName'),
+      receipt: s('receipt'),
+      apy: (j['apy'] as num?)?.toDouble(),
+    );
+  }
+}
+
+/// POST /near/quote's answer, and POST /near/earn/quote's, which is the
+/// same quote with its vault and one line to show.
 class NearQuote {
   const NearQuote({
     required this.dry,
@@ -103,6 +162,11 @@ class NearQuote {
     this.explorer,
     this.guardLevel = 'ok',
     this.checks = const [],
+    this.exact,
+    this.kind,
+    this.direction,
+    this.vault,
+    this.words,
   });
 
   final bool dry;
@@ -124,6 +188,19 @@ class NearQuote {
   /// `ok`, `warn` or `block`: the worst of [checks].
   final String guardLevel;
   final List<NearCheck> checks;
+
+  /// `in` (the amount paid is exact) or `out` (the amount that arrives is).
+  final String? exact;
+
+  /// Earn only: `earn`, `in` or `out`, the vault, and the line the screen
+  /// leads with ("≈ $49.75 in Gauntlet USDC Prime at 4.5% APY"), never the
+  /// raw share count (Morpho's shares count in the millions).
+  final String? kind;
+  final String? direction;
+  final NearVault? vault;
+  final String? words;
+
+  bool get isEarn => kind == 'earn' && vault != null;
 
   bool get blocked => guardLevel == 'block' || checks.any((c) => c.level == 'block');
 
@@ -151,6 +228,11 @@ class NearQuote {
         for (final c in (guard['checks'] as List? ?? const []).whereType<Map>())
           NearCheck('${c['id'] ?? ''}', '${c['level'] ?? 'warn'}', '${c['text'] ?? ''}'),
       ],
+      exact: s('exact'),
+      kind: s('kind'),
+      direction: s('direction'),
+      vault: NearVault.fromJson(j['vault']),
+      words: s('words'),
     );
   }
 }
@@ -193,6 +275,14 @@ class NearApi {
   /// server's plain words ("Too small for NEAR Intents: at least $1").
   Future<NearQuote> quote(Map<String, Object?> body) async {
     final res = await GlyfApi.evmPost('/near/quote', body, timeout: const Duration(seconds: 30));
+    if (res['ok'] == false) throw GlyfApiException('${res['error'] ?? 'NEAR Intents had no quote'}');
+    return NearQuote.fromJson(res);
+  }
+
+  /// POST /near/earn/quote: Earn's deposit into a vault or its way back
+  /// out, refused in the server's plain words as [quote] is.
+  Future<NearQuote> earnQuote(Map<String, Object?> body) async {
+    final res = await GlyfApi.evmPost('/near/earn/quote', body, timeout: const Duration(seconds: 30));
     if (res['ok'] == false) throw GlyfApiException('${res['error'] ?? 'NEAR Intents had no quote'}');
     return NearQuote.fromJson(res);
   }
