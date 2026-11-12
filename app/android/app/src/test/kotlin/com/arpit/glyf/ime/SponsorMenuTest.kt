@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
-/** The g menu's sponsor row (Uniswap, Definitive): which apps show, what
+/** The g menu's sponsor row (Uniswap, Definitive, NEAR Intents): which apps show, what
  *  each one's panel lists, and what every option on it puts up. A tap on a
  *  card only opens its panel (Arpit, 2026-11-06: "should not trigger a
  *  thing by default. It should show all the options"). The twin of
@@ -23,9 +23,11 @@ class SponsorMenuTest {
         return (a as SponsorMenu.Action.Trade).intent
     }
 
-    @Test fun uniswapAndDefinitiveAndNothingElse() {
-        assertEquals(listOf(SponsorMenu.Sponsor.UNISWAP, SponsorMenu.Sponsor.DEFINITIVE), SponsorMenu.sponsors)
-        assertEquals(listOf("Uniswap", "Definitive"), SponsorMenu.Sponsor.values().map { it.title })
+    @Test fun uniswapDefinitiveAndNEARIntentsAndNothingElse() {
+        assertEquals(listOf(SponsorMenu.Sponsor.UNISWAP, SponsorMenu.Sponsor.DEFINITIVE, SponsorMenu.Sponsor.NEAR),
+            SponsorMenu.sponsors)
+        assertEquals(listOf("Uniswap", "Definitive", "NEAR Intents"), SponsorMenu.Sponsor.values().map { it.title })
+        assertEquals(SponsorMenu.Sponsor.NEAR, SponsorMenu.Sponsor.of("sponsor:near"))
         assertNull(SponsorMenu.Sponsor.of("sponsor:0g"))
     }
 
@@ -38,13 +40,15 @@ class SponsorMenuTest {
 
     @Test fun optionIdsRoundTrip() {
         val all = mutableListOf(SponsorMenu.Option.Swap, SponsorMenu.Option.Jupiter, SponsorMenu.Option.Typed,
-            SponsorMenu.Option.OpenOrders)
+            SponsorMenu.Option.OpenOrders, SponsorMenu.Option.NearTrade)
+        all += SponsorMenu.NEAR_STARTERS.map { SponsorMenu.Option.NearStarter(it.first) }
         all += SponsorMenu.SWAP_CHAINS.map { SponsorMenu.Option.SwapOn(it) }
         all += SponsorMenu.ORDER_KINDS.map { SponsorMenu.Option.Order(it) }
         for (option in all) assertEquals(option.id, option, SponsorMenu.Option.of(option.id))
         assertNull(SponsorMenu.Option.of("swap:polygon"))
         assertNull(SponsorMenu.Option.of("order:send"))
         assertNull(SponsorMenu.Option.of("receipts"))
+        assertNull(SponsorMenu.Option.of("near:moon"))
         assertNull(SponsorMenu.Option.of("nope"))
     }
 
@@ -197,5 +201,46 @@ class SponsorMenuTest {
 
     @Test fun openOrdersOpensTheApp() {
         assertEquals(SponsorMenu.Action.OpenApp("evm-wallet"), SponsorMenu.action(SponsorMenu.Option.OpenOrders, ""))
+    }
+
+    // MARK: NEAR Intents
+
+    @Test fun nearIntentsStartsWithUSDCOnBaseToSOL() {
+        val entries = SponsorMenu.entries(SponsorMenu.Sponsor.NEAR, "")
+        assertEquals(SponsorMenu.Entry.Row(SponsorMenu.Option.NearTrade, "Swap", "20 USDC → SOL", "swaparrows"), entries[0])
+        assertEquals(SponsorMenu.Entry.Header("Across chains"), entries[1])
+        assertEquals(listOf(SponsorMenu.Option.NearTrade, SponsorMenu.Option.NearStarter("base-solana"),
+            SponsorMenu.Option.NearStarter("solana-base"), SponsorMenu.Option.NearStarter("base-near")), options(entries))
+        assertEquals(SponsorMenu.Entry.Row(SponsorMenu.Option.NearStarter("base-solana"), "Base → Solana", "20 USDC → SOL",
+            "chain:solana"), entries[2])
+        assertEquals(SponsorMenu.Entry.Row(SponsorMenu.Option.NearStarter("solana-base"), "Solana → Base", "0.1 SOL → USDC",
+            "chain:base"), entries[3])
+        assertEquals(SponsorMenu.Entry.Row(SponsorMenu.Option.NearStarter("base-near"), "Base → NEAR", "20 USDC → NEAR",
+            "chain:near"), entries[4])
+        val t = trade(SponsorMenu.Option.NearTrade)
+        assertEquals("NEAR Intents", t.venue)
+        assertEquals("USDC", t.sell)
+        assertEquals("base", t.chainName)
+        assertEquals("SOL", t.buy)
+        assertEquals("solana", t.buyChain)
+        for ((id, _) in SponsorMenu.NEAR_STARTERS) assertTrue(id, trade(SponsorMenu.Option.NearStarter(id)).isNear)
+    }
+
+    @Test fun nearIntentsTakesTheNEARTradeTyped() {
+        val typed = "ok. send 5 usdc to alice.near"
+        assertEquals(TradeIntent.parse(typed), trade(SponsorMenu.Option.NearTrade, typed))
+        assertEquals(SponsorMenu.Entry.Row(SponsorMenu.Option.NearTrade, "Send", "5 USDC to alice.near", "swaparrows"),
+            SponsorMenu.entries(SponsorMenu.Sponsor.NEAR, typed)[0])
+        // A Uniswap swap typed isn't NEAR's: the starter instead.
+        assertEquals(SponsorMenu.nearStarter("base-solana"), trade(SponsorMenu.Option.NearTrade, "swap 1 eth to usdc"))
+    }
+
+    /** The Definitive panel's bridge starter on Solana stays Flash's: the
+     *  same words typed would go through NEAR Intents. */
+    @Test fun flashsOwnBridgeStarterStaysFlashs() {
+        val t = SponsorMenu.starter(TradeIntent.Kind.BRIDGE, "solana")
+        assertEquals(TradeIntent.Kind.BRIDGE, t?.kind)
+        assertEquals("Flash", t?.venue)
+        assertTrue(TradeIntent.parse("move 10 usdc from solana to base")!!.isNear)
     }
 }

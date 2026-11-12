@@ -2,7 +2,8 @@ package com.arpit.glyf.ime
 
 /**
  * The g menu's top row: the apps Glyf trades through: Uniswap swaps (with
- * Jupiter for Solana) and Definitive's Flash orders. A tap on one opens its
+ * Jupiter for Solana), Definitive's Flash orders and NEAR Intents' swaps
+ * across chains the other two don't join. A tap on one opens its
  * own panel listing everything it does; nothing runs on the tap itself
  * (Arpit, 2026-11-06: "any icon, should not trigger a thing by default. It
  * should show all the options"). Pure, so SponsorMenuTest pins which icons
@@ -13,7 +14,8 @@ object SponsorMenu {
 
     enum class Sponsor(val id: String, val title: String) {
         UNISWAP("uniswap", "Uniswap"),
-        DEFINITIVE("definitive", "Definitive");
+        DEFINITIVE("definitive", "Definitive"),
+        NEAR("near", "NEAR Intents");
 
         /** The panel's screen id, as iOS's shell names it. */
         val screenId: String get() = "sponsor:$id"
@@ -41,6 +43,10 @@ object SponsorMenu {
         data class Order(val kind: TradeIntent.Kind) : Option()
         /** Definitive: the app's Ethereum wallet, where Flash orders wait. */
         object OpenOrders : Option()
+        /** NEAR Intents: the trade typed, or the starter (USDC on Base → SOL). */
+        object NearTrade : Option()
+        /** NEAR Intents: one of the starters across chains, by its id. */
+        data class NearStarter(val key: String) : Option()
 
         /** The row's target id. */
         val id: String
@@ -51,6 +57,8 @@ object SponsorMenu {
                 Typed -> "typed"
                 is Order -> "order:${kind.raw}"
                 OpenOrders -> "orders"
+                NearTrade -> "near"
+                is NearStarter -> "near:$key"
             }
 
         companion object {
@@ -59,7 +67,10 @@ object SponsorMenu {
                 "jupiter" -> Jupiter
                 "typed" -> Typed
                 "orders" -> OpenOrders
+                "near" -> NearTrade
                 else -> when {
+                    id.startsWith("near:") -> id.removePrefix("near:")
+                        .takeIf { key -> NEAR_STARTERS.any { it.first == key } }?.let { NearStarter(it) }
                     id.startsWith("swap:") -> id.removePrefix("swap:").takeIf { it in SWAP_CHAINS }?.let { SwapOn(it) }
                     id.startsWith("order:") -> TradeIntent.Kind.of(id.removePrefix("order:"))
                         ?.takeIf { it in ORDER_KINDS }?.let { Order(it) }
@@ -101,7 +112,15 @@ object SponsorMenu {
      *  picked. Kept while the keyboard process lives. */
     var flashChain = "base"
 
-    /** Uniswap and Definitive, in the g menu's order. */
+    /** NEAR Intents' starters, (id, words): from Base to Solana and back,
+     *  and to NEAR. Small, so a first look costs little. */
+    val NEAR_STARTERS = listOf(
+        "base-solana" to "swap 20 usdc on base to sol",
+        "solana-base" to "swap 0.1 sol to usdc on base",
+        "base-near" to "swap 20 usdc on base to near",
+    )
+
+    /** Uniswap, Definitive and NEAR Intents, in the g menu's order. */
     val sponsors: List<Sponsor> = Sponsor.values().toList()
 
     // MARK: panels
@@ -125,10 +144,25 @@ object SponsorMenu {
             rows.add(Entry.Row(Option.OpenOrders, "Open orders", null, "list"))
             rows
         }
+        Sponsor.NEAR -> {
+            val first = typedNear(typed) ?: nearStarter("base-solana")!!
+            val rows = mutableListOf<Entry>(
+                Entry.Row(Option.NearTrade, if (first.kind == TradeIntent.Kind.SEND) "Send" else "Swap", swapDetail(first),
+                    "swaparrows"),
+                Entry.Header("Across chains"),
+            )
+            rows += NEAR_STARTERS.mapNotNull { (id, _) ->
+                nearStarter(id)?.let { Entry.Row(Option.NearStarter(id), it.route, swapDetail(it), "chain:${it.buyChain ?: it.chainName}") }
+            }
+            rows
+        }
     }
 
-    /** "USDC → ETH", "0.05 ETH → USDC", "Buy $20 of ETH". */
-    fun swapDetail(t: TradeIntent): String = t.title.removePrefix("Swap ")
+    /** "USDC → ETH", "0.05 ETH → USDC", "Buy $20 of ETH", "5 USDC to alice.near". */
+    fun swapDetail(t: TradeIntent): String {
+        for (verb in listOf("Swap ", "Send ")) if (t.title.startsWith(verb)) return t.title.removePrefix(verb)
+        return t.title
+    }
 
     fun orderTitle(kind: TradeIntent.Kind): String = when (kind) {
         TradeIntent.Kind.LIMIT -> "Limit buy"
@@ -180,6 +214,8 @@ object SponsorMenu {
         Option.Typed -> typedOrder(typed)?.let { Action.Trade(it) }
         is Option.Order -> starter(option.kind, flashChain)?.let { Action.Trade(it) }
         Option.OpenOrders -> Action.OpenApp("evm-wallet")
+        Option.NearTrade -> Action.Trade(typedNear(typed) ?: nearStarter("base-solana")!!)
+        is Option.NearStarter -> nearStarter(option.key)?.let { Action.Trade(it) }
     }
 
     /** A swap typed at the end of the message. */
@@ -188,6 +224,13 @@ object SponsorMenu {
 
     /** A Flash order typed at the end of the message. */
     fun typedOrder(typed: String): TradeIntent? = TradeIntent.parse(typed)?.takeIf { it.venue == "Flash" }
+
+    /** A NEAR Intents trade typed at the end of the message. */
+    fun typedNear(typed: String): TradeIntent? = TradeIntent.parse(typed)?.takeIf { it.isNear }
+
+    /** The NEAR Intents starter with this id. */
+    fun nearStarter(id: String): TradeIntent? =
+        NEAR_STARTERS.firstOrNull { it.first == id }?.let { TradeIntent.parse(it.second) }
 
     /** A small swap, 10 USDC to ETH, on [chain]. */
     fun starterSwap(chain: String): TradeIntent = TradeIntent.parse("swap 10 usdc to eth on $chain")!!
