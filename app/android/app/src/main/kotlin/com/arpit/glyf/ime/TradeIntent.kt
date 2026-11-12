@@ -59,6 +59,12 @@ data class TradeIntent(
      *  name is lowercased; the panel looks up its address before anything
      *  is signed). */
     var to: String? = null,
+    /** Earn: out of the vault rather than into it. Out with no amount is
+     *  everything in it (the app reads the share balance). */
+    var earnOut: Boolean = false,
+    /** Earn: the vault named (gtusdcp, kamino-sol, taler-usdc); null is the
+     *  coin's own (USDC → Gauntlet USDC Prime, SOL → Kamino SOL Balanced). */
+    var vault: String? = null,
 ) {
 
     enum class Kind(val raw: String) {
@@ -83,7 +89,11 @@ data class TradeIntent(
         /** A send to an ENS or SNS name, or an address: "send 5 usdc to
          *  vitalik.eth". MetaMask sends it on Ethereum chains, Phantom on
          *  Solana (a .sol name, or SOL itself). */
-        SEND("send");
+        SEND("send"),
+        /** NEAR Intents Earn: idle USDC or SOL into a yield vault ("put $50
+         *  to work"), or back out of it ("take my usdc out of earn").
+         *  `sell` is the coin, `chain` where it is (in) or lands (out). */
+        EARN("earn");
 
         companion object {
             fun of(raw: String): Kind? = values().firstOrNull { it.raw == raw }
@@ -135,7 +145,9 @@ data class TradeIntent(
         get() = when (kind) {
             // The chains are the detail's: "Base → Solana · NEAR Intents".
             Kind.SWAP -> if (isNear) {
-                if (sell == buy) "Move $amountText to ${label(buyChain)}" else "Swap $amountText → $buy"
+                // No amount yet (the strip's AI heard none): the coin alone, never "all".
+                val what = if (amount == null && buyAmount == null) sell else amountText
+                if (sell == buy) "Move $what to ${label(buyChain)}" else "Swap $what → $buy"
             } else {
                 val bc = buyChain
                 when {
@@ -157,6 +169,8 @@ data class TradeIntent(
             Kind.BRIDGE -> "Move $amountText to ${chainLabels[toChain ?: ""] ?: capitalized(toChain ?: "")}"
             Kind.SEND -> if (isNear) "Send ${amount ?: ""} $buy to ${to?.let { shortRecipient(it) } ?: ""}"
                 else "Send $amountText to ${to?.let { shortRecipient(it) } ?: ""}"
+            Kind.EARN -> if (!earnOut) "Put ${amount?.let { "$it " } ?: ""}$sell to work"
+                else amount?.let { "Take $it $sell out of Earn" } ?: "Take your $sell out of Earn"
         }
 
     private fun twapTitle(): String {
@@ -175,6 +189,7 @@ data class TradeIntent(
     /** Under the title: where and through whom. */
     val detail: String
         get() {
+            if (kind == Kind.EARN) return "$earnProtocol · NEAR Intents"
             if (isNear) return "$route · NEAR Intents"
             val bc = buyChain
             return when {
@@ -188,6 +203,7 @@ data class TradeIntent(
     /** The app's words for it (glyf://open?path=trade?…). */
     val query: Map<String, String>
         get() {
+            if (kind == Kind.EARN) return earnQuery
             val q = linkedMapOf("kind" to kind.raw, "sell" to sell, "buy" to buy, "chain" to chainName)
             amount?.let { q["amount"] = it }
             if (amountIsUSD) q["usd"] = "1"
@@ -246,7 +262,29 @@ data class TradeIntent(
         get() = when (kind) {
             Kind.SWAP -> nearRoute(chainName, buyChain ?: chainName)
             Kind.SEND -> buyChain != null && buyChain != chainName
+            Kind.EARN -> true
             else -> false
+        }
+
+    // MARK: NEAR Intents Earn (TradeIntent.swift's Earn extension)
+
+    /** The vault an Earn trade means: the one named, else the coin's own. */
+    val earnVault: String get() = vault ?: if (sell == "SOL") "kamino-sol" else "gtusdcp"
+    /** Where the vault's shares sit: the wallet there holds them. */
+    val earnVaultChain: String get() = earnVaults[earnVault]?.chain ?: "base"
+    /** Who runs it: "Morpho", "Kamino". */
+    val earnProtocol: String get() = earnVaults[earnVault]?.protocol ?: "Morpho"
+
+    /** The app's words for it: glyf://open?path=trade?venue=near&kind=earn&…
+     *  (docs/NEAR-SPEC.md, Hand-off: Earn). Out with no amount is all=1. */
+    val earnQuery: Map<String, String>
+        get() {
+            val q = linkedMapOf("venue" to "near", "kind" to "earn", "direction" to (if (earnOut) "out" else "in"),
+                "coin" to sell, "chain" to chainName)
+            val a = amount
+            if (a != null) q["amount"] = a else if (earnOut) q["all"] = "1"
+            vault?.let { q["vault"] = it }
+            return q
         }
 
     /** "Base → Solana": where it's paid from and where it lands. */
@@ -269,7 +307,29 @@ data class TradeIntent(
 
         /** Who signs a trade on [chain], as the app names it: always the
          *  person's own wallet app, Phantom on Solana and MetaMask elsewhere. */
-        fun walletName(chain: String?): String = if (chain == "solana") "Phantom" else "MetaMask"
+        fun walletName(chain: String?): String = if (chain == "solana") "Phantom" else if (chain == "near") "HOT Wallet" else "MetaMask"
+
+        /** The wallet the app needs connected before [i] can go, or null:
+         *  the one that pays on its chain (MetaMask on EVM chains, Phantom on
+         *  Solana, HOT Wallet on NEAR), and HOT Wallet for a NEAR Intents
+         *  trade landing on NEAR with no "to". Earn needs the wallet the coins
+         *  leave (or land in) and the one the vault's shares sit in. */
+        fun missingWallet(i: TradeIntent, evm: String?, solana: String?, near: String?): String? {
+            fun has(s: String?) = !s.isNullOrEmpty()
+            val chain = i.chainName
+            if (i.kind == Kind.EARN) {
+                for (c in listOf(chain, i.earnVaultChain)) {
+                    if (c == "solana" && !has(solana)) return walletName(c)
+                    if (c in evmChains && !has(evm)) return walletName(c)
+                }
+                return null
+            }
+            if (chain == "solana") return if (has(solana)) null else walletName(chain)
+            if (chain in evmChains && !has(evm)) return walletName(chain)
+            if (i.isNear && chain == "near" && !has(near)) return walletName("near")
+            if (i.isNear && (i.buyChain ?: chain) == "near" && i.to == null && !has(near)) return walletName("near")
+            return null
+        }
 
         /** A number as Swift's Double(_:) reads one: digits, one point, an
          *  optional exponent; never "1d", "NaN" or hex. */
@@ -350,7 +410,8 @@ data class TradeIntent(
         private const val START = """(?:^|[.!?\n]\s*|\b(?:pls|please|glyf|hey glyf)[,:]?\s+)"""
 
         private val triggers = listOf("swap", "convert", "trade", "buy", "sell", "stop", "take profit", "tp ", "trail",
-            "dca", "move", "bridge", "send", "pay", "transfer", "protect", "limit", "invest", "stack", "put")
+            "dca", "move", "bridge", "send", "pay", "transfer", "protect", "limit", "invest", "stack", "put",
+            "earn", "park", "stash", "deposit", "stake", "take", "pull", "get", "withdraw", "cash")
 
         /** [near] false reads the words as before NEAR Intents (the
          *  Definitive panel's Flash bridge between Solana and Base). */
@@ -365,7 +426,7 @@ data class TradeIntent(
             // NEAR Intents reads first only what nothing else carries (each of
             // its readers gives null for a trade Uniswap or Flash would take).
             fun viaNear(read: (String) -> TradeIntent?): TradeIntent? = if (near) read(t) else null
-            val r = bracket(t) ?: orders(t) ?: spread ?: recurring(t) ?: viaNear(::nearMove) ?: bridgeMove(t)
+            val r = viaNear(::nearEarn) ?: bracket(t) ?: orders(t) ?: spread ?: recurring(t) ?: viaNear(::nearMove) ?: bridgeMove(t)
                 ?: viaNear(::nearSend) ?: send(t) ?: viaNear(::nearSwap) ?: swap(t) ?: return null
             // A share trades on Base, by its address there.
             baseStocks[r.sell]?.let { r.sellAddress = it; r.chain = "base" }
@@ -802,6 +863,98 @@ data class TradeIntent(
         private fun match(pattern: String, text: String): List<String?>? {
             val m = Regex(pattern, RegexOption.IGNORE_CASE).findAll(text).lastOrNull() ?: return null
             return (0..m.groupValues.lastIndex).map { m.groups[it]?.value }
+        }
+
+        // MARK: NEAR Intents Earn
+
+        data class EarnVault(val chain: String, val protocol: String, val coin: String)
+
+        /** The vaults Earn offers (server lib/nearearn.ts): their chain and
+         *  who runs them. USDC's own is Gauntlet USDC Prime, SOL's Kamino SOL
+         *  Balanced. */
+        val earnVaults = mapOf(
+            "gtusdcp" to EarnVault("base", "Morpho", "USDC"),
+            "kamino-sol" to EarnVault("solana", "Kamino", "SOL"),
+            "taler-usdc" to EarnVault("ethereum", "Taler", "USDC"),
+        )
+
+        /** The coins' own pictures (CoinGecko's), for a coin no token list
+         *  here carries: BTC, ZEC and NEAR on their own chains, and the
+         *  dollars beside them, so a NEAR Intents panel shows logos, not
+         *  letters. */
+        val coinLogos = mapOf(
+            "BTC" to "https://assets.coingecko.com/coins/images/1/large/bitcoin.png",
+            "ETH" to "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
+            "USDC" to "https://assets.coingecko.com/coins/images/6319/large/usdc.png",
+            "USDT" to "https://assets.coingecko.com/coins/images/325/large/Tether.png",
+            "SOL" to "https://assets.coingecko.com/coins/images/4128/large/solana.png",
+            "NEAR" to "https://assets.coingecko.com/coins/images/10365/large/near.jpg",
+            "ZEC" to "https://assets.coingecko.com/coins/images/486/large/circle-zcash-color.png",
+            "TON" to "https://assets.coingecko.com/coins/images/17980/large/ton_symbol.png",
+            "TRX" to "https://assets.coingecko.com/coins/images/1094/large/tron-logo.png",
+            "XRP" to "https://assets.coingecko.com/coins/images/44/large/xrp-symbol-white-128.png",
+            "DOGE" to "https://assets.coingecko.com/coins/images/5/large/dogecoin.png",
+            "LTC" to "https://assets.coingecko.com/coins/images/2/large/litecoin.png",
+            "SUI" to "https://assets.coingecko.com/coins/images/26375/large/sui-ocean-square.png",
+            "APT" to "https://assets.coingecko.com/coins/images/26455/large/aptos_round.png",
+            "XLM" to "https://assets.coingecko.com/coins/images/100/large/Stellar_symbol_black_RGB.png",
+            "ADA" to "https://assets.coingecko.com/coins/images/975/large/cardano.png",
+            "BNB" to "https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png",
+            "AVAX" to "https://assets.coingecko.com/coins/images/12559/large/Avalanche_Circle_RedWhite_Trans.png",
+            "DAI" to "https://assets.coingecko.com/coins/images/9956/large/Badge_Dai.png",
+        )
+
+        /** An Earn trade, as the strip's AI or the words give it. The chain
+         *  unsaid is the vault's own; a coin Earn doesn't take, or a chain it
+         *  isn't on, is null. */
+        fun earn(coin: String, amount: String?, out: Boolean, chain: String?, vault: String? = null): TradeIntent? {
+            val c = coin.uppercase(Locale.US).replace("$", "")
+            if (c != "USDC" && c != "SOL") return null
+            if (vault != null && earnVaults[vault]?.coin != c) return null
+            val i = TradeIntent(Kind.EARN, amount = amount?.let { amount(it) }, sell = c, buy = c)
+            i.earnOut = out
+            i.vault = vault
+            val at = chain ?: i.earnVaultChain
+            if (!nearHas(c, at) || !(at in evmChains || at == "solana")) return null
+            i.chain = at
+            return i
+        }
+
+        private const val EARN_MONEY = """(?:\$\s?(\d+(?:\.\d+)?|\.\d+)|(\d+(?:\.\d+)?|\.\d+)\s*(usdc|sol|dollars|bucks))"""
+        private const val EARN_ON = """(?:\s+(?:on|from|in)\s+(?!earn\b|savings\b|yield\b|a\s)([a-z]+))?"""
+
+        /** The words for Earn (server lib/nearphrase.ts parseEarnPhrase, the
+         *  same phrases): "put $50 to work", "earn yield on $50", "park 50
+         *  usdc on base", "stake .5 sol in a vault"; "take my usdc out of
+         *  earn", "withdraw $20 from earn", "take 20 usdc out of earn to
+         *  solana". "$", dollars and bucks are USDC. */
+        fun nearEarn(t: String): TradeIntent? {
+            val ins = listOf(
+                """(?:put|set)\s+(?:my\s+)?""" + EARN_MONEY + EARN_ON + """\s+to\s+work""",
+                """(?:start\s+)?earn(?:ing)?(?:\s+(?:yield|interest))?\s+(?:on|with|from)\s+(?:my\s+)?""" + EARN_MONEY + EARN_ON,
+                """(?:park|stash|deposit|stake)\s+(?:my\s+)?""" + EARN_MONEY + EARN_ON +
+                    """(?:\s+(?:in|into)\s+(?:earn|a vault|savings|yield))?""",
+            )
+            for (p in ins) {
+                val m = match(START + p + END, t) ?: continue
+                return earnRead(m[1], m[2], m[3], m[4], out = false)
+            }
+            val out = """(?:take|pull|get|withdraw|cash)\s+(?:out\s+)?(?:my\s+|all\s+(?:my\s+)?)?(?:""" + EARN_MONEY +
+                """|(usdc|sol|\$))(?:\s+(?:back\s+)?out)?\s+(?:of|from)\s+(?:earn|the vault|savings|yield)(?:\s+(?:to|on|into)\s+([a-z]+))?"""
+            val m = match(START + out + END, t) ?: return null
+            return earnRead(m[1], m[2], m[3] ?: m[4], m[5], out = true)
+        }
+
+        private fun earnRead(dollars: String?, amount: String?, coin: String?, chain: String?, out: Boolean): TradeIntent? {
+            val word = coin?.lowercase(Locale.US)
+            val symbol = when {
+                dollars != null || word == null || word in setOf("usdc", "dollars", "bucks", "$") -> "USDC"
+                word == "sol" -> "SOL"
+                else -> return null
+            }
+            var at: String? = null
+            if (chain != null) at = nearChainWords[chain.lowercase(Locale.US)] ?: return null
+            return earn(symbol, dollars ?: amount, out, at)
         }
 
         // MARK: NEAR Intents

@@ -72,6 +72,34 @@ data class AIAction(val tool: String, val label: String, val params: Map<String,
                     val to = p["to"] ?: return null
                     "move $a $asset from $from to $to"
                 }
+                "near.swap" -> {
+                    // Each side on its chain, as the server read it (a coin with no
+                    // chain said sits at home, else on Base). No amount: the panel asks.
+                    val sell = p["sell"] ?: return null
+                    val buy = p["buy"] ?: return null
+                    val from = p["sellChain"] ?: TradeIntent.nativeChain[sell.uppercase(Locale.US)] ?: "base"
+                    val into = p["buyChain"] ?: TradeIntent.nativeChain[buy.uppercase(Locale.US)] ?: "base"
+                    "swap ${p["amount"] ?: "1"} $sell on $from to $buy on $into"
+                }
+                "near.send" -> {
+                    val a = p["amount"] ?: return null
+                    val to = p["to"] ?: return null
+                    var words = "send $a ${p["coin"] ?: "USDC"} to $to"
+                    val with = p["with"]
+                    if (with != null) words += " with $with" + (p["withChain"]?.let { " on $it" } ?: "")
+                    else p["withChain"]?.let { words += " from $it" }
+                    words
+                }
+                "near.earn" -> {
+                    val coin = p["coin"] ?: "USDC"
+                    if (p["out"] == "true") {
+                        val what = p["amount"]?.let { "$it $coin" } ?: "my $coin"
+                        "take $what out of earn" + (p["chain"]?.let { " to $it" } ?: "")
+                    } else {
+                        val a = p["amount"] ?: return null
+                        "put $a $coin" + (p["chain"]?.let { " on $it" } ?: "") + " to work"
+                    }
+                }
                 else -> null
             }
         }
@@ -86,13 +114,23 @@ data class AIAction(val tool: String, val label: String, val params: Map<String,
                 return TradeIntent.recurringBuy(every, asset, TradeIntent.symbol(params["spend"]), period,
                     periods = params["periods"]?.toIntOrNull(), chain = params["chain"])
             }
-            return tradeWords?.let { TradeIntent.parse(it) }
+            if (tool == "near.earn" && tradeWords == null) {
+                // "put usdc to work": no amount said, so the panel asks for it.
+                return TradeIntent.earn(params["coin"] ?: "USDC", null, false, params["chain"])
+            }
+            val t = tradeWords?.let { TradeIntent.parse(it) } ?: return null
+            // A NEAR Intents tool opens NEAR Intents' panel, never Uniswap's.
+            if (tool.startsWith("near.") && !t.isNear) return null
+            if (tool == "near.swap" && params["amount"] == null) t.amount = null
+            return t
         }
 
     /** The chip it shows as; null when this phone can't open it. */
     val chip: Smart.Chip?
         get() {
-            if (tool.startsWith("trade.")) return trade?.let { Smart.Chip.Trade(it) }
+            if (tool.startsWith("trade.") || tool in setOf("near.swap", "near.send", "near.earn")) {
+                return trade?.let { Smart.Chip.Trade(it) }
+            }
             return when (tool) {
                 "calendar.event" -> {
                     val title = params["title"] ?: return null
@@ -111,6 +149,16 @@ data class AIAction(val tool: String, val label: String, val params: Map<String,
                 }
                 "rewrite" -> Smart.Chip.Action(label, "", "rewrite")
                 "convert" -> Smart.Chip.Action(label, params["query"] ?: "", "answer")
+                // A pay link to ask for, and the group pot: their panels read the
+                // params back from the query (NearPay.kt).
+                "near.request" -> {
+                    PayAsk.of(params) ?: return null
+                    Smart.Chip.Action(label, NearPay.chipQuery(params), "near:request")
+                }
+                "near.pot", "near.pot.pay" -> {
+                    PotAsk.of(params, tool == "near.pot.pay") ?: return null
+                    Smart.Chip.Action(label, NearPay.chipQuery(params), if (tool == "near.pot") "near:pot" else "near:pot.pay")
+                }
                 else -> null
             }
         }

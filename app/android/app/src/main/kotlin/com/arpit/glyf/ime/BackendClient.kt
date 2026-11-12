@@ -244,7 +244,8 @@ object BackendClient {
                 val body = JSONObject().put("text", text).put("deviceId", deviceId)
                 // The kinds of detail saved, never the details.
                 if (kinds.isNotEmpty()) body.put("kinds", org.json.JSONArray(kinds))
-                if (onAction != null) body.put("actions", true)
+                // It also opens NEAR Intents' tools (near.swap … near.pot.pay).
+                if (onAction != null) body.put("actions", true).put("near", true)
                 c.outputStream.use { it.write(body.toString().toByteArray()) }
                 if (c.responseCode !in 200..299 || cancelled.get()) return@execute
                 val json = JSONObject(c.inputStream.bufferedReader().readText())

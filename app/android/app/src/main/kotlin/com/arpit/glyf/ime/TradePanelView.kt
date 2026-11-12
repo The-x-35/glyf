@@ -95,6 +95,9 @@ class TradePanelView(
     private var quote: TradeQuote.Quote? = null
     /** NEAR Intents' answer (time, what's paid for a send, Guard's words). */
     private var near: NearQuote? = null
+    /** Earn's answer (its words, vault, APY, time), in Earn mode. */
+    private var earn: EarnQuote? = null
+    private var earnError: String? = null
     private var marketPrice: Double? = null
     private var asking = true
     private var serial = 0
@@ -122,6 +125,8 @@ class TradePanelView(
     /** The panel quotes it as it changes: a swap, or a NEAR Intents send. */
     private val quotes get() = TradeQuote.quotes(intent)
     private val nearSend get() = TradeQuote.nearSend(intent)
+    /** Earn mode: idle coins into a vault, or back out (NEAR Intents Earn). */
+    private val isEarn get() = intent.kind == TradeIntent.Kind.EARN
     private val red = Color.rgb(0xFF, 0x3B, 0x30)
     private val amber get() = if (palette.darkChrome) Color.rgb(0xFF, 0xC2, 0x47) else Color.rgb(0xB8, 0x73, 0x00)
     private val buyChain get() = intent.buyChain ?: intent.chainName
@@ -138,6 +143,8 @@ class TradePanelView(
 
     companion object {
         private val pool = Executors.newFixedThreadPool(2)
+        /** GET /near/earn/vaults, read once a session (everything out has no quote). */
+        private var vaultList: JSONObject? = null
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -205,6 +212,8 @@ class TradePanelView(
     private fun logo(symbol: String, chain: String): String? =
         known["$chain|${symbol.uppercase()}"]?.logo
             ?: tokenRows[chain]?.firstOrNull { it.symbol.equals(symbol, ignoreCase = true) }?.logo
+            // A coin no token list here carries (BTC, ZEC, NEAR…): its own picture, not a letter.
+            ?: TradeIntent.coinLogos[symbol.uppercase()]
 
     /** One side: its key and chain, the amount (a tap types it) and its
      *  token, a line under them. */
@@ -281,11 +290,14 @@ class TradePanelView(
                 q?.outUsd?.let { sub.add(TradeQuote.approx(it)) }
                 // The line over the button took the Arrives row: the time rides here.
                 if (alert() != null) near?.time?.let { sub.add(it) }
+            } else if (isEarn) {
+                // What the coins are worth; the vault's share count never shows.
+                (if (i.earnOut) quote?.outUsd else quote?.inUsd)?.let { sub.add(TradeQuote.approx(it)) }
             } else if (market != null) sub.add("${TradeQuote.display(top)} ${TradeQuote.dollars(market)}") else if (asking) sub.add("…")
             if (TradeEdit.sells(i)) balance(top, i.chainName)?.takeIf { it > 0 }?.let { sub.add("Balance ${PayPanelView.compact(it)}") }
             // Phantom's send here takes SOL or USDC as read; no picker for it.
             // A NEAR Intents send keeps the coin typed (its chain decides it).
-            val tokenPicks = !(i.kind == TradeIntent.Kind.SEND && (i.chainName == "solana" || i.isNear))
+            val tokenPicks = !(i.kind == TradeIntent.Kind.SEND && (i.chainName == "solana" || i.isNear)) && !isEarn
             // A NEAR send's card is what arrives, where: the chain it's paid
             // from is a row below.
             val cardChain = if (nearSend) i.buyChain ?: i.chainName else i.chainName
@@ -316,7 +328,20 @@ class TradePanelView(
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             body.addView(line, full(top = dp(7)))
         }
-        val go = TradeQuote.go(i, wallet, asking, quote, balance(i.sell, i.chainName), resolved, resolveProblem, near)
+        // Earn's line over the button: 1Click's word on yield.
+        if (isEarn && alert() == null) {
+            body.addView(TextView(context).apply {
+                text = EarnQuote.NOTICE
+                textSize = 12.5f
+                maxLines = 2
+                ellipsize = null
+                setTextColor(palette.inkSoft)
+                setPadding(dp(4), 0, dp(4), 0)
+                setTag(com.arpit.glyf.R.id.qa_id, "trade:notice")
+            }, full(top = dp(7)))
+        }
+        val go = if (isEarn) TradeQuote.earnGo(i, TradeIntent.missingWallet(i, evmAddress, solanaAddress, null), asking, earn, earnError)
+            else TradeQuote.go(i, wallet, asking, quote, balance(i.sell, i.chainName), resolved, resolveProblem, near)
         body.addView(label(go.title, 15f, true, if (go.blocked) palette.inkSoft else Color.WHITE).apply {
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
@@ -342,8 +367,7 @@ class TradePanelView(
     /** A NEAR send's rows: To (ticked once NEAR says the name is there, red
      *  when Guard stops it), You pay (tap to pay from another chain) and
      *  Arrives; at least 36dp each, values fitted, never cut. */
-    private fun renderNearRows() {
-        val rows = TradeQuote.nearSendRows(intent, near, asking, resolved, resolveProblem)
+    private fun renderNearRows(rows: List<TradeQuote.Row> = TradeQuote.nearSendRows(intent, near, asking, resolved, resolveProblem)) {
         val c = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(palette.card) }
@@ -376,6 +400,7 @@ class TradePanelView(
     private fun renderRows() {
         val i = intent
         if (nearSend) { renderNearRows(); return }
+        if (isEarn) { renderNearRows(TradeQuote.earnRows(i, earn, asking)); return }
         data class Spec(val id: String, var label: String, var value: String, val tap: () -> Unit)
         val specs = TradeEdit.fields(i).filter { it != TradeField.AMOUNT }.map { f ->
             Spec(f.id, TradeEdit.label(f, i), TradeEdit.shown(f, i)) { begin(f) }
@@ -716,6 +741,7 @@ class TradePanelView(
         when {
             isSwap -> requote()
             intent.kind == TradeIntent.Kind.SEND -> { resolve(); if (intent.isNear) requote() else price(intent.sell) }
+            isEarn -> requote()
             else -> price(TradeEdit.asset(intent))
         }
         render()
@@ -769,12 +795,15 @@ class TradePanelView(
         asking = true
         quote = null
         near = null
+        earn = null
+        earnError = null
         render()
         main.postDelayed({ if (n == serial) ask(n) }, 300)
     }
 
     private fun ask(n: Int) {
         val i = intent
+        if (i.kind == TradeIntent.Kind.EARN) { earnQuote(i, n); return }
         if (i.isNear) { nearQuote(i, n); return }
         if (i.chainName == "solana") { jupiter(n); return }
         val body = TradeQuote.body(i)
@@ -798,6 +827,37 @@ class TradePanelView(
             asking = false
             near = if (q.error == null) q else null
             quote = TradeQuote.Quote(q.amountOut, q.inUsd, q.outUsd, q.error?.let { TradeQuote.shortError(it) })
+            render()
+        }
+    }
+
+    /** Earn's preview (POST /near/earn/quote, dry). Everything out has no
+     *  amount to price: the vault's own row (GET /near/earn/vaults). */
+    private fun earnQuote(i: TradeIntent, n: Int) {
+        if (i.earnOut && i.amount == null) {
+            fun take(list: JSONObject?) {
+                if (n != serial) return
+                asking = false
+                earn = EarnQuote.vault(i.earnVault, list)
+                render()
+            }
+            vaultList?.let { take(it); return }
+            http("GET", "/near/earn/vaults", null) { ok, obj ->
+                if (ok && obj?.optJSONArray("vaults") != null) vaultList = obj
+                take(if (ok) obj else null)
+            }
+            return
+        }
+        val body = TradeQuote.earnBody(i)
+        if (body == null) { asking = false; render(); return }
+        http("POST", "/near/earn/quote", body) { ok, obj ->
+            if (n != serial) return@http
+            val q = EarnQuote.of(ok, obj)
+            asking = false
+            earn = if (q.error == null) q else null
+            earnError = q.error?.let { TradeQuote.shortError(it) }
+            quote = if (q.error == null) TradeQuote.Quote(null, TradeQuote.num(obj?.opt("amountInUsd")),
+                TradeQuote.num(obj?.opt("amountOutUsd"))) else null
             render()
         }
     }

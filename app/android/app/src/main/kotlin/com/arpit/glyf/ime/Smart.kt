@@ -125,9 +125,20 @@ object Smart {
             TradeIntent.Kind.SWAP -> if (chip.intent.isNear && chip.intent.sell == chip.intent.buy) "Move" else if (chip.intent.amountIsUSD || chip.intent.buyAmount != null) "Buy" else "Swap"
             TradeIntent.Kind.BRIDGE -> "Move"
             TradeIntent.Kind.SEND -> "Send"
+            TradeIntent.Kind.EARN -> if (chip.intent.earnOut) "Take out" else "Earn"
             else -> "Set"
         }
-        is Chip.Action, is Chip.Details, is Chip.Convert -> null
+        // NEAR's chips say what the tap does: ask for the money, look in the
+        // pot, propose a payout from it.
+        is Chip.Action -> when (chip.intent) {
+            "near:request" -> "Request"
+            "near:pot" -> "See"
+            "near:pot.pay" -> "Propose"
+            else -> null
+        }
+        // A bill split that can ask for the money is one card, with Request.
+        is Chip.Convert -> if (chip.answer.request != null) "Insert" else null
+        is Chip.Details -> null
     }
 
     /** What the chip says. */
@@ -152,7 +163,11 @@ object Smart {
         }
         is Chip.Buy -> chip.price ?: shortAddress(chip.mint)
         // NEAR Intents crosses chains: "Swap 20 USDC → SOL · Base → Solana".
-        is Chip.Trade -> chip.intent.title + " · " + if (chip.intent.isNear) chip.intent.route else chip.intent.chainLabel
+        is Chip.Trade -> chip.intent.title + " · " + when {
+            chip.intent.kind == TradeIntent.Kind.EARN -> chip.intent.earnProtocol
+            chip.intent.isNear -> chip.intent.route
+            else -> chip.intent.chainLabel
+        }
     }
 
     /** What tapping puts in the field. */
@@ -272,6 +287,10 @@ object Smart {
         }
         // A trade said in words: swaps and orders.
         TradeIntent.parse(text)?.let { return Chip.Trade(it) }
+        // The group pot, in words: a look, or a payout to propose.
+        PotAsk.parse(text)?.let {
+            return Chip.Action(it.label, NearPay.chipQuery(it.params), if (it.pay) "near:pot.pay" else "near:pot")
+        }
         // A link longer than the strip's view of the message: its trackers.
         if (linkContext != null && linkContext.length > text.length && endsInLink(text)) {
             cleanLink(linkContext)?.let { return Chip.Convert(it) }
@@ -1386,6 +1405,8 @@ object Smart {
         val inserts: List<String>? = null,
         /** How each goes in; in brackets after what was typed when null. */
         val hows: List<Insertion>? = null,
+        /** A bill split in dollars: the pay link a Request asks for. */
+        val request: PayAsk? = null,
     ) {
         fun insert(i: Int): String = inserts?.getOrNull(i) ?: results[i]
         fun how(i: Int): Insertion = hows?.getOrNull(i) ?: Insertion.BRACKET
@@ -2102,7 +2123,9 @@ object Smart {
             val bill = number(g[2]) ?: continue
             val n = headcount(g[3]) ?: continue
             if (n < 2 || n > 50) continue
-            return Conversions(g[0]!!.trim(), listOf("${billMoney(bill / n, g[1] ?: "")} each"))
+            // Dollars can be asked for: a pay link paid in USDC.
+            val ask = if (g[1] == "$") PayAsk.split(text, bill, n.toInt()) else null
+            return Conversions(g[0]!!.trim(), listOf("${billMoney(bill / n, g[1] ?: "")} each"), request = ask)
         }
         // (percent, sign, amount) or (sign, amount, percent)
         fun pick(g: List<String?>, percentFirst: Boolean): Triple<Double, String, Double>? {

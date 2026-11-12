@@ -161,6 +161,7 @@ object TradeQuote {
             // What's sent is what arrives (a NEAR Intents send may pay in another coin).
             TradeIntent.Kind.SEND -> resolveProblem
                 ?: if (resolved == null) "Looking up ${i.to ?: ""}" else "Send ${i.amount ?: ""} ${display(i.buy)}"
+            TradeIntent.Kind.EARN -> earnTitle(i)
         }
         if (i.kind == TradeIntent.Kind.SEND) return Go(title, resolved == null || resolveProblem != null || (quotes && asking), false)
         return Go(title, quotes && asking, false)
@@ -219,6 +220,7 @@ object TradeQuote {
         TradeIntent.Kind.TWAP -> "TWAP"
         TradeIntent.Kind.BRIDGE -> "Bridge"
         TradeIntent.Kind.SEND -> "Send"
+        TradeIntent.Kind.EARN -> "Earn"
     }
 
     /** The top card's key: You pay on a swap, else what the order does. */
@@ -227,6 +229,7 @@ object TradeQuote {
         TradeIntent.Kind.SEND -> "Send"
         TradeIntent.Kind.BRIDGE -> "Move"
         TradeIntent.Kind.TWAP -> "Spend"
+        TradeIntent.Kind.EARN -> if (i.earnOut) "Take out" else "Put in"
         else -> if (TradeEdit.sells(i)) "Sell" else "Buy"
     }
 
@@ -321,6 +324,7 @@ object TradeQuote {
      *  for a NEAR Intents trade ("Swap via NEAR Intents"), so the rows stay
      *  short. */
     fun headerTitle(i: TradeIntent): String {
+        if (i.kind == TradeIntent.Kind.EARN) return (if (i.earnOut) "Take out of Earn" else "Earn") + " via NEAR Intents"
         if (!i.isNear) return headerTitle(i.kind)
         val kind = if (i.kind == TradeIntent.Kind.SWAP && i.sell == i.buy) "Move" else headerTitle(i.kind)
         return "$kind via NEAR Intents"
@@ -347,6 +351,52 @@ object TradeQuote {
         val pay = near?.amountIn?.let { "≈ ${amount(it)} ${display(i.sell)}" } ?: if (asking) "…" else display(i.sell)
         rows.add(Row("pay", "You pay", "$pay · ${TradeIntent.label(i.chainName)}", tap = true, bold = true))
         if (alert == null) rows.add(Row("arrives", "Arrives", near?.time ?: if (asking) "…" else "—"))
+        return rows
+    }
+
+    // MARK: Earn (TradeSurface.swift's Earn mode)
+
+    /** What Earn's preview asks POST /near/earn/quote, dry: no addresses,
+     *  so no deposit. Null for everything out (nothing to price: the vault's
+     *  row from GET /near/earn/vaults says what and where) or a problem. */
+    fun earnBody(i: TradeIntent): JSONObject? {
+        if (i.kind != TradeIntent.Kind.EARN || TradeEdit.problem(i) != null) return null
+        if (i.earnOut && i.amount == null) return null
+        val b = JSONObject().put("coin", i.sell).put("chain", i.chainName)
+            .put("direction", if (i.earnOut) "out" else "in").put("slippage", 1)
+        i.amount?.let { b.put("amount", it) }
+        i.vault?.let { b.put("vault", it) }
+        return b
+    }
+
+    /** The button's words for Earn. */
+    fun earnTitle(i: TradeIntent): String = when {
+        !i.earnOut -> "Put ${i.amount ?: ""} ${i.sell} to work"
+        i.amount != null -> "Take out ${i.amount} ${i.sell}"
+        else -> "Take out all ${i.sell}"
+    }
+
+    /** Earn's button: both wallets first (where the coins are and the
+     *  vault's chain), then what's wrong, then the words. */
+    fun earnGo(i: TradeIntent, missing: String?, asking: Boolean, earn: EarnQuote?, error: String?): Go {
+        if (missing != null) return Go("Connect $missing", blocked = false, connect = true)
+        TradeEdit.problem(i)?.let { return Go(it, true, false) }
+        error?.let { return Go(it, true, false) }
+        if (asking) return Go("Asking NEAR Intents", true, false)
+        return Go(earnTitle(i), earn == null, false)
+    }
+
+    /** Earn's rows: the server's words ("≈ $49.75 in Gauntlet USDC Prime at
+     *  4.5% APY"), who runs the vault and its APY, and the time; everything
+     *  out says where it lands and has no time. */
+    fun earnRows(i: TradeIntent, earn: EarnQuote?, asking: Boolean): List<Row> {
+        val all = i.earnOut && i.amount == null
+        var words = if (asking) "…" else "—"
+        if (earn != null) words = if (all) "All your ${i.sell} back on ${TradeIntent.label(i.chainName)} from ${earn.vaultName ?: "Earn"}"
+            else earn.words ?: words
+        val rows = mutableListOf(Row("earn", "You get", words, bold = true),
+            Row("vault", "Vault", earn?.vaultLine(i.earnProtocol) ?: i.earnProtocol))
+        if (!all) rows.add(Row("arrives", "Arrives", earn?.time ?: if (asking) "…" else "—"))
         return rows
     }
 

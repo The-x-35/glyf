@@ -70,6 +70,8 @@ object TradeEdit {
         TradeIntent.Kind.TAKE_PROFIT, TradeIntent.Kind.TRAILING_STOP -> true
         TradeIntent.Kind.BRACKET -> i.buyAmount == null && !i.amountIsUSD
         TradeIntent.Kind.LIMIT -> i.sell !in stables
+        // Earn puts in what's typed; out, nothing typed is everything.
+        TradeIntent.Kind.EARN -> i.earnOut
         else -> false
     }
 
@@ -100,7 +102,7 @@ object TradeEdit {
         TradeIntent.Kind.BRACKET -> listOf(TradeField.AMOUNT, TradeField.PRICE, TradeField.STOP_PRICE)
         TradeIntent.Kind.TRAILING_STOP -> listOf(TradeField.AMOUNT, TradeField.TRAIL)
         TradeIntent.Kind.TWAP -> listOf(TradeField.AMOUNT, TradeField.DURATION)
-        TradeIntent.Kind.SWAP, TradeIntent.Kind.BRIDGE, TradeIntent.Kind.SEND -> listOf(TradeField.AMOUNT)
+        TradeIntent.Kind.SWAP, TradeIntent.Kind.BRIDGE, TradeIntent.Kind.SEND, TradeIntent.Kind.EARN -> listOf(TradeField.AMOUNT)
     }
 
     /** The row's name for a field. */
@@ -227,6 +229,8 @@ object TradeEdit {
                 if (i.toChain == null || i.toChain == i.chainName) return "Pick another chain"
             }
             TradeIntent.Kind.SEND -> if (!positive(i.amount)) return "Enter an amount"
+            // Out with no amount is everything; in needs one.
+            TradeIntent.Kind.EARN -> if (!i.earnOut && !positive(i.amount)) return "Enter an amount"
             else -> {}
         }
         return null
@@ -317,6 +321,8 @@ object TradeEdit {
         // A send stays where its name points: Solana for a .sol name or
         // SOL, any of MetaMask's chains otherwise.
         i.kind == TradeIntent.Kind.SEND -> if (i.chainName == "solana") listOf("solana") else SponsorMenu.SWAP_CHAINS
+        // Earn stays where the words put it.
+        i.kind == TradeIntent.Kind.EARN -> listOf(i.chainName)
         else -> FLASH_CHAINS
     }
 
