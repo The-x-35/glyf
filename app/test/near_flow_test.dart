@@ -364,6 +364,7 @@ void main() {
     final api = NearFlow.api = _FakeApi((_) => _quote());
     final out = await run({'kind': 'swap', 'venue': 'near', 'sell': 'BTC', 'chain': 'bitcoin', 'buy': 'USDC', 'buyChain': 'base', 'amount': '0.01'});
     expect(out.single.title, 'Where should a refund go?');
+    expect((out.single as NearOutcome).askRefund, 'Bitcoin', reason: 'the screen asks for it');
     expect(api.bodies, isEmpty);
   });
 

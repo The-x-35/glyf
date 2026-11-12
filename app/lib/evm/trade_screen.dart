@@ -32,6 +32,7 @@ class TradeScreen extends StatefulWidget {
 class _TradeScreenState extends State<TradeScreen> {
   TradeOutcome _outcome = const TradeOutcome(TradeState.working, 'One moment…');
   StreamSubscription<TradeOutcome>? _sub;
+  final _refund = TextEditingController();
 
   @override
   void initState() {
@@ -62,7 +63,18 @@ class _TradeScreenState extends State<TradeScreen> {
   void dispose() {
     // The trade carries on without the screen and tells the keyboard.
     _sub?.cancel();
+    _refund.dispose();
     super.dispose();
+  }
+
+  /// Paid from a wallet Glyf doesn't know: the same trade again, with the
+  /// person's own address on that chain for a refund.
+  void _withRefund() {
+    final to = _refund.text.trim();
+    if (to.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _outcome = const TradeOutcome(TradeState.working, 'One moment…'));
+    _start({...widget.query, 'refundTo': to});
   }
 
   /// Guard stopped it: the same trade again, past the check.
@@ -186,7 +198,31 @@ class _TradeScreenState extends State<TradeScreen> {
   );
 
   List<Widget> _buttons(TradeOutcome o, bool working, {bool blocked = false}) => [
-    if (blocked) ...[
+    if (o is NearOutcome && o.askRefund != null) ...[
+      Semantics(
+        identifier: 'trade:near:refund',
+        child: TextField(
+          controller: _refund,
+          autocorrect: false,
+          enableSuggestions: false,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _withRefund(),
+          style: const TextStyle(color: Glass.ink, fontSize: 16),
+          decoration: InputDecoration(
+            hintText: 'Your ${o.askRefund} address',
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      PillButton(label: 'Continue', onPressed: _withRefund),
+      TextButton(
+        onPressed: () => Navigator.of(context).maybePop(),
+        child: const Text('Close', style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600)),
+      ),
+    ] else if (blocked) ...[
       PillButton(label: 'Don’t send', onPressed: () => Navigator.of(context).maybePop()),
       const SizedBox(height: 6),
       Semantics(
@@ -216,7 +252,7 @@ class _TradeScreenState extends State<TradeScreen> {
           style: TextStyle(color: Glass.inkSoft, fontSize: 15, fontWeight: FontWeight.w600),
         ),
       )
-    else if (!blocked)
+    else if (!blocked && !(o is NearOutcome && o.askRefund != null))
       PillButton(label: 'Done', onPressed: () => Navigator.of(context).maybePop()),
   ];
 

@@ -20,7 +20,7 @@ import 'near_api.dart';
 class NearOutcome extends TradeOutcome {
   const NearOutcome(super.state, super.title,
       {super.detail, super.txUrl, super.reopen, super.hash, this.quote, this.recipient, this.explorer,
-      this.manual = false, this.blocked = false});
+      this.manual = false, this.blocked = false, this.askRefund});
 
   final NearQuote? quote;
 
@@ -36,6 +36,10 @@ class NearOutcome extends TradeOutcome {
 
   /// Guard stopped it before anything was signed; the screen offers "Send anyway".
   final bool blocked;
+
+  /// The chain ("Bitcoin") whose address a refund needs: paid from a wallet
+  /// Glyf doesn't know, so the screen asks for it and goes on with refundTo.
+  final String? askRefund;
 }
 
 /// What a NEAR Intents trade needs from the person's own wallets: who they
@@ -199,6 +203,12 @@ abstract final class NearFlow {
                 : null;
 
     final refundTo = q['refundTo'] ?? own(sellChain);
+    if (refundTo == null && !_isEvm(sellChain) && sellChain != 'solana') {
+      yield NearOutcome(TradeState.failed, 'Where should a refund go?',
+          detail: 'Your own ${chainLabel(sellChain)} address, in case NEAR Intents can’t fill it',
+          askRefund: chainLabel(sellChain));
+      return;
+    }
     if (refundTo == null) {
       yield TradeOutcome(TradeState.failed, switch (sellChain) {
         'solana' => 'Phantom isn’t connected',

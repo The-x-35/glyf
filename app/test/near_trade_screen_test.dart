@@ -97,6 +97,26 @@ void main() {
     unawaited(steps.close());
   });
 
+  testWidgets('from Bitcoin with no refund address: asks for one, then the same trade with it', (tester) async {
+    final asked = <Map<String, String>>[];
+    final steps = await open(tester, asked: asked);
+    steps.add(const NearOutcome(TradeState.failed, 'Where should a refund go?',
+        detail: 'Your own Bitcoin address, in case NEAR Intents can’t fill it', askRefund: 'Bitcoin'));
+    await tester.pump();
+    expect(find.text('Your Bitcoin address'), findsOneWidget);
+    expect(find.text('Done'), findsNothing);
+    await tester.tap(find.text('Continue'));
+    await tester.pump();
+    expect(asked, hasLength(1), reason: 'nothing typed, nothing asked');
+    await tester.enterText(find.byType(TextField), ' bc1qmine ');
+    await tester.tap(find.text('Continue'));
+    await tester.pump();
+    expect(asked, hasLength(2));
+    expect(asked.last['refundTo'], 'bc1qmine');
+    expect(asked.last['venue'], 'near');
+    unawaited(steps.close());
+  });
+
   testWidgets('done: the destination’s transaction and NEAR Intents’ explorer', (tester) async {
     final steps = await open(tester);
     steps.add(NearOutcome(TradeState.done, 'Swapped',
