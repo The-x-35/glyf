@@ -33,6 +33,7 @@ import { evmRoutes } from "./routes/evm.js";
 import { flashRoutes } from "./routes/flash.js";
 import { uniswapRoutes } from "./routes/uniswap.js";
 import { namesRoutes } from "./routes/names.js";
+import { nearRoutes } from "./routes/near.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -121,6 +122,7 @@ export function buildApp(kv: KV = defaultKV()) {
   flashRoutes(app);
   uniswapRoutes(app);
   namesRoutes(app);
+  nearRoutes(app);
   return app;
 }
 
