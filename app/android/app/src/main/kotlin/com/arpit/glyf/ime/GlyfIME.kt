@@ -3166,11 +3166,46 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }, onTemp = {}, onClose = dismiss)
             return
         }
-        showStripChip("paste", null, text.replace('\n', ' '), "Paste", onClose = dismiss) {
+        // A long copy can go in as a PDF instead (TextPDF, iOS's PDF button).
+        val pdf = TextPDF.offers(text)
+        showStripChip("paste", null, text.replace('\n', ' '), "Paste", onClose = dismiss,
+            extra = if (pdf) "PDF" else null, onExtra = if (pdf) ({ used(); sendTextPDF(text) }) else null) {
             used()
             currentInputConnection?.commitText(text, 1)
             hideStripChip()
         }
+    }
+
+    /** A long copy as a PDF made on the phone: into the field when it takes
+     *  PDFs (commitContent, as a sticker goes in), else on the clipboard as
+     *  its one item, and the strip says it's ready to paste. */
+    private fun sendTextPDF(text: String) {
+        hideStripChip()
+        val session = inputSession
+        Thread {
+            val uri = runCatching {
+                val dir = java.io.File(cacheDir, "media").apply { mkdirs() }
+                dir.listFiles()?.sortedBy { it.lastModified() }?.dropLast(4)?.forEach { it.delete() }
+                val file = java.io.File(dir, TextPDF.fileName(text))
+                TextPDF.write(text, file)
+                androidx.core.content.FileProvider.getUriForFile(this, "$packageName.media", file)
+            }.getOrNull()
+            main.post {
+                if (session != inputSession) return@post
+                if (uri == null) { notice("Couldn't make the PDF"); return@post }
+                val mime = "application/pdf"
+                val title = TextPDF.title(text)
+                val accepted = currentInputEditorInfo?.contentMimeTypes.orEmpty()
+                val ic = currentInputConnection
+                if (ic != null && accepted.any { android.content.ClipDescription.compareMimeTypes(mime, it) }) {
+                    val info = android.view.inputmethod.InputContentInfo(uri, android.content.ClipDescription(title, arrayOf(mime)), null)
+                    if (ic.commitContent(info, android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)) return@post
+                }
+                val clip = android.content.ClipData(title, arrayOf(mime), android.content.ClipData.Item(uri))
+                (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(clip)
+                showStripChip("paste", null, "PDF ready to paste", "OK") { hideStripChip() }
+            }
+        }.start()
     }
 
     /** Send's link: who to, and the amount the message asked for. */
