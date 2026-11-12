@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/bridge.dart';
 import '../core/glyf_api.dart';
+import '../near/near_flow.dart';
 import '../wallet/base58.dart';
 import '../wallet/flash_solana.dart';
 import '../wallet/phantom.dart';
@@ -42,7 +43,9 @@ class TradeOutcome {
 /// that waits on a price or spreads over time, signed in MetaMask on
 /// Ethereum chains; Jupiter swaps and Flash orders on Solana, signed in
 /// Phantom. A send to an ENS name (or an address) on an Ethereum chain is
-/// one MetaMask transaction too. Glyf builds each request and checks each answer; it holds no
+/// one MetaMask transaction too. Anything across to or from a chain those
+/// can't reach (Solana and an EVM chain, Bitcoin, NEAR…) and every send to a
+/// .near name goes through NEAR Intents (lib/near). Glyf builds each request and checks each answer; it holds no
 /// key. Every number is asked for again here: the keyboard's quote was only
 /// for show.
 abstract final class TradeFlow {
@@ -63,13 +66,19 @@ abstract final class TradeFlow {
           detail: 'Swaps, orders and sends only. Send from Profile › Wallet'));
       return;
     }
-    if (kind == 'send' && onSolana) {
+    if (kind == 'send' && onSolana && q['venue'] != 'near') {
       // The keyboard hands a Solana send to Phantom's own send (path=pay).
       yield await _told(const TradeOutcome(TradeState.failed, 'Send it from Phantom',
           detail: 'Solana sends go through Profile › Wallet › Send'));
       return;
     }
     try {
+      if (q['venue'] == 'near') {
+        await for (final o in NearFlow.run(q)) {
+          yield o.state == TradeState.working ? o : await _told(o);
+        }
+        return;
+      }
       if (onSolana && kind == 'swap') {
         // Uniswap has no Solana pools here; Jupiter swaps there (as Uniswap's
         // own app does), signed in Phantom.
@@ -758,8 +767,7 @@ abstract final class TradeFlow {
     return null;
   }
 
-  /// ERC-20 transfer(address,uint256) calldata.
-  @visibleForTesting
+  /// ERC-20 transfer(address,uint256) calldata (a NEAR Intents deposit too).
   static String erc20Transfer(String to, BigInt amount) =>
       '0xa9059cbb${_word(to.substring(2))}${_word(amount.toRadixString(16))}';
 
