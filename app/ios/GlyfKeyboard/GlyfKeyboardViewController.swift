@@ -107,6 +107,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
     /// Flash, signed in the person's own wallet app.
     private var trade: TradeSurface?
     private var pendingTrade: TradeIntent?
+    /// The group pot over the keys (a Sputnik DAO): a look, or a payout to propose.
+    private var pot: PotSurface?
+    private var pendingPot: (ask: PotAsk, dao: String)?
     private var connector: ConnectorSurface?
     /// The Calendar tool: a month and the chosen day's events.
     private var calendarView: CalendarSurface?
@@ -143,7 +146,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
     private var cursorMirror: CursorMirror?
     private var lastCursorAdjust: CFTimeInterval = 0
 
-    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard, games, pay, trade }
+    private enum Surface: Equatable { case none, shell, bar, emoji, connector(String), search, noteEdit, act, clipboard, games, pay, trade, pot }
     private var surface: Surface = .none
 
     /// When set, key input routes into an inline editor (bar prompt / emoji search).
@@ -260,11 +263,12 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .pay where pay?.editingAmount == true: return base + PaySurface.editStripHeight
         // A trade value or a token search being typed: a strip over the keys.
         case .trade where trade?.editStripHeight != nil: return base + (trade?.editStripHeight ?? 0)
+        case .pot where pot?.editStripHeight != nil: return base + (pot?.editStripHeight ?? 0)
         // A New Event title being typed: its strip rides over the keys, like
         // emoji search.
         case .connector where calendarView?.editingTitle == true:
             return base + EventComposer.editStripHeight
-        case .shell, .connector, .act, .clipboard, .games, .pay, .trade: return base
+        case .shell, .connector, .act, .clipboard, .games, .pay, .trade, .pot: return base
         }
     }
 
@@ -777,6 +781,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
         // The trade's name stays up while a value is typed: the strip's
         // words are for the chat, not for a price.
         case .trade: return (trade?.headerIcon ?? "arrow.triangle.2.circlepath", trade?.headerTitle ?? "Trade")
+        case .pot: return (pot?.headerIcon, pot?.headerTitle ?? "Group pot")
         case .connector where connector?.searchActive != true: return ("calendar", "Calendar")
         default: return (nil, nil)
         }
@@ -995,6 +1000,19 @@ final class GlyfKeyboardViewController: UIInputViewController {
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
             keyboardView.isHidden = true
             trade?.frame = panelRect(w, h)
+        case .pot where pot?.editStripHeight != nil:
+            let stripH = pot?.editStripHeight ?? 0
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            keyboardView.isHidden = false
+            pot?.frame = CGRect(x: 0, y: Glass.toolbarHeight, width: w, height: stripH)
+            let potKeysY = Glass.toolbarHeight + stripH
+            keyboardView.frame = CGRect(x: 0, y: potKeysY, width: w, height: max(0, h - potKeysY))
+        case .pot:
+            toolbar.isHidden = false
+            toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
+            keyboardView.isHidden = true
+            pot?.frame = panelRect(w, h)
         case .connector:
             toolbar.isHidden = connector?.searchActive == true
             toolbar.frame = CGRect(x: 0, y: 0, width: w, height: Glass.toolbarHeight)
@@ -1076,7 +1094,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             for overlay in [self.shell, self.bar, self.emoji, self.connector,
                             self.search, self.noteEdit, self.hud, self.calendarView,
                             self.tonesPopup, self.act, self.clipStrip,
-                            self.clipboardPanel, self.games, self.pay, self.trade] as [UIView?] {
+                            self.clipboardPanel, self.games, self.pay, self.trade, self.pot] as [UIView?] {
                 overlay?.alpha = 1
             }
             self.view.layoutIfNeeded()
@@ -1128,6 +1146,10 @@ final class GlyfKeyboardViewController: UIInputViewController {
         case .pay:
             pay?.removeFromSuperview(); pay = nil
             // Closed mid-amount: the field's own keys again, not the pad.
+            keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
+            keyboardView.setMode(.letters)
+        case .pot:
+            pot?.removeFromSuperview(); pot = nil
             keyboardView.context = KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
             keyboardView.setMode(.letters)
         case .trade:
@@ -1239,6 +1261,15 @@ final class GlyfKeyboardViewController: UIInputViewController {
             prepareEntrance(t, animated: animated)
             trade = t
             MemoryLogger.logSurface("trade")
+        case .pot:
+            guard let p = pendingPot else { break }
+            pendingPot = nil
+            let s = PotSurface(ask: p.ask, dao: p.dao)
+            s.delegate = self
+            content.addSubview(s)
+            prepareEntrance(s, animated: animated)
+            pot = s
+            MemoryLogger.logSurface("pot")
         case .none:
             break
         }
@@ -1536,6 +1567,8 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return .other(close: "pay:close")
         case .trade:
             return .other(close: "trade:close")
+        case .pot:
+            return .other(close: "pot:close")
         case .bar:
             return .other(close: "bar:close|toolbar:close")
         }
@@ -1843,6 +1876,9 @@ final class GlyfKeyboardViewController: UIInputViewController {
             // A copied address still pastes; it just isn't paid.
             case .pay(_, _, _, let copied?)?, .buy(_, _, _, let copied?)?: chip = .paste(text: copied)
             case .pay?, .buy?, .trade?: chip = nil
+            // The pot and pay links are the wallet's too; a bill split is still sums.
+            case .action(_, _, let intent)? where intent.hasPrefix("near:"): chip = nil
+            case .convert(var c)? where c.request != nil: c.request = nil; chip = .convert(c)
             case .money(let shown, let insert, _)?: chip = .money(shown: shown, insert: insert, buy: nil)
             default: break
             }
@@ -2169,6 +2205,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
                 // The model named one of Glyf's tools: its chip opens that
                 // tool with the values filled in (AIAction).
                 guard let self, self.surface == .none, let chip = action.chip,
+                      GlyfToolbar.walletOn || !action.tool.hasPrefix("near."),
                       String((self.beforeContext ?? "").suffix(120))
                         .trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
                 self.suggestedFor = trimmed
@@ -2593,6 +2630,11 @@ extension GlyfKeyboardViewController: KeyboardViewDelegate {
         if inlineTarget != nil, surface == .trade {
             // Return = done with the value (or the search); Swap stays a tap.
             trade?.endEditing()
+            return
+        }
+        if inlineTarget != nil, surface == .pot {
+            // Return = done typing the account, which is then checked.
+            pot?.endEditing()
             return
         }
         if inlineTarget != nil, surface == .pay {
@@ -3601,6 +3643,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
             toolbar.showSmart(nil)
             useTempAddress()
             return
+        case .convert(let c) where c.request != nil:
+            // A bill split's card: its tap is its one answer; Request is beside it.
+            toolbarSmartChoiceTapped(chip, index: 0)
+            return
         case .details, .convert:
             // Its parts are the actions (toolbarSmartChoiceTapped).
             return
@@ -3609,6 +3655,26 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
         }
         if case .action(_, _, "pdfReady") = chip {
             toolbar.showSmart(nil)
+            return
+        }
+        // A line the strip says ("Add a wallet in Glyf to get paid"): read, put away.
+        if case .action(_, _, "note") = chip {
+            toolbar.showSmart(nil)
+            return
+        }
+        if case .action(_, let query, let intent) = chip, intent.hasPrefix("near:") {
+            suggestedChip = nil
+            suggestedFor = ""
+            let params = [String: String](chipQuery: query)
+            switch intent {
+            case "near:request":
+                if let ask = PayAsk(params: params) { requestPayLink(ask) } else { toolbar.showSmart(nil) }
+            case "near:pot", "near:pot.pay":
+                toolbar.showSmart(nil)
+                if let ask = PotAsk(params: params, pay: intent == "near:pot.pay") { openPot(ask) }
+            default:
+                toolbar.showSmart(nil)
+            }
             return
         }
         if case .action(_, _, "meet") = chip {
@@ -3745,6 +3811,10 @@ extension GlyfKeyboardViewController: ToolbarDelegate {
     func toolbarSmartExtraTapped(_ chip: Smart.Chip) {
         noteChipUsed(chip)
         switch chip {
+        case .convert(let c) where c.request != nil:
+            // "$22.50 each" · Request: a pay link for the bill, in the chat.
+            if let ask = c.request { requestPayLink(ask) }
+            return
         case .paste(let text) where TextPDF.offers(text):
             // A long copy as a PDF on the clipboard: the person pastes it in
             // the message box (a keyboard can't insert a file).
@@ -4650,6 +4720,78 @@ extension GlyfKeyboardViewController: TradeSurfaceDelegate {
     }
 }
 
+// MARK: - PotSurfaceDelegate
+
+extension GlyfKeyboardViewController: PotSurfaceDelegate {
+
+    /// The pot's line or the proposal's, in the chat as is; the panel goes.
+    func potInsert(_ text: String) {
+        setSurface(.none)
+        hostInsert(Self.spaced(text, after: beforeContext))
+        syncAutoShift()
+        updateCandidates()
+    }
+
+    /// Trezu, where members vote and file payouts with their own NEAR wallet.
+    func potOpen(_ url: String) {
+        guard let u = URL(string: url), u.scheme == "https" else { return }
+        HostAppOpener.open(u, from: self) { _ in }
+    }
+
+    /// The payee's account being typed: the letters come up under its strip.
+    func potLayoutChanged() {
+        guard surface == .pot else { return }
+        inlineTarget?.isActive = false
+        let editor = pot?.activeEditor
+        inlineTarget = editor
+        editor?.isActive = true
+        keyboardView.context = fieldContext
+        keyboardView.setMode(.letters)
+        if editor != nil { keyboardView.syncAutoShift(wantsCapital: false) }
+        applySurfaceLayout(animated: true)
+    }
+
+    /// The pot a chip means (the typed DAO, the saved pot, the word's), or
+    /// "Add your pot in Glyf" on the strip when there is none.
+    func openPot(_ ask: PotAsk) {
+        let s = SettingsStore.current
+        guard let dao = ask.daoAccount(saved: s.nearPot, account: s.nearAccount) else {
+            toolbar.showSmart(.action(label: PotAsk.noPot, query: "", intent: "note"))
+            return
+        }
+        pendingPot = (ask, dao)
+        setSurface(.pot)
+    }
+
+    /// The Request button (docs/NEAR-SPEC.md): POST /near/requests with
+    /// where this person is paid, then the answer's words at the cursor,
+    /// no toast. No wallet to be paid in: the strip says so and nothing is
+    /// posted; a refusal is said on the strip in the server's words.
+    func requestPayLink(_ ask: PayAsk) {
+        let s = SettingsStore.current
+        guard let r = PayAsk.receiver(chain: ask.chain, evm: s.evmAddress, solana: s.walletAddress, near: s.nearAccount) else {
+            toolbar.showSmart(.action(label: PayAsk.noWallet, query: "", intent: "note"))
+            return
+        }
+        toolbar.showSmart(.action(label: "Making the pay link…", query: "", intent: "note"))
+        _ = BackendClient.shared.evmJSONResult(path: "/near/requests", body: ask.body(to: r.to, chain: r.chain)) {
+            [weak self] ok, obj in
+            guard let self else { return }
+            if ok, let text = obj?["text"] as? String, !text.isEmpty {
+                self.suggestedChip = nil
+                self.suggestedFor = ""
+                self.toolbar.showSmart(nil)
+                self.hostInsert(Self.spaced(text, after: self.beforeContext))
+                self.syncAutoShift()
+                self.updateCandidates()
+            } else {
+                let words = (obj?["error"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Couldn't make the link. Try again"
+                self.toolbar.showSmart(.action(label: words, query: "", intent: "note"))
+            }
+        }
+    }
+}
+
 // MARK: - PaySurfaceDelegate
 
 extension GlyfKeyboardViewController: PaySurfaceDelegate {
@@ -4675,6 +4817,7 @@ extension GlyfKeyboardViewController: PaySurfaceDelegate {
         if surface == .pay, pay?.activeEditor != nil { return .decimalPad }
         if surface == .trade, trade?.wantsDecimalPad == true { return .decimalPad }
         if surface == .trade, trade?.activeEditor != nil { return KeyboardContext(keyboardType: .default) }
+        if surface == .pot, pot?.activeEditor != nil { return KeyboardContext(keyboardType: .default) }
         if surface == .noteEdit, let keys = noteEdit?.keysContext { return keys }
         return KeyboardContext(keyboardType: textDocumentProxy.keyboardType)
     }

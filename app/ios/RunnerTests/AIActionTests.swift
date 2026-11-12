@@ -156,4 +156,215 @@ extension AIActionTests {
         XCTAssertEqual(t.buy, "TSLA")
         XCTAssertEqual(t.chainName, "base")
     }
+
+    // MARK: NEAR Intents' tools (server lib/actions.ts, near: true)
+
+    func testNEARSwapAndSendOpenTheNEARPanelThroughTheWords() throws {
+        let swap = try XCTUnwrap(action("near.swap", ["sell": "USDC", "buy": "SOL", "amount": "20", "sellChain": "base"],
+                                        label: "Swap 20 USDC → SOL · NEAR Intents"))
+        guard case .trade(let t)? = swap.chip else { return XCTFail("no trade chip") }
+        XCTAssertTrue(t.isNear)
+        XCTAssertEqual(t.amount, "20")
+        XCTAssertEqual(t.chainName, "base")
+        XCTAssertEqual(t.buyChain, "solana")
+        XCTAssertEqual(t, TradeIntent.parse("swap 20 usdc on base to sol"))
+        // A coin with no chain sits at home, else on Base, as the server reads it.
+        let btc = try XCTUnwrap(action("near.swap", ["sell": "USDC", "buy": "BTC", "amount": 50])?.trade)
+        XCTAssertEqual(btc.buyChain, "bitcoin")
+        XCTAssertEqual(btc.buy, "BTC")
+        XCTAssertEqual(btc.chainName, "base")
+        // No amount heard: the panel opens without one (and never says "all").
+        let bare = try XCTUnwrap(action("near.swap", ["sell": "SOL", "buy": "USDC", "buyChain": "base"])?.trade)
+        XCTAssertNil(bare.amount)
+        XCTAssertEqual(bare.title, "Swap SOL → USDC")
+        // The same coin across chains is a move.
+        let move = try XCTUnwrap(action("near.swap", ["sell": "USDC", "buy": "USDC", "amount": 50, "buyChain": "solana"])?.trade)
+        XCTAssertEqual(move.title, "Move 50 USDC to Solana")
+        // A swap Uniswap does isn't NEAR's to open.
+        XCTAssertNil(action("near.swap", ["sell": "USDC", "buy": "ETH", "amount": 5, "sellChain": "base", "buyChain": "arbitrum"]))
+
+        let send = try XCTUnwrap(action("near.send", ["to": "alice.near", "amount": "5", "coin": "USDC"])?.trade)
+        XCTAssertEqual(send.kind, .send)
+        XCTAssertEqual(send.to, "alice.near")
+        XCTAssertEqual(send.buyChain, "near")
+        XCTAssertEqual(send.query["exact"], "out")
+        let withSol = try XCTUnwrap(action("near.send", ["to": "bob.near", "amount": 10, "coin": "USDC", "with": "SOL"])?.trade)
+        XCTAssertEqual(withSol.sell, "SOL")
+        XCTAssertEqual(withSol.chainName, "solana")
+        let arb = try XCTUnwrap(action("near.send", ["to": "bob.near", "amount": 10, "coin": "USDC", "with": "USDC",
+                                                    "withChain": "arbitrum"])?.trade)
+        XCTAssertEqual(arb.chainName, "arbitrum")
+        let fromSol = try XCTUnwrap(action("near.send", ["to": "bob.near", "amount": 10, "withChain": "solana"])?.trade)
+        XCTAssertEqual(fromSol.chainName, "solana")
+        XCTAssertEqual(fromSol.sell, "USDC")
+    }
+
+    func testNEAREarnOpensEarnMode() throws {
+        let fifty = try XCTUnwrap(action("near.earn", ["amount": "50", "coin": "USDC"])?.trade)
+        XCTAssertEqual(fifty.kind, .earn)
+        XCTAssertEqual(fifty, TradeIntent.parse("put $50 to work"))
+        let sol = try XCTUnwrap(action("near.earn", ["amount": 0.5, "coin": "SOL"])?.trade)
+        XCTAssertEqual(sol.chainName, "solana")
+        let out = try XCTUnwrap(action("near.earn", ["coin": "USDC", "out": true])?.trade)
+        XCTAssertTrue(out.earnOut)
+        XCTAssertNil(out.amount)
+        XCTAssertEqual(out.query["all"], "1")
+        let twenty = try XCTUnwrap(action("near.earn", ["coin": "USDC", "amount": 20, "out": true, "chain": "solana"])?.trade)
+        XCTAssertEqual(twenty.amount, "20")
+        XCTAssertEqual(twenty.chainName, "solana")
+        // No amount going in: the panel asks for it.
+        let bare = try XCTUnwrap(action("near.earn", ["coin": "USDC"])?.trade)
+        XCTAssertNil(bare.amount)
+        XCTAssertFalse(bare.earnOut)
+        XCTAssertEqual(bare.title, "Put USDC to work")
+    }
+
+    func testNEARRequestAndThePotAreChipsWithTheirParams() throws {
+        let req = try XCTUnwrap(action("near.request", ["amount": "90", "count": 4, "us": true, "note": "dinner"],
+                                       label: "Request $22.50 each · NEAR Intents"))
+        guard case .action(let label, let query, let intent)? = req.chip else { return XCTFail("no request chip") }
+        XCTAssertEqual(label, "Request $22.50 each · NEAR Intents")
+        XCTAssertEqual(intent, "near:request")
+        XCTAssertEqual(req.chip?.verb, "Request")
+        let ask = try XCTUnwrap(PayAsk(params: [String: String](chipQuery: query)))
+        XCTAssertEqual(ask, PayAsk(amount: "90", count: 4, us: true, note: "dinner"))
+        XCTAssertNil(action("near.request", ["note": "dinner"]))
+
+        let pot = try XCTUnwrap(action("near.pot", ["pot": "trip"], label: "See the trip pot · Sputnik DAO"))
+        guard case .action(_, let pq, "near:pot")? = pot.chip else { return XCTFail("no pot chip") }
+        XCTAssertEqual(PotAsk(params: [String: String](chipQuery: pq), pay: false)?.pot, "trip")
+        XCTAssertEqual(pot.chip?.verb, "See")
+        let pay = try XCTUnwrap(action("near.pot.pay", ["to": "the caterer", "amount": "120", "coin": "USDC"],
+                                       label: "Propose $120 to caterer from the pot · Sputnik DAO"))
+        guard case .action(_, let payQuery, "near:pot.pay")? = pay.chip else { return XCTFail("no payout chip") }
+        let payAsk = try XCTUnwrap(PotAsk(params: [String: String](chipQuery: payQuery), pay: true))
+        XCTAssertEqual(payAsk.to, "the caterer")
+        XCTAssertEqual(payAsk.amount, "120")
+        XCTAssertEqual(pay.chip?.verb, "Propose")
+        XCTAssertNil(action("near.pot.pay", ["amount": "120"]))
+    }
+
+    // MARK: pay links (NearPay.swift)
+
+    /// Where the requester is paid: the wallet on the chain asked, else
+    /// MetaMask on Base, else the NEAR account; none, nothing is posted.
+    func testTheRequesterIsPaidInTheirOwnWallet() throws {
+        let r = { (chain: String?, evm: String?, sol: String?, near: String?) in
+            PayAsk.receiver(chain: chain, evm: evm, solana: sol, near: near).map { "\($0.to)@\($0.chain)" } }
+        XCTAssertEqual(r("solana", "0xab", "7xKX", "me.near"), "7xKX@solana")
+        XCTAssertEqual(r("arbitrum", "0xab", "7xKX", nil), "0xab@arbitrum")
+        XCTAssertEqual(r("near", "0xab", nil, "me.near"), "me.near@near")
+        XCTAssertEqual(r(nil, "0xab", "7xKX", "me.near"), "0xab@base")
+        XCTAssertEqual(r(nil, nil, "7xKX", "trip.sputnik-dao.near"), "trip.sputnik-dao.near@near")
+        XCTAssertNil(r("solana", "0xab", nil, nil))
+        XCTAssertNil(r(nil, nil, "7xKX", nil))
+        XCTAssertEqual(PayAsk.noWallet, "Add a wallet in Glyf to get paid")
+        let body = PayAsk(amount: "90", count: 4, us: true, note: "dinner").body(to: "0xab", chain: "base")
+        XCTAssertEqual(body["amount"] as? String, "90")
+        XCTAssertEqual(body["count"] as? Int, 4)
+        XCTAssertEqual(body["us"] as? Bool, true)
+        XCTAssertEqual(body["note"] as? String, "dinner")
+        XCTAssertEqual(body["to"] as? String, "0xab")
+        XCTAssertEqual(body["chain"] as? String, "base")
+        XCTAssertNil(body["each"])
+        let each = PayAsk(params: ["amount": "22.5", "each": "true", "count": "4", "chain": "solana"])
+        XCTAssertEqual(each?.body(to: "7xKX", chain: "solana")["each"] as? Bool, true)
+    }
+
+    /// The bill split's chip asks for the money: one card, Insert and Request.
+    func testABillSplitInDollarsCanBeRequested() throws {
+        let c = try XCTUnwrap(Smart.billMath(in: "dinner was $90 for 4 of us"))
+        XCTAssertEqual(c.results, ["$22.50 each"])
+        XCTAssertEqual(c.request, PayAsk(amount: "90", count: 4, us: true, note: "dinner"))
+        let chip = Smart.Chip.convert(c)
+        XCTAssertNil(chip.choices)
+        XCTAssertEqual(chip.verb, "Insert")
+        XCTAssertEqual(chip.extra, "Request")
+        XCTAssertEqual(Smart.billMath(in: "the cabin is $1,200 for 6 people")?.request,
+                       PayAsk(amount: "1200", count: 6, note: "cabin"))
+        XCTAssertEqual(Smart.billMath(in: "split the cab $60 3 ways")?.request?.note, "cab")
+        XCTAssertNil(Smart.billMath(in: "split the bill $60 3 ways")?.request?.note)
+        XCTAssertEqual(Smart.billMath(in: "split $90 between 4 people")?.request?.us, false)
+        // Rupees aren't asked for: a pay link is paid in dollars.
+        let rupees = try XCTUnwrap(Smart.billMath(in: "split ₹900 between 4 people"))
+        XCTAssertNil(rupees.request)
+        XCTAssertNotNil(Smart.Chip.convert(rupees).choices)
+    }
+
+    // MARK: the group pot
+
+    func testPotPhrasesAreReadOnThePhone() throws {
+        XCTAssertEqual(PotAsk.parse("how much is in the trip pot"), PotAsk(pay: false, pot: "trip"))
+        XCTAssertEqual(PotAsk.parse("what's in the pot?"), PotAsk(pay: false))
+        XCTAssertEqual(PotAsk.parse("check the trip pot"), PotAsk(pay: false, pot: "trip"))
+        XCTAssertEqual(PotAsk.parse("pot balance"), PotAsk(pay: false))
+        XCTAssertEqual(PotAsk.parse("how much is in build.sputnik-dao.near"), PotAsk(pay: false, dao: "build.sputnik-dao.near"))
+        XCTAssertEqual(PotAsk.parse("pay the caterer $120 from the pot"),
+                       PotAsk(pay: true, to: "the caterer", amount: "120", coin: "USDC"))
+        XCTAssertEqual(PotAsk.parse("pay caterer.near 120 usdc from the trip pot for catering"),
+                       PotAsk(pay: true, pot: "trip", to: "caterer.near", amount: "120", coin: "USDC", note: "catering"))
+        XCTAssertEqual(PotAsk.parse("send bob.near 5 near out of the pot"),
+                       PotAsk(pay: true, to: "bob.near", amount: "5", coin: "NEAR"))
+        for t in ["pay the caterer $120", "the pot is on the stove", "take it out"] { XCTAssertNil(PotAsk.parse(t), t) }
+        guard case .action(let label, _, "near:pot")? = Smart.chip(for: "how much is in the trip pot", fields: []) else {
+            return XCTFail("no pot chip")
+        }
+        XCTAssertEqual(label, "See the trip pot · Sputnik DAO")
+        guard case .action(let payLabel, _, "near:pot.pay")? = Smart.chip(for: "pay the caterer $120 from the pot", fields: []) else {
+            return XCTFail("no payout chip")
+        }
+        XCTAssertEqual(payLabel, "Propose $120 to caterer from the pot · Sputnik DAO")
+        XCTAssertEqual(PotAsk(pay: true, to: "bob.near", amount: "5", coin: "NEAR", note: nil).label,
+                       "Propose 5 NEAR to bob.near from the pot · Sputnik DAO")
+    }
+
+    /// Which pot a chip means: the typed DAO, the saved pot, a Sputnik DAO
+    /// saved as the NEAR account, then the word's.
+    func testWhichPot() {
+        let trip = PotAsk(pay: false, pot: "trip")
+        XCTAssertEqual(trip.daoAccount(saved: "lisbon.sputnik-dao.near", account: nil), "lisbon.sputnik-dao.near")
+        XCTAssertEqual(trip.daoAccount(saved: nil, account: "club.sputnik-dao.near"), "club.sputnik-dao.near")
+        XCTAssertEqual(trip.daoAccount(saved: nil, account: "me.near"), "trip.sputnik-dao.near")
+        XCTAssertEqual(PotAsk(pay: false, dao: "build.sputnik-dao.near").daoAccount(saved: "x.sputnik-dao.near", account: nil),
+                       "build.sputnik-dao.near")
+        XCTAssertNil(PotAsk(pay: false).daoAccount(saved: nil, account: "me.near"))
+        XCTAssertEqual(PotAsk.noPot, "Add your pot in Glyf")
+        XCTAssertTrue(PotAsk.isNEARAccount("caterer.near"))
+        XCTAssertFalse(PotAsk.isNEARAccount("the caterer"))
+    }
+
+    /// GET /near/pot (shaped like build.sputnik-dao.near's) and
+    /// GET /near/pot/propose-link, as the pot card says them.
+    func testThePotCardReads() throws {
+        let pot: [String: Any] = ["ok": true, "dao": "trip.sputnik-dao.near",
+            "text": "The trip pot holds 42.5 NEAR · 140.5 USDC. 4 members, payouts need 2 of 3. 2 proposals open",
+            "links": ["trezu": "https://trezu.app/trip.sputnik-dao.near/dashboard"],
+            "proposals": [
+                ["id": 5, "kind": "Transfer", "description": "Caterer", "amount": "12.5", "coin": "NEAR",
+                 "receiver": "caterer.near", "status": "InProgress", "approvalsNeeded": 1,
+                 "url": "https://trezu.app/trip.sputnik-dao.near/requests/5"],
+                ["id": 4, "kind": "AddMemberToRole", "description": "Add dee\nPlease", "status": "InProgress",
+                 "approvalsNeeded": 2, "url": "https://trezu.app/trip.sputnik-dao.near/requests/4"],
+                ["id": 3, "kind": "Transfer", "amount": "1", "coin": "USDC", "receiver": "x.near", "status": "Approved"]]]
+        let v = PotView(ok: true, pot)
+        XCTAssertEqual(v.text, "The trip pot holds 42.5 NEAR · 140.5 USDC. 4 members, payouts need 2 of 3. 2 proposals open")
+        XCTAssertEqual(v.open.map(\.line), ["#5 12.5 NEAR to caterer.near · 1 more approval", "#4 Add dee · 2 more approvals"])
+        XCTAssertEqual(v.open.first?.url, "https://trezu.app/trip.sputnik-dao.near/requests/5")
+        XCTAssertEqual(PotView(ok: false, ["ok": false, "error": "No Sputnik DAO nope.sputnik-dao.near"]).error,
+                       "No Sputnik DAO nope.sputnik-dao.near")
+
+        let link: [String: Any] = ["ok": true, "url": "https://trezu.app/trip.sputnik-dao.near/payments?address=caterer.near&token=usdc",
+            "fill": ["amount": "120", "coin": "USDC", "note": "catering"],
+            "text": "Proposing 120 USDC to caterer.near from the trip pot for catering. Vote: https://trezu.app/trip.sputnik-dao.near/requests",
+            "bond": "0.1", "proposers": "everyone", "threshold": ["words": "2 of 3"]]
+        let p = PotProposal(ok: true, link, to: "caterer.near", account: nil)
+        XCTAssertEqual(p.headline, "Propose $120 to caterer.near · needs 2 of 3 · bond 0.1 NEAR")
+        XCTAssertEqual(p.fill, "Type 120 USDC, note: catering")
+        XCTAssertFalse(p.notMember)
+        var members = link
+        members["proposers"] = ["ana.near", "ben.near"]
+        XCTAssertTrue(PotProposal(ok: true, members, to: "caterer.near", account: "me.near").notMember)
+        XCTAssertFalse(PotProposal(ok: true, members, to: "caterer.near", account: "Ben.near").notMember)
+        XCTAssertEqual(PotProposal.membersOnly, "Only members can propose from this pot")
+    }
 }

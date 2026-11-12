@@ -68,6 +68,8 @@ enum Smart {
         var choices: (values: [String], temp: Bool)? {
             switch self {
             case .details(let fields, let temp, _): return (fields.map(\.shown), temp)
+            // A bill split that can ask for the money is one card, with Request.
+            case .convert(let c) where c.request != nil: return nil
             case .convert(let c): return (c.results, false)
             default: return nil
             }
@@ -98,9 +100,15 @@ enum Smart {
             case .paste: return "Paste"
             case .pay(_, _, _, let copied): return copied == nil ? "Send" : "Paste"
             case .buy(_, _, _, let copied): return copied == nil ? "Buy" : "Paste"
+            // NEAR's chips say what the tap does: ask for the money, look in
+            // the pot, propose a payout from it.
+            case .action(_, _, "near:request"): return "Request"
+            case .action(_, _, "near:pot"): return "See"
+            case .action(_, _, "near:pot.pay"): return "Propose"
             case .action: return nil
             case .tempMail(_, _, let code): return code == nil ? "Open" : "Insert"
             case .tempAddress(let live): return live == nil ? "Create" : "Insert"
+            case .convert(let c) where c.request != nil: return "Insert"
             case .details, .convert: return nil    // each part is its own action
             case .trade(let t):
                 switch t.kind {
@@ -108,6 +116,7 @@ enum Smart {
                 case .swap: return t.amountIsUSD || t.buyAmount != nil ? "Buy" : "Swap"
                 case .bridge: return "Move"
                 case .send: return "Send"
+                case .earn: return t.earnOut ? "Take out" : "Earn"
                 default: return "Set"
                 }
             }
@@ -118,6 +127,7 @@ enum Smart {
             switch self {
             case .money(_, _, let mint): return mint == nil ? nil : "Buy"
             case .paste(let t): return TextPDF.offers(t) ? "PDF" : nil
+            case .convert(let c): return c.request == nil ? nil : "Request"
             case .pay(_, _, _, let copied): return copied == nil ? nil : "Send"
             case .buy(_, _, _, let copied): return copied == nil ? nil : "Buy"
             default: return nil
@@ -170,6 +180,7 @@ enum Smart {
             case .convert(let c):
                 return c.source.isEmpty ? c.results.joined(separator: " · ") : "\(c.source) = " + c.results.joined(separator: " · ")
             // NEAR Intents crosses chains: "Swap 20 USDC → SOL · Base → Solana".
+            case .trade(let t) where t.kind == .earn: return t.title + " · " + t.earnProtocol
             case .trade(let t): return t.title + " · " + (t.isNear ? t.route : t.chainLabel)
             }
         }
@@ -323,6 +334,10 @@ enum Smart {
         }
         // A trade said in words: swaps and orders.
         if let t = TradeIntent.parse(text) { return .trade(t) }
+        // The group pot, in words: a look, or a payout to propose.
+        if let p = PotAsk.parse(text) {
+            return .action(label: p.label, query: p.params.chipQuery, intent: p.pay ? "near:pot.pay" : "near:pot")
+        }
         // A link longer than the strip's view of the message: its trackers.
         if let context = linkContext, context.count > text.count, endsInLink(text), let c = cleanLink(in: context) {
             return .convert(c)
@@ -1603,6 +1618,8 @@ extension Smart {
         var inserts: [String]? = nil
         /// How each goes in; in brackets after what was typed when nil.
         var hows: [Insertion]? = nil
+        /// A bill split in dollars: the pay link a Request asks for.
+        var request: PayAsk? = nil
 
         func insert(_ i: Int) -> String { inserts.flatMap { i < $0.count ? $0[i] : nil } ?? results[i] }
         func how(_ i: Int) -> Insertion { hows.flatMap { i < $0.count ? $0[i] : nil } ?? .bracket }
@@ -2416,7 +2433,10 @@ extension Smart {
         for p in splits {
             guard let g = firstMatch(p, in: text), let bill = number(g[2]), let n = headcount(g[3]), n >= 2, n <= 50 else { continue }
             let s = g[1] ?? ""
-            return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces), results: ["\(billMoney(bill / n, s)) each"])
+            // Dollars can be asked for: a pay link paid in USDC.
+            let ask = s == "$" ? PayAsk.split(text: text, total: bill, count: Int(n)) : nil
+            return Conversions(source: g[0]!.trimmingCharacters(in: .whitespaces), results: ["\(billMoney(bill / n, s)) each"],
+                               request: ask)
         }
         // (percent, sign, amount) or (sign, amount, percent)
         func pick(_ g: [String?], percentFirst: Bool) -> (Double, String, Double)? {

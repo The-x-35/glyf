@@ -473,7 +473,8 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         // The kinds of detail saved, never the details.
         if !kinds.isEmpty { body["kinds"] = kinds }
         // This phone opens a tool prefilled from the model's action (AIAction).
-        if onAction != nil { body["actions"] = true }
+        // It also opens NEAR Intents' tools (near.swap … near.pot.pay).
+        if onAction != nil { body["actions"] = true; body["near"] = true }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         let task = session.dataTask(with: req) { data, _, _ in
             let reply = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }

@@ -34,6 +34,10 @@ struct TradeIntent: Equatable {
         /// vitalik.eth". MetaMask sends it on Ethereum chains, Phantom on
         /// Solana (a .sol name, or SOL itself).
         case send
+        /// NEAR Intents Earn: idle USDC or SOL into a yield vault ("put $50
+        /// to work"), or back out of it ("take my usdc out of earn").
+        /// `sell` is the coin, `chain` where it is (in) or lands (out).
+        case earn
     }
 
     var kind: Kind
@@ -78,6 +82,12 @@ struct TradeIntent: Equatable {
     /// name is lowercased; the panel looks up its address before anything
     /// is signed).
     var to: String?
+    /// Earn: out of the vault rather than into it. Out with no amount is
+    /// everything in it (the app reads the share balance).
+    var earnOut = false
+    /// Earn: the vault named (gtusdcp, kamino-sol, taler-usdc); nil is the
+    /// coin's own (USDC → Gauntlet USDC Prime, SOL → Kamino SOL Balanced).
+    var vault: String?
 
     /// A starter whose price waits on the market's.
     var awaitingPrice: Bool {
@@ -130,9 +140,14 @@ struct TradeIntent: Equatable {
         switch kind {
         case .swap where isNear:
             // The chains are the detail's: "Base → Solana · NEAR Intents".
-            return sell == buy ? "Move \(amountText) to \(Self.label(buyChain))" : "Swap \(amountText) → \(buy)"
+            // No amount yet (the strip's AI heard none): the coin alone, never "all".
+            let what = amount == nil && buyAmount == nil ? sell : amountText
+            return sell == buy ? "Move \(what) to \(Self.label(buyChain))" : "Swap \(what) → \(buy)"
         case .send where isNear:
             return "Send \(amount ?? "") \(buy) to \(to.map(Self.shortRecipient) ?? "")"
+        case .earn:
+            if !earnOut { return "Put \(amount.map { "\($0) " } ?? "")\(sell) to work" }
+            return amount.map { "Take \($0) \(sell) out of Earn" } ?? "Take your \(sell) out of Earn"
         case .swap:
             if amountIsUSD { return "Buy \(amountText)" }
             if buyAmount != nil { return "Buy \(amountText) with \(sell)" }
@@ -167,6 +182,7 @@ struct TradeIntent: Equatable {
 
     /// Under the title: where and through whom.
     var detail: String {
+        if kind == .earn { return "\(earnProtocol) · NEAR Intents" }
         if isNear { return "\(route) · NEAR Intents" }
         switch kind {
         case .bridge: return "\(chainLabel) → \(Self.chainLabels[toChain ?? ""] ?? "") · Flash"
@@ -178,6 +194,7 @@ struct TradeIntent: Equatable {
 
     /// The app's words for it (glyf://open?path=trade?…).
     var query: [String: String] {
+        if kind == .earn { return earnQuery }
         var q = ["kind": kind.rawValue, "sell": sell, "buy": buy, "chain": chainName]
         if let amount { q["amount"] = amount }
         if amountIsUSD { q["usd"] = "1" }
@@ -273,14 +290,16 @@ struct TradeIntent: Equatable {
         // Cheap test first: every pattern has one of these words.
         let lower = t.lowercased()
         let words = ["swap", "convert", "trade", "buy", "sell", "stop", "take profit", "tp ", "trail",
-                     "dca", "move", "bridge", "send", "pay", "transfer", "protect", "limit", "invest", "stack", "put"]
+                     "dca", "move", "bridge", "send", "pay", "transfer", "protect", "limit", "invest", "stack", "put",
+                     "earn", "park", "stash", "deposit", "stake", "take", "pull", "get", "withdraw", "cash"]
         guard words.contains(where: lower.contains) else { return nil }
         // A schedule longer than Flash's 30-day TWAP is a recurring plan.
         let spread = twap(t).flatMap { ($0.durationSeconds ?? 0) <= RecurringPlan.flashMaxSeconds ? $0 : nil }
         // NEAR Intents reads first only what nothing else carries (each of
         // its readers gives nil for a trade Uniswap or Flash would take).
         let viaNear = { (read: (String) -> TradeIntent?) -> TradeIntent? in near ? read(t) : nil }
-        guard var r = bracket(t) ?? orders(t) ?? spread ?? recurring(t) ?? viaNear(nearMove) ?? bridgeMove(t)
+        let first: TradeIntent? = viaNear(nearEarn) ?? bracket(t) ?? orders(t)
+        guard var r = first ?? spread ?? recurring(t) ?? viaNear(nearMove) ?? bridgeMove(t)
                 ?? viaNear(nearSend) ?? send(t) ?? viaNear(nearSwap) ?? swap(t)
         else { return nil }
         // A share trades on Base, by its address there.
@@ -639,6 +658,15 @@ extension TradeIntent {
     static func missingWallet(_ i: TradeIntent, evm: String?, solana: String?, near: String?) -> String? {
         let has = { (s: String?) in !(s ?? "").isEmpty }
         let chain = i.chainName
+        // Earn needs the wallet the coins leave (or land in) and the one
+        // the vault's shares sit in, on the vault's chain.
+        if i.kind == .earn {
+            for c in [chain, i.earnVaultChain] {
+                if c == "solana", !has(solana) { return walletName(chain: c) }
+                if evmChains.contains(c), !has(evm) { return walletName(chain: c) }
+            }
+            return nil
+        }
         if chain == "solana" { return has(solana) ? nil : walletName(chain: chain) }
         if evmChains.contains(chain) { if !has(evm) { return walletName(chain: chain) } }
         if i.isNear, chain == "near", !has(near) { return walletName(chain: "near") }
@@ -700,6 +728,7 @@ extension TradeIntent {
         switch kind {
         case .swap: return Self.nearRoute(chainName, buyChain ?? chainName)
         case .send: return buyChain != nil && buyChain != chainName
+        case .earn: return true
         default: return false
         }
     }
@@ -903,5 +932,180 @@ struct NearQuote: Equatable {
     var time: String? {
         guard let s = seconds, s > 0 else { return nil }
         return s < 90 ? "~\(s) s" : "~\(Int((Double(s) / 60).rounded())) min"
+    }
+}
+
+// MARK: NEAR Intents Earn
+
+extension TradeIntent {
+
+    /// The coins' own pictures (CoinGecko's), for a coin no token list here
+    /// carries: BTC, ZEC and NEAR on their own chains, and the dollars
+    /// beside them, so a NEAR Intents panel shows logos, not letters.
+    static let coinLogos: [String: String] = [
+        "BTC": "https://assets.coingecko.com/coins/images/1/large/bitcoin.png",
+        "ETH": "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
+        "USDC": "https://assets.coingecko.com/coins/images/6319/large/usdc.png",
+        "USDT": "https://assets.coingecko.com/coins/images/325/large/Tether.png",
+        "SOL": "https://assets.coingecko.com/coins/images/4128/large/solana.png",
+        "NEAR": "https://assets.coingecko.com/coins/images/10365/large/near.jpg",
+        "ZEC": "https://assets.coingecko.com/coins/images/486/large/circle-zcash-color.png",
+        "TON": "https://assets.coingecko.com/coins/images/17980/large/ton_symbol.png",
+        "TRX": "https://assets.coingecko.com/coins/images/1094/large/tron-logo.png",
+        "XRP": "https://assets.coingecko.com/coins/images/44/large/xrp-symbol-white-128.png",
+        "DOGE": "https://assets.coingecko.com/coins/images/5/large/dogecoin.png",
+        "LTC": "https://assets.coingecko.com/coins/images/2/large/litecoin.png",
+        "SUI": "https://assets.coingecko.com/coins/images/26375/large/sui-ocean-square.png",
+        "APT": "https://assets.coingecko.com/coins/images/26455/large/aptos_round.png",
+        "XLM": "https://assets.coingecko.com/coins/images/100/large/Stellar_symbol_black_RGB.png",
+        "ADA": "https://assets.coingecko.com/coins/images/975/large/cardano.png",
+        "BNB": "https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png",
+        "AVAX": "https://assets.coingecko.com/coins/images/12559/large/Avalanche_Circle_RedWhite_Trans.png",
+        "DAI": "https://assets.coingecko.com/coins/images/9956/large/Badge_Dai.png",
+    ]
+
+
+    /// The vaults Earn offers (server lib/nearearn.ts): their chain and who
+    /// runs them. USDC's own is Gauntlet USDC Prime, SOL's Kamino SOL Balanced.
+    static let earnVaults: [String: (chain: String, protocol: String, coin: String)] = [
+        "gtusdcp": ("base", "Morpho", "USDC"),
+        "kamino-sol": ("solana", "Kamino", "SOL"),
+        "taler-usdc": ("ethereum", "Taler", "USDC"),
+    ]
+
+    /// The vault an Earn trade means: the one named, else the coin's own.
+    var earnVault: String { vault ?? (sell == "SOL" ? "kamino-sol" : "gtusdcp") }
+    /// Where the vault's shares sit: the wallet there holds them.
+    var earnVaultChain: String { Self.earnVaults[earnVault]?.chain ?? "base" }
+    /// Who runs it: "Morpho", "Kamino".
+    var earnProtocol: String { Self.earnVaults[earnVault]?.protocol ?? "Morpho" }
+
+    /// An Earn trade, as the strip's AI or the words give it. The chain
+    /// unsaid is the vault's own; a coin Earn doesn't take, or a chain it
+    /// isn't on, is nil.
+    static func earn(coin: String, amount: String?, out: Bool, chain: String?, vault: String? = nil) -> TradeIntent? {
+        let c = coin.uppercased().replacingOccurrences(of: "$", with: "")
+        guard c == "USDC" || c == "SOL" else { return nil }
+        if let vault, earnVaults[vault]?.coin != c { return nil }
+        var i = TradeIntent(kind: .earn, amount: amount.flatMap { Self.amount($0) }, sell: c, buy: c, chain: nil)
+        i.earnOut = out
+        i.vault = vault
+        let at = chain ?? i.earnVaultChain
+        guard nearHas(c, on: at), evmChains.contains(at) || at == "solana" else { return nil }
+        i.chain = at
+        return i
+    }
+
+    /// The app's words for it: glyf://open?path=trade?venue=near&kind=earn&…
+    /// (docs/NEAR-SPEC.md, Hand-off: Earn). Out with no amount is all=1.
+    var earnQuery: [String: String] {
+        var q = ["venue": "near", "kind": "earn", "direction": earnOut ? "out" : "in", "coin": sell, "chain": chainName]
+        if let amount { q["amount"] = amount } else if earnOut { q["all"] = "1" }
+        if let vault { q["vault"] = vault }
+        return q
+    }
+
+    private static let earnMoney = #"(?:\$\s?(\d+(?:\.\d+)?|\.\d+)|(\d+(?:\.\d+)?|\.\d+)\s*(usdc|sol|dollars|bucks))"#
+    private static let earnOn = #"(?:\s+(?:on|from|in)\s+(?!earn\b|savings\b|yield\b|a\s)([a-z]+))?"#
+
+    /// The words for Earn (server lib/nearphrase.ts parseEarnPhrase, the
+    /// same phrases): "put $50 to work", "earn yield on $50", "park 50 usdc
+    /// on base", "stake .5 sol in a vault"; "take my usdc out of earn",
+    /// "withdraw $20 from earn", "take 20 usdc out of earn to solana".
+    /// "$", dollars and bucks are USDC. "put the kids to work" and "park the
+    /// car" have no amount and coin, so they stay words.
+    static func nearEarn(_ t: String) -> TradeIntent? {
+        let ins = [
+            #"(?:put|set)\s+(?:my\s+)?"# + earnMoney + earnOn + #"\s+to\s+work"#,
+            #"(?:start\s+)?earn(?:ing)?(?:\s+(?:yield|interest))?\s+(?:on|with|from)\s+(?:my\s+)?"# + earnMoney + earnOn,
+            #"(?:park|stash|deposit|stake)\s+(?:my\s+)?"# + earnMoney + earnOn
+                + #"(?:\s+(?:in|into)\s+(?:earn|a vault|savings|yield))?"#,
+        ]
+        for p in ins {
+            guard let m = match(start + p + end, t) else { continue }
+            return earnRead(dollars: m[1], amount: m[2], coin: m[3], chain: m[4], out: false)
+        }
+        let out = #"(?:take|pull|get|withdraw|cash)\s+(?:out\s+)?(?:my\s+|all\s+(?:my\s+)?)?(?:"# + earnMoney
+            + #"|(usdc|sol|\$))(?:\s+(?:back\s+)?out)?\s+(?:of|from)\s+(?:earn|the vault|savings|yield)(?:\s+(?:to|on|into)\s+([a-z]+))?"#
+        guard let m = match(start + out + end, t) else { return nil }
+        return earnRead(dollars: m[1], amount: m[2], coin: m[3] ?? m[4], chain: m[5], out: true)
+    }
+
+    private static func earnRead(dollars: String?, amount: String?, coin: String?, chain: String?, out: Bool) -> TradeIntent? {
+        let word = coin?.lowercased()
+        let symbol = dollars != nil || word == nil || ["usdc", "dollars", "bucks", "$"].contains(word!) ? "USDC"
+            : word == "sol" ? "SOL" : nil
+        guard let symbol else { return nil }
+        var at: String?
+        if let chain {
+            guard let c = nearChainWords[chain.lowercased()] else { return nil }
+            at = c
+        }
+        return earn(coin: symbol, amount: dollars ?? amount, out: out, chain: at)
+    }
+}
+
+/// What POST /near/earn/quote said (or GET /near/earn/vaults, for
+/// everything out), as the trade panel's Earn mode shows it. Pure, so
+/// RunnerTests pins how an answer reads.
+struct EarnQuote: Equatable {
+    /// "≈ $49.75 in Gauntlet USDC Prime at 4.5% APY".
+    var words: String?
+    var vaultName: String?
+    var protocolName: String?
+    /// Percent a year; nil when the vault's own API didn't say.
+    var apy: Double?
+    var seconds: Int?
+    var error: String?
+
+    init(ok: Bool, _ obj: [String: Any]?) {
+        guard ok, let obj, obj["ok"] as? Bool != false else {
+            let words = obj?["error"] as? String
+            error = (words?.isEmpty ?? true) ? "No quote right now" : words
+            return
+        }
+        words = obj["words"] as? String
+        let vault = obj["vault"] as? [String: Any]
+        vaultName = vault?["name"] as? String
+        protocolName = vault?["protocol"] as? String
+        apy = TradeSurfaceNumbers.number(vault?["apy"])
+        seconds = TradeSurfaceNumbers.number(obj["timeSeconds"]).map { Int($0.rounded()) }
+    }
+
+    /// GET /near/earn/vaults' row for `id`: the vault without a quote.
+    init(vault id: String, list obj: [String: Any]?) {
+        let row = (obj?["vaults"] as? [[String: Any]])?.first { $0["id"] as? String == id }
+        vaultName = row?["name"] as? String
+        protocolName = row?["protocol"] as? String
+        apy = TradeSurfaceNumbers.number(row?["apy"])
+    }
+
+    /// "4.5% APY", or "APY n/a" when no one said.
+    var apyText: String {
+        guard let apy else { return "APY n/a" }
+        return "\(TradeIntent.trimmed((apy * 100).rounded() / 100))% APY"
+    }
+
+    /// "Morpho · 4.5% APY".
+    func vaultLine(fallback: String) -> String { "\(protocolName ?? fallback) · \(apyText)" }
+
+    /// "~52 s", "~2 min".
+    var time: String? {
+        guard let s = seconds, s > 0 else { return nil }
+        return s < 90 ? "~\(s) s" : "~\(Int((Double(s) / 60).rounded())) min"
+    }
+
+    /// 1Click's ToS §7, in a line.
+    static let notice = "Yield isn't guaranteed; NEAR Intents doesn't run the vault"
+}
+
+/// Numbers as the server sends them: a number or a string.
+enum TradeSurfaceNumbers {
+    static func number(_ any: Any?) -> Double? {
+        if let d = any as? Double { return d }
+        if let i = any as? Int { return Double(i) }
+        if let n = any as? NSNumber { return n.doubleValue }
+        if let s = any as? String { return Double(s) }
+        return nil
     }
 }

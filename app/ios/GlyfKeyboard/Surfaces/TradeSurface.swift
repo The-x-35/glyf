@@ -98,6 +98,10 @@ final class TradeSurface: UIView {
     private var marketPrice: Double?
     /// NEAR Intents' answer (time, what's paid for a send, Guard's words).
     private var near: NearQuote?
+    /// Earn's answer (its words, vault, APY, time), in Earn mode.
+    private var earn: EarnQuote?
+    /// GET /near/earn/vaults, read once a session (everything out has no quote).
+    private static var vaultList: [String: Any]?
     /// Whole tokens held by symbol, per chain, once /evm/balances answers.
     private var held: [String: [String: Double]] = [:]
     private var asking = true
@@ -137,6 +141,8 @@ final class TradeSurface: UIView {
     /// The panel quotes it as it changes: a swap, or a NEAR Intents send.
     private var quotes: Bool { isSwap || intent.isNear }
     private var nearSend: Bool { intent.kind == .send && intent.isNear }
+    /// Earn mode: idle coins into a vault, or back out (NEAR Intents Earn).
+    private var isEarn: Bool { intent.kind == .earn }
     private var buyChain: String { intent.buyChain ?? intent.chainName }
 
     init(intent: TradeIntent) {
@@ -174,6 +180,7 @@ final class TradeSurface: UIView {
         case .twap: return "TWAP"
         case .bridge: return "Bridge"
         case .send: return "Send"
+        case .earn: return intent.earnOut ? "Take out of Earn" : "Earn"
         }
     }
 
@@ -352,7 +359,7 @@ final class TradeSurface: UIView {
         requote()
     }
 
-    private func clearQuote() { quoteOut = nil; quoteInUSD = nil; quoteOutUSD = nil; quoteError = nil; near = nil }
+    private func clearQuote() { quoteOut = nil; quoteInUSD = nil; quoteOutUSD = nil; quoteError = nil; near = nil; earn = nil }
 
     private func picked(_ token: TokenPick, side: TradeEdit.Side) {
         known["\(chain(of: side))|\(token.symbol.uppercased())"] = token
@@ -383,6 +390,8 @@ final class TradeSurface: UIView {
         case .send:
             resolve()
             if i.isNear { requote() } else { price(of: i.sell) }
+        case .earn:
+            requote()
         default:
             price(of: TradeEdit.asset(i))
         }
@@ -457,6 +466,7 @@ final class TradeSurface: UIView {
         quoteSerial += 1
         let serial = quoteSerial
         if TradeEdit.problem(i) != nil { asking = false; render(); return }
+        if i.kind == .earn { earnQuote(i, serial: serial); return }
         if i.isNear { nearQuote(i, serial: serial); return }
         // "buy 0.1 eth": what 0.1 ETH costs, asked the other way round.
         let reversed = i.buyAmount != nil
@@ -511,6 +521,39 @@ final class TradeSurface: UIView {
             self.quoteOut = q.amountOut
             self.quoteInUSD = q.inUSD
             self.quoteOutUSD = q.outUSD
+            self.quoteError = q.error.map { Self.shortError($0) }
+            self.render()
+        }
+    }
+
+    /// Earn's preview (POST /near/earn/quote, dry: no addresses, so no
+    /// deposit). Everything out has no amount to price: the vault's own row
+    /// (GET /near/earn/vaults) says what and where.
+    private func earnQuote(_ i: TradeIntent, serial: Int) {
+        if i.earnOut, i.amount == nil {
+            let done = { [weak self] (list: [String: Any]?) in
+                guard let self, serial == self.quoteSerial else { return }
+                self.asking = false
+                self.earn = EarnQuote(vault: i.earnVault, list: list)
+                self.render()
+            }
+            if let list = Self.vaultList { done(list); return }
+            quoteTask = BackendClient.shared.evmJSONResult(path: "/near/earn/vaults") { ok, obj in
+                if ok, obj?["vaults"] != nil { Self.vaultList = obj }
+                done(ok ? obj : nil)
+            }
+            return
+        }
+        var body: [String: Any] = ["coin": i.sell, "chain": i.chainName, "direction": i.earnOut ? "out" : "in", "slippage": 1]
+        if let amount = i.amount { body["amount"] = amount }
+        if let vault = i.vault { body["vault"] = vault }
+        quoteTask = BackendClient.shared.evmJSONResult(path: "/near/earn/quote", body: body) { [weak self] ok, obj in
+            guard let self, serial == self.quoteSerial else { return }
+            let q = EarnQuote(ok: ok, obj)
+            self.asking = false
+            self.earn = q.error == nil ? q : nil
+            self.quoteInUSD = q.error == nil ? Self.number(obj?["amountInUsd"]) : nil
+            self.quoteOutUSD = q.error == nil ? Self.number(obj?["amountOutUsd"]) : nil
             self.quoteError = q.error.map { Self.shortError($0) }
             self.render()
         }
@@ -653,6 +696,7 @@ final class TradeSurface: UIView {
     private func logo(_ symbol: String, chain: String) -> String? {
         known["\(chain)|\(symbol.uppercased())"]?.logo
             ?? tokenRows[chain]?.first(where: { $0.symbol.uppercased() == symbol.uppercased() })?.logo
+            ?? TokenLogo.coin(symbol)
     }
 
     // MARK: render
@@ -703,7 +747,9 @@ final class TradeSurface: UIView {
         rowsCard.isHidden = !panel || isSwap
         flipButton.isHidden = !panel || !isSwap
         goButton.isHidden = !panel
-        alertLine.isHidden = !panel || alert == nil
+        // Earn's line over the button is 1Click's word on yield, unless
+        // something needs saying more.
+        alertLine.isHidden = !panel || (alert == nil && !isEarn)
         stripKey.isHidden = !wantsDecimalPad
         numberEditor.isHidden = !wantsDecimalPad
         searchEditor.isHidden = !(tokensList || searching)
@@ -741,7 +787,7 @@ final class TradeSurface: UIView {
         }
         // Phantom's send here takes SOL or USDC as read; no picker for it.
         // A NEAR Intents send keeps the coin typed (its chain decides it).
-        let tokenPicks = !(i.kind == .send && (i.chainName == "solana" || i.isNear))
+        let tokenPicks = !(i.kind == .send && (i.chainName == "solana" || i.isNear)) && !isEarn
         payCard.token.set(symbol: Self.display(top), logo: logo(top, chain: i.chainName), enabled: tokenPicks)
         let typed = TradeEdit.value(.amount, i)
         payCard.setAmount(TradeEdit.shown(.amount, i), placeholder: typed.isEmpty)
@@ -778,6 +824,9 @@ final class TradeSurface: UIView {
                 if let usd = quoteOutUSD { detail.append(Self.approx(usd)) }
                 // The line over the button took the Arrives row: the time rides here.
                 if alert != nil, let time = near?.time { detail.append(time) }
+            } else if isEarn {
+                // What the coins are worth; the vault's share count never shows.
+                if let usd = i.earnOut ? quoteOutUSD : quoteInUSD { detail.append(Self.approx(usd)) }
             }
             else if let p = marketPrice { detail.append("\(Self.display(top)) \(PaySurface.dollars(p))") }
             else if asking { detail.append("…") }
@@ -793,6 +842,7 @@ final class TradeSurface: UIView {
         case .swap: return "You pay"
         case .send: return "Send"
         case .bridge: return "Move"
+        case .earn: return intent.earnOut ? "Take out" : "Put in"
         case .twap: return "Spend"
         default: return TradeEdit.sells(intent) ? "Sell" : "Buy"
         }
@@ -807,6 +857,20 @@ final class TradeSurface: UIView {
                                  tap: true, action: { [weak self] in self?.begin(field) }))
         }
         switch i.kind {
+        case .earn:
+            // The server's words lead ("≈ $49.75 in Gauntlet USDC Prime at
+            // 4.5% APY"), then who runs the vault and how long it takes.
+            let all = i.earnOut && i.amount == nil
+            var words = asking ? "…" : "—"
+            if let earn {
+                words = all ? "All your \(i.sell) back on \(label(i.chainName)) from \(earn.vaultName ?? "Earn")" : (earn.words ?? words)
+            }
+            specs.append(RowSpec(id: "earn", label: "You get", value: words, tap: false, action: {}, bold: true))
+            specs.append(RowSpec(id: "vault", label: "Vault", value: earn?.vaultLine(fallback: i.earnProtocol) ?? i.earnProtocol,
+                                 tap: false, action: {}))
+            if !all {
+                specs.append(RowSpec(id: "arrives", label: "Arrives", value: earn?.time ?? (asking ? "…" : "—"), tap: false, action: {}))
+            }
         case .bridge:
             specs.append(RowSpec(id: "toChain", label: "To", value: label(i.toChain ?? ""), tap: true,
                                  action: { [weak self] in self?.openChains(.buy) }))
@@ -854,7 +918,7 @@ final class TradeSurface: UIView {
             guard k < specs.count else { continue }
             let s = specs[k]
             r.accessibilityIdentifier = "trade:row:\(s.id)"
-            r.set(label: s.label, value: s.value, tappable: s.tap, separator: k > 0, fresh: nearSend, bold: s.bold,
+            r.set(label: s.label, value: s.value, tappable: s.tap, separator: k > 0, fresh: nearSend || isEarn, bold: s.bold,
                   tint: s.tint, check: s.check)
             r.onTap = s.action
         }
@@ -930,6 +994,10 @@ final class TradeSurface: UIView {
             if let resolveProblem { return resolveProblem }
             if resolved == nil { return "Looking up \(intent.to ?? "")" }
             return "Send \(intent.amount ?? "") \(Self.display(intent.sell))"
+        case .earn:
+            if asking { return "Asking NEAR Intents" }
+            guard intent.earnOut else { return "Put \(intent.amount ?? "") \(intent.sell) to work" }
+            return intent.amount.map { "Take out \($0) \(intent.sell)" } ?? "Take out all \(intent.sell)"
         }
     }
 
@@ -954,6 +1022,13 @@ final class TradeSurface: UIView {
     }
 
     private func renderGo() {
+        if alert == nil, isEarn {
+            alertMark.image = UIImage(systemName: "info.circle",
+                                      withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+            alertMark.tintColor = Glass.textSecondary
+            alertText.textColor = Glass.textSecondary
+            alertText.text = EarnQuote.notice
+        }
         if let a = alert {
             let red = a.block
             let ink: UIColor = red ? .systemRed : Self.amber
@@ -1559,6 +1634,8 @@ enum TokenLogo {
             image.draw(in: CGRect(x: 0, y: 0, width: side, height: side))
         }
     }
+
+    static func coin(_ symbol: String) -> String? { TradeIntent.coinLogos[symbol.uppercased()] }
 
     /// The first letter on a colour picked from the name, the same each time.
     static func placeholder(_ symbol: String) -> UIImage {

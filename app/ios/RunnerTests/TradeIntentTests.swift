@@ -739,4 +739,137 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertNil((try settings { $0["privateAI"] = "0g" }).privateAIHeader)
         XCTAssertNil((try settings { $0["privateAI"] = NSNull() }).privateAIHeader)
     }
+
+    // MARK: NEAR Intents Earn (docs/NEAR-SPEC.md, Phrases)
+
+    /// The spec's Earn phrases, read on the phone with no model, as the
+    /// server's parseEarnPhrase reads them.
+    func testEarnPhrasesAreReadOnThePhone() throws {
+        let fifty = try XCTUnwrap(TradeIntent.parse("put $50 to work"))
+        XCTAssertEqual(fifty.kind, .earn)
+        XCTAssertFalse(fifty.earnOut)
+        XCTAssertEqual(fifty.amount, "50")
+        XCTAssertEqual(fifty.sell, "USDC")
+        XCTAssertEqual(fifty.chainName, "base")
+        XCTAssertEqual(fifty.earnVault, "gtusdcp")
+        XCTAssertEqual(fifty.earnProtocol, "Morpho")
+        XCTAssertEqual(fifty.venue, "NEAR Intents")
+        XCTAssertEqual(fifty.title, "Put 50 USDC to work")
+        for t in ["put 50 usdc to work", "earn on 50 usdc", "earn yield on $50", "park 50 usdc", "park $50 in earn",
+                  "sounds good. put $50 to work", "Put 50 bucks to work"] {
+            let i = TradeIntent.parse(t)
+            XCTAssertEqual(i?.kind, .earn, t)
+            XCTAssertEqual(i?.amount, "50", t)
+            XCTAssertEqual(i?.sell, "USDC", t)
+            XCTAssertEqual(i?.earnOut, false, t)
+        }
+        let sol = try XCTUnwrap(TradeIntent.parse("put 0.5 sol to work"))
+        XCTAssertEqual(sol.sell, "SOL")
+        XCTAssertEqual(sol.chainName, "solana")
+        XCTAssertEqual(sol.earnVault, "kamino-sol")
+        XCTAssertEqual(sol.earnProtocol, "Kamino")
+        let stake = try XCTUnwrap(TradeIntent.parse("stake .5 sol in a vault"))
+        XCTAssertEqual(stake.amount, "0.5")
+        XCTAssertEqual(stake.sell, "SOL")
+        // From another chain: the coins are there, the shares on the vault's.
+        let fromSol = try XCTUnwrap(TradeIntent.parse("put 50 usdc on solana to work"))
+        XCTAssertEqual(fromSol.chainName, "solana")
+        XCTAssertEqual(fromSol.earnVaultChain, "base")
+        XCTAssertEqual(TradeIntent.parse("park 50 usdc on base")?.chainName, "base")
+    }
+
+    func testTakingItOutOfEarn() throws {
+        let all = try XCTUnwrap(TradeIntent.parse("take my usdc out of earn"))
+        XCTAssertEqual(all.kind, .earn)
+        XCTAssertTrue(all.earnOut)
+        XCTAssertNil(all.amount)
+        XCTAssertEqual(all.title, "Take your USDC out of Earn")
+        XCTAssertEqual(all.query, ["venue": "near", "kind": "earn", "direction": "out", "coin": "USDC", "chain": "base", "all": "1"])
+        let solAll = try XCTUnwrap(TradeIntent.parse("take my sol out of earn"))
+        XCTAssertEqual(solAll.sell, "SOL")
+        XCTAssertEqual(solAll.chainName, "solana")
+        let twenty = try XCTUnwrap(TradeIntent.parse("take 20 usdc out of earn"))
+        XCTAssertEqual(twenty.amount, "20")
+        XCTAssertEqual(twenty.title, "Take 20 USDC out of Earn")
+        XCTAssertEqual(twenty.query["all"], nil)
+        XCTAssertEqual(TradeIntent.parse("withdraw $20 from earn")?.amount, "20")
+        let toSol = try XCTUnwrap(TradeIntent.parse("take 20 usdc out of earn to solana"))
+        XCTAssertEqual(toSol.chainName, "solana")
+        XCTAssertEqual(toSol.query["chain"], "solana")
+        XCTAssertEqual(toSol.query["direction"], "out")
+    }
+
+    func testWordsThatAreNotEarnStayWords() {
+        for t in ["take it out", "put the kids to work", "park the car", "pay the caterer $120",
+                  "put 50 doge to work", "earn on 5 eth", "I need to get to work"] {
+            XCTAssertNotEqual(TradeIntent.parse(t)?.kind, .earn, t)
+        }
+        // Before NEAR Intents, Earn isn't read at all.
+        XCTAssertNil(TradeIntent.parse("put $50 to work", near: false))
+    }
+
+    func testTheEarnChipAndItsHandOff() throws {
+        guard case .trade(let t)? = Smart.chip(for: "put $50 to work", fields: []) else { return XCTFail("no Earn chip") }
+        let chip = Smart.Chip.trade(t)
+        XCTAssertEqual(chip.key, "NEAR Intents")
+        XCTAssertEqual(chip.value, "Put 50 USDC to work · Morpho")
+        XCTAssertEqual(chip.verb, "Earn")
+        XCTAssertEqual(t.detail, "Morpho · NEAR Intents")
+        XCTAssertEqual(t.query, ["venue": "near", "kind": "earn", "direction": "in", "coin": "USDC", "chain": "base", "amount": "50"])
+        guard case .trade(let out)? = Smart.chip(for: "take my sol out of earn", fields: []) else { return XCTFail() }
+        XCTAssertEqual(Smart.Chip.trade(out).verb, "Take out")
+        XCTAssertEqual(Smart.Chip.trade(out).value, "Take your SOL out of Earn · Kamino")
+        // A named vault rides along.
+        var taler = try XCTUnwrap(TradeIntent.earn(coin: "USDC", amount: "10", out: false, chain: nil, vault: "taler-usdc"))
+        XCTAssertEqual(taler.chainName, "ethereum")
+        XCTAssertEqual(taler.query["vault"], "taler-usdc")
+        taler.amount = nil
+        XCTAssertEqual(TradeEdit.problem(taler), "Enter an amount")
+        XCTAssertNil(TradeIntent.earn(coin: "SOL", amount: "1", out: false, chain: nil, vault: "gtusdcp"))
+        XCTAssertNil(TradeIntent.earn(coin: "DOGE", amount: "1", out: false, chain: nil))
+        // Everything out needs no amount.
+        XCTAssertNil(TradeEdit.problem(try XCTUnwrap(TradeIntent.parse("take my usdc out of earn"))))
+    }
+
+    /// Earn needs the wallet the coins leave and the one the shares land in.
+    func testEarnNeedsBothItsWallets() throws {
+        let fromSol = try XCTUnwrap(TradeIntent.parse("put 50 usdc on solana to work"))
+        XCTAssertEqual(TradeIntent.missingWallet(fromSol, evm: nil, solana: "7xKX", near: nil), "MetaMask")
+        XCTAssertEqual(TradeIntent.missingWallet(fromSol, evm: "0xab", solana: nil, near: nil), "Phantom")
+        XCTAssertNil(TradeIntent.missingWallet(fromSol, evm: "0xab", solana: "7xKX", near: nil))
+        let base = try XCTUnwrap(TradeIntent.parse("put $50 to work"))
+        XCTAssertNil(TradeIntent.missingWallet(base, evm: "0xab", solana: nil, near: nil))
+    }
+
+    /// POST /near/earn/quote's answer (the live one of 13 Nov) and the
+    /// vault list for everything out.
+    func testAnEarnQuoteReads() {
+        let live: [String: Any] = ["ok": true, "dry": true, "amountInUsd": "49.98", "amountOutUsd": "49.75", "timeSeconds": 52,
+                                   "kind": "earn", "direction": "in",
+                                   "vault": ["id": "gtusdcp", "name": "Gauntlet USDC Prime", "protocol": "Morpho", "apy": 4.5],
+                                   "words": "≈ $49.75 in Gauntlet USDC Prime at 4.5% APY"]
+        let q = EarnQuote(ok: true, live)
+        XCTAssertEqual(q.words, "≈ $49.75 in Gauntlet USDC Prime at 4.5% APY")
+        XCTAssertEqual(q.vaultLine(fallback: "x"), "Morpho · 4.5% APY")
+        XCTAssertEqual(q.time, "~52 s")
+        XCTAssertNil(q.error)
+        let none = EarnQuote(ok: true, ["ok": true, "vault": ["name": "Taler USDC", "protocol": "Taler", "apy": NSNull()]])
+        XCTAssertEqual(none.apyText, "APY n/a")
+        XCTAssertEqual(EarnQuote(ok: false, ["ok": false, "error": "Earn takes USDC or SOL, not DOGE"]).error,
+                       "Earn takes USDC or SOL, not DOGE")
+        XCTAssertEqual(EarnQuote(ok: false, nil).error, "No quote right now")
+        let list: [String: Any] = ["ok": true, "vaults": [
+            ["id": "gtusdcp", "name": "Gauntlet USDC Prime", "protocol": "Morpho", "apy": 4.5],
+            ["id": "kamino-sol", "name": "Kamino SOL Balanced", "protocol": "Kamino", "apy": 4.24]]]
+        let kamino = EarnQuote(vault: "kamino-sol", list: list)
+        XCTAssertEqual(kamino.vaultName, "Kamino SOL Balanced")
+        XCTAssertEqual(kamino.apyText, "4.24% APY")
+        XCTAssertEqual(EarnQuote.notice, "Yield isn't guaranteed; NEAR Intents doesn't run the vault")
+    }
+
+    /// Coins no token list carries here still show their own logo.
+    func testCoinsHaveTheirOwnLogos() {
+        for s in ["BTC", "ZEC", "NEAR", "SOL", "USDC", "ETH"] { XCTAssertNotNil(TradeIntent.coinLogos[s], s) }
+        XCTAssertNil(TradeIntent.coinLogos["PEPE"])
+    }
 }

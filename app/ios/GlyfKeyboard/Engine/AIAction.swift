@@ -66,6 +66,28 @@ struct AIAction: Equatable {
         case "trade.bridge":
             guard let a = p["amount"], let asset = p["asset"], let from = p["from"], let to = p["to"] else { return nil }
             return "move \(a) \(asset) from \(from) to \(to)"
+        case "near.swap":
+            // Each side on its chain, as the server read it (a coin with no
+            // chain said sits at home, else on Base): the words then read
+            // the same however they were typed. No amount: the panel asks.
+            guard let sell = p["sell"], let buy = p["buy"] else { return nil }
+            let from = p["sellChain"] ?? TradeIntent.nativeChain[sell.uppercased()] ?? "base"
+            let into = p["buyChain"] ?? TradeIntent.nativeChain[buy.uppercased()] ?? "base"
+            return "swap \(p["amount"] ?? "1") \(sell) on \(from) to \(buy) on \(into)"
+        case "near.send":
+            guard let a = p["amount"], let to = p["to"] else { return nil }
+            var words = "send \(a) \(p["coin"] ?? "USDC") to \(to)"
+            if let with = p["with"] { words += " with \(with)" + (p["withChain"].map { " on \($0)" } ?? "") }
+            else if let from = p["withChain"] { words += " from \(from)" }
+            return words
+        case "near.earn":
+            let coin = p["coin"] ?? "USDC"
+            if p["out"] == "true" {
+                let what = p["amount"].map { "\($0) \(coin)" } ?? "my \(coin)"
+                return "take \(what) out of earn" + (p["chain"].map { " to \($0)" } ?? "")
+            }
+            guard let a = p["amount"] else { return nil }
+            return "put \(a) \(coin)" + (p["chain"].map { " on \($0)" } ?? "") + " to work"
         default:
             return nil
         }
@@ -81,12 +103,20 @@ struct AIAction: Equatable {
                                             period: period, periods: params["periods"].flatMap { Int($0) },
                                             chain: params["chain"])
         }
-        return tradeWords.flatMap { TradeIntent.parse($0) }
+        if tool == "near.earn", tradeWords == nil {
+            // "put usdc to work": no amount said, so the panel asks for it.
+            return TradeIntent.earn(coin: params["coin"] ?? "USDC", amount: nil, out: false, chain: params["chain"])
+        }
+        guard var t = tradeWords.flatMap({ TradeIntent.parse($0) }) else { return nil }
+        // A NEAR Intents tool opens NEAR Intents' panel, never Uniswap's.
+        if tool.hasPrefix("near."), !t.isNear { return nil }
+        if tool == "near.swap", params["amount"] == nil { t.amount = nil }
+        return t
     }
 
     /// The chip it shows as; nil when this phone can't open it.
     var chip: Smart.Chip? {
-        if tool.hasPrefix("trade.") { return trade.map { .trade($0) } }
+        if tool.hasPrefix("trade.") || ["near.swap", "near.send", "near.earn"].contains(tool) { return trade.map { .trade($0) } }
         switch tool {
         case "calendar.event":
             guard let title = params["title"], let when = params["when"] else { return nil }
@@ -102,6 +132,14 @@ struct AIAction: Equatable {
                            intent: "open:translate")
         case "rewrite": return .action(label: label, query: "", intent: "rewrite")
         case "convert": return .action(label: label, query: params["query"] ?? "", intent: "answer")
+        // A pay link to ask for, and the group pot: their panels read the
+        // params back from the query (NearPay.swift).
+        case "near.request":
+            guard PayAsk(params: params) != nil else { return nil }
+            return .action(label: label, query: params.chipQuery, intent: "near:request")
+        case "near.pot", "near.pot.pay":
+            guard PotAsk(params: params, pay: tool == "near.pot.pay") != nil else { return nil }
+            return .action(label: label, query: params.chipQuery, intent: tool == "near.pot" ? "near:pot" : "near:pot.pay")
         default: return nil
         }
     }

@@ -610,9 +610,19 @@ final class GlyfToolbar: UIView {
     /// 15 pt to 11 pt in half points; when even that is too wide, the last
     /// " · " part (the chain, or a NEAR route) goes whole and the rest is
     /// fitted again, then the venue word before it. As Android's ChipFit.
-    private func fitTrade(_ t: TradeIntent, width: CGFloat) {
+    /// NEAR's chips (a pay link, the pot, what the strip says after a tap)
+    /// and a bill split's card are fitted the same way.
+    static func fitsWhole(_ chip: Smart.Chip) -> Bool {
+        switch chip {
+        case .trade: return true
+        case .action(_, _, let intent): return intent.hasPrefix("near:") || intent == "note"
+        case .convert(let c): return c.request != nil
+        default: return false
+        }
+    }
+
+    private func fitWhole(_ chip: Smart.Chip, width: CGFloat) {
         guard width > 0 else { return }
-        let chip = Smart.Chip.trade(t)
         var parts = chip.value.components(separatedBy: " · ")
         var label = chip.label
         func line(_ size: CGFloat) -> NSAttributedString {
@@ -1089,7 +1099,7 @@ final class GlyfToolbar: UIView {
             if lead { smartLead.frame = CGRect(x: contentX, y: (cardH - 16) / 2, width: 16, height: 16) }
             let textX = lead ? contentX + 16 + 8 : contentX
             smartValue.frame = CGRect(x: textX, y: 0, width: max(0, right - textX), height: cardH)
-            if case .trade(let t)? = smartChip { fitTrade(t, width: smartValue.frame.width) }
+            if let chip = smartChip, Self.fitsWhole(chip) { fitWhole(chip, width: smartValue.frame.width) }
             magic.layout(frame: smartCard.frame, radius: smartCard.layer.cornerRadius)
         }
         if !choiceRow.isHidden { layoutChoiceRow(left: left, right: rightInk, keyMid: keyMid) }

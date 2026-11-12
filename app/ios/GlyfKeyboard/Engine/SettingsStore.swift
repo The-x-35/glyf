@@ -203,6 +203,9 @@ struct GlyfSettings: Codable, Equatable {
     /// Wallet; lib/near/hot_wallet.dart), beside MetaMask's and Phantom's:
     /// it pays a NEAR Intents trade from NEAR and gets a swap to NEAR.
     var nearAccount: String? = nil
+    /// The group pot a pot chip means when it names none: a Sputnik DAO
+    /// (trip.sputnik-dao.near), saved in the app (Profile › Group pot).
+    var nearPot: String? = nil
 
     /// The X-Glyf-AI header every call carries: "near", or none.
     var privateAIHeader: String? { privateAI?.value == "near" ? "near" : nil }

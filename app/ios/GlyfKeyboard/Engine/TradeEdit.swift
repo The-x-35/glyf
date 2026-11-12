@@ -68,6 +68,8 @@ enum TradeEdit {
     static func sells(_ i: TradeIntent) -> Bool {
         switch i.kind {
         case .swap, .bridge, .send, .stopLoss, .takeProfit, .trailingStop: return true
+        // Earn puts in what's typed; out, nothing typed is everything.
+        case .earn: return i.earnOut
         case .bracket: return i.buyAmount == nil && !i.amountIsUSD
         case .limit: return !stables.contains(i.sell)
         default: return false
@@ -100,7 +102,7 @@ enum TradeEdit {
         case .bracket: return [.amount, .price, .stopPrice]
         case .trailingStop: return [.amount, .trail]
         case .twap: return [.amount, .duration]
-        case .swap, .bridge, .send: return [.amount]
+        case .swap, .bridge, .send, .earn: return [.amount]
         }
     }
 
@@ -235,6 +237,9 @@ enum TradeEdit {
             if i.toChain == nil || i.toChain == i.chainName { return "Pick another chain" }
         case .send:
             if !positive(i.amount) { return "Enter an amount" }
+        case .earn:
+            // Out with no amount is everything; in needs one.
+            if !i.earnOut, !positive(i.amount) { return "Enter an amount" }
         default:
             break
         }
@@ -324,6 +329,8 @@ enum TradeEdit {
         // A send stays where its name points: Solana for a .sol name or
         // SOL, any of MetaMask's chains otherwise.
         case .send: return i.chainName == "solana" ? ["solana"] : SponsorMenu.swapChains
+        // Earn stays where the words put it.
+        case .earn: return [i.chainName]
         default: return flashChains
         }
     }
