@@ -270,14 +270,10 @@ class _WalletScreenState extends State<WalletScreen> {
           const SizedBox(height: 1),
           GestureDetector(
             onTap: address == null ? null : () => _copyAddress(address),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(address == null ? signer : '$signer · $short',
-                  style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')])),
-              if (address != null) ...[
-                const SizedBox(width: 5),
-                Icon(_copied == address ? Icons.check_rounded : Icons.copy_rounded, size: 14, color: Glass.inkSoft),
-              ],
-            ]),
+            child: WalletSignerLine(
+              text: address == null ? signer : '$signer · $short',
+              copyIcon: address == null ? null : (_copied == address ? Icons.check_rounded : Icons.copy_rounded),
+            ),
           ),
         ]),
       ),
@@ -490,4 +486,31 @@ class _WalletScreenState extends State<WalletScreen> {
           ],
         ),
       );
+}
+
+/// The line under a chain's name: who signs, the short address and the copy
+/// icon. It takes the room the card leaves beside Disconnect and never draws
+/// past it (a long signer name with an address overflowed the Solana card).
+class WalletSignerLine extends StatelessWidget {
+  const WalletSignerLine({super.key, required this.text, this.copyIcon});
+
+  final String text;
+  final IconData? copyIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Flexible(
+        child: Text(text,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.fade,
+            style: const TextStyle(color: Glass.inkSoft, fontSize: 13.5, fontFeatures: [FontFeature.disable('calt')])),
+      ),
+      if (copyIcon != null) ...[
+        const SizedBox(width: 5),
+        Icon(copyIcon, size: 14, color: Glass.inkSoft),
+      ],
+    ]);
+  }
 }
