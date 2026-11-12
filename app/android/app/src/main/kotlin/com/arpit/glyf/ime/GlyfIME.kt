@@ -2738,6 +2738,10 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (chip == null && walletOn) Smart.addressToCheck(tail, rates, ownWallet)?.let {
             RatesStore.ensureAddress(settings.optString("backendURL"), it) { updateSuggestions() }
         }
+        // A send to a .sol name: its address first (NameSend).
+        if (chip == null && walletOn) NameSend.parse(tail)?.let {
+            NameSend.ensure(settings.optString("backendURL"), it.name) { updateSuggestions() }
+        }
         // An amount or a ticker with no rate yet: ask for one; the strip is
         // arranged again when it lands.
         // A character test first: neither pattern can match without one, and
@@ -2898,6 +2902,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             // The keyboard never signs: Send and Buy open in the app, which
             // has Phantom sign.
             is Smart.Chip.Pay -> {
+                // A name that points nowhere: said, and nothing to send.
+                if (chip.problem != null) {
+                    return showStripChip("pay", Smart.key(chip), Smart.display(chip), Smart.verb(chip) ?: "OK") {
+                        hideStripChip()
+                    }
+                }
                 return showStripChip("pay", Smart.key(chip), Smart.display(chip), "Send") {
                     hideStripChip()
                     if (tourStep() != null) {

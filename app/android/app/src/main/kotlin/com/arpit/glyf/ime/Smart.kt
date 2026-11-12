@@ -47,8 +47,11 @@ object Smart {
         data class Action(val label: String, val query: String, val intent: String) : Chip()
         /** Someone's Solana wallet on screen: Send opens in the app with it
          *  filled in (and the amount the message asks for). The keyboard
-         *  never holds a key: Phantom signs. */
-        data class Pay(val address: String, val amount: String? = null, val token: String? = null) : Chip()
+         *  never holds a key: Phantom signs. `name` is the .sol name the
+         *  address was looked up from (NameSend); `problem` says why a name
+         *  can't be paid ("arpit.sol isn’t registered"), and then nothing is. */
+        data class Pay(val address: String, val amount: String? = null, val token: String? = null,
+                       val name: String? = null, val problem: String? = null) : Chip()
         /** A token's address (a contract address someone shared): Buy opens
          *  for it in the app. */
         data class Buy(val mint: String, val symbol: String, val price: String?) : Chip()
@@ -100,7 +103,7 @@ object Smart {
     /** The small label on the chip's left, when there is one. */
     fun key(chip: Chip): String? = when (chip) {
         is Chip.Vault -> chip.field.title
-        is Chip.Pay -> "Wallet"
+        is Chip.Pay -> chip.name ?: "Wallet"
         is Chip.Buy -> chip.symbol
         else -> null
     }
@@ -111,7 +114,7 @@ object Smart {
         is Chip.Calc, is Chip.Vault, is Chip.Money -> "Insert"
         is Chip.Event -> "Add"
         is Chip.Booking -> "Book"
-        is Chip.Pay -> "Send"
+        is Chip.Pay -> if (chip.problem != null) "OK" else "Send"
         is Chip.Buy -> "Buy"
         is Chip.Action, is Chip.Details, is Chip.Convert -> null
     }
@@ -132,7 +135,7 @@ object Smart {
         // A plan that clashes says so, before the tap adds it (2026-10-14).
         is Chip.Event -> EventParse.summary(chip.plan) + (EventParse.busyNote?.invoke(chip.plan)?.let { " · $it" } ?: "")
         is Chip.Booking -> "A time on ${shortLink(chip.link)}"
-        is Chip.Pay -> {
+        is Chip.Pay -> chip.problem ?: run {
             val short = shortAddress(chip.address)
             if (chip.amount != null) "${chip.amount} ${chip.token ?: "USDC"} to $short" else short
         }
@@ -213,7 +216,8 @@ object Smart {
              rates: RatesSnapshot = RatesSnapshot.EMPTY, ownBooking: String? = null,
              ownWallet: String? = null, fieldKind: String? = null,
              region: String? = java.util.Locale.getDefault().country,
-             linkContext: String? = null): Chip? {
+             linkContext: String? = null,
+             names: Map<String, NameSend.Lookup> = NameSend.looked): Chip? {
         // A form asking for something we already know: one tap fills it,
         // one part each when there is more than one (nothing else reads an
         // empty field).
@@ -235,6 +239,16 @@ object Smart {
                     val asked = amount ?: amountAsked(text)
                     Chip.Pay(address, asked?.first, asked?.second)
                 }
+                null -> null
+            }
+        }
+        // "send 1 sol to arpit.sol": the address the name points at, once
+        // looked up (NameSend.ensure); nothing until then.
+        NameSend.parse(text)?.let { ask ->
+            return when (val found = names[ask.name]) {
+                is NameSend.Lookup.Found -> if (found.address == ownWallet) null
+                    else Chip.Pay(found.address, ask.amount, ask.token, name = ask.name)
+                is NameSend.Lookup.Missing -> Chip.Pay("", ask.amount, ask.token, name = ask.name, problem = found.why)
                 null -> null
             }
         }
