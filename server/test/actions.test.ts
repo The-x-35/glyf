@@ -234,3 +234,77 @@ describe("NEAR Intents actions", () => {
     expect(res.action).toBeNull();
   });
 });
+
+describe("Earn and the group pot as actions", () => {
+  const ground = async (raw: unknown, text: string) => {
+    const { groundAction } = await import("../src/lib/actions.js");
+    return groundAction(checkAction(raw), text);
+  };
+
+  it("writes Earn's chips from checked values: USDC or SOL, in or out", () => {
+    expect(checkAction({ tool: "near.earn", params: { amount: "$50" } }))
+      .toEqual({ tool: "near.earn", label: "Put 50 USDC to work · Morpho · NEAR Intents", params: { amount: "50", coin: "USDC" } });
+    expect(checkAction({ tool: "near.earn", params: { amount: 0.5, coin: "sol" } })?.label).toBe("Put 0.5 SOL to work · Kamino · NEAR Intents");
+    expect(checkAction({ tool: "near.earn", params: { coin: "usdc", out: true } })?.label).toBe("Take your USDC out of Earn · NEAR Intents");
+    expect(checkAction({ tool: "near.earn", params: { amount: 20, out: true } })?.label).toBe("Take 20 USDC out of Earn · NEAR Intents");
+    expect(checkAction({ tool: "near.earn", params: { amount: 5, coin: "doge" } })).toBeNull();
+    expect(checkAction({ tool: "near.earn", params: { amount: 5, coin: "eth" } })).toBeNull();
+  });
+
+  it("writes the pot's chips: a look, or a payout to propose", () => {
+    expect(checkAction({ tool: "near.pot", params: { pot: "Trip" } }))
+      .toEqual({ tool: "near.pot", label: "See the trip pot · Sputnik DAO", params: { pot: "trip" } });
+    expect(checkAction({ tool: "near.pot", params: { dao: "trip.sputnik-dao.near" } })?.label).toBe("See the trip pot · Sputnik DAO");
+    expect(checkAction({ tool: "near.pot", params: { dao: "alice.near" } })).toBeNull();
+    expect(checkAction({ tool: "near.pot.pay", params: { to: "the caterer", amount: 120 } }))
+      .toEqual({ tool: "near.pot.pay", label: "Propose $120 to caterer from the pot · Sputnik DAO",
+        params: { to: "the caterer", amount: "120", coin: "USDC" } });
+    expect(checkAction({ tool: "near.pot.pay", params: { to: "bob.near", amount: 5, coin: "near", pot: "trip" } })?.label)
+      .toBe("Propose 5 NEAR to bob.near from the trip pot · Sputnik DAO");
+    expect(checkAction({ tool: "near.pot.pay", params: { to: "<script>", amount: 5 } })).toBeNull();
+    expect(checkAction({ tool: "near.pot.pay", params: { to: "bob.near", amount: 5, coin: "doge" } })).toBeNull();
+  });
+
+  it("keeps only what the words said", async () => {
+    expect(await ground({ tool: "near.earn", params: { amount: 50 } }, "put $50 to work")).not.toBeNull();
+    // SOL nobody typed, an untyped amount, a withdrawal nobody asked for, a deposit with no earn words.
+    expect(await ground({ tool: "near.earn", params: { amount: 50, coin: "sol" } }, "put $50 to work")).toBeNull();
+    expect((await ground({ tool: "near.earn", params: { amount: 80 } }, "put $50 to work"))?.params).toEqual({ coin: "USDC" });
+    expect(await ground({ tool: "near.earn", params: { amount: 50, out: true } }, "put $50 to work")).toBeNull();
+    expect(await ground({ tool: "near.earn", params: { amount: 50 } }, "take my usdc out of earn")).toBeNull();
+    expect(await ground({ tool: "near.earn", params: { amount: 50 } }, "i have 50 usdc")).toBeNull();
+    expect((await ground({ tool: "near.earn", params: { amount: 50, chain: "solana" } }, "park 50 usdc on solana"))?.params)
+      .toEqual({ amount: "50", coin: "USDC", chain: "solana" });
+
+    expect((await ground({ tool: "near.pot", params: { pot: "beach" } }, "how much is in the trip pot"))?.params).toEqual({});
+    expect(await ground({ tool: "near.pot", params: {} }, "how much is in the bank")).toBeNull();
+    expect(await ground({ tool: "near.pot.pay", params: { to: "the caterer", amount: 120 } }, "pay the caterer $120 from the pot")).not.toBeNull();
+    expect(await ground({ tool: "near.pot.pay", params: { to: "bob.near", amount: 120 } }, "pay the caterer $120 from the pot")).toBeNull();
+    expect(await ground({ tool: "near.pot.pay", params: { to: "the caterer", amount: 150 } }, "pay the caterer $120 from the pot")).toBeNull();
+    expect(await ground({ tool: "near.pot.pay", params: { to: "the caterer", amount: 120, coin: "near" } }, "pay the caterer $120 from the pot")).toBeNull();
+    expect((await ground({ tool: "near.pot.pay", params: { to: "the caterer", amount: 120, note: "lunch" } }, "pay the caterer $120 from the pot"))
+      ?.params).toEqual({ to: "the caterer", amount: "120", coin: "USDC" });
+  });
+
+  it("tells the prompt, may act on the words, and the stand-in finds them", () => {
+    for (const tool of ["near.earn", "near.pot", "near.pot.pay"]) expect(ACTION_GUIDE).toContain(tool);
+    for (const t of ["put $50 to work", "park 50 usdc", "how much is in the trip pot", "pay the caterer $120 from the pot"]) expect(mayAct(t)).toBe(true);
+    expect(mockAction("put $50 to work")?.label).toBe("Put 50 USDC to work · Morpho · NEAR Intents");
+    expect(mockAction("earn on 50 usdc")?.tool).toBe("near.earn");
+    expect(mockAction("take my usdc out of earn")?.label).toBe("Take your USDC out of Earn · NEAR Intents");
+    expect(mockAction("how much is in the trip pot")?.label).toBe("See the trip pot · Sputnik DAO");
+    expect(mockAction("pay the caterer $120 from the pot")?.label).toBe("Propose $120 to caterer from the pot · Sputnik DAO");
+  });
+
+  it("reaches only a keyboard that knows NEAR's tools", async () => {
+    const app = signedInApp();
+    const ask = async (near?: boolean, deviceId = "actions-test-0010") => (await app.inject({ method: "POST", url: "/suggest",
+      payload: { text: "put $50 to work", deviceId, actions: true, ...(near ? { near } : {}) } })).json();
+    expect((await ask(true)).action).toEqual({ tool: "near.earn", label: "Put 50 USDC to work · Morpho · NEAR Intents",
+      params: { amount: "50", coin: "USDC" } });
+    expect((await ask(undefined, "actions-test-0011")).action).toBeNull();
+    const pot = (await app.inject({ method: "POST", url: "/suggest",
+      payload: { text: "pay the caterer $120 from the pot", deviceId: "actions-test-0012", actions: true, near: true } })).json();
+    expect(pot.action).toMatchObject({ tool: "near.pot.pay", params: { to: "the caterer", amount: "120", coin: "USDC" } });
+  });
+});

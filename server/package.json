@@ -12,7 +12,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "MOCK_AI=true vitest run",
     "typecheck": "tsc --noEmit",
-    "near:quote": "tsx scripts/near-quote.ts"
+    "near:quote": "tsx scripts/near-quote.ts",
+    "near:pot": "tsx scripts/near-pot.ts"
   },
   "dependencies": {
     "@bonfida/spl-name-service": "^4.0.1",
