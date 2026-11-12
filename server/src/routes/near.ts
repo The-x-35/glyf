@@ -89,7 +89,16 @@ export function nearRoutes(app: FastifyInstance, deps: NearDeps = {}): void {
         if (!(err instanceof IntentsError) || err.status !== 400 || !fits || !b.recipient || !buyChain) throw err;
         guard = await check(null);
         if (guard.level !== "block") throw err;
-        quote = await ask(undefined);
+        // No price to show either (the pair is down, or this was the
+        // preview already): Guard's reason is still the answer.
+        const blocked = () => reply.code(400).send({ ok: false,
+          error: guard!.checks.find(c => c.level === "block")!.text, guard });
+        if (!b.refundTo) return blocked();
+        try {
+          quote = await ask(undefined);
+        } catch {
+          return blocked();
+        }
       }
       if (b.recipient && buyChain && !guard) guard = await check(quote.amountInUsd);
       req.log.info({ sellChain: quote.sell.chain, buyChain: quote.buy.chain, exact: quote.exact, dry: quote.dry,

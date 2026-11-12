@@ -343,6 +343,15 @@ describe("POST /near/quote, GET /near/status, POST /near/submit", () => {
     expect(res.json()).toMatchObject({ ok: true, dry: true, depositAddress: null, amountOut: "5",
       guard: { level: "block", checks: [{ id: "no-account", level: "block", text: "No NEAR account nobody-glyf-zz9.near" },
         { id: "new-recipient", level: "warn", text: "First time paying this address" }] } });
+    // When 1Click can't price the pair at all, Guard's reason is the error,
+    // for the panel's preview as for the app's live quote.
+    const down = setup({ quote: () => new Response(JSON.stringify({ message: "Quoting for this pair is not available" }), { status: 400 }) });
+    for (const refundTo of [undefined, MINE]) {
+      const res = await quote(down.app, { sell: "USDC", sellChain: "base", buy: "USDC", buyChain: "near", amount: "5", exact: "out",
+        refundTo, recipient: "nobody-glyf-zz9.near" });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({ ok: false, error: "No NEAR account nobody-glyf-zz9.near", guard: { level: "block" } });
+    }
     // A recipient Guard has nothing against keeps 1Click's refusal, in the trade's words.
     const known = await quote(app, { sell: "USDC", sellChain: "base", buy: "USDC", buyChain: "near", amount: "5", exact: "out",
       refundTo: MINE, recipient: "alice.near" });
