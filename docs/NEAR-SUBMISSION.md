@@ -18,9 +18,9 @@ Two independent entries. Each README names the other.
 | Repository | https://github.com/The-x-35/glyf/tree/near-hackathon (the NEAR work is the diff from tag `near-baseline`, linked in docs/NEAR.md) |
 | Demo post | **owed by Arpit** (X post below) |
 
-Description (1,9xx characters, at most 2,000):
+Description (at most 2,000 characters):
 
-> Glyf is an AI keyboard for iPhone and Android. With NEAR Intents, money moves where people already talk: type "swap 20 usdc on base to sol" or "send 5 usdc to alice.near" in any chat, and the keyboard shows a live NEAR Intents quote (you pay, you get, about 30 seconds). Tap to deposit from MetaMask or Phantom. Glyf never holds a key, and the swap settles on the destination chain through 1Click.
+> Glyf is an AI keyboard for iPhone and Android. With NEAR Intents, money moves where people already talk: type "swap 20 usdc on base to sol" or "send 5 usdc to alice.near" in any chat, and the keyboard shows a live NEAR Intents quote (you pay, you get, about 30 seconds). Tap to deposit from MetaMask or Phantom. Glyf never holds a key.
 >
 > What we built for NEAR:
 > - Swaps across 30+ chains typed in plain words: Solana ↔ EVM, and Bitcoin, Zcash, NEAR, TON, Tron and others as a destination.
@@ -33,8 +33,11 @@ Description (1,9xx characters, at most 2,000):
 >   - new recipients and daily spend limits
 > - Private AI on NEAR AI Cloud: one switch sends Glyf's writing and answers to NEAR AI's TEE models, with verifiable receipts.
 > - The AI suggestion strip offers NEAR payments from the conversation ("pay Sam back $22.50"). Split-bill pay links let each friend pay from whatever chain they hold.
+> - The pot: a Sputnik DAO is the group's shared pot. Friends pay into it from any chain, and "pay the caterer $120 from the pot" becomes a proposal the group votes on in Trezu.
+> - Earn: "put $50 to work" moves idle USDC or SOL into a yield vault (Morpho, Kamino) through NEAR Intents, and "take it out" brings it back.
+> - Three wallets side by side, picked by the chain you pay from: MetaMask (EVM), Phantom (Solana), HOT (NEAR).
 >
-> Code since the hackathon started is on branch near-hackathon (diff from tag near-baseline). The README has "do X, see Y" steps: `cd server && npm i && npm run near:quote -- "swap 20 usdc on base to sol"` prints a live NEAR Intents quote without any keys, and the tests run with `npm test` (server) and `flutter test` (app).
+> Hackathon work: branch near-hackathon, diff from tag near-baseline. Try it keyless: `cd server && npm i && npm run near:quote -- "swap 20 usdc on base to sol"`. Steps and tests in docs/NEAR.md.
 >
 > Also entered by the same author: the NEAR investment thesis (link).
 
