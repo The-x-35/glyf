@@ -217,7 +217,9 @@ object SponsorMenu {
             TradeIntent.Kind.BRIDGE -> "move 10 usdc from $chain to ${bridgeTarget(chain)}"
             else -> return null
         }
-        val t = TradeIntent.parse(words)?.takeIf { it.kind == kind } ?: return null
+        // Flash's own words: its bridge between Solana and Base stays Flash's
+        // here, though the same words typed go through NEAR Intents.
+        val t = TradeIntent.parse(words, near = false)?.takeIf { it.kind == kind } ?: return null
         if (pct != null) { t.price = null; t.pricePercent = pct }
         if (stopPct != null) { t.stopPrice = null; t.stopPercent = stopPct }
         return t
