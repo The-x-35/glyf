@@ -594,7 +594,7 @@ extension TradeIntent {
         // view_account, on the server).
         if name.hasSuffix(".near") {
             if answer?["exists"] as? Bool == false || answer?["found"] as? Bool == false {
-                return (nil, "No NEAR account \(name)")
+                return (nil, "No NEAR account named \(name)")
             }
             guard ok else { return (nil, "Couldn’t look up \(name)") }
             let address = (answer?["address"] as? String) ?? ((answer?["addresses"] as? [String: Any])?["near"] as? String)
@@ -847,6 +847,8 @@ struct NearQuote: Equatable {
     /// Guard's worst finding: "warn" or "block", with its words.
     var guardLevel: String?
     var guardText: String?
+    /// Which check it was ("lookalike", "no-account", "chain-mismatch"…).
+    var guardId: String?
     /// The server's words when there's no quote.
     var error: String?
 
@@ -874,6 +876,7 @@ struct NearQuote: Equatable {
             if let c = checks.first(where: { $0["level"] as? String == level }) {
                 guardLevel = level
                 guardText = c["text"] as? String
+                guardId = c["id"] as? String
                 break
             }
         }

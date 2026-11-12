@@ -606,9 +606,9 @@ final class TradeIntentTests: XCTestCase {
         let missing: [String: Any] = ["ok": true, "chain": "near", "address": "nobody.near", "exists": false]
         let none = TradeIntent.recipient(for: "nobody.near", chain: "near", ok: true, answer: missing)
         XCTAssertNil(none.0)
-        XCTAssertEqual(none.1, "No NEAR account nobody.near")
+        XCTAssertEqual(none.1, "No NEAR account named nobody.near")
         XCTAssertEqual(TradeIntent.recipient(for: "nobody.near", chain: "near", ok: false,
-                                             answer: ["ok": false, "exists": false]).1, "No NEAR account nobody.near")
+                                             answer: ["ok": false, "exists": false]).1, "No NEAR account named nobody.near")
         XCTAssertEqual(TradeIntent.recipient(for: "a.near", chain: "near", ok: false, answer: nil).1, "Couldn’t look up a.near")
     }
 
@@ -628,6 +628,7 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(q.time, "~32 s")
         XCTAssertEqual(q.guardLevel, "block")
         XCTAssertEqual(q.guardText, "Looks like 0xAb12…9fE0 you paid before, but it isn't")
+        XCTAssertEqual(q.guardId, "lookalike")
         XCTAssertNil(q.error)
         let quiet = NearQuote(ok: true, ["ok": true, "amountOut": 5, "timeSeconds": 150, "guard": ["level": "ok", "checks": []]])
         XCTAssertNil(quiet.guardLevel)

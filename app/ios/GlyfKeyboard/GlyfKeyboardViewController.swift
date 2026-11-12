@@ -776,7 +776,7 @@ final class GlyfKeyboardViewController: UIInputViewController {
             return ("dollarsign.circle", pay?.headerTitle ?? "Pay")
         // The trade's name stays up while a value is typed: the strip's
         // words are for the chat, not for a price.
-        case .trade: return ("arrow.triangle.2.circlepath", trade?.headerTitle ?? "Trade")
+        case .trade: return (trade?.headerIcon ?? "arrow.triangle.2.circlepath", trade?.headerTitle ?? "Trade")
         case .connector where connector?.searchActive != true: return ("calendar", "Calendar")
         default: return (nil, nil)
         }
