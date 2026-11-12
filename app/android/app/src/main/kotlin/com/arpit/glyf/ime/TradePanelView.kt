@@ -49,7 +49,10 @@ class TradePanelView(
     private val onTitle: (String) -> Unit,
     /** The copy, read on the Paste address tap. */
     private val clipText: () -> String?,
-) : FrameLayout(ctx) {
+    /** A token search is being typed (true): the letter keys come up under
+     *  the panel's search strip; false: back to the panel's own height. */
+    private val onSearching: (Boolean) -> Unit = {},
+) : FrameLayout(ctx), StripField {
 
     var intent: TradeIntent = start
         private set
@@ -60,6 +63,18 @@ class TradePanelView(
         data class Number(val field: TradeField) : Mode()
         data class Tokens(val side: TradeEdit.Side) : Mode()
         data class Chains(val side: TradeEdit.Side) : Mode()
+        /** A token search typed with the keyboard's keys (iOS's .search). */
+        data class Search(val side: TradeEdit.Side) : Mode()
+    }
+
+    /** The search strip while it takes the keys (GlyfIME feeds it). */
+    val typing: StripField? get() = if (mode is Mode.Search) this else null
+
+    // StripField: the search's words; Return goes back to the list.
+    override val stripText: String get() = searchText
+    override fun setStripText(text: String) = searchChanged(text)
+    override fun endStrip() {
+        (mode as? Mode.Search)?.let { setMode(Mode.Tokens(it.side)) }
     }
 
     /** The strip's name as last said: told again only when the kind changes. */
@@ -88,6 +103,13 @@ class TradePanelView(
     private var resolvedFor: String? = null
     /** Picker rows per chain (server answer merged over the built-in few). */
     private val tokenRows = mutableMapOf<String, List<TokenPick>>()
+    /** Logos and addresses of tokens on the panel, by "chain|SYMBOL". */
+    private val known = mutableMapOf<String, TokenPick>()
+    /** The token search as typed, its rows, and whether the server is asked. */
+    private var searchText = ""
+    private var searchResults: List<TokenPick> = emptyList()
+    private var searchLoading = false
+    private var searchSerial = 0
 
     private val isSwap get() = intent.kind == TradeIntent.Kind.SWAP
     private val buyChain get() = intent.buyChain ?: intent.chainName
@@ -151,20 +173,33 @@ class TradePanelView(
         if (enabled) setOnClickListener { onTap() }
     }
 
-    private fun tokenPill(symbol: String, qa: String, onTap: (() -> Unit)?) =
-        label(TradeQuote.display(symbol) + if (onTap != null) " ▾" else "", 14f, true, palette.ink).apply {
+    /** A token: its logo and symbol on a soft pill, ▾ when it can change. */
+    private fun tokenPill(symbol: String, logo: String?, qa: String, onTap: (() -> Unit)?, compact: Boolean = false) =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = pill()
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(6), dp(10), dp(6))
+            setPadding(dp(5), dp(4), dp(if (onTap != null && !compact) 10 else 9), dp(4))
             setTag(com.arpit.glyf.R.id.qa_id, qa)
+            contentDescription = TradeQuote.display(symbol)
+            val d = dp(if (compact) 18 else 20)
+            addView(TokenLogoView(context, symbol, logo), LinearLayout.LayoutParams(d, d).apply { rightMargin = dp(6) })
+            addView(label(TradeQuote.display(symbol) + if (onTap != null && !compact) " ▾" else "",
+                if (compact) 13f else 14f, true, palette.ink))
             if (onTap != null) setOnClickListener { onTap() }
         }
+
+    /** A token's logo URL on [chain], from the rows the server sent. */
+    private fun logo(symbol: String, chain: String): String? =
+        known["$chain|${symbol.uppercase()}"]?.logo
+            ?: tokenRows[chain]?.firstOrNull { it.symbol.equals(symbol, ignoreCase = true) }?.logo
 
     /** One side: its key and chain, the amount (a tap types it) and its
      *  token, a line under them. */
     private fun sideCard(key: String, chain: String, chainEnabled: Boolean, onChain: () -> Unit,
                          amount: String, placeholder: Boolean, onAmount: (() -> Unit)?,
                          token: String, onToken: (() -> Unit)?, sub: String, id: String): View {
+        val tokenLogo = logo(token, chain)
         val c = card()
         c.setTag(com.arpit.glyf.R.id.qa_id, "trade:$id")
         val top = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -179,7 +214,7 @@ class TradePanelView(
         col.addView(label(sub, 11.5f, false, palette.inkSoft))
         if (onAmount != null) col.setOnClickListener { onAmount() }
         row.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(tokenPill(token, "trade:$id:token", onToken))
+        row.addView(tokenPill(token, tokenLogo, "trade:$id:token", onToken))
         c.addView(row, full(top = dp(2)))
         return c
     }
@@ -194,6 +229,7 @@ class TradePanelView(
             is Mode.Number -> renderNumber(m.field)
             is Mode.Tokens -> renderTokens(m.side)
             is Mode.Chains -> renderChains(m.side)
+            is Mode.Search -> renderSearch(m.side)
         }
     }
 
@@ -359,6 +395,12 @@ class TradePanelView(
         val chain = chainOf(side)
         pickerHeader("Tokens on ${TradeIntent.chainLabels[chain] ?: TradeIntent.capitalized(chain)}")
         val current = if (side == TradeEdit.Side.SELL || !isSwap) (if (isSwap) intent.sell else TradeEdit.asset(intent)) else intent.buy
+        // A tap on the field types a search on the letter keys.
+        body.addView(InlineField(context, "Search or paste address").apply {
+            show(searchText)
+            setTag(com.arpit.glyf.R.id.qa_id, "trade:search")
+            setOnClickListener { setMode(Mode.Search(side)) }
+        }, full(dp(38), dp(2)))
         val list = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(palette.card) }
@@ -368,10 +410,13 @@ class TradePanelView(
             addView(label("Paste address", 15f, true, blue), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(label("from the chat", 12f, false, palette.inkSoft))
         }, full(dp(44)))
-        for (t in (tokenRows[chain] ?: TradeEdit.builtIn(chain)).take(60)) {
+        val rows = pickerTokens(side)
+        for (t in rows.take(60)) {
             if (list.childCount > 0) list.addView(View(context).apply { setBackgroundColor(soft(40, palette.ink)) },
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { leftMargin = dp(12) })
             list.addView(listRow("trade:tokenrow:${t.symbol}") { picked(t, side) }.apply {
+                addView(TokenLogoView(context, t.symbol, t.logo ?: logo(t.symbol, chain)),
+                    LinearLayout.LayoutParams(dp(28), dp(28)).apply { rightMargin = dp(10) })
                 val names = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
                 names.addView(label(TradeQuote.display(t.symbol), 15f, true, palette.ink))
                 names.addView(label(t.name, 11.5f, false, palette.inkSoft))
@@ -381,7 +426,82 @@ class TradePanelView(
                     LinearLayout.LayoutParams(dp(24), LinearLayout.LayoutParams.WRAP_CONTENT))
             }, full(dp(46)))
         }
-        body.addView(list, full(top = dp(2)))
+        if (rows.isEmpty()) list.addView(label(if (searchLoading) "Searching…" else "No tokens match", 13f, false, palette.inkSoft).apply {
+            gravity = Gravity.CENTER
+        }, full(dp(44)))
+        body.addView(list, full(top = dp(6)))
+    }
+
+    /** The search strip over the letter keys: the words and Done, then the
+     *  best four tokens as pills (iOS's results row). */
+    private fun renderSearch(side: TradeEdit.Side) {
+        val chain = chainOf(side)
+        body.setPadding(dp(10), dp(6), dp(10), dp(4))
+        val top = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        top.addView(InlineField(context, "Search or paste address").apply {
+            show(searchText)
+            active = true
+            setTag(com.arpit.glyf.R.id.qa_id, "trade:searchfield")
+        }, LinearLayout.LayoutParams(0, dp(36), 1f))
+        top.addView(label("Done", 14f, true, palette.board).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(palette.ink) }
+            setPadding(dp(16), 0, dp(16), 0)
+            setTag(com.arpit.glyf.R.id.qa_id, "trade:searchdone")
+            setOnClickListener { endStrip() }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)).apply { leftMargin = dp(8) })
+        body.addView(top, full(dp(38)))
+        val results = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val list = pickerTokens(side).take(4)
+        if (list.isEmpty() && searchText.isNotEmpty()) {
+            results.addView(label(if (searchLoading) "Searching…" else "No tokens match", 13f, false, palette.inkSoft))
+        }
+        for (t in list) {
+            results.addView(tokenPill(t.symbol, t.logo ?: logo(t.symbol, chain), "trade:result:${t.symbol}", { picked(t, side) }, compact = true),
+                LinearLayout.LayoutParams(0, dp(32), 1f).apply { rightMargin = dp(6) })
+        }
+        // Keep the grid even: blanks fill a short row.
+        if (list.isNotEmpty()) for (k in list.size until 4) results.addView(View(context), LinearLayout.LayoutParams(0, dp(32), 1f))
+        body.addView(results, full(dp(40), dp(6)))
+    }
+
+    /** The rows the picker lists now: all of the chain's, or the search's. */
+    private fun pickerTokens(side: TradeEdit.Side): List<TokenPick> {
+        val chain = chainOf(side)
+        val all = tokenRows[chain] ?: TradeEdit.builtIn(chain)
+        if (searchText.isEmpty()) return all
+        return searchResults.ifEmpty { TradeEdit.filter(all, searchText) }
+    }
+
+    /** The search changed: this phone's rows at once, Uniswap's list a
+     *  moment after the last letter (not per key). */
+    private fun searchChanged(text: String) {
+        val side = (mode as? Mode.Search)?.side ?: return
+        val chain = chainOf(side)
+        searchText = text
+        searchResults = TradeEdit.filter(tokenRows[chain] ?: TradeEdit.builtIn(chain), text)
+        val n = ++searchSerial
+        searchLoading = false
+        if (TradeQuote.tokenSearchPath(chain, text) != null) {
+            searchLoading = true
+            main.postDelayed({ if (n == searchSerial) searchTokens(chain, text, n) }, 250)
+        }
+        render()
+    }
+
+    private fun searchTokens(chain: String, query: String, n: Int) {
+        val path = TradeQuote.tokenSearchPath(chain, query) ?: run { searchLoading = false; render(); return }
+        http("GET", path, null) { _, obj ->
+            val arr = obj?.optJSONArray("tokens")
+            val rows = if (arr == null) emptyList()
+                else (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.let { j -> TokenPick.fromJson(j) } }
+            tokenRows[chain] = TradeEdit.merge(tokenRows[chain] ?: TradeEdit.builtIn(chain), rows)
+            for (t in rows) known.getOrPut("$chain|${t.symbol.uppercase()}") { t }
+            if (n != searchSerial) return@http
+            searchLoading = false
+            searchResults = TradeQuote.searchRows(tokenRows[chain] ?: emptyList(), rows, query)
+            render()
+        }
     }
 
     private fun renderChains(side: TradeEdit.Side) {
@@ -411,7 +531,9 @@ class TradePanelView(
     // MARK: changes
 
     private fun setMode(m: Mode) {
+        val was = mode
         mode = m
+        if ((was is Mode.Search) != (m is Mode.Search)) onSearching(m is Mode.Search)
         render()
         scroll.scrollTo(0, 0)
     }
@@ -438,6 +560,8 @@ class TradePanelView(
     private fun chainOf(side: TradeEdit.Side) = if (side == TradeEdit.Side.BUY && isSwap) buyChain else intent.chainName
 
     private fun openTokens(side: TradeEdit.Side) {
+        searchText = ""
+        searchResults = emptyList()
         setMode(Mode.Tokens(side))
         prefetchTokens(chainOf(side))
         loadBalances(chainOf(side))
@@ -456,6 +580,7 @@ class TradePanelView(
     }
 
     private fun picked(token: TokenPick, side: TradeEdit.Side) {
+        known["${chainOf(side)}|${token.symbol.uppercase()}"] = token
         val was = intent
         intent = TradeEdit.repriced(TradeEdit.pick(token, if (isSwap) side else assetSide, intent), was)
         quote = null
@@ -635,7 +760,8 @@ class TradePanelView(
             val arr = obj?.optJSONArray("tokens") ?: return@http
             val rows = (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.let { j -> TokenPick.fromJson(j) } }
             tokenRows[chain] = TradeEdit.merge(TradeEdit.builtIn(chain), rows)
-            if (mode is Mode.Tokens) render()
+            for (t in rows) known.getOrPut("$chain|${t.symbol.uppercase()}") { t }
+            render()
         }
     }
 

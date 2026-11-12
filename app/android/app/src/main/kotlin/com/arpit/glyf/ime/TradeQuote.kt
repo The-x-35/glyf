@@ -166,6 +166,20 @@ object TradeQuote {
         return rows
     }
 
+    /** What a typed token search asks Uniswap's list (GET /uniswap/tokens);
+     *  null when nothing is asked: no words yet, or Solana (Jupiter's tokens
+     *  come from the phone's own short list there). */
+    fun tokenSearchPath(chain: String, query: String): String? {
+        val q = query.trim()
+        if (q.isEmpty() || chain == "solana") return null
+        return "/uniswap/tokens?chain=$chain&q=${java.net.URLEncoder.encode(q, "UTF-8")}&limit=40"
+    }
+
+    /** The picker's rows for a search: what the phone already has that
+     *  matches, then what Uniswap's list answered, once each. */
+    fun searchRows(known: List<TokenPick>, server: List<TokenPick>, query: String): List<TokenPick> =
+        TradeEdit.merge(TradeEdit.filter(TradeEdit.merge(known, server), query), server)
+
     /** The strip's name for the panel. */
     fun headerTitle(kind: TradeIntent.Kind): String = when (kind) {
         TradeIntent.Kind.SWAP -> "Swap"

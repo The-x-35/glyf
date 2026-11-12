@@ -1787,6 +1787,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             if (char != null && keyboard.shifted) { keyboard.shifted = false; keyboard.invalidate() }
             return
         }
+        // The trade panel's token search takes the letters while it is typed.
+        (featurePanel as? TradePanelView)?.typing?.let { f ->
+            typeIntoStrip(id, char, f.stripText, { f.setStripText(it) }) { f.endStrip() }
+            if (char != null && keyboard.shifted) { keyboard.shifted = false; keyboard.invalidate() }
+            return
+        }
         // The emoji board's search field takes the letters while it is open.
         emojiBoard?.takeIf { it.searchActive }?.let { board ->
             if (id == "shift" || id.startsWith("mode:")) typeIntoStrip(id, char, "", {}) {}
@@ -6140,7 +6146,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         dismissFeaturePanel()
         val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
         keyboard.visibility = View.GONE
-        val panel = TradePanelView(
+        lateinit var panel: TradePanelView
+        panel = TradePanelView(
             this, keyboard.palette(),
             backendURL = settings.optString("backendURL"),
             evmAddress = settings.optString("evmAddress").ifEmpty { null },
@@ -6157,6 +6164,14 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             onToast = { notice(it) },
             onTitle = { title -> showStripTitle(title, onBack = null, icon = "trend") },
             clipText = { com.arpit.glyf.store.ClipboardStore.clipText(this) },
+            // A token search: a strip over the letter keys, like New Event's title.
+            onSearching = { searching ->
+                keyboard.visibility = if (searching) View.VISIBLE else View.GONE
+                panel.layoutParams = (panel.layoutParams as LinearLayout.LayoutParams).apply {
+                    height = if (searching) dp(100) else keysH
+                }
+                if (searching) { keyboard.mode = Mode.LETTERS; keyboard.shifted = false; keyboard.rebuild() }
+            },
         )
         root.addView(panel, root.indexOfChild(keyboard),
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, keysH))
