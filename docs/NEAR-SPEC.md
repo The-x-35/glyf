@@ -35,17 +35,22 @@ Rules:
 - **It also takes every send to a .near name, a NEAR implicit account (64 hex
   characters), a Bitcoin address or a Zcash t-address.**
 - **Venue word** on the chip and panel: "NEAR Intents".
-- **Who signs.** Glyf can only deposit from EVM chains (MetaMask) and Solana
-  (Phantom). For any other origin chain (e.g. `swap 0.01 btc to usdc on base`),
-  the app shows the deposit address and the exact amount with Copy and a QR
-  code ("Send from any wallet"), then tracks the deposit.
+- **Who signs.** The origin chain picks the person's own wallet, and the
+  three sit side by side: MetaMask on EVM chains, Phantom on Solana, HOT
+  Wallet on NEAR (its public relay, `app/lib/near/hot_wallet.dart`; Connect
+  saves `nearAccount`, `nearPublicKey` and `nearWallet: "hot"` in the shared
+  settings). When that wallet isn't connected, the app says "<Wallet> isn't
+  connected" and its button is "Connect <Wallet>", which connects it and runs
+  the same trade again. For any other origin chain (e.g. `swap 0.01 btc to
+  usdc on base`), the app shows the deposit address and the exact amount with
+  Copy and a QR code ("Send from any wallet"), then tracks the deposit.
 - **Default pay-from for sends:** USDC on Base. `with sol` / `with eth` /
   `from solana` / `with usdc on arbitrum` change it.
 - **Default recipient for swaps:** the person's own wallet on the destination
   chain (the MetaMask address for EVM, the Phantom address for Solana). NEAR,
   Bitcoin, Zcash and other chains need a typed `to <address|name.near>`, or the
-  saved setting `nearAccount` for NEAR. When neither exists, the panel asks for
-  one.
+  saved setting `nearAccount` (HOT Wallet's account) for NEAR. With no
+  `nearAccount` and no `to`, the keyboard's button is "Connect HOT Wallet".
 - **Refunds** go to the person's own address on the origin chain
   (`refundType: ORIGIN_CHAIN`).
 
