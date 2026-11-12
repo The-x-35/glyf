@@ -308,6 +308,29 @@ void main() {
     expect(shared['nearRecent'], ['0xAb12000000000000000000000000000000009fE1']);
   });
 
+  test('a .near name with no account is Guard’s block with nothing to send anyway', () async {
+    // The server answers a recipient 1Click can't pay with a preview (no
+    // deposit address) and Guard's block.
+    final guard = {
+      'level': 'block',
+      'checks': [
+        {'id': 'no-account', 'level': 'block', 'text': 'No NEAR account nobody-glyf-zz9.near'},
+        {'id': 'new-recipient', 'level': 'warn', 'text': 'First time paying this address'},
+      ],
+    };
+    final q = {'kind': 'send', 'venue': 'near', 'sell': 'USDC', 'chain': 'base', 'buy': 'USDC', 'buyChain': 'near',
+      'amount': '5', 'exact': 'out', 'to': 'nobody-glyf-zz9.near'};
+    for (final anyway in [false, true]) {
+      NearFlow.api = _FakeApi((_) => _quote(buy: 'USDC', buyChain: 'near', dry: true, guard: guard));
+      final stop = (await run({...q, if (anyway) 'anyway': '1'})).last as NearOutcome;
+      expect(stop.state, TradeState.failed);
+      expect(stop.title, 'No NEAR account nobody-glyf-zz9.near', reason: 'never “NEAR Intents gave no deposit address”');
+      expect(stop.detail, 'Nothing was sent. Check the name');
+      expect(stop.blocked, isFalse, reason: 'there is no deposit to send anyway');
+      expect(wallet.evmSteps, isEmpty);
+    }
+  });
+
   test('from Bitcoin: the deposit address and amount to pay by hand, then followed', () async {
     const btcDeposit = 'bc1qdeposit0000000000000000000000000000000';
     final api = NearFlow.api = _FakeApi(

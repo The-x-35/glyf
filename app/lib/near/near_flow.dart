@@ -262,16 +262,21 @@ abstract final class NearFlow {
             manual: manual,
             blocked: blocked);
 
+    // Guard first: a recipient that can't be paid (no such .near account, an
+    // address from another chain) comes back as a preview with no deposit
+    // address, and that is Guard's reason, never "no deposit address". Only
+    // a live quote can go ahead anyway.
+    if (quote.blocked && (q['anyway'] != '1' || quote.dry)) {
+      final check = quote.checks.firstWhere((c) => c.level == 'block', orElse: () => const NearCheck('', 'block', ''));
+      yield step(TradeState.failed, check.text.isEmpty ? 'Guard stopped this one' : check.text,
+          detail: quote.dry ? 'Nothing was sent. Check the ${check.id == 'no-account' ? 'name' : 'address'}' : 'Nothing was sent',
+          blocked: !quote.dry);
+      return;
+    }
     final problem = quoteProblem(quote,
         sell: sell, sellChain: sellChain, buy: buy, buyChain: buyChain, amount: amount, exactIn: !send);
     if (problem != null) {
       yield step(TradeState.failed, problem, detail: 'Nothing was sent');
-      return;
-    }
-    if (quote.blocked && q['anyway'] != '1') {
-      final check = quote.checks.firstWhere((c) => c.level == 'block', orElse: () => const NearCheck('', 'block', ''));
-      yield step(TradeState.failed, check.text.isEmpty ? 'Guard stopped this one' : check.text,
-          detail: 'Nothing was sent', blocked: true);
       return;
     }
     final depositAddress = quote.depositAddress!;
