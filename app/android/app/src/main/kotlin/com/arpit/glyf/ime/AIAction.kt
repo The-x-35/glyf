@@ -13,8 +13,7 @@ import java.util.Locale
  * Trades go through the same reader as typed words (TradeIntent.parse), so
  * the AI's "stop-loss ETH at 3000" opens the very panel the words would.
  * Android opens what this keyboard has: trades, an event, a Meet link,
- * Search, YouTube and Maps, translate, a rewrite and a conversion; Shorts
- * (no Shorts tab here) is dropped.
+ * Search, YouTube, Shorts and Maps, translate, a rewrite and a conversion.
  */
 data class AIAction(val tool: String, val label: String, val params: Map<String, String>) {
 
@@ -102,7 +101,7 @@ data class AIAction(val tool: String, val label: String, val params: Map<String,
                     if (plan.hasDay || plan.hasTime) Smart.Chip.Event(plan) else null
                 }
                 "meet.link" -> Smart.Chip.Action("Add a Meet link", "", "meet")
-                "search", "youtube", "maps" -> {
+                "search", "youtube", "shorts", "maps" -> {
                     val q = params["query"]?.takeIf { it.isNotEmpty() } ?: return null
                     Smart.Chip.Action(label, q, "open:$tool")
                 }

@@ -128,6 +128,11 @@ object BackendClient {
         val channel: String? = null,
         val duration: String? = null,
         val live: Boolean = false,
+        // short (the Shorts tab, 2026-11-06; also channel, duration, thumb)
+        val seconds: Int? = null,
+        /** YouTube reported a taller-than-wide player: the thumbnail is its
+         *  9:16 frame centred on YouTube's own filler. */
+        val portrait: Boolean? = null,
         // place
         val address: String? = null,
         val rating: Double? = null,
@@ -455,7 +460,7 @@ object BackendClient {
         )
     }
 
-    private fun parseCards(json: JSONObject): List<SearchCard> {
+    fun parseCards(json: JSONObject): List<SearchCard> {
         val arr = json.optJSONArray("cards") ?: org.json.JSONArray()
         val cards = mutableListOf<SearchCard>()
         for (i in 0 until arr.length()) {
@@ -478,6 +483,8 @@ object BackendClient {
                 channel = o.optStringOrNull("channel"),
                 duration = o.optStringOrNull("duration"),
                 live = o.optBoolean("live", false),
+                seconds = if (o.has("seconds") && !o.isNull("seconds")) o.optInt("seconds") else null,
+                portrait = if (o.has("portrait") && !o.isNull("portrait")) o.optBoolean("portrait") else null,
                 address = o.optStringOrNull("address"),
                 rating = if (o.has("rating")) o.optDouble("rating") else null,
                 ratingCount = if (o.has("ratingCount")) o.optInt("ratingCount") else null,

@@ -138,6 +138,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     /** The tab track's thumb and tabs, and ABC (shown with results). */
     private var searchThumb: View? = null
     private var searchTabs: List<Pair<String, ToolIcon>> = emptyList()
+    /** A search tab's width: 35dp, narrower on a phone where six would
+     *  leave the query too little room (iOS's tab track). */
+    private var searchPillW = 0
     private var searchAbc: TextView? = null
     /// Suggestions shown while the KEYS STAY VISIBLE — you must be able to
     /// start typing over a suggestion, so this is a separate slot from
@@ -1322,9 +1325,11 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         }, FrameLayout.LayoutParams(dp(32), dp(30)).apply { leftMargin = dp(2); topMargin = (rowH - dp(30)) / 2 })
         // The website's tab track: a soft pill of icon-only tabs, a key-coloured
         // thumb sliding to the chosen one.
-        val tabs = listOf("web" to "search", "yt" to "playrect", "maps" to "map",
+        val tabs = listOf("web" to "search", "yt" to "playrect", "shorts" to "shorts", "maps" to "map",
             "contacts" to "personcircle", "translate" to "bubble")
-        val pillW = dp(35); val pillH = dp(30); val pad = dp(3); val gap = dp(2)
+        val widthDp = (resources.displayMetrics.widthPixels / resources.displayMetrics.density).toInt()
+        val pillW = dp(SearchCards.tabWidth(widthDp, tabs.size)); val pillH = dp(30); val pad = dp(3); val gap = dp(2)
+        searchPillW = pillW
         val trackW = pillW * tabs.size + gap * (tabs.size - 1) + pad * 2
         val trackH = pillH + pad * 2
         val track = FrameLayout(this).apply { background = Glass.pill(Glass.fillSoft) }
@@ -1336,7 +1341,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             val icon = ToolIcon(this, glyph, Glass.textSecondary).apply {
                 solid = true; weight = 1.7f; scale = 1.05f
                 contentDescription = when (tabId) {
-                    "web" -> "Search"; "yt" -> "YouTube"; "maps" -> "Maps"
+                    "web" -> "Search"; "yt" -> "YouTube"; "shorts" -> "Shorts"; "maps" -> "Maps"
                     "contacts" -> "Contacts"; else -> "Translate"
                 }
                 setTag(com.arpit.glyf.R.id.qa_id, "search:tab:$tabId")
@@ -1429,7 +1434,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             icon.solid = true
             icon.isSelected = on
             if (on) {
-                val x = (dp(3) + i * (dp(35) + dp(2))).toFloat()
+                val x = (dp(3) + i * (searchPillW + dp(2))).toFloat()
                 val lp = thumb.layoutParams as FrameLayout.LayoutParams
                 if (animated && thumb.isLaidOut) thumb.animate().translationX(x - lp.leftMargin).setDuration(220)
                     .setInterpolator(android.view.animation.OvershootInterpolator(0.6f)).start()
@@ -1684,6 +1689,33 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             soft = Glass.textSecondary, dp = ::dp, dark = chromeDark)
         val backendURL = settings.optString("backendURL")
         searchResultCount = cards.size
+        // Shorts land on a sideways shelf of tall 9:16 cards, not the list.
+        if (searchTab == "shorts" && cards.any { it.kind == "short" }) {
+            val shelfH = keysHeight - dp(14)
+            val shelf = android.widget.HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                setTag(com.arpit.glyf.R.id.qa_id, "search:shelf")
+            }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(dp(10), 0, dp(10), 0)
+            }
+            for ((i, c) in cards.withIndex()) {
+                val v = SearchCards.shortCard(this, c, theme, shelfH) { tapped -> insertResult(tapped) }
+                v.setTag(com.arpit.glyf.R.id.qa_id, if (c.kind == "short") "search:card:short:$i" else "search:card:link")
+                row.addView(v, LinearLayout.LayoutParams(ShortsThumb.cardWidth(shelfH), shelfH).apply {
+                    if (i > 0) leftMargin = dp(8)
+                })
+            }
+            shelf.addView(row)
+            panel.addView(shelf, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, shelfH).apply {
+                topMargin = dp(4)
+            })
+            root.addView(panel, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, keysHeight))
+            searchResults = panel
+            return
+        }
         for ((i, c) in cards.withIndex()) {
             val v = SearchCards.view(this, c, theme, backendURL) { tapped -> insertResult(tapped) }
             v.setTag(com.arpit.glyf.R.id.qa_id, "search:card:$i")
@@ -1712,7 +1744,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun relayoutSearchQuery() {
         val q = searchQueryView ?: return
         val abcOn = searchAbc?.visibility == View.VISIBLE
-        val trackW = dp(35) * 5 + dp(2) * 4 + dp(3) * 2
+        val n = searchTabs.size.coerceAtLeast(1)
+        val trackW = searchPillW * n + dp(2) * (n - 1) + dp(3) * 2
         val x = dp(34) + trackW + dp(6) + (if (abcOn) dp(46) else 0)
         q.layoutParams = (q.layoutParams as FrameLayout.LayoutParams).apply {
             leftMargin = x
@@ -6121,7 +6154,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             return
         }
         enterSearch()
-        searchTab = when (tool) { "youtube" -> "yt"; "maps" -> "maps"; else -> "web" }
+        searchTab = when (tool) { "youtube" -> "yt"; "shorts" -> "shorts"; "maps" -> "maps"; else -> "web" }
         styleSearchTabs(animated = false)
         searchQuery = query
         renderQuery()

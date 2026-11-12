@@ -398,6 +398,15 @@ class ToolIcon(ctx: Context, private val kind: String, tint: Int) : View(ctx) {
                 }
                 c.drawPath(tri, fill)
             }
+            // The Shorts tab: the YouTube tab's play.rectangle stood upright.
+            "shorts" -> {
+                c.drawRoundRect(cx - dp(5.6f), cy - dp(8.2f), cx + dp(5.6f), cy + dp(8.2f), dp(3f), dp(3f), p)
+                val tri = Path().apply {
+                    moveTo(cx - dp(1.6f), cy - dp(2.9f)); lineTo(cx - dp(1.6f), cy + dp(2.9f))
+                    lineTo(cx + dp(2.9f), cy); close()
+                }
+                c.drawPath(tri, fill)
+            }
             // SF map: a folded map, three panels.
             "map" -> {
                 val m = Path().apply {

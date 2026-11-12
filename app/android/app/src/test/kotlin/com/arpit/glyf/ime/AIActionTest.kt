@@ -7,8 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Recurring buys read on the phone and the strip's recommended actions
- *  from POST /suggest (AIAction). The twin of AIActionTests.swift; Shorts,
- *  which this keyboard has no tab for, is the one tool dropped. */
+ *  from POST /suggest (AIAction). The twin of AIActionTests.swift. */
 class AIActionTest {
 
     private val month = 30 * 86_400
@@ -121,6 +120,10 @@ class AIActionTest {
         assertEquals(Smart.Chip.Action("Add a Meet link", "", "meet"), action("meet.link", emptyMap())?.chip)
         assertEquals(Smart.Chip.Action("YouTube: dune 2 trailer", "dune 2 trailer", "open:youtube"),
             action("youtube", mapOf("query" to "dune 2 trailer"), label = "YouTube: dune 2 trailer")?.chip)
+        // The Shorts tab (2026-11-06), as on the iPhone.
+        assertEquals(Smart.Chip.Action("Shorts: cats", "cats", "open:shorts"),
+            action("shorts", mapOf("query" to "cats"), label = "Shorts: cats")?.chip)
+        assertNull(action("shorts", mapOf("query" to "")))
         assertEquals(Smart.Chip.Action("x", "ramen near me", "open:maps"), action("maps", mapOf("query" to "ramen near me"))?.chip)
         assertEquals(Smart.Chip.Action("x", "Spanish", "open:translate"), action("translate", mapOf("to" to "spanish"))?.chip)
         assertEquals(Smart.Chip.Action("x", "", "rewrite"), action("rewrite", emptyMap())?.chip)
@@ -136,8 +139,6 @@ class AIActionTest {
         // Sends to a name aren't one of this phone's tools.
         assertNull(action("send", mapOf("to" to "arpit.eth", "amount" to 5, "token" to "USDC")))
         assertNull(AIAction.from(JSONObject().put("tool", "meet.link")))
-        // No Shorts tab on this keyboard.
-        assertNull(action("shorts", mapOf("query" to "cats")))
         assertNull(action("rewrite", emptyMap(), label = "x".repeat(81)))
     }
 

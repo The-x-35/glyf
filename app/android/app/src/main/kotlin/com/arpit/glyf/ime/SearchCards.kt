@@ -51,9 +51,12 @@ object SearchCards {
      *  else ever gets the session. */
     fun loadThumb(url: String, into: ImageView, maxWidth: Int = 320, signed: Boolean = false,
                   crop: android.graphics.RectF? = null, keep: Boolean = false,
+                  frame: ((Int, Int) -> ShortsThumb.Frame)? = null,
                   onLoaded: (() -> Unit)? = null, onMiss: (() -> Unit)? = null) {
+        // A Short's 9:16 frame is its own picture in the cache.
+        val key = if (frame != null) "$url#9x16" else url
         into.tag = url
-        cache.get(url)?.let { into.setImageBitmap(it); onLoaded?.invoke(); return }
+        cache.get(key)?.let { into.setImageBitmap(it); onLoaded?.invoke(); return }
         // `keep`: whatever is showing (a pin) stays until the picture comes.
         if (!keep) into.setImageBitmap(null)
         pool.execute {
@@ -74,7 +77,11 @@ object SearchCards {
                         BitmapFactory.Options().apply { inSampleSize = sample })
                     // Part of the picture: a map's middle, above the credit
                     // printed along its bottom.
-                    if (full != null && crop != null) {
+                    if (full != null && frame != null) {
+                        val f = frame(full.width, full.height)
+                        if (f.width > 0 && f.height > 0 && (f.width != full.width || f.height != full.height))
+                            android.graphics.Bitmap.createBitmap(full, f.x, f.y, f.width, f.height) else full
+                    } else if (full != null && crop != null) {
                         val x = (crop.left * full.width).toInt()
                         val y = (crop.top * full.height).toInt()
                         val w = (crop.width() * full.width).toInt().coerceAtMost(full.width - x)
@@ -86,7 +93,7 @@ object SearchCards {
             into.post {
                 if (into.tag != url) return@post           // row was recycled
                 if (bmp != null) {
-                    cache.put(url, bmp)
+                    cache.put(key, bmp)
                     into.setImageBitmap(bmp)
                     onLoaded?.invoke()
                 } else onMiss?.invoke()
@@ -204,6 +211,12 @@ object SearchCards {
         /** A dark board: a place's map is drawn dark to match. */
         val dark: Boolean = false,
     )
+
+    /** A search tab's width in dp: up to 35, narrower when the tabs would
+     *  leave the query (beside ABC) under ~70: iOS's tab track, 30 each on a
+     *  402-wide phone, 35 on 440. Never under 28. */
+    fun tabWidth(screenDp: Int, tabs: Int): Int =
+        minOf(35, maxOf(28, Math.floor((screenDp - 218).toDouble() / tabs.coerceAtLeast(1)).toInt()))
 
     /** iOS's row heights less the 4dp above and below each card. */
     fun height(kind: String): Int = when (kind) {
@@ -385,6 +398,72 @@ object SearchCards {
         return row
     }
 
+    /** A Short on the Shorts tab's shelf: YouTube's 9:16 frame edge to edge,
+     *  the YouTube mark and the length on top, the title and channel over a
+     *  shade at the foot, the way YouTube's own Shorts shelf reads. Any
+     *  other card (the server's "More Shorts on YouTube") is the shelf's
+     *  last tile: the mark over its words. */
+    fun shortCard(ctx: Context, c: BackendClient.SearchCard, t: Theme, height: Int,
+                  onTap: (BackendClient.SearchCard) -> Unit): View {
+        val card = android.widget.FrameLayout(ctx).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = t.dp(15).toFloat()
+                setColor(if (c.kind == "short") Color.argb(46, 128, 128, 128) else t.card)
+                setStroke(maxOf(1, t.dp(1)), Glass.strokeHairline)
+            }
+            clipToOutline = true
+            outlineProvider = roundOutline(t.dp(15))
+            isClickable = true
+            setOnClickListener { onTap(c) }
+            contentDescription = if (c.kind == "short") "${c.title}. ${c.channel ?: ""}" else c.title
+        }
+        val match = android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+        val wrap = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+        if (c.kind != "short") {
+            val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+            col.addView(ImageView(ctx).apply { setImageDrawable(YouTubeMark()) }, LinearLayout.LayoutParams(t.dp(30), t.dp(30)))
+            col.addView(label(ctx, c.title, 13f, Glass.MEDIUM, t.ink, 3).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, wrap).apply { topMargin = t.dp(8) })
+            card.addView(col, android.widget.FrameLayout.LayoutParams(match, match).apply {
+                leftMargin = t.dp(10); rightMargin = t.dp(10)
+            })
+            return card
+        }
+        // A vertical video's frame fills the card; anything else is fitted
+        // whole, never cropped (YouTube's policies).
+        val portrait = c.portrait == true
+        val thumb = ImageView(ctx).apply {
+            scaleType = if (portrait) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
+        }
+        card.addView(thumb, android.widget.FrameLayout.LayoutParams(match, match))
+        if (!c.thumb.isNullOrEmpty()) loadThumb(c.thumb, thumb, maxWidth = 640,
+            frame = { w, h -> ShortsThumb.frame(w, h, portrait) })
+        card.addView(View(ctx).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.argb(0, 0, 0, 0), Color.argb(184, 0, 0, 0)))
+        }, android.widget.FrameLayout.LayoutParams(match, height / 2).apply { gravity = Gravity.BOTTOM })
+        // YouTube requires its mark on every card that shows its content.
+        card.addView(ImageView(ctx).apply { setImageDrawable(YouTubeMark()) },
+            android.widget.FrameLayout.LayoutParams(t.dp(16), t.dp(16)).apply { leftMargin = t.dp(8); topMargin = t.dp(8) })
+        if (!c.duration.isNullOrEmpty()) card.addView(TextView(ctx).apply {
+            text = c.duration
+            Glass.style(this, 10f, Glass.SEMIBOLD, Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(t.dp(4), 0, t.dp(4), 0)
+            background = rounded(Color.argb(184, 0, 0, 0), t.dp(4))
+        }, android.widget.FrameLayout.LayoutParams(wrap, t.dp(14)).apply {
+            gravity = Gravity.TOP or Gravity.END; topMargin = t.dp(9); rightMargin = t.dp(7)
+        })
+        val foot = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        foot.addView(label(ctx, c.title, 13f, Glass.SEMIBOLD, Color.WHITE, 3))
+        foot.addView(label(ctx, c.channel, 11f, Glass.REGULAR, Color.argb(199, 255, 255, 255)),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, wrap).apply { topMargin = t.dp(2) })
+        card.addView(foot, android.widget.FrameLayout.LayoutParams(match, wrap).apply {
+            gravity = Gravity.BOTTOM; leftMargin = t.dp(8); rightMargin = t.dp(8); bottomMargin = t.dp(8)
+        })
+        return card
+    }
+
     /** iOS's play.circle.fill over a loaded thumbnail. */
     private class PlayMark(ctx: Context) : View(ctx) {
         private val disc = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(235, 255, 255, 255) }
@@ -452,4 +531,28 @@ object SearchCards {
             outline.setRoundRect(0, 0, view.width, view.height, radiusPx.toFloat())
         }
     }
+}
+
+/** The Shorts tab's tall cards (2026-11-06), the twin of SearchCard.swift's
+ *  ShortsThumb. */
+object ShortsThumb {
+    data class Frame(val x: Int, val y: Int, val width: Int, val height: Int)
+
+    /**
+     * The part of a YouTube thumbnail a 9:16 card shows, in the image's own
+     * pixels. YouTube draws a vertical video's thumbnail (hq 480x360, sd
+     * 640x480, maxres 1280x720) as the full-height 9:16 frame centred on a
+     * blurred copy of itself. For such a video the card shows just that
+     * frame, which is the whole picture; anything else is shown whole
+     * (fitted), because YouTube's policies forbid cropping a thumbnail.
+     */
+    fun frame(width: Int, height: Int, portrait: Boolean): Frame {
+        val full = Frame(0, 0, width, height)
+        if (!portrait || width <= 0 || height <= 0) return full
+        val w = minOf(width, Math.round(height * 9.0 / 16).toInt())
+        return Frame(Math.floor((width - w) / 2.0).toInt(), 0, w, height)
+    }
+
+    /** The tall card's width for a shelf of the given height: 9:16. */
+    fun cardWidth(height: Int): Int = Math.round(height * 9.0 / 16).toInt()
 }
