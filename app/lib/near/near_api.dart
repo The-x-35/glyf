@@ -103,9 +103,14 @@ class NearQuote {
     this.explorer,
     this.guardLevel = 'ok',
     this.checks = const [],
+    this.exactOut = false,
   });
 
   final bool dry;
+
+  /// A send (EXACT_OUTPUT): the recipient gets [amountOut] exactly, and
+  /// whatever of [amountIn] isn't needed comes back.
+  final bool exactOut;
   final NearAsset sell;
   final NearAsset buy;
   final String amountIn;
@@ -146,6 +151,7 @@ class NearQuote {
       deadline: DateTime.tryParse(s('deadline') ?? ''),
       deposit: j['deposit'] is Map ? NearDeposit.fromJson(j['deposit']) : null,
       explorer: s('explorer'),
+      exactOut: j['exact'] == 'out',
       guardLevel: '${guard['level'] ?? 'ok'}',
       checks: [
         for (final c in (guard['checks'] as List? ?? const []).whereType<Map>())

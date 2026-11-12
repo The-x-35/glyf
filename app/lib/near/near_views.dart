@@ -32,7 +32,7 @@ class NearQuoteCard extends StatelessWidget {
             Semantics(
               identifier: 'trade:near:get',
               child: _side('You get', quote.amountOut, quote.buy, quote.amountOutUsd,
-                  approx: true, to: recipient),
+                  approx: !quote.exactOut, to: recipient),
             ),
           ]),
         ),
