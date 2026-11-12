@@ -152,3 +152,30 @@ Arpit asked what the Railway server does and what could run on the phone instead
 - **New:** phrases in 13 languages, the busy note on plan chips, repeated sentences offered back, 9 AM reminders, sunrise/sunset, weather (STRIP-BACKLOG.md "Done on 14 Oct").
 - **Moved to the phone:** currency rates (0a1a245); stickers, token prices and Cal.com booking in progress.
 
+
+## 11. Android parity, 12 Nov 2026
+
+Before the Android public beta on Google Play: every iPhone keyboard change since 1 Oct 2026 (`git log --since=2026-10-01 -- app/ios/GlyfKeyboard`, 57 commits) and every `Platform.isIOS` path in the Flutter app, checked against the Kotlin keyboard (`app/android/app/src/main/kotlin/com/arpit/glyf/ime/`).
+
+**Have (already on Android before this pass):** everything in section 7 (strip suggestions without the quoted word, emoji in the last slot, both currencies, coin amounts, word sums, city time, until-time, the list maker, polls, the booking-link chip, Add a Meet link, city/state form boxes, own names kept as words) and section 8 (glide typing); the trades reader, trade panel and g menu sponsors (43dc91d, 8061087); AI actions on the strip (539b8b0); MetaMask from the app (72f5549); .sol sends (f08f0b9); single words in the suggestion bar (D108, 19a33aa); the strip policy, chip cooldown, keyboard layouts, autocorrect undo, themes, phrases, repeated sentences, sunrise/sunset, weather, rates/stickers/Cal.com on the phone, the 9 AM reminder, Report on AI results, temp mail watching, search recents, translate strip, tones, Act, the vault editor, the money/stock chips, the swap fee, free runs.
+
+**Missing, done in this pass:**
+- Sends to .eth (ENS) names and 0x addresses, signed in MetaMask (22f6fc5).
+- The trade picker's typed token search and token logos (f7c7174).
+- No toast for a copy; your name after "I am" / "I'm" (d50fefe).
+- YouTube Shorts tab in search, and the strip's action can open it (8e07b1f).
+- The strip chip never ends in "…" (D108): shrink, then drop the last " · " part (7c8085b). Android's first; the iPhone's chip still truncates its tail.
+- A long copy pastes as a PDF (265742a).
+- "dinner was $90 for the four of us" splits, on both keyboards (4fad3c7).
+
+**Still missing (owed, Build):**
+- **Voice typing's full panel** (74adc98 on iOS: the frosted panel over the keys, ✕, the style pill As spoken / Clean / Formal / Casual / Excited, ✓, big words over the ribbon, listening until ✓). Android still has its strip with a level meter, ending at the recognizer's end of speech, and Polish/Undo chips after. Portable, but it changes how Android listens (continuous, restarted recognizer sessions) and needs a device to tune; left for a pass with the emulator.
+- Google Play billing: plans are not on sale anywhere yet (`Billing.onSale = false`); when they are, Android needs Play Billing (`Billing.available` is iOS-only today).
+
+**Not applicable on Android (iOS-only system behaviour):**
+- The Mac/iPad copy that iOS announces as "Pasting from MacBook" (d0dafc6): Android has no Universal Clipboard banner.
+- Voice through the app's background audio session, App Group and Darwin notifications (552314c, 4ce2725, d87d41b): Android's keyboard records itself with RECORD_AUDIO.
+- Apple's tulip key callout and Apple's emoji board chrome (ea4ac08, 74adc98's emoji part), the 16 pt band, scroll edge effects (c7d63bd): Apple's own look; Android keeps its Gboard-style press and board.
+- "Every emoji Apple's keyboard has" (6f48d22): Android draws the system's emoji set.
+- Paste from Other Apps and Full Access setup steps, Settings deep links, `clipboardCaptureAll`: iOS permission model only.
+- Sign in with Apple in onboarding: Android offers Google only, by design.
