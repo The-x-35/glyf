@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:glyf/evm/trade_flow.dart';
 import 'package:glyf/evm/trade_screen.dart';
 import 'package:glyf/near/near_api.dart';
+import 'package:glyf/near/hot_wallet.dart';
 import 'package:glyf/near/near_flow.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -140,6 +141,31 @@ void main() {
     unawaited(steps.close());
   });
 
+  testWidgets('a trade from NEAR waiting on HOT offers Open HOT Wallet', (tester) async {
+    final steps = await open(tester);
+    steps.add(NearOutcome(TradeState.working, 'Send 5 NEAR to NEAR Intents: approve in HOT Wallet',
+        quote: _quote(sell: 'NEAR', sellChain: 'near'), recipient: 'your wallet', reopen: '${HotRelay.appLink}?hotcall-abc'));
+    await tester.pump();
+    expect(find.text('Open HOT Wallet'), findsOneWidget);
+    expect(find.text('Open MetaMask'), findsNothing);
+  });
+
+  testWidgets('a wallet that isn’t connected: Connect HOT Wallet connects it, then the same trade again', (tester) async {
+    final asked = <Map<String, String>>[];
+    final wallet = _Connecting();
+    NearFlow.wallet = wallet;
+    addTearDown(() => NearFlow.wallet = const NearWallet());
+    final steps = await open(tester, asked: asked);
+    steps.add(const NearOutcome(TradeState.failed, 'HOT Wallet isn’t connected',
+        detail: 'Connect HOT Wallet in Profile › Wallet', connect: 'hot'));
+    await tester.pump();
+    expect(find.text('Done'), findsNothing);
+    await tester.tap(find.text('Connect HOT Wallet'));
+    await tester.pump();
+    expect(wallet.asked, ['hot']);
+    expect(asked, hasLength(2), reason: 'the trade runs again once HOT is connected');
+  });
+
   testWidgets('done: the destination’s transaction and NEAR Intents’ explorer', (tester) async {
     final steps = await open(tester);
     steps.add(NearOutcome(TradeState.done, 'Swapped',
@@ -154,4 +180,13 @@ void main() {
     expect(find.text('Done'), findsOneWidget);
     unawaited(steps.close());
   });
+}
+
+class _Connecting extends NearWallet {
+  final asked = <String>[];
+  @override
+  Future<String?> connect(String wallet, {void Function(String link)? opened}) async {
+    asked.add(wallet);
+    return null;
+  }
 }

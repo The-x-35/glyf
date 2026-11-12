@@ -17,6 +17,7 @@ import '../core/theme.dart';
 import '../shell/app_tour.dart';
 import '../onboarding/onboarding_flow.dart';
 import '../evm/evm_signer.dart';
+import '../near/hot_wallet.dart';
 import '../wallet/solana.dart' show Sol;
 import '../wallet/wallet_flow.dart' show WalletFlow, WalletLink;
 import '../wallet/wallet_screen.dart';
@@ -116,6 +117,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
 
   Future<void> _refresh() async {
     final settings = await GlyfBridge.sharedSettings();
+    unawaited(HotWallet.load());
     final contacts = await GlyfBridge.contactsStatus();
     final calendar = await GlyfBridge.calendarStatus();
     final google = await GlyfBridge.googleStatus();
@@ -415,7 +417,7 @@ class _ProfileTabState extends State<ProfileTab> with WidgetsBindingObserver {
                   ? Sol.short(link.address)
                   : EvmSigner.address.value != null
                       ? EvmSigner.short(EvmSigner.address.value!)
-                      : 'Connect',
+                      : HotWallet.account.value?.accountId ?? 'Connect',
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (ctx) => const WalletScreen(),
               )),

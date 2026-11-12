@@ -8,7 +8,7 @@ class BrandMark extends StatelessWidget {
   const BrandMark(this.brand, {super.key, this.size = 44});
 
   /// magicblock | calendar | contacts | gmail | gcal | meet | notion | slack |
-  /// spotify | calcom | calendly | booking | uniswap | definitive | jupiter | metamask | ethereum | solana
+  /// spotify | calcom | calendly | booking | uniswap | definitive | jupiter | metamask | ethereum | solana | near
   final String brand;
   final double size;
 
@@ -26,6 +26,7 @@ class BrandMark extends StatelessWidget {
       'metamask' => (Colors.white, const Color(0x1A000000)),
       'ethereum' => (Colors.white, const Color(0x1A000000)),
       'solana' => (Colors.black, null),
+      'near' => (Colors.black, null),
       _ => (Colors.white, const Color(0x1A000000)),
     };
     return Container(
@@ -195,6 +196,18 @@ class _MarkPainter extends CustomPainter {
           canvas.drawPath(svgPath(d, fill: PathFillType.nonZero), paint);
         }
         canvas.restore();
+      case 'near':
+        // NEAR's N, as the keyboard draws it (SponsorMarks.swift): the left
+        // bar rises from a notch at its foot, the right falls to one at its
+        // head, the diagonal joins them. White on black.
+        const shapes = [
+          [Offset(0.26, 0.24), Offset(0.36, 0.24), Offset(0.36, 0.62), Offset(0.26, 0.76)],
+          [Offset(0.64, 0.24), Offset(0.74, 0.24), Offset(0.74, 0.76), Offset(0.64, 0.76), Offset(0.64, 0.38)],
+          [Offset(0.26, 0.24), Offset(0.36, 0.24), Offset(0.74, 0.76), Offset(0.64, 0.76)],
+        ];
+        for (final shape in shapes) {
+          canvas.drawPath(Path()..addPolygon([for (final p in shape) p * s], true), fill(Colors.white));
+        }
       case 'metamask':
         // The fox (35x33), 70% of the tile wide.
         final w = s * 0.7, k = w / 35;

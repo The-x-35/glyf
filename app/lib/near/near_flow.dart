@@ -12,6 +12,7 @@ import '../wallet/phantom.dart';
 import '../wallet/solana.dart';
 import '../wallet/wallet_api.dart';
 import '../wallet/wallet_flow.dart';
+import 'hot_wallet.dart';
 import 'near_api.dart';
 
 /// A step of a NEAR Intents trade, with what the trade screen shows beside
@@ -20,7 +21,7 @@ import 'near_api.dart';
 class NearOutcome extends TradeOutcome {
   const NearOutcome(super.state, super.title,
       {super.detail, super.txUrl, super.reopen, super.hash, this.quote, this.recipient, this.explorer,
-      this.manual = false, this.blocked = false, this.askRefund});
+      this.manual = false, this.blocked = false, this.askRefund, this.connect});
 
   final NearQuote? quote;
 
@@ -40,14 +41,86 @@ class NearOutcome extends TradeOutcome {
   /// The chain ("Bitcoin") whose address a refund needs: paid from a wallet
   /// Glyf doesn't know, so the screen asks for it and goes on with refundTo.
   final String? askRefund;
+
+  /// The wallet this trade needs and isn't connected ("metamask",
+  /// "phantom", "hot"): the screen's button connects it and goes on.
+  final String? connect;
 }
 
 /// What a NEAR Intents trade needs from the person's own wallets: who they
 /// are on each chain, and the deposit signed (MetaMask on EVM chains,
-/// Phantom or a Mobile Wallet Adapter wallet on Solana). A test stands in
-/// for the wallets by overriding these.
+/// Phantom or a Mobile Wallet Adapter wallet on Solana, HOT Wallet on
+/// NEAR). All three stay connected side by side; the trade's origin chain
+/// picks the one that signs. A test stands in for the wallets by
+/// overriding these.
 class NearWallet {
   const NearWallet();
+
+  /// Connects [wallet] ("metamask", "phantom", "hot") from the trade
+  /// screen's button. Null when it's connected; else what went wrong.
+  /// Connecting one never touches the others' saved settings.
+  /// [opened] hears HOT's link, for the screen's Open HOT Wallet.
+  Future<String?> connect(String wallet, {void Function(String link)? opened}) async {
+    switch (wallet) {
+      case 'hot':
+        try {
+          await HotWallet.connect(opened: opened);
+          return null;
+        } on HotError catch (e) {
+          return e.refused ? 'Cancelled in HOT Wallet' : e.message;
+        }
+      case 'metamask':
+        try {
+          await EvmSigner.connect(EvmSignerKind.metamask).drain<void>();
+          return await EvmSigner.load() == null ? 'MetaMask isn’t connected' : null;
+        } on SignFailed catch (e) {
+          return e.cancelled ? 'Cancelled in MetaMask' : '$e';
+        }
+      case 'phantom':
+        final error = await WalletFlow.connect();
+        if (error != null) return error;
+        if (WalletFlow.link.value != null) return null;
+        // Phantom answers on glyf://phantom/connect, finished on its own screen.
+        final done = Completer<void>();
+        void heard() {
+          if (WalletFlow.link.value != null && !done.isCompleted) done.complete();
+        }
+        WalletFlow.link.addListener(heard);
+        try {
+          await done.future.timeout(const Duration(minutes: 3));
+          return null;
+        } on TimeoutException {
+          return 'Phantom didn’t answer';
+        } finally {
+          WalletFlow.link.removeListener(heard);
+        }
+    }
+    return 'Glyf can’t connect that wallet';
+  }
+
+  /// Opens HOT Wallet to sign and send [txs] from the connected NEAR account.
+  Future<HotCall> startNear(List<NearTransaction> txs) async {
+    try {
+      return await HotWallet.signAndSend(txs);
+    } on HotError catch (e) {
+      throw SignFailed(e.message, detail: 'Nothing was sent');
+    }
+  }
+
+  /// HOT's answer to [call]: what it sent, checked against [txs].
+  Future<List<NearSent>> finishNear(HotCall call, List<NearTransaction> txs, {required String signer}) async {
+    try {
+      return await HotWallet.sent(call, txs, signer: signer);
+    } on HotError catch (e) {
+      if (e.refused) {
+        throw SignFailed('Cancelled in HOT Wallet',
+            detail: e.message == 'Cancelled in HOT Wallet' ? 'Nothing was sent' : e.message, cancelled: true);
+      }
+      if (e.stopped) throw SignFailed('Stopped', detail: 'Nothing was sent from here', cancelled: true);
+      if (e.timedOut) throw SignFailed('HOT Wallet didn’t answer', detail: 'If you approved it, follow it on NearBlocks');
+      throw SignFailed(e.message, detail: 'Nothing was sent');
+    }
+  }
 
   /// The connected MetaMask's address, or null.
   Future<String?> evmAddress() => EvmSigner.load();
@@ -160,6 +233,22 @@ abstract final class NearFlow {
   /// EVM chains MetaMask can pay from here; their deposit is signed there.
   static bool _isEvm(String chain) => EvmChain.named(chain) != null || const {'bsc', 'avalanche', 'gnosis'}.contains(chain);
 
+  /// The wallet that signs on [chain]: MetaMask on the EVM chains,
+  /// Phantom on Solana, HOT Wallet on NEAR; null where Glyf can't sign
+  /// (Bitcoin, Zcash…: paid from any wallet by hand).
+  static String? walletFor(String chain) => _isEvm(chain)
+      ? 'metamask'
+      : chain == 'solana'
+          ? 'phantom'
+          : chain == 'near'
+              ? 'hot'
+              : null;
+
+  /// Connects [w] for the trade screen's button (see NearWallet.connect).
+  static Future<String?> connect(String w, {void Function(String link)? opened}) => wallet.connect(w, opened: opened);
+
+  static const walletNames = {'metamask': 'MetaMask', 'phantom': 'Phantom', 'hot': HotWallet.name};
+
   static String chainLabel(String chain) => EvmChain.named(chain)?.label ?? _labels[chain] ?? chain;
 
   static String short(String a) => a.length <= 16 || a.endsWith('.near') ? a : '${a.substring(0, 6)}…${a.substring(a.length - 4)}';
@@ -203,37 +292,39 @@ abstract final class NearFlow {
                 : null;
 
     final refundTo = q['refundTo'] ?? own(sellChain);
-    if (refundTo == null && !_isEvm(sellChain) && sellChain != 'solana') {
-      yield NearOutcome(TradeState.failed, 'Where should a refund go?',
-          detail: 'Your own ${chainLabel(sellChain)} address, in case NEAR Intents can’t fill it',
-          askRefund: chainLabel(sellChain));
+    final signer = walletFor(sellChain);
+    if (refundTo == null && signer != null) {
+      // Paid from the person's own wallet on that chain, and it isn't connected.
+      final name = walletNames[signer]!;
+      yield NearOutcome(TradeState.failed, '$name isn’t connected',
+          detail: signer == 'metamask'
+              ? EvmSigner.missing
+              : signer == 'phantom'
+                  ? 'Connect Phantom in Profile › Wallet'
+                  : 'Connect HOT Wallet in Profile › Wallet',
+          connect: signer);
       return;
     }
     if (refundTo == null) {
-      yield TradeOutcome(TradeState.failed, switch (sellChain) {
-        'solana' => 'Phantom isn’t connected',
-        _ when _isEvm(sellChain) => 'MetaMask isn’t connected',
-        _ => 'Where should a refund go?',
-      },
-          detail: switch (sellChain) {
-            'solana' => 'Connect Phantom in Profile › Wallet',
-            _ when _isEvm(sellChain) => EvmSigner.missing,
-            _ => 'Glyf needs your own ${chainLabel(sellChain)} address in case NEAR Intents can’t fill it',
-          });
+      yield NearOutcome(TradeState.failed, 'Where should a refund go?',
+          detail: 'Your own ${chainLabel(sellChain)} address, in case NEAR Intents can’t fill it',
+          askRefund: chainLabel(sellChain));
       return;
     }
     final typed = q['to']?.trim();
     final recipient = typed != null && typed.isNotEmpty ? typed : own(buyChain);
     if (recipient == null) {
       final where = chainLabel(buyChain);
-      yield TradeOutcome(TradeState.failed, 'Who gets the $buy?',
+      final lands = walletFor(buyChain);
+      yield NearOutcome(TradeState.failed, 'Who gets the $buy?',
           detail: buyChain == 'near'
-              ? 'Add your NEAR account, like “to alice.near”'
+              ? 'Connect HOT Wallet in Profile › Wallet, or add an account like “to alice.near”'
               : _isEvm(buyChain)
                   ? 'Connect MetaMask in Profile › Wallet, or add an address with “to”'
                   : buyChain == 'solana'
                       ? 'Connect Phantom in Profile › Wallet, or add an address with “to”'
-                      : 'Add a $where address, like “to ${buyChain == 'bitcoin' ? 'bc1q…' : '…'}”');
+                      : 'Add a $where address, like “to ${buyChain == 'bitcoin' ? 'bc1q…' : '…'}”',
+          connect: lands);
       return;
     }
     final mine = recipient == own(buyChain);
@@ -301,6 +392,9 @@ abstract final class NearFlow {
     final signable = switch (deposit.kind) {
       'erc20' || 'native' => evmChain != null && (deposit.chainId == null || deposit.chainId == evmChain.id),
       'sol' || 'spl' => sellChain == 'solana' && sol != null,
+      // From NEAR, signed in HOT Wallet. An older server says "manual" for
+      // NEAR; the deposit is built here either way.
+      'near' || 'manual' => sellChain == 'near' && nearAccount != null && nearAccount.isNotEmpty && refundTo == nearAccount,
       _ => false,
     };
     if (!signable) {
@@ -308,6 +402,22 @@ abstract final class NearFlow {
       await _remember(recipient, mine: mine);
       yield step(TradeState.working, 'Send from any wallet',
           detail: '$paid on ${chainLabel(sellChain)} to the address below', manual: true);
+    } else if (sellChain == 'near') {
+      final tx = nearDeposit(quote);
+      if (tx == null) {
+        yield step(TradeState.failed, 'That deposit doesn’t add up', detail: 'Nothing was sent');
+        return;
+      }
+      final call = await wallet.startNear([tx]);
+      yield step(TradeState.working, '$label: approve in ${HotWallet.name}', reopen: call.link);
+      final sent = (await wallet.finishNear(call, [tx], signer: nearAccount!)).single;
+      if (sent.failure != null) {
+        throw SignFailed('The deposit didn’t go through', detail: 'NEAR turned it down. Nothing was sent', hash: sent.hash);
+      }
+      depositTx = sent.hash;
+      await _remember(recipient, mine: mine);
+      yield step(TradeState.working, 'Deposit sent',
+          detail: '$paid on NEAR', txUrl: NearSent.explorer(sent.hash), hash: sent.hash);
     } else if (deposit.kind == 'erc20' || deposit.kind == 'native') {
       final call = depositCall(quote, evmChain!);
       if (call == null) {
@@ -357,7 +467,8 @@ abstract final class NearFlow {
     // 3. Told to 1Click, then followed until it lands.
     if (depositTx != null) {
       try {
-        await api.submit(depositAddress: depositAddress, txHash: depositTx, memo: memo);
+        await api.submit(
+            depositAddress: depositAddress, txHash: depositTx, memo: memo, nearSender: sellChain == 'near' ? nearAccount : null);
       } catch (_) {
         // Only a speed-up: 1Click finds the deposit on its own.
       }
@@ -378,7 +489,9 @@ abstract final class NearFlow {
           ? null
           : evmChain != null
               ? evmChain.txUrl(depositTx)
-              : WalletFlow.solscanUrl(depositTx);
+              : sellChain == 'near'
+                  ? NearSent.explorer(depositTx)
+                  : WalletFlow.solscanUrl(depositTx);
       switch (status?.status) {
         case 'SUCCESS':
           yield NearOutcome(TradeState.done, send ? 'Sent' : 'Swapped',
@@ -497,6 +610,25 @@ abstract final class NearFlow {
     if (quote.amountInBase != null && BigInt.tryParse(quote.amountInBase!) != amount) return null;
     return Sol.transferToken(
         from: from, to: to, mint: mint, amount: amount, decimals: d.decimals ?? quote.sell.decimals, blockhash: blockhash);
+  }
+
+  /// The deposit on NEAR, built here for HOT Wallet: the sell token's
+  /// contract registers the deposit address, wraps NEAR when it's NEAR
+  /// (1Click takes wNEAR), and ft_transfers the amount to it. Null when the
+  /// quote's pieces don't agree (another token than the one quoted, an
+  /// address that isn't a NEAR account, an amount that isn't the quote's).
+  @visibleForTesting
+  static NearTransaction? nearDeposit(NearQuote quote) {
+    final d = quote.deposit!;
+    final to = quote.depositAddress!;
+    final token = quote.sell.address;
+    if (quote.sell.chain != 'near' || token == null || !HotWallet.isAccount(token) || !HotWallet.isAccount(to)) return null;
+    if ((d.token != null && d.token != token) || (d.receiverId != null && d.receiverId != token)) return null;
+    if (d.depositAddress != null && d.depositAddress != to) return null;
+    final amount = _base(quote, d.amountBase);
+    if (amount == null || amount <= BigInt.zero) return null;
+    if (quote.amountInBase != null && BigInt.tryParse(quote.amountInBase!) != amount) return null;
+    return NearTransaction.ftTransfer(token: token, receiverId: to, amount: amount, wrap: token == 'wrap.near');
   }
 
   /// Someone paid through NEAR Intents, kept for Guard's lookalike check

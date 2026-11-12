@@ -8,7 +8,7 @@ Type `swap 20 usdc on base to sol` or `send 5 usdc to alice.near` in any app.
 Glyf's keyboard reads it on the phone, without a model, and shows a live NEAR
 Intents quote: what you pay, what you get, and about how many seconds it
 takes. One tap hands it to the Glyf app, and your own wallet sends the
-deposit: MetaMask on EVM chains, Phantom on Solana. NEAR Intents (1Click)
+deposit: MetaMask on EVM chains, Phantom on Solana, HOT Wallet on NEAR. NEAR Intents (1Click)
 settles it on the destination chain, and the app follows it until it lands.
 Glyf never holds a key.
 
@@ -32,6 +32,8 @@ wallets only know one.
 | `swap 0.2 sol to usdc on base` | A deposit from Phantom, USDC lands on Base | Unstoppable DeFi |
 | `swap 50 usdc on arbitrum to btc to bc1q…` | Native BTC to a Bitcoin address | Unstoppable DeFi |
 | `move 50 usdc from base to solana` | The same coin, moved across chains | Unstoppable DeFi |
+| `swap 5 near to usdc on base` | HOT Wallet signs the deposit from your own .near account (one transaction: register, wrap, ft_transfer), refunds go back to it, USDC lands in MetaMask | Unstoppable DeFi |
+| `swap 20 usdc on base to near` | Lands in the .near account HOT Wallet signed in with, no address typed | Unstoppable DeFi |
 | `send 5 usdc to alice.near` | Pays exactly 5 USDC (EXACT_OUTPUT) to a NEAR account; you pay from Base USDC. The .near name is checked on NEAR RPC first | Real-World Money |
 | `pay bob.near 10 usdc with sol` | Pays from SOL instead | Real-World Money |
 | `dinner was $90 for the four of us` | The strip offers "$22.50 each" and a **pay link**. Each friend opens it, picks the coin and chain they hold (USDC on any chain, SOL, BTC, ZEC, NEAR…), and gets a deposit address and QR code. The requester is paid exactly $22.50 on their own chain. The page shows "2 of 4 paid" | Social Money, Real-World Money |
@@ -88,8 +90,8 @@ npm run near:pot -- build.sputnik-dao.near "pay efiz.near \$120 from the pot for
 Tests (no network; every external call is faked):
 
 ```bash
-cd server && SESSION_SECRET=any-test-secret npm test     # 570 tests, NEAR ones in test/near*.test.ts, sputnik.test.ts, pay.test.ts, privateai.test.ts, names.test.ts, actions.test.ts
-cd app && flutter test test/near_flow_test.dart test/near_trade_screen_test.dart test/private_ai_near_test.dart
+cd server && SESSION_SECRET=any-test-secret npm test     # NEAR ones in test/near*.test.ts, sputnik.test.ts, pay.test.ts, privateai.test.ts, names.test.ts, actions.test.ts
+cd app && flutter test test/near_flow_test.dart test/near_trade_screen_test.dart test/hot_wallet_test.dart test/wallet/wallet_screen_near_test.dart test/private_ai_near_test.dart
 cd app/ios && xcodebuild test -workspace Runner.xcworkspace -scheme Runner -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:RunnerTests/TradeIntentTests
 ```
 
@@ -111,13 +113,14 @@ session, except the public pay pages at `/pay/<id>`.
 | Private AI on NEAR AI Cloud, receipts | `server/src/lib/privateai.ts`, `server/src/providers/openrouter.ts` |
 | AI-suggested NEAR actions | `server/src/lib/actions.ts`, `server/src/routes/suggest.ts` |
 | iPhone keyboard: reading phrases, chip, trade panel, g menu | `app/ios/GlyfKeyboard/Engine/TradeIntent.swift`, `Surfaces/TradeSurface.swift`, `Engine/SponsorMenu.swift` |
-| App: deposit through MetaMask or Phantom, tracking, QR | `app/lib/near/`, `app/lib/evm/trade_flow.dart`, `app/lib/evm/trade_screen.dart` |
+| App: deposit through MetaMask, Phantom or HOT Wallet, tracking, QR | `app/lib/near/`, `app/lib/evm/trade_flow.dart`, `app/lib/evm/trade_screen.dart` |
+| HOT Wallet (NEAR) over HOT's public relay (h4n.app), as near-connect speaks it | `app/lib/near/hot_wallet.dart`, Profile › Wallet in `app/lib/wallet/wallet_screen.dart` |
 | Android keyboard | `app/android/app/src/main/kotlin/com/arpit/glyf/ime/` |
 | Contract between the parts | `docs/NEAR-SPEC.md` |
 
 ## Honest limits
 
-- **Glyf has no NEAR wallet of its own**, so it can't sign NEAR-chain deposits. Swaps into NEAR are fine (to a .near account). Paying from NEAR, BTC or ZEC uses "Send from any wallet".
+- **Glyf holds no NEAR key.** NEAR deposits are signed in HOT Wallet, through HOT's public relay (h4n.app), the same mailbox near-connect uses; HOT is mainnet only. Paying from BTC or ZEC uses "Send from any wallet".
 - **Keyless 1Click** adds its 0.2% fee. With a 1Click JWT (`NEAR_INTENTS_JWT`), that fee goes away.
 - **Private AI on NEAR** needs NEAR AI Cloud credits on the deploying account. The switch is off by default, and without a key the server ignores it.
 - **Confidential Intents** need wallet-signed auth. Not built.

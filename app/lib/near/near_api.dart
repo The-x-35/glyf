@@ -23,7 +23,8 @@ class NearAsset {
 
 /// How the deposit is made (docs/NEAR-SPEC.md, POST /near/quote `deposit`):
 /// `erc20`, `native` (EVM, signed in MetaMask), `sol`, `spl` (Solana,
-/// signed in Phantom) or `manual` (any other chain: shown to copy).
+/// signed in Phantom), `near` (NEAR, signed in HOT Wallet) or `manual`
+/// (any other chain: shown to copy).
 class NearDeposit {
   const NearDeposit({
     required this.kind,
@@ -38,6 +39,7 @@ class NearDeposit {
     this.lamports,
     this.mint,
     this.decimals,
+    this.receiverId,
   });
 
   final String kind;
@@ -52,6 +54,9 @@ class NearDeposit {
   final String? lamports;
   final String? mint;
   final int? decimals;
+
+  /// `near`: the token contract the transaction goes to.
+  final String? receiverId;
 
   static NearDeposit fromJson(Object? j) {
     final m = j is Map ? j : const {};
@@ -69,6 +74,7 @@ class NearDeposit {
       lamports: s('lamports'),
       mint: s('mint'),
       decimals: (m['decimals'] as num?)?.toInt(),
+      receiverId: s('receiverId'),
     );
   }
 }
@@ -205,8 +211,10 @@ class NearApi {
 
   /// POST /near/submit: tells 1Click the deposit went out, which speeds up
   /// its pickup.
-  Future<void> submit({required String depositAddress, required String txHash, String? memo}) =>
-      GlyfApi.evmPost('/near/submit', {'depositAddress': depositAddress, 'txHash': txHash, 'memo': ?memo});
+  /// [nearSender]: the account that paid a deposit on NEAR.
+  Future<void> submit({required String depositAddress, required String txHash, String? memo, String? nearSender}) =>
+      GlyfApi.evmPost('/near/submit',
+          {'depositAddress': depositAddress, 'txHash': txHash, 'memo': ?memo, 'nearSenderAccount': ?nearSender});
 
   /// GET /near/status for the deposit address.
   Future<NearStatus> status({required String depositAddress, String? memo}) async {

@@ -293,6 +293,40 @@ final class TradeIntentTests: XCTestCase {
         XCTAssertEqual(TradeIntent.walletName(chain: "base"), "MetaMask")
         XCTAssertEqual(TradeIntent.walletName(chain: "arbitrum"), "MetaMask")
         XCTAssertEqual(TradeIntent.walletName(chain: nil), "MetaMask")
+        XCTAssertEqual(TradeIntent.walletName(chain: "near"), "HOT Wallet")
+    }
+
+    /// MetaMask, Phantom and HOT Wallet side by side: the trade's chain
+    /// picks the one it needs, and with HOT connected a swap to NEAR asks
+    /// for no recipient (it lands in the person's own account).
+    func testEachTradeNeedsItsOwnWalletAndHOTForNEAR() throws {
+        let fromNear = try XCTUnwrap(read("swap 5 near to usdc on base"))
+        XCTAssertEqual(fromNear.chainName, "near")
+        XCTAssertEqual(TradeIntent.missingWallet(fromNear, evm: "0xab", solana: "Gma", near: nil), "HOT Wallet")
+        XCTAssertNil(TradeIntent.missingWallet(fromNear, evm: "0xab", solana: nil, near: "arpit.near"))
+        XCTAssertNil(TradeIntent.missingWallet(fromNear, evm: nil, solana: nil, near: "arpit.near"),
+                     "the USDC lands in MetaMask, but the app asks for that, not the panel")
+
+        let toNear = try XCTUnwrap(read("swap 20 usdc on base to near"))
+        XCTAssertNil(toNear.to)
+        XCTAssertEqual(TradeIntent.missingWallet(toNear, evm: "0xab", solana: nil, near: nil), "HOT Wallet")
+        XCTAssertEqual(TradeIntent.missingWallet(toNear, evm: "0xab", solana: nil, near: ""), "HOT Wallet")
+        XCTAssertNil(TradeIntent.missingWallet(toNear, evm: "0xab", solana: nil, near: "arpit.near"))
+        XCTAssertEqual(TradeIntent.missingWallet(toNear, evm: nil, solana: nil, near: "arpit.near"), "MetaMask")
+        let typed = try XCTUnwrap(read("swap 20 usdc on base to near to alice.near"))
+        XCTAssertNil(TradeIntent.missingWallet(typed, evm: "0xab", solana: nil, near: nil))
+
+        let fromSol = try XCTUnwrap(read("swap 0.2 sol to usdc on base"))
+        XCTAssertEqual(TradeIntent.missingWallet(fromSol, evm: "0xab", solana: nil, near: "arpit.near"), "Phantom")
+        XCTAssertNil(TradeIntent.missingWallet(fromSol, evm: "0xab", solana: "Gma", near: nil))
+        let fromBase = try XCTUnwrap(read("swap 20 usdc on base to sol"))
+        XCTAssertEqual(TradeIntent.missingWallet(fromBase, evm: nil, solana: "Gma", near: "arpit.near"), "MetaMask")
+        XCTAssertNil(TradeIntent.missingWallet(try XCTUnwrap(read("swap 0.001 btc on bitcoin to usdc on base")), evm: "0xab", solana: nil, near: nil))
+
+        let s = try settings { $0["nearAccount"] = "arpit.near"; $0["evmAddress"] = "0xab" }
+        XCTAssertEqual(s.nearAccount, "arpit.near")
+        XCTAssertEqual(s.evmAddress, "0xab")
+        XCTAssertNil(try settings { $0["nearAccount"] = nil }.nearAccount)
     }
 
     /// Shares trade on Base, by their address there: a buy is a Uniswap
