@@ -6,6 +6,7 @@ import type { Guard } from "../lib/guard.js";
 import { TTLCache } from "../lib/cache.js";
 import { DETAIL_KINDS, detailNamed, type DetailKind } from "../lib/details.js";
 import { readTyping } from "../lib/reading.js";
+import { mayAct, type Action } from "../lib/actions.js";
 
 /**
  * POST /suggest — read what someone is typing and say what Glyf could DO
@@ -29,6 +30,9 @@ const SuggestSchema = z.object({
   deviceId: z.string().min(1).max(80),
   /** Kinds of detail saved in the keyboard's vault. Never the values. */
   kinds: z.array(z.string().max(16)).max(20).optional(),
+  /** A phone that can open a tool prefilled (lib/actions.ts). Old phones
+   *  never send it, and get exactly the answers they always did. */
+  actions: z.boolean().optional(),
 });
 
 /** What the chip says, and what the keyboard runs when it is tapped. */
@@ -80,14 +84,18 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
     const kinds = [...new Set(parsed.data.kinds ?? [])].filter((k): k is DetailKind =>
       (DETAIL_KINDS as readonly string[]).includes(k)).sort();
 
-    const key = TTLCache.key(["suggest", text.toLowerCase(), kinds.join(",")]);
+    const wantsActions = parsed.data.actions === true;
+    const key = TTLCache.key(["suggest", text.toLowerCase(), kinds.join(","), wantsActions ? "a" : ""]);
     const hit = cache.get(key);
     let suggestion: Suggestion;
+    let action: Action | null = null;
     if (hit !== undefined) {
-      suggestion = JSON.parse(hit) as Suggestion;
+      if (wantsActions) ({ suggestion, action } = JSON.parse(hit) as { suggestion: Suggestion; action: Action | null });
+      else suggestion = JSON.parse(hit) as Suggestion;
     } else {
       const named = detailNamed(text);
       const field = named && kinds.includes(named) ? named : null;
+      let asked = false;
       const byRules = field ? null : planByRules(text);
       if (field || byRules) {
         suggestion = suggestionFor(text, byRules?.intent ?? null, field, byRules?.query);
@@ -101,16 +109,24 @@ export function suggestRoutes(app: FastifyInstance, guard: Guard): void {
       } else {
         const gate = await guard.suggest(req, parsed.data.deviceId);
         if (!gate.ok) return reply.code(429).send({ ok: false, error: gate.message });
-        const read = await readTyping(text, kinds);
+        const read = await readTyping(text, kinds, wantsActions);
         // The same second look hold space gives the router's word: "can u
         // send me the invoice" is a message to tidy, not something to write.
         const intent = read?.intent ? checkPlan({ intent: read.intent, query: text }, text).intent : null;
         suggestion = suggestionFor(text, intent, read?.field ?? null);
+        action = read?.action ?? null;
+        asked = true;
       }
-      cache.set(key, JSON.stringify(suggestion));
+      // The rules had a chip, but the words may still be a tool's job ("can
+      // we do dinner fri 8pm" reads as a message to tidy, and is a plan).
+      if (wantsActions && !asked && !field && !named && mayAct(text)) {
+        const gate = await guard.suggest(req, parsed.data.deviceId);
+        if (gate.ok) action = (await readTyping(text, kinds, true))?.action ?? null;
+      }
+      cache.set(key, JSON.stringify(wantsActions ? { suggestion, action } : suggestion));
     }
     // Events only: the text itself never reaches the log.
-    if (suggestion) req.log.info({ intent: suggestion.intent, field: suggestion.field }, "suggest");
-    return { ok: true, suggestion };
+    if (suggestion || action) req.log.info({ intent: suggestion?.intent, field: suggestion?.field, tool: action?.tool }, "suggest");
+    return wantsActions ? { ok: true, suggestion, action } : { ok: true, suggestion };
   });
 }

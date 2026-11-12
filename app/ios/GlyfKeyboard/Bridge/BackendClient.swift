@@ -459,6 +459,7 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
     /// and cancellable: the strip asks after a pause, never on every key,
     /// and it never spends one of the person's runs.
     func suggestAction(text: String, kinds: [String] = [],
+                       onAction: ((AIAction) -> Void)? = nil,
                        onResult: @escaping (String, String, String) -> Void)
     -> URLSessionDataTask? {
         let s = SettingsStore.current
@@ -471,8 +472,16 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         var body: [String: Any] = ["text": text, "deviceId": s.deviceId]
         // The kinds of detail saved, never the details.
         if !kinds.isEmpty { body["kinds"] = kinds }
+        // This phone opens a tool prefilled from the model's action (AIAction).
+        if onAction != nil { body["actions"] = true }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         let task = session.dataTask(with: req) { data, _, _ in
+            let reply = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            // A tool the model named, checked by the server, wins over its text chip.
+            if let onAction, let raw = reply?["action"] as? [String: Any], let action = AIAction.from(json: raw) {
+                DispatchQueue.main.async { onAction(action) }
+                return
+            }
             guard let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let suggestion = json["suggestion"] as? [String: Any],
