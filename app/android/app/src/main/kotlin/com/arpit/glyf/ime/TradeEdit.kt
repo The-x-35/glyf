@@ -75,7 +75,10 @@ object TradeEdit {
 
     /** The asset an order is about (the side that isn't dollars). */
     fun asset(i: TradeIntent): String {
-        if (i.kind == TradeIntent.Kind.SWAP || i.kind == TradeIntent.Kind.BRIDGE || i.kind == TradeIntent.Kind.SEND) return i.sell
+        if (i.kind == TradeIntent.Kind.SWAP || i.kind == TradeIntent.Kind.BRIDGE) return i.sell
+        // What's sent: the coin the recipient gets (a NEAR Intents send
+        // may pay for it in another).
+        if (i.kind == TradeIntent.Kind.SEND) return i.buy
         return if (sells(i)) i.sell else i.buy
     }
 
@@ -85,6 +88,8 @@ object TradeEdit {
         if (i.kind == TradeIntent.Kind.TWAP) return AmountUnit.Dollars
         if (!sells(i) && i.kind in listOf(TradeIntent.Kind.LIMIT, TradeIntent.Kind.STOP, TradeIntent.Kind.BRACKET))
             return AmountUnit.Dollars
+        // A send's amount is what arrives.
+        if (i.kind == TradeIntent.Kind.SEND) return AmountUnit.Spend(i.buy)
         return AmountUnit.Spend(i.sell)
     }
 
@@ -305,13 +310,22 @@ object TradeEdit {
     }
 
     /** The chains a trade of this kind can be on. */
-    fun chains(i: TradeIntent): List<String> = when (i.kind) {
-        TradeIntent.Kind.SWAP -> SponsorMenu.SWAP_CHAINS
+    fun chains(i: TradeIntent): List<String> = when {
+        i.kind == TradeIntent.Kind.SWAP -> if (i.isNear) NEAR_CHAINS else SponsorMenu.SWAP_CHAINS
+        // NEAR Intents' send pays from any chain a wallet here signs on.
+        i.kind == TradeIntent.Kind.SEND && i.isNear -> NEAR_PAY_CHAINS
         // A send stays where its name points: Solana for a .sol name or
         // SOL, any of MetaMask's chains otherwise.
-        TradeIntent.Kind.SEND -> if (i.chainName == "solana") listOf("solana") else SponsorMenu.SWAP_CHAINS
+        i.kind == TradeIntent.Kind.SEND -> if (i.chainName == "solana") listOf("solana") else SponsorMenu.SWAP_CHAINS
         else -> FLASH_CHAINS
     }
+
+    /** The chains a NEAR Intents swap picks from: where MetaMask and
+     *  Phantom sign, then the chains of their own (paid from any wallet). */
+    val NEAR_CHAINS = listOf("base", "ethereum", "arbitrum", "optimism", "polygon", "bsc", "avalanche", "solana",
+        "near", "bitcoin", "zcash", "ton", "tron", "xrp", "dogecoin", "litecoin", "sui")
+    /** Where a NEAR Intents send is paid from: chains Glyf can sign on. */
+    val NEAR_PAY_CHAINS = listOf("base", "ethereum", "arbitrum", "optimism", "polygon", "solana")
 
     /** Flash's chains that this server also has an EVM node for, Solana too. */
     val FLASH_CHAINS = listOf("base", "solana", "ethereum", "arbitrum", "optimism")
@@ -320,6 +334,7 @@ object TradeEdit {
      *  cross-chain; a bridge's buy side is where it lands). Tokens that
      *  don't exist on the new chain fall back to its gas coin. */
     fun pickChain(chain: String, side: Side, intent: TradeIntent): TradeIntent {
+        if (intent.isNear) return pickNearChain(chain, side, intent)
         val i = intent.copy()
         if (i.kind == TradeIntent.Kind.BRIDGE && side == Side.BUY) {
             i.toChain = if (chain == i.chainName) null else chain
@@ -355,11 +370,41 @@ object TradeEdit {
         return i
     }
 
+    /** A chain picked on a NEAR Intents trade: a coin that isn't on the new
+     *  chain becomes that chain's own. One chain on both sides is a swap
+     *  there (Uniswap's, or Jupiter's), no longer across. */
+    private fun pickNearChain(chain: String, side: Side, intent: TradeIntent): TradeIntent {
+        val i = intent.copy()
+        if (side == Side.BUY && i.kind == TradeIntent.Kind.SWAP) {
+            i.buy = TradeIntent.nearFit(i.buy, chain)
+            i.buyAddress = null
+            i.buyChain = if (chain == i.chainName) null else chain
+            if (i.buyChain == null && i.sell == i.buy) i.buy = TradeIntent.stableFor(i.sell)
+            return i
+        }
+        i.chain = chain
+        i.sell = TradeIntent.nearFit(i.sell, chain)
+        i.sellAddress = null
+        if (i.kind == TradeIntent.Kind.SWAP && i.buyChain == chain) {
+            i.buyChain = null
+            if (i.sell == i.buy) i.buy = TradeIntent.stableFor(i.sell)
+        }
+        return i
+    }
+
     // MARK: picker rows
 
     /** The picker's rows before the server answers (or when it can't):
      *  the coins every chain here has. */
     fun builtIn(chain: String): List<TokenPick> {
+        // A chain of its own: its coin, and the dollars 1Click has there.
+        if (chain in TradeIntent.otherChains) {
+            val own = TradeIntent.nativeChain.entries.firstOrNull { it.value == chain }?.key ?: chain.uppercase(Locale.US)
+            val rows = mutableListOf(TokenPick(own, TradeIntent.label(chain), native = true))
+            if (TradeIntent.nearHas("USDC", chain)) rows.add(TokenPick("USDC", "USD Coin"))
+            if (TradeIntent.nearHas("USDT", chain)) rows.add(TokenPick("USDT", "Tether USD"))
+            return rows
+        }
         if (chain == "solana") return listOf(TokenPick("SOL", "Solana", native = true),
             TokenPick("USDC", "USD Coin"), TokenPick("USDT", "Tether USD"))
         val rows = mutableListOf(TokenPick("ETH", "Ether", native = true), TokenPick("USDC", "USD Coin"))

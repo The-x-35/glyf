@@ -31,7 +31,7 @@ object SchedulingClient {
             requestMethod = method
             connectTimeout = 5000
             readTimeout = 15000
-            BackendClient.bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+            BackendClient.session(this)
             if (method == "POST") {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")

@@ -122,7 +122,7 @@ object Smart {
         is Chip.Pay -> if (chip.problem != null) "OK" else "Send"
         is Chip.Buy -> "Buy"
         is Chip.Trade -> when (chip.intent.kind) {
-            TradeIntent.Kind.SWAP -> if (chip.intent.amountIsUSD || chip.intent.buyAmount != null) "Buy" else "Swap"
+            TradeIntent.Kind.SWAP -> if (chip.intent.isNear && chip.intent.sell == chip.intent.buy) "Move" else if (chip.intent.amountIsUSD || chip.intent.buyAmount != null) "Buy" else "Swap"
             TradeIntent.Kind.BRIDGE -> "Move"
             TradeIntent.Kind.SEND -> "Send"
             else -> "Set"
@@ -151,7 +151,8 @@ object Smart {
             if (chip.amount != null) "${chip.amount} ${chip.token ?: "USDC"} to $short" else short
         }
         is Chip.Buy -> chip.price ?: shortAddress(chip.mint)
-        is Chip.Trade -> chip.intent.title + " · " + chip.intent.chainLabel
+        // NEAR Intents crosses chains: "Swap 20 USDC → SOL · Base → Solana".
+        is Chip.Trade -> chip.intent.title + " · " + if (chip.intent.isNear) chip.intent.route else chip.intent.chainLabel
     }
 
     /** What tapping puts in the field. */
@@ -240,6 +241,11 @@ object Smart {
                 held.size > 1 -> Chip.Details(held.take(3), temp = false)
                 else -> Chip.Vault(held[0])
             }
+        }
+        // A Bitcoin or Zcash address can pass for a Solana one; said in a
+        // NEAR Intents send ("send 0.01 btc to 1BvB…"), the words decide.
+        payment(text)?.let { (address, _) ->
+            TradeIntent.parse(text)?.takeIf { it.isNear && it.to == address }?.let { return Chip.Trade(it) }
         }
         // An address: Send to a wallet, Buy a token. Your own wallet is one
         // you are sharing, not paying. Until the lookup says which, nothing
