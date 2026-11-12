@@ -22,11 +22,16 @@ TEST_SHARED = %w[
   Design/KeyboardThemes.swift
   Design/KeyFaces.swift
   Design/GlyfMark.swift
+  Design/ChainLogo.swift
   Design/EmojiData.swift
   Engine/Games.swift
   Engine/SpaceGesture.swift
   Engine/Smart.swift
   Engine/StripPolicy.swift
+  Engine/TradeIntent.swift
+  Engine/TradeEdit.swift
+  Engine/TradeRecurring.swift
+  Engine/SponsorMenu.swift
   Engine/EmojiWords.swift
   Engine/PhraseMemory.swift
   Engine/WeatherStore.swift

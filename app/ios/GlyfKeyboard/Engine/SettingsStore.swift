@@ -170,6 +170,12 @@ struct GlyfSettings: Codable, Equatable {
     /// key). An address that is your own is one you are sharing, so the
     /// strip offers no Send for it.
     var walletAddress: String? = nil
+    /// The Ethereum address that signs the keyboard's trades, the same on
+    /// every EVM chain: the connected MetaMask's (its public address, never
+    /// a key; lib/evm/evm_signer.dart). Its balances show on the trade panel.
+    var evmAddress: String? = nil
+    /// Which wallet that is: "metamask" (the only one).
+    var evmSigner: String? = nil
     /// How the last payment went, written by the app when Phantom answers
     /// ({"title","detail","at"}); the keyboard says it once and clears it.
     var walletOutcome: String? = nil

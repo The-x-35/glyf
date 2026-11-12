@@ -13,6 +13,8 @@ protocol GlyfShellDelegate: AnyObject {
     func shellOpenSearch()
     /// A g menu tile was tapped: the same tool ids the strip uses.
     func shellOpenTool(_ id: String)
+    /// An option on a sponsor's panel (the g menu's top row) was tapped.
+    func shellSponsorOption(_ option: SponsorMenu.Option)
     /// Run one of the person's own glyfs on what they are typing.
     func shellRunGlyf(_ id: String)
     /// A tile held and dragged: it can be dropped on the strip to live there.
@@ -190,6 +192,12 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
 
     private var order: [String] = []
     private var tileViews: [String: UIControl] = [:]
+    /// The top row: Uniswap and Definitive.
+    private var sponsorViews: [SponsorMenu.Sponsor: UIControl] = [:]
+    private var sponsors: [SponsorMenu.Sponsor] = []
+    private static let sponsorRowH: CGFloat = 44
+    /// How far the tool tiles sit below the grid's top: the sponsor row.
+    private var tilesTop: CGFloat { sponsors.isEmpty ? 0 : Self.sponsorRowH + Self.gridGap }
     private var draggingTile: String?
 
     private static let stateFile = "shell-state.json"
@@ -453,6 +461,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         grid.alwaysBounceVertical = true
         grid.showsVerticalScrollIndicator = false
         order = Self.menuTools
+        buildSponsorRow()
         for (id, title) in Self.tools {
             let cell = UIControl()
             cell.accessibilityLabel = title
@@ -504,6 +513,73 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             cell.isHidden = !order.contains(id)
             grid.addSubview(cell)
             tileViews[id] = cell
+        }
+    }
+
+    /// Two app cards over the tools, each its mark and its name, the
+    /// tiles' own fill, radius and hairline.
+    private func buildSponsorRow() {
+        sponsors = SponsorMenu.sponsors
+        for sponsor in SponsorMenu.Sponsor.allCases {
+            let cell = UIControl()
+            cell.accessibilityLabel = sponsor.title
+            cell.accessibilityIdentifier = "shell:sponsor:\(sponsor.rawValue)"
+            cell.isAccessibilityElement = true
+            cell.accessibilityTraits = .button
+
+            let card = UIView()
+            card.tag = 1
+            card.backgroundColor = Glass.surfaceTile
+            card.layer.cornerRadius = 14
+            card.layer.cornerCurve = .continuous
+            if !Glass.solidLook {
+                card.layer.borderWidth = 1
+                card.layer.borderColor = Glass.strokeHairline.cgColor
+            }
+            card.isUserInteractionEnabled = false
+            cell.addSubview(card)
+
+            let mark = UIImageView(image: SponsorMarks.image(sponsor, size: 26))
+            mark.tag = 2
+            mark.isUserInteractionEnabled = false
+            cell.addSubview(mark)
+
+            let label = UILabel()
+            label.tag = 3
+            label.text = sponsor.title
+            label.font = .systemFont(ofSize: 13, weight: .semibold)
+            label.textColor = Glass.textPrimary
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.8
+            label.isUserInteractionEnabled = false
+            cell.addSubview(label)
+
+            // Its own panel, listing all it does; nothing runs on this tap.
+            cell.addAction(UIAction { [weak self] _ in
+                self?.push(sponsor.screenId)
+            }, for: .touchUpInside)
+            cell.isHidden = !sponsors.contains(sponsor)
+            grid.addSubview(cell)
+            sponsorViews[sponsor] = cell
+        }
+    }
+
+    /// The sponsor cards share the row equally; mark and name centred as one.
+    private func layoutSponsorRow() {
+        guard !sponsors.isEmpty else { return }
+        let gap = Self.gridGap, side = Self.gridSide, h = Self.sponsorRowH
+        let n = CGFloat(sponsors.count)
+        let w = (grid.bounds.width - side * 2 - gap * (n - 1)) / n
+        for (i, sponsor) in sponsors.enumerated() {
+            guard let cell = sponsorViews[sponsor] else { continue }
+            cell.frame = CGRect(x: side + CGFloat(i) * (w + gap), y: 0, width: w, height: h)
+            cell.viewWithTag(1)?.frame = cell.bounds
+            let label = cell.viewWithTag(3) as? UILabel
+            let mark: CGFloat = 26, space: CGFloat = 8
+            let textW = min(ceil(label?.intrinsicContentSize.width ?? 0), w - mark - space - 16)
+            let x = (w - mark - space - textW) / 2
+            cell.viewWithTag(2)?.frame = CGRect(x: x, y: (h - mark) / 2, width: mark, height: mark)
+            label?.frame = CGRect(x: x + mark + space, y: 0, width: textW, height: h)
         }
     }
 
@@ -564,14 +640,16 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     private static let gridSide: CGFloat = 6
     /// Two rows fill the panel with the third peeking in, so the grid shows
     /// at a glance that it scrolls.
-    private var tileHeight: CGFloat { max(64, (grid.bounds.height - 40 - Self.gridGap) / 2) }
+    private var tileHeight: CGFloat { max(64, (grid.bounds.height - tilesTop - 40 - Self.gridGap) / 2) }
 
     private func tileIndex(at p: CGPoint) -> Int? {
         let cols = Self.gridCols
         let cellW = (grid.bounds.width - Self.gridSide * 2 - Self.gridGap * CGFloat(cols - 1))
             / CGFloat(cols)
         let c = Int((p.x - Self.gridSide) / (cellW + Self.gridGap))
-        let r = Int(p.y / (tileHeight + Self.gridGap))
+        let y = p.y - tilesTop
+        guard y >= 0 else { return nil }
+        let r = Int(y / (tileHeight + Self.gridGap))
         guard c >= 0, c < cols, r >= 0 else { return nil }
         return min(order.count - 1, r * cols + c)
     }
@@ -582,19 +660,20 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         let cellW = (grid.bounds.width - Self.gridSide * 2 - Self.gridGap * CGFloat(cols - 1))
             / CGFloat(cols)
         let c = min(cols - 1, max(0, Int((p.x - Self.gridSide) / (cellW + Self.gridGap))))
-        let r = max(0, Int(p.y / (tileHeight + Self.gridGap)))
+        let r = max(0, Int((p.y - tilesTop) / (tileHeight + Self.gridGap)))
         return min(count, r * cols + c)
     }
 
     /// Tiles in `order`, four to a row.
     private func layoutGrid() {
         let cols = Self.gridCols, gap = Self.gridGap, side = Self.gridSide
+        layoutSponsorRow()
         for (i, id) in order.enumerated() {
             if let cell = tileViews[id] { layoutTile(cell, at: i) }
         }
         let rows = Int(ceil(Double(order.count) / Double(cols)))
         grid.contentSize = CGSize(width: grid.bounds.width,
-                                  height: CGFloat(rows) * (tileHeight + gap) - gap + side)
+                                  height: tilesTop + CGFloat(rows) * (tileHeight + gap) - gap + side)
     }
 
     private func layoutTile(_ cell: UIView, at i: Int) {
@@ -603,7 +682,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         let cellH = tileHeight
         let r = i / cols, c = i % cols
         let frame = CGRect(x: side + CGFloat(c) * (cellW + gap),
-                           y: CGFloat(r) * (cellH + gap),
+                           y: tilesTop + CGFloat(r) * (cellH + gap),
                            width: cellW, height: cellH)
         cell.frame = frame
         cell.viewWithTag(1)?.frame = CGRect(origin: .zero, size: frame.size)
@@ -1105,6 +1184,9 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             }
             return Screen(id: id, title: "Style", rows: rows, showOpenInApp: false)
 
+        case _ where SponsorMenu.Sponsor(screenId: id) != nil:
+            return sponsorScreen(SponsorMenu.Sponsor(screenId: id)!)
+
         case "vault:detail":
             // The kinds, as the app's Vault names them; one tap and the
             // strip over the keys takes its value.
@@ -1121,6 +1203,30 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// What the Style screen shows its styles on (the keyboard sets it as
     /// the screen opens): the words picked out, or the message so far.
     static var styleSample = ""
+
+    // MARK: Sponsor panels (Uniswap, Definitive)
+
+    /// The text before the cursor as the menu opened: a sponsor's panel
+    /// offers the trade typed there.
+    static var sponsorTyped = ""
+
+    /// Everything a sponsor does, as rows (SponsorMenu.entries).
+    private static func sponsorScreen(_ sponsor: SponsorMenu.Sponsor) -> Screen {
+        let entries = SponsorMenu.entries(for: sponsor, typed: sponsorTyped, flashChain: SponsorMenu.flashChain)
+        let rows: [Row] = entries.map { entry in
+            switch entry {
+            case .header(let t):
+                return .header(title: t)
+            case .option(let option, let title, let detail, let icon):
+                return .nav(icon: icon, title: title, detail: detail, target: "!sponsor:\(option.id)")
+            case .chainPicker:
+                return .segmented(title: "Chain", options: SponsorMenu.flashChains,
+                                  value: { SponsorMenu.flashChain },
+                                  set: { SponsorMenu.flashChain = $0 })
+            }
+        }
+        return Screen(id: sponsor.screenId, title: sponsor.title, rows: rows, showOpenInApp: false)
+    }
 
     private static func styleIcon(_ style: Smart.TextStyle) -> String {
         switch style {
@@ -1232,6 +1338,10 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
                 delegate?.shellOpenTool(String(target.dropFirst("!connector:".count)))
             } else if target.hasPrefix("!style:") {
                 delegate?.shellApplyStyle(String(target.dropFirst("!style:".count)))
+            } else if target.hasPrefix("!sponsor:") {
+                if let option = SponsorMenu.Option(id: String(target.dropFirst("!sponsor:".count))) {
+                    delegate?.shellSponsorOption(option)
+                }
             } else {
                 push(target)
             }
@@ -1505,6 +1615,11 @@ private final class ShellCell: UITableViewCell {
 
     private func setIcon(_ name: String) {
         chip.isHidden = false
+        // "chain:base": the chain's own mark, in its colours.
+        if name.hasPrefix("chain:"), let mark = ChainLogo.image(String(name.dropFirst(6)), side: 20) {
+            chipIcon.image = mark.withRenderingMode(.alwaysOriginal)
+            return
+        }
         chipIcon.image = UIImage(systemName: name)
     }
 
@@ -1512,6 +1627,21 @@ private final class ShellCell: UITableViewCell {
         trailing = v
         card.addSubview(v)
         setNeedsLayout()
+    }
+
+    /// A chain's mark and name as one segment image (a segment can't hold both).
+    static func chainSegment(_ chain: String) -> UIImage {
+        let name = (TradeIntent.chainLabels[chain] ?? chain.capitalized) as NSString
+        let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 13, weight: .semibold),
+                                                    .foregroundColor: Glass.textPrimary]
+        let tw = ceil(name.size(withAttributes: attrs).width)
+        let size = CGSize(width: 16 + 6 + tw, height: 18)
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            ChainLogo.image(chain, side: 16)?.draw(in: CGRect(x: 0, y: 1, width: 16, height: 16))
+            name.draw(at: CGPoint(x: 22, y: 0), withAttributes: attrs)
+        }.withRenderingMode(.alwaysOriginal)
+        image.accessibilityLabel = name as String
+        return image
     }
 
     private func chevron() -> UIView {
@@ -1578,7 +1708,7 @@ private final class ShellCell: UITableViewCell {
             title.text = t
             let sw = UISwitch()
             sw.isOn = valueFn()
-            sw.onTintColor = Glass.controlOn
+            sw.onTintColor = Glass.switchOn
             sw.sizeToFit()
             sw.addAction(UIAction { [weak self] a in
                 guard let s = a.sender as? UISwitch else { return }
@@ -1608,9 +1738,13 @@ private final class ShellCell: UITableViewCell {
             accessibilityIdentifier = "toggle:\(t)"
         case .segmented(let t, let options, let valueFn, let set):
             title.text = t
-            let seg = UISegmentedControl(items: options.map(\.capitalized))
+            // Chains wear their marks beside their names.
+            let marked = options.allSatisfy { ChainLogo.mark($0) != nil }
+            let seg = marked
+                ? UISegmentedControl(items: options.map { Self.chainSegment($0) })
+                : UISegmentedControl(items: options.map(\.capitalized))
             seg.selectedSegmentIndex = options.firstIndex(of: valueFn()) ?? 0
-            seg.selectedSegmentTintColor = Glass.controlOn
+            seg.selectedSegmentTintColor = marked ? (Glass.isDark ? UIColor(white: 0.36, alpha: 1) : .white) : Glass.controlOn
             seg.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 13, weight: .medium),
                                         .foregroundColor: Glass.textPrimary], for: .normal)
             seg.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 13, weight: .semibold),

@@ -1,0 +1,240 @@
+import XCTest
+@testable import Runner
+
+/// The trades the keyboard reads from plain words: Uniswap, Jupiter and Definitive Flash.
+final class TradeIntentTests: XCTestCase {
+
+    private func read(_ text: String) -> TradeIntent? { TradeIntent.parse(text) }
+
+    func testASwapNamesBothTokensAndTheChain() throws {
+        let i = try XCTUnwrap(read("swap 0.05 eth to usdc on base"))
+        XCTAssertEqual(i.kind, .swap)
+        XCTAssertEqual(i.amount, "0.05")
+        XCTAssertEqual(i.sell, "ETH")
+        XCTAssertEqual(i.buy, "USDC")
+        XCTAssertEqual(i.chainName, "base")
+        XCTAssertEqual(i.title, "Swap 0.05 ETH → USDC")
+        XCTAssertEqual(i.detail, "Base · Uniswap")
+    }
+
+    func testASwapWithNoChainIsOnBase() throws {
+        let i = try XCTUnwrap(read("convert 100 usdc into eth"))
+        XCTAssertEqual(i.chainName, "base")
+        XCTAssertEqual(i.sell, "USDC")
+        XCTAssertEqual(i.buy, "ETH")
+    }
+
+    func testDollarsOfATokenAreSpentInUSDC() throws {
+        let i = try XCTUnwrap(read("buy $50 of eth"))
+        XCTAssertEqual(i.kind, .swap)
+        XCTAssertTrue(i.amountIsUSD)
+        XCTAssertEqual(i.amount, "50")
+        XCTAssertEqual(i.sell, "USDC")
+        XCTAssertEqual(i.title, "Buy $50 of ETH")
+    }
+
+    func testBuyingAnAmountKeepsTheAmountWanted() throws {
+        let i = try XCTUnwrap(read("buy 0.1 eth with usdt on arbitrum"))
+        XCTAssertNil(i.amount)
+        XCTAssertEqual(i.buyAmount, "0.1")
+        XCTAssertEqual(i.sell, "USDT")
+        XCTAssertEqual(i.chainName, "arbitrum")
+        XCTAssertEqual(i.title, "Buy 0.1 ETH with USDT")
+    }
+
+    func testSellingEverythingHasNoAmount() throws {
+        let i = try XCTUnwrap(read("sell my eth"))
+        XCTAssertEqual(i.kind, .swap)
+        XCTAssertNil(i.amount)
+        XCTAssertEqual(i.buy, "USDC")
+        XCTAssertEqual(i.title, "Swap all ETH → USDC")
+    }
+
+    func testAFallToAPriceIsAStopLoss() throws {
+        let i = try XCTUnwrap(read("sell my eth if it drops below 3000"))
+        XCTAssertEqual(i.kind, .stopLoss)
+        XCTAssertEqual(i.price, "3000")
+        XCTAssertNil(i.amount)
+        XCTAssertEqual(i.title, "Stop-loss ETH at $3,000")
+        XCTAssertEqual(i.detail, "Base · Flash")
+        XCTAssertEqual(read("stop loss 0.5 eth at $3,000")?.kind, .stopLoss)
+        XCTAssertEqual(read("stop loss 0.5 eth at $3,000")?.price, "3000")
+    }
+
+    func testARiseToAPriceIsATakeProfit() throws {
+        let i = try XCTUnwrap(read("sell 0.2 eth when it hits 4500"))
+        XCTAssertEqual(i.kind, .takeProfit)
+        XCTAssertEqual(i.amount, "0.2")
+        XCTAssertEqual(i.price, "4500")
+        XCTAssertEqual(read("take profit eth at 4.5k")?.price, "4500")
+    }
+
+    func testABuyBelowThePriceIsALimit() throws {
+        let i = try XCTUnwrap(read("buy $100 of eth if it dips below 2800"))
+        XCTAssertEqual(i.kind, .limit)
+        XCTAssertTrue(i.amountIsUSD)
+        XCTAssertEqual(i.price, "2800")
+        XCTAssertEqual(i.title, "Buy $100 of ETH at $2,800")
+        XCTAssertEqual(read("buy 0.1 eth at 2800")?.kind, .limit)
+    }
+
+    func testABuyAboveThePriceIsAStop() throws {
+        XCTAssertEqual(read("buy eth when it breaks 4000")?.kind, .stop)
+    }
+
+    func testTakeProfitAndStopTogetherAreABracket() throws {
+        let held = try XCTUnwrap(read("my eth: tp 4500, sl 3000"))
+        XCTAssertEqual(held.kind, .bracket)
+        XCTAssertEqual(held.sell, "ETH")
+        XCTAssertEqual(held.price, "4500")
+        XCTAssertEqual(held.stopPrice, "3000")
+        let buy = try XCTUnwrap(read("buy 0.1 eth take profit 4500 stop loss 3000"))
+        XCTAssertEqual(buy.kind, .bracket)
+        XCTAssertEqual(buy.buy, "ETH")
+        XCTAssertEqual(buy.buyAmount, "0.1")
+        // A take-profit under its stop is a typo, not an order.
+        XCTAssertNil(read("my eth tp 3000 sl 4500"))
+    }
+
+    func testATrailFollowsThePrice() throws {
+        let i = try XCTUnwrap(read("protect my eth with a 5% trail"))
+        XCTAssertEqual(i.kind, .trailingStop)
+        XCTAssertEqual(i.trailPercent, "5")
+        XCTAssertEqual(read("trailing stop on eth 7.5%")?.trailPercent, "7.5")
+        XCTAssertNil(read("trail my eth by 90%"))
+    }
+
+    func testARepeatedBuyIsOneTWAP() throws {
+        let i = try XCTUnwrap(read("buy $20 of eth every day for a week"))
+        XCTAssertEqual(i.kind, .twap)
+        XCTAssertEqual(i.amount, "140")
+        XCTAssertEqual(i.durationSeconds, 7 * 86_400)
+        XCTAssertEqual(i.title, "Buy $20 of ETH every day for 7 days")
+        // Autocorrect's "everyday", and "daily" for every day.
+        XCTAssertEqual(read("buy $20 of eth everyday for a week")?.amount, "140")
+        XCTAssertEqual(read("dca $10 into eth daily for 5 days")?.durationSeconds, 5 * 86_400)
+        let over = try XCTUnwrap(read("dca $300 into eth over 3 days"))
+        XCTAssertEqual(over.amount, "300")
+        XCTAssertEqual(over.durationSeconds, 3 * 86_400)
+    }
+
+    func testMovingBetweenChainsIsABridge() throws {
+        let i = try XCTUnwrap(read("move 50 usdc from base to arbitrum"))
+        XCTAssertEqual(i.kind, .bridge)
+        XCTAssertEqual(i.chainName, "base")
+        XCTAssertEqual(i.toChain, "arbitrum")
+        XCTAssertEqual(i.title, "Move 50 USDC to Arbitrum")
+        XCTAssertNil(read("move 50 usdc from base to base"))
+    }
+
+    /// Sends to a name and Whitechain pay requests aren't trades here: the
+    /// keyboard's own Send chip (an address) and Pay stay as they were.
+    func testSendsAndRequestsAreNoTrade() {
+        for text in ["send 20 usdc to arpit.eth", "pay arpit.sol 5 usdc",
+                     "send 0.01 eth to 0x52908400098527886E0F7030069857D2E4169EE7",
+                     "request 20 usdt", "request 15 usdt on whitechain"] {
+            XCTAssertNil(read(text), text)
+        }
+        // Whitechain isn't a trading chain.
+        XCTAssertNil(read("swap 1 usdc to eth on whitechain"))
+    }
+
+    func testSolanaOrdersGoToTheAppOnSolana() throws {
+        // Phantom signs these (lib/wallet/flash_solana.dart): the app reads chain=solana.
+        let stop = try XCTUnwrap(read("sell 0.1 sol if it drops below 100"))
+        XCTAssertEqual(stop.kind, .stopLoss)
+        XCTAssertEqual(stop.query["chain"], "solana")
+        XCTAssertEqual(stop.query["sell"], "SOL")
+        let bracket = try XCTUnwrap(read("buy 0.1 sol, tp 200, sl 100"))
+        XCTAssertEqual(bracket.kind, .bracket)
+        XCTAssertEqual(bracket.query["chain"], "solana")
+        XCTAssertEqual(bracket.query["buyAmount"], "0.1")
+        XCTAssertEqual(read("buy $10 of sol at 80")?.query["chain"], "solana")
+    }
+
+    func testTheStripOffersEachTradeAsItsChip() {
+        for text in ["Buy $20 of eth every day for a week ", "Buy $20 of eth every day for a week",
+                     "Sell my eth if it drops below 3000", "Swap 0.05 eth to usdc on base"] {
+            let chip = Smart.chip(for: text, fields: [])
+            guard case .trade? = chip else { return XCTFail("\(text): \(String(describing: chip))") }
+        }
+    }
+
+    func testOrdinaryWordsAreNoTrade() {
+        for text in ["swap shifts with sam", "I'll buy dinner tonight", "sell the old bike",
+                     "send me the doc", "stop it", "I want to take profit from this lesson"] {
+            XCTAssertNil(read(text), text)
+        }
+    }
+
+    func testTheCommandMayFollowASentence() throws {
+        let i = try XCTUnwrap(read("ok done. swap 1 usdc to eth"))
+        XCTAssertEqual(i.amount, "1")
+    }
+
+    func testTheQueryCarriesEverythingTheAppNeeds() throws {
+        let q = try XCTUnwrap(read("buy 0.1 eth take profit 4500 stop loss 3000 on arbitrum")).query
+        XCTAssertEqual(q["kind"], "bracket")
+        XCTAssertEqual(q["chain"], "arbitrum")
+        XCTAssertEqual(q["price"], "4500")
+        XCTAssertEqual(q["stopPrice"], "3000")
+        XCTAssertEqual(q["buyAmount"], "0.1")
+    }
+
+    /// Always the person's own wallet app: there is no Glyf wallet.
+    func testTheWalletPerChainIsAlwaysAnOutsideWallet() {
+        XCTAssertEqual(TradeIntent.walletName(chain: "solana"), "Phantom")
+        XCTAssertEqual(TradeIntent.walletName(chain: "base"), "MetaMask")
+        XCTAssertEqual(TradeIntent.walletName(chain: "arbitrum"), "MetaMask")
+        XCTAssertEqual(TradeIntent.walletName(chain: nil), "MetaMask")
+    }
+
+    /// Shares trade on Base, by their address there: a buy is a Uniswap
+    /// swap from USDC, a buy below a price is a Flash limit.
+    func testSharesTradeOnBase() throws {
+        let buy = try XCTUnwrap(read("buy $10 of apple"))
+        XCTAssertEqual(buy.kind, .swap)
+        XCTAssertEqual(buy.sell, "USDC")
+        XCTAssertEqual(buy.buy, "AAPL")
+        XCTAssertEqual(buy.chainName, "base")
+        XCTAssertEqual(buy.buyAddress, "0xb200000000000000000000C2e324d24d7eEcd1fb")
+        XCTAssertEqual(buy.venue, "Uniswap")
+        XCTAssertEqual(read("buy $10 of $aapl")?.buy, "AAPL")
+        let limit = try XCTUnwrap(read("buy $10 of tesla if it dips below 300"))
+        XCTAssertEqual(limit.kind, .limit)
+        XCTAssertEqual(limit.chainName, "base")
+        XCTAssertEqual(limit.query["buyAddress"] ?? limit.query["sellAddress"], TradeIntent.baseStocks["TSLA"])
+        XCTAssertEqual(read("swap 20 usdc to nvda on solana")?.chainName, "base")
+        XCTAssertEqual(TradeIntent.baseStock("AAPLx"), "AAPL")
+        XCTAssertEqual(TradeIntent.baseStock("AAPLon"), "AAPL")
+        XCTAssertNil(TradeIntent.baseStock("SOL"))
+        XCTAssertNil(read("I ate an apple"))
+    }
+
+    /// "every time", "whenever" and "it's below" read as a price to wait
+    /// for; a DCA says what was typed, not its total.
+    func testHowPeopleSayAPriceAndADCA() throws {
+        for text in ["buy $10 of tesla every time it dips below 300", "buy $10 of tesla whenever it drops below 300",
+                     "buy $10 of tesla when it's below 300", "buy $10 of tesla when it’s below 300",
+                     "buy $10 of tesla if the price is under 300"] {
+            let i = try XCTUnwrap(read(text), text)
+            XCTAssertEqual(i.kind, .limit, text)
+            XCTAssertEqual(i.price, "300", text)
+            XCTAssertEqual(i.buy, "TSLA", text)
+            XCTAssertEqual(i.amount, "10", text)
+            XCTAssertTrue(i.amountIsUSD, text)
+            XCTAssertEqual(TradeEdit.shown(.amount, i), "$10", text)
+        }
+        // As the phone types it: capitals, autocorrect's curly apostrophe.
+        let typed = try XCTUnwrap(read("Buy $10 of Tesla every time it dips below 300"))
+        XCTAssertEqual(TradeEdit.shown(.amount, typed), "$10")
+        XCTAssertEqual(TradeEdit.shown(.price, typed), "$300")
+        XCTAssertEqual(typed.title, "Buy $10 of TSLA at $300")
+        XCTAssertEqual(read("sell my eth whenever it falls below 1800")?.kind, .stopLoss)
+        let dca = try XCTUnwrap(read("buy $5 of eth every hour for 2 hours"))
+        XCTAssertEqual(dca.kind, .twap)
+        XCTAssertEqual(dca.amount, "10")
+        XCTAssertEqual(dca.title, "Buy $5 of ETH every hour for 2 hours")
+    }
+}
+

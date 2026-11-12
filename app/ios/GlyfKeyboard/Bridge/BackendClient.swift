@@ -685,6 +685,52 @@ final class BackendClient: NSObject, URLSessionDataDelegate {
         }
     }
 
+    // MARK: Trading (Uniswap, Definitive Flash)
+
+    /// GET (no body) or POST JSON to the trading side of the server:
+    /// balances, Uniswap quotes and tokens, Flash prices. The object, or nil
+    /// when the call failed; on the main queue. Nothing here signs.
+    func evmJSON(path: String, body: [String: Any]? = nil, done: @escaping ([String: Any]?) -> Void) {
+        guard let url = URL(string: SettingsStore.current.backendURL + path) else { done(nil); return }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.timeoutInterval = 12
+        if let body {
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        session.dataTask(with: req) { data, response, _ in
+            let ok = ((response as? HTTPURLResponse)?.statusCode ?? 0) / 100 == 2
+            let obj = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            DispatchQueue.main.async { done(ok ? obj : nil) }
+        }.resume()
+    }
+
+    /// evmJSON that also hands back a refusal's words (`error`, `code`), so
+    /// a panel can say "Cross-chain swaps need a Uniswap API key" instead of
+    /// a blank. `obj` is the body whatever the status; `ok` is a 2xx.
+    func evmJSONResult(path: String, body: [String: Any]? = nil,
+                       done: @escaping (_ ok: Bool, _ obj: [String: Any]?) -> Void) -> URLSessionDataTask? {
+        guard let url = URL(string: SettingsStore.current.backendURL + path) else { done(false, nil); return nil }
+        var req = URLRequest(url: url)
+        req.glyfSession()
+        req.timeoutInterval = 15
+        if let body {
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        let task = session.dataTask(with: req) { data, response, error in
+            if (error as? URLError)?.code == .cancelled { return }
+            let ok = ((response as? HTTPURLResponse)?.statusCode ?? 0) / 100 == 2
+            let obj = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            DispatchQueue.main.async { done(ok, obj) }
+        }
+        task.resume()
+        return task
+    }
+
     // MARK: Meter (§6.16)
 
     func fetchRemaining(completion: @escaping (Int?) -> Void) {
