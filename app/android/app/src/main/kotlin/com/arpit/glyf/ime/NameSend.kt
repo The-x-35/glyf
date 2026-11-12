@@ -87,7 +87,7 @@ object NameSend {
                     requestMethod = "GET"
                     connectTimeout = 5000
                     readTimeout = 12000
-                    BackendClient.bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+                    BackendClient.session(this)
                 }
                 val status = conn.responseCode
                 val body = (if (status in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText()

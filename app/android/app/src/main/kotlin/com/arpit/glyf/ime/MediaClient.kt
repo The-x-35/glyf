@@ -105,6 +105,8 @@ object MediaClient {
             connectTimeout = 6000
             readTimeout = 12000
             bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+            // Glyf's own calls (those with the session) say the private-AI choice too.
+            if (bearer != null) BackendClient.privateAI?.let { setRequestProperty("X-Glyf-AI", it) }
         }
 
     // MARK: config

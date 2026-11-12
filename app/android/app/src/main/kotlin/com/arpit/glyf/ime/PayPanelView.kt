@@ -809,7 +809,7 @@ class PayPanelView(
                     requestMethod = method
                     connectTimeout = 5000
                     readTimeout = 8000
-                    if (!raw) BackendClient.bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+                    if (!raw) BackendClient.session(this)
                     if (body != null) {
                         doOutput = true
                         setRequestProperty("content-type", "application/json")

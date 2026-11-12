@@ -18,8 +18,22 @@ object BackendClient {
     @JvmStatic
     var bearer: String? = null
 
-    private fun HttpURLConnection.signIn() {
-        bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+    /** Private AI on NEAR AI Cloud: "near" while the app's switch is on
+     *  (shared settings `privateAI`, SettingsStore.privateAIHeader), sent as
+     *  X-Glyf-AI with every call; null sends nothing. Kept by the IME as it
+     *  reads its settings. */
+    @Volatile
+    @JvmStatic
+    var privateAI: String? = null
+
+    private fun HttpURLConnection.signIn() = session(this)
+
+    /** What every call to Glyf's server carries: the session, and the
+     *  private-AI choice when there is one (iOS's URLRequest.glyfSession). */
+    @JvmStatic
+    fun session(conn: HttpURLConnection) {
+        bearer?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
+        privateAI?.let { conn.setRequestProperty("X-Glyf-AI", it) }
     }
 
     /** POST /report — flag an AI result (Google Play's AI-Generated Content

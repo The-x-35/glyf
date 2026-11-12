@@ -336,4 +336,42 @@ class NearIntentTest {
         assertEquals(listOf("BTC"), TradeEdit.builtIn("bitcoin").map { it.symbol })
         assertEquals(listOf("NEAR", "USDC", "USDT"), TradeEdit.builtIn("near").map { it.symbol })
     }
+
+    /** Private AI on NEAR AI Cloud: the app writes "near" or removes the
+     *  key; the ETHGlobal build's Bool reads as off without losing the file. */
+    @Test fun privateAIOnNEARIsReadFromTheSharedSettings() {
+        val store = com.arpit.glyf.store.SettingsStore
+        val on = JSONObject().put("privateAI", "near").put("nearRecent", org.json.JSONArray(listOf("alice.near", "0xab")))
+        assertEquals("near", store.privateAIHeader(on))
+        assertEquals(listOf("alice.near", "0xab"), store.nearRecent(on))
+        assertNull(store.privateAIHeader(JSONObject()))
+        assertEquals(emptyList<String>(), store.nearRecent(JSONObject()))
+        for (legacy in listOf(true, false)) {
+            val old = JSONObject().put("privateAI", legacy).put("haptics", false)
+            assertNull("$legacy", store.privateAIHeader(old))
+            assertFalse("the rest of the file still reads", old.optBoolean("haptics", true))
+        }
+        assertNull(store.privateAIHeader(JSONObject().put("privateAI", "0g")))
+        assertNull(store.privateAIHeader(JSONObject().put("privateAI", JSONObject.NULL)))
+        // Junk in the list is skipped; twenty at most go to Guard.
+        val many = JSONObject().put("nearRecent", org.json.JSONArray((1..25).map { "a$it.near" } + listOf(7)))
+        assertEquals(20, store.nearRecent(many).size)
+        assertEquals(listOf("x.near"), store.nearRecent(JSONObject().put("nearRecent", org.json.JSONArray(listOf(1, "x.near", true)))))
+    }
+
+    /** Every call to Glyf's server carries the header while the switch is on. */
+    @Test fun everyCallCarriesTheNEARHeaderWhileItIsOn() {
+        fun conn() = java.net.URL("http://127.0.0.1:9/ai").openConnection() as java.net.HttpURLConnection
+        val was = BackendClient.privateAI
+        try {
+            BackendClient.privateAI = "near"
+            val on = conn().also { BackendClient.session(it) }
+            assertEquals("near", on.getRequestProperty("X-Glyf-AI"))
+            BackendClient.privateAI = null
+            val off = conn().also { BackendClient.session(it) }
+            assertNull(off.getRequestProperty("X-Glyf-AI"))
+        } finally {
+            BackendClient.privateAI = was
+        }
+    }
 }

@@ -777,7 +777,7 @@ class TradePanelView(
                     requestMethod = method
                     connectTimeout = 6000
                     readTimeout = 15000
-                    BackendClient.bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+                    BackendClient.session(this)
                     if (body != null) {
                         doOutput = true
                         setRequestProperty("content-type", "application/json")

@@ -56,6 +56,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private val main = Handler(Looper.getMainLooper())
 
     private var settings = JSONObject()
+        // Every read of the app's settings also sets the private-AI header
+        // the keyboard's calls carry (X-Glyf-AI: near, or none).
+        set(value) { field = value; BackendClient.privateAI = SettingsStore.privateAIHeader(value) }
     private var autoShifted = false
     private var lastSpaceAt = 0L
 
