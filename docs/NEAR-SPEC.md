@@ -384,8 +384,267 @@ On the bill-split chip ("$22.50 each") and on a `near.request` action chip:
 - `buyChain=<glyf chain>` (swaps), `chain=<sell chain>`
 - `to=<recipient as typed>`; for sends, `exact=out`, `amount` = what the recipient gets, `buy`/`buyChain` = what they get, `sell`/`chain` = what pays
 
+## Earn (DeFi, Real-World Money; branch near-earn, lib/nearearn.ts)
+
+"Put $50 to work" parks idle USDC or SOL in a yield vault through NEAR
+Intents 1Click Earn
+(https://docs.near-intents.org/integration/distribution-channels/1click-api/earn).
+Earn is no separate 1Click API: a deposit is an ordinary quote whose
+destination is the vault's **receipt token** (its shares), and taking it out
+is the reverse quote. So the answer is POST /near/quote's shape and the
+app's NearFlow deposits it unchanged. 1Click returns no APY: each vault's
+rate comes from its own protocol's public, keyless API, kept ten minutes,
+and is `null` (never guessed) when that API doesn't answer.
+
+Vaults (1Click's Earn listings whose shares land where Glyf's wallets are;
+each quoted both ways live on 13 Nov 2026):
+
+| id | Vault | Shares (1Click asset) | Chain | Takes | APY from |
+|---|---|---|---|---|---|
+| `gtusdcp` (USDC default) | Gauntlet USDC Prime (Morpho) | gtUSDCp `nep141:base-0x0bb69b79bc829e1cfcc34a740110886d98d2bd14.omft.near`, 18 decimals | Base | USDC | Morpho GraphQL `vaultByAddress(0xeE8F4eC5672F09119b96Ab6fB59C27E1b7e44b61, 8453).state.netApy` (1Click's 0x0bb6… is an ERC-4626 whose `asset()` is that Morpho vault) |
+| `kamino-sol` (SOL default) | Kamino SOL Balanced | kV-gtSOLb `nep141:sol-0xa69aa1bcb03a369e338156a8718ad60271145803.omdep.near`, SPL mint `5EBsGgVTubrd7ShJgE89k6nC2bnLzqGCjXb2ejrhtdBK`, 9 decimals | Solana | SOL | Kamino `GET https://api.kamino.finance/kvaults/vaults/DcCRSdUMgAt6ZMeuL4BJAsZmJgND2LQd74Zq4z6ckhpg/metrics` `.apy` |
+| `taler-usdc` | Taler USDC | TLO `nep141:eth-0x0f38f1ce62776d4a0038bc6cac66877a5687383b.omft.near`, 8 decimals | Ethereum | USDC | none found: `apy: null` |
+
+Steakhouse USDC (steakUSDC on Ethereum) is listed by 1Click but answered
+"No liquidity available" to every quote, so it isn't offered. A vault
+1Click stops listing drops out of the list by itself. Any 1Click coin on
+any chain can pay in (USDC on Solana into the Base vault works); the
+shares always land on the vault's chain.
+
+### GET /near/earn/vaults (session)
+```json
+{ "ok": true, "venue": "NEAR Intents", "vaults": [
+  { "id": "gtusdcp", "name": "Gauntlet USDC Prime", "protocol": "Morpho", "chain": "base", "chainName": "Base",
+    "receipt": "gtUSDCp", "assetId": "nep141:base-0x0bb6….omft.near", "underlying": "USDC",
+    "apy": 4.5, "apyBasis": "net APY after the vault's fees", "apySource": "Morpho",
+    "url": "https://app.morpho.org/base/vault/0xeE8F…/gauntlet-usdc-prime",
+    "about": "Shares of Morpho's Gauntlet USDC Prime vault on Base", "default": true },
+  { "id": "kamino-sol", "…": "…", "apy": 4.24, "apyBasis": "current APY", "apySource": "Kamino" },
+  { "id": "taler-usdc", "…": "…", "apy": null, "apySource": null, "url": null, "default": false } ] }
+```
+`apy` is percent a year to two places (4.5 = 4.5%). `cache-control:
+private, max-age=60`.
+
+### POST /near/earn/quote (session)
+```json
+{ "coin": "USDC", "chain": "base", "amount": "50", "direction": "in",
+  "vault": "gtusdcp", "refundTo": "0x…", "recipient": "0x…", "slippage": 1 }
+```
+- `direction`: `in` (default) puts `amount` of `coin` (whole coins, exact
+  in) into the vault. `out` takes it back: `amount` = exactly what comes
+  back (EXACT_OUTPUT; the shares it takes carry the slippage, the excess is
+  refunded), or `shares` (base units, a string) to redeem that many shares
+  exactly, which is how "everything" is sent.
+- `coin` defaults to USDC. `vault` (id, receipt symbol, asset id or
+  protocol word) defaults to the coin's vault: USDC → `gtusdcp`, SOL →
+  `kamino-sol`. Any other coin without a vault is a 400.
+- `chain` is where the coin is (in) or where the payout lands (out).
+  Unsaid: the vault's chain for its own coin, Solana for SOL, else Base.
+- `refundTo` + `recipient` make it live (a deposit address), else dry, as
+  /near/quote. In: `recipient` holds the shares, so it is the person's
+  address **on the vault's chain** (MetaMask for Base/Ethereum, Phantom for
+  Solana) and `refundTo` their address on `chain`. Out: `refundTo` is
+  their address on the vault's chain (the shares come back there on a
+  refund), `recipient` their address on `chain`.
+
+Answer: every field of /near/quote's answer (`dry`, `exact`, `sell`, `buy`,
+`amountIn…`, `deposit`, `depositAddress`, `explorer`, `recipient`,
+`refundTo`…), plus:
+```json
+{ "kind": "earn", "direction": "in", "vault": { "id": "gtusdcp", "name": "Gauntlet USDC Prime", "apy": 4.5, "…": "…" },
+  "words": "≈ $49.75 in Gauntlet USDC Prime at 4.5% APY" }
+```
+Out: `words` is "20 USDC back on Base from Gauntlet USDC Prime". The
+deposit of an `out` quote is the shares: an ERC-20 transfer of gtUSDCp
+(`deposit.kind: "erc20"`, `token` 0x0bb6…) or an SPL transfer of
+kV-gtSOLb (`spl`, mint 5EBs…). Morpho's shares count in the millions (20
+USDC is about 17.8 M gtUSDCp): show `amountOutUsd`/`words`, never the raw
+share count, as the headline.
+
+Errors `{ok:false, error}`: 400 "amount?", "shares?", "Earn takes USDC or
+SOL, not DOGE", "Glyf doesn't know that vault", "Gauntlet USDC Prime's
+shares need your Base address", "The payout needs your Base address", "NEAR
+Intents can't put that into Gauntlet USDC Prime right now" (1Click's "No
+liquidity available"), "NEAR Intents can't take that out of … right now",
+"Too small for NEAR Intents: at least $X"; 502 when 1Click doesn't answer.
+Status after the deposit is GET /near/status, as for any swap.
+
+## The group pot on Sputnik DAO (Social Money; branch near-earn, lib/sputnik.ts)
+
+A pay link to `trip.sputnik-dao.near` fills a shared pot. These read it and
+help pay out of it. Read-only: NEAR RPC function-call views (keyless,
+https://rpc.mainnet.near.org or `NEAR_RPC_URL`), nothing signed. Payouts
+are proposed and voted in **Trezu** (https://trezu.app, NEAR DevHub's
+Sputnik app; AstroDAO's app no longer answers).
+
+### GET /near/pot?dao=trip.sputnik-dao.near (session)
+```json
+{ "ok": true, "dao": "trip.sputnik-dao.near", "name": "trip", "purpose": "Lisbon trip, Nov 2026",
+  "balance": { "near": "42.5", "tokens": [
+    { "symbol": "USDC", "amount": "120.5", "contract": "17208628…36133a1", "inIntents": false },
+    { "symbol": "USDC", "amount": "20", "contract": "17208628…36133a1", "inIntents": true } ] },
+  "members": ["ana.near", "ben.near", "cy.near", "dee.near"], "memberCount": 4,
+  "proposers": ["ana.near", "…"],
+  "threshold": { "role": "council", "approvals": 2, "of": 3, "words": "2 of 3" },
+  "bond": "0.1", "votingDays": 7, "lastProposalId": 8, "open": 2,
+  "text": "The trip pot holds 42.5 NEAR · 140.5 USDC. 4 members, payouts need 2 of 3. 2 proposals open",
+  "proposals": [
+    { "id": 5, "kind": "Transfer", "description": "Caterer", "amount": "12.5", "coin": "NEAR", "receiver": "caterer.near",
+      "proposer": "ben.near", "status": "InProgress", "votes": {"approve": 1, "reject": 0, "remove": 0},
+      "voters": {"ben.near": "Approve"}, "approvalsNeeded": 1,
+      "submitted": "2026-11-12T10:00:00.000Z", "expires": "2026-11-19T10:00:00.000Z",
+      "url": "https://trezu.app/trip.sputnik-dao.near/requests/5" } ],
+  "links": { "trezu": "https://trezu.app/trip.sputnik-dao.near/dashboard", "propose": "https://trezu.app/trip.sputnik-dao.near/payments" } }
+```
+- `balance.near`: `get_available_amount` (balance less storage and bonds
+  held), or `view_account` less storage where that view panics (some DAOs'
+  does). `tokens`: `ft_balance_of` on NEAR's USDC
+  (17208628…36133a1) and USDT (usdt.tether-token.near), and
+  `mt_batch_balance_of` on intents.near (USDC, USDT, wNEAR held inside NEAR
+  Intents, as Trezu treasuries keep them). Only non-zero ones.
+- `members`: everyone in a group role, at most 50 (`memberCount` is all).
+  `proposers`: who may file a transfer, or `"everyone"`.
+- `threshold`: the voting group role that passes a Transfer soonest, counted
+  as the contract does (a ratio [n, d] of a group of g is min(floor(n·g/d)+1, g),
+  a fixed weight is min(w, g), then at least the quorum). `null` when the
+  vote is token-weighted.
+- `proposals`: the latest 10 (`get_last_proposal_id` + `get_proposals`),
+  newest first. `status` is Sputnik's (InProgress, Approved, Rejected,
+  Removed, Moved, Failed), plus `Expired` for an open one past its voting
+  period. `amount`/`coin`/`receiver` only for transfers. `approvalsNeeded`
+  only while open. `url` is the proposal in Trezu, where members vote.
+- Kept 30 s. Errors: 400 "dao?", "A pot is a Sputnik DAO, like
+  trip.sputnik-dao.near"; 404 "No Sputnik DAO nope.sputnik-dao.near"; 502
+  "NEAR didn't answer. Try again in a moment".
+
+### GET /near/pot/propose-link?dao=&to=&amount=&coin=&note= (session)
+`to`: a NEAR account (name or 64-hex). `coin`: NEAR, USDC (default) or
+USDT, on NEAR. `amount`: whole coins, no more places than the coin has.
+`note`: up to 120 characters.
+```json
+{ "ok": true, "dao": "trip.sputnik-dao.near",
+  "url": "https://trezu.app/trip.sputnik-dao.near/payments?address=caterer.near&token=usdc&network=17208628…36133a1",
+  "fill": { "amount": "120", "coin": "USDC", "note": "catering" },
+  "votePage": "https://trezu.app/trip.sputnik-dao.near/requests",
+  "text": "Proposing 120 USDC to caterer.near from the trip pot for catering. Vote: https://trezu.app/trip.sputnik-dao.near/requests",
+  "call": { "contract": "trip.sputnik-dao.near", "method": "add_proposal", "deposit": "100000000000000000000000", "gas": "150000000000000",
+    "args": { "proposal": { "description": "catering",
+      "kind": { "Transfer": { "token_id": "17208628…36133a1", "receiver_id": "caterer.near", "amount": "120000000", "msg": null } } } } },
+  "bond": "0.1", "proposers": "everyone", "threshold": { "words": "2 of 3", "…": "…" } }
+```
+- Trezu's payments page prefills **only** the recipient and token from its
+  URL (`address`, `token`, `network`: `token=NEAR&network=near` for NEAR,
+  a bare NEAR token contract as `network` for USDC/USDT; read from
+  github.com/NEAR-DevHub/trezu `nt-fe/app/(treasury)/[treasuryId]/payments/page.tsx`
+  and `utils/payments-deep-link.ts`). The amount and note are typed there:
+  that's `fill`. The person must be a proposer and sign in to Trezu with
+  their own NEAR wallet; filing costs the DAO's bond (`bond`, NEAR).
+- `call` is Sputnik's own `add_proposal`, for a NEAR wallet that signs it
+  directly later (HOT); attach `deposit` yoctoNEAR.
+- Errors: 400 "to?" / "amount?" / "dao?", "Pay out to a NEAR account, like
+  caterer.near", "That's the pot itself", "A pot pays out NEAR, USDC or
+  USDT"; 404 and 502 as GET /near/pot. A bad payout is refused before any
+  NEAR RPC call.
+
+### The pot's pay page
+GET /pay/:id for a pot (`pot: true`) adds two lines under "Into the trip
+DAO treasury · shared pot", read live (at most 2.5 s; the page never waits
+longer or fails for it): "Holds 42.5 NEAR · 140.5 USDC" and "4 members:
+ana.near, ben.near, cy.near and 1 more".
+
+### Example DAO for demos and tests
+`build.sputnik-dao.near` (Build DAO, public, 391 proposals, NEAR and USDC
+transfers, council "3 of 5", bond 0.1 NEAR) is the live example: `npm run
+near:pot -- build.sputnik-dao.near`. Tests use a fake RPC shaped like its
+answers.
+
+## Earn and the pot in the keyboards and the app
+
+### Phrases (server reads them in lib/nearphrase.ts; the keyboards read the same)
+| Typed | Read |
+|---|---|
+| `put $50 to work`, `put 50 usdc to work`, `earn on 50 usdc`, `earn yield on $50`, `park 50 usdc`, `park $50 in earn` | Earn in: 50 USDC → Gauntlet USDC Prime |
+| `put 0.5 sol to work`, `stake .5 sol in a vault` | Earn in: SOL → Kamino SOL Balanced |
+| `put 50 usdc on solana to work`, `park 50 usdc on base` | Earn in, from that chain |
+| `take my usdc out of earn`, `take my sol out of earn` | Earn out, everything |
+| `take 20 usdc out of earn`, `withdraw $20 from earn`, `… out of earn to solana` | Earn out, exactly 20 back (to that chain) |
+| `how much is in the trip pot`, `what's in the pot`, `check the trip pot`, `pot balance`, `how much is in build.sputnik-dao.near` | Pot: look |
+| `pay the caterer $120 from the pot`, `pay caterer.near 120 usdc from the trip pot for catering`, `send bob.near 5 near out of the pot` | Pot: propose a payout |
+
+`$` and "dollars"/"bucks" mean USDC. Left alone: "take it out", "put the
+kids to work", "park the car", "pay the caterer $120" (no pot).
+
+### The strip's AI tools (gated by `near: true`, like the other near.* tools)
+| Tool | Params (checked) | Chip |
+|---|---|---|
+| `near.earn` | `amount?`, `coin` (USDC default, or SOL), `out?`, `chain?` | `Put 50 USDC to work · Morpho · NEAR Intents`, `Put 0.5 SOL to work · Kamino · NEAR Intents`, `Take your USDC out of Earn · NEAR Intents`, `Take 20 USDC out of Earn · NEAR Intents` |
+| `near.pot` | `pot?` (the word before "pot"), `dao?` (*.sputnik-dao.near) | `See the trip pot · Sputnik DAO`, `See the pot · Sputnik DAO` |
+| `near.pot.pay` | `to` (a NEAR account, or the name typed: "the caterer"), `amount`, `coin` (USDC default, NEAR, USDT), `pot?`, `dao?`, `note?` | `Propose $120 to caterer from the pot · Sputnik DAO`, `Propose 5 NEAR to bob.near from the trip pot · Sputnik DAO` |
+
+Grounding: Earn's coin must be typed (`$`/dollars/bucks count for USDC); a
+withdrawal needs out/withdraw/redeem words and a deposit earn/work/park/
+yield/vault/stake words, else the action goes; an untyped amount goes. A
+pot tool needs pot/treasury/kitty (or a sputnik-dao name) in the words;
+a payout's `to` and `amount` must be typed, a coin other than USDC named;
+`pot`, `dao` and `note` stay only when typed.
+
+### Which pot
+The app keeps one saved pot, a new setting `nearPot` (a
+*.sputnik-dao.near; a Sputnik DAO saved as `nearAccount`, which already
+makes pay links pots, counts when `nearPot` is empty). For a pot chip:
+`params.dao` if any, else the saved pot, else `<params.pot>.sputnik-dao.near`
+(a 404 says "No Sputnik DAO trip.sputnik-dao.near"); with none, the chip
+says "Add your pot in Glyf" and nothing is asked.
+
+### Hand-off: Earn
+1. Chip tap (near.earn, or the keyboard's own phrase reading) opens the
+   trade panel in Earn mode: POST /near/earn/quote dry (`coin`, `amount`,
+   `direction`, `chain`), shows `words` ("≈ $49.75 in Gauntlet USDC Prime
+   at 4.5% APY"), `vault.protocol`, `timeSeconds`, and "Yield isn't
+   guaranteed; NEAR Intents doesn't run the vault" (1Click's ToS §7).
+   GET /near/earn/vaults may be read once a session for a vault picker;
+   show "APY n/a" when `apy` is null.
+2. The button hands off to the app:
+   `glyf://open?path=trade?venue=near&kind=earn&direction=in|out&coin=USDC&amount=50[&chain=base][&vault=gtusdcp][&all=1]`.
+3. The app (NearFlow) POSTs /near/earn/quote live with `refundTo` and
+   `recipient` as above (in: recipient = the wallet on `vault.chain`;
+   out: refundTo = the wallet on `vault.chain`), then pays `deposit`
+   exactly as a swap's (MetaMask for erc20/native, Phantom for sol/spl),
+   POSTs /near/submit and follows GET /near/status.
+4. Out with `all=1` ("take my usdc out of earn"): the app reads its share
+   balance first, gtUSDCp `balanceOf(<MetaMask address>)` on Base at
+   0x0bb69b79bc829e1cfcc34a740110886d98d2bd14 (an ERC-20), or the
+   kV-gtSOLb SPL balance (mint 5EBsGgVTubrd7ShJgE89k6nC2bnLzqGCjXb2ejrhtdBK)
+   of the Phantom address, and sends it as `shares` (base units). Zero
+   shares: "Nothing in Earn yet".
+5. On SUCCESS the chip/strip says "Earning on 50 USDC · Morpho" (in) or
+   "20 USDC back on Base" (out). No toast.
+
+### Hand-off: the pot
+- **near.pot**: GET /near/pot?dao=… and show a card: `text`, then open
+  proposals (`status` InProgress) as rows "#5 12.5 NEAR to caterer.near ·
+  1 more approval" with **Vote** opening the row's `url` (Trezu). An
+  **Insert** button puts `text` in the chat as is.
+- **near.pot.pay**: if `to` isn't a NEAR account (`"the caterer"`), the
+  panel asks "caterer's NEAR account" (checked with GET
+  /names/resolve). Then GET /near/pot/propose-link and show "Propose
+  $120 to caterer.near · needs 2 of 3 · bond 0.1 NEAR". **Propose in
+  Trezu** opens `url` and copies nothing; the panel shows `fill` ("Type
+  120 USDC, note: catering") so the person can finish there. Back in
+  chat, **Insert** puts `text` at the cursor. When `proposers` is a list
+  without the person's saved NEAR account, say "Only members can propose
+  from this pot".
+- The app may show the same card on its Pot screen (Profile › Pot), with
+  the members and the Trezu dashboard link (`links.trezu`).
+
+### CLI (no session, no .env)
+`npm run near:quote -- "put 50 usdc to work"` prints the vault, its APY and
+a live dry 1Click Earn quote (also "put 0.5 sol to work", "take 20 usdc out
+of earn"); `npm run near:pot -- build.sputnik-dao.near ["pay efiz.near $120
+from the pot for catering"]` prints the pot and the Trezu link.
+
 ## Tests
-- Server: vitest with a fake fetch (no network in tests): nearintents, nearguard, nearphrase, pay (pay links), actions (NEAR tools).
+- Server: vitest with a fake fetch (no network in tests): nearintents, nearguard, nearphrase, pay (pay links), actions (NEAR tools), nearearn (Earn, fake 1Click/Morpho/Kamino), sputnik (the pot, fake NEAR RPC).
 - iPhone: RunnerTests (TradeIntentTests).
 - App: flutter test.
 - Android: JVM unit tests.
