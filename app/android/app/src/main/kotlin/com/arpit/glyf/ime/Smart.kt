@@ -66,6 +66,10 @@ object Smart {
         /** Someone's Cal.com or Calendly page, in the message or just copied:
          *  one tap shows its open times to book, with the person's own details. */
         data class Booking(val link: String) : Chip()
+        /** A trade said in words ("swap 0.05 eth to usdc on base", "sell my
+         *  eth if it drops below 3000"): a tap opens the trade panel over
+         *  the keys (TradePanelView), nothing typed. Smart.swift's `.trade`. */
+        data class Trade(val intent: TradeIntent) : Chip()
     }
 
     /** The rates the keyboard has at hand (from the server, via RatesStore):
@@ -105,6 +109,7 @@ object Smart {
         is Chip.Vault -> chip.field.title
         is Chip.Pay -> chip.name ?: "Wallet"
         is Chip.Buy -> chip.symbol
+        is Chip.Trade -> chip.intent.venue
         else -> null
     }
 
@@ -116,6 +121,11 @@ object Smart {
         is Chip.Booking -> "Book"
         is Chip.Pay -> if (chip.problem != null) "OK" else "Send"
         is Chip.Buy -> "Buy"
+        is Chip.Trade -> when (chip.intent.kind) {
+            TradeIntent.Kind.SWAP -> if (chip.intent.amountIsUSD || chip.intent.buyAmount != null) "Buy" else "Swap"
+            TradeIntent.Kind.BRIDGE -> "Move"
+            else -> "Set"
+        }
         is Chip.Action, is Chip.Details, is Chip.Convert -> null
     }
 
@@ -140,6 +150,7 @@ object Smart {
             if (chip.amount != null) "${chip.amount} ${chip.token ?: "USDC"} to $short" else short
         }
         is Chip.Buy -> chip.price ?: shortAddress(chip.mint)
+        is Chip.Trade -> chip.intent.title + " · " + chip.intent.chainLabel
     }
 
     /** What tapping puts in the field. */
@@ -149,7 +160,7 @@ object Smart {
         is Chip.Money -> chip.insert
         // A part's own tap types it.
         is Chip.Action, is Chip.Pay, is Chip.Buy, is Chip.Event, is Chip.Booking, is Chip.Details,
-        is Chip.Convert -> ""
+        is Chip.Convert, is Chip.Trade -> ""
     }
 
     /** A saved detail typed after what is there, with a space between when
@@ -252,6 +263,8 @@ object Smart {
                 null -> null
             }
         }
+        // A trade said in words: swaps and orders.
+        TradeIntent.parse(text)?.let { return Chip.Trade(it) }
         // A link longer than the strip's view of the message: its trackers.
         if (linkContext != null && linkContext.length > text.length && endsInLink(text)) {
             cleanLink(linkContext)?.let { return Chip.Convert(it) }

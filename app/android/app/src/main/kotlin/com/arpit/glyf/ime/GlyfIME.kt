@@ -2731,7 +2731,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         // lookup can tell; the strip is arranged again when it lands.
         // Without the wallet on, nothing to send or buy: a price is only a price.
         if (!walletOn) chip = when (val c = chip) {
-            is Smart.Chip.Pay, is Smart.Chip.Buy -> null
+            is Smart.Chip.Pay, is Smart.Chip.Buy, is Smart.Chip.Trade -> null
             is Smart.Chip.Money -> c.copy(buy = null)
             else -> c
         }
@@ -2794,6 +2794,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 is Smart.Chip.Action -> "action"
                 is Smart.Chip.Event -> "event"
                 is Smart.Chip.Booking -> "booking"
+                is Smart.Chip.Trade -> "trade"
                 null -> null
             }
             if (kind != null && !TourCoach.allowsChip(kind, step, tourCopied())) chip = null
