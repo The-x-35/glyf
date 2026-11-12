@@ -3,7 +3,7 @@ import { decodeFunctionData, getAddress, parseAbi } from "viem";
 import { describe, expect, it } from "vitest";
 import type { NearLookup } from "../src/lib/names.js";
 import {
-  addressFits, depositFor, EXPLORER, NEAR_CHAINS, nearChainOf, NearIntents, ONECLICK, pickToken, statusOf,
+  addressFits, depositFor, EXPLORER, NEAR_CHAINS, NEAR_STORAGE_DEPOSIT, nearChainOf, NearIntents, ONECLICK, pickToken, statusOf,
   type IntentToken,
 } from "../src/lib/nearintents.js";
 import { nearRoutes } from "../src/routes/near.js";
@@ -151,6 +151,43 @@ describe("NEAR Intents deposits", () => {
   });
 });
 
+describe("NEAR Intents deposits from NEAR (signed in HOT Wallet)", () => {
+  const IMPLICIT = "606bffe304070f24557a0d5cb8cca57812acfb478b341e9c32e76c68cfcbe48d";
+  const fc = (methodName: string, args: object, gas: string, deposit: string) =>
+    ({ type: "FunctionCall", params: { methodName, args, gas, deposit } });
+
+  it("NEAR is registered at wrap.near, wrapped and ft_transferred to the deposit address in one transaction", () => {
+    const d = depositFor(NEAR_CHAINS.near, TOKENS[5], IMPLICIT, "5000000000000000000000000", null);
+    expect(d).toEqual({ kind: "near", chain: "near", to: IMPLICIT, receiverId: "wrap.near", token: "wrap.near", wrap: true,
+      amount: "5", amountBase: "5000000000000000000000000", symbol: "NEAR", depositAddress: IMPLICIT, actions: [
+        fc("storage_deposit", { account_id: IMPLICIT, registration_only: true }, "30000000000000", NEAR_STORAGE_DEPOSIT),
+        fc("near_deposit", {}, "10000000000000", "5000000000000000000000000"),
+        fc("ft_transfer", { receiver_id: IMPLICIT, amount: "5000000000000000000000000" }, "30000000000000", "1"),
+      ] });
+    expect(NEAR_STORAGE_DEPOSIT).toBe("1250000000000000000000");
+  });
+
+  it("a NEP-141 token on NEAR (USDC) is registered and ft_transferred, with no wrapping", () => {
+    const usdc = TOKENS[6].contractAddress!;
+    const d = depositFor(NEAR_CHAINS.near, TOKENS[6], IMPLICIT, "5000000", null);
+    expect(d).toMatchObject({ kind: "near", receiverId: usdc, token: usdc, wrap: false, amount: "5", symbol: "USDC" });
+    expect((d as { actions: unknown[] }).actions).toEqual([
+      fc("storage_deposit", { account_id: IMPLICIT, registration_only: true }, "30000000000000", NEAR_STORAGE_DEPOSIT),
+      fc("ft_transfer", { receiver_id: IMPLICIT, amount: "5000000" }, "30000000000000", "1"),
+    ]);
+  });
+
+  it("a live quote from NEAR carries the NEAR deposit, and refunds go to the .near account", async () => {
+    const { n, calls } = intents();
+    const q = await n.quote({ sell: "NEAR", sellChain: "near", buy: "USDC", buyChain: "base", amount: "5",
+      refundTo: "arpit.near", recipient: MINE });
+    const sent = calls.find(c => c.url.endsWith("/v0/quote"))!.body;
+    expect(sent).toMatchObject({ dry: false, originAsset: "nep141:wrap.near", refundTo: "arpit.near", refundType: "ORIGIN_CHAIN" });
+    expect(q.sell).toMatchObject({ symbol: "NEAR", chain: "near", address: "wrap.near" });
+    expect(q.deposit).toMatchObject({ kind: "near", receiverId: "wrap.near", wrap: true, amountBase: "5000000000000000000000000" });
+  });
+});
+
 describe("NEAR Intents quotes", () => {
   it("asks for a dry quote with stand-in addresses when the phone gave none", async () => {
     const { n, calls } = intents();
@@ -279,6 +316,8 @@ describe("NEAR Intents status and submit", () => {
     expect(await n.submit(DEPOSIT, "0xfeed", "9")).toEqual({ ok: true });
     expect(calls.at(-1)).toMatchObject({ method: "POST", url: `${ONECLICK}/v0/deposit/submit`,
       body: { txHash: "0xfeed", depositAddress: DEPOSIT, memo: "9" } });
+    await n.submit(DEPOSIT, "8gA5", undefined, "arpit.near");
+    expect(calls.at(-1)!.body).toEqual({ txHash: "8gA5", depositAddress: DEPOSIT, nearSenderAccount: "arpit.near" });
   });
 });
 
@@ -371,6 +410,11 @@ describe("POST /near/quote, GET /near/status, POST /near/submit", () => {
     const sub = await app.inject({ method: "POST", url: "/near/submit", payload: { depositAddress: DEPOSIT, txHash: "0x" + "ab".repeat(32) } });
     expect(sub.json()).toEqual({ ok: true });
     expect((await app.inject({ method: "POST", url: "/near/submit", payload: { depositAddress: DEPOSIT } })).statusCode).toBe(400);
+    const fromNear = await app.inject({ method: "POST", url: "/near/submit",
+      payload: { depositAddress: DEPOSIT, txHash: "8gA5Xq1kLmnPqRsTuVwXyZ23", nearSenderAccount: "arpit.near" } });
+    expect(fromNear.json()).toEqual({ ok: true });
+    expect((await app.inject({ method: "POST", url: "/near/submit",
+      payload: { depositAddress: DEPOSIT, txHash: "8gA5Xq1kLmnPqRsTuVwXyZ23", nearSenderAccount: "Not An Account!" } })).statusCode).toBe(400);
   });
 
   it("is a 404 for a deposit address 1Click doesn't know", async () => {

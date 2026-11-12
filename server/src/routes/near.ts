@@ -40,6 +40,8 @@ const SubmitBody = z.object({
   depositAddress: z.string().trim().regex(DEPOSIT, "depositAddress?"),
   txHash: z.string().trim().regex(/^[A-Za-z0-9]{16,140}$/, "txHash?"),
   memo: z.string().trim().max(64).optional(),
+  /** The NEAR account that paid a deposit on NEAR (1Click's nearSenderAccount). */
+  nearSenderAccount: z.string().trim().regex(/^[a-z0-9._-]{2,64}$/, "nearSenderAccount?").optional(),
 });
 
 export interface NearDeps {
@@ -119,7 +121,7 @@ export function nearRoutes(app: FastifyInstance, deps: NearDeps = {}): void {
     if (!parsed.success) return reply.code(400).send({ ok: false, error: parsed.error.issues[0]?.message ?? "Bad request" });
     const b = parsed.data;
     try {
-      const out = await intents.submit(b.depositAddress, b.txHash, b.memo || undefined);
+      const out = await intents.submit(b.depositAddress, b.txHash, b.memo || undefined, b.nearSenderAccount || undefined);
       req.log.info("near_submit");
       return out;
     } catch (err) {

@@ -126,6 +126,15 @@ Response (`ok: true`):
 - `native`: `{to: depositAddress, value: amount, data:"0x"}`, with `chainId`.
 - `sol`: a native SOL transfer, `{to: depositAddress, lamports}`.
 - `spl`: `{to: depositAddress, mint, amountBase, decimals}`.
+- `near`: a NEP-141 token on NEAR, paid from the person's own account in
+  HOT Wallet: `{receiverId: <token contract>, token, wrap, amountBase,
+  depositAddress, actions}`. One transaction to the token contract:
+  `storage_deposit {account_id: depositAddress, registration_only: true}`
+  (0.00125 NEAR; the deposit address is a fresh implicit account), then for
+  NEAR itself (`wrap: true`, 1Click takes wNEAR) `near_deposit` of the
+  amount, then `ft_transfer {receiver_id: depositAddress, amount}` with 1
+  yocto. `actions` are near-connect's JSON actions; the app builds the same
+  ones itself and checks them before HOT signs.
 - `manual`: any other chain; show the address, amount and memo.
 
 Failures look like `{ok:false, error:"Plain words for the person"}`, sent
@@ -135,7 +144,7 @@ NEAR Intents: at least $X").
 ### GET /near/status?deposit=<depositAddress>[&memo=]
 Returns `{ok, status: "PENDING_DEPOSIT|INCOMPLETE_DEPOSIT|PROCESSING|SUCCESS|REFUNDED|FAILED", done: bool, amountOut?, destinationTx?: {hash, url}, originTx?: {hash,url}, explorer}`.
 
-### POST /near/submit `{depositAddress, txHash, memo?}`
+### POST /near/submit `{depositAddress, txHash, memo?, nearSenderAccount?}`
 Tells 1Click about the deposit tx, which speeds up pickup. Returns `{ok}`.
 
 ### GET /names/resolve?name=alice.near
