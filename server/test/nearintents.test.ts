@@ -180,6 +180,15 @@ describe("NEAR Intents quotes", () => {
       explorer: EXPLORER + DEPOSIT, recipient: PHANTOM, refundTo: MINE });
   });
 
+  it("deposits exactly the typed amount on an exact-in trade, whatever 1Click echoes", async () => {
+    const { n } = intents({ quote: body => new Response(JSON.stringify({ quote: { amountIn: "19999999", amountInUsd: "20",
+      amountOut: "247500000", amountOutUsd: "19.8", minAmountOut: "245025000", timeEstimate: 32, depositAddress: DEPOSIT,
+      deadline: "2026-11-14T00:00:00.000Z" }, quoteRequest: body })) });
+    const q = await n.quote({ sell: "USDC", sellChain: "base", buy: "SOL", buyChain: "solana", amount: "20.000000",
+      refundTo: MINE, recipient: PHANTOM });
+    expect(q).toMatchObject({ amountIn: "20", amountInBase: "20000000", deposit: { amountBase: "20000000" } });
+  });
+
   it("prices a send by what the recipient gets (EXACT_OUTPUT) and deposits 1Click's amountIn", async () => {
     const { n, calls } = intents();
     const q = await n.quote({ sell: "USDC", sellChain: "base", buy: "USDC", buyChain: "near", amount: "5", exact: "out",

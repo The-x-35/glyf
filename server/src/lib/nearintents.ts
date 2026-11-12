@@ -423,6 +423,9 @@ export class NearIntents {
     const depositAddress = !dry && typeof q.depositAddress === "string" ? q.depositAddress : null;
     if (!dry && !depositAddress) throw new IntentsError(502, "NEAR Intents sent back no deposit address");
     const memo = typeof q.depositMemo === "string" && q.depositMemo ? q.depositMemo : null;
+    // An exact-in deposit is the typed amount to the unit, whatever 1Click
+    // echoes; a send deposits 1Click's amountIn.
+    const amountInBase = exact === "in" ? amount.toString() : q.amountIn;
     return {
       ok: true,
       dry,
@@ -430,8 +433,8 @@ export class NearIntents {
       exact,
       sell: side(sell, sellChain),
       buy: side(buy, buyChain),
-      amountIn: whole(q.amountIn, sell.decimals),
-      amountInBase: q.amountIn,
+      amountIn: whole(amountInBase, sell.decimals),
+      amountInBase,
       amountInUsd: usd(q.amountInUsd),
       amountOut: whole(q.amountOut, buy.decimals),
       amountOutBase: q.amountOut,
@@ -443,7 +446,7 @@ export class NearIntents {
       deadline: !dry && typeof q.deadline === "string" ? q.deadline : null,
       // EXACT_OUTPUT's amountIn already carries the slippage; whatever isn't
       // needed comes back to refundTo.
-      deposit: depositAddress ? depositFor(sellChain, sell, depositAddress, q.amountIn, memo) : null,
+      deposit: depositAddress ? depositFor(sellChain, sell, depositAddress, amountInBase, memo) : null,
       explorer: depositAddress ? EXPLORER + encodeURIComponent(depositAddress) : null,
       recipient: dry ? null : recipient!,
       refundTo: dry ? null : refundTo!,
