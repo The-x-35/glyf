@@ -11,6 +11,12 @@ AI keyboard for iPhone and Android. *Type less. glyf more.*
 > The same author also entered the NEAR investment thesis,
 > https://github.com/The-x-35/near-thesis (independent; no shared code).
 
+| Swap in any chat | Send to a .near name | Guard blocks a bad name |
+|:-:|:-:|:-:|
+| <img src="docs/near-shots/1-swap.jpg" width="240" alt="swap 20 usdc on base to sol: live NEAR Intents quote"> | <img src="docs/near-shots/2-send-near-name.jpg" width="240" alt="send 5 usdc to alice.near: exact amount out, name checked on NEAR RPC"> | <img src="docs/near-shots/3-guard.jpg" width="240" alt="Guard: no NEAR account named nobody-glyf-zz9.near"> |
+| **Earn: "put $50 to work"** | **Group pot on Sputnik DAO** | **Private AI on NEAR** |
+| <img src="docs/near-shots/4-earn.jpg" width="240" alt="put $50 to work: Morpho vault through NEAR Intents, live APY"> | <img src="docs/near-shots/5-pot.jpg" width="240" alt="how much is in the build pot: balance, members, approvals from Sputnik DAO"> | <img src="docs/near-shots/6-private-ai.jpg" width="240" alt="Profile, Keyboard: Private AI on NEAR and NEAR AI receipts"> |
+
 **Everything about the project (decisions, timeline, every part, open items, full chat history) is in [docs/README.md](docs/README.md).**
 
 **Design:** Apple-like and simple, no explainer lines. Apple-standard keyboard
