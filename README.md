@@ -11,11 +11,13 @@ AI keyboard for iPhone and Android. *Type less. glyf more.*
 > The same author also entered the NEAR investment thesis,
 > https://github.com/The-x-35/near-thesis (independent; no shared code).
 
-| Swap in any chat | Send to a .near name | Guard blocks a bad name |
-|:-:|:-:|:-:|
-| <img src="docs/near-shots/1-swap.jpg" width="240" alt="swap 20 usdc on base to sol: live NEAR Intents quote"> | <img src="docs/near-shots/2-send-near-name.jpg" width="240" alt="send 5 usdc to alice.near: exact amount out, name checked on NEAR RPC"> | <img src="docs/near-shots/3-guard.jpg" width="240" alt="Guard: no NEAR account named nobody-glyf-zz9.near"> |
-| **Earn: "put $50 to work"** | **Group pot on Sputnik DAO** | **Private AI on NEAR** |
-| <img src="docs/near-shots/4-earn.jpg" width="240" alt="put $50 to work: Morpho vault through NEAR Intents, live APY"> | <img src="docs/near-shots/5-pot.jpg" width="240" alt="how much is in the build pot: balance, members, approvals from Sputnik DAO"> | <img src="docs/near-shots/6-private-ai.jpg" width="240" alt="Profile, Keyboard: Private AI on NEAR and NEAR AI receipts"> |
+| **Swap: keyboard suggests** | **Tap: live NEAR Intents quote** | **Send to .near: suggests** | **Tap: exact amount, name checked** |
+|:-:|:-:|:-:|:-:|
+| <img src="docs/near-shots/swap-chip.jpg" width="190" alt="typed swap 20 usdc on base to sol, chip: NEAR Intents Swap 20 USDC to SOL"> | <img src="docs/near-shots/swap-panel.jpg" width="190" alt="swap panel: you pay 20 USDC on Base, you get 0.2453 SOL, about 32 s"> | <img src="docs/near-shots/send-chip.jpg" width="190" alt="typed send 5 usdc to alice.near, chip: NEAR Intents Send"> | <img src="docs/near-shots/send-panel.jpg" width="190" alt="send panel: alice.near verified, you pay 5.051 USDC on Base"> |
+| **Earn: suggests** | **Tap: Morpho vault, live APY** | **Group pot: suggests** | **Tap: Sputnik DAO balance and votes** |
+| <img src="docs/near-shots/earn-chip.jpg" width="190" alt="typed put $50 to work, chip: NEAR Intents Put 50 USDC to work, Earn"> | <img src="docs/near-shots/earn-panel.jpg" width="190" alt="earn panel: Gauntlet USDC Prime on Morpho, 4.51% APY"> | <img src="docs/near-shots/pot-chip.jpg" width="190" alt="typed how much is in the build pot, chip: See the build pot, Sputnik DAO"> | <img src="docs/near-shots/pot-panel.jpg" width="190" alt="pot panel: build pot holds 7811 NEAR, 79 members, payouts need 3 of 5"> |
+| **Bill split: $22.50 each → Request** | **AI suggests a request from the chat** | **Guard blocks a .near that doesn't exist** | **Private AI on NEAR AI Cloud** |
+| <img src="docs/near-shots/split-chip.jpg" width="190" alt="typed dinner was $90 for the four of us, chip: $22.50 each, Request"> | <img src="docs/near-shots/ai-request-chip.jpg" width="190" alt="typed you owe me 22.50 for dinner, chip: Request $22.50 on Solana"> | <img src="docs/near-shots/guard.jpg" width="190" alt="Guard: No NEAR account named nobody-glyf-zz9.near"> | <img src="docs/near-shots/private-ai.jpg" width="190" alt="Profile, Keyboard: Private AI on NEAR switch and NEAR AI receipts"> |
 
 **Everything about the project (decisions, timeline, every part, open items, full chat history) is in [docs/README.md](docs/README.md).**
 
