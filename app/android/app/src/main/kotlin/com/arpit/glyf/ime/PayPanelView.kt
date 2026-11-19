@@ -859,8 +859,8 @@ class PayPanelView(
         cta.visibility = lead.visibility
 
         if (needsConnect) {
-            lead.text = "Connect Phantom once in the app; after that you pay right here."
-            cta.text = "Connect Phantom"
+            lead.text = "Connect ${SolanaWallet.name()} once in the app; after that you pay right here."
+            cta.text = "Connect ${SolanaWallet.name()}"
             cta.setTag(com.arpit.glyf.R.id.qa_id, "pay:connect")
             cta.setOnClickListener { onConnect() }
         }
@@ -880,7 +880,7 @@ class PayPanelView(
                     toName.setTextColor(blue)
                     toDetail.text = "from the chat"
                 }
-                meta.text = "Phantom signs · nothing moves without you"
+                meta.text = "${SolanaWallet.title()} signs · nothing moves without you"
                 go.text = if (isPrivate && paying.mint == USDC) "Send privately" else "Send"
             }
             is Intent.Buy -> {
@@ -888,7 +888,7 @@ class PayPanelView(
                 toDetail.text = intent.price?.let {
                     if (quote != null) "1 ${intent.symbol} = $it" else it
                 } ?: ""
-                meta.text = "Best route via Jupiter · Phantom signs"
+                meta.text = "Best route via Jupiter · ${SolanaWallet.title()} signs"
                 go.text = "Buy"
             }
         }

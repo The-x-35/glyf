@@ -236,8 +236,10 @@ data class TradeIntent(
         }
 
         /** Who signs a trade on [chain], as the app names it: always the
-         *  person's own wallet app, Phantom on Solana and MetaMask elsewhere. */
-        fun walletName(chain: String?): String = if (chain == "solana") "Phantom" else "MetaMask"
+         *  person's own wallet app. On Solana that's Seed Vault on a Seeker
+         *  (or another Mobile Wallet Adapter wallet), else Phantom
+         *  ([SolanaWallet]); MetaMask elsewhere. */
+        fun walletName(chain: String?): String = if (chain == "solana") SolanaWallet.title() else "MetaMask"
 
         /** A number as Swift's Double(_:) reads one: digits, one point, an
          *  optional exponent; never "1d", "NaN" or hex. */

@@ -644,6 +644,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // Name the wallet that will sign: Seed Vault on a Seeker, else Phantom.
+        SolanaWallet.refresh(this)
         // Signed out and back in since the keyboard last ran? Take the new one.
         com.arpit.glyf.ime.BackendClient.bearer = com.arpit.glyf.SessionStore.token(this)
         android.util.Log.d("GlyfKB", "onStartInputView restarting=$restarting overlay=${overlay != null}")

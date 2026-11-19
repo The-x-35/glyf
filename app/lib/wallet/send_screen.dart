@@ -273,11 +273,11 @@ class _SendScreenState extends State<SendScreen> {
     padding: const EdgeInsets.all(16),
     child: Row(
       children: [
-        const PhantomMark(size: 38),
-        const SizedBox(width: 12),
-        const Expanded(
+        if (!WalletFlow.mwaHere.value) const PhantomMark(size: 38),
+        if (!WalletFlow.mwaHere.value) const SizedBox(width: 12),
+        Expanded(
           child: Text(
-            'Connect Phantom to send',
+            'Connect ${WalletFlow.walletName} to send',
             style: TextStyle(color: Glass.ink, fontSize: 15, fontWeight: FontWeight.w700),
           ),
         ),

@@ -105,6 +105,16 @@ abstract final class WalletFlow {
   /// The connected wallet, or null.
   static final link = ValueNotifier<WalletLink?>(null);
 
+  /// A Mobile Wallet Adapter wallet is on this phone (Seed Vault on a
+  /// Seeker), so [connect] signs there rather than through Phantom.
+  static final mwaHere = ValueNotifier<bool>(false);
+
+  /// The wallet the connect and pay screens name.
+  static String get walletName => walletNameFor(mwaHere: mwaHere.value);
+
+  @visibleForTesting
+  static String walletNameFor({required bool mwaHere}) => mwaHere ? 'your wallet' : 'Phantom';
+
   /// Whether the wallet is turned on (Profile › Keyboard › Wallet); off,
   /// the Wallet card, Send, Buy and pay links stay hidden (2026-10-14).
   static final enabled = ValueNotifier<bool>(false);
@@ -118,6 +128,7 @@ abstract final class WalletFlow {
   static const phantomPlayStore = 'https://play.google.com/store/apps/details?id=app.phantom';
 
   static Future<void> load() async {
+    mwaHere.value = await Mwa.isAvailable();
     final seeded = await mwa.load();
     if (seeded != null) {
       link.value = WalletLink(address: seeded.address, viaMwa: true);

@@ -152,7 +152,7 @@ class _PayLaunchScreenState extends State<PayLaunchScreen> {
               const Spacer(flex: 3),
               if (_needsConnect)
                 PillButton(
-                  label: 'Connect Phantom',
+                  label: 'Connect ${WalletFlow.walletName}',
                   onPressed: () => Navigator.of(context)
                       .pushReplacement(MaterialPageRoute(builder: (_) => const WalletScreen())),
                 )
