@@ -26,3 +26,6 @@ qa/results/*.png
 
 # Parity pass reference and before/after shots (2026-09-30): large, kept locally.
 qa/results/parity/*.png
+
+# Gradle output from running gradlew in app/android
+app/android/build/

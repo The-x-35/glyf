@@ -5,12 +5,12 @@ import android.content.Intent
 import android.net.Uri
 
 /** Which wallet signs a Solana payment on this phone, as the keyboard names
- *  it. The app asks a Mobile Wallet Adapter wallet first (Seed Vault on a
- *  Seeker), which signs right on the phone; only without one does Phantom
- *  sign by deeplink (WalletFlow.connect). */
+ *  it. The app asks a Mobile Wallet Adapter wallet first (the Seeker's own
+ *  wallet, or any other), which signs right on the phone; only without one
+ *  does Phantom sign by deeplink (WalletFlow.connect). Glyf never names or
+ *  touches Seed Vault itself: the dApp Store allows that to wallet apps only
+ *  (rejected 20 Nov 2026 for "Connect Seed Vault"). */
 object SolanaWallet {
-    const val SEED_VAULT = "com.solanamobile.wallet"
-
     /** Packages that answer Mobile Wallet Adapter on this phone; empty until [refresh]. */
     @Volatile var mwaPackages: List<String> = emptyList()
 
@@ -24,12 +24,9 @@ object SolanaWallet {
         }
     }
 
-    /** "Seed Vault" on a Seeker, "your wallet" for another MWA wallet, else "Phantom". */
-    fun name(packages: List<String> = mwaPackages): String = when {
-        SEED_VAULT in packages -> "Seed Vault"
-        packages.isNotEmpty() -> "your wallet"
-        else -> "Phantom"
-    }
+    /** "your wallet" when a Mobile Wallet Adapter wallet is here, else "Phantom". */
+    fun name(packages: List<String> = mwaPackages): String =
+        if (packages.isNotEmpty()) "your wallet" else "Phantom"
 
     /** [name] at the start of a sentence. */
     fun title(packages: List<String> = mwaPackages): String = name(packages).replaceFirstChar { it.uppercase() }

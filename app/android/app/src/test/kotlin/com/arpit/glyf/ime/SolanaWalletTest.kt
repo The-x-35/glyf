@@ -4,13 +4,15 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** The keyboard names the wallet that will sign: Seed Vault on a Seeker,
- *  another Mobile Wallet Adapter wallet as "your wallet", else Phantom. */
+/** The keyboard names the wallet that will sign: any Mobile Wallet Adapter
+ *  wallet (the Seeker's own included) as "your wallet", else Phantom. Never
+ *  "Seed Vault": the dApp Store rejects apps that name it. */
 class SolanaWalletTest {
     @After fun reset() { SolanaWallet.mwaPackages = emptyList() }
 
-    @Test fun aSeekerNamesSeedVault() {
-        assertEquals("Seed Vault", SolanaWallet.name(listOf("com.solanamobile.wallet", "app.phantom")))
+    @Test fun aSeekerSaysYourWalletNeverSeedVault() {
+        assertEquals("your wallet", SolanaWallet.name(listOf("com.solanamobile.wallet", "app.phantom")))
+        assertEquals("Your wallet", SolanaWallet.title(listOf("com.solanamobile.wallet")))
     }
 
     @Test fun anotherMwaWalletIsYourWallet() {
@@ -24,7 +26,7 @@ class SolanaWalletTest {
 
     @Test fun tradesOnSolanaNameTheSameWallet() {
         SolanaWallet.mwaPackages = listOf("com.solanamobile.wallet")
-        assertEquals("Seed Vault", TradeIntent.walletName("solana"))
+        assertEquals("Your wallet", TradeIntent.walletName("solana"))
         assertEquals("MetaMask", TradeIntent.walletName("base"))
     }
 }

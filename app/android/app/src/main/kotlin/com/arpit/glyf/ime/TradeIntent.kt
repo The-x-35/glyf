@@ -236,8 +236,8 @@ data class TradeIntent(
         }
 
         /** Who signs a trade on [chain], as the app names it: always the
-         *  person's own wallet app. On Solana that's Seed Vault on a Seeker
-         *  (or another Mobile Wallet Adapter wallet), else Phantom
+         *  person's own wallet app. On Solana that's the phone's Mobile Wallet
+         *  Adapter wallet (the Seeker's own), else Phantom
          *  ([SolanaWallet]); MetaMask elsewhere. */
         fun walletName(chain: String?): String = if (chain == "solana") SolanaWallet.title() else "MetaMask"
 

@@ -120,7 +120,7 @@ release:
         Save your email, phone number, address, links, cards and passwords in the Vault, encrypted on your phone. When a form field or a sentence asks for one ("my email is"), it waits in the strip. The AI only ever sees the name of a saved detail, never what it holds. Shorthand turns ;sig into your signature, with blanks for the date or time.
 
         WALLET
-        Send SOL or USDC, or buy a token, from the chat. A copied wallet address offers Send, and a cashtag like $SOL shows its price. On Seeker, Seed Vault Wallet signs through Mobile Wallet Adapter right on the phone; elsewhere, Phantom signs. Glyf never holds your keys.
+        Send SOL or USDC, or buy a token, from the chat. A copied wallet address offers Send, and a cashtag like $SOL shows its price. On Seeker, your wallet signs through Mobile Wallet Adapter right on the phone; elsewhere, Phantom signs. Glyf never holds your keys.
 
         MORE INSIDE THE KEYBOARD
         • Search YouTube, places nearby and your contacts, and paste a result.
@@ -140,7 +140,7 @@ release:
         Open Glyf, sign in with Google and follow the steps to turn the keyboard on. Android shows its usual notice for any new keyboard. Glyf is free, with a daily allowance of AI actions. The keyboard types in English.
       new_in_version: First release on the Solana dApp Store.
       saga_features: |-
-        On Seeker, Glyf's wallet connects to Seed Vault Wallet through Mobile Wallet Adapter: send SOL or USDC, or buy a token, from the chat and approve it on the phone, with no switch to another app. Phantom works too.
+        On Seeker, Glyf connects to your wallet through Mobile Wallet Adapter: send SOL or USDC, or buy a token, from the chat and approve it on the phone, with no switch to another app. Phantom works too.
   android_details:
     locales:
       - en-US
@@ -151,7 +151,7 @@ solana_mobile_dapp_publisher_portal:
     Sign in: on the sign-in screen tap "App Review sign-in" and use review@tryglyf.com with the password <<REVIEW_PASSWORD: type it into the portal only, never here>>. (The button shows while Glyf's server runs with REVIEW_MODE=true; keep it on during review.)
     Turn the keyboard on: follow the in-app steps, or Settings > System > Keyboard > On-screen keyboard > Manage keyboards > Glyf Keyboard. Android shows its standard notice that any keyboard can see what you type; Glyf's privacy policy explains what is sent and when.
     Try it: in any chat app, type "$90 between 4 people" and tap the answer in the strip; type a sentence, then hold the space bar for rewrites; tap the emoji key for emoji, GIFs and stickers.
-    Wallet (optional): open Glyf > Wallet and connect Seed Vault Wallet or Phantom (Mobile Wallet Adapter). Type "$SOL" in a chat to see the price and Buy; copy a wallet address to see Send. A small SOL balance is needed to send.
+    Wallet (optional): open Glyf > Wallet and connect your wallet through Mobile Wallet Adapter, or Phantom. Type "$SOL" in a chat to see the price and Buy; copy a wallet address to see Send. A small SOL balance is needed to send.
   # Up to 10 Seeker Genesis Token wallets that may install before approval.
   alpha_testers:
     - address: <<OPTIONAL_GENESIS_TOKEN_WALLET_ADDRESS>>
