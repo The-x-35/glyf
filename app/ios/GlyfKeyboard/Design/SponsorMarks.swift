@@ -6,6 +6,8 @@ import UIKit
 ///   (Uniswap_icon_white.svg, 400x434), white on Uniswap pink #F50DB4.
 /// - Definitive: the triangle from docs.definitive.fi (Logos & Media Kit,
 ///   "Definitive Triangle"), white on black.
+/// - NEAR Intents: NEAR's N (two bars, the diagonal between them cut back
+///   at each end, as near.org's mark), white on black.
 /// The app draws the same marks (app/lib/profile/brand_marks.dart).
 enum SponsorMarks {
 
@@ -19,7 +21,7 @@ enum SponsorMarks {
             let tile = UIBezierPath(roundedRect: rect, cornerRadius: size * 0.26)
             let (face, ink): (UIColor, UIColor) = switch sponsor {
             case .uniswap: (uniswapPink, .white)
-            case .definitive: (.black, .white)
+            case .definitive, .near: (.black, .white)
             }
             face.setFill()
             tile.fill()
@@ -48,6 +50,21 @@ enum SponsorMarks {
                 p.closeSubpath()
                 ctx.addPath(p)
                 ctx.fillPath(using: .evenOdd)
+            case .near:
+                // On a unit square: the left bar rises from a notch at its
+                // foot, the right falls to one at its head, the diagonal joins.
+                let pts: [[CGPoint]] = [
+                    [CGPoint(x: 0.26, y: 0.24), CGPoint(x: 0.36, y: 0.24), CGPoint(x: 0.36, y: 0.62), CGPoint(x: 0.26, y: 0.76)],
+                    [CGPoint(x: 0.64, y: 0.24), CGPoint(x: 0.74, y: 0.24), CGPoint(x: 0.74, y: 0.76), CGPoint(x: 0.64, y: 0.76), CGPoint(x: 0.64, y: 0.38)],
+                    [CGPoint(x: 0.26, y: 0.24), CGPoint(x: 0.36, y: 0.24), CGPoint(x: 0.74, y: 0.76), CGPoint(x: 0.64, y: 0.76)],
+                ]
+                for shape in pts {
+                    let p = CGMutablePath()
+                    p.addLines(between: shape.map { CGPoint(x: $0.x * size, y: $0.y * size) })
+                    p.closeSubpath()
+                    ctx.addPath(p)
+                    ctx.fillPath()
+                }
             }
         }
     }

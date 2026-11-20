@@ -1,13 +1,24 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../core/glyf_api.dart';
 import 'evm_chains.dart';
 
 /// EVM JSON-RPC through Glyf's server (POST /evm/rpc picks the chain's node
 /// and carries reads only: nothing that signs or sends).
 abstract final class EvmRpc {
+  /// POST /evm/rpc; a test stands in for the server here.
+  @visibleForTesting
+  static Future<Map<String, dynamic>> Function(String path, Map<String, Object?> body) post =
+      (path, body) => GlyfApi.evmPost(path, body);
+
+  /// How long [receipt] waits between asks.
+  @visibleForTesting
+  static Duration pollEvery = const Duration(seconds: 2);
+
   static Future<Object?> call(EvmChain chain, String method, List<Object?> params) async {
-    final res = await GlyfApi.evmPost('/evm/rpc', {'chain': chain.name, 'method': method, 'params': params});
+    final res = await post('/evm/rpc', {'chain': chain.name, 'method': method, 'params': params});
     if (res['error'] != null) throw EvmRpcException(_message(res['error']));
     return res['result'];
   }
@@ -25,14 +36,21 @@ abstract final class EvmRpc {
 
   /// Waits for a transaction the wallet app sent to land: its receipt, or
   /// null when it's still out there after [timeout]. Glyf only reads here:
-  /// MetaMask builds, signs and sends.
+  /// MetaMask builds, signs and sends. A node that errs while the
+  /// transaction is new is asked again: publicnode answers a receipt it
+  /// can't find yet with "Archive requests require a personal token", and
+  /// a sent deposit must never read as failed because of that.
   static Future<Map<String, dynamic>?> receipt(EvmChain chain, String hash,
       {Duration timeout = const Duration(seconds: 90)}) async {
     final end = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(end)) {
-      final r = await call(chain, 'eth_getTransactionReceipt', [hash]);
-      if (r is Map) return Map<String, dynamic>.from(r);
-      await Future<void>.delayed(const Duration(seconds: 2));
+      try {
+        final r = await call(chain, 'eth_getTransactionReceipt', [hash]);
+        if (r is Map) return Map<String, dynamic>.from(r);
+      } catch (_) {
+        // Not found yet, or the node hiccuped: ask again until the time is up.
+      }
+      await Future<void>.delayed(pollEvery);
     }
     return null;
   }

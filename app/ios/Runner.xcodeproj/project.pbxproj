@@ -121,6 +121,7 @@
 		724DBAE031A15D40020449C8 /* bricks.png in Resources */ = {isa = PBXBuildFile; fileRef = 210688B378E50AA59AC27F83 /* bricks.png */; };
 		725686EE38A743AE82AF6009 /* brushed.png in Resources */ = {isa = PBXBuildFile; fileRef = 9501A2F1F9982E5262930960 /* brushed.png */; };
 		730B07F4E0AE128FF8D3553F /* KeyboardTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1970AAC7DE67739D3B0851FE /* KeyboardTheme.swift */; };
+		7330BC34A01AE026500C5BAB /* NearPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 546FF4FFF299AABFABE0FD94 /* NearPay.swift */; };
 		735137DEAC3D31AC61DBBBFB /* CalendarText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7C9B275603B0968648339E /* CalendarText.swift */; };
 		737B2D28D4945E95B7BCC5E5 /* GlyfSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7F2A23FE95E9EF336EEBA /* GlyfSession.swift */; };
 		741A70377640E915138D3838 /* SearchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E6DFEACD2A44AAB2AA5FA2 /* SearchCard.swift */; };
@@ -207,6 +208,7 @@
 		B0850AA732C33E25139D7C5A /* GlyfKeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3969FB3B09A43FC920D983 /* GlyfKeyboardViewController.swift */; };
 		B1206CCFBC7B411E70F86631 /* GoogleEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25E808ECB86F3613221456A /* GoogleEvent.swift */; };
 		B1218EBF6B6EEC196E8AD9BE /* KeyFaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA1967D53B71016F7C029BB /* KeyFaces.swift */; };
+		B5D48339C0F70EBFE09BD666 /* NearPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 546FF4FFF299AABFABE0FD94 /* NearPay.swift */; };
 		B970FCED18EE8126F58A8355 /* ConnectorSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C613956FFF2C3CEE732AF10E /* ConnectorSurface.swift */; };
 		B9D591A488B265BE2BC9CAAB /* CourierPrime-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 98BA183B9D39EA52C7FEE97A /* CourierPrime-OFL.txt */; };
 		BA72E8D676DCA4E6E9A8213E /* HostAppOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A24DFFE40F4D4F81C63DEE5 /* HostAppOpener.swift */; };
@@ -229,6 +231,7 @@
 		C8045525FD6698558A8BFB6C /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425B52CBFA3C0F3F3A7C0B44 /* BackendClient.swift */; };
 		C8F96BD3483C333CA7314C57 /* AIActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C7A90639C6C5055D858B3A /* AIActionTests.swift */; };
 		C935003FB1F140378070B3BB /* TourLabelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10257BEA0ADE02D15D7C04F8 /* TourLabelView.swift */; };
+		C962D30A1C03C0BB18E8550B /* PotSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C8AD6AC6741AC6A1D239BF /* PotSurface.swift */; };
 		C98A8C076412853AB1D442E1 /* ClipboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 707C5A7E74F5BA1712F4091F /* ClipboardStore.swift */; };
 		CD83D22C7C73F30CDB7318A7 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D7BD628E919BD87B27B98432 /* Pods_RunnerTests.framework */; };
 		CFE402D105D9636BC65D745E /* TonesPopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 969AE566AACBB47939055C04 /* TonesPopup.swift */; };
@@ -361,6 +364,7 @@
 		15B3144CD598A0B2C3FC5AC6 /* SearchSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchSurface.swift; sourceTree = "<group>"; };
 		1643DC4D0EB92E3F6980EAB3 /* GlyfVoiceWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = GlyfVoiceWidget.entitlements; sourceTree = "<group>"; };
 		16A8D9B958FE3F0446402563 /* theme-typewriter-letter.caf */ = {isa = PBXFileReference; includeInIndex = 1; path = "theme-typewriter-letter.caf"; sourceTree = "<group>"; };
+		17C8AD6AC6741AC6A1D239BF /* PotSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PotSurface.swift; sourceTree = "<group>"; };
 		1970AAC7DE67739D3B0851FE /* KeyboardTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardTheme.swift; sourceTree = "<group>"; };
 		19CBF30E2DEF6FF8DF3D934A /* knurl.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; path = knurl.png; sourceTree = "<group>"; };
 		1BBED0EAF8F6D2E1EC7A8B1C /* ClipContextStrip.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipContextStrip.swift; sourceTree = "<group>"; };
@@ -416,6 +420,7 @@
 		4E4BCEB0E5F2EF602218B6B1 /* Decoder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Decoder.swift; sourceTree = "<group>"; };
 		4E97DFE2A588F7A69880F23A /* InlineEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InlineEditor.swift; sourceTree = "<group>"; };
 		50939985B08DDAC02E5C126A /* KeyMetricsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyMetricsTests.swift; sourceTree = "<group>"; };
+		546FF4FFF299AABFABE0FD94 /* NearPay.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NearPay.swift; sourceTree = "<group>"; };
 		587F9A44BBDE81BBA515FDD4 /* theme-shutter-letter.caf */ = {isa = PBXFileReference; includeInIndex = 1; path = "theme-shutter-letter.caf"; sourceTree = "<group>"; };
 		5892699230017F64EAF27C9F /* TempMailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TempMailView.swift; sourceTree = "<group>"; };
 		58E1EBDDAEBB9FDE7F264EF4 /* GlyfM0UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GlyfM0UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -800,6 +805,7 @@
 				79DC6165B130D41D60F2677F /* VoicePanel.swift */,
 				94B3C3D63F7099CB952602F9 /* VoiceRibbon.swift */,
 				4ADFD2B8491262327C85DD4E /* TradeSurface.swift */,
+				17C8AD6AC6741AC6A1D239BF /* PotSurface.swift */,
 			);
 			name = Surfaces;
 			path = Surfaces;
@@ -854,6 +860,7 @@
 				D3EEF2DD2DDFC125471A7E55 /* TradeIntent.swift */,
 				7BC607A7ADAD356E043495BA /* TradeRecurring.swift */,
 				B3B4D870EDF320A6D0AE210B /* AIAction.swift */,
+				546FF4FFF299AABFABE0FD94 /* NearPay.swift */,
 			);
 			name = Engine;
 			path = Engine;
@@ -1497,6 +1504,8 @@
 				A8FEEB083DE25150FC125E93 /* TradeRecurring.swift in Sources */,
 				EF87C15F7B2CC244710A36C3 /* TradeSurface.swift in Sources */,
 				CFF2804089E821062D3B78AA /* AIAction.swift in Sources */,
+				7330BC34A01AE026500C5BAB /* NearPay.swift in Sources */,
+				C962D30A1C03C0BB18E8550B /* PotSurface.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1576,6 +1585,7 @@
 				C4DE603F8D24CF5E5E7BDF23 /* TradeIntentTests.swift in Sources */,
 				A599DF0D9A7A026F98963809 /* AIAction.swift in Sources */,
 				C8F96BD3483C333CA7314C57 /* AIActionTests.swift in Sources */,
+				B5D48339C0F70EBFE09BD666 /* NearPay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

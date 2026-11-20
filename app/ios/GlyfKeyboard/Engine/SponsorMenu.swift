@@ -1,7 +1,8 @@
 import Foundation
 
 /// The g menu's top row: the apps Glyf trades through: Uniswap swaps (with
-/// Jupiter for Solana) and Definitive's Flash orders. A tap
+/// Jupiter for Solana), Definitive's Flash orders and NEAR Intents' swaps
+/// across chains the other two don't join. A tap
 /// on one opens its own panel listing everything it does; nothing runs on
 /// the tap itself (Arpit, 2026-11-06: "any icon, should not trigger a thing
 /// by default. It should show all the options"). Pure, so RunnerTests pins
@@ -9,12 +10,13 @@ import Foundation
 enum SponsorMenu {
 
     enum Sponsor: String, CaseIterable {
-        case uniswap, definitive
+        case uniswap, definitive, near
 
         var title: String {
             switch self {
             case .uniswap: return "Uniswap"
             case .definitive: return "Definitive"
+            case .near: return "NEAR Intents"
             }
         }
 
@@ -42,6 +44,10 @@ enum SponsorMenu {
         case order(TradeIntent.Kind)
         /// Definitive: the app's Ethereum wallet, where Flash orders wait.
         case openOrders
+        /// NEAR Intents: the trade typed, or the starter (USDC on Base → SOL).
+        case nearTrade
+        /// NEAR Intents: one of the starters across chains, by its id.
+        case nearStarter(String)
 
         /// The shell row's target ("!sponsor:<id>").
         var id: String {
@@ -52,6 +58,8 @@ enum SponsorMenu {
             case .typed: return "typed"
             case .order(let kind): return "order:\(kind.rawValue)"
             case .openOrders: return "orders"
+            case .nearTrade: return "near"
+            case .nearStarter(let id): return "near:\(id)"
             }
         }
 
@@ -61,8 +69,13 @@ enum SponsorMenu {
             case "jupiter": self = .jupiter
             case "typed": self = .typed
             case "orders": self = .openOrders
+            case "near": self = .nearTrade
             default:
-                if id.hasPrefix("swap:") {
+                if id.hasPrefix("near:") {
+                    let key = String(id.dropFirst("near:".count))
+                    guard SponsorMenu.nearStarters.contains(where: { $0.id == key }) else { return nil }
+                    self = .nearStarter(key)
+                } else if id.hasPrefix("swap:") {
                     let chain = String(id.dropFirst("swap:".count))
                     guard SponsorMenu.swapChains.contains(chain) else { return nil }
                     self = .swapOn(chain)
@@ -108,7 +121,15 @@ enum SponsorMenu {
     /// Kept while the keyboard process lives.
     static var flashChain = "base"
 
-    /// Uniswap and Definitive, in the g menu's order.
+    /// NEAR Intents' starters: from Base to Solana and back, and to NEAR.
+    /// Small, so a first look costs little.
+    static let nearStarters: [(id: String, words: String)] = [
+        ("base-solana", "swap 20 usdc on base to sol"),
+        ("solana-base", "swap 0.1 sol to usdc on base"),
+        ("base-near", "swap 20 usdc on base to near"),
+    ]
+
+    /// Uniswap, Definitive and NEAR Intents, in the g menu's order.
     static let sponsors: [Sponsor] = Sponsor.allCases
 
     // MARK: panels
@@ -139,12 +160,26 @@ enum SponsorMenu {
             }
             rows.append(.option(.openOrders, title: "Open orders", detail: nil, icon: "list.bullet.rectangle"))
             return rows
+        case .near:
+            let first = typedNear(typed) ?? nearStarter("base-solana")!
+            var rows: [Entry] = [
+                .option(.nearTrade, title: first.kind == .send ? "Send" : "Swap", detail: swapDetail(first),
+                        icon: "arrow.left.arrow.right"),
+                .header("Across chains"),
+            ]
+            rows += nearStarters.compactMap { s in
+                nearStarter(s.id).map {
+                    .option(.nearStarter(s.id), title: $0.route, detail: swapDetail($0), icon: "chain:\($0.buyChain ?? $0.chainName)")
+                }
+            }
+            return rows
         }
     }
 
-    /// "USDC → ETH", "0.05 ETH → USDC", "Buy $20 of ETH".
+    /// "USDC → ETH", "0.05 ETH → USDC", "Buy $20 of ETH", "5 USDC to alice.near".
     static func swapDetail(_ t: TradeIntent) -> String {
-        t.title.hasPrefix("Swap ") ? String(t.title.dropFirst("Swap ".count)) : t.title
+        for verb in ["Swap ", "Send "] where t.title.hasPrefix(verb) { return String(t.title.dropFirst(verb.count)) }
+        return t.title
     }
 
     static func orderTitle(_ kind: TradeIntent.Kind) -> String {
@@ -202,6 +237,8 @@ enum SponsorMenu {
         case .typed: return typedOrder(typed).map { .trade($0) }
         case .order(let kind): return starter(kind, chain: flashChain).map { .trade($0) }
         case .openOrders: return .openApp(path: "evm-wallet")
+        case .nearTrade: return .trade(typedNear(typed) ?? nearStarter("base-solana")!)
+        case .nearStarter(let id): return nearStarter(id).map { .trade($0) }
         }
     }
 
@@ -215,6 +252,17 @@ enum SponsorMenu {
     static func typedOrder(_ typed: String) -> TradeIntent? {
         guard let t = TradeIntent.parse(typed), t.venue == "Flash" else { return nil }
         return t
+    }
+
+    /// A NEAR Intents trade typed at the end of the message.
+    static func typedNear(_ typed: String) -> TradeIntent? {
+        guard let t = TradeIntent.parse(typed), t.isNear else { return nil }
+        return t
+    }
+
+    /// The NEAR Intents starter with this id.
+    static func nearStarter(_ id: String) -> TradeIntent? {
+        nearStarters.first { $0.id == id }.flatMap { TradeIntent.parse($0.words) }
     }
 
     /// A small swap, 10 USDC to ETH, on `chain`.
@@ -248,7 +296,9 @@ enum SponsorMenu {
         case .bridge: words = "move 10 usdc from \(chain) to \(bridgeTarget(from: chain))"
         default: return nil
         }
-        guard var t = TradeIntent.parse(words), t.kind == kind else { return nil }
+        // Flash's own words: its bridge between Solana and Base stays Flash's
+        // here, though the same words typed go through NEAR Intents.
+        guard var t = TradeIntent.parse(words, near: false), t.kind == kind else { return nil }
         if let pct {
             t.price = nil
             t.pricePercent = pct

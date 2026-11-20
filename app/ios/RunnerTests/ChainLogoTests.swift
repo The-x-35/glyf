@@ -10,6 +10,10 @@ final class ChainLogoTests: XCTestCase {
             XCTAssertNotNil(ChainLogo.mark(chain), chain)
         }
         XCTAssertNotNil(ChainLogo.mark("op"))
+        // NEAR Intents' chains have a plain mark: their colour and initial.
+        for chain in TradeEdit.nearChains + Array(TradeIntent.otherChains) {
+            XCTAssertNotNil(ChainLogo.mark(chain), chain)
+        }
         XCTAssertNil(ChainLogo.mark("whitechain-sepolia"))
     }
 
@@ -39,7 +43,7 @@ final class ChainLogoTests: XCTestCase {
     }
 
     func testMarksRenderAtTheSizeAsked() {
-        for chain in ["base", "ethereum", "arbitrum", "optimism", "unichain", "solana"] {
+        for chain in ["base", "ethereum", "arbitrum", "optimism", "unichain", "solana", "near", "bitcoin", "zcash"] {
             let img = ChainLogo.image(chain, side: 28)
             XCTAssertEqual(img?.size, CGSize(width: 28, height: 28), chain)
         }

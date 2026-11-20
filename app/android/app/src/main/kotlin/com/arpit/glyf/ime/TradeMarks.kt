@@ -133,7 +133,9 @@ object SvgPath {
  * a chain reads at a glance on the trade panel, its picker and the sponsor
  * panels; nothing is fetched at run time. The same marks and sources as iOS's
  * ChainLogo.swift (Base's brand kit, Arbitrum's docs, the Solana Foundation,
- * Uniswap's Unichain icon, ethereum.org's diamond, OP Mainnet's red disc).
+ * Uniswap's Unichain icon, ethereum.org's diamond, OP Mainnet's red disc);
+ * the chains only NEAR Intents reaches get a plain disc in their colour
+ * with their initial.
  */
 object ChainMarks {
 
@@ -147,8 +149,12 @@ object ChainMarks {
                     /** Drawn on a white disc (the diamond is dark on dark sheets otherwise). */
                     val disc: Boolean = false,
                     val inset: Float = 0f,
-                    /** Drawn as a red disc with these letters (Optimism's mark is lettering). */
-                    val lettering: String? = null)
+                    /** Drawn as a disc with these letters (Optimism's mark is lettering),
+                     *  in [letteringFill]; also the plain mark for the chains only NEAR
+                     *  Intents reaches. */
+                    val lettering: String? = null,
+                    val letteringFill: Int = 0xFF0420,
+                    val letteringInk: Int = 0xFFFFFF)
 
     val marks: Map<String, Mark> = mapOf(
         "base" to Mark(1280f, 1280f, listOf(
@@ -180,7 +186,27 @@ object ChainMarks {
         "optimism" to Mark(1f, 1f, listOf(
             
         ), lettering = "OP"),
+        // NEAR Intents' chains: each one's colour and initial, kept simple.
+        "near" to letters("N", 0x000000),
+        "bitcoin" to letters("₿", 0xF7931A),
+        "zcash" to letters("Z", 0xF4B728, ink = 0x1A1A1A),
+        "bsc" to letters("B", 0xF0B90B, ink = 0x1A1A1A),
+        "avalanche" to letters("A", 0xE84142),
+        "gnosis" to letters("G", 0x04795B),
+        "polygon" to letters("P", 0x8247E5),
+        "ton" to letters("T", 0x0098EA),
+        "tron" to letters("T", 0xEB0029),
+        "xrp" to letters("X", 0x23292F),
+        "dogecoin" to letters("D", 0xC2A633),
+        "litecoin" to letters("Ł", 0x345D9D),
+        "sui" to letters("S", 0x4DA2FF),
+        "aptos" to letters("A", 0x1A1A1A),
+        "stellar" to letters("S", 0x111111),
+        "cardano" to letters("C", 0x0033AD),
     )
+
+    private fun letters(text: String, fill: Int, ink: Int = 0xFFFFFF) =
+        Mark(1f, 1f, emptyList(), lettering = text, letteringFill = fill, letteringInk = ink)
 
     /** The mark for a chain key ("op" is "optimism"); null for one without a mark. */
     fun mark(chain: String): Mark? = marks[if (chain == "op") "optimism" else chain]
@@ -202,11 +228,12 @@ class ChainMarkView(ctx: Context, chain: String) : View(ctx) {
         val top = (height - side) / 2f
         paint.shader = null
         mark.lettering?.let { letters ->
-            paint.color = ChainMarks.rgb(0xFF0420)
+            paint.color = ChainMarks.rgb(mark.letteringFill)
             c.drawOval(RectF(left, top, left + side, top + side), paint)
-            paint.color = Color.WHITE
-            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
-            paint.textSize = side * 0.40f
+            paint.color = ChainMarks.rgb(mark.letteringInk)
+            // OP's lettering leans, as Optimism draws it; the initials stand.
+            paint.typeface = Typeface.create(Typeface.DEFAULT, if (letters == "OP") Typeface.BOLD_ITALIC else Typeface.BOLD)
+            paint.textSize = side * if (letters.length == 1) 0.52f else 0.40f
             paint.textAlign = Paint.Align.CENTER
             val fm = paint.fontMetrics
             c.drawText(letters, left + side / 2, top + side / 2 - (fm.ascent + fm.descent) / 2, paint)
@@ -249,6 +276,8 @@ class ChainMarkView(ctx: Context, chain: String) : View(ctx) {
  *   (Uniswap_icon_white.svg, 400x434), white on Uniswap pink #F50DB4.
  * - Definitive: the triangle from docs.definitive.fi (Logos & Media Kit,
  *   "Definitive Triangle"), white on black.
+ * - NEAR Intents: NEAR's N (two bars, the diagonal between them cut back
+ *   at each end, as near.org's mark), white on black.
  */
 class SponsorMarkView(ctx: Context, private val sponsor: SponsorMenu.Sponsor) : View(ctx) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -282,12 +311,30 @@ class SponsorMarkView(ctx: Context, private val sponsor: SponsorMenu.Sponsor) : 
                 }
                 c.drawPath(p, paint)
             }
+            SponsorMenu.Sponsor.NEAR -> {
+                // On a unit square: the left bar rises from a notch at its
+                // foot, the right falls to one at its head, the diagonal joins.
+                for (shape in NEAR_N) {
+                    val p = Path()
+                    for ((k, pt) in shape.withIndex()) {
+                        if (k == 0) p.moveTo(pt.first * size, pt.second * size) else p.lineTo(pt.first * size, pt.second * size)
+                    }
+                    p.close()
+                    c.drawPath(p, paint)
+                }
+            }
         }
         c.restore()
     }
 
     companion object {
         val UNISWAP_PINK = Color.rgb(0xF5, 0x0D, 0xB4)
+        /** NEAR's N on a unit square (SponsorMarks.swift's points). */
+        val NEAR_N: List<List<Pair<Float, Float>>> = listOf(
+            listOf(0.26f to 0.24f, 0.36f to 0.24f, 0.36f to 0.62f, 0.26f to 0.76f),
+            listOf(0.64f to 0.24f, 0.74f to 0.24f, 0.74f to 0.76f, 0.64f to 0.76f, 0.64f to 0.38f),
+            listOf(0.26f to 0.24f, 0.36f to 0.24f, 0.74f to 0.76f, 0.64f to 0.76f),
+        )
         private val UNICORN: List<Pair<Boolean, String>> = listOf(
         false to "M325.144 65.7698C325.727 55.5419 327.119 48.7957 329.918 42.6348C331.025 40.1962 332.063 38.2003 332.223 38.2003C332.383 38.2003 331.902 40.0003 331.153 42.1999C329.118 48.1791 328.784 56.3572 330.186 65.872C331.965 77.9447 332.976 79.6866 345.782 92.7278C351.788 98.8446 358.775 106.559 361.307 109.871L365.912 115.894L361.307 111.59C355.676 106.327 342.724 96.0618 339.863 94.5945C337.945 93.6104 337.66 93.6274 336.477 94.801C335.387 95.8823 335.157 97.5072 335.005 105.189C334.77 117.16 333.132 124.845 329.18 132.528C327.042 136.684 326.705 135.797 328.64 131.106C330.084 127.604 330.231 126.064 330.22 114.475C330.198 91.1888 327.424 85.5906 311.153 76.0005C307.032 73.5711 300.24 70.0674 296.062 68.2141C291.883 66.3608 288.564 64.7467 288.685 64.6261C289.146 64.1691 305.013 68.7839 311.399 71.2318C320.899 74.8731 322.467 75.3449 323.621 74.9057C324.394 74.6113 324.768 72.367 325.144 65.7698Z",
         false to "M124.431 31.8931C118.795 31.0236 118.557 30.9216 121.209 30.5162C126.292 29.7389 138.292 30.7983 146.562 32.754C165.867 37.3182 183.434 49.0103 202.186 69.7754L207.168 75.2919L214.295 74.1524C244.318 69.3537 274.861 73.1675 300.407 84.9049C307.435 88.134 318.516 94.5618 319.9 96.2136C320.341 96.7401 321.151 100.129 321.699 103.745C323.597 116.255 322.647 125.843 318.8 133.005C316.707 136.903 316.59 138.138 317.997 141.473C319.121 144.135 322.253 146.105 325.355 146.1C331.703 146.092 338.536 135.885 341.702 121.683L342.96 116.042L345.452 118.849C359.117 134.248 369.85 155.248 371.694 170.196L372.174 174.093L369.877 170.55C365.924 164.454 361.952 160.303 356.866 156.956C347.697 150.922 338.002 148.868 312.327 147.523C289.139 146.307 276.015 144.337 263.002 140.117C240.861 132.937 229.699 123.375 203.399 89.0559C191.717 73.8123 184.497 65.3784 177.314 58.5864C160.994 43.1536 144.958 35.0599 124.431 31.8931Z",

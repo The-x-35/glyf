@@ -214,7 +214,7 @@ object RatesStore {
                     requestMethod = "GET"
                     connectTimeout = 5000
                     readTimeout = 8000
-                    BackendClient.bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+                    BackendClient.session(this)
                 }
                 val obj = JSONObject(conn.inputStream.bufferedReader().readText())
                 if (obj.optBoolean("ok")) done(obj) else failed?.invoke()

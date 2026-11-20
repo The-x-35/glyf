@@ -68,6 +68,8 @@ enum TradeEdit {
     static func sells(_ i: TradeIntent) -> Bool {
         switch i.kind {
         case .swap, .bridge, .send, .stopLoss, .takeProfit, .trailingStop: return true
+        // Earn puts in what's typed; out, nothing typed is everything.
+        case .earn: return i.earnOut
         case .bracket: return i.buyAmount == nil && !i.amountIsUSD
         case .limit: return !stables.contains(i.sell)
         default: return false
@@ -76,7 +78,10 @@ enum TradeEdit {
 
     /// The asset an order is about (the side that isn't dollars).
     static func asset(_ i: TradeIntent) -> String {
-        if i.kind == .swap || i.kind == .bridge || i.kind == .send { return i.sell }
+        if i.kind == .swap || i.kind == .bridge { return i.sell }
+        // What's sent: the coin the recipient gets (a NEAR Intents send
+        // may pay for it in another).
+        if i.kind == .send { return i.buy }
         return sells(i) ? i.sell : i.buy
     }
 
@@ -85,6 +90,8 @@ enum TradeEdit {
         if i.buyAmount != nil { return .receive(i.buy) }
         if i.kind == .twap { return .dollars }
         if !sells(i), [.limit, .stop, .bracket].contains(i.kind) { return .dollars }
+        // A send's amount is what arrives.
+        if i.kind == .send { return .spend(i.buy) }
         return .spend(i.sell)
     }
 
@@ -95,7 +102,7 @@ enum TradeEdit {
         case .bracket: return [.amount, .price, .stopPrice]
         case .trailingStop: return [.amount, .trail]
         case .twap: return [.amount, .duration]
-        case .swap, .bridge, .send: return [.amount]
+        case .swap, .bridge, .send, .earn: return [.amount]
         }
     }
 
@@ -230,6 +237,9 @@ enum TradeEdit {
             if i.toChain == nil || i.toChain == i.chainName { return "Pick another chain" }
         case .send:
             if !positive(i.amount) { return "Enter an amount" }
+        case .earn:
+            // Out with no amount is everything; in needs one.
+            if !i.earnOut, !positive(i.amount) { return "Enter an amount" }
         default:
             break
         }
@@ -313,13 +323,24 @@ enum TradeEdit {
     /// The chains a trade of this kind can be on.
     static func chains(for i: TradeIntent) -> [String] {
         switch i.kind {
-        case .swap: return SponsorMenu.swapChains
+        case .swap: return i.isNear ? nearChains : SponsorMenu.swapChains
+        // NEAR Intents' send pays from any chain a wallet here signs on.
+        case .send where i.isNear: return nearPayChains
         // A send stays where its name points: Solana for a .sol name or
         // SOL, any of MetaMask's chains otherwise.
         case .send: return i.chainName == "solana" ? ["solana"] : SponsorMenu.swapChains
+        // Earn stays where the words put it.
+        case .earn: return [i.chainName]
         default: return flashChains
         }
     }
+
+    /// The chains a NEAR Intents swap picks from: where MetaMask and
+    /// Phantom sign, then the chains of their own (paid from any wallet).
+    static let nearChains = ["base", "ethereum", "arbitrum", "optimism", "polygon", "bsc", "avalanche", "solana",
+                             "near", "bitcoin", "zcash", "ton", "tron", "xrp", "dogecoin", "litecoin", "sui"]
+    /// Where a NEAR Intents send is paid from: chains Glyf can sign on.
+    static let nearPayChains = ["base", "ethereum", "arbitrum", "optimism", "polygon", "solana"]
 
     /// Flash's chains that this server also has an EVM node for, Solana too.
     static let flashChains = ["base", "solana", "ethereum", "arbitrum", "optimism"]
@@ -328,6 +349,7 @@ enum TradeEdit {
     /// cross-chain; a bridge's buy side is where it lands). Tokens that
     /// don't exist on the new chain fall back to its gas coin.
     static func pickChain(_ chain: String, side: Side, in intent: TradeIntent) -> TradeIntent {
+        if intent.isNear { return pickNearChain(chain, side: side, in: intent) }
         var i = intent
         if i.kind == .bridge, side == .buy {
             i.toChain = chain == i.chainName ? nil : chain
@@ -362,11 +384,41 @@ enum TradeEdit {
         return i
     }
 
+    /// A chain picked on a NEAR Intents trade: a coin that isn't on the new
+    /// chain becomes that chain's own. One chain on both sides is a swap
+    /// there (Uniswap's, or Jupiter's), no longer across.
+    private static func pickNearChain(_ chain: String, side: Side, in intent: TradeIntent) -> TradeIntent {
+        var i = intent
+        if side == .buy, i.kind == .swap {
+            i.buy = TradeIntent.nearFit(i.buy, on: chain)
+            i.buyAddress = nil
+            i.buyChain = chain == i.chainName ? nil : chain
+            if i.buyChain == nil, i.sell == i.buy { i.buy = TradeIntent.stableFor(i.sell) }
+            return i
+        }
+        i.chain = chain
+        i.sell = TradeIntent.nearFit(i.sell, on: chain)
+        i.sellAddress = nil
+        if i.kind == .swap, i.buyChain == chain {
+            i.buyChain = nil
+            if i.sell == i.buy { i.buy = TradeIntent.stableFor(i.sell) }
+        }
+        return i
+    }
+
     // MARK: picker rows
 
     /// The picker's rows before the server answers (or when it can't):
     /// the coins every chain here has.
     static func builtIn(chain: String) -> [TokenPick] {
+        // A chain of its own: its coin, and the dollars 1Click has there.
+        if TradeIntent.otherChains.contains(chain) {
+            let own = TradeIntent.nativeChain.first { $0.value == chain }?.key ?? chain.uppercased()
+            var rows = [TokenPick(symbol: own, name: TradeIntent.label(chain), native: true)]
+            if TradeIntent.nearHas("USDC", on: chain) { rows.append(TokenPick(symbol: "USDC", name: "USD Coin")) }
+            if TradeIntent.nearHas("USDT", on: chain) { rows.append(TokenPick(symbol: "USDT", name: "Tether USD")) }
+            return rows
+        }
         if chain == "solana" {
             return [TokenPick(symbol: "SOL", name: "Solana", native: true), TokenPick(symbol: "USDC", name: "USD Coin"),
                     TokenPick(symbol: "USDT", name: "Tether USD")]

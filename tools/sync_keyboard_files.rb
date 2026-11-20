@@ -33,6 +33,7 @@ TEST_SHARED = %w[
   Engine/TradeRecurring.swift
   Engine/SponsorMenu.swift
   Engine/AIAction.swift
+  Engine/NearPay.swift
   Engine/EmojiWords.swift
   Engine/PhraseMemory.swift
   Engine/WeatherStore.swift

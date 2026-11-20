@@ -64,7 +64,7 @@ object SearchCards {
                 (URL(url).openConnection() as java.net.HttpURLConnection).apply {
                     connectTimeout = 6000
                     readTimeout = 8000
-                    if (signed) BackendClient.bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+                    if (signed) BackendClient.session(this)
                 }.inputStream.use { stream ->
                     // Decode bounds first so a 1280x720 thumbnail never
                     // becomes 3.6MB of live pixels for a 94dp row.

@@ -113,6 +113,30 @@ abstract final class GlyfApi {
   static void _signIn(HttpClientRequest req) {
     final token = Auth.bearer;
     if (token != null) req.headers.set('Authorization', 'Bearer $token');
+    if (privateAI != null) req.headers.set('X-Glyf-AI', privateAI!);
+  }
+
+  /// Private AI (Profile › Keyboard › Private AI on NEAR, off unless turned
+  /// on): "near" has the server answer this phone's AI calls with NEAR AI
+  /// Cloud's private models, which run in TEEs. Shared settings `privateAI`
+  /// holds the same string, so the keyboard sends the same header.
+  static String? privateAI;
+
+  static Future<void> loadPrivateAI() async {
+    final s = await GlyfBridge.sharedSettings();
+    privateAI = s['privateAI'] == 'near' ? 'near' : null;
+    // The ETHGlobal build's 0G switch kept a bool here: gone, so neither
+    // side asks for 0G.
+    if (s.containsKey('privateAI') && privateAI == null) {
+      await GlyfBridge.updateSharedSettings((s) => s..remove('privateAI'));
+    }
+  }
+
+  /// The last answers NEAR AI Cloud gave this account, newest first, with
+  /// their attestation: {requestId, model, verified, at}.
+  static Future<List<Map<String, dynamic>>> aiReceipts() async {
+    final res = await _getJson('/ai/receipts');
+    return [for (final r in (res['receipts'] as List? ?? const [])) (r as Map).cast<String, dynamic>()];
   }
 
   // ---- JSON helpers ------------------------------------------------------

@@ -57,6 +57,20 @@ object SettingsStore {
         return PRODUCTION_BACKEND
     }
 
+    /** The X-Glyf-AI header every keyboard call carries: "near" while the
+     *  app's Private AI on NEAR switch writes `privateAI = "near"`; none when
+     *  the key is gone, or holds anything else (the ETHGlobal build's Bool
+     *  reads as off, and nothing else in the file is lost over it). */
+    fun privateAIHeader(settings: JSONObject): String? = if (settings.opt("privateAI") == "near") "near" else null
+
+    /** Recipients the app last paid through NEAR Intents (newest first, 20
+     *  at most), shared setting `nearRecent`: the panel's quote sends them so
+     *  Guard can spot a lookalike. Anything that isn't a string is skipped. */
+    fun nearRecent(settings: JSONObject): List<String> {
+        val list = settings.optJSONArray("nearRecent") ?: return emptyList()
+        return (0 until list.length()).mapNotNull { list.opt(it) as? String }.take(20)
+    }
+
     fun defaults(): JSONObject = JSONObject().apply {
         put("schemaVersion", 9)
         put("haptics", true)

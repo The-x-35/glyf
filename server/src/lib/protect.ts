@@ -28,6 +28,9 @@ export const OPEN_PATHS: readonly (string | RegExp)[] = [
   // App Review's door: its own password IS the credential (routes/auth.ts).
   "/auth/review",
   /^\/p\//,            // a page someone shared; the link is the permission
+  // A pay link (routes/pay.ts): whoever has it may see it, quote a payment
+  // and follow it. Creating one (POST /near/requests) needs the session.
+  /^\/pay\/[A-Za-z0-9_-]+(\/(quote|status))?$/,
   // Providers redirect here; they carry their own state. Starting a
   // connection is not open: it needs the session, like everything else.
   /^\/oauth\/[^/]+\/callback$/,
@@ -63,6 +66,12 @@ declare module "fastify" {
     /** The signed-in user this request belongs to, once past the gate. */
     glyfUser?: string;
   }
+}
+
+/** The caller's address, as the gate counts it (also the open pay page's
+ *  per-IP limit, routes/pay.ts). */
+export function clientIp(req: FastifyRequest): string {
+  return ip(req);
 }
 
 function ip(req: FastifyRequest): string {

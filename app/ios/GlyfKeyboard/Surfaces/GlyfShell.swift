@@ -516,7 +516,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
         }
     }
 
-    /// Two app cards over the tools, each its mark and its name, the
+    /// The app cards over the tools, each its mark and its name, the
     /// tiles' own fill, radius and hairline.
     private func buildSponsorRow() {
         sponsors = SponsorMenu.sponsors
@@ -550,7 +550,8 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
             label.font = .systemFont(ofSize: 13, weight: .semibold)
             label.textColor = Glass.textPrimary
             label.adjustsFontSizeToFitWidth = true
-            label.minimumScaleFactor = 0.8
+            // Three cards share the row; "NEAR Intents" is the longest name.
+            label.minimumScaleFactor = 0.7
             label.isUserInteractionEnabled = false
             cell.addSubview(label)
 
@@ -1204,7 +1205,7 @@ final class GlyfShell: UIView, UITableViewDataSource, UITableViewDelegate {
     /// the screen opens): the words picked out, or the message so far.
     static var styleSample = ""
 
-    // MARK: Sponsor panels (Uniswap, Definitive)
+    // MARK: Sponsor panels (Uniswap, Definitive, NEAR Intents)
 
     /// The text before the cursor as the menu opened: a sponsor's panel
     /// offers the trade typed there.

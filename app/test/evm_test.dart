@@ -5,6 +5,7 @@ import 'package:eth_sig_util/eth_sig_util.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:glyf/evm/evm_chains.dart';
+import 'package:glyf/evm/evm_rpc.dart';
 import 'package:glyf/evm/evm_signer.dart';
 import 'package:glyf/evm/metamask_link.dart';
 import 'package:glyf/evm/trade_flow.dart';
@@ -364,5 +365,25 @@ void main() {
     expect(body['target'], pepe);
     expect(body['contra'], 'USDC');
     expect(body['side'], 'buy');
+  });
+
+  test('a receipt the node errs on while the transaction is new is asked for again', () async {
+    // publicnode answers a transaction it hasn't seen yet with an "archive"
+    // error; a deposit MetaMask did send must not read as failed.
+    var asks = 0;
+    EvmRpc.pollEvery = Duration.zero;
+    EvmRpc.post = (path, body) async {
+      asks++;
+      expect(body['method'], 'eth_getTransactionReceipt');
+      if (asks < 3) throw Exception('Archive requests require a personal token');
+      return {'ok': true, 'result': {'status': '0x1', 'from': address}};
+    };
+    final r = await EvmRpc.receipt(EvmChain.base, '0x${'ab' * 32}');
+    expect(asks, 3);
+    expect(r?['status'], '0x1');
+
+    // Errors until the time is up: still out there (null), never thrown.
+    EvmRpc.post = (path, body) async => throw Exception('Archive requests require a personal token');
+    expect(await EvmRpc.receipt(EvmChain.base, '0x${'ab' * 32}', timeout: const Duration(milliseconds: 20)), isNull);
   });
 }

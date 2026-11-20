@@ -171,7 +171,11 @@ final class GlyfBridge {
         // MIGRATED view — §6.13 defaults appear even before the keyboard's
         // first run, and new fields carry their defaults.
         case "readSharedSettings":
-            if let data = try? JSONEncoder().encode(SettingsStore.load()),
+            // Over the file, so the app's own keys (evmWallets…) come back too.
+            let raw = AppGroupStore.bridgeDir.flatMap {
+                try? Data(contentsOf: $0.appendingPathComponent(SettingsStore.fileName))
+            }
+            if let data = SettingsStore.appView(raw: raw),
                let json = String(data: data, encoding: .utf8) {
                 result(json)
             } else {

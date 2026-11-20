@@ -42,6 +42,9 @@ dependencies:
   # holds no Ethereum key: MetaMask signs and sends.
   eth_sig_util: ^0.0.9
   pointycastle: ^3.9.1
+  # The deposit address of a NEAR Intents trade from a chain Glyf can't
+  # sign on (Bitcoin, Zcash…), as a code another wallet scans.
+  qr_flutter: ^4.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

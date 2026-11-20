@@ -5,6 +5,7 @@ import 'core/billing.dart';
 import 'core/bridge.dart';
 import 'core/catalog.dart';
 import 'core/funnel.dart';
+import 'core/glyf_api.dart';
 import 'core/telemetry.dart';
 import 'core/theme.dart';
 import 'dictation/recording_sheet.dart';
@@ -13,6 +14,7 @@ import 'onboarding/demo_chat.dart';
 import 'evm/evm_signer.dart';
 import 'evm/evm_wallet_screen.dart';
 import 'evm/metamask_link.dart';
+import 'near/hot_wallet.dart';
 import 'evm/trade_screen.dart';
 import 'wallet/buy_screen.dart';
 import 'wallet/crypto_pay.dart';
@@ -101,6 +103,9 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
     // The connected MetaMask's address reaches the keyboard (and an older
     // build's own-wallet address leaves it).
     EvmSigner.load();
+    // Awaited: the tour-hint cleanup below writes the same file, and two
+    // writes at once lose one.
+    await GlyfApi.loadPrivateAI();
     // Custom glyf names live in shared settings — warm the sync cache.
     final settings = await GlyfBridge.sharedSettings();
     Catalog.rememberCustomTitles(
@@ -128,6 +133,8 @@ class _GlyfAppState extends State<GlyfApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Back from HOT Wallet (it doesn't open Glyf again): ask its relay now.
+      HotRelay.wake();
       Funnel.report();
       _checkPendingDictation();
       if (_onboarded) {

@@ -732,6 +732,32 @@ final class GlyfEngineTests: XCTestCase {
         XCTAssertNil(json["tourStep"], "a field the keyboard cleared is removed")
     }
 
+    func testTheAppReadsItsOwnKeysBack() throws {
+        // The app writes back what it read: a read without evmWallets lost
+        // MetaMask's connection (and NEAR's saved account) on every launch.
+        // A whole settings file, as the keyboard and the app write it, with
+        // the app's own keys beside the keyboard's.
+        var file = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(GlyfSettings())) as? [String: Any])
+        file["evmWallets"] = ["metamask": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"]
+        file["nearAccount"] = "alice.near"
+        file["privateAI"] = "near"
+        file["haptics"] = false
+        file["backendURL"] = "https://api.tryglyf.com"
+        let raw = try JSONSerialization.data(withJSONObject: file)
+        let out = try XCTUnwrap(SettingsStore.appView(raw: raw))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: out) as? [String: Any])
+        XCTAssertEqual((json["evmWallets"] as? [String: String])?["metamask"], "0x70997970C51812dc3A010C7d01b50e0d17dc79C8")
+        XCTAssertEqual(json["nearAccount"] as? String, "alice.near")
+        XCTAssertEqual(json["privateAI"] as? String, "near")
+        XCTAssertEqual(json["haptics"] as? Bool, false)
+        XCTAssertNotNil(json["toolbarOrder"], "the migrated defaults are there too")
+        XCTAssertEqual(json["backendURL"] as? String, GlyfSettings.productionized("https://api.tryglyf.com"),
+                       "the migrated value wins over the file's")
+        // No file yet: the defaults.
+        let fresh = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(SettingsStore.appView(raw: nil))) as? [String: Any])
+        XCTAssertEqual(fresh["haptics"] as? Bool, true)
+    }
+
     // MARK: Calendar words
 
     private func calendarAt(_ tz: String = "Asia/Kolkata") -> Calendar {

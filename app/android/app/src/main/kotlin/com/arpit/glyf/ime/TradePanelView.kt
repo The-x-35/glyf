@@ -26,9 +26,10 @@ import java.util.concurrent.Executors
  * and prices on the panel's own digits, tokens from a list (Uniswap's, or
  * an address pasted from the clipboard), chains from a list with their own
  * marks. One card per side, an order's values as rows, one button. The
- * quote is the server's (/uniswap/quote, /flash/search) or Jupiter's prices
- * on Solana; the button hands the trade to the app, which asks MetaMask or
- * Phantom. The keyboard holds no key and signs nothing (SPEC §1.5).
+ * quote is the server's (/uniswap/quote, /flash/search, /near/quote for
+ * NEAR Intents across chains) or Jupiter's prices on Solana; the button
+ * hands the trade to the app, which asks MetaMask or Phantom. The keyboard
+ * holds no key and signs nothing (SPEC §1.5).
  */
 @SuppressLint("ViewConstructor", "SetTextI18n")
 class TradePanelView(
@@ -45,13 +46,17 @@ class TradePanelView(
     /** No wallet for this chain yet: the app's Wallet page. */
     private val onConnect: () -> Unit,
     private val onToast: (String) -> Unit,
-    /** The strip's name for the panel, when the kind's name changes. */
-    private val onTitle: (String) -> Unit,
+    /** The strip's name for the panel and its mark (TradeQuote.headerIcon),
+     *  when the name changes. */
+    private val onTitle: (String, String) -> Unit,
     /** The copy, read on the Paste address tap. */
     private val clipText: () -> String?,
     /** A token search is being typed (true): the letter keys come up under
      *  the panel's search strip; false: back to the panel's own height. */
     private val onSearching: (Boolean) -> Unit = {},
+    /** Recipients the app last paid through NEAR Intents (shared settings
+     *  `nearRecent`), sent with a NEAR quote so Guard can spot a lookalike. */
+    private val nearRecent: List<String> = emptyList(),
 ) : FrameLayout(ctx), StripField {
 
     var intent: TradeIntent = start
@@ -78,7 +83,7 @@ class TradePanelView(
     }
 
     /** The strip's name as last said: told again only when the kind changes. */
-    private var shownTitle = TradeQuote.headerTitle(start.kind)
+    private var shownTitle = TradeQuote.headerTitle(start)
 
     private var mode: Mode = Mode.Panel
     private var typed = ""
@@ -88,6 +93,11 @@ class TradePanelView(
 
     // Live numbers.
     private var quote: TradeQuote.Quote? = null
+    /** NEAR Intents' answer (time, what's paid for a send, Guard's words). */
+    private var near: NearQuote? = null
+    /** Earn's answer (its words, vault, APY, time), in Earn mode. */
+    private var earn: EarnQuote? = null
+    private var earnError: String? = null
     private var marketPrice: Double? = null
     private var asking = true
     private var serial = 0
@@ -112,6 +122,13 @@ class TradePanelView(
     private var searchSerial = 0
 
     private val isSwap get() = intent.kind == TradeIntent.Kind.SWAP
+    /** The panel quotes it as it changes: a swap, or a NEAR Intents send. */
+    private val quotes get() = TradeQuote.quotes(intent)
+    private val nearSend get() = TradeQuote.nearSend(intent)
+    /** Earn mode: idle coins into a vault, or back out (NEAR Intents Earn). */
+    private val isEarn get() = intent.kind == TradeIntent.Kind.EARN
+    private val red = Color.rgb(0xFF, 0x3B, 0x30)
+    private val amber get() = if (palette.darkChrome) Color.rgb(0xFF, 0xC2, 0x47) else Color.rgb(0xB8, 0x73, 0x00)
     private val buyChain get() = intent.buyChain ?: intent.chainName
     private val wallet: String? get() = if (intent.chainName == "solana") solanaAddress else evmAddress
     /** The side a Flash order's token pill changes (its asset). */
@@ -126,6 +143,8 @@ class TradePanelView(
 
     companion object {
         private val pool = Executors.newFixedThreadPool(2)
+        /** GET /near/earn/vaults, read once a session (everything out has no quote). */
+        private var vaultList: JSONObject? = null
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -193,6 +212,8 @@ class TradePanelView(
     private fun logo(symbol: String, chain: String): String? =
         known["$chain|${symbol.uppercase()}"]?.logo
             ?: tokenRows[chain]?.firstOrNull { it.symbol.equals(symbol, ignoreCase = true) }?.logo
+            // A coin no token list here carries (BTC, ZEC, NEAR…): its own picture, not a letter.
+            ?: TradeIntent.coinLogos[symbol.uppercase()]
 
     /** One side: its key and chain, the amount (a tap types it) and its
      *  token, a line under them. */
@@ -261,36 +282,124 @@ class TradePanelView(
             body.addView(sideCard("You get", buyChain, true, { openChains(TradeEdit.Side.BUY) },
                 getAmount, i.buyAmount == null && q?.out == null,
                 if (reversed) ({ begin(TradeField.AMOUNT) }) else null,
-                i.buy, { openTokens(TradeEdit.Side.BUY) },
-                if (q?.error == null) q?.outUsd?.let { TradeQuote.approx(it) } ?: "" else "", "getcard"), full())
+                i.buy, { openTokens(TradeEdit.Side.BUY) }, getSub(q), "getcard"), full())
         } else {
             val sub = mutableListOf<String>()
             val market = marketPrice
-            if (market != null) sub.add("${TradeQuote.display(top)} ${TradeQuote.dollars(market)}") else if (asking) sub.add("…")
+            if (nearSend) {
+                q?.outUsd?.let { sub.add(TradeQuote.approx(it)) }
+                // The line over the button took the Arrives row: the time rides here.
+                if (alert() != null) near?.time?.let { sub.add(it) }
+            } else if (isEarn) {
+                // What the coins are worth (the vault's share count never
+                // shows) and how long it takes, as a swap's card says it.
+                sub.addAll(TradeQuote.earnCardLine(i, quote, earn))
+            } else if (market != null) sub.add("${TradeQuote.display(top)} ${TradeQuote.dollars(market)}") else if (asking) sub.add("…")
             if (TradeEdit.sells(i)) balance(top, i.chainName)?.takeIf { it > 0 }?.let { sub.add("Balance ${PayPanelView.compact(it)}") }
             // Phantom's send here takes SOL or USDC as read; no picker for it.
-            val tokenPicks = !(i.kind == TradeIntent.Kind.SEND && i.chainName == "solana")
-            body.addView(sideCard(TradeQuote.topKey(i), i.chainName, chains, { openChains(TradeEdit.Side.SELL) },
+            // A NEAR Intents send keeps the coin typed (its chain decides it).
+            val tokenPicks = !(i.kind == TradeIntent.Kind.SEND && (i.chainName == "solana" || i.isNear)) && !isEarn
+            // A NEAR send's card is what arrives, where: the chain it's paid
+            // from is a row below.
+            val cardChain = if (nearSend) i.buyChain ?: i.chainName else i.chainName
+            body.addView(sideCard(TradeQuote.topKey(i), cardChain, chains && !nearSend, { openChains(TradeEdit.Side.SELL) },
                 TradeEdit.shown(TradeField.AMOUNT, i), TradeEdit.value(TradeField.AMOUNT, i).isEmpty(),
                 { begin(TradeField.AMOUNT) }, top, if (tokenPicks) ({ openTokens(assetSide) }) else null,
                 sub.joinToString(" · "), "paycard"), full(top = dp(2)))
             renderRows()
         }
-        val go = TradeQuote.go(i, wallet, asking, quote, balance(i.sell, i.chainName), resolved, resolveProblem)
+        // Over the button: what Guard (or the name lookup) found, red when it
+        // stops the trade, amber when it only asks for a look.
+        alert()?.let { a ->
+            val ink = if (a.block) red else amber
+            val line = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(4), 0, dp(4), 0)
+                setTag(com.arpit.glyf.R.id.qa_id, "trade:alert")
+            }
+            line.addView(AlertMark(context, a.block, ink), LinearLayout.LayoutParams(dp(15), dp(15)).apply { rightMargin = dp(5) })
+            line.addView(TextView(context).apply {
+                text = a.text
+                textSize = 13f
+                maxLines = 2
+                ellipsize = null
+                setTextColor(ink)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            body.addView(line, full(top = dp(7)))
+        }
+        // Earn's line over the button: 1Click's word on yield, on one line,
+        // 13 down to 11 sp if it must (EarnQuote.noticeSize), so the amount's
+        // card keeps its room; two lines only when even 11 is too wide.
+        if (isEarn && alert() == null) {
+            body.addView(NoticeText(context).apply {
+                setTextColor(palette.inkSoft)
+                setPadding(dp(4), 0, dp(4), 0)
+                setTag(com.arpit.glyf.R.id.qa_id, "trade:notice")
+            }, full(top = dp(7)))
+        }
+        val go = if (isEarn) TradeQuote.earnGo(i, TradeIntent.missingWallet(i, evmAddress, solanaAddress, null), asking, earn, earnError)
+            else TradeQuote.go(i, wallet, asking, quote, balance(i.sell, i.chainName), resolved, resolveProblem, near)
         body.addView(label(go.title, 15f, true, if (go.blocked) palette.inkSoft else Color.WHITE).apply {
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
-                setColor(if (go.blocked) soft(if (palette.darkChrome) 26 else 16, palette.ink) else blue)
+                setColor(if (go.blocked) soft(if (palette.darkChrome) 26 else 16, palette.ink) else if (go.red) red else blue)
             }
             setTag(com.arpit.glyf.R.id.qa_id, "trade:go")
             setOnClickListener { go(go) }
         }, full(dp(42), dp(8)))
     }
 
+    /** You get's line: ≈ dollars, and NEAR Intents' time ("≈ $19.88 · ~32 s";
+     *  NEAR Intents is in the header). An error speaks on the button. */
+    private fun getSub(q: TradeQuote.Quote?): String {
+        if (q?.error != null) return ""
+        val parts = listOfNotNull(q?.outUsd?.let { TradeQuote.approx(it) },
+            if (intent.isNear) near?.time else null)
+        return parts.joinToString(" · ")
+    }
+
+    private fun alert(): TradeQuote.Alert? = TradeQuote.alert(intent, near, resolveProblem)
+
+    /** A NEAR send's rows: To (ticked once NEAR says the name is there, red
+     *  when Guard stops it), You pay (tap to pay from another chain) and
+     *  Arrives; at least 36dp each, values fitted, never cut. */
+    private fun renderNearRows(rows: List<TradeQuote.Row> = TradeQuote.nearSendRows(intent, near, asking, resolved, resolveProblem)) {
+        val c = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(palette.card) }
+        }
+        for ((k, r) in rows.withIndex()) {
+            if (k > 0) c.addView(View(context).apply { setBackgroundColor(soft(40, palette.ink)) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { leftMargin = dp(12) })
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(36)
+                setPadding(dp(12), dp(4), dp(12), dp(4))
+                setTag(com.arpit.glyf.R.id.qa_id, "trade:row:${r.id}")
+                if (r.tap) setOnClickListener { openChains(TradeEdit.Side.SELL) }
+            }
+            row.addView(label(r.label, 13.5f, false, palette.inkSoft).apply { ellipsize = null },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { rightMargin = dp(16) })
+            row.addView(RowValue(context, r.value).apply {
+                setTextColor(if (r.red) red else palette.ink)
+                if (r.bold) typeface = Typeface.DEFAULT_BOLD
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            if (r.check) row.addView(TickMark(context), LinearLayout.LayoutParams(dp(14), dp(14)).apply { leftMargin = dp(5) })
+            c.addView(row, full())
+        }
+        body.addView(c, full(top = dp(6)))
+    }
+
     /** An order's values under the asset: one row each, tap to change. */
     private fun renderRows() {
         val i = intent
+        if (nearSend) { renderNearRows(); return }
+        if (isEarn) { renderNearRows(TradeQuote.earnRows(i, earn, asking)); return }
         data class Spec(val id: String, var label: String, var value: String, val tap: () -> Unit)
         val specs = TradeEdit.fields(i).filter { it != TradeField.AMOUNT }.map { f ->
             Spec(f.id, TradeEdit.label(f, i), TradeEdit.shown(f, i)) { begin(f) }
@@ -406,7 +515,7 @@ class TradePanelView(
             background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(palette.card) }
         }
         // A contract from the chat: whatever Uniswap lists at that address.
-        if (chain != "solana") list.addView(listRow("trade:paste") { pasteToken(side) }.apply {
+        if (chain in TradeIntent.uniswapReach) list.addView(listRow("trade:paste") { pasteToken(side) }.apply {
             addView(label("Paste address", 15f, true, blue), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(label("from the chat", 12f, false, palette.inkSoft))
         }, full(dp(44)))
@@ -505,7 +614,7 @@ class TradePanelView(
     }
 
     private fun renderChains(side: TradeEdit.Side) {
-        pickerHeader(if (side == TradeEdit.Side.BUY && isSwap) "You get on" else "Chain")
+        pickerHeader(if (side == TradeEdit.Side.BUY && isSwap) "You get on" else if (nearSend) "Pay from" else "Chain")
         val current = when {
             intent.kind == TradeIntent.Kind.BRIDGE && side == TradeEdit.Side.BUY -> intent.toChain
             side == TradeEdit.Side.BUY && isSwap -> buyChain
@@ -575,6 +684,7 @@ class TradePanelView(
     private fun flip() {
         intent = TradeEdit.flip(intent)
         quote = null
+        near = null
         loadBalances(intent.chainName)
         requote()
     }
@@ -584,6 +694,7 @@ class TradePanelView(
         val was = intent
         intent = TradeEdit.repriced(TradeEdit.pick(token, if (isSwap) side else assetSide, intent), was)
         quote = null
+        near = null
         if (!isSwap) { marketPrice = null; asking = true }
         setMode(Mode.Panel)
         loadLive()
@@ -593,6 +704,7 @@ class TradePanelView(
         val was = intent
         intent = TradeEdit.repriced(TradeEdit.pickChain(chain, side, intent), was)
         quote = null
+        near = null
         if (!isSwap && side == TradeEdit.Side.SELL) { marketPrice = null; asking = true }
         setMode(Mode.Panel)
         loadBalances(intent.chainName)
@@ -617,17 +729,18 @@ class TradePanelView(
     private fun go(g: TradeQuote.Go) {
         if (g.connect) { onConnect(); return }
         if (g.blocked) return
-        onHandOff(TradeQuote.handOff(intent, resolved))
+        onHandOff(TradeQuote.handOff(intent, resolved, anyway = g.red))
     }
 
     // MARK: live numbers
 
     private fun loadLive() {
-        val title = TradeQuote.headerTitle(intent.kind)
-        if (title != shownTitle) { shownTitle = title; onTitle(title) }
+        val title = TradeQuote.headerTitle(intent)
+        if (title != shownTitle) { shownTitle = title; onTitle(title, TradeQuote.headerIcon(intent)) }
         when {
             isSwap -> requote()
-            intent.kind == TradeIntent.Kind.SEND -> { resolve(); price(intent.sell) }
+            intent.kind == TradeIntent.Kind.SEND -> { resolve(); if (intent.isNear) requote() else price(intent.sell) }
+            isEarn -> requote()
             else -> price(TradeEdit.asset(intent))
         }
         render()
@@ -641,7 +754,8 @@ class TradePanelView(
         val to = intent.to
         if (to == null) { resolved = null; resolveProblem = "No one to send to"; return }
         if (!TradeIntent.isName(to)) { resolved = to; resolveProblem = null; resolvedFor = null; return }
-        val chain = intent.chainName
+        // A NEAR Intents send is looked up where it lands, not where it's paid.
+        val chain = if (intent.isNear) intent.buyChain ?: intent.chainName else intent.chainName
         val key = "$to|$chain"
         if (key == resolvedFor) return
         resolvedFor = key
@@ -663,7 +777,7 @@ class TradePanelView(
 
     private fun loadBalances(chain: String) {
         val address = evmAddress
-        if (chain == "solana" || held[chain] != null || address.isNullOrEmpty()) return
+        if (chain !in TradeIntent.uniswapReach || held[chain] != null || address.isNullOrEmpty()) return
         http("GET", "/evm/balances?chain=$chain&address=$address", null) { _, obj ->
             TradeQuote.balances(obj)?.let { held[chain] = it; render() }
         }
@@ -671,7 +785,7 @@ class TradePanelView(
 
     /** A quote shortly after the last change (typing doesn't ask per key). */
     private fun requote() {
-        if (!isSwap) {
+        if (!quotes) {
             if (intent.awaitingPrice) price(TradeEdit.asset(intent))
             render()
             return
@@ -679,12 +793,17 @@ class TradePanelView(
         val n = ++serial
         asking = true
         quote = null
+        near = null
+        earn = null
+        earnError = null
         render()
         main.postDelayed({ if (n == serial) ask(n) }, 300)
     }
 
     private fun ask(n: Int) {
         val i = intent
+        if (i.kind == TradeIntent.Kind.EARN) { earnQuote(i, n); return }
+        if (i.isNear) { nearQuote(i, n); return }
         if (i.chainName == "solana") { jupiter(n); return }
         val body = TradeQuote.body(i)
         if (body == null) { asking = false; render(); return }
@@ -692,6 +811,52 @@ class TradePanelView(
             if (n != serial) return@http
             asking = false
             quote = TradeQuote.read(ok, obj, i.buyAmount != null)
+            render()
+        }
+    }
+
+    /** NEAR Intents' quote (POST /near/quote), dry: a preview the app asks
+     *  again for, with a refund address, before anything is signed. */
+    private fun nearQuote(i: TradeIntent, n: Int) {
+        val body = TradeQuote.nearBody(i, nearRecent)
+        if (body == null) { asking = false; render(); return }
+        http("POST", "/near/quote", body) { ok, obj ->
+            if (n != serial) return@http
+            val q = NearQuote.read(ok, obj)
+            asking = false
+            near = if (q.error == null) q else null
+            quote = TradeQuote.Quote(q.amountOut, q.inUsd, q.outUsd, q.error?.let { TradeQuote.shortError(it) })
+            render()
+        }
+    }
+
+    /** Earn's preview (POST /near/earn/quote, dry). Everything out has no
+     *  amount to price: the vault's own row (GET /near/earn/vaults). */
+    private fun earnQuote(i: TradeIntent, n: Int) {
+        if (i.earnOut && i.amount == null) {
+            fun take(list: JSONObject?) {
+                if (n != serial) return
+                asking = false
+                earn = EarnQuote.vault(i.earnVault, list)
+                render()
+            }
+            vaultList?.let { take(it); return }
+            http("GET", "/near/earn/vaults", null) { ok, obj ->
+                if (ok && obj?.optJSONArray("vaults") != null) vaultList = obj
+                take(if (ok) obj else null)
+            }
+            return
+        }
+        val body = TradeQuote.earnBody(i)
+        if (body == null) { asking = false; render(); return }
+        http("POST", "/near/earn/quote", body) { ok, obj ->
+            if (n != serial) return@http
+            val q = EarnQuote.of(ok, obj)
+            asking = false
+            earn = if (q.error == null) q else null
+            earnError = q.error?.let { TradeQuote.shortError(it) }
+            quote = if (q.error == null) TradeQuote.Quote(null, TradeQuote.num(obj?.opt("amountInUsd")),
+                TradeQuote.num(obj?.opt("amountOutUsd"))) else null
             render()
         }
     }
@@ -755,7 +920,8 @@ class TradePanelView(
 
     private fun prefetchTokens(chain: String) {
         if (tokenRows[chain] == null) tokenRows[chain] = TradeEdit.builtIn(chain)
-        if (chain == "solana" || (tokenRows[chain]?.size ?: 0) > 8) return
+        // Uniswap's token list is for its own chains.
+        if (chain !in TradeIntent.uniswapReach || (tokenRows[chain]?.size ?: 0) > 8) return
         http("GET", "/uniswap/tokens?chain=$chain&q=&limit=40", null) { _, obj ->
             val arr = obj?.optJSONArray("tokens") ?: return@http
             val rows = (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.let { j -> TokenPick.fromJson(j) } }
@@ -777,7 +943,7 @@ class TradePanelView(
                     requestMethod = method
                     connectTimeout = 6000
                     readTimeout = 15000
-                    BackendClient.bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+                    BackendClient.session(this)
                     if (body != null) {
                         doOutput = true
                         setRequestProperty("content-type", "application/json")
@@ -795,5 +961,125 @@ class TradePanelView(
             }
             main.post { if (isAttachedToWindow) done(ok, obj) }
         }
+    }
+}
+
+/** Over a NEAR trade's button: an octagon (red, Guard stops it) or a
+ *  triangle (amber, a look first), with its "!" (iOS's
+ *  exclamationmark.octagon.fill / exclamationmark.triangle.fill). */
+@SuppressLint("ViewConstructor")
+private class AlertMark(ctx: Context, private val block: Boolean, private val ink: Int) : View(ctx) {
+    private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+    override fun onDraw(c: android.graphics.Canvas) {
+        val s = minOf(width, height).toFloat()
+        val x0 = (width - s) / 2f
+        val y0 = (height - s) / 2f
+        val shape = android.graphics.Path()
+        if (block) {
+            for (k in 0 until 8) {
+                val a = Math.PI / 8 + k * Math.PI / 4
+                val x = x0 + s / 2 + (s / 2 * Math.cos(a)).toFloat()
+                val y = y0 + s / 2 + (s / 2 * Math.sin(a)).toFloat()
+                if (k == 0) shape.moveTo(x, y) else shape.lineTo(x, y)
+            }
+        } else {
+            shape.moveTo(x0 + s / 2, y0 + s * 0.06f); shape.lineTo(x0 + s, y0 + s * 0.94f); shape.lineTo(x0, y0 + s * 0.94f)
+        }
+        shape.close()
+        p.style = android.graphics.Paint.Style.FILL
+        p.color = ink
+        c.drawPath(shape, p)
+        // The "!": a bar and a dot, in the board's white.
+        p.color = Color.WHITE
+        val mid = x0 + s / 2
+        val top = y0 + s * if (block) 0.24f else 0.36f
+        c.drawRoundRect(android.graphics.RectF(mid - s * 0.06f, top, mid + s * 0.06f, y0 + s * 0.64f), s * 0.06f, s * 0.06f, p)
+        c.drawCircle(mid, y0 + s * 0.78f, s * 0.07f, p)
+    }
+}
+
+/** After a NEAR name the network says is there: a green disc with a tick
+ *  (iOS's checkmark.circle.fill). */
+private class TickMark(ctx: Context) : View(ctx) {
+    private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+    override fun onDraw(c: android.graphics.Canvas) {
+        val s = minOf(width, height).toFloat()
+        val x0 = (width - s) / 2f
+        val y0 = (height - s) / 2f
+        p.style = android.graphics.Paint.Style.FILL
+        p.color = Color.rgb(0x34, 0xC7, 0x59)
+        c.drawCircle(x0 + s / 2, y0 + s / 2, s / 2, p)
+        p.style = android.graphics.Paint.Style.STROKE
+        p.strokeWidth = s * 0.12f
+        p.strokeCap = android.graphics.Paint.Cap.ROUND
+        p.strokeJoin = android.graphics.Paint.Join.ROUND
+        p.color = Color.WHITE
+        val tick = android.graphics.Path().apply {
+            moveTo(x0 + s * 0.28f, y0 + s * 0.52f); lineTo(x0 + s * 0.44f, y0 + s * 0.67f); lineTo(x0 + s * 0.72f, y0 + s * 0.36f)
+        }
+        c.drawPath(tick, p)
+    }
+}
+
+/** A NEAR send's row value, fitted (TradeQuote.rowFit): smaller rather
+ *  than cut, then on two lines, never with "…". */
+@SuppressLint("ViewConstructor")
+private class RowValue(ctx: Context, private val value: String) : TextView(ctx) {
+    init {
+        text = value
+        textSize = 15f
+        maxLines = 2
+        ellipsize = null
+        gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        // Two lines break between words ("Gauntlet" whole, never
+        // hyphenated); an address, one long word, between characters.
+        if (value.contains(' ') && android.os.Build.VERSION.SDK_INT >= 23)
+            hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NONE
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val room = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight).toDouble()
+        if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED && room > 0) {
+            val scale = resources.displayMetrics.scaledDensity
+            val probe = android.text.TextPaint(paint)
+            val (size, lines) = TradeQuote.rowFit(value, room) { t, sp ->
+                probe.textSize = (sp * scale).toFloat()
+                probe.measureText(t).toDouble()
+            }
+            if (textSize != (size * scale).toFloat()) setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, size.toFloat())
+            if (maxLines != lines) maxLines = lines
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
+}
+
+/** Earn's notice (EarnQuote.NOTICE): one line at the largest size from 13 to
+ *  11 sp that fits, else 13 sp on two lines; never "…". */
+private class NoticeText(ctx: Context) : TextView(ctx) {
+    init {
+        text = EarnQuote.NOTICE
+        textSize = EarnQuote.NOTICE_FULL.toFloat()
+        maxLines = 2
+        ellipsize = null
+        if (android.os.Build.VERSION.SDK_INT >= 28) typeface = Typeface.create(Typeface.DEFAULT, 500, false)
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val room = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight).toDouble()
+        if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED && room > 0) {
+            val scale = resources.displayMetrics.scaledDensity
+            val probe = android.text.TextPaint(paint)
+            val size = EarnQuote.noticeSize(room) { sp ->
+                probe.textSize = (sp * scale).toFloat()
+                probe.measureText(EarnQuote.NOTICE).toDouble()
+            }
+            val sp = size ?: EarnQuote.NOTICE_FULL
+            val lines = if (size != null) 1 else 2
+            if (textSize != (sp * scale).toFloat()) setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, sp.toFloat())
+            if (maxLines != lines) maxLines = lines
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 }

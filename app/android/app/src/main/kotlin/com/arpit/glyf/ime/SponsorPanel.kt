@@ -9,7 +9,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * A g menu sponsor's own panel (Uniswap, Definitive): SponsorMenu.entries
+ * A g menu sponsor's own panel (Uniswap, Definitive, NEAR Intents): SponsorMenu.entries
  * as inset-grouped rows, the way iOS's shell lists them (GlyfShell's
  * sponsorScreen). Every row opens something; nothing runs on the tap that
  * opened the panel. Definitive's chain is a two-way switch, Base or Solana.
@@ -75,11 +75,37 @@ object SponsorPanel {
         contentDescription = sponsor.title
         setTag(com.arpit.glyf.R.id.qa_id, "shell:sponsor:${sponsor.id}")
         addView(SponsorMarkView(ctx, sponsor), LinearLayout.LayoutParams(dp(ctx, 26f), dp(ctx, 26f)).apply { rightMargin = dp(ctx, 8f) })
-        addView(TextView(ctx).apply {
+        addView(CardName(ctx).apply {
             text = sponsor.title
-            Glass.style(this, 13f, Glass.SEMIBOLD)
+            Glass.style(this, CardName.FULL, Glass.SEMIBOLD)
             maxLines = 1
         })
         setOnClickListener { onTap() }
+    }
+
+    /** A card's name, smaller (down to 70%) rather than cut: three cards
+     *  share the row and "NEAR Intents" is the longest name (iOS's
+     *  minimumScaleFactor 0.7). A name that fits keeps its 13dp. */
+    private class CardName(ctx: Context) : TextView(ctx) {
+        companion object {
+            const val FULL = 13f
+            const val SMALLEST = FULL * 0.7f
+        }
+
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val room = MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight
+            if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED && room > 0) {
+                val d = resources.displayMetrics.density
+                val probe = android.text.TextPaint(paint)
+                var size = FULL
+                while (size > SMALLEST) {
+                    probe.textSize = size * d
+                    if (probe.measureText(text.toString()) <= room) break
+                    size = maxOf(SMALLEST, size - 0.5f)
+                }
+                if (textSize != size * d) setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, size)
+            }
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        }
     }
 }

@@ -56,6 +56,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private val main = Handler(Looper.getMainLooper())
 
     private var settings = JSONObject()
+        // Every read of the app's settings also sets the private-AI header
+        // the keyboard's calls carry (X-Glyf-AI: near, or none).
+        set(value) { field = value; BackendClient.privateAI = SettingsStore.privateAIHeader(value) }
     private var autoShifted = false
     private var lastSpaceAt = 0L
 
@@ -988,10 +991,15 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             row.addView(back, LinearLayout.LayoutParams(dp(30), LinearLayout.LayoutParams.MATCH_PARENT)
                 .apply { leftMargin = start - dp(4) })
         }
-        if (icon != null) row.addView(ToolIcon(this, icon, Glass.textPrimary).apply {
+        // "sponsor:near" is that sponsor's own mark (NEAR's N over a NEAR
+        // Intents trade); anything else a strip glyph.
+        val sponsorMark = icon?.let { SponsorMenu.Sponsor.of(it) }
+        if (icon != null) row.addView(if (sponsorMark != null) SponsorMarkView(this, sponsorMark).apply {
+            contentDescription = sponsorMark.title
+        } else ToolIcon(this, icon, Glass.textPrimary).apply {
             solid = true
             weight = 1.8f
-        }, LinearLayout.LayoutParams(dp(24), dp(24)).apply {
+        }, LinearLayout.LayoutParams(dp(if (sponsorMark != null) 22 else 24), dp(if (sponsorMark != null) 22 else 24)).apply {
             leftMargin = if (back == null) start else -dp(2)
             rightMargin = dp(6)
         })
@@ -1818,6 +1826,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         (featurePanel as? CalendarPanelView)?.typing?.let { f ->
             typeIntoStrip(id, char, f.stripText, { f.setStripText(it) }) { f.endStrip() }
             // A title starts with a capital, then letters are lowercase.
+            if (char != null && keyboard.shifted) { keyboard.shifted = false; keyboard.invalidate() }
+            return
+        }
+        // The pot's payee account takes the letters while it is typed.
+        (featurePanel as? PotPanelView)?.typing?.let { f ->
+            typeIntoStrip(id, char, f.stripText, { f.setStripText(it) }) { f.endStrip() }
             if (char != null && keyboard.shifted) { keyboard.shifted = false; keyboard.invalidate() }
             return
         }
@@ -2773,6 +2787,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (!walletOn) chip = when (val c = chip) {
             is Smart.Chip.Pay, is Smart.Chip.Buy, is Smart.Chip.Trade -> null
             is Smart.Chip.Money -> c.copy(buy = null)
+            // The pot and pay links are the wallet's too; a bill split is still sums.
+            is Smart.Chip.Action -> if (c.intent.startsWith("near:")) null else c
+            is Smart.Chip.Convert -> if (c.answer.request != null) c.copy(answer = c.answer.copy(request = null)) else c
             else -> c
         }
         if (chip == null && walletOn) Smart.addressToCheck(tail, rates, ownWallet)?.let {
@@ -2844,6 +2861,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             }
         }
         if (chip != null) cancelSuggestion()
+        // A bill split in dollars is one card with Request; the pot's words, a NEAR chip.
+        (chip as? Smart.Chip.Convert)?.takeIf { it.answer.request != null }?.let { return showSplitChip(it) }
+        (chip as? Smart.Chip.Action)?.takeIf { it.intent.startsWith("near:") }?.let { return showNearChip(it) }
         when (chip) {
             is Smart.Chip.Calc, is Smart.Chip.Vault, is Smart.Chip.Money -> {
                 stripSmartDetail = when (chip) {
@@ -3002,7 +3022,8 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         if (recommended != null && suggestedFor == trimmed) showRecommended(recommended)?.let { return it }
         val cached = suggestedChip
         if (cached != null && suggestedFor == trimmed) {
-            return showStripChip("action", null, cached.label, "", policyKey = cached.intent + "|" + cached.query) {
+            return showStripChip("action", null, cached.label, "", policyKey = cached.intent + "|" + cached.query,
+                shorter = ChipFit.shorter(cached)) {
                 suggestedChip = null
                 suggestedAction = null
                 suggestedFor = ""
@@ -3235,7 +3256,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
     private fun showStripChip(kind: String, label: String?, value: String, verb: String,
                               lead: String? = null, extra: String? = null, onExtra: (() -> Unit)? = null,
                               onClose: (() -> Unit)? = null, policyKey: String? = null,
-                              onTap: () -> Unit): Boolean {
+                              shorter: String? = null, onTap: () -> Unit): Boolean {
         if (!policyAllows(kind, value, policyKey)) return false
         // The chip's purple, lighter so it reads on the card (Arpit,
         // 2026-09-30: "insert button text etc to be lighter colour purple so
@@ -3268,8 +3289,9 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             setPadding(0, 0, dp(8), 0)
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (lead == null) leftMargin = text0 })
-        // Never "…" (D108): smaller words, then the last " · " part goes (ChipFit).
-        chip.addView(FittedText(this, value, 15f).apply {
+        // Never "…" (D108): smaller words, then the last " · " part goes, then
+        // the chip's shorter words, then two lines (ChipFit.whole).
+        chip.addView(FittedText(this, value, 15f, shorter).apply {
             setTextColor(ink())
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             if (lead == null && label == null) leftMargin = text0
@@ -6142,6 +6164,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
         val chip = action.chip ?: return
         // Without the wallet on, nothing to trade; a Meet link only with Meet.
         if (chip is Smart.Chip.Trade && !walletOn) return
+        if (action.tool.startsWith("near.") && !walletOn) return
         if (chip is Smart.Chip.Action && chip.intent == "meet" && !com.arpit.glyf.store.GoogleAccess.hasMeet(this)) return
         suggestedFor = text
         suggestedDetail = null
@@ -6154,6 +6177,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
      *  in it; nothing runs from the strip. Null falls through to the rest. */
     private fun showRecommended(chip: Smart.Chip): Boolean? {
         val used = { suggestedAction = null; suggestedFor = "" }
+        if (chip is Smart.Chip.Action && chip.intent.startsWith("near:")) return showNearChip(chip, used)
         return when (chip) {
             is Smart.Chip.Trade -> showTradeChip(chip, used)
             is Smart.Chip.Event -> showStripChip("event", null, Smart.display(chip), "Add", lead = "calendar") {
@@ -6227,7 +6251,7 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
             },
             onConnect = { dismissFeaturePanel(); openAppPath("wallet") },
             onToast = { notice(it) },
-            onTitle = { title -> showStripTitle(title, onBack = null, icon = "trend") },
+            onTitle = { title, icon -> showStripTitle(title, onBack = null, icon = icon) },
             clipText = { com.arpit.glyf.store.ClipboardStore.clipText(this) },
             // A token search: a strip over the letter keys, like New Event's title.
             onSearching = { searching ->
@@ -6237,11 +6261,12 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 }
                 if (searching) { keyboard.mode = Mode.LETTERS; keyboard.shifted = false; keyboard.rebuild() }
             },
+            nearRecent = SettingsStore.nearRecent(settings),
         )
         root.addView(panel, root.indexOfChild(keyboard),
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, keysH))
         featurePanel = panel
-        showStripTitle(TradeQuote.headerTitle(intent.kind), onBack = null, icon = "trend")
+        showStripTitle(TradeQuote.headerTitle(intent), onBack = null, icon = TradeQuote.headerIcon(intent))
     }
 
     /** A sponsor's panel from the g menu's top row: everything it does as
@@ -6263,6 +6288,132 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 RatesStore.cryptoUsd("SOL")?.let { "$" + String.format(java.util.Locale.US, "%.2f", it) }))
             null -> {}
         }
+    }
+
+    // MARK: NEAR: pay links and the group pot (NearPay.kt, PotPanelView;
+    // the iPhone's GlyfKeyboardViewController PotSurfaceDelegate)
+
+    private val nearPool = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** A NEAR chip (a pay link to ask for, the pot, a payout from it): its
+     *  tap does what its verb says. */
+    private fun showNearChip(chip: Smart.Chip.Action, used: (() -> Unit)? = null): Boolean =
+        showStripChip("action", null, chip.label, Smart.verb(chip) ?: "", policyKey = chip.intent + "|" + chip.query,
+            shorter = ChipFit.shorter(chip)) {
+            used?.invoke()
+            hideStripChip()
+            val params = NearPay.params(chip.query)
+            when (chip.intent) {
+                "near:request" -> PayAsk.of(params)?.let { requestPayLink(it) }
+                "near:pot", "near:pot.pay" -> PotAsk.of(params, chip.intent == "near:pot.pay")?.let { openPot(it) }
+            }
+        }
+
+    /** "$22.50 each" with Insert, and Request beside it: a pay link for the bill. */
+    private fun showSplitChip(chip: Smart.Chip.Convert): Boolean {
+        val a = chip.answer
+        val ask = a.request ?: return false
+        stripSmartDetail = "convert"
+        // Too wide for its question ("$90 for the four of us ="), the
+        // answer alone: "$22.50 each" (ChipFit.shorter).
+        return showStripChip("smart", null, Smart.display(chip), "Insert", extra = "Request",
+            onExtra = { hideStripChip(); requestPayLink(ask) }, shorter = ChipFit.shorter(chip)) {
+            val ic = currentInputConnection
+            ic?.commitText(Smart.conversionInsert(a.insert(0), ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+            hideStripChip()
+            updateSuggestions()
+        }
+    }
+
+    /** A line the strip says ("Add a wallet in Glyf to get paid"): read, put away. */
+    private fun showNote(text: String) {
+        hideStripChip()
+        showStripChip("note", null, text, "OK", policyKey = "note|$text") { hideStripChip() }
+    }
+
+    private fun setting(key: String): String? = settings.optString(key).ifEmpty { null }
+
+    /** The Request button (docs/NEAR-SPEC.md): POST /near/requests with
+     *  where this person is paid, then the answer's words at the cursor, no
+     *  notice. No wallet to be paid in: the strip says so and nothing is
+     *  posted; a refusal is said on the strip in the server's words. */
+    private fun requestPayLink(ask: PayAsk) {
+        val r = PayAsk.receiver(ask.chain, setting("evmAddress"), setting("walletAddress"), setting("nearAccount"))
+        if (r == null) { showNote(PayAsk.NO_WALLET); return }
+        showNote("Making the pay link…")
+        val url = settings.optString("backendURL") + "/near/requests"
+        val body = ask.body(r.first, r.second)
+        nearPool.execute {
+            var ok = false
+            val obj = try {
+                val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 6000
+                    readTimeout = 15000
+                    doOutput = true
+                    setRequestProperty("content-type", "application/json")
+                    BackendClient.session(this)
+                    outputStream.bufferedWriter().use { it.write(body.toString()) }
+                }
+                ok = c.responseCode in 200..299
+                (if (ok) c.inputStream else c.errorStream)?.bufferedReader()?.readText()?.let { JSONObject(it) }
+            } catch (e: Exception) {
+                android.util.Log.w("GlyfKB", "pay link: $e")
+                null
+            }
+            main.post {
+                val text = obj?.optString("text").orEmpty()
+                if (ok && text.isNotEmpty()) {
+                    suggestedAction = null
+                    suggestedFor = ""
+                    hideStripChip()
+                    val ic = currentInputConnection
+                    ic?.commitText(Smart.spaced(text, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                    updateSuggestions()
+                } else {
+                    showNote(obj?.optString("error").orEmpty().ifEmpty { "Couldn't make the link. Try again" })
+                }
+            }
+        }
+    }
+
+    /** The pot a chip means (the typed DAO, the saved pot, the word's) over
+     *  the keys, or "Add your pot in Glyf" on the strip when there is none. */
+    private fun openPot(ask: PotAsk) {
+        val dao = ask.daoAccount(setting("nearPot"), setting("nearAccount"))
+        if (dao == null) { showNote(PotAsk.NO_POT); return }
+        dismissFeaturePanel()
+        val keysH = if (keyboard.height > 0) keyboard.height else dp(216)
+        keyboard.visibility = View.GONE
+        lateinit var panel: PotPanelView
+        panel = PotPanelView(this, keyboard.palette(), settings.optString("backendURL"), ask, dao, setting("nearAccount"),
+            onInsert = { text ->
+                dismissFeaturePanel()
+                val ic = currentInputConnection
+                ic?.commitText(Smart.spaced(text, ic.getTextBeforeCursor(1, 0)?.toString()), 1)
+                updateSuggestions()
+            },
+            onOpen = { url -> openLink(url) },
+            // The payee's account: a strip over the letter keys, like the trade panel's search.
+            onTyping = { typing ->
+                keyboard.visibility = if (typing) View.VISIBLE else View.GONE
+                panel.layoutParams = (panel.layoutParams as LinearLayout.LayoutParams).apply {
+                    height = if (typing) dp(64) else keysH
+                }
+                if (typing) { keyboard.mode = Mode.LETTERS; keyboard.shifted = false; keyboard.rebuild() }
+            })
+        root.addView(panel, root.indexOfChild(keyboard),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, keysH))
+        featurePanel = panel
+        showStripTitle(panel.title, onBack = null, icon = SponsorMenu.Sponsor.NEAR.screenId)
+    }
+
+    /** Trezu, where members vote and file payouts with their own NEAR wallet. */
+    private fun openLink(url: String) {
+        if (!url.startsWith("https://")) return
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure { notice("Couldn't open $url") }
     }
 
     // MARK: end of Trading (android-trade)
@@ -7419,18 +7570,25 @@ class GlyfIME : InputMethodService(), GlyfKeyboardView.Listener {
                 this.text = text
                 Glass.style(this, 13f, Glass.SEMIBOLD, Color.WHITE)
                 gravity = Gravity.CENTER
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(dp(13), 0, dp(13), 0)
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(14).toFloat()
-                    setColor(Color.argb(240, 31, 31, 31))
-                }
                 setTag(com.arpit.glyf.R.id.qa_id, "kb:notice")
+            }
+            // Never cut with "…" (D108): 13 sp down to 11 sp on one line,
+            // then two lines in a taller pill (iOS KeyboardToast.fitted).
+            val room = (root.width - dp(24) - dp(26)).toFloat()
+            var size = 13f
+            while (size > 11f && label.paint.apply { textSize = size * resources.displayMetrics.scaledDensity }
+                    .measureText(text) > room) size -= 0.5f
+            label.textSize = size
+            val twoLines = label.paint.measureText(text) > room
+            label.maxLines = if (twoLines) 2 else 1
+            label.background = GradientDrawable().apply {
+                cornerRadius = dp(if (twoLines) 12 else 14).toFloat()
+                setColor(Color.argb(240, 31, 31, 31))
             }
             label.measure(
                 View.MeasureSpec.makeMeasureSpec(root.width - dp(24), View.MeasureSpec.AT_MOST),
-                View.MeasureSpec.makeMeasureSpec(dp(28), View.MeasureSpec.EXACTLY))
+                View.MeasureSpec.makeMeasureSpec(dp(if (twoLines) 44 else 28), View.MeasureSpec.EXACTLY))
             val left = (root.width - label.measuredWidth) / 2
             val top = dp(8)
             label.layout(left, top, left + label.measuredWidth, top + label.measuredHeight)

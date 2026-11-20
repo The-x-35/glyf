@@ -71,7 +71,7 @@ class ToolMenuView(
     private val side get() = dp(6f)
     private val tileW get() = (width - side * 2 - gap * (cols - 1)) / cols
     private val tileH get() = max(dp(64f), (height - tilesTop - dp(40f) - gap) / 2)
-    /** The sponsor row over the tiles (Uniswap, Definitive), as iOS's grid has it. */
+    /** The sponsor row over the tiles (Uniswap, Definitive, NEAR Intents), as iOS's grid has it. */
     private val sponsorCards = LinkedHashMap<SponsorMenu.Sponsor, View>()
     private val sponsorRowH get() = dp(44f)
     private val tilesTop get() = if (sponsorCards.isEmpty()) 0f else sponsorRowH + gap

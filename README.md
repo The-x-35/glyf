@@ -2,6 +2,15 @@
 
 AI keyboard for iPhone and Android. *Type less. glyf more.*
 
+> **NEAR HACKATHON (Nov 2026): Glyf × NEAR.** Swaps, sends and pay links across
+> 21 chains through NEAR Intents, typed in any chat, with Guard and private AI on
+> NEAR AI Cloud. Judges, start at **[docs/NEAR.md](docs/NEAR.md)**: it has the
+> do-X-see-Y steps (`cd server && npm install && npm run near:quote -- "swap 20 usdc on base to sol"`)
+> and the diff of the hackathon work
+> ([near-baseline...near-hackathon](https://github.com/The-x-35/glyf/compare/near-baseline...near-hackathon)).
+> The same author also entered the NEAR investment thesis,
+> https://github.com/The-x-35/near-thesis (independent; no shared code).
+
 **Everything about the project (decisions, timeline, every part, open items, full chat history) is in [docs/README.md](docs/README.md).**
 
 **Design:** Apple-like and simple, no explainer lines. Apple-standard keyboard

@@ -18,6 +18,15 @@ class TradeMarksTest {
             if (mark!!.lettering == null) assertTrue(chain, mark.layers.isNotEmpty())
             for (layer in mark.layers) assertTrue(chain, SvgPath.ops(layer.d).isNotEmpty())
         }
+        // NEAR Intents' chains have a plain mark: their colour and initial.
+        for (chain in TradeEdit.NEAR_CHAINS + TradeIntent.otherChains) {
+            val mark = ChainMarks.mark(chain)
+            assertTrue(chain, mark != null)
+            if (mark!!.lettering == null) assertTrue(chain, mark.layers.isNotEmpty())
+        }
+        assertEquals("N", ChainMarks.mark("near")?.lettering)
+        assertEquals(0x000000, ChainMarks.mark("near")?.letteringFill)
+        assertEquals(0xFF0420, ChainMarks.mark("optimism")?.letteringFill)
         assertEquals(ChainMarks.mark("optimism"), ChainMarks.mark("op"))
         assertNull(ChainMarks.mark("whitechain"))
     }

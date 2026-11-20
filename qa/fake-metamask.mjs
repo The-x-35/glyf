@@ -9,6 +9,9 @@
 //
 // --hash answers eth_sendTransaction with that hash (nothing is sent: use a
 // real Base transaction to see the app refuse one that isn't its own).
+// --account 1 signs as Hardhat's test account #1 (0x7099…79C8) instead of
+// #0: NEAR Intents' 1Click refuses a live quote refunding to #0 (0xf39F…2266,
+// a key everyone knows) with "Failed to get quote", so NEAR trades need #1.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -16,8 +19,12 @@ import { createRequire } from "node:module";
 const require = createRequire(new URL("../server/package.json", import.meta.url));
 const { privateKeyToAccount } = require("viem/accounts");
 
-const account = privateKeyToAccount("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
 const args = process.argv.slice(2);
+const keys = [
+  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+  "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+];
+const account = privateKeyToAccount(keys[args.includes("--account") ? Number(args[args.indexOf("--account") + 1]) : 0]);
 const file = args[0];
 const hash = args.includes("--hash") ? args[args.indexOf("--hash") + 1] : null;
 const refuse = args.includes("--refuse");

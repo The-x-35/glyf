@@ -27,9 +27,13 @@ enum ChainLogo {
         var layers: [Layer]
         /// Drawn on a white disc (the diamond is dark on dark sheets otherwise).
         var disc = false
-        /// Drawn as a red disc with "OP" (Optimism's mark is lettering).
+        /// Drawn as a disc with these letters (Optimism's mark is lettering),
+        /// in `letteringFill`; also the plain mark for the chains only NEAR
+        /// Intents reaches.
         var lettering: String? = nil
         var inset: CGFloat = 0
+        var letteringFill: UInt32 = 0xFF0420
+        var letteringInk: UInt32 = 0xFFFFFF
     }
 
     static let marks: [String: Mark] = [
@@ -62,7 +66,28 @@ enum ChainLogo {
             .init(d: "M0 212.32l127.96 75.638v-133.8z", fill: 0x393939),
         ], disc: true, inset: 0.2),
         "optimism": Mark(viewBox: CGSize(width: 1, height: 1), layers: [], lettering: "OP"),
+        // NEAR Intents' chains: each one's colour and initial, kept simple.
+        "near": letters("N", 0x000000),
+        "bitcoin": letters("₿", 0xF7931A),
+        "zcash": letters("Z", 0xF4B728, ink: 0x1A1A1A),
+        "bsc": letters("B", 0xF0B90B, ink: 0x1A1A1A),
+        "avalanche": letters("A", 0xE84142),
+        "gnosis": letters("G", 0x04795B),
+        "polygon": letters("P", 0x8247E5),
+        "ton": letters("T", 0x0098EA),
+        "tron": letters("T", 0xEB0029),
+        "xrp": letters("X", 0x23292F),
+        "dogecoin": letters("D", 0xC2A633),
+        "litecoin": letters("Ł", 0x345D9D),
+        "sui": letters("S", 0x4DA2FF),
+        "aptos": letters("A", 0x1A1A1A),
+        "stellar": letters("S", 0x111111),
+        "cardano": letters("C", 0x0033AD),
     ]
+
+    private static func letters(_ text: String, _ fill: UInt32, ink: UInt32 = 0xFFFFFF) -> Mark {
+        Mark(viewBox: CGSize(width: 1, height: 1), layers: [], lettering: text, letteringFill: fill, letteringInk: ink)
+    }
 
     /// The mark for a chain key ("base", "op" is "optimism"), nil for one
     /// without a mark here.
@@ -90,12 +115,14 @@ enum ChainLogo {
 
     static func draw(_ mark: Mark, in rect: CGRect, _ cg: CGContext) {
         if let letters = mark.lettering {
-            ChainLogo.color(0xFF0420).setFill()
+            ChainLogo.color(mark.letteringFill).setFill()
             UIBezierPath(ovalIn: rect).fill()
-            let font = UIFont.systemFont(ofSize: rect.height * 0.40, weight: .heavy)
-            let italic = font.fontDescriptor.withSymbolicTraits([.traitBold, .traitItalic]).map { UIFont(descriptor: $0, size: 0) } ?? font
+            let font = UIFont.systemFont(ofSize: rect.height * (letters.count == 1 ? 0.52 : 0.40), weight: .heavy)
+            // OP's lettering leans, as Optimism draws it; the initials stand.
+            let italic = letters != "OP" ? font
+                : font.fontDescriptor.withSymbolicTraits([.traitBold, .traitItalic]).map { UIFont(descriptor: $0, size: 0) } ?? font
             let text = letters as NSString
-            let attrs: [NSAttributedString.Key: Any] = [.font: italic, .foregroundColor: UIColor.white, .kern: -rect.height * 0.01]
+            let attrs: [NSAttributedString.Key: Any] = [.font: italic, .foregroundColor: ChainLogo.color(mark.letteringInk), .kern: -rect.height * 0.01]
             let s = text.size(withAttributes: attrs)
             text.draw(at: CGPoint(x: rect.midX - s.width / 2, y: rect.midY - s.height / 2), withAttributes: attrs)
             return
